@@ -156,9 +156,42 @@ fi
 # ever catchable BEFORE the upgrade. So: migrate first, and if the migration
 # cannot be proven good, DO NOT UPGRADE. A box left one version stale is
 # recoverable; a box that is dark and silent is not.
+#
+# ⚠️ `openclaw doctor --fix` IS NOT THE MIGRATION, AND THIS SCRIPT NO LONGER
+# CALLS IT. It was called here because the gateway's own error text prescribes
+# it. Measured on 12 boxes: the config's SHA-256 was BYTE-IDENTICAL before and
+# after. `openclaw config schema` on 2026.7.1 / 2026.7.1-2 lists the `agents`
+# properties as exactly ["defaults","list"] -- there is no `entries` to migrate
+# to. It also silently rewrote `agents.defaults.models` pins on one box. So the
+# old path could only ever fail its own re-validation, and it risked model pins
+# doing so.
+#
+# THE MIGRATION MUST HAPPEN INSIDE THE UPGRADE WINDOW. `additionalProperties:
+# false` is set on `agents` in BOTH versions, so no config is valid on both; the
+# currently installed runtime has NO `entries` reader, so migrating early
+# enumerates ZERO agents (a silent total outage, worse than the crash-loop); and
+# a running gateway re-serializes openclaw.json about once a minute from an
+# in-memory model that only knows `agents.list`, reverting anything written
+# while it is up. Only one procedure satisfies all of that, and this cron now
+# delegates the whole upgrade to it: <oc-root>/scripts/oc-atomic-upgrade.sh.
+#
+# THREE-WAY DECISION, in order of preference:
+#   1. the atomic tool is on this box  -> it performs the ENTIRE upgrade
+#      (quiesce and prove it, install, migrate, verify, restart, prove stable,
+#      roll back binary AND config on any failure).
+#   2. the tool is absent BUT the config is PROVEN CLEAN -> the plain
+#      `npm update -g openclaw` still runs. A clean box cannot hit this
+#      landmine, so blocking it would be a regression for no safety gain.
+#   3. anything else -- legacy key present, unreadable config, no python3,
+#      detector error -> BLOCK. An absence that cannot be proven is not an
+#      absence, and a box left one build stale is recoverable.
 OC_CFG="$HOME/.openclaw/openclaw.json"
 [ -f "/data/.openclaw/openclaw.json" ] && OC_CFG="/data/.openclaw/openclaw.json"
+OC_ROOT_DIR="$HOME/.openclaw"
+[ -d "/data/.openclaw" ] && OC_ROOT_DIR="/data/.openclaw"
+OC_ATOMIC="$OC_ROOT_DIR/scripts/oc-atomic-upgrade.sh"
 OC_GATE_BLOCK=""
+OC_UPGRADE_DONE=0
 
 if [ ! -f "$OC_CFG" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] no config at $OC_CFG -- nothing to migrate" >> "$OC_LOG"
@@ -192,33 +225,49 @@ PYDETECT
     else
         case "${OC_VERDICT%%|*}" in
             ABSENT)
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] clean -- no legacy agents.list key; upgrade may proceed" >> "$OC_LOG"
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] clean -- no legacy agents.list key" >> "$OC_LOG"
+                # Even with nothing to migrate, prefer the atomic path when it is
+                # here: it stops the gateway before changing the binary, proves
+                # it came back and STAYED up, and rolls the binary back if it did
+                # not. A plain `npm update -g openclaw` does none of that -- it
+                # swaps the binary under a running gateway and never looks again.
+                if [ -f "$OC_ATOMIC" ]; then
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] clean box, but using the atomic path anyway for its quiesce + rollback + stability proof" >> "$OC_LOG"
+                    bash "$OC_ATOMIC" --upgrade >> "$OC_LOG" 2>&1
+                    OC_ATOMIC_RC=$?
+                    case "$OC_ATOMIC_RC" in
+                        0)  OC_UPGRADE_DONE=1 ;;
+                        78) OC_GATE_BLOCK="the atomic upgrade REFUSED and rolled back (exit 78) on a CLEAN box. This box is exactly as it was." ;;
+                        70) OC_GATE_BLOCK="the atomic upgrade's ROLLBACK ITSELF FAILED (exit 70) on a CLEAN box. THIS BOX NEEDS A HUMAN NOW." ;;
+                        *)  OC_GATE_BLOCK="the atomic upgrade exited $OC_ATOMIC_RC (undetermined) on a CLEAN box." ;;
+                    esac
+                else
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] atomic tool not on this box; a clean config cannot hit the landmine, so the plain npm upgrade may proceed" >> "$OC_LOG"
+                fi
                 ;;
             PRESENT)
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] LEGACY SCHEMA DETECTED -- migrating BEFORE the upgrade" >> "$OC_LOG"
-                if ! command -v openclaw >/dev/null 2>&1; then
-                    OC_GATE_BLOCK="legacy agents.list is present and the openclaw CLI is not on PATH, so 'openclaw doctor --fix' cannot be run"
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] LEGACY SCHEMA DETECTED -- this box cannot take a plain npm upgrade" >> "$OC_LOG"
+                if [ ! -f "$OC_ATOMIC" ]; then
+                    OC_GATE_BLOCK="legacy agents.list is present and the atomic upgrade procedure is NOT on this box (looked for $OC_ATOMIC). Run update-skills.sh once to deliver it, then this cron can migrate."
                 else
-                    OC_BAK="${OC_CFG}.bak-pre-agents-list-$(date +%Y%m%d-%H%M%S)"
-                    if ! cp -p "$OC_CFG" "$OC_BAK" 2>/dev/null; then
-                        OC_GATE_BLOCK="legacy agents.list is present but the config could not be backed up to $OC_BAK"
-                    else
-                        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] backup: $OC_BAK" >> "$OC_LOG"
-                        openclaw doctor --fix >> "$OC_LOG" 2>&1
-                        OC_DOCTOR_RC=$?
-                        OC_VERDICT2="$(python3 "$OC_DETECT_PY" "$OC_CFG" 2>&1)"
-                        if [ "$OC_DOCTOR_RC" -ne 0 ]; then
-                            # QC-ALLOW-NO-CHOWN: `cat >` writes THROUGH the existing inode, so the file's owner, group and mode are unchanged by construction — there is no ownership to restore. A cp/mv here is what would need a chown; that is exactly why this is a redirect.
-                            cat "$OC_BAK" > "$OC_CFG" 2>/dev/null
-                            OC_GATE_BLOCK="'openclaw doctor --fix' failed (rc=$OC_DOCTOR_RC); config restored from $OC_BAK"
-                        elif [ "${OC_VERDICT2%%|*}" != "ABSENT" ]; then
-                            # QC-ALLOW-NO-CHOWN: same as above — `cat >` preserves the original inode, owner and mode, so no ownership restore is possible or needed.
-                            cat "$OC_BAK" > "$OC_CFG" 2>/dev/null
-                            OC_GATE_BLOCK="'openclaw doctor --fix' exited 0 but the legacy key is STILL present (${OC_VERDICT2%%|*}); config restored from $OC_BAK"
-                        else
-                            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] MIGRATED and re-verified clean -- upgrade may proceed" >> "$OC_LOG"
-                        fi
-                    fi
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] delegating the ENTIRE upgrade to $OC_ATOMIC --upgrade" >> "$OC_LOG"
+                    bash "$OC_ATOMIC" --upgrade >> "$OC_LOG" 2>&1
+                    OC_ATOMIC_RC=$?
+                    case "$OC_ATOMIC_RC" in
+                        0)
+                            OC_UPGRADE_DONE=1
+                            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] ATOMIC UPGRADE COMPLETE -- binary installed, config migrated to agents.entries, gateway proven stable" >> "$OC_LOG"
+                            ;;
+                        78)
+                            OC_GATE_BLOCK="the atomic upgrade REFUSED and rolled back (exit 78). This box is exactly as it was -- old binary, old config, gateway running. See the log above for the step that refused."
+                            ;;
+                        70)
+                            OC_GATE_BLOCK="the atomic upgrade's ROLLBACK ITSELF FAILED (exit 70). THIS BOX NEEDS A HUMAN NOW -- it may be on a build its config does not match. See the log above for the exact repair commands."
+                            ;;
+                        *)
+                            OC_GATE_BLOCK="the atomic upgrade exited $OC_ATOMIC_RC (undetermined). Nothing is assumed about this box's state; the upgrade is treated as NOT done."
+                            ;;
+                    esac
                 fi
                 ;;
             *)
@@ -243,12 +292,15 @@ if [ -n "$OC_GATE_BLOCK" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'agents.list' config makes the gateway exit 78 every ~11s"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   until the crash-loop breaker latches channels OFF and the"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   box goes completely dark."
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   FIX:    openclaw doctor --fix"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   FIX:    bash $OC_ATOMIC --upgrade"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   NOT 'openclaw doctor --fix' -- measured on 12 boxes, the"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   config SHA-256 was IDENTICAL before and after, and it"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   silently rewrote agents.defaults.models pins on one box."
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   VERIFY: bash scripts/qc-assert-legacy-agents-list.sh"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
     } >> "$OC_LOG"
-    printf 'OPENCLAW UPGRADE BLOCKED %s\n  reason: %s\n  config: %s\n  fix:    openclaw doctor --fix\n' \
-        "$(date '+%Y-%m-%d %H:%M:%S')" "$OC_GATE_BLOCK" "$OC_CFG" \
+    printf 'OPENCLAW UPGRADE BLOCKED %s\n  reason: %s\n  config: %s\n  fix:    bash %s --upgrade\n  note:   `openclaw doctor --fix` does NOT perform this migration.\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "$OC_GATE_BLOCK" "$OC_CFG" "$OC_ATOMIC" \
         > "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
     exit 78
 fi
@@ -256,8 +308,17 @@ fi
 # The box is clear. Remove any stale block marker from a previous run.
 rm -f "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
 
-# Update OpenClaw CLI
-npm update -g openclaw >> "$OC_LOG" 2>&1
+# Update OpenClaw CLI.
+# SKIPPED when the atomic procedure already performed the upgrade: it installs
+# the binary itself (`npm install -g openclaw@<target>`) with the gateway down,
+# so running `npm update -g openclaw` again here would swap the binary a second
+# time UNDER THE RUNNING GATEWAY it just proved stable -- undoing the one
+# property that makes the atomic path worth taking.
+if [ "$OC_UPGRADE_DONE" = "1" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw already upgraded by the atomic procedure -- skipping 'npm update -g openclaw'" >> "$OC_LOG"
+else
+    npm update -g openclaw >> "$OC_LOG" 2>&1
+fi
 OC_VERSION=$(openclaw --version 2>/dev/null)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw updated to: $OC_VERSION" >> "$OC_LOG"
 OCUPDATE_EOF
@@ -278,13 +339,18 @@ echo "Log: $LOG_FILE"
 echo ""
 echo "What happens each week:"
 echo "  Saturday 11:59 PM:"
-echo "    1. PRE-UPGRADE GATE: refuses to upgrade a box whose openclaw.json still"
-echo "       carries the legacy 'agents.list' array (the 2026.7.2-beta line rejects"
-echo "       it and the gateway crash-loops until the box goes dark). Migrates via"
-echo "       'openclaw doctor --fix' with a backup + re-validation where it can;"
-echo "       otherwise SKIPS the upgrade, exits 78, and writes"
-echo "       ~/.openclaw/skills/.openclaw-upgrade-blocked"
-echo "    2. Updates OpenClaw CLI (npm update -g openclaw)"
+echo "    1. PRE-UPGRADE GATE on the legacy 'agents.list' schema. Three outcomes:"
+echo "       - the atomic procedure (<oc-root>/scripts/oc-atomic-upgrade.sh) is on"
+echo "         the box -> it performs the WHOLE upgrade: stop the gateway and prove"
+echo "         it stopped, install the new build, migrate the config to"
+echo "         'agents.entries', verify the rewrite is lossless, restart, and prove"
+echo "         the gateway STAYS up -- rolling back binary AND config on any failure"
+echo "       - the tool is absent but the config is PROVEN CLEAN -> plain npm upgrade"
+echo "       - anything else (legacy key, unreadable config, no python3) -> BLOCKED:"
+echo "         exit 78 and ~/.openclaw/skills/.openclaw-upgrade-blocked is written."
+echo "         A box left one build stale is recoverable; a dark box is not."
+echo "       NOTE: 'openclaw doctor --fix' does NOT perform this migration."
+echo "    2. Updates OpenClaw CLI (npm update -g openclaw) unless step 1 already did"
 echo "    3. Logs the new version"
 echo ""
 echo "  Sunday 3:00 AM:"
