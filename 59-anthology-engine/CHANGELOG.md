@@ -1,3 +1,26 @@
+### v0.1.18 -- QC-cycle-2 FIX-1: broker create_book_tree fails closed (2026-08-10)
+
+U25 fail-closed for the n8n Drive broker's `create_book_tree` (the producer editor
+share is NOT optional):
+
+- `scripts/drive_adapter.py::broker_create_book_tree` now raises `DependencyError`
+  when the broker response carries `producer_editor_shared != true`, a
+  `warning.code == "producer_editor_share_failed"`, or an unconfirmed `ok` -- the
+  engine never receives a book tree the producer cannot edit (was: 200-with-warning
+  accepted silently).
+- `config/n8n/anthology-drive-broker.workflow.json` (now 54 nodes):
+  - `Authorize & Dispatch` rejects `create_book_tree` up-front with **422**
+    `producer_email_not_shareable` when the producer email is not a Google
+    Workspace / Drive-shareable account (no half-provisioned trees).
+  - `Build Response` + new `Share Confirmed?` IF gate: a double share failure now
+    responds **502** `producer_editor_share_failed` through Respond Rejected; a 200
+    is returned ONLY when the share is confirmed. The 200-with-warning contract is
+    removed.
+- Tests: `tests/test_drive_broker.py` gains fail-closed DependencyError cases (+
+  happy-path guard); `tests/test_drive_broker_workflow.py` asserts the 422 gate and
+  the Share Confirmed? non-200 wiring.
+- `config/n8n/README.md` Contract section documents the fail-closed contract.
+
 ### v0.1.17 -- warfix batch 6 (2026-08-03)
 
 Re-stamped ENGINE-PIN.sha256 (verify.sh stamp-pin). Batches 4 and 5 bumped the pinned

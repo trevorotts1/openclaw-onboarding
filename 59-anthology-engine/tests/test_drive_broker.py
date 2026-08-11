@@ -186,6 +186,67 @@ def test_broker_rejects_bad_token_and_missing_ids(monkeypatch):
         da.broker_create_book_tree("c", "p@example.com", "b")
 
 
+def test_broker_fail_closed_when_producer_editor_share_not_confirmed(monkeypatch):
+    """U25: create_book_tree FAILS CLOSED. A 200-with-warning (the share did not land)
+    or an explicit producer_editor_shared=false must raise DependencyError -- the engine
+    must never receive a book tree the producer cannot edit."""
+    _broker_env(monkeypatch)
+    captured = {}
+
+    # 1. the historical ok:true + warning case (the QC-cycle-2 finding FIX-1 shape):
+    #    ok true, ids present, but producer_editor_shared=false + warning code.
+    monkeypatch.setattr(da, "_https", _capture_https(captured, status=200, body={
+        "ok": True, "action": "create_book_tree",
+        "root_folder_id": "ROOT", "client_folder_id": "CID",
+        "producer_folder_id": "PID", "book_folder_id": "BID",
+        "producer_editor_shared": False,
+        "warning": {"code": "producer_editor_share_failed",
+                    "message": "editor sharing failed after retrying"}}))
+    with pytest.raises(da.DependencyError) as ei:
+        da.broker_create_book_tree("c", "p@example.com", "b")
+    assert "share" in str(ei.value).lower()
+
+    # 2. warning.code alone must trigger fail-closed even if the flag is absent.
+    monkeypatch.setattr(da, "_https", _capture_https(captured, status=200, body={
+        "ok": True, "root_folder_id": "ROOT", "client_folder_id": "CID",
+        "producer_folder_id": "PID", "book_folder_id": "BID",
+        "warning": {"code": "producer_editor_share_failed", "message": "share failed"}}))
+    with pytest.raises(da.DependencyError):
+        da.broker_create_book_tree("c", "p@example.com", "b")
+
+    # 3. producer_editor_shared=false with no warning also fails closed.
+    monkeypatch.setattr(da, "_https", _capture_https(captured, status=200, body={
+        "ok": True, "root_folder_id": "ROOT", "client_folder_id": "CID",
+        "producer_folder_id": "PID", "book_folder_id": "BID",
+        "producer_editor_shared": False}))
+    with pytest.raises(da.DependencyError):
+        da.broker_create_book_tree("c", "p@example.com", "b")
+
+    # 4. ok not confirmed True also fails closed.
+    monkeypatch.setattr(da, "_https", _capture_https(captured, status=200, body={
+        "ok": "maybe", "root_folder_id": "ROOT", "client_folder_id": "CID",
+        "producer_folder_id": "PID", "book_folder_id": "BID",
+        "producer_editor_shared": True}))
+    with pytest.raises(da.DependencyError):
+        da.broker_create_book_tree("c", "p@example.com", "b")
+
+
+def test_broker_accepts_confirmed_share_and_ok(monkeypatch):
+    """U25 counter-side: an ok:true + producer_editor_shared:true response (with ids)
+    is still accepted -- the fail-closed check must not break the happy path."""
+    _broker_env(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(da, "_https", _capture_https(captured, status=200, body={
+        "ok": True, "action": "create_book_tree",
+        "root_folder_id": "ROOT", "client_folder_id": "CID",
+        "producer_folder_id": "PID", "book_folder_id": "BID",
+        "producer_editor_shared": True}))
+    res = da.broker_create_book_tree("c", "p@example.com", "b")
+    assert res["book_folder_id"] == "BID"
+    assert res["producer_editor_shared"] is True
+    assert res["via"] == "n8n_broker"
+
+
 def test_broker_requires_https(monkeypatch):
     monkeypatch.setenv(da.N8N_WEBHOOK_URL_ENV, "http://insecure.example/webhook/x")
     monkeypatch.setenv(da.N8N_WEBHOOK_TOKEN_ENV, BROKER_TOKEN)
