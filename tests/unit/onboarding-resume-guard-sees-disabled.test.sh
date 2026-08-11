@@ -23,9 +23,28 @@
 #                           a revert to bare `cron list` fails this check even
 #                           if --all still appears elsewhere in the file (e.g.
 #                           only in a comment)
+#   (4) INSTALLS_WHEN_MISSING -- against the REAL install_onboarding_resume_cron()
+#                           sourced from lib-onboarding-resume-cron.sh: with a
+#                           stub openclaw whose `cron list --all` shows NO
+#                           onboarding-resume line, the installer PROCEEDS and
+#                           makes a `cron create` attempt. (1)-(3) only prove
+#                           the guard's command-form mechanics; they do not
+#                           prove the function acts on the guard's answer -- a
+#                           guard that always reported "already exists" would
+#                           pass (1)-(3) untouched while silently preventing
+#                           onboarding from EVER installing this cron on a
+#                           fresh box.
+#   (5) SKIPS_WHEN_PRESENT -- same real function, stub's `cron list --all`
+#                           DOES show an onboarding-resume line -> the
+#                           installer makes ZERO `cron create` calls (no
+#                           duplicate stacked). Same both-directions
+#                           discipline as
+#                           tests/unit/ghl-mcp-autostart-idempotent-write.test.sh
+#                           (matched-value -> no write, drifted-value -> write).
 #
-# Hermetic: a fake `openclaw` on PATH in a scratch temp dir. No live gateway,
-# no real cron store, is touched.
+# Hermetic: a fake `openclaw` on PATH in a scratch temp dir, isolated HOME, and
+# an isolated ONBOARDING_DIR/ONBOARDING_STATE_FILE for (4)/(5). No live
+# gateway, no real cron store, no real onboarding state, is touched.
 #
 # Run: bash tests/unit/onboarding-resume-guard-sees-disabled.test.sh
 # Exit 0 = all checks pass. Exit 1 = one or more checks failed.
@@ -136,6 +155,118 @@ else
   else
     fail "3b: idempotency-guard line does NOT use --all -- this is the exact regression: cron list hides disabled jobs, so a disabled cron is silently re-created ENABLED"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# (4)/(5) BOTH-DIRECTIONS INSTALLER CHECK, against the REAL
+#   install_onboarding_resume_cron() sourced from lib-onboarding-resume-cron.sh
+#   (not a re-implementation of its logic). See header comment for why this
+#   closes a gap that (1)-(3) alone cannot catch.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (4)/(5) real install_onboarding_resume_cron(): both directions ---"
+
+# run_install_case CRON_EXISTS
+#   Runs the REAL install_onboarding_resume_cron(), sourced fresh from
+#   lib-onboarding-resume-cron.sh, inside an isolated HOME/PATH/ONBOARDING_DIR
+#   sandbox in its own subshell -- nothing here touches the real environment
+#   and nothing can message anywhere. A stub `openclaw` on PATH records every
+#   invocation (space-joined args, one per line) to a call-log file; echoes
+#   the path to that file on stdout.
+#     CRON_EXISTS=0 -> stub's `cron list --all` shows NO onboarding-resume
+#                      line (fresh box, nothing installed yet).
+#     CRON_EXISTS=1 -> stub's `cron list --all` DOES show an onboarding-resume
+#                      line (already installed -- the guard only checks
+#                      presence, so this also stands in for the disabled case
+#                      proven separately in (1)).
+#   The resume-prompt file and escalation-state guard are satisfied/avoided
+#   per the REAL resolver functions in the lib (_resolve_resume_prompt_file,
+#   _resolve_onboarding_state_file, _onboarding_resume_already_escalated),
+#   not assumed:
+#     - ONBOARDING_DIR points at a temp dir containing
+#       scripts/resume-onboarding-prompt.txt (the first candidate
+#       _resolve_resume_prompt_file checks), so the installer has a prompt to
+#       proceed with.
+#     - ONBOARDING_STATE_FILE points at a path that does NOT exist, and HOME
+#       is isolated so none of _resolve_onboarding_state_file's other
+#       candidates (including $HOME/.openclaw/workspace/...) can resolve to a
+#       real file on this machine -- _onboarding_resume_already_escalated
+#       therefore fails open (returns 1 / not escalated) exactly per its
+#       documented "no resolvable state file" behaviour, so that guard never
+#       blocks case (4).
+run_install_case() {
+  local cron_exists="$1"
+  local case_dir
+  case_dir="$(mktemp -d "$SANDBOX/install-case.XXXXXX")"
+  mkdir -p "$case_dir/bin" "$case_dir/home" "$case_dir/onboarding/scripts"
+  printf 'test resume prompt content\n' > "$case_dir/onboarding/scripts/resume-onboarding-prompt.txt"
+  : > "$case_dir/calls.log"
+
+  cat > "$case_dir/bin/openclaw" <<STUBEOF
+#!/usr/bin/env bash
+# Stub openclaw for this case only. Logs every invocation, then answers just
+# enough for install_onboarding_resume_cron()'s real decision logic to run.
+echo "\$@" >> "$case_dir/calls.log"
+if [ "\${1:-}" = "cron" ] && [ "\${2:-}" = "list" ]; then
+  shift 2
+  for _a in "\$@"; do
+    if [ "\$_a" = "--all" ]; then
+      if [ "$cron_exists" = "1" ]; then
+        echo "job-7a  onboarding-resume  enabled=true  */30 * * * *"
+      fi
+      exit 0
+    fi
+  done
+  exit 0
+fi
+if [ "\${1:-}" = "cron" ] && [ "\${2:-}" = "add" ] && [ "\${3:-}" = "--help" ]; then
+  # Deliberately not the modern --session form, so _oc_cron_silent_main takes
+  # a defined (old-flag) branch instead of depending on probe-text parsing.
+  echo "usage: cron add <expr> <prompt> --name NAME --agent AGENT"
+  exit 0
+fi
+if [ "\${1:-}" = "cron" ] && [ "\${2:-}" = "create" ]; then
+  exit 0
+fi
+exit 0
+STUBEOF
+  chmod +x "$case_dir/bin/openclaw"
+
+  (
+    HOME="$case_dir/home"
+    PATH="$case_dir/bin:/usr/bin:/bin"
+    ONBOARDING_DIR="$case_dir/onboarding"
+    ONBOARDING_STATE_FILE="$case_dir/home/does-not-exist.json"
+    export HOME PATH ONBOARDING_DIR ONBOARDING_STATE_FILE
+    unset OC_PERSISTENT_SCRIPTS_DIR OC_CONFIG OC_WORKSPACE_DEFAULT TELEGRAM_DEFAULT_AGENT_CACHED LOG_FILE 2>/dev/null
+    # shellcheck disable=SC1090
+    source "$RESUME_CRON_LIB"
+    install_onboarding_resume_cron
+  ) >/dev/null 2>&1
+
+  printf '%s' "$case_dir/calls.log"
+}
+
+echo ""
+echo "--- (4) INSTALLS_WHEN_MISSING: no cron present -> installer attempts creation ---"
+
+log4="$(run_install_case 0)"
+create_calls4="$(grep -c '^cron create ' "$log4" 2>/dev/null || true)"
+if [[ "${create_calls4:-0}" -ge 1 ]] && grep -q '^cron create .*--name onboarding-resume' "$log4" 2>/dev/null; then
+  pass "4: no onboarding-resume cron present -> installer made ${create_calls4} 'cron create' attempt(s) naming onboarding-resume"
+else
+  fail "4: no onboarding-resume cron present but installer made NO 'cron create' attempt -- a fresh box would never get this cron installed"
+fi
+
+echo ""
+echo "--- (5) SKIPS_WHEN_PRESENT: cron already present -> installer makes ZERO creation attempts ---"
+
+log5="$(run_install_case 1)"
+create_calls5="$(grep -c '^cron create ' "$log5" 2>/dev/null || true)"
+if [[ "${create_calls5:-0}" -eq 0 ]]; then
+  pass "5: onboarding-resume cron already present -> installer made 0 'cron create' calls (no duplicate stacked)"
+else
+  fail "5: onboarding-resume cron already present but installer made ${create_calls5} 'cron create' call(s) -- would stack a duplicate"
 fi
 
 # ---------------------------------------------------------------------------
