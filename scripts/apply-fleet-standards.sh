@@ -2487,6 +2487,63 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5c-N40. Inject FAIL_CLOSED_DEPENDENCY_V1 into workspace/AGENTS.md ───────
+# N40: against a dependency that refuses ON PURPOSE (auth-class), stop after at
+# most 2 attempts, emit exactly ONE message, and never narrate a discovery hunt
+# to the client. Idempotent: guarded by <!-- FAIL_CLOSED_DEPENDENCY_V1 -->.
+#
+# WHY THIS IS AN INJECTION AND NOT JUST A REPO EDIT. The repo-root AGENTS.md is
+# the operator's canonical doctrine document; NOTHING copies it to a box.
+# link_shared_core_files() fans a box's OWN workspace AGENTS.md out to that box's
+# other agent workspaces — it never pulls from the repo. So a rule added to the
+# repo's AGENTS.md alone reaches ZERO existing boxes. This stanza is the only
+# vehicle that puts N40 on a live box, and it rides both the full update pass and
+# the converged fast-path.
+#
+# PROVENANCE. Generalised from a rule hand-written into ONE box's TOOLS.md on
+# 2026-08-11 after a live incident:
+#   "if a call still returns 401/404/empty after sourcing secrets, STOP after at
+#    most two attempts and tell the owner in ONE short message what failed. Never
+#    run discovery hunts across the filesystem, never narrate step-by-step
+#    attempts to the owner."
+# That wording was proven effective but service-specific, and TOOLS.md is NOT
+# shipped fleet-wide (it propagates only WITHIN a box), so it reached one box.
+# This is the fleet-wide generalisation, and it belongs in AGENTS.md because a
+# stop-condition is BEHAVIOUR, not a local tool note. The "what is needed to
+# unblock it" clause is a deliberate ADDITION to the original wording, aligning
+# N40 with the BLOCKED state already defined by OWNER_REPORTING_V1 below.
+FAIL_CLOSED_DEPENDENCY_MARKER="<!-- FAIL_CLOSED_DEPENDENCY_V1 -->"
+
+if grep -qF "$FAIL_CLOSED_DEPENDENCY_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] FAIL_CLOSED_DEPENDENCY_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'FCDEOF'
+
+<!-- FAIL_CLOSED_DEPENDENCY_V1 -->
+## N40 — Fail-Closed Dependency: stop at 2, report once, never narrate the hunt (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `FAIL_CLOSED_DEPENDENCY_V1`. Idempotent — re-stamped on every install/update.
+
+A **fail-closed dependency** refuses you on purpose. It answers `unauthorized`, `forbidden`, `invalid api key`, `authentication failed`, `not authenticated`, or `missing credentials`. That is a **permission** answer, not a capability answer, and it is the SAME answer however the request is worded.
+
+1. **STOP AFTER AT MOST 2 ATTEMPTS.** The first establishes the failure, the second confirms it is not transient. There is no third.
+2. **REWORDING IS NOT A NEW APPROACH.** Different arguments against the same fail-closed dependency are the same attempt repeated — a different endpoint, a different path to the same credential, a different phrasing of the same call. None of it is progress.
+3. **EMIT EXACTLY ONE MESSAGE**, and only when you stop. It says three things and nothing else: **what is blocked**, **what is needed to unblock it**, and **who can supply it.** That is the BLOCKED state from the owner reporting rules.
+4. **NEVER NARRATE A DISCOVERY HUNT TO THE OWNER OR CLIENT.** No running commentary, no "let me try...", no per-attempt status, no filesystem search narrated step by step. They see ONE message describing a blocked state, or they see nothing. This is We Move In Silence applied to failure.
+5. **A FAIL-CLOSED REFUSAL IS A REPORTABLE STATE, NOT A PROBLEM TO SOLVE.** You cannot earn a credential you were not given. Escalate; do not grind.
+
+**This BOUNDS "try 5-10 methods before asking for help."** That rule governs CAPABILITY failures — a tool you have not yet found the right invocation for. It does NOT govern PERMISSION failures. No number of methods can satisfy a credential you do not have.
+
+**Why this is doctrine and not a detector.** Every automated loop guard keys on the ARGUMENTS — the runtime on `toolName` + `sha256(params)`, the always-armed runaway guard on those plus the result hash. An agent that rewords defeats all of them at once, and OpenClaw exposes no per-turn tool-call ceiling to fall back on. In the incident behind this rule an agent made **13 tool calls in 49 seconds**, each a reworded attempt at one intent; nothing fired, and the client stopped it by hand after typing "stop looping." Only this rule stops that while it is happening.
+
+FCDEOF
+  echo "[apply-fleet-standards] FAIL_CLOSED_DEPENDENCY_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 # ─── 5d. Inject OWNER_REPORTING_V1 into workspace/AGENTS.md ──────────────────
 # W6: owner reporting standard — how and when to report back to the owner.
 # Idempotent: guarded by <!-- OWNER_REPORTING_V1 -->.
