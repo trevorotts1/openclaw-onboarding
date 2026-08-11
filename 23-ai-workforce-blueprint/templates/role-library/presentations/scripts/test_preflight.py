@@ -394,6 +394,13 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # R3 AF-DECK-TYPE-UNSET: a full-artifacts run dir must declare a deck type
+        # (webinar|signature_presentation) — derive_legacy_fields() writes it from the
+        # ONE presentation_type answer, and every preflight refuses an unset deck_type.
+        _deck_type = Path(root / "working" / "copy" / "intake.json")
+        _intake = json.loads(_deck_type.read_text())
+        _intake["deck_type"] = "webinar"
+        _deck_type.write_text(json.dumps(_intake))
         # v16.0.1 — a NON-adhoc render is now bound to Phase P0B-PRIORITY at EVERY entry
         # point (build_deck.run_preflight reuses check_phase_preconditions to refuse unless
         # P0B-PRIORITY is attested in process_manifest.json). A full modern pipeline run
