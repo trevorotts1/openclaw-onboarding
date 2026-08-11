@@ -380,7 +380,7 @@ U07_MODULES = (
                     "family — the browser UA (CAF_BROWSER_UA, CF 1010), "
                     "the Convert and Flow version header "
                     "(CAF_VERSION_HEADER), and the complete AF autofail "
-                    "code table (the manifest's 37 rows, the U07 "
+                    "code table (the manifest's 75 rows, the U07 "
                     "family's authority); the offline self-test pins "
                     "the UA and version header byte-exact against the "
                     "registry and the AF table byte-exact against "
@@ -897,7 +897,7 @@ def _module_plan(modules, name, location_id, field_map):
                 "version_header": "CAF_VERSION_HEADER (LeadConnector v2, "
                                   "verified at W0.5)",
                 "af_codes": "the complete AF autofail table (the "
-                            "manifest's 37 rows, byte-exact)",
+                            "manifest's 75 rows, byte-exact)",
                 "note": "offline constants module — no network, no "
                         "credential needed; a tamper never masquerades "
                         "as exit 1 (exit 4, the AF-AE-HASH-PIN family)",

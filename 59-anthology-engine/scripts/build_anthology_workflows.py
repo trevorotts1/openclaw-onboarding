@@ -94,9 +94,12 @@
 #     "connections" shape, so the scanner stays clean over the generated
 #     directory - proved by the self-test).
 #   * OFFLINE BY CONSTRUCTION, like the whole U10/U13 family: no network, no
-#     credential, nothing sent. There is NO live surface, so there is no
-#     --execute gate: a `verify` request is a usage STOP (exit 2,
-#     AF-AE-U10-U13-OFFLINE), never a silent probe.
+#     credential, nothing sent. The BUILD (13 files + the manifest-pending
+#     stage) is the family's ONE write surface and it is Trevor-gated:
+#     without --execute it is a usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE)
+#     that writes nothing - never a silent rewrite; a `verify` request is
+#     likewise a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a silent
+#     probe.
 #   * FAIL-CLOSED: every module import is BY NAME (a missing module STOPS,
 #     never a silent skip); every generated file is validated against the
 #     copy law (zero banned byline actors, zero em-dashes, zero code fences,
@@ -124,7 +127,11 @@
 # CLI (house shape; --dry-run / --self-test accepted as flags AND as
 # positional subcommands, --self-test / --selftest normalized exactly as
 # anthology_registry.py and the U02..U08_U09 siblings):
-#   python3 build_anthology_workflows.py build       # generate + validate
+#   python3 build_anthology_workflows.py build       # REFUSED without --execute
+#                                                    # (exit 2, AF-AE-U10-U13-
+#                                                    # NO-EXECUTE - nothing
+#                                                    # written); with --execute
+#                                                    # generate + validate
 #   python3 build_anthology_workflows.py self-test   # offline battery + the
 #                                                    # 13-file validation
 #   python3 build_anthology_workflows.py plan        # offline plan
@@ -783,13 +790,47 @@ def payload_name_for(payload: dict) -> str:
     return payload.get("name", "")
 
 
+def _no_execute_gate_check() -> None:
+    """THE TREVOR GATE, proven REFUSED by the offline self-test: a bare
+    `build` (no --execute) must exit STOP (2, AF-AE-U10-U13-NO-EXECUTE)
+    before anything is generated or written. The check drives the SAME CLI
+    path the operator runs, so the gate cannot silently disappear from the
+    runtime surface while the battery keeps passing. Raise AssertionError
+    (exit-4 family) on any drift of the refusal."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        before = sorted(p.name for p in OUTPUT_DIR.glob("*.json")) \
+            if OUTPUT_DIR.is_dir() else []
+        try:
+            rc = main(["build", "--out", td])
+        except SystemExit as exc:
+            raise AssertionError(
+                "the bare 'build' CLI (no --execute) exited %r during the "
+                "self-test, expected STOP exit %d (AF-AE-U10-U13-NO-EXECUTE "
+                "must be a clean return, never a crash)" % (exc.code, EX_STOP))
+        assert rc == EX_STOP, (
+            "the bare 'build' CLI (no --execute) returned exit %d, "
+            "expected STOP exit %d (AF-AE-U10-U13-NO-EXECUTE - the Trevor "
+            "gate on the family's one write surface)" % (rc, EX_STOP))
+        after = sorted(p.name for p in OUTPUT_DIR.glob("*.json")) \
+            if OUTPUT_DIR.is_dir() else []
+        assert after == before, (
+            "the bare 'build' CLI (no --execute) wrote into "
+            "scripts/u10_u13_workflows/ - the refused build must write "
+            "NOTHING")
+        assert sorted(p.name for p in Path(td).iterdir()) == [], (
+            "the bare 'build' CLI (no --execute) wrote into the requested "
+            "--out directory - the refused build must write NOTHING")
+
+
 def self_test(out=None) -> int:
     """OFFLINE self-test: every module's own battery, the skeleton
     dispatcher battery, the docs drift gate, the assembly tree pin (the
-    exact file roster), and the 13-file validation battery. Any failure
-    is exit 4 (AF-AE-TEMPLATE-ATTACK family) - a tamper NEVER masquerades
-    as exit 1. On a clean pass the manifest-pending stage is written by the
-    CLI."""
+    exact file roster), the 13-file validation battery, and the Trevor-gate
+    refusal (a bare `build` without --execute exits STOP and writes
+    nothing). Any failure is exit 4 (AF-AE-TEMPLATE-ATTACK family) - a
+    tamper NEVER masquerades as exit 1. On a clean pass the manifest-pending
+    stage is written by the CLI."""
     out = out or sys.stderr
     dev = io.StringIO()
     try:
@@ -841,6 +882,13 @@ def self_test(out=None) -> int:
             "the 11 module-owned-seat count drifted from the family catalog"
         # 6. the rendered-payload validation battery (over fresh builds).
         _file_validation_checks(dev)
+        # 7. THE TREVOR GATE - the BUILD is the family's ONE write surface
+        #    (13 template documents + the manifest-pending stage) and it is
+        #    gated: a bare `build` (no --execute) is REFUSED at the CLI
+        #    surface, exit 2 (AF-AE-U10-U13-NO-EXECUTE), BEFORE anything is
+        #    generated or written - proven here by driving the same CLI
+        #    path the operator runs.
+        _no_execute_gate_check()
     except AssertionError as exc:
         sys.stderr.write("[build-anthology-workflows] SELF-TEST FAILED "
                          "(AF-AE-TEMPLATE-ATTACK family): %s\n" % exc)
@@ -854,7 +902,7 @@ def self_test(out=None) -> int:
     out.write("[build-anthology-workflows] assembled self-test: OK (16 "
               "u10_u13_modules files imported, every module battery + the "
               "skeleton dispatcher battery + the docs drift gate + the "
-              "13-file validation all pass)\n")
+              "13-file validation + the Trevor-gate refusal all pass)\n")
     return EX_OK
 
 
@@ -881,9 +929,12 @@ def dry_run(modules: dict, contract: dict, out=None) -> int:
         "execute": False,
         "note": "offline plan only - template generation is OFFLINE (no "
                 "network, no credential, nothing ever sent); there is no "
-                "live surface, so no execute gate exists and a live-verify "
-                "request is a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), "
-                "never a silent probe; the copy law (editors never AI; zero "
+                "live surface, so a live-verify request is a usage STOP "
+                "(exit 2, AF-AE-U10-U13-OFFLINE), never a silent probe; "
+                "the BUILD write surface (13 template documents + the "
+                "manifest-pending stage) is Trevor-gated: without --execute "
+                "it is a usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) "
+                "that writes nothing; the copy law (editors never AI; zero "
                 "em-dashes; sign-off 'The Editors' or the producer merge; "
                 "per-stage PDF view + Doc edit links; the U08 pre-fill "
                 "stage link) is enforced at generation time and re-proven "
@@ -934,12 +985,15 @@ def _pending_payload(kind: str, verdict: str = "PASS") -> dict:
             "any_fail": False,
             "note": "template generation is OFFLINE by construction (the "
                     "U10/U13 package-init doctrine): no network, no "
-                    "credential, nothing ever sent - there is no live "
-                    "surface and no execute gate; a live-verify request is "
-                    "a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a "
-                    "silent network probe; every generated file is "
-                    "validated against the copy law before it is written - "
-                    "a silently off-law file never ships",
+                    "credential, nothing ever sent - the BUILD (13 files + "
+                    "this manifest-pending stage) is the family's ONE write "
+                    "surface and it is Trevor-gated: without --execute it "
+                    "is a usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) "
+                    "that writes nothing; a live-verify request is a usage "
+                    "STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a silent "
+                    "network probe; every generated file is validated "
+                    "against the copy law before it is written - a "
+                    "silently off-law file never ships",
         },
     }
 
@@ -965,6 +1019,11 @@ _AF_CODES = (
      "fully present, or a module violates the one-entry-point contract, or "
      "a shipped template file is not in the set - a template law is never "
      "silently skipped"),
+    ("AF-AE-U10-U13-NO-EXECUTE", 2,
+     "a BUILD (the family's one write surface: the 13 template documents "
+     "plus the manifest-pending stage) was requested WITHOUT --execute - "
+     "the Trevor gate: the build reports the plan and exits without "
+     "writing anything, never a silent rewrite and never a silent no-op"),
     ("AF-AE-U10-U13-OFFLINE", 2,
      "a live-verify request on the U10/U13 family - template generation is "
      "OFFLINE by construction and there is no live surface to gate; a "
@@ -985,8 +1044,10 @@ _EXIT_CODES = {
     0: "verified success - the 13 template documents generated and "
        "validated OFFLINE (also plan / self-test / a documented PASS)",
     1: "unexpected error (top-level guard; never a secret leak)",
-    2: ("STOP refusal - usage / a live-verify request (this family is "
-        "OFFLINE BY CONSTRUCTION; there is no live surface to gate, "
+    2: ("STOP refusal - a BUILD without --execute (the Trevor gate, "
+        "AF-AE-U10-U13-NO-EXECUTE: the build reports the plan and exits "
+        "without writing) / a live-verify request (this family is OFFLINE "
+        "BY CONSTRUCTION; there is no live surface to gate, "
         "AF-AE-U10-U13-OFFLINE) / the template-module assembly incomplete "
         "(AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the inventory names "
         "that does not ship, or a shipped template that is not in the "
@@ -1005,10 +1066,11 @@ _EXIT_CODES = {
 
 def write_pending(payload: dict, *, mode: str = "self-test", out=None) -> None:
     """Write manifest-pending/u10_u13.json (fail-closed: only after a
-    PASS). The directory is created if absent; the file is written
-    atomically (temp + rename) so a crash mid-write never leaves a partial
-    stage. The ENGINE-MANIFEST.json / ENGINE-PIN.sha256 / verify.sh are
-    NEVER touched."""
+    PASS, and only on an --execute-gated surface - the CLI never reaches
+    this writer without --execute). The directory is created if absent;
+    the file is written atomically (temp + rename) so a crash mid-write
+    never leaves a partial stage. The ENGINE-MANIFEST.json /
+    ENGINE-PIN.sha256 / verify.sh are NEVER touched."""
     out = out or sys.stderr
     try:
         PENDING_DIR.mkdir(parents=True, exist_ok=True)
@@ -1026,9 +1088,11 @@ def write_pending(payload: dict, *, mode: str = "self-test", out=None) -> None:
 # CLI - house shape: --dry-run / --self-test accepted as flags AND as a
 # positional subcommand (--self-test / --selftest normalize exactly as
 # anthology_registry.py and the U02..U08_U09 siblings). The default command
-# is the OFFLINE build (13 files generated + validated); `verify` is a
-# usage STOP (exit 2, AF-AE-U10-U13-OFFLINE) - template generation is
-# OFFLINE by construction.
+# is the OFFLINE build (13 files generated + validated) - and the BUILD is
+# the family's ONE write surface, Trevor-gated: without --execute it is a
+# usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) that writes nothing (never
+# a silent rewrite); `verify` is likewise a usage STOP (exit 2,
+# AF-AE-U10-U13-OFFLINE) - template generation is OFFLINE by construction.
 # ---------------------------------------------------------------------------
 def main(argv=None):
     ap = argparse.ArgumentParser(
@@ -1041,13 +1105,17 @@ def main(argv=None):
                     "actions, zero banned byline actors, zero em-dashes, "
                     "zero code fences, the merge links present) before it "
                     "is written; the manifest-pending stage is written "
-                    "after a PASS. Template generation is OFFLINE by "
-                    "construction: no network, no credential, nothing ever "
-                    "sent - a live-verify request is a usage STOP (exit 2, "
+                    "after a PASS. The BUILD is the family's ONE write "
+                    "surface and it is Trevor-gated: without --execute it "
+                    "is a usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) "
+                    "that writes nothing - never a silent rewrite. "
+                    "Template generation is OFFLINE by construction: no "
+                    "network, no credential, nothing ever sent - a "
+                    "live-verify request is a usage STOP (exit 2, "
                     "AF-AE-U10-U13-OFFLINE), never a silent probe.")
     ap.add_argument("--dry-run", action="store_true",
                     help="offline plan only - no network, no credential "
-                         "(default: the offline build)")
+                         "(the default build is REFUSED without --execute)")
     ap.add_argument("--json", action="store_true",
                     help="emit a machine-readable summary on stdout "
                          "(default on for plan)")
@@ -1057,6 +1125,12 @@ def main(argv=None):
     ap.add_argument("--no-pending", action="store_true",
                     help="do not write manifest-pending/u10_u13.json after "
                          "a PASS (dry runs for CI)")
+    ap.add_argument("--execute", action="store_true",
+                    help="TREVOR GATE - the explicit GO for the BUILD "
+                         "write surface (the 13 template documents + the "
+                         "manifest-pending stage); without it a build is a "
+                         "usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) "
+                         "that writes nothing")
     ap.add_argument("--selftest", "--self-test", dest="self_test",
                     action="store_true",
                     help="run the offline self-test (every module battery + "
@@ -1065,7 +1139,9 @@ def main(argv=None):
     ap.add_argument("cmd", nargs="?", choices=["build", "plan", "verify",
                                                "self-test"],
                     help="positional subcommand form (build / plan / "
-                         "verify / self-test) - 'verify' is REFUSED: "
+                         "verify / self-test) - the 'build' write surface "
+                         "is Trevor-gated (REFUSED without --execute, "
+                         "AF-AE-U10-U13-NO-EXECUTE); 'verify' is REFUSED: "
                          "template generation is OFFLINE and there is no "
                          "live surface")
 
@@ -1101,7 +1177,7 @@ def main(argv=None):
 
         if args.self_test:
             rc = self_test(out=sys.stderr)
-            if rc == EX_OK and not args.no_pending:
+            if rc == EX_OK and not args.no_pending and args.execute:
                 write_pending(_pending_payload("self-test"), mode="self-test")
             return rc
 
@@ -1112,7 +1188,24 @@ def main(argv=None):
             return dry_run(modules, contract)
 
         # The default surface: the OFFLINE build - every seat's template
-        # document generated and validated, then written.
+        # document generated and validated, then written. The BUILD is the
+        # family's ONE write surface (13 files + the manifest-pending
+        # stage) and it is Trevor-gated: without --execute it is a usage
+        # STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) that writes NOTHING -
+        # never a silent rewrite. The no-execute law is proven REFUSED by
+        # the offline self-test, which drives this same CLI path.
+        if not args.execute:
+            sys.stderr.write(
+                "[build-anthology-workflows] build REFUSED: the BUILD is "
+                "the family's ONE write surface (13 template documents + "
+                "the manifest-pending stage) and it is Trevor-gated - "
+                "pass --execute explicitly to generate and write "
+                "(AF-AE-U10-U13-NO-EXECUTE); nothing was written. Use "
+                "--dry-run for the offline plan or --self-test for the "
+                "offline battery.\n")
+            return EX_STOP
+
+        # WITH --execute: generate, validate, then write.
         generated = build_all(modules)
         write_outputs(generated)
         if not args.no_pending:

@@ -42,7 +42,7 @@
 #      reg.InternalRailClient send on every request. Version is also NOT a
 #      secret.
 #   3. THE AF CODE LAW. The complete autofail table mirrored from
-#      ENGINE-MANIFEST.json "autofails" (37 rows: the AF-AE-* families plus
+#      ENGINE-MANIFEST.json "autofails" (75 rows: the AF-AE-* families plus
 #      AE_DEPS_MISSING) as immutable constants, so a code can NEVER be
 #      misspelled or drifted between a raising module and the manifest.
 #      Self-test asserts byte-equality with the manifest (when the manifest
@@ -101,7 +101,7 @@
 # =============================================================================
 """house_rules.py — the engine's canonical constant surface for the U07
 family: browser UA (CF 1010), Convert and Flow version header, and the full
-AF autofail code table (the manifest's 37 rows, the U07 family's authority
+AF autofail code table (the manifest's 75 rows, the U07 family's authority
 exactly as the U03 / U05 siblings mirror; the U07 family's own codes are
 carried by docs_u07.AF_CODES, with AF-AE-FIELD-KEY-MISMATCH declared
 PENDING in the manifest and verified at ship time 2026-08-11)."""
@@ -187,7 +187,7 @@ CAF_VERSION_HEADER = reg.CAF_VERSION_HEADER
 #      reg.InternalRailClient send on every request. Version is also NOT a
 #      secret.
 #   3. THE AF CODE LAW. The complete autofail table mirrored from
-#      ENGINE-MANIFEST.json "autofails" (37 rows: the AF-AE-* families plus
+#      ENGINE-MANIFEST.json "autofails" (75 rows: the AF-AE-* families plus
 #      AE_DEPS_MISSING) as immutable constants, so a code can NEVER be
 #      misspelled or drifted between a raising module and the manifest.
 #      Self-test asserts byte-equality with the manifest (when the manifest
@@ -318,6 +318,42 @@ AF_TEMPLATE_CUSTOM_VALUE_REAL = "AF-AE-TEMPLATE-CUSTOM-VALUE-REAL"
 AF_TEMPLATE_INTAKE_FIRE = "AF-AE-TEMPLATE-INTAKE-FIRE"
 AF_U07_CREATE_NO_EXECUTE = "AF-AE-U07-CREATE-NO-EXECUTE"
 AF_FIELD_KEY_MISMATCH = "AF-AE-FIELD-KEY-MISMATCH"
+AF_U08_U09_NO_EXECUTE = "AF-AE-U08-U09-NO-EXECUTE"
+AF_U10_U13_ASSEMBLY_INCOMPLETE = "AF-AE-U10-U13-ASSEMBLY-INCOMPLETE"
+AF_U10_U13_NO_EXECUTE = "AF-AE-U10-U13-NO-EXECUTE"
+AF_U10_U13_OFFLINE = "AF-AE-U10-U13-OFFLINE"
+AF_COPY_LAW = "AF-AE-COPY-LAW"
+AF_TEMPLATE_ATTACK = "AF-AE-TEMPLATE-ATTACK"
+AF_U20_ASSEMBLY_INCOMPLETE = "AF-AE-U20-ASSEMBLY-INCOMPLETE"
+AF_WELCOME_NO_EXECUTE = "AF-AE-WELCOME-NO-EXECUTE"
+AF_WELCOME_DB_MISSING = "AF-AE-WELCOME-DB-MISSING"
+AF_WELCOME_READ_REFUSED = "AF-AE-WELCOME-READ-REFUSED"
+AF_WELCOME_CARD_REFUSED = "AF-AE-WELCOME-CARD-REFUSED"
+AF_WELCOME_READBACK_MISMATCH = "AF-AE-WELCOME-READBACK-MISMATCH"
+AF_WELCOME_SOURCE_UNREADABLE = "AF-AE-WELCOME-SOURCE-UNREADABLE"
+AF_WELCOME_SOURCE_DRIFT = "AF-AE-WELCOME-SOURCE-DRIFT"
+AF_WELCOME_CONTENT_VIOLATION = "AF-AE-WELCOME-CONTENT-VIOLATION"
+AF_WELCOME_DB_UNREADABLE = "AF-AE-WELCOME-DB-UNREADABLE"
+AF_WELCOME_DB_MISMATCH = "AF-AE-WELCOME-DB-MISMATCH"
+AF_WELCOME_INSERT_REFUSED = "AF-AE-WELCOME-INSERT-REFUSED"
+AF_WELCOME_CARDS_PRESENT = "AF-AE-WELCOME-CARDS-PRESENT"
+AF_WELCOME_MALFORMED = "AF-AE-WELCOME-MALFORMED"
+AF_WELCOME_ATTACK = "AF-AE-WELCOME-ATTACK"
+AF_DBC_NO_DB = "AF-AE-DBC-NO-DB"
+AF_DBC_NO_EXECUTE = "AF-AE-DBC-NO-EXECUTE"
+AF_DBC_NO_WELCOME = "AF-AE-DBC-NO-WELCOME"
+AF_DBC_SEED_EXISTS = "AF-AE-DBC-SEED-EXISTS"
+AF_DBC_ATTACK = "AF-AE-DBC-ATTACK"
+AF_VRBOARD_NO_DB = "AF-AE-VRBOARD-NO-DB"
+AF_VRBOARD_NO_EXECUTE = "AF-AE-VRBOARD-NO-EXECUTE"
+AF_VRBOARD_TASKS_MISSING = "AF-AE-VRBOARD-TASKS-MISSING"
+AF_VRBOARD_DRILLS_LIVE = "AF-AE-VRBOARD-DRILLS-LIVE"
+AF_VRBOARD_NO_WELCOME = "AF-AE-VRBOARD-NO-WELCOME"
+AF_VRBOARD_ATTACK = "AF-AE-VRBOARD-ATTACK"
+AF_U20ARCHIVE_NO_EXECUTE = "AF-AE-U20ARCHIVE-NO-EXECUTE"
+AF_U20ARCHIVE_READBACK_MISMATCH = "AF-AE-U20ARCHIVE-READBACK-MISMATCH"
+AF_ARCHSTMT_NO_EXECUTE = "AF-AE-ARCHSTMT-NO-EXECUTE"
+AF_ARCHSTMT_READBACK = "AF-AE-ARCHSTMT-READBACK"
 
 # The complete, immutable AF table (frozen; one canonical order — the
 # manifest's own autofails order, never re-sorted). Built from the constants
@@ -362,6 +398,42 @@ _AF_TABLE = (
     AF_TEMPLATE_INTAKE_FIRE,
     AF_U07_CREATE_NO_EXECUTE,
     AF_FIELD_KEY_MISMATCH,
+    AF_U08_U09_NO_EXECUTE,
+    AF_U10_U13_ASSEMBLY_INCOMPLETE,
+    AF_U10_U13_NO_EXECUTE,
+    AF_U10_U13_OFFLINE,
+    AF_COPY_LAW,
+    AF_TEMPLATE_ATTACK,
+    AF_U20_ASSEMBLY_INCOMPLETE,
+    AF_WELCOME_NO_EXECUTE,
+    AF_WELCOME_DB_MISSING,
+    AF_WELCOME_READ_REFUSED,
+    AF_WELCOME_CARD_REFUSED,
+    AF_WELCOME_READBACK_MISMATCH,
+    AF_WELCOME_SOURCE_UNREADABLE,
+    AF_WELCOME_SOURCE_DRIFT,
+    AF_WELCOME_CONTENT_VIOLATION,
+    AF_WELCOME_DB_UNREADABLE,
+    AF_WELCOME_DB_MISMATCH,
+    AF_WELCOME_INSERT_REFUSED,
+    AF_WELCOME_CARDS_PRESENT,
+    AF_WELCOME_MALFORMED,
+    AF_WELCOME_ATTACK,
+    AF_DBC_NO_DB,
+    AF_DBC_NO_EXECUTE,
+    AF_DBC_NO_WELCOME,
+    AF_DBC_SEED_EXISTS,
+    AF_DBC_ATTACK,
+    AF_VRBOARD_NO_DB,
+    AF_VRBOARD_NO_EXECUTE,
+    AF_VRBOARD_TASKS_MISSING,
+    AF_VRBOARD_DRILLS_LIVE,
+    AF_VRBOARD_NO_WELCOME,
+    AF_VRBOARD_ATTACK,
+    AF_U20ARCHIVE_NO_EXECUTE,
+    AF_U20ARCHIVE_READBACK_MISMATCH,
+    AF_ARCHSTMT_NO_EXECUTE,
+    AF_ARCHSTMT_READBACK,
 )
 AF_CODES = tuple(_AF_TABLE)  # public immutable surface; also a set below
 AF_CODES_SET = frozenset(_AF_TABLE)
@@ -550,7 +622,7 @@ def plan(*, out=None) -> int:
                 "constant": "AF_CODES",
                 "count": len(AF_CODES),
                 "codes": list(AF_CODES),
-                "source": "ENGINE-MANIFEST.json autofails (37 rows)",
+                "source": "ENGINE-MANIFEST.json autofails (75 rows)",
             },
         },
     }
@@ -742,7 +814,7 @@ def main(argv=None) -> int:
         prog="house_rules.py",
         description="The U07 family's canonical constant surface: browser "
                     "UA (CF 1010), Convert and Flow version header, the "
-                    "complete AF autofail code table (the manifest's 37 "
+                    "complete AF autofail code table (the manifest's 75 "
                     "rows), and the U07 family's own rows (docs_u07.AF_CODES)"
                     " -- fail-closed, offline, never prints a token "
                     "(Skill 59). One JSON object on stdout.")

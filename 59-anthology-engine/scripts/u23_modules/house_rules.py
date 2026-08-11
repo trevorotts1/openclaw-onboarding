@@ -4,7 +4,7 @@
 # HOUSE RULES CONSTANTS MODULE — the ONE canonical surface for the U23
 # provisioning family's fixed laws: the browser User-Agent (CF 1010), the
 # Convert and Flow version header, and the complete AF autofail code table
-# (the manifest's 40 rows). Imported BY NAME as u23_modules.house_rules, per
+# (the manifest's 75 rows). Imported BY NAME as u23_modules.house_rules, per
 # the u23_modules package contract in __init__.py (pure namespace container;
 # side-effect-free at import).
 #
@@ -47,7 +47,7 @@
 #      reg.InternalRailClient send on every request. Version is also NOT a
 #      secret.
 #   3. THE AF CODE LAW. The complete autofail table mirrored from
-#      ENGINE-MANIFEST.json "autofails" (40 rows: the AF-AE-* families plus
+#      ENGINE-MANIFEST.json "autofails" (75 rows: the AF-AE-* families plus
 #      the lone AE_DEPS_MISSING row) as immutable constants, so a code can
 #      NEVER be misspelled or drifted between a raising module and the
 #      manifest. Self-test asserts byte-equality with the manifest — SAME
@@ -58,13 +58,15 @@
 #   4. THE U23 FAMILY AF LAW. The family's OWN autofail rows are mirrored
 #      byte-for-byte from docs_u23.AF_CODES (the family authority, the U07
 #      sibling construction): 22 REAL rows — the operational PROVPHONE-* /
-#      PROVACTION-* / PHONELIST-* / SMSVER-* families, the six self-test
+#      PROVACTION-* / PHONELIST-* / SMSVER-* families, the five self-test
 #      ATTACK enforcement rows (AF-AE-PROVPHONE-ATTACK /
 #      AF-AE-PROVACTION-ATTACK / AF-AE-PHONELIST-ATTACK /
-#      AF-AE-SMSVER-ATTACK / AF-AE-ATTACKSMSFAILED-ATTACK / and the shared
-#      AF-AE-TEMPLATE-ATTACK row the authority declares) — in the
-#      authority's exact order. A code can NEVER be misspelled or drifted
-#      between a raising module and the family's authority.
+#      AF-AE-SMSVER-ATTACK / AF-AE-ATTACKSMSFAILED-ATTACK), and the shared
+#      AF-AE-TEMPLATE-ATTACK row the authority declares (a SHARED manifest
+#      row — stamped in ENGINE-MANIFEST.json's autofails, never a
+#      family-local enforcement row) — in the authority's exact order. A
+#      code can NEVER be misspelled or drifted between a raising module
+#      and the family's authority.
 #      MEMBERSHIP DISCIPLINE (the U07 sibling's own rule, both directions):
 #      a manifest-only row (the shared AF-AE-READBACK-MISMATCH row) is
 #      NEVER absorbed into the family subset — it stays in the
@@ -74,7 +76,7 @@
 #      stamped in ENGINE-MANIFEST.json's autofails OR declared PENDING in
 #      AF_U23_PENDING (as of 2026-08-11 the manifest has not yet stamped
 #      any U23 row, so the 16 operational rows are declared PENDING —
-#      exactly as docs_u23 declares) OR an enforcement row (the six ATTACK
+#      exactly as docs_u23 declares) OR an enforcement row (the five ATTACK
 #      rows, the family's own self-test language: NEVER manifest rows,
 #      NEVER declared PENDING). A stale mirror is a tamper, never silent.
 #
@@ -127,7 +129,7 @@
 # =============================================================================
 """house_rules.py — the engine's canonical constant surface for the U23
 provisioning family: browser UA (CF 1010), Convert and Flow version header,
-the full AF autofail code table (the manifest's 40 rows), and the U23
+the full AF autofail code table (the manifest's 75 rows), and the U23
 family's own rows mirrored byte-for-byte from docs_u23.AF_CODES (22 rows;
 the 16 operational rows declared PENDING in the manifest as of
 2026-08-11)."""
@@ -237,6 +239,41 @@ AF_TEMPLATE_INTAKE_FIRE = "AF-AE-TEMPLATE-INTAKE-FIRE"
 AF_U07_CREATE_NO_EXECUTE = "AF-AE-U07-CREATE-NO-EXECUTE"
 AF_FIELD_KEY_MISMATCH = "AF-AE-FIELD-KEY-MISMATCH"
 AF_U08_U09_NO_EXECUTE = "AF-AE-U08-U09-NO-EXECUTE"
+AF_U10_U13_ASSEMBLY_INCOMPLETE = "AF-AE-U10-U13-ASSEMBLY-INCOMPLETE"
+AF_U10_U13_NO_EXECUTE = "AF-AE-U10-U13-NO-EXECUTE"
+AF_U10_U13_OFFLINE = "AF-AE-U10-U13-OFFLINE"
+AF_COPY_LAW = "AF-AE-COPY-LAW"
+AF_TEMPLATE_ATTACK = "AF-AE-TEMPLATE-ATTACK"
+AF_U20_ASSEMBLY_INCOMPLETE = "AF-AE-U20-ASSEMBLY-INCOMPLETE"
+AF_WELCOME_NO_EXECUTE = "AF-AE-WELCOME-NO-EXECUTE"
+AF_WELCOME_DB_MISSING = "AF-AE-WELCOME-DB-MISSING"
+AF_WELCOME_READ_REFUSED = "AF-AE-WELCOME-READ-REFUSED"
+AF_WELCOME_CARD_REFUSED = "AF-AE-WELCOME-CARD-REFUSED"
+AF_WELCOME_READBACK_MISMATCH = "AF-AE-WELCOME-READBACK-MISMATCH"
+AF_WELCOME_SOURCE_UNREADABLE = "AF-AE-WELCOME-SOURCE-UNREADABLE"
+AF_WELCOME_SOURCE_DRIFT = "AF-AE-WELCOME-SOURCE-DRIFT"
+AF_WELCOME_CONTENT_VIOLATION = "AF-AE-WELCOME-CONTENT-VIOLATION"
+AF_WELCOME_DB_UNREADABLE = "AF-AE-WELCOME-DB-UNREADABLE"
+AF_WELCOME_DB_MISMATCH = "AF-AE-WELCOME-DB-MISMATCH"
+AF_WELCOME_INSERT_REFUSED = "AF-AE-WELCOME-INSERT-REFUSED"
+AF_WELCOME_CARDS_PRESENT = "AF-AE-WELCOME-CARDS-PRESENT"
+AF_WELCOME_MALFORMED = "AF-AE-WELCOME-MALFORMED"
+AF_WELCOME_ATTACK = "AF-AE-WELCOME-ATTACK"
+AF_DBC_NO_DB = "AF-AE-DBC-NO-DB"
+AF_DBC_NO_EXECUTE = "AF-AE-DBC-NO-EXECUTE"
+AF_DBC_NO_WELCOME = "AF-AE-DBC-NO-WELCOME"
+AF_DBC_SEED_EXISTS = "AF-AE-DBC-SEED-EXISTS"
+AF_DBC_ATTACK = "AF-AE-DBC-ATTACK"
+AF_VRBOARD_NO_DB = "AF-AE-VRBOARD-NO-DB"
+AF_VRBOARD_NO_EXECUTE = "AF-AE-VRBOARD-NO-EXECUTE"
+AF_VRBOARD_TASKS_MISSING = "AF-AE-VRBOARD-TASKS-MISSING"
+AF_VRBOARD_DRILLS_LIVE = "AF-AE-VRBOARD-DRILLS-LIVE"
+AF_VRBOARD_NO_WELCOME = "AF-AE-VRBOARD-NO-WELCOME"
+AF_VRBOARD_ATTACK = "AF-AE-VRBOARD-ATTACK"
+AF_U20ARCHIVE_NO_EXECUTE = "AF-AE-U20ARCHIVE-NO-EXECUTE"
+AF_U20ARCHIVE_READBACK_MISMATCH = "AF-AE-U20ARCHIVE-READBACK-MISMATCH"
+AF_ARCHSTMT_NO_EXECUTE = "AF-AE-ARCHSTMT-NO-EXECUTE"
+AF_ARCHSTMT_READBACK = "AF-AE-ARCHSTMT-READBACK"
 
 # The complete, immutable AF table (frozen; one canonical order — the
 # manifest's own autofails order, never re-sorted). Built from the constants
@@ -282,6 +319,41 @@ _AF_TABLE = (
     AF_U07_CREATE_NO_EXECUTE,
     AF_FIELD_KEY_MISMATCH,
     AF_U08_U09_NO_EXECUTE,
+    AF_U10_U13_ASSEMBLY_INCOMPLETE,
+    AF_U10_U13_NO_EXECUTE,
+    AF_U10_U13_OFFLINE,
+    AF_COPY_LAW,
+    AF_TEMPLATE_ATTACK,
+    AF_U20_ASSEMBLY_INCOMPLETE,
+    AF_WELCOME_NO_EXECUTE,
+    AF_WELCOME_DB_MISSING,
+    AF_WELCOME_READ_REFUSED,
+    AF_WELCOME_CARD_REFUSED,
+    AF_WELCOME_READBACK_MISMATCH,
+    AF_WELCOME_SOURCE_UNREADABLE,
+    AF_WELCOME_SOURCE_DRIFT,
+    AF_WELCOME_CONTENT_VIOLATION,
+    AF_WELCOME_DB_UNREADABLE,
+    AF_WELCOME_DB_MISMATCH,
+    AF_WELCOME_INSERT_REFUSED,
+    AF_WELCOME_CARDS_PRESENT,
+    AF_WELCOME_MALFORMED,
+    AF_WELCOME_ATTACK,
+    AF_DBC_NO_DB,
+    AF_DBC_NO_EXECUTE,
+    AF_DBC_NO_WELCOME,
+    AF_DBC_SEED_EXISTS,
+    AF_DBC_ATTACK,
+    AF_VRBOARD_NO_DB,
+    AF_VRBOARD_NO_EXECUTE,
+    AF_VRBOARD_TASKS_MISSING,
+    AF_VRBOARD_DRILLS_LIVE,
+    AF_VRBOARD_NO_WELCOME,
+    AF_VRBOARD_ATTACK,
+    AF_U20ARCHIVE_NO_EXECUTE,
+    AF_U20ARCHIVE_READBACK_MISMATCH,
+    AF_ARCHSTMT_NO_EXECUTE,
+    AF_ARCHSTMT_READBACK,
 )
 AF_CODES = tuple(_AF_TABLE)  # public immutable surface; also a set below
 AF_CODES_SET = frozenset(_AF_TABLE)
@@ -290,11 +362,13 @@ AF_CODES_SET = frozenset(_AF_TABLE)
 # LAW 4 — THE U23 FAMILY AF ROWS. Mirrored byte-for-byte from
 # docs_u23.AF_CODES (the family authority, the U07 sibling construction):
 # the operational PROVPHONE-* / PROVACTION-* / PHONELIST-* / SMSVER-*
-# families, the six self-test ATTACK enforcement rows, and the shared
-# AF-AE-TEMPLATE-ATTACK row the authority declares — in the authority's
-# EXACT order, so a reordered authority trips the self-test first. Every
-# real row is pinned per row against the manifest: stamped OR declared
-# PENDING OR an enforcement row. As of 2026-08-11 the manifest has not yet
+# families, the five self-test ATTACK enforcement rows, and the shared
+# AF-AE-TEMPLATE-ATTACK row the authority declares (a SHARED manifest row —
+# stamped in ENGINE-MANIFEST.json's autofails, never a family-local
+# enforcement row) — in the authority's EXACT order, so a reordered
+# authority trips the self-test first. Every real row is pinned per row
+# against the manifest: stamped OR declared PENDING OR an enforcement row.
+# As of 2026-08-11 the manifest has not yet
 # stamped any U23 row (row 53's exit-code language carries the
 # AF-AE-PROVPHONE-* family but no autofail row exists for it yet), so the
 # 16 operational rows are declared PENDING here. A stale mirror — a PENDING
@@ -340,18 +414,19 @@ AF_U23_PENDING = (
     "AF-AE-SMSVER-NO-SID",
 )
 
-# The family's own self-test ENFORCEMENT rows — the six ATTACK codes the
+# The family's own self-test ENFORCEMENT rows — the five ATTACK codes the
 # family's OFFLINE self-tests raise (enforced violation, exit 4). These are
 # the family's own language, NEVER manifest rows and NEVER declared PENDING:
 # a raised enforcement code must exist in the family subset, must never be
-# stamped in the manifest, and must never be declared PENDING.
+# stamped in the manifest, and must never be declared PENDING. (The shared
+# AF-AE-TEMPLATE-ATTACK row IS a manifest row — it is pinned by the
+# manifest-mirror table above, not by this enforcement set.)
 AF_U23_ENFORCEMENT_CODES = (
     "AF-AE-PROVPHONE-ATTACK",
     "AF-AE-PROVACTION-ATTACK",
     "AF-AE-PHONELIST-ATTACK",
     "AF-AE-SMSVER-ATTACK",
     "AF-AE-ATTACKSMSFAILED-ATTACK",
-    "AF-AE-TEMPLATE-ATTACK",
 )
 
 # Every AF row must carry the house AF shape: "AF-<family>-<NAME>", with the
@@ -499,7 +574,7 @@ def plan(*, out=None) -> int:
                 "constant": "AF_CODES",
                 "count": len(AF_CODES),
                 "codes": list(AF_CODES),
-                "source": "ENGINE-MANIFEST.json autofails (40 rows)",
+                "source": "ENGINE-MANIFEST.json autofails (75 rows)",
             },
             "u23_family": {
                 "constant": "AF_U23_CODES",
@@ -722,10 +797,11 @@ def self_test(*, out=None) -> int:
               "byte-exact against the registry; AF table matches "
               "ENGINE-MANIFEST.json (%s codes); the U23 family rows match "
               "docs_u23.AF_CODES (%s rows, same set AND same order, the "
-              "16 operational rows PENDING in the manifest, the 6 "
+              "16 operational rows PENDING in the manifest, the %s "
               "enforcement rows never in the manifest) and every attack "
               "fixture refused; zero credential surface\n"
-              % (len(AF_CODES), len(AF_U23_CODES)))
+              % (len(AF_CODES), len(AF_U23_CODES),
+                 len(AF_U23_ENFORCEMENT_CODES)))
     return EX_OK
 
 
@@ -734,7 +810,7 @@ def main(argv=None) -> int:
         prog="house_rules.py",
         description="The U23 family's canonical constant surface: browser "
                     "UA (CF 1010), Convert and Flow version header, the "
-                    "complete AF autofail code table (the manifest's 40 "
+                    "complete AF autofail code table (the manifest's 75 "
                     "rows), and the U23 family's own rows (docs_u23.AF_CODES)"
                     " -- fail-closed, offline, never prints a token "
                     "(Skill 59). One JSON object on stdout.")

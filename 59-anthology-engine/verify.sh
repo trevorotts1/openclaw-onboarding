@@ -47,7 +47,7 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "verify: FATAL python3 required" >&2; exit 4; }
 
 SELF_DIR="$SELF_DIR" python3 - <<'PY'
-import hashlib, io, json, os, re, subprocess, sys
+import hashlib, io, json, os, re, shutil, subprocess, sys, tempfile
 
 root = os.environ["SELF_DIR"]
 def p(*a): return os.path.join(root, *a)
@@ -191,6 +191,61 @@ for f in stage_files:
     rc = subprocess.call([sys.executable, fp, "--self-test"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     need(rc == 0, "stage runner --self-test failed: %s" % f)
+
+# --- tooling CLIs: enumerate the 10 assembled U02-U23 dispatchers and run --self-test ---
+# The W1.1-sibling tooling layer (U02..U23) ships ten assembled CLIs, each with
+# an OFFLINE --self-test battery (golden PASS / attack FAIL; exit 4 on any
+# failure, never exit 1). They are enumerated by exact basename — the same
+# roster discipline as stage_files above — and their self-tests run on every
+# verify so a drifted family module, a manifest-mirror AF table, or a broken
+# assembly FAILS this verify (exit 4) instead of shipping green. Exit 0 = the
+# battery passed; anything else (2/3/4/5) is DRIFT.
+#
+# READ-ONLY ISOLATION: the dispatchers write manifest-pending/<unit>.json
+# after a PASS (their designed stage surface). This verify is READ-ONLY over
+# the shipped tree, so the self-tests run against a temp COPY of the engine
+# (scripts/ + config/ + ENGINE-MANIFEST.json, pycache excluded) — the pending
+# writes land in the copy's manifest-pending/ and the shipped tree is never
+# mutated, never clobbered, even when another writer has in-flight changes.
+cli_files = [
+    "live_verify_template.py", "check_pipeline_name.py", "fix_intake_form.py",
+    "check_intake_fire_scope.py", "archive_legacy_workflows.py",
+    "provision_fields.py", "build_anthology_forms.py",
+    "build_anthology_workflows.py", "provision_sms_phone.py",
+    "cc_board_hygiene.py",
+]
+cli_missing = [f for f in cli_files if not os.path.isfile(p("scripts", f))]
+for f in cli_missing:
+    fails.append("missing tooling CLI: scripts/%s" % f)
+cli_copy = None
+if not cli_missing:
+    try:
+        cli_copy = tempfile.mkdtemp(prefix="anthology-engine-verify-")
+        shutil.copytree(p("scripts"), os.path.join(cli_copy, "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(p("config"), os.path.join(cli_copy, "config"))
+        # Root-level files the CLIs read from their resolved SKILL_DIR: the
+        # manifest (house_rules mirror), HOW-TO-USE.md + skill-version.txt
+        # (the U20 welcome-builder card law), and fixtures/ when present.
+        for _root_f in ("ENGINE-MANIFEST.json", "HOW-TO-USE.md",
+                        "skill-version.txt"):
+            if os.path.isfile(p(_root_f)):
+                shutil.copy(p(_root_f), cli_copy)
+        if os.path.isdir(p("fixtures")):
+            shutil.copytree(p("fixtures"), os.path.join(cli_copy, "fixtures"))
+        for f in cli_files:
+            fp = os.path.join(cli_copy, "scripts", f)
+            rc = subprocess.call([sys.executable, "-m", "py_compile", fp])
+            need(rc == 0, "tooling CLI does not byte-compile: %s" % f)
+            rc = subprocess.call([sys.executable, fp, "--self-test"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 timeout=600, cwd=cli_copy)
+            need(rc == 0, "tooling CLI --self-test failed (rc=%d): %s"
+                 % (rc, f))
+    finally:
+        if cli_copy:
+            shutil.rmtree(cli_copy, ignore_errors=True)
 
 # --- U17 drift gate: the snapshot fixture must agree with the source of truth ---
 # scripts/qc-snapshot-fixture.sh (ENGINE-MANIFEST row 52, authored_by U17) is the

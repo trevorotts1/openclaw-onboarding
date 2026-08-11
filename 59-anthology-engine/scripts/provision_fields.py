@@ -379,7 +379,7 @@ U07_MODULES = (
     ("golden_all_present.py",  "the GOLDEN ALL-28-PRESENT FIXTURE — the canonical in-memory payload of the U07 FIELD-CENSUS law in its GOLDEN state: ALL 28 contract custom fields on the listing BY EXACT KEY (the 19 base PRD Section 6 link/control keys + 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys, the intended keys read ONCE from config/field-map.json through reg.load_field_map, never retyped), the canonical record mappingproxy-frozen (every container a tuple, so no caller can mutate the law); the payload() gate is fail-closed — an absent / renamed / duplicated / foreign / wrong-size / malformed / credential-shaped listing is REFUSED exit 5 (FIELDS-NOT-ALL-PRESENT), never a blind pass, and the WRITE ACTION (provision) is --execute-gated (GOLDEN_EXECUTE_REQUIRED — the gate lives in this dispatcher, never in a fixture)"),
     ("attack_missing_14.py",   "the U07 ATTACK #1: a deterministic DEEP strict-subset customFields read carrying only FOURTEEN of the twenty-eight contract fields (the canonical census minus its fourteen even-positioned records — a location missing half its fields) that every byte-exact field census MUST DETECT and refuse (verify_live(...) exit 5, missing keys by MASKED MARKER only) while the golden 28-key control (payload_true) PASSES exit 0 — the pass/fail split discriminates the deep-strict-subset boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
     ("attack_text_drift.py",   "the U07 ATTACK #2: a deterministic SINGLE-VARIABLE dataType drift — the canonical field inventory read once from the field-map (the dataType LAW surface: 28 keys, 27 LARGE_TEXT + 1 SINGLE_OPTIONS, the cover choice with its four named options), then the ONE data_type of the first free-text key re-declared TEXT with every other field byte-for-byte preserved — that every dataType gate (the 27+1 invariant, the provision-fields exact-match verify, every U07 type law) MUST FAIL, never a pass; the golden 27+1 control (GOLDEN_RECORD / payload_true) PASSES exit 0 — the pass/fail split discriminates the TEXT-vs-LARGE_TEXT boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
-    ("house_rules.py",         "the ONE canonical house-law constant surface for the U07 family (browser UA — CAF_BROWSER_UA, CF 1010 — / version header — CAF_VERSION_HEADER — / the complete AF autofail table, the manifest's 37 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails — a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"),
+    ("house_rules.py",         "the ONE canonical house-law constant surface for the U07 family (browser UA — CAF_BROWSER_UA, CF 1010 — / version header — CAF_VERSION_HEADER — / the complete AF autofail table, the manifest's 75 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails — a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"),
     ("docs_u07.py",            "the U07 tooling README/catalog data + drift gate — the module inventory, the FIVE verified items, the house exit codes and af codes as DATA (the module inventory and the shipped tree never drift; a doc that names a module that does not ship FAILS its self-test exit 4)"),
     ("example_usage.py",       "the fail-closed WORKED EXAMPLE of the U07 dispatch — the field-map contract gate + the golden all-present census + the missing-14 attack boundary with its golden control + the live read + the missing-field presence law + the type law, composed in the documented order with every sibling exit code honored verbatim (a STOP refusal is NEVER downgraded to a pass). NOT a gate and NOT a checker: it makes NO judgment of its own — every judgment is delegated to the sibling modules, which stay the single implementation of each law"),
     ("test_missing_finder.py", "the independent pytest battery over the missing-finder (provenance only)"),
@@ -864,13 +864,48 @@ class _redirect_stdout:
 _CREDENTIAL_SHAPE = re.compile(r"pit-\S+")
 
 # ---------------------------------------------------------------------------
+# The field-map contract gate — the loader, on the SUPPLIED path. The plan
+# (and any other offline surface) is only as sound as the map it plans
+# against: a map that drifted from its own 28-key contract (28-key count,
+# total_keys byte-match, derivation law, type law, key law) must refuse the
+# plan, never plan clean against a wrong map. load_field_map raises
+# FieldMapError on any drift and returns the verified inventory otherwise —
+# the SAME fail-closed law the live verify's first gate enforces, so the
+# plan and the live gate can never disagree about the map.
+# ---------------------------------------------------------------------------
+def _field_map_contract_gate(modules: dict, path: Path,
+                             out=None) -> None:
+    out = out or sys.stderr
+    try:
+        modules["fieldmap_loader"].load_field_map(path)
+    except Exception as exc:  # noqa: BLE001 — a loader refusal is a STOP,
+        #                         never a blind plan
+        reg._stop(out,
+                  "The field-map at %s drifted from its own 28-key "
+                  "contract (28-key count / total_keys byte-match / "
+                  "derivation law / type law / key law) — the plan is "
+                  "REFUSED, never a plan against a wrong map." % path,
+                  ["%s: %s" % (type(exc).__name__, exc),
+                   "Fix the map (or restore config/field-map.json) so "
+                   "the loader verifies it, then re-run the plan.",
+                   "AF-AE-FIELDMAP-* (STOP family, exit 2)."])
+        raise AssembleError(
+            "field-map contract gate refused the plan: %s: %s"
+            % (type(exc).__name__, exc)) from exc
+
+# ---------------------------------------------------------------------------
 # Offline plan — no network, no credentials. The dispatcher's plan, with the
 # assembly's stage-record on the side. Prints ONE JSON object on stdout.
 # ---------------------------------------------------------------------------
 def dry_run(modules: dict, location_id: str, field_map: dict,
-            out=None) -> int:
+            field_map_path: Path, out=None) -> int:
     out = out or sys.stderr
     skeleton = modules["main_skeleton"]
+    # The plan is only as sound as the map it plans against: the fail-closed
+    # contract gate runs FIRST, through the family loader on the SUPPLIED
+    # path — a map that drifted from its own 28-key contract is a STOP
+    # (exit 2), never a clean plan against a wrong map.
+    _field_map_contract_gate(modules, field_map_path, out=out)
     # The dispatcher's own plan (the ONE JSON object on stdout, captured
     # into the human channel — the machine surface is this assembler's plan
     # object, so stdout stays ONE JSON document).
@@ -1075,12 +1110,13 @@ def main(argv=None):
                               mode="self-test")
             return rc
 
-        field_map = _read_json(Path(args.field_map).expanduser(),
-                               "config/field-map.json")
+        field_map_path = Path(args.field_map).expanduser()
+        field_map = _read_json(field_map_path, "config/field-map.json")
         location_id = args.location_id.strip() or DEFAULT_TEMPLATE_LOCATION
 
         if args.dry_run:
-            rc = dry_run(modules, location_id, field_map, out=sys.stderr)
+            rc = dry_run(modules, location_id, field_map,
+                         field_map_path=field_map_path, out=sys.stderr)
             if rc == EX_OK:
                 write_pending(_pending_payload("dry-run", location_id),
                               mode="dry-run")
