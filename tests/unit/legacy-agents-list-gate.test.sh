@@ -141,10 +141,19 @@ if printf '%s' "$out2" | grep -q 'agents.list'; then
 else
   fail "2b: the failure did not name agents.list. Output: $out2"
 fi
-if printf '%s' "$out2" | grep -q 'doctor --fix'; then
-  pass "2c: the failure states the remedy (openclaw doctor --fix)"
+if printf '%s' "$out2" | grep -q 'oc-atomic-upgrade.sh'; then
+  pass "2c: the failure states the REAL remedy (oc-atomic-upgrade.sh)"
 else
-  fail "2c: the failure did not state the remedy. Output: $out2"
+  fail "2c: the failure did not name oc-atomic-upgrade.sh. Output: $out2"
+fi
+# And it must NOT prescribe `openclaw doctor --fix` as the migration: measured
+# on 12 boxes, the config SHA-256 was byte-identical before and after, and it
+# silently rewrote agents.defaults.models pins on one box. Mentioning it as a
+# warning is fine; prescribing it is the defect.
+if printf '%s' "$out2" | grep -qE '(FIX|REMEDY|Run)[^\n]*openclaw doctor --fix'; then
+  fail "2d: the failure still PRESCRIBES 'openclaw doctor --fix' as the migration. Output: $out2"
+else
+  pass "2d: the failure no longer prescribes 'openclaw doctor --fix' as the migration"
 fi
 
 # ---------------------------------------------------------------------------
@@ -365,133 +374,128 @@ else
   fail "5e: no refusal banner. Output: $out5c"
 fi
 
-# (5f) legacy box, doctor GENUINELY fixes it -> 0
-H_FIX="$SANDBOX/h-fix"
-write_config "$H_FIX/.openclaw/openclaw.json" legacy
-STUB_FIX="$SANDBOX/stubs-fix"
-mkdir -p "$STUB_FIX"
-cp "$STUBS/hostname" "$STUB_FIX/hostname"
-cat > "$STUB_FIX/openclaw" <<'EOF'
-#!/bin/bash
-# stub: a doctor that really performs the migration (drops agents.list,
-# preserving agents.defaults.workspace so the resolved workspace is unchanged)
-if [ "${1:-}" = "doctor" ]; then
-  python3 - "$HOME/.openclaw/openclaw.json" <<'PY'
-import json, sys
-p = sys.argv[1]
-d = json.load(open(p))
-d.get('agents', {}).pop('list', None)
-json.dump(d, open(p, 'w'))
-PY
-  echo "doctor: migrated agents.list"
-  exit 0
-fi
-exit 0
-EOF
-chmod +x "$STUB_FIX/openclaw"
-out5f="$(HOME="$H_FIX" PATH="$STUB_FIX:/usr/bin:/bin" bash -c '
+# ---------------------------------------------------------------------------
+# (5f-5m) THE DELEGATION CONTRACT.
+#
+# WHAT CHANGED AND WHY. The cases that used to live here stubbed an
+# `openclaw doctor` and asserted that agents_list_gate() migrated with it. That
+# contract is GONE, because it was measured to be false: on 12 boxes the config
+# SHA-256 was BYTE-IDENTICAL before and after `openclaw doctor --fix`, and
+# `openclaw config schema` on 2026.7.1 / 2026.7.1-2 lists the `agents`
+# properties as exactly ["defaults","list"] -- there is no `entries` for it to
+# migrate to. It also silently rewrote `agents.defaults.models` pins on one box.
+#
+# So the gate no longer migrates anything itself. It DELEGATES to
+# scripts/oc-atomic-upgrade.sh, which is the only procedure that can do this
+# safely (gateway stopped and proven stopped, new binary installed, config
+# rewritten, verified lossless, gateway restarted and proven stable, everything
+# rolled back on failure). The lying-migration and workspace-move protections
+# still exist -- they moved INTO that procedure and its transform engine, and
+# they are proven at runtime by tests/unit/oc-atomic-upgrade.test.sh cases
+# (2f), (3), (7) and (9f). Asserting them here against a doctor stub that is
+# never invoked would be a test that passes for the wrong reason.
+# ---------------------------------------------------------------------------
+
+# (5f) DEADLOCK FIX: default 'report' mode must NOT block the roll on a legacy
+# box. The previous gate exited 78 here, which froze the roll on 35 of 38 boxes
+# -- including the roll that DELIVERS scripts/oc-atomic-upgrade.sh to a box. The
+# gate was blocking the only delivery vehicle for its own remedy.
+H_REPORT="$SANDBOX/h-report"
+write_config "$H_REPORT/.openclaw/openclaw.json" legacy
+BEFORE_REPORT="$(cat "$H_REPORT/.openclaw/openclaw.json")"
+out5f="$(HOME="$H_REPORT" PATH="$STUBS:/usr/bin:/bin" bash -c '
   set -uo pipefail
   . "$1"
-  agents_list_gate migrate
+  agents_list_gate report
 ' _ "$GATE_LIB" 2>&1)"; rc5f=$?
 if [ "$rc5f" -eq 0 ]; then
-  pass "5f: a LEGACY box whose migration genuinely works is MIGRATED and proceeds (exit 0)"
+  pass "5f: DEADLOCK FIX -- a LEGACY box does NOT block the skill roll in report mode (exit 0)"
 else
-  fail "5f: successful migration returned $rc5f (expected 0). Output: $out5f"
+  fail "5f: report mode returned $rc5f on a legacy box (expected 0). The roll that delivers the fix is blocked again. Output: $out5f"
 fi
-if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if 'list' not in d.get('agents',{}) else 1)" "$H_FIX/.openclaw/openclaw.json"; then
-  fail "5g: the migrated config still carries agents.list"
+if [ "$(cat "$H_REPORT/.openclaw/openclaw.json")" = "$BEFORE_REPORT" ]; then
+  pass "5g: report mode mutated nothing"
 else
-  pass "5g: the migrated config no longer carries agents.list (re-read from disk)"
+  fail "5g: report mode modified the config"
+fi
+if printf '%s' "$out5f" | grep -q 'oc-atomic-upgrade.sh'; then
+  pass "5h: report mode still names the real remedy (oc-atomic-upgrade.sh), loudly"
+else
+  fail "5h: report mode did not name the remedy. Output: $out5f"
+fi
+if [ -f "$H_REPORT/.openclaw/.openclaw-agents-list-legacy" ]; then
+  pass "5i: report mode wrote the marker file a human and the next sweep will trip over"
+else
+  fail "5i: no marker file was written -- a line in a log nobody reads is how this stayed invisible for ten days"
 fi
 
-# (5h) legacy box, doctor LIES (exits 0, changes nothing) -> 3 AND rolled back.
-# An exit code is a claim, not a result. This is the case that catches a
-# migration tool that reports success without doing anything.
-H_LIE="$SANDBOX/h-lie"
-write_config "$H_LIE/.openclaw/openclaw.json" legacy
-BEFORE_LIE="$(cat "$H_LIE/.openclaw/openclaw.json")"
-STUB_LIE="$SANDBOX/stubs-lie"
-mkdir -p "$STUB_LIE"
-cp "$STUBS/hostname" "$STUB_LIE/hostname"
-cat > "$STUB_LIE/openclaw" <<'EOF'
-#!/bin/bash
-# stub: a doctor that claims success and changes nothing
-echo "doctor: all good (lying)"
-exit 0
-EOF
-chmod +x "$STUB_LIE/openclaw"
-out5h="$(HOME="$H_LIE" PATH="$STUB_LIE:/usr/bin:/bin" bash -c '
-  set -uo pipefail
-  . "$1"
-  agents_list_gate migrate
-' _ "$GATE_LIB" 2>&1)"; rc5h=$?
-if [ "$rc5h" -eq 3 ]; then
-  pass "5h: a migration that exits 0 but changes NOTHING is caught and REFUSED (exit 3)"
-else
-  fail "5h: lying migration returned $rc5h (expected 3). Output: $out5h"
-fi
-if [ "$(cat "$H_LIE/.openclaw/openclaw.json")" = "$BEFORE_LIE" ]; then
-  pass "5i: the config was ROLLED BACK to its exact original bytes"
-else
-  fail "5i: the config was not restored after the failed migration"
-fi
-
-# (5j) legacy box whose workspace lives ONLY in the legacy array, and a doctor
-# that drops the array without preserving it -> the resolved workspace MOVES.
-# That silently re-points the box's shared AGENTS.md/TOOLS.md/USER.md, so it
-# must be refused and rolled back even though the crash-loop key is gone.
-H_WS="$SANDBOX/h-ws"
-write_config "$H_WS/.openclaw/openclaw.json" legacy-with-ws
-BEFORE_WS="$(cat "$H_WS/.openclaw/openclaw.json")"
-STUB_WS="$SANDBOX/stubs-ws"
-mkdir -p "$STUB_WS"
-cp "$STUBS/hostname" "$STUB_WS/hostname"
-cat > "$STUB_WS/openclaw" <<'EOF'
-#!/bin/bash
-if [ "${1:-}" = "doctor" ]; then
-  python3 - "$HOME/.openclaw/openclaw.json" <<'PY'
-import json, sys
-p = sys.argv[1]
-d = json.load(open(p))
-d.get('agents', {}).pop('list', None)   # drops the ONLY workspace declaration
-json.dump(d, open(p, 'w'))
-PY
-  echo "doctor: dropped agents.list (and the workspace with it)"
-  exit 0
-fi
-exit 0
-EOF
-chmod +x "$STUB_WS/openclaw"
-out5j="$(HOME="$H_WS" PATH="$STUB_WS:/usr/bin:/bin" bash -c '
+# (5j) 'migrate' mode with the atomic tool ABSENT must REFUSE, never improvise.
+H_NOTOOL="$SANDBOX/h-notool"
+write_config "$H_NOTOOL/.openclaw/openclaw.json" legacy
+BEFORE_NOTOOL="$(cat "$H_NOTOOL/.openclaw/openclaw.json")"
+out5j="$(HOME="$H_NOTOOL" PATH="$STUBS:/usr/bin:/bin" bash -c '
   set -uo pipefail
   . "$1"
   agents_list_gate migrate
 ' _ "$GATE_LIB" 2>&1)"; rc5j=$?
-if [ "$rc5j" -eq 3 ]; then
-  pass "5j: a migration that MOVES the resolved workspace is refused (exit 3)"
+if [ "$rc5j" -eq 3 ] && [ "$(cat "$H_NOTOOL/.openclaw/openclaw.json")" = "$BEFORE_NOTOOL" ]; then
+  pass "5j: 'migrate' with no atomic tool on the box REFUSES (exit 3) and mutates nothing"
 else
-  fail "5j: workspace-moving migration returned $rc5j (expected 3). Output: $out5j"
-fi
-if [ "$(cat "$H_WS/.openclaw/openclaw.json")" = "$BEFORE_WS" ]; then
-  pass "5k: the workspace-moving migration was ROLLED BACK"
-else
-  fail "5k: the workspace-moving migration was not rolled back"
+  fail "5j: migrate-without-tool returned $rc5j or mutated the config. Output: $out5j"
 fi
 
-# (5l) 'check' mode never mutates
+# (5k) 'migrate' mode WITH the tool present must invoke it and honour its result.
+# A witness file records the invocation, so this asserts a real call and not the
+# presence of a string in the source.
+H_TOOL="$SANDBOX/h-tool"
+write_config "$H_TOOL/.openclaw/openclaw.json" legacy
+mkdir -p "$H_TOOL/.openclaw/scripts"
+cat > "$H_TOOL/.openclaw/scripts/oc-atomic-upgrade.sh" <<'ATOMICSTUB'
+#!/bin/bash
+# stub: stands in for the atomic procedure. Records that it was really invoked,
+# then performs the shape change its real counterpart would.
+echo "invoked $*" >> "$HOME/.openclaw/atomic-witness.txt"
+python3 - "$HOME/.openclaw/openclaw.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding='utf-8'))
+lst = d['agents'].pop('list')
+d['agents']['entries'] = {e['id']: {k: v for k, v in e.items() if k != 'id'} for e in lst}
+json.dump(d, open(p, 'w'), indent=2)
+PY
+exit 0
+ATOMICSTUB
+chmod +x "$H_TOOL/.openclaw/scripts/oc-atomic-upgrade.sh"
+out5k="$(HOME="$H_TOOL" PATH="$STUBS:/usr/bin:/bin" bash -c '
+  set -uo pipefail
+  . "$1"
+  agents_list_gate migrate
+' _ "$GATE_LIB" 2>&1)"; rc5k=$?
+if [ -f "$H_TOOL/.openclaw/atomic-witness.txt" ]; then
+  pass "5k: 'migrate' DELEGATED to the atomic procedure -- observed by a witness file, not by reading the source"
+else
+  fail "5k: the atomic procedure was never invoked. Output: $out5k"
+fi
+if [ "$rc5k" -eq 0 ]; then
+  pass "5l: a successful delegation returns 0"
+else
+  fail "5l: successful delegation returned $rc5k (expected 0). Output: $out5k"
+fi
+
+# (5m) 'check' mode never mutates, and must still refuse -- it is the pre-flight
+# a fleet driver runs before moving any box onto a new build.
 H_CHECK="$SANDBOX/h-check"
 write_config "$H_CHECK/.openclaw/openclaw.json" legacy
 BEFORE_CHECK="$(cat "$H_CHECK/.openclaw/openclaw.json")"
-out5l="$(HOME="$H_CHECK" PATH="$STUB_FIX:/usr/bin:/bin" bash -c '
+out5m="$(HOME="$H_CHECK" PATH="$STUBS:/usr/bin:/bin" bash -c '
   set -uo pipefail
   . "$1"
   agents_list_gate check
-' _ "$GATE_LIB" 2>&1)"; rc5l=$?
-if [ "$rc5l" -eq 3 ] && [ "$(cat "$H_CHECK/.openclaw/openclaw.json")" = "$BEFORE_CHECK" ]; then
-  pass "5l: 'check' mode refuses (exit 3) and mutates nothing, even with a working doctor on PATH"
+' _ "$GATE_LIB" 2>&1)"; rc5m=$?
+if [ "$rc5m" -eq 3 ] && [ "$(cat "$H_CHECK/.openclaw/openclaw.json")" = "$BEFORE_CHECK" ]; then
+  pass "5m: 'check' mode refuses (exit 3) and mutates nothing"
 else
-  fail "5l: check mode returned $rc5l or mutated the config. Output: $out5l"
+  fail "5m: check mode returned $rc5m or mutated the config. Output: $out5m"
 fi
 
 # ---------------------------------------------------------------------------
@@ -531,7 +535,7 @@ chmod +x "$CRON_SCRIPT"
 
 # Stub npm/openclaw that RECORD whether they were invoked.
 make_cron_stubs() {
-  local dir="$1" doctor_mode="$2"
+  local dir="$1"
   mkdir -p "$dir"
   cat > "$dir/npm" <<EOF
 #!/bin/bash
@@ -540,17 +544,29 @@ exit 0
 EOF
   chmod +x "$dir/npm"
   cp "$STUBS/hostname" "$dir/hostname"
-  if [ "$doctor_mode" = "fix" ]; then
-    cp "$STUB_FIX/openclaw" "$dir/openclaw"
-  else
-    cat > "$dir/openclaw" <<'EOF'
+  # The generated cron NEVER invokes `openclaw doctor` any more -- that path was
+  # removed because it was measured not to migrate anything. This stub only has
+  # to answer --version.
+  cat > "$dir/openclaw" <<'CRONOC'
 #!/bin/bash
 if [ "${1:-}" = "--version" ]; then echo "2026.7.2-beta"; exit 0; fi
-echo "doctor: nothing to do (lying)"
 exit 0
-EOF
-    chmod +x "$dir/openclaw"
-  fi
+CRONOC
+  chmod +x "$dir/openclaw"
+}
+
+# install_atomic_stub <box-home> -- drops a stand-in for the atomic procedure
+# where the generated cron looks for it (<oc-root>/scripts/oc-atomic-upgrade.sh)
+# and records that it was really invoked.
+install_atomic_stub() {
+  local home="$1"
+  mkdir -p "$home/.openclaw/scripts"
+  cat > "$home/.openclaw/scripts/oc-atomic-upgrade.sh" <<'ATOMICSTUB'
+#!/bin/bash
+echo "ATOMIC-CALLED $*" >> "$HOME/atomic-witness.txt"
+exit 0
+ATOMICSTUB
+  chmod +x "$home/.openclaw/scripts/oc-atomic-upgrade.sh"
 }
 
 run_cron() {
@@ -566,7 +582,7 @@ H_CRON_CLEAN="$SANDBOX/cron-clean"
 mkdir -p "$H_CRON_CLEAN/.openclaw/skills"
 write_config "$H_CRON_CLEAN/.openclaw/openclaw.json" clean
 S_CRON_CLEAN="$SANDBOX/cron-stubs-clean"
-make_cron_stubs "$S_CRON_CLEAN" lie
+make_cron_stubs "$S_CRON_CLEAN"
 out6a="$(run_cron "$H_CRON_CLEAN" "$S_CRON_CLEAN")"; rc6a=$?
 if [ -f "$H_CRON_CLEAN/npm-witness.txt" ]; then
   pass "6a: CONTROL — on a CLEAN box \`npm update -g openclaw\` DID run (the harness works)"
@@ -579,7 +595,7 @@ H_CRON_LEG="$SANDBOX/cron-legacy"
 mkdir -p "$H_CRON_LEG/.openclaw/skills"
 write_config "$H_CRON_LEG/.openclaw/openclaw.json" legacy
 S_CRON_LEG="$SANDBOX/cron-stubs-legacy"
-make_cron_stubs "$S_CRON_LEG" lie
+make_cron_stubs "$S_CRON_LEG"
 out6b="$(run_cron "$H_CRON_LEG" "$S_CRON_LEG")"; rc6b=$?
 if [ ! -f "$H_CRON_LEG/npm-witness.txt" ]; then
   pass "6b: a LEGACY box was NOT upgraded — \`npm update -g openclaw\` never executed"
@@ -597,17 +613,36 @@ else
   fail "6d: no .openclaw-upgrade-blocked marker was written"
 fi
 
-# (6e) a LEGACY box WITH a working doctor migrates and then upgrades.
+# (6e) THE SUCCESS PATH. A LEGACY box that HAS the atomic procedure on it must
+# hand the whole upgrade to that procedure -- and must NOT then run
+# `npm update -g openclaw` itself, which would swap the binary a second time
+# under the gateway the procedure just proved stable.
 H_CRON_FIX="$SANDBOX/cron-fix"
 mkdir -p "$H_CRON_FIX/.openclaw/skills"
 write_config "$H_CRON_FIX/.openclaw/openclaw.json" legacy
+install_atomic_stub "$H_CRON_FIX"
 S_CRON_FIX="$SANDBOX/cron-stubs-fix"
-make_cron_stubs "$S_CRON_FIX" fix
+make_cron_stubs "$S_CRON_FIX"
 out6e="$(run_cron "$H_CRON_FIX" "$S_CRON_FIX")"; rc6e=$?
-if [ -f "$H_CRON_FIX/npm-witness.txt" ] && [ "$rc6e" -eq 0 ]; then
-  pass "6e: a LEGACY box with a working migration was fixed and THEN upgraded (exit 0)"
+if [ -f "$H_CRON_FIX/atomic-witness.txt" ]; then
+  pass "6e: a LEGACY box with the atomic procedure present DELEGATED the upgrade to it (witness file, not source text)"
 else
-  fail "6e: migrate-then-upgrade failed (rc=$rc6e, npm ran: $([ -f "$H_CRON_FIX/npm-witness.txt" ] && echo yes || echo no)). Output: $out6e"
+  fail "6e: the atomic procedure was never invoked (rc=$rc6e). Output: $out6e"
+fi
+if [ "$rc6e" -eq 0 ]; then
+  pass "6f: a delegated upgrade exits 0"
+else
+  fail "6f: delegated upgrade exited $rc6e (expected 0). Output: $out6e"
+fi
+if [ ! -f "$H_CRON_FIX/npm-witness.txt" ]; then
+  pass "6g: \`npm update -g openclaw\` did NOT also run -- the binary is not swapped twice, once under a live gateway"
+else
+  fail "6g: npm ALSO ran after the atomic procedure: $(cat "$H_CRON_FIX/npm-witness.txt")"
+fi
+if [ ! -f "$H_CRON_FIX/.openclaw/skills/.openclaw-upgrade-blocked" ]; then
+  pass "6h: no block marker was left behind on a successful delegated upgrade"
+else
+  fail "6h: a stale block marker survived a successful upgrade"
 fi
 
 # ---------------------------------------------------------------------------
@@ -642,7 +677,7 @@ H_MUT="$SANDBOX/cron-mutated"
 mkdir -p "$H_MUT/.openclaw/skills"
 write_config "$H_MUT/.openclaw/openclaw.json" legacy
 S_MUT="$SANDBOX/cron-stubs-mut"
-make_cron_stubs "$S_MUT" lie
+make_cron_stubs "$S_MUT"
 NPM_WITNESS="$H_MUT/npm-witness.txt" HOME="$H_MUT" PATH="$S_MUT:/usr/bin:/bin" \
   bash "$MUT_SCRIPT" >/dev/null 2>&1
 if [ -f "$H_MUT/npm-witness.txt" ]; then
