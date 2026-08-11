@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -46,6 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="FIX-20: measure one phase's working-set token count (or all phases) and "
                         "report fit against the context-window cap. Exit 0 if every measured phase "
                         "fits one window, exit 3 (EXIT_GATE_BLOCKED) if any exceeds it.")
+    m.add_argument("--capacity", action="store_true",
+                   help="WORK-ITEM-12: run the 9Router capacity probe and print the report; "
+                        "exit 0. Read-only measurement, never simulated.")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -151,8 +155,29 @@ def cmd_status(args) -> int:
     for k, g in (st.get("gates") or {}).items():
         print(f"gate {k:<14} {g.get('state')}"
               + (f"  — {g.get('reason')}" if g.get("reason") else ""))
-    if st.get("undeliverable"):
-        print(f"UNDELIVERABLE messages: {len(st['undeliverable'])} "
+    # notify_target — the SPEC-mandated status line for WORK-ITEM-08/15 verification
+    notify_cmd = os.environ.get("PRESENTATION_NOTIFY_CMD", "")
+    if notify_cmd:
+        print(f"notify_target = \"owner\"")
+        print(f"notify_cmd    = {notify_cmd}")
+        req = st.get("requester") or {}
+        if req.get("chat_id"):
+            print(f"requester_chat_id = {req['chat_id']}")
+        sent = st.get("sent") or {}
+        for k in ("ack", "done"):
+            if k in sent:
+                rec = sent[k]
+                print(f"sent.{k:4}: {rec.get('count',0)} messages, "
+                      f"last at {rec.get('last_at','?')}")
+        progress_count = (sent.get("progress") or {}).get("count", 0)
+        blocked_count = (sent.get("blocked") or {}).get("count", 0)
+        print(f"sent.progress: {progress_count} messages")
+        print(f"sent.blocked:  {blocked_count} messages")
+    else:
+        print("notify_target = \"none\" (PRESENTATION_NOTIFY_CMD unset — notifications disabled)")
+    undelivered = st.get("undeliverable")
+    if undelivered:
+        print(f"UNDELIVERABLE messages: {len(undelivered)} "
               "(the requester was NOT told — see F2)")
     return EXIT_OK
 
@@ -200,6 +225,18 @@ def cmd_sweep_undeliverable(args) -> int:
         store.save(state)
         print(f"{total} queued, {delivered} delivered, {still} still undeliverable")
         return EXIT_OK if still == 0 else 1
+
+
+def cmd_capacity(args) -> int:
+    """WORK-ITEM-12: run the 9Router capacity probe and print the report.
+
+    Read-only measurement of the harness settings and the local process table.
+    Never simulated. Prints the probe report to stdout; the machine-greppable
+    JSON block ships inside it (probe_mode / dispatchable / available)."""
+    from . import capacity
+    result = capacity.probe()
+    print(capacity.format_report(result), flush=True)
+    return EXIT_OK
 
 
 def cmd_workingset(args, scripts_dir: Path) -> int:
@@ -284,12 +321,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.apply and not args.reconcile_board:
         die(EXIT_USAGE, "--apply is only meaningful with --reconcile-board")
 
+    # --capacity needs no run-dir: it is a read-only probe of the harness.
+    if args.capacity:
+        return cmd_capacity(args)
+
     if not args.run_dir:
         die(EXIT_USAGE, "--run-dir is required")
     run_dir = args.run_dir.expanduser().resolve()
 
     if args.new:
         return cmd_new(args, scripts_dir)
+    if args.capacity:
+        return cmd_capacity(args)
     if args.workingset is not None:
         return cmd_workingset(args, scripts_dir)
     if args.status:

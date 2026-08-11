@@ -50,20 +50,14 @@ def resolve_runs_root() -> Path:
 # Engine lifecycle
 # ---------------------------------------------------------------------------
 def is_engine_running(run_dir: str | Path) -> bool:
-    """Read state.json's engine_pid. Check if that PID is still alive.
+    """Read the recorded engine PID (state.json, or .engine.pid sidecar before
+    state.json exists). Check if that PID is still alive.
 
     Uses os.kill(pid, 0) -- signal 0 is an existence check, never a real signal.
     Returns True if running, False if dead or no PID recorded.
     """
-    state_path = Path(run_dir) / "state.json"
-    if not state_path.is_file():
-        return False
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return False
-    pid = state.get("engine_pid")
-    if not isinstance(pid, int) or pid <= 0:
+    pid = _read_engine_pid(run_dir)
+    if pid is None:
         return False
     try:
         os.kill(pid, 0)
@@ -73,21 +67,15 @@ def is_engine_running(run_dir: str | Path) -> bool:
 
 
 def stop_engine(run_dir: str | Path) -> bool:
-    """Read state.json's engine_pid. Send SIGTERM to the process group.
+    """Read the recorded engine PID (state.json, or .engine.pid sidecar before
+    state.json exists). Send SIGTERM to the process group.
 
     Wait up to 10 seconds. If still alive, SIGKILL. Returns True on
     successful stop, False on timeout.
     """
-    state_path = Path(run_dir) / "state.json"
-    if not state_path.is_file():
+    pid = _read_engine_pid(run_dir)
+    if pid is None:
         return True  # nothing to stop
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return True
-    pid = state.get("engine_pid")
-    if not isinstance(pid, int) or pid <= 0:
-        return True
     try:
         os.killpg(pid, signal.SIGTERM)
     except OSError:
@@ -106,19 +94,73 @@ def stop_engine(run_dir: str | Path) -> bool:
     return True
 
 
+def _engine_pid_sidecar(run_dir: str | Path) -> Path:
+    """Path of the engine-pid sidecar used until state.json exists.
+
+    Canary D1 (R3): launcher.py must not create state.json itself on --new --
+    the engine's cmd_new refuses to start when state.json already exists. Until
+    cmd_new has written state.json, the engine PID is recorded here; once
+    state.json exists the PID lives inside it (is_engine_running/stop_engine
+    read the sidecar only as a fallback)."""
+    return Path(run_dir) / ".engine.pid"
+
+
 def _write_engine_pid(run_dir: str | Path, pid: int) -> None:
-    """Record the engine PID in state.json for the watchdog to monitor."""
-    state_path = Path(run_dir) / "state.json"
-    state: dict = {}
+    """Record the engine PID for the watchdog to monitor.
+
+    If state.json exists, the PID is merged into it (preserving every field
+    the engine wrote). If state.json does not exist yet -- the --new window,
+    before cmd_new has run -- the PID goes to the .engine.pid sidecar instead;
+    state.json is NEVER created here, so the engine's 'state.json already
+    exists' refusal can never trigger from the launcher."""
+    run_path = Path(run_dir).expanduser().resolve()
+    state_path = run_path / "state.json"
     if state_path.is_file():
+        state: dict = {}
         try:
             state = json.loads(state_path.read_text(encoding="utf-8")) or {}
         except (json.JSONDecodeError, OSError):
             state = {}
-    state["engine_pid"] = pid
-    tmp = state_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    os.replace(tmp, state_path)
+        state["engine_pid"] = pid
+        tmp = state_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        os.replace(tmp, state_path)
+        try:
+            _engine_pid_sidecar(run_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    # No state.json yet: sidecar only. Never synthesize state.json here.
+    sidecar = _engine_pid_sidecar(run_path)
+    try:
+        tmp = sidecar.with_suffix(".pid.tmp")
+        tmp.write_text(f"{pid}\n", encoding="utf-8")
+        os.replace(tmp, sidecar)
+    except OSError as exc:
+        print(f"launcher: could not record engine pid {pid}: {exc}", file=sys.stderr)
+
+
+def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
+    """Read the recorded engine PID: state.json first, .engine.pid sidecar second."""
+    run_path = Path(run_dir).expanduser().resolve()
+    state_path = run_path / "state.json"
+    if state_path.is_file():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            state = {}
+        pid = state.get("engine_pid")
+        if isinstance(pid, int) and pid > 0:
+            return pid
+    sidecar = _engine_pid_sidecar(run_path)
+    if sidecar.is_file():
+        try:
+            pid = int(sidecar.read_text(encoding="utf-8").strip())
+            if pid > 0:
+                return pid
+        except (OSError, ValueError):
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -171,8 +213,26 @@ def dispatch(
         # --client and --deck-type are intake-time flags; they are embedded
         # in state.json during --new (cmd_new reads intake from --intake),
         # so they are not passed as separate CLI flags to the engine.
-        # Instead, we pass them via the intake JSON mechanism.
-        pass
+        # Instead, we pass them via the intake JSON mechanism: the intake
+        # bridge populates working/copy/intake.json (launcher contract --
+        # see dispatch_new's docstring). Pass that file to --new.
+        intake_arg: Optional[str] = None
+        for cand in (
+            run_path / "working" / "copy" / "intake.json",
+            run_path / "working" / "checkpoints" / ".engine-intake.json",
+        ):
+            if cand.is_file():
+                intake_arg = str(cand)
+                break
+        if intake_arg:
+            argv.extend(["--intake", intake_arg])
+        else:
+            print(f"launcher: WARNING no intake JSON at {run_path}/working/copy/intake.json "
+                  "-- engine --new will refuse (presentation_type required)", file=sys.stderr)
+    if resume:
+        intake_check = run_path / "working" / "checkpoints" / ".engine-intake.json"
+        if intake_check.is_file():
+            argv.extend(["--intake", str(intake_check)])
 
     if phase:
         argv.extend(["--phase", phase])
@@ -200,7 +260,29 @@ def dispatch(
             print(f"launcher: could not start engine: {exc}", file=sys.stderr)
             return -1
 
+        # Canary D1 (R3): record the engine PID ONLY after the spawn succeeded.
+        # _write_engine_pid never creates state.json -- if cmd_new has not run
+        # yet (the --new window) the PID lands in the .engine.pid sidecar, so
+        # the engine's 'state.json already exists' refusal can never trigger
+        # from the launcher. Same path for --new and --resume.
         _write_engine_pid(run_path, proc.pid)
+        # Then, once cmd_new HAS written state.json (the --new path), merge the
+        # PID into it so the watchdog sees a self-contained record. Poll briefly
+        # (cmd_new is fast) and fall back to the sidecar without error.
+        if not resume:
+            deadline = time.time() + 5.0
+            state_path = run_path / "state.json"
+            while time.time() < deadline and not state_path.is_file():
+                time.sleep(0.1)
+            if state_path.is_file():
+                try:
+                    state = json.loads(state_path.read_text(encoding="utf-8")) or {}
+                except (json.JSONDecodeError, OSError):
+                    state = {}
+                state["engine_pid"] = proc.pid
+                tmp = state_path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+                os.replace(tmp, state_path)
         print(f"Engine launched: PID {proc.pid}  run-dir={run_path}  "
               f"cmd={' '.join(argv)}", flush=True)
         print(f"  logs: {stdout_path}, {stderr_path}", flush=True)
@@ -212,7 +294,9 @@ def dispatch(
         except OSError as exc:
             print(f"launcher: could not start engine: {exc}", file=sys.stderr)
             return -1
-        _write_engine_pid(run_path, os.getpid())
+        # The child has already exited; recording a PID for a finished process
+        # is meaningless, so nothing is written here. The engine's cmd_new
+        # wrote state.json itself (if it succeeded).
         return proc.returncode
 
 
@@ -308,13 +392,19 @@ def main(argv: Optional[list] = None) -> int:
         print(f"engine {'stopped' if ok else 'stop timed out'} for {run_path}")
         return 0 if ok else 1
 
-    if args.resume:
-        pid = dispatch_resume(str(run_path), background=not args.foreground)
-    else:
-        pid = dispatch_new(str(run_path),
-                           client=args.client or "operator",
-                           deck_type=args.deck_type or "standard",
-                           background=not args.foreground)
+    if args.foreground:
+        # Sync mode: dispatch returns the engine's own exit code (0 == ok).
+        rc = dispatch_resume(str(run_path), background=False) if args.resume else \
+            dispatch_new(str(run_path),
+                         client=args.client or "operator",
+                         deck_type=args.deck_type or "standard",
+                         background=False)
+        return 0 if rc == 0 else 1
+    pid = dispatch_resume(str(run_path), background=True) if args.resume else \
+        dispatch_new(str(run_path),
+                     client=args.client or "operator",
+                     deck_type=args.deck_type or "standard",
+                     background=True)
     return 0 if pid > 0 else 1
 
 
