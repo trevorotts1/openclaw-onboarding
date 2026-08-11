@@ -41,6 +41,58 @@ _finding() {
 _log() { echo "[fleet-audit-remediate] $*"; }
 _fix() { echo "[fleet-audit-remediate] FIX: $*"; }
 
+# _agents_list_blocks_upgrade — PRE-UPGRADE GATE for F1.
+#
+# Prints a reason and returns 0 when this box MUST NOT be moved onto a new
+# OpenClaw build; returns 1 when it is clear to upgrade.
+#
+# F1's fix is `npm update -g openclaw` — a VERSION CHANGE. The 2026.7.2-beta
+# line rejects the legacy `agents.list` key ("agents: Unrecognized key:
+# \"list\""), the gateway exits 78 (EX_CONFIG) ~0.4s after start, launchd's
+# KeepAlive + ThrottleInterval=10 respawns it every ~11s, and the crash-loop
+# breaker eventually latches channel auto-start OFF — the box goes completely
+# dark and queued deliveries are lost. The key is HARMLESS on the older line, so
+# "F1: gateway is stale" fires on exactly the boxes most likely to still carry
+# it. Upgrading without checking the schema converts a healthy-but-stale box
+# into a dark one. FAIL CLOSED: an unreadable config, or no python3, BLOCKS.
+_agents_list_blocks_upgrade() {
+  local cfg="${OC_ROOT}/openclaw.json" py out rc
+  [[ -f "$cfg" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || { printf 'python3 unavailable; config never inspected'; return 0; }
+  py="$(mktemp "${TMPDIR:-/tmp}/f1-agents-list.XXXXXX.py")" || { printf 'could not create temp file for the detector'; return 0; }
+  cat > "$py" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('BLOCK|config does not parse as JSON: %s' % e); raise SystemExit(0)
+if not isinstance(cfg, dict):
+    print('BLOCK|config top level is not a JSON object'); raise SystemExit(0)
+agents = cfg.get('agents')
+if agents is None:
+    print('CLEAR|no agents block'); raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('BLOCK|agents is a %s, not an object' % type(agents).__name__); raise SystemExit(0)
+if 'list' in agents:
+    print('BLOCK|legacy `agents.list` key is present -- the new line rejects it and the gateway crash-loops')
+else:
+    print('CLEAR|no legacy agents.list key')
+PYEOF
+  rc=0
+  out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+  rm -f "$py"
+  if [[ "$rc" -ne 0 || -z "$out" ]]; then
+    printf 'schema detector failed (rc=%s): %s' "$rc" "${out:-no output}"
+    return 0
+  fi
+  if [[ "${out%%|*}" == "BLOCK" ]]; then
+    printf '%s' "${out#*|}"
+    return 0
+  fi
+  return 1
+}
+
 # F1: Stale gateway version check
 check_f1_stale_gateway() {
   _log "F1: checking gateway version staleness..."
@@ -60,6 +112,12 @@ check_f1_stale_gateway() {
   if [[ "$behind" -gt 2 ]]; then
     _finding "F1" "STALE" "gateway ${local_ver} >2 releases behind ${latest_ver} (~${behind})"
     if [[ "$_APPLY" -eq 1 ]]; then
+      # PRE-UPGRADE GATE — see _agents_list_blocks_upgrade above.
+      local _al_reason=""
+      if _al_reason="$(_agents_list_blocks_upgrade)"; then
+        _finding "F1" "BLOCKED" "upgrade REFUSED (${_al_reason}) -- fix with 'openclaw doctor --fix', verify with 'bash scripts/qc-assert-legacy-agents-list.sh', then re-run --apply"
+        return 0
+      fi
       _fix "F1: running npm update -g openclaw..."
       if npm update -g openclaw 2>&1; then
         local new_ver; new_ver=$(openclaw --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
