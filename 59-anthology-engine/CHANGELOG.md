@@ -1,3 +1,10 @@
+### v0.1.20 -- unit batch U16/U17 (2026-08-11)
+
+- U16: client-box snapshot IMPORT + fieldKey re-verify -- provision-anthology-client.sh step 7.5 now runs provision_snapshot_import.py (NEW-2) BEFORE the verify/fill/stamp tail (idempotent GET-check-by-name, PUT snapshot.override with the agency PIT, bounded snapshot-status poll, resolved field-map + provision_report.json); fixture from --snapshot-fixture / ANTHOLOGY_SNAPSHOT_FIXTURE / the repo fixture, absent fixture + push required STOPS fail-closed AF-AE-SNAPIMPORT-NO-FIXTURE; verify/fill tail re-verifies every fieldKey (anthology_registry.py verify-fields, all 28 keys byte-exact, exit 5 on any unresolved/mismatch) before stamping snapshot-version.json. references/anthology-snapshot-guide.md rewritten to the box-side import model.
+- U17: ship the versioned snapshot fixture fixtures/snapshot/anthology-engine-v1.0.0.json + scripts/qc-snapshot-fixture.sh CI drift gate (every fieldKey / pipeline-stage name / form-field name byte-exact vs config/field-map.json + ENGINE-MANIFEST.json; exit 0 agree / 1 DRIFT / 2 gate went blind)
+- U18 (canary): persist the operator canary run artifact canary-run/reports/CANARY-REPORT.json (verdict PASS, one complete S0-S9, 2026-08-11T01:10:44Z)
+- ENGINE-MANIFEST.json row 52 (qc-snapshot-fixture.sh); ENGINE-PIN.sha256 re-stamped; skill-version 0.1.18 -> 0.1.19
+
 ### v0.1.19 -- unit batch U18/U21/U25/U26 (2026-08-10)
 
 - U18: one-complete-S0-S9 operator canary (canary_e2e_test.py, NEW-4, 38-check self-test)
