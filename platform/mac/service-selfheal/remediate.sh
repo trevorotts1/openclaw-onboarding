@@ -46,6 +46,35 @@ mkdir -p "$LOG_DIR"
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 log() { echo "[$(ts)] $*" >> "$LOG"; }
 
+# ---- MAINTENANCE LOCK -------------------------------------------------------
+# scripts/oc-atomic-upgrade.sh holds this lock while it moves a box onto a new
+# OpenClaw build. During that window the gateway is DELIBERATELY down: the
+# config is being rewritten from the legacy `agents.list` array to
+# `agents.entries`, and that rewrite is only valid once the new binary is on
+# disk. Bootstrapping the gateway back mid-procedure would restart the OLD
+# binary against a half-migrated config, and — worse — the running gateway
+# re-serializes openclaw.json roughly once a minute from its in-memory model,
+# which only knows `agents.list`. It would therefore silently REVERT the
+# migration and leave the box on a build that rejects its config.
+#
+# A bootout of this agent is not sufficient on its own: this script ALSO runs
+# from cron on some boxes ("*/5 * * * * remediate.sh"), where there is no
+# LaunchAgent to boot out. The lock is the mechanism that covers both.
+#
+# STALE LOCKS EXPIRE. A crashed upgrade must never wedge self-heal off forever,
+# so a lock older than 60 minutes is ignored and reported — the atomic
+# procedure's own worst case is a couple of minutes.
+LOCK_FILE="$HOME/.openclaw/.openclaw-maintenance-lock"
+[ -d "/data/.openclaw" ] && LOCK_FILE="/data/.openclaw/.openclaw-maintenance-lock"
+if [ -f "$LOCK_FILE" ]; then
+  if [ -n "$(find "$LOCK_FILE" -mmin +60 2>/dev/null)" ]; then
+    log "STALE maintenance lock at $LOCK_FILE (older than 60m) — IGNORING it and healing normally. If an upgrade is genuinely still running, stop this agent by hand."
+  else
+    log "MAINTENANCE LOCK HELD ($LOCK_FILE) — standing down. An atomic OpenClaw upgrade is in progress; re-bootstrapping the gateway now would revert its config migration."
+    exit 0
+  fi
+fi
+
 overall_rc=0
 
 # is_loaded LABEL  → 0 if the job is bootstrapped in the GUI domain.
