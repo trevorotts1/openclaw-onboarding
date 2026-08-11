@@ -74,12 +74,17 @@
 #          (--company-id arg or env label) and no SAME-AGENCY tenancy is declared.
 #          STOP: the module never invents an agency id.
 #
-# EXIT CODES (house convention; nonzero STOPS/HELDs with an operator surface):
+# EXIT CODES (house convention; nonzero STOPS/HELDs with an operator surface;
+# 4 = enforced violation):
 #   0  verified success (idempotent no-op / dry run counts as pass)
 #   1  unexpected error
 #   2  STOP refusal — usage error / missing credential / refusal to create
 #   3  Convert and Flow API unreachable / dependency held / status not completed
 #      (retryable)
+#   4  self-test FAILED — an assertion in the OFFLINE self-test (golden /
+#      attack fixtures, fixture coherence, read-back law) tripped: the
+#      AF-AE-SNAPIMPORT-* family. A tamper NEVER masquerades as "unexpected
+#      error" (exit 1).
 #   5  read-back mismatch (a contract key absent from the present fields)
 #
 # STDLIB ONLY (urllib + json), reusing anthology_registry.CafClient + credential
@@ -110,6 +115,7 @@ import anthology_registry as reg  # noqa: E402
 
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = (
     reg.EX_OK, reg.EX_ERR, reg.EX_STOP, reg.EX_HELD, reg.EX_MISMATCH)
+EX_VIOLATION = 4  # enforced violation detected (self-test FAILED, AF-AE-SNAPIMPORT-* family)
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 CONTRACT_PATH = SKILL_DIR / "config" / "anthology-snapshot-contract.json"
@@ -776,6 +782,23 @@ def self_test() -> int:
     td = Path(tempfile.mkdtemp(prefix="ae-snapimport-"))
     fm_path = td / "field-map.json"
     rpt_path = td / "provision_report.json"
+
+    try:
+        return _self_test_body(dev, contract, field_map, fm_path, rpt_path)
+    except AssertionError as exc:
+        # A self-test FAILURE is an enforced violation, never an "unexpected
+        # error": the field-map/fixture drift a tamper produces is exactly the
+        # AF-AE-SNAPIMPORT-* family this module documents (coherence gate /
+        # read-back law). The OFFLINE self-test reports the SAME code family,
+        # exit 4 — a tamper NEVER masquerades as exit 1.
+        sys.stderr.write("[provision_snapshot_import] SELF-TEST FAILED "
+                         "(AF-AE-SNAPIMPORT-* family): %s\n" % exc)
+        return EX_VIOLATION
+
+
+def _self_test_body(dev, contract, field_map, fm_path, rpt_path) -> int:
+    import io
+    import tempfile
 
     # (0) fixture coherence: golden passes, attack fails on every axis
     ok, mism = check_fixture(_golden_fixture(contract), contract, out=dev)

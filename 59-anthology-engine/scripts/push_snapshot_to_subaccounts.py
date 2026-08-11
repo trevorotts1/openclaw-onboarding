@@ -109,7 +109,8 @@
 #          (empty, missing location id, or the overrides file does not exist).
 #          STOP before any network call.
 #
-# EXIT CODES (house convention; nonzero STOPS/HELDs with an operator surface).
+# EXIT CODES (house convention; nonzero STOPS/HELDs with an operator surface;
+# 4 = enforced violation).
 #   The aggregate exit of a batch is the WORST per-target result:
 #     0  verified success (every target verified; idempotent no-op / dry run
 #        counts as pass)
@@ -118,6 +119,10 @@
 #        to create / malformed target / overrides refusal
 #     3  Convert and Flow API unreachable / dependency held / status not
 #        completed (retryable)
+#     4  self-test FAILED — an assertion in the OFFLINE self-test (golden /
+#        attack fixtures, field-map<->contract coherence, read-back law)
+#        tripped: the AF-AE-SNAP-PUSH-* family. A tamper NEVER masquerades as
+#        "unexpected error" (exit 1).
 #     5  read-back mismatch (a contract key absent from the present fields)
 #
 # STDLIB ONLY (urllib + json), reusing anthology_registry.CafClient + credential
@@ -149,6 +154,7 @@ import anthology_registry as reg  # noqa: E402
 
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = (
     reg.EX_OK, reg.EX_ERR, reg.EX_STOP, reg.EX_HELD, reg.EX_MISMATCH)
+EX_VIOLATION = 4  # enforced violation detected (self-test FAILED, AF-AE-SNAP-PUSH-* family)
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 CONTRACT_PATH = SKILL_DIR / "config" / "anthology-snapshot-contract.json"
@@ -1074,6 +1080,30 @@ def self_test() -> int:
     other = "loc_CLIENT_OWNED_000001"
     assert tmpl, "contract source_template_location.template_location_id must be present"
     want_keys = [f["intended_key"] for f in field_map["provisioning"]["fields"]]
+
+    try:
+        return _self_test_body(dev, contract, field_map, rpt_path, tmpl, other, want_keys)
+    except AssertionError as exc:
+        # A self-test FAILURE is an enforced violation, never an "unexpected
+        # error": the field-map drift a tamper produces is exactly the
+        # AF-AE-SNAP-PUSH-* family this module documents (read-back law). The
+        # OFFLINE self-test reports the SAME code family, exit 4 — a tamper
+        # NEVER masquerades as exit 1.
+        sys.stderr.write("[push_snapshot_to_subaccounts] SELF-TEST FAILED "
+                         "(AF-AE-SNAP-PUSH-* family): %s\n" % exc)
+        return EX_VIOLATION
+
+
+def _self_test_body(dev, contract, field_map, rpt_path, tmpl, other, want_keys) -> int:
+    import io
+    # ---- field-map <-> contract coherence: a drifted field-map must FAIL the
+    #      self-test, never pass it (the read-back fixtures derive from the
+    #      map, so a tampered map would otherwise self-confirm). The coherence
+    #      assert is the FIRST self-test check for that reason.
+    contract_keys = [f["intended_key"] for f in (contract.get("custom_fields") or {}).get("fields", [])]
+    assert want_keys == contract_keys, \
+        "field-map provisioning.fields drifted from contract custom_fields " \
+        "(AF-AE-SNAP-PUSH-READBACK-MISMATCH family)"
 
     # -- (0) overrides validation ---------------------------------------------
     assert validate_overrides(contract, {"producer": "Jane"}) == []
