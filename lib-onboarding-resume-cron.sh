@@ -149,7 +149,10 @@ install_onboarding_resume_cron() {
         return 0
     fi
     # IDEMPOTENT: if one already exists, leave it in place (never stack a duplicate).
-    if openclaw cron list 2>/dev/null | grep -qi "onboarding-resume"; then
+    # `cron list` HIDES DISABLED JOBS (--all defaults to false). Without --all this
+    # guard cannot see a cron an operator deliberately disabled, so every roll
+    # re-creates it ENABLED and re-arms the */30 main-session self-ping loop.
+    if openclaw cron list --all 2>/dev/null | grep -qi "onboarding-resume"; then
         success "onboarding-resume cron already installed"
         return 0
     fi
