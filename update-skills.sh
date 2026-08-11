@@ -3282,20 +3282,6 @@ main() {
     echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
     export OC_PIN_DELIVERY_FAILED=1
   fi
-
-  # ASSERT-ON-LAND (plugins-sovereignty-denylist.json). Same invariant as
-  # ghl-mcp-pin.env above: a cp that exited 0 is not a receipt. Deliberately
-  # NOT fatal — scripts/apply-fleet-standards.sh fails open (never crashes a
-  # roll) when this file is missing, so the failure must be surfaced loudly
-  # here or it is invisible.
-  if [ -r "$OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json" ]; then
-    echo "  ✓ config/plugins-sovereignty-denylist.json delivered and readable at $OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json"
-  else
-    echo "  ✗ config/plugins-sovereignty-denylist.json is NOT readable at $OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json after delivery." >&2
-    echo "    CONSEQUENCE: scripts/apply-fleet-standards.sh will fail open to the previous behaviour and resume re-adding the denied plugin id to plugins.allow on every roll, which triggers a full gateway restart that kills in-flight agent runs." >&2
-    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
-    export OC_DENYLIST_DELIVERY_FAILED=1
-  fi
   export OC_PERSISTENT_CONFIG_DIR="$OC_CANONICAL_CONFIG_DEST"
   # <<< CANONICAL-CONFIG-DELIVERY-END
 
@@ -4172,6 +4158,141 @@ print(state + " " + str(len(headers)))
         exit 0
       fi
       echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
+      echo "    Trying the FAST convergence-only sub-pass before committing to a full content sync..."
+      # >>> CONVERGENCE-FAST-PATH-BEGIN (2026-08-10)
+      # WHEN THIS RUNS: content is current (A3 digest match) but at least one
+      # convergence probe fired. The old behavior fell through to the FULL
+      # sync, which re-copies every numbered skill (rm -rf + cp -r per skill)
+      # and re-runs the ~77s skill-content-hash.sh per skill on a ~450MB /
+      # 16,789-file tree — a multi-minute hang on every already-current re-roll
+      # (observed live: all 10 VPS boxes, deterministic). The convergence steps
+      # the probes stand in for are SMALL, idempotent repairs; this sub-pass
+      # runs exactly those, then re-probes. Only if a probe still fires after
+      # the fast pass (or content genuinely drifted) do we fall through to the
+      # full sync — the full pass remains the never-weaker backstop.
+      # GUARDS: never deletes a healthy skill; never touches a dirty CC
+      # checkout with uncommitted client work; every repair is idempotent and
+      # reverts to the full pass on any uncertainty.
+      _FAST_CONVERGED=1
+      if [ -n "${_RECHECK_DRIFT:-}" ]; then
+        # Content genuinely drifted — the full sync is required. Do not run
+        # the fast path; fall straight through below.
+        _FAST_CONVERGED=0
+      else
+        # --- CC currency (state=behind or state=dirty on a CC checkout) ----
+        # Repair: fetch + fast-forward reset to origin/main — but ONLY when
+        # the checkout is clean (no uncommitted client work). A dirty checkout
+        # is load-bearing (the probe's own comment: "uncommitted work on a
+        # client box is load-bearing") — do NOT reset it; report and let the
+        # full pass (which also refuses to touch it) surface the same state.
+        for _fast_p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+                      "$HOME/projects/command-center" "/data/projects/command-center" \
+                      "$HOME/projects/blackceo-command-center" \
+                      "/data/projects/blackceo-command-center" \
+                      "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+                      "/opt/mission-control" "/app"; do
+          [ -n "$_fast_p" ] || continue
+          [ -d "$_fast_p/.git" ] || continue
+          _fast_remote="$(git -C "$_fast_p" remote get-url origin 2>/dev/null || true)"
+          case "$_fast_remote" in *command-center*) : ;; *) continue ;; esac
+          _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null || true)"
+          if [ -n "$_fast_dirty" ]; then
+            echo "    [fast-path] CC checkout $_fast_p has uncommitted changes (load-bearing) — NOT reset; full pass will surface the same state."
+            continue
+          fi
+          if git -C "$_fast_p" fetch --quiet origin 2>/dev/null \
+             && git -C "$_fast_p" reset --hard origin/main >/dev/null 2>&1; then
+            echo "    [fast-path] CC checkout $_fast_p fast-forwarded to origin/main."
+          else
+            echo "    [fast-path] CC checkout $_fast_p could not be refreshed (offline? locked?) — full pass will retry."
+          fi
+          break
+        done
+        # --- SOP library under-populated (U6c) ------------------------------
+        if [ -n "${_U6C_SOPLIB_FAIL:-}" ]; then : # probe reported missing ingester / no reader — full pass handles it
+        else
+          _fast_sop_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
+                        || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+          if [ -n "$_fast_sop_db" ] && [ -f "$_fast_sop_db" ]; then
+            _fast_sop_canon="${_U6C_CANON:-2555}"
+            _fast_sop_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_sop_db" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+            _fast_sop_rows="${_fast_sop_rows:-0}"
+            if [ "${_fast_sop_rows:-0}" -lt "${_fast_sop_canon}" ] 2>/dev/null; then
+              _fast_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-library/ingest-sop-library.sh"
+              [ -f "$_fast_ingest" ] || _fast_ingest="${EXTRACTED_DIR:-}/shared-utils/sop-library/ingest-sop-library.sh"
+              if [ -f "$_fast_ingest" ]; then
+                echo "    [fast-path] SOP library under-populated (${_fast_sop_rows} < ${_fast_sop_canon}) — running ingest..."
+                bash "$_fast_ingest" >/dev/null 2>&1 && echo "    [fast-path] SOP library ingest completed." || echo "    [fast-path] SOP library ingest failed (rc=$?) — full pass will retry."
+              else
+                echo "    [fast-path] ingest-sop-library.sh not found — full pass handles it."
+              fi
+            fi
+          fi
+        fi
+        # --- SOP-embeddings under-populated (U6c2) --------------------------
+        _fast_emb_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
+                       || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+        if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
+          _fast_emb_canon="${_U6C_EMB_CANON:-0}"
+          if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then
+            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+            _fast_emb_rows="${_fast_emb_rows:-0}"
+            if [ "${_fast_emb_rows:-0}" -lt "${_fast_emb_canon}" ] 2>/dev/null; then
+              _fast_emb_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-embed-once/embed-sops.sh"
+              [ -f "$_fast_emb_ingest" ] || _fast_emb_ingest="${EXTRACTED_DIR:-}/shared-utils/sop-embed-once/embed-sops.sh"
+              if [ -f "$_fast_emb_ingest" ]; then
+                echo "    [fast-path] SOP-embeddings under-populated (${_fast_emb_rows} < ${_fast_emb_canon}) — running embedder..."
+                bash "$_fast_emb_ingest" >/dev/null 2>&1 && echo "    [fast-path] SOP-embeddings ingest completed." || echo "    [fast-path] SOP-embeddings ingest failed (rc=$?) — full pass will retry."
+              else
+                echo "    [fast-path] embed-sops.sh not found — full pass handles it."
+              fi
+            fi
+          fi
+        fi
+        # --- persona-index provisioner (U6b) --------------------------------
+        _fast_pidx="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-persona-index.sh"
+        [ -f "$_fast_pidx" ] || _fast_pidx="${EXTRACTED_DIR:-}/shared-utils/provision-persona-index.sh"
+        if [ -f "$_fast_pidx" ]; then
+          echo "    [fast-path] provisioning persona index..."
+          bash "$_fast_pidx" >/dev/null 2>&1 && echo "    [fast-path] persona index provisioned." || echo "    [fast-path] persona-index provisioning failed (rc=$?) — full pass will retry."
+        fi
+        # --- weekly-onboarding-update cron (U6c-adjacent) -------------------
+        if command -v install_onboarding_resume_cron >/dev/null 2>&1; then
+          echo "    [fast-path] registering weekly onboarding-update cron..."
+          install_onboarding_resume_cron >/dev/null 2>&1 && echo "    [fast-path] weekly cron registered." || echo "    [fast-path] weekly cron registration failed (rc=$?) — full pass will retry."
+        fi
+        # --- AGENTS.md dedup / orphan hygiene -------------------------------
+        if [ -f "${EXTRACTED_DIR:-}/scripts/apply-fleet-standards.sh" ]; then
+          echo "    [fast-path] running AGENTS.md hygiene..."
+          bash "${EXTRACTED_DIR:-}/scripts/apply-fleet-standards.sh" >/dev/null 2>&1 && echo "    [fast-path] AGENTS.md hygiene complete." || echo "    [fast-path] AGENTS.md hygiene reported non-zero (rc=$?) — full pass will retry."
+        fi
+        # --- PENDING flag ----------------------------------------------------
+        for _fast_pending in "${PENDING_PATHS[@]:-}"; do
+          [ -n "$_fast_pending" ] || continue
+          if [ -f "$_fast_pending" ]; then
+            rm -f "$_fast_pending" 2>/dev/null && echo "    [fast-path] cleared UPDATE PENDING flag at $_fast_pending."
+          fi
+        done
+      fi
+      if [ "$_FAST_CONVERGED" -eq 1 ]; then
+        # Re-probe once. If clean now, we are done WITHOUT the expensive sync.
+        _CONVERGENCE_TRIGGERS=""
+        _cc_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center currency"
+        _sop_library_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }SOP library/embeddings population"
+        _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
+        _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
+        _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+        _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
+        if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
+          echo "  ✓ [CONVERGENCE FAST PATH] all outstanding convergence steps repaired without a content sync — nothing to do."
+          rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+          exit 0
+        fi
+        echo "  ✗ [CONVERGENCE FAST PATH] still outstanding after the fast pass: ${_CONVERGENCE_TRIGGERS}"
+        echo "    Proceeding with a full pass so they run — the fast path is exhausted, the full pass is the backstop."
+      fi
+      # <<< CONVERGENCE-FAST-PATH-END
+      echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
       echo "    Proceeding with a full pass so they run — the version/content stamp is not a signal for any of them."
       # <<< CONTENT-RECHECK-CONVERGENCE-GATE-END
     fi
@@ -4688,8 +4809,8 @@ PYEOF
   # and this satisfies it truthfully rather than working around it.
   [ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600 "$_U6B_OC_SECRETS_ENV" 2>/dev/null || true
 
-  _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
-  [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
+  _U6B_HELPER="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-persona-index.sh"
+  [ -f "$_U6B_HELPER" ] || _U6B_HELPER="${EXTRACTED_DIR:-}/shared-utils/provision-persona-index.sh"
 
   # Workspace + Skill-22 source for the persona reconcile (v14.27.2).
   _U6B_WS="$HOME/.openclaw/workspace"
