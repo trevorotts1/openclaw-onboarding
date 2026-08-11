@@ -384,6 +384,11 @@ if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
       '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
     curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
   fi
+  # resumeEscalated is now CONSUMED by lib-onboarding-resume-cron.sh's second
+  # guard (install_onboarding_resume_cron -> _onboarding_resume_already_escalated):
+  # when true, that installer refuses to re-arm this cron until an operator
+  # deliberately clears it. Do NOT remove or rename this key without updating
+  # that consumer.
   if command -v jq >/dev/null 2>&1; then
     _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
   fi
