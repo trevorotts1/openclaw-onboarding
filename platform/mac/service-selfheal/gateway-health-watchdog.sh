@@ -99,6 +99,32 @@ ts()  { date '+%Y-%m-%d %H:%M:%S'; }
 log() { echo "[$(ts)] $*" >> "$LOG" 2>/dev/null; }
 now() { date +%s; }
 
+# ---- MAINTENANCE LOCK -------------------------------------------------------
+# scripts/oc-atomic-upgrade.sh holds this lock while it moves a box onto a new
+# OpenClaw build. Throughout that window the gateway is DOWN ON PURPOSE while
+# the config is migrated from the legacy `agents.list` array to `agents.entries`
+# — a rewrite that is only valid once the new binary is on disk.
+#
+# This watchdog exists to revive a dead or hung gateway, so without this check
+# it would do precisely the wrong thing here: an "unhealthy" verdict is CORRECT
+# during the window, and kickstarting the gateway would restart the OLD binary
+# against a half-migrated config. The running gateway also re-serializes
+# openclaw.json roughly once a minute from an in-memory model that only knows
+# `agents.list`, so a revival mid-window silently REVERTS the migration.
+#
+# A lock older than 60 minutes is treated as STALE and ignored: a crashed
+# upgrade must never leave a box with its watchdog permanently disarmed.
+LOCK_FILE="$HOME/.openclaw/.openclaw-maintenance-lock"
+[ -d "/data/.openclaw" ] && LOCK_FILE="/data/.openclaw/.openclaw-maintenance-lock"
+if [ -f "$LOCK_FILE" ]; then
+  if [ -n "$(find "$LOCK_FILE" -mmin +60 2>/dev/null)" ]; then
+    log "STALE maintenance lock at $LOCK_FILE (older than 60m) — IGNORING it and probing normally."
+  else
+    log "MAINTENANCE LOCK HELD ($LOCK_FILE) — standing down. An atomic OpenClaw upgrade is in progress; the gateway is down deliberately and reviving it would revert the config migration."
+    exit 0
+  fi
+fi
+
 read_count()  { c="$(cat "$STATE" 2>/dev/null)"; case "$c" in ''|*[!0-9]*) echo 0 ;; *) echo "$c" ;; esac; }
 write_count() { echo "$1" > "$STATE" 2>/dev/null || true; }
 

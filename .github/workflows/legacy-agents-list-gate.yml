@@ -50,20 +50,30 @@ on:
   push:
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
+      - scripts/oc-atomic-upgrade.sh
+      - scripts/oc-schema-migrate.py
       - scripts/setup-weekly-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
+      - platform/mac/service-selfheal/remediate.sh
+      - platform/mac/service-selfheal/gateway-health-watchdog.sh
       - update-skills.sh
       - tests/unit/legacy-agents-list-gate.test.sh
+      - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
   pull_request:
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
+      - scripts/oc-atomic-upgrade.sh
+      - scripts/oc-schema-migrate.py
       - scripts/setup-weekly-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
+      - platform/mac/service-selfheal/remediate.sh
+      - platform/mac/service-selfheal/gateway-health-watchdog.sh
       - update-skills.sh
       - tests/unit/legacy-agents-list-gate.test.sh
+      - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
 
 jobs:
@@ -82,6 +92,13 @@ jobs:
       - name: Syntax check every shipped file the gate lives in
         run: |
           bash -n scripts/qc-assert-legacy-agents-list.sh
+          bash -n scripts/oc-atomic-upgrade.sh
+          bash -n tests/unit/oc-atomic-upgrade.test.sh
+          bash -n platform/mac/service-selfheal/remediate.sh
+          bash -n platform/mac/service-selfheal/gateway-health-watchdog.sh
+          sh   -n platform/mac/service-selfheal/remediate.sh
+          sh   -n platform/mac/service-selfheal/gateway-health-watchdog.sh
+          python3 -c "import ast; ast.parse(open('scripts/oc-schema-migrate.py').read())"
           bash -n scripts/setup-weekly-update.sh
           bash -n scripts/fleet-audit-remediate.sh
           bash -n scripts/u126-remediate.sh
@@ -106,6 +123,11 @@ jobs:
           body = "\n".join(src[start:end])
           assert 'npm update -g openclaw' in body, "the generated script no longer upgrades openclaw"
           assert 'OC_GATE_BLOCK' in body, "the generated script no longer carries the pre-upgrade gate"
+          assert 'oc-atomic-upgrade.sh' in body, "the generated script no longer delegates to the atomic procedure"
+          for ln in body.splitlines():
+              assert not ln.strip().startswith('openclaw doctor'), (
+                  "the generated script INVOKES `openclaw doctor`, which was measured not to perform "
+                  "this migration (config SHA-256 identical on 12 boxes) and which rewrites model pins: " + ln)
           open('/tmp/generated-selfupdate.sh', 'w').write(body + "\n")
           PY
           bash -n /tmp/generated-selfupdate.sh
@@ -115,6 +137,41 @@ jobs:
         run: |
           chmod +x tests/unit/legacy-agents-list-gate.test.sh
           bash tests/unit/legacy-agents-list-gate.test.sh
+
+      - name: ACCEPTANCE — the ATOMIC UPGRADE must enforce, mutate-prove and roll back
+        # Runs the real scripts/oc-atomic-upgrade.sh against fixture boxes with
+        # stubbed openclaw/npm/launchctl, and asserts on OBSERVED side effects:
+        # a clean box still upgrades (control), a legacy box is migrated or
+        # refused but never upgraded unmigrated, neutering ONLY the shape
+        # detector reproduces the landmine on demand (mutation proof), and a
+        # forced mid-procedure failure restores BOTH the original binary and the
+        # original config.
+        run: |
+          chmod +x tests/unit/oc-atomic-upgrade.test.sh
+          bash tests/unit/oc-atomic-upgrade.test.sh
+
+      - name: The transform must be lossless on a config with many agents
+        # Independent of the test harness: build a 200-agent legacy config here,
+        # migrate it, and require the verifier to prove nothing was lost.
+        run: |
+          python3 - <<'PYGEN'
+          import json
+          cfg = {"agents": {"defaults": {"workspace": "~/ws"},
+                            "list": [{"id": "a%d" % i, "n": i} for i in range(200)]},
+                 "other": {"keep": "me"}}
+          json.dump(cfg, open('/tmp/many.json', 'w'), indent=2)
+          PYGEN
+          python3 scripts/oc-schema-migrate.py apply /tmp/many.json /tmp/many.out
+          python3 scripts/oc-schema-migrate.py verify /tmp/many.json /tmp/many.out
+          python3 - <<'PYCHK'
+          import json, sys
+          b = json.load(open('/tmp/many.json')); a = json.load(open('/tmp/many.out'))
+          assert len(a['agents']['entries']) == len(b['agents']['list']) == 200
+          assert {e['id'] for e in b['agents']['list']} == set(a['agents']['entries'])
+          assert 'list' not in a['agents']
+          assert b['other'] == a['other']
+          print('200/200 agents survived the transform')
+          PYCHK
 
       - name: A legacy config must never exit 0
         # Belt and braces, independent of the test harness: build a legacy
@@ -130,3 +187,31 @@ jobs:
             exit 1
           fi
           echo "legacy config correctly exits 1"
+
+      - name: A migration must never be prescribed via `openclaw doctor --fix`
+        # It was measured NOT to perform this migration (config SHA-256 identical
+        # before and after on 12 boxes; `openclaw config schema` lists the agents
+        # keys as exactly [defaults, list]) and it silently rewrote
+        # agents.defaults.models pins on one box. Any shipped file that RUNS it
+        # as the remedy is re-introducing the defect.
+        run: |
+          python3 - <<'PYDOC'
+          import sys
+          files = ["update-skills.sh", "scripts/setup-weekly-update.sh",
+                   "scripts/fleet-audit-remediate.sh", "scripts/u126-remediate.sh",
+                   "scripts/qc-assert-legacy-agents-list.sh", "scripts/oc-atomic-upgrade.sh"]
+          bad = []
+          for f in files:
+              for n, ln in enumerate(open(f, encoding="utf-8"), 1):
+                  s = ln.strip()
+                  # A COMMAND, not a mention. Comments and echo/printf warnings
+                  # about it are exactly what we want to keep.
+                  if s.startswith("openclaw doctor") and "--fix" in s:
+                      bad.append("%s:%d: %s" % (f, n, s))
+          if bad:
+              sys.stderr.write("`openclaw doctor --fix` is INVOKED as a migration in:\n")
+              for b in bad:
+                  sys.stderr.write("  " + b + "\n")
+              sys.exit(1)
+          print("no shipped file invokes `openclaw doctor --fix` as the migration")
+          PYDOC
