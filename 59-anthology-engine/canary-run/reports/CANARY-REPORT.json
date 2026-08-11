@@ -995,6 +995,6 @@
   "signature": {
     "alg": "sha256",
     "chain": "v1:report-body+state-ledger",
-    "sha256": "92b028a198fb14cfe85380c9ddf026333e5da3dfcd60bcb57e6de13b78889c70"
+    "sha256": "68e16009d2e71e43ad80a584c364cb69bfb7e4dcb4f39ab2395aa1e643e72241"
   }
 }

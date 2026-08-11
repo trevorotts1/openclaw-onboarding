@@ -47,7 +47,12 @@
 # anthology_registry.resolve_pit() (labels CONVERT_AND_FLOW_PIT /
 # CONVERT_AND_FLOW_API_KEY / GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_PIT /
 # GHL_API_KEY, live process env first then the three canonical client env
-# stores). SET / NOT SET only on every operator surface. The optional
+# stores), EXTENDED by the cut with the two agency PIT fallback labels
+# (GOHIGHLEVEL_AGENCY_PIT / GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT, appended
+# after GHL_API_KEY — see CUT_PIT_LABELS; the agency PITs hold LOCATION ACCESS
+# to the template location and gain the missing customFields/customValues
+# scope without any further code change). SET / NOT SET only on every operator
+# surface. The optional
 # Firebase refresh token for the internal rail is resolved BY LABEL
 # (ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN / GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN /
 # GHL_FIREBASE_REFRESH_TOKEN). A value is NEVER printed.
@@ -115,6 +120,36 @@ import anthology_registry as reg  # noqa: E402
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = (
     reg.EX_OK, reg.EX_ERR, reg.EX_STOP, reg.EX_HELD, reg.EX_MISMATCH)
 EX_VIOLATION = 4  # enforced violation detected (self-test FAILED, AF-AE-SNAPSHOT-* family)
+
+# ---------------------------------------------------------------------------
+# PIT resolve order — the registry's client-standard labels FIRST, then the
+# two agency PIT labels as fallbacks (extended for the cut only; the registry's
+# PIT_LABELS stays client-standard-only, never-agency, per its own doctrine).
+# The agency PITs (GOHIGHLEVEL_AGENCY_PIT / GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT,
+# documented in ~/.openclaw/secrets/.env) have proven LOCATION ACCESS to the
+# template location (LOCATION-META 200) but lack customFields/customValues
+# scope; with the fallback wired, the moment the scope grant lands the cut
+# fires without code change. Resolved BY LABEL ONLY through reg._env_first —
+# a value is NEVER printed. Fail-closed: if every label is unset/invalid the
+# cut STILL stops (exit 2, AF-AE-PIT-SCOPE family / NOT SET), never fabricates.
+# ---------------------------------------------------------------------------
+CUT_PIT_LABELS = tuple(reg.PIT_LABELS) + (
+    "GOHIGHLEVEL_AGENCY_PIT",
+    "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT",
+)
+
+
+def _resolve_cut_pit():
+    """Resolve the template-location PIT across CUT_PIT_LABELS. Mirrors
+    reg.resolve_pit() (pit- prefix validation; SET / NOT SET only — the token
+    value is never printed, and only the label is ever reported)."""
+    label, token = reg._env_first(CUT_PIT_LABELS)
+    if not token:
+        return None, None
+    if not token.startswith(reg.PIT_PREFIX):
+        return label, None
+    return label, token
+
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
@@ -815,6 +850,20 @@ def _self_test_body(dev, contract, field_map) -> int:
     for bad in ("Bearer ", "https://", "http://", "pit-"):
         assert bad not in blob, "golden fixture carries a real-looking %r" % bad
 
+    # ---- PIT resolve order: registry client-standard labels FIRST, then the
+    #      two agency PIT fallbacks (golden fixture — labels only, a value is
+    #      never touched or printed) ----------------------------------------
+    assert CUT_PIT_LABELS == reg.PIT_LABELS + (
+        "GOHIGHLEVEL_AGENCY_PIT",
+        "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT",
+    ), "CUT_PIT_LABELS must extend reg.PIT_LABELS with the two agency PIT fallbacks, in order"
+    assert "GOHIGHLEVEL_AGENCY_PIT" in CUT_PIT_LABELS, "agency PIT fallback missing"
+    assert "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT" in CUT_PIT_LABELS, \
+        "ConvertAndFlow agency PIT fallback missing"
+    # the registry's own list stays client-standard-only (never-agency doctrine)
+    assert "GOHIGHLEVEL_AGENCY_PIT" not in reg.PIT_LABELS
+    assert "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT" not in reg.PIT_LABELS
+
     # ---- canonical serialization is deterministic -------------------------
     b1 = _canonical_bytes(golden)
     b2 = _canonical_bytes(copy.deepcopy(golden))
@@ -876,7 +925,9 @@ def _self_test_body(dev, contract, field_map) -> int:
           "canonical sha256, compliant live extraction, rail-unavailable HELD, 9 attack "
           "fixtures refused (fieldKey-mutated/field-deleted/field-extra/pipeline-wrong-name/"
           "workflow-missing/custom-value-real/custom-value-key-renamed/custom-value-extra/"
-          "empty-cut), write + read-back, dry-run, version validation)")
+          "empty-cut), PIT resolve order extends reg.PIT_LABELS with the two agency PIT "
+          "fallbacks (GOHIGHLEVEL_AGENCY_PIT / GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT), "
+          "write + read-back, dry-run, version validation)")
     return EX_OK
 
 
@@ -953,13 +1004,15 @@ def main(argv=None):
             return EX_OK
 
         # ---- live cut ----
-        pit_label, token = reg.resolve_pit()
+        pit_label, token = _resolve_cut_pit()
         if not token:
-            checked = ", ".join(reg.PIT_LABELS)
+            checked = ", ".join(CUT_PIT_LABELS)
             reg._stop(sys.stderr, "No Convert and Flow private-integration token is SET.",
                       ["Checked (in order): %s — all NOT SET." % checked,
                        "The cut runs against the operator's OWN template location %s; "
-                       "set the template-location PIT and re-run." % location_id])
+                       "set the template-location PIT (client-standard labels first, "
+                       "then the agency PITs GOHIGHLEVEL_AGENCY_PIT / "
+                       "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT) and re-run." % location_id])
             return EX_STOP
         client = reg.CafClient(token)
 

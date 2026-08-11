@@ -69,19 +69,24 @@
 #   --plan             print the stage plan + exit-code contract and exit 0.
 #   --verify-report REPORT_PATH  independently re-check a persisted
 #                      CANARY-REPORT.json claim: recomputes the deterministic
-#                      sha256 chain over the report BODY (every stage's checks
-#                      with result + evidence) AND over the state ledger it
-#                      names (the two SQLite files: anthology_state.db + WAL,
-#                      gate_nonce.db + WAL, in byte order). VALID (exit 0) iff
-#                      the chain matches the report's signature hash, the
-#                      ledger exists at the recorded path, and every DEFERRED
-#                      check carries the deferred-live note. INVALID (exit 4)
-#                      on ANY mismatch or missing ledger. Self-check: a report
+#                      sha256 chain over the report BODY (schema_version,
+#                      mode, verdict, the FULL summary with counts + note,
+#                      and every stage's checks with result + evidence) AND
+#                      over the state ledger it names (the two SQLite files:
+#                      anthology_state.db + WAL, gate_nonce.db + WAL, in byte
+#                      order). VALID (exit 0) iff the chain matches the
+#                      report's signature hash, the ledger exists at the
+#                      recorded path, and every DEFERRED check carries the
+#                      deferred-live note. INVALID (exit 4) on ANY mismatch
+#                      or missing ledger -- including a summary-only tamper
+#                      (e.g. stages_passed 12->99), which changes the digest
+#                      exactly like a stage edit. Self-check: a report
 #                      regenerated from the same data reproduces the same hash.
 #   run (default)      execute the full S0..S9 canary against an ISOLATED
 #                      state dir (--state-dir; default a fresh temp dir),
 #                      writing CANARY-REPORT.json (per-stage pass/fail +
-#                      evidence) to --report-dir (default: state dir/reports).
+#                      evidence, verdict + full summary) to --report-dir
+#                      (default: state dir/reports).
 #   --gateway-base-url URL   gateway base for the T-battery (default
 #                      127.0.0.1:18789, the OpenClaw gateway).
 #   --public-url URL    enable the LIVE-TUNNEL T8 proof (a real named
@@ -94,9 +99,9 @@
 #   2  bad invocation / a stage that was executed FAILED (the report carries
 #      the failing stage + evidence; the canary NEVER false-passes)
 #   3  --require-live with un-executed live stages (held)
-#   4  --self-test failed; --verify-report: INVALID (tampered body, missing
-#      ledger, or a DEFERRED check without the deferred-live note) — an
-#      invariant the canary itself owns is violated
+#   4  --self-test failed; --verify-report: INVALID (tampered body or
+#      summary, missing ledger, or a DEFERRED check without the
+#      deferred-live note) — an invariant the canary itself owns is violated
 #   1  unexpected error
 #
 # DOCTRINE (binding, enforced in code):
@@ -441,26 +446,29 @@ class CanaryRun:
                 "deferred_stages": [s.stage for s in deferred],
             },
         }
-        # Deterministic self-signature: sha256 over the report body PLUS the
-        # state ledger (see compute_report_chain). No secrets, no ledger
-        # contents -- only digests. The report's own claim of PASS can be
-        # re-checked later with --verify-report.
+        # Deferred-live note: the 12/12 verdict is STAGE-LEVEL, never
+        # check-level. The two live checks (S7 live Kie render, S8 live Doc
+        # pull-back) are deliberately not exercised on a default run; the
+        # summary says so in the same breath as the counts, and every
+        # DEFERRED check carries the note. The note MUST be in place BEFORE
+        # signing: the summary (note included) is part of the report body
+        # digest.
+        report["summary"]["note"] = DEFERRED_LIVE_NOTE
+        for s in report["stages"]:
+            for c in s["checks"]:
+                if c["result"] == "DEFERRED" and c.get("check") in DEFERRED_LIVE_CHECKS:
+                    c["note"] = DEFERRED_LIVE_NOTE
+        # Deterministic self-signature: sha256 over the report body (stages,
+        # checks, verdict, summary) PLUS the state ledger (see
+        # compute_report_chain). No secrets, no ledger contents -- only
+        # digests. The report's own claim of PASS can be re-checked later
+        # with --verify-report.
         signature = {
             "alg": "sha256",
             "chain": "v1:report-body+state-ledger",
             "sha256": compute_report_chain(report, self.state_dir),
         }
         report["signature"] = signature
-        # Deferred-live note: the 12/12 verdict is STAGE-LEVEL, never
-        # check-level. The two live checks (S7 live Kie render, S8 live Doc
-        # pull-back) are deliberately not exercised on a default run; the
-        # summary says so in the same breath as the counts, and every
-        # DEFERRED check carries the note.
-        report["summary"]["note"] = DEFERRED_LIVE_NOTE
-        for s in report["stages"]:
-            for c in s["checks"]:
-                if c["result"] == "DEFERRED" and c.get("check") in DEFERRED_LIVE_CHECKS:
-                    c["note"] = DEFERRED_LIVE_NOTE
         return report
 
 
@@ -649,14 +657,28 @@ def _canonical_json(value):
 
 
 def report_body_digest(report):
-    """sha256 over the report BODY: schema_version + mode + every stage in
+    """sha256 over the report BODY: schema_version + mode + verdict + the
+    FULL summary (counts, failed/deferred stage lists, note) + every stage in
     order with its checks (check name, result, and evidence -- evidence is
-    verified, not reason; reasons may be long). Never includes the signature
-    itself (a self-referential chain is a tautology)."""
+    verified, not reason; reasons may be long). The summary and verdict are
+    hashed because the headline counts are the first tamper target: a
+    summary-only edit (e.g. stages_passed 12->99) must break the chain just
+    like a body edit. Never includes the signature itself (a self-referential
+    chain is a tautology)."""
     h = hashlib.sha256()
     h.update(_canonical_json({
         "schema_version": report.get("schema_version"),
         "mode": report.get("mode"),
+        "verdict": report.get("verdict"),
+        "summary": {
+            "stages_total": (report.get("summary") or {}).get("stages_total"),
+            "stages_passed": (report.get("summary") or {}).get("stages_passed"),
+            "stages_deferred": (report.get("summary") or {}).get("stages_deferred"),
+            "stages_failed": (report.get("summary") or {}).get("stages_failed"),
+            "failed_stages": (report.get("summary") or {}).get("failed_stages"),
+            "deferred_stages": (report.get("summary") or {}).get("deferred_stages"),
+            "note": (report.get("summary") or {}).get("note"),
+        },
         "stages": [
             {"stage": s.get("stage"), "checks": [
                 {"check": c.get("check"), "result": c.get("result"),
@@ -2423,6 +2445,17 @@ def self_test():
         tampered["stages"][0]["checks"][0]["evidence"] = "x"
         check("tampered report body breaks the chain",
               compute_report_chain(tampered, t6 / "state") != sig["sha256"])
+        # tamper: a SUMMARY-ONLY edit breaks the chain (the headline counts
+        # are the first tamper target -- stages_passed 12->99 must be INVALID
+        # exactly like a body edit, and the verdict participates too).
+        t6sum = json.loads(json.dumps(t6rep))
+        t6sum["summary"]["stages_passed"] = 99
+        check("tampered report summary breaks the chain",
+              compute_report_chain(t6sum, t6 / "state") != sig["sha256"])
+        t6ver = json.loads(json.dumps(t6rep))
+        t6ver["verdict"] = "FAIL"
+        check("tampered verdict breaks the chain",
+              compute_report_chain(t6ver, t6 / "state") != sig["sha256"])
         # tamper: a changed ledger byte breaks the chain.
         (t6 / "state" / "anthology_state.db").write_bytes(b"\x01sqlite canary fixture")
         check("tampered state ledger breaks the chain",
