@@ -218,11 +218,17 @@ def probe_commands(repo_dir: str, writeback_url: str, send_bearer: bool = False)
             "PY"
         ),
         PROBE_STAMP: f"cat {r}/version 2>/dev/null; git -C {r} rev-parse HEAD 2>/dev/null",
-        # CONFIG SCHEMA. Reports whether the LEGACY `agents.list` key is present,
+        # CONFIG SCHEMA. Reports which of the FOUR real shapes `agents` is in,
         # and whether the gateway LaunchAgent is throwing its stderr away.
-        # Prints exactly two lines: "<LEGACY|CLEAN|UNREADABLE:...>" then
-        # "stderr=<path|NONE|NOPLIST>". No config VALUE is ever returned — only
-        # a verdict about one key's presence and one plist path.
+        # Prints exactly two lines: the verdict, then "stderr=<path|NONE|NOPLIST>".
+        # The verdict is one of:
+        #   CLEAN            -- no `agents` block, or neither schema key present
+        #   LEGACY:<n>        -- legacy `agents.list` present, n agent(s)
+        #   ENTRIES:<n>       -- migrated `agents.entries` present, n agent(s)
+        #   INVALID:<detail>  -- BOTH keys present -- valid on NO build
+        #   UNREADABLE:<reason>
+        # `n` is a COUNT ONLY. No config VALUE, agent name, or agent id is ever
+        # returned — this repo is fleet-wide and must never carry client names.
         PROBE_CONFIG_SCHEMA: (
             "python3 - <<'PY'\n"
             "import glob,json,os,plistlib\n"
@@ -240,7 +246,17 @@ def probe_commands(repo_dir: str, writeback_url: str, send_bearer: bool = False)
             "    elif not isinstance(a,dict):\n"
             "        verdict='UNREADABLE:agents is not an object in %s'%p\n"
             "    else:\n"
-            "        verdict='LEGACY' if 'list' in a else 'CLEAN'\n"
+            "        has_list='list' in a; has_entries='entries' in a\n"
+            "        if has_list and has_entries:\n"
+            "            verdict='INVALID:carries both schema keys'\n"
+            "        elif has_list:\n"
+            "            lv=a.get('list')\n"
+            "            verdict='LEGACY:%d'%(len(lv) if isinstance(lv,list) else 0)\n"
+            "        elif has_entries:\n"
+            "            ev=a.get('entries')\n"
+            "            verdict='ENTRIES:%d'%(len(ev) if isinstance(ev,dict) else 0)\n"
+            "        else:\n"
+            "            verdict='CLEAN'\n"
             "    break\n"
             "print(verdict)\n"
             "err='NOPLIST'\n"
@@ -510,10 +526,10 @@ def check_ceiling(version_res: ProbeResult, retries_res: ProbeResult,
 
 def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
                         recorded_version: str) -> Outcome:
-    """The LEGACY-SCHEMA + RECORD-DRIFT check.
+    """The SCHEMA-SHAPE + RECORD-DRIFT check.
 
-    TWO faults, one check, because they are the same fault seen from two sides:
-    a box whose real state nobody has actually looked at.
+    Faults, one check, because they are the same fault seen from different
+    sides: a box whose real state nobody has actually looked at.
 
     (a) LEGACY `agents.list`.  The 2026.7.2-beta line rejects the key outright
         ("agents: Unrecognized key: \"list\"").  The gateway exits 78 (EX_CONFIG)
@@ -525,8 +541,23 @@ def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
         landmine: a box carrying it looks perfectly healthy until something
         moves it onto the new line.  So this is FAIL, not WARN, even on a box
         that is currently fine -- the sweep exists to find them BEFORE a roll.
+        REMEDY is the ATOMIC procedure (scripts/oc-atomic-upgrade.sh --upgrade),
+        run only inside an upgrade window -- NEVER `openclaw doctor --fix`:
+        measured on 12 boxes, `doctor --fix` left the config's SHA-256
+        BYTE-IDENTICAL (there is no `entries` key on either build for it to
+        migrate to) and it has a measured SIDE EFFECT of rewriting
+        `agents.defaults.models` on one box.
 
-    (b) MEASURED vs RECORDED version.  The fleet record for the box that died
+    (b) `agents.entries`.  The MIGRATED, correct shape.  A PASS on the schema
+        leg of this check -- the box still has to clear the version-drift
+        check below (c) to come out green overall.
+
+    (c) BOTH keys present.  `additionalProperties: false` is set on `agents`
+        in both schema versions, so a config carrying both is INVALID ON EVERY
+        BUILD.  Always FAIL; a human has to decide which one is real, this
+        check never guesses.
+
+    (d) MEASURED vs RECORDED version.  The fleet record for the box that died
         was TWO MINOR VERSIONS STALE.  Every conclusion drawn from it was wrong,
         and nobody noticed because the record was never compared to the box.
         `openclaw --version` is measured here and compared to what the record
@@ -534,7 +565,7 @@ def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
         the remedy is to correct the record (or explain the drift), never to
         trust it.  Version is measured, never trusted.
 
-    (c) Advisory: the gateway LaunchAgent's StandardErrorPath.  A plist that
+    (e) Advisory: the gateway LaunchAgent's StandardErrorPath.  A plist that
         sends stderr to /dev/null DISCARDS the startup exception -- which is why
         (a) survived ten days of investigation.  The gateway LaunchAgent is
         written by the upstream openclaw CLI, not by this repo, so this cannot
@@ -568,8 +599,17 @@ def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
         if ln.startswith("stderr="):
             stderr_path = ln[len("stderr="):].strip()
 
-    observed: Dict[str, Any] = {"agents_list": verdict.split(":")[0],
-                                "gateway_stderr_path": stderr_path or None}
+    # verdict is CLEAN | LEGACY:<n> | ENTRIES:<n> | INVALID:<detail> |
+    # UNREADABLE:<reason>. `kind` is everything before the first ':'; a bare
+    # "LEGACY"/"CLEAN" with no ':' (an older probe, or a hand-built test
+    # fixture) still parses correctly -- split on a colon-free string just
+    # returns the whole string as `kind`.
+    kind = verdict.split(":", 1)[0]
+    detail = verdict.split(":", 1)[1] if ":" in verdict else ""
+
+    observed: Dict[str, Any] = {"agents_list": kind, "gateway_stderr_path": stderr_path or None}
+    if kind in ("LEGACY", "ENTRIES") and detail.strip().lstrip("-").isdigit():
+        observed["agent_count"] = int(detail)
 
     # The plist advisory is attached to whatever verdict we reach below.
     # KEEP THIS NOTE SHORT. Reasons are truncated to 400 chars by _scrub() on
@@ -583,26 +623,31 @@ def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
         blind_note = (f" ALSO: LaunchAgent discards stderr (StandardErrorPath={stderr_path or 'unset'})"
                       " — startup errors leave NO trace; see /tmp/openclaw/openclaw-<date>.log.")
 
-    if verdict.startswith("UNREADABLE"):
+    if kind == "UNREADABLE":
         return Outcome(L.FAIL,
-                       f"could not determine whether the legacy `agents.list` key is present: "
-                       f"{verdict.split(':', 1)[-1]} — an absence that cannot be proven is not an "
-                       "absence, so this is fail-closed." + blind_note,
+                       f"could not determine the `agents` schema shape: {detail} — an absence that "
+                       "cannot be proven is not an absence, so this is fail-closed." + blind_note,
                        observed)
-    if verdict == "LEGACY":
+    if kind == "INVALID":
         return Outcome(L.FAIL,
-                       "LEGACY `agents.list` KEY PRESENT — the 2026.7.2-beta line rejects it and the "
-                       "gateway then exits 78 every ~11s until the crash-loop breaker latches channels "
-                       "OFF and the box goes DARK. REMEDY: `openclaw doctor --fix` BEFORE any version "
-                       "change." + blind_note,
+                       f"INVALID CONFIG: `agents` carries BOTH `list` AND `entries` — valid on NO build "
+                       f"({detail or 'both schema keys present'}). Refusing to pick a winner." + blind_note,
                        observed)
-    if verdict != "CLEAN":
+    if kind == "LEGACY":
+        n = observed.get("agent_count")
+        return Outcome(L.FAIL,
+                       f"LEGACY `agents.list` KEY PRESENT ({n if n is not None else '?'} agent(s)) — new "
+                       "builds reject it; gateway crash-loops until channels latch OFF and the box goes "
+                       "DARK. REMEDY: `bash scripts/oc-atomic-upgrade.sh --upgrade` inside an upgrade "
+                       "window; never `doctor --fix`." + blind_note,
+                       observed)
+    if kind not in ("CLEAN", "ENTRIES"):
         return Outcome(L.FAIL,
                        f"unrecognised config-schema verdict {verdict!r} — refusing to call that clean."
                        + blind_note,
                        observed)
 
-    # ── measured vs recorded version ─────────────────────────────────────────
+    # ── CLEAN or ENTRIES both clear the schema leg — measured vs recorded version ──
     raw_version = ""
     if (version_res.stdout or "").strip():
         raw_version = (version_res.stdout or "").strip().splitlines()[0].strip()
@@ -632,8 +677,9 @@ def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
                        + blind_note,
                        observed)
 
+    schema_note = "already on `agents.entries`" if kind == "ENTRIES" else "no legacy `agents.list` key"
     return Outcome(L.PASS,
-                   f"no legacy `agents.list` key; measured openclaw {raw_version} matches the recorded "
+                   f"{schema_note}; measured openclaw {raw_version} matches the recorded "
                    f"{recorded_version}." + blind_note,
                    observed)
 

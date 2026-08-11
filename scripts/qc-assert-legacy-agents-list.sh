@@ -37,13 +37,27 @@
 # the key and never on its contents.
 #
 # ⚠️ THIS SCRIPT DOES NOT MIGRATE. It is an assertion, not a fixer — the same
-# split as scripts/qc-assert-provider-timeouts.sh. The documented migration is
-# `openclaw doctor --fix` (the gateway's own error text prescribes it), and it
-# is performed, with a backup and a post-migration re-validation, by
-# agents_list_gate() in update-skills.sh. Deleting the key by hand is NOT a
-# migration: the legacy array holds agent definitions, and this script cannot
-# verify where a given box's definitions are supposed to land in the new schema.
-# Guessing that transform would trade a loud crash-loop for silent agent loss.
+# split as scripts/qc-assert-provider-timeouts.sh.
+#
+# ⚠️ `openclaw doctor --fix` IS NOT THE MIGRATION, AND NEVER WAS. That claim is
+# now DISPROVEN, measured, not assumed: on 12 boxes the config's SHA-256 was
+# BYTE-IDENTICAL before and after a `doctor --fix` run. `openclaw config
+# schema` on 2026.7.1 / 2026.7.1-2 reports the `agents` properties as exactly
+# ["defaults","list"] — there is no `entries` key for it to migrate TO on
+# either build. It also has a measured SIDE EFFECT: on one box it silently
+# rewrote `agents.defaults.models` pins. A hand-edit is no better: the transform
+# is `agents.list` (array) -> `agents.entries` (object keyed by each agent's
+# `id`, with `id` removed from the entry body), and `additionalProperties:
+# false` on `agents` makes NO config valid on both schema versions at once — so
+# the transform is only ever safe performed atomically, in the exact window of
+# the binary change (gateway stopped -> new binary installed -> config
+# rewritten -> verified lossless -> gateway restarted). That atomic procedure
+# is scripts/oc-atomic-upgrade.sh; it is performed, with a backup and a
+# post-migration re-validation, by agents_list_gate() in update-skills.sh.
+# Deleting the key by hand is NOT a migration: the legacy array holds agent
+# definitions, and this script cannot verify where a given box's definitions
+# are supposed to land in the new schema. Guessing that transform would trade a
+# loud crash-loop for silent agent loss.
 #
 # Config resolution (first that applies wins):
 #   1. an explicit path passed as $1
@@ -76,8 +90,9 @@
 # Wired in:
 #   - update-skills.sh agents_list_gate() implements the same detection inline
 #     (it must run on the curl|bash path, where no repo checkout exists yet, so
-#     it cannot source this file) and adds the backup + `openclaw doctor --fix`
-#     migration + re-validation.
+#     it cannot source this file). Any migration triggered from that gate must
+#     go through the atomic procedure in scripts/oc-atomic-upgrade.sh, NOT
+#     `openclaw doctor --fix` — see the DISPROVEN note above.
 #   - shared-utils/fleet_validation_harness.py check `config_schema` runs the
 #     same assertion across a whole wave.
 
@@ -210,13 +225,21 @@ case "$KIND" in
     ;;
   FAIL)
     _fail "$OC_CONFIG — $DETAIL"
-    echo "REMEDY: migrate this box BEFORE any version change moves it onto the beta line:" >&2
-    echo "    openclaw doctor --fix          # the migration the gateway's own error text prescribes" >&2
-    echo "  Back the config up first, and RE-READ it afterwards to confirm the key is gone:" >&2
-    echo "    cp \"$OC_CONFIG\" \"$OC_CONFIG.bak-\$(date +%Y%m%d-%H%M%S)\"" >&2
-    echo "  update-skills.sh does exactly that automatically (agents_list_gate)." >&2
-    echo "  DO NOT hand-delete the key: the legacy array holds agent definitions and" >&2
-    echo "  dropping it trades a loud crash-loop for silent agent loss." >&2
+    echo "REMEDY: a hand-edit and \`openclaw doctor --fix\` are NOT migrations here --" >&2
+    echo "  measured on 12 boxes, doctor --fix left the config's SHA-256 BYTE-IDENTICAL," >&2
+    echo "  because \`agents.entries\` is not even an accepted key on the build that" >&2
+    echo "  still needs this fix (schema reports [\"defaults\",\"list\"] only), and it has" >&2
+    echo "  a measured SIDE EFFECT of rewriting agents.defaults.models on one box." >&2
+    echo "  The only safe path is the ATOMIC procedure, run in the SAME window as the" >&2
+    echo "  binary change (gateway stopped -> new binary -> config rewritten+verified ->" >&2
+    echo "  gateway restarted):" >&2
+    echo "    bash scripts/oc-atomic-upgrade.sh --upgrade   # or --dry-run to preview first" >&2
+    echo "  DO NOT hand-delete or hand-edit the key. The correct transform is" >&2
+    echo "  \`agents.list\` (array) -> \`agents.entries\` (object keyed by each agent's" >&2
+    echo "  \`id\`, id removed from the entry body) and it must land in that same upgrade" >&2
+    echo "  window: done early, against the still-installed build, it is silently" >&2
+    echo "  normalized straight back out within about a minute by a live process that" >&2
+    echo "  rewrites this file -- trading this loud crash-loop for silent agent loss." >&2
     exit 1
     ;;
   UNDETERMINED)
