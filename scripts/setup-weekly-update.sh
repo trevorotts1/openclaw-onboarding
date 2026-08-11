@@ -193,6 +193,154 @@ OC_ATOMIC="$OC_ROOT_DIR/scripts/oc-atomic-upgrade.sh"
 OC_GATE_BLOCK=""
 OC_UPGRADE_DONE=0
 
+# ---------------------------------------------------------------------------
+# R0 REGISTRY-PARITY GATE (2026-08-11) -- 'pre' snapshot, before the binary
+# changes. Compact inline counterpart of registry_parity_gate() in
+# update-skills.sh (same two checks, same rationale -- see that file's block
+# comment for the full incident writeup). This IS the entry point that
+# actually moves a box's OpenClaw version, so it is the single most
+# important place in the fleet for this gate to run. Self-contained: this
+# generated script has no shared function library to source from.
+#
+# PLACEMENT IS LOAD-BEARING (merge of origin/main, 2026-08-11): this block
+# sits ABOVE the `agents.list` detect/atomic-upgrade section on purpose.
+# That section can now delegate the ENTIRE upgrade to
+# scripts/oc-atomic-upgrade.sh, which rewrites openclaw.json in place. If
+# the 'pre' snapshot were taken after it, the baseline would already be
+# post-migration and the 'post' regression check would be comparing a
+# changed config against itself -- silently unable to see a loss caused by
+# the very upgrade it exists to police. Taken here, 'pre' is the box
+# exactly as the cron found it, and the absolute-floor check also refuses
+# to hand an already-stripped box to the upgrade procedure at all.
+# ---------------------------------------------------------------------------
+OC_AGENTS_DIR="$HOME/.openclaw/agents"
+[ -d "/data/.openclaw/agents" ] && OC_AGENTS_DIR="/data/.openclaw/agents"
+
+oc_registry_snapshot() {
+    # Prints "<verdict>|<count>|<ids>" for $1 (an openclaw.json path).
+    local cfg="$1" py out rc
+    if [ ! -f "$cfg" ]; then printf 'NO-CONFIG|0|\n'; return 0; fi
+    if ! command -v python3 >/dev/null 2>&1; then printf 'UNDETERMINED|0|python3 not on PATH\n'; return 0; fi
+    py="$(mktemp "${TMPDIR:-/tmp}/oc-registry-snapshot.XXXXXX")" || { printf 'UNDETERMINED|0|could not create a temp file\n'; return 0; }
+    cat > "$py" <<'PYSNAP'
+import json, sys
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('UNDETERMINED|0|cannot parse as JSON: %s' % e); raise SystemExit(0)
+if not isinstance(cfg, dict):
+    print('UNDETERMINED|0|top level is not a JSON object'); raise SystemExit(0)
+agents = cfg.get('agents')
+if agents is None:
+    print('ABSENT|0|no agents block'); raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('UNDETERMINED|0|agents is not an object'); raise SystemExit(0)
+has_entries = isinstance(agents.get('entries'), dict)
+has_list = isinstance(agents.get('list'), list)
+if not has_entries and not has_list:
+    print('ABSENT|0|no agents.list or agents.entries key'); raise SystemExit(0)
+ids = set()
+if has_entries:
+    for k in agents['entries'].keys():
+        ids.add(str(k))
+if has_list:
+    for item in agents['list']:
+        if isinstance(item, dict) and item.get('id'):
+            ids.add(str(item['id']))
+ids_sorted = sorted(ids)
+print('OK|%d|%s' % (len(ids_sorted), ','.join(ids_sorted)))
+PYSNAP
+    rc=0
+    out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+    rm -f "$py"
+    if [ "$rc" -ne 0 ] || [ -z "$out" ]; then printf 'UNDETERMINED|0|detector exited %s\n' "$rc"; return 0; fi
+    printf '%s\n' "$out"
+}
+
+oc_registry_dir_count() {
+    local dir="$1" n=0 f
+    if [ ! -d "$dir" ]; then printf '0'; return 0; fi
+    for f in "$dir"/*/; do
+        [ -d "$f" ] || continue
+        n=$((n + 1))
+    done
+    printf '%s' "$n"
+}
+
+oc_registry_parity_check() {
+    # $1 = "pre" or "post". Sets OC_GATE_BLOCK and returns non-zero on a
+    # parity violation. Reads OC_REG_PRE_COUNT/OC_REG_PRE_IDS globals when
+    # phase=post (set by the phase=pre call earlier in this same run).
+    local phase="$1" snap verdict count ids dircount
+    snap="$(oc_registry_snapshot "$OC_CFG")"
+    verdict="${snap%%|*}"
+    count="$(printf '%s' "$snap" | cut -d'|' -f2)"
+    ids="$(printf '%s' "$snap" | cut -d'|' -f3-)"
+    dircount="$(oc_registry_dir_count "$OC_AGENTS_DIR")"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [registry-parity:$phase] registry=$verdict count=$count ids=[${ids:-<none>}] agents-dir-count=$dircount" >> "$OC_LOG"
+
+    if [ "$verdict" = "UNDETERMINED" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [registry-parity:$phase] config unreadable -- count checks SKIPPED this phase (not silently passed)" >> "$OC_LOG"
+        [ "$phase" = "pre" ] && OC_REG_PRE_VERDICT="UNDETERMINED"
+        return 0
+    fi
+    case "$verdict" in ABSENT|NO-CONFIG) count=0 ;; esac
+
+    if [ "$count" -le 1 ] && [ "$dircount" -gt 2 ]; then
+        OC_GATE_BLOCK="registry-parity ABSOLUTE FLOOR ($phase): the registry declares only $count agent(s) while $OC_AGENTS_DIR holds $dircount agent subdirectories -- the exact signature of the 2026-08-11 registry-strip incident. This is the single most consequential gate in the fleet, because this cron is what actually moves a box's OpenClaw version -- refusing here, unattended at 23:59, is deliberately more conservative than the roll's own report-only detector."
+        return 78
+    fi
+
+    if [ "$phase" = "pre" ]; then
+        OC_REG_PRE_VERDICT="$verdict"; OC_REG_PRE_COUNT="$count"; OC_REG_PRE_IDS="$ids"
+        return 0
+    fi
+
+    if [ -z "${OC_REG_PRE_VERDICT:-}" ] || [ "$OC_REG_PRE_VERDICT" = "UNDETERMINED" ] || [ "$OC_REG_PRE_VERDICT" = "NO-CONFIG" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [registry-parity:post] no usable pre snapshot -- regression check skipped" >> "$OC_LOG"
+        return 0
+    fi
+    if [ "$count" -lt "$OC_REG_PRE_COUNT" ]; then
+        OC_GATE_BLOCK="registry-parity REGRESSION (post): the registry held $OC_REG_PRE_COUNT agent(s) before this upgrade and holds only $count now (pre ids=[${OC_REG_PRE_IDS:-<none>}] post ids=[${ids:-<none>}]). The binary version may already have changed -- this box needs a human, not an automated retry."
+        return 78
+    fi
+    local missing="" id_pre save_ifs
+    save_ifs="$IFS"; IFS=','
+    for id_pre in $OC_REG_PRE_IDS; do
+        IFS="$save_ifs"
+        [ -z "$id_pre" ] && continue
+        case ",${ids}," in
+            *",${id_pre},"*) : ;;
+            *) if [ -z "$missing" ]; then missing="$id_pre"; else missing="$missing,$id_pre"; fi ;;
+        esac
+        IFS=','
+    done
+    IFS="$save_ifs"
+    if [ -n "$missing" ]; then
+        OC_GATE_BLOCK="registry-parity IDENTITY LOSS (post): agent id(s) present before this upgrade are gone now: [$missing] (pre ids=[${OC_REG_PRE_IDS:-<none>}] post ids=[${ids:-<none>}]). Count alone did not catch this."
+        return 78
+    fi
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [registry-parity:post] no loss: pre=$OC_REG_PRE_COUNT post=$count, all pre ids still present" >> "$OC_LOG"
+    return 0
+}
+
+OC_REG_RC=0
+oc_registry_parity_check pre || OC_REG_RC=$?
+if [ "$OC_REG_RC" -ne 0 ] && [ -n "$OC_GATE_BLOCK" ]; then
+    {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPENCLAW UPGRADE BLOCKED (registry-parity, pre) on $(hostname 2>/dev/null || uname -n)"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'npm update -g openclaw' was NOT run. \`openclaw config validate\`"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   would PASS on this box right now -- validity is not health."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
+    } >> "$OC_LOG"
+    printf 'OPENCLAW UPGRADE BLOCKED %s\n  reason: %s\n  config: %s\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "$OC_GATE_BLOCK" "$OC_CFG" \
+        > "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
+    exit 78
+fi
 if [ ! -f "$OC_CFG" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] no config at $OC_CFG -- nothing to migrate" >> "$OC_LOG"
 elif ! command -v python3 >/dev/null 2>&1; then
@@ -308,6 +456,7 @@ fi
 # The box is clear. Remove any stale block marker from a previous run.
 rm -f "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
 
+
 # Update OpenClaw CLI.
 # SKIPPED when the atomic procedure already performed the upgrade: it installs
 # the binary itself (`npm install -g openclaw@<target>`) with the gateway down,
@@ -321,6 +470,30 @@ else
 fi
 OC_VERSION=$(openclaw --version 2>/dev/null)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw updated to: $OC_VERSION" >> "$OC_LOG"
+
+# R0 REGISTRY-PARITY GATE -- 'post' snapshot, after the binary has changed and
+# the gateway has had a chance to touch the config. A violation here fires
+# AFTER npm has already run -- there is no "undo" available to this cron (it
+# does not restart the gateway or touch the binary), so this is a LOUD
+# escalation-quality alarm, not a preventive block: the box's next state is
+# whatever npm + the gateway left it in, and a human needs to know NOW.
+OC_REG_POST_RC=0
+oc_registry_parity_check post || OC_REG_POST_RC=$?
+if [ "$OC_REG_POST_RC" -ne 0 ] && [ -n "$OC_GATE_BLOCK" ]; then
+    {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] REGISTRY-PARITY VIOLATION AFTER UPGRADE on $(hostname 2>/dev/null || uname -n)"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   OpenClaw WAS updated to: $OC_VERSION -- this alarm fires AFTER that,"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   because a registry loss can only be measured once it has happened."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   THIS BOX NEEDS A HUMAN NOW. Do not assume the roster loss is safe"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   just because the upgrade itself reported success."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
+    } >> "$OC_LOG"
+    printf 'REGISTRY-PARITY VIOLATION AFTER UPGRADE %s\n  reason: %s\n  config: %s\n  openclaw_version: %s\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "$OC_GATE_BLOCK" "$OC_CFG" "$OC_VERSION" \
+        > "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
+fi
 OCUPDATE_EOF
 chmod +x "$OPENCLAW_UPDATE_SCRIPT"
 

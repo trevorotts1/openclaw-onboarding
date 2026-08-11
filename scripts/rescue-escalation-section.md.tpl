@@ -1,4 +1,4 @@
-<!-- RESCUE_ESCALATION_BOXNAME_V1 -->
+<!-- RESCUE_ESCALATION_BOXNAME_V2 -->
 ## Escalate to Rescue Rangers (when you are stuck)
 
 When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound.
@@ -16,6 +16,8 @@ Never send any of these as `boxName`:
 An escalation that arrives with the wrong `boxName` cannot be attributed to you, is not counted against your own daily cap, and cannot be checked against your account standing. Getting this field right is the whole point of the field.
 
 **The escalation payload MUST carry all nine fields** -- partial payloads are rejected.
+
+**Loop / stuck / no-reply symptoms get a `LOOP:` prefix.** If the problem you are escalating is "it keeps looping", "it's stuck", "I got nothing back", or anything else where the client experience is repetition or silence, prefix the `problem` field with `LOOP:` (e.g. `"problem": "LOOP: agent re-ran the same tool call five times with no reply"`). This routes the ticket to the loop/stuck/no-reply triage runbook (`universal-sops/SOP-RR-LOOP-TRIAGE.md`) so a responder -- or an automated first pass running `scripts/rr-triage.sh` -- starts at that runbook's Step 0 instead of guessing the mechanism from free text. Do not prefix anything else with `LOOP:` -- it is a routing signal, not emphasis.
 
 **How to escalate (the ONLY supported method):**
 
@@ -94,4 +96,4 @@ Never leave the end user in the dark about what happened or what comes next. Thi
 **Hard cap: 25 exchanges per client per day.** Do not loop endlessly; if unresolved after several exchanges, ping Trevor's chat `5252140759` directly.
 
 > DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
-<!-- END RESCUE_ESCALATION_BOXNAME_V1 -->
+<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->
