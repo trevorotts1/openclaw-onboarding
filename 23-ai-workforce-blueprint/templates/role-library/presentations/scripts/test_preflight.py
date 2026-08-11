@@ -3559,6 +3559,21 @@ def emit_af_coverage():
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
 
+    # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
+    # a prompts dir holding a 1-digit name (slide-1.txt — non-canonical even under
+    # the R3 2/3-digit overlay), a 4-digit name (slide-0100.txt), AND a zero-pad
+    # collision (slide-01.txt vs slide-1.txt) FAILS the shared choke point with
+    # both codes. This closes the AF-QC-INDEPENDENCE-class no-op for the two
+    # autofails U02-SYNCFIX registered (AF-PROMPT-NAME, AF-PROMPT-DUP-FILE).
+    _pp_root = Path(tempfile.mkdtemp(prefix="deck_prompt_dir_problems_"))
+    (_pp_root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (_pp_root / "working" / "prompts" / "slide-1.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-01.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-0100.txt").write_text("x")
+    for _prob in build_deck._canonical_prompt_dir_problems(_pp_root):
+        record("AF-PROMPT-NAME", _prob)
+        record("AF-PROMPT-DUP-FILE", _prob)
+
     # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
     over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
     rd = _rich_prompt_run_dir(over)
