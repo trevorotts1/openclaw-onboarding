@@ -153,7 +153,8 @@
 # surface where it is read at all). DOCTRINE: move in silence; NOTHING
 # Anthropic in any runtime file; Convert and Flow naming in every client
 # surface; NEVER print a secret value; --dry-run and --self-test are
-# OFFLINE; template generation is OFFLINE (no execute).
+# OFFLINE; template generation is OFFLINE; the BUILD write surface is
+# Trevor-gated (--execute, AF-AE-U10-U13-NO-EXECUTE).
 # =============================================================================
 """main_skeleton.py — U10/U13 template-law dispatcher: offline plan and
 offline self-test of the client-facing release-notification template
@@ -164,8 +165,11 @@ u06_modules/main_skeleton.py, u07_modules/main_skeleton.py and
 u08_u09_modules/main_skeleton.py). TEMPLATE GENERATION IS OFFLINE — this
 family renders JSON/Python data OFFLINE with no network, no credential, and
 nothing ever sent; there is no live surface, so a live-verify request is a
-usage STOP (exit 2), never a silent network probe. --dry-run and
---self-test are the whole surface, both fully OFFLINE and free."""
+usage STOP (exit 2), never a silent network probe. The BUILD (the family's
+one write surface, owned by the packaged assembler
+build_anthology_workflows.py) is Trevor-gated: without --execute it is a
+usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) that writes nothing. --dry-run
+and --self-test are the whole surface, both fully OFFLINE and free."""
 
 from __future__ import annotations
 
@@ -805,7 +809,10 @@ def self_test(modules, out=None) -> int:
             "house exit-code law drifted: constants are not 0/1/2/3/5"
         assert EX_VIOLATION == 4, "house exit-code law drifted: EX_VIOLATION is not 4"
         # 4. THE OFFLINE LAW — the heart of the U10/U13 family: template
-        #    generation is OFFLINE (no execute, no network, no credentials).
+        #    generation is OFFLINE (no network, no credentials; the family's
+        #    one WRITE surface — the packaged assembler's BUILD — is
+        #    Trevor-gated by --execute, AF-AE-U10-U13-NO-EXECUTE, proven by
+        #    that assembler's own battery).
         #    This dispatcher's own CLI surface REFUSES a live-verify request
         #    verbatim (proven here: a `verify` command exits STOP, exit 2,
         #    before any resolution work — there is no live surface to gate).
@@ -1137,8 +1144,11 @@ def _build_plan(modules, contract: dict) -> dict:
         "execute": False,
         "note": "offline plan only — template generation is OFFLINE (no "
                 "network, no credential, nothing ever sent); there is no "
-                "live surface, so no execute gate exists and a live-verify "
-                "request is a usage STOP (exit 2), never a silent probe; "
+                "live surface, so a live-verify request is a usage STOP "
+                "(exit 2), never a silent probe; the BUILD write surface "
+                "of the family (owned by the packaged assembler) is "
+                "Trevor-gated: without --execute it is a usage STOP "
+                "(exit 2, AF-AE-U10-U13-NO-EXECUTE) that writes nothing; "
                 "the copy law (editors never AI; zero em-dashes; sign-off "
                 "\"%s\" or %s; per-stage PDF view + Doc edit links; the "
                 "U08 pre-fill stage link) is enforced at generation time "
@@ -1746,9 +1756,11 @@ def main(argv=None):
                     "template modules by name and aggregates their rendered "
                     "payloads into ONE fail-closed JSON report. TEMPLATE "
                     "GENERATION IS OFFLINE: no network, no credential, "
-                    "nothing ever sent — there is no live surface and no "
-                    "execute gate; a live-verify request is a usage STOP "
-                    "(exit 2), never a silent probe.")
+                    "nothing ever sent — there is no live-verify surface; "
+                    "a live-verify request is a usage STOP (exit 2), never "
+                    "a silent probe. The BUILD write surface (the packaged "
+                    "assembler) is Trevor-gated by --execute (exit 2, "
+                    "AF-AE-U10-U13-NO-EXECUTE).")
     ap.add_argument("--dry-run", action="store_true",
                     help="offline plan only — no network, no credential "
                          "(default: the offline render aggregate)")

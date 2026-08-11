@@ -874,13 +874,15 @@ EXIT_CODES = {
     0: "verified success — plan / render / self-test pass (the whole "
        "surface is OFFLINE: nothing is ever sent)",
     1: "unexpected error (top-level guard; never a secret leak)",
-    2: ("STOP refusal — usage / a live-verify request (this family is "
-        "OFFLINE BY CONSTRUCTION; there is no live surface to gate, "
-        "AF-AE-U10-U13-OFFLINE) / the template-module assembly incomplete "
-        "(AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the inventory names "
-        "that does not ship, or a shipped template that is not in the "
-        "set) / an out-of-vocabulary stage token or an unknown form slug "
-        "(never a fabricated token)"),
+    2: ("STOP refusal — a BUILD without --execute (the Trevor gate, "
+        "AF-AE-U10-U13-NO-EXECUTE: the build reports the plan and exits "
+        "without writing anything) / usage / a live-verify request (this "
+        "family is OFFLINE BY CONSTRUCTION; there is no live surface to "
+        "gate, AF-AE-U10-U13-OFFLINE) / the template-module assembly "
+        "incomplete (AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the "
+        "inventory names that does not ship, or a shipped template that "
+        "is not in the set) / an out-of-vocabulary stage token or an "
+        "unknown form slug (never a fabricated token)"),
     3: "HELD — unused by this family: template generation is OFFLINE, so "
        "a dependency or transport state is never consulted (kept for the "
        "house 0/1/2/3/5 law)",
@@ -905,6 +907,11 @@ AF_CODES = (
      "fully present, or a module violates the one-entry-point contract, "
      "or a shipped template file is not in the set — a template law is "
      "never silently skipped (not yet stamped in ENGINE-MANIFEST.json)"),
+    ("AF-AE-U10-U13-NO-EXECUTE", 2,
+     "a BUILD (the family's one write surface: the 13 template documents "
+     "plus the manifest-pending stage) was requested WITHOUT --execute — "
+     "the Trevor gate: the build reports the plan and exits without "
+     "writing anything, never a silent rewrite and never a silent no-op"),
     ("AF-AE-U10-U13-OFFLINE", 2,
      "a live-verify request on the U10/U13 family — template generation "
      "is OFFLINE by construction and there is no live surface to gate; "
@@ -930,7 +937,11 @@ DOCTRINE = (
      "render / self-test run with zero network and zero credential; "
      "rendering is PURE (same inputs -> same bytes); a live-verify "
      "request is a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a "
-     "silent network probe; nothing here ever sends a message"),
+     "silent network probe; the BUILD (13 template documents + the "
+     "manifest-pending stage) is the family's ONE write surface and it "
+     "is Trevor-gated: without --execute it is a usage STOP (exit 2, "
+     "AF-AE-U10-U13-NO-EXECUTE) that writes nothing, never a silent "
+     "rewrite; nothing here ever sends a message"),
     ("Editors, never AI", "'editors' and 'editorial team' are the ONLY "
      "byline actors; the banned words and every model / tool name are "
      "ABSENT from every generated string (the single enforcement-context "

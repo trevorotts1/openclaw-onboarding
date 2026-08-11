@@ -121,7 +121,7 @@
 #   house_rules.py      the ONE canonical house-law constant surface for the
 #                       U23 family (browser UA — CAF_BROWSER_UA, CF 1010 — /
 #                       version header — CAF_VERSION_HEADER — / the complete
-#                       AF autofail table, the manifest's 40 rows, the U23
+#                       AF autofail table, the manifest's 75 rows, the U23
 #                       family's authority); the offline self-test pins the
 #                       UA and version header byte-exact against the
 #                       registry and the AF table byte-exact against
@@ -361,7 +361,7 @@ U23_MODULES = (
     ("house_rules", "the ONE canonical house-law constant surface for the "
                     "U23 family — browser UA (CAF_BROWSER_UA, CF 1010), "
                     "version header (CAF_VERSION_HEADER), the complete AF "
-                    "autofail table (the manifest's 40 rows, the U23 "
+                    "autofail table (the manifest's 75 rows, the U23 "
                     "family's authority); the self-test pins UA and header "
                     "byte-exact against the registry and the AF table "
                     "byte-exact against ENGINE-MANIFEST.json autofails (a "
@@ -929,7 +929,7 @@ def _module_plan(modules, name):
                 "version_header": "CAF_VERSION_HEADER (LeadConnector v2, "
                                   "verified at W0.5)",
                 "af_codes": "the complete AF autofail table (the "
-                            "manifest's 40 rows, byte-exact) plus the U23 "
+                            "manifest's 75 rows, byte-exact) plus the U23 "
                             "family's own rows (docs_u23.AF_CODES)",
                 "note": "offline constants module — no network, no "
                         "credential needed; a tamper never masquerades "

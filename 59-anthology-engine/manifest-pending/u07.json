@@ -131,7 +131,7 @@
     },
     {
       "name": "house_rules.py",
-      "role": "the ONE canonical house-law constant surface for the U07 family (browser UA \u2014 CAF_BROWSER_UA, CF 1010 \u2014 / version header \u2014 CAF_VERSION_HEADER \u2014 / the complete AF autofail table, the manifest's 37 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails \u2014 a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"
+      "role": "the ONE canonical house-law constant surface for the U07 family (browser UA \u2014 CAF_BROWSER_UA, CF 1010 \u2014 / version header \u2014 CAF_VERSION_HEADER \u2014 / the complete AF autofail table, the manifest's 75 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails \u2014 a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"
     },
     {
       "name": "docs_u07.py",

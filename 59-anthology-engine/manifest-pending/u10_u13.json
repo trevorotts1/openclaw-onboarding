@@ -6,6 +6,11 @@
       "meaning": "the template-module set named in the dispatcher's inventory is not fully present, or a module violates the one-entry-point contract, or a shipped template file is not in the set - a template law is never silently skipped"
     },
     {
+      "code": "AF-AE-U10-U13-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "a BUILD (the family's one write surface: the 13 template documents plus the manifest-pending stage) was requested WITHOUT --execute - the Trevor gate: the build reports the plan and exits without writing anything, never a silent rewrite and never a silent no-op"
+    },
+    {
       "code": "AF-AE-U10-U13-OFFLINE",
       "exit": 2,
       "meaning": "a live-verify request on the U10/U13 family - template generation is OFFLINE by construction and there is no live surface to gate; a verify request is a usage STOP, never a silent network probe"
@@ -107,17 +112,17 @@
   "exit_codes": {
     "0": "verified success - the 13 template documents generated and validated OFFLINE (also plan / self-test / a documented PASS)",
     "1": "unexpected error (top-level guard; never a secret leak)",
-    "2": "STOP refusal - usage / a live-verify request (this family is OFFLINE BY CONSTRUCTION; there is no live surface to gate, AF-AE-U10-U13-OFFLINE) / the template-module assembly incomplete (AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the inventory names that does not ship, or a shipped template that is not in the set) / an out-of-vocabulary stage token",
+    "2": "STOP refusal - a BUILD without --execute (the Trevor gate, AF-AE-U10-U13-NO-EXECUTE: the build reports the plan and exits without writing) / a live-verify request (this family is OFFLINE BY CONSTRUCTION; there is no live surface to gate, AF-AE-U10-U13-OFFLINE) / the template-module assembly incomplete (AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the inventory names that does not ship, or a shipped template that is not in the set) / an out-of-vocabulary stage token",
     "3": "HELD - unused by this family: template generation is OFFLINE, so a dependency or transport state is never consulted (kept for the house 0/1/2/3/5 law)",
     "4": "self-test FAILED (the AF-AE-TEMPLATE-ATTACK enforced-violation family - a tamper never masquerades as exit 1)",
     "5": "data or copy-law mismatch - a generated string carrying an em-dash, a banned byline actor, an unbalanced merge slot, a code fence, or a secret-shaped fragment (AF-AE-COPY-LAW; the fail-closed default - never a printed payload, never exit 0)"
   },
   "fail_closed": {
     "any_fail": false,
-    "note": "template generation is OFFLINE by construction (the U10/U13 package-init doctrine): no network, no credential, nothing ever sent - there is no live surface and no execute gate; a live-verify request is a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a silent network probe; every generated file is validated against the copy law before it is written - a silently off-law file never ships"
+    "note": "template generation is OFFLINE by construction (the U10/U13 package-init doctrine): no network, no credential, nothing ever sent - the BUILD (13 files + this manifest-pending stage) is the family's ONE write surface and it is Trevor-gated: without --execute it is a usage STOP (exit 2, AF-AE-U10-U13-NO-EXECUTE) that writes nothing; a live-verify request is a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a silent network probe; every generated file is validated against the copy law before it is written - a silently off-law file never ships"
   },
   "generated_files": 13,
-  "kind": "self-test",
+  "kind": "build",
   "schema_version": 1,
   "script": "build_anthology_workflows.py",
   "template_location_id": "2HIKGNgsixWx0yds7Qnx",
