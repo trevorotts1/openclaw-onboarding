@@ -1,0 +1,132 @@
+name: legacy-agents-list-gate
+
+# THE LANDMINE THIS GUARDS
+#
+# A config carrying the LEGACY `agents.list` array is fatal on the 2026.7.2-beta
+# line, which rejects the key outright:
+#
+#     Gateway failed to start: Invalid config at ~/.openclaw/openclaw.json:
+#     agents: Unrecognized key: "list"
+#
+# The gateway exits 78 (EX_CONFIG) ~0.4s after start. launchd's KeepAlive +
+# ThrottleInterval=10 respawns it every ~11s -- 701 boots in 10 days on the box
+# this was measured on -- until the crash-loop breaker latches channel
+# auto-start OFF and the box goes COMPLETELY DARK. 24 queued deliveries were
+# permanently lost.
+#
+# AND IT IS SILENT: the gateway LaunchAgent (written by the upstream openclaw
+# CLI, not by this repo) sets StandardErrorPath = /dev/null on boxes provisioned
+# before the log-path fix, so the startup exception is DISCARDED. It survives
+# only in /tmp/openclaw/openclaw-<date>.log. Ten days of investigation missed it
+# for exactly that reason.
+#
+# The key is HARMLESS on 2026.7.1-2. That is what makes it a landmine rather
+# than an outage: the box looks perfectly healthy until something upgrades it.
+# So the gate has to fire BEFORE a version change, never after.
+#
+# WHAT THIS WORKFLOW PROVES ON EVERY PUSH
+#   • the standalone detector returns 0/1/3 correctly, and NEVER 0 on a config
+#     it could not read (an unreadable config is not a clean config)
+#   • update-skills.sh's agents_list_gate() migrates with a backup, RE-VALIDATES,
+#     and ROLLS BACK a migration that lies (exits 0, changes nothing) or that
+#     moves the resolved workspace
+#   • the generated weekly-cron script does NOT run `npm update -g openclaw` on a
+#     box carrying the legacy key -- observed by a stub npm that records its own
+#     invocation, not by reading the source
+#   • the CONTROL: a CLEAN box still upgrades through the same harness
+#   • the MUTATION PROOF: with detection neutered, the same legacy box IS
+#     upgraded -- so the block is caused by the detector and not by luck
+#
+# ⚠️ INTERPRETER. Every shell file here is syntax-checked under BOTH bash 5
+# (ubuntu default) and, where available, bash 3.2 semantics. The fleet's Macs run
+# stock /bin/bash 3.2.57 while dev boxes run Homebrew bash 5.x, and this repo has
+# already shipped a gate that parsed fine under 5.x and aborted at PARSE time on
+# every client box (a heredoc nested inside a command substitution). The shipped
+# scripts therefore avoid that construct on purpose -- see the comments in
+# scripts/qc-assert-legacy-agents-list.sh and update-skills.sh's
+# _agents_list_detect().
+
+on:
+  push:
+    paths:
+      - scripts/qc-assert-legacy-agents-list.sh
+      - scripts/setup-weekly-update.sh
+      - scripts/fleet-audit-remediate.sh
+      - scripts/u126-remediate.sh
+      - update-skills.sh
+      - tests/unit/legacy-agents-list-gate.test.sh
+      - .github/workflows/legacy-agents-list-gate.yml
+  pull_request:
+    paths:
+      - scripts/qc-assert-legacy-agents-list.sh
+      - scripts/setup-weekly-update.sh
+      - scripts/fleet-audit-remediate.sh
+      - scripts/u126-remediate.sh
+      - update-skills.sh
+      - tests/unit/legacy-agents-list-gate.test.sh
+      - .github/workflows/legacy-agents-list-gate.yml
+
+jobs:
+  legacy-agents-list-gate:
+    name: Legacy agents.list pre-upgrade gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax check every shipped file the gate lives in
+        run: |
+          bash -n scripts/qc-assert-legacy-agents-list.sh
+          bash -n scripts/setup-weekly-update.sh
+          bash -n scripts/fleet-audit-remediate.sh
+          bash -n scripts/u126-remediate.sh
+          bash -n update-skills.sh
+          bash -n tests/unit/legacy-agents-list-gate.test.sh
+
+      - name: The GENERATED weekly-cron script must also parse
+        # The script that actually performs the version change on every box is
+        # generated from a heredoc, so `bash -n` on its parent proves nothing
+        # about it. Extract it and check it directly.
+        run: |
+          python3 - <<'PY'
+          src = open('scripts/setup-weekly-update.sh', encoding='utf-8').read().splitlines()
+          start = end = None
+          for i, l in enumerate(src):
+              if "<< 'OCUPDATE_EOF'" in l:
+                  start = i + 1
+              elif start is not None and l.strip() == 'OCUPDATE_EOF':
+                  end = i
+                  break
+          assert start is not None and end is not None, "OCUPDATE_EOF heredoc not found"
+          body = "\n".join(src[start:end])
+          assert 'npm update -g openclaw' in body, "the generated script no longer upgrades openclaw"
+          assert 'OC_GATE_BLOCK' in body, "the generated script no longer carries the pre-upgrade gate"
+          open('/tmp/generated-selfupdate.sh', 'w').write(body + "\n")
+          PY
+          bash -n /tmp/generated-selfupdate.sh
+          echo "generated self-update script parses"
+
+      - name: ACCEPTANCE — the gate must FIRE, and the mutation proof must hold
+        run: |
+          chmod +x tests/unit/legacy-agents-list-gate.test.sh
+          bash tests/unit/legacy-agents-list-gate.test.sh
+
+      - name: A legacy config must never exit 0
+        # Belt and braces, independent of the test harness: build a legacy
+        # config here and require a non-zero verdict from the shipped detector.
+        run: |
+          printf '%s\n' '{"agents":{"list":[{"id":"main"}]}}' > /tmp/legacy.json
+          set +e
+          bash scripts/qc-assert-legacy-agents-list.sh /tmp/legacy.json >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" != "1" ]; then
+            echo "::error::qc-assert-legacy-agents-list.sh exited $rc on a LEGACY config (expected 1) — the gate is not firing"
+            exit 1
+          fi
+          echo "legacy config correctly exits 1"

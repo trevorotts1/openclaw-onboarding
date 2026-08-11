@@ -8,7 +8,7 @@ see fleet_ledger.py).  It is the HARD GATE in front of the ONE batched fleet
 roll: a wave is only green when EVERY box is green, and green is only ever
 written from an explicit, parsed, positive probe result.
 
-THE FIVE CHECKS (all five are REQUIRED — none is optional, none can be skipped)
+THE SIX CHECKS (all six are REQUIRED — none is optional, none can be skipped)
 ------------------------------------------------------------------------------
   1. mc_api_token_store   MC_API_TOKEN store is REACHABLE on the box.
                           Runs the repo's own authoritative credential checker
@@ -37,6 +37,15 @@ THE FIVE CHECKS (all five are REQUIRED — none is optional, none can be skipped
                           DOWNGRADE detector: `update-skills.sh` piped from a
                           stale clone silently rolls a box BACKWARDS, and the
                           only way to catch it is to demand the stamp.
+  6. config_schema        (a) the box's openclaw.json carries NO legacy
+                          `agents.list` key -- the 2026.7.2-beta line rejects it
+                          and the gateway crash-loops until the box goes dark;
+                          and (b) the MEASURED `openclaw --version` matches the
+                          version the fleet RECORD claims.  Version is measured,
+                          never trusted from a record: the record for the box
+                          that died was two minor versions stale.  Also reports
+                          (advisory) whether the gateway LaunchAgent discards
+                          stderr, which is why the crash was invisible.
 
 FAIL-LOUD CONTRACT (why this is not a report, it is a gate)
 -----------------------------------------------------------
@@ -118,6 +127,7 @@ CHECK_WRITEBACK = "writeback_probe"
 CHECK_BROWSER = "browser_probe"
 CHECK_CEILING = "openclaw_ceiling"
 CHECK_STAMP = "repo_stamp"
+CHECK_SCHEMA = "config_schema"
 
 REQUIRED_CHECKS: Tuple[str, ...] = (
     CHECK_TOKEN,
@@ -125,6 +135,7 @@ REQUIRED_CHECKS: Tuple[str, ...] = (
     CHECK_BROWSER,
     CHECK_CEILING,
     CHECK_STAMP,
+    CHECK_SCHEMA,
 )
 
 # Doctrine: never more than 20 boxes in a wave.
@@ -137,6 +148,11 @@ REQUIRED_EXPECTATIONS = {
     "run_retries_max": CHECK_CEILING,
     "repo_version": CHECK_STAMP,
     "repo_sha": CHECK_STAMP,
+    # The version the FLEET RECORD claims this wave is on. Required, because
+    # the whole point of check_config_schema's version half is to catch the
+    # record being WRONG — and you cannot detect a record drifting from
+    # reality without naming what the record says. See check_config_schema.
+    "openclaw_recorded_version": CHECK_SCHEMA,
 }
 
 
@@ -152,6 +168,7 @@ PROBE_BROWSER = "browser"
 PROBE_VERSION = "openclaw_version"
 PROBE_RUN_RETRIES = "run_retries"
 PROBE_STAMP = "repo_stamp"
+PROBE_CONFIG_SCHEMA = "config_schema"
 
 
 def probe_commands(repo_dir: str, writeback_url: str, send_bearer: bool = False) -> Dict[str, str]:
@@ -201,6 +218,42 @@ def probe_commands(repo_dir: str, writeback_url: str, send_bearer: bool = False)
             "PY"
         ),
         PROBE_STAMP: f"cat {r}/version 2>/dev/null; git -C {r} rev-parse HEAD 2>/dev/null",
+        # CONFIG SCHEMA. Reports whether the LEGACY `agents.list` key is present,
+        # and whether the gateway LaunchAgent is throwing its stderr away.
+        # Prints exactly two lines: "<LEGACY|CLEAN|UNREADABLE:...>" then
+        # "stderr=<path|NONE|NOPLIST>". No config VALUE is ever returned — only
+        # a verdict about one key's presence and one plist path.
+        PROBE_CONFIG_SCHEMA: (
+            "python3 - <<'PY'\n"
+            "import glob,json,os,plistlib\n"
+            "verdict='UNREADABLE:no config file found'\n"
+            "for p in (os.path.expanduser('~/.openclaw/openclaw.json'), '/data/.openclaw/openclaw.json'):\n"
+            "    if not os.path.exists(p):\n"
+            "        continue\n"
+            "    try:\n"
+            "        d=json.load(open(p))\n"
+            "    except Exception as e:\n"
+            "        verdict='UNREADABLE:%s does not parse (%s)'%(p,e); break\n"
+            "    a=d.get('agents')\n"
+            "    if a is None:\n"
+            "        verdict='CLEAN'\n"
+            "    elif not isinstance(a,dict):\n"
+            "        verdict='UNREADABLE:agents is not an object in %s'%p\n"
+            "    else:\n"
+            "        verdict='LEGACY' if 'list' in a else 'CLEAN'\n"
+            "    break\n"
+            "print(verdict)\n"
+            "err='NOPLIST'\n"
+            "for g in glob.glob(os.path.expanduser('~/Library/LaunchAgents/*openclaw*.plist')):\n"
+            "    try:\n"
+            "        pl=plistlib.load(open(g,'rb'))\n"
+            "    except Exception:\n"
+            "        continue\n"
+            "    err=pl.get('StandardErrorPath') or 'NONE'\n"
+            "    break\n"
+            "print('stderr=%s'%err)\n"
+            "PY"
+        ),
     }
 
 
@@ -455,6 +508,136 @@ def check_ceiling(version_res: ProbeResult, retries_res: ProbeResult,
                    observed)
 
 
+def check_config_schema(schema_res: ProbeResult, version_res: ProbeResult,
+                        recorded_version: str) -> Outcome:
+    """The LEGACY-SCHEMA + RECORD-DRIFT check.
+
+    TWO faults, one check, because they are the same fault seen from two sides:
+    a box whose real state nobody has actually looked at.
+
+    (a) LEGACY `agents.list`.  The 2026.7.2-beta line rejects the key outright
+        ("agents: Unrecognized key: \"list\"").  The gateway exits 78 (EX_CONFIG)
+        ~0.4s after start, launchd's KeepAlive + ThrottleInterval=10 respawns it
+        every ~11s -- 701 boots in 10 days on the box this was measured on --
+        and the crash-loop breaker then latches channel auto-start OFF.  The box
+        goes COMPLETELY DARK: 24 queued deliveries were permanently lost.
+        The key is HARMLESS on 2026.7.1-2, which is exactly what makes it a
+        landmine: a box carrying it looks perfectly healthy until something
+        moves it onto the new line.  So this is FAIL, not WARN, even on a box
+        that is currently fine -- the sweep exists to find them BEFORE a roll.
+
+    (b) MEASURED vs RECORDED version.  The fleet record for the box that died
+        was TWO MINOR VERSIONS STALE.  Every conclusion drawn from it was wrong,
+        and nobody noticed because the record was never compared to the box.
+        `openclaw --version` is measured here and compared to what the record
+        claims; a mismatch is a FAIL against the RECORD, not against the box --
+        the remedy is to correct the record (or explain the drift), never to
+        trust it.  Version is measured, never trusted.
+
+    (c) Advisory: the gateway LaunchAgent's StandardErrorPath.  A plist that
+        sends stderr to /dev/null DISCARDS the startup exception -- which is why
+        (a) survived ten days of investigation.  The gateway LaunchAgent is
+        written by the upstream openclaw CLI, not by this repo, so this cannot
+        be fixed here; it is surfaced so nobody again concludes "there is no
+        error" from a log that was never written.  It never fails the box on its
+        own -- a box is not broken because its plist is quiet -- but it is
+        always reported.
+    """
+    if schema_res.transport_failed or version_res.transport_failed:
+        return Outcome(L.UNKNOWN,
+                       f"could not reach box for the config-schema check: "
+                       f"{schema_res.error or version_res.error}")
+    if not recorded_version:
+        return Outcome(L.FAIL,
+                       "EXPECTATION NOT DECLARED (openclaw_recorded_version) — record drift cannot be "
+                       "detected without naming what the record claims; a gate with no expectation "
+                       "cannot fail, so it is not a gate")
+    if schema_res.rc == 127:
+        return Outcome(L.FAIL, "config-schema probe did not run (no response) — fail-closed")
+
+    lines = [ln.strip() for ln in (schema_res.stdout or "").splitlines() if ln.strip()]
+    if schema_res.rc != 0 or not lines:
+        return Outcome(L.FAIL,
+                       f"config-schema probe returned nothing usable (rc={schema_res.rc}) — fail-closed; "
+                       "an unreadable config is NOT a clean config",
+                       {"raw": _scrub(schema_res.stdout or schema_res.stderr)})
+
+    verdict = lines[0]
+    stderr_path = ""
+    for ln in lines[1:]:
+        if ln.startswith("stderr="):
+            stderr_path = ln[len("stderr="):].strip()
+
+    observed: Dict[str, Any] = {"agents_list": verdict.split(":")[0],
+                                "gateway_stderr_path": stderr_path or None}
+
+    # The plist advisory is attached to whatever verdict we reach below.
+    # KEEP THIS NOTE SHORT. Reasons are truncated to 400 chars by _scrub() on
+    # their way into the ledger and the failure banner, so a long primary
+    # message silently eats the advisory appended after it — which is how this
+    # very advisory went missing the first time it was written.
+    blind = stderr_path in ("/dev/null", "NONE")
+    blind_note = ""
+    if blind:
+        observed["gateway_stderr_discarded"] = True
+        blind_note = (f" ALSO: LaunchAgent discards stderr (StandardErrorPath={stderr_path or 'unset'})"
+                      " — startup errors leave NO trace; see /tmp/openclaw/openclaw-<date>.log.")
+
+    if verdict.startswith("UNREADABLE"):
+        return Outcome(L.FAIL,
+                       f"could not determine whether the legacy `agents.list` key is present: "
+                       f"{verdict.split(':', 1)[-1]} — an absence that cannot be proven is not an "
+                       "absence, so this is fail-closed." + blind_note,
+                       observed)
+    if verdict == "LEGACY":
+        return Outcome(L.FAIL,
+                       "LEGACY `agents.list` KEY PRESENT — the 2026.7.2-beta line rejects it and the "
+                       "gateway then exits 78 every ~11s until the crash-loop breaker latches channels "
+                       "OFF and the box goes DARK. REMEDY: `openclaw doctor --fix` BEFORE any version "
+                       "change." + blind_note,
+                       observed)
+    if verdict != "CLEAN":
+        return Outcome(L.FAIL,
+                       f"unrecognised config-schema verdict {verdict!r} — refusing to call that clean."
+                       + blind_note,
+                       observed)
+
+    # ── measured vs recorded version ─────────────────────────────────────────
+    raw_version = ""
+    if (version_res.stdout or "").strip():
+        raw_version = (version_res.stdout or "").strip().splitlines()[0].strip()
+    measured = _parse_version(raw_version)
+    recorded = _parse_version(str(recorded_version))
+    observed["openclaw_version_measured"] = raw_version or None
+    observed["openclaw_version_recorded"] = str(recorded_version)
+
+    if version_res.rc != 0 or measured is None:
+        return Outcome(L.FAIL,
+                       f"`openclaw --version` did not report a measurable version (rc={version_res.rc}, "
+                       f"output={_scrub(raw_version) or 'empty'}) — the recorded version "
+                       f"{recorded_version!r} therefore could NOT be checked against reality."
+                       + blind_note,
+                       observed)
+    if recorded is None:
+        return Outcome(L.FAIL,
+                       f"declared openclaw_recorded_version {recorded_version!r} is not a version — "
+                       "nothing to compare the measured value against." + blind_note,
+                       observed)
+    if measured != recorded:
+        return Outcome(L.FAIL,
+                       f"RECORD DRIFT: this box MEASURES openclaw {raw_version} but the fleet record "
+                       f"says {recorded_version}. The record is wrong, not the box — correct the record. "
+                       "The box that went dark was recorded two minor versions stale, and every decision "
+                       "taken from that record was wrong. Version is MEASURED, never trusted."
+                       + blind_note,
+                       observed)
+
+    return Outcome(L.PASS,
+                   f"no legacy `agents.list` key; measured openclaw {raw_version} matches the recorded "
+                   f"{recorded_version}." + blind_note,
+                   observed)
+
+
 def check_repo_stamp(res: ProbeResult, want_version: str, want_sha: str) -> Outcome:
     """The stale-checkout / DOWNGRADE detector."""
     if res.transport_failed:
@@ -519,6 +702,8 @@ def validate_box(box: Dict[str, Any], backend: Backend, expectations: Dict[str, 
             CHECK_STAMP: check_repo_stamp(probe(PROBE_STAMP),
                                           str(expectations.get("repo_version") or ""),
                                           str(expectations.get("repo_sha") or "")),
+            CHECK_SCHEMA: check_config_schema(probe(PROBE_CONFIG_SCHEMA), probe(PROBE_VERSION),
+                                              str(expectations.get("openclaw_recorded_version") or "")),
         }
     except Exception as exc:                                       # pragma: no cover
         outcomes = {c: Outcome(L.UNKNOWN, f"harness error on this box: {exc}") for c in REQUIRED_CHECKS}
