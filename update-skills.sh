@@ -629,12 +629,25 @@ PYEOF
 #
 # RESOLUTION ORDER (identical to obs_resolve_workspace / install.sh Step 10):
 #   1. obs_resolve_workspace, when the shim really did define it
-#   2. THIS box's openclaw.json -> agents.list[id=main].workspace
-#   3. THIS box's openclaw.json -> agents.defaults.workspace
-#   4. the canonical <oc-root>/workspace default -- ONLY when a readable,
+#   2. THIS box's openclaw.json -> agents.entries.main.workspace   (NEW schema)
+#   3. THIS box's openclaw.json -> agents.list[id=main].workspace  (LEGACY schema)
+#   4. THIS box's openclaw.json -> agents.defaults.workspace
+#   5. the canonical <oc-root>/workspace default -- ONLY when a readable,
 #      parseable openclaw.json exists and simply declares no workspace at all
 #      (that is the documented default, not a guess) -- still announced, with
 #      its reason, on every run.
+#
+# ⚠️ WHY STEP 2 EXISTS AND WHY IT COMES FIRST. The schema migration renames
+# `agents.list` (array) to `agents.entries` (object keyed by agent id). Before
+# this resolver understood `entries`, a migrated box fell straight through to
+# `agents.defaults.workspace` — so on any box that declared its workspace ONLY
+# inside the legacy array, the migration silently RELOCATED the resolved
+# workspace. That path is CANON_DIR, the symlink TARGET for the box's shared
+# AGENTS.md / TOOLS.md / USER.md, so the effect would have been to re-point
+# those files: a loud crash-loop traded for a silent outage. Reading the new
+# shape FIRST makes this function return the SAME answer either side of a
+# migration, which is exactly the invariant scripts/oc-atomic-upgrade.sh
+# asserts before it will commit one. Keep the two reads in this order.
 # ----------------------------------------------------------
 oc_resolve_workspace_announced() {
   local _ctx="${1:-workspace}"
@@ -654,21 +667,39 @@ oc_resolve_workspace_announced() {
     [ -n "$OC_WS_RESOLVED" ] && OC_WS_SOURCE="obs_resolve_workspace() from the onboarding-state.sh shim"
   fi
 
-  # (2)+(3) read THIS box's own config directly. This is the SAME intended means
-  # (the config), not a guess -- so it is a legitimate fallback, and it is
+  # (2)+(3)+(4) read THIS box's own config directly. This is the SAME intended
+  # means (the config), not a guess -- so it is a legitimate fallback, and it is
   # announced below with the reason the primary resolver was unavailable.
+  # Reads BOTH schema shapes, new one first, so the answer is invariant across a
+  # migration (see the RESOLUTION ORDER note above).
   if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && command -v python3 >/dev/null 2>&1; then
     OC_WS_RESOLVED="$(OC_JSON="$_ws_ocjson" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
+    agents = cfg.get("agents") or {}
+    if not isinstance(agents, dict):
+        agents = {}
+    ws = None
+    # (2) NEW schema: agents.entries is a dict keyed by agent id.
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        main = entries.get("main")
+        if isinstance(main, dict) and main.get("workspace"):
+            ws = main["workspace"]
+    # (3) LEGACY schema: agents.list is an array whose entries carry their own id.
+    if not ws:
+        for ag in (agents.get("list") or []):
+            if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+                ws = ag["workspace"]
+                break
+    # (4) the shared default.
+    if not ws:
+        defaults = agents.get("defaults") or {}
+        if isinstance(defaults, dict):
+            ws = defaults.get("workspace")
+    if ws:
+        print(os.path.expanduser(ws))
 except Exception:
     pass
 PYEOF
@@ -678,12 +709,12 @@ PYEOF
     fi
   fi
 
-  # (4) config is readable+parseable but declares no workspace anywhere.
+  # (5) config is readable+parseable but declares no workspace anywhere.
   if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && [ -r "$_ws_ocjson" ] \
      && command -v python3 >/dev/null 2>&1 \
      && OC_JSON="$_ws_ocjson" python3 -c 'import json,os; json.load(open(os.environ["OC_JSON"]))' 2>/dev/null; then
     OC_WS_RESOLVED="$_ws_ocroot/workspace"
-    OC_WS_SOURCE="canonical default -- FALLBACK USED because $_ws_ocjson parses but declares NO agents.list[id=main].workspace and NO agents.defaults.workspace"
+    OC_WS_SOURCE="canonical default -- FALLBACK USED because $_ws_ocjson parses but declares NO agents.entries.main.workspace, NO agents.list[id=main].workspace and NO agents.defaults.workspace"
   fi
 
   if [ -z "$OC_WS_RESOLVED" ]; then
@@ -2145,11 +2176,13 @@ preclear_2026_7_1() {
 # <<< TRAP1-PRECLEAR-END
 
 # ----------------------------------------------------------
-# LEGACY `agents.list` PRE-UPGRADE GATE  (v22.0.8)
+# LEGACY `agents.list` SCHEMA DETECTOR  (v22.0.8)
 # ----------------------------------------------------------
-# WHAT: refuses to roll — or, preferably, MIGRATES — a box whose openclaw.json
-# still carries the legacy `agents.list` array, before anything on this box
-# changes.
+# WHAT: reports whether this box's openclaw.json still carries the legacy
+# `agents.list` array, and routes a migration request to the one procedure that
+# can actually perform it (scripts/oc-atomic-upgrade.sh). It is a DETECTOR and a
+# DISPATCHER — it never migrates a config itself, and on the roll path it never
+# blocks. Both of those are deliberate; see the two numbered points below.
 #
 # THE LANDMINE. The 2026.7.2-beta line REJECTS that key outright:
 #
@@ -2184,53 +2217,88 @@ preclear_2026_7_1() {
 # early exits and would otherwise never be inspected. This call must stay above
 # both of them.
 #
-# MIGRATE, DON'T JUST REFUSE. A hard refusal leaves the box stale forever, so
-# the default is to migrate: back the config up, run `openclaw doctor --fix`
-# (the migration the gateway's own error text prescribes), then RE-VALIDATE.
-# Only a proven-good migration is allowed to proceed.
+# ⚠️ THIS GATE DOES NOT MIGRATE, AND IT NO LONGER BLOCKS THE ROLL. Both of
+# those are corrections of a defect this gate shipped with, and the reasons are
+# the whole point of this comment.
 #
-# THE POST-MIGRATION CHECK IS NOT OPTIONAL. `agents.list[id=main].workspace` is
-# a real workspace source on this box — oc_resolve_workspace_announced() above
-# reads it FIRST, ahead of agents.defaults.workspace. So a migration that drops
-# the array can silently move the resolved workspace, and CANON_DIR is the
-# symlink TARGET for the box's shared AGENTS.md/TOOLS.md/USER.md. A migration
-# that fixes the crash-loop but re-points those files has traded a loud outage
-# for a silent one. This gate therefore captures the resolved workspace BEFORE
-# migrating and requires it to be byte-identical afterwards; if it moved, the
-# migration is ROLLED BACK and the roll refuses.
+# (a) `openclaw doctor --fix` CANNOT PERFORM THIS MIGRATION. The first version
+#     of this gate called it, because the gateway's own error text prescribes
+#     it. Measured on 12 boxes: the config's SHA-256 was BYTE-IDENTICAL before
+#     and after. `openclaw config schema` on 2026.7.1 / 2026.7.1-2 reports the
+#     `agents` properties as exactly ["defaults","list"] — there is no `entries`
+#     for it to migrate TO. It also has a measured SIDE EFFECT: on one box it
+#     silently rewrote `agents.defaults.models` pins. So the old migrate path
+#     could only ever fail its own re-validation, and it risked model pins to do
+#     it. It is gone.
+#
+# (b) A SKILL ROLL IS NOT A VERSION CHANGE, SO REFUSING ONE PROTECTS NOTHING.
+#     This updater installs no binary: it contains no `npm install -g openclaw`,
+#     no `openclaw@<version>`, no `openclaw update/upgrade`, no docker pull (see
+#     the note above preclear_2026_7_1, which says the same thing for the same
+#     reason). The legacy key is harmless on the line these boxes are on. But
+#     the earlier gate exited 78 on detection — which froze the roll on 35 of 38
+#     boxes, AND the roll is the very thing that delivers scripts/ to a box
+#     (deliver_canonical_scripts_tree, below this call). The gate was therefore
+#     blocking the only delivery vehicle for its own fix: a deadlock in which
+#     the tool that repairs the fleet can never reach the fleet.
+#
+#     So on a legacy box this gate now WARNS LOUDLY, records a marker, and lets
+#     the roll proceed. Blocking is reserved for the paths that actually change
+#     the version — the weekly `npm update -g openclaw` cron and the F1
+#     remediations — which fail closed unless the atomic procedure runs.
+#
+# THE REAL MIGRATION lives in scripts/oc-atomic-upgrade.sh and is only valid
+# INSIDE an upgrade window: gateway stopped and PROVEN stopped, new binary
+# installed, config rewritten to `agents.entries`, verified lossless against the
+# NEW schema, gateway started and proven to STAY up. It cannot be done earlier,
+# because `additionalProperties:false` is set on `agents` in BOTH versions (no
+# config is valid on both), the deployed runtime has NO `entries` reader (an
+# early migration enumerates ZERO agents — a silent total outage), and a live
+# gateway re-serializes openclaw.json about once a minute from an in-memory
+# model that only knows `agents.list`, silently reverting anything written while
+# it runs.
+#
+# THE WORKSPACE TRAP IS HANDLED UPSTREAM NOW. oc_resolve_workspace_announced()
+# above reads `agents.entries.main.workspace` BEFORE the legacy array, so the
+# resolved workspace — CANON_DIR, the symlink target for this box's shared
+# AGENTS.md/TOOLS.md/USER.md — is invariant across the migration by
+# construction. oc-atomic-upgrade.sh asserts that invariant before committing.
 #
 # WHY WE NEVER HAND-DELETE THE KEY. The legacy array holds agent definitions.
-# Dropping it without knowing where a given box's definitions belong in the new
-# schema trades a loud crash-loop for silent agent loss. `openclaw doctor --fix`
-# is the only migration performed here; if it is unavailable or fails, this gate
-# REFUSES rather than improvising one.
+# Deleting it is not a migration; it is agent loss. The transform is `list` ->
+# `entries` keyed by each agent's `id`, and nothing here improvises it.
 #
 # MODES (OPENCLAW_AGENTS_LIST_MODE, or the mode argument):
-#   migrate  (default) back up -> `openclaw doctor --fix` -> re-validate. On any
-#            failure, ROLL BACK and refuse.
-#   check    detect and report only. Never mutates anything. Refuses if present.
-# There is deliberately NO skip/proceed-anyway mode. A silent proceed is the one
-# outcome this gate exists to make impossible.
+#   report   (default, used by the roll) detect and report. Never mutates.
+#            Returns 0 even on a legacy box — see (b) — after writing the
+#            marker file and printing the banner.
+#   check    detect and report only, and RETURN 3 when the legacy key is
+#            present. This is the pre-flight a fleet driver runs before it moves
+#            any box onto a new build. Never mutates anything.
+#   migrate  delegates to scripts/oc-atomic-upgrade.sh --upgrade if that tool is
+#            on this box, and REFUSES if it is not. This gate never migrates by
+#            itself: outside an upgrade window there is no correct migration.
 #
-# RETURNS: 0 = clear (or successfully migrated), 3 = REFUSED (matching
-# preclear_2026_7_1's "needs a human" contract). main() maps a refusal to
-# exit 78 (EX_CONFIG) — the same code the landmine itself produces, so a fleet
-# driver can tell a config refusal from a transport failure.
+# RETURNS: 0 = clear, or legacy-but-reported (report mode). 3 = REFUSED /
+# needs a human, matching preclear_2026_7_1's contract.
 #
 # SELF-CONTAINED ON PURPOSE: this runs on the `curl ... | bash` path, BEFORE the
 # repo is cloned, so it cannot source scripts/qc-assert-legacy-agents-list.sh.
 # That script is the standalone/CI counterpart and asserts the same invariant.
 # ----------------------------------------------------------
 agents_list_gate() {
-  local mode="${1:-${OPENCLAW_AGENTS_LIST_MODE:-migrate}}"
-  local ocjson ts backup verdict detail ws_before ws_after doctor_out doctor_rc box
+  # DEFAULT IS 'report', NOT 'migrate'. The roll changes no binary version, so
+  # it has nothing to migrate for and everything to lose by refusing -- see (b)
+  # in the block comment above.
+  local mode="${1:-${OPENCLAW_AGENTS_LIST_MODE:-report}}"
+  local ocjson verdict detail box marker atomic _al_rc
 
   box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
   ocjson="$HOME/.openclaw/openclaw.json"
   [ -f "/data/.openclaw/openclaw.json" ] && ocjson="/data/.openclaw/openclaw.json"
 
   if [ ! -f "$ocjson" ]; then
-    echo "  [agents-list] no config at $ocjson (fresh box) -- nothing to migrate."
+    echo "  [agents-list] no config at $ocjson (fresh box) -- nothing to inspect."
     return 0
   fi
 
@@ -2273,71 +2341,90 @@ agents_list_gate() {
   echo ""
   echo "  [agents-list] LEGACY SCHEMA DETECTED on $box: $detail"
 
+  # Record it where a human and the next sweep will both trip over it. A line in
+  # a log nobody reads is how this fault stayed invisible for ten days.
+  marker="$(dirname "$ocjson")/.openclaw-agents-list-legacy"
+  {
+    printf 'detected=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
+    printf 'config=%s\n' "$ocjson"
+    printf 'detail=%s\n' "$detail"
+    printf 'remedy=bash %s/scripts/oc-atomic-upgrade.sh --upgrade\n' "$(dirname "$ocjson")"
+  } > "$marker" 2>/dev/null || true
+
+  # The atomic procedure, if this box has taken a roll that delivered it.
+  atomic="$(dirname "$ocjson")/scripts/oc-atomic-upgrade.sh"
+
   if [ "$mode" = "check" ]; then
+    # Pre-flight mode: a fleet driver asking "is this box safe to move?". The
+    # answer is no, and it must be a non-zero one.
     _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail)." \
-      "Mode is 'check' -- detection only. Nothing was changed. Re-run in 'migrate' mode to fix it."
+      "The legacy \`agents.list\` key IS PRESENT ($detail). This box MUST NOT be moved onto a new OpenClaw build as-is." \
+      "Mode is 'check' -- detection only. Nothing was changed. Migrate it with: bash $atomic --upgrade"
     return 3
   fi
 
-  if ! command -v openclaw >/dev/null 2>&1; then
+  if [ "$mode" = "migrate" ]; then
+    # Delegate. This gate performs no migration itself, because outside an
+    # upgrade window there is no correct one: the deployed runtime has no
+    # `entries` reader, so writing the new shape here would enumerate ZERO
+    # agents, and a live gateway would re-serialize the old shape back within
+    # about a minute anyway.
+    if [ ! -f "$atomic" ]; then
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The legacy \`agents.list\` key IS PRESENT ($detail), and the atomic upgrade tool is NOT on this box (looked for $atomic)." \
+        "Nothing was changed. Run a normal update-skills.sh roll first -- it delivers scripts/ to this box -- then re-run with --agents-list-migrate."
+      return 3
+    fi
+    echo "  [agents-list] delegating to the atomic upgrade procedure: $atomic --upgrade"
+    _al_rc=0
+    bash "$atomic" --upgrade || _al_rc=$?
+    if [ "$_al_rc" -eq 0 ]; then
+      echo "  [agents-list] atomic upgrade COMPLETED -- this box is migrated and running."
+      rm -f "$marker" 2>/dev/null || true
+      return 0
+    fi
     _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail), and the \`openclaw\` CLI is NOT ON PATH here, so the prescribed migration (\`openclaw doctor --fix\`) cannot be run." \
-      "Nothing was changed. This gate will NOT hand-delete the key: the array holds agent definitions, and dropping it blindly trades a loud crash-loop for silent agent loss."
+      "The atomic upgrade procedure exited $_al_rc (78 = refused and rolled back, 70 = ROLLBACK FAILED and this box needs a human NOW, 3 = undetermined)." \
+      "See its output above for the exact step that failed."
     return 3
   fi
 
-  # Capture the workspace the box resolves TODAY, before anything moves.
-  ws_before="$(_agents_list_workspace "$ocjson")"
-
-  ts="$(date +%Y%m%d-%H%M%S)"
-  backup="${ocjson}.bak-pre-agents-list-migration-${ts}"
-  if ! cp -p "$ocjson" "$backup" 2>/dev/null; then
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail), but the config could NOT BE BACKED UP to $backup." \
-      "Refusing to migrate a config we cannot roll back. Nothing was changed."
-    return 3
-  fi
-  echo "  [agents-list] backup written: $backup"
-  echo "  [agents-list] workspace resolved BEFORE migration: ${ws_before:-<none declared>}"
-  echo "  [agents-list] running the prescribed migration: openclaw doctor --fix"
-
-  doctor_rc=0
-  doctor_out="$(openclaw doctor --fix 2>&1)" || doctor_rc=$?
-  printf '%s\n' "$doctor_out" | sed 's/^/    | /'
-
-  if [ "$doctor_rc" -ne 0 ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "\`openclaw doctor --fix\` FAILED (rc=$doctor_rc) while migrating the legacy \`agents.list\` key." \
-      "The config was RESTORED from $backup. The box is exactly as it was."
-    return 3
-  fi
-
-  # RE-VALIDATE. A migration that returns 0 is a claim, not a result.
-  verdict="$(_agents_list_detect "$ocjson")"
-  detail="${verdict#*|}"
-  verdict="${verdict%%|*}"
-  if [ "$verdict" != "ABSENT" ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "\`openclaw doctor --fix\` exited 0 but the legacy key is STILL THERE (post-migration verdict: $verdict -- $detail)." \
-      "An exit code is not a migration. The config was RESTORED from $backup."
-    return 3
-  fi
-
-  ws_after="$(_agents_list_workspace "$ocjson")"
-  if [ "$ws_before" != "$ws_after" ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The migration removed the legacy key but MOVED THE RESOLVED WORKSPACE: '${ws_before:-<none>}' -> '${ws_after:-<none>}'." \
-      "That workspace is the symlink target for this box's shared AGENTS.md/TOOLS.md/USER.md -- accepting it would trade a loud crash-loop for a silent one. The config was RESTORED from $backup."
-    return 3
-  fi
-
-  echo "  [agents-list] MIGRATED: legacy \`agents.list\` removed, config re-read and verified clean."
-  echo "  [agents-list] workspace unchanged after migration: ${ws_after:-<none declared>}"
-  echo "  [agents-list] backup retained at: $backup"
+  # ── DEFAULT ('report'): warn loudly, then LET THE ROLL PROCEED. ─────────────
+  # This updater changes no OpenClaw binary, so it cannot trigger the landmine;
+  # and it is the mechanism that delivers scripts/oc-atomic-upgrade.sh to this
+  # box. Refusing here would block the only delivery vehicle for the fix on
+  # every affected box -- a deadlock. Blocking belongs on the paths that DO
+  # change the version: the weekly `npm update -g openclaw` cron and the F1
+  # remediations, both of which fail closed without the atomic procedure.
+  echo "  ################################################################"
+  echo "  ##  LEGACY \`agents.list\` SCHEMA ON THIS BOX  --  NOT YET FATAL  ##"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $ocjson"
+  echo "  ##  Detail : $detail"
+  echo "  ##"
+  echo "  ##  This roll is CONTINUING on purpose: it installs no OpenClaw"
+  echo "  ##  binary, so it cannot move this box onto the line that rejects"
+  echo "  ##  the key -- and it is what delivers the fix below to this box."
+  echo "  ##"
+  echo "  ##  BUT THIS BOX IS NOT SAFE TO UPGRADE. The 2026.7.2-beta line"
+  echo "  ##  rejects \`agents.list\` outright, the gateway exits 78 ~0.4s"
+  echo "  ##  after start, launchd respawns it every ~11s, and the crash-loop"
+  echo "  ##  breaker latches channels OFF until the box is COMPLETELY DARK."
+  echo "  ##"
+  echo "  ##  MIGRATE IT (stops the gateway, installs the new build, rewrites"
+  echo "  ##  the config, verifies, restarts -- rolling back on any failure):"
+  echo "  ##    bash $atomic --upgrade"
+  echo "  ##  Inspect first, changing nothing:"
+  echo "  ##    bash $atomic --detect"
+  echo "  ##"
+  echo "  ##  ⚠️  \`openclaw doctor --fix\` DOES NOT DO THIS. Measured on 12"
+  echo "  ##  boxes: config SHA-256 identical before and after. It also"
+  echo "  ##  silently rewrote agents.defaults.models pins on one box."
+  echo "  ##"
+  echo "  ##  Marker written: $marker"
+  echo "  ################################################################"
+  echo ""
   return 0
 }
 
@@ -2490,14 +2577,23 @@ _agents_list_refuse_banner() {
   echo "  ##  LaunchAgent's stderr -- there is none."
   echo "  ##"
   echo "  ##  THE FIX (run on the box, then re-run this):"
-  echo "  ##    openclaw doctor --fix"
+  echo "  ##    bash <oc-root>/scripts/oc-atomic-upgrade.sh --upgrade"
+  echo "  ##"
+  echo "  ##  ⚠️  NOT \`openclaw doctor --fix\`. It CANNOT do this: measured on"
+  echo "  ##  12 boxes, the config SHA-256 was IDENTICAL before and after, and"
+  echo "  ##  \`openclaw config schema\` on this line lists the agents keys as"
+  echo "  ##  exactly [defaults, list] -- there is no \`entries\` to migrate to."
+  echo "  ##  It also silently rewrote agents.defaults.models pins on one box."
   echo "  ##"
   echo "  ##  Verify it took (exit 0 = clean, 1 = still legacy, 3 = unreadable):"
   echo "  ##    bash scripts/qc-assert-legacy-agents-list.sh"
   echo "  ##"
-  echo "  ##  DO NOT hand-delete the key. The legacy array holds agent"
-  echo "  ##  definitions; dropping it blindly trades a loud crash-loop for"
-  echo "  ##  silent agent loss."
+  echo "  ##  DO NOT hand-delete the key, and DO NOT write \`entries\` early."
+  echo "  ##  The array holds agent definitions, and the CURRENTLY INSTALLED"
+  echo "  ##  runtime has no \`entries\` reader -- migrating before the binary"
+  echo "  ##  changes enumerates ZERO agents: a silent total outage, worse"
+  echo "  ##  than the crash-loop. The migration belongs INSIDE the upgrade"
+  echo "  ##  window, which is what oc-atomic-upgrade.sh exists to provide."
   echo "  ##"
   echo "  ##  ⚠️  AFTER ANY plist CHANGE: \`launchctl kickstart -k\` does NOT"
   echo "  ##  reload a plist -- it only restarts the running process, and the"
@@ -2981,14 +3077,18 @@ main() {
         echo ""
         echo "  --agents-list-check    Report whether this box's openclaw.json still carries the LEGACY"
         echo "                         \`agents.list\` array. Never changes anything. Exit 3 = present."
-        echo "  --agents-list-migrate  Same detection, then migrate: back up the config, run"
-        echo "                         \`openclaw doctor --fix\`, and RE-VALIDATE (key gone AND the"
-        echo "                         resolved workspace unmoved). Rolls back on any failure."
-        echo "                         The 2026.7.2-beta line rejects \`agents.list\` and exits 78, and"
-        echo "                         launchd then respawns the gateway every ~11s until the crash-loop"
-        echo "                         breaker latches channels OFF and the box goes dark. Run this"
-        echo "                         BEFORE any version change. (This gate also runs automatically on"
-        echo "                         every normal update run.)"
+        echo "                         This is the pre-flight to run against every box BEFORE moving any"
+        echo "                         of them onto a new OpenClaw build."
+        echo "  --agents-list-migrate  Delegates to scripts/oc-atomic-upgrade.sh --upgrade, which is the"
+        echo "                         only procedure that can do this safely: it STOPS the gateway (and"
+        echo "                         proves it stopped), installs the new build, rewrites the config"
+        echo "                         from \`agents.list\` to \`agents.entries\`, verifies the rewrite is"
+        echo "                         lossless against the NEW schema, restarts, and proves the gateway"
+        echo "                         STAYS up -- rolling back binary AND config on any failure."
+        echo "                         NOTE: \`openclaw doctor --fix\` does NOT perform this migration."
+        echo "                         Measured on 12 boxes: config SHA-256 identical before and after."
+        echo "                         (The detector also runs automatically on every normal update run,"
+        echo "                         where it reports and does not block.)"
         echo ""
         echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
         echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
@@ -3053,20 +3153,35 @@ main() {
   # file is deleted rather than restamped.
   reap_dead_skill_manifest
 
-  # LEGACY `agents.list` PRE-UPGRADE GATE. See agents_list_gate() above for the
+  # LEGACY `agents.list` SCHEMA DETECTOR. See agents_list_gate() above for the
   # full rationale. Placement is load-bearing for the SAME reason as the two
   # calls immediately above: every exit path below this line is an `exit 0`, and
   # a box carrying `agents.list` is exactly an already-poisoned box that would
   # otherwise reach one of those early exits and never be inspected.
   #
-  # A refusal exits 78 (EX_CONFIG) — deliberately the same code the landmine
-  # itself produces, so a fleet driver can tell "this box has a config fault"
-  # from "this box was unreachable". It is NOT 0 and NOT 1: a roll that walks
-  # past a box about to crash-loop has not succeeded.
+  # ⚠️ A LEGACY CONFIG NO LONGER BLOCKS THIS ROLL, AND THAT IS THE FIX, NOT A
+  # RELAXATION. The previous version exited 78 here on detection. Because this
+  # updater installs no OpenClaw binary, that refusal prevented no crash — while
+  # freezing the roll on 35 of 38 boxes, including the roll that delivers
+  # scripts/oc-atomic-upgrade.sh (deliver_canonical_scripts_tree, below). The
+  # gate was blocking the only delivery vehicle for its own remedy. In 'report'
+  # mode the detector now warns loudly, writes a marker, and returns 0.
+  #
+  # WHAT STILL BLOCKS: a return of 3, which the detector reserves for the
+  # genuinely UNKNOWN — an unparseable config, or no python3 to read it with. An
+  # absence that cannot be proven is not an absence, and a box whose config does
+  # not parse is not a box to keep writing to. That population is disjoint from
+  # the 35: their configs parse fine, they simply carry the old key.
+  #
+  # The version-changing paths are where the real block lives now, and they fail
+  # closed without the atomic procedure: the weekly `npm update -g openclaw`
+  # cron (scripts/setup-weekly-update.sh) and the F1 remediations
+  # (scripts/fleet-audit-remediate.sh, scripts/u126-remediate.sh).
   _AGENTS_LIST_RC=0
   agents_list_gate || _AGENTS_LIST_RC=$?
   if [ "$_AGENTS_LIST_RC" -ne 0 ]; then
-    echo "FATAL: legacy \`agents.list\` schema gate REFUSED this roll (exit 78 / EX_CONFIG)." >&2
+    echo "FATAL: the \`agents.list\` schema detector could NOT READ this box's config (exit 78 / EX_CONFIG)." >&2
+    echo "       This is the fail-closed path for an UNKNOWN, not for a known-legacy box." >&2
     echo "       Nothing was installed and no version stamp was written." >&2
     exit 78
   fi
