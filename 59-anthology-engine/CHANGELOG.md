@@ -1,3 +1,11 @@
+### v0.1.19 -- unit batch U18/U21/U25/U26 (2026-08-10)
+
+- U18: one-complete-S0-S9 operator canary (canary_e2e_test.py, NEW-4, 38-check self-test)
+- U21: confirm-then-pull Doc read-back -- gate_engine pullback-revalidate callback + prove_aw_doc_pullback.py prover (NEW-5, advisory never blocking, Trevor D3)
+- U25: n8n Drive broker create_book_tree FAILS CLOSED -- producer editor share not optional (422 up-front email gate, 502 on double share failure, 200 only when the share is confirmed; the 200-with-warning contract is removed)
+- U26: operator snapshot + CC-door toolchain -- snapshot_cut (NEW-1), provision_snapshot_import (NEW-2), push_snapshot_to_subaccounts (NEW-3), copy_qc_workflows (NEW-6), guard_cc_anthology_door (NEW-7)
+- ENGINE-MANIFEST.json rows 45-51 + AF-AE-SNAPSHOT-KEY-MISMATCH / AF-AE-SNAPSHOT-EMPTY; ENGINE-PIN.sha256 re-stamped; verify.sh manifest-parse hardening + enforcement-set DRIFT recompute; skill-version 0.1.17 -> 0.1.18
+
 ### v0.1.18 -- QC-cycle-2 FIX-1: broker create_book_tree fails closed (2026-08-10)
 
 U25 fail-closed for the n8n Drive broker's `create_book_tree` (the producer editor
