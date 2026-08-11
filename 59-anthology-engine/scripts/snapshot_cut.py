@@ -66,7 +66,7 @@
 #                                an empty fixture
 #   AF-AE-PIT-SCOPE              (exit 2, via registry) token cannot READ
 #
-# EXIT CODES (house convention 0/1/2/3/5):
+# EXIT CODES (house convention 0/1/2/3/5; 4 = enforced violation):
 #   0  success (cut written + gate passed; also a --dry-run plan pass and
 #      self-test pass)
 #   1  unexpected error
@@ -74,6 +74,10 @@
 #      pipeline/field-section missing on the live location)
 #   3  Convert and Flow API unreachable / dependency held (retryable;
 #      --dry-run never contacts the network)
+#   4  self-test FAILED — an assertion in the OFFLINE self-test (golden /
+#      attack fixtures, contract<->field-map coherence, byte-exact fieldKeys)
+#      tripped: the AF-AE-SNAPSHOT-KEY-MISMATCH family. A tamper NEVER
+#      masquerades as "unexpected error" (exit 1).
 #   5  data or read-back mismatch — the byte-exact fieldKey gate
 #      (AF-AE-SNAPSHOT-KEY-MISMATCH) or an empty-cut refusal
 #
@@ -110,6 +114,7 @@ import anthology_registry as reg  # noqa: E402
 
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = (
     reg.EX_OK, reg.EX_ERR, reg.EX_STOP, reg.EX_HELD, reg.EX_MISMATCH)
+EX_VIOLATION = 4  # enforced violation detected (self-test FAILED, AF-AE-SNAPSHOT-* family)
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
@@ -117,20 +122,44 @@ CONTRACT_PATH = SKILL_DIR / "config" / "anthology-snapshot-contract.json"
 FIXTURES_DIR = SKILL_DIR / "fixtures" / "snapshot"
 
 # ---------------------------------------------------------------------------
-# The four REPLACE-ME location custom values (mirror of the contract's
-# location_custom_values.required keys). A cut NEVER carries a real value:
-# the custom-values extraction keeps ONLY the placeholder the snapshot ships,
-# and REFUSES a location where one of them holds a real-looking value
-# (AF-AE-SNAPSHOT-KEY-MISMATCH) instead of silently embedding it — the
-# never-a-real-token rule made enforceable at cut time.
+# The REPLACE-ME location custom values are CONTRACT-DRIVEN: the key set is
+# config/anthology-snapshot-contract.json location_custom_values.required (the
+# same source anthology_snapshot.py provision-custom-values fills), never a
+# hardcoded tuple — a contract key rename must fail the cut, not silently
+# drop the key. A cut NEVER carries a real value: the custom-values extraction
+# keeps ONLY the placeholder the snapshot ships, and REFUSES a location where
+# one of them holds a real-looking value (AF-AE-SNAPSHOT-KEY-MISMATCH) instead
+# of silently embedding it — the never-a-real-token rule made enforceable at
+# cut time.
 # ---------------------------------------------------------------------------
-PLACEHOLDER_CUSTOM_VALUES = (
-    "anthology_webhook_url",
-    "anthology_hook_secret",
-    "producer",
-    "producer_email",
-)
 PLACEHOLDER_MARKERS = ("REPLACE-ME", "replace-me", "<PUBLIC_HOSTNAME>")
+
+def _contract_custom_values(contract: dict) -> list:
+    """The contract's location_custom_values.required list (normalized dicts,
+    so callers may use it straight from the JSON file or from a self-test
+    fixture). Empty -> the empty list (no keys to require)."""
+    required = ((contract.get("location_custom_values") or {}).get("required")) or []
+    return [dict(cv) for cv in required if isinstance(cv, dict)]
+
+def _placeholder_custom_value_keys(contract: dict) -> list:
+    """The ordered contract key list for the REPLACE-ME custom values."""
+    return [cv.get("key") for cv in _contract_custom_values(contract) if cv.get("key")]
+
+def _placeholder_custom_value_entries(contract: dict) -> list:
+    """The fixture entries the golden cut / a compliant extraction carries:
+    key + name + REPLACE-ME value + the contract's secret flag. Contract-
+    DRIVEN (key list + secret flags from location_custom_values.required), so
+    a renamed key / new key / secret-flag change is exercised by the self-test
+    exactly as the live cut would be. The name field mirrors what the
+    extractor writes (key) — the shape the shipped fixture carries."""
+    out = []
+    for cv in _contract_custom_values(contract):
+        key = cv.get("key")
+        if not key:
+            continue
+        out.append({"key": key, "name": key,
+                    "value": "REPLACE-ME", "secret": bool(cv.get("secret"))})
+    return out
 
 # Internal-rail endpoints proven live in this repo (Podcast gate): workflow
 # list/get/trigger. The forms + tags reads ride the same rail (see
@@ -302,21 +331,44 @@ def _extract_custom_fields(client, location_id: str, field_map: dict, contract: 
     return out
 
 
-def _extract_custom_values(client, location_id: str) -> list:
-    """Location custom values as placeholder-only entries. REFUSES a location
-    that holds a real-looking value in any of the four keys (the never-a-real-
-    token rule, enforceable at cut time)."""
+def _extract_custom_values(client, location_id: str, contract: dict) -> list:
+    """Location custom values as placeholder-only entries, CONTRACT-DRIVEN:
+    the key set is the contract's location_custom_values.required (never a
+    hardcoded tuple), and the gate runs BOTH directions like the fieldKey
+    gate — a live location missing a contract key is SnapshotMissing, a
+    renamed / extra / real-valued key is KeyMismatch. A contract key rename
+    therefore FAILS the cut instead of silently dropping the key."""
     live = client.list_custom_values(location_id)
-    out = []
+    want_keys = _placeholder_custom_value_keys(contract)
+    got = {}
     for cv in live:
-        name = cv.get("name") or ""
-        if name in PLACEHOLDER_CUSTOM_VALUES:
-            if not _is_placeholder(cv.get("value") or ""):
-                raise KeyMismatch(
-                    "custom value %r holds a real-looking value on the template "
-                    "location — a cut NEVER ships a real value; replace it with the "
-                    "REPLACE-ME placeholder and re-cut" % name)
-            out.append({"key": name, "name": name, "value": "REPLACE-ME", "secret": name == "anthology_hook_secret"})
+        k = cv.get("key") or cv.get("name") or ""
+        if k:
+            got[k] = cv
+    want = set(want_keys)
+    got_keys = set(got)
+    if got_keys != want:
+        missing = sorted(want - got_keys)
+        extra = sorted(got_keys - want)
+        if missing and not extra:
+            raise SnapshotMissing(
+                "the template location is missing %d contract custom value key(s): %s"
+                % (len(missing), ", ".join(missing)))
+        raise KeyMismatch(
+            "custom-value key gate FAILED: %d missing (%s), %d unexpected (%s)"
+            % (len(missing), ", ".join(missing[:8]),
+               len(extra), ", ".join(extra[:8])))
+    out = []
+    for key in want_keys:
+        cv = got[key]
+        if not _is_placeholder(cv.get("value") or ""):
+            raise KeyMismatch(
+                "custom value %r holds a real-looking value on the template "
+                "location — a cut NEVER ships a real value; replace it with the "
+                "REPLACE-ME placeholder and re-cut" % key)
+        out.append({"key": key, "name": key, "value": "REPLACE-ME",
+                    "secret": bool(next((c["secret"] for c in _contract_custom_values(contract)
+                                        if c.get("key") == key), False))})
     return out
 
 
@@ -374,7 +426,7 @@ def _assemble_payload(client, rail, location_id: str, contract: dict, field_map:
     payload["cut_at"] = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload["pipeline"] = _extract_pipeline(client, location_id, field_map)
     payload["custom_fields"] = _extract_custom_fields(client, location_id, field_map, contract)
-    payload["custom_values"] = _extract_custom_values(client, location_id)
+    payload["custom_values"] = _extract_custom_values(client, location_id, contract)
     payload["forms"], payload["tags"] = _extract_forms_tags(contract)
     payload["workflows"] = _extract_workflows(rail, location_id, contract)
     payload["counts"] = _cut_count(payload)
@@ -484,12 +536,11 @@ def _golden_payload(contract: dict, field_map: dict) -> dict:
         {"fieldKey": f["intended_key"], "name": f["create_name"], "dataType": f["data_type"],
          "options": f.get("options") or []}
         for f in field_map["provisioning"]["fields"]]
-    payload["custom_values"] = [
-        {"key": "anthology_webhook_url", "name": "anthology_webhook_url", "value": "REPLACE-ME", "secret": False},
-        {"key": "anthology_hook_secret", "name": "anthology_hook_secret", "value": "REPLACE-ME", "secret": True},
-        {"key": "producer", "name": "producer", "value": "REPLACE-ME", "secret": False},
-        {"key": "producer_email", "name": "producer_email", "value": "REPLACE-ME", "secret": False},
-    ]
+    # Contract-DRIVEN (never a hardcoded set): the key list + secret flags
+    # come from the contract's location_custom_values.required, the same
+    # source provision-custom-values fills — a contract key rename MUST fail
+    # the self-test (custom-value-key-renamed attack below).
+    payload["custom_values"] = _placeholder_custom_value_entries(contract)
     forms, tags = _extract_forms_tags(contract)
     payload["forms"], payload["tags"] = forms, tags
     payload["workflows"] = [
@@ -538,15 +589,32 @@ def _attack_fixtures(golden: dict, contract: dict):
     a6["custom_values"][1]["value"] = "Bearer REALTOKEN123"
     attacks.append(("custom-value-real", a6))
 
-    # 7. empty cut -> KeyMismatch (empty fixture refusal)
+    # 7. a contract custom-value key RENAMED on the template location ->
+    #    KeyMismatch (the contract-drift self-test: the key set is the
+    #    contract's location_custom_values.required, never a hardcoded tuple)
     a7 = copy.deepcopy(golden)
-    a7["custom_fields"] = []
-    a7["workflows"] = []
-    a7["forms"] = {"universal_hidden_fields": [], "required": [], "contract_bound_per_anthology": [], "provenance": ""}
-    a7["tags"] = {"seed_recommended": False, "slugs": [], "provenance": ""}
-    a7["custom_values"] = []
-    a7["pipeline"] = {"name": "", "id": "", "stages": []}
-    attacks.append(("empty-cut", a7))
+    for cve in a7["custom_values"]:
+        if cve["key"] == "producer_email":
+            cve["key"] = "producer_email_renamed"
+            cve["name"] = "producer_email_renamed"
+    attacks.append(("custom-value-key-renamed", a7))
+
+    # 8. an EXTRA custom value on the template location -> KeyMismatch
+    #    (the gate runs BOTH directions, like the fieldKey gate)
+    a8 = copy.deepcopy(golden)
+    a8["custom_values"].append({"key": "anthology_extra_cv", "name": "anthology_extra_cv",
+                                "value": "REPLACE-ME", "secret": False})
+    attacks.append(("custom-value-extra", a8))
+
+    # 9. empty cut -> KeyMismatch (empty fixture refusal)
+    a9 = copy.deepcopy(golden)
+    a9["custom_fields"] = []
+    a9["workflows"] = []
+    a9["forms"] = {"universal_hidden_fields": [], "required": [], "contract_bound_per_anthology": [], "provenance": ""}
+    a9["tags"] = {"seed_recommended": False, "slugs": [], "provenance": ""}
+    a9["custom_values"] = []
+    a9["pipeline"] = {"name": "", "id": "", "stages": []}
+    attacks.append(("empty-cut", a9))
     return attacks
 
 
@@ -613,9 +681,28 @@ def _check_attack(attack_name, payload, golden, dev):
         except SnapshotMissing:
             pass
     elif attack_name == "custom-value-real":
+        # the location carries ALL contract keys, one holding a real value
+        # (the never-a-real-token rule) -> KeyMismatch
+        cv_real = copy.deepcopy(golden["custom_values"])
+        cv_real[1]["value"] = "Bearer REALTOKEN123"
         try:
-            _extract_custom_values(_FakeValues([{"name": "anthology_hook_secret", "value": "Bearer REALTOKEN123"}]), "loc")
+            _extract_custom_values(_FakeValues(cv_real), "loc", _fake_contract())
             raise AssertionError("custom-value-real was NOT refused")
+        except KeyMismatch:
+            pass
+    elif attack_name == "custom-value-key-renamed":
+        # a contract custom-value key RENAMED on the template location ->
+        # KeyMismatch (the both-directions gate: the live set no longer
+        # matches the contract's location_custom_values.required keys)
+        try:
+            _extract_custom_values(_FakeValues(payload["custom_values"]), "loc", _fake_contract())
+            raise AssertionError("custom-value-key-renamed was NOT refused")
+        except KeyMismatch:
+            pass
+    elif attack_name == "custom-value-extra":
+        try:
+            _extract_custom_values(_FakeValues(payload["custom_values"]), "loc", _fake_contract())
+            raise AssertionError("custom-value-extra was NOT refused")
         except KeyMismatch:
             pass
     elif attack_name == "empty-cut":
@@ -675,6 +762,23 @@ def self_test() -> int:
     contract = _fake_contract()
     field_map = _fake_field_map()
 
+    try:
+        return _self_test_body(dev, contract, field_map)
+    except AssertionError as exc:
+        # A self-test FAILURE is an enforced violation, never an "unexpected
+        # error": the field-map/contract drift or mutated-fixture a tamper
+        # produces is exactly the AF-AE-SNAPSHOT-KEY-MISMATCH surface this
+        # module documents (byte-exact fieldKey gate, exit 5 in the live cut;
+        # the OFFLINE self-test reports the SAME code, exit 4).
+        sys.stderr.write("[snapshot-cut] SELF-TEST FAILED (AF-AE-SNAPSHOT-KEY-MISMATCH "
+                         "family): %s\n" % exc)
+        return EX_VIOLATION
+
+
+def _self_test_body(dev, contract, field_map) -> int:
+    import hashlib
+    import tempfile
+
     # ---- contract <-> field-map coherence (defense-in-depth; the real gate
     #      is qc-snapshot-contract.sh, but a cut refuses to run on a drifted
     #      pair) -----------------------------------------------------------
@@ -690,7 +794,16 @@ def self_test() -> int:
     golden = _golden_payload(contract, field_map)
     assert len(golden["custom_fields"]) == contract["custom_fields"]["total_keys"] == 28
     assert golden["counts"]["custom_fields"] == 28
-    assert golden["counts"]["custom_values"] == 4
+    cv_keys = _placeholder_custom_value_keys(contract)
+    assert golden["counts"]["custom_values"] == len(cv_keys) == 4, \
+        "golden custom_values drifted from contract location_custom_values.required"
+    # every custom-value key byte-equals the contract key list
+    assert [c["key"] for c in golden["custom_values"]] == cv_keys, \
+        "golden fixture custom-value keys drifted from contract location_custom_values.required"
+    # the secret flag byte-equals the contract's flag
+    assert [c["secret"] for c in golden["custom_values"]] == \
+        [bool(cv.get("secret")) for cv in _contract_custom_values(contract)], \
+        "golden fixture custom-value secret flags drifted from contract"
     assert golden["counts"]["tags"] == 8
     assert golden["counts"]["forms"] == 4
     assert golden["counts"]["workflows"] == 8
@@ -715,6 +828,9 @@ def self_test() -> int:
     payload = copy.deepcopy(FIXTURE_SCHEMA)
     payload["custom_fields"] = _extract_custom_fields(client_ok, "loc", fm, contract)
     assert [f["fieldKey"] for f in payload["custom_fields"]] == fm_keys
+    payload["custom_values"] = _extract_custom_values(client_ok, "loc", contract)
+    assert [c["key"] for c in payload["custom_values"]] == cv_keys
+    assert payload["custom_values"] == _placeholder_custom_value_entries(contract)
     pipeline = _extract_pipeline(client_ok, "loc", fm)
     assert pipeline["name"] == fm["pipeline"]["standard_pipeline_name"]
     assert [s["name"] for s in pipeline["stages"]] == [s["name"] for s in fm["pipeline"]["standard_stages"]]
@@ -756,10 +872,11 @@ def self_test() -> int:
 
     print("snapshot_cut self-test: OK "
           "(contract<->field-map coherence, golden fixture 28/4/8/4/8 counts, byte-exact "
-          "fieldKeys, never-a-real-token, deterministic canonical sha256, compliant live "
-          "extraction, rail-unavailable HELD, 7 attack fixtures refused "
-          "(fieldKey-mutated/field-deleted/field-extra/pipeline-wrong-name/workflow-missing/"
-          "custom-value-real/empty-cut), write + read-back, dry-run, version validation)")
+          "fieldKeys, contract-driven custom values, never-a-real-token, deterministic "
+          "canonical sha256, compliant live extraction, rail-unavailable HELD, 9 attack "
+          "fixtures refused (fieldKey-mutated/field-deleted/field-extra/pipeline-wrong-name/"
+          "workflow-missing/custom-value-real/custom-value-key-renamed/custom-value-extra/"
+          "empty-cut), write + read-back, dry-run, version validation)")
     return EX_OK
 
 
@@ -871,7 +988,12 @@ def main(argv=None):
         rail = None
         rlabel, rtoken = reg.resolve_firebase_refresh_token()
         if rtoken:
-            api_key = reg._resolve_firebase_api_key() or ""
+            # _resolve_firebase_api_key() returns (label, value) like every
+            # resolver in the registry — destructure it, or the 2-tuple would
+            # reach InternalRailClient._mint() and TypeError inside
+            # FIREBASE_TOKEN_URL_TEMPLATE % api_key (the exact bug this line
+            # previously carried; all other callers in the repo destructure).
+            _, api_key = reg._resolve_firebase_api_key() or (None, "")
             rail = reg.InternalRailClient(rtoken, api_key) if api_key else None
         if rail is None:
             sys.stderr.write("[snapshot-cut] internal-rail refresh token NOT SET — "
