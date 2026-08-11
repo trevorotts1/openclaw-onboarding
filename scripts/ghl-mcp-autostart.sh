@@ -1661,7 +1661,29 @@ oc_mcp_unset_verb_supported() {
 
 deregister_tier2() {
   command -v openclaw >/dev/null 2>&1 || return 0
-  openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >/dev/null 2>&1 || true
+  # IDEMPOTENCY GUARD. A single-key `openclaw config set` does NOT rewrite one path:
+  # measured changedPathCount was 10-103 depending on the box. When that rewrite lands
+  # on plugins.allow the gateway logs "config change requires gateway restart
+  # (plugins.allow)" -> SIGUSR1 -> a FULL process restart that kills every in-flight
+  # agent run mid-task. The value written here is normally identical to the value
+  # already stored -- proven by diff: zero keys added, zero removed, exactly one value
+  # changed (meta.lastTouchedAt). So the write was pure churn that restarted gateways.
+  # Only write on a real change. FAIL-OPEN: if the config cannot be read, fall through
+  # to the original write so genuine drift is still repaired.
+  _ghl_want="http://localhost:${GHL_MCP_PORT}"
+  _ghl_cfg="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
+  [ -f "$_ghl_cfg" ] || _ghl_cfg="/data/.openclaw/openclaw.json"
+  _ghl_cur="$(OC_CFG="$_ghl_cfg" python3 -c 'import json,os
+try:
+    d=json.load(open(os.environ["OC_CFG"]))
+    print((((d.get("env") or {}).get("vars")) or {}).get("GHL_COMMUNITY_MCP_URL","") or "")
+except Exception:
+    print("__UNREADABLE__")' 2>/dev/null)"
+  [ -n "$_ghl_cur" ] || _ghl_cur="__UNREADABLE__"
+  if [ "$_ghl_cur" != "$_ghl_want" ]; then
+    openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "$_ghl_want" >/dev/null 2>&1 || true
+  fi
+  unset _ghl_want _ghl_cur _ghl_cfg
   if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
     log "de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl); installed CLI documents the verb: $(oc_mcp_unset_verb_supported)"
     if ! oc_mcp_unset ghl-community-mcp; then
