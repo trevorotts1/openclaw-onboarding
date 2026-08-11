@@ -2223,7 +2223,7 @@ preclear_2026_7_1() {
 # ----------------------------------------------------------
 agents_list_gate() {
   local mode="${1:-${OPENCLAW_AGENTS_LIST_MODE:-migrate}}"
-  local ocjson ts backup verdict detail ws_before ws_after doctor_out doctor_rc box
+  local ocjson verdict detail box
 
   box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
   ocjson="$HOME/.openclaw/openclaw.json"
@@ -2273,72 +2273,28 @@ agents_list_gate() {
   echo ""
   echo "  [agents-list] LEGACY SCHEMA DETECTED on $box: $detail"
 
-  if [ "$mode" = "check" ]; then
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail)." \
-      "Mode is 'check' -- detection only. Nothing was changed. Re-run in 'migrate' mode to fix it."
-    return 3
-  fi
-
-  if ! command -v openclaw >/dev/null 2>&1; then
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail), and the \`openclaw\` CLI is NOT ON PATH here, so the prescribed migration (\`openclaw doctor --fix\`) cannot be run." \
-      "Nothing was changed. This gate will NOT hand-delete the key: the array holds agent definitions, and dropping it blindly trades a loud crash-loop for silent agent loss."
-    return 3
-  fi
-
-  # Capture the workspace the box resolves TODAY, before anything moves.
-  ws_before="$(_agents_list_workspace "$ocjson")"
-
-  ts="$(date +%Y%m%d-%H%M%S)"
-  backup="${ocjson}.bak-pre-agents-list-migration-${ts}"
-  if ! cp -p "$ocjson" "$backup" 2>/dev/null; then
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The legacy \`agents.list\` key IS PRESENT ($detail), but the config could NOT BE BACKED UP to $backup." \
-      "Refusing to migrate a config we cannot roll back. Nothing was changed."
-    return 3
-  fi
-  echo "  [agents-list] backup written: $backup"
-  echo "  [agents-list] workspace resolved BEFORE migration: ${ws_before:-<none declared>}"
-  echo "  [agents-list] running the prescribed migration: openclaw doctor --fix"
-
-  doctor_rc=0
-  doctor_out="$(openclaw doctor --fix 2>&1)" || doctor_rc=$?
-  printf '%s\n' "$doctor_out" | sed 's/^/    | /'
-
-  if [ "$doctor_rc" -ne 0 ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "\`openclaw doctor --fix\` FAILED (rc=$doctor_rc) while migrating the legacy \`agents.list\` key." \
-      "The config was RESTORED from $backup. The box is exactly as it was."
-    return 3
-  fi
-
-  # RE-VALIDATE. A migration that returns 0 is a claim, not a result.
-  verdict="$(_agents_list_detect "$ocjson")"
-  detail="${verdict#*|}"
-  verdict="${verdict%%|*}"
-  if [ "$verdict" != "ABSENT" ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "\`openclaw doctor --fix\` exited 0 but the legacy key is STILL THERE (post-migration verdict: $verdict -- $detail)." \
-      "An exit code is not a migration. The config was RESTORED from $backup."
-    return 3
-  fi
-
-  ws_after="$(_agents_list_workspace "$ocjson")"
-  if [ "$ws_before" != "$ws_after" ]; then
-    _agents_list_restore "$ocjson" "$backup"
-    _agents_list_refuse_banner "$box" "$ocjson" \
-      "The migration removed the legacy key but MOVED THE RESOLVED WORKSPACE: '${ws_before:-<none>}' -> '${ws_after:-<none>}'." \
-      "That workspace is the symlink target for this box's shared AGENTS.md/TOOLS.md/USER.md -- accepting it would trade a loud crash-loop for a silent one. The config was RESTORED from $backup."
-    return 3
-  fi
-
-  echo "  [agents-list] MIGRATED: legacy \`agents.list\` removed, config re-read and verified clean."
-  echo "  [agents-list] workspace unchanged after migration: ${ws_after:-<none declared>}"
-  echo "  [agents-list] backup retained at: $backup"
-  return 0
+  # R0 (2026-08-11, post registry-strip incident): `openclaw doctor --fix` is
+  # REMOVED from this path, in BOTH modes. Measured on 12 boxes: the config's
+  # SHA-256 was byte-identical before and after a `doctor --fix` run --
+  # `openclaw config schema` on this build line lists the `agents` properties
+  # as exactly [defaults, list]; there is no `entries` key for it to migrate
+  # TO. It is a proven no-op for this migration. It ALSO has a measured side
+  # effect: on one box it silently rewrote `agents.defaults.models` pins. A
+  # command that cannot do the job but CAN mutate model pins is strictly
+  # worse than refusing, so this gate no longer calls it in either mode.
+  #
+  # Until a sanctioned migrator lands (an atomic procedure that stops the
+  # gateway, installs the new binary, rewrites the config, and verifies
+  # losslessness IN THE SAME WINDOW -- config-only migration is provably
+  # unsafe both directions: `additionalProperties:false` makes `entries`
+  # invalid on this build and `list` invalid on the next one), this gate
+  # REFUSES on a legacy box in every mode. A box left one roll stale is
+  # recoverable; a box whose model pins were silently rewritten, or one
+  # migrated to a schema this build cannot read, is not.
+  _agents_list_refuse_banner "$box" "$ocjson" \
+    "The legacy \`agents.list\` key IS PRESENT ($detail). \`openclaw doctor --fix\` is NOT run here: measured on 12 boxes it is a byte-identical no-op for this migration, and it has a proven side effect of silently rewriting \`agents.defaults.models\` pins." \
+    "Nothing was changed (mode='$mode'). This gate will NOT hand-delete the key, and will NOT run a fix proven not to work: the array holds agent definitions, and a migration that cannot work but CAN mutate model pins is worse than refusing."
+  return 3
 }
 
 # Detect the legacy key in a config. Prints "<VERDICT>|<detail>" where VERDICT is
@@ -2353,7 +2309,18 @@ _agents_list_detect() {
   # aborts at PARSE time. Dev boxes running Homebrew bash 5.x never see it, so
   # the heredoc form can look perfectly fine while being dead on every client
   # box. Same two-step, same reason, as scripts/qc-assert-config-write-chown.sh.
-  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-detect.XXXXXX.py")" || {
+  # R0 (2026-08-11): NO literal suffix after the X's. BSD/macOS `mktemp` (every
+  # Mac in the fleet) only substitutes a TRAILING run of X's -- a template
+  # with anything after them (".py" here) is treated as a literal filename,
+  # not a pattern: the first call "succeeds" by creating that exact
+  # unrandomized file, and every call after it (or any concurrent run) fails
+  # with "mkstemp failed ...: File exists" until that stale file is removed.
+  # Proven via mutation test: `mktemp .../foo.XXXXXX.py` called twice in a row
+  # fails the second time on this exact bash 3.2.57 / macOS mktemp; dropping
+  # the suffix (`mktemp .../foo.XXXXXX`) succeeds every time. `python3 "$file"`
+  # runs a script with no extension identically to one with `.py` -- the
+  # suffix was cosmetic, never functional.
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-detect.XXXXXX")" || {
     printf 'UNDETERMINED|could not create a temp file to run the detector\n'; return 0; }
   cat > "$py" <<'PYEOF'
 import json
@@ -2411,7 +2378,11 @@ PYEOF
 # never writes. Used to prove a migration did not move the workspace.
 _agents_list_workspace() {
   local cfg="$1" py out
-  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-workspace.XXXXXX.py")" || { printf ''; return 0; }
+  # R0 (2026-08-11): no literal suffix after the X's -- see the mktemp note in
+  # _agents_list_detect() above (BSD/macOS mktemp does not randomize a
+  # template with a trailing ".py"; the second call ever made to this exact
+  # template fails "File exists" on every Mac in the fleet).
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-workspace.XXXXXX")" || { printf ''; return 0; }
   cat > "$py" <<'PYEOF'
 import json
 import os
@@ -2506,6 +2477,389 @@ _agents_list_refuse_banner() {
   echo "  ##    launchctl bootstrap gui/\$(id -u) <plist-path>"
   echo "  ################################################################"
   echo ""
+}
+
+# ----------------------------------------------------------
+# R0 REGISTRY-PARITY GATE  (2026-08-11, post registry-strip incident)
+# ----------------------------------------------------------
+# WHAT HAPPENED THAT THIS GATE EXISTS TO CATCH: on 2026-08-11, 16 boxes had
+# their `agents` registry reduced to `main`-only (every department
+# de-registered) while a raw writer (source UNDETERMINED) raced a fleet roll.
+# `config validate` returned valid (rc=0) on every one of them -- a config
+# with zero departments is a perfectly valid config, so VALIDITY IS NOT
+# HEALTH. Worse: THIS updater's own agents_list_gate() read the resulting
+# near-empty/ABSENT registry as "safe to proceed" on every box it reached,
+# because that gate checks SCHEMA SHAPE (does the legacy key exist), never
+# COUNT. A roll that walks past a just-emptied registry calling it clean is
+# exactly the failure this gate exists to close.
+#
+# ⚠️ NEVER TRUST `openclaw config validate` (or the ABSENT verdict from
+# agents_list_gate) as a substitute for this check. This gate never calls
+# validate and never treats ABSENT as automatically safe.
+#
+# TWO INDEPENDENT CHECKS. Either one alone REFUSES the run (exit 78):
+#
+#   (1) ABSOLUTE FLOOR (runs on 'pre' AND 'post'): the registry declares <= 1
+#       agent while this box's own `<oc-root>/agents/` directory tree still
+#       holds > 2 per-agent subdirectories. Those directories are created and
+#       gate-tested elsewhere in this repo as a 1:1 mapping to
+#       `agents.list[].id` / `agents.entries` keys (see
+#       23-ai-workforce-blueprint/scripts/verify-wiring.sh, which already
+#       fails loud when that pairing breaks) -- so a registry that has
+#       collapsed while the directories it is supposed to describe are still
+#       there is exactly the strip signature, not a coincidence. This check
+#       alone would have refused every one of the 15 reached boxes in the
+#       2026-08-11 incident.
+#   (2) REGRESSION (runs on 'post' only, against the 'pre' snapshot captured
+#       earlier in THIS SAME RUN): the registry's entry COUNT dropped, or any
+#       agent id present at 'pre' is MISSING at 'post' -- even if the total
+#       count happens to match (a drop-one/add-one swap can hide a real loss
+#       behind a matching total; identity is checked, not just count). This
+#       catches partial loss below the absolute floor, and loss with no
+#       surviving directory evidence at all.
+#
+# NEVER AUTO-RESTORES. A parity violation could be an intentional, human-
+# driven roster change (a real department retirement) -- indistinguishable
+# from damage by this gate alone. On violation it writes a marker, prints a
+# banner designed to be impossible to miss, best-effort escalates to Rescue
+# Rangers (a documented no-op when the webhook env vars are not set -- most
+# boxes today -- in which case the marker + banner ARE the escalation
+# record), and REFUSES. A human, or the box's own standing sentinel, makes
+# the call on whether the change was intended.
+#
+# PLACEMENT IS LOAD-BEARING, same reason as agents_list_gate's placement
+# above it: 'pre' must run before ANY write this updater makes; 'post' must
+# run after EVERY write this updater makes, immediately before the final
+# return -- see the two call sites (search REGISTRY-PARITY-CALL).
+#
+# SCHEMA-AGNOSTIC ON PURPOSE. Reads BOTH `agents.list` (array, current fleet
+# schema -- confirmed zero `agents.entries` readers anywhere in this repo as
+# of this commit) and `agents.entries` (object, the post-migration schema),
+# taking the union of ids if a config somehow briefly carries both. A box
+# migrated by the atomic upgrade procedure is measured the same way as one
+# still on the legacy schema.
+# ----------------------------------------------------------
+_REGISTRY_PARITY_PRE_VERDICT=""
+_REGISTRY_PARITY_PRE_COUNT=""
+_REGISTRY_PARITY_PRE_IDS=""
+_REGISTRY_PARITY_PRE_DIRCOUNT=""
+
+_registry_parity_ocjson() {
+  local p="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && p="/data/.openclaw/openclaw.json"
+  printf '%s' "$p"
+}
+
+_registry_parity_agentsdir() {
+  local p="$HOME/.openclaw/agents"
+  [ -d "/data/.openclaw/agents" ] && p="/data/.openclaw/agents"
+  printf '%s' "$p"
+}
+
+# Prints "<verdict>|<count>|<comma-separated-sorted-ids>" for the agents
+# registry in $1 (an openclaw.json path). verdict is OK, ABSENT or
+# UNDETERMINED. Never fails, never writes to $1.
+_registry_snapshot() {
+  local cfg="$1" py out rc
+  if [ ! -f "$cfg" ]; then
+    printf 'NO-CONFIG|0|\n'
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'UNDETERMINED|0|python3 not on PATH\n'
+    return 0
+  fi
+  # Same bash-3.2.57-heredoc-in-$()-parser workaround as _agents_list_detect
+  # above: write the python source to a temp FILE and run it as a plain
+  # command substitution, never a heredoc directly inside $(...). No literal
+  # suffix after the X's -- see the mktemp note in _agents_list_detect():
+  # BSD/macOS mktemp does not randomize ".XXXXXX.py"; found by this gate's
+  # OWN test suite failing "File exists" on the second call.
+  py="$(mktemp "${TMPDIR:-/tmp}/registry-snapshot.XXXXXX")" || {
+    printf 'UNDETERMINED|0|could not create a temp file to run the detector\n'; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('UNDETERMINED|0|cannot parse as JSON: %s' % e)
+    raise SystemExit(0)
+
+if not isinstance(cfg, dict):
+    print('UNDETERMINED|0|top level is not a JSON object')
+    raise SystemExit(0)
+
+agents = cfg.get('agents')
+if agents is None:
+    print('ABSENT|0|no `agents` block at all')
+    raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('UNDETERMINED|0|`agents` is not an object')
+    raise SystemExit(0)
+
+has_entries = isinstance(agents.get('entries'), dict)
+has_list = isinstance(agents.get('list'), list)
+
+if not has_entries and not has_list:
+    print('ABSENT|0|no `agents.list` or `agents.entries` key present')
+    raise SystemExit(0)
+
+ids = set()
+if has_entries:
+    for k in agents['entries'].keys():
+        ids.add(str(k))
+if has_list:
+    for item in agents['list']:
+        if isinstance(item, dict) and item.get('id'):
+            ids.add(str(item['id']))
+
+ids_sorted = sorted(ids)
+print('OK|%d|%s' % (len(ids_sorted), ','.join(ids_sorted)))
+PYEOF
+  rc=0
+  out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+  rm -f "$py"
+  if [ "$rc" -ne 0 ]; then
+    printf 'UNDETERMINED|0|detector exited %s: %s\n' "$rc" "${out:-<no output>}"
+    return 0
+  fi
+  if [ -z "$out" ]; then
+    printf 'UNDETERMINED|0|detector produced no output\n'
+    return 0
+  fi
+  printf '%s\n' "$out"
+  return 0
+}
+
+# Prints "<count>|<sorted-comma-list>" of subdirectories under $1. "0|" when
+# the directory does not exist (fresh/unprovisioned box -- not a fault, just
+# no baseline to compare against).
+_registry_agent_dirs() {
+  local dir="$1" n=0 f b names=""
+  if [ ! -d "$dir" ]; then
+    printf '0|\n'
+    return 0
+  fi
+  for f in "$dir"/*/; do
+    [ -d "$f" ] || continue
+    b="$(basename "$f")"
+    n=$((n + 1))
+    if [ -z "$names" ]; then names="$b"; else names="$names,$b"; fi
+  done
+  if [ "$n" -gt 0 ]; then
+    names="$(printf '%s' "$names" | tr ',' '\n' | sort | tr '\n' ',' | sed 's/,$//')"
+  fi
+  printf '%s|%s\n' "$n" "$names"
+  return 0
+}
+
+# The one loud refusal banner for a parity violation, plus the marker file
+# and the best-effort RR escalation. Matches the shape of
+# _agents_list_refuse_banner above so every gate in this file refuses the
+# same way.
+_registry_parity_refuse() {
+  local box="$1" cfg="$2" phase="$3" reason="$4" detail="$5" marker
+  marker="$(dirname "$cfg")/.openclaw-registry-parity-refused"
+  {
+    printf 'refused_at=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
+    printf 'phase=%s\n' "$phase"
+    printf 'box=%s\n' "$box"
+    printf 'config=%s\n' "$cfg"
+    printf 'reason=%s\n' "$reason"
+    printf 'detail=%s\n' "$detail"
+  } > "$marker" 2>/dev/null || true
+
+  echo ""
+  echo "  ################################################################"
+  echo "  ##  ROLL REFUSED -- REGISTRY-PARITY GATE ($phase)"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $cfg"
+  echo "  ##"
+  echo "  ##  $reason"
+  echo "  ##  $detail"
+  echo "  ##"
+  echo "  ##  \`openclaw config validate\` WOULD PASS on this box right now --"
+  echo "  ##  a config with zero (or fewer) departments is a perfectly valid"
+  echo "  ##  config. Validity is not health. Do not use it to override this."
+  echo "  ##"
+  echo "  ##  THIS GATE NEVER AUTO-RESTORES. A parity violation could be an"
+  echo "  ##  intended roster change; only a human (or this box's own"
+  echo "  ##  standing sentinel) can tell the difference. Marker written:"
+  echo "  ##    $marker"
+  echo "  ##"
+  echo "  ##  RECOVERY: look for a pre-incident backup BEFORE restoring"
+  echo "  ##  anything -- verify its agent count first:"
+  echo "  ##    ${cfg}.bak-pre-agents-list-migration-*"
+  echo "  ##    ${cfg}.last-good  (⚠ can be poisoned by the same writer that"
+  echo "  ##                       caused the loss -- verify its count too)"
+  echo "  ##  Copy whichever backup verifies clean to a path no updater or"
+  echo "  ##  migration touches BEFORE restoring it."
+  echo "  ################################################################"
+  echo ""
+
+  _registry_parity_escalate "$box" "$cfg" "$phase" "$reason" "$detail"
+}
+
+# Best-effort Rescue Rangers escalation. NEVER fails the gate: on most boxes
+# today RESCUE_RANGERS_WEBHOOK_URL is not set, and that is a documented,
+# silent no-op -- the marker file and banner above are the escalation record
+# in that case. When it IS set, POSTs the same nine-field payload shape the
+# agent-side escalation template uses (rescue-escalation-section.md.tpl).
+_registry_parity_escalate() {
+  local box="$1" cfg="$2" phase="$3" reason="$4" detail="$5" payload rc
+  if [ -z "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
+    echo "  [registry-parity] RESCUE_RANGERS_WEBHOOK_URL not set on this box -- skipping the live escalation POST. The marker file and banner above ARE the escalation record." >&2
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    echo "  [registry-parity] curl or python3 not on PATH -- skipping the live escalation POST." >&2
+    return 0
+  fi
+  # No literal suffix after the X's -- see the mktemp note in
+  # _agents_list_detect() above.
+  payload="$(mktemp "${TMPDIR:-/tmp}/registry-parity-escalation.XXXXXX")" || return 0
+  RPG_BOX="${FLEET_STANDING_BOX_SLUG:-$box}" RPG_PHASE="$phase" RPG_REASON="$reason" RPG_DETAIL="$detail" RPG_CFG="$cfg" \
+    python3 -c '
+import json, os
+print(json.dumps({
+    "action": "escalate",
+    "person": "update-skills.sh registry-parity gate (automated)",
+    "clientName": "a box",
+    "agentName": "registry-parity-gate",
+    "boxName": os.environ.get("RPG_BOX", "unknown-box"),
+    "boxType": "unknown",
+    "openclawVersion": "unknown",
+    "problem": "REGISTRY-STRIP (%s): %s" % (os.environ.get("RPG_PHASE", ""), os.environ.get("RPG_REASON", "")),
+    "alreadyTried": "registry-parity gate refused the roll (exit 78) and wrote a marker next to %s; no restore attempted. %s" % (os.environ.get("RPG_CFG", ""), os.environ.get("RPG_DETAIL", "")),
+    "returnTo": "repo-gate",
+}))
+' > "$payload" 2>/dev/null
+
+  # NOT a bash array here on purpose. `"${arr[@]}"` on a ZERO-LENGTH array
+  # under `set -u` (this script runs `set -euo pipefail`) throws "unbound
+  # variable" on stock bash 3.2.57 and would ABORT the whole updater at
+  # exactly the moment it is trying to report a registry-parity refusal --
+  # the CLAUDE.md negative-result contract names this exact trap ("bash 3.2
+  # `set -u` on an empty array"). Two explicit curl invocations instead of
+  # one array-built one: more lines, zero cleverness, nothing to trip on.
+  rc=0
+  if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
+    curl -s -m 10 -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      -H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}" \
+      --data-binary "@$payload" >/dev/null 2>&1 || rc=$?
+  else
+    curl -s -m 10 -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      --data-binary "@$payload" >/dev/null 2>&1 || rc=$?
+  fi
+  rm -f "$payload" 2>/dev/null || true
+  if [ "$rc" -ne 0 ]; then
+    echo "  [registry-parity] escalation POST failed/unavailable (rc=$rc, non-fatal) -- marker + banner remain the record." >&2
+  else
+    echo "  [registry-parity] escalation POSTed to Rescue Rangers." >&2
+  fi
+  return 0
+}
+
+# The gate itself. $1 = "pre" or "post". Returns 0 = clear, 78 = REFUSED (a
+# parity violation was found -- the caller must exit 78 immediately, matching
+# the same EX_CONFIG contract agents_list_gate uses).
+registry_parity_gate() {
+  local phase="$1" ocjson agentsdir box
+  local snap sverdict scount sids dirsnap dircount dirnames
+
+  box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
+  ocjson="$(_registry_parity_ocjson)"
+  agentsdir="$(_registry_parity_agentsdir)"
+
+  if [ ! -f "$ocjson" ]; then
+    echo "  [registry-parity:$phase] no config at $ocjson (fresh box) -- nothing to check."
+    [ "$phase" = "pre" ] && _REGISTRY_PARITY_PRE_VERDICT="NO-CONFIG"
+    return 0
+  fi
+
+  snap="$(_registry_snapshot "$ocjson")"
+  sverdict="${snap%%|*}"
+  scount="$(printf '%s' "$snap" | cut -d'|' -f2)"
+  sids="$(printf '%s' "$snap" | cut -d'|' -f3-)"
+
+  dirsnap="$(_registry_agent_dirs "$agentsdir")"
+  dircount="${dirsnap%%|*}"
+  dirnames="${dirsnap#*|}"
+
+  echo "  [registry-parity:$phase] registry=$sverdict count=$scount ids=[${sids:-<none>}] | agents-dir($agentsdir) count=$dircount"
+
+  if [ "$sverdict" = "UNDETERMINED" ]; then
+    echo "  [registry-parity:$phase] ⚠ config could not be read/parsed -- an unreadable config is NOT proof of a healthy registry. Count checks SKIPPED this phase (not silently passed)."
+    [ "$phase" = "pre" ] && _REGISTRY_PARITY_PRE_VERDICT="UNDETERMINED"
+    return 0
+  fi
+
+  # Normalize ABSENT/NO-CONFIG to a zero count for the arithmetic below.
+  case "$sverdict" in ABSENT|NO-CONFIG) scount=0 ;; esac
+
+  # ---- CHECK 1: ABSOLUTE FLOOR (every phase) ----
+  if [ "$scount" -le 1 ] && [ "$dircount" -gt 2 ]; then
+    _registry_parity_refuse "$box" "$ocjson" "$phase" \
+      "ABSOLUTE FLOOR: the registry declares only $scount agent(s) (ids=[${sids:-<none>}]) while $agentsdir holds $dircount agent subdirectories (names=[${dirnames:-<none>}])." \
+      "This is the exact signature of the 2026-08-11 registry-strip incident: the on-disk agent identities survived; only the registry pointing to them was emptied."
+    return 78
+  fi
+
+  if [ "$phase" = "pre" ]; then
+    _REGISTRY_PARITY_PRE_VERDICT="$sverdict"
+    _REGISTRY_PARITY_PRE_COUNT="$scount"
+    _REGISTRY_PARITY_PRE_IDS="$sids"
+    _REGISTRY_PARITY_PRE_DIRCOUNT="$dircount"
+    return 0
+  fi
+
+  # ---- CHECK 2: REGRESSION (post only, vs this run's own pre snapshot) ----
+  if [ -z "$_REGISTRY_PARITY_PRE_VERDICT" ] || [ "$_REGISTRY_PARITY_PRE_VERDICT" = "UNDETERMINED" ] || [ "$_REGISTRY_PARITY_PRE_VERDICT" = "NO-CONFIG" ]; then
+    echo "  [registry-parity:post] no usable 'pre' snapshot from this run (was: ${_REGISTRY_PARITY_PRE_VERDICT:-<never captured>}) -- regression check skipped; the absolute-floor check above still ran."
+    return 0
+  fi
+
+  if [ "$scount" -lt "$_REGISTRY_PARITY_PRE_COUNT" ]; then
+    _registry_parity_refuse "$box" "$ocjson" "post" \
+      "REGRESSION: the registry held $_REGISTRY_PARITY_PRE_COUNT agent(s) at the START of this run and holds only $scount now." \
+      "pre ids=[${_REGISTRY_PARITY_PRE_IDS:-<none>}]  post ids=[${sids:-<none>}]. This run's own writes are not trusted; nothing after this point in the run proceeds."
+    return 78
+  fi
+
+  # Identity check: every id present at 'pre' must still be present at
+  # 'post', even if the count happens to match -- a drop-one/add-one swap is
+  # not a loss by count, but it IS a loss of that specific agent.
+  local missing="" id_pre save_ifs
+  save_ifs="$IFS"
+  IFS=','
+  for id_pre in $_REGISTRY_PARITY_PRE_IDS; do
+    IFS="$save_ifs"
+    [ -z "$id_pre" ] && continue
+    case ",${sids}," in
+      *",${id_pre},"*) : ;;
+      *)
+        if [ -z "$missing" ]; then missing="$id_pre"; else missing="$missing,$id_pre"; fi
+        ;;
+    esac
+    IFS=','
+  done
+  IFS="$save_ifs"
+
+  if [ -n "$missing" ]; then
+    _registry_parity_refuse "$box" "$ocjson" "post" \
+      "IDENTITY LOSS: agent id(s) present at the START of this run are GONE from the registry now: [$missing]." \
+      "pre ids=[${_REGISTRY_PARITY_PRE_IDS:-<none>}]  post ids=[${sids:-<none>}]. Count alone did not catch this -- a swap can hide a real loss behind a matching total."
+    return 78
+  fi
+
+  echo "  [registry-parity:post] ✓ no loss: pre=$_REGISTRY_PARITY_PRE_COUNT post=$scount, all pre ids still present."
+  return 0
 }
 
 # ----------------------------------------------------------
@@ -3067,6 +3421,23 @@ main() {
   agents_list_gate || _AGENTS_LIST_RC=$?
   if [ "$_AGENTS_LIST_RC" -ne 0 ]; then
     echo "FATAL: legacy \`agents.list\` schema gate REFUSED this roll (exit 78 / EX_CONFIG)." >&2
+    echo "       Nothing was installed and no version stamp was written." >&2
+    exit 78
+  fi
+
+  # REGISTRY-PARITY-CALL (pre). See registry_parity_gate() above for the full
+  # rationale. Placement is load-bearing for the SAME reason as
+  # agents_list_gate immediately above: this must run before ANY write this
+  # updater makes, so the baseline snapshot reflects the box exactly as it
+  # was found, not as this run has already started changing it. It ALSO
+  # catches a box that arrives here ALREADY stripped (the absolute-floor
+  # check does not need a 'post' phase to fire) -- a state the schema gate
+  # above cannot see, because ABSENT is exactly what that gate calls "safe to
+  # proceed."
+  _REGISTRY_PARITY_RC=0
+  registry_parity_gate pre || _REGISTRY_PARITY_RC=$?
+  if [ "$_REGISTRY_PARITY_RC" -ne 0 ]; then
+    echo "FATAL: registry-parity gate REFUSED this roll (exit 78 / EX_CONFIG) -- see the banner above." >&2
     echo "       Nothing was installed and no version stamp was written." >&2
     exit 78
   fi
@@ -8961,6 +9332,21 @@ BACKUP_BLOCK
   # above already uses, so fleet drivers do not need a new code to recognize
   # it.
   # ----------------------------------------------------------
+  # REGISTRY-PARITY-CALL (post). Runs after EVERY write this updater makes,
+  # immediately before the final return -- see registry_parity_gate() above.
+  # A registry-parity failure is more severe than the infra-degraded (exit 2)
+  # cases below: it is possible agent data was just lost, so this OVERRIDES
+  # whatever exit code the rest of this run would otherwise report and exits
+  # 78 (EX_CONFIG) directly, the moment it is detected, rather than folding
+  # into the normal return-code decision tree.
+  _REGISTRY_PARITY_POST_RC=0
+  registry_parity_gate post || _REGISTRY_PARITY_POST_RC=$?
+  if [ "$_REGISTRY_PARITY_POST_RC" -ne 0 ]; then
+    echo "FATAL: registry-parity gate REFUSED at the END of this run (exit 78 / EX_CONFIG) -- see the banner above." >&2
+    echo "       Skills content may already be current on disk, but the agent registry did not verify -- treat this box as UNVERIFIED, not updated." >&2
+    exit 78
+  fi
+
   if [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
     {
       echo ""
