@@ -51,6 +51,33 @@
 #   cron: it runs the shell directly and never involves the model, so it cannot
 #   burn tokens and cannot message anyone.
 #
+#   NOTE the cron store here is the GATEWAY's own (`openclaw cron`), not system
+#   crontab — fleet VPS containers have no cron daemon, so a crontab entry would
+#   silently never fire inside one. Both this script and the gateway's cron store
+#   live under the mounted config volume, so both persist across recreation.
+#
+# RELATION TO THE ONE-BOX REFERENCE IMPLEMENTATION (read before "fixing" this):
+#   A host-resident variant was test-deployed on a single VPS, running from the
+#   Docker HOST's root crontab and reaching in via `docker exec`. This script is
+#   the fleet-wide generalisation of it, deliberately NOT a copy:
+#     - that one hardcodes its container name, so it cannot be rolled by
+#       update-skills.sh to any other box; this one has no container identity at
+#       all because it already runs where the config is;
+#     - it repairs via `openclaw config patch --replace-path`, this one edits the
+#       JSON directly and atomically — the same approach apply-fleet-standards.sh
+#       already uses to write this very key, so the two writers agree;
+#     - its verdict is LENIENT (treats a missing `enabled` as healthy) because
+#       the old CANONICAL block omitted that key. Now that CANONICAL writes both
+#       keys, this guard is STRICT and repairs the missing-`enabled` shape, so
+#       writer and guard converge on one shape instead of two.
+#
+#   HONEST LIMITATION, stated rather than papered over: a gateway-registered cron
+#   cannot fire while the gateway itself is down, whereas a host cron can. This
+#   guard therefore protects against the config being REWRITTEN, which is the
+#   observed failure, but not against a box whose gateway never comes up at all.
+#   That case is already covered by the host-level service-selfheal watchdog
+#   (platform/vps/service-selfheal/), which is where it belongs — not here.
+#
 # EXIT CODES:
 #   0  config already correct (nothing written), OR drift detected and RESTORED
 #   2  could not run — no OpenClaw root, no python3, config missing/unreadable/
@@ -94,6 +121,34 @@ log() {
   fi
   printf '%s\n' "$_line"
 }
+
+# ─── Log bounding ─────────────────────────────────────────────────────────────
+# This guard fires every 20 minutes and logs one line per fire even when nothing
+# is wrong: 72 lines/day, ~26,000 lines/year, growing without limit on a box
+# nobody is watching. A monitoring script that quietly becomes a disk problem is
+# its own incident. Truncate to the most recent LOG_KEEP lines once the file
+# exceeds LOG_MAX. Best-effort throughout: a failure to trim must never abort a
+# run or prevent the actual repair.
+LOG_MAX="${TOOLSEARCH_GUARD_LOG_MAX:-5000}"
+LOG_KEEP="${TOOLSEARCH_GUARD_LOG_KEEP:-2000}"
+bound_log() {
+  [ -n "${LOG_FILE:-}" ] || return 0
+  [ -f "$LOG_FILE" ] || return 0
+  _n="$(wc -l < "$LOG_FILE" 2>/dev/null | tr -dc '0-9')"
+  [ -n "$_n" ] || return 0
+  [ "$_n" -gt "$LOG_MAX" ] 2>/dev/null || return 0
+  _tmp="${LOG_FILE}.trim.$$"
+  # Copy the tail out, then write it BACK INTO the original file rather than
+  # mv'ing the temp over it. This keeps the log's existing inode, mode and
+  # ownership — no chmod needed, and nothing GNU-specific (`chmod --reference`
+  # does not exist on the fleet's macOS boxes).
+  if tail -n "$LOG_KEEP" "$LOG_FILE" > "$_tmp" 2>/dev/null; then
+    cat "$_tmp" > "$LOG_FILE" 2>/dev/null || true
+  fi
+  rm -f "$_tmp" 2>/dev/null || true
+}
+# Trim on EVERY exit path, including the early fail-safe returns below.
+trap bound_log EXIT
 
 # ─── Preflight ────────────────────────────────────────────────────────────────
 if [ -z "${CONFIG_FILE:-}" ]; then

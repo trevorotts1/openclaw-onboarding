@@ -423,6 +423,50 @@ else
     fail "5k: scalar 'true' not repaired -- config reads '$got'"
   fi
 
+  # ── 5m/5n: LOG BOUNDING ────────────────────────────────────────────────────
+  # The guard fires every 20 minutes and logs a line per fire even when healthy:
+  # ~26,000 lines/year, unbounded, on a box nobody is watching. A monitoring
+  # script that quietly becomes a disk problem is its own incident.
+  CFG7="$GTMP/logbound.json"
+  LOG7="$GTMP/logbound.log"
+  printf '%s\n' '{"tools":{"toolSearch":{"enabled":true,"mode":"directory"}}}' > "$CFG7"
+  # Seed a log well past the cap.
+  : > "$LOG7"
+  i=0
+  while [ "$i" -lt 120 ]; do echo "seeded line $i" >> "$LOG7"; i=$((i+1)); done
+  seeded="$(wc -l < "$LOG7" | tr -dc '0-9')"
+  rc=0
+  TOOLSEARCH_GUARD_CONFIG="$CFG7" TOOLSEARCH_GUARD_BACKUP_DIR="$GTMP/backups7" \
+    TOOLSEARCH_GUARD_LOG="$LOG7" TOOLSEARCH_GUARD_LOG_MAX=50 TOOLSEARCH_GUARD_LOG_KEEP=20 \
+    /bin/bash "$DRIFT_GUARD" >"$GTMP/out-logbound.txt" 2>&1 || rc=$?
+  after_lines="$(wc -l < "$LOG7" | tr -dc '0-9')"
+  if [ "${after_lines:-0}" -le 25 ] && [ "${seeded:-0}" -gt 100 ]; then
+    pass "5m: log bounded — $seeded lines trimmed to $after_lines (cap 50, keep 20); growth is capped, not unbounded"
+  else
+    fail "5m: log NOT bounded — seeded $seeded lines, still $after_lines after a run (cap 50). ~26k lines/year at */20."
+  fi
+
+  # 5n: trimming keeps the NEWEST lines, not the oldest — a log that discards
+  # recent history would defeat the purpose of keeping one.
+  if tail -1 "$LOG7" | grep -q "\[OK\]" || tail -3 "$LOG7" | grep -q "toolSearch"; then
+    pass "5n: the retained tail contains this run's own entry (newest lines kept, not oldest)"
+  else
+    fail "5n: after trimming, this run's entry is missing — the trim kept the wrong end of the log"
+  fi
+
+  # 5o: an UNSET log cap must not crash the guard (defaults apply).
+  CFG8="$GTMP/defaultcap.json"
+  printf '%s\n' '{"tools":{"toolSearch":{"enabled":true,"mode":"directory"}}}' > "$CFG8"
+  rc=0
+  TOOLSEARCH_GUARD_CONFIG="$CFG8" TOOLSEARCH_GUARD_BACKUP_DIR="$GTMP/backups8" \
+    TOOLSEARCH_GUARD_LOG="$GTMP/defaultcap.log" \
+    /bin/bash "$DRIFT_GUARD" >"$GTMP/out-defaultcap.txt" 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    pass "5o: guard runs clean with the default log cap (no LOG_MAX/LOG_KEEP set)"
+  else
+    fail "5o: guard failed (rc=$rc) with default log-cap settings"
+  fi
+
   # 5l: MISSING toolSearch key entirely -> installed.
   CFG6="$GTMP/absent.json"
   printf '%s\n' '{"tools":{"exec":{"security":"full"}}}' > "$CFG6"
