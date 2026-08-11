@@ -169,6 +169,33 @@ fi
 export FLEET_PLUGINS_JSON_FILE
 export FLEET_PLUGINS_ENUM_OK
 
+# ─── 1d. Resolve the shared plugins.allow sovereignty deny-list ─────────────
+# config/plugins-sovereignty-denylist.json is the SINGLE authoritative
+# definition of "plugin ids that must never appear in plugins.allow[]" (see
+# that file for the full rationale). Consumed below so this enumerator stops
+# re-adding an id that scripts/repair-model-sovereignty.sh (invoked later in
+# this same script, step "4a-SOVEREIGNTY") strips on every run. That
+# contradiction — enumerator re-adds, stripper removes, same key — was a
+# permanent 2-writer oscillation: 1-2 SIGUSR1 gateway restarts per roll
+# chain, killing every in-flight agent run mid-task
+# (fix/loop-fault-class-20260811, UNIT U8).
+# Same 5-candidate resolution order as config/ghl-mcp-pin.env elsewhere in
+# this repo (scripts/ghl-mcp-autostart.sh, scripts/ghl-mcp-check-pin-digest.sh)
+# — both installers already deliver config/ to every one of these locations.
+# FAIL-OPEN: file missing/unreadable -> FLEET_DENYLIST_FILE stays empty; the
+# python step below WARNS and falls back to the PRE-FIX behavior (nothing
+# subtracted from the enumeration) rather than crashing the roll.
+_AFS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLEET_DENYLIST_FILE=""
+for _c in "$_AFS_SCRIPT_DIR/../config/plugins-sovereignty-denylist.json" \
+          "$HOME/.openclaw/config/plugins-sovereignty-denylist.json" \
+          "$HOME/.openclaw/onboarding/config/plugins-sovereignty-denylist.json" \
+          "/data/.openclaw/config/plugins-sovereignty-denylist.json" \
+          "/data/.openclaw/onboarding/config/plugins-sovereignty-denylist.json"; do
+  [ -f "$_c" ] && { FLEET_DENYLIST_FILE="$_c"; break; }
+done
+export FLEET_DENYLIST_FILE
+
 # ─── 2. Deep-merge the canonical fleet block into openclaw.json ──────────────
 python3 - "$OC_CONFIG" <<'PYEOF'
 import json
@@ -366,18 +393,80 @@ if _plugins_enum_ok and _plugins_json_file:
         ]
         _bundled_only = {p["id"] for p in _all_entries if p.get("origin") == "bundled"}
         _non_bundled = {p["id"] for p in _all_entries if p.get("origin") != "bundled"}
-        _bundled_ids = sorted(_bundled_only | _non_bundled)
+        _bundled_ids_raw = sorted(_bundled_only | _non_bundled)
     except Exception as _e:
         print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
-        _bundled_ids = []
+        _bundled_ids_raw = []
         _bundled_only = set()
         _non_bundled = set()
+
+    # ── SOVEREIGNTY DENY-SET SUBTRACTION (fix/loop-fault-class-20260811, U8,
+    #     Parts 1+2) — subtract the SHARED deny-set (config/plugins-
+    #     sovereignty-denylist.json) from the union BEFORE assignment, so this
+    #     enumerator stops re-adding an id that repair-model-sovereignty.sh
+    #     strips every run (the 2-writer oscillation this fix resolves — see
+    #     that file's header comment for the full contradiction + rationale).
+    #     Matching is EXACT (id.strip().lower() == denied entry), mirroring
+    #     repair-model-sovereignty.sh's OWN plugins.allow strip predicate
+    #     exactly (not the broader substring rule it applies to
+    #     plugins.entries.*, a different data shape — see the denylist file's
+    #     comment). FAIL-OPEN: missing/unreadable/malformed deny-list file ->
+    #     WARN and fall back to the PRE-FIX behavior (nothing subtracted);
+    #     never crashes the roll.
+    _deny_plugin_file = os.environ.get("FLEET_DENYLIST_FILE", "")
+    _deny_plugin_ids = set()
+    _deny_list_loaded = False
+    if _deny_plugin_file:
+        try:
+            _deny_doc = json.loads(Path(_deny_plugin_file).read_text())
+            _deny_raw = _deny_doc.get("deny_plugin_ids", [])
+            if isinstance(_deny_raw, list):
+                _deny_plugin_ids = {
+                    str(x).strip().lower() for x in _deny_raw
+                    if isinstance(x, str) and x.strip()
+                }
+                _deny_list_loaded = True
+            else:
+                print(f"WARNING: [apply-fleet-standards] {_deny_plugin_file} has a non-list 'deny_plugin_ids' — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+        except Exception as _e:
+            print(f"WARNING: [apply-fleet-standards] failed to parse plugins-sovereignty-denylist.json ({_e}) — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+    else:
+        print("WARNING: [apply-fleet-standards] config/plugins-sovereignty-denylist.json not found in any delivered location (FLEET_DENYLIST_FILE unresolved) — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+
+    if _deny_list_loaded and _deny_plugin_ids:
+        _denied_present = sorted(
+            x for x in _bundled_ids_raw
+            if isinstance(x, str) and x.strip().lower() in _deny_plugin_ids
+        )
+    else:
+        _denied_present = []
+    _bundled_ids = [x for x in _bundled_ids_raw if x not in _denied_present]
+    if _denied_present:
+        print(f"[apply-fleet-standards] plugins.allow: excluded {len(_denied_present)} sovereignty-denied id(s) from the enumeration (config/plugins-sovereignty-denylist.json): {_denied_present}")
+
     # FAIL-OPEN posture UNCHANGED: an empty enumeration still writes nothing. The
     # guard is keyed on the BUNDLED count specifically — a run that somehow saw only
-    # non-bundled plugins is not a trustworthy enumeration either.
+    # non-bundled plugins is not a trustworthy enumeration either. (Keyed on the
+    # PRE-subtraction _bundled_only — the deny-set subtraction never turns a
+    # genuine enumeration into a treated-as-failed one.)
     if _bundled_ids and _bundled_only:
-        cfg.setdefault("plugins", {})["allow"] = _bundled_ids
-        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
+        # READ-COMPARE-WRITE (fix/loop-fault-class-20260811, U8, Part 3): only
+        # assign when the computed value actually DIFFERS from what is already
+        # in cfg["plugins"]["allow"], compared as SORTED lists. A converged
+        # box therefore produces NO write here, independent of Part 1/2 above
+        # — this protects against the next pair of contradicting writers on
+        # this same key, not just today's anthropic/plugins.allow one. Same
+        # discipline as the whole-config before_json/after_json gate at the
+        # tail of this script, restated locally so it holds even if that
+        # outer gate is ever removed or this block is lifted into its own
+        # script.
+        _existing_allow = cfg.get("plugins", {}).get("allow")
+        _existing_allow_sorted = sorted(_existing_allow) if isinstance(_existing_allow, list) else None
+        if _existing_allow_sorted == _bundled_ids:
+            print(f"[apply-fleet-standards] plugins.allow already converged at {len(_bundled_ids)} id(s) — no write (read-compare-write)")
+        else:
+            cfg.setdefault("plugins", {})["allow"] = _bundled_ids
+            print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
     else:
         print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
 else:
