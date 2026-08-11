@@ -112,14 +112,42 @@ echo ""
 echo "--- (3) REAL_MUTATION: gate catches the genuine pre-fix file from git ---"
 MUT="$TMP/real-mutation"
 mkdir -p "$MUT"
-_git_ok=1
-git -C "$REPO_ROOT" show origin/main:direct-to-agent-install.md > "$MUT/direct-to-agent-install.md" 2>/dev/null || _git_ok=0
-git -C "$REPO_ROOT" show origin/main:cron-prompt.txt > "$MUT/cron-prompt.txt" 2>/dev/null || _git_ok=0
 
-if [[ "$_git_ok" -ne 1 ]] || [[ ! -s "$MUT/direct-to-agent-install.md" ]]; then
-  echo "  SKIP: could not retrieve origin/main:direct-to-agent-install.md (no origin ref in this checkout)."
+# DO NOT anchor this to origin/main. Once the fix is merged, origin/main holds
+# the FIXED file and this check goes red for the wrong reason -- which is exactly
+# what happened the first time it ran after merge. Instead, walk the file's own
+# history and take the most recent revision that genuinely still carried the
+# defect. That is self-maintaining: it keeps testing real historical bytes no
+# matter how far main advances, and it degrades to UNDETERMINED rather than a
+# false pass if no such revision can be found.
+_pre_fix_rev=""
+_hist="$(git -C "$REPO_ROOT" rev-list HEAD -- direct-to-agent-install.md 2>/dev/null | head -60)"
+for _rev in $_hist; do
+  _blob="$(git -C "$REPO_ROOT" show "$_rev:direct-to-agent-install.md" 2>/dev/null)" || continue
+  [[ -z "$_blob" ]] && continue
+  # The defect: a cron registration line carrying delivery flags. Match the
+  # registration itself, not prose that merely mentions the flags (the fixed
+  # file deliberately names them in a "do NOT add this" warning).
+  if printf '%s\n' "$_blob" | grep -qE '^[[:space:]]*--channel[[:space:]]+telegram[[:space:]]+--to\b'; then
+    _pre_fix_rev="$_rev"
+    break
+  fi
+done
+
+if [[ -n "$_pre_fix_rev" ]]; then
+  git -C "$REPO_ROOT" show "$_pre_fix_rev:direct-to-agent-install.md" > "$MUT/direct-to-agent-install.md" 2>/dev/null
+  # Pair it with the prompt template from the SAME revision where possible, so
+  # the pair is internally consistent; fall back to the current one.
+  git -C "$REPO_ROOT" show "$_pre_fix_rev:cron-prompt.txt" > "$MUT/cron-prompt.txt" 2>/dev/null \
+    || cp "$REPO_ROOT/cron-prompt.txt" "$MUT/cron-prompt.txt" 2>/dev/null
+fi
+
+if [[ -z "$_pre_fix_rev" ]] || [[ ! -s "$MUT/direct-to-agent-install.md" ]]; then
+  echo "  SKIP: no historical revision of direct-to-agent-install.md carrying the"
+  echo "        pre-fix wiring was found in the first 60 revisions (shallow clone?)."
   echo "        UNDETERMINED, not a pass -- the synthetic checks in (4) still run."
 else
+  echo "  (using pre-fix revision ${_pre_fix_rev:0:8} of direct-to-agent-install.md)"
   rc="$(run_gate "$MUT")"
   if [[ "$rc" -eq 1 ]] && grep -q "DOUBLE_DELIVERY" "$TMP/gate-out.txt"; then
     pass "3a: gate FLAGS the genuine pre-fix direct-to-agent-install.md as DOUBLE_DELIVERY (real bytes from git, not a fixture)"
