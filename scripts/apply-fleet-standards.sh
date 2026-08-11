@@ -2901,7 +2901,17 @@ fi
 #     write error => log and skip WITHOUT writing the marker, so a later roll
 #     retries. This step can never fail a roll.
 # Spec: scripts/fleet-standing/NEW-BOX-WIRING.md §2.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
+#
+# R7 (2026-08-11): marker bumped V1 -> V2 for the one-line `LOOP:` routing
+# addition to the template (see rescue-escalation-section.md.tpl). A box
+# still carrying the V1 marker pair is found via the "replace" branch below
+# on its next roll (V1 start/end still matched there); a box with no marker
+# at all still upgrades via the "upgrade" (bare-heading) branch. Either path
+# lands the box on V2. Content-diff idempotency means a version bump was not
+# strictly required for THIS change to propagate -- it is done anyway so the
+# faster "replace" path (rather than the heading-regex "upgrade" fallback)
+# stays the steady-state path on every future roll, not a permanent detour.
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -2943,8 +2953,14 @@ path = sys.argv[1]
 slug = os.environ["RESCUE_BOX_SLUG"]
 tpl_path = os.environ["RESCUE_TPL"]
 
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V1 -->"
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->"
+# R7: a box still carrying the V1 marker pair falls through to the "upgrade"
+# (bare heading) branch below on its first V2 roll -- it is not matched by
+# the V2 START/END pair above, so `si == -1`, and the code takes the
+# `re.search(r'^## Escalate to Rescue Rangers...')` path instead. That path
+# replaces the whole section (V1 markers included) with the V2-rendered
+# template. Every roll after that one finds the V2 pair directly.
 
 try:
     txt = open(path, encoding="utf-8").read()
@@ -2963,8 +2979,19 @@ if si != -1 and ei != -1 and ei > si:
     cur_start, cur_end = si, ei + len(END)
     mode = "replace"
 else:
-    m = re.search(r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
-                  txt, re.MULTILINE | re.DOTALL)
+    # R7: also consume a STALE marker-comment line of ANY version number
+    # immediately above the heading (e.g. a lingering V1 opening tag left
+    # over on the first roll after a V1->V2 bump). Without this, a version
+    # bump leaves the old opening `<!-- RESCUE_ESCALATION_BOXNAME_V1 -->`
+    # tag orphaned one line above the freshly-rendered V2 section forever --
+    # harmless to rendering, but it is dead text nobody asked for and it
+    # would keep accumulating on every future version bump. The optional
+    # group only matches this exact marker naming shape, never an unrelated
+    # HTML comment added to a box by hand.
+    m = re.search(
+        r'(?:^<!-- RESCUE_ESCALATION_BOXNAME_V\d+ -->\n)?'
+        r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
+        txt, re.MULTILINE | re.DOTALL)
     if not m:
         # No section at all. Do NOT create one — see the contract above.
         print("absent"); raise SystemExit(0)
