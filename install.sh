@@ -3830,7 +3830,7 @@ fi
 # to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
 # can resolve them on EVERY box, and so the registered crons survive a temp-clone
 # cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
-for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh; do
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh guard-toolsearch-directory.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"

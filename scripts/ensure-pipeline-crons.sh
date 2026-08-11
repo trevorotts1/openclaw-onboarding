@@ -788,6 +788,7 @@ MANAGED_RECONCILE_CRONS=(
   "orphan-temp-sweep"
   "disk-usage-alert"
   "pre-july14-embed-migrate"
+  "toolsearch-drift-guard"
   "agent-browser-reaper"
   "ghl-token-liveness"
   # v14.1.6 — belt-and-suspenders for the existing-box cron-rewrite migration
@@ -1105,6 +1106,20 @@ main() {
   _ensure_health_cron "orphan-temp-sweep"        "37 * * * *" "orphan-temp-sweep.sh"                      || fails=$((fails + 1))
   _ensure_health_cron "disk-usage-alert"         "47 * * * *" "disk-usage-alert.sh"                       || fails=$((fails + 1))
   _ensure_health_cron "pre-july14-embed-migrate" "23 9 * * *" "pre-july14-embedding-migration-check.sh"  || fails=$((fails + 1))
+  # ── tools.toolSearch DRIFT GUARD ────────────────────────────────────────────
+  # tools.toolSearch must stay {"enabled":true,"mode":"directory"}. It is knocked
+  # off "directory" by OpenClaw's OWN config persistence during the container
+  # boot window (writeConfigFile / conditional merge-patch guard) — NOT by any
+  # fleet script. apply-fleet-standards.sh asserts the value at WRITE time, which
+  # by construction cannot see a third-party writer acting BETWEEN passes, so the
+  # only way to catch it is to look periodically. */20 (not hourly) because the
+  # damage window is a gateway boot: a wrong value means every tool call returns
+  # "Tool not found" and loop-detection blocks the tool without ending the turn —
+  # an unbounded, PAID loop — so the exposure is worth the cheap check. COMMAND
+  # cron: zero LLM tokens, and it can never message anyone.
+  # The upstream fix (making that merge-patch guard unconditional) is NOT ours;
+  # this guard holds the line until it lands.
+  _ensure_health_cron "toolsearch-drift-guard"   "*/20 * * * *" "guard-toolsearch-directory.sh"            || fails=$((fails + 1))
   # SINGLETON POOLED BROWSER backstop: HOURLY reaper sweeps orphaned agent-browser
   # sessions/descriptors + tripwires scoped Chromium (NEVER bare chrome/Claude).
   # v14.1.1: throttled */10 -> hourly (13 * * * *). The old */10 cadence ran the
@@ -1137,7 +1152,7 @@ main() {
   local _n
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
             "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
-            "agent-browser-reaper" "ghl-token-liveness"; do
+            "toolsearch-drift-guard" "agent-browser-reaper" "ghl-token-liveness"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space

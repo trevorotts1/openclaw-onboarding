@@ -1,0 +1,43 @@
+name: toolsearch-directory-guard
+
+# Fails the build if tools.toolSearch stops being written as the explicit object
+# {"enabled": true, "mode": "directory"}, or if the periodic drift guard that
+# keeps it there is missing / broken.
+#
+# Background: the value is knocked off "directory" by OpenClaw's OWN config
+# persistence during the container boot window -- not by any fleet script. The
+# write-time assertion inside apply-fleet-standards.sh cannot see a third-party
+# writer acting between passes, so scripts/guard-toolsearch-directory.sh is the
+# periodic half. The upstream fix (making that merge-patch guard unconditional)
+# is NOT ours.
+
+on:
+  push:
+    paths:
+      - scripts/apply-fleet-standards.sh
+      - scripts/guard-toolsearch-directory.sh
+      - scripts/ensure-pipeline-crons.sh
+      - install.sh
+      - tests/unit/toolsearch-directory-shape.test.sh
+      - .github/workflows/toolsearch-directory-guard.yml
+  pull_request:
+    paths:
+      - scripts/apply-fleet-standards.sh
+      - scripts/guard-toolsearch-directory.sh
+      - scripts/ensure-pipeline-crons.sh
+      - install.sh
+      - tests/unit/toolsearch-directory-shape.test.sh
+      - .github/workflows/toolsearch-directory-guard.yml
+
+jobs:
+  toolsearch-directory-guard:
+    name: tools.toolSearch directory-mode shape + drift guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run toolsearch-directory-shape tests
+        run: |
+          chmod +x tests/unit/toolsearch-directory-shape.test.sh
+          bash tests/unit/toolsearch-directory-shape.test.sh

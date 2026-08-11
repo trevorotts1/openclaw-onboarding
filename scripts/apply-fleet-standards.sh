@@ -262,7 +262,15 @@ CANONICAL = {
         # is the desired repair, not a preserved override. The
         # `openclaw config validate` gate below is the backstop + auto-rollback if a
         # gateway version ever rejects the key.
+        #
+        # EXPLICIT `enabled` (per-box shape drift). This block previously wrote only
+        # `mode`, so a box whose config had no `enabled` key never got one — the
+        # feature's on/off state was left to whatever default the running gateway
+        # happened to apply, and that shape differed box to box. Write BOTH keys so
+        # the persisted object is fully specified and identical fleet-wide, and so
+        # the drift guard has an unambiguous target to compare against and restore.
         "toolSearch": {
+            "enabled": True,
             "mode": "directory"
         }
     },
@@ -325,11 +333,20 @@ deep_merge(cfg, CANONICAL)
 # the model starts guessing filenames, and loop-detection blocks the tool without
 # ending the turn -- an unbounded, paid, self-sustaining loop. Fail loudly rather
 # than write a config that silently re-arms it.
+#
+# SCOPE -- READ THIS BEFORE STRENGTHENING IT. This assertion is a WRITE-TIME check
+# only. It proves what THIS script is about to persist, at the instant it persists
+# it. It CANNOT catch the failure actually seen on boxes, where the value is
+# knocked off "directory" AFTER this script exits, by OpenClaw's own config
+# persistence during the container boot window -- a third-party writer, between
+# passes, that no assertion inside this script can observe. That gap is what
+# scripts/guard-toolsearch-directory.sh exists to close; this check and that guard
+# are complements, not alternatives.
 _ts = (cfg.get("tools") or {}).get("toolSearch")
-if not isinstance(_ts, dict) or _ts.get("mode") != "directory":
+if not isinstance(_ts, dict) or _ts.get("mode") != "directory" or _ts.get("enabled") is not True:
     raise SystemExit(
         "FATAL: post-merge tools.toolSearch is %r; expected an object with "
-        'mode="directory". Refusing to write.' % (_ts,)
+        'enabled=true and mode="directory". Refusing to write.' % (_ts,)
     )
 
 # PROVIDER timeoutSeconds FLOOR. An ABSENT key falls back to a 120s gateway
