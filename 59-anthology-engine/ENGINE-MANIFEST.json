@@ -2,7 +2,7 @@
  "manifest_version": 1,
  "skill": "anthology-engine",
  "skill_number": 59,
- "skill_version": "0.1.18",
+ "skill_version": "0.1.19",
  "schema_version": "1",
  "ledger_schema_version": 1,
  "authoring_core": "54-anthology-writer",
@@ -553,6 +553,13 @@
    "authored_by": "NEW-4",
    "purpose": "MASTER-SPEC NEW-4: ONE complete S0..S9 canary with 2 SYNTHETIC co-authors on the operator box, per-stage verified. S0 intake webhook fire with a LIVE Cloudflare Tunnel (verify-webhook-t1-t9.sh T-battery; --public-url, never invented) plus dedup no-op, tenant/stage/malformed capture with typed reasons, board card fail-soft; S1 avatar + producer board approve + §3 release tag; S2 tone 3,000-word floor (Tier 1) + gate; S3 titles + TITLE LOCK one-way + participant TOKEN-door pick (mint->verify->decide, replayed token refused); S4 blurb+outline both gates both doors; S5 chapter full Gate B (Tier 1 band 2,000-3,500 measured, JUDGE rubric, strike-gate accounting), chapter gate EXACTLY TWO actions, freeze; S6 rewrite budget 2 + rewrite1/2 preservation slots + re-entry; S7 cover SET of 4 named styles + portrait guard + choice field + apply-pick edge; S8 Doc+PDF with 14pt floor on the RENDERED PDF (guard-font-floor), completion notice (nudge_send dry-run), signed process certificate, card to review never done; S9 every PRD 3.11 guard (own-producer, typed confirm-name, floor 2, one-way), order set/adjust/confirm (U9 confirm_order flags the runner for transitions + Grand Finale), compile with frozen-chapter sha256 byte-identity (tampered sha refused), assembly Gate B, s9_producer sign-off. Cross-cutting: email+SMS release workflows (every §3 slug -> snapshot-contract release_notifications send-email+send-sms), Doc pull-back byte-diff (pullback-revalidate + qc-tier1 --mode pullback advisory; live NEW-5 prover driven when Drive creds present else DEFERRED), QC scorer >=8.5 owns review->done (engine never-done + CC qc-scorer.ts QC_PASS_THRESHOLD 8.5 when the CC repo is present), board round-trip both doors, every gate fails closed. Output CANARY-REPORT.json per-stage pass/fail + evidence; DEFERRED never false-passes; --require-live holds on un-executed live stages. Credentials BY LABEL SET/NOT SET only, never printed; browser UA not needed (the canary itself makes zero network calls; every probe shells a sibling that owns its transport); stdlib only",
    "exit_codes": "0 every stage observed PASS (or cleanly DEFERRED without --require-live); 1 unexpected error; 2 bad invocation / a stage that ran FAILED (report carries the failing stage + evidence; never a false pass); 3 --require-live with un-executed live stages (held); 4 --self-test failed"
+  },
+  {
+   "n": 52,
+   "script": "qc-snapshot-fixture.sh",
+   "authored_by": "U17",
+   "purpose": "MASTER-SPEC U17 CI DRIFT GATE over the shipped snapshot fixture fixtures/snapshot/anthology-engine-v1.0.0.json: reads the snapshot JSON and asserts every fieldKey / pipeline-stage name / form-field name BYTE-EXACT against config/field-map.json (pipeline name + 9 stages in order, 28 custom fields' intended_key/create_name/data_type/options) and ENGINE-MANIFEST.json (the manifest's S0..S9 stage set maps 1:1 onto the fixture's pipeline stage names in order), plus the fixture's own shape invariants (27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice, 4 REPLACE-ME location custom values, 8 release-tag slugs with exactly 3 LIVE, 1 universal author-intake form + 3 contract-bound gate forms, 8 release-notification workflow summaries, never-a-real-token: no https://, no Bearer, no REAL value). A deliberate drift in field-map.json (rename a key) FAILS the gate. Mirrors qc-snapshot-contract.sh (row 39) so a stale fixture fails CI before it can ship.",
+   "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT (one or more assertions failed); 2 a required file is missing or the fixture does not parse (gate went blind — treated as failure)"
   }
  ],
  "autofails": [
