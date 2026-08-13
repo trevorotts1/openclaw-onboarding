@@ -12,12 +12,17 @@
 #   from universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json without
 #   restamping MANIFEST-SOURCE.txt's recorded content_sha256, bricking
 #   manifest_source.py's sync_check and presentation-canonical-entry.sh GATE 3.
+#   PR #884 ALSO restamped a THIRD registry, universal-sops/_content-manifest.json
+#   (enforced by scripts/hash-universal-sops-manifest.py --check), and a follow-up
+#   fix that restored the MANIFEST-SOURCE.txt lockstep left THAT registry stale --
+#   invisible to the original GATE 2, which only ever looked at MANIFEST-SOURCE.txt.
 #
 # GATE 1 (import smoke)             -- catches the Problem-1 class: any missing
 #                                       symbol/module in the presentation_job package.
 # GATE 2 (manifest lockstep)        -- catches the Problem-2 class: ANY byte-level
 #                                       touch to PIPELINE-MANIFEST.json without a
-#                                       matching MANIFEST-SOURCE.txt restamp.
+#                                       matching restamp of BOTH MANIFEST-SOURCE.txt
+#                                       AND universal-sops/_content-manifest.json.
 # GATE 3 (deliverable whitelist parity) -- see the GATE 3 section below: today the
 #                                       two deliverable-key structures are NOT
 #                                       identical for reasons unrelated to drift, so
@@ -36,6 +41,8 @@ cd "$REPO_ROOT"
 SCRIPTS_DIR="23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
 MANIFEST="universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
 MANIFEST_SOURCE="universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt"
+CONTENT_MANIFEST="universal-sops/_content-manifest.json"
+CONTENT_MANIFEST_KEY="presentation-slide-craft/PIPELINE-MANIFEST.json"
 
 GATE1_TMP=""
 cleanup() {
@@ -66,12 +73,15 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
-echo "== GATE 2: manifest lockstep (PIPELINE-MANIFEST.json <-> MANIFEST-SOURCE.txt) =="
+echo "== GATE 2: manifest lockstep (PIPELINE-MANIFEST.json <-> MANIFEST-SOURCE.txt <-> _content-manifest.json) =="
 if [ ! -f "$MANIFEST" ]; then
   echo "GATE 2 FAILED: manifest not found at $MANIFEST" >&2
   FAILED=1
 elif [ ! -f "$MANIFEST_SOURCE" ]; then
   echo "GATE 2 FAILED: manifest source not found at $MANIFEST_SOURCE" >&2
+  FAILED=1
+elif [ ! -f "$CONTENT_MANIFEST" ]; then
+  echo "GATE 2 FAILED: content manifest not found at $CONTENT_MANIFEST" >&2
   FAILED=1
 else
   if command -v shasum >/dev/null 2>&1; then
@@ -97,7 +107,48 @@ else
       echo "  or restore the manifest bytes the hash was recorded against." >&2
       FAILED=1
     else
-      echo "GATE 2 PASSED: computed sha256 ($COMPUTED_SHA) matches MANIFEST-SOURCE.txt."
+      echo "GATE 2a PASSED: computed sha256 ($COMPUTED_SHA) matches MANIFEST-SOURCE.txt."
+    fi
+  fi
+
+  # Second leg: universal-sops/_content-manifest.json (scripts/hash-universal-
+  # sops-manifest.py --check). PR #884's drift moved HERE once MANIFEST-SOURCE.txt
+  # was fixed, and the original GATE 2 never looked at this file -- that blind
+  # spot is exactly why it stayed green while the real registry went stale.
+  # This registry hashes CRLF->LF-normalized bytes (matching its own generator),
+  # computed independently of COMPUTED_SHA above rather than assumed equal.
+  if MANIFEST_PATH="$MANIFEST" python3 -c "
+import hashlib, os
+data = open(os.environ['MANIFEST_PATH'], 'rb').read().replace(b'\r\n', b'\n')
+print(hashlib.sha256(data).hexdigest())
+" > /tmp/gate2_norm_sha.$$ 2>/tmp/gate2_norm_err.$$; then
+    COMPUTED_SHA_NORM="$(cat /tmp/gate2_norm_sha.$$)"
+  else
+    echo "GATE 2 FAILED: could not hash $MANIFEST for _content-manifest.json comparison:" >&2
+    cat /tmp/gate2_norm_err.$$ >&2
+    COMPUTED_SHA_NORM=""
+    FAILED=1
+  fi
+  rm -f /tmp/gate2_norm_sha.$$ /tmp/gate2_norm_err.$$
+
+  if [ -n "${COMPUTED_SHA_NORM:-}" ]; then
+    RECORDED_SHA_CM="$(CONTENT_MANIFEST_PATH="$CONTENT_MANIFEST" CONTENT_MANIFEST_KEY="$CONTENT_MANIFEST_KEY" python3 -c "
+import json, os
+d = json.load(open(os.environ['CONTENT_MANIFEST_PATH'], encoding='utf-8'))
+print(d.get('files', {}).get(os.environ['CONTENT_MANIFEST_KEY'], {}).get('sha256', ''))
+")"
+    if [ -z "$RECORDED_SHA_CM" ]; then
+      echo "GATE 2 FAILED: no '$CONTENT_MANIFEST_KEY' entry found in $CONTENT_MANIFEST" >&2
+      FAILED=1
+    elif [ "$COMPUTED_SHA_NORM" != "$RECORDED_SHA_CM" ]; then
+      echo "GATE 2 FAILED: manifest drift -- PIPELINE-MANIFEST.json was touched without restamping $CONTENT_MANIFEST" >&2
+      echo "  computed (current PIPELINE-MANIFEST.json, CRLF->LF normalized): $COMPUTED_SHA_NORM" >&2
+      echo "  recorded ($CONTENT_MANIFEST):                                   $RECORDED_SHA_CM" >&2
+      echo "  Fix: run scripts/hash-universal-sops-manifest.py to regenerate $CONTENT_MANIFEST," >&2
+      echo "  or restore the manifest bytes the hash was recorded against." >&2
+      FAILED=1
+    else
+      echo "GATE 2b PASSED: computed sha256 ($COMPUTED_SHA_NORM) matches $CONTENT_MANIFEST."
     fi
   fi
 fi
