@@ -663,6 +663,30 @@ class Engine:
 
         return cert
 
+    def _run_self_audit(self) -> Tuple[bool, str, str]:
+        """WORK-ITEM-16 (ANTI-DRIFT CORE): mechanical self-audit of the run
+        directory, run as the FINAL step before handoff. Invokes
+        self_audit.py as a subprocess against this run's deliverables; a
+        non-zero exit means one or more deliverables failed verification
+        (missing, undersized, or wrong file type) and handoff must be
+        rejected.
+
+        Returns (ok, reason, output) -- output is captured stdout+stderr,
+        truncated to a sane length for state.json.
+        """
+        scripts_dir = Path(__file__).resolve().parent.parent
+        self_audit_path = scripts_dir / "self_audit.py"
+        argv = ["python3", str(self_audit_path), "--run-dir", str(self.run_dir)]
+        try:
+            r = subprocess.run(argv, cwd=str(self.run_dir), capture_output=True,
+                               text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return False, f"self-audit could not run: {exc}", str(exc)[-4000:]
+        output = ((r.stdout or "") + (r.stderr or ""))[-4000:]
+        if r.returncode != 0:
+            return False, f"self-audit exited {r.returncode}", output
+        return True, "", output
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
@@ -720,6 +744,24 @@ class Engine:
                         f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
                     print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
+                # WORK-ITEM-16: self-audit runs as the FINAL step before
+                # handoff -- after curation succeeds, before terminal=DONE.
+                # A non-zero exit REJECTS the handoff.
+                audit_ok, audit_reason, audit_output = self._run_self_audit()
+                if not audit_ok:
+                    self.state["terminal"] = "BLOCKED"
+                    self.state["blocked"] = {
+                        "phase": "SELF-AUDIT",
+                        "reason": audit_reason,
+                        "at": utcnow(),
+                        "output": audit_output,
+                    }
+                    self.store.save(self.state)
+                    self.report.to_requester(
+                        "blocked",
+                        f"Self-audit failed before handoff — {audit_reason}")
+                    print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
+                    return EXIT_GATE_BLOCKED
                 if self.board:
                     self.board.mark_review()
                 self.state["terminal"] = "DONE"
@@ -766,6 +808,24 @@ class Engine:
                 "blocked",
                 f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
             print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
+        # WORK-ITEM-16: self-audit runs as the FINAL step before handoff --
+        # after curation succeeds, before terminal=DONE. A non-zero exit
+        # REJECTS the handoff.
+        audit_ok, audit_reason, audit_output = self._run_self_audit()
+        if not audit_ok:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": "SELF-AUDIT",
+                "reason": audit_reason,
+                "at": utcnow(),
+                "output": audit_output,
+            }
+            self.store.save(self.state)
+            self.report.to_requester(
+                "blocked",
+                f"Self-audit failed before handoff — {audit_reason}")
+            print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if self.board:
             self.board.mark_review()
