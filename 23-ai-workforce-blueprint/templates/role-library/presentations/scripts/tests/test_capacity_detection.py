@@ -174,6 +174,58 @@ def test_interview_answer_is_asked_once(monkeypatch, tmp_path):
     assert result["interview_question"] is None
 
 
+def test_declared_max_concurrent_cannot_bypass_park_via_ordering(monkeypatch, tmp_path):
+    """The breach: a KNOWN cap-table provider with no plan but a declared
+    max_concurrent must PARK, not MEASURE the declared number verbatim. Before
+    the fix, the bare-declared-int branch sat ahead of the PARK branch and
+    9999 came back as status=MEASURED, available=9999, autofail_code=None --
+    the launcher gate would have passed a 9999-wide dispatch against a
+    provider whose highest cap-table row anywhere is 10."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "ollama-cloud", "max_concurrent": 9999}),
+        encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_PARKED
+    assert result["available"] is None
+    assert capacity.available_or_none(result) is None
+    assert result["autofail_code"] == "AF-CAPACITY-UNMEASURED"
+    assert "Which plan is your ollama-cloud account on?" in result["interview_question"]
+
+
+def test_unknown_provider_declared_is_bounded_and_not_measured(monkeypatch, tmp_path):
+    """A provider that is not on the cap table at all: a declared
+    max_concurrent is a self-report, never a measurement. It is honoured only
+    up to DEFAULT_CONSERVATIVE and must never be labelled MEASURED."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "some-random-unknown-llm", "max_concurrent": 50}),
+        encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_DECLARED_UNVERIFIED
+    assert result["status"] != capacity.STATUS_MEASURED
+    assert result["available"] == capacity.DEFAULT_CONSERVATIVE == 3
+    assert capacity.available_or_none(result) == 3
+
+
+def test_unknown_provider_declared_below_default_is_honoured(monkeypatch, tmp_path):
+    """A self-throttling declaration below DEFAULT_CONSERVATIVE is still
+    honoured -- only upward guesses are bounded, never downward caution."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "some-random-unknown-llm", "max_concurrent": 1}),
+        encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_DECLARED_UNVERIFIED
+    assert result["available"] == 1
+
+
 def test_broken_override_fails_closed_never_defaults(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
