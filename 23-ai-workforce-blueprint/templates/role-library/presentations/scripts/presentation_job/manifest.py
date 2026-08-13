@@ -74,6 +74,51 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
+# HARDEN G3 — heartbeat_minutes sanity ceiling.
+# ---------------------------------------------------------------------------
+# GAP G3's first fix (sync_check.py check E3, 2026-08-13) asserted heartbeat_minutes is
+# PRESENT and > 0 on every phase. An adversarial re-attack proved presence-and-positivity
+# is not a range: setting heartbeat_minutes to 999999999 on all 33 non-long-running phases
+# still passes E3 (present, positive) with zero drift, and heartbeat_interval_minutes below
+# used to hand that value straight to the watchdog/reaper untouched -- a ~2,853-year stall
+# threshold (999999999 min x 1.5 grace) that reports a 12-hour-silent job HEALTHY. The fix
+# that closed the ORIGINAL gap (deletion) was strictly milder than this one: with the field
+# absent, the budget-minutes fallback below still fired and the stall was still detected.
+#
+# The ceiling is not an arbitrary round number -- that would just be a bigger number to
+# guess past. It is this engine's own PHASE_BUDGET_MINUTES table above, which already
+# declares, for every phase, the longest time that phase is EVER allowed to run before the
+# engine kills it outright (the subprocess timeout enforced in phases.py). The single
+# largest entry in that table -- 240 minutes, shared by P4-RENDER (62-slide image render),
+# P9.6-WEBINAR-VIDEO and P9-SPEECH-WEBINAR-INTRO (ffmpeg assembly + a 500MB GHL upload) --
+# is the slowest legitimate unit of work this engine EVER performs. A checkpoint cadence
+# looser than the slowest thing the whole system does is not "this phase checkpoints
+# rarely", it can only be a watchdog being blinded. Every real phase's declared
+# heartbeat_minutes is well inside this ceiling (15-120 across all 36 phases; see
+# universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json), so the ceiling costs the
+# legitimate path nothing.
+MAX_HEARTBEAT_INTERVAL_MINUTES = max(PHASE_BUDGET_MINUTES.values())  # 240 as of this table
+
+
+def is_sane_heartbeat_minutes(value: Any) -> bool:
+    """True iff `value` is a heartbeat_minutes a consumer may trust as-is (present, a real
+    int -- not bool -- strictly positive, and no larger than MAX_HEARTBEAT_INTERVAL_MINUTES).
+
+    Used directly by Phase.heartbeat_interval_minutes below (the runtime source that writes
+    state.json's heartbeat.interval_minutes) and by sync_check.py's E3 manifest check, which
+    imports this module's MAX_HEARTBEAT_INTERVAL_MINUTES rather than re-declaring its own copy.
+    watchdog.py and process_reaper.py read heartbeat.interval_minutes back OFF state.json as
+    defense in depth (a pre-fix or foreign-written state.json could still carry a poisoned
+    value) and mirror this same MAX_HEARTBEAT_INTERVAL_MINUTES ceiling inline rather than
+    calling this function, because they also tolerate a bare float there (state.json is
+    parsed JSON, not manifest-authored input) -- one ceiling value, imported everywhere it is
+    checked, so no consumer can silently diverge on WHERE the line is, even where the
+    surrounding type check differs by design.
+    """
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and 0 < value <= MAX_HEARTBEAT_INTERVAL_MINUTES)
+
+# ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
 # ---------------------------------------------------------------------------
 @dataclass
@@ -112,9 +157,14 @@ class Phase:
         """
         How often this phase is expected to CHECKPOINT — the watchdog's comparison value, not a
         timeout. The watchdog compares last-checkpoint AGE against this, never total elapsed.
-        Falls back to the full budget for phases that checkpoint only on completion.
+        Falls back to the full budget for phases that checkpoint only on completion, OR for a
+        heartbeat_minutes that fails is_sane_heartbeat_minutes — absent, non-int, <= 0, or past
+        MAX_HEARTBEAT_INTERVAL_MINUTES (HARDEN G3, see the block above). This is the runtime
+        SOURCE that _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes,
+        so refusing an insane value here means it can never reach the watchdog/reaper at all —
+        independent of whether the manifest that produced it ever passed through sync_check.
         """
-        if self.heartbeat_minutes:
+        if is_sane_heartbeat_minutes(self.heartbeat_minutes):
             return int(self.heartbeat_minutes)
         return self.budget_minutes
 

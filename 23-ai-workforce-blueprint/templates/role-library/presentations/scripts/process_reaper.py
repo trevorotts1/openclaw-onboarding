@@ -74,6 +74,22 @@ KILL_GRACE_SECONDS = 5                       # SIGTERM -> SIGKILL grace
 DEFAULT_HEARTBEAT_GRACE_MULTIPLIER = 1.5
 DEFAULT_MAX_PROCESS_AGE_SECONDS = 24 * 3600  # a build process older than a day is a stray
 
+# HARDEN G3: sanity ceiling for a state.json heartbeat.interval_minutes value (mirrors
+# presentation_job/manifest.py's MAX_HEARTBEAT_INTERVAL_MINUTES -- the longest total
+# per-phase budget the engine grants ANY phase, i.e. the slowest legitimate unit of work
+# this engine ever performs; see that module for the full rationale). Without this bound,
+# _run_dir_liveness() below only rejected interval<=0, so a poisoned
+# interval_minutes=999999999 read straight off disk made every run look "alive" no matter
+# how stale its last checkpoint really was. Imported when presentation_job is reachable so
+# the two modules can never silently diverge on what "sane" means; the literal fallback
+# keeps the reaper functional even if this file is ever deployed without presentation_job/
+# beside it (normally it sits in this same scripts/ directory: imported by phases.py, and
+# run standalone by presentation-watchdog.sh, both of which put scripts/ on sys.path).
+try:
+    from presentation_job.manifest import MAX_HEARTBEAT_INTERVAL_MINUTES
+except ImportError:  # pragma: no cover — see comment above
+    MAX_HEARTBEAT_INTERVAL_MINUTES = 240
+
 
 class ProcessTableError(RuntimeError):
     """Raised when the process table cannot be enumerated at all (both psutil and ps
@@ -278,8 +294,14 @@ def _run_dir_liveness(run_dir: Path, grace_multiplier: float) -> Tuple[str, str]
     except (ValueError, TypeError):
         return "alive", "unparseable heartbeat timestamp (defer to watchdog)"
     interval = hb.get("interval_minutes")
-    if not isinstance(interval, (int, float)) or interval <= 0:
-        # No manifest interval recorded — fall back to the engine default budget.
+    # HARDEN G3: reject not just <=0 but anything past MAX_HEARTBEAT_INTERVAL_MINUTES too —
+    # a state.json written before the manifest.py fix (or by any other writer) could still
+    # carry a poisoned interval_minutes, and this reaper reads state.json independently of
+    # the watchdog, so it needs its own bound rather than trusting the value on disk.
+    if (not isinstance(interval, (int, float)) or isinstance(interval, bool)
+            or interval <= 0 or interval > MAX_HEARTBEAT_INTERVAL_MINUTES):
+        # No manifest interval recorded, or an insane value — fall back to the engine
+        # default budget rather than trust it.
         interval = 20
     threshold = interval * grace_multiplier
     if age_min > threshold:
