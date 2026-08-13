@@ -204,7 +204,25 @@ def reconcile_sweep(
       EXIT_OK (0)               -- scanned >=1 run dir, none raised, and at
                                     least one was actually classified
                                     (card_missing/card_behind/consistent/
-                                    too_old) -- i.e. something was reconciled.
+                                    finished_no_card) -- i.e. something was
+                                    genuinely reconciled. NOTE: too_old is
+                                    NOT one of these -- it means Guard A
+                                    passed but the sweep DECLINED to inspect
+                                    the run dir further (see reconciled_count
+                                    below), so a too_old-only or
+                                    too_old/not_a_run_dir-mixed scan can
+                                    still return EXIT_OK with reconciled 0 --
+                                    that case prints an unmissable WARNING
+                                    ("reconciled 0 of N ...") rather than
+                                    reading as silently clean. Any
+                                    not_a_run_dir rejection, of any size,
+                                    also always prints a WARNING now, not
+                                    just a schema_version mismatch -- see the
+                                    open policy question in the WARNING
+                                    block below about whether a rejection
+                                    fraction should ever move the exit code
+                                    itself off EXIT_OK; that call is left to
+                                    a human on purpose.
       EXIT_SWEEP_NO_RUNS (10)   -- scanned 0 run dirs. UNDETERMINED: this is
                                     not evidence the fleet is healthy, it is
                                     evidence the sweep checked nothing. Never
@@ -222,7 +240,12 @@ def reconcile_sweep(
                                     invalidates every real run dir on the box.
                                     Same epistemic state as EXIT_SWEEP_NO_RUNS,
                                     reached by rejection instead of absence.
-                                    Never treat this as a pass either.
+                                    Never treat this as a pass either. This
+                                    check is keyed on not_a_run_dir_count ==
+                                    scanned specifically (not reconciled_count
+                                    == 0), so a too_old-only scan -- where
+                                    Guard A rejected nothing -- never trips
+                                    it.
     """
 
     # --- Import cc_board and BoardMirror lazily ---
@@ -405,13 +428,28 @@ def reconcile_sweep(
     # "scanned". A run dir rejected by Guard A (not_a_run_dir) was enumerated
     # but never validated, so it contributes nothing here. This is the
     # number the pass/fail decision below is actually made on.
+    #
+    # too_old is deliberately EXCLUDED. Reaching "too_old" means Guard A
+    # passed and a deck_slug resolved, but _classify() returns before ever
+    # looking up a task_id -- the sweep DECLINED to inspect the run dir for
+    # card status, the same way not_a_run_dir means Guard A refused to look
+    # at it at all. Counting a declined inspection as a reconciled one is
+    # the exact false-comfort bug this branch exists to close, just in
+    # miniature: a box carrying nothing but stale debris (too_old) alongside
+    # run dirs whose state.json was truncated (not_a_run_dir) could show a
+    # non-zero reconciled_count contributed entirely by dirs the sweep never
+    # actually checked, while every dir representing live, in-flight work
+    # was rejected -- and because the old warning below only fired for a
+    # schema_version mismatch, a truncation reject reason produced zero
+    # warnings at all. That read as a clean, silent pass. See
+    # tests/test_sweep.py::TestTooOldNotCountedAsReconciled for the proof.
     reconciled_count = (
         counts.get("card_missing", 0)
         + counts.get("card_behind", 0)
         + counts.get("consistent", 0)
-        + counts.get("too_old", 0)
         + counts.get("finished_no_card", 0)
     )
+    not_a_run_dir_count = counts.get("not_a_run_dir", 0)
 
     parts = [
         f"scanned {scanned} run dir(s) under {scan_root} (depth {scan_depth})",
@@ -442,12 +480,53 @@ def reconcile_sweep(
             flush=True,
         )
 
-    if schema_mismatch_count:
+    # G5: any rejection at all must be loud, not just a schema-version bump.
+    # A truncated/corrupt state.json, a bad job_id, or an unresolvable
+    # deck_slug are exactly as UNRECONCILED as a schema mismatch, and before
+    # this fix none of them printed anything beyond a buried "not_a_run_dir:
+    # N" count in the summary line -- easy to miss, and printed identically
+    # whether N was 1 of 50 or 50 of 50.
+    #
+    # OPEN POLICY QUESTION for a human to set, not decided here: this
+    # deliberately keeps the exit code at EXIT_OK whenever at least one run
+    # dir was genuinely reconciled (the conservative reading -- surface
+    # loudly, don't invent a new pass/fail threshold). Is a rejection
+    # fraction of, say, 1-of-25 acceptable for EXIT_OK? Is any rejection at
+    # all? Should a fraction above some threshold move the exit code itself
+    # off EXIT_OK? That call belongs to a human, not to this function.
+    if not_a_run_dir_count:
+        pct = (not_a_run_dir_count / scanned * 100.0) if scanned else 0.0
         print(
-            f"reconcile-board: WARNING -- {schema_mismatch_count} run dir(s) "
-            f"rejected on schema_version mismatch (expected {STATE_SCHEMA_VERSION}). "
-            f"This looks like a STATE_SCHEMA_VERSION bump that shipped without a "
-            f"matching sweep/engine update, not empty or unhealthy run dirs.",
+            f"reconcile-board: WARNING -- {not_a_run_dir_count} of {scanned} "
+            f"run dir(s) scanned ({pct:.0f}%) were rejected by Guard A "
+            f"(not_a_run_dir) and are UNRECONCILED -- see 'skipped: "
+            f"not_a_run_dir' lines above for why.",
+            flush=True,
+        )
+        if schema_mismatch_count:
+            print(
+                f"reconcile-board: WARNING -- of those, {schema_mismatch_count} "
+                f"were rejected specifically on schema_version mismatch "
+                f"(expected {STATE_SCHEMA_VERSION}). This looks like a "
+                f"STATE_SCHEMA_VERSION bump that shipped without a matching "
+                f"sweep/engine update, not empty or unhealthy run dirs.",
+                flush=True,
+            )
+
+    if reconciled_count == 0 and not_a_run_dir_count < scanned:
+        # G5 sub-finding: everything found was either declined (too_old) or
+        # rejected (not_a_run_dir) -- nothing was actually inspected for
+        # card status. This does NOT hit the ALL_REJECTED gate below because
+        # not every run dir was a Guard A rejection -- this is exactly the
+        # "100% of live work invisible" shape an adversarial re-attack
+        # proved: stale too_old debris alongside truncated in-flight run
+        # dirs used to look identical to a healthy sweep.
+        print(
+            f"reconcile-board: WARNING -- reconciled 0 of {scanned} run "
+            f"dir(s) -- everything found was either declined "
+            f"(too_old: {counts.get('too_old', 0)}) or rejected "
+            f"(not_a_run_dir: {not_a_run_dir_count}) -- nothing was actually "
+            f"checked for card status",
             flush=True,
         )
 
@@ -460,21 +539,31 @@ def reconcile_sweep(
         )
         return EXIT_SWEEP_HAD_FAILURES
 
-    if reconciled_count == 0:
+    if not_a_run_dir_count == scanned:
         # Same epistemic state as EXIT_SWEEP_NO_RUNS ("I could not check
         # anything"), reached via rejection instead of absence. "scanned N"
         # must never be allowed to read as "checked N and all is well" when
         # every single one of those N was thrown out by Guard A.
+        #
+        # Checked against not_a_run_dir_count directly (not reconciled_count)
+        # so this branch names exactly what it claims -- total Guard A
+        # rejection -- and does not also fire on a box where every run dir
+        # is simply too_old: that is a real, Guard-A-valid run dir the sweep
+        # chose not to inspect further, not one Guard A refused. (A box that
+        # is too_old-only, or a too_old/not_a_run_dir mix, still gets the
+        # "reconciled 0" WARNING printed above -- it just does not escalate
+        # to this UNDETERMINED exit code, per the open policy question noted
+        # there.)
         print(
             f"reconcile-board: UNDETERMINED -- scanned {scanned} run dir(s) "
-            f"but ALL {counts.get('not_a_run_dir', 0)} were rejected by Guard A "
+            f"but ALL {not_a_run_dir_count} were rejected by Guard A "
             f"(not_a_run_dir) -- ZERO run dirs were actually classified or "
             f"reconciled -- this is NOT a pass -- "
             + (
                 f"every rejection was a schema_version mismatch (expected "
                 f"{STATE_SCHEMA_VERSION}); check whether STATE_SCHEMA_VERSION was "
                 f"bumped without a matching sweep/engine deploy"
-                if schema_mismatch_count == counts.get("not_a_run_dir", 0)
+                if schema_mismatch_count == not_a_run_dir_count
                 and schema_mismatch_count > 0
                 else "check the 'skipped: not_a_run_dir' lines above for why"
             ),

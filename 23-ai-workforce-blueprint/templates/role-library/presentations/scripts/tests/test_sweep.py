@@ -481,6 +481,73 @@ class TestTooOld:
         assert "  too_old" not in out
 
 
+class TestTooOldNotCountedAsReconciled:
+    """G5 sub-finding: reaching 'too_old' means Guard A passed and a
+    deck_slug resolved, but _classify() returns BEFORE ever looking up a
+    task_id -- the sweep deliberately DECLINED to inspect the run dir for
+    card status, the same way not_a_run_dir means Guard A refused to look at
+    it at all. Counting a declined inspection as a reconciled one is the
+    exact false-comfort bug this branch exists to close, just in miniature:
+    it let a box carrying nothing but stale debris (too_old) look like it
+    had reconciled something, even when zero run dirs were ever actually
+    checked for card status."""
+
+    def test_too_old_excluded_from_reconciled_count(self, tmp_path):
+        root = tmp_path / "scan"
+        root.mkdir()
+        _write_state(
+            root / "old1",
+            _make_state(root / "old1", deck_slug="deck-old", created_hours_ago=100.0),
+        )
+
+        rc, out = _run_sweep(root, max_age_hours=72.0)
+        assert rc == 0
+        assert "too_old" in out
+        # The fix under test: a declined inspection must not inflate
+        # "reconciled" -- pre-fix this printed "reconciled 1".
+        assert "reconciled 0" in out
+
+    def test_all_live_work_invisible_scenario_is_no_longer_silent(self, tmp_path):
+        """The exact adversarial shape an adversarial re-attack proved: a box
+        carries a couple of stale-but-genuinely-valid old run dirs (too_old)
+        alongside several in-flight run dirs whose state.json was truncated
+        mid-write (not_a_run_dir, reason unreadable_or_missing -- NOT a
+        schema mismatch, so the old warning never fired for it either).
+
+        Pre-fix: too_old propped reconciled_count to a non-zero number, so
+        the ALL_REJECTED gate (reconciled_count == 0) never fired, and
+        because the rejection reason wasn't schema_mismatch, no WARNING
+        printed either. The result was a fully silent, fully green sweep
+        (rc == EXIT_OK, no WARNING anywhere in the output) while 100% of the
+        run dirs representing live, in-flight work were unreconciled.
+        """
+        root = tmp_path / "scan"
+        root.mkdir()
+        # Stale debris -- old, but genuinely valid, run dirs.
+        for i in range(2):
+            d = root / f"old{i}"
+            _write_state(
+                d, _make_state(d, deck_slug=f"deck-old-{i}", created_hours_ago=100.0)
+            )
+        # In-flight run dirs that crashed mid-write -- truncated state.json.
+        for i in range(3):
+            d = root / f"live{i}"
+            d.mkdir()
+            (d / "state.json").write_text(
+                '{"schema_version": 1, "job_id": "pj_live_' + str(i) + '_incomplete'
+            )
+
+        rc, out = _run_sweep(root, max_age_hours=72.0)
+        # Nothing was genuinely reconciled -- everything found was either
+        # declined (too_old) or rejected (not_a_run_dir).
+        assert "reconciled 0" in out
+        assert "not_a_run_dir: 3" in out
+        assert "too_old: 2" in out
+        # The fix under test: this must be loud, not a silent green pass --
+        # regardless of what the exit code policy question above resolves to.
+        assert "WARNING" in out
+
+
 class TestFinishedJobNotIngested:
     """A run dir with terminal 'DONE' and no card is not ingested."""
 
@@ -734,18 +801,46 @@ class TestAllRejectedIsNotAPass:
         assert "reconciled 0" in out
         assert "NOT a pass" in out
 
-    def test_mixed_rejects_and_one_good_still_passes(self, tmp_path):
-        """The legitimate path is NOT broken by this fix: a real fleet always
-        carries some debris (old/broken run dirs) alongside real ones. As
-        long as at least one run dir was actually classified, this is still
-        a genuine pass."""
+    def test_mixed_rejects_surfaces_loud_warning_even_though_it_passes(self, tmp_path):
+        """CORRECTED EXPECTATION -- this replaces
+        test_mixed_rejects_and_one_good_still_passes, which an adversarial
+        re-attack proved was itself the surviving bypass: it asserted
+        rc == EXIT_OK for a 4-of-5 (80%) Guard A rejection rate and never
+        checked the output for any warning at all. That is precisely the
+        shape that let a box carrying old debris plus in-flight run dirs
+        with truncated state.json print a reassuring summary, emit zero
+        warnings, and return success while all of the live work was
+        invisible (see TestAllLiveWorkInvisible below for that exact
+        reproduction).
+
+        The legitimate path really is not broken by requiring at least one
+        genuine reconciliation to keep EXIT_OK -- a real fleet always
+        carries some debris. What was missing is that "some debris" must
+        never be SILENT. This test uses a rejection reason
+        (unreadable_or_missing, i.e. truncated JSON) that the pre-fix code
+        never warned about at all -- only a schema_version mismatch printed
+        anything -- so this test fails against the pre-fix logic and only
+        passes once the warning is generalized to every not_a_run_dir
+        reason.
+
+        OPEN POLICY QUESTION for a human to set, not decided here: this
+        deliberately keeps rc == EXIT_OK whenever at least one run dir was
+        genuinely reconciled (the conservative reading -- surface loudly,
+        don't invent a new pass/fail threshold). Is 4-of-5 (80%) rejected
+        an acceptable EXIT_OK? Is 1-of-25? Should a rejection fraction above
+        some threshold move the exit code itself off EXIT_OK? That policy
+        call belongs to a human, not to this test.
+        """
         from presentation_job.state import EXIT_OK
 
         root = tmp_path / "scan"
         root.mkdir()
         for i in range(4):
             d = root / f"bad{i}"
-            _write_state(d, _make_state(d, deck_slug=f"deck-{i}", schema_version=99))
+            d.mkdir()
+            # Truncated mid-write -- NOT a schema mismatch, so the old
+            # schema-mismatch-only warning never fired for this reason.
+            (d / "state.json").write_text('{"schema_version": 1, "job_id": "pj_trunc')
         _write_state(root / "good", _make_state(root / "good", deck_slug="deck-good"))
 
         rc, out = _run_sweep(root)
@@ -754,6 +849,10 @@ class TestAllRejectedIsNotAPass:
         assert "not_a_run_dir: 4" in out
         assert "reconciled 1" in out
         assert "card_missing" in out
+        # The fix under test: any rejection must be loud, not just a
+        # schema-version-mismatch one, and not just a buried summary count.
+        assert "WARNING" in out
+        assert "4 of 5" in out
 
     def test_failures_take_priority_over_all_rejected_wording(self, tmp_path):
         """When a run dir raises AND the rest are all rejected, the sweep

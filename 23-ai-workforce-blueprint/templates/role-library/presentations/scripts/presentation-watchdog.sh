@@ -54,8 +54,15 @@ fi
 
 # Board-reconcile pass: report-only unless --apply is given.
 # Exit 0  = scanned >=1 run dir, none raised, and >=1 was actually classified
-#           (card_missing/card_behind/consistent/too_old/finished_no_card)
-#           -- a genuine pass.
+#           (card_missing/card_behind/consistent/finished_no_card) -- a
+#           genuine pass. NOTE (G5 fix): too_old no longer counts here --
+#           it means the sweep DECLINED to inspect the run dir (found it
+#           valid but too old to check further), not that anything was
+#           reconciled. A too_old-only or too_old+not_a_run_dir-mixed scan
+#           can still exit 0, but the log will carry an explicit
+#           "reconciled 0 of N" WARNING line instead of reading as a clean
+#           pass -- grep the log for "WARNING" if this box's decks are
+#           ever unexpectedly stale.
 # Exit 10 = zero run dirs found -- UNDETERMINED, not a pass, but a normal,
 #           expected state between jobs -- must not abort this script before
 #           the run-discovery pass below runs.
