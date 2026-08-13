@@ -187,6 +187,68 @@ def evaluate(sp_intake_path: Path) -> List[Tuple[str, str]]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def _check_wiring(engine: Path) -> int:
+    """Assert the governed engine wires the four SP wrappers. Mirrors the
+    contract verify.sh 1b checks (fails, not warns, when any wrapper is
+    absent — zero SP enforcement at runtime is a hard fail)."""
+    if not engine.is_file():
+        print(f"FAIL: engine not found at {engine}")
+        return 1
+    try:
+        text = engine.read_text(errors="replace")
+    except OSError as exc:
+        print(f"FAIL: engine unreadable: {exc}")
+        return 1
+    # The governed engine's actual SP wrapper set (v22.0.8, SOP-SLIDE-06 lockstep):
+    # the claim gate + the three sacred gates + intake trace.
+    required = ["_chk_sp_claim", "_chk_sp_structure", "_chk_sp_no_pitch",
+                "_chk_sp_intake", "_chk_sp_intake_trace"]
+    missing = [f for f in required if f"def {f}" not in text]
+    if missing:
+        print(f"FAIL: engine missing SP wrappers: {', '.join(missing)}")
+        return 1
+    print("engine wire-presence: SP wrappers present -> PASS")
+    return 0
+
+
+def _self_test() -> int:
+    """Offline self-test (A10 / verify.sh): run the VALID golden fixture through
+    evaluate_run_dir and the VIOLATION fixture through evaluate, asserting the
+    gate really bites. Exits 0 on full pass, 1 otherwise."""
+    import tempfile
+    from pathlib import Path as _P
+
+    def _mk(sp_type: str, deck_type: str | None) -> _P:
+        rd = _P(tempfile.mkdtemp(prefix="psr_selftest_"))
+        (rd / "working" / "copy").mkdir(parents=True)
+        (rd / "working" / "copy" / "intake.json").write_text(
+            "{\"presentation_type\": \"signature_presentation\","
+            " \"deck_type\": \"%s\", \"pitch_included\": true}" % deck_type)
+        (rd / "working" / "copy" / "sp_intake.json").write_text(
+            "{\"presentation_type\": \"signature_presentation\","
+            " \"deck_type\": \"%s\"}" % deck_type)
+        (rd / "working" / "checkpoints").mkdir(parents=True)
+        (rd / "working" / "checkpoints" / "process_manifest.json").write_text(
+            "{\"phases\": [{\"phase_id\": \"P-SP-CLAIM\", \"status\": \"artifact_present\"}]}")
+        return rd
+
+    fails = []
+    # VALID: deck_type declared => PASS
+    ok_rd = _mk("signature_presentation", "signature_presentation")
+    problems = evaluate_run_dir(ok_rd)
+    if problems:
+        fails.append(f"VALID fixture expected PASS, got {problems}")
+    # VIOLATION: SP signals but deck_type unset => AF-SP-TYPE-UNDECLARED FAIL
+    bad_rd = _mk("signature_presentation", "unset")
+    problems = evaluate_run_dir(bad_rd)
+    if not problems or not any("AF-SP-TYPE-UNDECLARED" in c for c, _ in problems):
+        fails.append(f"VIOLATION fixture expected AF-SP-TYPE-UNDECLARED FAIL, got {problems}")
+    print(f"prove_sp_routing self-test -> {'PASS' if not fails else 'FAIL'}")
+    for f in fails:
+        print("  -", f)
+    return 0 if not fails else 1
+
+
 def main() -> int:
     """CLI entry. Usage: python3 prove_sp_routing.py --run-dir <DIR> [--json]
 
@@ -201,12 +263,21 @@ def main() -> int:
                     "when SP signals exist but deck_type is not declared.")
     p.add_argument("--run-dir", type=Path,
                    help="the deck's run directory (for evaluate_run_dir)")
+    p.add_argument("--self-test", action="store_true",
+                   help="run the offline self-test fixtures; exit 0 on pass")
+    p.add_argument("--check-wiring", type=Path, metavar="BUILD_DECK",
+                   help="assert the governed engine (build_deck.py) defines and "
+                        "registers the four _chk_sp_* wrappers; exit 0 on pass")
     p.add_argument("--json", action="store_true",
                    help="output as JSON")
     p.add_argument("file", nargs="?", type=Path,
                    help="direct sp_intake.json path (for evaluate)")
     args = p.parse_args()
 
+    if args.self_test:
+        return _self_test()
+    if args.check_wiring:
+        return _check_wiring(args.check_wiring)
     if args.run_dir:
         run_dir = args.run_dir.expanduser().resolve()
         failures = evaluate_run_dir(run_dir)

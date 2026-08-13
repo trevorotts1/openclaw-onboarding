@@ -1,3 +1,29 @@
+## [v22.0.8] -- 2026-08-11 -- Presentations Dept R3 fix batch (U01-U09): manifest token resolution, canonical prompt family, authentic skip auth, launcher/discovery wiring, watchdog hardening, drift restoration
+
+Atomic batch merge of the R3 Presentations fix set (merge train U11,
+EXECUTION-PLAN C.5). Every file landed from the live Presentations dept tree
+(cmp-verified) with sync_check --strict exit 0 and py_compile clean on the
+repo tree before commit.
+
+- U01/U01-R2: {deck_slug}/{run_dir} token resolution in manifest.py
+  (resolve_artifact_pattern/_split_artifact_patterns/_dir_context/
+  _resolve_deck_slug) wired into phases.py, workingset.py,
+  run_signature_deck.py; ' + ' artifact pairs split and hashed as one
+  combined feed. MIN_MANIFEST_VERSION 44 -> 46.
+- U02/U02-SYNCFIX: %02d/%03d canonical prompt family +
+  _canonical_prompt_dir_problems; PIPELINE-MANIFEST v46 with
+  AF-PROMPT-NAME + AF-PROMPT-DUP-FILE (175 autofails);
+  MANIFEST-SOURCE.txt restamped; MASTER-QC-AUTOFAIL-RULESET Section 5 rows.
+- U03/U03-R2: verifier FAIL blocks unless an AUTHENTIC owner token —
+  process_manifest.json structurally incapable of issuing a skip
+  (waivers.json-only authenticity; SELF-MINTED exploit closed).
+- U05: launcher.py .engine.pid sidecar; __main__.py --capacity; NEW
+  execution_plan.py, manifest_assert.py, run_discovery.py.
+- U06/U06-R2: presentation-watchdog.sh SCAN_ROOT default + reconcile +
+  discovery + PATH-safe timeout.
+- U09: drift restoration — curate.py (NEW, import-broken without it) and
+  fix_bundle_complete.py restored to live bytes.
+
 ## [v22.0.7] -- 2026-08-10 -- Rescue Rangers three-tier rescue order + access inventory (v1.2)
 
 Doctrine rewrite across all 10 rescue-rangers department docs (repo-side; no

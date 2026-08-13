@@ -394,6 +394,13 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # R3 AF-DECK-TYPE-UNSET: a full-artifacts run dir must declare a deck type
+        # (webinar|signature_presentation) — derive_legacy_fields() writes it from the
+        # ONE presentation_type answer, and every preflight refuses an unset deck_type.
+        _deck_type = Path(root / "working" / "copy" / "intake.json")
+        _intake = json.loads(_deck_type.read_text())
+        _intake["deck_type"] = "webinar"
+        _deck_type.write_text(json.dumps(_intake))
         # v16.0.1 — a NON-adhoc render is now bound to Phase P0B-PRIORITY at EVERY entry
         # point (build_deck.run_preflight reuses check_phase_preconditions to refuse unless
         # P0B-PRIORITY is attested in process_manifest.json). A full modern pipeline run
@@ -3551,6 +3558,21 @@ def emit_af_coverage():
         record("AF-P1", str(exc))
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
+
+    # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
+    # a prompts dir holding a 1-digit name (slide-1.txt — non-canonical even under
+    # the R3 2/3-digit overlay), a 4-digit name (slide-0100.txt), AND a zero-pad
+    # collision (slide-01.txt vs slide-1.txt) FAILS the shared choke point with
+    # both codes. This closes the AF-QC-INDEPENDENCE-class no-op for the two
+    # autofails U02-SYNCFIX registered (AF-PROMPT-NAME, AF-PROMPT-DUP-FILE).
+    _pp_root = Path(tempfile.mkdtemp(prefix="deck_prompt_dir_problems_"))
+    (_pp_root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (_pp_root / "working" / "prompts" / "slide-1.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-01.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-0100.txt").write_text("x")
+    for _prob in build_deck._canonical_prompt_dir_problems(_pp_root):
+        record("AF-PROMPT-NAME", _prob)
+        record("AF-PROMPT-DUP-FILE", _prob)
 
     # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
     over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)

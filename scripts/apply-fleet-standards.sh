@@ -169,6 +169,33 @@ fi
 export FLEET_PLUGINS_JSON_FILE
 export FLEET_PLUGINS_ENUM_OK
 
+# ─── 1d. Resolve the shared plugins.allow sovereignty deny-list ─────────────
+# config/plugins-sovereignty-denylist.json is the SINGLE authoritative
+# definition of "plugin ids that must never appear in plugins.allow[]" (see
+# that file for the full rationale). Consumed below so this enumerator stops
+# re-adding an id that scripts/repair-model-sovereignty.sh (invoked later in
+# this same script, step "4a-SOVEREIGNTY") strips on every run. That
+# contradiction — enumerator re-adds, stripper removes, same key — was a
+# permanent 2-writer oscillation: 1-2 SIGUSR1 gateway restarts per roll
+# chain, killing every in-flight agent run mid-task
+# (fix/loop-fault-class-20260811, UNIT U8).
+# Same 5-candidate resolution order as config/ghl-mcp-pin.env elsewhere in
+# this repo (scripts/ghl-mcp-autostart.sh, scripts/ghl-mcp-check-pin-digest.sh)
+# — both installers already deliver config/ to every one of these locations.
+# FAIL-OPEN: file missing/unreadable -> FLEET_DENYLIST_FILE stays empty; the
+# python step below WARNS and falls back to the PRE-FIX behavior (nothing
+# subtracted from the enumeration) rather than crashing the roll.
+_AFS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLEET_DENYLIST_FILE=""
+for _c in "$_AFS_SCRIPT_DIR/../config/plugins-sovereignty-denylist.json" \
+          "$HOME/.openclaw/config/plugins-sovereignty-denylist.json" \
+          "$HOME/.openclaw/onboarding/config/plugins-sovereignty-denylist.json" \
+          "/data/.openclaw/config/plugins-sovereignty-denylist.json" \
+          "/data/.openclaw/onboarding/config/plugins-sovereignty-denylist.json"; do
+  [ -f "$_c" ] && { FLEET_DENYLIST_FILE="$_c"; break; }
+done
+export FLEET_DENYLIST_FILE
+
 # ─── 2. Deep-merge the canonical fleet block into openclaw.json ──────────────
 python3 - "$OC_CONFIG" <<'PYEOF'
 import json
@@ -226,12 +253,24 @@ CANONICAL = {
         # visible; only the standing catalog (OpenClaw/plugin/MCP) is compacted.
         # Verified: docs.openclaw.ai/tools/tool-search — tools.toolSearch.mode accepts
         #   "code" (gateway default) | "tools" | "directory"  (or `false` to disable).
-        # Idempotent + override-preserving: deep_merge() recurses into an existing
-        # toolSearch block and enforces ONLY `mode`, leaving any per-box tuning
-        # (codeTimeoutMs / searchDefaultLimit / maxSearchLimit) untouched. The
+        # Idempotent + override-preserving ONLY when the existing value is an object:
+        # deep_merge() recurses into an existing toolSearch BLOCK and enforces just
+        # `mode`, leaving per-box tuning (codeTimeoutMs / searchDefaultLimit /
+        # maxSearchLimit) untouched. If the existing value is a SCALAR (e.g. a bare
+        # `true`, which selects a prompt surface with no hydration path and makes every
+        # tool call return "Tool not found"), deep_merge REPLACES it wholesale -- which
+        # is the desired repair, not a preserved override. The
         # `openclaw config validate` gate below is the backstop + auto-rollback if a
         # gateway version ever rejects the key.
+        #
+        # EXPLICIT `enabled` (per-box shape drift). This block previously wrote only
+        # `mode`, so a box whose config had no `enabled` key never got one — the
+        # feature's on/off state was left to whatever default the running gateway
+        # happened to apply, and that shape differed box to box. Write BOTH keys so
+        # the persisted object is fully specified and identical fleet-wide, and so
+        # the drift guard has an unambiguous target to compare against and restore.
         "toolSearch": {
+            "enabled": True,
             "mode": "directory"
         }
     },
@@ -289,6 +328,47 @@ def deep_merge(dst, src):
 # Apply the canonical block.
 deep_merge(cfg, CANONICAL)
 
+# POST-MERGE ASSERTION. A scalar `tools.toolSearch` (e.g. bare `true`) selects a
+# prompt surface with NO hydration path: every tool call returns "Tool not found",
+# the model starts guessing filenames, and loop-detection blocks the tool without
+# ending the turn -- an unbounded, paid, self-sustaining loop. Fail loudly rather
+# than write a config that silently re-arms it.
+#
+# SCOPE -- READ THIS BEFORE STRENGTHENING IT. This assertion is a WRITE-TIME check
+# only. It proves what THIS script is about to persist, at the instant it persists
+# it. It CANNOT catch the failure actually seen on boxes, where the value is
+# knocked off "directory" AFTER this script exits, by OpenClaw's own config
+# persistence during the container boot window -- a third-party writer, between
+# passes, that no assertion inside this script can observe. That gap is what
+# scripts/guard-toolsearch-directory.sh exists to close; this check and that guard
+# are complements, not alternatives.
+_ts = (cfg.get("tools") or {}).get("toolSearch")
+if not isinstance(_ts, dict) or _ts.get("mode") != "directory" or _ts.get("enabled") is not True:
+    raise SystemExit(
+        "FATAL: post-merge tools.toolSearch is %r; expected an object with "
+        'enabled=true and mode="directory". Refusing to write.' % (_ts,)
+    )
+
+# PROVIDER timeoutSeconds FLOOR. An ABSENT key falls back to a 120s gateway
+# default; against a thinking-model primary that is what produced
+# `LLM idle timeout (120s)`, `FailoverError: LLM request timed out`,
+# `durationMs=122368`, and stuck-session aborts on an affected box. A detector
+# that only compares values across providers misses an absent key entirely, so
+# this walks every configured provider directly. Never creates a provider that
+# doesn't exist; never overwrites an operator's explicit choice (box-dependent:
+# two boxes legitimately run 600 and 300 on the same primary) -- only fills the
+# gap when the key is missing. Fail-open if models.providers isn't a dict.
+_providers = (cfg.get("models") or {}).get("providers")
+if isinstance(_providers, dict):
+    for _prov_name, _prov_cfg in _providers.items():
+        if not isinstance(_prov_cfg, dict):
+            continue
+        if "timeoutSeconds" not in _prov_cfg:
+            _prov_cfg["timeoutSeconds"] = 600
+            print(f"[apply-fleet-standards] provider '{_prov_name}' had no timeoutSeconds — set to 600 (was falling back to the 120s gateway default)")
+        elif _prov_cfg["timeoutSeconds"] < 600:
+            print(f"WARNING: [apply-fleet-standards] provider '{_prov_name}' timeoutSeconds={_prov_cfg['timeoutSeconds']} is below 600 — left unchanged (operator-set value preserved; box-dependent)", file=sys.stderr)
+
 # ─── DYNAMIC plugins.allow — vetted-bundled-only plugin gate (box-specific) ──
 # See "1c" above for the full rationale. This is intentionally NOT part of the
 # static CANONICAL dict above: CANONICAL is the same literal block on every
@@ -330,18 +410,80 @@ if _plugins_enum_ok and _plugins_json_file:
         ]
         _bundled_only = {p["id"] for p in _all_entries if p.get("origin") == "bundled"}
         _non_bundled = {p["id"] for p in _all_entries if p.get("origin") != "bundled"}
-        _bundled_ids = sorted(_bundled_only | _non_bundled)
+        _bundled_ids_raw = sorted(_bundled_only | _non_bundled)
     except Exception as _e:
         print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
-        _bundled_ids = []
+        _bundled_ids_raw = []
         _bundled_only = set()
         _non_bundled = set()
+
+    # ── SOVEREIGNTY DENY-SET SUBTRACTION (fix/loop-fault-class-20260811, U8,
+    #     Parts 1+2) — subtract the SHARED deny-set (config/plugins-
+    #     sovereignty-denylist.json) from the union BEFORE assignment, so this
+    #     enumerator stops re-adding an id that repair-model-sovereignty.sh
+    #     strips every run (the 2-writer oscillation this fix resolves — see
+    #     that file's header comment for the full contradiction + rationale).
+    #     Matching is EXACT (id.strip().lower() == denied entry), mirroring
+    #     repair-model-sovereignty.sh's OWN plugins.allow strip predicate
+    #     exactly (not the broader substring rule it applies to
+    #     plugins.entries.*, a different data shape — see the denylist file's
+    #     comment). FAIL-OPEN: missing/unreadable/malformed deny-list file ->
+    #     WARN and fall back to the PRE-FIX behavior (nothing subtracted);
+    #     never crashes the roll.
+    _deny_plugin_file = os.environ.get("FLEET_DENYLIST_FILE", "")
+    _deny_plugin_ids = set()
+    _deny_list_loaded = False
+    if _deny_plugin_file:
+        try:
+            _deny_doc = json.loads(Path(_deny_plugin_file).read_text())
+            _deny_raw = _deny_doc.get("deny_plugin_ids", [])
+            if isinstance(_deny_raw, list):
+                _deny_plugin_ids = {
+                    str(x).strip().lower() for x in _deny_raw
+                    if isinstance(x, str) and x.strip()
+                }
+                _deny_list_loaded = True
+            else:
+                print(f"WARNING: [apply-fleet-standards] {_deny_plugin_file} has a non-list 'deny_plugin_ids' — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+        except Exception as _e:
+            print(f"WARNING: [apply-fleet-standards] failed to parse plugins-sovereignty-denylist.json ({_e}) — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+    else:
+        print("WARNING: [apply-fleet-standards] config/plugins-sovereignty-denylist.json not found in any delivered location (FLEET_DENYLIST_FILE unresolved) — plugins.allow falls back to the PRE-FIX behavior this run (nothing subtracted from the enumeration)", file=sys.stderr)
+
+    if _deny_list_loaded and _deny_plugin_ids:
+        _denied_present = sorted(
+            x for x in _bundled_ids_raw
+            if isinstance(x, str) and x.strip().lower() in _deny_plugin_ids
+        )
+    else:
+        _denied_present = []
+    _bundled_ids = [x for x in _bundled_ids_raw if x not in _denied_present]
+    if _denied_present:
+        print(f"[apply-fleet-standards] plugins.allow: excluded {len(_denied_present)} sovereignty-denied id(s) from the enumeration (config/plugins-sovereignty-denylist.json): {_denied_present}")
+
     # FAIL-OPEN posture UNCHANGED: an empty enumeration still writes nothing. The
     # guard is keyed on the BUNDLED count specifically — a run that somehow saw only
-    # non-bundled plugins is not a trustworthy enumeration either.
+    # non-bundled plugins is not a trustworthy enumeration either. (Keyed on the
+    # PRE-subtraction _bundled_only — the deny-set subtraction never turns a
+    # genuine enumeration into a treated-as-failed one.)
     if _bundled_ids and _bundled_only:
-        cfg.setdefault("plugins", {})["allow"] = _bundled_ids
-        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
+        # READ-COMPARE-WRITE (fix/loop-fault-class-20260811, U8, Part 3): only
+        # assign when the computed value actually DIFFERS from what is already
+        # in cfg["plugins"]["allow"], compared as SORTED lists. A converged
+        # box therefore produces NO write here, independent of Part 1/2 above
+        # — this protects against the next pair of contradicting writers on
+        # this same key, not just today's anthropic/plugins.allow one. Same
+        # discipline as the whole-config before_json/after_json gate at the
+        # tail of this script, restated locally so it holds even if that
+        # outer gate is ever removed or this block is lifted into its own
+        # script.
+        _existing_allow = cfg.get("plugins", {}).get("allow")
+        _existing_allow_sorted = sorted(_existing_allow) if isinstance(_existing_allow, list) else None
+        if _existing_allow_sorted == _bundled_ids:
+            print(f"[apply-fleet-standards] plugins.allow already converged at {len(_bundled_ids)} id(s) — no write (read-compare-write)")
+        else:
+            cfg.setdefault("plugins", {})["allow"] = _bundled_ids
+            print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
     else:
         print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
 else:
@@ -2345,6 +2487,63 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5c-N40. Inject FAIL_CLOSED_DEPENDENCY_V1 into workspace/AGENTS.md ───────
+# N40: against a dependency that refuses ON PURPOSE (auth-class), stop after at
+# most 2 attempts, emit exactly ONE message, and never narrate a discovery hunt
+# to the client. Idempotent: guarded by <!-- FAIL_CLOSED_DEPENDENCY_V1 -->.
+#
+# WHY THIS IS AN INJECTION AND NOT JUST A REPO EDIT. The repo-root AGENTS.md is
+# the operator's canonical doctrine document; NOTHING copies it to a box.
+# link_shared_core_files() fans a box's OWN workspace AGENTS.md out to that box's
+# other agent workspaces — it never pulls from the repo. So a rule added to the
+# repo's AGENTS.md alone reaches ZERO existing boxes. This stanza is the only
+# vehicle that puts N40 on a live box, and it rides both the full update pass and
+# the converged fast-path.
+#
+# PROVENANCE. Generalised from a rule hand-written into ONE box's TOOLS.md on
+# 2026-08-11 after a live incident:
+#   "if a call still returns 401/404/empty after sourcing secrets, STOP after at
+#    most two attempts and tell the owner in ONE short message what failed. Never
+#    run discovery hunts across the filesystem, never narrate step-by-step
+#    attempts to the owner."
+# That wording was proven effective but service-specific, and TOOLS.md is NOT
+# shipped fleet-wide (it propagates only WITHIN a box), so it reached one box.
+# This is the fleet-wide generalisation, and it belongs in AGENTS.md because a
+# stop-condition is BEHAVIOUR, not a local tool note. The "what is needed to
+# unblock it" clause is a deliberate ADDITION to the original wording, aligning
+# N40 with the BLOCKED state already defined by OWNER_REPORTING_V1 below.
+FAIL_CLOSED_DEPENDENCY_MARKER="<!-- FAIL_CLOSED_DEPENDENCY_V1 -->"
+
+if grep -qF "$FAIL_CLOSED_DEPENDENCY_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] FAIL_CLOSED_DEPENDENCY_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'FCDEOF'
+
+<!-- FAIL_CLOSED_DEPENDENCY_V1 -->
+## N40 — Fail-Closed Dependency: stop at 2, report once, never narrate the hunt (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `FAIL_CLOSED_DEPENDENCY_V1`. Idempotent — re-stamped on every install/update.
+
+A **fail-closed dependency** refuses you on purpose. It answers `unauthorized`, `forbidden`, `invalid api key`, `authentication failed`, `not authenticated`, or `missing credentials`. That is a **permission** answer, not a capability answer, and it is the SAME answer however the request is worded.
+
+1. **STOP AFTER AT MOST 2 ATTEMPTS.** The first establishes the failure, the second confirms it is not transient. There is no third.
+2. **REWORDING IS NOT A NEW APPROACH.** Different arguments against the same fail-closed dependency are the same attempt repeated — a different endpoint, a different path to the same credential, a different phrasing of the same call. None of it is progress.
+3. **EMIT EXACTLY ONE MESSAGE**, and only when you stop. It says three things and nothing else: **what is blocked**, **what is needed to unblock it**, and **who can supply it.** That is the BLOCKED state from the owner reporting rules.
+4. **NEVER NARRATE A DISCOVERY HUNT TO THE OWNER OR CLIENT.** No running commentary, no "let me try...", no per-attempt status, no filesystem search narrated step by step. They see ONE message describing a blocked state, or they see nothing. This is We Move In Silence applied to failure.
+5. **A FAIL-CLOSED REFUSAL IS A REPORTABLE STATE, NOT A PROBLEM TO SOLVE.** You cannot earn a credential you were not given. Escalate; do not grind.
+
+**This BOUNDS "try 5-10 methods before asking for help."** That rule governs CAPABILITY failures — a tool you have not yet found the right invocation for. It does NOT govern PERMISSION failures. No number of methods can satisfy a credential you do not have.
+
+**Why this is doctrine and not a detector.** Every automated loop guard keys on the ARGUMENTS — the runtime on `toolName` + `sha256(params)`, the always-armed runaway guard on those plus the result hash. An agent that rewords defeats all of them at once, and OpenClaw exposes no per-turn tool-call ceiling to fall back on. In the incident behind this rule an agent made **13 tool calls in 49 seconds**, each a reworded attempt at one intent; nothing fired, and the client stopped it by hand after typing "stop looping." Only this rule stops that while it is happening.
+
+FCDEOF
+  echo "[apply-fleet-standards] FAIL_CLOSED_DEPENDENCY_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 # ─── 5d. Inject OWNER_REPORTING_V1 into workspace/AGENTS.md ──────────────────
 # W6: owner reporting standard — how and when to report back to the owner.
 # Idempotent: guarded by <!-- OWNER_REPORTING_V1 -->.
@@ -2702,7 +2901,17 @@ fi
 #     write error => log and skip WITHOUT writing the marker, so a later roll
 #     retries. This step can never fail a roll.
 # Spec: scripts/fleet-standing/NEW-BOX-WIRING.md §2.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
+#
+# R7 (2026-08-11): marker bumped V1 -> V2 for the one-line `LOOP:` routing
+# addition to the template (see rescue-escalation-section.md.tpl). A box
+# still carrying the V1 marker pair is found via the "replace" branch below
+# on its next roll (V1 start/end still matched there); a box with no marker
+# at all still upgrades via the "upgrade" (bare-heading) branch. Either path
+# lands the box on V2. Content-diff idempotency means a version bump was not
+# strictly required for THIS change to propagate -- it is done anyway so the
+# faster "replace" path (rather than the heading-regex "upgrade" fallback)
+# stays the steady-state path on every future roll, not a permanent detour.
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -2744,8 +2953,14 @@ path = sys.argv[1]
 slug = os.environ["RESCUE_BOX_SLUG"]
 tpl_path = os.environ["RESCUE_TPL"]
 
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V1 -->"
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->"
+# R7: a box still carrying the V1 marker pair falls through to the "upgrade"
+# (bare heading) branch below on its first V2 roll -- it is not matched by
+# the V2 START/END pair above, so `si == -1`, and the code takes the
+# `re.search(r'^## Escalate to Rescue Rangers...')` path instead. That path
+# replaces the whole section (V1 markers included) with the V2-rendered
+# template. Every roll after that one finds the V2 pair directly.
 
 try:
     txt = open(path, encoding="utf-8").read()
@@ -2764,8 +2979,19 @@ if si != -1 and ei != -1 and ei > si:
     cur_start, cur_end = si, ei + len(END)
     mode = "replace"
 else:
-    m = re.search(r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
-                  txt, re.MULTILINE | re.DOTALL)
+    # R7: also consume a STALE marker-comment line of ANY version number
+    # immediately above the heading (e.g. a lingering V1 opening tag left
+    # over on the first roll after a V1->V2 bump). Without this, a version
+    # bump leaves the old opening `<!-- RESCUE_ESCALATION_BOXNAME_V1 -->`
+    # tag orphaned one line above the freshly-rendered V2 section forever --
+    # harmless to rendering, but it is dead text nobody asked for and it
+    # would keep accumulating on every future version bump. The optional
+    # group only matches this exact marker naming shape, never an unrelated
+    # HTML comment added to a box by hand.
+    m = re.search(
+        r'(?:^<!-- RESCUE_ESCALATION_BOXNAME_V\d+ -->\n)?'
+        r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
+        txt, re.MULTILINE | re.DOTALL)
     if not m:
         # No section at all. Do NOT create one — see the contract above.
         print("absent"); raise SystemExit(0)

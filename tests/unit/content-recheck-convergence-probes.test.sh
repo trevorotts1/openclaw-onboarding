@@ -558,6 +558,40 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pe
     # exit code straight into the function body (a bare `return "$cc"` would
     # instead try to read a positional parameter of the STUBBED function,
     # not this outer variable).
+    #
+    # CONVERGENCE-FAST-PATH (2026-08-10): the gate now runs the fast
+    # convergence sub-pass and RE-PROBES. A probe that returns non-zero on
+    # the FIRST call but 0 on the re-probe models "the fast path repaired
+    # it" -> the gate exits 0 (fast path converged). A probe that returns
+    # non-zero on BOTH calls models "the repair did not take" -> the gate
+    # falls through to the full pass (never-weaker backstop). Each probe
+    # carries its OWN first-call flag so the re-probe semantics are
+    # per-probe, not shared (the gate calls them in order).
+    eval "_cc_currency_probe() { if [ \"\${_GATE_CC_FIRST:-1}\" -eq 1 ]; then _GATE_CC_FIRST=0; echo stub-cc; return $cc; else echo stub-cc-again; return 0; fi; }"
+    eval "_sop_library_currency_probe() { if [ \"\${_GATE_SOP_FIRST:-1}\" -eq 1 ]; then _GATE_SOP_FIRST=0; echo stub-sop; return $sop; else echo stub-sop-again; return 0; fi; }"
+    eval "_persona_index_currency_probe() { if [ \"\${_GATE_PERSONA_FIRST:-1}\" -eq 1 ]; then _GATE_PERSONA_FIRST=0; echo stub-persona; return $persona; else echo stub-persona-again; return 0; fi; }"
+    eval "_weekly_cron_currency_probe() { if [ \"\${_GATE_CRON_FIRST:-1}\" -eq 1 ]; then _GATE_CRON_FIRST=0; echo stub-cron; return $cron; else echo stub-cron-again; return 0; fi; }"
+    eval "_agents_md_hygiene_probe() { if [ \"\${_GATE_AGENTS_FIRST:-1}\" -eq 1 ]; then _GATE_AGENTS_FIRST=0; echo stub-agents; return $agents; else echo stub-agents-again; return 0; fi; }"
+    eval "_pending_flag_currency_probe() { if [ \"\${_GATE_PENDING_FIRST:-1}\" -eq 1 ]; then _GATE_PENDING_FIRST=0; echo stub-pending; return $pending; else echo stub-pending-again; return 0; fi; }"
+    # shellcheck source=/dev/null
+    source "$WORK/gate-wrapped.sh"
+    # shellcheck disable=SC2034  # read by gate_block (dynamically sourced above) for its cleanup rm -rf, not this scope
+    TEMP_EXTRACT="$WORK/gate-temp-extract-$$-unused"
+    # shellcheck disable=SC2034  # read by gate_block (dynamically sourced above) for its cleanup rm -rf, not this scope
+    TEMP_ZIP="$WORK/gate-temp-zip-$$-unused"
+    gate_block
+    echo "GATE_FELL_THROUGH rc=$?"
+  )
+}
+
+# CONVERGENCE-FAST-PATH (2026-08-10) backstop fixture: identical to run_gate
+# but every probe returns its baked rc on EVERY call (first AND re-probe),
+# modeling "the fast path repair did not take". The gate must then fall
+# through to the full sync — never exit 0 on work that is still outstanding.
+run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc>
+  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6"
+  (
+    set -euo pipefail
     eval "_cc_currency_probe() { echo stub-cc; return $cc; }"
     eval "_sop_library_currency_probe() { echo stub-sop; return $sop; }"
     eval "_persona_index_currency_probe() { echo stub-persona; return $persona; }"
@@ -595,15 +629,31 @@ for combo in "1:0:0:0:0:0:Command Center currency" \
              "0:0:0:0:0:1:UPDATE PENDING flag currency"; do
   IFS=':' read -r cc sop persona cron agents pending label <<< "$combo"
   OUT="$(run_gate "$cc" "$sop" "$persona" "$cron" "$agents" "$pending" 2>&1)"; RC=$?
+  # CONVERGENCE-FAST-PATH (2026-08-10): a probe that fails on the FIRST
+  # call but converges on the re-probe models "the fast path repaired it" ->
+  # the gate exits 0 (fast path converged, no full sync). The fall-through
+  # is reserved for a probe that fails on BOTH calls (repair did not take).
   if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
-    ok "(gate) '${label}' outstanding -> falls through (does not exit 0)"
+    bad "(gate) '${label}' repaired by the fast path but still fell through (expected fast exit 0): $OUT"
   else
-    bad "(gate) '${label}' outstanding did NOT fall through (incorrectly fast-exited): $OUT"
+    [ "$RC" -eq 0 ] && ok "(gate) '${label}' repaired by the fast path -> fast exit 0 (no full sync)" \
+      || bad "(gate) '${label}' fast path exited $RC (expected 0): $OUT"
   fi
-  echo "$OUT" | grep -q "OUTSTANDING" && echo "$OUT" | grep -qF "$label" \
-    && ok "(gate) names '${label}' in the OUTSTANDING message" \
-    || bad "(gate) did not name '${label}' in the OUTSTANDING message: $OUT"
+  echo "$OUT" | grep -q "CONVERGENCE FAST PATH" \
+    && ok "(gate) '${label}' ran the fast convergence sub-pass" \
+    || bad "(gate) '${label}' did not run the fast convergence sub-pass: $OUT"
 done
+
+echo ""
+echo "== Fast path backstop: a probe that STILL fails after the fast path falls through =="
+# All six probes fail on BOTH calls -> the fast path cannot converge -> the
+# gate must fall through to the full sync (never-weaker backstop).
+OUT="$(run_gate_stubborn 1 1 1 1 1 1 2>&1)"; RC=$?
+if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
+  ok "(backstop) repairs that do not take fall through to the full sync (never-weaker)"
+else
+  bad "(backstop) stubborn failures did NOT fall through (incorrectly exited 0): $OUT"
+fi
 
 echo ""
 echo "== Idempotency proof: a genuinely converged box still gets the fast exit =="
