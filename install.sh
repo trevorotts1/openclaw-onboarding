@@ -3127,7 +3127,7 @@ sub['maxChildrenPerAgent'] = 20
 sub['maxSpawnDepth']       = 4
 # maxConcurrent: CAPACITY-AWARE (WS-8 dual-key fix, 2026-08-01).
 #
-# WAS: `max(100, prev) if prev >= 50 else 100` — a hard-overwrite to 100 on
+# WAS: max(100, prev) if prev >= 50 else 100 — a hard-overwrite to 100 on
 # EVERY box. This is the "100 everywhere" bug WS-8 exists to kill: a base 8GB
 # Mac mini and a 64GB VPS both got 100, and worse, the old rule could only ever
 # RAISE the number, so every install/re-install CLOBBERED a value that

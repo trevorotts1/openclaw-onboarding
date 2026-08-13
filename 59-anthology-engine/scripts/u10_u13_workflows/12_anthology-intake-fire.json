@@ -1,0 +1,21 @@
+{
+  "actions": [
+    "webhook-to-route"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "forms": {
+    "form_id_marker": "...lKWG",
+    "form_slug": "universal-intake"
+  },
+  "module": null,
+  "name": "Anthology Intake Fire",
+  "note": "DOCUMENTED SEAT ONLY - no template is generated for the Intake Fire: its template is the live webhook-to-route mapping owned by the U02/U05 tooling, never an n8n/GHL workflow JSON export",
+  "owned_elsewhere": "true - the seat is owned by the U02/U05 tooling (u02_modules/scope_check.py, scripts/check_intake_fire_scope.py); this family documents it, it does not generate its template",
+  "schema_version": 1,
+  "seat": 12,
+  "status": "OWNED-ELSEWHERE",
+  "trigger": {
+    "scoped_form": "universal-intake",
+    "type": "form_submission"
+  }
+}

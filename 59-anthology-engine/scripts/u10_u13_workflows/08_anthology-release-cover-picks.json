@@ -1,0 +1,65 @@
+{
+  "actions": [
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "send-email",
+      "send-sms"
+    ],
+    "email": {
+      "body": "Dear {{ contact.first_name }},\n\nYour cover options are ready. Our editors have prepared four distinctly-styled cover designs for you: Signature, Bold Editorial, Fine Art, and Pure Type.\n\nView your four cover options here:\n{{ contact.anthology_cover_sample1_url }}\n{{ contact.anthology_cover_sample2_url }}\n{{ contact.anthology_cover_sample3_url }}\n{{ contact.anthology_cover_sample4_url }}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nTake a look and pick your favorite cover style in the review form here:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s7_cover\n\nWarm regards,\nThe Editors",
+      "cover_styles": [
+        "Signature",
+        "Bold Editorial",
+        "Fine Art",
+        "Pure Type"
+      ],
+      "from_name_merge": "{{ custom_values.producer }}",
+      "link_fields": [
+        "{{contact.anthology_cover_sample1_url}}",
+        "{{contact.anthology_cover_sample2_url}}",
+        "{{contact.anthology_cover_sample3_url}}",
+        "{{contact.anthology_cover_sample4_url}}"
+      ],
+      "sign_off": "The Editors",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s7_cover",
+      "subject": "Your cover options are ready"
+    },
+    "gate_cursor": "s7_cover",
+    "note": "offline template only \u2014 a REAL location write must ride the house clients (CAF_BROWSER_UA on every request \u2014 CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live",
+    "producer_gate": "s7_producer",
+    "sms": {
+      "body": "Your cover options are ready to view here: {{contact.anthology_cover_sample1_url}}",
+      "shape": "link-only short message (one warm sentence plus ONE link)"
+    },
+    "stage": "s7_cover",
+    "trigger_tag": "anthology-release-cover",
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow_name": "Anthology Release: Cover Picks"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_cover_sample1_url}}",
+      "{{contact.anthology_cover_sample2_url}}",
+      "{{contact.anthology_cover_sample3_url}}",
+      "{{contact.anthology_cover_sample4_url}}"
+    ],
+    "sms_link": "{{contact.anthology_cover_sample1_url}}"
+  },
+  "module": "w9_release_cover",
+  "name": "Anthology Release: Cover Picks",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 8,
+  "status": "WIRED-AHEAD",
+  "trigger": {
+    "tag": "anthology-release-cover",
+    "type": "contact_tag"
+  }
+}

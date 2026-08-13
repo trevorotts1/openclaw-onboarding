@@ -863,6 +863,29 @@ def broker_create_book_tree(client_key, producer_email, book_title, co_author=No
             raise DependencyError(
                 "n8n Drive broker create_book_tree response is missing %r "
                 "(the broker must return the created folder ids)." % key)
+    # FAIL-CLOSED (U25): the producer editor share is NOT optional. A broker
+    # response that truthfully reports the share did not land -- either the
+    # producer_editor_shared flag is False or the warning carries
+    # producer_editor_share_failed (or the ok flag is not confirmed True) --
+    # must abort provisioning with DependencyError, never hand the engine a
+    # book tree the producer cannot edit. The workflow also rejects
+    # non-shareable producer emails up-front (non-200), so reaching this check
+    # means the broker itself acknowledged the share failure.
+    _share_failed_warning = (
+        isinstance(result.get("warning"), dict)
+        and result.get("warning", {}).get("code") == "producer_editor_share_failed")
+    if result.get("producer_editor_shared") is not True or _share_failed_warning:
+        raise DependencyError(
+            "n8n Drive broker create_book_tree: the producer editor share was NOT "
+            "confirmed (producer_editor_shared=%r warning=%r) -- the book folder was "
+            "created but the producer cannot edit it; no book tree is provisioned "
+            "until the share lands (check the producer email is a Google "
+            "Workspace/Drive-shareable account)."
+            % (result.get("producer_editor_shared"), result.get("warning")))
+    if result.get("ok") is not True:
+        raise DependencyError(
+            "n8n Drive broker create_book_tree did not confirm ok=true: %r"
+            % (result.get("error") or result.get("message") or result.get("ok")))
     result.setdefault("ok", True)
     result.setdefault("action", "create_book_tree")
     # drive_adapter is authoritative on WHICH path served this call, regardless of any
@@ -1646,8 +1669,11 @@ def self_test():
         def _fake_post(action, payload):
             captured["action"] = action
             captured["payload"] = dict(payload)
+            # U25: the broker must CONFIRM the producer editor share (fail-closed);
+            # a happy-path fake carries producer_editor_shared: true.
             return {"ok": True, "root_folder_id": "ROOT", "client_folder_id": "CID",
-                    "producer_folder_id": "PID", "book_folder_id": "BID"}
+                    "producer_folder_id": "PID", "book_folder_id": "BID",
+                    "producer_editor_shared": True}
         globals()["_broker_post"] = _fake_post
         res = broker_create_book_tree("clientA", "producer@x.example",
                                       "The Weight of the Keys", co_author="co@x.example")

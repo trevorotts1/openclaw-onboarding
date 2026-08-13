@@ -1,0 +1,165 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U08-U09-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "an ACTION (a form create / build / write, or the live verify itself) was requested without the operator's explicit --execute (the Trevor gate, u08_u09_modules/__init__.py doctrine) \u2014 a refusal, never a silent no-op and never a silent write; an un-gated live verify never fires (not yet stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "a PUT returned success but the read-back in the SAME job does not prove the build byte-exact \u2014 never reported as built (the house code, already stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-PREFILL-EXECUTE",
+      "exit": 2,
+      "meaning": "the pre-fill live verify was requested without --execute \u2014 an operator-gated live action in this package (background or accidental invocations must never even probe the live surface)"
+    },
+    {
+      "code": "AF-AE-PREFILL-BASELINE-UNREADABLE",
+      "exit": 2,
+      "meaning": "the committed pre-fill widget-build baseline (config/prefill-verifier-baseline.json) is missing or unreadable \u2014 a check that cannot see its law never fabricates a pass"
+    },
+    {
+      "code": "AF-AE-PREFILL-BASELINE-MALFORMED",
+      "exit": 2,
+      "meaning": "the committed pre-fill baseline is malformed (not a JSON object / drifted structure) \u2014 the hydration law became unverifiable, never a silent pass"
+    },
+    {
+      "code": "AF-AE-PREFILL-RENDER",
+      "exit": 5,
+      "meaning": "a headless-Chromium render observed a probe value rendered non-exact or onto the wrong field, or a prefill rendered with its param absent \u2014 the rendered hidden-field values must be exact (the render is OPTIONAL \u2014 absent runtime is SKIPPED-as-undetermined, never fabricated)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of a family module or battery (enforced violation \u2014 the house code, shared with the U02 / U03 / U04 / U05 / U06 / U07 families)"
+    }
+  ],
+  "authored_by": "U08/U09",
+  "check_modules": [
+    "form_spec_loader",
+    "golden_title",
+    "golden_review",
+    "attack_missing_hidden",
+    "attack_bad_dropdown",
+    "hidden_field_module",
+    "title_select_builder",
+    "universal_review_builder",
+    "dropdown_module",
+    "prefill_verifier",
+    "docs_forms"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u08-u09-forms-law",
+  "exit_codes": {
+    "0": "verified success \u2014 the live form carries its law byte-exact (also plan / dry-run / self-test / a documented PASS)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / the --execute gate withheld (AF-AE-U08-U09-NO-EXECUTE: an ACTION without the gate is a refusal, never a silent write) / the pre-fill live verify without --execute (AF-AE-PREFILL-EXECUTE) / the U08/U09 check-module assembly incomplete (AF-AE-U08-U09-ASSEMBLY-INCOMPLETE) / a form-spec contract refusal (AF-AE-FORMSPEC-*) / an unreadable listing shape / a genuine location-scope denial / a module STOP-family refusal (FormSpecError / FormsFixError / FormsBuildError / ReviewBuildError / DropdownError / StyleImportError / DecisionImportError / FixtureError)",
+    "3": "HELD \u2014 Convert and Flow unreachable / Cloudflare edge block (CF error 1010) / an applied-but-unreadable PUT (the live state is UNDETERMINED, never reported as built) / a pre-fill fetch or render that cannot complete",
+    "4": "self-test FAILED (the AF-AE-* enforced-violation family \u2014 a tamper never masquerades as exit 1)",
+    "5": "mismatch / fail-closed default \u2014 a form row absent (FORMS-EMPTY / FORMS-NOT-FOUND), a pinned id absent from the listing, a byte-drifted hidden-field law (including a strict subset), a drifted decision or cover option set, a pre-fill page that is not byte-identical or a drifted widget-build signature (AF-AE-PREFILL-*), a read-back that does not prove the build (AF-AE-READBACK-MISMATCH), or a fixture payload that drifted"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "every CREATE ACTION (and the live verify itself) is Trevor-gated (--execute, the u08_u09 package-init doctrine) \u2014 without --execute a write is a STOP (exit 2, AF-AE-U08-U09-NO-EXECUTE), never a silent no-op and never a silent create; even WITH --execute every write is create-only-missing with a byte-exact read-back \u2014 this assembler never writes."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "build_anthology_forms.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u08_u09_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the U08/U09 form-law dispatcher CLI (plan / self-test / live verify; the ONE entry-point contract over the check modules)"
+    },
+    {
+      "name": "form_spec_loader.py",
+      "role": "the FAIL-CLOSED THREE-FORM SPEC LOADER AND CONTRACT GATE \u2014 the single implementation of the anthology-snapshot-contract.json forms load-and-verify law: the hidden-field law [contact_id, anthology_id, stage] byte-exact on every required and contract-bound row, the universal-review slug a NAMED form never a count row, the pinned form ids byte-equal their live authorities \u2014 refuse anything else (FormSpecError, STOP, exit 2), never a partial load. OFFLINE, READ-ONLY, NETWORK-FREE; a form id is reported by masked marker only, never by value"
+    },
+    {
+      "name": "golden_title.py",
+      "role": "the GOLDEN TITLE-SELECT FIXTURE \u2014 the canonical in-memory payload of the S3 title-selection surface in its GOLDEN state: the byte-exact locked PAIR (title AND subtitle \u2014 the lock is a PAIR, never a title-only stamp), the composite participant_key under the KEYING LAW (read once through anthology_state.participant_key), the one-way lock truth, the fixed two doors (nudge_link / dashboard); payload(candidate=None) judges a select payload fail-closed (exit 0 PASS / 5 REFUSED); the live selection write is Trevor-gated (--execute) \u2014 the gate lives in the dispatcher, never in a fixture"
+    },
+    {
+      "name": "golden_review.py",
+      "role": "the GOLDEN UNIVERSAL-REVIEW FIXTURE \u2014 the canonical in-memory payload of the universal-review decision surface in its GOLDEN state: the UNIVERSAL_REVIEW_FORM slug byte-exact (read once from u05_modules.negative_verifier), the decision present and non-empty, the keys riding the field-map authority, the cover choice (when carried) ONE of the four style names, and the golden s7_cover HOLD -> certified does-not-fire; payload(candidate) judges a review submission fail-closed (exit 0 PASS / 5 REFUSED)"
+    },
+    {
+      "name": "attack_missing_hidden.py",
+      "role": "the U08/U09 ATTACK #1: a deterministic DEEP strict-subset hidden-field container carrying only TWO of the THREE universal hidden fields (the canonical trio minus its LAST contract row by position \u2014 the stage token today) that every byte-exact hidden-field gate MUST DETECT and refuse (verify_missing_hidden exit 5, missing key named) while the true 3-key control (payload_true, --execute-gated) PASSES exit 0 \u2014 the pass/fail split discriminates the deep-strict-subset boundary, never a broken instrument. The attack ships ONLY with --execute"
+    },
+    {
+      "name": "attack_bad_dropdown.py",
+      "role": "the U08/U09 ATTACK #2: a deterministic wrong-option decision-dropdown picklist \u2014 the FIRST of the two gate actions byte-swapped to the repo's OWN documented drifted spelling (approved_as_is, pinned byte-exact against golden_review.GOLDEN_DECISION and proven NOT in the two gate actions) that every byte-exact picklist gate MUST DETECT and refuse (verify_options exit 5, wrong option and expected option named) while the true two-option golden control (payload_true, --execute-gated) PASSES exit 0 \u2014 the pass/fail split discriminates the one-option-wrong boundary, never a broken instrument. The attack ships ONLY with --execute"
+    },
+    {
+      "name": "hidden_field_module.py",
+      "role": "the HIDDEN-FIELD CREATOR \u2014 create-or-verify the universal hidden-field trio (contact_id / anthology_id / stage) on the universal author-intake form through the proven public write rail PUT /forms/{id} (Version header + CAF_BROWSER_UA \u2014 the Cloudflare edge fix). WITHOUT --execute a READ-ONLY dry-run (nothing written); WITH --execute a PUT and a read-back that must prove the trio byte-exact (AF-AE-READBACK-MISMATCH, exit 5); a missing / unreadable listing is FORMS-NOT-FOUND / FORMS-EMPTY (exit 2)"
+    },
+    {
+      "name": "title_select_builder.py",
+      "role": "the TITLE-SELECT FORM BUILDER \u2014 the S3 gate form of the three-slug family: EXACTLY TWO routing hidden fields (anthology_id, stage \u2014 never the intake trio) plus the TWO visible multi-line REQUIRED fields (title, subtitle), built through the proven public rail PUT /forms/{id} with a read-back; Trevor-gated exactly like the hidden-field creator; a read-back that does not prove the build is a MISMATCH (exit 5), never a reported success"
+    },
+    {
+      "name": "universal_review_builder.py",
+      "role": "the UNIVERSAL-REVIEW FORM BUILDER \u2014 the decision form of the family: EXACTLY TWO hidden fields (anthology_id, stage \u2014 never contact_id), the TWO-option decision dropdown (Approve as-is / Request rewrite with notes \u2014 read once from gate_engine's action vocabulary), the multi-line notes surface, and the FOUR-option cover dropdown (the U8 style names read once from cover_render.STYLE_NAMES), built through PUT /forms/{id} with a read-back; Trevor-gated; a drifted decision / cover picklist or an unproven read-back is a MISMATCH (exit 5)"
+    },
+    {
+      "name": "dropdown_module.py",
+      "role": "the TWO-DROPDOWN CREATE-OR-VERIFY MODULE \u2014 the SINGLE_OPTIONS law of the review surface: the PRD Section 4 universal-review decision field (contact.anthology_review_decision, the two gate actions approve_as_is / request_rewrite_with_notes from gate_engine) and the U8 cover-choice field (contact.anthology_cover_choice, the four named styles from cover_render.STYLE_NAMES, byte-exact against config/field-map.json choice_options). verify_live: missing keys WITHOUT --execute are a STOP (exit 2) that lists them; WITH --execute create-only-missing at SINGLE_OPTIONS with the exact picklists then re-read (a drift is exit 5); a live field of the WRONG type is never re-created and never re-typed \u2014 it is a FAIL (exit 5)"
+    },
+    {
+      "name": "prefill_verifier.py",
+      "role": "the U08 VALUE-SIDE GATE \u2014 the minted intake link's TWO query params (?anthology_id=<minted>&stage=<stage>) must pre-fill the form's HIDDEN anthology_id AND stage fields (the U08 two-hidden-field extension of the U04 G3 value-side law); the live read is the PUBLIC hosted-form page + the PUBLIC widget build \u2014 zero credentials; a real browser render is OPTIONAL (absent runtime -> rendered check SKIPPED as undetermined, never fabricated); run_live -> 0 PASS / 5 MISMATCH / 3 HELD / 2 STOP; --execute is REQUIRED for the live verify (u08_u09 doctrine)"
+    },
+    {
+      "name": "docs_forms.py",
+      "role": "the U08/U09 tooling README / catalog data + drift gate \u2014 the three named forms and their laws, the module inventory, the house exit codes, the AF family, the doctrine, and the credential labels as DATA; readme() renders FROM the same data the self-test asserts against, so documentation and data cannot drift; its self-test is a read-only filesystem drift gate \u2014 a doc that names a module that does not ship FAILS its self-test exit 4"
+    },
+    {
+      "name": "test_prefill.py",
+      "role": "the independent pytest battery over the pre-fill verifier (provenance only)"
+    },
+    {
+      "name": "test_title_builder.py",
+      "role": "the independent pytest battery over the title-select builder (provenance only)"
+    },
+    {
+      "name": "test_review_builder.py",
+      "role": "the independent pytest battery over the universal-review builder (provenance only)"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "form_spec_law",
+      "item": 1,
+      "title": "3-form spec law \u2014 the snapshot contract loads and verifies against its own law (the hidden-field trio, the named review slug, the pinned ids)"
+    },
+    {
+      "id": "golden_fixtures",
+      "item": 2,
+      "title": "Golden fixtures law \u2014 the golden title-select PAIR and the golden universal-review submission PASS their own fail-closed judges"
+    },
+    {
+      "id": "attack_boundaries",
+      "item": 3,
+      "title": "Attack boundaries law \u2014 the 2-of-3 hidden strict subset and the one-option-wrong dropdown are REFUSED with their golden controls PASSING"
+    },
+    {
+      "id": "dropdown_law",
+      "item": 4,
+      "title": "Dropdown law \u2014 the decision field (2 options) and the cover-choice field (4 style names) live SINGLE_OPTIONS byte-exact"
+    },
+    {
+      "id": "create_gate",
+      "item": 5,
+      "title": "Create gate law \u2014 every CREATE ACTION (and the live verify) STOPS without --execute"
+    }
+  ]
+}

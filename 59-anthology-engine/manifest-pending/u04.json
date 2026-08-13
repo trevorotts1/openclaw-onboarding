@@ -1,0 +1,172 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U04-ASSEMBLY-INCOMPLETE",
+      "exit": 2,
+      "meaning": "the U04 check-module set named in the assembly roster is not fully present, or a module violates the one-entry-point self_test contract \u2014 a check family is never silently skipped (dispatcher STOP)"
+    },
+    {
+      "code": "AF-AE-INTAKE-QUERY-KEY",
+      "exit": 5,
+      "meaning": "the live intake form's hidden query key is not 'anthology_id' byte-exact (query_key_checker), or a live field submits under the lookalike 'anthology_active_id' key \u2014 the G3 defect family"
+    },
+    {
+      "code": "AF-AE-BRAND-LINK",
+      "exit": 5,
+      "meaning": "a brand page carries a placeholder / hostless / mislabeled legal link, or a page carries no legal links at all (brand_link_checker)"
+    },
+    {
+      "code": "AF-AE-REQUIRED-MISSING",
+      "exit": 5,
+      "meaning": "a required intake flag (first_name / last_name / email) is absent, empty, whitespace-only, or non-string on the payload (required_checker / attack_not_required)"
+    },
+    {
+      "code": "AF-AE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "the query-key fix PUT does not read back byte-for-byte in the same job \u2014 a fix is never reported without proof (query_key_fixer)"
+    },
+    {
+      "code": "AF-AE-PREFILL",
+      "exit": 5,
+      "meaning": "the pre-fill hydration law drifted: the served page differs between the bare and probe-param URLs, the widget build no longer matches its committed baseline, or the hydration code is absent (prefill_verifier)"
+    },
+    {
+      "code": "AF-AE-PIT-SCOPE",
+      "exit": 2,
+      "meaning": "a genuine location-scope denial signature on the forms read \u2014 STOP, never mislabeled as an edge block (form_reader; already stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of the dispatcher or a family battery (enforced violation \u2014 the house code, shared with the U02 / U03 families)"
+    }
+  ],
+  "authored_by": "U04",
+  "check_modules": [
+    "form_reader",
+    "required_checker",
+    "brand_link_checker",
+    "query_key_checker",
+    "query_key_fixer",
+    "golden_ok",
+    "attack_bad_query",
+    "attack_example_dot_com",
+    "attack_not_required",
+    "label_checker",
+    "prefill_verifier",
+    "docs_u04"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u04-intake-form",
+  "custom_value_keys": [
+    "anthology_webhook_url",
+    "anthology_hook_secret",
+    "producer",
+    "producer_email"
+  ],
+  "exit_codes": {
+    "0": "verified success \u2014 all checks PASS (also plan / dry-run / self-test)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / the U04 check-module assembly incomplete (AF-AE-U04-ASSEMBLY-INCOMPLETE) / a contract that cannot be read / a module STOP-family refusal",
+    "3": "HELD \u2014 Convert and Flow unreachable incl. the Cloudflare edge 403 (CF error 1010) / the hosted-form page cannot be fetched (UNDETERMINED, never a verdict)",
+    "4": "self-test FAILED (AF-AE-TEMPLATE-ATTACK / AF-AE-*-ATTACK family, enforced violation) \u2014 a tamper never masquerades as exit 1",
+    "5": "mismatch / fail-closed default \u2014 drift, a lookalike query key, a placeholder legal link, a missing required flag, a pre-fill signature drift, a read-back mismatch after the fix PUT, or a DEFERRED live read without --allow-deferred"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the dispatcher's brand gate is DEFERRED (no brand HTML page paths wired \u2014 never fabricated) and counts as FAIL unless --allow-deferred; the fixer (query_key_fixer.py) is the ONLY write surface and REFUSES without its own --execute \u2014 this assembler never writes."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "fix_intake_form.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u04_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the check-module dispatcher CLI (plan / self-test / live verify)"
+    },
+    {
+      "name": "form_reader.py",
+      "role": "live public-v2 forms listing read \u2014 find the universal author-intake form by slug / pin, report its ONE form id"
+    },
+    {
+      "name": "required_checker.py",
+      "role": "the required-flags law applied to a payload (first_name / last_name / email, present and non-empty)"
+    },
+    {
+      "name": "brand_link_checker.py",
+      "role": "the brand-surface legal-link gate (offline HTML scan; RFC 2606 placeholder hosts fail)"
+    },
+    {
+      "name": "query_key_checker.py",
+      "role": "the G3 intake query-key gate (live public hosted-form page read, credential-free)"
+    },
+    {
+      "name": "query_key_fixer.py",
+      "role": "the ONLY write surface \u2014 the G3 query-key fix via PUT /forms/{id}, REFUSED without its own --execute"
+    },
+    {
+      "name": "golden_ok.py",
+      "role": "the golden ALREADY-COMPLIANT intake-form fixture (contract-derived, never a hardcoded list)"
+    },
+    {
+      "name": "attack_bad_query.py",
+      "role": "the U04 ATTACK: the wrong query key (anthology_active_id) must FAIL every gate"
+    },
+    {
+      "name": "attack_example_dot_com.py",
+      "role": "the U04 ATTACK: an example.com legal link must FAIL every brand gate"
+    },
+    {
+      "name": "attack_not_required.py",
+      "role": "the U04 ATTACK: an intake payload with no email is REFUSED, never a clean read"
+    },
+    {
+      "name": "label_checker.py",
+      "role": "the OFFLINE raw-key / warm-client-language map gate (no raw key on a client surface)"
+    },
+    {
+      "name": "prefill_verifier.py",
+      "role": "the G3 VALUE-side gate \u2014 hidden-field pre-fill hydration (served-page identity + widget-build signature, credential-free)"
+    },
+    {
+      "name": "test_checkers.py",
+      "role": "the independent pytest battery over the six public check surfaces"
+    },
+    {
+      "name": "test_prefill.py",
+      "role": "the independent pytest battery over the prefill verifier"
+    },
+    {
+      "name": "docs_u04.py",
+      "role": "the U04 README/catalog data + drift gate (the module inventory as DATA)"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "form",
+      "item": 1,
+      "title": "Universal author-intake form readable (slug + pin law)"
+    },
+    {
+      "id": "query_key",
+      "item": 2,
+      "title": "G3 intake query key BYTE-EXACT 'anthology_id'"
+    },
+    {
+      "id": "required",
+      "item": 3,
+      "title": "Required intake flags present and non-empty"
+    },
+    {
+      "id": "brand_links",
+      "item": 4,
+      "title": "Brand legal links replacement-ready"
+    }
+  ]
+}

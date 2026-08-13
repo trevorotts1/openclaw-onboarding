@@ -27,7 +27,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Anthology Drive Broker -- authorize, validate, ROUTE the full action set.\n// Trevor's Google service-account credential lives ONLY inside this n8n instance and\n// never leaves it. The client box holds only the webhook URL + a low-privilege shared\n// token (validated HERE). Per-Doc + participant-tree + capabilities all route from here.\nconst EXPECTED = $env.ANTHOLOGY_DRIVE_BROKER_TOKEN || '';\nconst ROOT = $env.ANTHOLOGY_DRIVE_ROOT_FOLDER || '';\nconst item = $input.first();\nconst j = (item && item.json) ? item.json : {};\nconst body = j.body || {};\nconst headers = j.headers || {};\nconst presented = headers['x-anthology-broker-token'] || headers['X-Anthology-Broker-Token'] || body.token || '';\n\nconst DOC_ACTIONS = ['create_doc', 'upload_pdf', 'share_doc_edit', 'pull_doc_text'];\nconst TREE_ACTIONS = ['create_book_tree', 'create_participant_tree'];\nconst IMPLEMENTED = TREE_ACTIONS.concat(DOC_ACTIONS);\n\nfunction respond(code, obj) {\n  return [{ json: { route: 'respond', http_code: code, response: obj } }];\n}\nfunction reject(code, error, extra) {\n  return respond(code, Object.assign({ ok: false, error: error }, extra || {}));\n}\nconst qesc = (s) => String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\");\n\nif (!EXPECTED) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_BROKER_TOKEN not set in n8n' });\nif (!presented || presented !== EXPECTED) return reject(401, 'unauthorized');\n\nconst action = (body.action || '').toString();\nif (!action) return reject(400, 'missing_action');\n\n// capabilities probe -- the broker-preflight asks which actions this workflow implements.\nif (action === 'capabilities') {\n  return respond(200, { ok: true, action: 'capabilities', via: 'n8n_broker', implemented_actions: IMPLEMENTED });\n}\nif (IMPLEMENTED.indexOf(action) === -1) {\n  return reject(400, 'unknown_action', { action: action });\n}\n// side-effect-free probe of a known action (broker-preflight fallback path).\nif (body.probe === true) {\n  return respond(200, { ok: true, action: action, via: 'n8n_broker', probe: true, implemented: true });\n}\n\nfunction need(fields) {\n  const missing = [];\n  for (const f of fields) { if (!(body[f] != null && String(body[f]).trim() !== '')) missing.push(f); }\n  return missing;\n}\nfunction shareRole(mode) {\n  if (mode === 'edit') return 'writer';\n  if (mode === 'view') return 'reader';\n  return '';\n}\n\nif (action === 'create_book_tree') {\n  if (!ROOT) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_ROOT_FOLDER not set in n8n' });\n  const m = need(['client_key', 'producer_email', 'book_title']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const client_key = body.client_key.toString().trim();\n  const producer_email = body.producer_email.toString().trim();\n  const book_title = body.book_title.toString().trim();\n  const co_author = (body.co_author || '').toString().trim();\n  return [{ json: {\n    route: 'book_tree', action: action, root_folder_id: ROOT,\n    client_key, producer_email, book_title, co_author,\n    client_folder_name: client_key, producer_folder_name: producer_email, book_folder_name: book_title,\n    q_client: qesc(client_key), q_producer: qesc(producer_email), q_book: qesc(book_title)\n  } }];\n}\n\nif (action === 'create_participant_tree') {\n  if (!ROOT) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_ROOT_FOLDER not set in n8n' });\n  const m = need(['producer', 'anthology', 'participant']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const producer = body.producer.toString().trim();\n  const anthology = body.anthology.toString().trim();\n  const participant = body.participant.toString().trim();\n  return [{ json: {\n    route: 'participant_tree', action: action, root_folder_id: ROOT,\n    producer, anthology, participant,\n    producer_folder_name: producer, anthology_folder_name: anthology, participant_folder_name: participant,\n    q_producer: qesc(producer), q_anthology: qesc(anthology), q_participant: qesc(participant)\n  } }];\n}\n\nif (action === 'create_doc') {\n  const m = need(['parent_folder_id', 'name']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = (body.share_mode || '').toString();\n  return [{ json: {\n    route: 'create_doc', action: action,\n    parent_folder_id: body.parent_folder_id.toString().trim(),\n    doc_name: body.name.toString().trim(),\n    doc_text: (body.text != null ? String(body.text) : ''),\n    share_mode: share_mode || null, share_role: shareRole(share_mode)\n  } }];\n}\n\nif (action === 'upload_pdf') {\n  const m = need(['parent_folder_id', 'name', 'content_b64']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = (body.share_mode || '').toString();\n  return [{ json: {\n    route: 'upload_pdf', action: action,\n    parent_folder_id: body.parent_folder_id.toString().trim(),\n    file_name: body.name.toString().trim(),\n    content_b64: body.content_b64.toString(),\n    mime: (body.mime || 'application/octet-stream').toString(),\n    share_mode: share_mode || null, share_role: shareRole(share_mode)\n  } }];\n}\n\nif (action === 'share_doc_edit') {\n  const m = need(['file_id', 'share_mode']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = body.share_mode.toString();\n  const role = shareRole(share_mode);\n  if (!role) return reject(400, 'bad_share_mode', { share_mode: share_mode });\n  return [{ json: { route: 'share_doc_edit', action: action,\n    file_id: body.file_id.toString().trim(), share_mode, share_role: role } }];\n}\n\nif (action === 'pull_doc_text') {\n  const m = need(['doc_id']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  return [{ json: { route: 'pull_doc_text', action: action, doc_id: body.doc_id.toString().trim() } }];\n}\n\nreturn reject(400, 'unknown_action', { action: action });\n"
+        "jsCode": "// Anthology Drive Broker -- authorize, validate, ROUTE the full action set.\n// Trevor's Google service-account credential lives ONLY inside this n8n instance and\n// never leaves it. The client box holds only the webhook URL + a low-privilege shared\n// token (validated HERE). Per-Doc + participant-tree + capabilities all route from here.\nconst EXPECTED = $env.ANTHOLOGY_DRIVE_BROKER_TOKEN || '';\nconst ROOT = $env.ANTHOLOGY_DRIVE_ROOT_FOLDER || '';\nconst item = $input.first();\nconst j = (item && item.json) ? item.json : {};\nconst body = j.body || {};\nconst headers = j.headers || {};\nconst presented = headers['x-anthology-broker-token'] || headers['X-Anthology-Broker-Token'] || body.token || '';\n\nconst DOC_ACTIONS = ['create_doc', 'upload_pdf', 'share_doc_edit', 'pull_doc_text'];\nconst TREE_ACTIONS = ['create_book_tree', 'create_participant_tree'];\nconst IMPLEMENTED = TREE_ACTIONS.concat(DOC_ACTIONS);\n\nfunction respond(code, obj) {\n  return [{ json: { route: 'respond', http_code: code, response: obj } }];\n}\nfunction reject(code, error, extra) {\n  return respond(code, Object.assign({ ok: false, error: error }, extra || {}));\n}\nconst qesc = (s) => String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\");\n\nif (!EXPECTED) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_BROKER_TOKEN not set in n8n' });\nif (!presented || presented !== EXPECTED) return reject(401, 'unauthorized');\n\nconst action = (body.action || '').toString();\nif (!action) return reject(400, 'missing_action');\n\n// capabilities probe -- the broker-preflight asks which actions this workflow implements.\nif (action === 'capabilities') {\n  return respond(200, { ok: true, action: 'capabilities', via: 'n8n_broker', implemented_actions: IMPLEMENTED });\n}\nif (IMPLEMENTED.indexOf(action) === -1) {\n  return reject(400, 'unknown_action', { action: action });\n}\n// side-effect-free probe of a known action (broker-preflight fallback path).\nif (body.probe === true) {\n  return respond(200, { ok: true, action: action, via: 'n8n_broker', probe: true, implemented: true });\n}\n\nfunction need(fields) {\n  const missing = [];\n  for (const f of fields) { if (!(body[f] != null && String(body[f]).trim() !== '')) missing.push(f); }\n  return missing;\n}\n// U25 fail-closed: a named-user (email) share only lands on a Google Workspace or\n// Drive-shareable account (consumer Gmail/other domains are rejected by Google with\n// a 400). Refuse create_book_tree up-front for such producers -- non-200 -- instead\n// of creating the tree and then reporting a share warning on a 200.\nfunction isShareableDriveEmail(email) {\n  const at = email.lastIndexOf('@');\n  if (at <= 0 || at === email.length - 1) return false;\n  const domain = email.slice(at + 1).toLowerCase();\n  return domain.indexOf('.') !== -1 && domain.indexOf('..') === -1 && domain.charAt(0) !== '.' && domain.charAt(domain.length - 1) !== '.';\n}\nfunction shareRole(mode) {\n  if (mode === 'edit') return 'writer';\n  if (mode === 'view') return 'reader';\n  return '';\n}\n\nif (action === 'create_book_tree') {\n  if (!ROOT) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_ROOT_FOLDER not set in n8n' });\n  const m = need(['client_key', 'producer_email', 'book_title']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const client_key = body.client_key.toString().trim();\n  const producer_email = body.producer_email.toString().trim();\n  // U25 fail-closed: refuse non-shareable producer emails (consumer Gmail or any\n  // account Google cannot grant a Drive role to) BEFORE any folder or share is\n  // created -- the tree is never half-provisioned and the reply is non-200.\n  if (!isShareableDriveEmail(producer_email)) {\n    return reject(422, 'producer_email_not_shareable', { producer_email: producer_email, detail: 'producer_email must be a Google Workspace or other Drive-shareable account (a named-user editor share cannot be granted to this address)' });\n  }\n\n  const book_title = body.book_title.toString().trim();\n  const co_author = (body.co_author || '').toString().trim();\n  return [{ json: {\n    route: 'book_tree', action: action, root_folder_id: ROOT,\n    client_key, producer_email, book_title, co_author,\n    client_folder_name: client_key, producer_folder_name: producer_email, book_folder_name: book_title,\n    q_client: qesc(client_key), q_producer: qesc(producer_email), q_book: qesc(book_title)\n  } }];\n}\n\nif (action === 'create_participant_tree') {\n  if (!ROOT) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_ROOT_FOLDER not set in n8n' });\n  const m = need(['producer', 'anthology', 'participant']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const producer = body.producer.toString().trim();\n  const anthology = body.anthology.toString().trim();\n  const participant = body.participant.toString().trim();\n  return [{ json: {\n    route: 'participant_tree', action: action, root_folder_id: ROOT,\n    producer, anthology, participant,\n    producer_folder_name: producer, anthology_folder_name: anthology, participant_folder_name: participant,\n    q_producer: qesc(producer), q_anthology: qesc(anthology), q_participant: qesc(participant)\n  } }];\n}\n\nif (action === 'create_doc') {\n  const m = need(['parent_folder_id', 'name']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = (body.share_mode || '').toString();\n  return [{ json: {\n    route: 'create_doc', action: action,\n    parent_folder_id: body.parent_folder_id.toString().trim(),\n    doc_name: body.name.toString().trim(),\n    doc_text: (body.text != null ? String(body.text) : ''),\n    share_mode: share_mode || null, share_role: shareRole(share_mode)\n  } }];\n}\n\nif (action === 'upload_pdf') {\n  const m = need(['parent_folder_id', 'name', 'content_b64']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = (body.share_mode || '').toString();\n  return [{ json: {\n    route: 'upload_pdf', action: action,\n    parent_folder_id: body.parent_folder_id.toString().trim(),\n    file_name: body.name.toString().trim(),\n    content_b64: body.content_b64.toString(),\n    mime: (body.mime || 'application/octet-stream').toString(),\n    share_mode: share_mode || null, share_role: shareRole(share_mode)\n  } }];\n}\n\nif (action === 'share_doc_edit') {\n  const m = need(['file_id', 'share_mode']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  const share_mode = body.share_mode.toString();\n  const role = shareRole(share_mode);\n  if (!role) return reject(400, 'bad_share_mode', { share_mode: share_mode });\n  return [{ json: { route: 'share_doc_edit', action: action,\n    file_id: body.file_id.toString().trim(), share_mode, share_role: role } }];\n}\n\nif (action === 'pull_doc_text') {\n  const m = need(['doc_id']);\n  if (m.length) return reject(400, 'missing_fields', { missing: m });\n  return [{ json: { route: 'pull_doc_text', action: action, doc_id: body.doc_id.toString().trim() } }];\n}\n\nreturn reject(400, 'unknown_action', { action: action });\n"
       }
     },
     {
@@ -401,7 +401,7 @@
         -100
       ],
       "parameters": {
-        "jsCode": "const a = $('Authorize & Dispatch').item.json;\nconst share = $input.first().json || {};\nconst shared = Boolean(share.id && share.role === 'writer' && share.type === 'user');\nconst response = {\n  ok: true, action: 'create_book_tree', via: 'n8n_broker',\n  client_key: a.client_key, producer_email: a.producer_email, book_title: a.book_title,\n  root_folder_id: a.root_folder_id,\n  client_folder_id: $('Client Resolved').item.json.folderId,\n  producer_folder_id: $('Producer Resolved').item.json.folderId,\n  book_folder_id: $('Book Resolved').item.json.folderId,\n  producer_editor_shared: shared\n};\nif (!shared) {\n  response.warning = {\n    code: 'producer_editor_share_failed',\n    message: 'Book folder created, but editor sharing failed after retrying with notification email enabled.'\n  };\n}\nreturn [{ json: response }];"
+        "jsCode": "const a = $('Authorize & Dispatch').item.json;\nconst share = $input.first().json || {};\nconst shared = Boolean(share.id && share.role === 'writer' && share.type === 'user');\n// U25 fail-closed: the producer editor share is NOT optional. If both the first\n// share attempt and the notification-enabled retry failed, the broker must answer\n// NON-200 (Respond Rejected) so the client box raises DependencyError -- never a\n// 200-with-warning.\nif (!shared) {\n  return [{ json: { ok: false, http_code: 502,\n    response: { ok: false, error: 'producer_editor_share_failed', action: 'create_book_tree',\n      detail: 'Book folder created, but editor sharing failed after retrying with notification email enabled; the producer cannot edit the book folder.' } } }];\n}\nreturn [{ json: { ok: true, action: 'create_book_tree', via: 'n8n_broker',\n  client_key: a.client_key, producer_email: a.producer_email, book_title: a.book_title,\n  root_folder_id: a.root_folder_id,\n  client_folder_id: $('Client Resolved').item.json.folderId,\n  producer_folder_id: $('Producer Resolved').item.json.folderId,\n  book_folder_id: $('Book Resolved').item.json.folderId,\n  producer_editor_shared: true } }];\n"
       }
     },
     {
@@ -1341,6 +1341,38 @@
           "responseCode": 200
         }
       }
+    },
+    {
+      "id": "c1a2b3c4-1f2e-4d3c-8b7a-0000000000f1",
+      "name": "Share Confirmed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2620,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a2b3c4-1f2e-4d3c-8b7a-0000000000f2",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -1559,7 +1591,7 @@
       "main": [
         [
           {
-            "node": "Respond OK",
+            "node": "Share Confirmed?",
             "type": "main",
             "index": 0
           }
@@ -2000,6 +2032,24 @@
         [
           {
             "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Share Confirmed?": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Rejected",
             "type": "main",
             "index": 0
           }
