@@ -5,9 +5,11 @@ Minting cards for historical run dirs is how a sweep turns into a mass-import,
 and a board that has been deliberately cleared must stay cleared.
 
 This sweep scans a root directory for run dirs whose board card is missing
-or behind. It classifies every run dir into exactly one of six outcomes and
-takes action only under --apply. It never touches state.json, never makes
-its own HTTP calls, and never sets "done" on a card.
+or behind. It classifies every run dir into exactly one of seven outcomes
+(not_a_run_dir, too_old, card_missing, card_behind, consistent,
+finished_no_card, failure) and takes action only under --apply. It never
+touches state.json, never makes its own HTTP calls, and never sets "done"
+on a card.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from .state import (
     EXIT_OK,
     EXIT_SWEEP_NO_RUNS,
     EXIT_SWEEP_HAD_FAILURES,
+    EXIT_SWEEP_ALL_REJECTED,
 )
 
 # ---------------------------------------------------------------------------
@@ -60,18 +63,30 @@ def _resolve_task_id(state: dict, run_dir: Path) -> Optional[str]:
     return None
 
 
-def _is_valid_engine_dir(run_dir: Path) -> Tuple[bool, Optional[dict]]:
+def _is_valid_engine_dir(run_dir: Path) -> Tuple[bool, Optional[dict], Optional[str]]:
     """Guard A: a run dir qualifies only when state.json exists, parses, carries
-    a job_id beginning 'pj_', and has the right schema_version. Returns (ok, state_dict)."""
+    a job_id beginning 'pj_', and has the right schema_version. Returns
+    (ok, state_dict, reject_reason).
+
+    reject_reason is None when ok is True, else one of:
+      "unreadable_or_missing"  -- no state.json, or it does not parse to a dict
+      "bad_job_id"              -- job_id missing / does not start with 'pj_'
+      "schema_mismatch:<got>!=<want>" -- schema_version does not match
+
+    The schema_mismatch reason is kept distinguishable from the other two on
+    purpose: a version bump rejects EVERY run dir on the box at once, which is
+    a fleet-wide event the caller must be able to name, not a per-dir defect
+    indistinguishable from one truncated file."""
     st = _read_json(run_dir / "state.json")
     if not st or not isinstance(st, dict):
-        return False, None
+        return False, None, "unreadable_or_missing"
     job_id = st.get("job_id", "")
     if not isinstance(job_id, str) or not job_id.startswith("pj_"):
-        return False, None
-    if st.get("schema_version") != STATE_SCHEMA_VERSION:
-        return False, None
-    return True, st
+        return False, None, "bad_job_id"
+    got_version = st.get("schema_version")
+    if got_version != STATE_SCHEMA_VERSION:
+        return False, None, f"schema_mismatch:{got_version!r}!={STATE_SCHEMA_VERSION!r}"
+    return True, st, None
 
 
 def _target_status(state: dict) -> Optional[str]:
@@ -118,10 +133,17 @@ def _classify(
 ) -> Tuple[str, Optional[str]]:
     """Classify a single run dir. Returns (outcome, detail_string_or_None)."""
     # --- Terminal DONE with no card: do not ingest ---
+    # NOTE: this is a real, fully-validated classification (the run dir
+    # already passed Guard A and slug resolution) -- it must NEVER share the
+    # "not_a_run_dir" bucket, which means "the sweep could not tell what this
+    # was". Conflating the two would make a box whose every job finished
+    # cleanly with no card look identical to a box where Guard A rejected
+    # everything, and would wrongly trip the all-rejected gate below on a
+    # perfectly healthy sweep.
     if state.get("terminal") == "DONE":
         task_id = _resolve_task_id(state, run_dir)
         if not task_id:
-            return "not_a_run_dir", "finished job, no card needed"
+            return "finished_no_card", "finished job, no card needed"
 
     # --- Guard B: max age ---
     created_str = state.get("created_at")
@@ -177,9 +199,12 @@ def reconcile_sweep(
     FAIL-SOFT: one bad run dir never ends the sweep -- the loop keeps going
     and every remaining run dir still gets classified. But "kept going" is
     not the same claim as "everything is fine", so the return code names
-    exactly one of three distinct outcomes:
+    exactly one of four distinct outcomes:
 
-      EXIT_OK (0)               -- scanned >=1 run dir, none raised.
+      EXIT_OK (0)               -- scanned >=1 run dir, none raised, and at
+                                    least one was actually classified
+                                    (card_missing/card_behind/consistent/
+                                    too_old) -- i.e. something was reconciled.
       EXIT_SWEEP_NO_RUNS (10)   -- scanned 0 run dirs. UNDETERMINED: this is
                                     not evidence the fleet is healthy, it is
                                     evidence the sweep checked nothing. Never
@@ -187,6 +212,17 @@ def reconcile_sweep(
       EXIT_SWEEP_HAD_FAILURES (11) -- scanned >=1 run dir but at least one
                                     raised an unexpected error while being
                                     classified or reconciled.
+      EXIT_SWEEP_ALL_REJECTED (12) -- scanned >=1 run dir, none raised, but
+                                    EVERY one was rejected by Guard A
+                                    (not_a_run_dir) -- zero run dirs were
+                                    actually classified. Reporting "scanned N"
+                                    here would read as a pass while the sweep
+                                    validated nothing -- e.g. a
+                                    STATE_SCHEMA_VERSION bump that silently
+                                    invalidates every real run dir on the box.
+                                    Same epistemic state as EXIT_SWEEP_NO_RUNS,
+                                    reached by rejection instead of absence.
+                                    Never treat this as a pass either.
     """
 
     # --- Import cc_board and BoardMirror lazily ---
@@ -223,12 +259,14 @@ def reconcile_sweep(
         "card_missing": [],
         "card_behind": [],
         "consistent": [],
+        "finished_no_card": [],
         "failure": [],
     }
 
     created_count = 0
     deduped_count = 0
     replay_failed_count = 0
+    schema_mismatch_count = 0
 
     findings_lines: List[str] = []
     findings_path = scan_root / "reconcile-findings.jsonl"
@@ -236,10 +274,23 @@ def reconcile_sweep(
     for run_dir in run_dirs:
         try:
             # Guard A: validate engine dir
-            is_valid, state = _is_valid_engine_dir(run_dir)
+            is_valid, state, reject_reason = _is_valid_engine_dir(run_dir)
             if not is_valid:
-                outcomes["not_a_run_dir"].append((run_dir, None))
-                print(f"  skipped: not_a_run_dir   {run_dir}", flush=True)
+                outcomes["not_a_run_dir"].append((run_dir, reject_reason))
+                if reject_reason and reject_reason.startswith("schema_mismatch"):
+                    schema_mismatch_count += 1
+                    print(
+                        f"  skipped: not_a_run_dir   {run_dir}  "
+                        f"SCHEMA VERSION MISMATCH ({reject_reason}) -- this is a "
+                        f"schema bump, not a missing/empty run dir; sweep cannot "
+                        f"validate this run dir until reconciled",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"  skipped: not_a_run_dir   {run_dir} ({reject_reason})",
+                        flush=True,
+                    )
                 continue
 
             # Check for slug
@@ -350,16 +401,32 @@ def reconcile_sweep(
         counts.get("card_behind", 0) - replay_failed_count
     )
 
+    # What was actually classified and reconciled -- NOT the same number as
+    # "scanned". A run dir rejected by Guard A (not_a_run_dir) was enumerated
+    # but never validated, so it contributes nothing here. This is the
+    # number the pass/fail decision below is actually made on.
+    reconciled_count = (
+        counts.get("card_missing", 0)
+        + counts.get("card_behind", 0)
+        + counts.get("consistent", 0)
+        + counts.get("too_old", 0)
+        + counts.get("finished_no_card", 0)
+    )
+
     parts = [
         f"scanned {scanned} run dir(s) under {scan_root} (depth {scan_depth})",
+        f"reconciled {reconciled_count} run dir(s)",
         f"card_missing: {counts.get('card_missing', 0)}",
         f"card_behind: {counts.get('card_behind', 0)}",
         f"consistent: {counts.get('consistent', 0)}",
         f"too_old: {counts.get('too_old', 0)}",
+        f"finished_no_card: {counts.get('finished_no_card', 0)}",
         f"not_a_run_dir: {counts.get('not_a_run_dir', 0)}",
     ]
     if counts.get("failure", 0):
         parts.append(f"failure: {counts['failure']}")
+    if schema_mismatch_count:
+        parts.append(f"schema_mismatch: {schema_mismatch_count}")
     if deduped_count:
         parts.append(f"deduped: {deduped_count} (Guard A might be too loose)")
 
@@ -375,6 +442,15 @@ def reconcile_sweep(
             flush=True,
         )
 
+    if schema_mismatch_count:
+        print(
+            f"reconcile-board: WARNING -- {schema_mismatch_count} run dir(s) "
+            f"rejected on schema_version mismatch (expected {STATE_SCHEMA_VERSION}). "
+            f"This looks like a STATE_SCHEMA_VERSION bump that shipped without a "
+            f"matching sweep/engine update, not empty or unhealthy run dirs.",
+            flush=True,
+        )
+
     if counts.get("failure", 0):
         print(
             f"reconcile-board: FAILED -- {counts['failure']} run dir(s) raised "
@@ -383,5 +459,27 @@ def reconcile_sweep(
             flush=True,
         )
         return EXIT_SWEEP_HAD_FAILURES
+
+    if reconciled_count == 0:
+        # Same epistemic state as EXIT_SWEEP_NO_RUNS ("I could not check
+        # anything"), reached via rejection instead of absence. "scanned N"
+        # must never be allowed to read as "checked N and all is well" when
+        # every single one of those N was thrown out by Guard A.
+        print(
+            f"reconcile-board: UNDETERMINED -- scanned {scanned} run dir(s) "
+            f"but ALL {counts.get('not_a_run_dir', 0)} were rejected by Guard A "
+            f"(not_a_run_dir) -- ZERO run dirs were actually classified or "
+            f"reconciled -- this is NOT a pass -- "
+            + (
+                f"every rejection was a schema_version mismatch (expected "
+                f"{STATE_SCHEMA_VERSION}); check whether STATE_SCHEMA_VERSION was "
+                f"bumped without a matching sweep/engine deploy"
+                if schema_mismatch_count == counts.get("not_a_run_dir", 0)
+                and schema_mismatch_count > 0
+                else "check the 'skipped: not_a_run_dir' lines above for why"
+            ),
+            flush=True,
+        )
+        return EXIT_SWEEP_ALL_REJECTED
 
     return EXIT_OK

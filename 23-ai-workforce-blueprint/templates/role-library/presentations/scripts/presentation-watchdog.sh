@@ -53,12 +53,21 @@ else
 fi
 
 # Board-reconcile pass: report-only unless --apply is given.
-# Exit 0  = scanned >=1 run dir, none raised -- a pass.
+# Exit 0  = scanned >=1 run dir, none raised, and >=1 was actually classified
+#           (card_missing/card_behind/consistent/too_old/finished_no_card)
+#           -- a genuine pass.
 # Exit 10 = zero run dirs found -- UNDETERMINED, not a pass, but a normal,
 #           expected state between jobs -- must not abort this script before
 #           the run-discovery pass below runs.
 # Exit 11 = >=1 run dir raised an unexpected error while being
 #           classified/reconciled -- also not a pass.
+# Exit 12 = >=1 run dir found and none raised, but EVERY one was rejected by
+#           Guard A (not_a_run_dir) -- zero were actually classified. Same
+#           epistemic state as exit 10 (nothing could be checked), reached by
+#           rejection instead of absence -- e.g. a STATE_SCHEMA_VERSION bump
+#           that invalidates every real run dir on the box. Also not a pass,
+#           and also a normal-enough state (a stale box) that this script
+#           must keep going rather than abort.
 # Captured explicitly (not swallowed) so a real problem is logged instead of
 # silently reported as clean; kept non-fatal to this script on purpose so
 # `set -e` cannot skip run-discovery just because no decks exist right now.
@@ -68,7 +77,7 @@ python3 "${SCRIPT_DIR}/presentation_job.py" \
     --scan-root "${SCAN_ROOT}" \
     >> "${LOG}" 2>&1 || RECONCILE_RC=$?
 if [ "${RECONCILE_RC}" -ne 0 ]; then
-    echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
+    echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures; 12=all run dirs rejected/UNDETERMINED) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
 fi
 
 # Run-discovery pass: optional component. Guarded with || true so a missing
