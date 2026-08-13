@@ -35,13 +35,14 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Import the canonical deliverable list from fix_bundle_complete.py (sibling in scripts/).
+# Import the canonical deliverable list from presentation_job/deliverables.py
+# (U05 — the single source of truth every consumer imports from).
 try:
     _HERE = Path(__file__).resolve().parent  # presentation_job/
     _SCRIPTS = _HERE.parent                   # scripts/
     if str(_SCRIPTS) not in sys.path:
         sys.path.insert(0, str(_SCRIPTS))
-    from fix_bundle_complete import (
+    from presentation_job.deliverables import (
         DELIVERABLE_AUDIT_SPEC,
         REQUIRED_DELIVERABLES,
         REQUIRED_KEYS,
@@ -51,8 +52,8 @@ try:
     )
 except ImportError:
     raise ImportError(
-        "curate.py requires fix_bundle_complete.py in the scripts/ directory. "
-        "Cannot resolve the canonical deliverable whitelist."
+        "curate.py requires presentation_job/deliverables.py (the single-source "
+        "deliverable whitelist). Cannot resolve the canonical deliverable whitelist."
     )
 
 # Derived from the SINGLE SOURCE OF TRUTH (DELIVERABLE_AUDIT_SPEC) — never edit by hand.
