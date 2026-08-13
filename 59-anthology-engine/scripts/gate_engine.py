@@ -81,6 +81,11 @@ TEMPLATE_CONFIG = SKILL_DIR / "config" / "engine-config.template.json"
 # Exit codes.
 EX_OK, EX_ERR, EX_REFUSE, EX_GATE = 0, 1, 2, 3
 
+# Tier-1 word-band bounds the pull-back advisory envelope carries (byte-identical
+# to qc-tier1-anthology.py CHAPTER_WORD_MIN / CHAPTER_WORD_MAX; advisory only).
+CHAPTER_WORD_MIN = 2000
+CHAPTER_WORD_MAX = 3500
+
 # The label under which the per-client gate-token HMAC secret is resolved. The
 # VALUE is never read into any output; only SET / NOT SET is ever surfaced.
 DEFAULT_SECRET_LABEL = "ANTHOLOGY_GATE_TOKEN_SECRET"
@@ -746,6 +751,216 @@ def _import_s9_logic():
         sys.path.insert(0, str(SCRIPTS))
     import stage_s9_assembly_logic  # noqa: E402
     return stage_s9_assembly_logic
+
+
+# --------------------------------------------------------------------------- #
+# U21 -- Confirm-then-Pull Doc read-back (SPEC U21 / NEW-5).
+#
+# The form-submit CALLBACK: after a COMMITTED participant gate decision, pull the
+# co-author's editable Google Doc back through drive_adapter.pull_doc_text (the
+# confirm-then-pull read-back; the Doc was shared anyone-with-link EDIT at S8 per
+# Trevor's D3 ruling, overriding the old view-only floor) and re-run ONLY the
+# deterministic Tier-1 CONTENT invariants over the PULLED bytes (word band 1,
+# title-lock presence 2, story anchors 3) via qc-tier1-anthology.py --mode
+# pullback. ADVISORY, never blocking: the client's edits are law for content
+# (Trevor D3); a violated invariant becomes a PRODUCER board note in the result,
+# it NEVER blocks the co-author and never fails the decision.
+# --------------------------------------------------------------------------- #
+TIER1_SCRIPT = SCRIPTS / "qc-tier1-anthology.py"
+DRIVE_ADAPTER = SCRIPTS / "drive_adapter.py"
+
+# Deliverable type -> pull-back kind (the qc-tier1 KNOWN_KINDS vocabulary). A
+# rewrite is revalidated as a rewrite; every other deliverable as its own kind.
+PULLBACK_KIND_BY_TYPE = {
+    "chapter": "chapter", "rewrite": "rewrite", "outline": "outline",
+    "tone": "tone", "avatar": "avatar", "titles": "titles",
+    "blurb": "blurb", "cover": "cover",
+}
+
+# Pull-back kinds that observe the story anchors (personal stories are placed
+# only in the outline and the chapter/rewrite).
+PULLBACK_KINDS_WITH_STORIES = ("outline", "chapter", "rewrite")
+
+
+def _read_participant_pullback_row(state_dir, participant_key):
+    """Read the participant + latest artifact rows (read-only mirror reads, the
+    same surface cmd_status uses). Returns (participant_row, artifact_row) or
+    (None, None) when the mirror is unavailable. Never writes."""
+    try:
+        con = _mirror_ro(state_dir)
+        if con is None:
+            return None, None
+        part = _read_one(con,
+            "SELECT * FROM participants WHERE participant_key=?",
+            (participant_key,))
+        art = _read_one(con,
+            "SELECT * FROM artifacts WHERE participant_key=? AND type='chapter' "
+            "ORDER BY version DESC, created_at DESC LIMIT 1",
+            (participant_key,))
+        try:
+            con.close()
+        except Exception:
+            pass
+        return part, art
+    except Exception:  # noqa: BLE001 -- pull-back is advisory; never crash on it
+        return None, None
+
+
+def _pullback_envelope(participant_key, state_dir, kind=None):
+    """Assemble the qc-tier1 pullback ENVELOPE from the ledger mirror: kind,
+    artifact text (pulled bytes frozen by the caller), title lock, intake
+    personal-story anchors, and word-band bounds (advisory). Returns the envelope
+    dict, or None when the mirror reads fail (advisory: caller degrades)."""
+    part, art = _read_participant_pullback_row(state_dir, participant_key)
+    if part is None:
+        return None
+    kind = kind or PULLBACK_KIND_BY_TYPE.get((art or {}).get("type"), "chapter")
+    env = {
+        "kind": kind,
+        "title": {"title": part.get("title_locked") or "",
+                  "subtitle": part.get("subtitle_locked") or ""},
+        "intake": {"personal_stories": []},
+        "chapter_word_min": CHAPTER_WORD_MIN,
+        "chapter_word_max": CHAPTER_WORD_MAX,
+    }
+    if kind in PULLBACK_KINDS_WITH_STORIES:
+        try:
+            stories = json.loads(part.get("personal_stories") or "[]")
+            env["intake"]["personal_stories"] = (
+                [str(s) for s in stories] if isinstance(stories, list) else [])
+        except (ValueError, TypeError):
+            env["intake"]["personal_stories"] = []
+    return env
+
+
+def _run_tier1_pullback(envelope, pulled_text):
+    """Run qc-tier1-anthology.py --mode pullback over the pulled bytes via stdin.
+    Returns (parsed_verdict, error_string). Advisory: the verdict is surfaced as
+    producer notes, never a failure."""
+    if not TIER1_SCRIPT.is_file() or not pulled_text:
+        return None, None
+    env = dict(envelope)
+    env["artifact_text"] = pulled_text
+    argv = [sys.executable, str(TIER1_SCRIPT), "--mode", "pullback", "--json"]
+    try:
+        proc = subprocess.run(
+            argv, input=json.dumps(env).encode("utf-8"),
+            capture_output=True, timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return None, "tier1 pullback could not run"
+    try:
+        parsed = json.loads(proc.stdout.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None, (proc.stderr.decode("utf-8", "replace").strip() or
+                      "tier1 pullback emitted no JSON")
+    return parsed, None
+
+
+def cmd_pullback_revalidate(args):
+    """U21 form-submit callback: pull the co-author's editable Doc back and
+    re-run the deterministic Tier-1 content invariants over the pulled bytes.
+
+    This is the confirm-then-pull read-back the participant's own edit triggers:
+    at a COMMITTED participant gate decision the Doc the co-author edited in place
+    (shared anyone-with-link EDIT at S8 per Trevor's D3) is exported via
+    drive_adapter.pull_doc_text, frozen byte-exactly, and revalidated with
+    qc-tier1-anthology.py --mode pullback (word band 1, title-lock presence 2,
+    story anchors 3 -- whichever are in scope for the kind). The verdict is
+    ADVISORY and NEVER blocking: a violated invariant becomes a producer note.
+
+    The pull and the revalidation are best-effort and FAIL-SOFT -- a Drive blip or
+    an unmapped doc id degrades to a clear note, never a failure. The optional
+    --gate-decision provenance (gate + decision of the submit that fired this
+    callback) rides the result so the operator can tie a note to the exact
+    submit."""
+    state_dir = resolve_state_dir(args)
+    kind = getattr(args, "kind", None)
+
+    def _out(payload):
+        return _emit(payload, args.json), EX_OK
+
+    # Resolve the doc: --doc-id wins (machine caller); else the participant's
+    # latest chapter artifact row's drive_doc_id (the S8 record-artifact stamp).
+    doc_id = getattr(args, "doc_id", None)
+    source = "explicit"
+    if not doc_id:
+        _part, art = _read_participant_pullback_row(state_dir, args.subject_key)
+        doc_id = (art or {}).get("drive_doc_id")
+        source = "ledger_drive_doc_id"
+    if not doc_id:
+        return _out({"ok": False, "action": "pullback-revalidate",
+                     "reason": "no_doc_id",
+                     "note": "no --doc-id and the participant's latest chapter "
+                             "artifact row has no drive_doc_id (S8 record-artifact "
+                             "stamps it); nothing to pull"})
+
+    # -- 1. PULL the current plain-text body of the Doc (confirm-then-pull). --
+    text = None
+    pull_error = None
+    if DRIVE_ADAPTER.is_file():
+        argv = [sys.executable, str(DRIVE_ADAPTER), "pull-doc-text", "--doc-id", doc_id]
+        try:
+            proc = subprocess.run(argv, capture_output=True, timeout=60)
+            if proc.returncode == 0:
+                try:
+                    text = json.loads(proc.stdout.decode("utf-8")).get("text")
+                except (ValueError, UnicodeDecodeError):
+                    pull_error = "drive_adapter emitted no JSON"
+            else:
+                pull_error = ("drive_adapter exit %d" % proc.returncode)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            pull_error = "drive_adapter could not run: %s" % type(exc).__name__
+    else:
+        pull_error = "drive_adapter.py not present (advisory skip)"
+
+    payload = {
+        "ok": True, "action": "pullback-revalidate",
+        "doc_id": doc_id, "source": source,
+        "kind": kind, "advisory": True, "blocking": False,
+    }
+    if getattr(args, "gate", None):
+        payload["gate"] = args.gate
+    if getattr(args, "decision", None):
+        payload["decision"] = args.decision
+
+    if text is None:
+        payload["pulled"] = False
+        payload["note"] = ("pull failed: %s -- confirm-then-pull is ADVISORY; the "
+                           "committed decision stands" % (pull_error or "unknown"))
+        return _out(payload), EX_OK
+
+    pulled_bytes = text.encode("utf-8")
+    payload["pulled"] = True
+    payload["byte_len"] = len(pulled_bytes)
+    payload["sha256"] = hashlib.sha256(pulled_bytes).hexdigest()
+    # The pulled body rides the result inline (the same shape do_pull_doc_text
+    # returns without --out) so a caller -- the U21 prover -- can prove the
+    # co-author's edit survived the round trip byte-for-byte.
+    payload["text"] = text
+
+    # -- 2. Revalidate the PULLED bytes with the deterministic Tier-1 battery. --
+    envelope = _pullback_envelope(args.subject_key, state_dir, kind=kind)
+    if envelope is None:
+        payload["note"] = ("pulled %d bytes; Tier-1 revalidation skipped: ledger "
+                           "mirror read failed (advisory)" % len(pulled_bytes))
+        return _out(payload), EX_OK
+    verdict, t1_err = _run_tier1_pullback(envelope, text)
+    if verdict is None:
+        payload["tier1"] = {"ran": False, "error": t1_err or "unavailable"}
+        payload["note"] = ("pulled %d bytes; Tier-1 revalidation unavailable (%s)"
+                           % (len(pulled_bytes), t1_err or "no verdict"))
+        return _out(payload), EX_OK
+    payload["tier1"] = {"ran": True, "clean": bool(verdict.get("clean")),
+                        "producer_notes": verdict.get("producer_notes") or [],
+                        "checks": verdict.get("checks") or []}
+    if verdict.get("producer_notes"):
+        payload["note"] = ("pulled %d bytes; %d producer note(s) -- advisory only, "
+                           "the client's edits are accepted as law for content (Trevor D3)"
+                           % (len(pulled_bytes), len(verdict["producer_notes"])))
+    else:
+        payload["note"] = ("pulled %d bytes; Tier-1 pullback revalidation CLEAN "
+                           "(word band, title lock, story anchors)" % len(pulled_bytes))
+    return _out(payload), EX_OK
 
 
 def _participant_run_dir(subject_key):
@@ -1707,11 +1922,30 @@ def _build_parser():
                     help="record the decision but do NOT stamp the §3 release tag "
                          "(dry-run / re-record without re-notifying the client)")
     common(sp)
+
+    # U21 confirm-then-pull: pull the co-author's editable Doc back + re-run the
+    # deterministic Tier-1 content invariants over the pulled bytes (advisory).
+    sp = sub.add_parser(
+        "pullback-revalidate",
+        help="U21 form-submit callback: pull the participant's editable Doc back "
+             "via drive_adapter.pull_doc_text and re-run Tier-1 pullback "
+             "revalidation (word band, title lock, story anchors; advisory)")
+    sp.add_argument("--subject-key", dest="subject_key", required=True)
+    sp.add_argument("--doc-id", dest="doc_id",
+                    help="doc id to pull (default: the participant's latest "
+                         "chapter artifact row's drive_doc_id)")
+    sp.add_argument("--kind",
+                    help="pullback kind override (chapter/rewrite/outline/tone/...; "
+                         "default derived from the artifact type)")
+    sp.add_argument("--gate", help="gate id of the submit that fired this callback")
+    sp.add_argument("--decision", help="decision of the submit that fired this callback")
+    common(sp)
     return ap
 
 
 HANDLERS = {"status": cmd_status, "mint": cmd_mint, "verify": cmd_verify,
-            "open": cmd_open, "decide": cmd_decide}
+            "open": cmd_open, "decide": cmd_decide,
+            "pullback-revalidate": cmd_pullback_revalidate}
 
 
 def main(argv=None):

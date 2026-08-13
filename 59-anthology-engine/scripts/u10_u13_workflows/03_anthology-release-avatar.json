@@ -1,0 +1,41 @@
+{
+  "actions": [
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "email": {
+      "body": "Hi {{ contact.first_name }},\n\nYour author profile for {{ custom_values.anthology_name }} is ready.\n\nYou can view the PDF here:\n{{contact.anthology_avatar_pdf_url}}\n\nAnd you can edit your Google Doc here:\n{{contact.anthology_avatar_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you are happy with it, you can move to the next step by opening this link:\nhttps://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s1_gate\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
+      "doc_link": "{{contact.anthology_avatar_doc_url}}",
+      "from_name": "{{ custom_values.producer }}",
+      "pdf_link": "{{contact.anthology_avatar_pdf_url}}",
+      "reply_to": "{{ custom_values.producer_email }}",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s1_gate",
+      "subject": "Your author profile for {{ custom_values.anthology_name }} is ready"
+    },
+    "sms": {
+      "body": "{{ contact.first_name }}, your author profile is ready to review. Here is your Google Doc: {{contact.anthology_avatar_doc_url}}",
+      "doc_link": "{{contact.anthology_avatar_doc_url}}"
+    },
+    "trigger_tag": "anthology-release-avatar",
+    "workflow": "Anthology Release: Avatar"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_avatar_pdf_url}}",
+      "{{contact.anthology_avatar_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_avatar_doc_url}}"
+  },
+  "module": "w3_release_avatar",
+  "name": "Anthology Release: Avatar",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 3,
+  "status": "LIVE",
+  "trigger": {
+    "tag": "anthology-release-avatar",
+    "type": "contact_tag"
+  }
+}

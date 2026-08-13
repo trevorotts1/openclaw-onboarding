@@ -1,0 +1,56 @@
+{
+  "actions": [
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "send-email",
+      "send-sms"
+    ],
+    "email": {
+      "body": "Dear {{ contact.first_name }},\n\nCongratulations! Your final chapter is ready. Our editors have completed their final review, and your chapter is now in its finished form.\n\nView your final chapter PDF here:\n{{ contact.anthology_chapter_pdf_url }}\n\nEdit your final chapter in the Google Doc here:\n{{ contact.anthology_chapter_doc_url }}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you would like to approve your chapter or request final changes, open the review form here:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s8\n\nWarm regards,\nThe Editors",
+      "from_name_merge": "{{ custom_values.producer }}",
+      "link_fields": [
+        "{{contact.anthology_chapter_pdf_url}}",
+        "{{contact.anthology_chapter_doc_url}}"
+      ],
+      "sign_off": "The Editors",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s8",
+      "subject": "Your final chapter is ready"
+    },
+    "milestone": "S8 milestone congratulations",
+    "note": "offline template only (a REAL location write must ride the house clients, CAF_BROWSER_UA on every request, the CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live",
+    "producer_gate": "S8 final",
+    "sms": {
+      "body": "Your final chapter is ready to review here: {{contact.anthology_chapter_pdf_url}}",
+      "shape": "link-only short message (one warm sentence plus ONE link)"
+    },
+    "stage": "s8",
+    "stage_cursor": "s8_deliver",
+    "trigger_tag": "anthology-release-final",
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow_name": "Anthology Release: Final Chapter"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_chapter_pdf_url}}",
+      "{{contact.anthology_chapter_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_chapter_pdf_url}}"
+  },
+  "module": "w10_release_final",
+  "name": "Anthology Release: Final Chapter",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 9,
+  "status": "DOCTRINE",
+  "trigger": {
+    "tag": "anthology-release-final",
+    "type": "contact_tag"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "build_id": "61af4923-e329-4e77-94ba-94a97885eec7",
+  "contract": "anthology-engine-prefill-baseline",
+  "fetched_at": "2026-08-11T00:00:00Z",
+  "note": "Committed signature of the widget build served for the universal author-intake form (U65pwoeMTy1niMqllKWG on link.msgsndr.com), fetched on 2026-08-11 with the house browser UA (CF 1010). The page's build references (module script + <link as=script> preloads + the build-meta URL derived from the page's own __NUXT__ app config) are the fetched set; every artifact must match these sha256 digests byte-exact (hashed over the RAW transferred bytes, gzip and all \u2014 the exact bytes the verifier hashes), and the widget code must carry the prefill hydration law (hiddenFieldQueryKey -> urlParams -> field value) or the gate REFUSES (fail-closed: a build that no longer maps the URL param onto the hidden field changes the artifact signature and trips this gate). Digests and the build timestamp are identifiers, never credentials.",
+  "schema_version": 1,
+  "self_test": {
+    "blob": "function Ct(e,r){hiddenFieldQueryKey in c&&(I.value[O.tag]=e)}",
+    "note": "The OFFLINE self-test fixture: the hydration-marker code text as a synthetic one-liner bundle (a deliberate test value, not a real artifact), with its own committed sha256. The self-test asserts THIS digest against THIS blob, so a drift in either the test code or the committed digest trips the battery (exit 4) before the live gate is ever trusted.",
+    "sha256": "11e94d9b876635e2ab189c5d7fc863a060eee0f90de45f70b1718afd5cfebeeb"
+  },
+  "signatures": {
+    "https://stcdn.leadconnectorhq.com/_preview/AlyBA-pS.js": {
+      "bytes": 2293,
+      "sha256": "b499e0c57f69dfdc1782cfd49723a71d1714118da50876584c89d9b9fd01b18c",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/AlyBA-pS.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/CEoTkAE3.js": {
+      "bytes": 10567,
+      "sha256": "27f434d3458590c27c2421c469ca822743b134cada87f22782e764fc0a51dcff",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/CEoTkAE3.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/D66j2u5Q.js": {
+      "bytes": 532,
+      "sha256": "4acca2c1e25157d4e9268e6e5986f2b81b339beacd25694a546495c67e6da34d",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/D66j2u5Q.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/DO9dUel-.js": {
+      "bytes": 112078,
+      "sha256": "f2b2593c5deb95a53b43302496e67ed17a1e4efe1a7a243bed76e3d96380098b",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/DO9dUel-.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/DRNKrJGC.js": {
+      "bytes": 225,
+      "sha256": "4197c3f1388fa29dc9d8936561ad5e782965eaa5ec8d9f8493af5e202eb61e3d",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/DRNKrJGC.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/DdJwql_a.js": {
+      "bytes": 249,
+      "sha256": "0620c38e7ed6dc419a853927db759fa179a6d7148560b692bf72825dada66ed4",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/DdJwql_a.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/DlgVX1vK.js": {
+      "bytes": 276,
+      "sha256": "a6d9a4676f7191ee8d9df43c8d8146159274c6c7c34e555b86443cbb2061d2c4",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/DlgVX1vK.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/Ivnu-BGv.js": {
+      "bytes": 582,
+      "sha256": "fec8d2d42ef53b719078a04747fa417cc12ef82e9bdf2759c9e97bdeb9def54c",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/Ivnu-BGv.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/WYXEJpVj.js": {
+      "bytes": 2782,
+      "sha256": "8a7fefc2de7abe35f1a06a99299b604757a1e15eb52aae881e8458b1d284227b",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/WYXEJpVj.js"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/builds/meta/61af4923-e329-4e77-94ba-94a97885eec7.json": {
+      "bytes": 111,
+      "sha256": "f1be9011152b7e86edcf35d2e95579f7245c28c3b6190c87ce203e4de5bc1311",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/builds/meta/61af4923-e329-4e77-94ba-94a97885eec7.json"
+    },
+    "https://stcdn.leadconnectorhq.com/_preview/mxFsF5jP.js": {
+      "bytes": 132237,
+      "sha256": "64e1c513e3856290bfd8867bc1be3d39b515d329fe98209af5f7cb238ccf7296",
+      "url": "https://stcdn.leadconnectorhq.com/_preview/mxFsF5jP.js"
+    }
+  }
+}

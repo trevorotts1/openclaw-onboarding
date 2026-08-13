@@ -1,0 +1,156 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-TEMPLATE-PIPELINE-MISSING",
+      "exit": 2,
+      "meaning": "the standard pipeline is absent or renamed on the template location \u2014 find-and-bind would fail silently (STOP); the U03 EMPTY-LISTING attack refuses under this code at exit 5"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-STAGE-DRIFT",
+      "exit": 5,
+      "meaning": "a present pipeline is missing a contract stage or carries an extra/renamed/out-of-order stage"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-CUSTOM-VALUE-REAL",
+      "exit": 5,
+      "meaning": "a custom value holds a real-looking value (never-a-real-token)"
+    },
+    {
+      "code": "AF-AE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "a Convert and Flow field write or a Drive write does not read back byte-for-byte in the same job (S8; verify_after.py is the provision-time read-back prover)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation)"
+    }
+  ],
+  "authored_by": "U03",
+  "check_modules": [
+    "config_loader",
+    "name_reader",
+    "rename_checker",
+    "rename_applier",
+    "verify_after",
+    "golden_correct",
+    "golden_wrong",
+    "attack_no_pipeline",
+    "house_rules",
+    "example_usage",
+    "docs_u03"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u03-name-check",
+  "custom_value_keys": [
+    "anthology_webhook_url",
+    "anthology_hook_secret",
+    "producer",
+    "producer_email"
+  ],
+  "exit_codes": {
+    "0": "verified success \u2014 all checks PASS (also plan / dry-run / self-test)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / a contract section missing / the standard pipeline ABSENT or RENAMED on the location / a drifted (location, name) config pair",
+    "3": "HELD \u2014 Convert and Flow API unreachable incl. the Cloudflare edge 403 (CF error 1010); retryable, never mislabeled as a scope problem",
+    "4": "self-test FAILED (AF-AE-*-ATTACK family, enforced violation) \u2014 a tamper never masquerades as exit 1",
+    "5": "mismatch / fail-closed default \u2014 drift, extra or mutated keys, a real-looking custom value, the U03 EMPTY-LISTING attack, or a read-back mismatch after the rename PUT"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the U03 EMPTY-LISTING attack is refused UP FRONT (AF-AE-TEMPLATE-PIPELINE-MISSING, STOP exit 2) \u2014 a location with nothing bound is never judged a clean read."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "check_pipeline_name.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u03_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed empty package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the check-module dispatcher CLI (plan / self-test / live verify)"
+    },
+    {
+      "name": "config_loader.py",
+      "role": "the shared OFFLINE (location id, expected name) config surface"
+    },
+    {
+      "name": "name_reader.py",
+      "role": "live pipeline-name read (STOP on unreadable shape)"
+    },
+    {
+      "name": "rename_checker.py",
+      "role": "live name check BYTE-EXACT vs the name law"
+    },
+    {
+      "name": "rename_applier.py",
+      "role": "the ONLY write surface (REFUSES without --execute)"
+    },
+    {
+      "name": "verify_after.py",
+      "role": "the read-back: stamp / custom values / pipeline gates"
+    },
+    {
+      "name": "golden_correct.py",
+      "role": "golden pipeline fixture (field-map derived)"
+    },
+    {
+      "name": "golden_wrong.py",
+      "role": "golden RENAMED-state fixture the checks DETECT"
+    },
+    {
+      "name": "attack_no_pipeline.py",
+      "role": "the U03 ATTACK: the empty listing is refused up front"
+    },
+    {
+      "name": "house_rules.py",
+      "role": "the ONE canonical house-law constants surface"
+    },
+    {
+      "name": "example_usage.py",
+      "role": "the fail-closed WORKED EXAMPLE of the U03 dispatch"
+    },
+    {
+      "name": "docs_u03.py",
+      "role": "the U03 README/catalog data + drift gate"
+    },
+    {
+      "name": "test_rename_checker.py",
+      "role": "offline pytest battery for rename_checker"
+    },
+    {
+      "name": "test_rename_applier.py",
+      "role": "offline pytest battery for rename_applier"
+    },
+    {
+      "name": "test_verify_after.py",
+      "role": "offline pytest battery for verify_after"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "pipeline",
+      "item": 1,
+      "title": "Pipeline name BYTE-EXACT 'Anthology Engine'"
+    },
+    {
+      "id": "stages",
+      "item": 2,
+      "title": "Nine stages BY NAME IN ORDER, contiguous positions 0..8"
+    },
+    {
+      "id": "custom_values",
+      "item": 3,
+      "title": "Custom values (four keys, REPLACE-ME placeholders, never-a-real-token)"
+    },
+    {
+      "id": "workflows",
+      "item": 4,
+      "title": "Workflows count + folder 'Anthology Engine' (EIGHT release workflows)"
+    }
+  ]
+}

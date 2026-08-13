@@ -569,6 +569,40 @@ class InternalRailClient:
         return out.get("pipelines") or []
 
 
+class RailFallbackClient:
+    """A CafClient-shaped READ surface that routes through the internal rail
+    when the public-v2 PIT surface is edge-blocked (GK-09, proven live
+    2026-08-12: /locations/{id}/customFields, /locations/{id}/customValues,
+    /forms/?locationId= ALL read through the rail while the PIT 403s at the
+    edge). Covers the read methods the U02/U14/U15 checks call so a blocked
+    PIT DEFERS to the rail (never fabricated, never a STOP where a read is
+    possible). Writes are REFUSED with an AttributeError — a fallback client
+    must never silently write."""
+
+    def __init__(self, rail: "InternalRailClient"):
+        self._rail = rail
+
+    def list_custom_fields(self, location_id: str):
+        out = self._rail._get("/locations/%s/customFields"
+                              % urllib.parse.quote(location_id, safe=""))
+        rows = out.get("customFields")
+        return rows if isinstance(rows, list) else []
+
+    def list_custom_values(self, location_id: str):
+        out = self._rail._get("/locations/%s/customValues"
+                              % urllib.parse.quote(location_id, safe=""))
+        rows = out.get("customValues")
+        return rows if isinstance(rows, list) else []
+
+    def list_pipelines(self, location_id: str):
+        return self._rail.list_pipelines(location_id)
+
+    def __getattr__(self, name):
+        raise AttributeError(
+            "RailFallbackClient is READ-ONLY (rail-backed); %r is not a "
+            "supported read surface" % name)
+
+
 # ---------------------------------------------------------------------------
 # fieldKey derivation law (verified at W0.5). The API DERIVES the fieldKey; it is
 # not accepted on create. We create with name = the intended key minus the

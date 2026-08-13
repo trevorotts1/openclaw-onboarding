@@ -113,15 +113,45 @@ def test_book_share_retries_with_notification_and_reports_double_failure(wf, nam
     assert first_outputs[0][0]["node"] == "Build Response"
     assert first_outputs[1][0]["node"] == retry_name
 
-    # Whether the retry succeeds or fails, response construction remains non-fatal.
+    # U25 fail-closed: whether the retry succeeds or fails, Build Response emits a
+    # machine-readable body; a share failure is now a NON-200 through Respond Rejected
+    # (the old "200-with-warning" contract is gone).
     retry_outputs = wf["connections"][retry_name]["main"]
     assert retry_outputs[0][0]["node"] == "Build Response"
     assert retry_outputs[1][0]["node"] == "Build Response"
     response_js = nodes["Build Response"]["parameters"]["jsCode"]
-    assert "producer_editor_shared: true" not in response_js
-    assert "producer_editor_shared: shared" in response_js
-    assert "response.warning" in response_js
-    assert "producer_editor_share_failed" in response_js
+    assert "producer_editor_shared: true" in response_js  # the SUCCESS body is explicit
+    assert "producer_editor_share_failed" in response_js   # the FAILURE body names the code
+    assert "http_code: 502" in response_js                 # ... and carries a non-200
+    assert "response.warning" not in response_js           # no 200-with-warning remains
+    # Build Response feeds a Share Confirmed? IF; true -> Respond OK (200),
+    # false -> Respond Rejected (its http_code), so a double share failure is NON-200.
+    assert "Share Confirmed?" in names
+    sc = wf["connections"]["Build Response"]["main"]
+    assert sc[0][0]["node"] == "Share Confirmed?"
+    sc_out = wf["connections"]["Share Confirmed?"]["main"]
+    assert sc_out[0][0]["node"] == "Respond OK"
+    assert sc_out[1][0]["node"] == "Respond Rejected"
+    # the failure body routes through Respond Rejected's code-driven responder.
+    assert nodes["Respond Rejected"]["parameters"]["options"]["responseCode"] == "={{ $json.http_code }}"
+
+
+def test_authorize_rejects_non_shareable_producer_email_upfront(wf):
+    """U25 fail-closed: create_book_tree must refuse a non-shareable producer email
+    (consumer Gmail / any account Google cannot grant a Drive role to) in Authorize &
+    Dispatch -- a non-200 BEFORE any folder or share is created. The tree is never
+    half-provisioned."""
+    js = _authorize_js(wf)
+    assert "isShareableDriveEmail" in js
+    assert "producer_email_not_shareable" in js
+    assert "reject(422," in js
+    # the gate must sit inside the create_book_tree branch, before the tree payload.
+    cbt = js[js.index("if (action === 'create_book_tree')"):js.index(
+        "if (action === 'create_participant_tree')")]
+    assert "producer_email_not_shareable" in cbt
+    assert cbt.index("producer_email_not_shareable") < cbt.index("return [{ json:")
+    # no unguarded acceptance remains: every 200 create_book_tree response must confirm
+    # the share (asserted by the Build Response / Share Confirmed? wiring above).
 
 
 def test_no_dangling_connections_or_node_references(wf, names, blob):
