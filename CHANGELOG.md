@@ -1,3 +1,35 @@
+## [v22.0.14] -- 2026-08-13 -- G3: heartbeat_minutes asserted on every phase, and given a sanity ceiling
+
+Two layers, because the first one alone was proven insufficient by re-attack.
+
+- **`sync_check.py` check E3** now asserts `heartbeat_minutes` is present and
+  positive on EVERY phase, not just `long_running` ones.
+- **Sanity ceiling (the hardening).** Presence-and-positivity is not a range:
+  setting `heartbeat_minutes` to `999999999` on all 33 non-long-running phases
+  passed E3 with zero drift, and `heartbeat_interval_minutes` handed that value
+  straight to the watchdog and reaper -- a ~2,853-year stall threshold
+  (999999999 min x 1.5 grace) that reports a 12-hour-silent job HEALTHY. Note the
+  original deletion attack was strictly MILDER: with the field absent, the
+  budget-minutes fallback still fired and the stall was still caught.
+
+`MAX_HEARTBEAT_INTERVAL_MINUTES` is not an arbitrary round number that would just
+be a bigger number to guess past -- it is `max(PHASE_BUDGET_MINUTES.values())`
+(240), this engine's own declaration of the longest any phase may EVER run before
+it is killed outright. A checkpoint cadence looser than the slowest thing the whole
+system does cannot be a real cadence. All 36 real phases declare 15-120, so the
+ceiling costs the legitimate path nothing.
+
+Enforced at the runtime SOURCE (`Phase.heartbeat_interval_minutes`, which is what
+writes `state.json`'s `heartbeat.interval_minutes`) so an insane value can never
+reach a consumer at all, independent of whether its manifest ever passed
+sync_check; `watchdog.py` and `process_reaper.py` additionally re-check the value
+they read back OFF state.json, since a pre-fix or foreign-written state.json is a
+different, still-untrusted input. One ceiling constant, imported everywhere.
+
+Measured: a poisoned `999999999` yields `heartbeat_interval_minutes` of
+**999999999 on the origin/main control** and **240 on this branch**.
+`test_watchdog.py`: 22 passed here vs 20 on the control.
+
 ## [v22.0.13] -- 2026-08-13 -- Capacity gate: UNDETERMINED is unmistakable, but an unconfigured box is still usable
 
 `launcher.py`'s capacity gate checked only `available is None`, which treated the
