@@ -55,7 +55,13 @@ def test_workbook_phase_declared_in_manifest():
     ph = phases["P8.25-WORKBOOK"]
     assert ph["order"] == 8.25
     assert ph["executor"]["kind"] == "script"
-    assert "workbook_builder.py" in ph["executor"]["cmd"]
+    # D4 (canonical-entry routing, manifest v45): the workbook phase runs through
+    # the canonical entry script (--resume --run-dir {run_dir}), NOT by invoking
+    # workbook_builder.py directly — the canonical entry is the single sanctioned
+    # door, and the entry's phase dispatch hands off to the builder by phase id.
+    cmd = ph["executor"]["cmd"]
+    assert "presentation-canonical-entry.sh" in cmd, cmd
+    assert "--resume" in cmd and "--run-dir" in cmd, cmd
     assert ph["verifier"] == "phase_verifiers.verify"
     # owning_role must be a real role stem (sync_check A6 would fail otherwise).
     assert ph["owning_role"] == "pptx-assembly-specialist"

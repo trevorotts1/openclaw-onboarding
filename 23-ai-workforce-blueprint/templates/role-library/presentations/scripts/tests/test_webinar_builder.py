@@ -490,14 +490,7 @@ def test_webinar_mp4_deck_slug_templating(tmp_path):
 def test_manifest_lockstep_includes_webinar_mp4():
     """PIPELINE-MANIFEST.build_bundle_files must include webinar_mp4 — the bundle
     gate's REQUIRED_KEYS and the manifest must never drift apart."""
-    manifest_path = None
-    cur = SCRIPTS
-    for _ in range(8):
-        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if cand.is_file():
-            manifest_path = cand
-            break
-        cur = cur.parent
+    manifest_path = _resolve_manifest_path()
     assert manifest_path is not None, "PIPELINE-MANIFEST.json not found"
     man = json.loads(manifest_path.read_text())
     assert "webinar_mp4" in man.get("build_bundle_files", []), (
@@ -506,6 +499,24 @@ def test_manifest_lockstep_includes_webinar_mp4():
     codes = {a["code"] for a in man.get("autofails", [])}
     assert "AF-WEBINAR-SIZE" in codes, (
         "AF-WEBINAR-SIZE must be registered in PIPELINE-MANIFEST.autofails")
+
+
+def _resolve_manifest_path():
+    """Deployed layout first (scripts/../sops/PIPELINE-MANIFEST.json), repo
+    walk-up fallback (universal-sops/presentation-slide-craft/) — mirrors
+    manifest_source.resolve_manifest's installed-then-cluster tiering."""
+    deployed = SCRIPTS.parent / "sops" / "PIPELINE-MANIFEST.json"
+    if deployed.is_file():
+        return deployed
+    cur = SCRIPTS
+    for _ in range(12):
+        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if cand.is_file():
+            return cand
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
 
 
 # ---------------------------------------------------------------------------

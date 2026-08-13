@@ -210,11 +210,20 @@ def test_verify_sections_all_in_band():
 # ---------------------------------------------------------------------------
 
 def _manifest_path():
-    cur = Path(__file__).resolve().parent
-    for _ in range(8):
+    """Deployed layout first (scripts/../sops/PIPELINE-MANIFEST.json), repo
+    walk-up fallback (universal-sops/presentation-slide-craft/) — mirrors
+    manifest_source.resolve_manifest's installed-then-cluster tiering."""
+    here = Path(__file__).resolve().parent
+    deployed = here.parent.parent / "sops" / "PIPELINE-MANIFEST.json"
+    if deployed.is_file():
+        return deployed
+    cur = here
+    for _ in range(12):
         cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
         if cand.is_file():
             return cand
+        if cur.parent == cur:
+            break
         cur = cur.parent
     return None
 
