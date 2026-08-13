@@ -16,6 +16,7 @@ Locks the four things that make capacity a GATE instead of an advisory print:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -300,3 +301,143 @@ def test_dispatch_refuses_a_parked_client_box(monkeypatch, tmp_path):
                         lambda *a, **k: pytest.fail("spawned despite PARKED capacity"))
     rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard")
     assert rc == launcher.DISPATCH_CAPACITY_REFUSED
+
+
+# ---------------------------------------------------------------------------
+# 5. The no-config hole: UNDETERMINED must not be silently treated as MEASURED
+#
+# These run dispatch() with background=False (subprocess.run, synchronous --
+# the mode the module's own docstring calls out "for testing"). A real child
+# interpreter runs a one-line stub `presentation_job.py` that touches a marker
+# file, so "the engine was spawned" is proven by an actual process having
+# actually run, not by mocking Popen and its .pid attribute.
+# ---------------------------------------------------------------------------
+def _stub_engine(tmp_path, monkeypatch):
+    """No-config-box rig: isolated detection, ps stubbed, a stub
+    presentation_job.py that proves it ran by writing a marker file.
+    Returns (config_dir, marker_path)."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
+    monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
+    marker = tmp_path / "engine_ran.marker"
+    (tmp_path / "presentation_job.py").write_text(
+        "import pathlib, sys\n"
+        f"pathlib.Path(r'''{marker}''').write_text('ran')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    return cfg, marker
+
+
+def test_no_config_run_proceeds_at_conservative_floor_and_says_so_unmistakably(
+        monkeypatch, tmp_path, capsys):
+    """THE HOLE: almost every client box has no override, no 9Router combo, no
+    OpenClaw config -- UNDETERMINED, available=3. Dispatch must proceed (an
+    unconfigured box is not an outage) but the UNDETERMINED-ness must be
+    impossible to miss: a distinct banner (never the MEASURED line), and a
+    record in run state."""
+    _, marker = _stub_engine(tmp_path, monkeypatch)
+    run_dir = tmp_path / "run"
+    rc = launcher.dispatch(str(run_dir), client="acme", deck_type="standard",
+                           background=False)
+    assert rc != launcher.DISPATCH_CAPACITY_REFUSED
+    assert marker.is_file(), "expected the engine to actually run in the no-config case"
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "CAPACITY UNDETERMINED" in captured.err, "the banner must be loud on stderr"
+    assert "capacity measured --" not in combined, (
+        "the UNDETERMINED case must never print the same line as a real MEASURED probe")
+
+    sidecar = run_dir / ".capacity-status.json"
+    assert sidecar.is_file(), "UNDETERMINED must be recorded into run state"
+    record = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert record["status"] == capacity.STATUS_UNDETERMINED
+    assert record["available"] == capacity.DEFAULT_CONSERVATIVE == 3
+
+
+def test_no_config_run_notifies_the_operator(monkeypatch, tmp_path):
+    """Best-effort operator ping fires on the UNDETERMINED path (via
+    report.dispatch, PRESENTATION_NOTIFY_CMD-gated, same mechanism watchdog.py
+    already uses for system-level alerts)."""
+    _stub_engine(tmp_path, monkeypatch)
+    calls = []
+    from presentation_job import report as report_mod
+    monkeypatch.setattr(report_mod, "dispatch",
+                        lambda chat_id, kind, message: calls.append((chat_id, kind, message)) or True)
+    launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                      background=False)
+    assert calls, "expected a report.dispatch() call notifying the operator"
+    chat_id, kind, message = calls[0]
+    assert kind == "capacity_undetermined"
+    assert "UNDETERMINED" in message
+
+
+def test_dispatch_refuses_wide_parallel_request_when_capacity_undetermined(
+        monkeypatch, tmp_path):
+    """Refuse only the case the fix targets: capacity never measured AND the
+    run asks for more parallel width than the conservative floor."""
+    _, marker = _stub_engine(tmp_path, monkeypatch)
+    rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                           background=False, requested_parallel=16)
+    assert rc == launcher.DISPATCH_CAPACITY_REFUSED
+    assert not marker.is_file(), "the engine must not have run"
+
+
+def test_dispatch_no_config_requesting_exactly_the_floor_still_proceeds(
+        monkeypatch, tmp_path):
+    """Requesting AT the conservative floor (or not declaring a request at
+    all, the overwhelming majority of callers today) is not the blind-dispatch
+    case -- only requesting MORE than the floor is."""
+    _, marker = _stub_engine(tmp_path, monkeypatch)
+    rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                           background=False,
+                           requested_parallel=capacity.DEFAULT_CONSERVATIVE)
+    assert rc != launcher.DISPATCH_CAPACITY_REFUSED
+    assert marker.is_file()
+
+
+def test_measured_box_ignores_requested_parallel_and_dispatches_at_real_ceiling(
+        monkeypatch, tmp_path, capsys):
+    """A properly configured box (a real cap-table hit) is untouched by
+    requested_parallel -- it is a MEASURED ceiling, not a floor to defend.
+    execution_plan.py's wave-capping, not this gate, is what bounds a request
+    that exceeds it."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
+    monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
+    marker = tmp_path / "engine_ran.marker"
+    (tmp_path / "presentation_job.py").write_text(
+        "import pathlib, sys\n"
+        f"pathlib.Path(r'''{marker}''').write_text('ran')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                           background=False, requested_parallel=2000)
+    assert rc != launcher.DISPATCH_CAPACITY_REFUSED
+    assert marker.is_file()
+    out = capsys.readouterr().out
+    assert "capacity measured -- 2500 concurrent agents available" in out
+
+
+def test_malformed_override_still_refuses_end_to_end(monkeypatch, tmp_path):
+    """The behaviour this fix must NOT touch: a genuinely malformed
+    capacity_override.json, read for real (not stubbed), still refuses --
+    exercised through capacity.probe() -> launcher.capacity_gate() ->
+    launcher.dispatch(), not a mocked capacity_gate()."""
+    _, marker = _stub_engine(tmp_path, monkeypatch)
+    cfg = Path(os.environ[capacity.CONFIG_DIR_ENV])
+    (cfg / capacity.OVERRIDE_FILENAME).write_text("{ not json", encoding="utf-8")
+    rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                           background=False)
+    assert rc == launcher.DISPATCH_CAPACITY_REFUSED
+    assert not marker.is_file(), "the engine must not have run"
