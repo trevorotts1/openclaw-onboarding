@@ -51,6 +51,19 @@ import sys
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
+# SINGLE SOURCE OF TRUTH (U05) — the deliverable whitelist and its key set live
+# in presentation_job/deliverables.py; fix_bundle_complete.py, curate.py, and
+# self_audit.py all derive their runtime maps from the same constant. This
+# import is NOT defensive/optional: the P9-DELIVER verifier's whitelist must
+# never fall back to a local, driftable copy (see _DELIVERY_DELIVERABLES below).
+try:
+    from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
+except ImportError:
+    _SCRIPTS_DIR = Path(__file__).resolve().parent
+    if str(_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS_DIR))
+    from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
+
 # ---------------------------------------------------------------------------
 # Defensive engine-checker imports (all optional)
 # ---------------------------------------------------------------------------
@@ -419,19 +432,49 @@ def _verify_notes_sync(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(hard) == 0), reasons
 
 
-# -- canonical deliverable whitelist (mirrors fix_bundle_complete.REQUIRED_DELIVERABLES,
-#    plus the deck_slug-aware expander the bundle gate uses) --
+# -- canonical deliverable whitelist (U05: SINGLE SOURCE OF TRUTH — derived from
+#    presentation_job.deliverables.DELIVERABLE_AUDIT_SPEC, the same constant
+#    fix_bundle_complete.py, curate.py, and self_audit.py all import). The key
+#    set, min_bytes floor, and magic bytes/description come from the canonical
+#    spec; `pattern` (the pre-curation working/ dir glob) and `content_check`
+#    (the substance-verifier tag) are phase_verifiers-local metadata layered on
+#    top, because this verifier runs BEFORE curate.py assembles the flat
+#    deliverables/ bundle the other consumers check. --
+
+# Pre-curation search pattern (glob, relative to run_dir) per canonical key.
+_DELIVERY_PATTERN_BY_KEY = {
+    "deck_pptx":         "working/delivery/*-FINAL.pptx",
+    "deck_pdf":          "working/delivery/*-FINAL.pdf",
+    "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
+    "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
+    "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
+    "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+    "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
+    "infographic_png":   "working/delivery/infographic.png",
+    "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
+    "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
+}
+
+# Substance content-check tag for deliverables whose magic_bytes is None (a
+# presence-only check would let a renamed text file pass) — see
+# _deliverable_content_check() below.
+_DELIVERY_CONTENT_CHECK_BY_KEY = {
+    "speech_fish_md":    "fish_tags",
+    "teleprompter_html": "teleprompter",
+    "webinar_mp4":       "mp4_ftyp",
+}
+
 _DELIVERY_DELIVERABLES = [
-    {"key": "deck_pptx",        "pattern": "working/delivery/*-FINAL.pptx",    "min_bytes": 50000,  "magic": b"PK\x03\x04", "magic_desc": "ZIP/PPTX container"},
-    {"key": "deck_pdf",         "pattern": "working/delivery/*-FINAL.pdf",     "min_bytes": 50000,  "magic": b"%PDF",      "magic_desc": "PDF document"},
-    {"key": "guide_pdf",        "pattern": "working/deliverables/PRESENTER-GUIDE.pdf",  "min_bytes": 20000,  "magic": b"%PDF",      "magic_desc": "PDF document"},
-    {"key": "speech_pdf",       "pattern": "working/deliverables/PRESENTERS-SPEECH.pdf","min_bytes": 20000,  "magic": b"%PDF",      "magic_desc": "PDF document"},
-    {"key": "speech_fish_md",   "pattern": "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md", "min_bytes": 5000, "magic": None, "magic_desc": "text/markdown", "content_check": "fish_tags"},
-    {"key": "audio_mp3",        "pattern": "working/delivery/PRESENTER-AUDIO.mp3",  "min_bytes": 100000, "magic": b"ID3",   "magic_desc": "MP3 audio (ID3 tag)"},
-    {"key": "workbook_pdf",     "pattern": "working/deliverables/*-WORKBOOK.pdf",   "min_bytes": 20000,  "magic": b"%PDF", "magic_desc": "PDF document"},
-    {"key": "teleprompter_html","pattern": "working/deliverables/presenter-teleprompter.html", "min_bytes": 5000, "magic": None, "magic_desc": "text/html", "content_check": "teleprompter"},
-    {"key": "webinar_mp4",      "pattern": "working/delivery/*-WEBINAR.mp4",        "min_bytes": 500000, "magic": None,  "magic_desc": "MP4 video", "content_check": "mp4_ftyp"},
-    {"key": "infographic_png",  "pattern": "working/delivery/infographic.png",      "min_bytes": 5000,   "magic": b"\x89PNG", "magic_desc": "PNG image"},
+    {
+        "key": s["key"],
+        "pattern": _DELIVERY_PATTERN_BY_KEY[s["key"]],
+        "min_bytes": s["min_bytes"],
+        "magic": s["magic_bytes"],
+        "magic_desc": s["magic_desc"],
+        **({"content_check": _DELIVERY_CONTENT_CHECK_BY_KEY[s["key"]]}
+           if s["key"] in _DELIVERY_CONTENT_CHECK_BY_KEY else {}),
+    }
+    for s in _DELIVERABLE_AUDIT_SPEC
 ]
 
 
