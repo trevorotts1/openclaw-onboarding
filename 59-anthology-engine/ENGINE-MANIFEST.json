@@ -7,7 +7,7 @@
   "ledger_schema_version": 1,
   "authoring_core": "54-anthology-writer",
   "shared_tone_core": "shared-utils/tone-writing-core",
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages). LATER UNITS extend the inventory beyond the W1 normative set: rows 37..52 (W3/W-snapshot/fleet/unit batches U17..U26), row 53 (U23 GHL-gated SMS phone provisioner) and row 54 (U02 GHL template live re-verifier live_verify_template.py) — each documented with its own purpose + exit-code contract so inventory-equals-shipped-set holds across the whole shipped set.",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages). LATER UNITS extend the inventory beyond the W1 normative set: rows 37..52 (W3/W-snapshot/fleet/unit batches U17..U26), row 53 (U23 GHL-gated SMS phone provisioner) and row 54 (U02 GHL template live re-verifier live_verify_template.py) \u2014 each documented with its own purpose + exit-code contract so inventory-equals-shipped-set holds across the whole shipped set.",
   "doctrine": "Move in silence (operator-verbose, client-silent; only the three sanctioned nudge templates ever reach a client). Nothing Anthropic ships in any runtime file (guard-no-anthropic-runtime.py + model_router.py deny patterns). Every credential is referenced by label and location only, never by value. The client-facing platform name is Convert and Flow. Config writes run as the node user, never root. Keying is contact_id, never email. Enforcement, not description: every SACRED floor is a fail-closed prover, never advice.",
   "layers": {
     "L2_orchestration": "The ONLY layer that touches the ledger, the model router, and the gates. intake_router.py -> anthology_state.py -> the stage runners.",
@@ -28,7 +28,7 @@
       "name": "INTAKE AND ROUTING",
       "runner": "scripts/stage_s0_intake.py",
       "tier": "none (deterministic)",
-      "produces_artifact": "participant ledger row (composite key contact_id::anthology_id), board card (mirrored BEFORE the holdable Drive step, fail-soft, so a held/dark Drive never suppresses it — A1), Drive path",
+      "produces_artifact": "participant ledger row (composite key contact_id::anthology_id), board card (mirrored BEFORE the holdable Drive step, fail-soft, so a held/dark Drive never suppresses it \u2014 A1), Drive path",
       "gate": "none",
       "provers": [
         "intake_router validation"
@@ -468,20 +468,20 @@
       "script": "qc-snapshot-contract.sh",
       "authored_by": "W-snapshot",
       "purpose": "Merge-gate (CI) DRIFT GATE: proves config/anthology-snapshot-contract.json still byte-agrees with the engine's single source of truth (config/field-map.json pipeline name/stages + the 28 field keys/create-names/types + cover-choice options; config/engine-config.template.json intake route path + credential labels), plus the fixture's own invariants (27 LARGE_TEXT + 1 SINGLE_OPTIONS, 8 tags with 3 LIVE, 4 custom values, forms, and the agency->subaccount push standing-REJECTED). Mirrors Skill 38's qc-23-key-bodies.sh so a stale snapshot fails CI before it can ship.",
-      "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT; 2 a required file is missing (gate went blind — treated as failure)"
+      "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT; 2 a required file is missing (gate went blind \u2014 treated as failure)"
     },
     {
       "n": 40,
       "script": "standing_gate.py",
       "authored_by": "U-fleet-standing",
-      "purpose": "Fleet standing-gate client: asks the fleet-wide standing-check endpoint whether THIS box is approved for the anthology system BEFORE any participant row is created, Drive folder provisioned, or model call made. FAIL CLOSED (unreachable endpoint, non-200, missing credential, or malformed response are ALL treated as NOT approved). On a definite or suspected refusal also fires the shared rejection notifier so the client is told. Reuses the legacy roster gate's already-propagated FLEET_STANDING_GATE_HEADER/FLEET_STANDING_GATE_SECRET credential — same n8n httpHeaderAuth, no new secret.",
+      "purpose": "Fleet standing-gate client: asks the fleet-wide standing-check endpoint whether THIS box is approved for the anthology system BEFORE any participant row is created, Drive folder provisioned, or model call made. FAIL CLOSED (unreachable endpoint, non-200, missing credential, or malformed response are ALL treated as NOT approved). On a definite or suspected refusal also fires the shared rejection notifier so the client is told. Reuses the legacy roster gate's already-propagated FLEET_STANDING_GATE_HEADER/FLEET_STANDING_GATE_SECRET credential \u2014 same n8n httpHeaderAuth, no new secret.",
       "exit_codes": "0 approved; 2 refused (standing reason_code 'standing' or 'not_enrolled'); 3 endpoint unreachable / credential missing / malformed response (held)"
     },
     {
       "n": 41,
       "script": "anthology_book.py",
       "authored_by": "U-book-minter",
-      "purpose": "Producer 'start a book' minter — the SINGLE authority for Book IDs. Reuses anthology_state.gen_id for the id shape, anthology_state.py upsert-anthology for the ledger row, and anthology_registry.py bind for the CAF binding. Writes no state of its own and holds no credential. Emits the author-facing intake link carrying the minted anthology_id as a hidden form field.",
+      "purpose": "Producer 'start a book' minter \u2014 the SINGLE authority for Book IDs. Reuses anthology_state.gen_id for the id shape, anthology_state.py upsert-anthology for the ledger row, and anthology_registry.py bind for the CAF binding. Writes no state of its own and holds no credential. Emits the author-facing intake link carrying the minted anthology_id as a hidden form field.",
       "exit_codes": "0 ok (minted and bound or idempotent no-op); 1 unexpected error; 2 refused (e.g. pipeline unresolved on bind); 5 validation (missing required arg or book-name refusal)"
     },
     {
@@ -489,7 +489,7 @@
       "script": "anthology_run_dir.py",
       "authored_by": "U-run-dir",
       "purpose": "Single durable per-participant run directory resolver (U059). Every anthology authoring stage resolves the participant's working directory through this ONE function so later stages read back exactly what earlier stages wrote. Canonical layout: state/runs/participants/<safe-participant-id>/working/. Stdlib only (pathlib); no network, no model, no provider.",
-      "exit_codes": "0 (module/library; no standalone CLI — imported by stage dispatchers and Skill 54 run_anthology.py)"
+      "exit_codes": "0 (module/library; no standalone CLI \u2014 imported by stage dispatchers and Skill 54 run_anthology.py)"
     },
     {
       "n": 43,
@@ -502,8 +502,8 @@
       "n": 44,
       "script": "stage_s9_assembly_logic.py",
       "authored_by": "W1.18",
-      "purpose": "S9 assembly logic module — the substance between the two producer decisions that bracket S9. The thin runner stage_s9_assembly.py imports and drives this module in-process. fire_ready() arms the six PRD 3.11 guards; run_assembly() drives order curation, editor introduction, contributor bios, inter-chapter transitions, front/back matter, and the Grand Finale; sign_off() closes the anthology. NEVER writes state directly — every ledger mutation shells through anthology_state.py.",
-      "exit_codes": "0 ok; 1 unexpected error; 2 prover failure (FrozenChapterMismatch / seam bridge / Grand Finale contract failure — counts a QC attempt); 3 held (collaborator not yet wired / credit-outs); 5 validation (SlotUnresolved — AF-AE-SLOT-UNRESOLVED — or confirm-name mismatch)"
+      "purpose": "S9 assembly logic module \u2014 the substance between the two producer decisions that bracket S9. The thin runner stage_s9_assembly.py imports and drives this module in-process. fire_ready() arms the six PRD 3.11 guards; run_assembly() drives order curation, editor introduction, contributor bios, inter-chapter transitions, front/back matter, and the Grand Finale; sign_off() closes the anthology. NEVER writes state directly \u2014 every ledger mutation shells through anthology_state.py.",
+      "exit_codes": "0 ok; 1 unexpected error; 2 prover failure (FrozenChapterMismatch / seam bridge / Grand Finale contract failure \u2014 counts a QC attempt); 3 held (collaborator not yet wired / credit-outs); 5 validation (SlotUnresolved \u2014 AF-AE-SLOT-UNRESOLVED \u2014 or confirm-name mismatch)"
     },
     {
       "n": 45,
@@ -516,21 +516,21 @@
       "n": 46,
       "script": "snapshot_cut.py",
       "authored_by": "NEW-1",
-      "purpose": "GHL SNAPSHOT CUTTER (NEW-1): extracts the Anthology Convert and Flow (LeadConnector v2) TEMPLATE location (contract source_template_location.template_location_id, default 2HIKGNgsixWx0yds7Qnx) into the VERSIONED JSON fixture fixtures/snapshot/anthology-engine-v<X.Y.Z>.json carrying pipeline / custom fields / location custom values / tags / forms / workflows (structured inventory ONLY — no GHL workflow JSON export, so scan-no-json-exports.sh stays green; provenance-marked contract entries for forms/tags/workflows when the live read surface is unavailable, fail-closed never fabricated). BYTE-EXACT fieldKey gate vs config/field-map.json provisioning.fields: the live keyset must equal the contract 28 exactly (missing -> AF-AE-SNAPSHOT-FIELD-MISSING STOP; wrong/extra/mutated -> AF-AE-SNAPSHOT-KEY-MISMATCH exit 5); never-a-real-token: the four location custom values are extracted as REPLACE-ME placeholders only and a real-looking value REFUSES the cut. PIT resolved BY LABEL (CONVERT_AND_FLOW_PIT etc.) never printed; internal-rail workflow read via anthology_registry.InternalRailClient (optional Firebase refresh token BY LABEL); browser UA CAF_BROWSER_UA on every request. Subcommands cut / plan / self-test (self-test = golden + 7 attack fixtures, mutation proof). Wired into references/anthology-snapshot-guide.md Section 2-3 (the operator cuts the snapshot with this, then exports).",
+      "purpose": "GHL SNAPSHOT CUTTER (NEW-1): extracts the Anthology Convert and Flow (LeadConnector v2) TEMPLATE location (contract source_template_location.template_location_id, default 2HIKGNgsixWx0yds7Qnx) into the VERSIONED JSON fixture fixtures/snapshot/anthology-engine-v<X.Y.Z>.json carrying pipeline / custom fields / location custom values / tags / forms / workflows (structured inventory ONLY \u2014 no GHL workflow JSON export, so scan-no-json-exports.sh stays green; provenance-marked contract entries for forms/tags/workflows when the live read surface is unavailable, fail-closed never fabricated). BYTE-EXACT fieldKey gate vs config/field-map.json provisioning.fields: the live keyset must equal the contract 28 exactly (missing -> AF-AE-SNAPSHOT-FIELD-MISSING STOP; wrong/extra/mutated -> AF-AE-SNAPSHOT-KEY-MISMATCH exit 5); never-a-real-token: the four location custom values are extracted as REPLACE-ME placeholders only and a real-looking value REFUSES the cut. PIT resolved BY LABEL (CONVERT_AND_FLOW_PIT etc.) never printed; internal-rail workflow read via anthology_registry.InternalRailClient (optional Firebase refresh token BY LABEL); browser UA CAF_BROWSER_UA on every request. Subcommands cut / plan / self-test (self-test = golden + 7 attack fixtures, mutation proof). Wired into references/anthology-snapshot-guide.md Section 2-3 (the operator cuts the snapshot with this, then exports).",
       "exit_codes": "0 success (cut written + gate passed; dry-run/plan/self-test pass); 1 unexpected error; 2 STOP (AF-AE-SNAPSHOT-PIPELINE-MISSING / AF-AE-SNAPSHOT-FIELD-MISSING; PIT scope denied; usage; label NOT SET); 3 HELD (Convert and Flow API unreachable incl. Cloudflare edge 403, internal rail unavailable); 4 self-test FAILED (AF-AE-SNAPSHOT-KEY-MISMATCH family, never 'unexpected error'); 5 mismatch (AF-AE-SNAPSHOT-KEY-MISMATCH byte-exact fieldKey gate; empty-cut refusal)"
     },
     {
       "n": 47,
       "script": "prove_aw_doc_pullback.py",
       "authored_by": "NEW-5",
-      "purpose": "U21 confirm-then-pull Doc read-back prover (NEW-5): proves the whole D3 confirm-then-pull cycle end to end — share the throwaway scratch Doc ANYONE-with-link EDIT via drive_adapter.deliver_doc(share_mode=edit) (create + insert + byte read-back + share + share read-back), SIMULATE the co-author's edit by writing a KNOWN TEST STRING via the Docs API, TRIGGER gate_engine.py pullback-revalidate (pulls current text via drive_adapter.pull_doc_text + re-runs the deterministic Tier-1 battery in pullback mode, advisory never blocking), VERIFY the pulled text CONTAINS the test string and Tier-1 revalidation ran. Scratch Doc lives under the operator's OWN Drive root, deleted trash-free after the proof; refuses scratch mode in n8n broker mode (--doc-id against an already-delivered Doc instead). Credentials resolved BY LABEL never printed. AF-AW-PULL-BACK-MISSING / AF-AW-PULL-BACK-DRIFT outputs",
+      "purpose": "U21 confirm-then-pull Doc read-back prover (NEW-5): proves the whole D3 confirm-then-pull cycle end to end \u2014 share the throwaway scratch Doc ANYONE-with-link EDIT via drive_adapter.deliver_doc(share_mode=edit) (create + insert + byte read-back + share + share read-back), SIMULATE the co-author's edit by writing a KNOWN TEST STRING via the Docs API, TRIGGER gate_engine.py pullback-revalidate (pulls current text via drive_adapter.pull_doc_text + re-runs the deterministic Tier-1 battery in pullback mode, advisory never blocking), VERIFY the pulled text CONTAINS the test string and Tier-1 revalidation ran. Scratch Doc lives under the operator's OWN Drive root, deleted trash-free after the proof; refuses scratch mode in n8n broker mode (--doc-id against an already-delivered Doc instead). Credentials resolved BY LABEL never printed. AF-AW-PULL-BACK-MISSING / AF-AW-PULL-BACK-DRIFT outputs",
       "exit_codes": "0 PASS; 1 unexpected error; 2 validation/usage; 3 credential unavailable / API unreachable / ledger mirror unavailable (dependency); 5 proof failure (AF-AW-PULL-BACK-MISSING or AF-AW-PULL-BACK-DRIFT)"
     },
     {
       "n": 48,
       "script": "guard_cc_anthology_door.py",
       "authored_by": "NEW-7",
-      "purpose": "Command Center anthology-integration prover (NEW-7): proves the Layer-4 board door over the LIVE Command Center (never docs) — (1) gate route auth: GET /api/anthology/gate is bearer-gated for external callers (no token -> 401 missing-header / 503 mc-api-token-unset, wrong bearer -> 401 token-mismatch, correct bearer passes middleware Gate B and the route answers 400 for the missing subjectKey); (2) done-action 403: POST action \"done\" is refused HTTP 403 by the route's FORBIDDEN_ACTIONS before the engine is shelled (review->done belongs ONLY to the QC auto-scorer >= 8.5; probe body uses an explicit <guard-probe-no-live-subject> placeholder that can never record a real decision); (3) workspace resolution: GET /api/workspaces carries the seeded \"anthology\" slug (lowercase-exact) and GET /api/workspaces/{slug} resolves it by slug (live /workspace/anthology, never a dead link); (4) home-screen tile: GET /api/engine-db reports anthology DB present (true exactly) + the workspace slug — the two fetches src/app/page.tsx + selectProducerCardSlugs gate the producer card on. Fail-closed on every seam; token resolved BY LABEL (MC_API_TOKEN or board.api_token_label) SET/NOT SET only, never printed; house browser UA on every request (Cloudflare 1010); --self-test with golden + attack fixtures over the real predicates; stdlib only",
+      "purpose": "Command Center anthology-integration prover (NEW-7): proves the Layer-4 board door over the LIVE Command Center (never docs) \u2014 (1) gate route auth: GET /api/anthology/gate is bearer-gated for external callers (no token -> 401 missing-header / 503 mc-api-token-unset, wrong bearer -> 401 token-mismatch, correct bearer passes middleware Gate B and the route answers 400 for the missing subjectKey); (2) done-action 403: POST action \"done\" is refused HTTP 403 by the route's FORBIDDEN_ACTIONS before the engine is shelled (review->done belongs ONLY to the QC auto-scorer >= 8.5; probe body uses an explicit <guard-probe-no-live-subject> placeholder that can never record a real decision); (3) workspace resolution: GET /api/workspaces carries the seeded \"anthology\" slug (lowercase-exact) and GET /api/workspaces/{slug} resolves it by slug (live /workspace/anthology, never a dead link); (4) home-screen tile: GET /api/engine-db reports anthology DB present (true exactly) + the workspace slug \u2014 the two fetches src/app/page.tsx + selectProducerCardSlugs gate the producer card on. Fail-closed on every seam; token resolved BY LABEL (MC_API_TOKEN or board.api_token_label) SET/NOT SET only, never printed; house browser UA on every request (Cloudflare 1010); --self-test with golden + attack fixtures over the real predicates; stdlib only",
       "exit_codes": "0 all four checks PASS; 1 unexpected error; 2 bad invocation (unknown flag / missing argument / bad --url); 3 credential label NOT SET or Command Center unreachable (held, re-runnable); 4 one or more checks FAIL (drift/alarm path)"
     },
     {
@@ -544,14 +544,14 @@
       "n": 50,
       "script": "copy_qc_workflows.py",
       "authored_by": "NEW-6",
-      "purpose": "COPY-COMPLIANCE QC GATE over the Convert and Flow release-notification workflow exports (MASTER-SPEC NEW-6; contract workflows.copy_law + workflows.release_notifications): five fail-closed checks per workflow with EXACT violation locations (workflow -> node id/name/type -> parameter path -> matched text) — (a) editors never AI/ghostwriter (word-boundary AI + ghostwriter shapes in client-facing text AND node names, enforcement-context excluded), (b) zero U+2014 em-dashes, (c) email AND SMS actions present for every client-facing workflow (trigger-tag or name identified; structural n8n/GHL node-type + action-word sensors so a renamed export cannot evade), (d) stage-appropriate links (email link merge tags {{ contact.anthology_* }} resolved from field-map deliverable_fields via the contract rows, plus a URL/merge reference presence check), (e) per-stage copy invariants (producer-name merge {{ custom_values.producer }}, the standing instruction text, and the workflow's trigger tag byte-equal to its contract row). Subcommands check (files or --directory) / list / list-live / plan / self-test; self-test = golden + attack fixtures (attack fails EVERY client-facing check with exact codes), malformed export fails closed (exit 2, never a silent skip), non-client-facing workflows are exempt from the channel/link/stage checks. Optional --list-live reads the location's workflow names via the PROVEN internal rail (backend.leadconnectorhq.com /workflow/{loc}/list) with the Firebase refresh token resolved BY LABEL (SET/NOT-SET, never printed) and the CAF_BROWSER_UA on every request. Exit codes: 0 all PASS (including an empty set); 1 unexpected; 2 validation/usage/malformed export/sources unreadable; 3 HELD (live list: credential NOT SET or rail unreachable); 4 AF-AE-COPY-* violation detected.",
+      "purpose": "COPY-COMPLIANCE QC GATE over the Convert and Flow release-notification workflow exports (MASTER-SPEC NEW-6; contract workflows.copy_law + workflows.release_notifications): five fail-closed checks per workflow with EXACT violation locations (workflow -> node id/name/type -> parameter path -> matched text) \u2014 (a) editors never AI/ghostwriter (word-boundary AI + ghostwriter shapes in client-facing text AND node names, enforcement-context excluded), (b) zero U+2014 em-dashes, (c) email AND SMS actions present for every client-facing workflow (trigger-tag or name identified; structural n8n/GHL node-type + action-word sensors so a renamed export cannot evade), (d) stage-appropriate links (email link merge tags {{ contact.anthology_* }} resolved from field-map deliverable_fields via the contract rows, plus a URL/merge reference presence check), (e) per-stage copy invariants (producer-name merge {{ custom_values.producer }}, the standing instruction text, and the workflow's trigger tag byte-equal to its contract row). Subcommands check (files or --directory) / list / list-live / plan / self-test; self-test = golden + attack fixtures (attack fails EVERY client-facing check with exact codes), malformed export fails closed (exit 2, never a silent skip), non-client-facing workflows are exempt from the channel/link/stage checks. Optional --list-live reads the location's workflow names via the PROVEN internal rail (backend.leadconnectorhq.com /workflow/{loc}/list) with the Firebase refresh token resolved BY LABEL (SET/NOT-SET, never printed) and the CAF_BROWSER_UA on every request. Exit codes: 0 all PASS (including an empty set); 1 unexpected; 2 validation/usage/malformed export/sources unreadable; 3 HELD (live list: credential NOT SET or rail unreachable); 4 AF-AE-COPY-* violation detected.",
       "exit_codes": "0 all audited workflows PASS; 1 unexpected error; 2 validation / usage / malformed export / missing field-map or contract (fail-closed, never blind); 3 HELD (live list only: Firebase refresh token NOT SET or internal rail unreachable); 4 enforced violation detected (AF-AE-COPY-EM-DASH / AF-AE-COPY-AI-WORD / AF-AE-COPY-NO-EMAIL / AF-AE-COPY-NO-SMS / AF-AE-COPY-STAGE-LINKS / AF-AE-COPY-STAGE-TOKENS / AF-AE-COPY-MALFORMED)"
     },
     {
       "n": 51,
       "script": "canary_e2e_test.py",
       "authored_by": "NEW-4",
-      "purpose": "MASTER-SPEC NEW-4: ONE complete S0..S9 canary with 2 SYNTHETIC co-authors on the operator box, per-stage verified. S0 intake webhook fire with a LIVE Cloudflare Tunnel (verify-webhook-t1-t9.sh T-battery; --public-url, never invented) plus dedup no-op, tenant/stage/malformed capture with typed reasons, board card fail-soft; S1 avatar + producer board approve + §3 release tag; S2 tone 3,000-word floor (Tier 1) + gate; S3 titles + TITLE LOCK one-way + participant TOKEN-door pick (mint->verify->decide, replayed token refused); S4 blurb+outline both gates both doors; S5 chapter full Gate B (Tier 1 band 2,000-3,500 measured, JUDGE rubric, strike-gate accounting), chapter gate EXACTLY TWO actions, freeze; S6 rewrite budget 2 + rewrite1/2 preservation slots + re-entry; S7 cover SET of 4 named styles + portrait guard + choice field + apply-pick edge; S8 Doc+PDF with 14pt floor on the RENDERED PDF (guard-font-floor), completion notice (nudge_send dry-run), signed process certificate, card to review never done; S9 every PRD 3.11 guard (own-producer, typed confirm-name, floor 2, one-way), order set/adjust/confirm (U9 confirm_order flags the runner for transitions + Grand Finale), compile with frozen-chapter sha256 byte-identity (tampered sha refused), assembly Gate B, s9_producer sign-off. Cross-cutting: email+SMS release workflows (every §3 slug -> snapshot-contract release_notifications send-email+send-sms), Doc pull-back byte-diff (pullback-revalidate + qc-tier1 --mode pullback advisory; live NEW-5 prover driven when Drive creds present else DEFERRED), QC scorer >=8.5 owns review->done (engine never-done + CC qc-scorer.ts QC_PASS_THRESHOLD 8.5 when the CC repo is present), board round-trip both doors, every gate fails closed. Output CANARY-REPORT.json per-stage pass/fail + evidence; DEFERRED never false-passes; --require-live holds on un-executed live stages. Credentials BY LABEL SET/NOT SET only, never printed; browser UA not needed (the canary itself makes zero network calls; every probe shells a sibling that owns its transport); stdlib only",
+      "purpose": "MASTER-SPEC NEW-4: ONE complete S0..S9 canary with 2 SYNTHETIC co-authors on the operator box, per-stage verified. S0 intake webhook fire with a LIVE Cloudflare Tunnel (verify-webhook-t1-t9.sh T-battery; --public-url, never invented) plus dedup no-op, tenant/stage/malformed capture with typed reasons, board card fail-soft; S1 avatar + producer board approve + \u00a73 release tag; S2 tone 3,000-word floor (Tier 1) + gate; S3 titles + TITLE LOCK one-way + participant TOKEN-door pick (mint->verify->decide, replayed token refused); S4 blurb+outline both gates both doors; S5 chapter full Gate B (Tier 1 band 2,000-3,500 measured, JUDGE rubric, strike-gate accounting), chapter gate EXACTLY TWO actions, freeze; S6 rewrite budget 2 + rewrite1/2 preservation slots + re-entry; S7 cover SET of 4 named styles + portrait guard + choice field + apply-pick edge; S8 Doc+PDF with 14pt floor on the RENDERED PDF (guard-font-floor), completion notice (nudge_send dry-run), signed process certificate, card to review never done; S9 every PRD 3.11 guard (own-producer, typed confirm-name, floor 2, one-way), order set/adjust/confirm (U9 confirm_order flags the runner for transitions + Grand Finale), compile with frozen-chapter sha256 byte-identity (tampered sha refused), assembly Gate B, s9_producer sign-off. Cross-cutting: email+SMS release workflows (every \u00a73 slug -> snapshot-contract release_notifications send-email+send-sms), Doc pull-back byte-diff (pullback-revalidate + qc-tier1 --mode pullback advisory; live NEW-5 prover driven when Drive creds present else DEFERRED), QC scorer >=8.5 owns review->done (engine never-done + CC qc-scorer.ts QC_PASS_THRESHOLD 8.5 when the CC repo is present), board round-trip both doors, every gate fails closed. Output CANARY-REPORT.json per-stage pass/fail + evidence; DEFERRED never false-passes; --require-live holds on un-executed live stages. Credentials BY LABEL SET/NOT SET only, never printed; browser UA not needed (the canary itself makes zero network calls; every probe shells a sibling that owns its transport); stdlib only",
       "exit_codes": "0 every stage observed PASS (or cleanly DEFERRED without --require-live); 1 unexpected error; 2 bad invocation / a stage that ran FAILED (report carries the failing stage + evidence; never a false pass); 3 --require-live with un-executed live stages (held); 4 --self-test failed"
     },
     {
@@ -559,27 +559,27 @@
       "script": "qc-snapshot-fixture.sh",
       "authored_by": "U17",
       "purpose": "MASTER-SPEC U17 CI DRIFT GATE over the shipped snapshot fixture fixtures/snapshot/anthology-engine-v1.0.0.json: reads the snapshot JSON and asserts every fieldKey / pipeline-stage name / form-field name BYTE-EXACT against config/field-map.json (pipeline name + 9 stages in order, 28 custom fields' intended_key/create_name/data_type/options) and ENGINE-MANIFEST.json (the manifest's S0..S9 stage set maps 1:1 onto the fixture's pipeline stage names in order), plus the fixture's own shape invariants (27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice, 4 REPLACE-ME location custom values, 8 release-tag slugs with exactly 3 LIVE, 1 universal author-intake form + 3 contract-bound gate forms, 8 release-notification workflow summaries, never-a-real-token: no https://, no Bearer, no REAL value). A deliberate drift in field-map.json (rename a key) FAILS the gate. Mirrors qc-snapshot-contract.sh (row 39) so a stale fixture fails CI before it can ship.",
-      "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT (one or more assertions failed); 2 a required file is missing or the fixture does not parse (gate went blind — treated as failure)"
+      "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT (one or more assertions failed); 2 a required file is missing or the fixture does not parse (gate went blind \u2014 treated as failure)"
     },
     {
       "n": 53,
       "script": "provision_sms_phone.py",
       "authored_by": "U23",
-      "purpose": "U23 GHL-GATED SMS PHONE PROVISIONER assembled from the 16 u23_modules files (main_skeleton dispatcher + phone_lister + provision_action + sms_verifier + sms_sender + golden_has_phone + attack_sms_failed + attack_no_phone + docs_u23 + house_rules + checklist_note + example_usage + the empty package init + the three sibling pytest batteries), imported BY NAME (importlib, never exec'd from a path; a missing module STOPS, never a silent skip). GHL-gated LeadConnector phone provisioning for the client location: GET /phones/numbers first, provision only when no SMS-capable number exists (idempotent no-op on already-provisioned, never a second number), bounded send-test-message verification (HELD exit 3, never a false pass). NEVER provisions or sends without --execute (the POSTs are the GHL-gated ACTIONs, AF-AE-PROVPHONE-NO-EXECUTE / AF-AE-SMSVER-NO-EXECUTE); --dry-run and --self-test are OFFLINE (the self-test battery runs EVERY module's own golden PASS / attack FAIL — the golden has-phone PASS, the no-phone listing refused with provision_needed TRUE, the non-200 send attack FAIL exit 5 with the golden 200-send control PASS — plus the dispatcher battery, the family-law gate and the three sibling pytest batteries; exit 4 on any failure); token/location resolved BY LABEL never printed; CAF_BROWSER_UA on every request (CF 1010); bare 401/403 HELD, never mislabeled as scope. After a PASS the tool writes manifest-pending/u23.json (fail-closed: FAIL/HELD/STOP writes nothing)",
-      "exit_codes": "0 verified success (idempotent no-op / dry run / plan / self-test); 1 unexpected error; 2 STOP refusal (missing credential label / an ACTION without --execute — the Trevor gate / a module missing from u23_modules/ — AF-AE-U23-ASSEMBLY-INCOMPLETE / a genuine scope denial / usage); 3 HELD (API unreachable incl. the Cloudflare edge 403 — CF 1010, verification not confirmed, edge block never mislabeled); 4 self-test FAILED (AF-AE-PROVPHONE-* / AF-AE-SMSVER-* family, enforced violation); 5 read-back mismatch (create returned no number id / verify read-back returned no number / a 200 send without a message identifier — AF-AE-SMSVER-NO-SID / a drifted fixture)"
+      "purpose": "U23 GHL-GATED SMS PHONE PROVISIONER assembled from the 16 u23_modules files (main_skeleton dispatcher + phone_lister + provision_action + sms_verifier + sms_sender + golden_has_phone + attack_sms_failed + attack_no_phone + docs_u23 + house_rules + checklist_note + example_usage + the empty package init + the three sibling pytest batteries), imported BY NAME (importlib, never exec'd from a path; a missing module STOPS, never a silent skip). GHL-gated LeadConnector phone provisioning for the client location: GET /phones/numbers first, provision only when no SMS-capable number exists (idempotent no-op on already-provisioned, never a second number), bounded send-test-message verification (HELD exit 3, never a false pass). NEVER provisions or sends without --execute (the POSTs are the GHL-gated ACTIONs, AF-AE-PROVPHONE-NO-EXECUTE / AF-AE-SMSVER-NO-EXECUTE); --dry-run and --self-test are OFFLINE (the self-test battery runs EVERY module's own golden PASS / attack FAIL \u2014 the golden has-phone PASS, the no-phone listing refused with provision_needed TRUE, the non-200 send attack FAIL exit 5 with the golden 200-send control PASS \u2014 plus the dispatcher battery, the family-law gate and the three sibling pytest batteries; exit 4 on any failure); token/location resolved BY LABEL never printed; CAF_BROWSER_UA on every request (CF 1010); bare 401/403 HELD, never mislabeled as scope. After a PASS the tool writes manifest-pending/u23.json (fail-closed: FAIL/HELD/STOP writes nothing)",
+      "exit_codes": "0 verified success (idempotent no-op / dry run / plan / self-test); 1 unexpected error; 2 STOP refusal (missing credential label / an ACTION without --execute \u2014 the Trevor gate / a module missing from u23_modules/ \u2014 AF-AE-U23-ASSEMBLY-INCOMPLETE / a genuine scope denial / usage); 3 HELD (API unreachable incl. the Cloudflare edge 403 \u2014 CF 1010, verification not confirmed, edge block never mislabeled); 4 self-test FAILED (AF-AE-PROVPHONE-* / AF-AE-SMSVER-* family, enforced violation); 5 read-back mismatch (create returned no number id / verify read-back returned no number / a 200 send without a message identifier \u2014 AF-AE-SMSVER-NO-SID / a drifted fixture)"
     },
     {
       "n": 54,
       "script": "live_verify_template.py",
       "authored_by": "U02",
-      "purpose": "LIVE RE-VERIFY OF THE GHL TEMPLATE LOCATION (U02 tooling; the live READ is GHL-gated — the tooling ships now). Reads the operator's OWN Anthology Convert and Flow TEMPLATE location (contract source_template_location.template_location_id 2HIKGNgsixWx0yds7Qnx) back and verifies EVERY item of the MASTER-SPEC U02 'ALREADY DONE' list against the engine's sources of truth, documenting every delta as JSON output: (1) pipeline name BYTE-EXACT 'Anthology Engine' (MASTERDOC floor 11 find-and-bind is BY NAME), (2) nine stages BY NAME IN ORDER with contiguous positions 0..8, (3) forms count + field mapping (one REQUIRED universal author-intake + three contract-bound gate forms, universal hidden fields contact_id/anthology_id/stage; live count via the internal rail when a Firebase refresh token BY LABEL is SET, DEFERRED otherwise — never fabricated), (4) workflows count + folder (the EIGHT tag->notification release workflows in one folder named exactly 'Anthology Engine', each contact_tag trigger ACTIVE on its contract trigger_tag; rail-gated), (5) Intake Fire trigger scope (the intake front door is a WEBHOOK-TO-ROUTE: config/route-template.json 'anthology-intake' mapping + the {{ custom_values.anthology_webhook_url }} merge target as REPLACE-ME, and NO live workflow inlining a real URL past the box route), (6) custom field count + dataTypes (all 28 keys BYTE-EXACT vs field-map.json provisioning.fields, 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice with the four named options; extra/mutated keys fail closed), (7) custom values (the four contract keys as placeholders; a real-looking value REFUSES — never-a-real-token). PIT + Firebase refresh token resolved BY LABEL never printed; browser UA CAF_BROWSER_UA on every request via reg.CafClient / reg.InternalRailClient (CF 1010); scope-vs-edge-block discrimination (bare 401/403 is HELD, never mislabeled). Subcommands verify / plan / self-test (self-test = golden + 16 attack fixtures, mutation proof; verify_live fail-closed aggregate: any FAIL -> exit 5, DEFERRED counts as FAIL unless --allow-deferred)",
+      "purpose": "LIVE RE-VERIFY OF THE GHL TEMPLATE LOCATION (U02 tooling; the live READ is GHL-gated \u2014 the tooling ships now). Reads the operator's OWN Anthology Convert and Flow TEMPLATE location (contract source_template_location.template_location_id 2HIKGNgsixWx0yds7Qnx) back and verifies EVERY item of the MASTER-SPEC U02 'ALREADY DONE' list against the engine's sources of truth, documenting every delta as JSON output: (1) pipeline name BYTE-EXACT 'Anthology Engine' (MASTERDOC floor 11 find-and-bind is BY NAME), (2) nine stages BY NAME IN ORDER with contiguous positions 0..8, (3) forms count + field mapping (one REQUIRED universal author-intake + three contract-bound gate forms, universal hidden fields contact_id/anthology_id/stage; live count via the internal rail when a Firebase refresh token BY LABEL is SET, DEFERRED otherwise \u2014 never fabricated), (4) workflows count + folder (the EIGHT tag->notification release workflows in one folder named exactly 'Anthology Engine', each contact_tag trigger ACTIVE on its contract trigger_tag; rail-gated), (5) Intake Fire trigger scope (the intake front door is a WEBHOOK-TO-ROUTE: config/route-template.json 'anthology-intake' mapping + the {{ custom_values.anthology_webhook_url }} merge target as REPLACE-ME, and NO live workflow inlining a real URL past the box route), (6) custom field count + dataTypes (all 28 keys BYTE-EXACT vs field-map.json provisioning.fields, 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice with the four named options; extra/mutated keys fail closed), (7) custom values (the four contract keys as placeholders; a real-looking value REFUSES \u2014 never-a-real-token). PIT + Firebase refresh token resolved BY LABEL never printed; browser UA CAF_BROWSER_UA on every request via reg.CafClient / reg.InternalRailClient (CF 1010); scope-vs-edge-block discrimination (bare 401/403 is HELD, never mislabeled). Subcommands verify / plan / self-test (self-test = golden + 16 attack fixtures, mutation proof; verify_live fail-closed aggregate: any FAIL -> exit 5, DEFERRED counts as FAIL unless --allow-deferred)",
       "exit_codes": "0 all checks PASS (also plan / self-test / dry-run); 1 unexpected error; 2 STOP (AF-AE-TEMPLATE-PIPELINE-MISSING / AF-AE-TEMPLATE-FIELD-MISSING / PIT scope denied / label NOT SET / usage); 3 HELD (Convert and Flow API unreachable incl. Cloudflare edge 403, internal rail unavailable); 4 self-test FAILED (AF-AE-TEMPLATE-ATTACK family, never 'unexpected error'); 5 mismatch (AF-AE-TEMPLATE-STAGE-DRIFT / AF-AE-TEMPLATE-KEY-MISMATCH / AF-AE-TEMPLATE-CUSTOM-VALUE-REAL / AF-AE-TEMPLATE-INTAKE-FIRE; fail-closed default when any live check is DEFERRED without --allow-deferred)"
     },
     {
       "n": 55,
       "script": "check_pipeline_name.py",
       "authored_by": "U03",
-      "purpose": "U03 PIPELINE-NAME CHECK assembled from the 16 u03_modules files (main_skeleton dispatcher + config_loader + name_reader + rename_checker + rename_applier + verify_after + golden_correct + golden_wrong + attack_no_pipeline + house_rules + example_usage + docs_u03 + the empty package init + the three sibling pytest batteries), imported BY NAME. The pipeline name law of the U02 family, fail-closed and offline-provable: the standard pipeline 'Anthology Engine' must exist BYTE-EXACT (config/field-map.json pipeline.standard_pipeline_name is the single source of truth; find-and-bind is BY NAME — MASTERDOC floor 11), so a RENAMED pipeline is indistinguishable from an ABSENT one to find-by-name and BOTH refuse (AF-AE-TEMPLATE-PIPELINE-MISSING); the EMPTY listings state ({'pipelines': []}, the U03 attack — a location with NOTHING bound) is REFUSED UP FRONT with its own loud STOP, never judged a clean read; the read-back family (verify_after: stamp coherent / custom values placeholders only / standard pipeline byte-exact) aggregates fail-closed (any FAIL -> exit 5). --dry-run (offline plan) and --self-test (golden PASS / wrong name DETECTED / no-pipeline STOP + the dispatcher battery + the sibling pytest batteries, exit 4 on any failure) are OFFLINE — no token, no network. The live READ is GHL-gated: verify runs only from a session that resolves a template-scoped private-integration token BY LABEL (never printed); every request rides reg.CafClient's CAF_BROWSER_UA (CF 1010); scope-vs-edge-block discrimination (bare 401/403 is HELD, never mislabeled). After a PASS the tool writes manifest-pending/u03.json (fail-closed: FAIL/HELD/STOP writes nothing).",
+      "purpose": "U03 PIPELINE-NAME CHECK assembled from the 16 u03_modules files (main_skeleton dispatcher + config_loader + name_reader + rename_checker + rename_applier + verify_after + golden_correct + golden_wrong + attack_no_pipeline + house_rules + example_usage + docs_u03 + the empty package init + the three sibling pytest batteries), imported BY NAME. The pipeline name law of the U02 family, fail-closed and offline-provable: the standard pipeline 'Anthology Engine' must exist BYTE-EXACT (config/field-map.json pipeline.standard_pipeline_name is the single source of truth; find-and-bind is BY NAME \u2014 MASTERDOC floor 11), so a RENAMED pipeline is indistinguishable from an ABSENT one to find-by-name and BOTH refuse (AF-AE-TEMPLATE-PIPELINE-MISSING); the EMPTY listings state ({'pipelines': []}, the U03 attack \u2014 a location with NOTHING bound) is REFUSED UP FRONT with its own loud STOP, never judged a clean read; the read-back family (verify_after: stamp coherent / custom values placeholders only / standard pipeline byte-exact) aggregates fail-closed (any FAIL -> exit 5). --dry-run (offline plan) and --self-test (golden PASS / wrong name DETECTED / no-pipeline STOP + the dispatcher battery + the sibling pytest batteries, exit 4 on any failure) are OFFLINE \u2014 no token, no network. The live READ is GHL-gated: verify runs only from a session that resolves a template-scoped private-integration token BY LABEL (never printed); every request rides reg.CafClient's CAF_BROWSER_UA (CF 1010); scope-vs-edge-block discrimination (bare 401/403 is HELD, never mislabeled). After a PASS the tool writes manifest-pending/u03.json (fail-closed: FAIL/HELD/STOP writes nothing).",
       "exit_codes": "0 all checks PASS (also plan / dry-run / self-test); 1 unexpected error; 2 STOP (AF-AE-TEMPLATE-PIPELINE-MISSING / label NOT SET / PIT scope denied / usage / a drifted (location, name) config pair); 3 HELD (Convert and Flow API unreachable incl. Cloudflare edge 403); 4 self-test FAILED (AF-AE-TEMPLATE-ATTACK family, never 'unexpected error'); 5 mismatch (the pipeline name absent/renamed/near-miss, the U03 EMPTY-LISTING attack, or a read-back mismatch)"
     },
     {
@@ -630,6 +630,13 @@
       "authored_by": "U20",
       "purpose": "U20 CC BOARD-HYGIENE DISPATCHER assembled from the u20_modules files (the family's nine-module catalog: the empty package init + the producer Welcome-card builders welcome_builder / welcome_action + the fail-closed mission-control.db connector db_connector + the post-action board verifier verify_board + the archive statement builder archive_stmt + the producer ledger/board archive action archive_action + the zero-cards attack fixture attack_no_cards + the golden six-card census fixture golden_6cards + the sibling pytest battery test_archive_stmt + the docs_u20 catalog/drift gate), imported BY NAME (importlib, never exec'd from a path; a missing module STOPS, never a silent skip). Gates the MASTER-SPEC U20 WELCOME-CARD and BOARD-HYGIENE LAW of the anthology engine (the u20 package-init doctrine): the engine's database is READ-ONLY in dry-run, every ACTION surface is Trevor-gated by --execute, the Welcome card content derives from HOW-TO-USE.md (copy, never a write). The seven verified items in the family's FIXED order: (1) the producer-voice law -- the Welcome card body renders from HOW-TO-USE.md by EXACT section order with the producer language enforced (participant(s) and the Convert and Flow naming MUST ride the body; a heading renamed/dropped/reordered or a content-law break refuses the build, welcome_builder); (2) the read-only-dry-run law -- the state database opens ONLY in sqlite URI mode=ro and mission-control.db ONLY with the QUERY-ONLY pragma plus an IMMEDIATE rollback transaction, and the self-tests prove no database file is created and no byte changes in any non-execute path (the archive battery's byte-identical mirror is the strongest form); (3) the Trevor gate -- every ACTION surface (the card INSERT in welcome_builder/welcome_action/db_connector, the archive statements in archive_action/archive_stmt, the verify ACTION in verify_board) REQUIRES the operator's explicit --execute; WITHOUT it an ACTION request is a STOP (exit 2, the AF-AE-WELCOME-NO-EXECUTE / AF-AE-DBC-NO-EXECUTE / AF-AE-VRBOARD-NO-EXECUTE / AF-AE-U20ARCHIVE-NO-EXECUTE family), never a silent no-op and never a silent write; dry-run and no-execute are DIFFERENT laws (a plan exits 0, an ACTION without the gate exits 2); (4) the idempotency law (GET-first) -- a card/board state that already exists is a clean no-op: the meta row under 'welcome::producer' present with identical content is an IDEMPOTENT NO-OP, an existing 'Welcome to Anthology' task on the board is 'already welcomed', never re-seeded, a foreign value under the card's own key is a MISMATCH, never overwritten; (5) the read-back law -- a write is never trusted without read-back: the card INSERT is re-read through the READ-ONLY open and compared byte-exact, the archive statements are followed by a read of the ledger target through the SOLE WRITER's own read-only surface (AF-AE-U20ARCHIVE-READBACK-MISMATCH), the seeded board card is SELECTed back by its task id, the archive UPDATEs are re-read and every pinned card must be archived (AF-AE-ARCHSTMT-READBACK); (6) the zero-drill law -- the open board carries zero live ZZZ/SYNTHETIC drill cards and the byte-exact 'Welcome to Anthology' card is present on the open board (verify_board, the read-back half of the U14 board-hygiene law; a board that cannot be read is STOP/HELD, never 'board clean'); (7) the zero-cards attack law -- the empty board census is the golden no-op PASS (nothing to sync, nothing to write) while a non-empty census is REFUSED (attack_no_cards, AF-AE-WELCOME-CARDS-PRESENT / AF-AE-WELCOME-MALFORMED; the fixture is DATA and never writes), and the golden six-card census must pass its own fail-closed judge byte-exact with the execute_required truth (golden_6cards). The offline self-test battery runs EVERY module's own golden PASS / attack FAIL (the zero-cards attack judged clean and the cards-present attack REFUSED, the golden clean board PASSING and every drift REFUSED) plus the docs_u20 drift gate and the sibling pytest battery (exit 4 on any failure, the AF-AE-TEMPLATE-ATTACK enforced-violation family). --dry-run (offline plan) and --self-test are OFFLINE -- no token, no network, no database, no credential; the live surfaces (verify check / seed / archive) are the sibling modules' own --execute-gated CLIs, which this dispatcher never invokes and which never write without the gate. After a PASS the tool writes manifest-pending/u20.json (fail-closed: FAIL/HELD/STOP writes nothing).",
       "exit_codes": "0 all checks PASS (also plan / dry-run / self-test; an idempotent no-op -- an existing card / board state, an already-archived row, a zero-cards census); 1 unexpected error; 2 STOP refusal (AF-AE-U20-ASSEMBLY-INCOMPLETE -- a module the roster names that does not ship / a HOW-TO-USE.md unreadable -- AF-AE-WELCOME-SOURCE-UNREADABLE / a database missing or unreadable -- AF-AE-WELCOME-DB-MISSING, AF-AE-DBC-NO-DB, AF-AE-VRBOARD-NO-DB / TASKS-MISSING / an ACTION requested WITHOUT --execute -- the AF-AE-WELCOME-NO-EXECUTE / AF-AE-DBC-NO-EXECUTE / AF-AE-VRBOARD-NO-EXECUTE / AF-AE-U20ARCHIVE-NO-EXECUTE family, the Trevor gate / usage); 3 HELD -- a retryable database condition (locked / busy) or an unreadable read-back (UNDETERMINED, never a verdict); 4 self-test FAILED (the AF-AE-WELCOME-ATTACK / AF-AE-DBC-ATTACK / AF-AE-VRBOARD-ATTACK / AF-AE-ARCHSTMT-ATTACK / AF-AE-TEMPLATE-ATTACK enforced-violation family -- a tamper never masquerades as exit 1); 5 mismatch (AF-AE-WELCOME-SOURCE-DRIFT / AF-AE-WELCOME-CONTENT-VIOLATION / AF-AE-WELCOME-DB-MISMATCH / AF-AE-WELCOME-READBACK-MISMATCH / AF-AE-WELCOME-CARDS-PRESENT / AF-AE-WELCOME-MALFORMED / AF-AE-DBC-NO-WELCOME / AF-AE-VRBOARD-DRILLS-LIVE / AF-AE-VRBOARD-NO-WELCOME / AF-AE-U20ARCHIVE-READBACK-MISMATCH / AF-AE-ARCHSTMT-READBACK; fail-closed default)"
+    },
+    {
+      "n": 63,
+      "script": "check_agency_scopes.py",
+      "authored_by": "U24",
+      "purpose": "U24 AGENCY-PIT SCOPE PROBE (read-only): proves the four scopes MASTER-SPEC U24 names (snapshots.readonly, snapshots.write, locations.write, opportunities.write) on the operator's OWN agency PIT resolved BY LABEL (never printed), discriminating a genuine insuf_scope denial from a Cloudflare edge 403 (HELD, never a claim) from a route-exists 404 (UNKNOWN, never a claim). Proves each scope by its own read surface (GET /snapshots, GET /opportunities, GET /locations) and maps write-only endpoints by auth outcome. Exit 4 when a scope is PROVABLY absent (AF-AE-SCOPE-MISSING); 3 HELD (edge/transport \u2014 UNDETERMINED, never a verdict); 2 STOP (no agency PIT set, checked BY LABEL); 1 unexpected error. Values NEVER printed (SET/NOT SET + masked identifiers only); browser UA on every request (CF 1010).",
+      "exit_codes": "0 every probed scope read-passed (write-only scopes share their read groups); 1 unexpected error; 2 STOP (no agency PIT set, checked BY LABEL); 3 HELD (edge/transport \u2014 scope UNDETERMINED, never a claim of missing); 4 any scope PROVABLY absent (insuf_scope / invalid token)"
     }
   ],
   "autofails": [
@@ -877,7 +884,7 @@
       "code": "AF-AE-SNAPSHOT-EMPTY",
       "stage": "snapshot cut",
       "level": "snapshot",
-      "trigger": "the cut fixture is structurally empty (all section counts zero) — an empty template location must NEVER produce an empty fixture",
+      "trigger": "the cut fixture is structurally empty (all section counts zero) \u2014 an empty template location must NEVER produce an empty fixture",
       "enforced_by": "snapshot_cut.py (NEW-1)",
       "py_symbol": "refuse_empty"
     },
@@ -885,7 +892,7 @@
       "code": "AF-AE-TEMPLATE-PIPELINE-MISSING",
       "stage": "template live verify (U02)",
       "level": "template",
-      "trigger": "the standard pipeline 'Anthology Engine' is ABSENT or renamed on the operator's template location — find-and-bind is BY NAME and would fail silently; STOP (exit 2) instructing a UI restore",
+      "trigger": "the standard pipeline 'Anthology Engine' is ABSENT or renamed on the operator's template location \u2014 find-and-bind is BY NAME and would fail silently; STOP (exit 2) instructing a UI restore",
       "enforced_by": "live_verify_template.py (U02)",
       "py_symbol": "check_pipeline"
     },
@@ -901,7 +908,7 @@
       "code": "AF-AE-TEMPLATE-FIELD-MISSING",
       "stage": "template live verify (U02)",
       "level": "template",
-      "trigger": "a contract custom-field key (or custom-value key) is ABSENT from the template location (a strict subset); STOP (exit 2) — never a silent runtime create",
+      "trigger": "a contract custom-field key (or custom-value key) is ABSENT from the template location (a strict subset); STOP (exit 2) \u2014 never a silent runtime create",
       "enforced_by": "live_verify_template.py (U02)",
       "py_symbol": "check_custom_fields"
     },
@@ -917,7 +924,7 @@
       "code": "AF-AE-TEMPLATE-CUSTOM-VALUE-REAL",
       "stage": "template live verify (U02)",
       "level": "template",
-      "trigger": "a location custom value on the TEMPLATE holds a real-looking value instead of its REPLACE-ME placeholder — the template must never carry a real token or hook URL",
+      "trigger": "a location custom value on the TEMPLATE holds a real-looking value instead of its REPLACE-ME placeholder \u2014 the template must never carry a real token or hook URL",
       "enforced_by": "live_verify_template.py (U02)",
       "py_symbol": "check_custom_values"
     },
@@ -997,7 +1004,7 @@
       "code": "AF-AE-U20-ASSEMBLY-INCOMPLETE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the u20_modules file set named in the assembly roster is not fully present, or a module violates the one-entry-point self_test contract — a family gate is never silently skipped (dispatcher STOP)",
+      "trigger": "the u20_modules file set named in the assembly roster is not fully present, or a module violates the one-entry-point self_test contract \u2014 a family gate is never silently skipped (dispatcher STOP)",
       "enforced_by": "cc_board_hygiene.py (U20) / u20_modules/__init__.py",
       "py_symbol": "load_all_modules"
     },
@@ -1005,7 +1012,7 @@
       "code": "AF-AE-WELCOME-NO-EXECUTE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "an ACTION (the card INSERT / the VERIFY ACTION / the archive statements) was requested WITHOUT --execute — the Trevor gate: the module reports exactly what it WOULD do and exits without mutating (STOP, never a silent no-op and never a silent write)",
+      "trigger": "an ACTION (the card INSERT / the VERIFY ACTION / the archive statements) was requested WITHOUT --execute \u2014 the Trevor gate: the module reports exactly what it WOULD do and exits without mutating (STOP, never a silent no-op and never a silent write)",
       "enforced_by": "cc_board_hygiene.py (U20) / welcome_builder.py / welcome_action.py / db_connector.py / verify_board.py / archive_action.py / archive_stmt.py",
       "py_symbol": "self_test"
     },
@@ -1013,7 +1020,7 @@
       "code": "AF-AE-WELCOME-DB-MISSING",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "no Command Center database found in any candidate location and no DATABASE_PATH env override — never a write into the unknown, never a guessed path",
+      "trigger": "no Command Center database found in any candidate location and no DATABASE_PATH env override \u2014 never a write into the unknown, never a guessed path",
       "enforced_by": "welcome_action.py / db_connector.py / verify_board.py / archive_stmt.py",
       "py_symbol": "find_db"
     },
@@ -1021,7 +1028,7 @@
       "code": "AF-AE-WELCOME-READ-REFUSED",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the GET-first existence check or the read-back SELECT failed on the found database (missing table / sqlite error / unreadable file) — never a silent skip, never a seed-into-the-unknown",
+      "trigger": "the GET-first existence check or the read-back SELECT failed on the found database (missing table / sqlite error / unreadable file) \u2014 never a silent skip, never a seed-into-the-unknown",
       "enforced_by": "welcome_action.py / db_connector.py",
       "py_symbol": "seed_welcome"
     },
@@ -1029,7 +1036,7 @@
       "code": "AF-AE-WELCOME-CARD-REFUSED",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the found database refused the INSERT (sqlite error / constraint / read-only file) — a refused write is NEVER reported as inserted",
+      "trigger": "the found database refused the INSERT (sqlite error / constraint / read-only file) \u2014 a refused write is NEVER reported as inserted",
       "enforced_by": "welcome_action.py / db_connector.py",
       "py_symbol": "seed_welcome"
     },
@@ -1037,7 +1044,7 @@
       "code": "AF-AE-WELCOME-READBACK-MISMATCH",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "delivery",
-      "trigger": "a post-write read-back does not prove the write byte-for-byte — the shared house code with the U02 / U03 / U04 / U05 / U06 / U07 / U08_U09 / U10_U13 families (already stamped in ENGINE-MANIFEST.json)",
+      "trigger": "a post-write read-back does not prove the write byte-for-byte \u2014 the shared house code with the U02 / U03 / U04 / U05 / U06 / U07 / U08_U09 / U10_U13 families (already stamped in ENGINE-MANIFEST.json)",
       "enforced_by": "welcome_action.py / welcome_builder.py",
       "py_symbol": "seed_welcome"
     },
@@ -1045,7 +1052,7 @@
       "code": "AF-AE-WELCOME-SOURCE-UNREADABLE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "HOW-TO-USE.md is missing or unreadable — a card that cannot see its law never fabricates a pass",
+      "trigger": "HOW-TO-USE.md is missing or unreadable \u2014 a card that cannot see its law never fabricates a pass",
       "enforced_by": "welcome_builder.py / welcome_action.py / db_connector.py / archive_action.py",
       "py_symbol": "build_card"
     },
@@ -1053,7 +1060,7 @@
       "code": "AF-AE-WELCOME-SOURCE-DRIFT",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "the guide's section headings no longer match the pinned section law (a heading renamed, dropped, or reordered), or the title line is not the guide's '# ' title — the card body renders from the guide BY EXACT SECTION ORDER, so a drifted heading structure means the card can silently contradict the guide",
+      "trigger": "the guide's section headings no longer match the pinned section law (a heading renamed, dropped, or reordered), or the title line is not the guide's '# ' title \u2014 the card body renders from the guide BY EXACT SECTION ORDER, so a drifted heading structure means the card can silently contradict the guide",
       "enforced_by": "welcome_builder.py",
       "py_symbol": "_check_content_law"
     },
@@ -1061,7 +1068,7 @@
       "code": "AF-AE-WELCOME-CONTENT-VIOLATION",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "a content-law break — 'participant' / 'participants' absent from the card body, or the Convert and Flow naming absent — the producer language is enforced, never described",
+      "trigger": "a content-law break \u2014 'participant' / 'participants' absent from the card body, or the Convert and Flow naming absent \u2014 the producer language is enforced, never described",
       "enforced_by": "welcome_builder.py",
       "py_symbol": "_check_content_law"
     },
@@ -1069,7 +1076,7 @@
       "code": "AF-AE-WELCOME-DB-UNREADABLE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the engine state database cannot be opened READ-ONLY, or its schema carries no meta table — the gate's own control: the write is never trusted into the unknown",
+      "trigger": "the engine state database cannot be opened READ-ONLY, or its schema carries no meta table \u2014 the gate's own control: the write is never trusted into the unknown",
       "enforced_by": "welcome_builder.py",
       "py_symbol": "_prove_schema"
     },
@@ -1077,7 +1084,7 @@
       "code": "AF-AE-WELCOME-DB-MISMATCH",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "the live meta schema is not the engine's pinned meta schema, or a foreign value already sits under the card's own key — never a blind insert, never a blind overwrite, never a fabricated state",
+      "trigger": "the live meta schema is not the engine's pinned meta schema, or a foreign value already sits under the card's own key \u2014 never a blind insert, never a blind overwrite, never a fabricated state",
       "enforced_by": "welcome_builder.py",
       "py_symbol": "build_action"
     },
@@ -1085,7 +1092,7 @@
       "code": "AF-AE-WELCOME-INSERT-REFUSED",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the INSERT itself failed under --execute (read-only filesystem, locked database, schema drift) — a refused write is NEVER reported as inserted (HELD exit 3 per class)",
+      "trigger": "the INSERT itself failed under --execute (read-only filesystem, locked database, schema drift) \u2014 a refused write is NEVER reported as inserted (HELD exit 3 per class)",
       "enforced_by": "welcome_builder.py",
       "py_symbol": "build_action"
     },
@@ -1093,7 +1100,7 @@
       "code": "AF-AE-WELCOME-CARDS-PRESENT",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "the board census carries card(s) — the zero-cards attack law is violated; the census that is not empty is REFUSED, never certified clean",
+      "trigger": "the board census carries card(s) \u2014 the zero-cards attack law is violated; the census that is not empty is REFUSED, never certified clean",
       "enforced_by": "attack_no_cards.py",
       "py_symbol": "verify"
     },
@@ -1101,7 +1108,7 @@
       "code": "AF-AE-WELCOME-MALFORMED",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "a malformed census — a missing 'cards' key, a non-list array, or a credential-shaped string on the census — the attack fixture is DATA, and a census that cannot be judged is refused, never certified clean",
+      "trigger": "a malformed census \u2014 a missing 'cards' key, a non-list array, or a credential-shaped string on the census \u2014 the attack fixture is DATA, and a census that cannot be judged is refused, never certified clean",
       "enforced_by": "attack_no_cards.py",
       "py_symbol": "_extract_cards"
     },
@@ -1109,7 +1116,7 @@
       "code": "AF-AE-WELCOME-ATTACK",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "enforcement",
-      "trigger": "an attack fixture tripped the OFFLINE self-test (enforced violation) — a census that should have been REFUSED was not caught HERE first",
+      "trigger": "an attack fixture tripped the OFFLINE self-test (enforced violation) \u2014 a census that should have been REFUSED was not caught HERE first",
       "enforced_by": "attack_no_cards.py / golden_6cards.py",
       "py_symbol": "self_test"
     },
@@ -1117,7 +1124,7 @@
       "code": "AF-AE-DBC-NO-DB",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the database file is absent, unreadable, or unopenable — a missing DB is never 'board cleared', never a no-op pass",
+      "trigger": "the database file is absent, unreadable, or unopenable \u2014 a missing DB is never 'board cleared', never a no-op pass",
       "enforced_by": "db_connector.py",
       "py_symbol": "resolve_db_path"
     },
@@ -1125,7 +1132,7 @@
       "code": "AF-AE-DBC-NO-EXECUTE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the card INSERT was requested without --execute — the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)",
+      "trigger": "the card INSERT was requested without --execute \u2014 the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)",
       "enforced_by": "db_connector.py",
       "py_symbol": "cmd_seed"
     },
@@ -1133,7 +1140,7 @@
       "code": "AF-AE-DBC-NO-WELCOME",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "no Welcome card exists on the anthology board — a READ-ONLY report that names exactly the remediation: run with --execute to seed it. Never a pass",
+      "trigger": "no Welcome card exists on the anthology board \u2014 a READ-ONLY report that names exactly the remediation: run with --execute to seed it. Never a pass",
       "enforced_by": "db_connector.py",
       "py_symbol": "cmd_check"
     },
@@ -1141,7 +1148,7 @@
       "code": "AF-AE-DBC-SEED-EXISTS",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "run",
-      "trigger": "the seed was requested with --execute but a Welcome card ALREADY exists on the anthology board — the 'already welcomed' no-op; the seed is idempotent, it never duplicates and never archives",
+      "trigger": "the seed was requested with --execute but a Welcome card ALREADY exists on the anthology board \u2014 the 'already welcomed' no-op; the seed is idempotent, it never duplicates and never archives",
       "enforced_by": "db_connector.py / welcome_action.py",
       "py_symbol": "cmd_seed"
     },
@@ -1149,7 +1156,7 @@
       "code": "AF-AE-DBC-ATTACK",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "enforcement",
-      "trigger": "an attack fixture tripped the OFFLINE self-test (enforced violation) — a tamper never masquerades as exit 1",
+      "trigger": "an attack fixture tripped the OFFLINE self-test (enforced violation) \u2014 a tamper never masquerades as exit 1",
       "enforced_by": "db_connector.py",
       "py_symbol": "cmd_self_test"
     },
@@ -1157,7 +1164,7 @@
       "code": "AF-AE-VRBOARD-NO-DB",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "no Command Center database found (--db unset, DATABASE_PATH unset, and no candidate exists). STOP — a board that cannot be read is never 'board clean'",
+      "trigger": "no Command Center database found (--db unset, DATABASE_PATH unset, and no candidate exists). STOP \u2014 a board that cannot be read is never 'board clean'",
       "enforced_by": "verify_board.py",
       "py_symbol": "resolve_db_path"
     },
@@ -1165,7 +1172,7 @@
       "code": "AF-AE-VRBOARD-NO-EXECUTE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the VERIFY ACTION was requested without --execute — the Trevor gate: without it the ACTION is a refusal, never a silent no-op; even WITH it the verifier never writes",
+      "trigger": "the VERIFY ACTION was requested without --execute \u2014 the Trevor gate: without it the ACTION is a refusal, never a silent no-op; even WITH it the verifier never writes",
       "enforced_by": "verify_board.py",
       "py_symbol": "check"
     },
@@ -1173,7 +1180,7 @@
       "code": "AF-AE-VRBOARD-TASKS-MISSING",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the tasks table is absent from the board database. STOP — never a sweep of nothing, never a blind pass",
+      "trigger": "the tasks table is absent from the board database. STOP \u2014 never a sweep of nothing, never a blind pass",
       "enforced_by": "verify_board.py",
       "py_symbol": "check"
     },
@@ -1181,7 +1188,7 @@
       "code": "AF-AE-VRBOARD-DRILLS-LIVE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "one or more live ZZZ/SYNTHETIC drill cards on the open board — the zero-drill law is violated; the report names the masked ids",
+      "trigger": "one or more live ZZZ/SYNTHETIC drill cards on the open board \u2014 the zero-drill law is violated; the report names the masked ids",
       "enforced_by": "verify_board.py",
       "py_symbol": "_live_drill_cards"
     },
@@ -1189,7 +1196,7 @@
       "code": "AF-AE-VRBOARD-NO-WELCOME",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "compose",
-      "trigger": "no byte-exact 'Welcome to Anthology' card is LIVE on the open board — the report names the remediation (the seed ACTION is the sibling's, Trevor-gated, never re-implemented here)",
+      "trigger": "no byte-exact 'Welcome to Anthology' card is LIVE on the open board \u2014 the report names the remediation (the seed ACTION is the sibling's, Trevor-gated, never re-implemented here)",
       "enforced_by": "verify_board.py",
       "py_symbol": "_welcome_card"
     },
@@ -1205,7 +1212,7 @@
       "code": "AF-AE-U20ARCHIVE-NO-EXECUTE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the archive statements were requested without --execute — the statements run ONLY when the caller passed the gate; WITHOUT --execute a live-status anthology is a STOP that names the code and writes NOTHING",
+      "trigger": "the archive statements were requested without --execute \u2014 the statements run ONLY when the caller passed the gate; WITHOUT --execute a live-status anthology is a STOP that names the code and writes NOTHING",
       "enforced_by": "archive_action.py / archive_stmt.py",
       "py_symbol": "archive"
     },
@@ -1213,7 +1220,7 @@
       "code": "AF-AE-U20ARCHIVE-READBACK-MISMATCH",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "delivery",
-      "trigger": "the post-archive read-back of the LEDGER target does not match the ledger's archived vocabulary byte-exact — nothing is ever reported archived without read-back",
+      "trigger": "the post-archive read-back of the LEDGER target does not match the ledger's archived vocabulary byte-exact \u2014 nothing is ever reported archived without read-back",
       "enforced_by": "archive_action.py",
       "py_symbol": "archive"
     },
@@ -1221,7 +1228,7 @@
       "code": "AF-AE-ARCHSTMT-NO-EXECUTE",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "setup",
-      "trigger": "the archive UPDATEs were requested without --execute — the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)",
+      "trigger": "the archive UPDATEs were requested without --execute \u2014 the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)",
       "enforced_by": "archive_stmt.py",
       "py_symbol": "archive"
     },
@@ -1229,7 +1236,7 @@
       "code": "AF-AE-ARCHSTMT-READBACK",
       "stage": "Welcome-card and board-hygiene law (U20)",
       "level": "delivery",
-      "trigger": "the post-write read-back did not confirm every pinned card archived (exit 5, MISMATCH) or could not be read (exit 3, HELD — UNDETERMINED, never a verdict)",
+      "trigger": "the post-write read-back did not confirm every pinned card archived (exit 5, MISMATCH) or could not be read (exit 3, HELD \u2014 UNDETERMINED, never a verdict)",
       "enforced_by": "archive_stmt.py",
       "py_symbol": "_readback"
     }
