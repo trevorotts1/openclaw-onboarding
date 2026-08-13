@@ -1,8 +1,8 @@
 {
  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
  "section": "deck-intake",
- "version": "1.3.0",
- "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere \u2014 edit here. ONE CANONICAL TYPE-PICKER (order 0, id 'presentation_type') replaces the old binary deck_type question and is the single answer that decides all four legacy axis fields (deck_type, creation_mode, presentation_mode, audience_mode) \u2014 see 'legacy_field_mapping' below; the ONE place that mapping table is applied in code is derive_legacy_fields() in deck-intake-driver.py. On presentation_type=='signature' the driver asks ONE conditional follow-up ('signature_source', order 0.5) then switches to SIGNATURE mode: choice-first (QUICK vs IN-DEPTH), then it asks the SACRED 8 Questions + frame-selection question ONE at a time and waits for each answer (never a batch -- dumping them is AF-INTAKE-BATCH), and assembles the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B (scratch vs augment) is NEVER asked here \u2014 it stays derived from whether source assets exist, per director-of-presentations.md SOP 9.3. The picker (+ its conditional follow-up) runs BEFORE the standard one-question-per-turn capture below. ALSO (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" now lives here as real driver questions \u2014 every client question flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. Two conditional-skip schemas coexist and are applied by ONE reconciled pass (deck-intake-driver.py:auto_skip_all_conditionals): the type-picker follow-ups (recipient_name/signature_source) carry a `conditional_on` {id,equals} block, and the migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block; unmet conditions are auto-skipped (never surfaced, never block --complete).",
+ "version": "1.4.0",
+ "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere \u2014 edit here. ONE CANONICAL TYPE-PICKER (order 0, id 'presentation_type') replaces the old binary deck_type question and is the single answer that decides all four legacy axis fields (deck_type, creation_mode, presentation_mode, audience_mode) \u2014 see 'legacy_field_mapping' below; the ONE place that mapping table is applied in code is derive_legacy_fields() in deck-intake-driver.py. On presentation_type=='signature' the driver asks ONE conditional follow-up ('signature_source', order 0.5) then switches to SIGNATURE mode: choice-first (QUICK vs IN-DEPTH), then it asks the SACRED 8 Questions + frame-selection question ONE at a time and waits for each answer (never a batch -- dumping them is AF-INTAKE-BATCH), and assembles the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B (scratch vs augment) is NEVER asked here \u2014 it stays derived from whether source assets exist, per director-of-presentations.md SOP 9.3. The picker (+ its conditional follow-up) runs BEFORE the standard one-question-per-turn capture below. ALSO (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" now lives here as real driver questions \u2014 every client question flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. Two conditional-skip schemas coexist and are applied by ONE reconciled pass (deck-intake-driver.py:auto_skip_all_conditionals): the type-picker follow-ups (recipient_name/signature_source) carry a `conditional_on` {id,equals} block, and the migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block; unmet conditions are auto-skipped (never surfaced, never block --complete). ALSO (v1.4.0) the STANDARD (non-signature) track now offers the SAME choice-first QUICK vs IN-DEPTH fork the SIGNATURE track already had via sp_mode -- a new 'standard_mode' question (order 0.6, asked right after the type-picker for the three non-signature presentation_type values) using the identical allowed_values vocabulary ['QUICK','IN-DEPTH']. QUICK narrows the standard interview to the 12 curated questions (matching intake/interview-app/build_questions_payload.py's DEFAULT_CURATED as closely as this file's own question set allows -- its 12th id, image_links, is an app-only UI capture question with no canonical counterpart here) plus the always-on presentation_type router and the presentation_type-gated required fields (recipient_name / extracted_substance / signature_source) that a build cannot run without. IN-DEPTH asks every one of the questions below, unchanged. No question was deleted or renamed to build this fork: every non-curated question below simply gained one more gate -- an `ask_if` {question_id:'standard_mode', equals:'IN-DEPTH'} on questions that had no existing ask_if, or a `conditional_on` {id:'standard_mode', equals:'IN-DEPTH'} on questions that already used ask_if for something else (both blocks are evaluated independently by should_ask() in deck-intake-driver.py -- already-true behavior, not new code).",
  "legacy_field_mapping": {
   "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
   "from_scratch": {
@@ -92,7 +92,8 @@
   "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
   "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
   "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
-  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON"
+  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+  "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE"
  },
  "session_budget": {
   "max_turns": 44,
@@ -185,6 +186,35 @@
    "resolverHint": "Ask only when presentation_type=='signature'. Default if unanswered: from_scratch. On 'existing_content': the driver asks the SAME content_personal-vs-content_general follow-up implicitly via the normal signature 8-Questions flow; until that is known, creation_mode is set to content_general (the safer default -- never left unset per AF-MODE-UNSET) and corrected once the signature intake clarifies the audience. On 'from_scratch': creation_mode stays from_scratch (the signature default)."
   },
   {
+   "id": "standard_mode",
+   "section": "deck-intake",
+   "order": 0.6,
+   "prompt": "Quick or in-depth? QUICK asks the 12 essential questions and gets you moving fast. IN-DEPTH asks the full expanded interview for maximum precision and control over every detail.",
+   "help": "Mirrors the signature flow's choice-first QUICK vs IN-DEPTH picker (deck-intake-driver.py sp_mode) -- same vocabulary, same idea, applied to the standard (non-signature) track. QUICK leaves every non-curated question gated out for this run; IN-DEPTH asks everything, in the same order, exactly as before this field existed. Default if unanswered: QUICK -- the lean 12-question path is now the standard default this project exists to make the norm.",
+   "kind": "enum",
+   "storeOn": "STANDARD_MODE",
+   "allowed_values": [
+    "QUICK",
+    "IN-DEPTH"
+   ],
+   "value_labels": {
+    "QUICK": "QUICK -- 12 essential questions",
+    "IN-DEPTH": "IN-DEPTH -- full expanded interview (all questions)"
+   },
+   "required": true,
+   "block_gate": false,
+   "default": "QUICK",
+   "conditional_on": {
+    "id": "presentation_type",
+    "in": [
+     "from_scratch",
+     "content_personal",
+     "content_general"
+    ]
+   },
+   "resolverHint": "Ask only for the three non-signature presentation_type values -- signature already has its own separate choice-first QUICK vs IN-DEPTH picker (sp_mode) inside the --signature code path and never reaches this question. Default if unanswered: QUICK. On QUICK, every question below whose ask_if/conditional_on references standard_mode=='IN-DEPTH' auto-skips (never surfaced, never blocks --complete -- same auto-skip contract as every other conditional in this file). On IN-DEPTH, those gates all pass and the full interview runs exactly as it did before this field existed."
+  },
+  {
    "id": "representation_mix",
    "section": "deck-intake",
    "order": 1,
@@ -194,7 +224,11 @@
    "storeOn": "REPRESENTATION_MIX",
    "required": true,
    "block_gate": false,
-   "resolverHint": "If owner cannot or will not answer: set representation_uncaptured:true, flag the operator, and proceed. A racial or gender default is NEVER invented. The deck generates with NO PEOPLE."
+   "resolverHint": "If owner cannot or will not answer: set representation_uncaptured:true, flag the operator, and proceed. A racial or gender default is NEVER invented. The deck generates with NO PEOPLE.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "audience_composition_note",
@@ -206,7 +240,11 @@
    "storeOn": "AUDIENCE_COMPOSITION_NOTE",
    "required": true,
    "block_gate": false,
-   "resolverHint": "Derive from representation_mix if the owner just answered it and the answer is unambiguous. Ask fresh if representation_mix was flagged uncaptured."
+   "resolverHint": "Derive from representation_mix if the owner just answered it and the answer is unambiguous. Ask fresh if representation_mix was flagged uncaptured.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "grounded_content",
@@ -218,7 +256,11 @@
    "storeOn": "GROUNDED_CONTENT",
    "required": true,
    "block_gate": true,
-   "resolverHint": "If the owner does not have a name yet: capture whatever they describe and mark grounded_content_provisional:true. The build CANNOT start with a blank GROUNDED_CONTENT; block handoff and ask once more if still empty at lock."
+   "resolverHint": "If the owner does not have a name yet: capture whatever they describe and mark grounded_content_provisional:true. The build CANNOT start with a blank GROUNDED_CONTENT; block handoff and ask once more if still empty at lock.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "visual_mix",
@@ -231,7 +273,11 @@
    "required": true,
    "block_gate": false,
    "default": "mix",
-   "resolverHint": "Default if owner says 'no preference' or does not answer: 'mix'. Mark visual_mix_defaulted:true."
+   "resolverHint": "Default if owner says 'no preference' or does not answer: 'mix'. Mark visual_mix_defaulted:true.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "dark_ok",
@@ -244,7 +290,11 @@
    "required": true,
    "block_gate": false,
    "default": false,
-   "resolverHint": "Default if owner does not answer: false. Only set to true on EXPLICIT owner request."
+   "resolverHint": "Default if owner does not answer: false. Only set to true on EXPLICIT owner request.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "hook_seed",
@@ -256,7 +306,11 @@
    "storeOn": "HOOK_SEED",
    "required": true,
    "block_gate": false,
-   "resolverHint": "If none: mark hook_seed_missing:true. The Hook Strategist derives one from the offer at build time; note this in brief.json so the Director triggers the Hook Lab."
+   "resolverHint": "If none: mark hook_seed_missing:true. The Hook Strategist derives one from the offer at build time; note this in brief.json so the Director triggers the Hook Lab.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "deliverable_set",
@@ -269,7 +323,11 @@
    "required": true,
    "block_gate": false,
    "default": "deck-only",
-   "resolverHint": "Default if owner says 'just the deck' or 'no preference': deck-only. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21 (audio) based on this value."
+   "resolverHint": "Default if owner says 'just the deck' or 'no preference': deck-only. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21 (audio) based on this value.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_teleprompter",
@@ -290,7 +348,11 @@
    "storeOn": "WANT_TELEPROMPTER",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote."
+   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "teleprompter_declined_reason",
@@ -306,7 +368,11 @@
     "id": "want_teleprompter",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_teleprompter is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+   "resolverHint": "Auto-skipped whenever want_teleprompter is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_speech_script",
@@ -327,7 +393,11 @@
    "storeOn": "WANT_SPEECH_SCRIPT",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "speech_script_declined_reason",
@@ -343,7 +413,11 @@
     "id": "want_speech_script",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_speech_script is 'yes'. When asked, it BLOCKS --complete."
+   "resolverHint": "Auto-skipped whenever want_speech_script is 'yes'. When asked, it BLOCKS --complete.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_ghl_upload",
@@ -364,7 +438,11 @@
    "storeOn": "WANT_GHL_UPLOAD",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "ghl_upload_declined_reason",
@@ -380,7 +458,11 @@
     "id": "want_ghl_upload",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_ghl_upload is 'yes'. When asked, it BLOCKS --complete."
+   "resolverHint": "Auto-skipped whenever want_ghl_upload is 'yes'. When asked, it BLOCKS --complete.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_audio_deliverable",
@@ -401,7 +483,31 @@
    "storeOn": "WANT_AUDIO_DELIVERABLE",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
+  },
+  {
+   "id": "audio_declined_reason",
+   "section": "deck-intake",
+   "order": 7.41,
+   "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+   "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "kind": "text",
+   "storeOn": "AUDIO_DECLINED_REASON",
+   "required": true,
+   "block_gate": true,
+   "conditional_on": {
+    "id": "want_audio_deliverable",
+    "equals": "no"
+   },
+   "resolverHint": "Auto-skipped whenever want_audio_deliverable is 'yes'. When asked, it BLOCKS --complete.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "speech_speed_preference",
@@ -423,22 +529,6 @@
    "default": "default",
    "storeOn": "intake.json",
    "key": "speech_speed_preference"
-  },
-  {
-   "id": "audio_declined_reason",
-   "section": "deck-intake",
-   "order": 7.41,
-   "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "AUDIO_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_audio_deliverable",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_audio_deliverable is 'yes'. When asked, it BLOCKS --complete."
   },
   {
    "id": "want_sales_checkout",
@@ -475,7 +565,11 @@
     "id": "want_sales_checkout",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_sales_checkout is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+   "resolverHint": "Auto-skipped whenever want_sales_checkout is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_vsl_page",
@@ -512,7 +606,11 @@
     "id": "want_vsl_page",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+   "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "want_audio_demo",
@@ -529,7 +627,11 @@
     "question_id": "deliverable_set",
     "contains": "audio"
    },
-   "resolverHint": "Ask only if DELIVERABLE_SET includes '+audio'. If '+audio' but no voice named: set WANT_AUDIO_DEMO:true and audio_voice_unset:true. Default when not '+audio': WANT_AUDIO_DEMO:false."
+   "resolverHint": "Ask only if DELIVERABLE_SET includes '+audio'. If '+audio' but no voice named: set WANT_AUDIO_DEMO:true and audio_voice_unset:true. Default when not '+audio': WANT_AUDIO_DEMO:false.",
+   "conditional_on": {
+    "id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "target_wpm",
@@ -549,7 +651,11 @@
    },
    "block_gate": false,
    "default": 140,
-   "resolverHint": "Ask only if DELIVERABLE_SET includes a speech. Default if owner says 'you decide' or not asked: 140. Mark target_wpm_defaulted:true when defaulted."
+   "resolverHint": "Ask only if DELIVERABLE_SET includes a speech. Default if owner says 'you decide' or not asked: 140. Mark target_wpm_defaulted:true when defaulted.",
+   "conditional_on": {
+    "id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "style_source",
@@ -562,7 +668,11 @@
    "required": false,
    "block_gate": false,
    "default": "create-new",
-   "resolverHint": "On match-existing or analyze-reference: the Brand Steward submits the reference to the Graphics Design Intelligence Unit Style Analyst for a PPT-tier style card. On create-new: Brand Steward builds STYLE BLOCK fresh. Default when unanswered: create-new with style_source_defaulted:true."
+   "resolverHint": "On match-existing or analyze-reference: the Brand Steward submits the reference to the Graphics Design Intelligence Unit Style Analyst for a PPT-tier style card. On create-new: Brand Steward builds STYLE BLOCK fresh. Default when unanswered: create-new with style_source_defaulted:true.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "goal",
@@ -574,7 +684,11 @@
    "storeOn": "GOAL",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). No default; hand back to owner if unclear."
+   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). No default; hand back to owner if unclear.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "cta_action",
@@ -598,7 +712,11 @@
    "storeOn": "EVENT_PRICE",
    "required": true,
    "block_gate": false,
-   "resolverHint": "Ask once; NEVER inferred from FINAL_PRICE. A free event does not imply a free offer."
+   "resolverHint": "Ask once; NEVER inferred from FINAL_PRICE. A free event does not imply a free offer.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "access_free",
@@ -610,7 +728,11 @@
    "storeOn": "ACCESS_FREE",
    "required": true,
    "block_gate": false,
-   "resolverHint": "May be derived from event_price without re-asking when unambiguous."
+   "resolverHint": "May be derived from event_price without re-asking when unambiguous.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "target_feeling",
@@ -622,7 +744,11 @@
    "storeOn": "TARGET_FEELING",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1)."
+   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "tone",
@@ -658,7 +784,11 @@
    "storeOn": "OFFER_STACK",
    "required": false,
    "block_gate": false,
-   "resolverHint": "Optional detail beyond offer_name; skip if the owner already gave the full stack when naming the offer."
+   "resolverHint": "Optional detail beyond offer_name; skip if the owner already gave the full stack when naming the offer.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "price_mode",
@@ -674,7 +804,11 @@
    ],
    "required": true,
    "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). Drives whether price_anchor is asked next."
+   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). Drives whether price_anchor is asked next.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "final_price",
@@ -698,7 +832,11 @@
    "storeOn": "DURATION_MIN",
    "required": true,
    "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1)."
+   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "audience",
@@ -732,7 +870,11 @@
    "storeOn": "LOGO_ON_SLIDES",
    "required": false,
    "block_gate": false,
-   "default": false
+   "default": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "price_anchor",
@@ -748,7 +890,11 @@
     "question_id": "price_mode",
     "equals": "drop"
    },
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation when PRICE_MODE=drop; auto-skipped on 'straight'."
+   "resolverHint": "Mandatory per director-of-presentations.md brief validation when PRICE_MODE=drop; auto-skipped on 'straight'.",
+   "conditional_on": {
+    "id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "payment_plan",
@@ -758,7 +904,11 @@
    "kind": "text",
    "storeOn": "PAYMENT_PLAN",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "vip_tier",
@@ -769,7 +919,11 @@
    "storeOn": "VIP_TIER",
    "required": false,
    "block_gate": false,
-   "default": false
+   "default": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "vip_price",
@@ -783,6 +937,10 @@
    "ask_if": {
     "question_id": "vip_tier",
     "truthy": true
+   },
+   "conditional_on": {
+    "id": "standard_mode",
+    "equals": "IN-DEPTH"
    }
   },
   {
@@ -798,6 +956,10 @@
    "ask_if": {
     "question_id": "vip_tier",
     "truthy": true
+   },
+   "conditional_on": {
+    "id": "standard_mode",
+    "equals": "IN-DEPTH"
    }
   },
   {
@@ -808,7 +970,11 @@
    "kind": "text",
    "storeOn": "PRIMARY_OBJECTION",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "proof_assets",
@@ -818,7 +984,11 @@
    "kind": "text",
    "storeOn": "PROOF_ASSETS",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "style_prefs",
@@ -828,7 +998,11 @@
    "kind": "text",
    "storeOn": "STYLE_PREFS",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "transformation_promise",
@@ -850,7 +1024,11 @@
    "storeOn": "SLIDE_COUNT",
    "required": false,
    "block_gate": false,
-   "resolverHint": "When the client states an explicit count, it is honored EXACTLY -- never floored, capped, or changed."
+   "resolverHint": "When the client states an explicit count, it is honored EXACTLY -- never floored, capped, or changed.",
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "delivery_destinations",
@@ -860,7 +1038,11 @@
    "kind": "text",
    "storeOn": "DELIVERY_DESTINATIONS",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "deadline",
@@ -870,7 +1052,11 @@
    "kind": "text",
    "storeOn": "DEADLINE",
    "required": false,
-   "block_gate": false
+   "block_gate": false,
+   "ask_if": {
+    "question_id": "standard_mode",
+    "equals": "IN-DEPTH"
+   }
   },
   {
    "id": "client_notes",
