@@ -30,6 +30,7 @@ set -euo pipefail
 
 HOST="${N8N_HOST:-https://main.blackceoautomations.com}"
 TABLE_ID="EFPgipZtKatC5xPw"   # rr_agent_map (recreated 2026-08-13 after the original table was deleted)
+export RR_AGENT_MAP_TABLE_ID="$TABLE_ID"
 DRY_RUN=0
 ROSTER_FILE=""
 while [ "${1:-}" = "--dry-run" ]; do DRY_RUN=1; shift || true; done
@@ -89,13 +90,14 @@ echo "seed-rr-agent-map: ANNOUNCING WRITE — $N rows into rr_agent_map (local_a
 python3 -c '
 import json, subprocess, os, sys
 key = os.environ["N8N_API_KEY"]; host = os.environ.get("N8N_HOST", "https://main.blackceoautomations.com")
+table = os.environ["RR_AGENT_MAP_TABLE_ID"]
 rows = json.load(open("/tmp/rr-seed-payload.json"))["data"]
 ok = 0
 for i in range(0, len(rows), 10):
     chunk = {"data": rows[i:i+10]}
     p = subprocess.run(["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
         "-X", "POST", "-H", f"X-N8N-API-KEY: {key}", "-H", "Content-Type: application/json",
-        "--data", json.dumps(chunk), f"{host}/api/v1/data-tables/wHS7NxgnWjpox48k/rows"],
+        "--data", json.dumps(chunk), f"{host}/api/v1/data-tables/{table}/rows"],
         capture_output=True, text=True)
     code = p.stdout.strip()
     if code.startswith("2"):
