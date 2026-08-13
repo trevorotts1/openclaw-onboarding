@@ -41,6 +41,11 @@ USAGE:
     python3 test_preflight.py            # FIRST — produces working/af-coverage.json
     python3 gate_integrity_check.py      # then assert integrity
     python3 gate_integrity_check.py --json
+    python3 gate_integrity_check.py --purity
+        GUARD B (Trust Boundary Increment 1, additive/non-breaking): AST-asserts
+        that presentation_job.runfacts.verify_owner_skip / verify_qc — the two
+        gates migrated onto the sealed RunFacts record so far — contain no
+        direct file/env I/O. Exit 0 = confirmed pure; 1 = a violation found.
 """
 
 import ast
@@ -188,6 +193,120 @@ def run_check(manifest, defined_names, ref_counts, af_strings, covered):
     return problems
 
 
+# ===========================================================================
+# GUARD B: RUNFACTS-PURE GATES MUST BE ENFORCED BY AN AST LINT, NOT CONVENTION
+# ===========================================================================
+# TRUST BOUNDARY, INCREMENT 1 (see presentation_job/runfacts.py). The design
+# calls for every migrated gate to be a pure function (RunFacts) -> Verdict
+# that CANNOT open a file, "enforced by an AST lint in the existing
+# gate_integrity_check.py rather than by convention". This increment migrates
+# a small set of consumers (owner_skip + P-TYPO-QC) onto two pure verdict
+# functions in presentation_job/runfacts.py; this guard proves — by parsing
+# the source, not by trusting a docstring — that those two functions contain
+# no direct file I/O. It is intentionally scoped to the functions THIS
+# increment claims are pure; asserting purity for every _chk_* gate is future
+# work (most of them still read files directly by design — they are shadow-
+# compared against RunFacts, not yet migrated onto it).
+#
+# Additive and non-breaking: this only runs under --purity, so it changes
+# nothing about the default `python3 gate_integrity_check.py` invocation any
+# existing CI workflow already depends on (Guard A keeps its own exit code).
+# ===========================================================================
+
+RUNFACTS_PATH = HERE / "presentation_job" / "runfacts.py"
+
+# A function claiming purity may not call any of these (by attribute name OR
+# bare name) — every one of them touches the filesystem or environment.
+_BANNED_ATTRS = {
+    "read_text", "read_bytes", "write_text", "write_bytes", "exists", "is_file",
+    "is_dir", "glob", "rglob", "iterdir", "stat", "lstat", "listdir", "scandir",
+    "walk", "chmod", "replace", "unlink", "mkdir", "rename", "environ",
+}
+_BANNED_NAMES = {"open"}
+
+# Functions in presentation_job/runfacts.py this increment asserts are pure:
+# (RunFacts, ...) -> (Verdict, str), reading ONLY already-sealed fields off
+# the RunFacts object passed in — never touching disk themselves.
+PURITY_ASSERTED_FUNCTIONS = ("verify_owner_skip", "verify_qc")
+
+
+def _function_bodies(source: str, names) -> dict:
+    """Return {name: ast.FunctionDef} for every top-level (or nested, doesn't
+    matter — ast.walk) function whose name is in `names`, parsed from source."""
+    tree = ast.parse(source)
+    found = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in names:
+            found[node.name] = node
+    return found
+
+
+def _banned_calls_in(fn_node: ast.FunctionDef) -> list:
+    """Return a list of (lineno, description) for every banned call found
+    anywhere inside fn_node's body (nested functions/comprehensions included —
+    ast.walk descends into everything under this node)."""
+    hits = []
+    for node in ast.walk(fn_node):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Attribute) and f.attr in _BANNED_ATTRS:
+                hits.append((node.lineno, f"disallowed call .{f.attr}(...) — direct I/O "
+                                          f"inside a function asserted RunFacts-pure"))
+            elif isinstance(f, ast.Name) and f.id in _BANNED_NAMES:
+                hits.append((node.lineno, f"disallowed call {f.id}(...) — direct I/O "
+                                          f"inside a function asserted RunFacts-pure"))
+        elif isinstance(node, ast.Attribute) and node.attr == "environ":
+            hits.append((node.lineno, "disallowed access to os.environ inside a function "
+                                      "asserted RunFacts-pure"))
+    return hits
+
+
+def run_purity_check() -> list:
+    """Guard B. Returns a list of {"function", "detail"} problems; empty means
+    every function in PURITY_ASSERTED_FUNCTIONS is free of the banned I/O
+    calls, PROVEN by parsing runfacts.py, not by reading its docstring."""
+    if not RUNFACTS_PATH.exists():
+        _fatal(f"presentation_job/runfacts.py not found (looked at {RUNFACTS_PATH}) "
+               f"— Guard B cannot run.")
+    source = RUNFACTS_PATH.read_text()
+    try:
+        bodies = _function_bodies(source, set(PURITY_ASSERTED_FUNCTIONS))
+    except SyntaxError as exc:
+        _fatal(f"presentation_job/runfacts.py does not parse: {exc}")
+
+    problems = []
+    for name in PURITY_ASSERTED_FUNCTIONS:
+        node = bodies.get(name)
+        if node is None:
+            problems.append({"function": name,
+                              "detail": f"asserted RunFacts-pure but not FOUND in "
+                                        f"{RUNFACTS_PATH.name} — update "
+                                        f"PURITY_ASSERTED_FUNCTIONS or restore the function."})
+            continue
+        for lineno, desc in _banned_calls_in(node):
+            problems.append({"function": name,
+                              "detail": f"{RUNFACTS_PATH.name}:{lineno}: {desc}"})
+    return problems
+
+
+def main_purity() -> int:
+    problems = run_purity_check()
+    if not problems:
+        print("=== gate_integrity_check --purity: RUNFACTS-PURE GATES CONFIRMED (Guard B) ===")
+        print(f"Asserted-pure functions checked: {', '.join(PURITY_ASSERTED_FUNCTIONS)}")
+        print("OK — none of them contain a direct file/env I/O call. Purity is enforced by "
+              "parsing the source (AST), not by convention or docstring claim.")
+        return 0
+    print("=== gate_integrity_check --purity: PURITY VIOLATION (Guard B) ===", file=sys.stderr)
+    for p in problems:
+        print(f"  {p['function']}: {p['detail']}", file=sys.stderr)
+    print(f"\n{len(problems)} violation(s). A function listed in "
+          "PURITY_ASSERTED_FUNCTIONS must not perform direct I/O — either fix the "
+          "function or remove it from the asserted-pure list (and from whatever "
+          "calls it expecting purity).", file=sys.stderr)
+    return 1
+
+
 def main():
     as_json = "--json" in sys.argv[1:]
     manifest = load_manifest()
@@ -236,4 +355,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--purity" in sys.argv[1:]:
+        sys.exit(main_purity())
     main()
