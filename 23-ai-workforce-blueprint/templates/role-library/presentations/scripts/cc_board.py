@@ -79,6 +79,15 @@ succeeded:
 PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
       -> task_id str | None
+  ingest_child_task(run_dir, parent_task_id, phase_id, title, description,
+      priority="normal") -> task_id str | None
+      # Option B: one child card per phase, nested under parent_task_id.
+      # Idempotency key sha256(parent_task_id + ':' + phase_id). Call site
+      # (BoardMirror.child_report in presentation_job/board.py) checks
+      # read_child_task_id()/state FIRST so a phase reporting progress twice
+      # never reaches this function twice.
+  read_child_task_id(run_dir, phase_id) -> task_id str | None
+  stamp_child_task_id(run_dir, phase_id, task_id) -> bool
   patch_phase(run_dir, task_id, phase_id, status, note="") -> bool
       # task-level STATUS change. The producer's TERMINAL close is status='review'
       # (never a self-closed 'done'); on 'review'/'done' it auto-attaches the cert
@@ -641,6 +650,136 @@ def ingest_deck_task(
     _log(
         f"ingest POST non-OK (HTTP {status}): {body}; "
         "run continues ungrouped. cc_register_attempted=True already logged."
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# CHILD CARDS (Option B) — one task card per phase, nested under the deck's
+# parent task via the `parent_task_id` field on the SAME /api/tasks/ingest
+# endpoint ingest_deck_task uses above. Field name and idempotency-key
+# derivation (sha256(parent_task_id + ':' + stage)) match the established
+# parent/child convention already live in master-orchestrator-dept/SOP-07
+# (Full-Funnel epic + staged child cards) -- this is the second producer to
+# mint children under that same contract, not a new one.
+#
+# The phase_id -> child_task_id mapping is persisted into
+# process_manifest.json's cc_child_task_ids map the same way the single
+# parent task_id is persisted via stamp_task_id/cc_task_id, so a resumed run
+# recovers each phase's card instead of re-minting it. BoardMirror.child_report
+# (board.py) is the idempotent caller: it checks this mapping (plus its
+# state.json mirror) BEFORE ever invoking ingest_child_task, so a phase
+# reporting progress twice never reaches this function twice.
+# ---------------------------------------------------------------------------
+_CHILD_MANIFEST_KEY = "cc_child_task_ids"
+
+
+def read_child_task_id(run_dir, phase_id: str) -> Optional[str]:
+    """process_manifest.json half of the phase_id -> child_task_id dual
+    recovery (the state.json half is BoardMirror's ["board"]["children"] map,
+    read by the caller directly -- mirrors task_id_anywhere's two-source
+    check for the parent). Returns None on any absent/unreadable manifest or
+    missing entry. Never raises."""
+    children = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    if isinstance(children, dict):
+        val = children.get(phase_id)
+        if val:
+            return str(val)
+    return None
+
+
+def stamp_child_task_id(run_dir, phase_id: str, task_id: str) -> bool:
+    """Merge {phase_id: task_id} into process_manifest.json's cc_child_task_ids
+    map without disturbing any other phase already recorded there or any other
+    manifest field. Atomic replace (via _merge_manifest). Returns True on
+    success. Never raises."""
+    if not task_id or not phase_id or run_dir is None:
+        return False
+    existing = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    children = dict(existing) if isinstance(existing, dict) else {}
+    children[phase_id] = task_id
+    ok = _merge_manifest(run_dir, {_CHILD_MANIFEST_KEY: children})
+    if not ok:
+        _log(f"stamp_child_task_id failed for phase={phase_id} task_id={task_id}.")
+    return ok
+
+
+def ingest_child_task(
+    run_dir,
+    parent_task_id: str,
+    phase_id: str,
+    title: str,
+    description: str,
+    priority: str = "normal",
+    env: Optional[dict] = None,
+) -> Optional[str]:
+    """Ingest (or idempotently re-fetch) a per-phase CHILD task card, nested
+    under `parent_task_id` via the `parent_task_id` field on the ingest
+    payload.
+
+    Idempotency key is sha256(parent_task_id + ':' + phase_id) -- deterministic
+    per (deck, phase), so a retried POST for the same phase re-fetches the
+    same server-side row instead of minting a duplicate. That server-side
+    guard is the SECOND line of defense; the FIRST is the caller
+    (BoardMirror.child_report) checking read_child_task_id()/state and never
+    calling this function at all once a child_task_id is already known.
+
+    Returns the child task_id string on success, else None. FAIL-SOFT — same
+    contract as ingest_deck_task: never raises, and a None return never
+    blocks the deck build. No parent_task_id => nothing to nest under => a
+    clean no-op (there is no cc_register_attempted-style hard gate on a child
+    card the way there is on the parent)."""
+    if run_dir is None or not parent_task_id or not phase_id:
+        return None
+
+    cfg = board_config(env)
+    if cfg is None:
+        _log(
+            "COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — CC board disabled "
+            f"(no-op); child card for phase {phase_id} not created."
+        )
+        return None
+
+    source_ref = f"{parent_task_id}:{phase_id}"
+    idempotency_key = hashlib.sha256(source_ref.encode("utf-8")).hexdigest()
+
+    payload: dict = {
+        "title": title,
+        "description": description,
+        "priority": priority,
+        "source": "build_deck_phase",
+        "source_ref": source_ref,
+        "department_slug": _DEPARTMENT_SLUG,
+        "persona": _PERSONA,
+        "external_session_id": source_ref,
+        "parent_task_id": parent_task_id,
+        "stage": phase_id,
+        "idempotency_key": idempotency_key,
+    }
+
+    url = f"{cfg['base_url']}/api/tasks/ingest"
+    try:
+        status, body = _request("POST", url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"child ingest POST failed for phase {phase_id} "
+            f"({type(exc).__name__}: {exc}); run continues without a child card."
+        )
+        return None
+
+    if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
+        task_id = str(body["task_id"])
+        deduped = body.get("deduped", False)
+        _log(
+            f"child task {'deduped (reused)' if deduped else 'created'} for "
+            f"phase {phase_id}: task_id={task_id} parent_task_id={parent_task_id}"
+        )
+        stamp_child_task_id(run_dir, phase_id, task_id)
+        return task_id
+
+    _log(
+        f"child ingest POST non-OK for phase {phase_id} (HTTP {status}): {body}; "
+        "run continues without a child card."
     )
     return None
 

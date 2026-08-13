@@ -55,6 +55,15 @@ class Engine:
             self.report.event("warn", "board init failed — running without board mirror")
             self.board = None
 
+    # -- Option B child cards -----------------------------------------------
+    def _child_card_meta(self, phase: Phase) -> Tuple[str, str]:
+        """(title, description) for phase.id's Command Center child card."""
+        return (
+            f"{phase.id} — {phase.owning_role}",
+            f"Phase {phase.id} of presentation build {self.run_dir.name}, "
+            f"owned by {phase.owning_role}.",
+        )
+
     # -- state helpers ----------------------------------------------------
     def _phase_state(self, pid: str) -> Dict[str, Any]:
         for ps in self.state.setdefault("phases", []):
@@ -237,6 +246,13 @@ class Engine:
             self.report.to_requester("progress", done_msg)
             if self.board:
                 self.board.phase_progress(phase.id, done_msg)
+                # Option B: the phase's verifier has already passed by this point
+                # (a failing verifier returns via _block() above, never reaching
+                # here) -- so this phase's FIRST progress report both mints its
+                # child card (idempotent, see BoardMirror.child_report) and closes
+                # it 'done' in the same call.
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description, "done", done_msg)
         return rc
 
     def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
@@ -410,6 +426,12 @@ class Engine:
         self.store.save(self.state)
         if self.board:
             self.board.mark_blocked(phase.id, reason)
+            # Option B: a gate failure on a phase that never reached its own
+            # progress report (the success-path child_report call above) still
+            # needs a child card -- child_report mints one on demand (idempotent,
+            # same as the success path) and closes it 'blocked' with the reason.
+            title, description = self._child_card_meta(phase)
+            self.board.child_report(phase.id, title, description, "blocked", reason)
         safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
                    "-- nothing you sent us is lost."
         if not lost:
