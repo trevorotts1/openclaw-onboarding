@@ -13,6 +13,12 @@
 #                 aliases + ~/clawd/fleet-prover/fleet-roster.json when present).
 #   --dry-run     print what would be written, write nothing.
 #
+# NOTE: the n8n data-table API exposes row POST (insert) but no row DELETE
+# (405), so this script is INSERT-ONLY and a rerun may add duplicate rows for
+# the same slug. That is benign for RR-02-coach (lookup is limit-1) and the
+# verify step below asserts every slug is mapped at least once, not exact
+# counts. De-duping a table requires the n8n UI or a workflow.
+#
 # Requirements: N8N_API_KEY + N8N_HOST in the environment (operator box only —
 # client boxes do not carry the n8n key and must NOT run this; the script exits
 # cleanly if the key is absent). Roster slugs only — no client names live here.
@@ -23,7 +29,7 @@
 set -euo pipefail
 
 HOST="${N8N_HOST:-https://main.blackceoautomations.com}"
-TABLE_ID="wHS7NxgnWjpox48k"
+TABLE_ID="EFPgipZtKatC5xPw"   # rr_agent_map (recreated 2026-08-13 after the original table was deleted)
 DRY_RUN=0
 ROSTER_FILE=""
 while [ "${1:-}" = "--dry-run" ]; do DRY_RUN=1; shift || true; done
@@ -93,10 +99,11 @@ for i in range(0, len(rows), 10):
         capture_output=True, text=True)
     code = p.stdout.strip()
     if code.startswith("2"):
-        ok += len(chunk["data"]); print(f"  batch {i//10}: HTTP {code} ({len(chunk['data'])} rows)")
+        n = len(chunk["data"])
+        ok += n; print("  batch %d: HTTP %s (%d rows)" % (i//10, code, n))
     else:
-        print(f"  batch {i//10}: HTTP {code} FAILED — {p.stderr[:200]}", file=sys.stderr)
-print(f"seed-rr-agent-map: wrote {ok}/{len(rows)} rows")
+        print("  batch %d: HTTP %s FAILED — %s" % (i//10, code, p.stderr[:200]), file=sys.stderr)
+print("seed-rr-agent-map: wrote %d/%d rows" % (ok, len(rows)))
 sys.exit(0 if ok == len(rows) else 1)
 '
 RC=$?
@@ -111,9 +118,10 @@ d = json.load(open("/tmp/rr-seed-after.json"))
 rows = d.get("rows", d.get("data", []))
 if isinstance(rows, dict): rows = [rows]
 mapped = {r.get("box_slug"): r.get("local_agent_id") for r in rows}
-missing = sorted(s for s in want if s not in mapped)
+seen = set(r.get("box_slug") for r in rows)
+missing = sorted(s for s in want if s not in seen)
 wrong = sorted(s for s in want if mapped.get(s) != "main")
-print(f"seed-rr-agent-map: VERIFY — table has {len(rows)} rows; missing={len(missing)} non-main={len(wrong)}")
+print(f"seed-rr-agent-map: VERIFY — table has {len(rows)} rows ({len(seen)} unique slugs); missing={len(missing)} non-main={len(wrong)}")
 if missing: print("  missing:", ", ".join(missing))
 if wrong: print("  non-main:", ", ".join(wrong))
 sys.exit(0 if not missing and not wrong else 1)
