@@ -8,6 +8,16 @@ there is exactly one place where the engine is launched.
 Root cause prevented: The engine (presentation_job.py + 18 modules, 552 tests)
 has zero production callers (CURRENT-STATE Section B breakpoint 5). The intake
 cron, canonical entry, and CC all stop short. This module closes that gap.
+
+CAPACITY GATE (unit u07)
+------------------------
+Dispatch now measures before it launches. capacity.probe() detects THIS client's
+provider and plan; if it cannot produce a dispatchable number -- the plan is
+undeclared (PARKED behind the one-time interview question), or a declared
+capacity_override.json is unusable (FAILED) -- dispatch REFUSES with
+AF-CAPACITY-UNMEASURED and a non-zero exit, and no engine process is spawned.
+A capacity probe whose result nothing acts on is an advisory print, not a gate;
+this is the acting-on.
 """
 
 from __future__ import annotations
@@ -19,7 +29,21 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Dispatch return sentinels and exit codes
+# ---------------------------------------------------------------------------
+#: dispatch() already returns -1 (failure), -2 (already running) and -3 (already
+#: DONE). -4 joins that family: capacity could not be measured, so NOTHING was
+#: spawned. Callers that only test `> 0` keep working unchanged.
+DISPATCH_CAPACITY_REFUSED = -4
+
+#: CLI exit code for a capacity refusal (== state.EXIT_GATE_BLOCKED).
+EXIT_CAPACITY_UNMEASURED = 3
+
+CAPACITY_AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +188,49 @@ def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
 
 
 # ---------------------------------------------------------------------------
+# Capacity gate -- measured before anything is launched
+# ---------------------------------------------------------------------------
+def capacity_gate() -> Tuple[Optional[int], dict]:
+    """Probe THIS client's capacity. Returns (available, probe_result).
+
+    `available` is None when the probe could not produce a number, which is the
+    dispatch path's refusal condition. An import failure of the capacity module
+    is itself an unmeasured capacity -- it is never treated as "no limit"."""
+    try:
+        try:
+            from . import capacity  # package-relative (python3 -m presentation_job)
+        except ImportError:
+            import capacity  # direct file run from presentation_job/
+        result = capacity.probe()
+        return capacity.available_or_none(result), result
+    except Exception as exc:  # noqa: BLE001 -- an unreadable probe is UNMEASURED
+        return None, {
+            "status": "FAILED",
+            "available": None,
+            "notes": [f"capacity probe could not run: {exc.__class__.__name__}: {exc}"],
+        }
+
+
+def _refuse_unmeasured_capacity(result: dict, run_path: Path) -> int:
+    """Emit the autofail and refuse. No engine process has been created."""
+    try:
+        try:
+            from . import capacity
+        except ImportError:
+            import capacity
+        payload = capacity.autofail_payload(result)
+        detail = capacity.refusal_message(result)
+    except Exception:  # noqa: BLE001 -- refuse loudly even if capacity.py is gone
+        payload = {"code": CAPACITY_AUTOFAIL_CODE, "detail": str(result)}
+        detail = str(result)
+    payload["run_dir"] = str(run_path)
+    print(f"launcher: REFUSING to dispatch {run_path} -- {CAPACITY_AUTOFAIL_CODE}: "
+          f"{detail}", file=sys.stderr)
+    print(json.dumps(payload, indent=2), file=sys.stderr)
+    return DISPATCH_CAPACITY_REFUSED
+
+
+# ---------------------------------------------------------------------------
 # Dispatch -- the single entry point all callers use
 # ---------------------------------------------------------------------------
 def dispatch(
@@ -188,7 +255,8 @@ def dispatch(
                     If False, run synchronously (for testing).
 
     Returns:
-        PID on success (int > 0), -1 on failure.
+        PID on success (int > 0), -1 on failure, -4 when the capacity gate
+        refused (AF-CAPACITY-UNMEASURED, nothing spawned).
         The function returns immediately when background=True.
     """
     scripts = resolve_scripts_dir()
@@ -198,6 +266,16 @@ def dispatch(
         return -1
 
     run_path = Path(run_dir).expanduser().resolve()
+
+    # THE GATE. Measure before launching -- before argv is built, before any
+    # process exists. A run that cannot be sized is a run that does not start.
+    available, capacity_result = capacity_gate()
+    if available is None:
+        return _refuse_unmeasured_capacity(capacity_result, run_path)
+    print(f"launcher: capacity measured -- {available} concurrent agents available "
+          f"(provider {capacity_result.get('provider')}, plan "
+          f"{capacity_result.get('plan')}, source "
+          f"{capacity_result.get('detection_source')})", flush=True)
 
     argv = [
         sys.executable or "python3",
@@ -393,18 +471,23 @@ def main(argv: Optional[list] = None) -> int:
         return 0 if ok else 1
 
     if args.foreground:
-        # Sync mode: dispatch returns the engine's own exit code (0 == ok).
+        # Sync mode: dispatch returns the engine's own exit code (0 == ok), or a
+        # negative sentinel when the launcher itself refused before spawning.
         rc = dispatch_resume(str(run_path), background=False) if args.resume else \
             dispatch_new(str(run_path),
                          client=args.client or "operator",
                          deck_type=args.deck_type or "standard",
                          background=False)
+        if rc == DISPATCH_CAPACITY_REFUSED:
+            return EXIT_CAPACITY_UNMEASURED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True) if args.resume else \
         dispatch_new(str(run_path),
                      client=args.client or "operator",
                      deck_type=args.deck_type or "standard",
                      background=True)
+    if pid == DISPATCH_CAPACITY_REFUSED:
+        return EXIT_CAPACITY_UNMEASURED
     return 0 if pid > 0 else 1
 
 

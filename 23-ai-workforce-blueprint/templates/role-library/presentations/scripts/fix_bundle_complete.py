@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-fix_bundle_complete.py — FIX-8: the full 9-deliverable bundle gate.
+fix_bundle_complete.py — FIX-8: the full deliverable bundle gate.
 
 WHY THIS EXISTS (Gauntlet Loop FIX-8 / T-09 / M2-M9):
-The department's delivery contract is a NINE-piece operator build bundle
+The department's delivery contract is a ten-piece operator build bundle
 (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md,
-audio_mp3, infographic_png, teleprompter_html). In the live E2E run (task
+audio_mp3, infographic_png, teleprompter_html, webinar_mp4). In the live E2E run (task
 e738cff0) only the deck PPTX was produced; the other eight were never built.
 The engine had NO dedicated, mechanically-enforced `bundle_complete.json`
 gate after assembly — the bundle was "complete" only in the eye of whatever
@@ -13,7 +13,7 @@ agent happened to be driving the run.
 
 THIS FILE closes that gap with a FAIL-CLOSED gate:
 
-  * it requires ALL NINE deliverables to exist in the bundle dir AND be
+  * it requires ALL deliverables to exist in the bundle dir AND be
     non-empty (a zero-byte / placeholder file does NOT count as "done");
   * on ANY missing/empty deliverable it FAILS with the code
     AF-BUNDLE-INCOMPLETE and enumerates EXACTLY which keys are missing —
@@ -22,13 +22,14 @@ THIS FILE closes that gap with a FAIL-CLOSED gate:
     named gate artifact) — a durable, on-disk proof the full bundle is
     present, plus a JSON `--json` report mode for machines.
 
-SOURCE OF TRUTH — DELIVERABLES_REQUIRED:
-The nine keys + canonical filenames come from build_deck.py's
+SOURCE OF TRUTH — DELIVERABLE_AUDIT_SPEC (+ DELIVERABLES_REQUIRED / REQUIRED_KEYS derived views):
+The ten keys + canonical filenames come from build_deck.py's
 DELIVERABLES_REQUIRED (deck_slug-templated) and the PIPELINE-MANIFEST
 build_bundle_files list. To avoid importing the 10,000-line build_deck.py
 (and to keep this gate stdlib-only + runnable on a deployed box without
-python-pptx), the canonical set is pinned here AND asserted against the
-PIPELINE-MANIFEST by the self-test (they must never drift apart).
+python-pptx), the canonical set is pinned in presentation_job/deliverables.py
+(U05 — the single source of truth every consumer imports from) AND asserted
+against the PIPELINE-MANIFEST by the self-test (they must never drift apart).
 
 WHERE IT RUNS:
   * standalone:   python3 fix_bundle_complete.py <bundle_dir>
@@ -37,12 +38,12 @@ WHERE IT RUNS:
   * self-test:    python3 fix_bundle_complete.py --selftest
 
 EXIT CODES:
-  0 — all nine deliverables present and non-empty (gate clean).
+  0 — all ten deliverables present and non-empty (gate clean).
   1 — one or more deliverables missing or empty (AF-BUNDLE-INCOMPLETE).
   2 — could not run (bad args / bundle dir unreadable).
 
 PUBLIC API:
-  REQUIRED_DELIVERABLES : list[dict] — the nine {key, filename, label} specs.
+  REQUIRED_DELIVERABLES : list[dict] — the {key, filename, label} specs (derived from DELIVERABLE_AUDIT_SPEC).
   check_bundle_complete(bundle_dir, deck_slug="deck") -> list[str]
       Returns a list of MISSING-or-empty keys ([] == complete). Never raises.
   run_bundle_gate(bundle_dir, deck_slug="deck") -> tuple[bool, list[str], Path|None]
@@ -63,9 +64,33 @@ import os
 import sys
 from pathlib import Path
 
-# The failure code. Registered in PIPELINE-MANIFEST.autofails so sync_check's
-# C1 registry check resolves it (see the check_script entry).
-AF_BUNDLE_INCOMPLETE = "AF-BUNDLE-INCOMPLETE"
+# SINGLE SOURCE OF TRUTH (U05) — the deliverable whitelist and its derived views
+# now live in presentation_job/deliverables.py. curate.py, phase_verifiers.py,
+# and self_audit.py import the same constants from that one module. No file
+# (including this one) may hardcode a deliverable list of its own.
+try:
+    from presentation_job.deliverables import (
+        DELIVERABLE_AUDIT_SPEC,
+        REQUIRED_DELIVERABLES,
+        REQUIRED_KEYS,
+        DELIVERABLE_COUNT,
+        BUNDLE_COMPLETE_FILENAME,
+        AF_BUNDLE_INCOMPLETE,
+        _expand_filename,
+    )
+except ImportError:
+    _SCRIPTS = Path(__file__).resolve().parent
+    if str(_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS))
+    from presentation_job.deliverables import (
+        DELIVERABLE_AUDIT_SPEC,
+        REQUIRED_DELIVERABLES,
+        REQUIRED_KEYS,
+        DELIVERABLE_COUNT,
+        BUNDLE_COMPLETE_FILENAME,
+        AF_BUNDLE_INCOMPLETE,
+        _expand_filename,
+    )
 
 # sync_check.py LOCKSTEP — C1 emission registry (same pattern as delivery_gate.py
 # _EMITTED_AF_CODES). sync_check scans every script named in an autofails[]
@@ -73,47 +98,13 @@ AF_BUNDLE_INCOMPLETE = "AF-BUNDLE-INCOMPLETE"
 # code is not registered in PIPELINE-MANIFEST.autofails. This literal makes the
 # EXACT code this gate can emit machine-discoverable. It MUST stay registered.
 _EMITTED_AF_CODES = (
-    {"code": "AF-BUNDLE-INCOMPLETE"},  # one+ of the nine deliverables missing/empty
+    {"code": "AF-BUNDLE-INCOMPLETE"},  # one+ of deliverables missing/empty
 )
-
-# The gate artifact written on pass — the named FIX-8 deliverable.
-BUNDLE_COMPLETE_FILENAME = "bundle_complete.json"
-
-# Canonical nine-deliverable build bundle. Order matches build_deck.py
-# DELIVERABLES_REQUIRED and PIPELINE-MANIFEST.build_bundle_files.
-# `filename` is deck_slug-templated (same convention as build_deck.py); when
-# deck_slug == "deck" the filename is literal (matches DELIVERABLES_REQUIRED).
-REQUIRED_DELIVERABLES = [
-    {"key": "deck_pptx",        "filename": "{deck_slug}-FINAL.pptx",   "label": "assembled deck PPTX"},
-    {"key": "deck_pdf",         "filename": "{deck_slug}-FINAL.pdf",    "label": "deck PDF export"},
-    {"key": "guide_pdf",        "filename": "PRESENTER-GUIDE.pdf",      "label": "presenter guide PDF"},
-    {"key": "speech_md",        "filename": "PRESENTERS-SPEECH.md",     "label": "presenter speech markdown (pure)"},
-    {"key": "speech_pdf",       "filename": "PRESENTERS-SPEECH.pdf",    "label": "presenter speech teleprompter PDF"},
-    {"key": "speech_fish_md",   "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md", "label": "presenter speech (Fish-Audio expression-tagged)"},
-    {"key": "audio_mp3",        "filename": "PRESENTER-AUDIO.mp3",      "label": "presenter audio MP3"},
-    {"key": "infographic_png",  "filename": "infographic.png",          "label": "infographic checklist PNG"},
-    {"key": "teleprompter_html","filename": "presenter-teleprompter.html", "label": "presenter teleprompter web app"},
-    # Feature L2-G (P9.6-WEBINAR-VIDEO): the webinar video is a TENTH, video-phase-owned
-    # build deliverable. It is produced AFTER P8 assembly — build_deck.DELIVERABLES_REQUIRED
-    # carries it with `produced_later: True` so the P8 postflight gate skips it, and the
-    # P9.6 phase + this bundle gate + the delivery gate own its real presence. It is NOT a
-    # loose client file (it is hosted in GHL via the v3 tier — never in client_package_files).
-    # It IS required for the final closeout bundle: a build whose webinar never rendered
-    # must not be reported done.
-    {"key": "webinar_mp4",      "filename": "{deck_slug}-WEBINAR.mp4",  "label": "webinar video mp4"},
-]
-
-# The nine canonical keys (for direct set comparison in tests / reports).
-REQUIRED_KEYS = [d["key"] for d in REQUIRED_DELIVERABLES]
-
-
-def _expand_filename(template: str, deck_slug: str) -> str:
-    return template.replace("{deck_slug}", deck_slug)
 
 
 def check_bundle_complete(bundle_dir, deck_slug="deck") -> list:
     """Return a list of missing-or-empty deliverable KEYS in bundle_dir.
-    [] means the full 9-deliverable bundle is present and non-empty.
+    [] means the full bundle is present and non-empty.
     Never raises: an unreadable bundle_dir is reported as 'all missing'
     (fail-closed). 'non-empty' means a REAL regular file with > 0 bytes —
     a zero-byte placeholder or a symlink-to-nowhere is NOT done."""
@@ -161,13 +152,13 @@ def run_bundle_gate(bundle_dir, deck_slug="deck"):
             pass
         return False, missing, None
 
-    # All nine present and non-empty -> write the durable pass marker.
+    # All present and non-empty -> write the durable pass marker.
     bundle_dir.mkdir(parents=True, exist_ok=True)
     record = {
         "gate": BUNDLE_COMPLETE_FILENAME,
         "complete": True,
         "deck_slug": deck_slug,
-        "deliverable_count": len(REQUIRED_DELIVERABLES),
+        "deliverable_count": len(DELIVERABLE_AUDIT_SPEC),
         "deliverables": {
             spec["key"]: _expand_filename(spec["filename"], deck_slug)
             for spec in REQUIRED_DELIVERABLES
@@ -182,20 +173,20 @@ def run_bundle_gate(bundle_dir, deck_slug="deck"):
 
 
 def fix_bundle_complete(bundle_dir, deck_slug="deck") -> bool:
-    """Thin in-pipeline wrapper: True iff the full 9-deliverable bundle is
+    """Thin in-pipeline wrapper: True iff the full bundle is
     complete (writes bundle_complete.json on pass). Fail-closed otherwise."""
     ok, _missing, _gate = run_bundle_gate(bundle_dir, deck_slug=deck_slug)
     return ok
 
 
 def resolve_bundle_dir(run_dir, explicit_bundle_dir=None):
-    """Resolve the operator build bundle dir (where the NINE deliverables live)
+    """Resolve the operator build bundle dir (where the deliverables live)
     for a governed run dir, matching build_deck.py's convention:
       1. an explicit bundle dir (--out override / --bundle-dir arg);
       2. the `bundleDir` recorded in working/checkpoints/process_manifest.json;
       3. ~/Downloads/<deck-slug>/ (build_deck's BUNDLE_DIR_DEFAULT convention,
          deck-slug from the run dir's intake/config or the run dir name);
-      4. the run dir itself (some flows keep the 9-file bundle in the run dir).
+      4. the run dir itself (some flows keep the bundle in the run dir).
 
     Returns a Path (never None) — callers must still treat a partial/missing
     bundle as fail-closed regardless of which candidate was chosen."""
@@ -281,7 +272,7 @@ def _selftest() -> int:
         if "speech_md" in missing:
             fails.append("B zero-byte: a real speech_md must NOT be missing")
 
-    # CASE C — full 9-piece bundle -> PASSES, bundle_complete.json written.
+    # CASE C — full bundle -> PASSES, bundle_complete.json written.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         for spec in REQUIRED_DELIVERABLES:
@@ -299,10 +290,10 @@ def _selftest() -> int:
             rec = json.loads(gate.read_text())
             if rec.get("complete") is not True:
                 fails.append("C full: bundle_complete.json record.complete must be true")
-            if rec.get("deliverable_count") != len(REQUIRED_DELIVERABLES):
-                fails.append("C full: bundle_complete.json must record all 9 deliverables")
+            if rec.get("deliverable_count") != len(DELIVERABLE_AUDIT_SPEC):
+                fails.append("C full: bundle_complete.json must record all deliverables")
 
-    # CASE D — deck_slug templating: a slugged bundle dir.
+    # CASE D — deck_slug templating.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         for spec in REQUIRED_DELIVERABLES:
@@ -315,7 +306,7 @@ def _selftest() -> int:
         if not ok:
             fails.append("D slug: slugged full bundle must PASS")
 
-    # CASE E — manifest cross-check: the nine keys must match the
+    # CASE E — manifest cross-check: the keys must match the
     # PIPELINE-MANIFEST build_bundle_files list (they must never drift).
     try:
         # Walk up from this script until the PIPELINE-MANIFEST is found (the
@@ -351,7 +342,7 @@ def _selftest() -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="FIX-8 full 9-deliverable bundle gate (AF-BUNDLE-INCOMPLETE).")
+        description="FIX-8 full deliverable bundle gate (AF-BUNDLE-INCOMPLETE).")
     ap.add_argument("bundle_dir", nargs="?",
                     help="the operator build bundle directory (or use --run-dir)")
     ap.add_argument("--run-dir", dest="run_dir", help="governed run dir; the bundle dir "
@@ -407,7 +398,7 @@ def main(argv=None) -> int:
         label = next((d["label"] for d in REQUIRED_DELIVERABLES if d["key"] == key), key)
         print(f"  - {key} ({label})", file=sys.stderr)
     print("The run may NOT be reported as 'done'. Re-run the upstream producer "
-          "roles until all nine exist and are non-empty.", file=sys.stderr)
+          "roles until all deliverables exist and are non-empty.", file=sys.stderr)
     return 1
 
 

@@ -13,6 +13,16 @@ LOG="${1:-${LOG:-/dev/null}}"
 # paths from committed files). Install must substitute the real run root.
 SCAN_ROOT="${SCAN_ROOT:-<SCAN_ROOT>}"
 
+# U14: PRESENTATION_NOTIFY_CMD is warn-not-crash by design (report.py, watchdog.py)
+# so an unset transport fails silently everywhere else -- the operator/director
+# never hear progress, blocked, or done, and stall findings below never leave
+# this box. This script runs unattended via launchd with NO environment (see
+# header), so this log is the only place that silence can surface. Loud, not
+# fatal: matches the existing warn-mode idiom below, does not add set -e risk.
+if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
+    echo "WARNING: PRESENTATION_NOTIFY_CMD is unset; watchdog stall notifications and job progress/blocked/done messages will not be delivered" >> "${LOG}" 2>&1
+fi
+
 # Main watchdog pass. Warn mode by default (no --enforce): scans for stalled
 # jobs and reports. Exit status is load-bearing -- set -e semantics preserved.
 # launchd runs this with a minimal PATH (no /opt/homebrew/bin), so resolve the
