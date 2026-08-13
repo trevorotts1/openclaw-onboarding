@@ -3,6 +3,36 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v22.0.17] - 2026-08-13 - fix(send-interview-link): shared-dashboard tenant verification (Janet incident)
+
+Janet Pinkney (box #39, Contabo) clicked her AI Workforce Interview link
+(`https://janet.zerohumanworkforce.com/interview`) and the page flashed the
+interview then jumped straight to the Command Center dashboard. Root cause:
+her hostname is served by the OPERATOR's SHARED Command Center deployment
+(the single CC serving every client dashboard), whose interview-state
+endpoint was hostname-blind and answered from the OPERATOR's own canonical
+interview files — a fresh client was told `interviewComplete: true` and the
+interview page's own redirect (`interviewComplete -> /`) bounced her to the
+dashboard. She had zero interview answers; she was never served her own
+interview.
+
+This entry fixes the SKILL side so no future client hits the class:
+`send-interview-link.sh` now NEVER emits an unverifiable web link. When the
+dashboard host is the shared/operator CC (any non-localhost
+`<client>.zerohumanworkforce.com`), the script verifies that host's
+`/api/interview/gate-status` answers `interviewComplete: false` for this
+company BEFORE sending; on mismatch or unverifiable it FAILS to the
+Telegram-native reply-here invite instead of sending the broken link. A
+`localhost`/`127.0.0.1` dashboard (the box's OWN CC, reading this same state
+file) is exempt — the state read above is authoritative. New env:
+`INTERVIEW_GATE_URL` overrides the base used for the check (defaults to the
+dashboard host). Backed up as `send-interview-link.sh.bak-janet-skill23-fix-20260813`.
+
+The COMMAND CENTER side of the fix (tenant-scoped `/api/interview/state` +
+`/api/interview/gate-status` + turn relay to the client's own gateway +
+migration 125) lives in the command-center repo and is deployed on the
+operator box; a future shared-CC deploy picks it up from there.
+
 ## [v21.7.2] - 2026-08-03 - feat(dept-floor): register master-orchestrator as the 24th mandatory department, floor 29 -> 30
 
 Operator ruling: department-naming-map.json's `mandatory` block gains
