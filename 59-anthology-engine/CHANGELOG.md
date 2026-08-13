@@ -30,7 +30,7 @@
 - U16: copy_qc_workflows deliverable_fields drift lock -- every contract release_notifications link field (email_link_fields AND sms_link_field) must resolve into field-map deliverable_fields by bare key before any export is judged; unresolved keys are a located FAIL of the stage_links check, exit 4 (AF-AE-COPY-FIELD-DRIFT), naming the contract row + missing field; block-vs-inventory cross-check catches the one-sided re-key the union would mask. Self-test force-observes the rename attack.
 - U17: qc-snapshot-fixture pins ENGINE-MANIFEST stage NAMES byte-exact (S0..S9, the ten dispatchers' STAGE_NAME constants) -- a manifest-name rename previously passed the gate; --self-test force-observes both directions (untouched PASS, S8-name tamper DRIFT). verify.sh now runs the drift gate + its mutation self-test on every self-verify (exit 4 on DRIFT).
 - U19: provision_snapshot_import / push_snapshot_to_subaccounts self-test FAILURE is exit 4 (AF-AE-SNAPIMPORT-* / AF-AE-SNAP-PUSH-*), never exit 1; push gains a first-check field-map<->contract coherence assert so a tampered map cannot self-confirm.
-- U19: canary report self-signature (deterministic sha256 chain over report body + state ledger, digests only) + --verify-report (VALID 0 / INVALID 4; refuses a DEFERRED check without the deferred-live note); report always carries the stage-level note; committed report re-persisted signed (02:07Z, repo-relative state_dir); canary-run/state/ gitignored.
+- U19: operator-probe report self-signature (deterministic sha256 chain over report body + state ledger, digests only) + --verify-report (VALID 0 / INVALID 4; refuses a DEFERRED check without the deferred-live note); report always carries the stage-level note; committed report re-persisted signed (02:07Z, repo-relative state_dir); probe-run/state/ gitignored.
 - U19: E10 engine-script-drift baseline re-stamped for the four shared scripts changed on main history after the baseline was frozen (58-podcast delivery_report 574d89bd + guard-no-anthropic-runtime 9ab5ce73, 59-anthology alert-dedup + delivery_report 33e2dbed) -- the committed baseline was stale and failed the drift guard on an untouched tree.
 - ENGINE-MANIFEST.json rows 45/46/49 exit-4 contracts; ENGINE-PIN.sha256 re-stamped; skill-version 0.1.19 -> 0.1.20
 
@@ -38,12 +38,12 @@
 
 - U16: client-box snapshot IMPORT + fieldKey re-verify -- provision-anthology-client.sh step 7.5 now runs provision_snapshot_import.py (NEW-2) BEFORE the verify/fill/stamp tail (idempotent GET-check-by-name, PUT snapshot.override with the agency PIT, bounded snapshot-status poll, resolved field-map + provision_report.json); fixture from --snapshot-fixture / ANTHOLOGY_SNAPSHOT_FIXTURE / the repo fixture, absent fixture + push required STOPS fail-closed AF-AE-SNAPIMPORT-NO-FIXTURE; verify/fill tail re-verifies every fieldKey (anthology_registry.py verify-fields, all 28 keys byte-exact, exit 5 on any unresolved/mismatch) before stamping snapshot-version.json. references/anthology-snapshot-guide.md rewritten to the box-side import model.
 - U17: ship the versioned snapshot fixture fixtures/snapshot/anthology-engine-v1.0.0.json + scripts/qc-snapshot-fixture.sh CI drift gate (every fieldKey / pipeline-stage name / form-field name byte-exact vs config/field-map.json + ENGINE-MANIFEST.json; exit 0 agree / 1 DRIFT / 2 gate went blind)
-- U18 (canary): persist the operator canary run artifact canary-run/reports/CANARY-REPORT.json (verdict PASS, one complete S0-S9, 2026-08-11T01:10:44Z)
+- U18 (operator probe): persist the operator probe run artifact probe-run/reports/PROBE-REPORT.json (verdict PASS, one complete S0-S9, 2026-08-11T01:10:44Z)
 - ENGINE-MANIFEST.json row 52 (qc-snapshot-fixture.sh); ENGINE-PIN.sha256 re-stamped; skill-version 0.1.18 -> 0.1.19
 
 ### v0.1.19 -- unit batch U18/U21/U25/U26 (2026-08-10)
 
-- U18: one-complete-S0-S9 operator canary (canary_e2e_test.py, NEW-4, 38-check self-test)
+- U18: one-complete-S0-S9 operator probe (probe_e2e_test.py, NEW-4, 38-check self-test)
 - U21: confirm-then-pull Doc read-back -- gate_engine pullback-revalidate callback + prove_aw_doc_pullback.py prover (NEW-5, advisory never blocking, Trevor D3)
 - U25: n8n Drive broker create_book_tree FAILS CLOSED -- producer editor share not optional (422 up-front email gate, 502 on double share failure, 200 only when the share is confirmed; the 200-with-warning contract is removed)
 - U26: operator snapshot + CC-door toolchain -- snapshot_cut (NEW-1), provision_snapshot_import (NEW-2), push_snapshot_to_subaccounts (NEW-3), copy_qc_workflows (NEW-6), guard_cc_anthology_door (NEW-7)
