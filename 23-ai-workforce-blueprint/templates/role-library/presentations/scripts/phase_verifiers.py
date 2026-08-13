@@ -372,7 +372,16 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
 
 def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
     """P8-ASSEMBLE: build_deck.check_deck_harmony (arc + visual consistency).
-    Falls back to filesystem PPTX existence + size check when unavailable."""
+    Falls back to filesystem PPTX existence + size check when unavailable.
+
+    check_deck_harmony only proves cross-slide cohesion (recurring character,
+    palette, archetype rhythm) from the RENDERED PNGs / prompts — it never opens
+    the assembled PPTX itself. Delegating straight to it let a decoy file (e.g. a
+    40-byte text file renamed 'deck.pptx') pass this phase outright, because a
+    harmony PASS was returned before anything checked the artifact was a real
+    PPTX. Mirror the same magic-bytes idiom _DELIVERY_DELIVERABLES already uses
+    (PK\\x03\\x04 header) on every passing harmony result, so a decoy cannot ride
+    a harmony pass through assembly."""
     fn = _bd_fn("check_deck_harmony")
     if fn is not None:
         try:
@@ -380,6 +389,35 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
             if not _checker_pass(result):
                 detail = result if isinstance(result, str) else json.dumps(result)
                 return False, [f"AF-HARMONY: deck harmony check failed: {detail}"]
+            # Harmony passed — but harmony never inspects the assembled PPTX
+            # itself. Prove each candidate PPTX is a real one before letting the
+            # delegated pass stand.
+            hits = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
+            if not hits:
+                return False, ["AF-HARMONY: deck harmony check passed but no .pptx "
+                               "found in run dir (assembly not complete)"]
+            pptx_reasons: List[str] = []
+            for p in hits:
+                size = p.stat().st_size
+                if size < 1000:
+                    pptx_reasons.append(
+                        f"AF-HARMONY: {p.name} is suspiciously small ({size} bytes) "
+                        f"— not a real assembled PPTX")
+                    continue
+                try:
+                    with open(p, "rb") as fh:
+                        head = fh.read(4)
+                except OSError as exc:  # noqa: BLE001
+                    pptx_reasons.append(f"AF-HARMONY: cannot read {p.name} for "
+                                        f"magic-bytes check: {exc!r}")
+                    continue
+                if head != b"PK\x03\x04":
+                    pptx_reasons.append(
+                        f"AF-HARMONY: {p.name} is not a valid ZIP/PPTX container "
+                        f"(expected b'PK\\x03\\x04' at offset 0, got {head!r}) — "
+                        f"a renamed non-PPTX file cannot pass assembly")
+            if pptx_reasons:
+                return False, pptx_reasons
             return True, []
         except Exception as exc:  # noqa: BLE001
             pass  # fall through to filesystem check
