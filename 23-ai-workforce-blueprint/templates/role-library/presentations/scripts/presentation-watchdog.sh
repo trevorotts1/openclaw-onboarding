@@ -53,10 +53,39 @@ else
 fi
 
 # Board-reconcile pass: report-only unless --apply is given.
+# Exit 0  = scanned >=1 run dir, none raised, and >=1 was actually classified
+#           (card_missing/card_behind/consistent/finished_no_card) -- a
+#           genuine pass. NOTE (G5 fix): too_old no longer counts here --
+#           it means the sweep DECLINED to inspect the run dir (found it
+#           valid but too old to check further), not that anything was
+#           reconciled. A too_old-only or too_old+not_a_run_dir-mixed scan
+#           can still exit 0, but the log will carry an explicit
+#           "reconciled 0 of N" WARNING line instead of reading as a clean
+#           pass -- grep the log for "WARNING" if this box's decks are
+#           ever unexpectedly stale.
+# Exit 10 = zero run dirs found -- UNDETERMINED, not a pass, but a normal,
+#           expected state between jobs -- must not abort this script before
+#           the run-discovery pass below runs.
+# Exit 11 = >=1 run dir raised an unexpected error while being
+#           classified/reconciled -- also not a pass.
+# Exit 12 = >=1 run dir found and none raised, but EVERY one was rejected by
+#           Guard A (not_a_run_dir) -- zero were actually classified. Same
+#           epistemic state as exit 10 (nothing could be checked), reached by
+#           rejection instead of absence -- e.g. a STATE_SCHEMA_VERSION bump
+#           that invalidates every real run dir on the box. Also not a pass,
+#           and also a normal-enough state (a stale box) that this script
+#           must keep going rather than abort.
+# Captured explicitly (not swallowed) so a real problem is logged instead of
+# silently reported as clean; kept non-fatal to this script on purpose so
+# `set -e` cannot skip run-discovery just because no decks exist right now.
+RECONCILE_RC=0
 python3 "${SCRIPT_DIR}/presentation_job.py" \
     --reconcile-board \
     --scan-root "${SCAN_ROOT}" \
-    >> "${LOG}" 2>&1
+    >> "${LOG}" 2>&1 || RECONCILE_RC=$?
+if [ "${RECONCILE_RC}" -ne 0 ]; then
+    echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures; 12=all run dirs rejected/UNDETERMINED) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
+fi
 
 # Run-discovery pass: optional component. Guarded with || true so a missing
 # run_discovery.py cannot kill the loop.
