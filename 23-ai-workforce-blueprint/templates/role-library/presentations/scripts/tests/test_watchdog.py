@@ -11,7 +11,7 @@ _scripts_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_scripts_dir))
 
 from presentation_job.watchdog import watchdog, _find_state_files
-from presentation_job.state import EXIT_OK, EXIT_STALLED
+from presentation_job.state import EXIT_OK, EXIT_STALLED, EXIT_WATCHDOG_NO_RUNS
 from presentation_job.report import dispatch as report_dispatch
 
 
@@ -148,8 +148,47 @@ def test_default_exits_0_enforce_exits_5(tmp_path):
 
 # 13
 def test_scanned_zero_prints_no_state_json_found(tmp_path):
+    """B5 fix: scanned==0 is UNDETERMINED (EXIT_WATCHDOG_NO_RUNS=13), never EXIT_OK.
+    Before this fix, `EXIT_STALLED if (enforce and findings) else EXIT_OK` made a
+    scan that found nothing to check bitwise identical, at the exit-code level, to
+    a scan that found jobs and confirmed zero are stalled -- a wrong --scan-root
+    would have read as a healthy fleet. This is the regression test for that
+    collapse: it must stay UNDETERMINED even though nothing here looks like an
+    adversary, just an empty directory."""
     rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
-    assert "NO state.json found" in out and rc == EXIT_OK
+    assert "NO state.json found" in out
+    assert rc == EXIT_WATCHDOG_NO_RUNS
+    assert rc != EXIT_OK, "scanned==0 must never read as a pass"
+
+# 13b
+def test_scanned_zero_is_undetermined_even_under_enforce(tmp_path):
+    """Same UNDETERMINED collapse, but through the --enforce path specifically --
+    this is the one the docstring's 'stage 3' flip makes load-bearing: once
+    --enforce is wired into the live watchdog, a broken scan-root must not read
+    as 'enforced, zero problems'. EXIT_WATCHDOG_NO_RUNS wins over both EXIT_OK
+    and EXIT_STALLED when scanned==0, enforce or not."""
+    rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1, enforce=True)
+    assert rc == EXIT_WATCHDOG_NO_RUNS
+    assert rc not in (EXIT_OK, EXIT_STALLED)
+
+# 13c
+def test_good_scan_with_runs_still_exits_ok(tmp_path):
+    """Control: a real, healthy scan (>=1 run dir, none stalled) must still exit
+    EXIT_OK -- the UNDETERMINED fix above must not turn a genuine pass into a
+    false alarm."""
+    _w(tmp_path / "a", "P4-RENDER", 10, 5)
+    rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
+    assert rc == EXIT_OK
+    assert "STALLED" not in out
+
+# 13d
+def test_bad_scan_with_stall_still_exits_stalled_under_enforce(tmp_path):
+    """Control: a real stall (scanned>0, findings>0) under --enforce must still
+    exit EXIT_STALLED -- unaffected by the scanned==0 fix."""
+    _w(tmp_path / "a", "P4-RENDER", 10, 40)
+    rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1, enforce=True)
+    assert rc == EXIT_STALLED
+    assert "STALLED" in out
 
 # 14
 def test_watchdog_never_writes_state_json(tmp_path):
