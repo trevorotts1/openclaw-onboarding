@@ -783,11 +783,15 @@ def _audit_templates_file(fp, field_map: dict, contract: dict, *,
     # tag under data.trigger_tag (02 Title Fire and 06 Release: Chapter both
     # do). An adapter that only reads the top level would audit an empty
     # surface and BLINDLY PASS client-facing copy the law must judge -- the
-    # exact false-green the audit exists to prevent. Resolve, deepest first:
-    # the document's data.release block wins over its data block, and any
-    # non-empty tag wins over an empty one (the empty string is a real
+    # exact false-green the audit exists to prevent. Precedence (matching the
+    # implementation exactly): a TOP-LEVEL email/sms block wins over a nested
+    # data.release block (the document's direct data is the primary seat; the
+    # release block is the fallback -- `email = email or val` keeps the first
+    # truthy). For the trigger tag the loop is (release, data) with
+    # last-write-wins, so data.trigger_tag beats release.trigger_tag, and the
+    # document trigger.tag is the final fallback; an empty string is a real
     # builder value on contact_tag workflows whose tag lives at
-    # data.trigger_tag).
+    # data.trigger_tag, so the first non-empty tag wins.
     release = data.get("release") or {}
     for candidate in (release, data):
         for key in ("email", "sms"):
