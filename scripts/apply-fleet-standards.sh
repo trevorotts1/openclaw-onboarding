@@ -3066,6 +3066,35 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5k. Seed the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─────
+# WHY. RR-02-coach reads rr_agent_map (box_slug -> local_agent_id) before
+# diagnosing an escalation. A receiver-covered box with no row is routed to
+# agent_id_unmapped and pages a human instead of running the diagnosis chain
+# (2026-08-13: 35/36 boxes unmapped — a provisioning gap, since nothing seeded
+# the table at enrollment). The map lives in n8n; only the operator box carries
+# the n8n key, so this step is operator-only and self-skips everywhere else.
+#
+# WHAT. Run scripts/seed-rr-agent-map.sh (shipped beside this script): idempotent
+# upsert of local_agent_id=main per fleet slug, backup-before-write, read-back
+# verify. RR-02-coach additionally auto-seeds (source=auto_seed_rr02) when a box
+# somehow still arrives unmapped, so a missing row can never page a human again.
+#
+# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open: key absent, roster
+# absent, or script error => log and skip; this step can never fail a roll.
+if [ -n "${N8N_API_KEY:-}" ]; then
+  _RR_SEED_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/seed-rr-agent-map.sh"
+  if [ ! -f "$_RR_SEED_SH" ]; then
+    echo "[apply-fleet-standards] RR_AGENT_MAP_SEED skipped — seed-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
+  else
+    if "$_RR_SEED_SH" >/tmp/rr-seed-apply.log 2>&1; then
+      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED ok ($(grep -o 'VERIFY.*' /tmp/rr-seed-apply.log | head -1))"
+    else
+      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED error — see /tmp/rr-seed-apply.log (fail-open)"
+    fi
+  fi
+  unset _RR_SEED_SH
+fi
+
 echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"
