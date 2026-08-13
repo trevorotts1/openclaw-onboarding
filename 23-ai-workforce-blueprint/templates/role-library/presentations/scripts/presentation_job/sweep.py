@@ -19,7 +19,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from .state import _read_json, STATE_SCHEMA_VERSION, EXIT_OK
+from .state import (
+    _read_json,
+    STATE_SCHEMA_VERSION,
+    EXIT_OK,
+    EXIT_SWEEP_NO_RUNS,
+    EXIT_SWEEP_HAD_FAILURES,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,8 +174,19 @@ def reconcile_sweep(
 ) -> int:
     """Scan --scan-root for jobs whose board card is missing or behind.
 
-    Returns EXIT_OK (0) always unless --apply is invalid on its own.
-    FAIL-SOFT: one bad run dir never ends the sweep.
+    FAIL-SOFT: one bad run dir never ends the sweep -- the loop keeps going
+    and every remaining run dir still gets classified. But "kept going" is
+    not the same claim as "everything is fine", so the return code names
+    exactly one of three distinct outcomes:
+
+      EXIT_OK (0)               -- scanned >=1 run dir, none raised.
+      EXIT_SWEEP_NO_RUNS (10)   -- scanned 0 run dirs. UNDETERMINED: this is
+                                    not evidence the fleet is healthy, it is
+                                    evidence the sweep checked nothing. Never
+                                    treat this as a pass.
+      EXIT_SWEEP_HAD_FAILURES (11) -- scanned >=1 run dir but at least one
+                                    raised an unexpected error while being
+                                    classified or reconciled.
     """
 
     # --- Import cc_board and BoardMirror lazily ---
@@ -192,11 +209,12 @@ def reconcile_sweep(
 
     if scanned == 0:
         print(
-            f"reconcile-board: NO state.json found "
-            f"-- check --scan-root and --scan-depth",
+            f"reconcile-board: UNDETERMINED -- NO state.json found under "
+            f"{scan_root} (depth {scan_depth}) -- 0 run dirs were checked, "
+            f"this is NOT a pass -- check --scan-root and --scan-depth",
             flush=True,
         )
-        return EXIT_OK
+        return EXIT_SWEEP_NO_RUNS
 
     # --- Classification ---
     outcomes: Dict[str, List[Tuple[Path, Optional[str]]]] = {
@@ -356,5 +374,14 @@ def reconcile_sweep(
             "Guard A may be too loose.",
             flush=True,
         )
+
+    if counts.get("failure", 0):
+        print(
+            f"reconcile-board: FAILED -- {counts['failure']} run dir(s) raised "
+            f"an unexpected error while being classified/reconciled (see "
+            f"'FAILED:' lines above) -- this is NOT a pass",
+            flush=True,
+        )
+        return EXIT_SWEEP_HAD_FAILURES
 
     return EXIT_OK

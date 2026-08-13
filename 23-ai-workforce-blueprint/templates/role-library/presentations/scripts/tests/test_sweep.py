@@ -294,16 +294,22 @@ class TestNotARunDir:
     """Directories that are not valid engine run dirs are never ingested."""
 
     def test_no_state_json(self, tmp_path):
+        from presentation_job.state import EXIT_SWEEP_NO_RUNS
+
         root = tmp_path / "scan"
         root.mkdir()
         (root / "junk").mkdir()
         (root / "junk" / "notes.txt").write_text("not a run dir")
 
         rc, out = _run_sweep(root, scan_depth=2)
-        assert rc == 0
-        # No state.json found anywhere -> explicit NO state.json line
+        # Zero run dirs found is UNDETERMINED, not a pass -- G5.
+        assert rc == EXIT_SWEEP_NO_RUNS
+        assert rc != 0
+        # No state.json found anywhere -> explicit NO state.json line, marked
+        # unmistakably as not-a-pass.
         assert "NO state.json" in out
-        assert "scanned 0" in out.lower() or "NO state.json" in out
+        assert "UNDETERMINED" in out
+        assert "not a pass" in out.lower()
 
     def test_state_no_job_id(self, tmp_path):
         root = tmp_path / "scan"
@@ -603,17 +609,52 @@ class TestBrokenRunDirContinues:
         assert "card_missing" in out
 
 
+class TestSweepFailurePropagatesExitCode:
+    """G5: 'FAIL-SOFT' means one bad run dir never ENDS the loop -- it does
+    not mean the sweep's own return code gets to lie about it. A run dir
+    whose ingest call raises is recorded as 'failure'; the sweep as a whole
+    must then return EXIT_SWEEP_HAD_FAILURES, not EXIT_OK."""
+
+    def test_ingest_exception_makes_sweep_fail(self, tmp_path, monkeypatch):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_HAD_FAILURES
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        _write_state(root / "boom", _make_state(root / "boom", deck_slug="deck-boom"))
+
+        def _boom(*a, **kw):
+            raise RuntimeError("simulated ingest failure")
+
+        # fake_ingest_deck_task is looked up as a module global at call time,
+        # so patching it here reaches the FakeMod.ingest_deck_task shim that
+        # _run_sweep installs as the sweep's cc_board.
+        monkeypatch.setattr(sys.modules[__name__], "fake_ingest_deck_task", _boom)
+
+        rc, out = _run_sweep(root, apply=True)
+        assert rc == EXIT_SWEEP_HAD_FAILURES
+        assert rc != EXIT_OK
+        assert "FAILED" in out
+        assert "not a pass" in out.lower()
+
+
 class TestEmptyScan:
-    """scanned == 0 prints the explicit NO state.json found line."""
+    """scanned == 0 is UNDETERMINED, not a pass (G5) -- it prints the explicit
+    NO state.json line AND returns a distinct non-EXIT_OK code so a caller
+    that only checks the return code cannot mistake "found nothing" for
+    "found N and all were fine"."""
 
     def test_empty_scan_says_no_state_json(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_NO_RUNS
+
         root = tmp_path / "scan"
         root.mkdir()
         (root / "sub").mkdir()
 
         rc, out = _run_sweep(root)
-        assert rc == 0
+        assert rc == EXIT_SWEEP_NO_RUNS
+        assert rc != EXIT_OK
         assert "NO state.json" in out or "NO state.json found" in out
+        assert "UNDETERMINED" in out
 
 
 class TestApplyWithoutReconcileBoard:

@@ -23,6 +23,12 @@ EXIT_LOCK_HELD = 6
 EXIT_MANIFEST_MISMATCH = 7
 EXIT_STATE_CORRUPT = 8
 EXIT_WAIVER_INVALID = 9
+# reconcile_sweep (sweep.py) is a report-only pass, not a gate -- but "found
+# nothing" and "found problems" are still not the same as "found and checked
+# N runs, all fine". Callers (presentation-watchdog.sh) must not read either
+# of the two codes below as a plain pass.
+EXIT_SWEEP_NO_RUNS = 10       # scanned 0 run dirs -- UNDETERMINED, not a pass
+EXIT_SWEEP_HAD_FAILURES = 11  # scanned >0 but >=1 run dir raised an unexpected error
 
 STATE_FILENAME = "state.json"
 LOCK_FILENAME = ".job.lock"

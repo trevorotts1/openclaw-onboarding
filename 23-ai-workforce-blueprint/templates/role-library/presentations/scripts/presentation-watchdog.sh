@@ -53,10 +53,23 @@ else
 fi
 
 # Board-reconcile pass: report-only unless --apply is given.
+# Exit 0  = scanned >=1 run dir, none raised -- a pass.
+# Exit 10 = zero run dirs found -- UNDETERMINED, not a pass, but a normal,
+#           expected state between jobs -- must not abort this script before
+#           the run-discovery pass below runs.
+# Exit 11 = >=1 run dir raised an unexpected error while being
+#           classified/reconciled -- also not a pass.
+# Captured explicitly (not swallowed) so a real problem is logged instead of
+# silently reported as clean; kept non-fatal to this script on purpose so
+# `set -e` cannot skip run-discovery just because no decks exist right now.
+RECONCILE_RC=0
 python3 "${SCRIPT_DIR}/presentation_job.py" \
     --reconcile-board \
     --scan-root "${SCAN_ROOT}" \
-    >> "${LOG}" 2>&1
+    >> "${LOG}" 2>&1 || RECONCILE_RC=$?
+if [ "${RECONCILE_RC}" -ne 0 ]; then
+    echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
+fi
 
 # Run-discovery pass: optional component. Guarded with || true so a missing
 # run_discovery.py cannot kill the loop.
