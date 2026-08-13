@@ -18,6 +18,33 @@ capacity_override.json is unusable (FAILED) -- dispatch REFUSES with
 AF-CAPACITY-UNMEASURED and a non-zero exit, and no engine process is spawned.
 A capacity probe whose result nothing acts on is an advisory print, not a gate;
 this is the acting-on.
+
+THE NO-CONFIG CASE (UNDETERMINED) IS NOT THE SAME AS MEASURED
+---------------------------------------------------------------
+A box with no capacity_override.json, no 9Router combo, and no OpenClaw config
+-- the state almost every client box starts in -- is UNDETERMINED, not FAILED
+and not PARKED. capacity.probe() answers that with `available =
+DEFAULT_CONSERVATIVE (3)` so the department is not dead out of the box, but
+that 3 was never measured; it is a floor, never a proven ceiling.
+
+Refusing every unconfigured box would make the department unusable by default,
+which is its own outage -- so this gate does NOT refuse on UNDETERMINED alone.
+Instead it does three things a plain "capacity measured" print cannot be
+mistaken for:
+  1. proceeds at the conservative floor, with a banner that says UNDETERMINED
+     out loud (never the same line MEASURED prints);
+  2. records the probe result into run state (state.json / a pre-state.json
+     sidecar) so the anomaly outlives the launch log line;
+  3. pings the operator (best-effort, never fatal to dispatch) so a fleet of
+     boxes silently running at the floor is visible, not just archived.
+
+It DOES refuse -- the same AF-CAPACITY-UNMEASURED, same non-zero exit, same
+"nothing spawned" contract as PARKED/FAILED -- when a caller declares
+`requested_parallel` and that request exceeds the conservative floor while
+capacity is UNDETERMINED. Wanting more parallel width than the un-measured
+floor, without a real measurement backing it, is exactly the blind dispatch
+this gate exists to stop; wanting the floor itself (or not declaring a
+request at all -- the overwhelming majority of callers today) is not.
 """
 
 from __future__ import annotations
@@ -44,6 +71,14 @@ DISPATCH_CAPACITY_REFUSED = -4
 EXIT_CAPACITY_UNMEASURED = 3
 
 CAPACITY_AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
+
+#: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
+#: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
+#: to proceed AT, not a ceiling this account was proven to support. Checking
+#: only `available is None` (as this gate used to) treats the no-config case,
+#: which is what nearly every client box IS, as a clean measurement. See
+#: dispatch()'s capacity gate below.
+CAPACITY_STATUS_UNDETERMINED = "UNDETERMINED"
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +265,121 @@ def _refuse_unmeasured_capacity(result: dict, run_path: Path) -> int:
     return DISPATCH_CAPACITY_REFUSED
 
 
+def _refuse_undetermined_parallel(result: dict, run_path: Path, requested: int,
+                                  available: int) -> int:
+    """Refuse a wide-parallel request when capacity was never actually measured.
+
+    UNDETERMINED's `available` is capacity.DEFAULT_CONSERVATIVE -- a floor to
+    proceed AT, never a ceiling this account was proven to support. A caller
+    that declares it wants MORE than that floor, with nothing backing the
+    number, is exactly the blind dispatch AF-CAPACITY-UNMEASURED exists to
+    stop -- so this refuses the same way an unusable override refuses: same
+    code, same non-zero sentinel, nothing spawned."""
+    detail = (
+        f"requested {requested} concurrent, but capacity is UNDETERMINED (no "
+        f"provider/plan could be detected) -- only the conservative floor of "
+        f"{available} is safe to assume. Declare capacity_override.json or answer "
+        f"the capacity interview ('python3 -m presentation_job --capacity') to "
+        f"unlock wider dispatch."
+    )
+    payload = {
+        "code": CAPACITY_AUTOFAIL_CODE,
+        "status": result.get("status"),
+        "detection_source": result.get("detection_source"),
+        "requested": requested,
+        "conservative_floor": available,
+        "run_dir": str(run_path),
+        "detail": detail,
+    }
+    print(f"launcher: REFUSING to dispatch {run_path} -- {CAPACITY_AUTOFAIL_CODE}: "
+          f"{detail}", file=sys.stderr)
+    print(json.dumps(payload, indent=2), file=sys.stderr)
+    return DISPATCH_CAPACITY_REFUSED
+
+
+def _record_capacity_status(run_path: Path, result: dict) -> None:
+    """Record an UNDETERMINED probe into run state so the anomaly outlives the
+    launch-line log entry. Written unconditionally to a `.capacity-status.json`
+    sidecar (never depends on state.json existing yet -- the --new window,
+    before cmd_new runs, is exactly when this matters) and merged into
+    state.json too once it exists, mirroring _write_engine_pid's dual-write
+    pattern. Best-effort: a write failure here must never affect dispatch."""
+    record = {
+        "status": result.get("status"),
+        "available": result.get("available"),
+        "provider": result.get("provider"),
+        "plan": result.get("plan"),
+        "detection_source": result.get("detection_source"),
+        "notes": result.get("notes"),
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    try:
+        run_path.mkdir(parents=True, exist_ok=True)
+        sidecar = run_path / ".capacity-status.json"
+        tmp = sidecar.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        os.replace(tmp, sidecar)
+    except OSError as exc:
+        print(f"launcher: could not record capacity status: {exc}", file=sys.stderr)
+        return
+    state_path = run_path / "state.json"
+    if state_path.is_file():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8")) or {}
+        except (json.JSONDecodeError, OSError):
+            state = {}
+        state["capacity_status"] = record
+        tmp = state_path.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            os.replace(tmp, state_path)
+        except OSError as exc:
+            print(f"launcher: could not merge capacity status into state.json: {exc}",
+                  file=sys.stderr)
+
+
+def _notify_operator_undetermined(result: dict, run_path: Path, available: int) -> None:
+    """Best-effort ping to the operator channel. Follows watchdog.py's own
+    precedent (report.dispatch("watchdog", "stall", ...): a fixed, non-numeric
+    chat_id names the subsystem raising the alert, distinct from any per-job
+    requester chat_id). A notify failure is swallowed -- it must never affect
+    the dispatch decision."""
+    try:
+        try:
+            from . import report
+        except ImportError:
+            import report
+        report.dispatch(
+            "capacity",
+            "capacity_undetermined",
+            f"Presentations: capacity UNDETERMINED for {run_path} -- dispatching at "
+            f"the conservative floor of {available} only (provider/plan could not be "
+            f"detected). Declare capacity_override.json or answer the capacity "
+            f"interview to unlock this box's real ceiling.",
+        )
+    except Exception:  # noqa: BLE001 -- never let operator-notify break dispatch
+        pass
+
+
+def _announce_undetermined_capacity(result: dict, run_path: Path, available: int) -> None:
+    """Make the UNDETERMINED case impossible to miss: a banner that cannot be
+    confused with the MEASURED print, a run-state record, and an operator
+    ping. This -- not silence -- is what closes the no-config hole without
+    turning an unconfigured box into an outage."""
+    banner = (
+        f"launcher: !! CAPACITY UNDETERMINED for {run_path} -- no provider/plan "
+        f"could be detected (checked: declared override, 9Router, OpenClaw). "
+        f"Proceeding at the conservative floor of {available} concurrent agent(s) "
+        f"ONLY -- never guessed upward. Run 'python3 -m presentation_job --capacity' "
+        f"(or answer the one-time capacity interview) to declare this box's real "
+        f"ceiling."
+    )
+    print(banner, file=sys.stderr)
+    print(banner, flush=True)
+    _record_capacity_status(run_path, result)
+    _notify_operator_undetermined(result, run_path, available)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch -- the single entry point all callers use
 # ---------------------------------------------------------------------------
@@ -241,6 +391,7 @@ def dispatch(
     phase: Optional[str] = None,
     until: Optional[str] = None,
     background: bool = True,
+    requested_parallel: Optional[int] = None,
 ) -> int:
     """Launch the presentation engine.
 
@@ -253,6 +404,16 @@ def dispatch(
         until: Run through this phase then stop (passed through to --until).
         background: If True, spawn as detached subprocess (default).
                     If False, run synchronously (for testing).
+        requested_parallel: How much parallel width this run wants, if the
+                    caller knows and cares to declare it. None (the default,
+                    and every caller today) means "no declared request" --
+                    dispatch proceeds at whatever capacity.probe() measures,
+                    including the conservative floor when it is UNDETERMINED.
+                    When given AND capacity is UNDETERMINED, a request above
+                    the conservative floor is refused (see the gate below);
+                    it is never checked against a real MEASURED ceiling --
+                    execution_plan.py already waves a wide request down to
+                    a measured ceiling instead of refusing it.
 
     Returns:
         PID on success (int > 0), -1 on failure, -4 when the capacity gate
@@ -269,13 +430,29 @@ def dispatch(
 
     # THE GATE. Measure before launching -- before argv is built, before any
     # process exists. A run that cannot be sized is a run that does not start.
+    #
+    # available is None            -> PARKED or FAILED: no number at all. Refuse.
+    # status == UNDETERMINED       -> a number, but never MEASURED -- it is
+    #                                  capacity.DEFAULT_CONSERVATIVE, a floor to
+    #                                  proceed AT. Refuse ONLY if the caller
+    #                                  declared it wants more than that floor;
+    #                                  otherwise proceed, but loudly, on record,
+    #                                  and with the operator told.
+    # anything else (MEASURED)     -> a real, detected ceiling. Proceed as before.
     available, capacity_result = capacity_gate()
     if available is None:
         return _refuse_unmeasured_capacity(capacity_result, run_path)
-    print(f"launcher: capacity measured -- {available} concurrent agents available "
-          f"(provider {capacity_result.get('provider')}, plan "
-          f"{capacity_result.get('plan')}, source "
-          f"{capacity_result.get('detection_source')})", flush=True)
+
+    if capacity_result.get("status") == CAPACITY_STATUS_UNDETERMINED:
+        if requested_parallel is not None and requested_parallel > available:
+            return _refuse_undetermined_parallel(capacity_result, run_path,
+                                                 requested_parallel, available)
+        _announce_undetermined_capacity(capacity_result, run_path, available)
+    else:
+        print(f"launcher: capacity measured -- {available} concurrent agents available "
+              f"(provider {capacity_result.get('provider')}, plan "
+              f"{capacity_result.get('plan')}, source "
+              f"{capacity_result.get('detection_source')})", flush=True)
 
     argv = [
         sys.executable or "python3",
@@ -383,6 +560,7 @@ def dispatch_new(
     client: str,
     deck_type: str,
     background: bool = True,
+    requested_parallel: Optional[int] = None,
 ) -> int:
     """Convenience wrapper: launch a new engine job.
 
@@ -391,6 +569,9 @@ def dispatch_new(
 
     The engine's --new path reads intake_json from the run directory's
     working/copy/intake.json (populated by the intake interview).
+
+    requested_parallel: see dispatch()'s docstring -- None (default) means no
+    declared request; the capacity gate still runs either way.
 
     Returns PID on success, -1 on failure.
     """
@@ -412,10 +593,11 @@ def dispatch_new(
             pass
 
     return dispatch(run_dir, client=client, deck_type=deck_type, resume=False,
-                    background=background)
+                    background=background, requested_parallel=requested_parallel)
 
 
-def dispatch_resume(run_dir: str, background: bool = True) -> int:
+def dispatch_resume(run_dir: str, background: bool = True,
+                    requested_parallel: Optional[int] = None) -> int:
     """Convenience wrapper: resume a parked engine job.
 
     Returns PID on success, -1 on failure.
@@ -427,7 +609,8 @@ def dispatch_resume(run_dir: str, background: bool = True) -> int:
     if is_engine_running(run_path):
         print(f"launcher: engine already running for {run_path}", flush=True)
         return -2
-    return dispatch(run_dir, resume=True, background=background)
+    return dispatch(run_dir, resume=True, background=background,
+                    requested_parallel=requested_parallel)
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +639,12 @@ def main(argv: Optional[list] = None) -> int:
                    help="check if engine is running; exit 0 if yes, 1 if no")
     p.add_argument("--stop", action="store_true",
                    help="stop the engine for this run-dir")
+    p.add_argument("--requested-parallel", type=int, default=None,
+                   help="declare the parallel width this run wants. Only checked "
+                        "when capacity is UNDETERMINED: a request above the "
+                        "conservative floor (3) is refused (AF-CAPACITY-UNMEASURED). "
+                        "Omit (the default) to run at whatever capacity.probe() "
+                        "measures, floor included.")
 
     args = p.parse_args(argv)
     run_path = args.run_dir.expanduser().resolve()
@@ -473,19 +662,23 @@ def main(argv: Optional[list] = None) -> int:
     if args.foreground:
         # Sync mode: dispatch returns the engine's own exit code (0 == ok), or a
         # negative sentinel when the launcher itself refused before spawning.
-        rc = dispatch_resume(str(run_path), background=False) if args.resume else \
+        rc = dispatch_resume(str(run_path), background=False,
+                             requested_parallel=args.requested_parallel) if args.resume else \
             dispatch_new(str(run_path),
                          client=args.client or "operator",
                          deck_type=args.deck_type or "standard",
-                         background=False)
+                         background=False,
+                         requested_parallel=args.requested_parallel)
         if rc == DISPATCH_CAPACITY_REFUSED:
             return EXIT_CAPACITY_UNMEASURED
         return 0 if rc == 0 else 1
-    pid = dispatch_resume(str(run_path), background=True) if args.resume else \
+    pid = dispatch_resume(str(run_path), background=True,
+                          requested_parallel=args.requested_parallel) if args.resume else \
         dispatch_new(str(run_path),
                      client=args.client or "operator",
                      deck_type=args.deck_type or "standard",
-                     background=True)
+                     background=True,
+                     requested_parallel=args.requested_parallel)
     if pid == DISPATCH_CAPACITY_REFUSED:
         return EXIT_CAPACITY_UNMEASURED
     return 0 if pid > 0 else 1
