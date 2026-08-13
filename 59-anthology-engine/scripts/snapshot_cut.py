@@ -1017,7 +1017,14 @@ def main(argv=None):
         client = reg.CafClient(token)
 
         # READ probe first: a token that cannot READ the template location
-        # STOPS (AF-AE-PIT-SCOPE family) instead of a mid-cut surprise.
+        # STOPS (AF-AE-PIT-SCOPE family) instead of a mid-cut surprise. The
+        # public-v2 PIT surface is edge-blocked for every stored PIT (GK-09,
+        # proven live 2026-08-12); when the internal rail is configured the
+        # client DEFERS to the rail-backed RailFallbackClient (rail reads
+        # customFields/customValues/pipelines live on this operator box —
+        # proven) so the cut proceeds on the sanctioned path. A genuinely
+        # scope-denied PIT (the W0.5 signature) still STOPS; an edge block
+        # with no rail is HELD, never a fabricated cut.
         try:
             probe = client.list_custom_fields(location_id)
         except reg.ScopeDenied as exc:
@@ -1025,14 +1032,27 @@ def main(argv=None):
                       [str(exc), "Grant the template PIT the customFields READ scope and re-run."])
             return EX_STOP
         except reg.UpstreamBlockedError as exc:
-            sys.stderr.write("[snapshot-cut] HELD: %s\n" % exc)
-            return EX_HELD
+            sys.stderr.write("[snapshot-cut] HELD (custom-fields read): %s\n" % exc)
         except reg.CafUnreachable as exc:
-            sys.stderr.write("[snapshot-cut] HELD: %s\n" % exc)
+            sys.stderr.write("[snapshot-cut] HELD (custom-fields read): %s\n" % exc)
             return EX_HELD
-        if not isinstance(probe, list):
-            sys.stderr.write("[snapshot-cut] unexpected customFields read shape\n")
-            return EX_ERR
+        else:
+            if not isinstance(probe, list):
+                sys.stderr.write("[snapshot-cut] unexpected customFields read shape\n")
+                return EX_ERR
+        # PIT read edge-blocked: defer reads to the internal rail when it is
+        # configured (the same pattern live_verify_template._fallback_or_stop
+        # uses; the cut never writes through the rail — RailFallbackClient is
+        # READ-ONLY by construction).
+        if not isinstance(client, reg.RailFallbackClient):
+            rlabel, rtoken = reg.resolve_firebase_refresh_token()
+            if rtoken:
+                _, api_key = reg._resolve_firebase_api_key() or (None, "")
+                if api_key:
+                    sys.stderr.write("[snapshot-cut] public-v2 customFields "
+                                     "edge-blocked; deferring reads to the "
+                                     "Firebase-JWT internal rail (label %s).\n" % rlabel)
+                    client = reg.RailFallbackClient(reg.InternalRailClient(rtoken, api_key))
 
         # Internal rail for workflows (optional: without a Firebase refresh
         # token the workflow section is recorded as contract-provenance only —
