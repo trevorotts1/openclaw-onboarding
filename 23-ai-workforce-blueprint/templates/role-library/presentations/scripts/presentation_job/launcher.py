@@ -58,6 +58,8 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
+from .vocab import normalize_presentation_type, UnknownPresentationType
+
 
 # ---------------------------------------------------------------------------
 # Dispatch return sentinels and exit codes
@@ -69,6 +71,17 @@ DISPATCH_CAPACITY_REFUSED = -4
 
 #: CLI exit code for a capacity refusal (== state.EXIT_GATE_BLOCKED).
 EXIT_CAPACITY_UNMEASURED = 3
+
+#: dispatch()/dispatch_new() refuse before touching state.json at all when the
+#: caller's deck_type does not resolve through vocab.normalize_presentation_type()
+#: -- joins the -1..-4 refusal family above. fix/deck-type-routing-bypass:
+#: launcher.py is one of the four callers (entry script, engine, poll, launcher)
+#: that must agree on the deck-type vocabulary; an unrecognized value fails
+#: loudly here too, never silently.
+DISPATCH_UNKNOWN_DECK_TYPE = -5
+
+#: CLI exit code for DISPATCH_UNKNOWN_DECK_TYPE.
+EXIT_UNKNOWN_DECK_TYPE = 6
 
 CAPACITY_AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
 
@@ -417,9 +430,25 @@ def dispatch(
 
     Returns:
         PID on success (int > 0), -1 on failure, -4 when the capacity gate
-        refused (AF-CAPACITY-UNMEASURED, nothing spawned).
+        refused (AF-CAPACITY-UNMEASURED, nothing spawned), -5 when deck_type
+        does not resolve (AF-DECK-TYPE-UNKNOWN, nothing spawned).
         The function returns immediately when background=True.
     """
+    # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
+    # not itself passed to the engine's argv below -- --new reads
+    # presentation_type from the --intake JSON, built by
+    # presentation_job/resolve_intake.py, which applies this SAME check --
+    # but an unrecognized value must fail loudly here too, not pass through
+    # silently. None is exempt: dispatch_resume() never declares one, and a
+    # resume never creates a new job (the type was already committed to
+    # state.json by a prior --new).
+    if deck_type is not None:
+        try:
+            normalize_presentation_type(deck_type)
+        except UnknownPresentationType as exc:
+            print(f"launcher: {exc}", file=sys.stderr)
+            return DISPATCH_UNKNOWN_DECK_TYPE
+
     scripts = resolve_scripts_dir()
     engine_entry = scripts / "presentation_job.py"
     if not engine_entry.is_file():
@@ -671,6 +700,8 @@ def main(argv: Optional[list] = None) -> int:
                          requested_parallel=args.requested_parallel)
         if rc == DISPATCH_CAPACITY_REFUSED:
             return EXIT_CAPACITY_UNMEASURED
+        if rc == DISPATCH_UNKNOWN_DECK_TYPE:
+            return EXIT_UNKNOWN_DECK_TYPE
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel) if args.resume else \
@@ -681,6 +712,8 @@ def main(argv: Optional[list] = None) -> int:
                      requested_parallel=args.requested_parallel)
     if pid == DISPATCH_CAPACITY_REFUSED:
         return EXIT_CAPACITY_UNMEASURED
+    if pid == DISPATCH_UNKNOWN_DECK_TYPE:
+        return EXIT_UNKNOWN_DECK_TYPE
     return 0 if pid > 0 else 1
 
 

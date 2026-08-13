@@ -131,37 +131,29 @@ except Exception:
         # Build an intake JSON and create a new engine job.
         log "new intake complete, dispatching engine: $run_dir"
 
-        # Build the engine intake JSON from the intake ledger
+        # fix/deck-type-routing-bypass: this used to build the intake JSON
+        # inline with NO deck-type normalization at all (`ptype =
+        # ledger.get('presentation_type') or 'from_scratch'`), so a ledger
+        # carrying "signature_presentation" (the SOP's own `deck_type` name
+        # for what the engine calls "signature") was handed to the engine
+        # unresolved, --new rejected it, no state.json was written, and this
+        # loop (which always `exit 0`s -- see below) retried the identical
+        # failure every 5 minutes, forever, with nothing but a WARNING line
+        # to show for it. Resolve through the SAME shared resolver the
+        # canonical entry script uses (single-sourced vocabulary, see
+        # vocab.py) -- an unresolvable deck type is now a loud ERROR here,
+        # not a silent default that would build the WRONG deck.
         ENGINE_INTAKE_TMP="$run_dir/working/checkpoints/.engine-intake.json"
         mkdir -p "$(dirname "$ENGINE_INTAKE_TMP")"
-        python3 -c "
-import json, os
-ledger = {}
-ledger_path = '$INTAKE_LEDGER'
-if os.path.isfile(ledger_path):
-    try:
-        ledger = json.load(open(ledger_path))
-    except Exception:
-        pass
-
-ptype = ledger.get('presentation_type') or 'from_scratch'
-client = ledger.get('client_name') or ledger.get('client') or 'operator'
-chat_id = ledger.get('requester_chat_id') or ledger.get('chat_id') or ''
-
-intake = {
-    'presentation_type': ptype,
-    'requester': {'chat_id': chat_id, 'client_name': client},
-    'client': client,
-    'deck_type': ptype,
-    'source': 'intake-poll',
-}
-if ptype == 'signature':
-    intake['signature_source'] = ledger.get('signature_source', 'from_scratch')
-
-os.makedirs(os.path.dirname('$ENGINE_INTAKE_TMP'), exist_ok=True)
-with open('$ENGINE_INTAKE_TMP', 'w') as f:
-    json.dump(intake, f, indent=2)
-" 2>/dev/null
+        RESOLVE_OUT="$(python3 "$SCRIPTS_DIR/presentation_job/resolve_intake.py" \
+            --ledger "$INTAKE_LEDGER" --out "$ENGINE_INTAKE_TMP" \
+            --source intake-poll 2>&1)"
+        if [ $? -ne 0 ]; then
+            log "  ERROR: $run_dir did not resolve to a legal presentation_type: $RESOLVE_OUT"
+            log "  skipping this run dir until its intake ledger is corrected -- it will NOT silently build the wrong deck type"
+            continue
+        fi
+        log "  $RESOLVE_OUT"
 
         # Create the engine job then run it
         python3 "$ENGINE_ENTRY" --new --run-dir "$run_dir" --intake "$ENGINE_INTAKE_TMP" 2>&1 | while IFS= read -r line; do
