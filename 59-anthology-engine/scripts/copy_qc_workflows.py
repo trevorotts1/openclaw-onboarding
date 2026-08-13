@@ -596,8 +596,13 @@ def audit_workflow(export, field_map: dict, contract: dict, *,
         if isinstance(pno, str) and pno:
             m = re.search(r"'([A-Za-z0-9 _-]+)'", pno)
             if m:
-                email_only = (m.group(1).strip().lower() in
-                              (report["name"] or "").lower())
+                # EXACT match only (adversarial finding 1): a substring test
+                # would let a differently-named workflow ride the carve-out
+                # ("Chapter Approval Ready: Latest Content" is a different
+                # surface with a different email law). Only the literal
+                # workflow named in the contract decree is email-only.
+                email_only = (m.group(1).strip().lower() ==
+                              (report["name"] or "").strip().lower())
         if not smss and not email_only:
             report["checks"]["email_and_sms"]["pass"] = False
             report["checks"]["email_and_sms"]["fails"].append(
@@ -773,6 +778,30 @@ def _audit_templates_file(fp, field_map: dict, contract: dict, *,
     email = data.get("email") or {}
     sms = data.get("sms") or {}
     links = doc.get("links") or {}
+    # NESTED-SHAPE FALLBACK (adversarial finding 2): the U10-U13 builder is
+    # free to nest a release's copy under data.release.* or name its trigger
+    # tag under data.trigger_tag (02 Title Fire and 06 Release: Chapter both
+    # do). An adapter that only reads the top level would audit an empty
+    # surface and BLINDLY PASS client-facing copy the law must judge -- the
+    # exact false-green the audit exists to prevent. Resolve, deepest first:
+    # the document's data.release block wins over its data block, and any
+    # non-empty tag wins over an empty one (the empty string is a real
+    # builder value on contact_tag workflows whose tag lives at
+    # data.trigger_tag).
+    release = data.get("release") or {}
+    for candidate in (release, data):
+        for key in ("email", "sms"):
+            val = candidate.get(key)
+            if isinstance(val, dict) and val:
+                if key == "email":
+                    email = email or val
+                else:
+                    sms = sms or val
+        dt = candidate.get("trigger_tag")
+        if isinstance(dt, str) and dt.strip():
+            tag = dt.strip()
+    if not tag:
+        tag = str(trigger.get("tag") or "")
     nodes = []
     if tag:
         nodes.append({"type": "n8n-nodes-base.gmail", "name": "Trigger",
@@ -789,18 +818,34 @@ def _audit_templates_file(fp, field_map: dict, contract: dict, *,
     if not nodes:
         # A DOCUMENTED SEAT ONLY template (owned_elsewhere, e.g. the Intake
         # Fire: its real surface is the webhook-to-route mapping owned by the
-        # U02/U05 tooling) has no copy of its own to audit. It is a skip,
-        # not a failure -- fail-closed still applies to a genuinely empty
-        # or malformed audit surface.
+        # U02/U05 tooling) has no trigger/actions/data of its own to audit.
+        # It is still not a blind pass (adversarial finding 4): any copy the
+        # document DOES carry (notes, seat doc, delegate instructions) must
+        # satisfy the text law. owned_elsewhere skips the workflow-law checks
+        # (no trigger/email/sms surface exists here) but never the text scan.
         if doc.get("owned_elsewhere"):
+            texts = []
+            for p, s in _walk_strings(doc, "doc"):
+                texts.append(("<doc>", p, s))
+            violations = []
+            for nid, path, text in texts:
+                for kind, match in _text_violations(text):
+                    violations.append(
+                        {"node": nid, "path": path,
+                         "code": ("AF-AE-COPY-EM-DASH" if kind == "em-dash"
+                                  else "AF-AE-COPY-AI-WORD"),
+                         "check": ("no_em_dashes" if kind == "em-dash"
+                                   else "editors_never_ai"),
+                         "detail": match})
             return {
                 "file": str(fp), "name": name, "trigger_tag": "",
                 "client_facing": bool(expect_client_facing),
-                "checks": {k: {"pass": True, "fails": []}
+                "checks": {k: {"pass": not any(v["check"] == k
+                                               for v in violations), "fails": []}
                            for k in ("editors_never_ai", "no_em_dashes",
                                      "email_and_sms", "stage_links",
                                      "per_stage_copy")},
-                "fails": [], "ok": True, "skipped": True,
+                "fails": violations, "ok": not violations, "skipped": True,
             }
         return {
             "file": str(fp), "name": name, "trigger_tag": "",

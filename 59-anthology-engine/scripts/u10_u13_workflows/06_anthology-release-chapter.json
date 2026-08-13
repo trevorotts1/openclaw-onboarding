@@ -10,7 +10,7 @@
       "send-sms"
     ],
     "email": {
-      "body": "Hi there,\n\nGood news. Your chapter is finished and saved for you.\n\nYou can view the PDF here:\n\n{{contact.anthology_chapter_pdf_url}}\n\nThe Google Doc is the one you edit:\n\n{{contact.anthology_chapter_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nYour package includes up to two editors' rewrites (0 used of 2).\n\nTwo editors' rewrites are included in your package. If you would like to go further, you can ask for one more pass.\n\nThank you for contributing to Stories We Carry.\n\nWarmly,\nThe Editors",
+      "body": "Hi there,\n\nGood news. Your chapter is finished and saved for you.\n\nYou can view the PDF here:\n\n{{contact.anthology_chapter_pdf_url}}\n\nThe Google Doc is the one you edit:\n\n{{contact.anthology_chapter_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nYour package includes up to two editors' rewrites (0 used of 2).\n\nTwo editors' rewrites are included in your package. If you would like to go further, you can ask for one more pass.\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\n{{ custom_values.producer }}",
       "subject": "[Chapter ready] Stories We Carry"
     },
     "forms": {
