@@ -1,3 +1,79 @@
+## [v22.0.9] -- 2026-08-13 -- Presentations wave 2 (U03-U08, U14): missing enforcement scripts landed, self-audit handoff gate, single-source deliverable whitelist, capacity enforcement -- plus fail-closed CI drift gates
+
+Two merges carry this release. PR #886 landed the seven wave-2 units and
+rolled all 10 version markers 22.0.8 -> 22.0.9. This entry is completed by
+the CI drift-gate PR that adds `scripts/ci/presentations-drift-gates.sh` and
+its workflow.
+
+**Wave 2 units (PR #886, merge commit 56d18ad2):**
+
+- **U03 -- three spec-mandated enforcement scripts that were never on main.**
+  `presentation_job/capacity.py` (WORK-ITEM-12 9Router capacity probe),
+  `qc_check.py` (mechanical enforcement for the 48 manifest autofail codes
+  declared `enforced_by qc_check` -- dead manifest entries until now), and
+  `self_audit.py` (WORK-ITEM-16 pre-handoff deliverable verifier). Each was
+  verified absent at its target path first, then copied byte-identical
+  (MD5-verified) from the only location it existed.
+- **U04 -- self-audit wired into `close()` as a FAIL-CLOSED handoff gate.**
+  WORK-ITEM-16 requires self-audit as the final step before handoff, but no
+  code anywhere in the engine ever called `self_audit.py`.
+  `Engine._run_self_audit()` now runs it against the run directory on BOTH
+  paths that reach `terminal=DONE`; a non-zero exit sets `terminal=BLOCKED`
+  with `phase=SELF-AUDIT` recorded, instead of handing off.
+- **U05 -- the deliverable whitelist is now single-source.**
+  `presentation_job/deliverables.py` holds the canonical
+  `DELIVERABLE_AUDIT_SPEC` / `REQUIRED_KEYS` (10 deliverables);
+  `fix_bundle_complete.py`, `presentation_job/curate.py`, `phase_verifiers.py`
+  and `self_audit.py` all derive their view from it rather than keeping
+  hand-maintained copies that drifted apart.
+- **U06 -- decoy-PPTX bypass closed** on the assemble-phase harmony check.
+- **U07 -- real client-capacity detection with enforcement teeth.**
+- **U08 -- standard deck intake is 12 questions, not ~38**, via a QUICK vs
+  IN-DEPTH fork.
+- **U14 -- an unset `PRESENTATION_NOTIFY_CMD` is now loud** in
+  `presentation-watchdog.sh`. The watchdog runs unattended under launchd with
+  no environment, so the by-design warn-not-crash silence in `report.py`'s
+  `dispatch()` had no surface: two verification sweeps recorded
+  `notify_target = none` while operator progress/blocked/done messages
+  dead-ended with nothing in the log. No transport value was invented -- none
+  is specified anywhere in the repo or the SOPs.
+
+**Presentations CI drift gates (this PR):**
+`.github/workflows/presentations-drift-gates.yml` +
+`scripts/ci/presentations-drift-gates.sh`. Both landmines that motivated this
+suite passed a green 93-check CI, because nothing in CI did a bare
+import-smoke of the package or recomputed the manifest hashes.
+
+- **GATE 1 (import smoke)** -- imports `presentation_job.phases` from a copy of
+  the scripts tree. Catches the class where a canonical symbol goes missing and
+  leaves `curate.py` (and everything importing it) import-broken on main.
+- **GATE 2 (manifest lockstep, both registries)** -- 2a compares
+  `PIPELINE-MANIFEST.json`'s sha256 against `MANIFEST-SOURCE.txt`'s recorded
+  `content_sha256`; 2b hashes it the way `hash-universal-sops-manifest.py`'s own
+  generator does (CRLF->LF normalized) and compares against the
+  `universal-sops/_content-manifest.json` entry. The second leg exists because
+  PR #884's drift MOVED to `_content-manifest.json` once `MANIFEST-SOURCE.txt`
+  was fixed, and a two-registry check never looked there.
+- **GATE 3 (deliverable whitelist parity) -- FAIL-CLOSED, no skip path.** The
+  version of this gate written before U05 compared two hardcoded views, found
+  them unequal for then-real structural reasons, printed
+  `GATE3_SKIP_WITH_REASON` and exited 0 -- a no-op wearing a GATE 3 label, which
+  made whitelist drift the one class the suite could not catch. It now imports
+  canon from `presentation_job/deliverables.py` and each of the four real
+  consumers, extracts each one's RUNTIME whitelist view, and FAILS naming the
+  consumer and the exact diverging keys when a consumer holds a key canon does
+  not have, or omits a canon key that is not pre-declared in an
+  `_ALLOWED_SUBSETS` map with a written reason. That map is empty today (all
+  four consumers prove exact parity post-U05); it exists so a future legitimate
+  subset must be asserted in code, never waved through by a bare skip.
+
+Proven by negative control on scratch copies (never committed): injecting a
+key into `phase_verifiers._DELIVERY_DELIVERABLES` that canon does not have
+made GATE 3 exit 1 naming `phase_verifiers.py: holds key(s) NOT in canonical
+spec (drift/hardcoded): ['bogus_drifted_key']`; zeroing the
+`_content-manifest.json` entry made GATE 2b exit 1 naming the file. The
+unmodified copy exits 0 in both controls.
+
 ## [v22.0.8] -- 2026-08-11 -- Presentations Dept R3 fix batch (U01-U09): manifest token resolution, canonical prompt family, authentic skip auth, launcher/discovery wiring, watchdog hardening, drift restoration
 
 Atomic batch merge of the R3 Presentations fix set (merge train U11,
