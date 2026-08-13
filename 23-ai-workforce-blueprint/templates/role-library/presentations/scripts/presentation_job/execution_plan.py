@@ -8,11 +8,26 @@ Turns PIPELINE-MANIFEST.json into a wave-scheduled execution plan:
   * topological_sort (Kahn's algorithm) -- a phase never runs before its
     dependencies; the manifest's `order` values provide the deterministic
     tie-break so the sort is stable across runs.
-  * cap_wave_width -- each wave respects the measured capacity (available
-    agents) and the 16-subagents-per-workflow doctrine.
+  * cap_wave_width -- each wave is bounded by the MEASURED capacity of THIS
+    client's account (capacity.probe()), never by a constant.
   * build_execution_plan(manifest_path, capacity_probe) -- the full plan.
   * main() -- CLI entry; calls capacity.probe() and prints
     'Execution plan: N waves' (plus the wave breakdown). Exit 0.
+
+WAVE WIDTH IS MEASURED, NOT DECLARED (unit u07)
+-----------------------------------------------
+This module used to clamp every wave to a hard-coded 16 (one operator's
+subagents-per-workflow directive) and to fall back to that same 16 whenever the
+capacity probe was unavailable. Both are ways of dispatching a number nobody
+measured: on an Ollama-Cloud-$20 box, 16 is five times the account's real
+ceiling. The width of each wave is now
+
+    min(number of phases READY in this wave, capacity.probe() available)
+
+and a plan can no longer be built at all without a measurement -- an absent or
+unmeasurable probe raises CapacityUnmeasured (AF-CAPACITY-UNMEASURED) instead of
+silently substituting a constant. The Kahn dependency logic below is unchanged;
+only the width is.
 
 Import as package-relative. Standalone run: `python3 -m presentation_job.execution_plan
 --manifest <path>` or `python3 presentation_job/execution_plan.py --manifest <path>`.
@@ -28,15 +43,16 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from .state import EXIT_OK, EXIT_USAGE  # package-relative (python3 -m)
+    from .state import EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED  # package-relative
 except ImportError:
-    from state import EXIT_OK, EXIT_USAGE  # direct file run from scripts/
+    from state import EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED  # direct file run
 
-# Sub-agents each workflow may run in parallel -- the operator directive of
-# 2026-08-10, mirrored here so a wave width is never larger than the doctrine
-# allows even when the measured capacity is (capacity.py computes
-# available = min(harness ceiling, provider ceiling, 30 x 16)).
-SUBAGENTS_PER_WORKFLOW = 16
+try:
+    from .capacity import (AUTOFAIL_CODE, CapacityUnmeasured, autofail_payload,
+                           refusal_message, require_available)
+except ImportError:  # direct file run from scripts/
+    from capacity import (AUTOFAIL_CODE, CapacityUnmeasured, autofail_payload,
+                          refusal_message, require_available)
 
 
 # ---------------------------------------------------------------------------
@@ -134,26 +150,68 @@ def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
 # ---------------------------------------------------------------------------
 # Wave scheduling
 # ---------------------------------------------------------------------------
-def cap_wave_width(available: int) -> int:
-    """Cap the wave width at the measured capacity and the per-workflow doctrine.
+def cap_wave_width(available: Optional[int], ready_items: Optional[int] = None) -> int:
+    """The width of ONE wave: min(ready_items, available). No constant involved.
 
-    width = min(available, SUBAGENTS_PER_WORKFLOW). A wave is one workflow, so
-    it can never carry more concurrent phases than the doctrine allows per
-    workflow -- even when the harness reports a larger available budget.
+    `available` is the measured ceiling of THIS client's account
+    (capacity.probe()['available']). There is deliberately no fallback: an
+    unmeasured capacity raises CapacityUnmeasured rather than substituting a
+    number, because the substituted number is exactly the defect this unit
+    exists to remove. `ready_items` is how many phases have all their
+    dependencies satisfied right now; when omitted the width is the measured
+    ceiling alone.
     """
-    if available is None:
-        available = SUBAGENTS_PER_WORKFLOW
-    return max(1, min(int(available), SUBAGENTS_PER_WORKFLOW))
+    if available is None or isinstance(available, bool) or not isinstance(available, int):
+        raise CapacityUnmeasured(
+            f"{AUTOFAIL_CODE}: wave width needs a measured capacity, got "
+            f"available={available!r}"
+        )
+    if available < 1:
+        raise CapacityUnmeasured(
+            f"{AUTOFAIL_CODE}: measured capacity {available} is not dispatchable"
+        )
+    if ready_items is None:
+        return available
+    return max(1, min(int(ready_items), available))
 
 
-def _wave_schedule(order: List[str], width: int) -> List[List[str]]:
-    """Greedy wave packing of the topological order, width-limited.
+def _wave_schedule_dag(dag: Dict[str, List[str]], available: int) -> List[List[str]]:
+    """Level-scheduled waves: each wave is min(ready, available) phases wide.
 
-    Within a wave, phases are independent by construction (the topological
-    order guarantees no edge between them). Returns waves of phase ids."""
+    Same Kahn mechanics as topological_sort (indegree bookkeeping, ready set
+    processed in sorted order for determinism) -- the DEPENDENCY logic is
+    untouched. The only new thing is that the ready set is truncated to the
+    measured capacity, and whatever does not fit stays ready for the next wave.
+    This replaces the old fixed-width slice of the topological order, which
+    could not tell a phase that was READY from one that merely came next.
+
+    With 5 mutually independent phases and available=3 this yields waves of
+    3 then 2: the width is driven by the probe, not by a constant.
+    """
+    indegree: Dict[str, int] = {pid: 0 for pid in dag}
+    for pid, deps in dag.items():
+        for dep in deps:
+            indegree[dep] = indegree.get(dep, 0) + 1
+
+    ready = sorted(pid for pid, deg in indegree.items() if deg == 0)
     waves: List[List[str]] = []
-    for i in range(0, len(order), width):
-        waves.append(order[i:i + width])
+    scheduled = 0
+    while ready:
+        width = cap_wave_width(available, len(ready))
+        wave = ready[:width]
+        carried = ready[width:]
+        waves.append(wave)
+        scheduled += len(wave)
+        newly_ready: List[str] = []
+        for pid in wave:
+            for dep in sorted(dag.get(pid, [])):
+                indegree[dep] -= 1
+                if indegree[dep] == 0:
+                    newly_ready.append(dep)
+        ready = sorted(carried + newly_ready)
+    if scheduled != len(dag):
+        stuck = [pid for pid, deg in indegree.items() if deg > 0]
+        raise ValueError(f"cycle detected in phase DAG involving: {sorted(stuck)}")
     return waves
 
 
@@ -165,40 +223,51 @@ def build_execution_plan(manifest_path: str | Path, capacity_probe: Optional[dic
 
     Args:
         manifest_path: path to PIPELINE-MANIFEST.json
-        capacity_probe: result of capacity.probe() (dict). When None, the
-            doctrine width (16) is used.
+        capacity_probe: result of capacity.probe() (dict). REQUIRED -- passing
+            None (or a probe that could not produce a number) raises
+            CapacityUnmeasured. There is no constant to fall back to.
 
     Returns:
         dict with keys: manifest_path, manifest_version, phase_count,
-        order (list), waves (list of lists), wave_width, dispatchable,
-        available, capacity_probe_mode.
+        order (list), waves (list of lists), wave_width, wave_widths,
+        dispatchable, available, capacity_probe_mode, capacity_status,
+        capacity_provider, capacity_plan.
+
+    Raises:
+        CapacityUnmeasured: the probe produced no dispatchable number.
     """
+    if capacity_probe is None:
+        raise CapacityUnmeasured(
+            f"{AUTOFAIL_CODE}: build_execution_plan requires a capacity probe result; "
+            f"a plan built without one would dispatch a width nobody measured"
+        )
+    available = require_available(capacity_probe)
+
     dag = load_phase_dag(manifest_path)
     order = topological_sort(dag)
     raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     manifest_version = raw.get("manifest_version")
 
-    if capacity_probe is None:
-        available = SUBAGENTS_PER_WORKFLOW
-        dispatchable = SUBAGENTS_PER_WORKFLOW
-        probe_mode = "none"
-    else:
-        available = int(capacity_probe.get("available") or SUBAGENTS_PER_WORKFLOW)
-        dispatchable = int(capacity_probe.get("dispatchable") or available)
-        probe_mode = str(capacity_probe.get("probe_mode") or "live")
+    dispatchable = capacity_probe.get("dispatchable")
+    if not isinstance(dispatchable, int) or isinstance(dispatchable, bool):
+        dispatchable = available
+    probe_mode = str(capacity_probe.get("probe_mode") or "live")
 
-    width = cap_wave_width(available)
-    waves = _wave_schedule(order, width)
+    waves = _wave_schedule_dag(dag, available)
     return {
         "manifest_path": str(Path(manifest_path).resolve()),
         "manifest_version": manifest_version,
         "phase_count": len(order),
         "order": order,
         "waves": waves,
-        "wave_width": width,
+        "wave_width": available,
+        "wave_widths": [len(w) for w in waves],
         "dispatchable": dispatchable,
         "available": available,
         "capacity_probe_mode": probe_mode,
+        "capacity_status": capacity_probe.get("status"),
+        "capacity_provider": capacity_probe.get("provider"),
+        "capacity_plan": capacity_probe.get("plan"),
     }
 
 
@@ -208,10 +277,12 @@ def format_plan_report(plan: dict) -> str:
         "EXECUTION PLAN -- Presentations department (MASTER-SPEC FILE 9)",
         f"Manifest: {plan['manifest_path']} (v{plan['manifest_version']}, "
         f"{plan['phase_count']} phases)",
-        f"Capacity probe: {plan['capacity_probe_mode']} -- dispatchable "
-        f"{plan['dispatchable']}, available {plan['available']}",
-        f"Wave width: {plan['wave_width']} (capped by doctrine "
-        f"{SUBAGENTS_PER_WORKFLOW} per workflow)",
+        f"Capacity probe: {plan['capacity_probe_mode']} -- status "
+        f"{plan.get('capacity_status')}, provider {plan.get('capacity_provider')}, "
+        f"plan {plan.get('capacity_plan')}, dispatchable {plan['dispatchable']}, "
+        f"available {plan['available']}",
+        f"Wave width: min(ready phases, measured available {plan['wave_width']}) "
+        f"-> per-wave widths {plan.get('wave_widths')}",
         f"Execution plan: {len(plan['waves'])} waves",
     ]
     for i, wave in enumerate(plan["waves"], 1):
@@ -239,16 +310,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"execution_plan: manifest not found: {args.manifest}", file=sys.stderr)
         return EXIT_USAGE
     try:
-        try:
-            from . import capacity  # package-relative (python3 -m)
-        except ImportError:
-            import capacity  # direct file run from scripts/
-        probe = capacity.probe()
-    except SystemExit as exc:
-        # probe exits 2 on missing settings -- degrade to doctrine width rather
-        # than failing the plan; the report states probe_mode=none.
-        probe = None
-    plan = build_execution_plan(args.manifest, probe)
+        from . import capacity  # package-relative (python3 -m)
+    except ImportError:
+        import capacity  # direct file run from scripts/
+    probe = capacity.probe()
+    try:
+        plan = build_execution_plan(args.manifest, probe)
+    except CapacityUnmeasured:
+        # No degradation to a constant. A plan whose width nobody measured is
+        # the defect, not the recovery.
+        print(f"execution_plan: {refusal_message(probe)}", file=sys.stderr)
+        print(json.dumps(autofail_payload(probe), indent=2), file=sys.stderr)
+        return EXIT_GATE_BLOCKED
     print(format_plan_report(plan), flush=True)
     return EXIT_OK
 

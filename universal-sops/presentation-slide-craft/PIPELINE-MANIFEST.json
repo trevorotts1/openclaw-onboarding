@@ -1,5 +1,5 @@
 {
-  "manifest_version": 46,
+  "manifest_version": 47,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -3131,6 +3131,16 @@
       "enforced_by": "synthesize_full_speech",
       "py_symbol": null,
       "check_script": "scripts/phase_verifiers.py::_verify_webinarized_speech"
+    },
+    {
+      "code": "AF-CAPACITY-UNMEASURED",
+      "stage": "0",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the engine was dispatched (or an execution plan was built) without a capacity measurement for THIS client's account. capacity.probe() detects the client's provider and plan in a fixed order -- (a) a declared capacity_override.json in the department config dir, (b) the 9Router configuration, (c) the OpenClaw agent model configuration, (d) provider known but plan undeclared, which PARKS behind a one-time interview question whose answer persists to capacity_override.json, (e) nothing found, which reports UNDETERMINED and falls back to DEFAULT_CONSERVATIVE = 3 -- and the cap table is exact: ollama-cloud $20/month = 3 concurrent agents, ollama-cloud $100/month = 10, deepseek-direct v4-pro = 500, deepseek-direct v4-flash = 2500. An unknown provider or plan is NEVER guessed upward. The autofail fires when the probe cannot produce a dispatchable number at all (status PARKED or FAILED): launcher.dispatch refuses before any engine process is created and exits non-zero, and execution_plan.build_execution_plan refuses rather than substituting a constant wave width. Wave width is min(ready phases, measured available) -- never a hard-coded per-workflow number, which on a small client plan would over-dispatch by orders of magnitude. Detection is read-only and never reads a credential VALUE, only which provider is configured. Repair: answer the capacity interview question (the answer is stored once), or fix/remove the malformed capacity_override.json named in the refusal payload.",
+      "enforced_by": "launcher",
+      "py_symbol": null,
+      "check_script": "scripts/presentation_job/capacity.py::probe"
     }
   ],
   "roles": [
