@@ -735,8 +735,14 @@ class TestAllRejectedIsNotAPass:
       1. STATE_SCHEMA_VERSION bumped -- every run dir fails the `!=` check.
       2. truncated/corrupt state.json on every run dir.
       3. unresolvable deck_slug on every run dir.
-    None of these may return EXIT_OK. The legitimate "some rejected, some
-    fine" path (real fleets always carry debris) must still pass."""
+    None of these may return EXIT_OK -- that part is settled, correct
+    behaviour and these tests assert it as such.
+
+    The DIFFERENT "some rejected, some fine" (mixed) case -- where at least
+    one run dir genuinely reconciles alongside rejections -- is deliberately
+    NOT covered by this class and is NOT asserted as correct anywhere in
+    this file. See TestMixedRejectionsKnownGap below, which documents that
+    case as an open, unresolved product gap instead."""
 
     def test_schema_bump_rejects_everything_not_a_pass(self, tmp_path):
         """Vector 1: a routine STATE_SCHEMA_VERSION bump makes EVERY run dir
@@ -801,59 +807,6 @@ class TestAllRejectedIsNotAPass:
         assert "reconciled 0" in out
         assert "NOT a pass" in out
 
-    def test_mixed_rejects_surfaces_loud_warning_even_though_it_passes(self, tmp_path):
-        """CORRECTED EXPECTATION -- this replaces
-        test_mixed_rejects_and_one_good_still_passes, which an adversarial
-        re-attack proved was itself the surviving bypass: it asserted
-        rc == EXIT_OK for a 4-of-5 (80%) Guard A rejection rate and never
-        checked the output for any warning at all. That is precisely the
-        shape that let a box carrying old debris plus in-flight run dirs
-        with truncated state.json print a reassuring summary, emit zero
-        warnings, and return success while all of the live work was
-        invisible (see TestAllLiveWorkInvisible below for that exact
-        reproduction).
-
-        The legitimate path really is not broken by requiring at least one
-        genuine reconciliation to keep EXIT_OK -- a real fleet always
-        carries some debris. What was missing is that "some debris" must
-        never be SILENT. This test uses a rejection reason
-        (unreadable_or_missing, i.e. truncated JSON) that the pre-fix code
-        never warned about at all -- only a schema_version mismatch printed
-        anything -- so this test fails against the pre-fix logic and only
-        passes once the warning is generalized to every not_a_run_dir
-        reason.
-
-        OPEN POLICY QUESTION for a human to set, not decided here: this
-        deliberately keeps rc == EXIT_OK whenever at least one run dir was
-        genuinely reconciled (the conservative reading -- surface loudly,
-        don't invent a new pass/fail threshold). Is 4-of-5 (80%) rejected
-        an acceptable EXIT_OK? Is 1-of-25? Should a rejection fraction above
-        some threshold move the exit code itself off EXIT_OK? That policy
-        call belongs to a human, not to this test.
-        """
-        from presentation_job.state import EXIT_OK
-
-        root = tmp_path / "scan"
-        root.mkdir()
-        for i in range(4):
-            d = root / f"bad{i}"
-            d.mkdir()
-            # Truncated mid-write -- NOT a schema mismatch, so the old
-            # schema-mismatch-only warning never fired for this reason.
-            (d / "state.json").write_text('{"schema_version": 1, "job_id": "pj_trunc')
-        _write_state(root / "good", _make_state(root / "good", deck_slug="deck-good"))
-
-        rc, out = _run_sweep(root)
-        assert rc == EXIT_OK
-        assert "scanned 5" in out
-        assert "not_a_run_dir: 4" in out
-        assert "reconciled 1" in out
-        assert "card_missing" in out
-        # The fix under test: any rejection must be loud, not just a
-        # schema-version-mismatch one, and not just a buried summary count.
-        assert "WARNING" in out
-        assert "4 of 5" in out
-
     def test_failures_take_priority_over_all_rejected_wording(self, tmp_path):
         """When a run dir raises AND the rest are all rejected, the sweep
         must still report non-pass (already guaranteed by EXIT_SWEEP_HAD_FAILURES,
@@ -881,6 +834,78 @@ class TestAllRejectedIsNotAPass:
 
         assert rc == EXIT_SWEEP_HAD_FAILURES
         assert rc != EXIT_OK
+
+
+class TestMixedRejectionsKnownGap:
+    """KNOWN GAP -- this class documents PRESENT BEHAVIOUR, not a settled
+    correctness claim, and it must never be read as one.
+
+    When a scan is "mixed" -- some run dirs rejected by Guard A, but at
+    least one genuinely reconciled (the normal shape of any real fleet,
+    which always carries some debris) -- the sweep CURRENTLY returns
+    EXIT_OK no matter how large the rejected fraction is, up to and
+    including 4-of-5 (80%) rejected in the test below. Whether that is the
+    right call is an OPEN, UNRESOLVED product decision that belongs to the
+    operator (see the "OPEN POLICY QUESTION" comment on reconcile_sweep()
+    in presentation_job/sweep.py) -- it has never been decided, and this
+    test suite does not decide it either. All this test proves is: (a) the
+    exit code is EXIT_OK today, and (b) a loud WARNING now fires so the
+    rejection is at least visible, not silent.
+
+    Lineage, so the next engineer does not re-litigate this from zero: this
+    exact test was previously named test_mixed_rejects_and_one_good_still_passes
+    (asserted PASS with 4-of-5 rejected and never checked for any warning
+    at all -- an adversarial re-attack proved that was itself a live
+    bypass: a box carrying old debris plus in-flight run dirs with
+    truncated state.json printed a reassuring summary, emitted zero
+    warnings, and returned success while 100% of live work was invisible).
+    It was then renamed test_mixed_rejects_surfaces_loud_warning_even_though_it_passes,
+    which added the warning assertion but whose name still read as though
+    "it passes" were the settled, intended outcome -- a green test is not
+    proof an exit code is correct, and that name did not make the gap
+    plain. This is the third name. If it needs a fourth, the fix is to the
+    exit-code POLICY (an operator decision, made once, written down), not
+    to the test's wording again.
+
+    If/when an operator decides a mixed-rejection scan (or one above some
+    rejection-fraction threshold) should return non-zero, changing this
+    scenario's exit code is a DELIBERATE FIX closing a documented gap --
+    it is NOT a regression, and nobody should revert it to force EXIT_OK
+    back. Update this test's assertions (and its name) to match the new,
+    stricter policy when that decision is made -- do not leave it asserting
+    the old EXIT_OK behaviour as if the gap were still open once it is
+    closed."""
+
+    def test_mixed_rejects_KNOWN_GAP_exit_code_still_ok_pending_operator_decision(
+        self, tmp_path
+    ):
+        from presentation_job.state import EXIT_OK
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(4):
+            d = root / f"bad{i}"
+            d.mkdir()
+            # Truncated mid-write -- NOT a schema mismatch, so the old
+            # schema-mismatch-only warning never fired for this reason.
+            (d / "state.json").write_text('{"schema_version": 1, "job_id": "pj_trunc')
+        _write_state(root / "good", _make_state(root / "good", deck_slug="deck-good"))
+
+        rc, out = _run_sweep(root)
+        # PRESENT BEHAVIOUR, not a correctness claim -- see class docstring.
+        # A future policy decision may deliberately change this assertion
+        # to a non-zero exit code; that would be a fix, not a regression.
+        assert rc == EXIT_OK
+        assert "scanned 5" in out
+        assert "not_a_run_dir: 4" in out
+        assert "reconciled 1" in out
+        assert "card_missing" in out
+        # This part IS a real, settled requirement regardless of how the
+        # exit-code policy question resolves: any rejection must be loud,
+        # not just a schema-version-mismatch one, and not just a buried
+        # summary count.
+        assert "WARNING" in out
+        assert "4 of 5" in out
 
 
 class TestFinishedNoCardCountsAsReconciled:

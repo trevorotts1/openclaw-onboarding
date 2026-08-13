@@ -494,6 +494,17 @@ def reconcile_sweep(
     # fraction of, say, 1-of-25 acceptable for EXIT_OK? Is any rejection at
     # all? Should a fraction above some threshold move the exit code itself
     # off EXIT_OK? That call belongs to a human, not to this function.
+    #
+    # KNOWN, UNRESOLVED GAP -- tracked in
+    # tests/test_sweep.py::TestMixedRejectionsKnownGap, which documents this
+    # as present behaviour only and explicitly refuses to assert it is
+    # correct. Do not read that test's green result, or this comment, as
+    # proof EXIT_OK is the right answer for a mixed-rejection scan -- it is
+    # simply what the code does today, pending the operator decision above.
+    # If/when that decision moves this exit code to non-zero for some
+    # rejection shape, that change is a DELIBERATE FIX closing this gap --
+    # it is NOT a regression, and the linked test's assertions must be
+    # updated to match the new policy, not reverted to force EXIT_OK back.
     if not_a_run_dir_count:
         pct = (not_a_run_dir_count / scanned * 100.0) if scanned else 0.0
         print(
