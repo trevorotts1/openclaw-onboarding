@@ -1,3 +1,43 @@
+## [v22.0.15] -- 2026-08-13 -- G5: the reconcile sweep can no longer report success while reconciling nothing
+
+The board-reconcile sweep returned `EXIT_OK` in several shapes where it had in
+fact reconciled nothing, so a box whose live work was entirely invisible looked
+healthy.
+
+- **Zero run dirs** no longer reports success, and its exit code is distinct from
+  the all-rejected code so the two causes are never conflated.
+- **All-rejected** (every run dir refused -- corrupt JSON, unresolvable slug) is
+  no longer a pass. Genuine failures still take priority in the wording.
+- **`too_old` no longer counts toward `reconciled_count`.** Reaching `too_old`
+  means Guard A passed and a deck_slug resolved, but `_classify()` returns before
+  ever looking up a task_id -- a DECLINED inspection, not a reconciled one. The
+  `EXIT_SWEEP_ALL_REJECTED` gate is keyed on `not_a_run_dir_count == scanned`
+  directly, so a `too_old`-only scan still exits 0 -- honestly.
+- **The schema-mismatch-only WARNING is generalized**: any `not_a_run_dir`
+  rejection, of any reason, prints an unmissable WARNING naming count and
+  percentage. A second WARNING fires when `reconciled_count == 0` while not
+  everything was Guard-A-rejected -- the `too_old` + truncated-`state.json` mix
+  that used to be completely silent.
+
+`test_mixed_rejects_and_one_good_still_passes` was REMOVED because it enshrined the
+bypass as intended: it asserted `EXIT_OK` for a scan where 4 of 5 run dirs were
+rejected, checking nothing about warnings. An adversarial re-attack proved that
+exact shape live -- old debris counted as reconciled alongside in-flight dirs whose
+`state.json` was truncated (rejected for `unreadable_or_missing`, which the old
+schema-mismatch warning never fired for), printing a reassuring summary with zero
+warnings and `EXIT_OK` while 100% of live work was unreconciled. It is replaced by
+`test_mixed_rejects_surfaces_loud_warning_even_though_it_passes`, which uses a
+truncated-JSON rejection so it FAILS against the pre-fix warning logic.
+
+KNOWN GAP, deliberately left for a human to decide and labelled as such in code:
+the exit code still stays `EXIT_OK` whenever at least one run dir was genuinely
+reconciled. Whether a rejection FRACTION should move the exit code itself is a
+policy question this change does not invent an answer to -- it surfaces loudly
+instead.
+
+Mutation proof: the new tests were run against the PRE-FIX `sweep.py` and **17
+failed**; against the fixed sweep **38 passed** (origin/main control: 28 passed).
+
 ## [v22.0.14] -- 2026-08-13 -- G3: heartbeat_minutes asserted on every phase, and given a sanity ceiling
 
 Two layers, because the first one alone was proven insufficient by re-attack.
