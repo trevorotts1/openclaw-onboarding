@@ -470,16 +470,15 @@ def _text_violations(text: str):
 
 
 def _trigger_tag(node: dict) -> str:
-    """The contact_tag the node binds, from parameters/options/name, else ''."""
+    """The contact_tag the node binds — node-bound contactTag/tag parameters
+    ONLY. A node NAME (e.g. "Webhook anthology-drive", "PT Producer Resolved")
+    is a structural label, not a release-tag binding, and must never be read
+    as one: it would misclassify non-notification workflows (like the Drive
+    broker) as client-facing and false-fail their audit."""
     tag = (node.get("parameters") or {}).get("contactTag") or \
         (node.get("parameters") or {}).get("tag") or ""
     if not isinstance(tag, str):
         tag = ""
-    if not tag.strip():
-        name = (node.get("name") or "")
-        m = re.search(r"anthology-[a-z-]+", name)
-        if m:
-            tag = m.group(0)
     return tag.strip()
 
 
@@ -587,7 +586,19 @@ def audit_workflow(export, field_map: dict, contract: dict, *,
             report["checks"]["email_and_sms"]["fails"].append(
                 {"node": "<workflow>", "path": "nodes[]",
                  "detail": "no email-sending action node found"})
-        if not smss:
+        # Trevor's decree (contract workflows.producer_notify_out_of_scope +
+        # MASTER-SPEC U13): producer-notification workflows are email-only
+        # by design and are NOT client-facing author releases, so the SMS
+        # law does not apply to them. The email law still holds.
+        email_only = False
+        pno = (contract.get("workflows") or {}).get(
+            "producer_notify_out_of_scope")
+        if isinstance(pno, str) and pno:
+            m = re.search(r"'([A-Za-z0-9 _-]+)'", pno)
+            if m:
+                email_only = (m.group(1).strip().lower() in
+                              (report["name"] or "").lower())
+        if not smss and not email_only:
             report["checks"]["email_and_sms"]["pass"] = False
             report["checks"]["email_and_sms"]["fails"].append(
                 {"node": "<workflow>", "path": "nodes[]",
@@ -731,8 +742,87 @@ def collect_workflow_files(paths, directory, *, out=None):
     return files, None
 
 
+def _audit_templates_file(fp, field_map: dict, contract: dict, *,
+                          expect_client_facing=False):
+    """Audit ONE u10_u13 template document (the U10-U13 build output shape:
+    {name, module, seat, trigger:{tag,type}, actions, data:{email,sms},
+    links}) by translating it into the canonical n8n-export shape the audit
+    judges. The template is the source of what deploys, so its copy law is
+    the same law. A template missing the document shape is a malformed
+    refusal (never a blind pass)."""
+    try:
+        doc = json.loads(fp.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {
+            "file": str(fp), "name": "", "trigger_tag": "",
+            "client_facing": bool(expect_client_facing),
+            "checks": {k: {"pass": True, "fails": []}
+                       for k in ("editors_never_ai", "no_em_dashes",
+                                 "email_and_sms", "stage_links",
+                                 "per_stage_copy")},
+            "fails": [{"code": "AF-AE-COPY-MALFORMED", "node": "<export root>",
+                       "check": "malformed",
+                       "detail": "template not readable/valid JSON: %s" % exc}],
+            "ok": False,
+        }
+    name = str(doc.get("name") or "")
+    trigger = doc.get("trigger") or {}
+    tag = str(trigger.get("tag") or "")
+    actions = doc.get("actions") or []
+    data = doc.get("data") or {}
+    email = data.get("email") or {}
+    sms = data.get("sms") or {}
+    links = doc.get("links") or {}
+    nodes = []
+    if tag:
+        nodes.append({"type": "n8n-nodes-base.gmail", "name": "Trigger",
+                      "parameters": {"contactTag": tag}})
+    if email:
+        nodes.append({"type": "n8n-nodes-base.emailSend", "name": "Email",
+                      "parameters": email})
+    if sms:
+        nodes.append({"type": "n8n-nodes-base.smsSend", "name": "SMS",
+                      "parameters": sms})
+    if links:
+        nodes.append({"type": "n8n-nodes-base.code", "name": "Links",
+                      "parameters": {"links": links}})
+    if not nodes:
+        # A DOCUMENTED SEAT ONLY template (owned_elsewhere, e.g. the Intake
+        # Fire: its real surface is the webhook-to-route mapping owned by the
+        # U02/U05 tooling) has no copy of its own to audit. It is a skip,
+        # not a failure -- fail-closed still applies to a genuinely empty
+        # or malformed audit surface.
+        if doc.get("owned_elsewhere"):
+            return {
+                "file": str(fp), "name": name, "trigger_tag": "",
+                "client_facing": bool(expect_client_facing),
+                "checks": {k: {"pass": True, "fails": []}
+                           for k in ("editors_never_ai", "no_em_dashes",
+                                     "email_and_sms", "stage_links",
+                                     "per_stage_copy")},
+                "fails": [], "ok": True, "skipped": True,
+            }
+        return {
+            "file": str(fp), "name": name, "trigger_tag": "",
+            "client_facing": bool(expect_client_facing),
+            "checks": {k: {"pass": True, "fails": []}
+                       for k in ("editors_never_ai", "no_em_dashes",
+                                 "email_and_sms", "stage_links",
+                                 "per_stage_copy")},
+            "fails": [{"code": "AF-AE-COPY-MALFORMED", "node": "<export root>",
+                       "check": "malformed",
+                       "detail": "template carries no trigger/actions/data "
+                                 "(empty audit surface)"}],
+            "ok": False,
+        }
+    export = {"name": name, "nodes": nodes}
+    return audit_workflow(export, field_map, contract, path=fp,
+                          expect_client_facing=expect_client_facing)
+
+
 def check_command(files, *, field_map_path=None, contract_path=None,
-                  expect_client_facing=False, jsonout=None, out=None):
+                  expect_client_facing=False, templates=False, jsonout=None,
+                  out=None):
     """Audit every file, print the per-workflow PASS/FAIL report with exact
     violation locations, return exit code (0 all PASS; 4 any FAIL; 2 malformed/
     missing sources; 1 unexpected)."""
@@ -781,9 +871,13 @@ def check_command(files, *, field_map_path=None, contract_path=None,
             out.write("[copy_qc] %s: not readable/valid JSON: %s\n" % (fp, exc))
             any_malformed = True
             continue
-        reports.append(audit_workflow(
-            export, fm, ct, path=fp,
-            expect_client_facing=expect_client_facing))
+        if templates:
+            reports.append(_audit_templates_file(
+                fp, fm, ct, expect_client_facing=expect_client_facing))
+        else:
+            reports.append(audit_workflow(
+                export, fm, ct, path=fp,
+                expect_client_facing=expect_client_facing))
 
     # A malformed export is a fail-closed refusal (exit 2), never a silent skip.
     if any_malformed:
@@ -814,7 +908,8 @@ def _print_report(r: dict, out):
             extra = " (%d)" % len(body["fails"])
         out.write("    [%s%s] %s%s\n" % (mark, check, "FAIL" if not body["pass"] else "PASS", extra))
     for f in r["fails"]:
-        out.write("      -> %s at %s (%s)\n" % (f["code"], f["node"], f["path"]))
+        out.write("      -> %s at %s (%s)\n" % (f["code"], f["node"],
+                                           f.get("path", "<workflow>")))
         out.write("         %s\n" % f["detail"])
     if r["fails"]:
         out.write("    AF-AE-COPY-*: %d violation(s) -- fix the workflow copy and re-run\n"
@@ -1190,6 +1285,83 @@ def self_test() -> int:
         finally:
             fm, ct = fm_bak, ct_bak
 
+    # -- template mode (U14): a document-shaped u10_u13 template with
+    #    trigger/actions/data audits clean (the avatar template) -----------
+    tpl = {
+        "name": "Anthology Release: Avatar", "module": "w3_release_avatar",
+        "trigger": {"tag": "anthology-release-avatar", "type": "contact_tag"},
+        "actions": ["send-email", "send-sms"],
+        "data": {
+            "email": {
+                "body": ("Hi {{ custom_values.producer }},\n\nYour author "
+                         "profile for {{ custom_values.anthology_name }} is "
+                         "ready.\n\nThe PDF is yours to view. The Google Doc "
+                         "is the one you edit, and it is the version we "
+                         "use.\n\nSee it: "
+                         "{{ contact.anthology_avatar_pdf_url }} and "
+                         "{{ contact.anthology_avatar_doc_url }}."),
+                "subject": "Your Avatar is ready"},
+            "sms": {"body": "Your Avatar is ready. See it: "
+                            "{{ contact.anthology_avatar_doc_url }}."}},
+        "links": {"email_links": ["{{contact.anthology_avatar_pdf_url}}",
+                                  "{{contact.anthology_avatar_doc_url}}"],
+                  "sms_link": "{{contact.anthology_avatar_doc_url}}"},
+    }
+    with _tf.TemporaryDirectory() as td:
+        tpl_fp = Path(td) / "tpl.json"
+        tpl_fp.write_text(json.dumps(tpl), encoding="utf-8")
+        dev_t = io.StringIO()
+        rc = check_command([tpl_fp], templates=True, jsonout=dev_t)
+        assert rc == EX_OK, "template golden must exit 0, got %s" % rc
+        dev_tb = io.StringIO()
+        rc = check_command([tpl_fp], templates=True, out=dev_tb)
+        assert rc == EX_OK and "PASS" in dev_tb.getvalue()
+
+        # A producer-notification template (email-only per Trevor's decree)
+        # PASSES: the SMS law does not apply to producer notifications.
+        prod_tpl = {
+            "name": "Chapter Approval Ready",
+            "trigger": {"tag": "anthology-producer-chapter-ready",
+                        "type": "contact_tag"},
+            "actions": ["send-email"],
+            "data": {"email": {
+                "body": ("Dear {{ custom_values.producer }},\n\nOur editors "
+                         "have finished the chapter, and it is ready for your "
+                         "review at the board.\n\nView the chapter PDF here: "
+                         "{{ contact.anthology_chapter_pdf_url }}\n\nEdit the "
+                         "chapter in the Google Doc here: "
+                         "{{ contact.anthology_chapter_doc_url }}\n\nThe PDF "
+                         "is yours to view. The Google Doc is the one you "
+                         "edit, and it is the version we use.")},
+                "sms": {}},
+            "links": {"email_links": ["{{contact.anthology_chapter_pdf_url}}",
+                                      "{{contact.anthology_chapter_doc_url}}"],
+                      "sms_link": ""},
+        }
+        prod_fp = Path(td) / "prod.json"
+        prod_fp.write_text(json.dumps(prod_tpl), encoding="utf-8")
+        dev_p = io.StringIO()
+        rc = check_command([prod_fp], templates=True, jsonout=dev_p)
+        assert rc == EX_OK, "producer-notification template must exit 0, got %s" % rc
+
+        # A documented seat (owned_elsewhere, e.g. Intake Fire) is a SKIP.
+        skip_tpl = {"name": "Anthology Intake Fire", "owned_elsewhere": True,
+                    "data": None}
+        skip_fp = Path(td) / "skip.json"
+        skip_fp.write_text(json.dumps(skip_tpl), encoding="utf-8")
+        dev_s = io.StringIO()
+        rc = check_command([skip_fp], templates=True, jsonout=dev_s)
+        assert rc == EX_OK, "documented seat must exit 0, got %s" % rc
+
+        # A template with NO audit surface and NOT owned elsewhere is a
+        # malformed FAIL (fail-closed), never a silent pass.
+        mal_tpl = {"name": "Weird", "data": None}
+        mal_fp = Path(td) / "mal.json"
+        mal_fp.write_text(json.dumps(mal_tpl), encoding="utf-8")
+        dev_m = io.StringIO()
+        rc = check_command([mal_fp], templates=True, jsonout=dev_m)
+        assert rc == EX_VIOLATION, "malformed template must exit 4, got %s" % rc
+
     print("copy_qc_workflows self-test: OK "
           "(golden PASS, per-check FAIL ladders [AI word, em-dash, no-email, "
           "no-sms, missing stage links, missing stage tokens], attack fixture "
@@ -1223,6 +1395,12 @@ def main(argv=None):
     ap.add_argument("--expect-client-facing", action="store_true",
                     help="treat every audited workflow as client-facing even "
                          "when no trigger tag is found")
+    ap.add_argument("--templates", action="store_true",
+                    help="audit U10-U13 build template documents (document-"
+                         "shaped templates under scripts/u10_u13_workflows/) "
+                         "instead of n8n workflow exports. Translates each "
+                         "document into the canonical n8n shape internally "
+                         "so the same copy law applies.")
     ap.add_argument("--json", action="store_true",
                     help="emit a machine-readable report on stdout")
     ap.add_argument("--location-id", default="",
@@ -1267,6 +1445,7 @@ def main(argv=None):
                 files, field_map_path=args.field_map,
                 contract_path=args.contract,
                 expect_client_facing=args.expect_client_facing,
+                templates=args.templates,
                 jsonout=jsonout, out=out)
 
         ap.error("unknown command %r" % args.cmd)

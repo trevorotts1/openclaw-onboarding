@@ -212,7 +212,7 @@ cli_files = [
     "check_intake_fire_scope.py", "archive_legacy_workflows.py",
     "provision_fields.py", "build_anthology_forms.py",
     "build_anthology_workflows.py", "provision_sms_phone.py",
-    "cc_board_hygiene.py",
+    "cc_board_hygiene.py", "copy_qc_workflows.py",
 ]
 cli_missing = [f for f in cli_files if not os.path.isfile(p("scripts", f))]
 for f in cli_missing:
@@ -246,6 +246,41 @@ if not cli_missing:
     finally:
         if cli_copy:
             shutil.rmtree(cli_copy, ignore_errors=True)
+
+# --- U14 copy-QC gate: every built workflow template passes the copy law ---
+# The U10-U13 template documents (scripts/u10_u13_workflows/*.json) are the
+# source of what deploys, so the U14 copy law (editors never AI/ghostwriter,
+# zero em-dashes, email AND SMS for author-facing releases, stage-appropriate
+# links, per-stage copy invariants) must hold over them on every verify. Runs
+# inside the isolated copy above (read-only over the shipped tree).
+if not cli_missing:
+    _qc_copy = None
+    try:
+        _qc_copy = tempfile.mkdtemp(prefix="anthology-engine-verify-qc-")
+        shutil.copytree(p("scripts"), os.path.join(_qc_copy, "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(p("config"), os.path.join(_qc_copy, "config"))
+        for _root_f in ("ENGINE-MANIFEST.json", "HOW-TO-USE.md",
+                        "skill-version.txt"):
+            if os.path.isfile(p(_root_f)):
+                shutil.copy(p(_root_f), _qc_copy)
+        _qc_py = os.path.join(_qc_copy, "scripts", "copy_qc_workflows.py")
+        _qc_dir = os.path.join(_qc_copy, "scripts", "u10_u13_workflows")
+        if os.path.isfile(_qc_py) and os.path.isdir(_qc_dir):
+            _r = subprocess.run(
+                [sys.executable, _qc_py, "check", "--templates",
+                 "--directory", _qc_dir],
+                capture_output=True, text=True, timeout=300, cwd=_qc_copy)
+            if _r.returncode != 0:
+                _tail = (_r.stdout or _r.stderr or "").strip()[-500:]
+                fails.append("U14 copy-QC gate FAILED (rc=%d): %s"
+                             % (_r.returncode, _tail))
+        else:
+            fails.append("U14 copy-QC gate missing target: scripts/copy_qc_"
+                         "workflows.py or scripts/u10_u13_workflows/")
+    finally:
+        if _qc_copy:
+            shutil.rmtree(_qc_copy, ignore_errors=True)
 
 # --- U17 drift gate: the snapshot fixture must agree with the source of truth ---
 # scripts/qc-snapshot-fixture.sh (ENGINE-MANIFEST row 52, authored_by U17) is the
