@@ -2374,6 +2374,82 @@ def _resolve_dept_library_dir(dept_slug):
 _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
                      "how-to-use-this-department.md"]
 
+# Canonical script asset suffixes: always-overwrite (mirror) from the
+# role-library on every scaffold/floor-fill pass. .json is deliberately
+# excluded — it is additive/missing-only because it may carry client-local
+# overrides (see scaffold_department's scripts/ block below).
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".sha256", ".pdf")
+
+# Directory names never descended into when walking a role-library scripts/
+# tree — build/tooling cache, never a source of canonical files a department
+# needs. Any directory name starting with "." is also pruned (hidden dirs,
+# e.g. a stray .git or .pytest_cache with a dot-prefixed variant).
+_SCRIPTS_WALK_PRUNE_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".git"}
+
+
+def _iter_scripts_tree_files(scripts_root):
+    """
+    Recursively walk `scripts_root` (a role-library dept's scripts/ dir),
+    yielding (relative_path, absolute_path) for every file NOT inside a
+    pruned cache/hidden directory. Deterministic order (sorted at each
+    level) so callers get stable, diffable output.
+
+    This is the single walk used by BOTH the materializer (copy) and the
+    verifier (post-copy check) so the two can never silently disagree about
+    what "the scripts tree" contains.
+    """
+    scripts_root = Path(scripts_root)
+    for root, dirnames, filenames in os.walk(scripts_root):
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if d not in _SCRIPTS_WALK_PRUNE_DIRS and not d.startswith(".")
+        )
+        root_path = Path(root)
+        for fname in sorted(filenames):
+            if fname == ".DS_Store" or fname.endswith(".pyc"):
+                continue
+            src_file = root_path / fname
+            yield src_file.relative_to(scripts_root), src_file
+
+
+def verify_scripts_materialization(lib_scripts_root, scripts_target,
+                                    canonical_suffixes=_CANONICAL_SCRIPT_SUFFIXES):
+    """
+    Post-materialization proof (generalizes the single-file U024 assertion
+    below to every canonical file in the tree, at any depth). For every file
+    under `lib_scripts_root` whose suffix is in `canonical_suffixes` (the
+    always-overwrite / mirrored set — .json is NOT in this set and is never
+    checked here, because it is deliberately allowed to diverge from the
+    library as a client-local override), require that the same relative
+    path exists under `scripts_target` AND is byte-identical (sha256).
+
+    Returns a list of problem dicts, each either
+      {"path": "<relative path>", "issue": "missing"}
+    or
+      {"path": "<relative path>", "issue": "hash-mismatch"}
+    An empty list means every canonical file the library ships was proven
+    present and unmodified at the destination — i.e. the box actually
+    received the update, not just "a copy step ran without raising".
+    Never writes anything; safe to call against a live, already-materialized
+    department directory (read-only).
+    """
+    import hashlib as _hashlib
+    lib_scripts_root = Path(lib_scripts_root)
+    scripts_target = Path(scripts_target)
+    problems = []
+    for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root):
+        if src_file.suffix not in canonical_suffixes:
+            continue
+        dest_file = scripts_target / rel_path
+        if not dest_file.is_file():
+            problems.append({"path": str(rel_path), "issue": "missing"})
+            continue
+        src_hash = _hashlib.sha256(src_file.read_bytes()).hexdigest()
+        dst_hash = _hashlib.sha256(dest_file.read_bytes()).hexdigest()
+        if src_hash != dst_hash:
+            problems.append({"path": str(rel_path), "issue": "hash-mismatch"})
+    return problems
+
 def scaffold_department(dept_path, dept_slug, dry_run=False):
     """
     ADDITIVE department-level scaffolding (defect #4). Writes, only if missing
@@ -2443,19 +2519,27 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # disarms on exactly the copies most likely to be tampered with. Both are treated
     # like .py/.sh (always-overwrite with the canonical library version); only .json
     # stays additive (may carry client-local overrides).
+    #
+    # FIX-DELIVERY-01: this used to be a depth-1 iterdir() that explicitly
+    # `continue`d on every directory ("skip nested dirs (e.g. __pycache__)"),
+    # so any role-library scripts/ tree with real nested packages (e.g.
+    # presentations/scripts/presentation_job/, tests/) could NEVER reach a
+    # materialized department — silently, with no error, on every box,
+    # forever. Walks the full tree now (via _iter_scripts_tree_files, shared
+    # with verify_scripts_materialization below so copy and verify can never
+    # disagree about what the tree contains); only real cache/hidden dirs are
+    # pruned, and the per-file mirror(.py/.sh/.sha256/.pdf)-vs-fork(.json)
+    # policy is unchanged and now applies at every depth, not just depth 1.
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
+        lib_scripts_root = lib_dir / "scripts"
         if not dry_run:
             scripts_target.mkdir(exist_ok=True)
         scripts_copied = 0
-        for src_file in sorted((lib_dir / "scripts").iterdir()):
-            if src_file.name.startswith("__") or src_file.suffix == ".pyc":
-                continue
-            if src_file.is_dir():
-                continue  # skip nested dirs (e.g. __pycache__)
+        for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root):
             if src_file.suffix not in (".py", ".sh", ".json", ".sha256", ".pdf"):
                 continue
-            dest_file = scripts_target / src_file.name
+            dest_file = scripts_target / rel_path
             # .json config files: additive (never clobber client-local overrides).
             # .py / .sh / .sha256 / .pdf canonical assets: always overwrite so a
             # stale build_deck.py (or any other generator), a stale hash-pin file,
@@ -2465,11 +2549,41 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                 continue
             if not dry_run:
                 import shutil as _shutil
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
                 _shutil.copy2(src_file, dest_file)
             scripts_copied += 1
         if scripts_copied:
             written.setdefault("scripts", 0)
             written["scripts"] = scripts_copied
+
+        # FIX-DELIVERY-01 — generalized post-materialization proof. The old
+        # code below this block only ever asserted ONE hardcoded file
+        # (blend_voice_governance.py). A copy step that silently drops or
+        # diverges on any OTHER canonical file — including everything under
+        # a nested dir the depth-1 loop used to skip — reported success
+        # anyway (written["scripts"] is just a count). Prove every canonical
+        # file the library ships (recursively) actually landed, byte-
+        # identical, at the destination; a box that did NOT receive the
+        # update raises loudly here instead of reporting a clean count.
+        # dry_run never writes, so there is nothing to verify yet.
+        if not dry_run:
+            _verify_problems = verify_scripts_materialization(
+                lib_scripts_root, scripts_target)
+            if _verify_problems:
+                _lines = "\n".join(
+                    f"  - {p['issue']}: {p['path']}" for p in _verify_problems
+                )
+                raise RuntimeError(
+                    f"scripts/ materialization for {dept_path} did not reach "
+                    f"the destination intact — {len(_verify_problems)} "
+                    f"canonical file(s) missing or diverged from "
+                    f"{lib_scripts_root}:\n{_lines}\n"
+                    "Refusing to report success on an incomplete/sabotaged copy."
+                )
+            written["scripts_verified"] = sum(
+                1 for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root)
+                if src_file.suffix in _CANONICAL_SCRIPT_SUFFIXES
+            )
 
         # U024 — post-materialization assertion for blend_voice_governance.py.
         # A copy that silently diverges is worse than an absence, because
@@ -2603,6 +2717,24 @@ def main():
             "is added to persona-categories.json."
         ),
     )
+    # FIX-DELIVERY-01: standalone, read-only per-box proof. Independent of
+    # whether/when scaffold_department last ran on this box (floor-fill is
+    # gap-gated — see floor-fill-driver.py — so a box in steady state may
+    # never invoke the materializer at all). Point this at a LIVE
+    # department's scripts/ dir and its role-library source and it reports,
+    # loudly and with an itemized list, whether the box actually has every
+    # canonical (.py/.sh/.sha256/.pdf) file the library ships, at every
+    # depth — instead of a roll silently reporting success while a box never
+    # received the update. Never writes anything.
+    parser.add_argument(
+        "--verify-scripts-only", action="store_true",
+        help=(
+            "Read-only: verify --dept-path/scripts/ against the role-library's "
+            "--dept-slug scripts/ tree (recursively). Prints PASS or an "
+            "itemized FAIL list and exits non-zero on any missing/diverged "
+            "canonical file. Makes no writes; does not require --roles-json."
+        ),
+    )
     args = parser.parse_args()
 
     if args.workspace_root:
@@ -2623,8 +2755,34 @@ def main():
         print(f"[create_role_workspaces] Refreshed governing-personas.md in {n} dept folder(s).")
         return 0
 
+    # ── --verify-scripts-only: read-only per-box proof (FIX-DELIVERY-01) ────
+    if args.verify_scripts_only:
+        if not args.dept_path:
+            parser.error("--dept-path is required with --verify-scripts-only")
+        dept_path = Path(args.dept_path)
+        dept_slug = args.dept_slug or dept_path.name.replace("-dept", "").strip().lower()
+        lib_dir = _resolve_dept_library_dir(dept_slug)
+        if lib_dir is None or not (lib_dir / "scripts").is_dir():
+            print(f"[verify-scripts] no role-library scripts/ source found for "
+                  f"dept-slug={dept_slug!r} — nothing to verify against.",
+                  file=sys.stderr)
+            return 2
+        scripts_target = dept_path / "scripts"
+        problems = verify_scripts_materialization(lib_dir / "scripts", scripts_target)
+        if problems:
+            print(f"[verify-scripts] FAIL — {dept_path} did NOT receive the full "
+                  f"update. {len(problems)} canonical file(s) missing or diverged "
+                  f"from {lib_dir / 'scripts'}:")
+            for p in problems:
+                print(f"  - {p['issue']}: {p['path']}")
+            return 1
+        print(f"[verify-scripts] PASS — {scripts_target} matches "
+              f"{lib_dir / 'scripts'} for every canonical file.")
+        return 0
+
     if not args.dept_path:
-        parser.error("--dept-path is required (unless --refresh-personas-only is used)")
+        parser.error("--dept-path is required (unless --refresh-personas-only or "
+                      "--verify-scripts-only is used)")
     dept_path = Path(args.dept_path)
 
     # ── --from-roster: complete, additive dept-scoped instantiation ──────────
