@@ -1,3 +1,99 @@
+## [v22.0.16] -- 2026-08-13 -- presentation-notify.sh enters git, at the path production actually reads
+
+`presentation-notify.sh` is what the Presentations engine's Reporter shells out to
+through `PRESENTATION_NOTIFY_CMD`. It had never been in this repository. A
+repo-wide search of `origin/main` for `presentation-notify` returns zero hits
+(rc=1, empty stderr) against a control search for `presentation_job` returning 60
+files (rc=0) -- so the script existed only as an untracked file written directly
+onto a live box, and no roll could ever have fixed it. The hardened rewrite sat
+unmerged on a branch, at a path that would never have reached production anyway.
+
+**Only the script and its wiring land here. No presentation Python is touched** --
+`report.py`, `__main__.py` and `diagnose.py` are being redesigned separately and
+are deliberately excluded from this change. Everything else in the diff is the
+version roll this repo's own gates require: touching anything under
+`23-ai-workforce-blueprint/` makes G3 demand a `skill-version.txt` bump, which
+version-consistency then requires to stay in lockstep with `/version`. The single
+`.py` that appears is one `BROWSER_MANAGER_PY_VERSION` string in skill 06 that
+`scripts/bump-version.sh` owns.
+
+- **`23-ai-workforce-blueprint/tools/presentation-notify.sh`** (NEW, +x) -- the
+  hardened script, committed at the path that reaches production.
+- **`23-ai-workforce-blueprint/wire.sh`** (NEW, +x) -- skill-root wiring installer,
+  which `update-skills.sh`'s generic wiring loop already picks up (priority
+  `wire.sh` > `install.sh` > `scripts/install.sh`). Copies the committed script to
+  `~/.openclaw/tools/presentation-notify.sh` (`/data/.openclaw/tools/` off Darwin),
+  `chmod +x`, byte-exact `cmp` no-op when already current, honours a `TOOLS_DIR`
+  override for tests, logs every failure and **always exits 0** so a per-skill
+  installer can never abort a fleet roll.
+
+**Path choice, which is the load-bearing decision here.** The same hardened script
+also existed at `templates/role-library/presentations/scripts/`. That path is NOT
+authoritative: department materialization would only ever deploy it to
+`~/.openclaw/workspace/departments/Presentations/scripts/`, never to
+`~/.openclaw/tools/`. Checked read-only against a live box -- the deployed script
+is a loose file at `~/.openclaw/tools/presentation-notify.sh`; the env that sets
+`PRESENTATION_NOTIFY_CMD` references `tools/presentation-notify.sh` exactly once
+and the department path zero times; and that department `scripts/` directory holds
+a `presentation-notify.**py**`, not this `.sh`. Exactly ONE copy is committed --
+deliberately not a second orphan at the templates path. The one existing precedent
+for installing into `~/.openclaw/tools/`, skill 44's `convert-and-flow-cli`, uses
+a named SUBDIRECTORY via its own root `wire.sh`; this is the first loose file
+directly under that root.
+
+**Three layered defects the script closes.**
+
+1. *Command injection (remote code execution).* The old script handed a
+   `json.dumps()`-built string to `eval`. `json.dumps` escapes JSON syntax, not
+   shell metacharacters, so `$(...)` and backticks inside the untrusted `message`
+   executed as whoever invoked the script. `python3` now emits the three fields as
+   NUL-delimited literal bytes read with `read -r -d ''`: no `eval`, no
+   string-built command, no path by which the payload reaches a shell parser.
+2. *NUL field-boundary forgery.* A JSON `u0000` escape decodes to a real NUL --
+   which is the wire delimiter -- letting a crafted message forge field breaks and
+   substitute an attacker-chosen `chat_id` for the trusted one. `python3` now
+   strips NUL/CR/LF from every DECODED field before it reaches the wire, so a
+   forged boundary is unrepresentable rather than merely escaped.
+3. *Silent alert loss on an unencodable character.* A lone surrogate
+   (U+D800-U+DFFF, reachable through a `uD800` escape or `surrogateescape` on a
+   non-UTF-8 filename) survived `sanitize()` but raised `UnicodeEncodeError` in a
+   write that sat OUTSIDE the `try`, with stderr discarded by a trailing
+   `2>/dev/null`. Nothing had flushed, so zero bytes reached the pipe, all three
+   `read` calls hit EOF, and the notification vanished leaving no trace at all.
+   The writes now happen INSIDE the `try`, each field is encoded with
+   `errors='replace'` (a mode that cannot raise), and the `2>/dev/null` is gone.
+
+**Verification.** Harness: `env -i`, `LANG`/`LC_ALL` pinned, `HOME` redirected to a
+sandbox so the real secrets file is never sourced, `curl` replaced by a stub that
+records argv and performs no I/O, and `wget`/`nc`/`ncat`/`telnet`/`ssh`/`scp`/
+`openssl` replaced by a guard exiting 97. A preflight ran BEFORE any payload and
+proved `command -v curl` resolves to the stub, `curl --version` prints
+`STUB_CURL_OK`, `wget` exits 97, and python3's stdout/filesystem encoding is
+`utf-8`. Battery of 5 cases against 4 subjects in BOTH `en_US.UTF-8` and `C`:
+
+| subject | injection | NUL forgery | U+D800 | U+DCFF | legit |
+|---|---|---|---|---|---|
+| candidate (sha256 `98f1e597...`) | PASS | PASS | PASS | PASS | PASS |
+| live deployed copy | **EXECUTES** | pass | fail | fail | pass |
+| first injection fix | pass | **REDIRECTS** | fail | fail | pass |
+| pre-amendment fix | pass | pass | **SILENT LOSS** | **SILENT LOSS** | pass |
+
+Every check has a proven positive control, so none of them can pass vacuously: the
+live deployed copy actually created `SENT_DOLLAR` and `SENT_BACKTICK` on disk; the
+first injection fix put `999_ATTACKER_CHAT` on the wire as `chat_id` and truncated
+the message to `legit`; the pre-amendment fix exited rc=1 with `curl` never called.
+The candidate delivers both lone surrogates DEGRADED (`pre?post`, rc=0, surrounding
+text intact -- `?` is Python's encode-side `errors='replace'` output, U+FFFD being
+the decode-side form) and is byte-identical in both locales, which the
+pre-amendment fix is not. Legitimate traffic is unchanged on every subject:
+`text="[Presentation] Deck 3 of 7 rendered"`, `chat_id` from `OWNER_CHAT_ID`.
+`wire.sh` is `bash -n` clean, installs the verified bytes, no-ops byte-exactly on
+re-run, and exits 0 on every path; tested with `TOOLS_DIR` redirected to a sandbox,
+leaving the live tools directory unwritten (mtime and sha256 unchanged after).
+
+**This does not change any running box on merge** -- the live file is untracked, so
+it is picked up on the next roll through `wire.sh`, or by an explicit manual copy.
+
 ## [v22.0.15] -- 2026-08-13 -- G5: the reconcile sweep can no longer report success while reconciling nothing
 
 The board-reconcile sweep returned `EXIT_OK` in several shapes where it had in
