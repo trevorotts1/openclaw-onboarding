@@ -1,3 +1,44 @@
+## [v22.0.9] -- 2026-08-13 -- Presentations engine import fix + manifest lockstep restore across all three hash registries + new drift gates
+
+Fixes PR #884's fallout: `curate.py` import-broken on main, and a manifest
+hash drift that moved between registries as each was fixed in isolation.
+Adds the CI drift gates that would have caught it.
+
+- **Engine import fix:** landed the live
+  `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/
+  fix_bundle_complete.py` (10-piece DELIVERABLE_AUDIT_SPEC) -- closes the
+  drift that left `curate.py` import-broken on main.
+- **Manifest lockstep restore (three hash registries):** PR #884 stripped
+  `presentation-slide-craft/PIPELINE-MANIFEST.json`'s trailing newline and
+  restamped `MANIFEST-SOURCE.txt` to the WITHOUT-newline bytes. Restoring the
+  trailing newline fixed `MANIFEST-SOURCE.txt` lockstep but left
+  `universal-sops/_content-manifest.json` stale, so
+  `hash-universal-sops-manifest.py --check` still failed. Regenerated via the
+  script's own write mode (no hand-edited JSON) -- only the
+  presentation-slide-craft entry (plus the generator's `generated_at`
+  timestamp) changed. All three registries (`PIPELINE-MANIFEST.json` itself,
+  `MANIFEST-SOURCE.txt`, `_content-manifest.json`) now agree on
+  `acaadd54.../150405`.
+- **New presentations CI drift gates:** `.github/workflows/
+  presentations-drift-gates.yml` + `scripts/ci/presentations-drift-gates.sh`
+  -- import-smoke, manifest-lockstep, and whitelist-parity gates. GATE 2
+  (manifest-lockstep) widened to cover the third registry after the fix
+  above proved the original two-registry check had a blind spot: it
+  validated `PIPELINE-MANIFEST.json` against `MANIFEST-SOURCE.txt` only, so
+  the drift that moved to `_content-manifest.json` passed unnoticed. GATE 2
+  now also hashes `PIPELINE-MANIFEST.json` the way
+  `hash-universal-sops-manifest.py`'s own generator does (CRLF->LF
+  normalized) and compares it against the `_content-manifest.json` entry,
+  failing (and naming the file) if either leg disagrees. Proven with a
+  negative control: a corrupted `_content-manifest.json` entry in a scratch
+  copy made the widened GATE 2 fail exit 1 naming the file; the real tree
+  exits 0.
+- `23-ai-workforce-blueprint/skill-version.txt` and `SKILL.md` frontmatter
+  `version:` bumped 22.0.8 -> 22.0.9 in lockstep (G3 `check-skill-version-bump`
+  requires a skill-version bump alongside the `fix_bundle_complete.py`
+  change under that skill dir). Version rolled v22.0.8 -> v22.0.9 across all
+  10 repo-wide markers via `scripts/bump-version.sh` (atomic, no hand-edits).
+
 ## [v22.0.8] -- 2026-08-11 -- Presentations Dept R3 fix batch (U01-U09): manifest token resolution, canonical prompt family, authentic skip auth, launcher/discovery wiring, watchdog hardening, drift restoration
 
 Atomic batch merge of the R3 Presentations fix set (merge train U11,
