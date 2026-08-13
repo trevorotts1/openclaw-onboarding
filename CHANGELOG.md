@@ -1,3 +1,55 @@
+## [v22.0.10] -- 2026-08-13 -- U11: producer-side Option B child cards (one Command Center card per phase)
+
+Engine half of D1 Option B (NESTED child cards). The Command Center half is a
+separate change in the `blackceo-command-center` repo -- the read route
+(`/api/presentations/children`) already SELECTed `FROM tasks WHERE
+parent_task_id = ?`, but nothing had ever WRITTEN a child row, so the parent
+card rendered a designed empty state describing a mechanism that did not exist
+on either side.
+
+- **`cc_board.py`** -- `ingest_child_task(run_dir, parent_task_id, phase_id,
+  title, description)` POSTs to the SAME `/api/tasks/ingest` endpoint
+  `ingest_deck_task` uses, adding `parent_task_id` + `stage`. Idempotency key is
+  `sha256(parent_task_id + ':' + phase_id)`, matching the parent/child
+  convention already documented in `master-orchestrator-dept/SOP-07`. FAIL-SOFT:
+  catches `(URLError, OSError, ValueError)` around the HTTP call exactly like
+  `ingest_deck_task` and never raises. `read_child_task_id` /
+  `stamp_child_task_id` hold the `process_manifest.json` half of the
+  `phase_id -> child_task_id` map (`cc_child_task_ids`), mirroring
+  `stamp_task_id` / `cc_task_id` for the parent.
+- **`presentation_job/board.py` (`BoardMirror`)** -- `child_report(phase_id,
+  title, description, status, note)` is the idempotent entry point. It resolves
+  the parent task id from state first and the manifest second (the same two
+  sources `task_id_anywhere` already checks), resolves any existing child id the
+  same dual way, creates the child ONLY when neither source has it, records the
+  new id in `state["board"]["children"][phase_id]`, then PATCHes status through
+  the existing UNMODIFIED `patch_phase` helper. Wrapped in the class's existing
+  `_wrap` (Invariant 1), so a Command Center outage during either the create or
+  the status PATCH returns None/False and never raises into the phase loop.
+- **`presentation_job/phases.py` (`Engine`)** -- two call sites, both where a
+  board-mirror call already lived: `run_phase`'s success path (after the phase's
+  verifier has passed) reports `done`, and `_block()` reports `blocked` so a
+  phase that fails before ever reaching its success path still gets a card.
+  `_child_card_meta(phase)` is the shared (title, description) helper.
+
+15 new tests in `test_u11_producer_child_cards.py`, all passing, covering the
+three acceptance criteria directly: one card per phase
+(`test_a_one_card_created_per_phase`), idempotent on repeat
+(`test_b_same_phase_twice_creates_one_card_not_two`, plus a resumed run that
+recovers the mapping from `process_manifest.json` and re-POSTs nothing), and a
+Command Center outage never raising into the engine
+(`test_c_outage_on_create_does_not_raise`,
+`test_c_outage_on_status_patch_does_not_raise`, and a third proof at the `_wrap`
+layer itself). The tests were mutation-proven, not merely observed green:
+disabling the idempotency lookup in `child_report` fails 4 tests including
+`test_b`, and removing `_wrap`'s fail-soft `except` fails both outage tests --
+each verified against an unmodified control copy at 0 failures.
+
+Full presentations suite on this branch: 828 passed, 10 failed. The same 10
+failures (same test ids) reproduce on a clean `origin/main` control at 813
+passed -- pre-existing and unrelated to this change; the +15 delta is exactly
+this unit's new tests.
+
 ## [v22.0.9] -- 2026-08-13 -- Presentations wave 2 (U03-U08, U14): missing enforcement scripts landed, self-audit handoff gate, single-source deliverable whitelist, capacity enforcement -- plus fail-closed CI drift gates
 
 Two merges carry this release. PR #886 landed the seven wave-2 units and
