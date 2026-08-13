@@ -79,6 +79,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent                       # .../presentations/scripts
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
+# HARDEN G3: the E3 heartbeat_minutes ceiling is imported, not re-declared, from the SAME
+# module the runtime watchdog/reaper import it from (presentation_job/manifest.py) — one
+# definition of "sane" shared by the manifest check and the runtime consumers, so this
+# script (whose whole job is catching exactly this kind of two-numbers-silently-diverge
+# drift) can never itself become a second source that drifts from the engine it checks.
+from presentation_job.manifest import MAX_HEARTBEAT_INTERVAL_MINUTES
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -403,7 +409,7 @@ EXTENSION_STEP = {
     "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
     "E1": "step (i) — add a client_report block to the phase in PIPELINE-MANIFEST.json (manifest v21+ requirement)",
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
-    "E3": "step (i) — add a sane positive heartbeat_minutes value to this phase in PIPELINE-MANIFEST.json (every phase requires one, not only long_running:true phases)",
+    "E3": "step (i) — add a sane heartbeat_minutes value (a positive integer, no greater than MAX_HEARTBEAT_INTERVAL_MINUTES) to this phase in PIPELINE-MANIFEST.json (every phase requires one, not only long_running:true phases)",
 }
 
 # WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
@@ -759,15 +765,25 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"to this phase in PIPELINE-MANIFEST.json.")
 
     # E3: EVERY phase — not just long_running ones — must carry a heartbeat_minutes
-    # value, and it must be a sane positive integer. WI-10 (CHANGELOG v22.0.5)
-    # deliberately put heartbeat_minutes on all 36 phases, not only the 3 marked
-    # long_running:true; E2 alone only re-derives that 3-phase subset and is
-    # presence-only for it, so stripping the field from the other 33 phases (a full
-    # revert of WI-10 everywhere except the long_running phases) produced ZERO drift
+    # value, and it must be a sane value IN RANGE, not merely present and positive.
+    # WI-10 (CHANGELOG v22.0.5) deliberately put heartbeat_minutes on all 36 phases, not
+    # only the 3 marked long_running:true; E2 alone only re-derives that 3-phase subset
+    # and is presence-only for it, so stripping the field from the other 33 phases (a
+    # full revert of WI-10 everywhere except the long_running phases) produced ZERO drift
     # items and sync_check kept exiting 0 — the anti-silence watchdog protection can
-    # evaporate from 33 of 36 phases with no alarm. E3 closes that hole: it is a
-    # structural assertion on every phase, independent of long_running, and it names
-    # every offending phase rather than passing on a single instance.
+    # evaporate from 33 of 36 phases with no alarm. E3's first cut (2026-08-13) closed
+    # that hole but only checked presence + hb > 0, with NO UPPER BOUND — an adversarial
+    # re-attack proved that is STRICTLY WORSE than the gap it closed: setting
+    # heartbeat_minutes=999999999 on the same 33 phases is present and positive, so it
+    # sailed through with zero drift, and the runtime then handed that value straight to
+    # the watchdog — a ~2,853-year stall threshold that reports a 12-hour-silent job
+    # HEALTHY (the deleted-field gap, by contrast, still tripped the budget-minutes
+    # fallback at runtime and was detected). E3 now asserts a RANGE — every phase,
+    # independent of long_running, naming every offending phase rather than passing on a
+    # single instance. MAX_HEARTBEAT_INTERVAL_MINUTES (imported above) is not an arbitrary
+    # constant: it is this engine's own PHASE_BUDGET_MINUTES maximum — the longest any
+    # phase is ever allowed to run — so it costs the legitimate path nothing (real values
+    # run 15-120) while rejecting a manifest that only LOOKS positive.
     for ph in phases:
         hb = ph.get("heartbeat_minutes")
         if hb is None:
@@ -783,6 +799,16 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"sane positive integer. heartbeat_minutes must be a whole number of "
                 f"minutes > 0 (the manifest's existing values run 15-120). Fix the "
                 f"value for this phase in PIPELINE-MANIFEST.json.")
+        elif hb > MAX_HEARTBEAT_INTERVAL_MINUTES:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares heartbeat_minutes={hb}, which exceeds the "
+                f"{MAX_HEARTBEAT_INTERVAL_MINUTES}-minute ceiling (HARDEN G3). A value "
+                f"this large does not mean \"this phase checkpoints rarely\" — it is "
+                f"past PHASE_BUDGET_MINUTES's own maximum, the longest ANY phase in this "
+                f"engine is ever allowed to run, so it can only blind the watchdog "
+                f"(e.g. 999999999 -> a ~2,853-year stall threshold). The manifest's "
+                f"existing values run 15-120. Fix the value for this phase in "
+                f"PIPELINE-MANIFEST.json.")
 
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match

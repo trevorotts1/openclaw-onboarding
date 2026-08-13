@@ -70,6 +70,32 @@ def test_pred_u016_no_interval_minutes_uses_budget_table(tmp_path):
     rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
     assert "STALLED" in out and "interval source: budget_table" in out
 
+# 5b (HARDEN G3): an adversarial re-attack on the sync_check E3 fix proved that guarding
+# only `interval <= 0` is NOT a range check. Setting interval_minutes to 999999999 (present,
+# positive, so E3's original presence-and-positivity assertion passed it) reaches the
+# watchdog and produced a ~1.5-BILLION-minute threshold (999999999 x grace 1.5) that never
+# trips -- a job silent for 12 hours (720 min) read as perfectly healthy. This proves the
+# watchdog now independently distrusts an out-of-range interval it finds on disk (defense in
+# depth beyond Phase.heartbeat_interval_minutes refusing to ever write one) and falls back to
+# the budget table exactly as it does for interval<=0.
+def test_g3_insane_interval_minutes_falls_back_to_budget_not_blinded(tmp_path):
+    _w(tmp_path / "a", "P-QC-AGGREGATE", 999999999, 720, budget=10)
+    rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
+    assert "STALLED" in out, (
+        "a 12-hour-silent job with interval_minutes=999999999 must be caught, not read as "
+        "healthy -- this is the exact HARDEN G3 bypass"
+    )
+    assert "interval source: budget_table" in out
+    assert "1499999998" not in out, "the insane interval must never reach the threshold math"
+
+def test_g3_interval_minutes_exactly_at_ceiling_still_trusted(tmp_path):
+    # 240 == MAX_HEARTBEAT_INTERVAL_MINUTES (PHASE_BUDGET_MINUTES's own max) is a legitimate
+    # value and must be trusted as-is, not silently swapped for the budget-table fallback.
+    _w(tmp_path / "a", "P4-RENDER", 240, 400, src="manifest_heartbeat_minutes")
+    rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
+    assert "STALLED" in out and "interval source: manifest_heartbeat_minutes" in out
+    assert "threshold 360.0" in out  # 240 x 1.5, the manifest value trusted unchanged
+
 # 6
 def test_unknown_phase_loud_default_fallback(tmp_path):
     d = tmp_path / "a"; d.mkdir(parents=True)

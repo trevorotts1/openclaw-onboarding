@@ -23,7 +23,9 @@ from pathlib import Path
 from typing import Set
 
 from .state import _read_json, EXIT_OK, EXIT_STALLED
-from .manifest import PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES
+from .manifest import (
+    PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES, MAX_HEARTBEAT_INTERVAL_MINUTES,
+)
 
 
 def _find_state_files(scan_root: Path, depth: int):
@@ -79,7 +81,14 @@ def watchdog(
 
         interval = hb.get("interval_minutes")
         source = hb.get("interval_source") or "state"
-        if not isinstance(interval, (int, float)) or interval <= 0:
+        # HARDEN G3: reject not just <=0 but anything past MAX_HEARTBEAT_INTERVAL_MINUTES too.
+        # Phase.heartbeat_interval_minutes (manifest.py) now refuses an insane value at the
+        # source, but the watchdog is read-only (Super Spec 8.3) and must independently distrust
+        # whatever it finds on disk -- a state.json written before this fix, or by any other
+        # writer, could still carry a poisoned interval_minutes. Without this bound a value like
+        # 999999999 sails past `interval <= 0` unchanged and blinds the stall check for millennia.
+        if (not isinstance(interval, (int, float)) or isinstance(interval, bool)
+                or interval <= 0 or interval > MAX_HEARTBEAT_INTERVAL_MINUTES):
             interval = PHASE_BUDGET_MINUTES.get(pid, DEFAULT_PHASE_BUDGET_MINUTES)
             source = ("budget_table" if pid in PHASE_BUDGET_MINUTES
                       else f"DEFAULT_{DEFAULT_PHASE_BUDGET_MINUTES}min_NO_ENTRY_FOR_{pid}")
