@@ -1,5 +1,10 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.2.1 — golden delivery example: Marcus Halloway 30-Day Challenge book
+
+- Ships `examples/golden-marcus-halloway/delivery/Marcus_Halloway-Book/30_Day_Challenge-Marcus_Halloway.md` —
+  a complete authored delivery example for the 30-Day Challenge stage.
+
 ## 1.2.0 — BUG-3: the 22 non-tone authoring-stage prompt triplets now ship; the authoring layer is complete
 
 - The 22 non-tone prompt triplets referenced by `BOOK-WRITER-MANIFEST.json` `stages[]` — avatar

@@ -18,8 +18,8 @@
 #
 # THE DATABASE (the live Command Center board):
 #     <command-center>/data/mission-control.db   (DATABASE_PATH, the CC
-#     server's own .env.local; probe surface /Users/blackceomacmini/command-
-#     center/data/mission-control.db on the operator box, 116 MB)
+#     server's own .env.local; probe surface <command-center>/data/mission-
+#     control.db on the operator box, 116 MB)
 #   The board the Welcome card lives on is workspaces.slug='anthology'
 #   (department "Anthology"; head agent caa5c28b88e5d724 "Anthology
 #   Producer"). A card is a row in tasks; a card is "on the open board" only
@@ -131,7 +131,7 @@ HEAD_AGENT_ID = "caa5c28b88e5d724"  # "Anthology Producer" (Anthology Dept Head)
 # .env.local). Resolved via DATABASE_PATH first, then this literal — the
 # caller may pass --db, which always wins. A missing file is NEVER a pass:
 # it is AF-AE-DBC-NO-DB (exit 2), fail-closed.
-_DEFAULT_DB = Path("/Users/blackceomacmini/command-center/data/mission-control.db")
+_DEFAULT_DB = Path("/var/lib/mission-control/mission-control.db")
 
 # The exact task columns the CC board contract uses for a seeded card (the
 # departments route / tasks API shape: id, workspace_id, department, title,

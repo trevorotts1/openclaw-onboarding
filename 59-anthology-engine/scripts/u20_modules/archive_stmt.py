@@ -268,7 +268,7 @@ _DB_CANDIDATES = (
     "/opt/mission-control/mission-control.db",
     "/app/mission-control.db",
     "/data/projects/command-center/mission-control.db",
-    "/Users/blackceomacmini/command-center/data/mission-control.db",
+    "/var/lib/mission-control/mission-control.db",
 )
 
 # The report contract — every surface this module emits carries it, so a
