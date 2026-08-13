@@ -445,21 +445,18 @@ def verify_live(modules: dict, location_id: str, field_map: dict,
                    % location_id])
         return EX_STOP
     client = reg.CafClient(token)
-    try:
-        probe = client.list_custom_fields(location_id)
-    except reg.ScopeDenied as exc:
-        reg._stop(out, "The Convert and Flow token lacks READ scope on the template location.",
-                  [str(exc), "Grant the template PIT the customFields READ scope and re-run."])
-        return EX_STOP
-    except reg.UpstreamBlockedError as exc:
-        out.write("[live-verify] HELD: %s\n" % exc)
+    # READ probe FIRST: a token that cannot READ the template location STOPS
+    # (AF-AE-PIT-SCOPE family) instead of a mid-verify surprise. The public
+    # v2 surface is edge-blocked for every stored PIT (GK-09, proven live
+    # 2026-08-12); when the rail is available, the client DEFERS to the
+    # rail-backed RailFallbackClient (the rail reads customFields/customValues
+    # on this operator box — proven live) so the verify proceeds on the
+    # sanctioned path. A genuinely scope-denied PIT (the W0.5 signature, not
+    # an edge block) still STOPS; an unreadable surface with NO rail is a
+    # HELD, never a fabricated pass.
+    client = _fallback_or_stop(client, location_id, out)
+    if client is None:
         return EX_HELD
-    except reg.CafUnreachable as exc:
-        out.write("[live-verify] HELD: %s\n" % exc)
-        return EX_HELD
-    if not isinstance(probe, list):
-        out.write("[live-verify] unexpected customFields read shape\n")
-        return EX_ERR
 
     # Internal rail (optional): without a Firebase refresh token the workflow /
     # forms / intake-fire-workflow-half reads are DEFERRED (never fabricated)
@@ -480,6 +477,49 @@ def verify_live(modules: dict, location_id: str, field_map: dict,
     return skeleton.verify_live(checks, client, rail, location_id, contract,
                                 field_map, route, allow_deferred=allow_deferred,
                                 out=out)
+
+
+def _fallback_or_stop(client, location_id: str, out) -> "reg.CafClient|None":
+    """Probe the PIT's custom-fields read; on an EDGE block (UpstreamBlockedError
+    — not a genuine scope denial) and with a Firebase refresh token BY LABEL
+    configured, return the rail-backed fallback client. On a genuine scope
+    denial STOP (exit 2). On a blocked read with no rail configured, HELD
+    (return None). Never fabricated either way."""
+    try:
+        probe = client.list_custom_fields(location_id)
+    except reg.ScopeDenied as exc:
+        reg._stop(out, "The Convert and Flow token lacks READ scope on the "
+                  "template location.",
+                  [str(exc), "Grant the template PIT the customFields READ "
+                   "scope and re-run."])
+        raise _StopSentinel()
+    except reg.UpstreamBlockedError as exc:
+        out.write("[live-verify] HELD (custom-fields read): %s\n" % exc)
+    except reg.CafUnreachable as exc:
+        out.write("[live-verify] HELD (custom-fields read): %s\n" % exc)
+        return None
+    else:
+        if not isinstance(probe, list):
+            out.write("[live-verify] unexpected customFields read shape\n")
+            raise _StopSentinel()
+        return client
+    # The PIT read is edge-blocked: defer to the rail when it is configured.
+    rlabel, rtoken = reg.resolve_firebase_refresh_token()
+    if rtoken:
+        _, api_key = reg._resolve_firebase_api_key() or (None, "")
+        if api_key:
+            out.write("[live-verify] public-v2 customFields edge-blocked; "
+                      "deferring reads to the Firebase-JWT internal rail "
+                      "(label %s).\n" % rlabel)
+            return reg.RailFallbackClient(reg.InternalRailClient(rtoken, api_key))
+    out.write("[live-verify] HELD: custom-fields read blocked and no Firebase "
+              "refresh token is SET for the rail fallback (labels: %s) — "
+              "fail-closed.\n" % ", ".join(reg.FIREBASE_REFRESH_LABELS))
+    return None
+
+
+class _StopSentinel(Exception):
+    """Internal sentinel for the probe's STOP path — never a secret leak."""
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +669,8 @@ def main(argv=None):
                           mode="verify")
         return rc
 
+    except _StopSentinel:
+        return EX_STOP
     except reg.ScopeDenied as exc:
         sys.stderr.write("[live-verify] STOP: %s\n" % exc)
         return EX_STOP

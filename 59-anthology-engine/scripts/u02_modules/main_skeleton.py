@@ -234,9 +234,12 @@ def load_checks():
 
 
 def _entry(mod):
-    """The module's documented check entry point."""
+    """The module's documented check entry point. The roster uses bare names
+    (``pipeline_check``); an importer may hand us the dotted identity
+    (``u02_modules.pipeline_check``) when the package is on sys.path, so
+    match on the final component too."""
     for name, entry in CHECK_MODULES:
-        if name == mod.__name__:
+        if name == mod.__name__ or name == mod.__name__.split(".")[-1]:
             return getattr(mod, entry)
     return getattr(mod, "check", None)
 
