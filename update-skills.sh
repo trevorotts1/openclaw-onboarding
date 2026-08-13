@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v22.0.10"
+ONBOARDING_VERSION="v22.0.11"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v22.0.10 - safe_json_edit
+# v22.0.11 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5244,6 +5244,7 @@ PYEOF
   # WITHHOLDS the stamp because the skills CONTENT is not verifiably current):
   _U6B_PERSONA_FAIL=0            # persona-index CONTENT wiring (sentinel != pinned release_tag, triad-divergent library, or helper did not run)
   _D2_REFRESH_STATUS="ok"       # in-scope role/SOP CONTENT refresh (refresh-stale-roles.py rc 3 -- new library content that SHOULD have re-applied to an EXISTING artifact did not)
+  _D2_DEPTSCRIPTS_STATUS="ok"   # UNCONDITIONAL dept scripts/ mirror (refresh-dept-scripts.py rc 3 -- a materialized department's canonical scripts/ file missing/diverged from the library AFTER the copy step; runs every roll, independent of any gap map -- fixes delivery causes 2/3)
   _SHAREDCORE_STATUS="ok"       # shared-core-file wiring step (link_shared_core_files)
   # WORKFORCE-provisioning latches (v20.0.10: DECOUPLED from the content stamp --
   # they describe "is the client's workforce fully built", NOT "is the skills
@@ -7053,6 +7054,57 @@ else:
   fi
 
   # ----------------------------------------------------------
+  # FIX-DELIVERY-02: UNCONDITIONAL DEPARTMENT-SCRIPTS MIRROR.
+  # The refresh-stale-roles.py drain immediately above -- like every other
+  # repair step on this box -- only ever acts on rows detect-stale-artifacts.py
+  # put in a queue. detect-stale-artifacts.py's load_current() never emits a
+  # "scripts" kind at all (the literal string never appears in the manifest,
+  # and there is no code path that could produce one), so a department's
+  # canonical scripts/ files (build_deck.py, capacity.py, deliverables.py,
+  # self_audit.py, qc_check.py, ...) can NEVER be queued STALE or MISSING --
+  # not on a fresh install, and never again afterward. The only other writer,
+  # scaffold_department() (create_role_workspaces.py), has exactly one runtime
+  # caller (floor-fill-driver.py), gated behind migrate-existing-workforce.sh's
+  # `FF_GAP_DEPTS -gt 0` check -- on a HEALTHY steady-state box (no missing
+  # roles/sops/depts) that gate is false and floor-fill-driver.py never runs,
+  # so not even the depth-1 files this repo already treats as fleet-owned
+  # (.py/.sh/.sha256/.pdf) ever refresh again after day one.
+  #
+  # refresh-dept-scripts.py closes both gaps at once: it mirrors every
+  # role-library department's scripts/ tree onto the box's materialized
+  # department directory UNCONDITIONALLY, every roll, with no gap-map
+  # dependency (same unconditional-every-roll shape as refresh-stale-roles.py
+  # above), honoring the same ownership policy scaffold_department already
+  # enforces (.py/.sh/.sha256/.pdf fleet-owned/always-overwrite-when-
+  # divergent; .json box-owned/additive/missing-only). Its pass/fail verdict
+  # is re-derived from the filesystem AFTER the copy step (sha256 of the
+  # library file vs the destination file), never from its own copy-loop
+  # counter, so an incomplete or sabotaged copy is caught here exactly like
+  # scaffold_department's own post-materialization proof.
+  #
+  # A poisoned/missing department is a benign SKIP (not this script's job to
+  # create one -- that stays floor-fill-driver.py's MISSING-department job).
+  # Only a materialized department whose canonical files fail to verify AFTER
+  # the copy counts against the completeness contract (rc 3), which trips
+  # _D2_DEPTSCRIPTS_STATUS below -- same pipefail-correct `if PIPE; then`
+  # capture as the refresh-stale-roles.py block above. A MISSING generator
+  # (older bundle) is still a benign skip -- see the else branch.
+  # ----------------------------------------------------------
+  DEPT_SCRIPTS_REFRESH="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py"
+  if [ -f "$DEPT_SCRIPTS_REFRESH" ] && command -v python3 >/dev/null 2>&1; then
+    echo ""
+    echo "  Mirroring department scripts/ trees (unconditional, every roll)..."
+    if python3 "$DEPT_SCRIPTS_REFRESH" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE"; then
+      :
+    else
+      echo "  refresh-dept-scripts.py: completed with warnings (see $LOG_FILE)"
+      _D2_DEPTSCRIPTS_STATUS="fail"
+    fi
+  else
+    echo "  (refresh-dept-scripts.py not found or python3 unavailable -- skipping dept scripts/ mirror; older bundle)"
+  fi
+
+  # ----------------------------------------------------------
   # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
   # checks role docs against the departments/ tree. If that directory is absent
   # while .workforce-build-state.json says interviewComplete=true, the drain has
@@ -7329,6 +7381,11 @@ if isinstance(n, int) and n > 0:
   #     content refresh that SHOULD have re-applied the new library content to an
   #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
   #     rows exit 0 and never land here.)
+  #   - _D2_DEPTSCRIPTS_STATUS: refresh-dept-scripts.py rc 3 (FIX-DELIVERY-02) --
+  #     a MATERIALIZED department's canonical scripts/ file (.py/.sh/.sha256/.pdf)
+  #     was missing or hash-diverged from the role library AFTER this run's own
+  #     copy step -- an incomplete/sabotaged mirror. (A department not yet
+  #     materialized on this box is a benign skip and never lands here.)
   #   - _U6C_SOPLIB_FAIL: SOP V2 library CONTENT population (U6c) -- the ingester
   #     is missing, failed, or ran and left the `sops` table below the manifest's
   #     canonical population. A box whose SOP database is a demo fixture must
@@ -7359,6 +7416,9 @@ if isinstance(n, int) and n > 0:
   fi
   if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - in-scope role/SOP content refresh (D2, refresh-stale-roles.py rc 3): an in-scope refresh that SHOULD have applied did not — see $LOG_FILE\n"
+  fi
+  if [ "${_D2_DEPTSCRIPTS_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - department scripts/ mirror (FIX-DELIVERY-02, refresh-dept-scripts.py rc 3): a materialized department's canonical scripts/ file did not verify after the copy step — see $LOG_FILE\n"
   fi
   if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
