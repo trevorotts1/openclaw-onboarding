@@ -1,3 +1,35 @@
+## [v22.0.13] -- 2026-08-13 -- Capacity gate: UNDETERMINED is unmistakable, but an unconfigured box is still usable
+
+`launcher.py`'s capacity gate checked only `available is None`, which treated the
+NO-CONFIG case -- what nearly every client box actually is -- as a clean
+measurement. `capacity.probe()` answers no-config with
+`available = DEFAULT_CONSERVATIVE (3)`: a floor to proceed AT, never a ceiling the
+account was proven to support.
+
+Refusing every unconfigured box would make the department unusable by default,
+which is its own outage, so this gate does NOT refuse on UNDETERMINED alone. It:
+
+1. proceeds at the conservative floor behind a banner that says UNDETERMINED out
+   loud -- never the line MEASURED prints;
+2. records the probe into a `.capacity-status.json` sidecar (and merges it into
+   state.json) so the anomaly outlives the launch log line, including during the
+   `--new` window before `cmd_new` runs;
+3. pings the operator best-effort, never fatal to dispatch, so a fleet quietly
+   running at the floor is visible rather than merely archived.
+
+It DOES refuse -- same `AF-CAPACITY-UNMEASURED`, same non-zero exit, same nothing-
+spawned contract as PARKED/FAILED -- only when a caller declares
+`requested_parallel` ABOVE the floor while capacity is UNDETERMINED. Asking for
+the floor itself, or not declaring a request at all (the overwhelming majority of
+callers), still proceeds.
+
+6 new tests in `tests/test_capacity_detection.py` (41 passed on this branch vs 35
+on the `origin/main` control, nothing broken), including the two that pin the
+contract directly:
+`test_no_config_run_proceeds_at_conservative_floor_and_says_so_unmistakably` and
+`test_dispatch_no_config_requesting_exactly_the_floor_still_proceeds`, alongside
+`test_dispatch_refuses_wide_parallel_request_when_capacity_undetermined`.
+
 ## [v22.0.12] -- 2026-08-13 -- Backport: 13 live-ahead presentations hotfixes the every-roll mirror would clobber
 
 v22.0.11 made the department `scripts/` mirror run UNCONDITIONALLY on every roll,
