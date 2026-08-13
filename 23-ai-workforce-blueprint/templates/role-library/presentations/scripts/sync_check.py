@@ -403,12 +403,13 @@ EXTENSION_STEP = {
     "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
     "E1": "step (i) — add a client_report block to the phase in PIPELINE-MANIFEST.json (manifest v21+ requirement)",
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
+    "E3": "step (i) — add a sane positive heartbeat_minutes value to this phase in PIPELINE-MANIFEST.json (every phase requires one, not only long_running:true phases)",
 }
 
 # WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
 # `drift`, they never contribute to the exit code, and they never flip --json's
 # "in_sync". Letter W is chosen because A/B/C/D/E/V are all in use as drift classes
-# (A1-A8, B1-B2, C1, D1-D2, E1-E2 in EXTENSION_STEP, plus V1/V2/V3 emitted by
+# (A1-A8, B1-B2, C1, D1-D2, E1-E3 in EXTENSION_STEP, plus V1/V2/V3 emitted by
 # value_checks()). Reusing A7 — as an earlier draft proposed — would have attached
 # an exit-0 meaning to the live sop_refs integrity class at :587-596.
 WARN_STEP = {
@@ -757,6 +758,32 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"for long phases (e.g. heartbeat_minutes:10). Add heartbeat_minutes "
                 f"to this phase in PIPELINE-MANIFEST.json.")
 
+    # E3: EVERY phase — not just long_running ones — must carry a heartbeat_minutes
+    # value, and it must be a sane positive integer. WI-10 (CHANGELOG v22.0.5)
+    # deliberately put heartbeat_minutes on all 36 phases, not only the 3 marked
+    # long_running:true; E2 alone only re-derives that 3-phase subset and is
+    # presence-only for it, so stripping the field from the other 33 phases (a full
+    # revert of WI-10 everywhere except the long_running phases) produced ZERO drift
+    # items and sync_check kept exiting 0 — the anti-silence watchdog protection can
+    # evaporate from 33 of 36 phases with no alarm. E3 closes that hole: it is a
+    # structural assertion on every phase, independent of long_running, and it names
+    # every offending phase rather than passing on a single instance.
+    for ph in phases:
+        hb = ph.get("heartbeat_minutes")
+        if hb is None:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares no heartbeat_minutes. Manifest v45+ "
+                f"(WI-10) requires EVERY phase — not only long_running:true ones — "
+                f"to carry a heartbeat_minutes value so the watchdog always knows "
+                f"the client-report polling interval. Add heartbeat_minutes to this "
+                f"phase in PIPELINE-MANIFEST.json.")
+        elif not isinstance(hb, int) or isinstance(hb, bool) or hb <= 0:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares heartbeat_minutes={hb!r}, which is not a "
+                f"sane positive integer. heartbeat_minutes must be a whole number of "
+                f"minutes > 0 (the manifest's existing values run 15-120). Fix the "
+                f"value for this phase in PIPELINE-MANIFEST.json.")
+
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match
     # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
@@ -845,7 +872,8 @@ def report_human(drift, warnings, manifest, explain):
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if e:
         print("\n(E) PHASE-STRUCTURE DRIFT — a manifest phase is missing a required "
-              "structural block (client_report, heartbeat_minutes on long_running):",
+              "structural block (client_report; heartbeat_minutes on long_running "
+              "phases E2 and heartbeat_minutes on EVERY phase E3):",
               file=sys.stderr)
         for d in e:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
