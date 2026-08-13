@@ -24,6 +24,28 @@ EXIT_MANIFEST_MISMATCH = 7
 EXIT_USAGE = 2
 
 
+def _canonical_manifest() -> Path:
+    """Locate the canonical PIPELINE-MANIFEST.json the way the deployed tree and
+    the repo tree carry it. Deployed layout first (scripts/../sops/), repo
+    layout as fallback (walk up to universal-sops/presentation-slide-craft/).
+    Same two-tier resolution manifest_source.resolve_manifest uses."""
+    deployed = _scripts_dir.parent / "sops" / "PIPELINE-MANIFEST.json"
+    if deployed.is_file():
+        return deployed
+    cur = _scripts_dir
+    for _ in range(12):
+        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if cand.is_file():
+            return cand
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    raise FileNotFoundError(
+        "PIPELINE-MANIFEST.json not found (looked in scripts/../sops/ and the "
+        "universal-sops/presentation-slide-craft walk-up)")
+
+
+
 # ---------------------------------------------------------------------------
 # Test 1: StateStore save then load round-trips, and no .state-*.tmp remains
 # ---------------------------------------------------------------------------
@@ -108,10 +130,9 @@ class TestManifest:
 
     def test_assert_manifest_current_on_canonical_passes(self):
         """_assert_manifest_current on the real canonical file exits normally."""
-        canonical = _scripts_dir.parent.parent.parent.parent.parent / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if canonical.is_file():
-            # Should not raise
-            _assert_manifest_current(canonical)
+        canonical = _canonical_manifest()
+        # Should not raise
+        _assert_manifest_current(canonical)
 
     # Test 6: resolve_manifest does NOT search upward
     def test_resolve_manifest_no_upward_search(self, tmp_path, monkeypatch):
@@ -143,7 +164,7 @@ class TestManifest:
     # Test 7: PHASE_BUDGET_MINUTES covers every canonical phase id
     def test_budget_covers_all_canonical_phases(self):
         """PHASE_BUDGET_MINUTES covers every id in the canonical manifest."""
-        canonical = _scripts_dir.parent.parent.parent.parent.parent / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        canonical = _canonical_manifest()
         assert canonical.is_file(), f"Canonical manifest not found at {canonical}"
         manifest_data = json.loads(canonical.read_text())
         manifest_ids = {p["id"] for p in manifest_data["phases"]}
@@ -236,9 +257,15 @@ class TestBoardMirror:
         monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
         monkeypatch.delenv("MISSION_CONTROL_URL", raising=False)
 
-        # Keep mock active for the ENTIRE test
-        with mock.patch("presentation_job.board._get_cc_board", return_value=fake_cc):
-            board_module._cc_board = fake_cc
+        # Keep mock active for the ENTIRE test. The bare `board_module._cc_board =
+        # fake_cc` assignment is itself the leak that poisoned every later test in
+        # this module: mock.patch only restores the attribute it patched
+        # (_get_cc_board); the direct assignment to _cc_board survives the with
+        # block, so BoardMirror.__init__ in subsequent tests read `_read_manifest()`
+        # off the leftover MagicMock, stuffed a MagicMock task_id into
+        # state["board"], and json.dumps blew up (test-order-dependent failures).
+        with mock.patch.object(board_module, "_cc_board", fake_cc), \
+             mock.patch("presentation_job.board._get_cc_board", return_value=fake_cc):
             run_dir = tmp_path / "run"
             run_dir.mkdir()
             state = {"job_id": "test", "events": []}
@@ -462,6 +489,16 @@ class TestU069ShellInjectionFix:
         store.save(state)
         return store, state
 
+    def _seed_intake_artifact(self, run_dir):
+        """WORK-ITEM-14 (R3 U03): phase_verifiers.verify(P0A-INTAKE) is now a
+        PRIMARY gate — a missing working/copy/intake.json BLOCKS the phase
+        (exit 3) instead of warning. These tests are about executor.cmd
+        handling, not the intake gate, so they must satisfy the substance
+        verifier for the phase to reach done."""
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"topic": "U069 executor handling", "deck_slug": "deck"}))
+
     def test_u069_space_in_run_dir_preserves_path(self, tmp_path):
         """U069-a: space in run dir path must arrive as ONE argument."""
         from presentation_job.manifest import Manifest, Phase
@@ -483,6 +520,7 @@ class TestU069ShellInjectionFix:
         }))
         manifest = Manifest(manifest_path)
         store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        self._seed_intake_artifact(run_dir)
         engine = Engine(run_dir, manifest, store, state, dry_run=False)
         rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
         assert rc == EXIT_OK, f"Phase should pass, got rc={rc}"
@@ -512,6 +550,7 @@ class TestU069ShellInjectionFix:
         }))
         manifest = Manifest(manifest_path)
         store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        self._seed_intake_artifact(run_dir)
         engine = Engine(run_dir, manifest, store, state, dry_run=False)
         rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
         assert rc == EXIT_GATE_BLOCKED
@@ -536,6 +575,7 @@ class TestU069ShellInjectionFix:
         }))
         manifest = Manifest(manifest_path)
         store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        self._seed_intake_artifact(run_dir)
         engine = Engine(run_dir, manifest, store, state, dry_run=False)
         with pytest.raises(PhaseExecutorContractError) as exc_info:
             engine.run_phase(manifest.phase("P0A-INTAKE"))
@@ -552,17 +592,43 @@ class TestU069ShellInjectionFix:
 # job could reach DONE with zero OCR-verified slides. These drive Engine.close() itself
 # (not just Gates in isolation) to prove the observable, end-to-end behaviour.
 # ---------------------------------------------------------------------------
+def _seed_curated_bundle(run_dir):
+    """WORK-ITEM-13 (R2/R3): Engine.close() now runs curate.curate() after the
+    gates pass, and curation hard-fails (AF-BUNDLE-INCOMPLETE, exit 3) when any
+    deliverable in the canonical whitelist (fix_bundle_complete.REQUIRED_KEYS)
+    is missing. close() tests that only assert gate behaviour must therefore
+    seed the FULL curated deliverable set, or the pass-path tests die on
+    curation before DONE. The two files this family already seeds
+    (PRESENTERS-SPEECH.md, presenter-teleprompter.html) are kept here for
+    continuity; the other eight come from the canonical standardized
+    destination names in DELIVERABLE_AUDIT_SPEC (suffix- and size-checked by
+    locate_deliverable, so each is a non-empty real file)."""
+    (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+    seeded = {
+        "PRESENTERS-SPEECH.md": 3000,
+        "presenter-teleprompter.html": 12000,
+        "DECK-FINAL.pptx": 60000,
+        "DECK-FINAL.pdf": 60000,
+        "PRESENTER-GUIDE.pdf": 30000,
+        "PRESENTERS-SPEECH.pdf": 30000,
+        "PRESENTERS-SPEECH-FISH-TAGGED.md": 8000,
+        "PRESENTER-AUDIO.mp3": 120000,
+        "INFOGRAPHIC.png": 20000,
+        "WEBINAR-VIDEO.mp4": 600000,
+    }
+    for name, size in seeded.items():
+        (run_dir / "working" / "deliverables" / name).write_bytes(b"x" * size)
+
+
 class TestOCRReadbackGateBlocks:
     def _seed_other_gates_passing(self, run_dir):
         """Every gate except ocr_readback/qc satisfied, so a close() failure can only
         be attributed to the one gate each test is about."""
-        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        _seed_curated_bundle(run_dir)
         (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
-        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
         (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",
@@ -641,13 +707,11 @@ class TestQCGateBlocks:
     def _seed_other_gates_passing(self, run_dir):
         """Every gate except qc satisfied for real, so a close() failure can only be
         attributed to qc."""
-        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        _seed_curated_bundle(run_dir)
         (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
-        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
         (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",
@@ -751,13 +815,11 @@ class TestQCGateBlocks:
 # ---------------------------------------------------------------------------
 class TestQCAggregatePhaseEndToEnd:
     def _seed_other_gates_passing(self, run_dir):
-        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        _seed_curated_bundle(run_dir)
         (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
-        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
         (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",

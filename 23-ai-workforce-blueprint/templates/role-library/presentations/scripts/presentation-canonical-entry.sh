@@ -95,7 +95,7 @@ EOF
 # ---------------------------------------------------------------------------
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
-PLAN=0 ADHOC=0
+PLAN=0 ADHOC=0 RESUME=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir)     RUN_DIR="${2:-}"; shift 2 ;;
@@ -105,6 +105,7 @@ while [ $# -gt 0 ]; do
         --platform)    PLATFORM="${2:-}"; shift 2 ;;
         --scripts-dir) SCRIPTS_DIR="${2:-}"; SCRIPTS_DIR_STATED=1; shift 2 ;;
         --plan)        PLAN=1; shift ;;
+        --resume) RESUME=1; shift ;;
         --adhoc)       ADHOC=1; shift ;;
         -h|--help)     usage ;;
         *) die "unknown argument: $1 (run with --help)" ;;
@@ -114,7 +115,7 @@ done
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-if [ "$PLAN" -eq 0 ]; then
+if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
     [ -n "$OUT" ] || die "--out is required to build a deck"
@@ -865,7 +866,9 @@ import json
 m = json.load(open('$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json'))
 print(len(m.get('phases', [])))
 " 2>/dev/null || echo '?')"
+    if [ "$RESUME" -eq 0 ]; then
     echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
+    fi
     echo "  Then:       python3 $ENGINE_ENTRY --run --run-dir $RUN_DIR"
     echo "  All phases walked mechanically. 6 fail-closed gates at close()."
     exit 0

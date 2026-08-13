@@ -1,3 +1,84 @@
+## [v22.0.12] -- 2026-08-13 -- Backport: 13 live-ahead presentations hotfixes the every-roll mirror would clobber
+
+v22.0.11 made the department `scripts/` mirror run UNCONDITIONALLY on every roll,
+with `.py/.sh/.sha256/.pdf` fleet-owned and overwritten whenever they diverge from
+the role library. That is the correct ownership policy, but it means any file whose
+live content is AHEAD of git is replaced by the library copy on the next roll.
+Thirteen presentations files were in exactly that state -- their content existed
+only on the operator's box.
+
+Direction was established, not assumed: each live blob was searched for across the
+whole of `origin/main`'s history. The five source files' live blobs appear NOWHERE
+in main's history (genuinely live-ahead), while control files (`build_deck.py`,
+`delivery_gate.py`, `presentation_job/launcher.py`, `test_preflight.py`) matched
+older main commits and are correctly live-behind -- so the roll updating those is
+right and only these needed rescuing.
+
+- **`presentation_job/board.py`** -- module contract header, plus `_resolve_task_id()`
+  run from `__init__`: fills `state["board"]["task_id"]` from state first and
+  `process_manifest.json`'s `cc_task_id` second, and when the board is ENABLED but
+  neither source has an id it emits a WARNING-level `board.no_task_id` event and
+  attempts re-creation from stored `card_params` instead of silently no-oping every
+  downstream call. Merged with, not over, v22.0.10's U11 Option B child-card methods
+  (`_resolve_parent_task_id`, `_resolve_child_task_id`, `_remember_child_task_id`,
+  `child_report`) -- both behaviors are present.
+- **`presentation_job/gates.py`, `presentation_job/watchdog.py`,
+  `presenter_guide.py`, `presentation-canonical-entry.sh`** -- live-ahead content
+  restored to the library byte-for-byte.
+- **8 test files** (`test_canonical_entry_scripts_dir`, `test_client_package`,
+  `test_fix23_door_reliability`, `test_fix8_bundle_complete`, `test_presentation_job`,
+  `test_webinar_builder`, `test_webinar_intro_outro`, `test_workbook_builder`).
+
+Measured under an explicitly constructed environment with outbound HTTP stubbed to
+`127.0.0.1:9` (stub proven to block before the run): this change is 6 failed /
+137 passed against a `origin/main` control of 9 failed / 134 passed, and the same
+9 failures reproduce at pre-merge `af7766ba`. The 6 are a strict SUBSET of main's 9:
+this fixes 3 (`test_stage1_missing_teleprompter_warns_but_passes`,
+`test_u069_space_in_run_dir_preserves_path`, `test_workbook_phase_declared_in_manifest`)
+and introduces none. The remaining 6 are pre-existing on main and NOT addressed here.
+
+## [v22.0.11] -- 2026-08-13 -- Department scripts/ delivery: nested materialization + unconditional every-roll mirror
+
+The delivery defect that kept new presentations engine work from ever reaching a
+client box had three causes; this closes all three.
+
+- **Cause 1 -- `scaffold_department()` (`create_role_workspaces.py`)** iterated the
+  role-library `scripts/` tree at depth 1 and `continue`d on every directory, so
+  nested packages (`presentation_job/`, `tests/`) could never be materialized. It
+  now walks the full tree through a shared `_iter_scripts_tree_files()` and proves
+  the outcome with `verify_scripts_materialization()`, which re-hashes every
+  canonical library file against the destination.
+- **Causes 2 and 3 -- the materializer never ran at all on a healthy box.**
+  `scaffold_department()` has exactly ONE runtime caller, `floor-fill-driver.py`,
+  which iterates a MISSING-only gap map, itself gated behind
+  `migrate-existing-workforce.sh`'s `FF_GAP_DEPTS -gt 0`. In steady state that gate
+  is false and the driver never launches, so not even depth-1 files refreshed. And
+  `detect-stale-artifacts.py` never emits a `scripts` kind, so a dept scripts file
+  could never be queued STALE either. The only writer reaching the dept scripts dir
+  on every roll was `colocate_presentation_entry()` -- a hardcoded two-file list.
+- **New `23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** is a third,
+  independent path: it mirrors every role-library department's `scripts/` tree onto
+  the box's materialized department UNCONDITIONALLY on every roll, with no gap-map
+  dependency, modelled on the one repair step that already runs every time
+  (`refresh-stale-roles.py`). Ownership policy is unchanged and sourced from the
+  single existing definition (`_CANONICAL_SCRIPT_SUFFIXES`): `.py/.sh/.sha256/.pdf`
+  fleet-owned and overwritten when divergent, `.json` box-owned, additive, never
+  clobbered. Wired into `update-skills.sh` immediately after the
+  `refresh-stale-roles.py` drain with the same pipefail-correct `if PIPE; then`
+  capture, and latched into the pre-stamp CONTENT-integrity gate via
+  `_D2_DEPTSCRIPTS_STATUS`, so a mirror that cannot repair withholds the stamp.
+
+The pass/fail verdict is re-derived from the filesystem AFTER the copy step
+(sha256 library vs destination), never from the copy loop's own counter: with
+`shutil.copy2` stubbed to a silent no-op the loop reported 139 copies while the
+post-write verify returned `ok=0 failed_inscope=133`, rc 3.
+
+Known residual, pre-existing and unchanged: `presentation-watchdog.plist.template`
+and `WORKBOOK-PAGE-PROMPT-TEMPLATE.md` fall outside the canonical suffix policy and
+are mirrored by neither this script nor `scaffold_department()`. Delivering
+`presentations/intake/` remains a separate, undesigned gap -- it is a SIBLING of
+`scripts/`, outside this change's reach.
+
 ## [v22.0.10] -- 2026-08-13 -- U11: producer-side Option B child cards (one Command Center card per phase)
 
 Engine half of D1 Option B (NESTED child cards). The Command Center half is a
