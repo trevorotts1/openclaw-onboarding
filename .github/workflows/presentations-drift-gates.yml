@@ -1,0 +1,71 @@
+name: presentations-drift-gates
+
+# Three continuous-integration drift gates for the presentation pipeline, added
+# after two landmines each passed a green 93-check CI on the same PR:
+#
+#   Problem 1: fix_bundle_complete.py's canonical DELIVERABLE_AUDIT_SPEC symbol
+#   went missing, silently breaking curate.py's import (and everything that
+#   imports curate.py, including presentation_job.phases) on main -- with no
+#   CI job noticing because nothing did a bare import-smoke of the package.
+#
+#   Problem 2: PR #884 stripped the trailing newline from
+#   universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json without
+#   restamping MANIFEST-SOURCE.txt's recorded content_sha256, breaking
+#   manifest_source.py's sync_check and bricking presentation-canonical-entry.sh
+#   GATE 3 -- with no CI job noticing because nothing recomputed the hash.
+#
+# scripts/ci/presentations-drift-gates.sh runs three gates and exits non-zero
+# on any real failure, naming which gate failed and why:
+#   GATE 1 - import smoke (presentation_job.phases) -- catches the Problem-1 class.
+#   GATE 2 - manifest lockstep (PIPELINE-MANIFEST.json <-> MANIFEST-SOURCE.txt) --
+#            catches the Problem-2 class.
+#   GATE 3 - deliverable whitelist parity (fix_bundle_complete.py <->
+#            phase_verifiers.py) -- prints SKIP-WITH-REASON today (the two
+#            structures are not identical for reasons unrelated to drift) but
+#            still hard-fails on an outright import/missing-symbol error.
+#
+# This job's path filter deliberately covers the exact files each gate reads,
+# since none of those files are in presentations-lockstep.yml's trigger list
+# (that job never fires on a fix_bundle_complete.py-only or
+# MANIFEST-SOURCE.txt-only change -- the precise blind spot both landmines
+# exploited).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      # Gate script itself
+      - "scripts/ci/presentations-drift-gates.sh"
+      # GATE 1 targets -- the import-smoke surface (presentation_job package + its
+      # sibling fix_bundle_complete.py / phase_verifiers.py, imported transitively
+      # via presentation_job/curate.py)
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/**"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/fix_bundle_complete.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py"
+      # GATE 2 targets -- the manifest lockstep pair
+      - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
+      - "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt"
+      # This workflow file
+      - ".github/workflows/presentations-drift-gates.yml"
+
+jobs:
+  presentations-drift-gates:
+    name: Presentations import-smoke / manifest-lockstep / whitelist-parity drift gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/presentations-drift-gates.sh
+          bash scripts/ci/presentations-drift-gates.sh
