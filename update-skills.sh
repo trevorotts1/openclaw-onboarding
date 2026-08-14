@@ -7461,6 +7461,27 @@ if isinstance(n, int) and n > 0:
     echo "  ------------------------------------------------------------"
   fi
 
+  # --- Claude Code subagent concurrency (operator directive 2026-08-14) -------
+  # Merges CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS + CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
+  # into this box's Claude Code profile(s). Runs AFTER the shared-utils refresh so
+  # the helper is present. Deliberately NON-GATING: a box with no Claude Code
+  # profile, or an unparseable settings.json we refuse to touch, is an advisory —
+  # it must never withhold the content stamp or fail a fleet roll. The helper is
+  # idempotent, merge-only, backs up before writing, and restores on any failure.
+  # It does NOT change the Workflow tool's per-run cap, which is computed from the
+  # box's own CPU count (min(16, max(2, cores-2))) and reads no env var.
+  _CCS_HELPER="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-claude-settings.sh"
+  [ -f "$_CCS_HELPER" ] || _CCS_HELPER="${EXTRACTED_DIR:-}/shared-utils/provision-claude-settings.sh"
+  if [ -f "$_CCS_HELPER" ]; then
+    echo ""
+    echo "  Provisioning Claude Code subagent concurrency (500 concurrent / 10000 per session)..."
+    if ! bash "$_CCS_HELPER"; then
+      echo "  ⚠️  Claude subagent-concurrency provisioning reported a problem (advisory — does NOT withhold the stamp)." >&2
+    fi
+  else
+    echo "  ⚠️  provision-claude-settings.sh not found on this box — subagent concurrency left at platform defaults (advisory)." >&2
+  fi
+
   if [ -n "$_STEP_GATE_FAILS" ]; then
     echo ""
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
