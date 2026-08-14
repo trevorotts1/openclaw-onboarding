@@ -35,6 +35,26 @@
 #     .workforce-build-state.json + interview-handoff.md and writes ONLY its
 #     own non-canonical ledger line. It never touches build-state, the
 #     transcript, or the handoff.
+#   • SHARED-DASHBOARD SAFETY (Janet incident 2026-08-13 — BINDING). A link is
+#     only emitted when the dashboard host that serves it ANSWERS for THIS
+#     company. The shared Command Center deployment serves every client
+#     hostname (<client>.zerohumanworkforce.com -> the operator's CC), and a
+#     hostname-blind interview endpoint previously answered a fresh client with
+#     the OPERATOR's completed interview, so the client's /interview page
+#     immediately redirected itself to the dashboard (flash-then-jump). Rules:
+#       (a) If the link points at a SHARED dashboard host (a *.zerohumanworkforce.com
+#           host that does NOT run this box's own CC — see the CHECK_SHARED_HOST
+#           function below), the script VERIFIES the host answers interview
+#           state for THIS company (gate-status query) and that the state says
+#           the interview is NOT complete. On mismatch: FAIL and send the
+#           Telegram-native reply-here invite instead — NEVER a broken link.
+#       (b) If the link points at THIS box's own CC (localhost/127.0.0.1 or a
+#           box-owned hostname), no check is needed: the box's own state file
+#           was already read above, and the box's CC reads the same file.
+#       (c) Failures in the CHECK are treated as "cannot verify" -> FAIL to
+#           the Telegram invite (never send an unverifiable web link). A
+#           deliberately-breakable verification (curl to a health endpoint)
+#           does NOT count as verification of interview state.
 #   • STANDARD-FIRST DAY-ONE LINK. Under the standard-first onboarding lane
 #     (build-state buildType == "standard-first"), the operator runs this
 #     script on DAY ONE — after the locked Command Center shell + tunnel are
@@ -61,6 +81,13 @@
 #                            reply-here invitation is sent instead.
 #   OPENCLAW_OWNER_CHAT_ID   (optional) explicit owner chat pin (resolver S0;
 #                            operator ids still rejected).
+#   INTERVIEW_GATE_URL       (optional) the base URL whose /api/interview/
+#                            gate-status answers interview-completion for this
+#                            company. Defaults to the dashboard host derived
+#                            from OPENCLAW_DASHBOARD_URL. For the shared
+#                            operator Command Center the default works
+#                            directly; an operator may point it at any
+#                            tenant-correct host.
 #   OPENCLAW_WORKSPACE_ROOT  (optional) workspace override (tests).
 #   CLIENT_FIRST_NAME        (optional, default "there").
 #   FORCE=1                  (optional) bypass the 30-minute re-send guard.
@@ -157,6 +184,46 @@ if [ -n "$DASH" ]; then
     LINK="$DASH/onboarding/resume/$SLUG"
   else
     LINK="$DASH/interview"
+  fi
+fi
+
+# ── Shared-dashboard safety (Janet incident 2026-08-13; doctrine above) ───────
+# Only the *shared* dashboard host needs the interview-state check: a host
+# that serves THIS box's own CC reads this same state file (already read
+# above), while the shared operator CC is hostname-blind to this company
+# unless its /api/interview/gate-status is tenant-scoped. So:
+#   * localhost / 127.0.0.1 dashboards  -> no check (box-own CC).
+#   * any other dashboard host          -> gate-status must answer
+#     interviewComplete:false for this company, else FAIL to the
+#     Telegram-native invite (never send an unverifiable web link).
+CHECK_SHARED_HOST() {
+  python3 - "$1" <<'PYEOF'
+import sys
+host = sys.argv[1].lower()
+if host in ("localhost", "127.0.0.1"):
+    sys.exit(0)  # box-own CC: state read above is authoritative
+# Shared/unknown host: the caller verifies gate-status externally.
+sys.exit(1)
+PYEOF
+}
+
+if [ -n "$LINK" ] && ! CHECK_SHARED_HOST "$DASH"; then
+  GATE_BASE="${INTERVIEW_GATE_URL:-$DASH}"
+  GATE_URL="$GATE_BASE/api/interview/gate-status"
+  GATE_JSON="$(curl -sS -m 10 "$GATE_URL" 2>/dev/null || true)"
+  GATE_COMPLETE="$(printf '%s' "$GATE_JSON" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print("1" if d.get("interviewComplete") is True else "0")
+except Exception:
+    print("unknown")
+' 2>/dev/null || echo unknown)"
+  if [ "$GATE_COMPLETE" = "0" ]; then
+    : # verified: the dashboard host answers incomplete for this company
+  else
+    echo "[send-interview-link] WARNING: dashboard host $DASH did not verify an incomplete interview for this company (gate-status=${GATE_COMPLETE:-unknown}) — sending the Telegram-native invite instead of an unverifiable web link." >&2
+    LINK=""
   fi
 fi
 
