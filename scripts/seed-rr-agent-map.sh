@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # seed-rr-agent-map.sh — provision Rescue Rangers agent-id mappings fleet-wide.
 #
-# rr_agent_map (n8n data table wHS7NxgnWjpox48k) maps box_slug -> local_agent_id,
+# rr_agent_map (n8n data table EFPgipZtKatC5xPw) maps box_slug -> local_agent_id,
 # the OpenClaw agent id that receives RR coaching answers on that box. RR-02-coach
 # reads it before diagnosing; a receiver-covered box with no row escalates to a
 # human (agent_id_unmapped). This script upserts a row per box so every enrolled
@@ -14,10 +14,10 @@
 #   --dry-run     print what would be written, write nothing.
 #
 # NOTE: the n8n data-table API exposes row POST (insert) but no row DELETE
-# (405), so this script is INSERT-ONLY and a rerun may add duplicate rows for
-# the same slug. That is benign for RR-02-coach (lookup is limit-1) and the
-# verify step below asserts every slug is mapped at least once, not exact
-# counts. De-duping a table requires the n8n UI or a workflow.
+# (405) and no upsert, so this script is INSERT-ONLY — the idempotent diff
+# below computes which slugs already have a row and inserts only the missing
+# ones, making a rerun a true no-op. Rows inserted outside this script can
+# still duplicate; de-duping a table requires the n8n UI or a workflow.
 #
 # Requirements: N8N_API_KEY + N8N_HOST in the environment (operator box only —
 # client boxes do not carry the n8n key and must NOT run this; the script exits
@@ -51,8 +51,6 @@ elif [ -f "$HOME/clawd/fleet-prover/fleet-roster.json" ]; then
 else
   grep '^Host ' "$HOME/.ssh/config" | awk '{print $2}' | grep '^rescue-' > "$SLUGS_FILE"
 fi
-N=$(wc -l < "$SLUGS_FILE" | tr -d ' ')
-echo "seed-rr-agent-map: $N box slugs to ensure mapped (dry-run=$DRY_RUN)"
 
 # --- Backup -------------------------------------------------------------------
 BAK="/tmp/rr_agent_map-backup-$(date +%Y%m%dT%H%M%S).json"
@@ -61,10 +59,31 @@ if [ "$DRY_RUN" -eq 0 ]; then
   echo "seed-rr-agent-map: backup -> $BAK ($(wc -c < "$BAK" | tr -d ' ') bytes)"
 fi
 
+# --- Idempotent diff ----------------------------------------------------------
+# The API has no row-level delete/upsert, so a plain re-run would accumulate
+# duplicate rows. Compute the set of slugs that ALREADY have a row and insert
+# only the missing ones — a re-run is then a true no-op (0 rows).
+EXISTING=$(curl -sS -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$HOST/api/v1/data-tables/$TABLE_ID/rows" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); rows=d.get("data",[]); print("\n".join(sorted(set(r.get("box_slug","") for r in rows if r.get("box_slug")))))' 2>/dev/null || true)
+python3 - "$SLUGS_FILE" "$EXISTING" <<'DEDUP'
+import sys
+want = [l.strip() for l in open(sys.argv[1]) if l.strip()]
+have = set(sys.argv[2].split()) if len(sys.argv) > 2 and sys.argv[2] else set()
+missing = [s for s in want if s not in have]
+print("\n".join(missing))
+DEDUP
+python3 - "$SLUGS_FILE" "$EXISTING" > /tmp/rr-seed-missing.txt 2>/dev/null || true
+mapfile -t SLUGS < /tmp/rr-seed-missing.txt
+N=${#SLUGS[@]}
+echo "seed-rr-agent-map: $N slugs missing (of $(echo "$EXISTING" | grep -c .) existing) — dry-run=$DRY_RUN"
+if [ "$N" -eq 0 ]; then
+  echo "seed-rr-agent-map: nothing to write — table already mapped (no-op)"
+  rm -f "$SLUGS_FILE" /tmp/rr-seed-missing.txt
+  exit 0
+fi
+
 # --- Upsert -------------------------------------------------------------------
 NOW=$(python3 -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))')
-declare -a SLUGS
-mapfile -t SLUGS < "$SLUGS_FILE"
 : > /tmp/rr-seed-payload.json
 {
   echo -n '{"data":['
