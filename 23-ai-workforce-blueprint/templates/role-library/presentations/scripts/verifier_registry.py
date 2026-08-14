@@ -221,12 +221,15 @@ def run_gate(gate: str, run_dir: Path) -> Tuple[bool, List[str]]:
 # Verifier factories for the common shapes
 # ---------------------------------------------------------------------------
 def qc_report_verifier(qc_key: str) -> VerifierSpec:
-    """Build the standard QC-report verifier for one of the six QC_REPORTS keys
-    (copy / prompt / image / typography / speech / priority_shift). Seals the
-    report's fact (existence, sha256, gate label, average, pass, autofails,
-    independence, substance) and verifies it with runfacts.verify_qc — the
-    SAME rubric build_deck._qc_report_gate enforces. This is the machinery the
-    T1 slice (copy/typography/speech re-measure teeth) wires per report."""
+    """Build the standard QC-report verifier for one of the sealed QC_REPORTS
+    keys (copy / prompt / image / typography / speech — the 0-10 rubric
+    reports). Seals the report's fact (existence, sha256, gate label, average,
+    pass, autofails, independence, substance) and verifies it with
+    runfacts.verify_qc — the SAME rubric build_deck._qc_report_gate enforces.
+    This is the machinery the T1 slice (copy/typography/speech re-measure
+    teeth) wires per report, and SLICE-2 uses it for P-SPEECH-QC. NOT for
+    priority_shift (a ledger, not a 0-10 rubric) or final (the aggregate — see
+    priority_shift_verifier / final_qc_verifier)."""
     if qc_key not in QC_REPORTS:
         raise KeyError(f"{qc_key!r} is not a sealed QC report key")
 
@@ -245,6 +248,62 @@ def qc_report_verifier(qc_key: str) -> VerifierSpec:
         verifier=_v,
         verdict=_verdict,
         artifacts=(QC_REPORTS[qc_key]["path"],),
+        legacy=None,
+        config=None,
+    )
+
+
+def priority_shift_verifier() -> VerifierSpec:
+    """SLICE-2: P-SHIFT-QC (order 7.5). Verifier for the priority-shift ship
+    gate's ledger report (working/qc/priority_shift_report.json). The ledger is
+    written by build_deck._chk_priority_shift_ledger from its own 14-item +
+    per-slide measurements — the REAL artifact. The verdict re-derives the
+    ledger's decided value from the SEALED fact (runfacts.verify_priority_shift)
+    instead of trusting the file's existence. Authoritative (legacy=None): this
+    slice takes over the gate."""
+    if "priority_shift" not in QC_REPORTS:
+        raise KeyError("'priority_shift' is not a sealed QC report key")
+
+    def _v(artifact_paths: Tuple[str, ...], run_dir: Path,
+           config: Optional[dict]) -> Tuple[RunFacts, bool]:
+        facts = _rf.seal(Path(run_dir), nonce_bound=False, force=True)
+        had = facts.qc.get("priority_shift") is not None and \
+            facts.qc["priority_shift"].state is not Epistemic.ABSENT
+        return facts, bool(had)
+
+    return VerifierSpec(
+        gate="qc:priority_shift",
+        verifier=_v,
+        verdict=lambda facts: _rf.verify_priority_shift(facts),
+        artifacts=(QC_REPORTS["priority_shift"]["path"],),
+        legacy=None,
+        config=None,
+    )
+
+
+def final_qc_verifier() -> VerifierSpec:
+    """SLICE-2: P-QC-AGGREGATE (order 8.65). Verifier for the FINAL QC aggregate
+    report (working/qc/final_qc_report.json, produced by qc_aggregate.py from
+    the six domain reports). Re-measures the REAL artifacts: the verdict
+    (runfacts.verify_final_qc) independently re-derives every one of the six
+    sealed domain facts it claims to aggregate under the SAME per-domain rubric
+    (verify_qc), never trusting the aggregate's headline alone. Authoritative
+    (legacy=None): this slice takes over the gate."""
+    if "final" not in QC_REPORTS:
+        raise KeyError("'final' is not a sealed QC report key")
+
+    def _v(artifact_paths: Tuple[str, ...], run_dir: Path,
+           config: Optional[dict]) -> Tuple[RunFacts, bool]:
+        facts = _rf.seal(Path(run_dir), nonce_bound=False, force=True)
+        had = facts.qc.get("final") is not None and \
+            facts.qc["final"].state is not Epistemic.ABSENT
+        return facts, bool(had)
+
+    return VerifierSpec(
+        gate="qc:final",
+        verifier=_v,
+        verdict=lambda facts: _rf.verify_final_qc(facts),
+        artifacts=(QC_REPORTS["final"]["path"],),
         legacy=None,
         config=None,
     )
