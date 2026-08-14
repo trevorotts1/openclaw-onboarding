@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v22.0.19"
+ONBOARDING_VERSION="v22.0.20"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1293,7 +1293,7 @@ PYEOF
     # secret — it is a public, outbound-reachable webhook — but it IS seeded into
     # the agent's env so the escalation command can reference $RESCUE_RANGERS_WEBHOOK_URL
     # rather than a hardcoded URL. Overridable via the operator env var of the same name.
-    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rescue-rangers"
+    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rr-v2-intake"
     local RR_WEBHOOK="${RESCUE_RANGERS_WEBHOOK_URL:-$RR_WEBHOOK_DEFAULT}"
     _shared_write_env "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"

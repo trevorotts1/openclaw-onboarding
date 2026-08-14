@@ -52,7 +52,7 @@
      -H 'Content-Type: application/json' \
      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"<ROLE_ID>\",\"message\":\"<escalation text from step 1>\"}"
    ```
-   `RESCUE_RANGERS_WEBHOOK_URL` is seeded by install.sh (default: `https://main.blackceoautomations.com/webhook/rescue-rangers`). Do NOT use `openclaw message send -t <group>` — bots cannot read other bots and the old Telegram group path is silently dropped.
+   `RESCUE_RANGERS_WEBHOOK_URL` is seeded by install.sh (default: `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Do NOT use `openclaw message send -t <group>` — bots cannot read other bots and the old Telegram group path is silently dropped.
 3. Log the escalation to `working/maintenance/escalations/esc-YYYYMMDD-HHMMSS.json`.
 4. After sending: HALT this fix thread and wait for operator response. Do NOT retry the fix without operator direction.
 
