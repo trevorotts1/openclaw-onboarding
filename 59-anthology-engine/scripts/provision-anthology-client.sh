@@ -535,6 +535,18 @@ step3_pipeline() {
     # in the UI, or bind a pre-existing pipeline with `bind --pipeline-id`.
     n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-pipeline \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
+    # Deferred-credential install (Trevor GO 2026-08-14): the standard pipeline is
+    # a UI-only object whose canonical source is the SNAPSHOT IMPORT (step 7.5,
+    # itself credential-gated). In install-mode, an absent pipeline is DEFERRED
+    # (recorded) instead of STOPPING the install — the pipeline lands when the
+    # snapshot import runs after the client's levers are wired. Fail-closed
+    # semantics unchanged outside install-mode.
+    if [ "$n" != "$EX_OK" ] && [ "$INSTALL_MODE" = "1" ]; then
+        mkdir -p "$STATE_DIR"
+        echo "$EX_HELD" | tee "$STATE_DIR/pipeline-pending" >/dev/null
+        note "  (install-mode) pipeline absent — recorded pipeline-pending, install CONTINUES (bind when snapshot import runs)"
+        echo "$EX_OK"; return
+    fi
     echo "$n"
 }
 

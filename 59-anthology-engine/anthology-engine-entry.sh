@@ -271,6 +271,9 @@ if [ -f "$ANTHOLOGY_STATE_DIR_RESOLVED/credentials-pending" ]; then
     echo "  - GOOGLE_IMPERSONATE_USER  (the Workspace user this client's deliveries impersonate)" >&2
     echo "  - GOOGLE_DRIVE_ROOT_FOLDER (this client's BlackCEO-hosted Shared-Drive root id)" >&2
     echo "Add them to the box env store and re-run provision (idempotent); the install itself is complete." >&2
+    if [ -f "$ANTHOLOGY_STATE_DIR_RESOLVED/pipeline-pending" ]; then
+        echo "  - 'Anthology Engine' pipeline not yet bound — it lands with the snapshot import once the above are set." >&2
+    fi
     exit 4
 fi
 
