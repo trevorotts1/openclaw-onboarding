@@ -602,22 +602,80 @@ def _seed_curated_bundle(run_dir):
     (PRESENTERS-SPEECH.md, presenter-teleprompter.html) are kept here for
     continuity; the other eight come from the canonical standardized
     destination names in DELIVERABLE_AUDIT_SPEC (suffix- and size-checked by
-    locate_deliverable, so each is a non-empty real file)."""
+    locate_deliverable, so each is a non-empty real file).
+
+    Wave-2 wired self_audit's magic-byte checks into Engine.close(), so a
+    seeded file of plain b"x" padding now fails the audit: the .pptx/.pdf/.mp3/
+    .png files must open with their real magic bytes (read from _AUDIT_SPEC),
+    the html must carry a DOCTYPE marker (check_html_marker reads the first
+    2000 bytes), and the mp4 must carry an ftyp box (check_mp4_ftyp scans the
+    first 512 bytes). Sizes are taken from each spec's min_bytes, never
+    guessed. After writing, every seeded name that has a magic_bytes entry in
+    _AUDIT_SPEC is re-verified through check_magic_bytes so a future spec
+    change breaks fixture authoring loudly instead of drifting silently."""
+    from self_audit import _AUDIT_SPEC, check_magic_bytes
+
     (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+    spec_by_name = {s["standardized_dest"]: s for s in _AUDIT_SPEC}
+
+    def _min_bytes(name: str) -> int:
+        return spec_by_name[name]["min_bytes"]
+
+    def _seed_bytes(prefix: bytes, size: int, suffix: bytes = b"") -> bytes:
+        return prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix
+
     seeded = {
-        "PRESENTERS-SPEECH.md": 3000,
-        "presenter-teleprompter.html": 12000,
-        "DECK-FINAL.pptx": 60000,
-        "DECK-FINAL.pdf": 60000,
-        "PRESENTER-GUIDE.pdf": 30000,
-        "PRESENTERS-SPEECH.pdf": 30000,
-        "PRESENTERS-SPEECH-FISH-TAGGED.md": 8000,
-        "PRESENTER-AUDIO.mp3": 120000,
-        "INFOGRAPHIC.png": 20000,
-        "WEBINAR-VIDEO.mp4": 600000,
+        "PRESENTERS-SPEECH.md": (
+            _min_bytes("PRESENTERS-SPEECH.md"),
+            lambda sz: b"x" * sz,
+        ),
+        "presenter-teleprompter.html": (
+            12000,
+            lambda sz: _seed_bytes(b"<!DOCTYPE html>\n", sz),
+        ),
+        "DECK-FINAL.pptx": (
+            _min_bytes("DECK-FINAL.pptx"),
+            lambda sz: _seed_bytes(b"PK\x03\x04", sz),
+        ),
+        "DECK-FINAL.pdf": (
+            _min_bytes("DECK-FINAL.pdf"),
+            lambda sz: _seed_bytes(b"%PDF-1.4\n", sz, b"\n%%EOF\n"),
+        ),
+        "PRESENTER-GUIDE.pdf": (
+            _min_bytes("PRESENTER-GUIDE.pdf"),
+            lambda sz: _seed_bytes(b"%PDF-1.4\n", sz, b"\n%%EOF\n"),
+        ),
+        "PRESENTERS-SPEECH.pdf": (
+            _min_bytes("PRESENTERS-SPEECH.pdf"),
+            lambda sz: _seed_bytes(b"%PDF-1.4\n", sz, b"\n%%EOF\n"),
+        ),
+        "PRESENTERS-SPEECH-FISH-TAGGED.md": (
+            _min_bytes("PRESENTERS-SPEECH-FISH-TAGGED.md"),
+            lambda sz: b"x" * sz,
+        ),
+        "PRESENTER-AUDIO.mp3": (
+            _min_bytes("PRESENTER-AUDIO.mp3"),
+            lambda sz: _seed_bytes(b"ID3", sz),
+        ),
+        "INFOGRAPHIC.png": (
+            _min_bytes("INFOGRAPHIC.png"),
+            lambda sz: _seed_bytes(b"\x89PNG\r\n\x1a\n", sz),
+        ),
+        "WEBINAR-VIDEO.mp4": (
+            _min_bytes("WEBINAR-VIDEO.mp4"),
+            lambda sz: _seed_bytes(b"\x00\x00\x00\x18ftypmp42", sz),
+        ),
     }
-    for name, size in seeded.items():
-        (run_dir / "working" / "deliverables" / name).write_bytes(b"x" * size)
+    for name, (size, factory) in seeded.items():
+        path = run_dir / "working" / "deliverables" / name
+        path.write_bytes(factory(size))
+        spec = spec_by_name[name]
+        magic = spec.get("magic_bytes")
+        if magic is not None:
+            ok, reason = check_magic_bytes(
+                str(path), magic, spec.get("magic_offset", 0)
+            )
+            assert ok, f"seeded {name}: magic-byte check failed: {reason}"
 
 
 class TestOCRReadbackGateBlocks:
