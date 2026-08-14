@@ -1,3 +1,17 @@
+## [v22.0.26] -- 2026-08-14 -- fix(presentations): close the sixth bypass — owner-skip anchor (Trust Boundary Increment 2)
+
+`build_deck.py:_owner_skip_approved()` waived 13 gates based on an unsigned,
+agent-writable dict in `process_manifest.json`. Fix adds a real friction
+floor (reason >= 8 chars, real ISO timestamp), a blanket-skip-reason limit
+(one reason may waive at most 2 distinct af_codes), and mandatory,
+unconditional stderr + ledger disclosure of every consumption/rejection.
+Independently reproduced: a 13-gate self-approval with reason="x" waives
+13/13 on the unmodified pre-fix module and 0/13 post-fix; a legitimate
+distinct-substantive-reason approval still waives 13/13 on both. Zero
+regressions (646 passed / 2 skipped / 6 pre-existing failures, identical
+before and after). See `23-ai-workforce-blueprint/CHANGELOG.md` for the
+full writeup.
+
 ## [v22.0.25] -- 2026-08-14 -- fix(wi-11): make --sops-only a real, responsive acceptance gate
 
 QC-WI-11's binary acceptance criterion (`sync_check.py --sops-only 2>&1 | grep
