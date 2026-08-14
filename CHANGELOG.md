@@ -1,3 +1,25 @@
+## [v22.0.28] -- 2026-08-14 -- fix(presentations): gate-conversion infra — verifier registry + sealed RunFacts helpers (Trust Boundary Increment 2, shared base)
+
+Shared machinery the gate-conversion slices (T1 QC-report teeth, T2 CC-registered
+gate) build on. New `presentation_job/../verifier_registry.py` (ships beside
+`presentation_job/runfacts.py`): a verifier registry whose entries are
+`(artifact_paths, run_dir, config) -> sealed RunFacts` (transactional seal — the
+shared Increment-1 seal cache is restored after each slice seal), pure
+`(RunFacts) -> (Verdict, str)` verdict functions, the same report-only
+shadow-compare + `PRES_TRUST_BOUNDARY_ENFORCE=1` enforcement gate as Increment 1,
+fail-closed on missing input (a gate whose input is absent does not pass — the
+`Gates._qc_gate` contract), and `register_verifier()` as the slices' wiring
+point (idempotent by gate name, last registration wins). Factories: `qc_report_verifier`
+(the six QC_REPORTS keys, verdict = `runfacts.verify_qc`, same rubric
+`build_deck._qc_report_gate` enforces) and `artifact_verifier`. Shared
+both-direction test harness (`both_directions`): fabricated artifact rejected
+with reasons naming exactly what could not be reproduced / genuine passes —
+exercised against `qc:typography` with the proven Increment-1 fabricated report
+(gate:'typography', pass:false, average:2.1). Suite `presentations/scripts/tests/`:
+662 passed / 1 skipped (baseline 654/1 + 8 new, zero regressions).
+`gate_integrity_check.py --purity` contract unchanged: verdict functions must
+stay pure (linted by name in PURITY_ASSERTED_FUNCTIONS).
+
 ## [v22.0.27] -- 2026-08-14 -- fix(presentations): heal wave-2 test drift (MIN manifest version 46->47, real magic-byte test fixtures, repo-manifest MIN guard test, skill-version 22.0.27)
 
 Merge sha 3b8a23c97e5dddabf783ddc027ca7340289460e2. This is the version chain entry for the wave-2 test drift heal: the presentations MIN manifest version moved 46 -> 47, test fixtures now carry real magic bytes, a repo-manifest MIN guard test was added, and skill-version rolled to 22.0.27.
