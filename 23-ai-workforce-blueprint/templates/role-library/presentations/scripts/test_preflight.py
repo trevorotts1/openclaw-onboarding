@@ -4323,6 +4323,16 @@ def emit_af_coverage():
     _cc_reason = build_deck._chk_cc_registered(_cc_root, "probe-deck")
     record("AF-CC-UNREGISTERED", _cc_reason)
 
+    # AF-CC-UNVERIFIED — probe (T2 gate teeth): cc_register_attempted=True with NO
+    # cc_task_id (transport/partial failure — could-not-verify must fail the gate
+    # with an honest message, never read as verified).
+    _ccu_root = Path(_tf_cc.mkdtemp(prefix="deck_coverage_cc_unverified_probe_"))
+    (_ccu_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_ccu_root / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
+    _ccu_reason = build_deck._chk_cc_registered(_ccu_root, "probe-deck")
+    record("AF-CC-UNVERIFIED", _ccu_reason)
+
     # Skill 51 — AF-SP-* Signature-Presentation gates. One deliberately-failing signature
     # fixture per code trips its build_deck._chk_sp_* wrapper (Guard-A negative coverage).
     _spi, _sps, _spn = _sp_provers()
@@ -5959,24 +5969,69 @@ def test_deck_type_u021() -> list:
     return fails
 
 
-def test_chk_cc_registered() -> list:
-    """AF-CC-UNREGISTERED negative test (Fix 5a):
-    Verifies that build_deck._chk_cc_registered enforces the CC registration gate.
+def _cc_registration_receipt(cc_task_id: str, idempotency_key: str, deck_slug: str) -> dict:
+    """Build a cc_registration receipt exactly as cc_board.registration_proof
+    does (deterministic HMAC over cc_task_id|idempotency_key) so the gate test
+    fixtures can mint a VERIFIED receipt without importing cc_board."""
+    import hashlib as _hl, hmac as _hm
+    canonical = f"{cc_task_id}|{idempotency_key}"
+    digest = _hm.new(canonical.encode("utf-8"), b"", _hl.sha256).hexdigest()
+    return {
+        "task_id": cc_task_id,
+        "idempotency_key": idempotency_key,
+        "deck_slug": deck_slug,
+        "hmac": digest,
+    }
 
-    Cases:
-      (A) process_manifest.json with NEITHER cc_task_id NOR cc_register_attempted
-          -> FAIL (fail-closed: never-attempted is a hard fail).
-      (B) process_manifest.json with cc_register_attempted=True but no cc_task_id
-          -> PASS (fail-soft: transport failure satisfies the gate).
-      (C) process_manifest.json with cc_task_id set (successful registration)
-          -> PASS.
+
+def test_chk_cc_registered() -> list:
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED gate test (Fix 5a + T2 gate teeth):
+    Verifies that build_deck._chk_cc_registered enforces the CC registration
+    gate with THREE outcomes:
+
+      (A) NEITHER cc_task_id NOR cc_register_attempted -> FAIL
+          AF-CC-UNREGISTERED (fail-closed: never-attempted is a hard fail).
+      (B) cc_register_attempted=True but NO cc_task_id -> FAIL
+          AF-CC-UNVERIFIED (transport/partial failure; could-not-verify must
+          NOT read as verified — bare attempted is NOT a pass).
+      (C) cc_task_id + VERIFYING cc_registration HMAC receipt (a real
+          cc_board.ingest_deck_task round-trip) -> PASS ("").
+      (F) cc_task_id present but cc_registration receipt MISSING (hand-written
+          or stale id, no proof) -> FAIL AF-CC-UNVERIFIED (never verified).
+      (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged)
+          -> FAIL AF-CC-UNVERIFIED.
       (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
-      (E) process_manifest.json absent entirely
-          -> FAIL (fail-closed: manifest missing at closeout).
+      (E) process_manifest.json absent entirely -> FAIL (fail-closed: manifest
+          missing at closeout).
 
     Returns a list of failure strings ([] = all passed).
     """
     fails = []
+
+    def _assert_fail(label: str, result, code: str):
+        if not result or code not in result:
+            fails.append(
+                f"{label}: expected a FAIL carrying {code}, got: {result!r}"
+            )
+        # Could-not-verify must be UNREADABLE as verified: the failure text
+        # must not claim the run VERIFIED/registered as a pass (a bare
+        # "registered" claim would read as verified). "not verified" /
+        # "could not be verified" / "does not count as registered" are honest
+        # negations and fine; the assertion targets affirmative claims.
+        _upper = result.upper()
+        # Strip the AF code names themselves ("AF-CC-UNVERIFIED" / "AF-CC-
+        # UNREGISTERED" legitimately contain VERIFIED/REGISTERED) plus honest
+        # negations, then require NO affirmative verified/registered claim.
+        for _tok in ("AF-CC-UNVERIFIED", "AF-CC-UNREGISTERED",
+                     "UNVERIFIED", "UNREGISTERED",
+                     "NOT BE VERIFIED", "NOT COUNT AS REGISTERED",
+                     "NEVER COUNTS AS VERIFIED", "NOT PROVABLY PRODUCED"):
+            _upper = _upper.replace(_tok, "")
+        if "VERIFIED" in _upper or "REGISTERED" in _upper:
+            fails.append(
+                f"{label}: failure text must not read as verified/registered, "
+                f"got: {result!r}"
+            )
 
     # (A) Neither cc_task_id nor cc_register_attempted -> FAIL (fail-closed).
     rd_a = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_a_"))
@@ -5984,39 +6039,42 @@ def test_chk_cc_registered() -> list:
     (rd_a / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": []}))
     r_a = build_deck._chk_cc_registered(rd_a, "test-deck")
-    if not r_a or "AF-CC-UNREGISTERED" not in r_a:
-        fails.append(
-            f"CC-REG-A: no cc_task_id and no cc_register_attempted must FAIL "
-            f"AF-CC-UNREGISTERED, got: {r_a!r}"
-        )
+    _assert_fail("CC-REG-A", r_a, "AF-CC-UNREGISTERED")
     print(f"CC-REG-A (never-attempted fail-closed) -> "
           f"{'PASS' if 'CC-REG-A' not in str(fails) else 'FAIL'}")
 
-    # (B) cc_register_attempted=True but no cc_task_id -> PASS (fail-soft).
+    # (B) cc_register_attempted=True but NO cc_task_id -> FAIL AF-CC-UNVERIFIED.
+    # T2: bare attempted without a task id must NOT satisfy the gate, and must
+    # never print as verified.
     rd_b = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_b_"))
     (rd_b / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_b / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
     r_b = build_deck._chk_cc_registered(rd_b, "test-deck")
-    if r_b:
-        fails.append(
-            f"CC-REG-B: cc_register_attempted=True must PASS (fail-soft), got: {r_b!r}"
-        )
-    print(f"CC-REG-B (transport-fail soft-pass)    -> "
+    _assert_fail("CC-REG-B", r_b, "AF-CC-UNVERIFIED")
+    if "cc_register_attempted" not in (r_b or ""):
+        fails.append("CC-REG-B: UNVERIFIED message must say the attempt was logged "
+                     f"(cc_register_attempted), got: {r_b!r}")
+    print(f"CC-REG-B (attempted-no-id UNVERIFIED)  -> "
           f"{'PASS' if 'CC-REG-B' not in str(fails) else 'FAIL'}")
 
-    # (C) cc_task_id set (successful registration) -> PASS.
+    # (C) cc_task_id + VERIFYING cc_registration receipt -> PASS (real round-trip).
     rd_c = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_c_"))
     (rd_c / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_c / "working" / "checkpoints" / "process_manifest.json").write_text(
-        json.dumps({"phase_attestations": [], "cc_task_id": "task-abc-123",
-                    "cc_register_attempted": True}))
+        json.dumps({
+            "phase_attestations": [],
+            "cc_task_id": "task-abc-123",
+            "cc_register_attempted": True,
+            "cc_registration": _cc_registration_receipt(
+                "task-abc-123", "sha256-deck-key", "test-deck"),
+        }))
     r_c = build_deck._chk_cc_registered(rd_c, "test-deck")
     if r_c:
         fails.append(
-            f"CC-REG-C: cc_task_id set must PASS (successful registration), got: {r_c!r}"
+            f"CC-REG-C: cc_task_id + verifying receipt must PASS, got: {r_c!r}"
         )
-    print(f"CC-REG-C (successful-reg pass)         -> "
+    print(f"CC-REG-C (verified receipt pass)       -> "
           f"{'PASS' if 'CC-REG-C' not in str(fails) else 'FAIL'}")
 
     # (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
@@ -6033,13 +6091,39 @@ def test_chk_cc_registered() -> list:
     (rd_e / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     # No process_manifest.json written.
     r_e = build_deck._chk_cc_registered(rd_e, "test-deck")
-    if not r_e or "AF-CC-UNREGISTERED" not in r_e:
-        fails.append(
-            f"CC-REG-E: absent process_manifest.json must FAIL AF-CC-UNREGISTERED, "
-            f"got: {r_e!r}"
-        )
+    _assert_fail("CC-REG-E", r_e, "AF-CC-UNREGISTERED")
     print(f"CC-REG-E (manifest-absent fail-closed) -> "
           f"{'PASS' if 'CC-REG-E' not in str(fails) else 'FAIL'}")
+
+    # (F) cc_task_id WITHOUT a cc_registration receipt (bare id, no proof —
+    # hand-written or stale) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_f = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_f_"))
+    (rd_f / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_f / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True}))
+    r_f = build_deck._chk_cc_registered(rd_f, "test-deck")
+    _assert_fail("CC-REG-F", r_f, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-F (bare id no receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-F' not in str(fails) else 'FAIL'}")
+
+    # (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged
+    # proof) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_g = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_g_"))
+    (rd_g / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    _bad_receipt = _cc_registration_receipt(
+        "task-abc-123", "sha256-deck-key", "test-deck")
+    _bad_receipt["hmac"] = "0" * 64  # forged digest
+    (rd_g / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True,
+                    "cc_registration": _bad_receipt}))
+    r_g = build_deck._chk_cc_registered(rd_g, "test-deck")
+    _assert_fail("CC-REG-G", r_g, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-G (tampered receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-G' not in str(fails) else 'FAIL'}")
 
     print(f"CC-REGISTERED (gate tests)   -> {'PASS' if not fails else 'FAIL'}")
     return fails
