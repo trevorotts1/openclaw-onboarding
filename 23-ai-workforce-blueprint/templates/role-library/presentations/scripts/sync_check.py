@@ -56,6 +56,11 @@ USAGE:
     python3 sync_check.py            # human report, exit 0 / 4
     python3 sync_check.py --json     # machine: {"in_sync":bool,"drift":[...]}
     python3 sync_check.py --explain  # also print which EXTENSION-SOP step was skipped
+    python3 sync_check.py --sops-only  # SOP-audit-only mode: phantom-symbol, stale-repo-path,
+                                        # and unresolved-registration checks over sops/*.md.
+                                        # Exit 0 clean, 4 on any finding (all findings are
+                                        # severity HIGH), 2 if it cannot run. Any --flag not
+                                        # listed here is a FATAL usage error, not a no-op.
 
 GATES IT RUNS AT (none optional — see SOP-SLIDE-06-EXTENSION-AND-SYNC):
     * QC GATE (Phase 1Q): the QC specialist's mechanical runner executes this
@@ -915,10 +920,147 @@ def report_human(drift, warnings, manifest, explain):
     _print_warnings(warnings, manifest)
 
 
+# ---------------------------------------------------------------------------
+# --sops-only: THE SOP AUDIT  [QC-WI-11 adversarial finding, re-scored 2026-08-13]
+# ---------------------------------------------------------------------------
+# THE GAP THIS CLOSES
+# -------------------
+# WORK-ITEM-11's acceptance criterion (MASTER-SPEC-2026-08-09.md:419) was:
+#
+#   python3 scripts/sync_check.py --sops-only 2>&1 | grep -c "HIGH"
+#   # Must return 0.
+#
+# Two independent facts made that criterion unconditionally satisfiable:
+#   1. `--sops-only` was never a recognised flag (main() only ever read
+#      `--json` / `--explain` out of argv) — it was silently swallowed and the
+#      script ran its normal full check regardless of what was passed.
+#   2. The literal string "HIGH" appeared nowhere in sync_check.py's output —
+#      no check anywhere emits it — so `grep -c "HIGH"` returned 0 whether the
+#      tree was pristine, had every one of this unit's HIGH-severity fixes
+#      reverted, or could not even run (exit 2).
+#
+# This function makes `--sops-only` real and makes "HIGH" mean something:
+# three independently-verified-safe (zero false positives against the current,
+# correct SOP corpus — see commit message) mechanical checks, each targeting a
+# GENERAL CLASS of SOP defect, not a hardcoded filename or a replay of one
+# specific adversarial string:
+#
+#   phantom-symbol   — a SOP cites `build_deck.<name>` or `` `_chk_<name>` ``
+#                       that is not actually defined anywhere in build_deck.py
+#                       (the exact shape of the F10 regression: a symbol
+#                       renamed/typo'd in prose after the code moved).
+#   stale-repo-path  — a SOP cites a repo-root-relative path (a numbered
+#                       top-level dept dir, `universal-sops/`, or `docs/`) that
+#                       does not exist on disk (the F1 class: a directory
+#                       reference that drifted after a file moved).
+#   unresolved-reg   — a SOP still carries the literal "PENDING Agent W3"
+#                       registration-debt marker this department's own doctrine
+#                       uses to track a gate that is authored but not yet
+#                       mechanically wired (SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md).
+#                       Deliberately this EXACT phrase, not bare "PENDING" —
+#                       "PENDING" alone is a normal, frequent, legitimate
+#                       in-flight-deliverable placeholder elsewhere in this SOP
+#                       set (e.g. `[PRICE PENDING]`, `[PROOF PENDING]`) and
+#                       flagging it would fail closed on innocent SOP content.
+#
+# Every finding is reported at severity HIGH (this audit does not emit LOW —
+# add a class here only when it is a real, checked defect, never a style nit).
+# An UNRESOLVED input (SOPS_DIR missing, a SOP unreadable, build_deck.py
+# unparseable) is a FATAL exit(2) via the existing _fatal()/parse_build_deck()
+# paths above — this audit never treats "could not check" as "nothing found".
+def sop_audit(sops_dir, bd, repo_root):
+    findings = []
+    if not sops_dir.is_dir():
+        _fatal(f"--sops-only: sops dir not found: {sops_dir}")
+
+    symbol_re = re.compile(r'`build_deck\.([A-Za-z_][A-Za-z0-9_]*)`|`(_chk_[A-Za-z0-9_]+)`')
+    path_re = re.compile(r'`((?:\d\d-[a-z0-9-]+|universal-sops|docs)/[A-Za-z0-9_./-]*)`')
+    defined_names = bd["defined_names"]
+
+    for sop in sorted(sops_dir.glob("*.md")):
+        try:
+            lines = sop.read_text().splitlines()
+        except Exception as exc:  # noqa: BLE001
+            _fatal(f"--sops-only: cannot read {sop}: {exc}")
+        for lineno, line in enumerate(lines, 1):
+            for m in symbol_re.finditer(line):
+                sym = m.group(1) or m.group(2)
+                if sym == "py":  # `build_deck.py` — the file itself, not a symbol
+                    continue
+                if sym not in defined_names:
+                    findings.append({
+                        "severity": "HIGH", "class": "phantom-symbol",
+                        "sop": sop.name, "line": lineno,
+                        "detail": f"cites `{sym}` — not defined anywhere in {BUILD_DECK.name}. "
+                                  f"Either the symbol was renamed/removed in code and this SOP's "
+                                  f"prose was not updated, or the citation is a typo.",
+                    })
+            for m in path_re.finditer(line):
+                path_str = m.group(1)
+                if repo_root is None:
+                    continue  # no repo root resolvable (e.g. standalone deployed box) — not checkable here
+                if not (repo_root / path_str).exists():
+                    findings.append({
+                        "severity": "HIGH", "class": "stale-repo-path",
+                        "sop": sop.name, "line": lineno,
+                        "detail": f"cites repo path `{path_str}` which does not exist "
+                                  f"relative to the repo root ({repo_root}). The file/dir it "
+                                  f"once pointed to may have moved.",
+                    })
+            if "PENDING Agent W3" in line:
+                findings.append({
+                    "severity": "HIGH", "class": "unresolved-registration",
+                    "sop": sop.name, "line": lineno,
+                    "detail": "carries the \"PENDING Agent W3\" registration-debt marker. "
+                              "Per SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md, either wire the "
+                              "declared gate (add the _chk_ function + manifest entry) or mark "
+                              "it REGISTRATION STATUS: DOCTRINE-ONLY and remove this marker.",
+                })
+    return findings
+
+
+def report_sop_audit(findings):
+    if not findings:
+        print("=== sync_check --sops-only: SOP AUDIT ===")
+        print("Zero findings. SOP corpus clean on all three checks "
+              "(phantom-symbol, stale-repo-path, unresolved-registration).")
+        return
+    print("=== sync_check --sops-only: SOP AUDIT — FINDINGS ===", file=sys.stderr)
+    for f in findings:
+        print(f"  {f['severity']} [{f['class']}] {f['sop']}:{f['line']} {f['detail']}", file=sys.stderr)
+    print(f"\n{len(findings)} HIGH finding(s).", file=sys.stderr)
+
+
+# Every flag main() understands. An arg starting with `--` that is NOT in this
+# set is a FATAL usage error (exit 2), not a silent no-op — the WI-11 gap was
+# exactly a flag nobody recognised being swallowed instead of rejected.
+KNOWN_FLAGS = {"--json", "--explain", "--sops-only"}
+
+
 def main():
     argv = sys.argv[1:]
+    unknown = [a for a in argv if a.startswith("--") and a not in KNOWN_FLAGS]
+    if unknown:
+        print(f"FATAL (sync_check cannot run): unrecognized flag(s) {unknown} — "
+              f"known flags are {sorted(KNOWN_FLAGS)}. A flag nobody recognises must "
+              f"never be silently ignored.", file=sys.stderr)
+        sys.exit(2)
     as_json = "--json" in argv
     explain = "--explain" in argv
+    sops_only = "--sops-only" in argv
+
+    if sops_only:
+        bd = parse_build_deck()
+        findings = sop_audit(SOPS_DIR, bd, _REPO_ROOT)
+        if as_json:
+            print(json.dumps({
+                "in_sync": not findings,
+                "findings": findings,
+                "finding_count": len(findings),
+            }, indent=2))
+        else:
+            report_sop_audit(findings)
+        sys.exit(4 if findings else 0)
 
     manifest = load_manifest()
     bd = parse_build_deck()
