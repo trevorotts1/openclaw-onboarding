@@ -254,6 +254,27 @@ else
 fi
 
 # ===========================================================================
+# GATE 2.5 -- DEFERRED-CREDENTIAL READINESS (install-mode provisioned the skill
+# without the per-client Google delivery levers; first USE that needs delivery
+# surfaces what's missing instead of failing cryptically)
+# ===========================================================================
+resolve_anthology_state_dir() {
+    if [ -n "${ANTHOLOGY_STATE_DIR:-}" ]; then printf '%s\n' "$ANTHOLOGY_STATE_DIR"; return; fi
+    if [ -n "${OPENCLAW_DATA_DIR:-}" ]; then printf '%s\n' "${OPENCLAW_DATA_DIR%/}/anthology-engine/state"; return; fi
+    printf '%s\n' "${HOME:-$(cd ~ && pwd)}/.anthology-engine/state"
+}
+ANTHOLOGY_STATE_DIR_RESOLVED="$(resolve_anthology_state_dir)"
+if [ -f "$ANTHOLOGY_STATE_DIR_RESOLVED/credentials-pending" ]; then
+    note "GATE 2.5/3 -- CREDENTIAL READINESS (deferred-credential install)"
+    echo "The Anthology skill is installed and ready, but needs these before it can deliver to Google Drive:" >&2
+    echo "  - GOOGLE_SA_KEY_FILE       (this client's BlackCEO service-account key path)" >&2
+    echo "  - GOOGLE_IMPERSONATE_USER  (the Workspace user this client's deliveries impersonate)" >&2
+    echo "  - GOOGLE_DRIVE_ROOT_FOLDER (this client's BlackCEO-hosted Shared-Drive root id)" >&2
+    echo "Add them to the box env store and re-run provision (idempotent); the install itself is complete." >&2
+    exit 4
+fi
+
+# ===========================================================================
 # GATE 3 -- VERSION/HASH PIN (content hash of the enforcement set, when pinned)
 # The integrator stamps ENGINE-PIN.sha256 after all guards land; until then the
 # hash is recorded, not enforced. Only files that exist are hashed.
