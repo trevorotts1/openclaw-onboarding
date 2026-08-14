@@ -21,6 +21,7 @@ from .board import BoardMirror
 from .sweep import reconcile_sweep
 from . import diagnose
 from . import persona
+from .vocab import CANONICAL_PRESENTATION_TYPES
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,7 +87,12 @@ def cmd_new(args, scripts_dir: Path) -> int:
     intake = intake or {}
 
     ptype = intake.get("presentation_type")
-    legal = ("from_scratch", "content_personal", "content_general", "signature")
+    # Single-sourced with the entry script, the poll, and the launcher --
+    # see vocab.py. This tuple must never be hand-copied again; two
+    # independently maintained "legal" sets is the exact shape of the
+    # deck-type-routing-bypass bug (a value present in both a caller's own
+    # set and the engine's real set skips the caller's alias remap).
+    legal = CANONICAL_PRESENTATION_TYPES
     if ptype not in legal:
         die(EXIT_USAGE,
             f"intake.presentation_type is {ptype!r}; must be one of {legal}.\n"

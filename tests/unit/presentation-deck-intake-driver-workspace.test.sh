@@ -165,20 +165,73 @@ else
 fi
 
 if "$PY" - "$DRIVER" <<'PY'
-import pathlib, sys
+import pathlib, re, sys
 src = pathlib.Path(sys.argv[1]).read_text()
-# Guard the grounded invariant: the driver takes its workspace from the explicit
-# flag only. If an env/CWD fallback is ever added it must come with a test that
-# proves containment — fail here so that change cannot land unnoticed.
-hits = [n for n in ("os.getenv", "os.environ", "getcwd", "Path.cwd()") if n in src]
-if hits:
-    print("NEW ambient-workspace source(s) introduced: " + ", ".join(hits)); sys.exit(1)
+# Guard the grounded invariant: the driver takes its WORKSPACE (run_dir) from
+# the explicit --run-dir flag only. getcwd()/Path.cwd() are unconditional bans
+# — there is no legitimate reason for this driver to consult the process cwd.
+#
+# os.environ is judged differently as of fix/deck-type-routing-bypass: the
+# driver now reads a SMALL, EXPLICIT allowlist of env keys to stamp requester
+# identity (requester_chat_id/requester_channel) into working/copy/intake.json
+# at --complete -- see _resolve_requester_from_env(). That is DATA the
+# dispatcher already knew, never a workspace/run_dir/path source: run_dir is
+# still resolved exclusively from args.run_dir (checked separately above).
+# Every os.environ.get(...) call in the file must name one of these keys, or
+# this still fails loudly -- an env read of anything else (especially
+# anything path-shaped) must not land unnoticed.
+if "getcwd" in src or "Path.cwd()" in src:
+    print("NEW ambient-workspace source(s) introduced: getcwd/Path.cwd()"); sys.exit(1)
+ALLOWED_ENV_KEYS = {
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+    "PRESENTATION_REQUESTER_CHANNEL",
+}
+if "os.getenv" in src:
+    print("NEW ambient-workspace source(s) introduced: os.getenv"); sys.exit(1)
+# Every os.environ.get(...) call must pass EITHER of two allowlisted forms:
+#   (a) a literal string key, e.g. os.environ.get("PRESENTATION_REQUESTER_CHANNEL")
+#   (b) the loop variable `key` iterating a module-level tuple literal named
+#       _REQUESTER_ENV_KEYS (e.g. `for key in _REQUESTER_ENV_KEYS:`), whose
+#       OWN literal contents are then checked against the allowlist below.
+# Anything else (a different variable, an f-string, environ[...] subscript,
+# etc.) is NOT recognized and fails loudly.
+call_args = re.findall(r'os\.environ\.get\(\s*([^\s,)]+)', src)
+bare_refs = len(re.findall(r'os\.environ\b', src))
+if bare_refs != len(call_args):
+    print(f"os.environ referenced {bare_refs} time(s) but only {len(call_args)} "
+          "were os.environ.get(...) calls -- a non-allowlisted env access form "
+          "(e.g. os.environ[...] subscript) was introduced"); sys.exit(1)
+literal_keys = []
+uses_key_var = False
+for arg in call_args:
+    m = re.fullmatch(r'["\']([A-Za-z_][A-Za-z0-9_]*)["\']', arg)
+    if m:
+        literal_keys.append(m.group(1))
+    elif arg == "key":
+        uses_key_var = True
+    else:
+        print(f"NEW non-allowlisted os.environ.get(...) argument form introduced: {arg}"); sys.exit(1)
+unexpected = sorted(set(literal_keys) - ALLOWED_ENV_KEYS)
+if unexpected:
+    print("NEW non-allowlisted os.environ key(s) introduced: " + ", ".join(unexpected)); sys.exit(1)
+if uses_key_var:
+    tm = re.search(r'_REQUESTER_ENV_KEYS\s*=\s*\(([^)]*)\)', src)
+    if not tm:
+        print("os.environ.get(key) used but no _REQUESTER_ENV_KEYS tuple literal found to bound it"); sys.exit(1)
+    tuple_keys = re.findall(r'["\']([A-Za-z_][A-Za-z0-9_]*)["\']', tm.group(1))
+    if not tuple_keys:
+        print("_REQUESTER_ENV_KEYS tuple literal contains no recognizable string keys"); sys.exit(1)
+    unexpected_tuple = sorted(set(tuple_keys) - ALLOWED_ENV_KEYS)
+    if unexpected_tuple:
+        print("NEW non-allowlisted key(s) in _REQUESTER_ENV_KEYS: " + ", ".join(unexpected_tuple)); sys.exit(1)
 sys.exit(0)
 PY
 then
-    pass "driver still derives its workspace ONLY from the explicit flag (no getenv/environ/cwd ambient source)"
+    pass "driver's workspace still comes ONLY from --run-dir; any os.environ reads are the allowlisted requester-identity keys, never a path source"
 else
-    fail "driver gained an ambient workspace source — containment is no longer guaranteed by the flag alone"
+    fail "driver gained an unreviewed ambient-workspace or unlisted env source — containment is no longer guaranteed"
 fi
 
 echo

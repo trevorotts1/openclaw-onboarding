@@ -216,6 +216,59 @@ def write_intake_json(run_dir: Path, intake: Dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+# ---------------------------------------------------------------------------
+# requester identity -- fix/deck-type-routing-bypass follow-up.
+#
+# b01d2a09 diagnosed the gap in these exact words: "the dispatcher knows it
+# but never writes it down." Two dispatchers (mc-route.sh's REQUESTER_CHAT_ID
+# / REQUESTER_CHANNEL and whatever exports PRESENTATION_REQUESTER_CHAT_ID /
+# ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID before invoking
+# this driver) already know the requester at dispatch time, and cc_board.py's
+# resolve_requester() already reads that SAME set of env keys -- but only for
+# CC-board task registration, a different purpose than the engine's own hard
+# gate (presentation_job.py --new dies with no requester.chat_id; see
+# presentation_job/__main__.py cmd_new). Neither dispatcher ever persisted the
+# value into working/copy/intake.json, the ONE file resolve_intake.py (and
+# therefore the engine) actually reads. This driver is where intake.json is
+# actually produced, so --complete is the correct place to make the stamp
+# durable: whichever env var the calling dispatcher exported is read once,
+# here, and merged into intake -- never overwriting a value already on disk
+# (an upstream writer or a re-run always wins over the environment).
+#
+# _REQUESTER_ENV_KEYS mirrors cc_board.py's own constant of the same name
+# byte-for-byte -- one vocabulary, read in two places for two purposes.
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
+
+
+def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, str]:
+    """Return {requester_chat_id, requester_channel} updates to merge into
+    working/copy/intake.json, sourced from the environment the dispatcher
+    already sets (see _REQUESTER_ENV_KEYS above). Returns {} -- never a
+    fabricated value -- when intake already has a requester_chat_id (do not
+    clobber) or when none of the env keys are set (a genuinely
+    operator-initiated / requester-less run). The engine's own hard gate on
+    an empty requester.chat_id is left to fire exactly as designed in that
+    second case -- this function only closes the "dispatcher knew it but
+    nobody wrote it down" gap, never the case where nobody knew it at all.
+    """
+    if str(existing_intake.get("requester_chat_id") or "").strip():
+        return {}
+    chat_id = ""
+    for key in _REQUESTER_ENV_KEYS:
+        val = str(os.environ.get(key) or "").strip()
+        if val:
+            chat_id = val
+            break
+    if not chat_id:
+        return {}
+    channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+    return {"requester_chat_id": chat_id, "requester_channel": channel}
+
+
 def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
     """Read working/interview/intake_ledger.json. Returns empty dict if absent."""
     path = run_dir / "working" / "interview" / "intake_ledger.json"
@@ -290,7 +343,19 @@ def cmd_next(args) -> int:
     schema = load_question_schema()
     questions = get_questions(schema)
     ledger = read_intake_ledger(run_dir)
-    answers = ledger.get("entries", {})
+    entries = ledger.get("entries", {})
+    # BUGFIX (fresh-process --next after presentation_type is answered): entries
+    # are nested ledger records ({"value": ..., "validated": ..., ...}), never
+    # bare strings. Flatten through the SAME tolerant accessor cmd_answer already
+    # uses to build its post-answer `answers` dict (below, and in cmd_complete's
+    # val extraction) -- reusing it here rather than adding a fourth way to read
+    # the same field. Feeding the raw nested entries dict straight into
+    # derive_legacy_fields() (or into should_ask()'s conditional_on/ask_if
+    # comparisons via _first_unanswered) crashed cmd_next with a ValueError on
+    # every bare --next call once presentation_type had been recorded.
+    answers = {k: (v.get("value") if isinstance(v, dict) else v)
+               for k, v in entries.items()
+               if not k.startswith("_")}
 
     # If presentation_type is answered, auto-derive legacy fields
     ptype = answers.get("presentation_type")
@@ -483,6 +548,11 @@ def cmd_complete(args) -> int:
         print(json.dumps({"error": "SP claim gate failed",
                           "failures": sp_result}))
         return 2
+
+    # fix/deck-type-routing-bypass follow-up: stamp the requester identity
+    # (env -> intake.json) so the engine's resolve_intake.py has something to
+    # read besides an empty ledger. See _resolve_requester_from_env() above.
+    intake.update(_resolve_requester_from_env(intake))
 
     # Mark interview_confirmed
     intake["interview_confirmed"] = True
