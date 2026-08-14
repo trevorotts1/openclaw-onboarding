@@ -204,4 +204,14 @@ def test_import_smoke_curate_phase_verifiers_self_audit():
     assert hasattr(curate, "DESTINATION_FILENAMES")
     assert hasattr(self_audit, "DELIVERABLE_AUDIT_LIST")
     assert "P9-DELIVER" in pv.PHASE_VERIFIERS
-    assert pv.PHASE_VERIFIERS["P9-DELIVER"] is pv._verify_delivery
+    # SLICE 3: P9-DELIVER is wired through the sealed-RunFacts shadow wrapper
+    # (_shadow_composite_verifier) — report-only by default, stricter only
+    # under PRES_TRUST_BOUNDARY_ENFORCE=1. The wrapper still delegates to the
+    # refactored single-sourced _verify_delivery, so the whitelist contract
+    # the legacy verifier enforces stays live on every report-only run.
+    assert pv.PHASE_VERIFIERS["P9-DELIVER"] is not pv._verify_delivery
+    assert pv.PHASE_VERIFIERS["P9-DELIVER"].__closure__ is not None
+    wrapped = [c.cell_contents for c in pv.PHASE_VERIFIERS["P9-DELIVER"].__closure__]
+    assert any(cell is pv._verify_delivery for cell in wrapped), (
+        "P9-DELIVER shadow wrapper must delegate to the single-sourced "
+        "_verify_delivery (legacy verdict still enforced report-only)")

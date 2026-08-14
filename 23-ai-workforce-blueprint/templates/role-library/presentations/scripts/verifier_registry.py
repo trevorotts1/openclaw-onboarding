@@ -285,6 +285,108 @@ def _resolve_first(run_dir: Path, pattern: str) -> Optional[Path]:
 
 
 # ---------------------------------------------------------------------------
+# SLICE 3 — composite / multi-artifact gate verifiers. Each gate re-measures
+# MORE than one artifact at seal time (a 10-key deliverable bundle, a JSON
+# ledger, a dual-PDF pair, a video + its timing track, a sync record + the
+# PPTX it mutated, two speech files under a strip-equals prover). The pure
+# verdicts live in runfacts.py (verify_deliverables / verify_media_library /
+# verify_workbook / verify_webinar_video / verify_notes_sync /
+# verify_fish_tag) and are registered here as VerifierSpecs so the both-
+# direction test harness and the phase_verifiers wiring share one source.
+# ---------------------------------------------------------------------------
+def composite_verifier(gate: str, verdict_fn: Callable[[RunFacts], Tuple[Verdict, str]],
+                       artifact_paths: Tuple[str, ...],
+                       legacy: Optional[Callable] = None) -> VerifierSpec:
+    """Build a slice-3 composite verifier. The seal reads every artifact the
+    gate re-measures exactly once; the verdict is the pure runfacts function
+    (never opens a file — enforced by gate_integrity_check --purity). had_input
+    is True when ANY declared artifact exists — a composite gate may legitimately
+    run with some keys absent (that is what its verdict FAILs on, D10)."""
+    def _v(artifact_paths_: Tuple[str, ...], run_dir: Path,
+           config: Optional[dict]) -> Tuple[RunFacts, bool]:
+        facts = _rf.seal(Path(run_dir), nonce_bound=False, force=True)
+        had = any(_resolve_first(Path(run_dir), pat) is not None for pat in artifact_paths_)
+        return facts, had
+
+    return VerifierSpec(
+        gate=gate,
+        verifier=_v,
+        verdict=verdict_fn,
+        artifacts=artifact_paths,
+        legacy=legacy,
+        config=None,
+    )
+
+
+def slice3_verifiers() -> Tuple[VerifierSpec, ...]:
+    """Build (not register) the slice-3 composite-gate VerifierSpecs.
+
+    `legacy` is deliberately None for every one: the phase_verifiers wiring
+    (_shadow_*_verifier in phase_verifiers.py) owns the legacy shadow-compare
+    at the phase level and passes the legacy fn there — registering it here
+    too would double-compare. A slice-3 spec run directly (both_directions,
+    run_gate) is therefore authoritative on the RunFacts verdict, exactly like
+    the qc_report_verifier specs."""
+    _FISH_TAG_ARTIFACTS = (
+        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "working/deliverables/PRESENTERS-SPEECH.md",
+    )
+    return (
+        composite_verifier(
+            "deliverables:bundle",
+            _rf.verify_deliverables,
+            (
+                "working/delivery/*-FINAL.pptx",
+                "working/delivery/*-FINAL.pdf",
+                "working/deliverables/PRESENTER-GUIDE.pdf",
+                "working/deliverables/PRESENTERS-SPEECH.md",
+                "working/deliverables/PRESENTERS-SPEECH.pdf",
+                "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+                "working/delivery/PRESENTER-AUDIO.mp3",
+                "working/delivery/infographic.png",
+                "working/deliverables/presenter-teleprompter.html",
+                "working/delivery/*-WEBINAR.mp4",
+            ),
+        ),
+        composite_verifier(
+            "ghl_upload:ledger",
+            _rf.verify_media_library,
+            ("working/checkpoints/media_library.json",),
+        ),
+        composite_verifier(
+            "workbook:both",
+            _rf.verify_workbook,
+            ("working/deliverables/*-WORKBOOK.pdf",
+             "working/deliverables/*-WORKBOOK-FILLABLE.pdf"),
+        ),
+        composite_verifier(
+            "webinar_video:video",
+            _rf.verify_webinar_video,
+            ("working/delivery/*-WEBINAR.mp4",
+             "working/checkpoints/webinar_timing.json"),
+        ),
+        composite_verifier(
+            "notes_sync:sync",
+            _rf.verify_notes_sync,
+            ("working/checkpoints/notes_sync.json",),
+        ),
+        composite_verifier(
+            "fish_tag:strip_equals",
+            _rf.verify_fish_tag,
+            _FISH_TAG_ARTIFACTS,
+        ),
+    )
+
+
+def register_slice3() -> None:
+    """Register all slice-3 composite-gate verifiers. Idempotent: re-registration
+    replaces (last wins) per register_verifier. Called from phase_verifiers'
+    shadow wiring so the registry is populated wherever the phases run."""
+    for spec in slice3_verifiers():
+        register_verifier(spec)
+
+
+# ---------------------------------------------------------------------------
 # The both-direction test harness: fabricated artifact REJECTED / genuine PASSES
 # ---------------------------------------------------------------------------
 # Shared by every slice test so the "fabricated -> reject, genuine -> pass"

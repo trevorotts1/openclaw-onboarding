@@ -227,7 +227,18 @@ _BANNED_NAMES = {"open"}
 # Functions in presentation_job/runfacts.py this increment asserts are pure:
 # (RunFacts, ...) -> (Verdict, str), reading ONLY already-sealed fields off
 # the RunFacts object passed in — never touching disk themselves.
-PURITY_ASSERTED_FUNCTIONS = ("verify_owner_skip", "verify_qc")
+PURITY_ASSERTED_FUNCTIONS = (
+    "verify_owner_skip",
+    "verify_qc",
+    # SLICE 3 (composite / multi-artifact gates) — pure verdicts over the
+    # sealed facts; the seal does the I/O, the verdict never touches disk.
+    "verify_deliverables",
+    "verify_media_library",
+    "verify_workbook",
+    "verify_webinar_video",
+    "verify_notes_sync",
+    "verify_fish_tag",
+)
 
 
 def _function_bodies(source: str, names) -> dict:
