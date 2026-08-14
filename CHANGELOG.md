@@ -1,3 +1,66 @@
+## [v22.0.21] -- 2026-08-13 -- the .js tool that never reached a single box, and a locked file that crashed the roll
+
+**GAP 1 -- `.js` was in neither writer's suffix list, so
+`rescue-rangers/scripts/relay_brain_validation.js` was silently dropped by every
+delivery path since day one.** `create_role_workspaces.scaffold_department()` and
+`refresh-dept-scripts.py` each carried their own hardcoded tuple; neither included
+`.js`.
+
+Executed, by calling the REAL `scaffold_department()` to materialize the
+department into a scratch dir and listing what landed:
+
+| tree | `_CANONICAL_SCRIPT_SUFFIXES` | `relay_brain_validation.js` delivered |
+|---|---|---|
+| `origin/main` | `('.py','.sh','.sha256','.pdf')` | **NO** |
+| this change | `('.py','.sh','.js','.sha256','.pdf')` | **YES** |
+
+Running the materialized `verify.sh` with real node (v26.7.0):
+`origin/main` -> `MODULE_NOT_FOUND ... relay_brain_validation.js`,
+`DRILL FAILED: relay_brain_validation.js --self-test`, **3 passed / 2 failed**.
+This change -> `[relay_brain_validation] self-test: PASS`, **4 passed / 1 failed**.
+
+The one still-failing drill (`stamp-rescue-escalation-section.sh`) fails
+**identically on `origin/main`** and is an artifact of materializing into a
+scratch dir: that script walks UP to a repo root for
+`scripts/rescue-escalation-section.md.tpl`. Run from inside a repo checkout it is
+`self-test: PASS` on both trees. It is NOT fixed here and is NOT claimed fixed.
+
+Fix: `.js` added to `_CANONICAL_SCRIPT_SUFFIXES` (fleet-owned, always overwritten
+-- it is a versioned tool like any `.py`/`.sh`), `_ADDITIVE_SCRIPT_SUFFIXES`
+(`.json`) introduced as a named constant beside it, and BOTH writers now import
+those two module-level constants instead of re-declaring their own literal tuples
+-- which retires the "two hardcoded lists silently disagree" bug class that
+produced this gap:
+
+    refresh-dept-scripts.py:196  _MIRROR_SUFFIXES   = crw._CANONICAL_SCRIPT_SUFFIXES
+    refresh-dept-scripts.py:197  _ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES
+
+**GAP 2 -- an unwritable destination crashed the whole roll with a raw traceback
+instead of the documented graceful outcome.** Reproduced by chmod-ing a
+materialized `departments/rescue-rangers/scripts/` to `0555` with a divergent
+fleet-owned file inside it and running `refresh-dept-scripts.py --apply`:
+
+| tree | result |
+|---|---|
+| `origin/main` | **rc=1**, uncaught `PermissionError`, raw `Traceback`, run aborted at the FIRST locked file |
+| this change | **rc=3** (the documented code), `COPY FAILED -- <path> -- PermissionError: ...` named per file, loop continues through all 7, receipt lists each as `copy-failed` |
+
+Nothing client-owned is clobbered: with a client-local
+`rescue_ledger_config.json` in place, its sha256 is **byte-identical before and
+after** an `--apply` run that overwrote the fleet-owned `.py` and delivered the
+new `.js` in the same pass.
+
+- **`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`** -- the two
+  shared suffix constants; `scaffold_department()`'s copy loop sources from them.
+- **`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** -- imports both
+  constants; new `_try_copy()` catches `OSError` per file, records path + concrete
+  reason, folds into the existing `problems`/`failed_inscope` contract (deduped
+  against the generic "missing" entry for the same path).
+
+Suites: `test-department-instantiation.sh`, `test-materialize-missing-departments.sh`,
+`test-floor-fill-vertical-gate.sh` (13/13), `both-paths-zhe-delivery.test.sh`,
+`refresh-stale-roles.test.sh` (30/30) -- all rc=0.
+
 ## [v22.0.20] -- 2026-08-13 -- new provisions point at the canonical rr-v2-intake relay
 
 `install.sh` seeded `RESCUE_RANGERS_WEBHOOK_URL`'s provisioning default to the

@@ -2378,7 +2378,23 @@ _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
 # role-library on every scaffold/floor-fill pass. .json is deliberately
 # excluded — it is additive/missing-only because it may carry client-local
 # overrides (see scaffold_department's scripts/ block below).
-_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".sha256", ".pdf")
+# GAP-DELIVERY-JS: .js is a fleet-owned canonical asset exactly like .py/.sh
+# (e.g. rescue-rangers/scripts/relay_brain_validation.js — a versioned tool,
+# never a client-local override candidate), so it belongs in THIS tuple, not
+# the additive one. Before this fix .js appeared in neither list in either
+# writer (here nor in refresh-dept-scripts.py), so relay_brain_validation.js
+# was silently dropped by every delivery path — never auto-delivered at all.
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".sha256", ".pdf")
+
+# Additive/box-owned script suffixes: copied only if the destination is
+# missing, NEVER overwritten (may carry a client-local override). Named here
+# — alongside _CANONICAL_SCRIPT_SUFFIXES — so every writer that needs "which
+# suffixes does this mirror policy even apply to" (scaffold_department's
+# scripts/ copy loop below, and refresh-dept-scripts.py's independent third
+# writer) sources BOTH decisions from this one place instead of each
+# re-declaring its own hardcoded tuple that could silently drift out of sync
+# with this one — the exact bug class that let .js fall through every path.
+_ADDITIVE_SCRIPT_SUFFIXES = (".json",)
 
 # Directory names never descended into when walking a role-library scripts/
 # tree — build/tooling cache, never a source of canonical files a department
@@ -2504,7 +2520,7 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                 dest.write_text(sop.read_text(encoding="utf-8"), encoding="utf-8")
             written["sops"] += 1
 
-    # scripts/ folder — REFRESH_CANONICAL_SCRIPTS: .py and .sh files from the
+    # scripts/ folder — REFRESH_CANONICAL_SCRIPTS: .py/.sh/.js files from the
     # role-library are ALWAYS overwritten so stale canonical generators (e.g. a
     # pre-v16 build_deck.py that predates the P0B-PRIORITY preflight) are
     # replaced on every floor-fill run. .json config files remain additive
@@ -2512,13 +2528,21 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # deploys role-owned no-AI generators (e.g. presentations/scripts/
     # build_teleprompter.py, build_deck.py) so the role SOPs can run them at
     # the relative path 'presentations/scripts/build_deck.py'.
-    # Only .py, .sh, .json, .sha256, and .pdf files are copied; we skip
-    # __pycache__ and .pyc. FIX-PRES-04: .sha256 (e.g. CANONICAL-RENDERER-PIN.sha256)
-    # and .pdf (e.g. STANDARD-presenter-speech-layout.pdf) MUST reach the
-    # materialized department scripts dir — without them GATE 3's hash-pin silently
-    # disarms on exactly the copies most likely to be tampered with. Both are treated
-    # like .py/.sh (always-overwrite with the canonical library version); only .json
-    # stays additive (may carry client-local overrides).
+    # Suffixes copied are exactly _CANONICAL_SCRIPT_SUFFIXES (.py/.sh/.js/
+    # .sha256/.pdf) plus _ADDITIVE_SCRIPT_SUFFIXES (.json) — sourced from
+    # those two module-level constants, never re-declared as a separate
+    # literal tuple here, so this loop and refresh-dept-scripts.py's
+    # independent mirror can never silently disagree about which suffixes
+    # are in scope (that disagreement is exactly how .js — a fleet-owned
+    # asset like .py/.sh — fell through every delivery path before this fix:
+    # it appeared in neither list, in either file). We skip __pycache__ and
+    # .pyc (via _iter_scripts_tree_files). FIX-PRES-04: .sha256 (e.g.
+    # CANONICAL-RENDERER-PIN.sha256) and .pdf (e.g.
+    # STANDARD-presenter-speech-layout.pdf) MUST reach the materialized
+    # department scripts dir — without them GATE 3's hash-pin silently
+    # disarms on exactly the copies most likely to be tampered with. Both are
+    # treated like .py/.sh/.js (always-overwrite with the canonical library
+    # version); only .json stays additive (may carry client-local overrides).
     #
     # FIX-DELIVERY-01: this used to be a depth-1 iterdir() that explicitly
     # `continue`d on every directory ("skip nested dirs (e.g. __pycache__)"),
@@ -2528,7 +2552,7 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # forever. Walks the full tree now (via _iter_scripts_tree_files, shared
     # with verify_scripts_materialization below so copy and verify can never
     # disagree about what the tree contains); only real cache/hidden dirs are
-    # pruned, and the per-file mirror(.py/.sh/.sha256/.pdf)-vs-fork(.json)
+    # pruned, and the per-file mirror(.py/.sh/.js/.sha256/.pdf)-vs-fork(.json)
     # policy is unchanged and now applies at every depth, not just depth 1.
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
@@ -2537,15 +2561,16 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
             scripts_target.mkdir(exist_ok=True)
         scripts_copied = 0
         for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root):
-            if src_file.suffix not in (".py", ".sh", ".json", ".sha256", ".pdf"):
+            if (src_file.suffix not in _CANONICAL_SCRIPT_SUFFIXES
+                    and src_file.suffix not in _ADDITIVE_SCRIPT_SUFFIXES):
                 continue
             dest_file = scripts_target / rel_path
             # .json config files: additive (never clobber client-local overrides).
-            # .py / .sh / .sha256 / .pdf canonical assets: always overwrite so a
+            # .py / .sh / .js / .sha256 / .pdf canonical assets: always overwrite so a
             # stale build_deck.py (or any other generator), a stale hash-pin file,
             # or a stale layout PDF is replaced with the canonical library version
             # on every scaffold/floor-fill pass.
-            if src_file.suffix == ".json" and dest_file.exists():
+            if src_file.suffix in _ADDITIVE_SCRIPT_SUFFIXES and dest_file.exists():
                 continue
             if not dry_run:
                 import shutil as _shutil
@@ -2723,7 +2748,7 @@ def main():
     # never invoke the materializer at all). Point this at a LIVE
     # department's scripts/ dir and its role-library source and it reports,
     # loudly and with an itemized list, whether the box actually has every
-    # canonical (.py/.sh/.sha256/.pdf) file the library ships, at every
+    # canonical (.py/.sh/.js/.sha256/.pdf) file the library ships, at every
     # depth — instead of a roll silently reporting success while a box never
     # received the update. Never writes anything.
     parser.add_argument(
