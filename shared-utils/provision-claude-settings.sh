@@ -41,6 +41,19 @@
 #   * Runs as the invoking (node) user. Refuses to run as root, because a
 #     root-owned settings.json freezes the box's Claude Code on next start.
 #   * Never prints a credential. It only ever reads/writes these two keys.
+#   * LAUNCHER-AWARE. These keys are read by the Claude Code BINARY at session
+#     start. A box with no launcher installed (every OpenClaw-only VPS, for
+#     example) can never read them, so writing them there produces a dead file
+#     that looks like success. This script therefore provisions a profile ONLY
+#     when its launcher is actually installed:
+#         ~/.claude       <- requires `claude`      on PATH or a known install dir
+#         ~/.claude-nine  <- requires `claude-nine` (or `claude-9`) likewise
+#     A profile DIRECTORY alone is NOT proof -- an OpenClaw box can carry a
+#     leftover ~/.claude with no binary behind it. Neither launcher present is a
+#     clean, expected SKIP (exit 0), never a failure.
+#     Note: a resolvable name proves the NAME resolves, not that the program
+#     runs. That is sufficient here -- we are deciding whether a settings file
+#     could ever be read, not whether the binary is healthy.
 #
 # Exit codes: 0 = provisioned or already correct, 2 = failure (nothing changed).
 # ----------------------------------------------------------------------------
@@ -53,6 +66,7 @@ _stamp="$(date '+%Y%m%d-%H%M%S')"
 _rc=0
 _changed=0
 _seen=0
+_skipped=0
 
 if [ "$(id -u)" = "0" ]; then
   echo "  ✋ provision-claude-settings: refusing to run as root (a root-owned settings.json freezes Claude Code on this box)." >&2
@@ -64,15 +78,43 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
-# Both profiles. The claude-nine profile only exists on boxes running the
-# 9Router launcher; its absence is normal and is NOT a failure.
-for _dir in "$HOME/.claude" "$HOME/.claude-nine"; do
+# Is a launcher actually installed? Checks PATH first, then the install dirs
+# used across the fleet (npm global, user-local, Homebrew both arches, ~/bin).
+# $1.. = candidate binary names for this profile.
+_launcher_installed() {
+  local _name
+  for _name in "$@"; do
+    command -v "$_name" >/dev/null 2>&1 && return 0
+    local _p
+    for _p in "$HOME/.npm-global/bin/$_name" "$HOME/.local/bin/$_name" \
+              "$HOME/bin/$_name" "/usr/local/bin/$_name" \
+              "/opt/homebrew/bin/$_name" "/usr/bin/$_name"; do
+      [ -x "$_p" ] && return 0
+    done
+  done
+  return 1
+}
+
+# Both profiles, each gated on ITS OWN launcher being installed.
+for _spec in ".claude:claude" ".claude-nine:claude-nine claude-9"; do
+  _dirname="${_spec%%:*}"
+  _bins="${_spec#*:}"
+  _dir="$HOME/$_dirname"
   _f="$_dir/settings.json"
 
-  # A profile directory that does not exist means that launcher is not
-  # installed here. Skip quietly -- never create a profile that isn't in use.
-  [ -d "$_dir" ] || continue
+  # shellcheck disable=SC2086
+  if ! _launcher_installed $_bins; then
+    if [ -d "$_dir" ]; then
+      echo "  = ${_dirname}/ exists but no launcher installed (looked for: ${_bins}) — these keys would never be read. SKIPPED, nothing written."
+    fi
+    _skipped=$((_skipped + 1))
+    continue
+  fi
   _seen=$((_seen + 1))
+
+  # Launcher is installed but has never run, so no profile dir yet. Create it
+  # so the settings are in place for its first session.
+  [ -d "$_dir" ] || mkdir -p "$_dir" || { echo "  ✋ could not create $_dir" >&2; _rc=2; continue; }
 
   _bak=""
   if [ -f "$_f" ]; then
@@ -169,11 +211,11 @@ PYEOF
 done
 
 if [ "$_seen" = "0" ]; then
-  echo "  = provision-claude-settings: no Claude Code profile directory on this box (neither ~/.claude nor ~/.claude-nine) — nothing to do."
+  echo "  = provision-claude-settings: no Claude Code launcher installed on this box (checked PATH + npm-global/local/homebrew/usr) — these settings are not applicable here. Nothing written."
 fi
 
 if [ "$_rc" = "0" ]; then
-  echo "  ✅ Claude subagent concurrency provisioned (${_changed} file(s) changed, ${_seen} profile(s) present)."
+  echo "  ✅ Claude subagent concurrency: ${_changed} file(s) changed, ${_seen} launcher profile(s) provisioned, ${_skipped} skipped (no launcher)."
 else
   echo "  ⚠️  Claude subagent concurrency provisioning had failures — see above." >&2
 fi
