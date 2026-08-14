@@ -634,7 +634,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 | `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
 | `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted (your client's chat) |
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
+- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Reference the env var, never a hardcoded URL.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
 - The rescue agent will reply with a solution delivered back into the Rescue Rangers group; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).

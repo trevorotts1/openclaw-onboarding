@@ -36,6 +36,16 @@ EXIT_SWEEP_HAD_FAILURES = 11  # scanned >0 but >=1 run dir raised an unexpected 
 # bump that makes every real run dir on the box fail the version check.
 # "scanned 5, not_a_run_dir: 5" must never read as a pass.
 EXIT_SWEEP_ALL_REJECTED = 12
+# watchdog.py's own version of the same fix, applied for the same reason: before
+# this code, watchdog(scanned=0) fell all the way through to
+# `EXIT_STALLED if (enforce and findings) else EXIT_OK` with findings == [], and
+# returned EXIT_OK -- bitwise identical, at the exit-code level, to "scanned N
+# run dirs, zero were stalled." A wrong --scan-root, a mount that didn't come up,
+# or a typo'd path all read as a clean fleet. Returned whenever scanned == 0,
+# REGARDLESS of --enforce (mirroring EXIT_SWEEP_NO_RUNS, which is likewise
+# unconditional on sweep.py's --apply) -- "I found nothing to check" is never
+# the same claim as "I checked and it's fine," in warn mode or enforce mode.
+EXIT_WATCHDOG_NO_RUNS = 13   # scanned 0 state.json files -- UNDETERMINED, not a pass
 
 STATE_FILENAME = "state.json"
 LOCK_FILENAME = ".job.lock"

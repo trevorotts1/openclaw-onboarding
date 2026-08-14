@@ -5756,7 +5756,7 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 # ---------------------------------------------------------------------------
 # FIX-2 — owner/founder skip token (the ONLY way to waive a FIX-2 gate)
 # ---------------------------------------------------------------------------
-def _owner_skip_approved(run_dir: Path, af_code: str):
+def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
 
     A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION /
@@ -5766,7 +5766,11 @@ def _owner_skip_approved(run_dir: Path, af_code: str):
     object or a list of them). A valid token carries owner_approved:true, the af_code
     (or gate) it waives, a non-empty approved_by, a non-empty reason, and a timestamp.
     No agent may self-skip and the absence of a token means the gate is ENFORCED.
-    Returns the matching record (so callers can log who approved what) or None."""
+    Returns the matching record (so callers can log who approved what) or None.
+
+    UNCHANGED by Trust Boundary Increment 1 — this is still the sole source of
+    truth for the value _owner_skip_approved() returns in report-only mode
+    (the default). See _owner_skip_approved below for the shadow wrapper."""
     pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
     if not pm.exists():
         return None
@@ -5792,6 +5796,52 @@ def _owner_skip_approved(run_dir: Path, af_code: str):
             continue
         return r
     return None
+
+
+def _owner_skip_approved(run_dir: Path, af_code: str):
+    """TRUST BOUNDARY, INCREMENT 1 (report-only) — public entry point, SAME name
+    and signature every existing call site already uses (12 in this file, 2 in
+    run_signature_deck.py via bd._owner_skip_approved), so nothing needs to
+    change at any call site for this wrapper to take effect.
+
+    Calls the UNCHANGED legacy implementation first — its result is what gets
+    returned in report-only mode (the default), so behavior for a running
+    fleet does not change from this increment. In parallel, it seals (or
+    reuses the already-sealed) RunFacts for run_dir and asks the PURE
+    verify_owner_skip(facts, af_code) function the same question. Any
+    divergence between the two is logged loudly via
+    presentation_job.runfacts.shadow_compare — see that module's docstring for
+    the full design/limits writeup. Set PRES_TRUST_BOUNDARY_ENFORCE=1 to make
+    the sealed verdict authoritative instead of report-only.
+
+    This function can never raise due to the shadow path: any error sealing or
+    querying RunFacts is caught, logged, and the legacy result returned — a bug
+    in the NEW code must never be able to break an EXISTING gate."""
+    legacy_result = _owner_skip_approved_legacy(run_dir, af_code)
+    try:
+        from presentation_job import runfacts as _rf  # noqa: PLC0415 — lazy, avoids any import cycle
+        facts = _rf.get_or_seal(Path(run_dir))
+        verdict, detail = _rf.verify_owner_skip(facts, af_code)
+        _rf.shadow_compare(
+            f"owner_skip:{af_code}",
+            legacy_result is not None,
+            "approved" if legacy_result is not None else "no matching valid record",
+            verdict, detail, run_dir=run_dir,
+        )
+        if _rf.enforcing():
+            if verdict is _rf.Verdict.PASS:
+                return legacy_result if legacy_result is not None else {
+                    "owner_approved": True, "af_code": af_code.strip().upper(),
+                    "source": "runfacts-enforcing",
+                }
+            return None
+    except Exception as exc:  # noqa: BLE001 — the shadow must never break this gate
+        try:
+            print(f"TRUST-BOUNDARY-SHADOW-ERROR owner_skip:{af_code}: {exc!r}",
+                  file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+    return legacy_result
 
 
 def _gather_rendered_pngs(run_dir: Path) -> list:
@@ -10396,6 +10446,28 @@ def main():
             file=sys.stderr,
         )
         sys.exit(2)
+
+    # ---------------------------------------------------------------------
+    # TRUST BOUNDARY, INCREMENT 1 (report-only). Seal the RunFacts record for
+    # this run EXACTLY ONCE, at the same admission point the front-door nonce
+    # was just verified above — deliberately the FIRST thing that runs after
+    # admission succeeds. Every _owner_skip_approved call and the P-TYPO-QC
+    # shadow verifier below reuse this single sealed snapshot (get_or_seal)
+    # instead of each re-opening process_manifest.json / QC reports on its
+    # own schedule. Sealing itself is report-only and can never block
+    # admission — any error here is caught and logged, never raised; see
+    # presentation_job/runfacts.py for the full design and its honest limits.
+    # ---------------------------------------------------------------------
+    try:
+        from presentation_job import runfacts as _runfacts  # noqa: PLC0415
+        _runfacts.seal(_nonce_run_dir, nonce_bound=True)
+    except Exception as _rf_exc:  # noqa: BLE001 — sealing must never block admission
+        try:
+            print(f"TRUST-BOUNDARY-SEAL-ERROR: could not seal RunFacts for "
+                  f"{_nonce_run_dir}: {_rf_exc!r} (report-only — run proceeds)",
+                  file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
 
     # P-STYLE-PREVIEW (order 4.85) --sample mode: render 9 style samples (3 variants x
     # 3 representative slides) for the owner's gateway sign-off, then stop. Needs only

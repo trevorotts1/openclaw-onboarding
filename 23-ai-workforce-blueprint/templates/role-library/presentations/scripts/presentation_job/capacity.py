@@ -16,6 +16,23 @@ unknown plan collapses to DEFAULT_CONSERVATIVE (3), and a provider whose plan
 cannot be determined PARKS the run behind a one-time interview question instead
 of inventing a number.
 
+HARDENING (fix/capacity-override-clamp)
+----------------------------------------
+`_resolve_override()` had an ordering-plus-trust bug: a declared
+`max_concurrent` with no recognisable `plan` returned status MEASURED with the
+declared value verbatim and unbounded, and that branch sat AHEAD of the
+provider-known/plan-unknown PARK branch -- so a `capacity_override.json` of
+`{"provider":"ollama-cloud","max_concurrent":9999}` (a known cap-table
+provider whose highest row anywhere is 10) yielded MEASURED / available=9999,
+never PARKED, never AF-CAPACITY-UNMEASURED. The declared number was trusted as
+if it were a reading off the account, when it was only ever a claim about it.
+Fixed by re-ordering `_resolve_override()`'s three cases so the PARK check for
+"provider known, plan unknown" runs BEFORE the bare-declared-int fallback (a
+declaration can never outrun the interview question for a cap-table provider),
+and by giving a genuinely unrecognised provider's declaration its own status --
+DECLARED_UNVERIFIED, bounded to DEFAULT_CONSERVATIVE -- so it is never
+mistaken for a real measurement again.
+
 THE CAP TABLE (binding)
 -----------------------
     ollama-cloud    + $20/month    ->     3 concurrent agents
@@ -50,14 +67,29 @@ returns UNDETERMINED instead.
 
 STATUSES
 --------
-    MEASURED     -- provider + plan resolved; `available` is the cap-table number.
-    UNDETERMINED -- nothing resolved; `available` = DEFAULT_CONSERVATIVE (3).
-    PARKED       -- provider known, plan unknown; `available` is None and an
-                    interview question is attached. Dispatch must REFUSE.
-    FAILED       -- a declared config exists but is unusable (e.g. malformed
-                    capacity_override.json); `available` is None. Dispatch must
-                    REFUSE. A broken declaration is never silently downgraded to
-                    a default -- that would hide the operator's own mistake.
+    MEASURED           -- provider + plan BOTH resolved against the cap table;
+                          `available` is the cap-table number (a declared
+                          max_concurrent may lower it, never raise it).
+    DECLARED_UNVERIFIED -- max_concurrent was declared for a provider that is
+                          not on the cap table at all. A declaration is not a
+                          measurement: `available` is the declared value bounded
+                          to DEFAULT_CONSERVATIVE so a typo cannot produce a
+                          four-digit fan-out, and it is never labelled MEASURED.
+    UNDETERMINED       -- nothing resolved; `available` = DEFAULT_CONSERVATIVE (3).
+    PARKED             -- provider known (on the cap table) but its plan is not;
+                          `available` is None and an interview question is
+                          attached. Dispatch must REFUSE. This fires even when a
+                          max_concurrent was declared alongside the provider: a
+                          known provider's real ceiling is a physical fact the
+                          operator cannot opt out of by typing a bigger number,
+                          and clamping to that provider's highest cap-table row
+                          would still be a guess about which of its plans is
+                          actually in effect -- this module never guesses upward.
+    FAILED             -- a declared config exists but is unusable (e.g. malformed
+                          capacity_override.json); `available` is None. Dispatch
+                          must REFUSE. A broken declaration is never silently
+                          downgraded to a default -- that would hide the
+                          operator's own mistake.
 
 `available is None` is the ONLY signal a caller needs: it means "this probe could
 not produce a number", and the dispatch path fails closed with
@@ -112,6 +144,7 @@ PLANS_BY_PROVIDER = {
 }
 
 STATUS_MEASURED = "MEASURED"
+STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
 STATUS_UNDETERMINED = "UNDETERMINED"
 STATUS_PARKED = "PARKED"
 STATUS_FAILED = "FAILED"
@@ -297,7 +330,33 @@ def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Op
 
 
 def _resolve_override(record: dict, path: Path) -> dict:
-    """Turn a declared {provider, plan, max_concurrent} into a resolution dict."""
+    """Turn a declared {provider, plan, max_concurrent} into a resolution dict.
+
+    A declaration is not a measurement. The three cases below are checked in
+    THIS order on purpose:
+
+      1. (provider, plan) BOTH resolve to a cap-table row -> that row is
+         authoritative; a declared max_concurrent may only lower it.
+      2. provider resolves (it IS on the cap table) but plan does not -> PARK,
+         no matter what max_concurrent says. The provider's real ceiling is a
+         physical fact the operator cannot opt out of by typing a bigger
+         number, and clamping to that provider's own highest cap-table row
+         would still be a guess about which plan is actually in effect (a
+         $20/month Ollama Cloud account cannot run 10 just because a
+         $100/month account can) -- this module never guesses upward, so it
+         asks instead of assuming. This check MUST come before case 3 below:
+         if the bare-declared-int fallback ran first it would swallow every
+         "provider known, plan missing, max_concurrent present" declaration
+         and PARK would never fire -- that ordering mistake is the bug this
+         function fixes.
+      3. provider does not resolve at all (not a cap-table row, e.g. an
+         entirely unrecognised or absent provider name) -> the declared number
+         is the only information available, but it is a self-report, not a
+         measurement. It is honoured only up to DEFAULT_CONSERVATIVE, so a
+         typo (784 instead of 8, or a placeholder 9999) cannot produce a
+         four-digit fan-out, and the result is labelled DECLARED_UNVERIFIED,
+         never MEASURED.
+    """
     provider = normalize_provider(_safe_value("provider", record.get("provider")))
     plan = normalize_plan(_safe_value("plan", record.get("plan")), provider)
     declared = record.get("max_concurrent")
@@ -306,12 +365,14 @@ def _resolve_override(record: dict, path: Path) -> dict:
         declared_int = None
 
     notes = []
+
+    # Case 1: a full known (provider, plan) pair -- the table is authoritative.
     if provider and plan:
         capped = CAP_TABLE[(provider, plan)]
         if declared_int is not None and declared_int != capped:
-            # The table is authoritative for a known pair. A declared number may
-            # lower it (an operator throttling themselves is legitimate) but must
-            # never raise it above what the account can actually run.
+            # A declared number may lower it (an operator throttling
+            # themselves is legitimate) but must never raise it above what the
+            # account can actually run.
             available = min(declared_int, capped)
             notes.append(
                 f"declared max_concurrent={declared_int} reconciled against cap table "
@@ -322,18 +383,34 @@ def _resolve_override(record: dict, path: Path) -> dict:
         return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
                 "available": available, "notes": notes}
 
+    # Case 2: provider is on the cap table, plan is not resolvable -> PARK.
+    # Checked BEFORE the bare-declared-int fallback so a max_concurrent typed
+    # alongside a known provider can never bypass the interview question.
+    if provider and not plan:
+        if declared_int is not None:
+            notes.append(
+                f"{path} declares provider {provider} with max_concurrent={declared_int}, "
+                f"but no recognisable plan -- a declared number is never authoritative for "
+                f"a known cap-table provider until its plan is confirmed, so the declared "
+                f"value is disregarded and this PARKS behind the interview question instead "
+                f"of clamping to a guessed ceiling"
+            )
+        else:
+            notes.append(f"{path} declares provider {provider} but no recognisable plan")
+        return {"status": STATUS_PARKED, "provider": provider, "plan": None,
+                "available": None, "notes": notes}
+
+    # Case 3: provider is not a cap-table row at all -- a self-reported number,
+    # bounded, honestly labelled, never MEASURED.
     if declared_int is not None:
+        available = min(declared_int, DEFAULT_CONSERVATIVE)
         notes.append(
             f"({record.get('provider')!r}, {record.get('plan')!r}) is not a cap-table row; "
-            f"using the explicitly declared max_concurrent={declared_int}"
+            f"declared max_concurrent={declared_int} is a self-report, not a measurement -- "
+            f"bounded to DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE} -> {available}"
         )
-        return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
-                "available": declared_int, "notes": notes}
-
-    if provider and not plan:
-        return {"status": STATUS_PARKED, "provider": provider, "plan": None,
-                "available": None,
-                "notes": [f"{path} declares provider {provider} but no recognisable plan"]}
+        return {"status": STATUS_DECLARED_UNVERIFIED, "provider": provider, "plan": plan,
+                "available": available, "notes": notes}
 
     return {"status": STATUS_UNDETERMINED, "provider": provider, "plan": plan,
             "available": DEFAULT_CONSERVATIVE,

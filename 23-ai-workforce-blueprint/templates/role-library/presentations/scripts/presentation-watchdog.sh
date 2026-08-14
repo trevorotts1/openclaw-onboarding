@@ -24,7 +24,7 @@ if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
 fi
 
 # Main watchdog pass. Warn mode by default (no --enforce): scans for stalled
-# jobs and reports. Exit status is load-bearing -- set -e semantics preserved.
+# jobs and reports.
 # launchd runs this with a minimal PATH (no /opt/homebrew/bin), so resolve the
 # timeout wrapper explicitly; fall back to no wrapper if neither is present.
 TIMEOUT_BIN=""
@@ -36,20 +36,33 @@ else
     echo "WARNING: neither timeout nor gtimeout found; watchdog run without a time limit" >> "${LOG}" 2>&1
 fi
 
+# Exit status is load-bearing but explicitly CAPTURED, not left to `set -e`
+# (B5 fix companion): watchdog() can now return EXIT_WATCHDOG_NO_RUNS (13)
+# when it scans zero state.json files -- a normal, expected state between
+# jobs, same as reconcile-board's exit 10 below -- and, once stage 3 wires
+# --enforce in here, EXIT_STALLED (5) on a real stall. Before this fix, an
+# uncaptured nonzero exit here would trip `set -e` and abort the script
+# immediately, skipping the reconcile-board pass AND the run-discovery pass
+# below -- exactly the failure mode the reconcile-board block already guards
+# against one paragraph down. Same treatment, same reason, applied here too.
+WATCHDOG_RC=0
 if [ -n "${TIMEOUT_BIN}" ]; then
     "${TIMEOUT_BIN}" 300 python3 "${SCRIPT_DIR}/presentation_job.py" \
         --watchdog \
         --scan-root "${SCAN_ROOT}" \
         --grace "${GRACE:-1.5}" \
         --scan-depth "${SCAN_DEPTH:-3}" \
-        >> "${LOG}" 2>&1
+        >> "${LOG}" 2>&1 || WATCHDOG_RC=$?
 else
     python3 "${SCRIPT_DIR}/presentation_job.py" \
         --watchdog \
         --scan-root "${SCAN_ROOT}" \
         --grace "${GRACE:-1.5}" \
         --scan-depth "${SCAN_DEPTH:-3}" \
-        >> "${LOG}" 2>&1
+        >> "${LOG}" 2>&1 || WATCHDOG_RC=$?
+fi
+if [ "${WATCHDOG_RC}" -ne 0 ]; then
+    echo "WARNING: watchdog exited ${WATCHDOG_RC} (0=pass; 5=stalled+enforce; 13=zero state.json found/UNDETERMINED) -- NOT necessarily a failure, see watchdog lines above" >> "${LOG}" 2>&1
 fi
 
 # Board-reconcile pass: report-only unless --apply is given.

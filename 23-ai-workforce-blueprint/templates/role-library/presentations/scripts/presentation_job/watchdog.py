@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Set
 
-from .state import _read_json, EXIT_OK, EXIT_STALLED
+from .result import CheckResult
+from .state import _read_json, EXIT_OK, EXIT_STALLED, EXIT_WATCHDOG_NO_RUNS
 from .manifest import (
     PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES, MAX_HEARTBEAT_INTERVAL_MINUTES,
 )
@@ -47,8 +48,14 @@ def watchdog(
 ) -> int:
     """Scan run directories under scan_root for stalled jobs.
 
-    Returns EXIT_OK (0) by default (warn-mode stage 1).
-    Returns EXIT_STALLED (5) only when enforce=True and stalls are found.
+    Returns EXIT_WATCHDOG_NO_RUNS (13) whenever scanned == 0 -- UNDETERMINED,
+    regardless of --enforce. Zero state.json files found is not the same claim
+    as "found jobs and none are stalled"; a wrong --scan-root, an unmounted
+    volume, or a path typo must never read the same as a healthy fleet. See
+    state.py's EXIT_WATCHDOG_NO_RUNS comment and result.py's CheckResult
+    doctrine (health report: unknown is reported as unknown, never as healthy).
+    Returns EXIT_STALLED (5) when enforce=True, scanned > 0, and stalls are found.
+    Returns EXIT_OK (0) otherwise (warn-mode stage 1, or enforce with zero stalls).
     """
     findings: list = []
     scanned = 0
@@ -107,7 +114,8 @@ def watchdog(
 
     n_stalled = len(findings)
     if scanned == 0:
-        print("watchdog: NO state.json found -- check --scan-root and --scan-depth",
+        print("watchdog: NO state.json found -- check --scan-root and --scan-depth "
+              "-- UNDETERMINED, exiting EXIT_WATCHDOG_NO_RUNS (13), NOT a clean pass",
               flush=True)
     else:
         print(f"watchdog: scanned {scanned} state file(s) under {scan_root} "
@@ -193,4 +201,16 @@ def watchdog(
         print(f"watchdog: enforce={enforce} n_stalled={n_stalled} blocked_count={blocked_count}",
               flush=True)
 
-    return EXIT_STALLED if (enforce and findings) else EXIT_OK
+    # B5 fix: `scanned == 0` is UNDETERMINED, not a pass, and NOT the same
+    # exit code as "scanned N, 0 stalled" -- even under --enforce, where the
+    # old code's `EXIT_STALLED if (enforce and findings) else EXIT_OK` made
+    # scanned=0 (findings == []) indistinguishable from a genuinely healthy
+    # fleet. This branch is checked first and wins regardless of enforce,
+    # mirroring EXIT_SWEEP_NO_RUNS in sweep.py (unconditional on --apply).
+    scan_result = (
+        CheckResult.UNDETERMINED if scanned == 0
+        else (CheckResult.FAIL if findings else CheckResult.PASS)
+    )
+    if scan_result is CheckResult.UNDETERMINED:
+        return EXIT_WATCHDOG_NO_RUNS
+    return EXIT_STALLED if (enforce and scan_result is CheckResult.FAIL) else EXIT_OK

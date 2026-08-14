@@ -6,7 +6,7 @@
   "connection_points": [
     {
       "name": "rescue-rangers-webhook-url",
-      "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rescue-rangers.",
+      "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rr-v2-intake.",
       "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_URL",
       "required": true
     },

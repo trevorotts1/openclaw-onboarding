@@ -28,14 +28,24 @@ refresh-stale-roles.py, the one repair step that already runs every time
 with no gap dependency): it mirrors every role-library department's
 scripts/ tree onto the box's materialized department directory, honoring
 the SAME ownership policy scaffold_department already enforces
-(create_role_workspaces.py:2431-2445 / _CANONICAL_SCRIPT_SUFFIXES):
+(create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
 
-  .py / .sh / .sha256 / .pdf   FLEET-OWNED  — always mirrored (overwritten
-                                               whenever the sha256 diverges)
+  .py / .sh / .js / .sha256 /  FLEET-OWNED  — always mirrored (overwritten
+  .pdf                                        whenever the sha256 diverges)
   .json                        BOX-OWNED    — additive / missing-only,
                                                NEVER overwritten if it exists
   anything else                             — not this mirror's concern,
                                                not copied
+
+GAP-DELIVERY-JS: .js was added to the fleet-owned set above because
+rescue-rangers/scripts/relay_brain_validation.js is a versioned tool (like
+any .py/.sh generator), never a client-local override candidate. Before this
+fix .js appeared in NEITHER suffix list in EITHER writer (this script nor
+scaffold_department), so relay_brain_validation.js was silently dropped by
+every delivery path that ever existed — never auto-delivered at all, on any
+box, since day one. Both writers now source both suffix tuples from the
+same two create_role_workspaces module-level constants, so they can no
+longer independently hardcode and silently disagree.
 
 Today exactly TWO role-library departments ship a scripts/ subdir
 (presentations, rescue-rangers); on every other department this script's
@@ -70,18 +80,23 @@ For every role-library department directory with a scripts/ subdir:
      verification below can never disagree about what the tree contains).
      For each file: .json is copied only if the destination does not yet
      exist (never clobbers a client-local override); every other canonical
-     suffix (.py/.sh/.sha256/.pdf) is copied only when its sha256 differs
+     suffix (.py/.sh/.js/.sha256/.pdf) is copied only when its sha256 differs
      from the current destination (idempotent no-op on an already-current
      box; a genuinely stale/corrupted file gets overwritten with the
-     canonical library bytes).
+     canonical library bytes). A per-file write failure here (an unwritable/
+     locked destination, an unwritable parent dir, ...) is CAUGHT — never
+     raised — and recorded with the exact path and reason (see
+     mirror_dept_scripts's _try_copy); one locked file does not abort the
+     loop or the run.
   4. AFTER the writes, independently RE-DERIVE the verdict from the
      filesystem: create_role_workspaces.verify_scripts_materialization()
      re-hashes every canonical-suffix library file against the destination.
      This is the check that catches an incomplete or sabotaged copy — it is
      never satisfied by this script's own copy-loop counter (see "NOT A
      BOOLEAN PREDICATE" below).
-  5. Any problem verify_scripts_materialization() reports counts toward
-     failed_inscope for that department, and for the whole run.
+  5. Any problem verify_scripts_materialization() reports, OR any per-file
+     copy failure step 3 caught, counts toward failed_inscope for that
+     department, and for the whole run.
 
 ────────────────────────────────────────────────────────────────────────────
 NOT A BOOLEAN PREDICATE OVER THE SAME UNTRUSTED INPUT
@@ -116,7 +131,14 @@ EXIT CODES
       clean (post-write verify found zero problems) or was skipped because
       it is not materialized on this box (a benign, non-failure skip).
   3   at least one in-scope department's post-write verify found a missing
-      or hash-diverged canonical file — a detected gap left unfilled. Also
+      or hash-diverged canonical file, OR a per-file copy attempt itself
+      failed (e.g. an unwritable/locked destination raises OSError/
+      PermissionError) — a detected gap left unfilled. A copy failure is
+      CAUGHT per file (naming the exact path and the reason) and folded into
+      this SAME graceful verify_failed/rc 3 contract; it never raises past
+      mirror_dept_scripts() to crash the whole run with an uncaught
+      traceback, and it never silently degrades to a bare pass/fail with no
+      indication of which file could not be written. Also
       writes <workspace>/.dept-scripts-refresh-receipt.json
       {ok, depts:[...], failed_inscope, ...} and prints
       "DEPT_SCRIPTS_STATUS ok=<0|1> failed_inscope=<n>" on stdout as a
@@ -164,12 +186,15 @@ import create_role_workspaces as crw  # type: ignore  # noqa: E402
 HOME = os.path.expanduser("~")
 
 # Same ownership policy scaffold_department already enforces
-# (create_role_workspaces.py:2431-2445 / _CANONICAL_SCRIPT_SUFFIXES):
-# .py/.sh/.sha256/.pdf are FLEET-OWNED and ALWAYS mirrored (overwritten when
-# divergent); .json is BOX-OWNED and additive/missing-only. Sourced from the
-# one place that already defines it so the two writers can never drift apart.
-_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # (".py", ".sh", ".sha256", ".pdf")
-_ADDITIVE_SUFFIXES = (".json",)
+# (create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
+# .py/.sh/.js/.sha256/.pdf are FLEET-OWNED and ALWAYS mirrored (overwritten when
+# divergent); .json is BOX-OWNED and additive/missing-only. BOTH tuples are
+# sourced from create_role_workspaces (never re-declared as a second literal
+# here) so the two writers can never drift apart — the exact bug class that
+# let relay_brain_validation.js (.js) fall through every delivery path: it
+# appeared in neither list, in either file, until this fix.
+_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # (".py", ".sh", ".js", ".sha256", ".pdf")
+_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # (".json",)
 
 
 def resolve_workspace(explicit):
@@ -215,18 +240,48 @@ def iter_library_depts_with_scripts(library_root):
             yield entry.name, scripts_dir
 
 
+def _try_copy(src_file, dest_file, rel_path, copy_failed):
+    """shutil.copy2 wrapped so a per-file write failure (an unwritable/locked
+    destination, an unwritable/missing parent directory, a full disk, ...)
+    is CAUGHT here and recorded — naming the exact offending relative path
+    and the concrete reason — instead of raising an uncaught OSError/
+    PermissionError past mirror_dept_scripts() and crashing the whole mirror
+    (and the whole roll's dept-scripts step) mid-loop with a raw Python
+    traceback. Every OTHER file already queued still gets its own copy
+    attempt; one locked file degrades the run to the documented graceful
+    verify_failed/rc 3 outcome, never an unhandled exit 1 crash.
+
+    Returns True if the write succeeded, False if it was caught and recorded
+    in copy_failed (caller must NOT count this path as copied)."""
+    try:
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, dest_file)
+        return True
+    except OSError as e:
+        reason = f"{type(e).__name__}: {e}"
+        copy_failed.append({"path": str(rel_path), "issue": "copy-failed", "reason": reason})
+        print(f"  refresh-dept-scripts: COPY FAILED -- {rel_path} -- {reason}",
+              file=sys.stderr)
+        return False
+
+
 def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
-    """Copy .py/.sh/.sha256/.pdf files from lib_scripts_root into
+    """Copy .py/.sh/.js/.sha256/.pdf files from lib_scripts_root into
     scripts_target whenever the destination is missing or its sha256
     diverges from the source (idempotent no-op on an already-current box);
     .json files are copied ONLY when absent at the destination (additive —
     a client-local override that already exists is NEVER touched). Returns
-    {"copied": [rel_path, ...], "skipped_owned": [rel_path, ...]}.
+    {"copied": [rel_path, ...], "skipped_owned": [rel_path, ...],
+     "copy_failed": [{"path", "issue": "copy-failed", "reason"}, ...]}.
+
+    A per-file copy failure (see _try_copy) is caught and appended to
+    copy_failed — it is NEVER allowed to raise past this function.
 
     apply_=False performs every comparison (so the report is accurate) but
-    writes nothing — the dry-run contract."""
+    writes nothing — the dry-run contract (nothing can fail to write)."""
     copied = []
     skipped_owned = []
+    copy_failed = []
     for rel_path, src_file in crw._iter_scripts_tree_files(lib_scripts_root):
         suffix = src_file.suffix
         dest_file = scripts_target / rel_path
@@ -236,8 +291,8 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
                 skipped_owned.append(str(rel_path))
                 continue
             if apply_:
-                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_file, dest_file)
+                if not _try_copy(src_file, dest_file, rel_path, copy_failed):
+                    continue
             copied.append(str(rel_path))
             continue
 
@@ -251,10 +306,10 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
             except OSError:
                 pass  # unreadable destination -- fall through and (re)write it
         if apply_:
-            dest_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_file, dest_file)
+            if not _try_copy(src_file, dest_file, rel_path, copy_failed):
+                continue
         copied.append(str(rel_path))
-    return {"copied": copied, "skipped_owned": skipped_owned}
+    return {"copied": copied, "skipped_owned": skipped_owned, "copy_failed": copy_failed}
 
 
 def _write_receipt(workspace, ok, depts, failed_inscope, apply_):
@@ -279,7 +334,7 @@ def main(argv=None):
         description="Unconditionally mirror role-library department scripts/ trees onto "
                     "a materialized workspace, on every roll, independent of any "
                     "MISSING-only gap map (fixes causes 2 and 3 of the delivery defect). "
-                    ".py/.sh/.sha256/.pdf are fleet-owned and always overwritten when they "
+                    ".py/.sh/.js/.sha256/.pdf are fleet-owned and always overwritten when they "
                     "diverge; .json is box-owned and additive/missing-only.")
     parser.add_argument("--workspace", default=None,
                         help="Client workspace root (default: resolved platform-appropriately).")
@@ -327,6 +382,22 @@ def main(argv=None):
         # so there is nothing to verify yet (mirrors scaffold_department's
         # own dry_run contract).
         problems = crw.verify_scripts_materialization(lib_scripts_root, scripts_target) if args.apply else []
+
+        # Fold mirror_dept_scripts()'s own copy_failed list (GAP-COPY-ERR: a
+        # per-file write failure -- e.g. an unwritable/locked destination --
+        # caught in _try_copy instead of raised) into the SAME problems list
+        # verify_scripts_materialization feeds, so a copy failure degrades
+        # this department to the documented graceful verify_failed/rc 3
+        # outcome exactly like a hash-mismatch does -- never an uncaught
+        # PermissionError crashing the whole run with a raw traceback. A path
+        # that failed to copy would ALSO show up in `problems` as a generic
+        # "missing"/"hash-mismatch" (verify has no way to know WHY); drop
+        # that generic duplicate and keep only the copy_failed entry, since
+        # it names the concrete reason and is strictly more informative --
+        # one line per offending file, not two, so the log unambiguously
+        # names which file could not be written and why.
+        copy_failed_paths = {p["path"] for p in result["copy_failed"]}
+        problems = [p for p in problems if p["path"] not in copy_failed_paths] + result["copy_failed"]
         dept_failed = len(problems)
         failed_inscope += dept_failed
 
@@ -340,9 +411,12 @@ def main(argv=None):
         })
 
         if dept_failed:
-            _lines = "\n".join(f"    - {p['issue']}: {p['path']}" for p in problems)
+            _lines = "\n".join(
+                f"    - {p['issue']}: {p['path']}" + (f" ({p['reason']})" if p.get("reason") else "")
+                for p in problems
+            )
             print(f"  refresh-dept-scripts: FAILED '{dept_slug}' -- {dept_failed} canonical "
-                  f"file(s) missing or diverged from {lib_scripts_root} AFTER the copy step "
+                  f"file(s) missing, diverged, or failed to write under {lib_scripts_root} "
                   f"-- a detected gap left unfilled, not a silent pass:\n{_lines}",
                   file=sys.stderr)
         else:

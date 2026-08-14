@@ -1451,6 +1451,56 @@ def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(hard) == 0), reasons
 
 
+# ---------------------------------------------------------------------------
+# TRUST BOUNDARY, INCREMENT 1 (report-only) — see presentation_job/runfacts.py
+# for the full design/limits writeup. This wraps a SMALL, well-chosen set of
+# PHASE_VERIFIERS entries (currently just P-TYPO-QC) so their verdict is
+# shadow-compared against a sealed RunFacts read, without changing what the
+# verifier returns unless the operator has explicitly opted into enforcing
+# mode. P-TYPO-QC was chosen because it is the PROVEN gap, executed against
+# this exact checkout:
+#
+#   >>> phase_verifiers.verify("P-TYPO-QC", <run_dir with
+#   ...     typography_qc_report.json = {"gate":"typography","pass":false,
+#   ...                                  "average":2.1, ...}>)
+#   (True, [])   # <-- a report that says pass:false is reported as a PASS
+#
+# because the registered verifier is _verify_json_artifact(pattern) with NO
+# required_keys — it only proves the file exists, is non-empty, and parses;
+# it never opens "gate", "pass", "average", or independence. The RunFacts
+# verdict re-derives the SAME rubric build_deck._qc_report_gate already
+# enforces on other paths for this exact report and rejects it on five
+# independent grounds (see the demo in the acceptance evidence).
+# ---------------------------------------------------------------------------
+def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
+    """Wrap a PHASE_VERIFIERS callable with a RunFacts shadow check. Returns a
+    callable with the exact same (run_dir) -> (ok, reasons) contract. The
+    legacy_fn's result is ALWAYS what gets returned unless
+    PRES_TRUST_BOUNDARY_ENFORCE=1 — this function can only ever make the gate
+    STRICTER (never weaker) when enforcing, and can never raise into a caller
+    (any error in the shadow path is swallowed and logged, legacy_fn's result
+    still wins)."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        legacy_ok, legacy_reasons = legacy_fn(run_dir)
+        try:
+            from presentation_job import runfacts as _rf
+            facts = _rf.get_or_seal(Path(run_dir))
+            verdict, detail = _rf.verify_qc(facts, qc_key)
+            _rf.shadow_compare(f"qc:{qc_key}", legacy_ok, "; ".join(legacy_reasons),
+                                verdict, detail, run_dir=run_dir)
+            if _rf.enforcing():
+                if verdict is _rf.Verdict.PASS:
+                    return True, []
+                return False, [f"[RunFacts enforcing] qc[{qc_key}]: {detail}"]
+        except Exception as exc:  # noqa: BLE001 — shadow must never break a gate
+            try:
+                print(f"TRUST-BOUNDARY-SHADOW-ERROR qc:{qc_key}: {exc!r}", file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
+        return legacy_ok, legacy_reasons
+    return _v
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -1471,7 +1521,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 4.5   Typography / Design Brief
     "PF-DESIGN":          _verify_text_artifact("working/research/design-brief-*.md", 50),
     # Phase 4.6   Typography QC
-    "P-TYPO-QC":          _verify_json_artifact("working/qc/typography_qc_report.json"),
+    # Trust Boundary Increment 1 (report-only) — see _shadow_qc_verifier above.
+    "P-TYPO-QC":          _shadow_qc_verifier(
+        "typography", _verify_json_artifact("working/qc/typography_qc_report.json")),
     # Phase 4.7   Prompt Authoring
     "P4-PROMPT":          _verify_prompt,
     # Phase 4.8   Prompt QC

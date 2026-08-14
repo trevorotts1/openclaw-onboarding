@@ -1,3 +1,348 @@
+## [v22.0.23] -- 2026-08-13 -- trust boundary increment 1: sealed RunFacts, REPORT-ONLY
+
+New `presentation_job/runfacts.py` seals a run's facts ONCE at the admission point
+(right after the front-door nonce verifies) and re-answers two of the pipeline's
+highest-privilege questions from that sealed snapshot instead of from a fresh,
+unsynchronised re-read: the FIX-2 owner-skip waiver
+(`build_deck._owner_skip_approved`) and the QC phase verifiers
+(`phase_verifiers._shadow_qc_verifier`). Divergences between the legacy answer and
+the sealed answer are LOGGED. Nothing else happens.
+
+**Proven report-only, by execution, not by reading the code.**
+
+`_owner_skip_approved` was fired at 13 `process_manifest.json` shapes -- absent,
+empty, valid single, valid in a list, `owner_approved:false`, wrong af_code, blank
+`approved_by`, whitespace `reason`, blank `timestamp`, `owner_approved:"true"` as a
+string, `gate:` key alias, corrupt JSON, list-of-junk -- on both trees:
+
+    origin/main vs this branch, PRES_TRUST_BOUNDARY_ENFORCE unset:
+    13 shapes, 13 IDENTICAL, 0 DIVERGENT
+
+Equal results are not by themselves proof of report-only -- they are also what a
+BROKEN probe returns. So the probe was proven able to SEE a block, using the one
+shape where the sealed verdict genuinely disagrees: a manifest carrying BOTH a valid
+`owner_approved:true` record AND an `owner_approved:false` record for the same
+af_code. Legacy first-match resolves it as waived; RunFacts calls it CONFLICTED ->
+UNDETERMINED:
+
+| tree / mode | result |
+|---|---|
+| `origin/main` | `RECORD` -- gate waived |
+| this branch, env unset (the shipped default) | `RECORD` -- gate waived, **identical to main** |
+| this branch, `PRES_TRUST_BOUNDARY_ENFORCE=1` | `None` -- **gate blocks** |
+
+So the probe does discriminate, the only path to a block is an explicit operator
+opt-in, and that env var is set NOWHERE in this repository (grep over the whole
+tree returns only the two docstrings that name it and the module that reads it).
+
+Additional containment, all verified:
+- Both shadow call sites wrap their whole shadow path in `try/except Exception` and
+  return the legacy result on ANY error -- a bug in the new code cannot break an
+  existing gate.
+- `_owner_skip_approved_legacy` is the untouched original; the new public
+  `_owner_skip_approved` keeps the same name and signature, so all 14 existing call
+  sites are unchanged.
+- When enforcing IS turned on, `_shadow_qc_verifier` can only make a gate STRICTER,
+  never weaker.
+- `gate_integrity_check.py` gains 121 lines that run ONLY under the new `--purity`
+  flag. Default-mode behaviour is byte-identical: rc=2 with the same
+  "af-coverage.json not found" message on BOTH trees. `--purity` proves, by parsing
+  the AST rather than trusting a docstring, that `verify_owner_skip` and `verify_qc`
+  contain no direct file/env I/O -> exit 0.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed**, exactly matching
+`origin/main` at v22.0.22 (646/6) -- the same 6 pre-existing failures, zero
+regressions. `test_runfacts.py` 11/11.
+
+## [v22.0.22] -- 2026-08-13 -- UNDETERMINED becomes representable, and stops reading as a pass
+
+New `presentation_job/result.py`: a three-valued `CheckResult(PASS/FAIL/UNDETERMINED)`
+for anything that inspects state and must report a verdict. `__bool__` is disabled
+ON PURPOSE, so `if result:` cannot silently decide on the type's behalf which side
+UNDETERMINED falls on -- every call site must compare explicitly
+(`result is CheckResult.PASS`) and therefore must hold an actual opinion about the
+unknown case. Three highest-severity instances converted, one per class of check.
+
+**1. `gates.py` -- security/completeness gate: UNDETERMINED REFUSES.**
+`_canonical_prompt_dir_problems()` used to `return []` when BOTH its detector routes
+(build_deck, then the shared prompt_gate) failed -- indistinguishable from "checked,
+nothing wrong". Executed three-way through the PUBLIC `_prompt_floor_gate()`:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: canonical prompts, detector works | `state='pass'` | `state='pass'` |
+| BAD: real `slide-1.txt`/`slide-01.txt` collision | `state='fail'`, AF-PROMPT-DUP-FILE named | identical |
+| **UNKNOWABLE: detector cannot run at all** | **`state='pass'`, reason=None** | **`state='fail'`, "prompt duplicate/canonical-name detector could not run..."** |
+
+`origin/main` passes a deck it never checked for D16 collisions. This change refuses it.
+
+**2. `report.py` -- message transport: UNDETERMINED keeps trying, never discards.**
+`dispatch3()` returns PASS (confirmed) / FAIL (no transport configured) /
+UNDETERMINED (non-zero exit, timeout, OSError). `Reporter.to_requester()`'s "blocked"
+dedupe timer used to be stamped when a blocked event was ALLOWED to attempt dispatch
+-- before the outcome was known -- so a failed first attempt armed a 10-minute window
+that swallowed the very next identical retry (heal.py retries with the same phase_id
+and reason seconds later) without ever queueing it to `undeliverable`. The timer is
+now stamped only on a CONFIRMED `CheckResult.PASS`. `dispatch()` stays a thin bool
+wrapper (`is CheckResult.PASS`) so every existing bool caller (`watchdog.py`,
+`__main__.cmd_sweep_undeliverable`, `launcher.py`) and the U069 shell-injection
+regression tests are unaffected.
+
+**3. `watchdog.py` + `presentation-watchdog.sh` -- health report: UNDETERMINED is
+reported as UNDETERMINED.** Executed:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: 1 healthy run dir | rc=0 | rc=0 |
+| **UNKNOWABLE: 0 `state.json` found, warn mode** | **rc=0 ("healthy")** | **rc=13 `EXIT_WATCHDOG_NO_RUNS`** |
+| **UNKNOWABLE: 0 `state.json` found, `--enforce`** | **rc=0** | **rc=13** |
+
+The shell caller now CAPTURES that status (`|| WATCHDOG_RC=$?`) instead of leaving it
+to `set -e`. Demonstrated with the two idioms side by side: the uncaptured form aborts
+the script at the watchdog line (rc=13, reconcile-board and run-discovery never run);
+the captured form logs `WARNING: watchdog exited 13 ... NOT necessarily a failure` and
+both later passes still run.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed** on this branch vs
+**612 passed / 6 failed** on `origin/main` -- the same 6 pre-existing failures, zero
+regressions, 34 net-new passing tests. The 4 new/extended test files
+(`test_result.py`, `test_gates.py`, `test_report.py`, `test_watchdog.py`) are 96/96
+green here and cannot even IMPORT against `origin/main` (`result.py` and
+`EXIT_WATCHDOG_NO_RUNS` do not exist there) -- the machinery is genuinely new.
+
+## [v22.0.21] -- 2026-08-13 -- the .js tool that never reached a single box, and a locked file that crashed the roll
+
+**GAP 1 -- `.js` was in neither writer's suffix list, so
+`rescue-rangers/scripts/relay_brain_validation.js` was silently dropped by every
+delivery path since day one.** `create_role_workspaces.scaffold_department()` and
+`refresh-dept-scripts.py` each carried their own hardcoded tuple; neither included
+`.js`.
+
+Executed, by calling the REAL `scaffold_department()` to materialize the
+department into a scratch dir and listing what landed:
+
+| tree | `_CANONICAL_SCRIPT_SUFFIXES` | `relay_brain_validation.js` delivered |
+|---|---|---|
+| `origin/main` | `('.py','.sh','.sha256','.pdf')` | **NO** |
+| this change | `('.py','.sh','.js','.sha256','.pdf')` | **YES** |
+
+Running the materialized `verify.sh` with real node (v26.7.0):
+`origin/main` -> `MODULE_NOT_FOUND ... relay_brain_validation.js`,
+`DRILL FAILED: relay_brain_validation.js --self-test`, **3 passed / 2 failed**.
+This change -> `[relay_brain_validation] self-test: PASS`, **4 passed / 1 failed**.
+
+The one still-failing drill (`stamp-rescue-escalation-section.sh`) fails
+**identically on `origin/main`** and is an artifact of materializing into a
+scratch dir: that script walks UP to a repo root for
+`scripts/rescue-escalation-section.md.tpl`. Run from inside a repo checkout it is
+`self-test: PASS` on both trees. It is NOT fixed here and is NOT claimed fixed.
+
+Fix: `.js` added to `_CANONICAL_SCRIPT_SUFFIXES` (fleet-owned, always overwritten
+-- it is a versioned tool like any `.py`/`.sh`), `_ADDITIVE_SCRIPT_SUFFIXES`
+(`.json`) introduced as a named constant beside it, and BOTH writers now import
+those two module-level constants instead of re-declaring their own literal tuples
+-- which retires the "two hardcoded lists silently disagree" bug class that
+produced this gap:
+
+    refresh-dept-scripts.py:196  _MIRROR_SUFFIXES   = crw._CANONICAL_SCRIPT_SUFFIXES
+    refresh-dept-scripts.py:197  _ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES
+
+**GAP 2 -- an unwritable destination crashed the whole roll with a raw traceback
+instead of the documented graceful outcome.** Reproduced by chmod-ing a
+materialized `departments/rescue-rangers/scripts/` to `0555` with a divergent
+fleet-owned file inside it and running `refresh-dept-scripts.py --apply`:
+
+| tree | result |
+|---|---|
+| `origin/main` | **rc=1**, uncaught `PermissionError`, raw `Traceback`, run aborted at the FIRST locked file |
+| this change | **rc=3** (the documented code), `COPY FAILED -- <path> -- PermissionError: ...` named per file, loop continues through all 7, receipt lists each as `copy-failed` |
+
+Nothing client-owned is clobbered: with a client-local
+`rescue_ledger_config.json` in place, its sha256 is **byte-identical before and
+after** an `--apply` run that overwrote the fleet-owned `.py` and delivered the
+new `.js` in the same pass.
+
+- **`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`** -- the two
+  shared suffix constants; `scaffold_department()`'s copy loop sources from them.
+- **`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** -- imports both
+  constants; new `_try_copy()` catches `OSError` per file, records path + concrete
+  reason, folds into the existing `problems`/`failed_inscope` contract (deduped
+  against the generic "missing" entry for the same path).
+
+Suites: `test-department-instantiation.sh`, `test-materialize-missing-departments.sh`,
+`test-floor-fill-vertical-gate.sh` (13/13), `both-paths-zhe-delivery.test.sh`,
+`refresh-stale-roles.test.sh` (30/30) -- all rc=0.
+
+## [v22.0.20] -- 2026-08-13 -- new provisions point at the canonical rr-v2-intake relay
+
+`install.sh` seeded `RESCUE_RANGERS_WEBHOOK_URL`'s provisioning default to the
+SUPERSEDED relay path. The canonical intake endpoint on the same host is
+`/webhook/rr-v2-intake` (operator memory; the repository itself carries no
+evidence of it, which is why an earlier pass correctly refused to guess the value
+and waited to be told).
+
+Confirmed by content before and after, each negative run against a control:
+
+- `git grep rr-v2-intake origin/main -- install.sh` -> rc=1, no match.
+  Control on the same path/ref: `git grep webhook -- install.sh` -> 22 matches,
+  rc=0. The file is readable; the absence is real, not a broken search.
+- After: `install.sh:1296 local RR_WEBHOOK_DEFAULT=".../webhook/rr-v2-intake"`.
+
+Executed acceptance -- the two provisioning lines lifted verbatim out of each
+`install.sh` and evaluated in a shell:
+
+| tree | `RR_WEBHOOK` resolved, no operator override |
+|---|---|
+| `origin/main` | `.../webhook/rescue-rangers` (superseded) |
+| this change | `.../webhook/rr-v2-intake` |
+| this change, `RESCUE_RANGERS_WEBHOOK_URL` set | the operator's value -- override still wins |
+
+**No secret and no hash appears anywhere in the diff.** The diff is 8 changed
+lines; all 8 are printed in the PR. Scanning ONLY the added/removed lines for
+`secret|token|password|api[-_]?key|bearer|authorization|[0-9a-f]{32,}|eyJ...`
+returns rc=1 (clean); the same pattern over the whole diff returns 3 hits, all on
+unchanged CONTEXT lines (`RESCUE_RANGERS_WEBHOOK_SECRET` is named but never
+touched) -- so the scan is proven live, not silently matching nothing.
+
+- **`install.sh`** -- `RR_WEBHOOK_DEFAULT` (the provisioning mechanism).
+- **`AGENTS.md`**, **`.../openclaw-maintenance/sops/sop-rescue-rangers-escalation.md`**,
+  **`.../role-library/rescue-rangers/connection-manifest.json`** -- the stated
+  default in each doc, so nothing tells an agent a different URL than install.sh
+  seeds.
+
+SCOPE, stated plainly: this changes where NEWLY PROVISIONED boxes send Rescue
+Rangers escalations. Existing boxes are unaffected unless re-provisioned. Six
+read-time consumer fallbacks still carry the old literal
+(`61-loop-protection-system/scripts/loop_escalate.py:43`,
+`scripts/resume-onboarding.sh:421`,
+`23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh:135`,
+`23-ai-workforce-blueprint/scripts/resume-workforce-build.sh:489,1125,1188`).
+They fire only when `RESCUE_RANGERS_WEBHOOK_URL` is unset, which install.sh always
+seeds; they are deliberately out of scope here and are NOT claimed fixed.
+
+## [v22.0.19] -- 2026-08-13 -- a signature deck stops silently losing 32 of its own questions
+
+The v1.4.0 QUICK/IN-DEPTH picker shipped `standard_mode` with its own
+`conditional_on` restricted to `{from_scratch, content_personal, content_general}`.
+For `presentation_type=='signature'` the picker was therefore NEVER ASKED --
+`auto_skip_conditionals` marked its ledger entry validated+skipped ("not
+applicable") -- and every downstream `ask_if {question_id:'standard_mode',
+equals:'IN-DEPTH'}` then read that skip as a real "not IN-DEPTH" answer and
+auto-skipped too. A signature deck's standard pre-presentation capture (a SEPARATE
+question set from the SACRED-8, which `sp_mode` alone governs inside `--signature`)
+collapsed to the QUICK curated set with no picker ever offered and no way to opt
+back in. Root cause: an ABSENT value silently became a fewer-questions decision.
+
+Measured by driving the REAL CLI (`deck-intake-driver.py --run-dir DIR --next /
+--answer`, answer by answer to completion) and comparing **question-ID sets**, not
+counts, across three trees -- pre-unit (`76e8d55c^`), `origin/main`, and this branch:
+
+| run | pre-unit | origin/main | this branch |
+|---|---|---|---|
+| signature, IN-DEPTH | 45 | **13** | **46** |
+| signature, QUICK | -- | 13 | 14 |
+| from_scratch, QUICK | -- | 13 | 13 |
+| from_scratch, IN-DEPTH | 44 | 45 | 45 |
+| content_personal, QUICK / IN-DEPTH | -- | 15 / 47 | 15 / 47 |
+| content_general, QUICK / IN-DEPTH | -- | 14 / 46 | 14 / 46 |
+
+- **signature vs pre-unit: `origin/main` LOSES 32 question ids**
+  (`representation_mix, audience_composition_note, grounded_content, visual_mix,
+  dark_ok, hook_seed, deliverable_set, want_teleprompter, want_speech_script,
+  want_ghl_upload, want_audio_deliverable, vsl_page_declined_reason, style_source,
+  goal, event_price, access_free, target_feeling, offer_stack, price_mode,
+  duration_min, logo_on_slides, price_anchor, payment_plan, vip_tier, vip_price,
+  vip_spots, primary_objection, proof_assets, style_prefs, slide_count,
+  delivery_destinations, deadline`). **This branch loses 0**; its only addition
+  over pre-unit is `standard_mode` itself.
+- **Both directions checked.** All six non-signature runs produce an
+  **identical question-id SEQUENCE** on this branch and on `origin/main` --
+  zero lost, zero gained. The standard QUICK path is not re-inflated.
+
+FIX: delete `standard_mode`'s `conditional_on` outright rather than special-case
+`presentation_type=='signature'` onto it. `standard_mode` is now unconditionally
+asked for all four presentation types, so the "never answered" state that produced
+the collapse cannot occur for ANY type -- the missing-value class is closed, not
+one instance of it.
+
+- **`.../presentations/intake/deck-intake-questions.json`** (v1.4.0 -> v1.5.0) --
+  the only file changed. `51-signature-presentation/` and `deck-intake-driver.py`
+  have **zero diff**; the SACRED-8 turn-gate is untouched.
+
+Suites on this branch: `presentation-type-contract` 9/9, `presentation-intake-conversation`
+96/96, `presentation-deck-intake-driver-workspace` 9/9 -- all rc=0.
+
+## [v22.0.18] -- 2026-08-13 -- a declared capacity is a claim, not a measurement
+
+`capacity.py::_resolve_override()` had an ordering-plus-trust bug. A
+`capacity_override.json` carrying a `max_concurrent` but no recognisable `plan`
+returned status **MEASURED** with the declared integer verbatim and unbounded --
+and that branch sat AHEAD of the "provider known, plan unknown" PARK branch, so
+PARK was unreachable for any declaration. `{"provider":"ollama-cloud",
+"max_concurrent":9999}` -- a cap-table provider whose highest row anywhere is 10 --
+resolved to MEASURED / available=9999 / autofail_code=None, and `execution_plan`
+would have built a real wave plan at width 9999.
+
+Executed evidence (36 adversarial override shapes -- case variants, whitespace,
+prefix matches, near-miss plans, provider-as-dict, `10**100` -- fired at both
+trees through an isolated `PRESENTATION_CAPACITY_CONFIG_DIR`):
+
+- **origin/main: 31 of 36 breach** (return a value above the cap-table bound for
+  the pair that actually resolved, and/or label a non-cap-table pair MEASURED).
+  `10**100` came back as `available=10**100`, MEASURED.
+- **after this change: 0 of 36 breach.** All 36 are bounded.
+
+`_resolve_override()`'s three cases are now checked in an order that enforces the
+doctrine on its own:
+
+1. `(provider, plan)` both resolve to a cap-table row -> that row is
+   authoritative; a declared `max_concurrent` may only LOWER it (unchanged).
+2. provider resolves but plan does not -> **PARK**, regardless of any declared
+   `max_concurrent`. A known provider's real ceiling is a physical fact the
+   operator cannot opt out of by typing a bigger number, and clamping to that
+   provider's own highest row would still be a guess about which plan is in
+   effect. This check now runs BEFORE the bare-declared-int fallback -- that
+   ordering was the bug.
+3. provider does not resolve at all -> the number is a self-report. Bounded to
+   `DEFAULT_CONSERVATIVE` and labelled with a new status,
+   **`DECLARED_UNVERIFIED`**, so it can never again be read as MEASURED.
+
+- **`.../presentations/scripts/presentation_job/capacity.py`** -- the re-ordering,
+  the `STATUS_DECLARED_UNVERIFIED` constant, and the module docstring's STATUSES
+  table rewritten to describe what the code now does.
+- **`.../presentations/scripts/tests/test_capacity_detection.py`** -- 3 new tests:
+  the exact breach payload, an unknown provider's declaration bounded and
+  relabelled, and a below-`DEFAULT_CONSERVATIVE` self-throttle still honoured.
+
+Suite: `presentations/scripts/tests/` 612 passed / 6 failed on this branch vs
+609 passed / 6 failed on `origin/main` -- the same 6 pre-existing failures
+(`test_client_package`, `test_presentation_job` QC/OCR gates), zero regressions,
+3 net-new passing tests.
+
+## [v22.0.17] -- 2026-08-13 -- shared-dashboard tenant verification before an interview link is emitted
+
+Backfilled entry for the release merged as #896 at `87d2d43de8d4`, which recorded
+its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
+`CHANGELOG.md` (the file G2 reads) with no `v22.0.17` header. The annotated tag
+`v22.0.17` was published at that same commit by
+`scripts/push-version-tag.sh v22.0.17 87d2d43de8d4` to clear the G1b debt that was
+blocking the merge lane; G2 then requires this header. Summary is taken verbatim
+from that commit's own message -- no claim here was measured by this entry.
+
+Janet incident (2026-08-13): the shared Command Center serves every client
+dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
+endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
+completed interview, so her `/interview` page immediately redirected to the
+dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
+#896 is the skill-side guard.
+
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** -- verifies any
+  shared-dashboard host answers `/api/interview/gate-status`
+  `interviewComplete:false` for THIS company before emitting the link; falls back
+  to the Telegram-native reply-here invite on mismatch or unverifiable; exempts the
+  box's own Command Center (localhost/127.0.0.1); adds `INTERVIEW_GATE_URL`.
+- 10 version markers rolled v22.0.16 -> v22.0.17 by `scripts/bump-version.sh`.
+
 ## [v22.0.16] -- 2026-08-13 -- presentation-notify.sh enters git, at the path production actually reads
 
 `presentation-notify.sh` is what the Presentations engine's Reporter shells out to
