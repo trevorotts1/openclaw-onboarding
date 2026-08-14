@@ -205,7 +205,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
-from typing import Optional
+from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
@@ -5756,68 +5756,306 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 # ---------------------------------------------------------------------------
 # FIX-2 — owner/founder skip token (the ONLY way to waive a FIX-2 gate)
 # ---------------------------------------------------------------------------
+# TRUST BOUNDARY, INCREMENT 2 — the sixth-bypass closure (2026-08 architecture
+# sweep). Read this before touching anything below.
+#
+# THE HONEST LIMIT: this codebase has NO adversary-unwritable anchor.
+# process_manifest.json is written by the same UID that would forge an
+# approval, and Increment 1 (presentation_job/runfacts.py, still in place,
+# untouched by this increment) already proved the point: its
+# verify_owner_skip() re-implements the identical "owner_approved:true + four
+# non-empty strings" rule this function has always used, sourced from a
+# sealed-but-not-anchored read of the SAME file — and it is report-only by
+# default, so it changes nothing about what a running fleet actually does.
+# There is no key here to check a signature against that isn't ALSO a literal
+# in this source tree, forgeable by anything that can read the repo. Building
+# a "signature" field and calling it real would be exactly the fake guarantee
+# this closure is required not to ship.
+#
+# WHAT IS ACTUALLY ACHIEVABLE, and what this increment does:
+#   1. FRICTION on the laziest self-skip shape. A one-token placeholder reason
+#      ("x", "ok", "approved") or a non-timestamp ("t", "now", "asap") is
+#      refused outright (_OWNER_SKIP_REASON_MIN_CHARS,
+#      _owner_skip_parse_timestamp). This does not stop a determined forger
+#      willing to type a real sentence and a real date — nothing available in
+#      this architecture does — but it closes the exact shape proven live in
+#      the sweep's PoC: a single mechanically-generated dict, one reason
+#      copy-pasted onto every af_code, minted in the time it takes to write
+#      one line of JSON.
+#   2. A blanket-skip signature check. The SAME reason text, reused verbatim
+#      across MORE than _OWNER_SKIP_BLANKET_REASON_LIMIT distinct af_codes in
+#      one manifest, disqualifies every record that shares it. A named,
+#      per-gate reason is required; one rubber-stamped sentence covering most
+#      or all of the FIX-2 battery is not — see _owner_skip_evaluate.
+#   3. MANDATORY, UNCONDITIONAL DISCLOSURE — the one defense this
+#      architecture cannot defeat by definition, because it does not depend on
+#      distinguishing a real approval from a forged one. EVERY consumption and
+#      EVERY rejected attempt is (a) printed to stderr in an unmissable
+#      banner, unconditionally — never gated behind the runfacts shadow path,
+#      never dependent on PRES_TRUST_BOUNDARY_ENFORCE, never silenced by an
+#      import failure — and (b) appended to a NEW, code-owned, append-only
+#      ledger key in process_manifest.json ("owner_skip_events", written ONLY
+#      by _owner_skip_ledger_append — the agent-authored "owner_skip_approval"
+#      input itself is never rewritten). run_postflight_gate() reads this
+#      ledger back and refuses to print "COMPLETE" without also printing every
+#      entry in it, or an explicit "no waivers used" line when it is empty —
+#      see the postflight success block further down this file. A skip can no
+#      longer be silent: this is the actual, load-bearing fix.
+#
+# An absent record, or a record that never names this af_code, is UNCHANGED
+# from before and stays QUIET (the common, innocent, majority case — see
+# runfacts.py's own findings() docstring for why treating plain absence as a
+# "finding" is the cry-wolf failure mode this does not repeat). A record that
+# NAMES this af_code but fails validation is now always loud — see
+# _owner_skip_evaluate / _owner_skip_disclose.
+_OWNER_SKIP_REASON_MIN_CHARS = 8
+_OWNER_SKIP_BLANKET_REASON_LIMIT = 2  # one reason may waive at most this many DISTINCT af_codes
+_OWNER_SKIP_LEDGER_KEY = "owner_skip_events"
+
+
+def _owner_skip_parse_timestamp(ts: str):
+    """Return a parsed datetime, or None when `ts` is not a real ISO-8601
+    date/datetime — rejects placeholders like 't' / 'now' / 'asap'. Accepts a
+    trailing 'Z' (normalized to '+00:00' for pre-3.11 datetime.fromisoformat
+    compatibility, since this fleet's Python version is not pinned here)."""
+    s = (ts or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _owner_skip_all_records(obj: dict) -> list:
+    """The raw owner_skip_approval records (tolerant of a single object or a
+    list) from an already-parsed process_manifest.json dict."""
+    raw = obj.get("owner_skip_approval")
+    return raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
+
+
+def _owner_skip_structurally_valid(r: dict) -> Tuple[bool, str]:
+    """The base authenticity rule this mechanism has always had (owner_approved
+    literal true + non-empty approved_by/reason/timestamp) PLUS the two
+    friction checks from the module comment above. Returns (True, "") or
+    (False, human-readable reason) — never raises."""
+    if r.get("owner_approved") is not True:
+        return False, f"owner_approved is {r.get('owner_approved')!r}, not literal true"
+    approved_by = str(r.get("approved_by") or "").strip()
+    if not approved_by:
+        return False, "approved_by is empty"
+    reason = str(r.get("reason") or "").strip()
+    if not reason:
+        return False, "reason is empty"
+    if len(reason) < _OWNER_SKIP_REASON_MIN_CHARS:
+        return False, (f"reason {reason!r} is shorter than the "
+                        f"{_OWNER_SKIP_REASON_MIN_CHARS}-character floor — a real "
+                        f"justification is required, not a placeholder token")
+    timestamp_raw = str(r.get("timestamp") or "").strip()
+    if not timestamp_raw:
+        return False, "timestamp is empty"
+    if _owner_skip_parse_timestamp(timestamp_raw) is None:
+        return False, (f"timestamp {timestamp_raw!r} does not parse as a real ISO-8601 "
+                        f"date/time")
+    return True, ""
+
+
+def _owner_skip_evaluate(run_dir: Path, af_code: str) -> Tuple[Optional[dict], list]:
+    """Evaluate every owner_skip_approval record naming `af_code`. Returns
+    (record_or_None, events): record is the FIRST validly-waiving record (or
+    None — the gate stays enforced, unchanged contract); events lists EVERY
+    record this af_code touched, granted or rejected-with-reason, for the
+    mandatory disclosure layer in _owner_skip_approved. Records that never
+    mention this af_code produce NO event (the quiet, common case). Never
+    raises: any read/parse problem becomes an event or an empty result, not an
+    exception."""
+    want = af_code.strip().upper()
+    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if not pm.exists():
+        return None, []
+    obj = _read_json(pm)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        detail = (obj.get("__parse_error__") if isinstance(obj, dict)
+                  else f"top-level JSON is {type(obj).__name__}, expected object")
+        # A manifest that EXISTS but cannot be read is not the quiet "nothing has
+        # happened yet" case — surface it every time a gate consults it.
+        return None, [{
+            "af_code": want, "approved_by": "", "reason": "", "timestamp": "",
+            "outcome": "rejected",
+            "rejected_because": (f"process_manifest.json exists but is UNPARSEABLE "
+                                  f"({detail}) — no owner_skip_approval record can be "
+                                  f"honored from a corrupt manifest"),
+        }]
+    records = _owner_skip_all_records(obj)
+
+    # Blanket-reason signature: reason text (whitespace-normalized, case-folded)
+    # reused across more than _OWNER_SKIP_BLANKET_REASON_LIMIT DISTINCT af_codes
+    # anywhere in this manifest disqualifies every record that shares it.
+    reason_af_codes: Dict[str, set] = {}
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
+        this_af = str(r.get("af_code") or r.get("gate") or "").strip().upper()
+        if norm_reason and this_af:
+            reason_af_codes.setdefault(norm_reason, set()).add(this_af)
+    blanket_reasons = {rs for rs, codes in reason_af_codes.items()
+                       if len(codes) > _OWNER_SKIP_BLANKET_REASON_LIMIT}
+
+    matches = [r for r in records if isinstance(r, dict)
+               and str(r.get("af_code") or r.get("gate") or "").strip().upper() == want]
+    if not matches:
+        return None, []
+
+    granted = None
+    events = []
+    for r in matches:
+        norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
+        ok, why = _owner_skip_structurally_valid(r)
+        if ok and norm_reason in blanket_reasons:
+            ok = False
+            others = sorted(reason_af_codes[norm_reason] - {want})
+            why = (f"reason is byte-identical (modulo whitespace/case) to the reason "
+                   f"waiving {len(others)} OTHER gate(s) in the same manifest ({others}) "
+                   f"— one reason may not waive more than "
+                   f"{_OWNER_SKIP_BLANKET_REASON_LIMIT} distinct gate(s); a blanket "
+                   f"skip is refused, name each gate's own reason")
+        event = {
+            "af_code": want,
+            "approved_by": str(r.get("approved_by") or "").strip(),
+            "reason": str(r.get("reason") or "").strip(),
+            "timestamp": str(r.get("timestamp") or "").strip(),
+            "outcome": "granted" if ok else "rejected",
+        }
+        if not ok:
+            event["rejected_because"] = why
+        events.append(event)
+        if ok and granted is None:
+            granted = r
+    return granted, events
+
+
+def _owner_skip_ledger_append(run_dir: Path, events: list, consumed_at: str) -> None:
+    """Append `events` to process_manifest.json["owner_skip_events"] — a ledger
+    this function OWNS exclusively; the agent-authored "owner_skip_approval"
+    input is never read-modify-written here. Best-effort / non-fatal by
+    design, matching write_process_manifest's own "never clobber, never let a
+    report write mask the verdict" convention: a ledger-write failure (or an
+    unreadable pre-existing manifest) degrades to stderr-only disclosure —
+    it must never be able to turn a real gate result into a crash."""
+    if not events:
+        return
+    ckpt_dir = run_dir / "working" / "checkpoints"
+    pm_path = ckpt_dir / "process_manifest.json"
+    try:
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        manifest: dict = {}
+        if pm_path.exists():
+            try:
+                existing = json.loads(pm_path.read_text())
+                if isinstance(existing, dict):
+                    manifest = existing
+                else:
+                    return  # legacy bare-list manifest — never clobber it here
+            except Exception:  # noqa: BLE001 — corrupt manifest: stderr already fired
+                return
+        ledger = manifest.get(_OWNER_SKIP_LEDGER_KEY)
+        if not isinstance(ledger, list):
+            ledger = []
+        for ev in events:
+            ledger.append({**ev, "consumed_at": consumed_at})
+        manifest[_OWNER_SKIP_LEDGER_KEY] = ledger
+        pm_path.write_text(json.dumps(manifest, indent=2))
+    except Exception:  # noqa: BLE001 — best-effort audit trail, never blocks the gate
+        pass
+
+
+def _owner_skip_disclose(run_dir: Path, events: list) -> None:
+    """UNCONDITIONAL disclosure layer. Runs regardless of the runfacts shadow
+    path succeeding, regardless of PRES_TRUST_BOUNDARY_ENFORCE, regardless of
+    whether presentation_job is even importable — this is the mandatory half
+    of the "malformed input fails loud" / "a skip can never be silent"
+    contract. Prints one unmissable banner per event and appends the same
+    events to the durable ledger (see _owner_skip_ledger_append). Never
+    raises."""
+    if not events:
+        return
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for ev in events:
+        try:
+            granted = ev["outcome"] == "granted"
+            print("!" * 78, file=sys.stderr)
+            print(f"{'OWNER-SKIP-CONSUMED' if granted else 'OWNER-SKIP-REJECTED'}: "
+                  f"gate {ev['af_code']} "
+                  f"{'WAIVED' if granted else 'attempted-but-REFUSED'} by "
+                  f"owner_skip_approval (approved_by={ev['approved_by']!r}, "
+                  f"reason={ev['reason']!r}, timestamp={ev['timestamp']!r})",
+                  file=sys.stderr)
+            if not granted:
+                print(f"  REFUSED because: {ev.get('rejected_because', '(no detail recorded)')}",
+                      file=sys.stderr)
+            print(f"  -> logged to working/checkpoints/process_manifest.json"
+                  f"[\"{_OWNER_SKIP_LEDGER_KEY}\"] for audit — this can never be silent.",
+                  file=sys.stderr)
+            print("!" * 78, file=sys.stderr)
+        except Exception:  # noqa: BLE001 — disclosure must never crash a gate check
+            pass
+    _owner_skip_ledger_append(run_dir, events, now)
+
+
 def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
 
     A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION /
-    AF-MODE-UNSET)
-    may be skipped ONLY by an explicit, LOGGED owner token recorded in
+    AF-MODE-UNSET) may be skipped ONLY by an explicit, LOGGED owner token recorded in
     working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
     object or a list of them). A valid token carries owner_approved:true, the af_code
-    (or gate) it waives, a non-empty approved_by, a non-empty reason, and a timestamp.
-    No agent may self-skip and the absence of a token means the gate is ENFORCED.
-    Returns the matching record (so callers can log who approved what) or None.
+    (or gate) it waives, a non-empty (>= _OWNER_SKIP_REASON_MIN_CHARS) approved_by/
+    reason, a real parseable timestamp, and a reason that is not a copy-pasted
+    blanket-skip signature shared by more than _OWNER_SKIP_BLANKET_REASON_LIMIT other
+    af_codes (see _owner_skip_evaluate / _owner_skip_structurally_valid — Trust
+    Boundary Increment 2). No agent may self-skip and the absence of a token means
+    the gate is ENFORCED. Returns the matching record (so callers can log who
+    approved what) or None.
 
-    UNCHANGED by Trust Boundary Increment 1 — this is still the sole source of
-    truth for the value _owner_skip_approved() returns in report-only mode
-    (the default). See _owner_skip_approved below for the shadow wrapper."""
-    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
-    if not pm.exists():
-        return None
-    obj = _read_json(pm)
-    if not isinstance(obj, dict) or "__parse_error__" in obj:
-        return None
-    raw = obj.get("owner_skip_approval")
-    records = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
-    want = af_code.strip().upper()
-    for r in records:
-        if not isinstance(r, dict):
-            continue
-        if r.get("owner_approved") is not True:
-            continue
-        waives = str(r.get("af_code") or r.get("gate") or "").strip().upper()
-        if waives != want:
-            continue
-        if not str(r.get("approved_by") or "").strip():
-            continue
-        if not str(r.get("reason") or "").strip():
-            continue
-        if not str(r.get("timestamp") or "").strip():
-            continue
-        return r
-    return None
+    Delegates to _owner_skip_evaluate and discards its events — kept as a separate,
+    stable name because run_signature_deck.py and the test suite call this directly
+    for the plain pass/fail answer. This is still the sole source of truth for the
+    value _owner_skip_approved() returns in report-only mode (the default, unchanged
+    from Trust Boundary Increment 1) — see _owner_skip_approved below for the
+    shadow wrapper and the (now unconditional) disclosure layer."""
+    record, _events = _owner_skip_evaluate(run_dir, af_code)
+    return record
 
 
 def _owner_skip_approved(run_dir: Path, af_code: str):
-    """TRUST BOUNDARY, INCREMENT 1 (report-only) — public entry point, SAME name
-    and signature every existing call site already uses (12 in this file, 2 in
-    run_signature_deck.py via bd._owner_skip_approved), so nothing needs to
-    change at any call site for this wrapper to take effect.
+    """Public entry point, SAME name and signature every existing call site
+    already uses (10 in this file, 3 in run_signature_deck.py via
+    bd._owner_skip_approved — INTAKE-INTERVIEW, AF-IMAGE-QC-VISION,
+    AF-OCR-READBACK, AF-CANONICAL-RENDER-BYPASS, AF-LOCAL-CANVAS,
+    AF-DECK-TYPE-UNSET, AF-MODE-UNSET, AF-STYLE-UNPICKED, AF-STYLE-DOUBLECHARGE,
+    AF-PRIORITY-SHIFT, AF-COPY-QC, AF-PROMPT-QC, AF-HARMONY), so nothing needs
+    to change at any call site for Trust Boundary Increment 2 to take effect.
 
-    Calls the UNCHANGED legacy implementation first — its result is what gets
-    returned in report-only mode (the default), so behavior for a running
-    fleet does not change from this increment. In parallel, it seals (or
-    reuses the already-sealed) RunFacts for run_dir and asks the PURE
-    verify_owner_skip(facts, af_code) function the same question. Any
-    divergence between the two is logged loudly via
-    presentation_job.runfacts.shadow_compare — see that module's docstring for
-    the full design/limits writeup. Set PRES_TRUST_BOUNDARY_ENFORCE=1 to make
-    the sealed verdict authoritative instead of report-only.
+    Evaluates _owner_skip_evaluate ONCE, unconditionally discloses every event
+    it found (see _owner_skip_disclose — this is the mandatory, non-optional
+    fix: a skip, or a REJECTED attempt at one, can no longer be silent), then
+    runs the UNCHANGED Trust Boundary Increment 1 shadow path on top: it seals
+    (or reuses the already-sealed) RunFacts for run_dir and asks the PURE
+    verify_owner_skip(facts, af_code) function the same question, logging any
+    divergence via presentation_job.runfacts.shadow_compare. Set
+    PRES_TRUST_BOUNDARY_ENFORCE=1 to make the sealed verdict authoritative
+    instead of report-only — this increment does not change that flag's
+    default or its meaning; the tightened validity rule above is already
+    unconditional and does not depend on it.
 
     This function can never raise due to the shadow path: any error sealing or
     querying RunFacts is caught, logged, and the legacy result returned — a bug
-    in the NEW code must never be able to break an EXISTING gate."""
-    legacy_result = _owner_skip_approved_legacy(run_dir, af_code)
+    in the shadow code must never be able to break an EXISTING gate."""
+    legacy_result, events = _owner_skip_evaluate(run_dir, af_code)
+    _owner_skip_disclose(run_dir, events)
     try:
         from presentation_job import runfacts as _rf  # noqa: PLC0415 — lazy, avoids any import cycle
         facts = _rf.get_or_seal(Path(run_dir))
@@ -10123,6 +10361,37 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         size_str = f"{e.get('size', 0):,} bytes" if e.get("size") else "n/a"
         print(f"  VERIFIED  [{e['key']}] {e.get('filename')}  ({size_str})", flush=True)
     print(f"Ledger (all-verified): {ledger_path}", flush=True)
+
+    # --- OWNER-SKIP DISCLOSURE (Trust Boundary Increment 2) — this run's operator
+    # report may NEVER print COMPLETE without also surfacing every owner_skip_approval
+    # this run consumed. Sourced from the code-owned "owner_skip_events" ledger
+    # (_owner_skip_ledger_append), never from the agent-authored "owner_skip_approval"
+    # input directly — see the FIX-2 owner-skip section for the full design. This is
+    # a report step only: it reflects what already happened, it does not gate.
+    if run_dir is not None:
+        _pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+        _events = []
+        if _pm.exists():
+            _obj = _read_json(_pm)
+            if isinstance(_obj, dict) and "__parse_error__" not in _obj:
+                _raw = _obj.get(_OWNER_SKIP_LEDGER_KEY)
+                _events = _raw if isinstance(_raw, list) else []
+        if _events:
+            print(f"\n*** OWNER OVERRIDES USED IN THIS RUN — {len(_events)} EVENT(S) ***",
+                  flush=True)
+            for _ev in _events:
+                if not isinstance(_ev, dict):
+                    continue
+                _tag = "WAIVED" if _ev.get("outcome") == "granted" else "REJECTED (attempt refused)"
+                print(f"  [{_tag}] {_ev.get('af_code')} — approved_by="
+                      f"{_ev.get('approved_by')!r} reason={_ev.get('reason')!r} "
+                      f"timestamp={_ev.get('timestamp')!r} consumed_at="
+                      f"{_ev.get('consumed_at')!r}", flush=True)
+            print("*** This deck did NOT clear every gate on its own merits — see above. ***",
+                  flush=True)
+        else:
+            print("\nOwner overrides: NONE used in this run (every gate cleared on its own "
+                  "merits).", flush=True)
     print("=== COMPLETE ===\n", flush=True)
 
 
