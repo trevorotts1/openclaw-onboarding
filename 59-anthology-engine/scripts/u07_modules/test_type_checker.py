@@ -5,10 +5,11 @@
 # type_checker.py — U07 tooling): every free-text field in the field-map
 # provisioning inventory must be live LARGE_TEXT (Trevor's every-text-input-
 # field-is-multi-line law; the field-map's data_type_choice note), and the
-# ONE SINGLE_OPTIONS field (the U8 cover choice, anthology_cover_choice) must
-# be live with EXACTLY the four named cover-style options, byte-exact, in
-# order — the picklist imported byte-exact from cover_render.STYLE_NAMES (the
-# named-style law), never hardcoded.
+# TWO SINGLE_OPTIONS fields (the U8 cover choice, anthology_cover_choice,
+# and the U15-absorbed review decision, anthology_review_decision) must be
+# live with EXACTLY their declared options, byte-exact, in order — the cover
+# picklist imported byte-exact from cover_render.STYLE_NAMES (the named-style
+# law), never hardcoded.
 #
 # WHAT THIS FILE PROVES (network-free, credential-free — the client is an
 # in-memory stub; the only env touches are the live-CLI hermetic-refusal
@@ -124,6 +125,7 @@ STYLES = tc.named_cover_styles()
 TEXT_ROWS = [f for f in tc._contract_inventory(FIELD_MAP)
              if f.get("data_type") == "LARGE_TEXT"]
 CHOICE_KEY = "contact.anthology_cover_choice"
+DECISION_KEY = "contact.anthology_review_decision"
 
 # A live location marker: the last four characters are the ONLY part that may
 # ever surface — the full id is a location handle, never a credential, and
@@ -190,12 +192,14 @@ class _FakeCaf:
 
 def _golden_fields(field_map=None, styles=None):
     """A live listing that EXACTLY matches the map's intended keys at their
-    declared types — the choice field carrying the four named style options
-    in order and resolved field ids."""
+    declared types — the cover choice carrying the four named style options
+    and the review decision carrying the two gate_engine actions, each in
+    order, with resolved field ids."""
     field_map = FIELD_MAP if field_map is None else field_map
     styles = STYLES if styles is None else styles
     out = []
     i = 0
+    decision_options = tc._declared_decision_options(field_map)
     for f in tc._contract_inventory(field_map):
         i += 1
         rec = {"fieldKey": f.get("intended_key"),
@@ -203,7 +207,9 @@ def _golden_fields(field_map=None, styles=None):
                "dataType": f.get("data_type", "LARGE_TEXT"),
                "id": "fld_%d" % i}
         if f.get("data_type") == "SINGLE_OPTIONS":
-            rec["options"] = list(styles)
+            rec["options"] = (list(styles)
+                              if f.get("intended_key") == CHOICE_KEY
+                              else list(decision_options))
         out.append(rec)
     return out
 
@@ -316,17 +322,35 @@ def test_u07_package_init_is_fail_closed_empty():
 # ---------------------------------------------------------------------------
 # Contract coherence (the sources of truth the checker judges against)
 # ---------------------------------------------------------------------------
-def test_contract_is_exactly_28_keys():
-    """The field-map's provisioning contract is exactly 27 LARGE_TEXT rows
-    plus the ONE SINGLE_OPTIONS choice row — the law the live check asserts
-    (a drift in the map breaks THIS test first, fail-closed)."""
+def test_contract_is_exactly_38_keys():
+    """The field-map's provisioning contract is exactly 36 LARGE_TEXT rows
+    plus the TWO SINGLE_OPTIONS choice rows (cover choice + review
+    decision) — the law the live check asserts (a drift in the map breaks
+    THIS test first, fail-closed)."""
     assert WANT_KEYS, "field-map must carry intended keys"
-    assert TOTAL is not None and len(WANT_KEYS) == TOTAL == 28, (
+    assert TOTAL is not None and len(WANT_KEYS) == TOTAL == 38, (
         "inventory %d != provisioning.total_keys %d" % (len(WANT_KEYS), TOTAL))
-    assert len(TEXT_ROWS) == 27, "the type contract must carry 27 LARGE_TEXT rows"
+    assert len(TEXT_ROWS) == 36, "the type contract must carry 36 LARGE_TEXT rows"
+    choice_rows = [f for f in tc._contract_inventory(FIELD_MAP)
+                   if f.get("data_type") == "SINGLE_OPTIONS"]
+    assert len(choice_rows) == 2, "the contract must carry 2 SINGLE_OPTIONS rows"
+    assert {f.get("intended_key") for f in choice_rows} == {CHOICE_KEY,
+                                                            DECISION_KEY}, (
+        "the two SINGLE_OPTIONS rows must be the cover choice and the "
+        "review decision")
     assert all(k.startswith("contact.") for k in WANT_KEYS), (
         "every intended key must carry the contact. prefix")
     assert len(set(WANT_KEYS)) == len(WANT_KEYS), "intended keys must be unique"
+
+def test_decision_options_are_the_two_gate_engine_actions_byte_exact():
+    """The decision picklist law: the review_decision_field block carries
+    exactly the two gate_engine s5_gate actions — approve_as_is and
+    request_rewrite_with_notes — in order, and the provisioning.fields
+    decision row declares the same options (the two surfaces never
+    drift)."""
+    assert tc._declared_decision_options(FIELD_MAP) == [
+        "approve_as_is", "request_rewrite_with_notes"], (
+        "the decision picklist drifted from the gate_engine law")
 
 def test_style_names_are_the_four_named_styles_byte_exact():
     """The named-style law: exactly four distinct, non-blank names, in the
@@ -382,9 +406,12 @@ def test_golden_live_state_passes_read_only():
     report = tc.check_types_live(_FakeCaf(fields=_golden_fields()), LOC, FIELD_MAP)
     assert report["verdict"] == "PASS", report["detail"]
     assert report["ok"] is True, report
-    assert report["total"] == 28 and report["text_keys"] == 27
+    assert report["total"] == 38 and report["text_keys"] == 36
     assert report["choice_key"] == CHOICE_KEY, report
     assert report["choice_options"] == list(STYLES), report
+    assert report["decision_key"] == DECISION_KEY, report
+    assert report["decision_options"] == ["approve_as_is",
+                                          "request_rewrite_with_notes"], report
     assert report["missing"] == [] and report["violations"] == [], report
     assert report["execute"] is False, "the read-only path must report execute false"
     assert report["contract"] == tc.REPORT_CONTRACT, report
@@ -499,10 +526,10 @@ def test_wrong_typed_verify_driver_exits_five():
     assert "type-check] FAIL" in err.getvalue(), err.getvalue()
 
 # ---------------------------------------------------------------------------
-# The choice law: the ONE SINGLE_OPTIONS field, four options byte-exact
+# The choice law: the cover-choice SINGLE_OPTIONS field, four options byte-exact
 # ---------------------------------------------------------------------------
 def test_choice_field_live_as_text_is_a_violation():
-    """The ONE SINGLE_OPTIONS choice field live as TEXT is a FAIL — the
+    """The cover-choice SINGLE_OPTIONS field live as TEXT is a FAIL — the
     cover dropdown must ship its type, never a silent pass."""
     attack = copy.deepcopy(_golden_fields())
     for rec in attack:
@@ -649,7 +676,7 @@ def test_empty_live_listing_fails_closed():
     family."""
     report = tc.check_types_live(_FakeCaf(fields=[]), LOC, FIELD_MAP)
     assert report["verdict"] == "FAIL" and report["ok"] is False, report
-    assert len(report["missing"]) == TOTAL == 28, report
+    assert len(report["missing"]) == TOTAL == 38, report
 
 def test_non_list_live_read_is_a_hard_refusal():
     """A non-list live read is a hard refusal (TypeCheckError, STOP family)
@@ -672,16 +699,40 @@ def test_total_keys_drift_is_a_hard_refusal():
         tc.check_types_live(_FakeCaf(fields=_golden_fields()), LOC, tampered)
 
 def test_map_vs_cover_render_options_drift_is_a_hard_refusal():
-    """A field-map whose declared choice options no longer byte-equal
+    """A field-map whose declared cover-choice options no longer byte-equal
     cover_render.STYLE_NAMES in order is a hard refusal — the two surfaces
     must never drift apart; the checker refuses to judge against a
     self-contradicting map."""
     tampered = copy.deepcopy(FIELD_MAP)
     for f in tampered["provisioning"]["fields"]:
-        if f.get("data_type") == "SINGLE_OPTIONS":
+        if f.get("data_type") == "SINGLE_OPTIONS" and \
+                f.get("intended_key") == CHOICE_KEY:
             f["options"] = ["Drifted", "Options", "List", "Here"]
     with pytest.raises(tc.TypeCheckError):
         tc.check_types_live(_FakeCaf(fields=_golden_fields()), LOC, tampered)
+
+def test_decision_options_drift_is_a_hard_refusal():
+    """A field-map whose review_decision_field options drift (or whose
+    decision row no longer matches the block) is a hard refusal — the
+    decision picklist law is the gate_engine actions, never judged
+    against a self-contradicting map."""
+    tampered = copy.deepcopy(FIELD_MAP)
+    tampered["review_decision_field"]["options"] = ["Drifted", "Decisions"]
+    with pytest.raises(tc.TypeCheckError):
+        tc.check_types_live(_FakeCaf(fields=_golden_fields()), LOC, tampered)
+
+def test_decision_field_live_with_drifted_options_is_a_violation():
+    """The decision field live with drifted options is a FAIL — the
+    gate_engine two-action picklist is the law, every direction."""
+    attack = copy.deepcopy(_golden_fields())
+    for rec in attack:
+        if rec["fieldKey"] == DECISION_KEY:
+            rec["options"] = ["approve_as_is", "request_rewrite_with_notes",
+                              "reject_outright"]
+    report = tc.check_types_live(_FakeCaf(fields=attack), LOC, FIELD_MAP)
+    assert report["verdict"] == "FAIL", "drifted decision options must FAIL"
+    assert any("gate_engine" in v for v in report["violations"]), (
+        report["violations"])
 
 def test_style_law_unavailable_is_refused_never_a_blind_pass():
     """The style-law guard discriminates an unavailable surface: an empty
@@ -885,11 +936,14 @@ def test_plan_is_offline_and_lists_the_exact_contract():
     rc, parsed = _capture(tc.plan, FIELD_MAP, out=io.StringIO())
     assert rc == EX_OK, "plan must exit 0, got %s" % rc
     assert parsed["contract"] == tc.PLAN_CONTRACT, parsed
-    assert parsed["total"] == 28 and parsed["text_keys"] == 27, parsed
+    assert parsed["total"] == 38 and parsed["text_keys"] == 36, parsed
     assert parsed["keys"] == WANT_KEYS, (
         "plan must list the intended keys in order")
     assert parsed["choice_key"] == CHOICE_KEY, parsed
     assert parsed["choice_options"] == list(STYLES), parsed
+    assert parsed["decision_key"] == DECISION_KEY, parsed
+    assert parsed["decision_options"] == ["approve_as_is",
+                                          "request_rewrite_with_notes"], parsed
     assert parsed["dry_run"] is True, parsed
     assert CREDENTIAL_SHAPE not in json.dumps(parsed), (
         "the plan must never carry a credential-shaped string")
@@ -917,7 +971,8 @@ TESTS = [
     (test_browser_user_agent_is_a_browser_ua_cf_1010_law, False),
     (test_cafclient_sends_the_browser_ua_on_the_live_requests, False),
     (test_u07_package_init_is_fail_closed_empty, False),
-    (test_contract_is_exactly_28_keys, False),
+    (test_contract_is_exactly_38_keys, False),
+    (test_decision_options_are_the_two_gate_engine_actions_byte_exact, False),
     (test_style_names_are_the_four_named_styles_byte_exact, False),
     (test_sample_url_slots_pair_with_the_style_order, False),
     (test_checker_is_deterministic_and_never_mutates_its_inputs, False),
@@ -944,6 +999,8 @@ TESTS = [
     (test_map_without_provisioning_fields_is_a_hard_refusal, False),
     (test_total_keys_drift_is_a_hard_refusal, False),
     (test_map_vs_cover_render_options_drift_is_a_hard_refusal, False),
+    (test_decision_options_drift_is_a_hard_refusal, False),
+    (test_decision_field_live_with_drifted_options_is_a_violation, False),
     (test_style_law_unavailable_is_refused_never_a_blind_pass, False),
     (test_scope_denied_read_is_a_stop_family_refusal, False),
     (test_edge_block_is_held_never_mislabeled_as_scope, False),

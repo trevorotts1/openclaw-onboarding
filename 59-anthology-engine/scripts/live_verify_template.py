@@ -24,13 +24,13 @@
 #                          live verify; the ONE entry-point contract)
 #   pipeline_check.py      check_pipeline_name — pipeline name BYTE-EXACT
 #   stages_check.py        check_stages — nine stages BY NAME IN ORDER 0..8
-#   fields_check.py        check_fields_live — 28 field keys byte-exact
+#   fields_check.py        check_fields_live — 38 field keys byte-exact
 #   custom_values_check.py check_custom_values — four REPLACE-ME values
 #   forms_check.py         check_forms — named forms + hidden-field contract
 #   workflows_check.py     check_workflows_live — EIGHT release workflows
 #   scope_check.py         check — Intake Fire trigger scope gate (pure)
 #   golden_pipeline.py     golden pipeline fixture (field-map derived)
-#   golden_fields.py       golden 28-record field-list fixture
+#   golden_fields.py       golden 38-record field-list fixture
 #   golden_forms.py        golden three-form payload fixture
 #   attack_missing_field.py  attack fixture: a contract key ABSENT live
 #   attack_wrong_name.py     attack fixture: a pipeline/field RENAMED
@@ -52,9 +52,10 @@
 #   5. INTAKE FIRE TRIGGER SCOPE — webhook-to-route: the route-template
 #      'anthology-intake' mapping + the {{ custom_values.anthology_webhook_url }}
 #      merge target as REPLACE-ME; no live workflow inlines a real URL.
-#   6. CUSTOM FIELD COUNT + dataTypes — all 28 contract fields present BY
-#      KEY, BYTE-EXACT (27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice with the
-#      four named options in order); extra/mutated keys fail closed.
+#   6. CUSTOM FIELD COUNT + dataTypes — all 38 contract fields present BY
+#      KEY, BYTE-EXACT (36 LARGE_TEXT + 2 SINGLE_OPTIONS: the cover choice and
+#      the review decision, each with its named options in order);
+#      extra/mutated keys fail closed.
 #   7. CUSTOM VALUES — the four contract location custom values present BY
 #      KEY, each holding a clearly-labeled placeholder; a real-looking value
 #      REFUSES the verify (the never-a-real-token rule).
@@ -164,13 +165,13 @@ U02_MODULES = (
     ("main_skeleton.py",       "the check-module dispatcher CLI (plan / self-test / live verify)"),
     ("pipeline_check.py",      "check_pipeline_name — pipeline name BYTE-EXACT"),
     ("stages_check.py",        "check_stages — nine stages BY NAME IN ORDER 0..8"),
-    ("fields_check.py",        "check_fields_live — 28 field keys byte-exact"),
+    ("fields_check.py",        "check_fields_live — 38 field keys byte-exact"),
     ("custom_values_check.py", "check_custom_values — four REPLACE-ME values"),
     ("forms_check.py",         "check_forms — named forms + hidden-field contract"),
     ("workflows_check.py",     "check_workflows_live — EIGHT release workflows"),
     ("scope_check.py",         "check — Intake Fire trigger scope gate (pure)"),
     ("golden_pipeline.py",     "golden pipeline fixture (field-map derived)"),
-    ("golden_fields.py",       "golden 28-record field-list fixture"),
+    ("golden_fields.py",       "golden 38-record field-list fixture"),
     ("golden_forms.py",        "golden three-form payload fixture"),
     ("attack_missing_field.py", "attack fixture: a contract key ABSENT live"),
     ("attack_wrong_name.py",   "attack fixture: a pipeline/field RENAMED"),
@@ -205,7 +206,7 @@ VERIFIED_ITEMS = (
     ("forms",           "Forms count + field mapping (named forms + hidden-field contract)"),
     ("workflows",       "Workflows count + folder 'Anthology Engine' (EIGHT release workflows)"),
     ("intake_fire",     "Intake Fire trigger scope (webhook-to-route, never an inlined URL)"),
-    ("custom_fields",   "Custom field count + dataTypes (28 keys byte-exact)"),
+    ("custom_fields",   "Custom field count + dataTypes (38 keys byte-exact)"),
     ("custom_values",   "Custom values (four keys, REPLACE-ME placeholders, never-a-real-token)"),
 )
 

@@ -2,7 +2,7 @@
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: u02_modules/golden_fields.py
 # GOLDEN FIELD-LIST FIXTURE (U02 tooling, extension module) — the single
-# canonical in-memory payload of the 28 contact custom fields a live Convert
+# canonical in-memory payload of the 38 contact custom fields a live Convert
 # and Flow location must carry, derived BYTE-FOR-BYTE from
 # config/field-map.json provisioning.fields (the single source of truth).
 #
@@ -15,30 +15,33 @@
 # an inconsistent map is a refusal, never a blind pass).
 #
 # WHAT THIS OWNS:
-#   1. GOLDEN_FIELDS — a frozen, deterministic list of the 28 field records
+#   1. GOLDEN_FIELDS — a frozen, deterministic list of the 38 field records
 #      ({fieldKey, name, dataType, id, options}) as a live customFields read
 #      would return them: fieldKey and name byte-equal the map's intended_key
 #      and create_name, dataType carries the map's declared type (LARGE_TEXT
-#      for every free-text key, Gap G11; SINGLE_OPTIONS for the lone U8
-#      cover-choice key, with its four picklist options), and each record
-#      carries a stable synthetic field id (fld_golden_000 .. fld_golden_027).
+#      for every free-text key, Gap G11; SINGLE_OPTIONS for the TWO picklist
+#      keys — the U8 cover choice with its four style options and the
+#      U15-absorbed review decision with its two gate actions), and each
+#      record carries a stable synthetic field id
+#      (fld_golden_000 .. fld_golden_037).
 #      The canonical payload is DEEP-FROZEN: the tuple of records is a tuple of
 #      MappingProxyType records (stdlib types module) whose OPTIONS containers
 #      are tuples, so a golden record can never be mutated through the module's
 #      public surface — the self-test proves every mutation route raises.
 #   2. golden_fields() — the builder, fail-closed: a missing/malformed
 #      provisioning.fields inventory or an intended_key/create_name/data_type
-#      that does not satisfy the contract (28 keys, unique, contact.-prefixed,
-#      derive-roundtrip clean, declared types matching the G11/U8 law) raises
-#      FixtureError instead of shipping a wrong fixture. 28 is the contract
-#      total (19 base PRD Section 6 link/control keys + 4 Gap G10
-#      chapter-rewrite-preservation keys + 5 U8 cover-style keys).
+#      that does not satisfy the contract (38 keys, unique, contact.-prefixed,
+#      derive-roundtrip clean, declared types matching the G11/U8/U15 law)
+#      raises FixtureError instead of shipping a wrong fixture. 38 is the
+#      contract total (19 base PRD Section 6 link/control keys + 4 Gap G10
+#      chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10
+#      U15-absorbed live keys).
 #   3. golden_field_ids() — the sorted fieldKey -> id map, for the resolved-
 #      slot surfaces (a resolved per-box field-map must pin the SAME ids).
 #   4. payload — a FAIL-CLOSED byte-level invariant on the field-map itself:
 #      the map's provisioning.total_keys must equal the inventory length AND
 #      this fixture's golden length, and a tampered map (a map whose golden
-#      payload would not carry 28 fields) is REFUSED with exit 5, never
+#      payload would not carry 38 fields) is REFUSED with exit 5, never
 #      silently tolerated.
 #
 # DOCTRINE (inherited from the registry / drive adapter / U02 verifier):
@@ -60,7 +63,7 @@
 #      byte-equal to the field-map contract; also self-test / plan OK
 #   1  unexpected error (malformed/unreadable field-map JSON)
 #   5  mismatch — the field-map drifted from the fixture contract (inventory
-#      length != 28, or total_keys != the inventory length), a derived golden
+#      length != 38, or total_keys != the inventory length), a derived golden
 #      fieldKey/name/data_type deviates from the map, or a non-contract
 #      data_type would ship in the payload (all FAIL-CLOSED refusals)
 #
@@ -68,7 +71,7 @@
 # fields_check.py / live_verify_template.py: sys.path.insert to scripts/ then
 # `import anthology_registry as reg`.
 # =============================================================================
-"""golden_fields.py — golden field-list payload fixture (28 keys) for self-test."""
+"""golden_fields.py — golden field-list payload fixture (38 keys) for self-test."""
 
 from __future__ import annotations
 
@@ -90,22 +93,26 @@ EX_OK, EX_ERR, EX_MISMATCH = reg.EX_OK, reg.EX_ERR, reg.EX_MISMATCH
 SKILL_DIR = Path(__file__).resolve().parent.parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
 
-# The one fixed report contract. The 28 field KEYS themselves are NEVER
+# The one fixed report contract. The 38 field KEYS themselves are NEVER
 # hardcoded here — they come from the field-map (the single source of truth);
 # a hardcoded key list would drift and defeat the fixture's whole purpose.
 FIXTURE_CONTRACT = "anthology-engine-golden-fields"
 
 # The contract total, fixed by the PRD (19 base Section 6 link/control keys +
-# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys). The
-# golden fixture asserts this exact number — a map that carries more or fewer
+# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10
+# U15-absorbed live keys). The golden fixture asserts this exact number — a map that carries more or fewer
 # keys has drifted and the fixture refuses to ship.
-CONTRACT_TOTAL = 28
+CONTRACT_TOTAL = 38
 
-# The ONE non-free-text field in the contract (PRD Section 6 / U8): the
-# cover-choice picklist. Everything else must be LARGE_TEXT (Gap G11). The
-# picklist's four options are the named cover styles the client picks from.
+# The TWO non-free-text fields in the contract: the U8 cover-choice picklist
+# (PRD Section 6) and the PRD Section 4 review-decision picklist
+# (U15-absorbed). Everything else must be LARGE_TEXT (Gap G11). The cover
+# picklist's four options are the named cover styles the client picks from;
+# the decision picklist's two options are the gate_engine s5_gate actions.
 COVER_CHOICE_KEY = "contact.anthology_cover_choice"
 COVER_CHOICE_OPTIONS = ("Signature", "Bold Editorial", "Fine Art", "Pure Type")
+DECISION_KEY = "contact.anthology_review_decision"
+DECISION_OPTIONS = ("approve_as_is", "request_rewrite_with_notes")
 
 
 class FixtureError(Exception):
@@ -141,13 +148,14 @@ def _contract_total(field_map: dict) -> int | None:
 # The golden builder — fail-closed, deterministic, byte-equal to the map.
 # ---------------------------------------------------------------------------
 def golden_fields(field_map: dict) -> list:
-    """Derive the golden field-list payload (28 records) from the field-map.
+    """Derive the golden field-list payload (38 records) from the field-map.
 
     Each record is EXACTLY what a live /locations/{id}/customFields read of a
     fully provisioned location returns: fieldKey and name byte-equal the map's
     intended_key and create_name, dataType carries the map's declared type
     (LARGE_TEXT for every free-text key, SINGLE_OPTIONS + its picklist options
-    for the lone U8 cover choice), and a stable synthetic field id. Raises
+    for the U8 cover choice and the U15-absorbed review decision), and a
+    stable synthetic field id. Raises
     FixtureError on ANY contract drift — a wrong fixture is never shipped.
 
     The returned list is a deep copy; mutating it never touches the internal
@@ -164,8 +172,8 @@ def golden_fields(field_map: dict) -> list:
         raise FixtureError(
             "field-map provisioning.fields carries %d keys, but the golden "
             "contract is %d (19 base PRD Section 6 + 4 Gap G10 rewrite + 5 U8 "
-            "cover-style) — the map drifted; refusing to ship a golden payload."
-            % (len(inventory), CONTRACT_TOTAL))
+            "cover-style + 10 U15-absorbed) — the map drifted; refusing to "
+            "ship a golden payload." % (len(inventory), CONTRACT_TOTAL))
 
     seen = {}
     out = []
@@ -195,15 +203,21 @@ def golden_fields(field_map: dict) -> list:
                 "intended_key %r repeats in the inventory — refusing." % intended)
         seen[intended] = True
 
-        # The G11 / U8 data-type law, byte-exact: every free-text key is
-        # LARGE_TEXT (the multi-line law, matching live provisioning); the lone
-        # cover-choice key is SINGLE_OPTIONS carrying its four picklist options.
+        # The G11 / U8 / U15 data-type law, byte-exact: every free-text key is
+        # LARGE_TEXT (the multi-line law, matching live provisioning); the two
+        # picklist keys are SINGLE_OPTIONS, each carrying its own options.
         if intended == COVER_CHOICE_KEY:
             if dtype != "SINGLE_OPTIONS":
                 raise FixtureError(
                     "%s must be declared SINGLE_OPTIONS (U8), got %r — refusing."
                     % (intended, dtype))
             options = COVER_CHOICE_OPTIONS
+        elif intended == DECISION_KEY:
+            if dtype != "SINGLE_OPTIONS":
+                raise FixtureError(
+                    "%s must be declared SINGLE_OPTIONS (PRD Section 4), got "
+                    "%r — refusing." % (intended, dtype))
+            options = DECISION_OPTIONS
         else:
             if dtype != "LARGE_TEXT":
                 raise FixtureError(
@@ -253,7 +267,7 @@ def _build_golden() -> tuple:
         for f in golden_fields(fm))
 
 
-# The canonical golden field-list payload: 28 records, deep-frozen (a tuple
+# The canonical golden field-list payload: 38 records, deep-frozen (a tuple
 # of mappingproxy records with tuple options — immutable through every route).
 GOLDEN_FIELDS = _build_golden()
 
@@ -267,9 +281,9 @@ def payload(field_map: dict, *, out=None) -> int:
 
     READ-ONLY: derives the golden payload and asserts the byte-level invariant
     — the map's provisioning.total_keys must equal the inventory length AND the
-    golden length (28). Any drift is a FAIL-CLOSED exit 5, never a blind pass.
+    golden length (38). Any drift is a FAIL-CLOSED exit 5, never a blind pass.
     The field keys themselves are never hardcoded (the map is the single source
-    of truth); the CONTRACT TOTAL (28) is pinned by the PRD. Returns the exit
+    of truth); the CONTRACT TOTAL (38) is pinned by the PRD. Returns the exit
     code; emits the ONE JSON report object on stdout, human notes on stderr."""
     out = out or sys.stderr
     try:
@@ -328,15 +342,15 @@ def _self_test_body(dev) -> None:
     assert total is not None and len(inventory) == total, \
         "inventory must equal provisioning.total_keys (%s != %s)" % (len(inventory), total)
     assert len(inventory) == CONTRACT_TOTAL, \
-        "field-map must carry exactly 28 keys (19 base + 4 G10 + 5 U8), got %d" % len(inventory)
+        "field-map must carry exactly 38 keys (19 base + 4 G10 + 5 U8 + 10 U15-absorbed), got %d" % len(inventory)
     assert len(set(f.get("intended_key") for f in inventory)) == CONTRACT_TOTAL, \
         "intended keys must be unique"
     assert all(str(f.get("intended_key", "")).startswith(reg._KEY_PREFIX) for f in inventory), \
         "every intended key must carry the contact. prefix"
 
-    # ---- the canonical fixture: 28 records, byte-exact, deep-frozen ---------
+    # ---- the canonical fixture: 38 records, byte-exact, deep-frozen ---------
     assert isinstance(GOLDEN_FIELDS, tuple) and len(GOLDEN_FIELDS) == CONTRACT_TOTAL, \
-        "GOLDEN_FIELDS must be the deep-frozen 28-record payload"
+        "GOLDEN_FIELDS must be the deep-frozen 38-record payload"
     assert isinstance(GOLDEN_FIELDS[0]["options"], tuple), \
         "golden options containers must be tuples (immutable canonical surface)"
     want_keys = [f["fieldKey"] for f in GOLDEN_FIELDS]
@@ -348,15 +362,18 @@ def _self_test_body(dev) -> None:
             "golden name must derive back to the fieldKey (%r)" % f["fieldKey"]
         assert f["dataType"] in ("LARGE_TEXT", "SINGLE_OPTIONS"), f["dataType"]
         assert f["id"].startswith("fld_golden_"), f["id"]
-    assert sum(1 for f in GOLDEN_FIELDS if f["dataType"] == "SINGLE_OPTIONS") == 1, \
-        "exactly one SINGLE_OPTIONS field (the U8 cover choice)"
-    cover = next(f for f in GOLDEN_FIELDS if f["dataType"] == "SINGLE_OPTIONS")
-    assert cover["fieldKey"] == COVER_CHOICE_KEY
+    singles = [f for f in GOLDEN_FIELDS if f["dataType"] == "SINGLE_OPTIONS"]
+    assert len(singles) == 2, \
+        "exactly two SINGLE_OPTIONS fields (the U8 cover choice + the PRD Section 4 review decision)"
+    cover = next(f for f in singles if f["fieldKey"] == COVER_CHOICE_KEY)
     assert cover["options"] == COVER_CHOICE_OPTIONS, \
         "the cover-choice picklist options must be the four U8 cover styles"
+    decision = next(f for f in singles if f["fieldKey"] == DECISION_KEY)
+    assert decision["options"] == DECISION_OPTIONS, \
+        "the decision picklist options must be the two gate_engine s5_gate actions"
     assert all(f["dataType"] == "LARGE_TEXT" for f in GOLDEN_FIELDS
-               if f["fieldKey"] != COVER_CHOICE_KEY), \
-        "every non-cover field must be LARGE_TEXT (Gap G11)"
+               if f["fieldKey"] not in (COVER_CHOICE_KEY, DECISION_KEY)), \
+        "every non-choice field must be LARGE_TEXT (Gap G11)"
     # Gap G10: the four rewrite-preservation keys are present and distinct from
     # the base chapter pair, so a rewrite can never overwrite the original.
     for slot in ("rewrite1_doc_url", "rewrite1_pdf_url", "rewrite2_doc_url", "rewrite2_pdf_url"):
@@ -374,8 +391,15 @@ def _self_test_body(dev) -> None:
     contract_keys.update((csf.get("sample_url_fields") or {}).values())
     if csf.get("choice_field"):
         contract_keys.add(csf["choice_field"])
+    rdf = field_map.get("review_decision_field") or {}
+    if rdf.get("key"):
+        contract_keys.add(rdf["key"])
+    af = field_map.get("absorbed_fields") or {}
+    for group in af.values():
+        if isinstance(group, dict):
+            contract_keys.update(group.values())
     assert contract_keys == set(want_keys), \
-        "inventory drifted from the deliverable/control/cover-style contract"
+        "inventory drifted from the deliverable/control/cover-style/review-decision/absorbed contract"
 
     # ---- the id map is deterministic and covers every key -------------------
     ids = golden_field_ids(field_map)
@@ -451,7 +475,7 @@ def _self_test_body(dev) -> None:
          "data_type": "LARGE_TEXT", "field_key": None, "field_id": None})
     try:
         golden_fields(tampered)
-        raise AssertionError("a 29-key inventory was NOT refused")
+        raise AssertionError("a 39-key inventory was NOT refused")
     except FixtureError:
         pass
     # 5. duplicate intended_key -> refusal
@@ -500,9 +524,10 @@ def _self_test_body(dev) -> None:
 
     dev.write("golden_fields self-test: OK (%d keys == total_keys == golden "
               "length; byte-exact fieldKey/name/dataType; G10 rewrite pairs + "
-              "U8 SINGLE_OPTIONS picklist present; 7 attack fixtures refused "
-              "(derivation-law violation / TEXT regression / total_keys drift / "
-              "29-key inventory / duplicate key / missing inventory / prefix-less "
+              "U8 + U15 SINGLE_OPTIONS picklists present; 7 attack fixtures "
+              "refused (derivation-law violation / TEXT regression / total_keys "
+              "drift / 39-key inventory / duplicate key / missing inventory / "
+              "prefix-less "
               "key); canonical deep-frozen immutability + deep-copy surface; "
               "payload gate exits 0 / drifts to exit 5)\n" % CONTRACT_TOTAL)
 
@@ -521,7 +546,7 @@ def tampered_total_keys(field_map: dict) -> dict:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="golden_fields.py",
-        description="Golden field-list payload fixture (28 keys) for the U02 "
+        description="Golden field-list payload fixture (38 keys) for the U02 "
                     "self-tests (Skill 59): derive the canonical customFields "
                     "payload byte-exact from config/field-map.json, fail-closed.")
     ap.add_argument("--field-map", default=str(FIELD_MAP_PATH),
@@ -545,7 +570,7 @@ def main(argv=None):
             return self_test()
         field_map = reg.load_field_map(Path(args.field_map).expanduser())
         if args.cmd == "plan":
-            # Offline plan (no network, no credentials): the 28 intended keys
+            # Offline plan (no network, no credentials): the 38 intended keys
             # the golden payload carries, straight from the field-map — never a
             # hardcoded list. One JSON object on stdout.
             inventory = _contract_inventory(field_map)

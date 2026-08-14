@@ -949,7 +949,7 @@ DOCTRINE = (
      "hardcoded blob)"),
     ("Negative-result contract", "the family carries its OWN golden "
      "controls (the golden card build, the golden board, the golden "
-     "all-28 field census in the sibling families) so every pass/fail "
+     "all-38 field census in the sibling families) so every pass/fail "
      "split discriminates the law and never a broken instrument — a "
      "gate that fails everything is a broken check, not a real fault; "
      "an attack fixture that PASSES any census gate is a broken gate; "

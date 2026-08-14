@@ -4,8 +4,8 @@
 # LIVE FIELD-MAP COMPLIANCE DISPATCHER — the ONE CLI ASSEMBLED from the
 # u07_modules files: it imports EVERY module under scripts/u07_modules/ BY
 # NAME (importlib, never exec'd from a path) and wires them into ONE CLI
-# whose offline self-test battery (the golden all-28-present census PASS, the
-# missing-14 attack REFUSED, the TEXT-drift attack REFUSED) runs before any
+# whose offline self-test battery (the golden all-38-present census PASS, the
+# missing-19 attack REFUSED, the TEXT-drift attack REFUSED) runs before any
 # live surface. This file carries NO check logic itself — a check family is
 # exercised ONLY through its module so `--dry-run`, `--self-test`, and the
 # live aggregate never drift apart. It is the packaged sibling of
@@ -29,7 +29,7 @@
 #                          GATE — the single implementation of the
 #                          field-map.json load-and-verify law (read
 #                          config/field-map.json and return its
-#                          provisioning.fields inventory — exactly 28 keys —
+#                          provisioning.fields inventory — exactly 38 keys —
 #                          ONLY when the map satisfies its own contract;
 #                          refuse anything else, never a partial load;
 #                          OFFLINE, READ-ONLY, NETWORK-FREE)
@@ -51,10 +51,11 @@
 #                          --execute a location with missing fields is a
 #                          STOP (exit 2) that lists them
 #   type_checker.py        the LIVE FIELD-TYPE CHECKER — the type-law half:
-#                          every free-text key live LARGE_TEXT (the 27-key
-#                          multi-line law) and the ONE SINGLE_OPTIONS
-#                          choice field live with exactly the four named
-#                          cover styles byte-exact in order; with --execute
+#                          every free-text key live LARGE_TEXT (the 36-key
+#                          multi-line law) and the TWO SINGLE_OPTIONS
+#                          picklists (cover choice + review decision) live
+#                          with their named options byte-exact in order;
+#                          with --execute
 #                          (Trevor-gated) missing keys are created at their
 #                          declared types then RE-LISTED and re-verified; a
 #                          live field of the WRONG type is never re-created
@@ -69,9 +70,9 @@
 #                          nothing is mutated); a missing / mismatched /
 #                          extra key is a MISMATCH (exit 5), an unreadable
 #                          Convert and Flow is HELD (exit 3)
-#   golden_all_present.py  the GOLDEN ALL-28-PRESENT FIXTURE — the
+#   golden_all_present.py  the GOLDEN ALL-38-PRESENT FIXTURE — the
 #                          canonical in-memory payload of the U07
-#                          FIELD-CENSUS law in its GOLDEN state: ALL 28
+#                          FIELD-CENSUS law in its GOLDEN state: ALL 38
 #                          contract custom fields on the listing BY EXACT
 #                          KEY (the intended keys read ONCE from
 #                          config/field-map.json through
@@ -86,29 +87,30 @@
 #                          gate lives in this dispatcher, never in a
 #                          fixture)
 #   attack_missing_14.py   the U07 ATTACK #1: a deterministic DEEP strict-
-#                          subset customFields read carrying only FOURTEEN
-#                          of the twenty-eight contract fields (the
-#                          canonical census minus its fourteen
+#                          subset customFields read carrying only NINETEEN
+#                          of the thirty-eight contract fields (the
+#                          canonical census minus its nineteen
 #                          even-positioned records) that every byte-exact
 #                          field census MUST DETECT and refuse (the judge
-#                          verify_live(...) FAILs the 14-key read with exit
+#                          verify_live(...) FAILs the 19-key read with exit
 #                          5, missing keys by MASKED MARKER only) while the
-#                          golden 28-key control (payload_true) PASSES exit
+#                          golden 38-key control (payload_true) PASSES exit
 #                          0 — the pass/fail split discriminates the
 #                          deep-strict-subset boundary, never a broken
 #                          instrument
 #   attack_text_drift.py   the U07 ATTACK #2: a deterministic SINGLE-
 #                          VARIABLE dataType drift — the canonical field
 #                          inventory read once from the field-map (the
-#                          dataType LAW surface: 28 keys, 27 LARGE_TEXT + 1
-#                          SINGLE_OPTIONS, the cover choice with its four
-#                          named options), then the ONE data_type of the
+#                          dataType LAW surface: 38 keys, 36 LARGE_TEXT + 2
+#                          SINGLE_OPTIONS (cover choice + review decision,
+#                          each with its named options), then the ONE
+#                          data_type of the
 #                          first free-text key re-declared TEXT with every
 #                          other field byte-for-byte preserved — that every
-#                          dataType gate (the 27+1 invariant, the
+#                          dataType gate (the 36+2 invariant, the
 #                          provision-fields exact-match verify, every U07
 #                          type law) MUST FAIL, never a pass; the golden
-#                          27+1 control (payload_true / GOLDEN_RECORD)
+#                          36+2 control (payload_true / GOLDEN_RECORD)
 #                          PASSES exit 0 — the pass/fail split
 #                          discriminates the TEXT-vs-LARGE_TEXT boundary,
 #                          never a broken instrument
@@ -134,45 +136,47 @@
 #
 # THE U07 ATTACKS (the offline self-test proves both are REFUSED — golden
 # PASS / attack FAIL; a tamper NEVER masquerades as exit 1):
-#   attack_missing_14 — the 14-of-28 deep strict-subset census MUST FAIL
+#   attack_missing_14 — the 19-of-38 deep strict-subset census MUST FAIL
 #                       the byte-exact field census judge (verify_live exit
 #                       5, missing keys by MASKED MARKER only) while the
-#                       golden 28-key control (payload_true) PASSES exit 0
+#                       golden 38-key control (payload_true) PASSES exit 0
 #                       — the pass/fail split discriminates the deep-strict-
 #                       subset boundary, never a broken instrument.
 #   attack_text_drift — the one-TEXT-drift inventory MUST FAIL the byte-
 #                       exact dataType law (verify_inventory exit 5, the
-#                       drifted key by masked marker) while the golden 27+1
+#                       drifted key by masked marker) while the golden 36+2
 #                       control (GOLDEN_RECORD, payload_true) PASSES exit 0
 #                       — the pass/fail split discriminates the TEXT-vs-
 #                       LARGE_TEXT boundary, never a broken instrument.
 #
 # WHAT THIS VERIFIES (MASTER-SPEC U07 — the LIVE FIELD-MAP COMPLIANCE LAW
-# of the anthology engine: every one of the field-map's 28 contact custom
+# of the anthology engine: every one of the field-map's 38 contact custom
 # fields must be present on the Convert and Flow location by byte-exact
-# derived key at its byte-exact declared data type — 27 LARGE_TEXT free-
-# text fields plus the ONE SINGLE_OPTIONS cover-choice field carrying
-# exactly the four named cover styles in order — and CREATION is the
+# derived key at its byte-exact declared data type — 36 LARGE_TEXT free-
+# text fields plus the TWO SINGLE_OPTIONS picklists (cover choice +
+# review decision, each with its named options in order) — and CREATION
+# is the
 # Trevor-gated --execute ACTION of the family). The dispatcher's live
 # gates run in the FIXED order main_skeleton.LIVE_GATES carries them; the
 # per-item claims live in the modules and in docs_u07.VERIFY_ITEMS:
-#   1. THE 28-KEY CENSUS LAW — the field-map contract loads byte-exact
+#   1. THE 38-KEY CENSUS LAW — the field-map contract loads byte-exact
 #      (fieldmap_loader.load_command over the committed
-#      config/field-map.json — OFFLINE, pure; the 28-key count,
+#      config/field-map.json — OFFLINE, pure; the 38-key count,
 #      provisioning.total_keys byte-match, the derivation law via
-#      reg.derive_field_key, the type law — 27 LARGE_TEXT + 1
-#      SINGLE_OPTIONS with the four named cover styles in order — and the
-#      'contact.' key law; a map that drifted from its own contract is a
-#      STOP (exit 2, FieldMapError), never a blind load).
-#   2. THE ALL-PRESENT LAW — the golden ALL-28-PRESENT census (golden_
-#      all_present payload gate: the canonical 28-row listing where every
+#      reg.derive_field_key, the type law — 36 LARGE_TEXT + 2
+#      SINGLE_OPTIONS (cover choice + review decision, each with its
+#      named options in order) — and the 'contact.' key law; a map that
+#      drifted from its own contract is a STOP (exit 2, FieldMapError),
+#      never a blind load).
+#   2. THE ALL-PRESENT LAW — the golden ALL-38-PRESENT census (golden_
+#      all_present payload gate: the canonical 38-row listing where every
 #      contract key is present BY EXACT KEY with its one synthetic id —
 #      an absent, renamed, duplicated, or foreign contract key is a FAIL,
 #      exit 5, FIELDS-NOT-ALL-PRESENT, never a blind pass).
-#   3. THE ATTACK BOUNDARIES — the missing-14 deep strict subset MUST fail
-#      the census judge (exit 5) with the golden 28-key control PASSING
+#   3. THE ATTACK BOUNDARIES — the missing-19 deep strict subset MUST fail
+#      the census judge (exit 5) with the golden 38-key control PASSING
 #      exit 0, and the one-TEXT-drift inventory MUST fail the byte-exact
-#      dataType law (exit 5) with the golden 27+1 control PASSING exit 0 —
+#      dataType law (exit 5) with the golden 36+2 control PASSING exit 0 —
 #      the pass/fail splits discriminate the boundaries, never a broken
 #      instrument.
 #   4. THE LIVE-READ LAW — the census is read LIVE through the PROVEN
@@ -184,9 +188,10 @@
 #      run_check — without --execute a location with missing fields is a
 #      STOP, exit 2, that lists them; name-squat drift is a MISMATCH,
 #      exit 5, never created, with or without --execute).
-#   6. THE TYPE LAW — every free-text key live LARGE_TEXT and the ONE
-#      SINGLE_OPTIONS choice field live with exactly the four named cover
-#      styles byte-exact in order (type_checker.verify_live — a live field
+#   6. THE TYPE LAW — every free-text key live LARGE_TEXT and the TWO
+#      SINGLE_OPTIONS picklists (cover choice + review decision) live with
+#      their named options byte-exact in order (type_checker.verify_live —
+#      a live field
 #      of the WRONG type is never re-created and never re-typed: it is a
 #      FAIL, exit 5, never a silent pass).
 #   7. THE POST-CREATE READ-BACK — the SAME live read the create used,
@@ -247,7 +252,7 @@
 #          silent; the missing-field list is the payload, the create is
 #          the gate.
 #   AF-AE-FIELDMAP-*            -> the field-map contract gate refused
-#          (28-key count / total_keys mismatch / derivation law / type
+#          (38-key count / total_keys mismatch / derivation law / type
 #          law / key law). STOP (exit 2, FieldMapError) — never a silent
 #          load.
 #   FIELDS-ALL-PRESENT          -> the golden all-present census gate
@@ -259,7 +264,7 @@
 #   AF-AE-FIELD-MISSING         -> an intended field is absent from the
 #          live listing (missing_finder; without --execute a STOP exit 2
 #          that lists them, never a silent pass); the deep strict-subset
-#          census (attack_missing_14: fourteen of twenty-eight fields
+#          census (attack_missing_14: nineteen of thirty-eight fields
 #          present) MUST be detected and refused exit 5, never passed.
 #   AF-AE-FIELD-KEY-MISMATCH    -> a live field name carries a non-derived
 #          key (name-squat drift, human-fix, never created) or a created
@@ -284,7 +289,7 @@
 #      AF-AE-U07-CREATE-NO-EXECUTE) / label NOT SET / a non-pit- value /
 #      usage / the U07 check-module assembly incomplete
 #      (AF-AE-U07-ASSEMBLY-INCOMPLETE) / a field-map that drifted from
-#      its own contract (FieldMapError: 28-key count, total_keys
+#      its own contract (FieldMapError: 38-key count, total_keys
 #      mismatch, derivation law, type law, key law — never a silent load)
 #      / a map-vs-cover_render options mismatch / the cover_render style
 #      import failed / a missing field WITHOUT --execute (the Trevor gate,
@@ -300,7 +305,7 @@
 #      / AF-AE-FIELD-MISSING / AF-AE-FIELD-KEY-MISMATCH /
 #      AF-AE-TEMPLATE-ATTACK family). A tamper NEVER masquerades as exit 1.
 #   5  data or read-back mismatch (a contract key absent or renamed —
-#      FIELDS-NOT-ALL-PRESENT — a foreign key outside the 28-key contract,
+#      FIELDS-NOT-ALL-PRESENT — a foreign key outside the 38-key contract,
 #      a wrong-size or malformed census, a credential-shaped or full-id
 #      surface (leak-scan REFUSAL), a name-squat drift, a created fieldKey
 #      that is not byte-equal to its intended key, a live field of the
@@ -326,7 +331,7 @@
 # =============================================================================
 """provision_fields.py — the U07 live field-map compliance dispatcher
 assembled from the u07_modules files: one CLI, offline self-test battery
-(golden all-present PASS, the missing-14 and TEXT-drift attacks REFUSED),
+(golden all-present PASS, the missing-19 and TEXT-drift attacks REFUSED),
 JSON output, and the manifest-pending/u07.json stage (Skill 59)."""
 
 from __future__ import annotations
@@ -371,14 +376,14 @@ DEFAULT_TEMPLATE_LOCATION = "2HIKGNgsixWx0yds7Qnx"
 U07_MODULES = (
     ("__init__.py",            "fail-closed EMPTY package init (pure namespace)"),
     ("main_skeleton.py",       "the U07 live field-map compliance dispatcher CLI (plan / self-test / live verify; the ONE entry-point contract over the check modules)"),
-    ("fieldmap_loader.py",     "the FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE — the single implementation of the field-map.json load-and-verify law: read config/field-map.json and return its provisioning.fields inventory (exactly 28 keys) ONLY when the map satisfies its own contract (28-key count, total_keys byte-match, derivation law, type law — 27 LARGE_TEXT + 1 SINGLE_OPTIONS — key law with the 'contact.' prefix) — refuse anything else (FieldMapError, exit 2 STOP family), never a partial load. OFFLINE, READ-ONLY, NETWORK-FREE; a field id is reported by status only (RESOLVED / UNRESOLVED), never by value"),
+    ("fieldmap_loader.py",     "the FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE — the single implementation of the field-map.json load-and-verify law: read config/field-map.json and return its provisioning.fields inventory (exactly 38 keys) ONLY when the map satisfies its own contract (38-key count, total_keys byte-match, derivation law, type law — 36 LARGE_TEXT + 2 SINGLE_OPTIONS — key law with the 'contact.' prefix) — refuse anything else (FieldMapError, exit 2 STOP family), never a partial load. OFFLINE, READ-ONLY, NETWORK-FREE; a field id is reported by status only (RESOLVED / UNRESOLVED), never by value"),
     ("live_fields_reader.py",  "the LIVE CUSTOM-FIELDS READER — the read surface of the U07 family: the location's contact custom fields through the PROVEN public rail GET /locations/{locationId}/customFields (reg.CafClient.list_custom_fields — the W0.5-verified surface the U02 fields_check gate and the provision path exercise). READ-ONLY BY CONSTRUCTION: no write surface, no ACTION verb, no --execute (nothing to gate). An EMPTY field set is a truthful PASS; a missing credential is a STOP (exit 2); an unreachable rail / edge block / unparseable listing is HELD (exit 3), never a fabricated list"),
     ("missing_finder.py",      "the MISSING-FIELD FINDER — the get-check-by-name half of the presence law: PRESENT (byte-equal server fieldKey) / MISSING (no live field under the derived key AND no live field under the create name) / NAME-SQUAT DRIFT (a live field named exactly the create_name but keyed otherwise — a human-fix drift, NEVER counted missing, NEVER created). With the operator's explicit --execute (Trevor-gated) it CREATES each missing field by name via the proven create surface (reg.CafClient.create_custom_field) and reads the server-returned fieldKey back byte-for-byte against the intended key — idempotent create-or-verify; a created fieldKey NOT byte-equal is a MISMATCH (exit 5). Without --execute a location with missing fields is a STOP (exit 2) that lists them — creation is never silent"),
-    ("type_checker.py",        "the LIVE FIELD-TYPE CHECKER — the type-law half of the U07 family: asserts EVERY free-text field in the inventory is live LARGE_TEXT (the 27-key every-text-input-field-is-multi-line law, PRD Gap G11) and the ONE SINGLE_OPTIONS field (contact.anthology_cover_choice) is live with EXACTLY the four named cover-style options byte-exact in order (the picklist imported from cover_render.STYLE_NAMES, self-pinned against the field-map's own declared options so the two surfaces can never drift). With --execute (Trevor-gated) each MISSING free-text key is created at its declared LARGE_TEXT data_type and the choice field at SINGLE_OPTIONS with the four options, then the location is RE-LISTED and every created key re-verified against the read-back — a report never claims a type that was not read back. A live field of the WRONG type is NEVER re-created and never re-typed: it is a FAIL (exit 5)"),
+    ("type_checker.py",        "the LIVE FIELD-TYPE CHECKER — the type-law half of the U07 family: asserts EVERY free-text field in the inventory is live LARGE_TEXT (the 36-key every-text-input-field-is-multi-line law, PRD Gap G11) and the TWO SINGLE_OPTIONS fields (contact.anthology_cover_choice and contact.anthology_review_decision) are live with EXACTLY their named options byte-exact in order (the picklist imported from cover_render.STYLE_NAMES, self-pinned against the field-map's own declared options so the two surfaces can never drift). With --execute (Trevor-gated) each MISSING free-text key is created at its declared LARGE_TEXT data_type and the choice field at SINGLE_OPTIONS with the four options, then the location is RE-LISTED and every created key re-verified against the read-back — a report never claims a type that was not read back. A live field of the WRONG type is NEVER re-created and never re-typed: it is a FAIL (exit 5)"),
     ("byte_verifier.py",       "the POST-CREATE READ-BACK VERIFIER — the read-back half of the U07 create law: after provisioning creates a custom field, RE-READS the location's custom-field inventory through the SAME live read surface the create used (reg.CafClient.list_custom_fields, browser UA on every request) and confirms EVERY server fieldKey byte-exact against config/field-map.json provisioning.fields (the SINGLE SOURCE OF TRUTH; each expectation derived through reg.derive_field_key, the single implementation). READ-ONLY by construction: it never creates, never stamps, never writes; the verify ACTION is Trevor-gated (--execute) — without it a STOP (exit 2, the family gate), with it the ACTION is reported and nothing is mutated; a missing / mismatched / extra key is a MISMATCH (exit 5), an unreadable Convert and Flow is HELD (exit 3)"),
-    ("golden_all_present.py",  "the GOLDEN ALL-28-PRESENT FIXTURE — the canonical in-memory payload of the U07 FIELD-CENSUS law in its GOLDEN state: ALL 28 contract custom fields on the listing BY EXACT KEY (the 19 base PRD Section 6 link/control keys + 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys, the intended keys read ONCE from config/field-map.json through reg.load_field_map, never retyped), the canonical record mappingproxy-frozen (every container a tuple, so no caller can mutate the law); the payload() gate is fail-closed — an absent / renamed / duplicated / foreign / wrong-size / malformed / credential-shaped listing is REFUSED exit 5 (FIELDS-NOT-ALL-PRESENT), never a blind pass, and the WRITE ACTION (provision) is --execute-gated (GOLDEN_EXECUTE_REQUIRED — the gate lives in this dispatcher, never in a fixture)"),
-    ("attack_missing_14.py",   "the U07 ATTACK #1: a deterministic DEEP strict-subset customFields read carrying only FOURTEEN of the twenty-eight contract fields (the canonical census minus its fourteen even-positioned records — a location missing half its fields) that every byte-exact field census MUST DETECT and refuse (verify_live(...) exit 5, missing keys by MASKED MARKER only) while the golden 28-key control (payload_true) PASSES exit 0 — the pass/fail split discriminates the deep-strict-subset boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
-    ("attack_text_drift.py",   "the U07 ATTACK #2: a deterministic SINGLE-VARIABLE dataType drift — the canonical field inventory read once from the field-map (the dataType LAW surface: 28 keys, 27 LARGE_TEXT + 1 SINGLE_OPTIONS, the cover choice with its four named options), then the ONE data_type of the first free-text key re-declared TEXT with every other field byte-for-byte preserved — that every dataType gate (the 27+1 invariant, the provision-fields exact-match verify, every U07 type law) MUST FAIL, never a pass; the golden 27+1 control (GOLDEN_RECORD / payload_true) PASSES exit 0 — the pass/fail split discriminates the TEXT-vs-LARGE_TEXT boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
+    ("golden_all_present.py",  "the GOLDEN ALL-38-PRESENT FIXTURE — the canonical in-memory payload of the U07 FIELD-CENSUS law in its GOLDEN state: ALL 38 contract custom fields on the listing BY EXACT KEY (the 19 base PRD Section 6 link/control keys + 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10 U15-absorbed live fields, the intended keys read ONCE from config/field-map.json through reg.load_field_map, never retyped), the canonical record mappingproxy-frozen (every container a tuple, so no caller can mutate the law); the payload() gate is fail-closed — an absent / renamed / duplicated / foreign / wrong-size / malformed / credential-shaped listing is REFUSED exit 5 (FIELDS-NOT-ALL-PRESENT), never a blind pass, and the WRITE ACTION (provision) is --execute-gated (GOLDEN_EXECUTE_REQUIRED — the gate lives in this dispatcher, never in a fixture)"),
+    ("attack_missing_14.py",   "the U07 ATTACK #1: a deterministic DEEP strict-subset customFields read carrying only NINETEEN of the thirty-eight contract fields (the canonical census minus its nineteen even-positioned records — a location missing half its fields) that every byte-exact field census MUST DETECT and refuse (verify_live(...) exit 5, missing keys by MASKED MARKER only) while the golden 38-key control (payload_true) PASSES exit 0 — the pass/fail split discriminates the deep-strict-subset boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
+    ("attack_text_drift.py",   "the U07 ATTACK #2: a deterministic SINGLE-VARIABLE dataType drift — the canonical field inventory read once from the field-map (the dataType LAW surface: 38 keys, 36 LARGE_TEXT + 2 SINGLE_OPTIONS, the cover choice and the review decision each with their named options), then the ONE data_type of the first free-text key re-declared TEXT with every other field byte-for-byte preserved — that every dataType gate (the 36+2 invariant, the provision-fields exact-match verify, every U07 type law) MUST FAIL, never a pass; the golden 36+2 control (GOLDEN_RECORD / payload_true) PASSES exit 0 — the pass/fail split discriminates the TEXT-vs-LARGE_TEXT boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"),
     ("house_rules.py",         "the ONE canonical house-law constant surface for the U07 family (browser UA — CAF_BROWSER_UA, CF 1010 — / version header — CAF_VERSION_HEADER — / the complete AF autofail table, the manifest's 75 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails — a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"),
     ("docs_u07.py",            "the U07 tooling README/catalog data + drift gate — the module inventory, the FIVE verified items, the house exit codes and af codes as DATA (the module inventory and the shipped tree never drift; a doc that names a module that does not ship FAILS its self-test exit 4)"),
     ("example_usage.py",       "the fail-closed WORKED EXAMPLE of the U07 dispatch — the field-map contract gate + the golden all-present census + the missing-14 attack boundary with its golden control + the live read + the missing-field presence law + the type law, composed in the documented order with every sibling exit code honored verbatim (a STOP refusal is NEVER downgraded to a pass). NOT a gate and NOT a checker: it makes NO judgment of its own — every judgment is delegated to the sibling modules, which stay the single implementation of each law"),
@@ -391,14 +396,14 @@ U07_MODULES = (
 # check-module set named in the dispatcher's own roster; a check family
 # that cannot prove itself offline STOPS).
 DISPATCH_MODULE_NAMES = tuple(name for name, _ in (
-    ("fieldmap_loader", "the FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE — the single implementation of the field-map.json load-and-verify law (28-key count, total_keys byte-match, derivation law, type law, key law); OFFLINE, READ-ONLY, NETWORK-FREE"),
+    ("fieldmap_loader", "the FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE — the single implementation of the field-map.json load-and-verify law (38-key count, total_keys byte-match, derivation law, type law, key law); OFFLINE, READ-ONLY, NETWORK-FREE"),
     ("live_fields_reader", "the LIVE CUSTOM-FIELDS READER — the read surface of the U07 family (GET /locations/{id}/customFields on the PROVEN public rail; READ-ONLY BY CONSTRUCTION; an EMPTY field set is a truthful PASS, a malformed read is HELD)"),
     ("missing_finder", "the MISSING-FIELD FINDER — PRESENT / MISSING / NAME-SQUAT DRIFT against the byte-exact derived keys; with --execute (Trevor-gated) create-only-missing with a byte-exact read-back; without it a location with missing fields STOPS (exit 2) that lists them"),
-    ("type_checker", "the LIVE FIELD-TYPE CHECKER — 27 LARGE_TEXT + the ONE SINGLE_OPTIONS choice field with the four named styles byte-exact in order; a wrong-type live field is a FAIL (exit 5), never re-created, never re-typed"),
+    ("type_checker", "the LIVE FIELD-TYPE CHECKER — 36 LARGE_TEXT + the TWO SINGLE_OPTIONS picklists (cover choice + review decision) with their named options byte-exact in order; a wrong-type live field is a FAIL (exit 5), never re-created, never re-typed"),
     ("byte_verifier", "the POST-CREATE READ-BACK VERIFIER — the SAME live read the create used, re-read and confirmed byte-exact against the field-map; the verify ACTION is Trevor-gated (--execute) and READ-ONLY"),
-    ("golden_all_present", "the GOLDEN ALL-28-PRESENT FIXTURE — ALL 28 contract custom fields present byte-exact by the golden keys (mappingproxy-frozen; payload() judges fail-closed, exit 0 pass / 5 refused; the WRITE ACTION is --execute-gated)"),
-    ("attack_missing_14", "the U07 ATTACK #1 — the 14-of-28 deep strict-subset census that every byte-exact field census MUST DETECT and refuse (exit 5, missing keys by masked marker) with the golden 28-key control PASSING"),
-    ("attack_text_drift", "the U07 ATTACK #2 — the one-TEXT-drift inventory that every byte-exact dataType gate MUST FAIL (exit 5) with the golden 27+1 control PASSING"),
+    ("golden_all_present", "the GOLDEN ALL-38-PRESENT FIXTURE — ALL 38 contract custom fields present byte-exact by the golden keys (mappingproxy-frozen; payload() judges fail-closed, exit 0 pass / 5 refused; the WRITE ACTION is --execute-gated)"),
+    ("attack_missing_14", "the U07 ATTACK #1 — the 19-of-38 deep strict-subset census that every byte-exact field census MUST DETECT and refuse (exit 5, missing keys by masked marker) with the golden 38-key control PASSING"),
+    ("attack_text_drift", "the U07 ATTACK #2 — the one-TEXT-drift inventory that every byte-exact dataType gate MUST FAIL (exit 5) with the golden 36+2 control PASSING"),
     ("house_rules", "the ONE canonical house-law constant surface (browser UA, version header, the AF autofail table mirrored from docs_u07.AF_CODES)"),
     ("docs_u07", "the U07 tooling README/catalog data + drift gate (the module inventory as DATA)"),
     ("example_usage", "the fail-closed WORKED EXAMPLE of the U07 dispatch (delegates every judgment to the sibling modules)"),
@@ -421,29 +426,29 @@ TEST_MODULES = ("test_missing_finder", "test_type_checker",
 # main_skeleton.LIVE_GATES one-to-one; the self-test pins the two cannot
 # drift).
 LIVE_GATES = tuple(name for name, _ in (
-    ("fieldmap_loader", "the field-map contract gate — load-and-verify config/field-map.json (the SINGLE SOURCE OF TRUTH) against its own 28-key contract; a map that drifted is a STOP, never a blind load"),
-    ("golden_all_present", "the golden all-present census — ALL 28 contract fields present byte-exact by the golden keys (an absent / renamed / duplicated / foreign key is a FAIL, exit 5, never a blind pass)"),
-    ("attack_missing_14", "the attack boundary #1 — the 14-of-28 deep strict-subset census MUST fail the byte-exact census judge (exit 5) while the golden 28-key control PASSES exit 0"),
-    ("attack_text_drift", "the attack boundary #2 — the one-TEXT-drift inventory MUST fail the byte-exact dataType law (exit 5) while the golden 27+1 control PASSES exit 0"),
+    ("fieldmap_loader", "the field-map contract gate — load-and-verify config/field-map.json (the SINGLE SOURCE OF TRUTH) against its own 38-key contract; a map that drifted is a STOP, never a blind load"),
+    ("golden_all_present", "the golden all-present census — ALL 38 contract fields present byte-exact by the golden keys (an absent / renamed / duplicated / foreign key is a FAIL, exit 5, never a blind pass)"),
+    ("attack_missing_14", "the attack boundary #1 — the 19-of-38 deep strict-subset census MUST fail the byte-exact census judge (exit 5) while the golden 38-key control PASSES exit 0"),
+    ("attack_text_drift", "the attack boundary #2 — the one-TEXT-drift inventory MUST fail the byte-exact dataType law (exit 5) while the golden 36+2 control PASSES exit 0"),
     ("live_fields_reader", "the live custom-field read — the location's contact custom fields through the PROVEN public rail GET /locations/{id}/customFields (PIT-gated; an EMPTY field set is a truthful PASS, a malformed read is HELD)"),
     ("missing_finder", "the missing-field presence law — every intended key present live by byte-exact derived key against the same field-map (missing without --execute is a STOP that lists them; name-squat drift is a MISMATCH, exit 5, never created)"),
-    ("type_checker", "the live type law — every free-text key live LARGE_TEXT and the ONE SINGLE_OPTIONS choice field live with exactly the four named cover styles byte-exact in order (a wrong-type live field is a FAIL, exit 5, never a silent pass)"),
+    ("type_checker", "the live type law — every free-text key live LARGE_TEXT and the TWO SINGLE_OPTIONS picklists (cover choice + review decision) live with their named options byte-exact in order (a wrong-type live field is a FAIL, exit 5, never a silent pass)"),
     ("byte_verifier", "the post-create read-back — the SAME live read the create used, re-read and confirmed byte-exact against the field-map (the verify ACTION is Trevor-gated, --execute; a missing / mismatched / extra key is a MISMATCH, exit 5)"),
 ))
 
 # The five U07 verified items, as the manifest-pending stage records them
 # (docs_u07.VERIFY_ITEMS — the catalog and the tree never drift).
 VERIFIED_ITEMS = (
-    (1, "census_law", "28-key census law — the field-map contract loads "
+    (1, "census_law", "38-key census law — the field-map contract loads "
                       "byte-exact"),
-    (2, "all_present", "All-present law — the golden 28 are present BY "
+    (2, "all_present", "All-present law — the golden 38 are present BY "
                        "EXACT KEY"),
     (3, "live_read", "Live-read law — the census is read LIVE through the "
                      "PROVEN rail"),
     (4, "create_gate", "Create gate law — a missing field STOPS without "
                        "--execute"),
     (5, "type_law", "Type law — every free-text key live LARGE_TEXT, the "
-                    "choice field exact"),
+                    "two picklists exact"),
 )
 
 # The AF-AE autofail family, as the stage records it (mirrored from
@@ -458,7 +463,7 @@ AF_CODES = (
      "creation is never silent; the missing-field list is the payload, the "
      "create is the gate"),
     ("AF-AE-FIELDMAP-*", 2,
-     "the field-map contract gate refused (28-key count / total_keys "
+     "the field-map contract gate refused (38-key count / total_keys "
      "mismatch / derivation law / type law / key law — never a silent "
      "load); an attack tripped the loader's OFFLINE self-test (exit 4)"),
     ("FIELDS-ALL-PRESENT", 0,
@@ -471,8 +476,8 @@ AF_CODES = (
     ("AF-AE-FIELD-MISSING", 2,
      "an intended field is absent from the live listing (missing_finder; "
      "without --execute a STOP exit 2 that lists them, never a silent "
-     "pass); the deep strict-subset census (attack_missing_14: fourteen "
-     "of twenty-eight fields present) MUST be detected and refused exit "
+     "pass); the deep strict-subset census (attack_missing_14: nineteen "
+     "of thirty-eight fields present) MUST be detected and refused exit "
      "5, never passed"),
     ("AF-AE-FIELD-KEY-MISMATCH", 5,
      "a live field name carries a non-derived key (name-squat drift, "
@@ -509,7 +514,7 @@ EXIT_CODES = {
        "AF-AE-U07-CREATE-NO-EXECUTE) / label NOT SET / a non-pit- value / "
        "usage / the U07 check-module assembly incomplete "
        "(AF-AE-U07-ASSEMBLY-INCOMPLETE) / a field-map that drifted from "
-       "its own contract (FieldMapError: 28-key count, total_keys "
+       "its own contract (FieldMapError: 38-key count, total_keys "
        "mismatch, derivation law, type law, key law — never a silent "
        "load) / a map-vs-cover_render options mismatch / the cover_render "
        "style import failed / a missing field WITHOUT --execute (the "
@@ -525,7 +530,7 @@ EXIT_CODES = {
        "MISMATCH / AF-AE-TEMPLATE-ATTACK family, enforced violation) — a "
        "tamper never masquerades as exit 1",
     5: "mismatch / fail-closed default — a contract key absent or renamed "
-       "(FIELDS-NOT-ALL-PRESENT), a foreign key outside the 28-key "
+       "(FIELDS-NOT-ALL-PRESENT), a foreign key outside the 38-key "
        "contract, a wrong-size or malformed census, a credential-shaped "
        "or full-id surface (leak-scan REFUSAL), a name-squat drift (a "
        "live name under a non-derived key), a created fieldKey that is "
@@ -707,8 +712,8 @@ def self_test(modules: dict, out=None, *, run_pytest: bool = True) -> int:
         # 4. the field-census law gate, exercised through the modules' own
         #    surfaces — the GOLDEN states PASS and the U07 ATTACKS FAIL
         #    (never a silent pass, never a blind refusal):
-        # 4a. the golden ALL-28-PRESENT census PASSES the fail-closed payload
-        #     gate (all 28 contract custom fields present byte-exact by the
+        # 4a. the golden ALL-38-PRESENT census PASSES the fail-closed payload
+        #     gate (all 38 contract custom fields present byte-exact by the
         #     golden keys, read once from config/field-map.json; the WRITE
         #     ACTION — provision — is --execute-gated).
         ga = modules["golden_all_present"]
@@ -718,40 +723,40 @@ def self_test(modules: dict, out=None, *, run_pytest: bool = True) -> int:
             "the Trevor gate flag drifted from the U07 contract"
         golden_result = ga.payload(None, out=io.StringIO())
         assert isinstance(golden_result, dict) and golden_result.get("ok"), \
-            "the golden ALL-28-PRESENT census must pass the payload gate: %s" \
+            "the golden ALL-38-PRESENT census must pass the payload gate: %s" \
             % (golden_result.get("af_code", "?")
                if isinstance(golden_result, dict) else "?")
-        assert golden_result.get("count") == 28, \
-            "the golden census must carry exactly 28 rows, got %r" \
+        assert golden_result.get("count") == 38, \
+            "the golden census must carry exactly 38 rows, got %r" \
             % golden_result.get("count")
-        # 4b. ATTACK #1 — the missing-14 deep strict-subset read (fourteen
-        #     of the twenty-eight contract fields — the canonical census
-        #     minus its fourteen even-positioned records) FAILS the byte-
+        # 4b. ATTACK #1 — the missing-14 deep strict-subset read (nineteen
+        #     of the thirty-eight contract fields — the canonical census
+        #     minus its nineteen even-positioned records) FAILS the byte-
         #     exact field-census judge (exit 5, missing keys by MASKED
-        #     MARKER only) while the golden 28-key control PASSES — the
+        #     MARKER only) while the golden 38-key control PASSES — the
         #     pass/fail split discriminates the deep-strict-subset
         #     boundary, never a broken instrument. The judge consumes the
         #     fixture's OWN canonical ATTACK_FIELDS payload through the
         #     in-memory read surface the fixture ships for it.
         a14 = modules["attack_missing_14"]
         attack_list = list(a14.attack_fields())
-        assert len(attack_list) == 14, \
-            "the missing-14 attack must carry exactly 14 rows, got %d" \
+        assert len(attack_list) == 19, \
+            "the missing-14 attack must carry exactly 19 rows, got %d" \
             % len(attack_list)
         attack_rc = a14.verify_live(_ATTACK_SURFACE14(), "loc_fx",
                                     _attack_field_map(modules),
                                     out=io.StringIO())
         assert attack_rc == EX_MISMATCH, \
-            "ATTACK #1 (14 of 28 fields present) was NOT refused (exit %s)" \
+            "ATTACK #1 (19 of 38 fields present) was NOT refused (exit %s)" \
             % attack_rc
         control_rc = a14.payload_true(out=io.StringIO())
         assert control_rc == EX_OK, \
-            "the golden 28-key control must PASS (exit %s)" % control_rc
+            "the golden 38-key control must PASS (exit %s)" % control_rc
         # 4c. ATTACK #2 — the one-TEXT-drift inventory (the canonical field
         #     inventory with the ONE data_type of the first free-text key
         #     re-declared TEXT, every other field byte-for-byte preserved)
         #     FAILS the byte-exact dataType law (exit 5, the drifted key by
-        #     MASKED MARKER) while the golden 27+1 control PASSES — the
+        #     MASKED MARKER) while the golden 36+2 control PASSES — the
         #     pass/fail split discriminates the TEXT-vs-LARGE_TEXT
         #     boundary, never a broken instrument.
         atd = modules["attack_text_drift"]
@@ -762,7 +767,7 @@ def self_test(modules: dict, out=None, *, run_pytest: bool = True) -> int:
         control_rc = atd.verify_inventory(atd.GOLDEN_RECORD,
                                           out=io.StringIO())
         assert control_rc == EX_OK, \
-            "the golden 27+1 control must PASS (exit %s)" % control_rc
+            "the golden 36+2 control must PASS (exit %s)" % control_rc
         # 4d. the create gate law at the dispatcher surface: the family's
         #     own batteries (missing_finder / type_checker / byte_verifier)
         #     each assert the module-level no-execute STOP (a missing field
@@ -866,7 +871,7 @@ _CREDENTIAL_SHAPE = re.compile(r"pit-\S+")
 # ---------------------------------------------------------------------------
 # The field-map contract gate — the loader, on the SUPPLIED path. The plan
 # (and any other offline surface) is only as sound as the map it plans
-# against: a map that drifted from its own 28-key contract (28-key count,
+# against: a map that drifted from its own 38-key contract (38-key count,
 # total_keys byte-match, derivation law, type law, key law) must refuse the
 # plan, never plan clean against a wrong map. load_field_map raises
 # FieldMapError on any drift and returns the verified inventory otherwise —
@@ -881,8 +886,8 @@ def _field_map_contract_gate(modules: dict, path: Path,
     except Exception as exc:  # noqa: BLE001 — a loader refusal is a STOP,
         #                         never a blind plan
         reg._stop(out,
-                  "The field-map at %s drifted from its own 28-key "
-                  "contract (28-key count / total_keys byte-match / "
+                  "The field-map at %s drifted from its own 38-key "
+                  "contract (38-key count / total_keys byte-match / "
                   "derivation law / type law / key law) — the plan is "
                   "REFUSED, never a plan against a wrong map." % path,
                   ["%s: %s" % (type(exc).__name__, exc),
@@ -903,7 +908,7 @@ def dry_run(modules: dict, location_id: str, field_map: dict,
     skeleton = modules["main_skeleton"]
     # The plan is only as sound as the map it plans against: the fail-closed
     # contract gate runs FIRST, through the family loader on the SUPPLIED
-    # path — a map that drifted from its own 28-key contract is a STOP
+    # path — a map that drifted from its own 38-key contract is a STOP
     # (exit 2), never a clean plan against a wrong map.
     _field_map_contract_gate(modules, field_map_path, out=out)
     # The dispatcher's own plan (the ONE JSON object on stdout, captured
@@ -1038,9 +1043,9 @@ def main(argv=None):
         prog="provision_fields.py",
         description="The U07 live field-map compliance dispatcher assembled "
                     "from the u07_modules files: offline self-test battery "
-                    "(golden all-present PASS, the missing-14 and TEXT-drift "
+                    "(golden all-present PASS, the missing-19 and TEXT-drift "
                     "attacks REFUSED), offline plan, and live verify of the "
-                    "28-key custom-field inventory law on the Convert and "
+                    "38-key custom-field inventory law on the Convert and "
                     "Flow location (Skill 59) — every delta documented as "
                     "JSON, the manifest-pending stage written after a PASS. "
                     "Field creation requires --execute (Trevor-gated) and "

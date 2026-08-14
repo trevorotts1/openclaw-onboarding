@@ -23,7 +23,7 @@
 #      EVERY request, the proven CF-1010 edge fix; no request is ever made
 #      without it).
 #   2. EXACT-MATCH BOTH DIRECTIONS against config/field-map.json
-#      provisioning.fields: the field-map's 28 intended_keys must all be
+#      provisioning.fields: the field-map's 38 intended_keys must all be
 #      present LIVE (a strict subset is a MISSING, never a pass), the live
 #      fieldKey set must not carry contract-foreign keys (EXTRA keys are
 #      drift, never ignored), and every live fieldKey must byte-equal its

@@ -54,19 +54,20 @@
 #   pass --execute explicitly (Trevor-gated). Without --execute the module
 #   must report what it WOULD do and exit without mutating."). Five
 #   verified items in a FIXED order:
-#   1. THE 28-KEY CENSUS LAW — a provisioned Convert and Flow location
-#      carries EXACTLY 28 contact custom fields under config/field-map.json
+#   1. THE 38-KEY CENSUS LAW — a provisioned Convert and Flow location
+#      carries EXACTLY 38 contact custom fields under config/field-map.json
 #      provisioning.fields (the 19 base PRD Section 6 link/control keys +
-#      4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys;
+#      4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys
+#      + 10 U15-absorbed live fields;
 #      the contract total, byte-pinned against provisioning.total_keys by
 #      fieldmap_loader.py, the module that owns the load-and-verify law —
 #      parse and return the inventory ONLY when the map satisfies its own
 #      contract, refuse anything else). The census binds BY EXACT KEY: a
 #      renamed or re-prefixed key is indistinguishable from an absent one
 #      and BOTH refuse fail-closed.
-#   2. THE ALL-PRESENT LAW — the golden state is EXACTLY 28 field rows on
+#   2. THE ALL-PRESENT LAW — the golden state is EXACTLY 38 field rows on
 #      the live listing, every one matched byte-exact by fieldKey, each
-#      with its one synthetic id (fld_golden_000 .. fld_golden_027); any
+#      with its one synthetic id (fld_golden_000 .. fld_golden_037); any
 #      deviation — an absent or renamed contract key, a foreign key outside
 #      the contract, a wrong-size listing, a malformed listing, a
 #      credential-shaped value — is a REFUSAL (golden_all_present.py, the
@@ -116,7 +117,7 @@
 #   the operator executes a live read only from a session that can resolve
 #   a location-scoped credential BY LABEL. The laws are pinned from the
 #   SINGLE AUTHORITIES — fieldmap_loader (the load law), golden_all_present
-#   (the all-present law surface + the golden 28), live_fields_reader (the
+#   (the all-present law surface + the golden 38), live_fields_reader (the
 #   live read), missing_finder (the missing-field + create gate law),
 #   type_checker (the type law), anthology_registry.load_field_map (the ONE
 #   keying authority, never re-implemented) — never a second implementation;
@@ -164,7 +165,7 @@
 #
 # FAIL-CLOSED (the whole point): a missing credential / location STOPS
 # (exit 2), a field-map that drifted from its own contract STOPS (the
-# load law — 28-key count, total_keys mismatch, derivation law, type law,
+# load law — 38-key count, total_keys mismatch, derivation law, type law,
 # key law — never a silent load), a missing field WITHOUT --execute STOPS
 # (exit 2, AF-AE-FIELD-MISSING family — creation is never silent, the
 # Trevor gate; WITH --execute creation is idempotent create-or-verify),
@@ -257,9 +258,9 @@ U07_SHIPPING_VERSION = "v0.1.23 (2026-08-11)"  # skill-version at ship time
 VERIFY_ITEMS = (
     {
         "item": 1,
-        "title": "28-key census law — the field-map contract loads byte-exact",
+        "title": "38-key census law — the field-map contract loads byte-exact",
         "asserts": ("a provisioned Convert and Flow location carries "
-                    "EXACTLY 28 contact custom fields under "
+                    "EXACTLY 38 contact custom fields under "
                     "config/field-map.json provisioning.fields (the 19 "
                     "base PRD Section 6 link/control keys + 4 Gap G10 "
                     "chapter-rewrite-preservation keys + 5 U8 cover-style "
@@ -288,10 +289,10 @@ VERIFY_ITEMS = (
                   "provisioning_rule + field_key_derivation_law + "
                   "data_type_choice) read through "
                   "anthology_registry.load_field_map (the ONE keying "
-                  "authority, never re-implemented); the 28-key count "
+                  "authority, never re-implemented); the 38-key count "
                   "pinned by the registry self-test and the U02 "
                   "golden_fields sibling",
-        "fails": "FieldMapError contract refusal — 28-key count drift, "
+        "fails": "FieldMapError contract refusal — 38-key count drift, "
                  "total_keys mismatch, derivation-law violation, type-law "
                  "violation, key-law violation (missing / duplicate / "
                  "wrong-prefix key), unreadable or malformed map (exit 2) "
@@ -301,27 +302,27 @@ VERIFY_ITEMS = (
     },
     {
         "item": 2,
-        "title": "All-present law — the golden 28 are present BY EXACT KEY",
-        "asserts": ("the golden state of the U07 census is EXACTLY 28 "
+        "title": "All-present law — the golden 38 are present BY EXACT KEY",
+        "asserts": ("the golden state of the U07 census is EXACTLY 38 "
                     "field rows on the listing, every one present BY "
                     "EXACT KEY — a row's fieldKey must byte-equal the "
                     "intended key, each with its one synthetic id "
-                    "(fld_golden_000 .. fld_golden_027, the fixture "
+                    "(fld_golden_000 .. fld_golden_037, the fixture "
                     "discipline: a fixture id is never a real field id) — "
                     "matched by the deep-frozen canonical record "
                     "GOLDEN_ALL_PRESENT (MappingProxyType, every container "
                     "a tuple — no caller can mutate it; golden_all_present() "
                     "/ golden_fields_payload() return deep copies) and "
                     "judged by the fail-closed all-present gate payload(): "
-                    "ALL 28 present -> PASS exit 0 with the "
-                    "dispatcher-consumed dict {'ok': True, 'count': 28, "
+                    "ALL 38 present -> PASS exit 0 with the "
+                    "dispatcher-consumed dict {'ok': True, 'count': 38, "
                     "'af_code': 'FIELDS-ALL-PRESENT', 'note': ...}; ANY "
                     "deviation — a contract key absent or renamed, a "
-                    "foreign key not in the 28-key contract, a wrong-size "
+                    "foreign key not in the 38-key contract, a wrong-size "
                     "listing, a malformed listing, a non-object row, a "
                     "credential-shaped value — is a REFUSED exit 5 "
                     "(FIELDS-NOT-ALL-PRESENT), never a blind pass, never a "
-                    "fabricated success; the 28 intended keys are NEVER "
+                    "fabricated success; the 38 intended keys are NEVER "
                     "retyped here — they come byte-exact from "
                     "config/field-map.json provisioning.fields through "
                     "reg.load_field_map (the single-implementation "
@@ -338,7 +339,7 @@ VERIFY_ITEMS = (
                  "malformed listing, non-object row, credential-shaped "
                  "value; the golden control itself MUST PASS (a gate that "
                  "fails everything is a broken check, not a real fault); "
-                 "a drift in the 28-key law breaks THIS fixture's "
+                 "a drift in the 38-key law breaks THIS fixture's "
                  "self-test first (exit 4)",
     },
     {
@@ -501,9 +502,9 @@ MODULES = (
                  "the single implementation of the field-map.json "
                  "load-and-verify law for this package: read "
                  "config/field-map.json and return its "
-                 "provisioning.fields inventory (the 28 keys, with their "
+                 "provisioning.fields inventory (the 38 keys, with their "
                  "declared data types) ONLY when the map satisfies its "
-                 "own contract (28-key count, total_keys byte-match, "
+                 "own contract (38-key count, total_keys byte-match, "
                  "derivation law via reg.derive_field_key, type law, key "
                  "law with the 'contact.' prefix) and refuse anything "
                  "else (FieldMapError, exit 2 STOP family — never a "
@@ -526,22 +527,22 @@ MODULES = (
         "name": "golden_all_present.py",
         "place": "scripts/u07_modules/",
         "manifest_row": None,
-        "role": ("the GOLDEN ALL-28-PRESENT FIXTURE — the canonical "
+        "role": ("the GOLDEN ALL-38-PRESENT FIXTURE — the canonical "
                  "in-memory payload of the U07 FIELD-CENSUS law in its "
-                 "GOLDEN state: ALL 28 Convert and Flow contact custom "
+                 "GOLDEN state: ALL 38 Convert and Flow contact custom "
                  "fields a provisioned location must carry are on the "
                  "listing BY EXACT KEY, every one present — the golden "
                  "control of the U07 all-present gate (the anti-attack "
                  "mirror of the U07 absent-key fixture); owns the "
                  "deep-frozen canonical record GOLDEN_ALL_PRESENT "
                  "(MappingProxyType, every container a tuple, SYNTHETIC "
-                 "ids only fld_golden_000 .. fld_golden_027), the "
+                 "ids only fld_golden_000 .. fld_golden_037), the "
                  "fail-closed all-present gate payload() "
                  "(FIELDS-ALL-PRESENT exit 0 / FIELDS-NOT-ALL-PRESENT "
                  "exit 5, the dispatcher-consumed dict surface) and "
                  "GOLDEN_EXECUTE_REQUIRED = True (the WRITE-ACTION law, "
                  "Trevor-gated — the gate lives in the dispatcher, never "
-                 "in a fixture); the 28 contract keys are read ONCE from "
+                 "in a fixture); the 38 contract keys are read ONCE from "
                  "config/field-map.json through reg.load_field_map, never "
                  "retyped here"),
         "offline": "entirely — pure data + the all-present gate + "
@@ -667,7 +668,7 @@ EXIT_CODES = {
     1: "unexpected error (top-level guard; never a secret leak)",
     2: ("STOP refusal — label NOT SET / a non-pit- value / usage / a "
         "field-map that drifted from its own contract (FieldMapError: "
-        "28-key count, total_keys mismatch, derivation law, type law, key "
+        "38-key count, total_keys mismatch, derivation law, type law, key "
         "law — never a silent load) / a map-vs-cover_render options "
         "mismatch / the cover_render style import failed / a missing "
         "field WITHOUT --execute (the Trevor gate, AF-AE-FIELD-MISSING "
@@ -683,7 +684,7 @@ EXIT_CODES = {
         "enforced violation) — a tamper never masquerades as exit 1"),
     5: ("mismatch / fail-closed default — a contract key absent or "
         "renamed (FIELDS-NOT-ALL-PRESENT), a foreign key outside the "
-        "28-key contract, a wrong-size or malformed census, a "
+        "38-key contract, a wrong-size or malformed census, a "
         "credential-shaped or full-id surface (leak-scan REFUSAL), a "
         "name-squat drift (a live name under a non-derived key), a "
         "created fieldKey that is not byte-equal to its intended key, a "
@@ -780,7 +781,7 @@ DOCTRINE = (
      "real field, and never a real token"),
     ("Single authority", "a law is read once, in one module: "
      "fieldmap_loader owns the load-and-verify law, golden_all_present "
-     "owns the all-present law surface (the golden 28, the gate, "
+     "owns the all-present law surface (the golden 38, the gate, "
      "GOLDEN_EXECUTE_REQUIRED), live_fields_reader owns the live census "
      "read, missing_finder owns the missing-field + create gate law, "
      "type_checker owns the type law, anthology_registry owns the rail "
@@ -898,10 +899,11 @@ def readme() -> str:
         "",
         "The U07 family gates the FIELD-CENSUS LAW of the anthology "
         "engine (the package-init doctrine): a provisioned Convert and "
-        "Flow location carries EXACTLY 28 contact custom fields under "
+        "Flow location carries EXACTLY 38 contact custom fields under "
         "config/field-map.json provisioning.fields (the 19 base PRD "
         "Section 6 keys + 4 Gap G10 chapter-rewrite-preservation keys + 5 "
-        "U8 cover-style keys), and the census binds BY EXACT KEY — a "
+        "U8 cover-style keys + 10 U15-absorbed live keys), and the census "
+        "binds BY EXACT KEY — a "
         "renamed or re-prefixed key is indistinguishable from an absent "
         "one and BOTH refuse fail-closed. The family's live surfaces "
         "read the census through the PROVEN public rail GET "

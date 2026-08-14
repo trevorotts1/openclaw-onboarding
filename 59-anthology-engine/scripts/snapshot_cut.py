@@ -17,7 +17,7 @@
 #      carries no connections/pinData graph and so is the sanctioned form).
 #   2. GATE: byte-exact fieldKeys. Every custom field the live location
 #      returns must carry a fieldKey that BYTE-EQUALS the intended key in
-#      config/field-map.json provisioning.fields (and the 28-key set must
+#      config/field-map.json provisioning.fields (and the 38-key set must
 #      match EXACTLY, both directions). Any drift STOPS the cut with the
 #      AF-AE-SNAPSHOT-KEY-MISMATCH surface — a drifted fixture never ships.
 #   3. The fixture's version string is the CONTRACT's snapshot_version
@@ -61,7 +61,7 @@
 # golden + attack fixtures):
 #   AF-AE-SNAPSHOT-KEY-MISMATCH  (exit 5) a live fieldKey != its intended
 #                                field-map key, or the field-key SET is not
-#                                exactly the contract 28 — the byte-exact gate
+#                                exactly the contract 38 — the byte-exact gate
 #   AF-AE-SNAPSHOT-FIELD-MISSING (exit 2) a required contract section is
 #                                absent/empty on the live location
 #   AF-AE-SNAPSHOT-PIPELINE-MISSING (exit 2) the standard pipeline is absent
@@ -253,24 +253,39 @@ def _is_placeholder(value: str) -> bool:
 def _workflow_summary(wf: dict, triggers: list) -> dict:
     steps = ((wf.get("workflowData") or {}).get("templates") or [])
     t = triggers[0] if triggers else {}
+    conds = []
+    for c in (t.get("conditions") or []):
+        if not isinstance(c, dict):
+            continue
+        cc = dict(c)
+        # the live rail returns a SINGLE tag condition value as a bare string
+        # ("anthology-release-avatar"); the U17 fixture gate compares against
+        # list values, so normalize the shape here (never the content).
+        v = cc.get("value")
+        if isinstance(v, str):
+            cc["value"] = [v] if v else []
+        conds.append(cc)
     return {
         "name": wf.get("name") or "",
         "status": wf.get("status") or "unknown",
         "steps": len(steps) if isinstance(steps, list) else 0,
         "trigger_type": t.get("type") or "",
         "trigger_active": bool(t.get("active")),
-        "trigger_conditions": [c for c in (t.get("conditions") or [])
-                               if isinstance(c, dict)],
+        "trigger_conditions": conds,
     }
 
 
 def _extract_workflows(rail, location_id: str, contract: dict) -> list:
-    """List -> per-workflow get+trigger summaries. FAIL-CLOSED: an absent
-    contract release-notification workflow is a STOP (AF-AE-SNAPSHOT-FIELD-
-    MISSING); every other workflow is recorded as-is (operator/template
-    internal automations are part of the template truth)."""
+    """List -> per-workflow get+trigger summaries for the CONTRACT's
+    release-notification set ONLY (the fixture ships exactly those eight —
+    the U17 gate and the self-test pin counts.workflows == 8, one summary
+    per tag slug). FAIL-CLOSED: an absent contract release-notification
+    workflow is a STOP (AF-AE-SNAPSHOT-FIELD-MISSING). Non-contract live
+    workflows (fires, producer notices, legacy) are never recorded into
+    the fixture — the fixture is the contract's structured inventory."""
     out = rail._get(_RAIL_WORKFLOW_LIST.format(loc=location_id))
     rows = [r for r in (out.get("rows") or []) if isinstance(r, dict) and r.get("type") == "workflow"]
+    want = {w["name"]: w for w in (contract.get("workflows") or {}).get("release_notifications", [])}
     seen = {}
     for row in rows:
         wid = row.get("id")
@@ -278,22 +293,25 @@ def _extract_workflows(rail, location_id: str, contract: dict) -> list:
             continue
         try:
             wf = rail._get(_RAIL_WORKFLOW_GET.format(loc=location_id, wid=wid))
-            trigs = rail._get(_RAIL_WORKFLOW_TRIGGER.format(loc=location_id, wid=wid))
         except reg.InternalRailUnavailable:
             raise  # fail-closed: a rail read failure is a HELD dependency, not a gap
+        if not (isinstance(wf, dict) and wf.get("name") in want):
+            continue
+        try:
+            trigs = rail._get(_RAIL_WORKFLOW_TRIGGER.format(loc=location_id, wid=wid))
+        except reg.InternalRailUnavailable:
+            raise
         if not isinstance(trigs, list):
             trigs = []
-        if isinstance(wf, dict):
-            seen[wid] = _workflow_summary(wf, trigs)
+        seen[wid] = _workflow_summary(wf, trigs)
 
-    want = {w["name"]: w for w in (contract.get("workflows") or {}).get("release_notifications", [])}
     got_names = {s["name"] for s in seen.values() if s["name"]}
     for name in want:
         if name not in got_names:
             raise SnapshotMissing(
                 "release-notification workflow %r absent from the template location "
                 "workflow list — the snapshot is STALE (must be re-cut with it)" % name)
-    return [seen[w] for w in seen]
+    return [seen[w] for w in sorted(seen, key=lambda w: seen[w]["name"])]
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +374,15 @@ def _extract_custom_fields(client, location_id: str, field_map: dict, contract: 
     out = []
     for f in live:
         k = f.get("fieldKey") or ""
+        # the live rail names the picklist key `picklistOptions`; the public-v2
+        # surface and the field-map call it `options`. Normalize here (never
+        # the content) so the U17 gate's byte-exact options compare holds.
+        opts = f.get("options") or f.get("picklistOptions") or []
         out.append({
             "fieldKey": k,
             "name": f.get("name") or "",
             "dataType": f.get("dataType") or "",
-            "options": f.get("options") or [],
+            "options": opts,
         })
     out.sort(key=lambda f: want_keys.index(f["fieldKey"]))
     return out
@@ -553,7 +575,7 @@ def cut(client, rail, location_id: str, contract: dict, field_map: dict,
 # ---------------------------------------------------------------------------
 def _golden_payload(contract: dict, field_map: dict) -> dict:
     """The EXPECTED cut for a compliant template location: contract-driven
-    forms/tags/workflows + field-map-driven fields (all 28 keys byte-exact)."""
+    forms/tags/workflows + field-map-driven fields (all 38 keys byte-exact)."""
     payload = copy.deepcopy(FIXTURE_SCHEMA)
     payload["snapshot_version"] = contract.get("snapshot_version") or ""
     payload["fixture_version"] = "0.1.17"
@@ -825,10 +847,12 @@ def _self_test_body(dev, contract, field_map) -> int:
         == [s["name"] for s in field_map["pipeline"]["standard_stages"]]
 
     # ---- golden fixture assembly: every contract element present, counts
-    #      exact (28 fields / 4 custom values / 8 tags / 4 forms / 8 wfs) ---
+    #      exact (38 fields / 4 custom values / 8 tags / 4 forms / 8 wfs) ---
     golden = _golden_payload(contract, field_map)
-    assert len(golden["custom_fields"]) == contract["custom_fields"]["total_keys"] == 28
-    assert golden["counts"]["custom_fields"] == 28
+    assert len(golden["custom_fields"]) == contract["custom_fields"]["total_keys"] == 38, \
+        "golden custom_fields must carry exactly 38 records, got %d" % len(golden["custom_fields"])
+    assert golden["counts"]["custom_fields"] == 38, \
+        "golden counts.custom_fields must be 38, got %d" % golden["counts"]["custom_fields"]
     cv_keys = _placeholder_custom_value_keys(contract)
     assert golden["counts"]["custom_values"] == len(cv_keys) == 4, \
         "golden custom_values drifted from contract location_custom_values.required"
@@ -906,7 +930,8 @@ def _self_test_body(dev, contract, field_map) -> int:
              "loc_QcDX", contract, fm, out_path, fixture_version="0.1.17", out=dev)
     assert rc == EX_OK, "golden cut must exit 0, got %s" % rc
     written = json.loads(out_path.read_text(encoding="utf-8"))
-    assert written["counts"]["custom_fields"] == 28
+    assert written["counts"]["custom_fields"] == 38, \
+        "written counts.custom_fields must be 38, got %d" % written["counts"]["custom_fields"]
     assert written["snapshot_version"] == contract["snapshot_version"]
     assert written["fixture_version"] == "0.1.17"
     # dry-run writes nothing
@@ -920,7 +945,7 @@ def _self_test_body(dev, contract, field_map) -> int:
     assert rc == EX_STOP, "bad --fixture-version must exit 2, got %s" % rc
 
     print("snapshot_cut self-test: OK "
-          "(contract<->field-map coherence, golden fixture 28/4/8/4/8 counts, byte-exact "
+          "(contract<->field-map coherence, golden fixture 38/4/8/4/8 counts, byte-exact "
           "fieldKeys, contract-driven custom values, never-a-real-token, deterministic "
           "canonical sha256, compliant live extraction, rail-unavailable HELD, 9 attack "
           "fixtures refused (fieldKey-mutated/field-deleted/field-extra/pipeline-wrong-name/"

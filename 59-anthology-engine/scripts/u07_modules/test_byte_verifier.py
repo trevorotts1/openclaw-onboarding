@@ -244,12 +244,12 @@ def test_u07_package_init_is_fail_closed_empty():
 # ---------------------------------------------------------------------------
 # Contract coherence (the source of truth the verifier judges against)
 # ---------------------------------------------------------------------------
-def test_contract_is_exactly_28_keys():
-    """The field-map's provisioning contract is exactly 28 intended keys,
+def test_contract_is_exactly_38_keys():
+    """The field-map's provisioning contract is exactly 38 intended keys,
     every one prefixed contact. and unique — the law the live check asserts
     (a drift in the map breaks THIS test first, fail-closed)."""
     assert WANT_KEYS, "field-map must carry intended keys"
-    assert TOTAL == 28, "the contract drifted from 28 keys, got %d" % TOTAL
+    assert TOTAL == 38, "the contract drifted from 38 keys, got %d" % TOTAL
     assert all(k.startswith("contact.") for k in WANT_KEYS), (
         "every intended key must carry the contact. prefix")
     assert len(set(WANT_KEYS)) == len(WANT_KEYS), "intended keys must be unique"
@@ -287,7 +287,7 @@ def test_golden_read_back_passes():
     assert parsed["contract"] == bv.CONFIG_CONTRACT, parsed
     assert parsed["action"] == "verify" and parsed["execute"] is True, parsed
     assert parsed["execute_required"] is True, parsed
-    assert parsed["expected_keys"] == 28 == parsed["live_keys"], parsed
+    assert parsed["expected_keys"] == 38 == parsed["live_keys"], parsed
     assert parsed["missing"] == [] and parsed["mismatched"] == [], parsed
     assert parsed["extra"] == [], parsed
     assert parsed["location_masked"] == LOC_MASK == "...fx8a", (
@@ -585,7 +585,7 @@ TESTS = [
     (test_browser_user_agent_is_a_browser_ua_cf_1010_law, False),
     (test_cafclient_sends_the_browser_ua_on_the_live_requests, False),
     (test_u07_package_init_is_fail_closed_empty, False),
-    (test_contract_is_exactly_28_keys, False),
+    (test_contract_is_exactly_38_keys, False),
     (test_every_create_name_derives_back_to_its_intended_key, False),
     (test_verifier_is_deterministic_and_never_mutates_its_inputs, False),
     (test_golden_read_back_passes, False),

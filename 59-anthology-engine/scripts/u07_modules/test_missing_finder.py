@@ -206,8 +206,8 @@ def test_field_map_is_the_single_source_of_truth():
     """The map is the source of truth and self-consistent: every intended key
     carries the contact. prefix, keys are unique, every create_name derives
     byte-exactly to its intended key, the inventory equals total_keys, and
-    the ONE SINGLE_OPTIONS key (anthology_cover_choice) carries its options
-    from the map."""
+    the TWO SINGLE_OPTIONS keys (anthology_cover_choice + the review
+    decision) carry their options from the map."""
     field_map = _field_map()
     entries = mf._intended_entries(field_map)
     keys = [e[0] for e in entries]

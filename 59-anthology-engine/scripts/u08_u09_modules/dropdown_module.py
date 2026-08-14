@@ -25,25 +25,26 @@
 #      ('universal-review' — the U05 negative-mirror slug, forms_check.py /
 #      golden_forms.py / u02_modules.forms_check) is the engine's one
 #      client-facing decision form. Its decision field is a SINGLE_OPTIONS
-#      that stays SINGLE_OPTIONS and is deliberately NOT in the provisioning
-#      inventory (field-map.json, U8 note: "the PRD Section 4
-#      universal-review decision field is a separate SINGLE_OPTIONS that
-#      stays SINGLE_OPTIONS and is deliberately NOT in this map"). The
-#      engine's gate law (gate_engine.py GateSpec s5_gate: EXACTLY TWO
-#      actions — ("approve_as_is", "request_rewrite_with_notes"), asserted in
+#      that stays SINGLE_OPTIONS. U15 ABSORB (Trevor GO 'let's absorb'): the
+#      decision key is now MAP-OWNED — config/field-map.json
+#      review_decision_field block (key + options) is the key authority and
+#      the provisioning inventory carries the decision row (data_type
+#      SINGLE_OPTIONS). The module reads the key from the map; the module
+#      pin below is a FALLBACK for pre-absorb maps only. The engine's gate
+#      law (gate_engine.py GateSpec s5_gate: EXACTLY TWO actions —
+#      ("approve_as_is", "request_rewrite_with_notes"), asserted in
 #      self_test) IS the two-option decision law: the review surface is a
 #      2-option dropdown. The action names are imported BYTE-EXACT from
 #      gate_engine (GATE_DECISION_OPTIONS), so the decision dropdown can
-#      never drift from the gate vocabulary that consumes it. The DECISION
-#      field key itself is NOT in any repo authority (the field-map excludes
-#      it by design) — it is the engine's pinned contact-key convention
-#      contact.anthology_review_decision, declared here as the module's own
-#      contract and pinned byte-exact by the offline self-test, exactly as a
-#      fixture pins the law it ships.
-#   2. THE COVER-STYLE CHOICE FIELD (U8 / B8). anthology_cover_choice — the
-#      ONE SINGLE_OPTIONS field IN the provisioning inventory (field-map.json
-#      row, data_type SINGLE_OPTIONS) — the four named cover styles the
-#      client picks ONE of in the universal-review cover dropdown
+#      never drift from the gate vocabulary that consumes it, and the map
+#      block's options must byte-equal that gate law (coherence
+#      self-tested).
+#   2. THE COVER-STYLE CHOICE FIELD (U8 / B8). anthology_cover_choice — one
+#      of the TWO SINGLE_OPTIONS fields IN the provisioning inventory
+#      (field-map.json row, data_type SINGLE_OPTIONS, picked BY KEY from
+#      cover_style_fields.choice_field — never first-SINGLE_OPTIONS) — the
+#      four named cover styles the client picks ONE of in the
+#      universal-review cover dropdown
 #      (stage_s7_cover.py: "the client picks ONE style in the
 #      universal-review cover dropdown"; --apply-pick --choice <name|key>).
 #      The four names are NOT hardcoded: the picklist is imported byte-exact
@@ -243,12 +244,13 @@ def _field_map() -> dict:
 # s5_gate pins EXACTLY ("approve_as_is", "request_rewrite_with_notes") and
 # asserts it in self_test. The decision dropdown can never drift from the
 # gate that consumes it — the options are imported byte-exact, never
-# re-typed. The field KEY (contact.anthology_review_decision) is the
-# engine's pinned contact-key convention: the decision field is deliberately
-# NOT in the field-map provisioning inventory (U8 note) and NOT in any other
-# repo authority, so this module declares its own contract key and pins it
-# byte-exact by the offline self-test — exactly as a fixture pins the law it
-# ships. The decision dropdown is a 2-option dropdown.
+# re-typed. The field KEY (contact.anthology_review_decision) is MAP-OWNED
+# since the U15 absorb: the field-map review_decision_field block is the
+# key authority and the provisioning inventory carries the decision row
+# (data_type SINGLE_OPTIONS). The module pin below is a FALLBACK for a
+# pre-absorb map that carries no review_decision_field block — the
+# self-test pins the map block so the fallback can never silently
+# re-become the authority. The decision dropdown is a 2-option dropdown.
 # ---------------------------------------------------------------------------
 def _decision_option_law() -> tuple:
     """The EXACT two-option decision law, byte-exact, from gate_engine (the
@@ -280,12 +282,18 @@ def _decision_option_law() -> tuple:
     return opts
 
 
-def _decision_key_law() -> str:
-    """The decision field KEY — the engine's pinned contact-key convention
-    (contact.anthology_review_decision). The decision field is deliberately
-    NOT in the field-map provisioning inventory (U8 note), so the key is
-    this module's own contract, pinned byte-exact by the offline self-test
-    and never fabricated at runtime."""
+def _decision_key_law(field_map: dict | None = None) -> str:
+    """The decision field KEY — MAP-OWNED since the U15 absorb: the field-map
+    review_decision_field.key is the authority. The module pin
+    (contact.anthology_review_decision) remains ONLY as the fallback for a
+    pre-absorb map that carries no review_decision_field block (back-compat;
+    the self-test pins the map block so the fallback can never silently
+    re-become the authority)."""
+    if isinstance(field_map, dict):
+        rdf = (field_map.get("review_decision_field") or {})
+        k = rdf.get("key")
+        if isinstance(k, str) and k.strip():
+            return k
     return "contact.anthology_review_decision"
 
 
@@ -300,25 +308,48 @@ DECISION_KEY = _decision_key_law()
 # choice_options == STYLE_NAMES in order — coherence is law).
 # ---------------------------------------------------------------------------
 def _choice_row(field_map: dict) -> dict:
+    """The cover-choice inventory row, picked BY KEY — the row whose
+    intended_key == cover_style_fields.choice_field. Since the U15 absorb
+    the inventory carries TWO SINGLE_OPTIONS rows (cover choice + review
+    decision), so first-SINGLE_OPTIONS matching would be a coin flip: the
+    key is the discriminator, never position."""
+    choice_key = _choice_key_law(field_map)
     for f in _contract_inventory(field_map):
-        if (f.get("data_type") or "") == "SINGLE_OPTIONS":
+        if f.get("intended_key") == choice_key:
             return f
     raise DropdownError(
-        "field-map provisioning.fields carries no SINGLE_OPTIONS row — the "
-        "U8 cover-choice law is unjudgeable; refusing a blind pass.")
+        "field-map provisioning.fields carries no row for "
+        "cover_style_fields.choice_field %r — the U8 cover-choice law is "
+        "unjudgeable; refusing a blind pass." % choice_key)
 
 
 def _declared_choice_options(field_map: dict) -> list:
-    """The field-map's declared options for the SINGLE_OPTIONS inventory row.
-    Raises DropdownError when the declared options do not exist — a choice
-    field without a picklist is a contradiction the map must never carry."""
+    """The field-map's declared options for the cover-choice SINGLE_OPTIONS
+    inventory row. Raises DropdownError when the declared options do not
+    exist — a choice field without a picklist is a contradiction the map
+    must never carry."""
     row = _choice_row(field_map)
     opts = row.get("options")
     if not isinstance(opts, list) or not opts:
         raise DropdownError(
-            "field-map SINGLE_OPTIONS row %r carries no options — the "
-            "choice picklist law is unjudgeable; refusing a blind pass."
-            % (row.get("intended_key") or "?"))
+            "field-map cover-choice SINGLE_OPTIONS row %r carries no options "
+            "— the choice picklist law is unjudgeable; refusing a blind "
+            "pass." % (row.get("intended_key") or "?"))
+    return list(opts)
+
+
+def _declared_decision_options(field_map: dict) -> list:
+    """The field-map's declared options for the review-decision field — the
+    map review_decision_field block (the authority since the U15 absorb).
+    Raises DropdownError when the block is absent or carries no options: a
+    decision field without a map-declared picklist is a contradiction the
+    map must never carry (never a blind fall-back to the module pin)."""
+    rdf = (field_map.get("review_decision_field") or {})
+    opts = rdf.get("options")
+    if not isinstance(opts, list) or not opts:
+        raise DropdownError(
+            "field-map carries no review_decision_field.options — the "
+            "decision picklist law is unjudgeable; refusing a blind pass.")
     return list(opts)
 
 
@@ -420,17 +451,40 @@ def check_dropdowns_live(client, location_id: str, field_map: dict,
             "drifted from the style-name law; refusing to judge (never a "
             "blind pass)." % choice_key)
 
-    # The decision key is NOT in the field-map (U8 note) — it is the module's
-    # own contract; the cover key must BE the inventory's lone SINGLE_OPTIONS
-    # row (the U8 coherence law the registry self-test pins).
+    # The decision key is MAP-OWNED since the U15 absorb (the map
+    # review_decision_field block); the map-declared decision options must
+    # byte-equal the gate_engine two-action law — the dropdown can never
+    # drift from the gate that consumes it.
+    dkey = _decision_key_law(field_map)
+    decision_options = _declared_decision_options(field_map)
+    if decision_options != list(decision):
+        raise DropdownError(
+            "field-map review_decision_field.options do not byte-equal the "
+            "gate_engine s5_gate decision actions in order — the decision "
+            "picklist drifted from the gate law; refusing to judge (never a "
+            "blind pass).")
+    # The cover key must BE the inventory's cover_style row (the U8
+    # coherence law the registry self-test pins) and the decision key must
+    # have its own inventory row.
     if not choice_key:
         raise DropdownError(
-            "the field-map SINGLE_OPTIONS row carries no intended_key — "
+            "the field-map cover-choice row carries no intended_key — "
             "refusing a blind pass.")
+    drow = next((f for f in inventory if f.get("intended_key") == dkey), None)
+    if drow is None:
+        raise DropdownError(
+            "the field-map provisioning inventory carries no row for the "
+            "review_decision_field key %r — the decision field must be IN "
+            "the inventory (U15 absorb); refusing a blind pass." % dkey)
+    if drow.get("data_type") != "SINGLE_OPTIONS":
+        raise DropdownError(
+            "the field-map review-decision row %r is declared %r, not "
+            "SINGLE_OPTIONS — a decision dropdown must be SINGLE_OPTIONS; "
+            "refusing a blind pass." % (dkey, drow.get("data_type")))
 
     specs = [
-        {"key": DECISION_KEY, "create_name": "anthology_review_decision",
-         "data_type": "SINGLE_OPTIONS", "options": list(decision),
+        {"key": dkey, "create_name": "anthology_review_decision",
+         "data_type": "SINGLE_OPTIONS", "options": list(decision_options),
          "law": "decision"},
         {"key": choice_key,
          "create_name": choice_row.get("create_name") or "",
@@ -439,7 +493,7 @@ def check_dropdowns_live(client, location_id: str, field_map: dict,
     ]
     if not specs[1]["create_name"]:
         raise DropdownError(
-            "the field-map SINGLE_OPTIONS row %r carries no create_name — "
+            "the field-map cover-choice row %r carries no create_name — "
             "the choice picklist law is unjudgeable; refusing a blind pass."
             % choice_key)
 
@@ -495,8 +549,8 @@ def check_dropdowns_live(client, location_id: str, field_map: dict,
         "verdict": "PASS" if ok else "FAIL",
         "execute": bool(execute),
         "execute_required": True,
-        "decision_key": DECISION_KEY,
-        "decision_options": list(decision),
+        "decision_key": dkey,
+        "decision_options": list(decision_options),
         "choice_key": choice_key,
         "choice_options": list(styles),
         "missing": missing,
@@ -575,8 +629,8 @@ def plan(field_map: dict, *, out=None) -> int:
     payload = {
         "contract": PLAN_CONTRACT,
         "schema_version": 1,
-        "decision_key": DECISION_KEY,
-        "decision_options": list(decision),
+        "decision_key": _decision_key_law(field_map),
+        "decision_options": _declared_decision_options(field_map),
         "choice_key": _choice_row(field_map).get("intended_key"),
         "choice_options": _declared_choice_options(field_map),
         "data_type": "SINGLE_OPTIONS (both; options on create)",
@@ -590,9 +644,10 @@ def plan(field_map: dict, *, out=None) -> int:
                 "the request — CF 1010 law)" % reg.CAF_VERSION_HEADER,
         "dry_run": True,
         "note": "offline plan only — no network, no credential needed; the "
-                "decision field (PRD Section 4) is deliberately NOT in the "
-                "field-map provisioning inventory (U8 note) and is created "
-                "by this module's own pinned contract key",
+                "decision field (PRD Section 4) is MAP-OWNED (the field-map "
+                "review_decision_field block + its provisioning inventory "
+                "row, U15 absorb), and the cover choice is picked by key "
+                "from cover_style_fields.choice_field",
     }
     dumped = json.dumps(payload, indent=2, sort_keys=True)
     if _CREDENTIAL_SHAPE.search(dumped):
@@ -664,9 +719,10 @@ def _fake_field_map() -> dict:
 
 def _golden_fields(field_map: dict, styles: tuple, decision: tuple) -> list:
     """A live listing that carries BOTH dropdown keys as SINGLE_OPTIONS with
-    their exact picklists in order — the decision field (the module's own
-    contract key, deliberately absent from the field-map) and the U8 cover
-    choice at its field-map-derived key."""
+    their exact picklists in order — the decision field at its map-owned key
+    and the U8 cover choice at its field-map-derived key (per-key picklists:
+    decision -> gate actions, choice -> styles)."""
+    choice_key = _choice_key_law(field_map)
     out = []
     i = 0
     for f in _contract_inventory(field_map):
@@ -676,13 +732,10 @@ def _golden_fields(field_map: dict, styles: tuple, decision: tuple) -> list:
                "dataType": f.get("data_type", "LARGE_TEXT"),
                "id": "fld_%d" % i}
         if f.get("data_type") == "SINGLE_OPTIONS":
-            rec["options"] = list(styles)
+            rec["options"] = (list(styles)
+                              if f.get("intended_key") == choice_key
+                              else list(decision))
         out.append(rec)
-    # The decision field rides the module's own contract key (the U8 note
-    # excludes it from the inventory by design).
-    out.append({"fieldKey": DECISION_KEY, "name": "anthology_review_decision",
-                "dataType": "SINGLE_OPTIONS", "id": "fld_decision",
-                "options": list(decision)})
     return out
 
 
@@ -710,13 +763,32 @@ def _self_test_body(dev) -> None:
     assert list(decision) == ["approve_as_is", "request_rewrite_with_notes"], \
         "the decision law must be exactly the two gate actions in order: " \
         "%r" % (decision,)
-    # The decision key is deliberately NOT in the field-map inventory (U8
-    # note) — the self-test pins the exclusion so a later inclusion cannot
-    # silently fork the key authority.
-    assert DECISION_KEY not in [f.get("intended_key")
-                                for f in _contract_inventory(field_map)], \
-        "the decision field must stay OUT of the provisioning inventory (U8 " \
-        "note) — the key authority is this module's contract"
+    # U15 ABSORB: the decision key is now MAP-OWNED — the field-map
+    # review_decision_field block is the key/options authority and the
+    # provisioning inventory carries the decision row (data_type
+    # SINGLE_OPTIONS); the module pin is a pre-absorb fallback only, and
+    # the self-test pins BOTH so the fallback can never silently
+    # re-become the authority.
+    assert _decision_key_law(field_map) == "contact.anthology_review_decision", \
+        "the map review_decision_field.key must be the decision key"
+    assert _decision_key_law(None) == "contact.anthology_review_decision", \
+        "the module decision-key fallback pin must stay byte-exact"
+    assert _declared_decision_options(field_map) == list(decision), \
+        "the map review_decision_field.options must byte-equal the gate " \
+        "two-action law in order"
+    inv_keys = [f.get("intended_key") for f in _contract_inventory(field_map)]
+    assert DECISION_KEY in inv_keys, \
+        "the decision field must BE in the provisioning inventory (U15 " \
+        "absorb) — the key authority is the map's review_decision_field"
+    dropt = next(f.get("data_type") for f in _contract_inventory(field_map)
+                 if f.get("intended_key") == DECISION_KEY)
+    assert dropt == "SINGLE_OPTIONS", \
+        "the decision inventory row must be SINGLE_OPTIONS, got %r" % dropt
+    singles = [f for f in _contract_inventory(field_map)
+               if f.get("data_type") == "SINGLE_OPTIONS"]
+    assert len(singles) == 2, \
+        "the inventory must carry exactly TWO SINGLE_OPTIONS rows (cover " \
+        "choice + review decision), got %d" % len(singles)
     total = _contract_total(field_map)
     assert total is not None and len(_contract_inventory(field_map)) == total, \
         "inventory must equal provisioning.total_keys"
@@ -730,6 +802,9 @@ def _self_test_body(dev) -> None:
         "contact.anthology_cover_choice", \
         "the U8 choice key drifted from the field-map: %r" % \
         _choice_row(field_map).get("intended_key")
+    assert _choice_row(field_map).get("data_type") == "SINGLE_OPTIONS", \
+        "the choice row must be SINGLE_OPTIONS (picked BY KEY, never by " \
+        "position)"
     assert BROWSER_UA == reg.CAF_BROWSER_UA and \
         "Python-urllib" not in BROWSER_UA, \
         "the browser User-Agent drifted from reg.CAF_BROWSER_UA (CF 1010)"
@@ -920,14 +995,43 @@ def _self_test_body(dev) -> None:
     except DropdownError:
         pass
 
-    # 13. field-map options vs cover_render styles drifted -> hard refusal
+    # 13. field-map COVER-CHOICE options vs cover_render styles drifted ->
+    #     hard refusal (key-filtered: the review-decision row's options are
+    #     a different law and must not be touched here)
     tampered2 = copy.deepcopy(field_map)
     for f in tampered2["provisioning"]["fields"]:
-        if f.get("data_type") == "SINGLE_OPTIONS":
+        if (f.get("intended_key") == "contact.anthology_cover_choice"
+                and f.get("data_type") == "SINGLE_OPTIONS"):
             f["options"] = ["Drifted", "Options", "List", "Here"]
     try:
         check_dropdowns_live(_FakeCaf(fields=golden), "loc_fx", tampered2)
         raise AssertionError("map-vs-cover_render options drift was NOT "
+                             "refused")
+    except DropdownError:
+        pass
+
+    # 13b. the review_decision_field block DELETED -> hard refusal (the
+    #      decision law is map-owned; a missing authority never falls back
+    #      to the module pin at runtime)
+    tampered2b = copy.deepcopy(field_map)
+    tampered2b.pop("review_decision_field", None)
+    try:
+        check_dropdowns_live(_FakeCaf(fields=golden), "loc_fx", tampered2b)
+        raise AssertionError("a deleted review_decision_field block was NOT "
+                             "refused")
+    except DropdownError:
+        pass
+
+    # 13c. the review_decision_field block's OPTIONS drifted from the gate
+    #      two-action law -> hard refusal (the decision dropdown can never
+    #      drift from the gate that consumes it)
+    tampered2c = copy.deepcopy(field_map)
+    tampered2c["review_decision_field"] = dict(
+        tampered2c["review_decision_field"])
+    tampered2c["review_decision_field"]["options"] = ["Drifted", "Decisions"]
+    try:
+        check_dropdowns_live(_FakeCaf(fields=golden), "loc_fx", tampered2c)
+        raise AssertionError("review_decision_field options drift was NOT "
                              "refused")
     except DropdownError:
         pass
@@ -1023,21 +1127,27 @@ def _self_test_body(dev) -> None:
 
     dev.write("[dropdown] self-test: OK (contract: decision "
               "contact.anthology_review_decision 2-option approve_as_is / "
-              "request_rewrite_with_notes from gate_engine, choice "
-              "contact.anthology_cover_choice 4-style Signature / Bold "
-              "Editorial / Fine Art / Pure Type from cover_render + "
-              "field-map, both live SINGLE_OPTIONS with byte-exact picklists "
-              "in order; golden all-PASS read-only + verify_live exit 0, "
-              "no-execute missing STOP exit 2 with zero writes, --execute "
+              "request_rewrite_with_notes from gate_engine, MAP-OWNED "
+              "since the U15 absorb via the field-map review_decision_field "
+              "block + inventory row (module pin = pre-absorb fallback "
+              "only), choice contact.anthology_cover_choice 4-style "
+              "Signature / Bold Editorial / Fine Art / Pure Type from "
+              "cover_render + field-map (picked BY KEY from "
+              "cover_style_fields.choice_field, never first-SINGLE_OPTIONS), "
+              "both live SINGLE_OPTIONS with byte-exact picklists in order; "
+              "golden all-PASS read-only + verify_live exit 0, no-execute "
+              "missing STOP exit 2 with zero writes, --execute "
               "create-only-missing at SINGLE_OPTIONS with the exact "
-              "picklists then re-read, wrong-type never re-created even with "
-              "--execute, 18 attack fixtures refused or FAIL-recorded "
+              "picklists then re-read, wrong-type never re-created even "
+              "with --execute, 20 attack fixtures refused or FAIL-recorded "
               "(decision-TEXT / choice-TEXT / decision-options-reordered / "
               "decision-options-extra / decision-options-renamed / "
               "choice-options-reordered / choice-options-extra / "
               "choice-options-renamed / options-missing / field-deleted / "
               "both-deleted / empty-listing / non-list-read / no-inventory / "
               "total_keys-drift / map-vs-cover_render drift / "
+              "review_decision_field-block-deleted / "
+              "review_decision_field-options-drift / "
               "style-law-unavailable / decision-law-unavailable / "
               "scope-denied / edge-block / transport), no-writes on the "
               "read-only path, masked-location, plan offline)\n")

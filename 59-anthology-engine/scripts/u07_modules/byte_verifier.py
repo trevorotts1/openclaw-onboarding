@@ -6,7 +6,7 @@
 # SAME live read surface the create used (reg.CafClient.list_custom_fields, the
 # house adapter) and confirms EVERY server fieldKey byte-exact against the
 # field map's intended keys (config/field-map.json provisioning.fields — the
-# SINGLE source of truth for field keys; the committed template's 28-key
+# SINGLE source of truth for field keys; the committed template's 38-key
 # inventory). The verifier is the post-write half of the U07 fieldKey law: it
 # does NOT create or stamp anything — it RE-READS and CONFIRMS. A fieldKey that
 # is not byte-exact is a MISMATCH (exit 5, AF-AE-READBACK-MISMATCH family),
@@ -21,9 +21,11 @@
 #      demands): every server fieldKey must byte-equal its intended key.
 #   2. THE SINGLE SOURCE OF TRUTH (config/field-map.json — the ONLY place
 #      field keys are spelled; $schema_note). The expected set is read from
-#      provisioning.fields (28 rows: the ten deliverable Doc/PDF pairs = 20
-#      keys, the three control fields, and the five U8 cover-style fields; the
-#      provisioning_rule counts the same 28), one row per key with the
+#      provisioning.fields (38 rows: the ten deliverable Doc/PDF pairs = 20
+#      keys, the three control fields, the five U8 cover-style fields, and
+#      the ten U15-absorbed live fields — nine LARGE_TEXT intake/review/
+#      title keys plus the SINGLE_OPTIONS review-decision key; the
+#      provisioning_rule counts the same 38), one row per key with the
 #      immutable CONTRACT (intended_key / create_name / data_type /
 #      deliverable / slot) — the intended key is read from the row, never
 #      re-typed.
@@ -490,7 +492,7 @@ def _plan_payload(field_map_path: Path) -> dict:
         "execute_required": True,
         "expected_source": "config/field-map.json provisioning.fields "
                            "(the single source of truth for field keys; the "
-                           "committed template's 28-key inventory)",
+                           "committed template's 38-key inventory)",
         "live_source": "reg.CafClient.list_custom_fields (GET /locations/"
                        "{id}/customFields — the SAME read the create path "
                        "used; browser UA carried on every request, CF 1010 "

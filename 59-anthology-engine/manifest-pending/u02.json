@@ -90,7 +90,7 @@
     },
     {
       "name": "fields_check.py",
-      "role": "check_fields_live \u2014 28 field keys byte-exact"
+      "role": "check_fields_live \u2014 38 field keys byte-exact"
     },
     {
       "name": "custom_values_check.py",
@@ -114,7 +114,7 @@
     },
     {
       "name": "golden_fields.py",
-      "role": "golden 28-record field-list fixture"
+      "role": "golden 38-record field-list fixture"
     },
     {
       "name": "golden_forms.py",
@@ -167,7 +167,7 @@
     {
       "id": "custom_fields",
       "item": 6,
-      "title": "Custom field count + dataTypes (28 keys byte-exact)"
+      "title": "Custom field count + dataTypes (38 keys byte-exact)"
     },
     {
       "id": "custom_values",

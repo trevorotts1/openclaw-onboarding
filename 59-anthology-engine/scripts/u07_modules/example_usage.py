@@ -9,14 +9,15 @@
 # makes, the same read the U02 fields_check gate and the provision path
 # exercise), then run every pure sibling law over the read and the canonical
 # fixtures: the field-map contract gate (u07_modules.fieldmap_loader) proves
-# config/field-map.json loads against its own 28-key contract; the golden
-# all-present gate (u07_modules.golden_all_present) proves ALL 28 contact
+# config/field-map.json loads against its own 38-key contract; the golden
+# all-present gate (u07_modules.golden_all_present) proves ALL 38 contact
 # custom fields present byte-exact by the golden keys is the all-present
-# state; the missing-14 attack (u07_modules.attack_missing_14) proves the
-# 14-of-28 deep strict-subset census FAILS the byte-exact field census while
-# its golden 28-key control PASSES; and the type law (u07_modules.type_checker)
-# proves the 27 LARGE_TEXT + ONE SINGLE_OPTIONS shape with the four named
-# cover styles byte-exact in order — then emit ONE JSON report on stdout. It
+# state; the missing-19 attack (u07_modules.attack_missing_14) proves the
+# 19-of-38 deep strict-subset census FAILS the byte-exact field census while
+# its golden 38-key control PASSES; and the type law (u07_modules.type_checker)
+# proves the 36 LARGE_TEXT + TWO SINGLE_OPTIONS shape with the four named
+# cover styles and the two gate actions byte-exact in order — then emit ONE
+# JSON report on stdout. It
 # demonstrates BY EXAMPLE how the U07 modules COMPOSE on a real location.
 #
 # WHAT THIS MODULE IS NOT: it is NOT a gate, NOT a checker, and NOT a manifest
@@ -40,14 +41,14 @@
 # to a pass) or is SKIPPED with the reason surfaced. If the live surface
 # cannot be certified (unreachable / edge-blocked), the report says HELD
 # (UNDETERMINED) — never "verified". The attack step is an EXPECTED-FAIL
-# step: the 14-of-28 attack MUST FAIL the byte-exact census (exit 5) — an
+# step: the 19-of-38 attack MUST FAIL the byte-exact census (exit 5) — an
 # attack that PASSES any field gate is a broken gate, and the composition
 # FAILS rather than report success. The golden all-present gate is an
 # EXPECTED-PASS step: a fully provisioned census is the all-present state
 # (exit 0) — a refusal is a FAIL of the composition. The create gate is an
 # EXPECTED-STOP step: a CREATE ACTION requested WITHOUT --execute MUST refuse
 # exit 2 (the Trevor gate) — a no-execute ACTION that proceeds is a broken
-# gate. The type-law step is judged over the canonical 28-key golden
+# gate. The type-law step is judged over the canonical 38-key golden
 # listing: it must PASS exit 0 (a wrong-type live field is a MISMATCH,
 # exit 5, never a silent pass). The example performs NO CREATE ACTION on a
 # live location at all: creation is proven OFFLINE by the family's own gate
@@ -83,8 +84,8 @@
 #
 # EXIT CODES (house convention 0/1/2/3/4/5):
 #   0  all steps PASSED — field-map contract gate PASSES, live custom-field
-#      read succeeded, golden all-present gate PASSES, missing-14 attack
-#      FAILS (as it must), golden 28-key control PASSES, type law PASSES,
+#      read succeeded, golden all-present gate PASSES, missing-19 attack
+#      FAILS (as it must), golden 38-key control PASSES, type law PASSES,
 #      no-execute CREATE ACTION STOPs (as it must); also --plan and
 #      --self-test pass
 #   1  unexpected error (top-level guard; never a secret leak)
@@ -97,9 +98,9 @@
 #      — the outcome is UNDETERMINED, never proven verified)
 #   4  enforced violation — an OFFLINE self-test assertion tripped
 #      (AF-AE-EXAMPLE-USAGE-* family). A tamper NEVER masquerades as exit 1.
-#   5  mismatch — an expected-fail step did NOT fail (the missing-14 attack
+#   5  mismatch — an expected-fail step did NOT fail (the missing-19 attack
 #      PASSED a field gate), the golden all-present gate REFUSED the census,
-#      the golden 28-key control REFUSED, the type law FAILED a golden
+#      the golden 38-key control REFUSED, the type law FAILED a golden
 #      listing, or the no-execute CREATE ACTION did not STOP
 #
 # USAGE (machine surface — ONE JSON object on stdout; human notes on
@@ -155,7 +156,7 @@ CONTRACT_PATH = SKILL_DIR / "config" / "field-map.json"
 # consumer can never mistake another JSON object for the example report).
 EXAMPLE_CONTRACT = "anthology-engine-example-usage"
 
-# The field-census authority this example demonstrates — the 28-key
+# The field-census authority this example demonstrates — the 38-key
 # contract total, read ONCE from the field-map's own law (never a
 # hardcoded list; the sibling loaders stay the single implementation).
 CONTRACT_TOTAL = loader.CONTRACT_TOTAL
@@ -202,32 +203,34 @@ def example_run(location_id: str, *, out=None, jsonout=None,
     """Run the U07 example surface on a live location.
 
     - fieldmap_loader's contract gate over config/field-map.json (the
-      SINGLE SOURCE OF TRUTH)       -> the 28-key load law holds (exit 0)
+      SINGLE SOURCE OF TRUTH)       -> the 38-key load law holds (exit 0)
     - live_fields_reader's LIVE READ (the PROVEN public rail
       GET /locations/{id}/customFields) -> the location's fields, read by
       the client's OWN pit- token BY LABEL (an EMPTY field set is a
       truthful PASS; a missing credential is a STOP; an unreachable rail /
       edge block / malformed listing is HELD — never a fabricated list)
-    - golden_all_present's payload gate over the canonical all-28 listing
+    - golden_all_present's payload gate over the canonical all-38 listing
                                       -> the ALL-PRESENT state holds (exit 0)
-    - attack_missing_14's FAIL over the canonical 14-of-28 attack
+    - attack_missing_14's FAIL over the canonical 19-of-38 attack
                                       -> the deep strict-subset census MUST
                                          FAIL (exit 5) — a broken gate FAILS
                                          the composition
-    - attack_missing_14's golden 28-key control
+    - attack_missing_14's golden 38-key control
                                       -> the true census PASSES (exit 0) —
                                          the pass/fail split discriminates
                                          the boundary, never a broken gate
-    - type_checker's type law over the canonical 28-key golden listing
-                                      -> 27 LARGE_TEXT + the ONE
-                                         SINGLE_OPTIONS choice field with
-                                         the four named styles byte-exact
-                                         in order (exit 0)
+    - type_checker's type law over the canonical 38-key golden listing
+                                      -> 36 LARGE_TEXT + the TWO
+                                         SINGLE_OPTIONS picklist fields
+                                         (cover choice with the four named
+                                         styles, review decision with the
+                                         two gate actions) byte-exact in
+                                         order (exit 0)
     - the no-execute CREATE ACTION gate (the family's OWN surfaces)
                                       -> missing_finder's run_check and
                                          type_checker's verify_live each
                                          STOP exit 2 WITHOUT --execute over
-                                         the canonical 14-of-28 attack
+                                         the canonical 19-of-38 attack
                                          census (the Trevor gate;
                                          AF-AE-U07-CREATE-NO-EXECUTE) —
                                          creation is never silent; with
@@ -253,7 +256,7 @@ def example_run(location_id: str, *, out=None, jsonout=None,
 
     # (1) FIELD-MAP CONTRACT GATE — config/field-map.json is the SINGLE
     #     SOURCE OF TRUTH; fieldmap_loader owns the load-and-verify law
-    #     (28-key count, total_keys byte-match, derivation law, type law,
+    #     (38-key count, total_keys byte-match, derivation law, type law,
     #     key law) and raises FieldMapError (STOP family, exit 2) on any
     #     drift — never a partial load. OFFLINE: no network, no credential.
     try:
@@ -329,11 +332,11 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                              "proven public rail (an EMPTY field set is a "
                              "truthful PASS)"})
 
-    # (3) GOLDEN ALL-PRESENT GATE — ALL 28 contract fields on the listing
+    # (3) GOLDEN ALL-PRESENT GATE — ALL 38 contract fields on the listing
     #     byte-exact by the golden keys is the U07 all-present state
     #     (golden_all_present owns that law; exit 5 on refusal). The
     #     canonical listing is the fixture's own payload — the law is
-    #     judged OFFLINE over the synthetic all-28 shape; the live read's
+    #     judged OFFLINE over the synthetic all-38 shape; the live read's
     #     byte-exact discipline is proven by the reader's own listing.
     with _sibling_stdout_to(out):
         gold = golden.payload(golden.golden_fields_payload(), out=out)
@@ -352,7 +355,7 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                   "verdict": "golden all-present state PASSES (exit 0, "
                              "af_code %s)" % gold.get("af_code")})
 
-    # (4) MISSING-14 ATTACK — the 14-of-28 deep strict-subset census MUST
+    # (4) MISSING-19 ATTACK — the 19-of-38 deep strict-subset census MUST
     #     FAIL the byte-exact field census (exit 5). attack_missing_14 owns
     #     that law; its verify_live judges the canonical attack fixture.
     #     This runner calls the raw law and maps the expected FAIL to a
@@ -379,17 +382,17 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                              "marker only)"
                              % (attack.MISSING_COUNT, CONTRACT_TOTAL)})
 
-    # (5) GOLDEN 28-KEY CONTROL — the negative-result contract: the true
-    #     all-28 census must PASS exit 0, so a field gate that FAILS
+    # (5) GOLDEN 38-KEY CONTROL — the negative-result contract: the true
+    #     all-38 census must PASS exit 0, so a field gate that FAILS
     #     EVERYTHING (a broken instrument) is never mistaken for a real
-    #     14/28 discrimination (attack_missing_14's payload_true owns the
+    #     19/38 discrimination (attack_missing_14's payload_true owns the
     #     control — the SAME judge, the SAME law).
     with _sibling_stdout_to(out):
         rc_true = attack.payload_true(out=out)
     if rc_true != EX_OK:
         steps.append({"step": "golden-control", "ok": False, "exit": rc_true,
-                      "verdict": "golden 28-key control did NOT PASS"})
-        return _report(ok=False, verdict="FAIL: the golden 28-key control "
+                      "verdict": "golden 38-key control did NOT PASS"})
+        return _report(ok=False, verdict="FAIL: the golden 38-key control "
                        "refused (a gate that fails everything is a broken "
                        "instrument — the pass/fail split discriminates the "
                        "boundary, never a broken gate)",
@@ -397,17 +400,18 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                        masked_location=_mask_location(location_id),
                        cred_label="PIT", out=out, jsonout=jsonout)
     steps.append({"step": "golden-control", "ok": True, "exit": EX_OK,
-                  "verdict": "golden 28-key control PASSES (exit 0 — the "
+                  "verdict": "golden 38-key control PASSES (exit 0 — the "
                              "pass/fail split discriminates the boundary)"})
 
-    # (6) TYPE LAW — every free-text field live LARGE_TEXT (the 27-key
-    #     multi-line law) and the ONE SINGLE_OPTIONS choice field live with
-    #     EXACTLY the four named cover styles byte-exact in order
-    #     (type_checker owns that law). The canonical all-28 golden listing
-    #     is the fixture's own payload — the law is judged OFFLINE over the
-    #     golden shape; the live read's type discipline is proven by the
-    #     checker's own verify surface. A wrong-type live field is a
-    #     MISMATCH (exit 5), never a silent pass.
+    # (6) TYPE LAW — every free-text field live LARGE_TEXT (the 36-key
+    #     multi-line law) and the TWO SINGLE_OPTIONS picklist fields live
+    #     with their own exact picklists byte-exact in order (type_checker
+    #     owns that law: the cover choice with the four named styles, the
+    #     review decision with the two gate actions). The canonical all-38
+    #     golden listing is the fixture's own payload — the law is judged
+    #     OFFLINE over the golden shape; the live read's type discipline is
+    #     proven by the checker's own verify surface. A wrong-type live
+    #     field is a MISMATCH (exit 5), never a silent pass.
     with _sibling_stdout_to(out):
         types = checker.check_types_live(
             _GoldenCaf(), location_id, reg.load_field_map(CONTRACT_PATH),
@@ -425,9 +429,10 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                   "text_keys": types.get("text_keys"),
                   "choice_key": types.get("choice_key"),
                   "choice_options": types.get("choice_options"),
+                  "decision_key": types.get("decision_key"),
                   "verdict": "type law PASSES (exit 0 — %d LARGE_TEXT keys + "
-                             "the ONE SINGLE_OPTIONS choice field with the "
-                             "four named cover styles byte-exact in order)"
+                             "the TWO SINGLE_OPTIONS picklists with their "
+                             "own exact options byte-exact in order)"
                              % types.get("text_keys")})
 
     # (7) THE CREATE GATE — Trevor-gated, proven on the family's OWN
@@ -435,7 +440,7 @@ def example_run(location_id: str, *, out=None, jsonout=None,
     #     through this CLI"). A CREATE ACTION requested WITHOUT --execute
     #     MUST refuse exit 2 on every create-capable surface — the
     #     verbatim AF-AE-U07-CREATE-NO-EXECUTE family: creation is never
-    #     silent. The gate is judged over the canonical 14-of-28 attack
+    #     silent. The gate is judged over the canonical 19-of-38 attack
     #     census (attack_missing_14's OWN deep-frozen fixture — the deep
     #     strict subset of the field LAW), so the no-execute STOPs are
     #     provable OFFLINE: the family's raw gate surfaces
@@ -476,7 +481,7 @@ def example_run(location_id: str, *, out=None, jsonout=None,
                                "type_checker verify_live"],
                   "execute_gate": "without --execute STOP (exit 2) on every "
                                   "create-capable surface (judged over the "
-                                  "canonical 14-of-28 attack census); with "
+                                  "canonical 19-of-38 attack census); with "
                                   "--execute create-only-missing with a "
                                   "byte-exact read-back — never a silent "
                                   "write",
@@ -516,7 +521,7 @@ class _sibling_stdout_to:
 
 
 # ---------------------------------------------------------------------------
-# Golden read surface for the OFFLINE type-law step — the canonical all-28
+# Golden read surface for the OFFLINE type-law step — the canonical all-38
 # listing, derived from the field-map (the single source of truth; never a
 # hardcoded list) and served through the SAME list_custom_fields seam the
 # checker's own _FakeCaf implements. READ-ONLY: it only lists; the checker
@@ -524,7 +529,7 @@ class _sibling_stdout_to:
 # ---------------------------------------------------------------------------
 class _AttackCaf:
     """In-memory Convert and Flow read surface for the create-gate probes:
-    list_custom_fields returns the canonical 14-of-28 attack census (the
+    list_custom_fields returns the canonical 19-of-38 attack census (the
     deep strict subset of the field LAW) — the read surface on which every
     create-capable family law MUST refuse without --execute. No create
     surface exists here — the example never performs a CREATE ACTION, and
@@ -537,10 +542,10 @@ class _AttackCaf:
 
 class _GoldenCaf:
     """In-memory Convert and Flow read surface: list_custom_fields returns
-    the canonical all-28 golden listing (every intended key byte-exact by
-    its derived fieldKey, each at its declared data_type, the ONE
-    SINGLE_OPTIONS choice field carrying the four named cover styles in
-    order). No create surface exists here — the example never performs a
+    the canonical all-38 golden listing (every intended key byte-exact by
+    its derived fieldKey, each at its declared data_type, the TWO
+    SINGLE_OPTIONS choice fields carrying the four named cover styles and
+    the two gate-engine decision actions in order). No create surface exists here — the example never performs a
     CREATE ACTION, and the create gate is proven on the family's OWN
     surfaces instead."""
 
@@ -579,7 +584,7 @@ def plan(*, out=None, jsonout=None) -> int:
         "steps": [
             "field-map: u07_modules.fieldmap_loader loads and verifies "
             "config/field-map.json (the SINGLE SOURCE OF TRUTH) against "
-            "its own 28-key contract -- the load law, exit 0; a map that "
+            "its own 38-key contract -- the load law, exit 0; a map that "
             "drifted is a STOP (exit 2, never a partial load)",
             "live-read: u07_modules.live_fields_reader reads the location's "
             "contact custom fields through the PROVEN public rail "
@@ -590,22 +595,23 @@ def plan(*, out=None, jsonout=None) -> int:
             "block / malformed listing is HELD exit 3, never a fabricated "
             "list)",
             "golden-all-present: u07_modules.golden_all_present gates the "
-            "canonical all-28 listing -- ALL 28 contract fields present "
+            "canonical all-38 listing -- ALL 38 contract fields present "
             "byte-exact by the golden keys, the all-present state, exit 0",
             "missing-14: u07_modules.attack_missing_14 verify_live judges "
-            "the canonical 14-of-28 deep strict-subset census -- MUST FAIL "
+            "the canonical 19-of-38 deep strict-subset census -- MUST FAIL "
             "exit 5 (a field gate that passes the attack is a broken gate)",
             "golden-control: u07_modules.attack_missing_14 payload_true "
-            "judges the true 28-key golden census -- MUST PASS exit 0 (the "
+            "judges the true 38-key golden census -- MUST PASS exit 0 (the "
             "pass/fail split discriminates the boundary, never a broken "
             "instrument)",
             "type-law: u07_modules.type_checker check_types_live judges the "
-            "canonical all-28 golden listing -- 27 LARGE_TEXT keys + the "
-            "ONE SINGLE_OPTIONS choice field with the four named cover "
-            "styles byte-exact in order, exit 0",
+            "canonical all-38 golden listing -- 36 LARGE_TEXT keys + the "
+            "TWO SINGLE_OPTIONS choice fields with the four named cover "
+            "styles and the two gate-engine decision actions byte-exact in "
+            "order, exit 0",
             "create-gate: the family's OWN create-capable gate surfaces "
             "(missing_finder run_check / type_checker verify_live) judged "
-            "over the canonical 14-of-28 attack census -- each MUST STOP "
+            "over the canonical 19-of-38 attack census -- each MUST STOP "
             "exit 2 WITHOUT --execute (AF-AE-U07-CREATE-NO-EXECUTE, the "
             "Trevor gate); creation is never silent and never performed "
             "against a live location here",
@@ -657,10 +663,10 @@ def _self_test_body(dev) -> None:
     assert golden.GOLDEN_EXECUTE_REQUIRED is True, \
         "the all-present authority must assert the --execute law"
     assert attack.CONTRACT_TOTAL == golden.CONTRACT_TOTAL == CONTRACT_TOTAL, \
-        "the golden and the attack must share the SAME 28-key contract"
+        "the golden and the attack must share the SAME 38-key contract"
     with contextlib.redirect_stdout(io.StringIO()):
         assert attack.payload_true(out=io.StringIO()) == EX_OK, \
-            "the golden 28-key control must PASS"
+            "the golden 38-key control must PASS"
 
     # 3. The field-map contract gate: the committed config load passes
     #    (the loader's own self-test proves the loader; here we pin the
@@ -723,11 +729,11 @@ def _self_test_body(dev) -> None:
     assert steps["golden-all-present"]["af_code"] == "FIELDS-ALL-PRESENT"
     assert steps["missing-14"]["exit"] == EX_MISMATCH, \
         "the missing-14 step must carry the expected exit 5"
-    assert steps["missing-14"]["missing_count"] == 14
+    assert steps["missing-14"]["missing_count"] == 19
     assert steps["golden-control"]["exit"] == EX_OK
     assert steps["type-law"]["exit"] == EX_OK
-    assert steps["type-law"]["text_keys"] == 27, \
-        "the type law must count 27 LARGE_TEXT keys"
+    assert steps["type-law"]["text_keys"] == 36, \
+        "the type law must count 36 LARGE_TEXT keys"
     assert steps["create-gate"]["exit"] == EX_OK, \
         "the create-gate step must exit 0"
     assert steps["create-gate"]["af_code"] == "AF-AE-U07-CREATE-NO-EXECUTE"
@@ -756,12 +762,12 @@ def _self_test_body(dev) -> None:
 
     dev.write("example_usage self-test: OK (browser UA pinned byte-exact; "
               "sibling laws consistent — the golden and the attack share "
-              "the same 28-key contract, golden 28-key control PASSes; the "
+              "the same 38-key contract, golden 38-key control PASSes; the "
               "field-map contract gate passes over the committed map and "
               "the golden all-present gate accepts the golden census; "
               "registry self-test passes; the golden composition exits 0 "
               "with the seven steps in order — missing-14 carries the "
-              "expected exit 5, type-law counts 27 LARGE_TEXT keys, "
+              "expected exit 5, type-law counts 36 LARGE_TEXT keys, "
               "create-gate carries AF-AE-U07-CREATE-NO-EXECUTE and never "
               "claims a mutation; the empty-environ run STOPS before any "
               "network — the credential gate is deterministic OFFLINE and "
@@ -778,7 +784,7 @@ def main(argv=None):
                     "surface (Skill 59): read the location's contact custom "
                     "fields through the proven public rail, prove the "
                     "field-map contract, the golden all-present state, the "
-                    "missing-14 attack FAILS as it must, its golden 28-key "
+                    "missing-14 attack FAILS as it must, its golden 38-key "
                     "control, the type law, and the Trevor-gated CREATE "
                     "ACTION gate — one JSON report, fail-closed; never "
                     "prints a secret value.")

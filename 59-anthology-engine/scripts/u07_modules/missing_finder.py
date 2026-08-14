@@ -67,7 +67,10 @@
 #     engine's proven create surface (reg.CafClient.create_custom_field —
 #     POST /locations/{locationId}/customFields, the derivation-law create
 #     endpoint, with data_type from the map and options from the map for
-#     the ONE SINGLE_OPTIONS key, anthology_cover_choice), then reads the
+#     each SINGLE_OPTIONS key — the U8 cover choice
+#     (anthology_cover_choice: the four style names) and the U15-absorbed
+#     review decision (anthology_review_decision: the two gate actions) —
+#     per its own row, never a guessed picklist), then reads the
 #     server-returned fieldKey back and asserts byte-equality to the
 #     intended key (the derivation law's exact_match_verify). A created
 #     fieldKey that is NOT byte-equal is a MISMATCH (exit 5,

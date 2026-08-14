@@ -19,7 +19,7 @@
 #                  no second import). Then a read-back STATUS poll (GET
 #                  snapshot-status, the same surface the n8n Snapshot Provisioner
 #                  polls) until "completed" or a bound; after completion the module
-#                  RESOLVES the field-map (the 28 field keys/ids read back from the
+#                  RESOLVES the field-map (the 38 field keys/ids read back from the
 #                  imported location BY KEY, stamped into field-map.json in place --
 #                  the exact resolved-field-map output the spec calls for) and
 #                  writes provision_report.json (the machine-readable per-import

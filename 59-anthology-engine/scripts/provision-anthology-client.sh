@@ -20,8 +20,9 @@
 #      are BlackCEO-owned/shared by design and are excluded from the commingle check.
 #   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 10
 #      Doc/PDF pairs incl. the 2 chapter-rewrite-preservation pairs + 3 control
-#      fields + 5 U8 cover-style fields = 28 keys, all LARGE_TEXT except the
-#      SINGLE_OPTIONS cover choice); a MISSING field STOPS setup
+#      fields + 5 U8 cover-style fields + 10 U15-absorbed live fields = 38
+#      keys, all LARGE_TEXT except the TWO SINGLE_OPTIONS choice fields);
+#      a MISSING field STOPS setup
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
@@ -59,7 +60,7 @@
 #      (NEW-2, same-agency branch) — idempotent GET-check-by-name (an already-imported
 #      location is VERIFIED, never re-pushed), then PUT /locations/{id}
 #      {companyId, snapshot:{id, override:true}} with the agency PIT (locations.write
-#      scope), a bounded snapshot-status poll, a resolved field-map (28 keys BY KEY) and
+#      scope), a bounded snapshot-status poll, a resolved field-map (38 keys BY KEY) and
 #      provision_report.json. The snapshot fixture is loaded from $ANTHOLOGY_SNAPSHOT_FIXTURE
 #      or the repo fixture fixtures/snapshot/anthology-engine-v1.0.0.json (MASTER-SPEC
 #      U15/U17); when absent, the import verifies an already-imported location and STOPS
@@ -76,7 +77,7 @@
 #      ANTHOLOGY_INTAKE_HOOK_SECRET and NEVER printed, producer, producer_email) —
 #      IDEMPOTENTLY (GET-check then create-only-missing / update-in-place) — RE-VERIFIES
 #      every fieldKey (anthology_registry.py verify-fields: the resolved field-map must
-#      carry all 28 keys byte-exact; any unresolved-or-mismatched key exits 5), and STAMPS
+#      carry all 38 keys byte-exact; any unresolved-or-mismatched key exits 5), and STAMPS
 #      the snapshot-version marker $STATE_DIR/snapshot-version.json. Runs AFTER step 7 so
 #      the intake route + secret exist; an unresolved secret leaves that ONE placeholder
 #      unfilled with a note (HELD under --require-live), never a false green. See
@@ -493,7 +494,7 @@ step1_credentials() {
 }
 
 step2_fields() {
-    note "STEP 2/10 — create-or-verify the 28 Section 6 custom fields (10 Doc/PDF pairs incl. 2 G10 rewrite pairs + 3 control + 5 U8 cover-style; 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice)"
+    note "STEP 2/10 — create-or-verify the 38 contract custom fields (10 Doc/PDF pairs incl. 2 G10 rewrite pairs + 3 control + 5 U8 cover-style + 10 U15-absorbed live fields; 36 LARGE_TEXT + 2 SINGLE_OPTIONS cover choice + review decision)"
     local n; n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-fields $(dry_flag) \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     echo "$n"
@@ -1036,7 +1037,7 @@ step_snapshot() {
         echo "$n"; return
     fi
     # 1) VERIFY the import landed: the UI/snapshot-only pipeline exists BY NAME with
-    #    all 9 stages + all 28 contract custom fields exist BY KEY (read-only, the
+    #    all 9 stages + all 38 contract custom fields exist BY KEY (read-only, the
     #    client's OWN PIT).
     n="$(run_collab py "$snap" verify-imported \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
@@ -1057,7 +1058,7 @@ step_snapshot() {
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
     # 3) VERIFICATION (MASTER-SPEC U16 step 3): anthology_registry.py verify-fields
     #    re-verifies EVERY fieldKey — the field-map.json the import resolved from the
-    #    live read-back must carry all 28 intended keys with a byte-exact field_key and
+    #    live read-back must carry all 38 intended keys with a byte-exact field_key and
     #    a field_id; any unresolved-or-mismatched key exits 5 (AF-AE-FIELD-KEY-MISMATCH
     #    family). READ-ONLY.
     n="$(run_collab py "$reg" verify-fields)"
@@ -1443,7 +1444,7 @@ STEP_REMEDIATION=(
     "Confirm this client's per-client BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER) is reachable via the BlackCEO service account (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
     "Ensure the state dir secrets subdir is writable (0600); export any generated secret into the client env store"
-    "Provide the versioned snapshot fixture (fixtures/snapshot/anthology-engine-v1.0.0.json or --snapshot-fixture; cut with snapshot_cut.py per U15) so provision_snapshot_import.py can push it, or IMPORT the Anthology snapshot (references/anthology-snapshot-guide.md) into THIS client's OWN Convert and Flow location (Settings -> Snapshots -> Import/Load) so the pipeline + 28 fields + the 4 REPLACE-ME custom values + the tag->notification workflow exist; grant the agency PIT locations.write scope for the same-agency push and the client PIT the customValues + opportunities scopes; export ANTHOLOGY_INTAKE_HOOK_SECRET into the client env store so the Authorization-header custom value can be filled; re-run"
+    "Provide the versioned snapshot fixture (fixtures/snapshot/anthology-engine-v1.0.0.json or --snapshot-fixture; cut with snapshot_cut.py per U15) so provision_snapshot_import.py can push it, or IMPORT the Anthology snapshot (references/anthology-snapshot-guide.md) into THIS client's OWN Convert and Flow location (Settings -> Snapshots -> Import/Load) so the pipeline + 38 fields + the 4 REPLACE-ME custom values + the tag->notification workflow exist; grant the agency PIT locations.write scope for the same-agency push and the client PIT the customValues + opportunities scopes; export ANTHOLOGY_INTAKE_HOOK_SECRET into the client env store so the Authorization-header custom value can be filled; re-run"
     "Provide a live cron backend (openclaw cron) or accept the declarative inventory; re-run"
     "Register the gateway route and secret; then re-run verify-webhook-t1-t9.sh (the live battery runs on the canary)"
     "Fund the client's OWN provider accounts (Ollama Cloud / OpenRouter / Gemini / Minimax / Kie.ai); re-run the smoke test"
@@ -1509,7 +1510,7 @@ print_plan() {
     cat >&2 <<PLAN
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
   1/10  credential gate            caf_credential_gate.py --require-delivery (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint; PLUS the per-client Google delivery levers SA-key + impersonate + Shared-Drive root gated for presence)
-  2/10  custom fields              anthology_registry.py provision-fields (28 keys: LARGE_TEXT + 1 SINGLE_OPTIONS cover choice; missing -> STOP; key mismatch -> exit 5)
+  2/10  custom fields              anthology_registry.py provision-fields (38 keys: 36 LARGE_TEXT + 2 SINGLE_OPTIONS cover choice + review decision; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked
@@ -1517,7 +1518,7 @@ print_plan() {
   5/10  Drive producer root        drive-tree-provision.py verify-root (per-client Shared-Drive root from GOOGLE_DRIVE_ROOT_FOLDER) + provision --producer; never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
-  7.5   Anthology snapshot         step_snapshot: SNAPSHOT IMPORT via provision_snapshot_import.py (MASTER-SPEC U16 step 1: loads the versioned fixture, idempotent GET-check-by-name — an already-imported location is verified, never re-pushed — then PUT snapshot.override with the agency PIT for a same-agency sub-account, bounded snapshot-status poll, resolved field-map + provision_report.json; missing fixture + push required -> STOP AF-AE-SNAPIMPORT-NO-FIXTURE). MANUAL import remains the cross-agency fallback (client owns their own GHL agency). Then anthology_snapshot.py verifies the push/import landed (pipeline BY NAME + 9 stages + 28 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fills the 4 REPLACE-ME location custom values idempotently (U16 step 2: webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + RE-VERIFIES every fieldKey (U16 step 3: anthology_registry.py verify-fields, all 28 keys byte-exact; exit 5 on any unresolved/mismatch) + stamps snapshot-version.json. Cross-agency agency->subaccount push stays REJECTED (impossible across an agency boundary); same-agency push is AUTHORIZED and automated (Trevor 2026-07-10, see config/anthology-snapshot-contract.json authorized_mechanisms)
+  7.5   Anthology snapshot         step_snapshot: SNAPSHOT IMPORT via provision_snapshot_import.py (MASTER-SPEC U16 step 1: loads the versioned fixture, idempotent GET-check-by-name — an already-imported location is verified, never re-pushed — then PUT snapshot.override with the agency PIT for a same-agency sub-account, bounded snapshot-status poll, resolved field-map + provision_report.json; missing fixture + push required -> STOP AF-AE-SNAPIMPORT-NO-FIXTURE). MANUAL import remains the cross-agency fallback (client owns their own GHL agency). Then anthology_snapshot.py verifies the push/import landed (pipeline BY NAME + 9 stages + 38 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fills the 4 REPLACE-ME location custom values idempotently (U16 step 2: webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + RE-VERIFIES every fieldKey (U16 step 3: anthology_registry.py verify-fields, all 38 keys byte-exact; exit 5 on any unresolved/mismatch) + stamps snapshot-version.json. Cross-agency agency->subaccount push stays REJECTED (impossible across an agency boundary); same-agency push is AUTHORIZED and automated (Trevor 2026-07-10, see config/anthology-snapshot-contract.json authorized_mechanisms)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver; the tick probes funded-reachability, ages the hold queue, AND reconciles the board mirror (mc_board.py reconcile) so a missed card recovers daily
   9/10  verify-webhook T1..T9      verify-webhook-t1-t9.sh (structure now; live battery observed on the W5.3 canary)
   10/10 smoke test                 anthology-smoke-test.py run --max-spend-cents 1 (balance endpoints only)
