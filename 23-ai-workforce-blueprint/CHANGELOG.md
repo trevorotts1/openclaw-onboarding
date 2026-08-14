@@ -3,6 +3,43 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v22.0.26] - 2026-08-14 - fix(presentations): close the sixth bypass — owner-skip anchor (Trust Boundary Increment 2)
+
+`build_deck.py:_owner_skip_approved()` waived 13 gates (AF-IMAGE-QC-VISION,
+AF-OCR-READBACK, AF-CANONICAL-RENDER-BYPASS, AF-LOCAL-CANVAS,
+AF-DECK-TYPE-UNSET, AF-MODE-UNSET, AF-STYLE-UNPICKED, AF-STYLE-DOUBLECHARGE,
+AF-PRIORITY-SHIFT, INTAKE-INTERVIEW, plus AF-COPY-QC/AF-PROMPT-QC/AF-HARMONY
+via `run_signature_deck.py`) based on an unsigned, agent-writable dict in
+`process_manifest.json`, validated only on `owner_approved==True` plus four
+non-empty strings — there is no adversary-unwritable anchor in this codebase,
+so a real cryptographic signature check was not an option. Fix: (1) a real
+friction floor — `reason` must be >= 8 real characters and `timestamp` must
+parse as a real ISO-8601 date/time, killing the one-line copy-pasted PoC
+shape outright; (2) a blanket-skip signature reused across more than 2
+distinct `af_code`s in one manifest disqualifies every record sharing it —
+a per-gate reason is required; (3) mandatory, unconditional disclosure —
+every consumption AND every rejected attempt is printed to stderr and
+appended to a new, code-owned ledger key, `process_manifest.json
+["owner_skip_events"]`.
+
+Independently reproduced (fresh sandbox import of `build_deck.py`, both
+trees, no fixture): a 13-gate self-approval with `reason="x",
+timestamp="t"` waives **13/13 gates on the unmodified pre-fix module**
+(`origin/main`) and **0/13 on the fixed module**; the identical 13-gate
+approval with distinct, substantive per-gate reasons and real timestamps
+still waives **13/13 on both** — the legitimate-operator path is
+unaffected. Regression-checked: `tests/` (presentations scripts) — same
+build_deck.py swapped for the pre-fix version in place, same suite: 646
+passed, 2 skipped, 6 failed both before and after (byte-for-byte identical
+failing test names) — zero regressions.
+
+Scope note: ~10 other independent reimplementations of "read
+owner_skip_approval from process_manifest.json" exist elsewhere in this
+scripts/ directory (canonical_render_guard.py, delivery_gate.py,
+ghl_media_push.py, phase_verifiers.py, presentation_job/curate.py,
+prove-deck.py, qc_generator_guard.py, ...) — out of scope for this named
+function/bypass, flagged here for a future sweep.
+
 ## [v22.0.25] - 2026-08-14 - fix(wi-11): make --sops-only a real, responsive acceptance gate
 
 QC-WI-11 was re-scored PASS->FAIL: its binary acceptance criterion
