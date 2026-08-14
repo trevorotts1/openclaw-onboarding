@@ -3,6 +3,28 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v22.0.25] - 2026-08-14 - fix(wi-11): make --sops-only a real, responsive acceptance gate
+
+QC-WI-11 was re-scored PASS->FAIL: its binary acceptance criterion
+(`python3 scripts/sync_check.py --sops-only 2>&1 | grep -c "HIGH"` must return
+0) was unconditionally satisfiable, for two independent reasons — `main()`
+never read `--sops-only` out of argv (it was silently swallowed and the
+script ran its normal full lockstep check regardless), and the literal string
+"HIGH" appeared nowhere in the script's output, so the grep returned 0
+whether the SOP corpus was pristine or had every HIGH-severity fix reverted.
+Fix: `--sops-only` is now a real, recognized flag running three independently
+mechanical checks over `sops/*.md` (phantom-symbol, stale-repo-path,
+unresolved-registration), each finding reported at severity HIGH; any
+unrecognized `--flag` is now a FATAL exit-2 usage error instead of a silent
+no-op. Independently reproduced on a from-scratch sandbox copy (never the
+live checkout): confirmed the unmodified pre-fix `sync_check.py` reports
+"IN SYNC" / exit 0 / `grep -c HIGH` == 0 on a tree with SOP-NORTHSTAR-00's
+registration marker reverted to "PENDING Agent W3" and SOP-IMG-01's shipped
+renderer path swapped for a nonexistent one — a false PASS on sabotaged
+input; the fixed `sync_check.py`, same sabotaged tree, correctly reports
+2 HIGH findings and exits 4. Regression-checked: `--json`, plain (no-flag),
+and unknown-flag-rejection behavior all still work correctly.
+
 ## [v22.0.24] - 2026-08-14 - fix(presentations): kill the deck-type routing bypass, fix requester/legacy-field resolution against the REAL nested ledger shape
 
 A real client intake could not reach the 36-phase deck engine at all for

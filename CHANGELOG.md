@@ -1,3 +1,33 @@
+## [v22.0.25] -- 2026-08-14 -- fix(wi-11): make --sops-only a real, responsive acceptance gate
+
+QC-WI-11's binary acceptance criterion (`sync_check.py --sops-only 2>&1 | grep
+-c "HIGH"` must return 0) was unconditionally satisfiable: `--sops-only` was
+never a recognized flag (silently swallowed, ran the full check instead), and
+the literal string "HIGH" appeared nowhere in the script's output. Fixed:
+`--sops-only` now runs three mechanical SOP checks (phantom-symbol,
+stale-repo-path, unresolved-registration) at severity HIGH; any unrecognized
+`--flag` is now a FATAL exit-2 usage error. Independently reproduced on a
+from-scratch sandbox: the unmodified pre-fix script reports a false PASS
+(exit 0, 0 HIGH) on a tree with SOP-NORTHSTAR-00's registration marker and
+SOP-IMG-01's renderer path both sabotaged; the fixed script correctly reports
+2 HIGH findings and exits 4 on the identical tree. See
+`23-ai-workforce-blueprint/CHANGELOG.md` for the full writeup.
+
+## [v22.0.24] -- 2026-08-14 -- fix(presentations): kill the deck-type routing bypass
+
+A real client intake could not reach the 36-phase deck engine for either
+`from_scratch` or `signature` presentation types: `cmd_next` derived
+`presentation_type`/`requester_chat_id`/`client_name` against an assumed flat
+ledger shape instead of the real nested `intake_ledger.json` shape the driver
+itself writes, crashing the very next bare `--next` with `AF-MODE-UNSET`
+before a single standard-mode question could be asked. `run_signature_deck.py`
+was also silently bypassed by deck-type routing, and `requester_chat_id`
+silently defaulted instead of persisting into `intake.json` at dispatch time.
+Independently reproduced (fresh process per turn, real driver, no fixture):
+pre-fix exits 1 with `AF-MODE-UNSET` on the documented turn 3; post-fix exits
+0 and returns the `standard_mode` question, for both presentation types. See
+`23-ai-workforce-blueprint/CHANGELOG.md` for the full writeup.
+
 ## [v22.0.23] -- 2026-08-13 -- trust boundary increment 1: sealed RunFacts, REPORT-ONLY
 
 New `presentation_job/runfacts.py` seals a run's facts ONCE at the admission point
