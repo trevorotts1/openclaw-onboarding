@@ -7068,14 +7068,14 @@ else:
   # `FF_GAP_DEPTS -gt 0` check -- on a HEALTHY steady-state box (no missing
   # roles/sops/depts) that gate is false and floor-fill-driver.py never runs,
   # so not even the depth-1 files this repo already treats as fleet-owned
-  # (.py/.sh/.sha256/.pdf) ever refresh again after day one.
+  # (.py/.sh/.js/.tpl/.sha256/.pdf) ever refresh again after day one.
   #
   # refresh-dept-scripts.py closes both gaps at once: it mirrors every
   # role-library department's scripts/ tree onto the box's materialized
   # department directory UNCONDITIONALLY, every roll, with no gap-map
   # dependency (same unconditional-every-roll shape as refresh-stale-roles.py
   # above), honoring the same ownership policy scaffold_department already
-  # enforces (.py/.sh/.sha256/.pdf fleet-owned/always-overwrite-when-
+  # enforces (.py/.sh/.js/.tpl/.sha256/.pdf fleet-owned/always-overwrite-when-
   # divergent; .json box-owned/additive/missing-only). Its pass/fail verdict
   # is re-derived from the filesystem AFTER the copy step (sha256 of the
   # library file vs the destination file), never from its own copy-loop
@@ -7382,7 +7382,7 @@ if isinstance(n, int) and n > 0:
   #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
   #     rows exit 0 and never land here.)
   #   - _D2_DEPTSCRIPTS_STATUS: refresh-dept-scripts.py rc 3 (FIX-DELIVERY-02) --
-  #     a MATERIALIZED department's canonical scripts/ file (.py/.sh/.sha256/.pdf)
+  #     a MATERIALIZED department's canonical scripts/ file (.py/.sh/.js/.tpl/.sha256/.pdf)
   #     was missing or hash-diverged from the role library AFTER this run's own
   #     copy step -- an incomplete/sabotaged mirror. (A department not yet
   #     materialized on this box is a benign skip and never lands here.)
