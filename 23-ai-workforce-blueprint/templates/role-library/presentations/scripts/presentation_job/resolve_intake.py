@@ -93,6 +93,20 @@ def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
     return None
 
 
+def _read_json_dict(path: Path) -> dict:
+    """Read a JSON file, tolerating absence/corruption -- returns {} rather
+    than raising. Shared by the ledger read and the intake.json sibling read
+    below; never a source of a hard crash on a merely-missing file."""
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        return loaded if isinstance(loaded, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def resolve(ledger_path: Path, source: str) -> dict:
     """Read the intake ledger and return the engine's --new intake dict.
 
@@ -101,15 +115,7 @@ def resolve(ledger_path: Path, source: str) -> dict:
     defaults it -- an absent or garbled value is exactly the case that must
     fail loudly, not build a deck of the wrong type.
     """
-    ledger = {}
-    if ledger_path.is_file():
-        try:
-            with open(ledger_path, "r", encoding="utf-8") as fh:
-                loaded = json.load(fh)
-            if isinstance(loaded, dict):
-                ledger = loaded
-        except (json.JSONDecodeError, OSError):
-            ledger = {}
+    ledger = _read_json_dict(ledger_path)
 
     entries = ledger.get("entries")
     if not isinstance(entries, dict):
@@ -132,13 +138,61 @@ def resolve(ledger_path: Path, source: str) -> dict:
     )
     ptype = normalize_presentation_type(raw_ptype)  # raises UnknownPresentationType
 
-    client = str(ledger.get("client_name") or ledger.get("client")
-                or ledger.get("requester_name") or "operator")
-    chat_id = str(ledger.get("requester_chat_id") or ledger.get("chat_id") or "")
+    # requester_chat_id / client_name -- follow-up to fix/deck-type-routing-
+    # bypass. presentation_job.py --new hard-fails a job with no requester
+    # (fix F1: a deck with nobody to report to must not start). The pre-fix
+    # read here was `ledger.get("requester_chat_id")` / `ledger.get(
+    # "client_name")` -- the ledger's TOP level, same mistake class as the
+    # presentation_type bug above. Verified empirically by running BOTH
+    # sanctioned deck-intake-driver.py copies end-to-end (55-question real
+    # intake, from_scratch and signature/existing_content) and dumping every
+    # artifact: NEITHER copy's 55-question schema contains a question about
+    # requester identity, so neither ever writes requester_chat_id/client_name
+    # anywhere in intake_ledger.json -- not top level, not nested in entries.
+    # That top-level ledger read was therefore dead code against every real
+    # driver ledger, same as the presentation_type bug.
+    #
+    # cc_board.py's OWN precedent (resolve_requester(), the function CC-board
+    # registration and build_deck.py's run-begin ingest both already call for
+    # this exact purpose) reads working/copy/intake.json's FLAT
+    # requester_chat_id / requester_channel instead -- "per-deck and durable"
+    # per its own docstring. That file is a sibling of the ledger under the
+    # same run_dir (working/copy/intake.json vs working/interview/
+    # intake_ledger.json) and, unlike the ledger, is read-modify-written by
+    # the driver (derive_legacy_fields() merges on top of whatever is already
+    # there) -- so a requester_chat_id/client_name stamped into it by an
+    # upstream dispatch step (CC board ingest, a Telegram/box trigger,
+    # run_signature_deck.py) survives the interview untouched, where a
+    # ledger-only read would never see it. This resolver now reads THAT file
+    # first, matching the established precedent, with the ledger's flat
+    # top-level kept only as a legacy/hand-authored fallback.
+    #
+    # A run with genuinely nothing stamped anywhere (verified: a completely
+    # untouched real driver run, no upstream step involved) still resolves to
+    # an empty chat_id here -- and MUST. This function never fabricates one;
+    # presentation_job.py --new's own hard-fail on missing requester.chat_id
+    # is the correct outcome for that case, not a bug this fix papers over.
+    intake_copy_path = ledger_path.parent.parent / "copy" / "intake.json"
+    intake_copy = _read_json_dict(intake_copy_path)
+
+    client = str(
+        intake_copy.get("client_name")
+        or ledger.get("client_name") or ledger.get("client")
+        or ledger.get("requester_name") or "operator"
+    )
+    chat_id = str(
+        intake_copy.get("requester_chat_id")
+        or ledger.get("requester_chat_id") or ledger.get("chat_id") or ""
+    )
+    channel = str(intake_copy.get("requester_channel") or "")
+
+    requester = {"chat_id": chat_id, "client_name": client}
+    if channel:
+        requester["channel"] = channel
 
     intake = {
         "presentation_type": ptype,
-        "requester": {"chat_id": chat_id, "client_name": client},
+        "requester": requester,
         "client": client,
         # deck_type mirrors presentation_type here for the engine's own intake
         # JSON; it is a DIFFERENT axis from the SOP-governed working/copy/
@@ -148,7 +202,31 @@ def resolve(ledger_path: Path, source: str) -> dict:
         "source": source,
     }
     if ptype == "signature":
-        intake["signature_source"] = ledger.get("signature_source", "from_scratch")
+        # signature_source -- the sibling of the presentation_type bug this
+        # whole file exists to fix, in its QUIET form: it has the identical
+        # nested-vs-flat mismatch (the real drivers nest the answer under
+        # entries.signature_source, same two shapes as presentation_type --
+        # verified empirically against both real drivers' signature/
+        # existing_content ledgers) but the pre-fix read here,
+        # `ledger.get("signature_source", "from_scratch")`, is a TOP-level
+        # ledger read that never matches either real shape -- so it silently
+        # fell through to the baked-in "from_scratch" default on EVERY real
+        # signature run, regardless of what the client actually answered.
+        # No exception, no log line -- a wrong value accepted without
+        # complaint. Unlike presentation_type/requester, this axis only
+        # feeds creation_mode (from_scratch vs content_general), never
+        # deck_type/routing (derive_legacy_fields), so correcting the read
+        # cannot mis-route a deck to the wrong manifest/phases -- it only
+        # makes the SAME already-computed creation_mode axis honor the
+        # client's real answer instead of silently overriding it. Falls back
+        # to the old top-level flat read (hand-authored/legacy ledger), then
+        # to the schema's own real default ("from_scratch") only when the
+        # question was genuinely never asked/answered -- never fabricated.
+        intake["signature_source"] = (
+            _entry_raw_value(entries, "signature_source")
+            or ledger.get("signature_source")
+            or "from_scratch"
+        )
     return intake
 
 
