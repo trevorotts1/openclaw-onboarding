@@ -1,3 +1,7 @@
+## [v22.0.27] -- 2026-08-14 -- fix(presentations): heal wave-2 test drift (MIN manifest version 46->47, real magic-byte test fixtures, repo-manifest MIN guard test, skill-version 22.0.27)
+
+Merge sha 3b8a23c97e5dddabf783ddc027ca7340289460e2. This is the version chain entry for the wave-2 test drift heal: the presentations MIN manifest version moved 46 -> 47, test fixtures now carry real magic bytes, a repo-manifest MIN guard test was added, and skill-version rolled to 22.0.27.
+
 ## [v22.0.26] -- 2026-08-14 -- fix(presentations): close the sixth bypass — owner-skip anchor (Trust Boundary Increment 2)
 
 `build_deck.py:_owner_skip_approved()` waived 13 gates based on an unsigned,

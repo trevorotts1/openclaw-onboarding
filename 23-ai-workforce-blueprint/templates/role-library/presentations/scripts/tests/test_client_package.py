@@ -336,6 +336,35 @@ def test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below():
 
 
 # ---------------------------------------------------------------------------
+# 12b — the WAVE-2 DRIFT guard. Test 12 reads MIN_MANIFEST_VERSION and the
+# manifest, but both sides derive from the same source, so a manifest bump with
+# no MIN bump is invisible to it. This test independently locates the REPO
+# manifest (the walk-up, never the deployed-layout fallback) and pins
+# MIN_MANIFEST_VERSION to its manifest_version — the floor must move WITH the
+# manifest, or the U019 floor is broken and _assert_manifest_current rejects a
+# bumped manifest on a live tree.
+# ---------------------------------------------------------------------------
+def test_min_manifest_version_matches_repo_manifest_file():
+    from presentation_job.manifest import MIN_MANIFEST_VERSION
+    cur = pathlib.Path(__file__).resolve().parent
+    repo_manifest = None
+    while cur != cur.parent:
+        candidate = cur / MANIFEST_REL
+        if candidate.is_file():
+            repo_manifest = candidate
+            break
+        cur = cur.parent
+    assert repo_manifest is not None, (
+        f"repo manifest could not be located by walking up from {__file__} looking "
+        f"for {MANIFEST_REL}")
+    obj = json.loads(repo_manifest.read_text())
+    assert MIN_MANIFEST_VERSION == obj["manifest_version"], (
+        f"MIN_MANIFEST_VERSION ({MIN_MANIFEST_VERSION}) must equal the repo manifest's "
+        f"manifest_version ({obj['manifest_version']}) — a manifest bump with no MIN "
+        "bump is a broken U019 floor (wave-2 drift class)")
+
+
+# ---------------------------------------------------------------------------
 # 13 — _mk_full_run(teleprompter=False) still produces the CASE K
 # AF-BUNDLE-COMPLETE rejection (the negative fixture this change is most likely to
 # silently invert).
