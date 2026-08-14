@@ -1,3 +1,59 @@
+## [v22.0.22] -- 2026-08-13 -- UNDETERMINED becomes representable, and stops reading as a pass
+
+New `presentation_job/result.py`: a three-valued `CheckResult(PASS/FAIL/UNDETERMINED)`
+for anything that inspects state and must report a verdict. `__bool__` is disabled
+ON PURPOSE, so `if result:` cannot silently decide on the type's behalf which side
+UNDETERMINED falls on -- every call site must compare explicitly
+(`result is CheckResult.PASS`) and therefore must hold an actual opinion about the
+unknown case. Three highest-severity instances converted, one per class of check.
+
+**1. `gates.py` -- security/completeness gate: UNDETERMINED REFUSES.**
+`_canonical_prompt_dir_problems()` used to `return []` when BOTH its detector routes
+(build_deck, then the shared prompt_gate) failed -- indistinguishable from "checked,
+nothing wrong". Executed three-way through the PUBLIC `_prompt_floor_gate()`:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: canonical prompts, detector works | `state='pass'` | `state='pass'` |
+| BAD: real `slide-1.txt`/`slide-01.txt` collision | `state='fail'`, AF-PROMPT-DUP-FILE named | identical |
+| **UNKNOWABLE: detector cannot run at all** | **`state='pass'`, reason=None** | **`state='fail'`, "prompt duplicate/canonical-name detector could not run..."** |
+
+`origin/main` passes a deck it never checked for D16 collisions. This change refuses it.
+
+**2. `report.py` -- message transport: UNDETERMINED keeps trying, never discards.**
+`dispatch3()` returns PASS (confirmed) / FAIL (no transport configured) /
+UNDETERMINED (non-zero exit, timeout, OSError). `Reporter.to_requester()`'s "blocked"
+dedupe timer used to be stamped when a blocked event was ALLOWED to attempt dispatch
+-- before the outcome was known -- so a failed first attempt armed a 10-minute window
+that swallowed the very next identical retry (heal.py retries with the same phase_id
+and reason seconds later) without ever queueing it to `undeliverable`. The timer is
+now stamped only on a CONFIRMED `CheckResult.PASS`. `dispatch()` stays a thin bool
+wrapper (`is CheckResult.PASS`) so every existing bool caller (`watchdog.py`,
+`__main__.cmd_sweep_undeliverable`, `launcher.py`) and the U069 shell-injection
+regression tests are unaffected.
+
+**3. `watchdog.py` + `presentation-watchdog.sh` -- health report: UNDETERMINED is
+reported as UNDETERMINED.** Executed:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: 1 healthy run dir | rc=0 | rc=0 |
+| **UNKNOWABLE: 0 `state.json` found, warn mode** | **rc=0 ("healthy")** | **rc=13 `EXIT_WATCHDOG_NO_RUNS`** |
+| **UNKNOWABLE: 0 `state.json` found, `--enforce`** | **rc=0** | **rc=13** |
+
+The shell caller now CAPTURES that status (`|| WATCHDOG_RC=$?`) instead of leaving it
+to `set -e`. Demonstrated with the two idioms side by side: the uncaptured form aborts
+the script at the watchdog line (rc=13, reconcile-board and run-discovery never run);
+the captured form logs `WARNING: watchdog exited 13 ... NOT necessarily a failure` and
+both later passes still run.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed** on this branch vs
+**612 passed / 6 failed** on `origin/main` -- the same 6 pre-existing failures, zero
+regressions, 34 net-new passing tests. The 4 new/extended test files
+(`test_result.py`, `test_gates.py`, `test_report.py`, `test_watchdog.py`) are 96/96
+green here and cannot even IMPORT against `origin/main` (`result.py` and
+`EXIT_WATCHDOG_NO_RUNS` do not exist there) -- the machinery is genuinely new.
+
 ## [v22.0.21] -- 2026-08-13 -- the .js tool that never reached a single box, and a locked file that crashed the roll
 
 **GAP 1 -- `.js` was in neither writer's suffix list, so
