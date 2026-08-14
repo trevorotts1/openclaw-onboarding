@@ -1,3 +1,50 @@
+## [v22.0.20] -- 2026-08-13 -- new provisions point at the canonical rr-v2-intake relay
+
+`install.sh` seeded `RESCUE_RANGERS_WEBHOOK_URL`'s provisioning default to the
+SUPERSEDED relay path. The canonical intake endpoint on the same host is
+`/webhook/rr-v2-intake` (operator memory; the repository itself carries no
+evidence of it, which is why an earlier pass correctly refused to guess the value
+and waited to be told).
+
+Confirmed by content before and after, each negative run against a control:
+
+- `git grep rr-v2-intake origin/main -- install.sh` -> rc=1, no match.
+  Control on the same path/ref: `git grep webhook -- install.sh` -> 22 matches,
+  rc=0. The file is readable; the absence is real, not a broken search.
+- After: `install.sh:1296 local RR_WEBHOOK_DEFAULT=".../webhook/rr-v2-intake"`.
+
+Executed acceptance -- the two provisioning lines lifted verbatim out of each
+`install.sh` and evaluated in a shell:
+
+| tree | `RR_WEBHOOK` resolved, no operator override |
+|---|---|
+| `origin/main` | `.../webhook/rescue-rangers` (superseded) |
+| this change | `.../webhook/rr-v2-intake` |
+| this change, `RESCUE_RANGERS_WEBHOOK_URL` set | the operator's value -- override still wins |
+
+**No secret and no hash appears anywhere in the diff.** The diff is 8 changed
+lines; all 8 are printed in the PR. Scanning ONLY the added/removed lines for
+`secret|token|password|api[-_]?key|bearer|authorization|[0-9a-f]{32,}|eyJ...`
+returns rc=1 (clean); the same pattern over the whole diff returns 3 hits, all on
+unchanged CONTEXT lines (`RESCUE_RANGERS_WEBHOOK_SECRET` is named but never
+touched) -- so the scan is proven live, not silently matching nothing.
+
+- **`install.sh`** -- `RR_WEBHOOK_DEFAULT` (the provisioning mechanism).
+- **`AGENTS.md`**, **`.../openclaw-maintenance/sops/sop-rescue-rangers-escalation.md`**,
+  **`.../role-library/rescue-rangers/connection-manifest.json`** -- the stated
+  default in each doc, so nothing tells an agent a different URL than install.sh
+  seeds.
+
+SCOPE, stated plainly: this changes where NEWLY PROVISIONED boxes send Rescue
+Rangers escalations. Existing boxes are unaffected unless re-provisioned. Six
+read-time consumer fallbacks still carry the old literal
+(`61-loop-protection-system/scripts/loop_escalate.py:43`,
+`scripts/resume-onboarding.sh:421`,
+`23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh:135`,
+`23-ai-workforce-blueprint/scripts/resume-workforce-build.sh:489,1125,1188`).
+They fire only when `RESCUE_RANGERS_WEBHOOK_URL` is unset, which install.sh always
+seeds; they are deliberately out of scope here and are NOT claimed fixed.
+
 ## [v22.0.19] -- 2026-08-13 -- a signature deck stops silently losing 32 of its own questions
 
 The v1.4.0 QUICK/IN-DEPTH picker shipped `standard_mode` with its own
