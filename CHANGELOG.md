@@ -45,6 +45,30 @@ Suite: `presentations/scripts/tests/` 612 passed / 6 failed on this branch vs
 (`test_client_package`, `test_presentation_job` QC/OCR gates), zero regressions,
 3 net-new passing tests.
 
+## [v22.0.17] -- 2026-08-13 -- shared-dashboard tenant verification before an interview link is emitted
+
+Backfilled entry for the release merged as #896 at `87d2d43de8d4`, which recorded
+its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
+`CHANGELOG.md` (the file G2 reads) with no `v22.0.17` header. The annotated tag
+`v22.0.17` was published at that same commit by
+`scripts/push-version-tag.sh v22.0.17 87d2d43de8d4` to clear the G1b debt that was
+blocking the merge lane; G2 then requires this header. Summary is taken verbatim
+from that commit's own message -- no claim here was measured by this entry.
+
+Janet incident (2026-08-13): the shared Command Center serves every client
+dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
+endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
+completed interview, so her `/interview` page immediately redirected to the
+dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
+#896 is the skill-side guard.
+
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** -- verifies any
+  shared-dashboard host answers `/api/interview/gate-status`
+  `interviewComplete:false` for THIS company before emitting the link; falls back
+  to the Telegram-native reply-here invite on mismatch or unverifiable; exempts the
+  box's own Command Center (localhost/127.0.0.1); adds `INTERVIEW_GATE_URL`.
+- 10 version markers rolled v22.0.16 -> v22.0.17 by `scripts/bump-version.sh`.
+
 ## [v22.0.16] -- 2026-08-13 -- presentation-notify.sh enters git, at the path production actually reads
 
 `presentation-notify.sh` is what the Presentations engine's Reporter shells out to
