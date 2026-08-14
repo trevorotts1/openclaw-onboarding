@@ -16,7 +16,7 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
-version: 22.0.26
+version: 22.0.27
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
