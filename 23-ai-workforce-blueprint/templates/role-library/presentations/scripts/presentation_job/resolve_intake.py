@@ -43,6 +43,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 if __package__ in (None, ""):
     # Allow `python3 resolve_intake.py` (no -m) by ensuring the package
@@ -53,6 +54,43 @@ if __package__ in (None, ""):
     )
 else:
     from .vocab import normalize_presentation_type, UnknownPresentationType
+
+
+def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
+    """Read one intake_ledger.json entry's answer, tolerating every REAL
+    driver's shape -- never inventing a value.
+
+    Every sanctioned writer nests the answer under entries[key]; reading it
+    at the ledger's TOP level (the pre-fix behavior) always returns None
+    against a real ledger -- that was the whole bug. But the two sanctioned
+    deck-intake-driver.py copies disagree on the entry's own inner key:
+
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py (this repo's
+        top-level dev copy) writes entries[qid] = {"answer": raw,
+        "normalized": canonical, ...} -- "normalized" is the canonicalized
+        form and is preferred (mirrors _apply_type_picker_derivation's own
+        pt_entry.get("normalized", pt_entry.get("answer")) precedence in
+        that same file).
+      - .../templates/role-library/presentations/scripts/deck-intake-
+        driver.py (the copy a deployed client box's intake_bridge.py parent
+        walk actually resolves to) writes entries[qid] = {"value": raw}
+        instead.
+
+    Tries every recognized sub-key; also tolerates a bare-string entry (some
+    non-driver writer could plausibly store one). Returns None -- never a
+    fabricated default -- if the entry is absent or every recognized
+    sub-field is empty.
+    """
+    entry = entries.get(key)
+    if isinstance(entry, dict):
+        for subkey in ("normalized", "value", "answer"):
+            val = entry.get(subkey)
+            if val:
+                return val
+        return None
+    if isinstance(entry, str) and entry:
+        return entry
+    return None
 
 
 def resolve(ledger_path: Path, source: str) -> dict:
@@ -73,7 +111,25 @@ def resolve(ledger_path: Path, source: str) -> dict:
         except (json.JSONDecodeError, OSError):
             ledger = {}
 
-    raw_ptype = ledger.get("presentation_type") or ledger.get("deck_type")
+    entries = ledger.get("entries")
+    if not isinstance(entries, dict):
+        entries = {}
+
+    # fix/deck-type-routing-bypass (adversarial-verifier follow-up): the
+    # REAL deck-intake-driver.py (either sanctioned copy) nests the answer
+    # under entries.presentation_type -- never at the ledger's top level.
+    # Reading only ledger.get("presentation_type")/ledger.get("deck_type")
+    # (the pre-fix code below, kept ONLY as a defensive fallback for a
+    # hand-authored/legacy flat ledger) returned None against every real
+    # ledger and hard-failed the door for every legitimate intake, including
+    # from_scratch. See _entry_raw_value() above for the two real nested
+    # shapes this now reads.
+    raw_ptype = (
+        _entry_raw_value(entries, "presentation_type")
+        or _entry_raw_value(entries, "deck_type")
+        or ledger.get("presentation_type")
+        or ledger.get("deck_type")
+    )
     ptype = normalize_presentation_type(raw_ptype)  # raises UnknownPresentationType
 
     client = str(ledger.get("client_name") or ledger.get("client")
