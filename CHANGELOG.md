@@ -1,3 +1,74 @@
+## [v22.0.18] -- 2026-08-13 -- a declared capacity is a claim, not a measurement
+
+`capacity.py::_resolve_override()` had an ordering-plus-trust bug. A
+`capacity_override.json` carrying a `max_concurrent` but no recognisable `plan`
+returned status **MEASURED** with the declared integer verbatim and unbounded --
+and that branch sat AHEAD of the "provider known, plan unknown" PARK branch, so
+PARK was unreachable for any declaration. `{"provider":"ollama-cloud",
+"max_concurrent":9999}` -- a cap-table provider whose highest row anywhere is 10 --
+resolved to MEASURED / available=9999 / autofail_code=None, and `execution_plan`
+would have built a real wave plan at width 9999.
+
+Executed evidence (36 adversarial override shapes -- case variants, whitespace,
+prefix matches, near-miss plans, provider-as-dict, `10**100` -- fired at both
+trees through an isolated `PRESENTATION_CAPACITY_CONFIG_DIR`):
+
+- **origin/main: 31 of 36 breach** (return a value above the cap-table bound for
+  the pair that actually resolved, and/or label a non-cap-table pair MEASURED).
+  `10**100` came back as `available=10**100`, MEASURED.
+- **after this change: 0 of 36 breach.** All 36 are bounded.
+
+`_resolve_override()`'s three cases are now checked in an order that enforces the
+doctrine on its own:
+
+1. `(provider, plan)` both resolve to a cap-table row -> that row is
+   authoritative; a declared `max_concurrent` may only LOWER it (unchanged).
+2. provider resolves but plan does not -> **PARK**, regardless of any declared
+   `max_concurrent`. A known provider's real ceiling is a physical fact the
+   operator cannot opt out of by typing a bigger number, and clamping to that
+   provider's own highest row would still be a guess about which plan is in
+   effect. This check now runs BEFORE the bare-declared-int fallback -- that
+   ordering was the bug.
+3. provider does not resolve at all -> the number is a self-report. Bounded to
+   `DEFAULT_CONSERVATIVE` and labelled with a new status,
+   **`DECLARED_UNVERIFIED`**, so it can never again be read as MEASURED.
+
+- **`.../presentations/scripts/presentation_job/capacity.py`** -- the re-ordering,
+  the `STATUS_DECLARED_UNVERIFIED` constant, and the module docstring's STATUSES
+  table rewritten to describe what the code now does.
+- **`.../presentations/scripts/tests/test_capacity_detection.py`** -- 3 new tests:
+  the exact breach payload, an unknown provider's declaration bounded and
+  relabelled, and a below-`DEFAULT_CONSERVATIVE` self-throttle still honoured.
+
+Suite: `presentations/scripts/tests/` 612 passed / 6 failed on this branch vs
+609 passed / 6 failed on `origin/main` -- the same 6 pre-existing failures
+(`test_client_package`, `test_presentation_job` QC/OCR gates), zero regressions,
+3 net-new passing tests.
+
+## [v22.0.17] -- 2026-08-13 -- shared-dashboard tenant verification before an interview link is emitted
+
+Backfilled entry for the release merged as #896 at `87d2d43de8d4`, which recorded
+its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
+`CHANGELOG.md` (the file G2 reads) with no `v22.0.17` header. The annotated tag
+`v22.0.17` was published at that same commit by
+`scripts/push-version-tag.sh v22.0.17 87d2d43de8d4` to clear the G1b debt that was
+blocking the merge lane; G2 then requires this header. Summary is taken verbatim
+from that commit's own message -- no claim here was measured by this entry.
+
+Janet incident (2026-08-13): the shared Command Center serves every client
+dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
+endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
+completed interview, so her `/interview` page immediately redirected to the
+dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
+#896 is the skill-side guard.
+
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** -- verifies any
+  shared-dashboard host answers `/api/interview/gate-status`
+  `interviewComplete:false` for THIS company before emitting the link; falls back
+  to the Telegram-native reply-here invite on mismatch or unverifiable; exempts the
+  box's own Command Center (localhost/127.0.0.1); adds `INTERVIEW_GATE_URL`.
+- 10 version markers rolled v22.0.16 -> v22.0.17 by `scripts/bump-version.sh`.
+
 ## [v22.0.16] -- 2026-08-13 -- presentation-notify.sh enters git, at the path production actually reads
 
 `presentation-notify.sh` is what the Presentations engine's Reporter shells out to
