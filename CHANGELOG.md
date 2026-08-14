@@ -1,3 +1,59 @@
+## [v22.0.23] -- 2026-08-13 -- trust boundary increment 1: sealed RunFacts, REPORT-ONLY
+
+New `presentation_job/runfacts.py` seals a run's facts ONCE at the admission point
+(right after the front-door nonce verifies) and re-answers two of the pipeline's
+highest-privilege questions from that sealed snapshot instead of from a fresh,
+unsynchronised re-read: the FIX-2 owner-skip waiver
+(`build_deck._owner_skip_approved`) and the QC phase verifiers
+(`phase_verifiers._shadow_qc_verifier`). Divergences between the legacy answer and
+the sealed answer are LOGGED. Nothing else happens.
+
+**Proven report-only, by execution, not by reading the code.**
+
+`_owner_skip_approved` was fired at 13 `process_manifest.json` shapes -- absent,
+empty, valid single, valid in a list, `owner_approved:false`, wrong af_code, blank
+`approved_by`, whitespace `reason`, blank `timestamp`, `owner_approved:"true"` as a
+string, `gate:` key alias, corrupt JSON, list-of-junk -- on both trees:
+
+    origin/main vs this branch, PRES_TRUST_BOUNDARY_ENFORCE unset:
+    13 shapes, 13 IDENTICAL, 0 DIVERGENT
+
+Equal results are not by themselves proof of report-only -- they are also what a
+BROKEN probe returns. So the probe was proven able to SEE a block, using the one
+shape where the sealed verdict genuinely disagrees: a manifest carrying BOTH a valid
+`owner_approved:true` record AND an `owner_approved:false` record for the same
+af_code. Legacy first-match resolves it as waived; RunFacts calls it CONFLICTED ->
+UNDETERMINED:
+
+| tree / mode | result |
+|---|---|
+| `origin/main` | `RECORD` -- gate waived |
+| this branch, env unset (the shipped default) | `RECORD` -- gate waived, **identical to main** |
+| this branch, `PRES_TRUST_BOUNDARY_ENFORCE=1` | `None` -- **gate blocks** |
+
+So the probe does discriminate, the only path to a block is an explicit operator
+opt-in, and that env var is set NOWHERE in this repository (grep over the whole
+tree returns only the two docstrings that name it and the module that reads it).
+
+Additional containment, all verified:
+- Both shadow call sites wrap their whole shadow path in `try/except Exception` and
+  return the legacy result on ANY error -- a bug in the new code cannot break an
+  existing gate.
+- `_owner_skip_approved_legacy` is the untouched original; the new public
+  `_owner_skip_approved` keeps the same name and signature, so all 14 existing call
+  sites are unchanged.
+- When enforcing IS turned on, `_shadow_qc_verifier` can only make a gate STRICTER,
+  never weaker.
+- `gate_integrity_check.py` gains 121 lines that run ONLY under the new `--purity`
+  flag. Default-mode behaviour is byte-identical: rc=2 with the same
+  "af-coverage.json not found" message on BOTH trees. `--purity` proves, by parsing
+  the AST rather than trusting a docstring, that `verify_owner_skip` and `verify_qc`
+  contain no direct file/env I/O -> exit 0.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed**, exactly matching
+`origin/main` at v22.0.22 (646/6) -- the same 6 pre-existing failures, zero
+regressions. `test_runfacts.py` 11/11.
+
 ## [v22.0.22] -- 2026-08-13 -- UNDETERMINED becomes representable, and stops reading as a pass
 
 New `presentation_job/result.py`: a three-valued `CheckResult(PASS/FAIL/UNDETERMINED)`
