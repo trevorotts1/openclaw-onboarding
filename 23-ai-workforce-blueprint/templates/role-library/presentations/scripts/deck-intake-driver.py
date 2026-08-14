@@ -343,7 +343,19 @@ def cmd_next(args) -> int:
     schema = load_question_schema()
     questions = get_questions(schema)
     ledger = read_intake_ledger(run_dir)
-    answers = ledger.get("entries", {})
+    entries = ledger.get("entries", {})
+    # BUGFIX (fresh-process --next after presentation_type is answered): entries
+    # are nested ledger records ({"value": ..., "validated": ..., ...}), never
+    # bare strings. Flatten through the SAME tolerant accessor cmd_answer already
+    # uses to build its post-answer `answers` dict (below, and in cmd_complete's
+    # val extraction) -- reusing it here rather than adding a fourth way to read
+    # the same field. Feeding the raw nested entries dict straight into
+    # derive_legacy_fields() (or into should_ask()'s conditional_on/ask_if
+    # comparisons via _first_unanswered) crashed cmd_next with a ValueError on
+    # every bare --next call once presentation_type had been recorded.
+    answers = {k: (v.get("value") if isinstance(v, dict) else v)
+               for k, v in entries.items()
+               if not k.startswith("_")}
 
     # If presentation_type is answered, auto-derive legacy fields
     ptype = answers.get("presentation_type")
