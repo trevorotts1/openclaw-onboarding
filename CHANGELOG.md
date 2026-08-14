@@ -1,3 +1,55 @@
+## [v22.0.19] -- 2026-08-13 -- a signature deck stops silently losing 32 of its own questions
+
+The v1.4.0 QUICK/IN-DEPTH picker shipped `standard_mode` with its own
+`conditional_on` restricted to `{from_scratch, content_personal, content_general}`.
+For `presentation_type=='signature'` the picker was therefore NEVER ASKED --
+`auto_skip_conditionals` marked its ledger entry validated+skipped ("not
+applicable") -- and every downstream `ask_if {question_id:'standard_mode',
+equals:'IN-DEPTH'}` then read that skip as a real "not IN-DEPTH" answer and
+auto-skipped too. A signature deck's standard pre-presentation capture (a SEPARATE
+question set from the SACRED-8, which `sp_mode` alone governs inside `--signature`)
+collapsed to the QUICK curated set with no picker ever offered and no way to opt
+back in. Root cause: an ABSENT value silently became a fewer-questions decision.
+
+Measured by driving the REAL CLI (`deck-intake-driver.py --run-dir DIR --next /
+--answer`, answer by answer to completion) and comparing **question-ID sets**, not
+counts, across three trees -- pre-unit (`76e8d55c^`), `origin/main`, and this branch:
+
+| run | pre-unit | origin/main | this branch |
+|---|---|---|---|
+| signature, IN-DEPTH | 45 | **13** | **46** |
+| signature, QUICK | -- | 13 | 14 |
+| from_scratch, QUICK | -- | 13 | 13 |
+| from_scratch, IN-DEPTH | 44 | 45 | 45 |
+| content_personal, QUICK / IN-DEPTH | -- | 15 / 47 | 15 / 47 |
+| content_general, QUICK / IN-DEPTH | -- | 14 / 46 | 14 / 46 |
+
+- **signature vs pre-unit: `origin/main` LOSES 32 question ids**
+  (`representation_mix, audience_composition_note, grounded_content, visual_mix,
+  dark_ok, hook_seed, deliverable_set, want_teleprompter, want_speech_script,
+  want_ghl_upload, want_audio_deliverable, vsl_page_declined_reason, style_source,
+  goal, event_price, access_free, target_feeling, offer_stack, price_mode,
+  duration_min, logo_on_slides, price_anchor, payment_plan, vip_tier, vip_price,
+  vip_spots, primary_objection, proof_assets, style_prefs, slide_count,
+  delivery_destinations, deadline`). **This branch loses 0**; its only addition
+  over pre-unit is `standard_mode` itself.
+- **Both directions checked.** All six non-signature runs produce an
+  **identical question-id SEQUENCE** on this branch and on `origin/main` --
+  zero lost, zero gained. The standard QUICK path is not re-inflated.
+
+FIX: delete `standard_mode`'s `conditional_on` outright rather than special-case
+`presentation_type=='signature'` onto it. `standard_mode` is now unconditionally
+asked for all four presentation types, so the "never answered" state that produced
+the collapse cannot occur for ANY type -- the missing-value class is closed, not
+one instance of it.
+
+- **`.../presentations/intake/deck-intake-questions.json`** (v1.4.0 -> v1.5.0) --
+  the only file changed. `51-signature-presentation/` and `deck-intake-driver.py`
+  have **zero diff**; the SACRED-8 turn-gate is untouched.
+
+Suites on this branch: `presentation-type-contract` 9/9, `presentation-intake-conversation`
+96/96, `presentation-deck-intake-driver-workspace` 9/9 -- all rc=0.
+
 ## [v22.0.18] -- 2026-08-13 -- a declared capacity is a claim, not a measurement
 
 `capacity.py::_resolve_override()` had an ordering-plus-trust bug. A
