@@ -4,9 +4,11 @@
 # LIVE FIELD-TYPE CHECKER — for a given Convert and Flow location, assert that
 # EVERY free-text field in config/field-map.json provisioning.fields is LIVE
 # LARGE_TEXT (Trevor's every-text-input-field-is-multi-line law; the field-map's
-# data_type_choice note) and that the ONE SINGLE_OPTIONS field in the inventory
-# (the U8 cover choice, anthology_cover_choice) is live with EXACTLY the four
-# named cover-style options, byte-exact, in order.
+# data_type_choice note) and that the TWO SINGLE_OPTIONS fields in the inventory
+# (the U8 cover choice, anthology_cover_choice, and the U15-absorbed review
+# decision, anthology_review_decision) are live with EXACTLY their declared
+# options (four named cover styles / approve_as_is + request_rewrite_with_notes),
+# byte-exact, in order.
 #
 # WHERE THIS SITS: scripts/u07_modules/ — an importable module under the U07
 # package. It is NOT a manifest row (no ENGINE-MANIFEST row exists for it yet
@@ -20,22 +22,26 @@
 #
 # WHAT THIS OWNS (live, fail-closed, READ-ONLY unless --execute):
 #   1. THE LARGE_TEXT LAW. The field-map declares LARGE_TEXT for all
-#      twenty-seven free-text keys (PRD Gap G11 reconciliation; U10
-#      rewrite-preservation + U8 cover-style; field-map data_type_choice):
-#      the eight base deliverable Doc/PDF pairs, the two chapter-rewrite
-#      pairs, the three control keys, and the four U8 cover sample-url keys.
+#      thirty-six free-text keys (PRD Gap G11 reconciliation; U10
+#      rewrite-preservation + U8 cover-style + U15 absorb; field-map
+#      data_type_choice): the eight base deliverable Doc/PDF pairs, the two
+#      chapter-rewrite pairs, the three control keys, the four U8 cover
+#      sample-url keys, and the nine U15-absorbed live LARGE_TEXT fields.
 #      Live Convert and Flow provisions every free-text field as LARGE_TEXT,
 #      and Trevor's every-text-input-field-is-multi-line law requires it.
 #      A live field whose dataType is NOT LARGE_TEXT (TEXT, PHONE, or any
 #      other byte) is a VIOLATION of that law — never a silent pass.
-#   2. THE SINGLE_OPTIONS CHOICE LAW. The inventory's ONE SINGLE_OPTIONS
-#      field — anthology_cover_choice (the U8 cover choice) — must be live
-#      as SINGLE_OPTIONS with EXACTLY the four named style options the client
-#      picks from in the universal-review cover dropdown. The four names are
-#      NOT hardcoded: the picklist is imported byte-exact from
-#      scripts/cover_render.py COVER_STYLES/STYLE_NAMES (the engine's named
-#      style law: Signature, Bold Editorial, Fine Art, Pure Type — one of
-#      them strictly typography-driven), and the module pins that import
+#   2. THE SINGLE_OPTIONS CHOICE LAW. The inventory's TWO SINGLE_OPTIONS
+#      fields — anthology_cover_choice (the U8 cover choice) and
+#      anthology_review_decision (the U15-absorbed review decision) — must
+#      be live as SINGLE_OPTIONS with EXACTLY their declared options: the
+#      four named style options the client picks from in the universal-review
+#      cover dropdown (imported byte-exact from scripts/cover_render.py
+#      COVER_STYLES/STYLE_NAMES — the engine's named style law: Signature,
+#      Bold Editorial, Fine Art, Pure Type — one of them strictly
+#      typography-driven) and the review-decision picklist from the
+#      field-map's own review_decision_field block
+#      (approve_as_is / request_rewrite_with_notes). Both picklists pin
 #      byte-exact against the field-map's own declared options in order, so
 #      the two surfaces can never drift apart. Any missing / extra /
 #      reordered / byte-drifted option is a violation.
@@ -98,7 +104,7 @@
 #      created field read back drifted
 #
 # USAGE (machine surface — ONE JSON object on stdout; human notes on stderr):
-#   type_checker.py plan                      # offline: the 28-key contract
+#   type_checker.py plan                      # offline: the 38-key contract
 #   type_checker.py verify [--location-id X]  # live read-only; a missing
 #                                             # field is a STOP without --execute
 #   type_checker.py verify --execute          # Trevor-gated: create-only-missing
@@ -109,10 +115,11 @@
 # other u0X_modules: sys.path.insert to scripts/ then
 # `import anthology_registry as reg`.
 # =============================================================================
-"""type_checker.py — live field-TYPE checker for the field-map's 28 keys (U07).
+"""type_checker.py — live field-TYPE checker for the field-map's 38 keys (U07).
 
-Every free-text field must be live LARGE_TEXT; the ONE SINGLE_OPTIONS field
-(the U8 cover choice) must carry exactly the four named cover styles.
+Every free-text field must be live LARGE_TEXT; the TWO SINGLE_OPTIONS fields
+(the cover choice + the review decision) must carry exactly their declared
+options (four named cover styles / approve_as_is + request_rewrite_with_notes).
 Imported BY NAME as u07_modules.type_checker per the u07_modules package
 contract (__init__.py: pure namespace container). Never prints a token.
 """
@@ -210,31 +217,74 @@ def named_cover_styles() -> tuple:
     return names
 
 
+# The review-decision choice (the second SINGLE_OPTIONS key, U15-absorbed
+# 2026-08-13): its picklist law is the field-map's own review_decision_field
+# block — options ["approve_as_is", "request_rewrite_with_notes"] (the
+# gate_engine s5_gate actions). The map is the authority; the module pins
+# the key name so the two choice rows can never be confused.
+DECISION_KEY = "contact.anthology_review_decision"
+
+
+def _declared_decision_options(field_map: dict) -> list:
+    """The review-decision picklist law read from the field-map's
+    review_decision_field block (the U15-absorbed authority — the map owns
+    the decision options now, where before only the dropdown module pinned
+    them). Raises TypeCheckError when the block or its options are missing —
+    a decision field without a picklist is a contradiction the map must
+    never carry."""
+    block = field_map.get("review_decision_field")
+    if not isinstance(block, dict):
+        raise TypeCheckError(
+            "field-map has no review_decision_field block — the "
+            "review-decision picklist law is unjudgeable; refusing a blind "
+            "pass.")
+    if block.get("key") != DECISION_KEY:
+        raise TypeCheckError(
+            "field-map review_decision_field.key is %r, not the byte-exact "
+            "%r — the map drifted; refusing a blind pass."
+            % (block.get("key"), DECISION_KEY))
+    opts = block.get("options")
+    if not isinstance(opts, list) or not opts:
+        raise TypeCheckError(
+            "field-map review_decision_field carries no options — the "
+            "decision picklist law is unjudgeable; refusing a blind pass.")
+    return list(opts)
+
+
 def _declared_choice_options(field_map: dict) -> list:
-    """The field-map's declared options for the SINGLE_OPTIONS inventory row.
-    Raises TypeCheckError when the declared options do not exist — a choice
-    field without a picklist is a contradiction the map must never carry."""
+    """The field-map's declared options for the cover-choice SINGLE_OPTIONS
+    inventory row. Raises TypeCheckError when the declared options do not
+    exist — a choice field without a picklist is a contradiction the map
+    must never carry."""
     for f in _contract_inventory(field_map):
-        if (f.get("data_type") or "") == "SINGLE_OPTIONS":
+        if (f.get("data_type") or "") == "SINGLE_OPTIONS" and \
+                f.get("intended_key") == "contact.anthology_cover_choice":
             opts = f.get("options")
             if not isinstance(opts, list) or not opts:
                 raise TypeCheckError(
-                    "field-map SINGLE_OPTIONS row %r carries no options — the "
-                    "choice picklist law is unjudgeable; refusing a blind pass."
+                    "field-map cover-choice row %r carries no options — the "
+                    "choice picklist law is unjudgeable; refusing a blind "
+                    "pass."
                     % (f.get("intended_key") or "?"))
             return list(opts)
     raise TypeCheckError(
-        "field-map provisioning.fields carries no SINGLE_OPTIONS row — the "
-        "U8 cover-choice law is unjudgeable; refusing a blind pass.")
+        "field-map provisioning.fields carries no cover-choice "
+        "SINGLE_OPTIONS row — the U8 cover-choice law is unjudgeable; "
+        "refusing a blind pass.")
 
 
 def _choice_row(field_map: dict) -> dict:
+    """The cover-choice SINGLE_OPTIONS row (by KEY, never first-match — the
+    decision row is also SINGLE_OPTIONS now, and it sits later in the map;
+    a first-match pick would confuse the two choice laws)."""
     for f in _contract_inventory(field_map):
-        if (f.get("data_type") or "") == "SINGLE_OPTIONS":
+        if (f.get("data_type") or "") == "SINGLE_OPTIONS" and \
+                f.get("intended_key") == "contact.anthology_cover_choice":
             return f
     raise TypeCheckError(
-        "field-map provisioning.fields carries no SINGLE_OPTIONS row — the "
-        "U8 cover-choice law is unjudgeable; refusing a blind pass.")
+        "field-map provisioning.fields carries no cover-choice "
+        "SINGLE_OPTIONS row — the U8 cover-choice law is unjudgeable; "
+        "refusing a blind pass.")
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +312,8 @@ def _collect_live(live_fields) -> dict:
 def check_types_live(client, location_id: str, field_map: dict,
                      *, execute: bool = False,
                      expected_styles=None) -> dict:
-    """Live field-TYPE check (the 27 LARGE_TEXT law + the ONE SINGLE_OPTIONS
-    choice law) with the Trevor-gated create-only-missing path. Returns the
+    """Live field-TYPE check (the 36 LARGE_TEXT law + the TWO SINGLE_OPTIONS
+    choice laws) with the Trevor-gated create-only-missing path. Returns the
     report dict; raises TypeCheckError (STOP family) or reg.ScopeDenied /
     reg.UpstreamBlockedError / reg.CafUnreachable (HELD family) upward —
     exactly the propagation the sibling verifier's driver uses.
@@ -308,13 +358,37 @@ def check_types_live(client, location_id: str, field_map: dict,
             "cover_render.STYLE_NAMES in order — the choice picklist drifted "
             "from the style-name law; refusing to judge (never a blind pass)."
             % choice_key)
-
-    if len(text_rows) + 1 != len(want_keys):
+    decision_options = _declared_decision_options(field_map)
+    # cross-surface pin: the decision row in provisioning.fields and the
+    # review_decision_field block must declare the SAME options — the two
+    # surfaces can never drift apart (the cover choice has the same pin
+    # against cover_render.STYLE_NAMES)
+    decision_row_opts = None
+    for f in inventory:
+        if (f.get("data_type") or "") == "SINGLE_OPTIONS" and \
+                f.get("intended_key") == DECISION_KEY:
+            decision_row_opts = f.get("options")
+            break
+    if not isinstance(decision_row_opts, list) or not decision_row_opts:
         raise TypeCheckError(
-            "field-map inventory does not resolve to exactly 27 LARGE_TEXT "
-            "rows + 1 SINGLE_OPTIONS row (got %d text rows for %d keys) — the "
-            "type contract drifted; refusing a blind pass."
-            % (len(text_rows), len(want_keys)))
+            "field-map decision row %r carries no options — the decision "
+            "picklist law is unjudgeable; refusing a blind pass."
+            % DECISION_KEY)
+    if list(decision_row_opts) != list(decision_options):
+        raise TypeCheckError(
+            "field-map decision row options %r do not byte-equal the "
+            "review_decision_field block options %r — the two surfaces "
+            "drifted; refusing to judge (never a blind pass)."
+            % (decision_row_opts, decision_options))
+
+    choice_rows = [f for f in inventory
+                   if (f.get("data_type") or "") == "SINGLE_OPTIONS"]
+    if len(text_rows) + 2 != len(want_keys) or len(choice_rows) != 2:
+        raise TypeCheckError(
+            "field-map inventory does not resolve to exactly 36 LARGE_TEXT "
+            "rows + 2 SINGLE_OPTIONS rows (got %d text / %d choice rows for "
+            "%d keys) — the type contract drifted; refusing a blind pass."
+            % (len(text_rows), len(choice_rows), len(want_keys)))
 
     live = _collect_live(client.list_custom_fields(location_id))
     created = []
@@ -326,10 +400,16 @@ def check_types_live(client, location_id: str, field_map: dict,
             if key in live:
                 continue
             f = declared[key]
-            opts = list(styles) if (f.get("data_type") or "") == "SINGLE_OPTIONS" else None
+            dtype = f.get("data_type") or "LARGE_TEXT"
+            opts = None
+            if dtype == "SINGLE_OPTIONS":
+                # per-key picklist: the cover choice rides the style law, the
+                # review decision rides its own declared options (the map's
+                # review_decision_field block) — never a guessed picklist
+                opts = (list(styles) if key == choice_key
+                        else list(decision_options))
             client.create_custom_field(location_id, f.get("create_name") or "",
-                                       f.get("data_type") or "LARGE_TEXT",
-                                       options=opts)
+                                       dtype, options=opts)
             created.append(key)
         if created:
             live = _collect_live(client.list_custom_fields(location_id))
@@ -346,15 +426,19 @@ def check_types_live(client, location_id: str, field_map: dict,
             if got_type != "SINGLE_OPTIONS":
                 violations.append("%s dataType %r != SINGLE_OPTIONS"
                                   % (key, got_type))
+            want_opts = (list(styles) if key == choice_key
+                         else list(decision_options))
+            opts_name = ("the four named cover styles in order"
+                         if key == choice_key
+                         else "the two gate_engine s5_gate actions in order")
             got_opts = livef.get("options")
             if not isinstance(got_opts, list):
                 violations.append("%s carries no options list (a picklist "
                                   "field must ship its options)"
                                   % key)
-            elif list(got_opts) != list(styles):
-                violations.append("%s options do not byte-equal the four "
-                                  "named cover styles in order"
-                                  % key)
+            elif list(got_opts) != want_opts:
+                violations.append("%s options do not byte-equal %s"
+                                  % (key, opts_name))
         else:
             if got_type != want_type:
                 violations.append("%s dataType %r != LARGE_TEXT (the "
@@ -376,6 +460,8 @@ def check_types_live(client, location_id: str, field_map: dict,
         "text_keys": len(text_rows),
         "choice_key": choice_key,
         "choice_options": list(styles),
+        "decision_key": DECISION_KEY,
+        "decision_options": list(decision_options),
         "missing": missing,
         "created": sorted(created),
         "violations": violations,
@@ -430,7 +516,7 @@ def verify_live(client, location_id: str, field_map: dict, *, execute: bool = Fa
 
 
 def plan(field_map: dict, *, out=None) -> int:
-    """Offline plan (no network, no credentials): the 28-key type contract the
+    """Offline plan (no network, no credentials): the 38-key type contract the
     live check will assert, straight from the field-map + the cover_render
     style law (the sources of truth — never a hardcoded list). One JSON
     object on stdout."""
@@ -453,6 +539,8 @@ def plan(field_map: dict, *, out=None) -> int:
         "text_keys": len(text_keys),
         "choice_key": _choice_row(field_map).get("intended_key"),
         "choice_options": _declared_choice_options(field_map),
+        "decision_key": DECISION_KEY,
+        "decision_options": _declared_decision_options(field_map),
         "keys": keys,
         "dry_run": True,
         "note": "offline plan only — no network, no credential needed",
@@ -519,10 +607,12 @@ def _fake_field_map():
 
 def _golden_fields(field_map: dict, styles: tuple) -> list:
     """A live listing that EXACTLY matches the map's intended keys at their
-    declared types — with the choice field carrying the four named style
-    options in order and resolved field ids."""
+    declared types — the cover choice carrying the four named style options
+    and the review decision carrying the two gate_engine actions, each in
+    order, with resolved field ids."""
     out = []
     i = 0
+    decision_options = _declared_decision_options(field_map)
     for f in _contract_inventory(field_map):
         i += 1
         rec = {"fieldKey": f.get("intended_key"),
@@ -530,7 +620,10 @@ def _golden_fields(field_map: dict, styles: tuple) -> list:
                "dataType": f.get("data_type", "LARGE_TEXT"),
                "id": "fld_%d" % i}
         if f.get("data_type") == "SINGLE_OPTIONS":
-            rec["options"] = list(styles)
+            rec["options"] = (list(styles)
+                              if f.get("intended_key") ==
+                              "contact.anthology_cover_choice"
+                              else list(decision_options))
         out.append(rec)
     return out
 
@@ -567,11 +660,14 @@ def _self_test_body(dev) -> None:
                  if f.get("data_type") == "LARGE_TEXT"]
     choice_rows = [f for f in _contract_inventory(field_map)
                    if f.get("data_type") == "SINGLE_OPTIONS"]
-    assert len(text_rows) == 27 and len(choice_rows) == 1, \
-        "the type contract must be exactly 27 LARGE_TEXT + 1 SINGLE_OPTIONS " \
+    assert len(text_rows) == 36 and len(choice_rows) == 2, \
+        "the type contract must be exactly 36 LARGE_TEXT + 2 SINGLE_OPTIONS " \
         "(got %d text / %d choice)" % (len(text_rows), len(choice_rows))
     assert _declared_choice_options(field_map) == list(styles), \
         "field-map declared options must byte-equal cover_render.STYLE_NAMES"
+    assert _declared_decision_options(field_map) == [
+        "approve_as_is", "request_rewrite_with_notes"], \
+        "the decision picklist must be the two gate_engine s5_gate actions"
     assert list(styles) == ["Signature", "Bold Editorial", "Fine Art", "Pure Type"], \
         "the four named cover styles must be exactly Signature / Bold Editorial / " \
         "Fine Art / Pure Type in order"
@@ -591,10 +687,13 @@ def _self_test_body(dev) -> None:
     report = check_types_live(caf, "loc_fx", field_map)
     assert report["verdict"] == "PASS", "golden: %s" % report["detail"]
     assert report["ok"] is True, "golden report must carry ok: true"
-    assert report["total"] == len(want_keys) == 28
-    assert report["text_keys"] == 27
+    assert report["total"] == len(want_keys) == 38
+    assert report["text_keys"] == 36
     assert report["choice_key"] == "contact.anthology_cover_choice"
     assert report["choice_options"] == list(styles)
+    assert report["decision_key"] == "contact.anthology_review_decision"
+    assert report["decision_options"] == ["approve_as_is",
+                                          "request_rewrite_with_notes"]
     assert report["missing"] == [] and report["violations"] == []
     assert report["execute"] is False, "read-only path must report execute false"
     assert report["location"] == "...c_fx", "location marker must be masked: %r" % report["location"]
@@ -702,6 +801,41 @@ def _self_test_body(dev) -> None:
     assert live_choice.get("options") == list(styles), \
         "the created choice field must carry the four named styles in order"
 
+    # 7b. the decision field deleted WITH --execute: created as
+    #     SINGLE_OPTIONS with the two gate_engine actions — never at a
+    #     guessed picklist (the map's review_decision_field block owns it)
+    golden_minus_decision = [rec for rec in golden
+                             if rec["fieldKey"] !=
+                             "contact.anthology_review_decision"]
+    caf7b = _FakeCaf(fields=golden_minus_decision)
+    buf7b = io.StringIO()
+    with contextlib.redirect_stdout(buf7b):
+        rc7b = verify_live(caf7b, "loc_fx", field_map, execute=True,
+                           out=io.StringIO())
+    assert rc7b == EX_OK, "--execute decision create must exit 0, got %s" % rc7b
+    create_calls_b = [c for c in caf7b.calls if c[0] == "create"]
+    assert len(create_calls_b) == 1
+    assert create_calls_b[0][2] == "anthology_review_decision"
+    assert create_calls_b[0][3] == "SINGLE_OPTIONS", \
+        "the decision field must be created as SINGLE_OPTIONS"
+    live_decision = next(rec for rec in caf7b._fields
+                         if rec["fieldKey"] ==
+                         "contact.anthology_review_decision")
+    assert live_decision.get("options") == ["approve_as_is",
+                                            "request_rewrite_with_notes"], \
+        "the created decision field must carry the two gate_engine actions"
+
+    # 7c. the decision field live with drifted options -> FAIL
+    a7c = copy.deepcopy(golden)
+    for rec in a7c:
+        if rec["fieldKey"] == "contact.anthology_review_decision":
+            rec["options"] = ["approve_as_is", "request_rewrite_with_notes",
+                              "reject_outright"]
+    report7c = check_types_live(_FakeCaf(fields=a7c), "loc_fx", field_map)
+    assert report7c["verdict"] == "FAIL", "drifted decision options must FAIL"
+    assert any("gate_engine" in v for v in report7c["violations"]), \
+        report7c["violations"]
+
     # 8. a live wrong-typed field is NEVER re-created or re-typed even WITH
     #    --execute: it is a FAIL (a provisioning decision, never a silent
     #    runtime act)
@@ -748,11 +882,21 @@ def _self_test_body(dev) -> None:
     # 13. field-map options vs cover_render styles drifted -> hard refusal
     tampered2 = copy.deepcopy(field_map)
     for f in tampered2["provisioning"]["fields"]:
-        if f.get("data_type") == "SINGLE_OPTIONS":
+        if f.get("data_type") == "SINGLE_OPTIONS" and \
+                f.get("intended_key") == "contact.anthology_cover_choice":
             f["options"] = ["Drifted", "Options", "List", "Here"]
     try:
         check_types_live(_FakeCaf(fields=golden), "loc_fx", tampered2)
         raise AssertionError("map-vs-cover_render options drift was NOT refused")
+    except TypeCheckError:
+        pass
+
+    # 13b. field-map review_decision_field options drifted -> hard refusal
+    tampered2b = copy.deepcopy(field_map)
+    tampered2b["review_decision_field"]["options"] = ["Drifted", "Decisions"]
+    try:
+        check_types_live(_FakeCaf(fields=golden), "loc_fx", tampered2b)
+        raise AssertionError("decision-options drift was NOT refused")
     except TypeCheckError:
         pass
 
@@ -802,18 +946,25 @@ def _self_test_body(dev) -> None:
     assert p["choice_key"] == "contact.anthology_cover_choice"
     assert p["choice_options"] == list(styles), \
         "plan must carry the four named styles in order"
+    assert p["decision_key"] == "contact.anthology_review_decision"
+    assert p["decision_options"] == ["approve_as_is",
+                                     "request_rewrite_with_notes"]
 
-    dev.write("type_checker self-test: OK (contract 27 LARGE_TEXT + 1 "
-              "SINGLE_OPTIONS, golden all-PASS read-only + verify_live exit 0, "
-              "no-execute missing STOP exit 2 with zero writes, --execute "
-              "create-only-missing at declared type then re-read, wrong-type "
-              "never re-created even with --execute, 4 named styles byte-exact "
-              "Signature / Bold Editorial / Fine Art / Pure Type in order, "
-              "17 attack fixtures refused or FAIL-recorded (live-TEXT / "
-              "choice-TEXT / options reordered / options extra / options "
-              "renamed / options missing / field-deleted / empty-listing / "
-              "non-list-read / no-inventory / total_keys-drift / "
-              "map-vs-cover_render drift / style-law-unavailable / "
+    dev.write("type_checker self-test: OK (contract 36 LARGE_TEXT + 2 "
+              "SINGLE_OPTIONS (cover choice + review decision), golden "
+              "all-PASS read-only + verify_live exit 0, no-execute missing "
+              "STOP exit 2 with zero writes, --execute create-only-missing "
+              "at declared type with per-key picklist then re-read, "
+              "wrong-type never re-created even with --execute, 4 named "
+              "styles byte-exact Signature / Bold Editorial / Fine Art / "
+              "Pure Type in order + the 2 gate_engine s5_gate actions "
+              "approve_as_is / request_rewrite_with_notes in order, 20 "
+              "attack fixtures refused or FAIL-recorded (live-TEXT / "
+              "choice-TEXT / cover options reordered / options extra / "
+              "options renamed / options missing / decision-options drifted "
+              "/ field-deleted / empty-listing / non-list-read / "
+              "no-inventory / total_keys-drift / map-vs-cover_render drift "
+              "/ decision-block drift / style-law-unavailable / "
               "scope-denied / edge-block / transport), no-writes on the "
               "read-only path, masked-location, plan offline)\n")
 
@@ -824,7 +975,7 @@ def _self_test_body(dev) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="type_checker.py",
-        description="Live field-TYPE check of the field-map's 28 contact "
+        description="Live field-TYPE check of the field-map's 38 contact "
                     "custom fields on a Convert and Flow location (U07 "
                     "tooling, Skill 59): every free-text field live "
                     "LARGE_TEXT, the ONE SINGLE_OPTIONS choice field live "

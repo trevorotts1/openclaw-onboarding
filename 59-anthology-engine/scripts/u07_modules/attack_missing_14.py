@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: u07_modules/attack_missing_14.py
-# ATTACK FIXTURE — 14 OF 28 FIELDS, MUST FAIL (U07 live-fields-reader law).
+# ATTACK FIXTURE — 19 OF 38 FIELDS, MUST FAIL (U07 live-fields-reader law).
 # The adversarial sibling of the U07 live fields reader: a live customFields
-# read that carries only FOURTEEN of the twenty-eight contract fields a
-# Convert and Flow location must carry — fourteen present, fourteen MISSING.
+# read that carries only NINETEEN of the thirty-eight contract fields a
+# Convert and Flow location must carry — nineteen present, nineteen MISSING.
 # The U07 reader's byte-exact field census (the same field law the U02
 # verifier's fields_check.py enforces) MUST DETECT this read in BOTH of its
-# directions (the fourteen missing keys are a DEEP strict-subset MISSING,
+# directions (the nineteen missing keys are a DEEP strict-subset MISSING,
 # never a pass) and THIS module's own gate payload() must REFUSE it
-# fail-closed with exit 5 — a 14-of-28 read is drift, never a golden payload.
+# fail-closed with exit 5 — a 19-of-38 read is drift, never a golden payload.
 #
 # THE ATTACK IS DETERMINISTIC AND SINGLE-VARIABLE: the canonical field-list
 # read is built by the SINGLE AUTHORITY (u02_modules.golden_fields — the
-# 28-key field law, byte-derived from config/field-map.json
+# 38-key field law, byte-derived from config/field-map.json
 # provisioning.fields, never a second implementation), then the ONE variable
 # — the census size — is dropped by half: every EVEN-positioned record of the
-# golden census (positions 0, 2, 4 .. 26 — fourteen of the twenty-eight) is
-# dropped, leaving the fourteen ODD-positioned records byte-identical to
+# golden census (positions 0, 2, 4 .. 36 — nineteen of the thirty-eight) is
+# dropped, leaving the nineteen ODD-positioned records byte-identical to
 # their golden shapes. The kept fields are NOT part of the attack: they are
 # the golden records the reader would certify; the MISSING half is what must
 # be detected. The drop is by POSITION (the even indices of the golden
 # census), never by a hardcoded key list — the field-map is the single source
 # of truth, so the fixture survives map edits exactly as its siblings
-# (attack_missing_field.py's DROP_INDEX = -1) do. FOURTEEN is the adversarial
-# census: half of the twenty-eight-key contract law (CONTRACT_TOTAL // 2),
+# (attack_missing_field.py's DROP_INDEX = -1) do. NINETEEN is the adversarial
+# census: half of the thirty-eight-key contract law (CONTRACT_TOTAL // 2),
 # derived from the authority, never a magic literal.
 #
 # WHERE THIS SITS: scripts/u07_modules/ — an importable module under the U07
 # live-fields-reader tooling, exactly like its attack-fixture siblings in
-# u02_modules/ (attack_missing_field.py — the 27-of-28 strict-subset attack),
+# u02_modules/ (attack_missing_field.py — the 37-of-38 strict-subset attack),
 # u03_modules/, u04_modules/, u05_modules/, and u06_modules/. It is NOT a
 # manifest row and NOT a checker: it ships the ADVERSARIAL FIXTURE surface
 # the self-tests of the U07 live fields reader and its sibling checkers
@@ -46,7 +46,7 @@
 # WHAT THIS OWNS:
 #   1. ATTACK_FIELDS — a frozen, deterministic list of the 14 field records
 #      ({fieldKey, name, dataType, id, options}) exactly as a live
-#      customFields read would return them for a location missing fourteen
+#      customFields read would return them for a location missing nineteen
 #      contract fields: fieldKey and name byte-equal the map's intended_key
 #      and create_name (the fieldKey derivation law — W0.5,
 #      fieldKey = "contact." + create_name — is pinned through the map's own
@@ -63,21 +63,21 @@
 #      module's public surface.
 #   2. attack_fields(field_map=None) — the builder, fail-closed: a
 #      missing/malformed provisioning.fields inventory, a contract that does
-#      not satisfy the 28-key law, or a golden authority that does not
+#      not satisfy the 38-key law, or a golden authority that does not
 #      produce exactly CONTRACT_TOTAL records raises FixtureError instead of
 #      shipping a wrong fixture. The drop is applied by POSITION (the even
 #      indices of the golden census), never by a hardcoded key.
 #   3. verify_live(client, location_id, field_map) — the JUDGE: reports the
-#      14-key read against the field-map contract and exits 5 (mismatch
-#      family) with missing_count 14 and the missing keys by MASKED MARKER
-#      (never a full key on any surface), never a pass; on the true 28-key
+#      19-key read against the field-map contract and exits 5 (mismatch
+#      family) with missing_count 19 and the missing keys by MASKED MARKER
+#      (never a full key on any surface), never a pass; on the true 38-key
 #      read it exits 0. The one place this module makes the FAIL explicit:
 #      an attack fixture that PASSES any field gate is a broken gate.
 #   4. payload() / payload_true() — the FAIL-CLOSED gates. payload() REFUSES
-#      the 14-key fixture with exit 5 (verdict REFUSED — the fixture must
+#      the 19-key fixture with exit 5 (verdict REFUSED — the fixture must
 #      fail, and it must fail HERE, offline, before any live read).
-#      payload_true() is the control: the TRUE 28-key golden payload passes
-#      exit 0, so the self-test's pass/fail split discriminates the 14/28
+#      payload_true() is the control: the TRUE 38-key golden payload passes
+#      exit 0, so the self-test's pass/fail split discriminates the 19/38
 #      boundary and never a broken instrument (the negative-result contract:
 #      a negative is a claim and carries the same burden of proof as a
 #      positive one — a gate that fails everything is a broken check, not a
@@ -91,7 +91,7 @@
 #     marker (last 4 chars) only. Nothing in this module can ever echo a
 #     secret because no secret is ever read.
 #   - Fail-closed: a malformed map, an absent section, a non-object read, a
-#     golden authority that drifts from the 28-key law all STOP or FAIL —
+#     golden authority that drifts from the 38-key law all STOP or FAIL —
 #     never a blind pass, never a fabricated success.
 #   - READ-ONLY: this module never creates, never writes, never mutates.
 #   - The field-list surface this fixture emulates is the PUBLIC v2 custom
@@ -108,12 +108,12 @@
 #
 # EXIT CODE CONTRACT (house convention; mirrors the U02 attack_missing_field
 # / the U04 attack family):
-#   0  verified success — the golden 28-key control record is internally
+#   0  verified success — the golden 38-key control record is internally
 #      consistent and byte-equal to the field-map contract; also self-test /
 #      plan OK
 #   1  unexpected error (malformed/unreadable field-map JSON)
 #   4  self-test FAILED (AF-AE-ATTACKMISSING14-* family, enforced violation)
-#   5  mismatch — the 14-key attack fixture is REFUSED (payload), the 14-key
+#   5  mismatch — the 19-key attack fixture is REFUSED (payload), the 19-key
 #      read is FAIL (verify_live), or the map / golden authority drifted
 #      from the fixture contract — all FAIL-CLOSED refusals, never a blind
 #      pass
@@ -123,10 +123,10 @@
 # `import anthology_registry as reg` / `import u02_modules.golden_fields as
 # golden`.
 # =============================================================================
-"""attack_missing_14.py — the 14-of-28-field attack fixture that must FAIL.
+"""attack_missing_14.py — the 19-of-38-field attack fixture that must FAIL.
 
 The adversarial sibling of the U07 live fields reader: a deterministic DEEP
-strict subset of the 28 contract fields — fourteen present, fourteen missing
+strict subset of the 38 contract fields — nineteen present, nineteen missing
 — which the byte-exact field census must DETECT and never pass, and which
 this module's own gates refuse fail-closed (exit 5).
 """
@@ -145,12 +145,12 @@ from pathlib import Path
 # Sibling import bootstrap (house convention, identical to golden_fields.py /
 # attack_missing_field.py): the registry owns the Cloudflare browser-UA
 # wiring + the LeadConnector client + the credential label resolution; the
-# golden sibling owns the 28-key field LAW (byte-derived from field-map.json,
+# golden sibling owns the 38-key field LAW (byte-derived from field-map.json,
 # never a second implementation) — the module reuses them, never
 # re-implements.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import anthology_registry as reg  # noqa: E402
-import u02_modules.golden_fields as golden  # noqa: E402  (the 28-key field LAW authority)
+import u02_modules.golden_fields as golden  # noqa: E402  (the 38-key field LAW authority)
 
 EX_OK, EX_ERR, EX_MISMATCH = reg.EX_OK, reg.EX_ERR, reg.EX_MISMATCH
 EX_VIOLATION = 4  # enforced violation detected (self-test FAILED)
@@ -158,21 +158,21 @@ EX_VIOLATION = 4  # enforced violation detected (self-test FAILED)
 SKILL_DIR = Path(__file__).resolve().parent.parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
 
-# The one fixed report contract. The 28 field KEYS themselves are NEVER
+# The one fixed report contract. The 38 field KEYS themselves are NEVER
 # hardcoded here — they come from the field-map through the golden authority
 # (the single source of truth); a hardcoded key list would drift and defeat
 # the fixture's whole purpose.
 ATTACK_CONTRACT = "anthology-engine-attack-missing-14"
 
 # The field census law, machine-carried from the SINGLE AUTHORITY: the
-# contract total is the golden sibling's CONTRACT_TOTAL (28 — 19 base PRD
+# contract total is the golden sibling's CONTRACT_TOTAL (38 — 19 base PRD
 # Section 6 link/control keys + 4 Gap G10 chapter-rewrite-preservation keys
-# + 5 U8 cover-style keys), and FOURTEEN is HALF of it — the adversarial
-# census count, derived from the authority, never a magic literal. A golden
-# authority that no longer carries the 28-key law breaks THIS fixture's
-# self-test first, fail-closed.
-CONTRACT_TOTAL = golden.CONTRACT_TOTAL          # 28
-ATTACK_TOTAL = CONTRACT_TOTAL // 2              # 14 — the adversarial census
+# + 5 U8 cover-style keys + 10 U15-absorbed live fields), and NINETEEN is
+# HALF of it — the adversarial census count, derived from the authority,
+# never a magic literal. A golden authority that no longer carries the
+# 38-key law breaks THIS fixture's self-test first, fail-closed.
+CONTRACT_TOTAL = golden.CONTRACT_TOTAL          # 38
+ATTACK_TOTAL = CONTRACT_TOTAL // 2              # 19 — the adversarial census
 
 # The drop pattern: the EVEN positions of the golden census (0, 2, 4 .. 26).
 # Exactly half the census, deterministic, derived by POSITION — never by a
@@ -182,14 +182,14 @@ ATTACK_TOTAL = CONTRACT_TOTAL // 2              # 14 — the adversarial census
 DROP_STEP = 2
 DROP_OFFSET = 0
 
-# The MISSING count the reader must detect — fourteen of twenty-eight. A
+# The MISSING count the reader must detect — nineteen of thirty-eight. A
 # fixture whose kept/missing split drifts from this is drift, never the
 # attack (the gate refuses it below).
 MISSING_COUNT = ATTACK_TOTAL
 
 class FixtureError(Exception):
     """A fail-closed fixture refusal (STOP/mismatch family): the field-map or
-    the golden authority is inconsistent with the 28-key contract, so NO
+    the golden authority is inconsistent with the 38-key contract, so NO
     fixture is shipped — a wrong fixture is worse than no fixture."""
 
 
@@ -216,19 +216,19 @@ def _mask_marker(key: str) -> str:
 
 
 def attack_fields(field_map: dict = None) -> list:
-    """Derive the 14-record attack payload from the field LAW: every
-    ODD-positioned golden record (positions 1, 3, 5 .. 27), byte-exact
+    """Derive the 19-record attack payload from the field LAW: every
+    ODD-positioned golden record (positions 1, 3, 5 .. 37), byte-exact
     golden shape — fieldKey and name byte-equal the map's intended_key and
     create_name, dataType per the G11/U8 law, the golden synthetic field id —
-    with the EVEN-positioned records (fourteen of the twenty-eight) absent:
+    with the EVEN-positioned records (nineteen of the thirty-eight) absent:
     the DEEP strict subset the live fields reader must DETECT. The build
     runs entirely through the SINGLE AUTHORITY (u02_modules.golden_fields —
-    the 28-key field law, never a second implementation): the golden census
+    the 38-key field law, never a second implementation): the golden census
     is derived first, then the ONE variable — the census size — is dropped
     by half. Raises FixtureError on ANY contract drift (a map that fails the
     golden authority's own fail-closed contract, a golden census that does
     not carry exactly CONTRACT_TOTAL records, or a kept/missing split that
-    is not exactly 14/14) — a wrong fixture is never shipped.
+    is not exactly 19/19) — a wrong fixture is never shipped.
 
     The returned list is a deep copy; mutating it never touches the internal
     canonical payload (which itself stores options in a tuple)."""
@@ -244,7 +244,7 @@ def attack_fields(field_map: dict = None) -> list:
         census = golden.golden_fields(field_map)
     except Exception as exc:  # noqa: BLE001 — the golden authority refused: drift, never a guess
         raise FixtureError(
-            "the golden field authority refused to derive the 28-key census "
+            "the golden field authority refused to derive the 38-key census "
             "(%s: %s) — the field LAW drifted; refusing to ship an attack "
             "payload." % (type(exc).__name__, exc)) from exc
     if len(census) != CONTRACT_TOTAL:
@@ -270,7 +270,7 @@ def attack_fields(field_map: dict = None) -> list:
     if len(out) != ATTACK_TOTAL:
         raise FixtureError(
             "the attack census carries %d records, not the %d of the "
-            "14-of-28 attack — the split drifted; refusing to ship an attack "
+            "19-of-38 attack — the split drifted; refusing to ship an attack "
             "payload." % (len(out), ATTACK_TOTAL))
     return out
 
@@ -292,10 +292,10 @@ def _build_attack() -> tuple:
         for f in attack_fields())
 
 
-# The canonical attack payload: 14 records, tuple-frozen — 28 minus the
-# fourteen even-positioned contract fields. A live customFields read shaped
+# The canonical attack payload: 19 records, tuple-frozen — 38 minus the
+# nineteen even-positioned contract fields. A live customFields read shaped
 # exactly like this MUST FAIL every byte-exact field census (deep strict
-# subset: fourteen missing); payload() below refuses it HERE, offline, so no
+# subset: nineteen missing); payload() below refuses it HERE, offline, so no
 # live read ever has to.
 ATTACK_FIELDS = _build_attack()
 
@@ -339,15 +339,15 @@ def _collect_read(client, location_id: str) -> dict:
 # The judge — verify_live: the ONE surface that makes the FAIL explicit.
 # ---------------------------------------------------------------------------
 def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
-    """Judge the 14-key attack read against the field-map contract.
+    """Judge the 19-key attack read against the field-map contract.
 
     READ-ONLY and OFFLINE: the read surface is the ATTACK_FIELDS canonical
     payload (this module never makes a network call — reg.CafClient is the
     only thing that ever talks to Convert and Flow, and it sends
     CAF_BROWSER_UA on every request, the proven CF-1010 edge fix). The judge
-    is the explicit fail: on the 14-key fixture the verdict is FAIL, exit 5
+    is the explicit fail: on the 19-key fixture the verdict is FAIL, exit 5
     (mismatch family), naming the missing count and every missing key by
-    MASKED MARKER; on a true 28-key read the verdict is PASS, exit 0. The
+    MASKED MARKER; on a true 38-key read the verdict is PASS, exit 0. The
     client argument exists so a future caller can hand a live read surface
     to the same judge; it is never called with anything but an in-memory
     fixture in this module.
@@ -372,7 +372,7 @@ def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
             "self-contradicting map." % (len(inventory), total))
     if len(inventory) != CONTRACT_TOTAL:
         raise FixtureError(
-            "field-map must carry %d intended keys to judge the 14-key "
+            "field-map must carry %d intended keys to judge the 19-key "
             "attack fixture; got %d — refusing." % (CONTRACT_TOTAL,
                                                     len(inventory)))
     want_keys = [f.get("intended_key") for f in inventory
@@ -408,8 +408,8 @@ def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
         "fail_closed": {
             "deep_strict_subset_fails": True,
             "byte_exact_required": True,
-            "fourteen_missing_detected": True,
-            "note": "a 14-of-28 read is a DEEP strict subset — fourteen "
+            "nineteen_missing_detected": True,
+            "note": "a 19-of-38 read is a DEEP strict subset — nineteen "
                     "contract fields missing, exit 5, never a pass. An "
                     "attack fixture that passes ANY field gate is a broken "
                     "gate."},
@@ -440,13 +440,13 @@ def _emit_refusal(detail: str, out) -> int:
 
 
 def payload(field_map: dict = None, *, out=None) -> int:
-    """The FAIL-CLOSED gate: the 14-key attack fixture must NEVER ship as a
+    """The FAIL-CLOSED gate: the 19-key attack fixture must NEVER ship as a
     golden payload. Any payload whose record count is not exactly the
-    ATTACK_TOTAL (14) is REFUSED with exit 5 (verdict REFUSED, ok False) —
-    including the canonical 14-key attack. Returns the exit code; emits the
+    ATTACK_TOTAL (19) is REFUSED with exit 5 (verdict REFUSED, ok False) —
+    including the canonical 19-key attack. Returns the exit code; emits the
     ONE JSON report object on stdout, human notes on stderr. The shipped
     report carries the missing keys by MASKED MARKER and the record count
-    only — the full attack census stays OFF the surface (a 14-of-28 read
+    only — the full attack census stays OFF the surface (a 19-of-38 read
     that carries full contract keys would itself be a leak)."""
     out = out or sys.stderr
     if field_map is None:
@@ -472,7 +472,7 @@ def payload(field_map: dict = None, *, out=None) -> int:
         "missing": missing_markers,
         "detail": "%d-record attack fixture derived byte-exact from the "
                   "field LAW (u02_modules.golden_fields over field-map.json "
-                  "— 14 of 28: fourteen contract fields missing, the deep "
+                  "— 19 of 38: nineteen contract fields missing, the deep "
                   "strict-subset read that MUST FAIL every byte-exact field "
                   "census)" % len(attack),
     }, indent=2, sort_keys=True))
@@ -480,9 +480,9 @@ def payload(field_map: dict = None, *, out=None) -> int:
 
 
 def payload_true(field_map: dict = None, *, out=None) -> int:
-    """The CONTROL gate (negative-result contract): the TRUE 28-key golden
+    """The CONTROL gate (negative-result contract): the TRUE 38-key golden
     payload must PASS exit 0 — so a payload gate that fails EVERYTHING (a
-    broken instrument) is never mistaken for a real 14/28 discrimination.
+    broken instrument) is never mistaken for a real 19/38 discrimination.
     Derives the full golden payload via the golden sibling (never a second
     implementation) and exits 0 only on exactly CONTRACT_TOTAL records; a
     drifted authority REFUSES with exit 5, never a blind pass."""
@@ -493,7 +493,7 @@ def payload_true(field_map: dict = None, *, out=None) -> int:
         census = golden.golden_fields(field_map)
     except Exception as exc:  # noqa: BLE001 — a drifted authority is a refusal, never a guess
         out.write("[attack-missing-14] payload-true REFUSED: the golden "
-                  "authority refused the 28-key census (%s: %s).\n"
+                  "authority refused the 38-key census (%s: %s).\n"
                   % (type(exc).__name__, exc))
         print(json.dumps({
             "contract": ATTACK_CONTRACT + "-true",
@@ -502,7 +502,7 @@ def payload_true(field_map: dict = None, *, out=None) -> int:
             "verdict": "REFUSED",
             "total": None,
             "detail": "u02_modules.golden_fields refused to derive the "
-                      "28-key census — the field LAW drifted.",
+                      "38-key census — the field LAW drifted.",
         }, indent=2, sort_keys=True))
         return EX_MISMATCH
     if len(census) != CONTRACT_TOTAL:
@@ -526,8 +526,8 @@ def payload_true(field_map: dict = None, *, out=None) -> int:
         "verdict": "PASS",
         "total": len(census),
         "expected": CONTRACT_TOTAL,
-        "detail": "control: the true 28-key golden payload passes exit 0 — "
-                  "the 14-of-28 attack fails by comparison, never by a "
+        "detail": "control: the true 38-key golden payload passes exit 0 — "
+                  "the 19-of-38 attack fails by comparison, never by a "
                   "broken gate.",
     }, indent=2, sort_keys=True))
     return EX_OK
@@ -549,7 +549,7 @@ def plan(*, out=None) -> int:
                 "hardcoded key list" % (CONTRACT_TOTAL - DROP_STEP),
         "missing_markers": ATTACK_MISSING_MARKERS,
         "note": "offline plan only — no network, no credential needed. The "
-                "attack ships the canonical customFields read minus FOURTEEN "
+                "attack ships the canonical customFields read minus NINETEEN "
                 "contract fields (the deep strict subset that MUST FAIL the "
                 "U07 live-fields-reader census): every missing key is "
                 "reported by masked marker (last 4 chars) only, never in "
@@ -581,28 +581,28 @@ def _self_test_body(dev) -> None:
     fm = reg.load_field_map(FIELD_MAP_PATH)
 
     # ---- the field LAW is the single source of truth -------------------------
-    assert golden.CONTRACT_TOTAL == 28, \
-        "the field LAW must pin the 28-key contract, got %r" \
+    assert golden.CONTRACT_TOTAL == 38, \
+        "the field LAW must pin the 38-key contract, got %r" \
         % golden.CONTRACT_TOTAL
     assert CONTRACT_TOTAL == golden.CONTRACT_TOTAL, \
         "this fixture must read the contract total from the golden authority"
-    assert ATTACK_TOTAL == 14 and MISSING_COUNT == 14, \
-        "the attack must carry exactly 14 of 28 fields (14 present, 14 " \
+    assert ATTACK_TOTAL == 19 and MISSING_COUNT == 19, \
+        "the attack must carry exactly 19 of 38 fields (19 present, 19 " \
         "missing), got %r / %r" % (ATTACK_TOTAL, MISSING_COUNT)
     total = (fm.get("provisioning") or {}).get("total_keys")
-    assert total == 28, \
-        "field-map provisioning.total_keys must be 28, got %r" % total
+    assert total == 38, \
+        "field-map provisioning.total_keys must be 38, got %r" % total
     inventory = (fm.get("provisioning") or {}).get("fields")
-    assert isinstance(inventory, list) and len(inventory) == 28, \
-        "field-map provisioning.fields must carry 28 rows, got %r" \
+    assert isinstance(inventory, list) and len(inventory) == 38, \
+        "field-map provisioning.fields must carry 38 rows, got %r" \
         % (len(inventory) if isinstance(inventory, list) else type(inventory).__name__)
 
-    # ---- the canonical attack record: fourteen of twenty-eight, golden-shaped
+    # ---- the canonical attack record: nineteen of thirty-eight, golden-shaped
     record = ATTACK_FIELDS
-    assert len(record) == 14, \
-        "the attack must carry exactly 14 records, got %d" % len(record)
+    assert len(record) == 19, \
+        "the attack must carry exactly 19 records, got %d" % len(record)
     keys = [f["fieldKey"] for f in record]
-    assert len(set(keys)) == 14, \
+    assert len(set(keys)) == 19, \
         "the attack census carries duplicate fieldKeys — drift"
     for f in record:
         assert f["fieldKey"].startswith(reg._KEY_PREFIX), \
@@ -616,6 +616,11 @@ def _self_test_body(dev) -> None:
                 tuple(f["options"]) == golden.COVER_CHOICE_OPTIONS, \
                 "the cover choice must be SINGLE_OPTIONS with the four " \
                 "golden options (U8 law)"
+        elif f["fieldKey"] == "contact.anthology_review_decision":
+            assert f["dataType"] == "SINGLE_OPTIONS" and \
+                tuple(f["options"]) == golden.DECISION_OPTIONS, \
+                "the review decision must be SINGLE_OPTIONS with the two " \
+                "gate_engine options (U15-absorbed law)"
         else:
             assert f["dataType"] == "LARGE_TEXT", \
                 "fieldKey %r must be LARGE_TEXT (Gap G11), got %r" \
@@ -624,20 +629,24 @@ def _self_test_body(dev) -> None:
     # position parity vs the golden census proves the derivation is by
     # position, never by key list
     census = golden.golden_fields(fm)
-    assert len(census) == 28
-    kept_positions = [i for i in range(28) if i % DROP_STEP != DROP_OFFSET]
-    dropped_positions = [i for i in range(28) if i % DROP_STEP == DROP_OFFSET]
-    assert len(kept_positions) == 14 and len(dropped_positions) == 14
+    assert len(census) == 38
+    kept_positions = [i for i in range(38) if i % DROP_STEP != DROP_OFFSET]
+    dropped_positions = [i for i in range(38) if i % DROP_STEP == DROP_OFFSET]
+    assert len(kept_positions) == 19 and len(dropped_positions) == 19
     assert [census[i]["fieldKey"] for i in kept_positions] == \
         [f["fieldKey"] for f in record], \
         "the attack census must be exactly the odd-positioned golden records"
     assert all(i % 2 == 0 for i in dropped_positions), \
         "the drop must be the EVEN positions of the golden census"
     # the cover choice is at an even position and therefore DROPPED — its
-    # picklist options never ride the attack surface
+    # picklist options never ride the attack surface (the review decision
+    # sits at an odd position, so IT rides the attack with its own options)
     assert all(f["fieldKey"] != "contact.anthology_cover_choice"
                for f in record), \
-        "the cover choice (golden position 24) must be among the dropped fields"
+        "the cover choice (golden position 22) must be among the dropped fields"
+    assert any(f["fieldKey"] == "contact.anthology_review_decision"
+               for f in record), \
+        "the review decision (golden position 31) must ride the attack census"
     # every kept id is the golden id — the kept fields are byte-identical to
     # their golden shapes
     for i, pos in enumerate(kept_positions):
@@ -645,27 +654,27 @@ def _self_test_body(dev) -> None:
             "kept field %r must carry the golden id %r, got %r" \
             % (record[i]["fieldKey"], census[pos]["id"], record[i]["id"])
 
-    # ---- the judge: the 14-key read MUST FAIL, the golden control MUST PASS --
+    # ---- the judge: the 19-key read MUST FAIL, the golden control MUST PASS --
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = verify_live(object(), "LOCsyntheticAnthologyAAA", fm, out=io.StringIO())
     assert rc == EX_MISMATCH, \
-        "the 14-key attack read must FAIL (exit 5), got %s" % rc
+        "the 19-key attack read must FAIL (exit 5), got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["verdict"] == "FAIL" and parsed["ok"] is False, \
-        "the 14-key read must be FAIL, got %s" % parsed["verdict"]
-    assert parsed["total"] == 14 and parsed["expected"] == 28, \
-        "the judge must report 14 of 28, got %s" % parsed
-    assert parsed["missing_count"] == 14, \
-        "the judge must report exactly fourteen missing, got %r" \
+        "the 19-key read must be FAIL, got %s" % parsed["verdict"]
+    assert parsed["total"] == 19 and parsed["expected"] == 38, \
+        "the judge must report 19 of 38, got %s" % parsed
+    assert parsed["missing_count"] == 19, \
+        "the judge must report exactly nineteen missing, got %r" \
         % parsed["missing_count"]
-    assert len(parsed["missing"]) == 14, \
-        "the judge must name all fourteen missing keys by marker"
+    assert len(parsed["missing"]) == 19, \
+        "the judge must name all nineteen missing keys by marker"
     assert parsed["missing"] == sorted(_mask_marker(census[i]["fieldKey"])
                                        for i in dropped_positions), \
         "the judge must name exactly the dropped keys, by masked marker"
-    assert parsed["fail_closed"]["fourteen_missing_detected"] is True, \
-        "the judge must declare the fourteen-missing detection"
+    assert parsed["fail_closed"]["nineteen_missing_detected"] is True, \
+        "the judge must declare the nineteen-missing detection"
     # the judge output carries masked markers only — never a full key surface
     blob = buf.getvalue()
     assert "contact.anthology_" not in blob, \
@@ -683,11 +692,11 @@ def _self_test_body(dev) -> None:
         rc = verify_live(_GoldenClient(), "LOCsyntheticAnthologyAAA", fm,
                          out=io.StringIO())
     assert rc == EX_OK, \
-        "the 28-key golden control must PASS (exit 0), got %s" % rc
+        "the 38-key golden control must PASS (exit 0), got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["verdict"] == "PASS" and parsed["ok"] is True, \
         "the golden read must be PASS, got %s" % parsed["verdict"]
-    assert parsed["total"] == 28 and parsed["missing_count"] == 0
+    assert parsed["total"] == 38 and parsed["missing_count"] == 0
 
     # ---- the judge's other FAIL directions (all never a pass) ---------------
     # 1. a non-mapping surface -> FAIL (never a pass)
@@ -708,12 +717,12 @@ def _self_test_body(dev) -> None:
     parsed = json.loads(buf.getvalue())
     assert parsed["ok"] is True and parsed["verdict"] == "PASS"
     assert parsed["contract"] == ATTACK_CONTRACT
-    assert parsed["total"] == 14 and parsed["expected"] == 28
-    assert parsed["missing_count"] == 14
-    assert len(parsed["missing"]) == 14
+    assert parsed["total"] == 19 and parsed["expected"] == 38
+    assert parsed["missing_count"] == 19
+    assert len(parsed["missing"]) == 19
     # the payload ships the report, never the raw census: the attack's shape
     # is carried by markers and counts only — full contract keys stay off the
-    # surface (a 14-of-28 read carrying full keys would itself be a leak).
+    # surface (a 19-of-38 read carrying full keys would itself be a leak).
     assert "fields" not in parsed, \
         "the payload must not ship the raw attack census (full keys)"
     assert "contact.anthology_" not in buf.getvalue(), \
@@ -721,7 +730,7 @@ def _self_test_body(dev) -> None:
     assert "pit-" not in buf.getvalue() and "Bearer" not in buf.getvalue(), \
         "the payload output must never carry a token shape"
 
-    # payload-true (the control): the true 28-key golden payload passes
+    # payload-true (the control): the true 38-key golden payload passes
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = payload_true(out=io.StringIO())
@@ -729,13 +738,13 @@ def _self_test_body(dev) -> None:
         "payload-true on the true authority must exit 0, got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["ok"] is True and parsed["verdict"] == "PASS"
-    assert parsed["total"] == 28 and parsed["expected"] == 28
+    assert parsed["total"] == 38 and parsed["expected"] == 38
 
     # ---- attack fixtures: every drift REFUSED, never shipped ---------------
-    # 1. a golden authority that drifts from the 28-key law -> refusal
+    # 1. a golden authority that drifts from the 38-key law -> refusal
     saved_total = golden.CONTRACT_TOTAL
     try:
-        golden.CONTRACT_TOTAL = 30  # the field LAW regressed
+        golden.CONTRACT_TOTAL = 40  # the field LAW regressed
         try:
             attack_fields(fm)
             raise AssertionError("a regressed field LAW must be REFUSED")
@@ -758,22 +767,22 @@ def _self_test_body(dev) -> None:
     assert rc == EX_OK, \
         "payload-true must pass again after the authority restored"
 
-    # 2. a 13-key census (the split drifted) -> refusal
-    thirteen = [dict(f) for f in census[:13]]
-    class _ThirteenClient:
+    # 2. an 18-key census (the split drifted) -> refusal
+    eighteen = [dict(f) for f in census[:18]]
+    class _EighteenClient:
         def read_attack_missing_14_fields(self):
-            return thirteen
+            return eighteen
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        rc = verify_live(_ThirteenClient(), "LOCsyntheticAnthologyAAA", fm,
+        rc = verify_live(_EighteenClient(), "LOCsyntheticAnthologyAAA", fm,
                          out=io.StringIO())
     assert rc == EX_MISMATCH, \
-        "a 13-key read must FAIL (exit 5), got %s" % rc
+        "an 18-key read must FAIL (exit 5), got %s" % rc
     parsed = json.loads(buf.getvalue())
-    assert parsed["missing_count"] == 15, \
-        "the judge must report fifteen missing on a 13-key read, got %r" \
+    assert parsed["missing_count"] == 20, \
+        "the judge must report twenty missing on an 18-key read, got %r" \
         % parsed["missing_count"]
-    # 3. a 28-key read carrying a mismatched fieldKey -> FAIL (never a pass)
+    # 3. a 38-key read carrying a mismatched fieldKey -> FAIL (never a pass)
     drifted = [dict(f) for f in census]
     drifted[0]["fieldKey"] = "contact.anthology_mismatched_slot"
     class _DriftedClient:
@@ -796,21 +805,21 @@ def _self_test_body(dev) -> None:
         rc = plan(out=io.StringIO())
     assert rc == EX_OK, "plan must exit 0"
     p = json.loads(buf.getvalue())
-    assert p["expected"] == 28 and p["attack_total"] == 14
-    assert p["missing_count"] == 14 and len(p["missing_markers"]) == 14
+    assert p["expected"] == 38 and p["attack_total"] == 19
+    assert p["missing_count"] == 19 and len(p["missing_markers"]) == 19
     assert "contact.anthology_" not in buf.getvalue(), \
         "the plan must never carry a full contract key"
 
     dev.write("attack_missing_14 self-test: OK (field LAW pinned "
-              "(u02_modules.golden_fields over field-map.json: 28 keys, "
+              "(u02_modules.golden_fields over field-map.json: 38 keys, "
               "byte-derived, derivation law contact. + create_name); "
-              "canonical 14-of-28 attack record dropping the fourteen "
-              "EVEN-positioned golden records (14 present, 14 missing — the "
+              "canonical 19-of-38 attack record dropping the nineteen "
+              "EVEN-positioned golden records (19 present, 19 missing — the "
               "deep strict subset the U07 live fields reader MUST detect); "
-              "judge FAILs the 14-key read with exit 5 naming the fourteen "
-              "missing keys by masked marker while the 28-key golden control "
-              "PASSES exit 0; non-list / 13-key / mismatched-fieldKey reads "
-              "FAIL; payload gate ships the one-14-of-28 attack and REFUSES "
+              "judge FAILs the 19-key read with exit 5 naming the nineteen "
+              "missing keys by masked marker while the 38-key golden control "
+              "PASSES exit 0; non-list / 18-key / mismatched-fieldKey reads "
+              "FAIL; payload gate ships the one-19-of-38 attack and REFUSES "
               "under a regressed authority while payload-true control PASSes "
               "the golden contract; CAF_BROWSER_UA pinned; never a token "
               "shape, never a full contract key; plan offline)\n")
@@ -822,15 +831,15 @@ def _self_test_body(dev) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="attack_missing_14.py",
-        description="Attack fixture — 14 of 28 fields, must FAIL (Skill 59, "
+        description="Attack fixture — 19 of 38 fields, must FAIL (Skill 59, "
                     "U07 live-fields-reader tooling): the adversarial sibling "
                     "of the U07 live fields reader, shipping the "
                     "deterministic deep strict-subset read (the golden "
-                    "census minus its fourteen even-positioned contract "
+                    "census minus its nineteen even-positioned contract "
                     "fields, every missing key by masked marker) that every "
                     "byte-exact field census must DETECT and refuse, and the "
                     "fail-closed offline gates that prove it (the golden "
-                    "28-key control PASSES).")
+                    "38-key control PASSES).")
     ap.add_argument("--record", default=None,
                     help="customFields read to judge (verify); defaults to "
                          "the first stdin line (e.g. a live-read surface "

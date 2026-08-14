@@ -3,9 +3,10 @@
 # SKILL 59 — ANTHOLOGY ENGINE :: u07_modules/attack_text_drift.py
 # ATTACK FIXTURE — DATA-TYPE DRIFT (TEXT instead of LARGE_TEXT), MUST FAIL
 # (U07 dataType law). The adversarial sibling of the engine's dataType
-# contract: the canonical 28-key field inventory (the SINGLE AUTHORITY is
-# config/field-map.json provisioning.fields — 27 LARGE_TEXT free-text keys +
-# the one SINGLE_OPTIONS cover choice, never a second implementation) with
+# contract: the canonical 38-key field inventory (the SINGLE AUTHORITY is
+# config/field-map.json provisioning.fields — 36 LARGE_TEXT free-text keys +
+# the two SINGLE_OPTIONS picklists (cover choice + review decision), never a
+# second implementation) with
 # the ONE data_type of one free-text key re-declared "TEXT" instead of the
 # byte-exact "LARGE_TEXT". The "TEXT" token is exactly the drift the spec
 # called out — field-map.json's data_type_choice states it in the engine's
@@ -16,20 +17,22 @@
 # live-matching, multi-line-correct type and is now the [declared type]."
 # Every dataType gate — provision-fields exact-match verify, the CI drift
 # gates (qc-snapshot-contract.sh, qc-snapshot-fixture.sh), the U02 template
-# live re-verify's dataType item, the snapshot fixture's own 27+1 invariant —
+# live re-verify's dataType item, the snapshot fixture's own 36+2 invariant —
 # MUST FAIL this attack, never a pass, and THIS module's own gates MUST
 # refuse anything that is not exactly the one-TEXT-drift shape.
 #
 # THE ATTACK IS DETERMINISTIC AND SINGLE-VARIABLE: the canonical field
 # inventory is read ONCE from the SINGLE AUTHORITY (config/field-map.json via
-# reg.FIELD_MAP_PATH — the dataType LAW surface: 28 keys total, 27 LARGE_TEXT
-# + 1 SINGLE_OPTIONS, the SINGLE_OPTIONS key is exactly the cover choice
-# contact.anthology_cover_choice with its four named options), checked
-# against the dataType law, then the ONE data_type of the first LARGE_TEXT
-# key (deterministic order: sorted by intended_key) is re-declared "TEXT"
-# with every other field byte-for-byte preserved. The cover choice is NOT
-# part of the attack — it is the golden SINGLE_OPTIONS row, so the failure
-# isolates the TEXT-vs-LARGE_TEXT boundary and nothing else.
+# reg.FIELD_MAP_PATH — the dataType LAW surface: 38 keys total, 36 LARGE_TEXT
+# + 2 SINGLE_OPTIONS, the SINGLE_OPTIONS keys are exactly the cover choice
+# contact.anthology_cover_choice with its four named options and the review
+# decision contact.anthology_review_decision with its two gate actions),
+# checked against the dataType law, then the ONE data_type of the first
+# LARGE_TEXT key (deterministic order: sorted by intended_key) is
+# re-declared "TEXT" with every other field byte-for-byte preserved. The two
+# SINGLE_OPTIONS rows are NOT part of the attack — they are the golden
+# picklist rows, so the failure isolates the TEXT-vs-LARGE_TEXT boundary and
+# nothing else.
 #
 # WHERE THIS SITS: scripts/u07_modules/ — an importable module under the U07
 # package (pure namespace container per the u07 __init__.py: imported BY
@@ -45,8 +48,9 @@
 #      canonical inventory comes from the SINGLE AUTHORITY (the committed
 #      config/field-map.json, read via reg.FIELD_MAP_PATH — the dataType LAW,
 #      never a second implementation) and is checked against the dataType
-#      law (28 keys, 27 LARGE_TEXT + 1 SINGLE_OPTIONS, the SINGLE_OPTIONS
-#      key is the byte-exact cover choice, NO row already carries TEXT), then
+#      law (38 keys, 36 LARGE_TEXT + 2 SINGLE_OPTIONS, the SINGLE_OPTIONS
+#      keys are the byte-exact cover choice and review decision, NO row
+#      already carries TEXT), then
 #      the ONE data_type of the first free-text key is re-declared TEXT; a
 #      malformed inventory, an inventory that already carries TEXT (the
 #      double-swap a regression would produce), or an inventory that breaks
@@ -54,20 +58,20 @@
 #      wrong fixture.
 #   2. verify_inventory(record, gates=None) — the JUDGE: runs a field
 #      inventory through the U07 dataType law's authorities (the total-key
-#      census, the 27-LARGE_TEXT + 1-SINGLE_OPTIONS dataType census, and the
-#      cover-choice law) and exits 5 (mismatch family) on the TEXT-drift
+#      census, the 36-LARGE_TEXT + 2-SINGLE_OPTIONS dataType census, and the
+#      per-key picklist laws) and exits 5 (mismatch family) on the TEXT-drift
 #      attack, naming the drifted key by MASKED MARKER and the type tokens —
-#      never a pass; on the golden 27+1 control it exits 0. The one place
+#      never a pass; on the golden 36+2 control it exits 0. The one place
 #      this module makes the FAIL explicit: an attack fixture that PASSES any
 #      dataType gate is a broken gate.
 #   3. payload() / payload_true() — the FAIL-CLOSED gates. payload() ships
 #      the TEXT-drift attack report (the fixture is the module's product —
 #      counts and masked markers, never the raw inventory) and exits 0 only
 #      when the attack is EXACTLY the one-TEXT-drift shape; any drift (a
-#      second TEXT row, a drifted cover choice, a missing data_type, an
+#      second TEXT row, a drifted picklist row, a missing data_type, an
 #      unparseable inventory, a conflated authority) is REFUSED with exit 5
 #      (verdict REFUSED). payload_true() is the control: the TRUE canonical
-#      inventory (27 LARGE_TEXT + 1 SINGLE_OPTIONS) passes exit 0 and its
+#      inventory (36 LARGE_TEXT + 2 SINGLE_OPTIONS) passes exit 0 and its
 #      own law checks catch a regression in the dataType authority, so the
 #      self-test's pass/fail split discriminates the TEXT boundary and never
 #      a broken instrument (the negative-result contract: a gate that fails
@@ -103,7 +107,7 @@
 #
 # EXIT CODE CONTRACT (house convention; mirrors the U06 attack_no_execute
 # sibling and the U05 attack_wrong_form / attack_unscoped family):
-#   0  verified success — the golden 27+1 control inventory is internally
+#   0  verified success — the golden 36+2 control inventory is internally
 #      consistent and byte-exact to the dataType law; also self-test / plan
 #      OK
 #   1  unexpected error (malformed input / no inventory to judge)
@@ -122,7 +126,7 @@
 """attack_text_drift.py — the TEXT-instead-of-LARGE_TEXT dataType attack
 fixture that must FAIL.
 
-The adversarial sibling of the engine's dataType law: the canonical 28-key
+The adversarial sibling of the engine's dataType law: the canonical 38-key
 field inventory read from config/field-map.json (the single authority) with
 the ONE data_type of one free-text key re-declared "TEXT" — the exact
 repo-vs-live drift the spec called out — every dataType gate must refuse it
@@ -163,20 +167,24 @@ GOLDEN_DATATYPE = "LARGE_TEXT"        # the byte-exact live-matching type
 OPTIONS_DATATYPE = "SINGLE_OPTIONS"   # the cover choice's data_type
 
 # The dataType law's census — the exact counts every dataType gate must see:
-# 28 total keys, 27 LARGE_TEXT free-text keys + the one SINGLE_OPTIONS cover
-# choice (the U02/U17/snapshot 27+1 invariant). Read from the authority at
-# import and pinned here for the law checks (never a second implementation
-# of the inventory itself).
-TOTAL_KEYS = 28
-COUNT_LARGE_TEXT = 27
-COUNT_SINGLE_OPTIONS = 1
+# 38 total keys, 36 LARGE_TEXT free-text keys + the two SINGLE_OPTIONS
+# choices (the cover choice and the review decision — the U15-absorbed
+# 36+2 invariant, formerly the 27+1 invariant before the 2026-08-13
+# absorb). Read from the authority at import and pinned here for the law
+# checks (never a second implementation of the inventory itself).
+TOTAL_KEYS = 38
+COUNT_LARGE_TEXT = 36
+COUNT_SINGLE_OPTIONS = 2
 
-# The cover-choice law: the ONE SINGLE_OPTIONS key is byte-exact the cover
-# choice with its four named options (Signature / Bold Editorial / Fine Art /
-# Pure Type — the PRD locked choice set). The cover choice is NOT part of
-# the attack — it is the golden SINGLE_OPTIONS row.
+# The SINGLE_OPTIONS law: the TWO SINGLE_OPTIONS keys are byte-exact the
+# cover choice (with its four named options Signature / Bold Editorial /
+# Fine Art / Pure Type — the PRD locked choice set) and the review
+# decision (with its two gate_engine s5_gate actions). Neither is part of
+# the attack — both are golden rows.
 COVER_CHOICE_KEY = "contact.anthology_cover_choice"
 COVER_CHOICE_OPTIONS = ("Signature", "Bold Editorial", "Fine Art", "Pure Type")
+DECISION_KEY = "contact.anthology_review_decision"
+DECISION_OPTIONS = ("approve_as_is", "request_rewrite_with_notes")
 
 
 class FixtureError(Exception):
@@ -215,12 +223,13 @@ def _load_field_inventory() -> list:
 
 def _check_data_type_law(inventory: list) -> str:
     """The dataType LAW over a field inventory, as a human reason string (""
-    when the inventory satisfies the law): 28 keys total, 27 LARGE_TEXT + the
-    one SINGLE_OPTIONS cover choice, NO TEXT anywhere, every row a mapping
-    with a non-empty intended_key / create_name / data_type. Fail-closed: a
-    malformed row is drift, never a pass. The counts come from the law
-    constants pinned against the authority at import (never a second
-    implementation of the inventory itself)."""
+    when the inventory satisfies the law): 38 keys total, 36 LARGE_TEXT + the
+    two SINGLE_OPTIONS picklists (cover choice + review decision), NO TEXT
+    anywhere, every row a mapping with a non-empty intended_key /
+    create_name / data_type. Fail-closed: a malformed row is drift, never a
+    pass. The counts come from the law constants pinned against the
+    authority at import (never a second implementation of the inventory
+    itself)."""
     if not isinstance(inventory, list):
         return "the inventory is %r, not a list — unparseable" \
             % type(inventory).__name__
@@ -254,26 +263,38 @@ def _check_data_type_law(inventory: list) -> str:
     return ""
 
 
-def _check_cover_choice_law(inventory: list) -> str:
-    """The cover-choice law: the ONE SINGLE_OPTIONS row is byte-exact the
-    cover choice (intended_key contact.anthology_cover_choice) and its
-    options are exactly the four named PRD choices in order. Fail-closed: a
-    drifted cover key or drifted options is a refusal, never a pass. The
-    cover choice is the golden SINGLE_OPTIONS row — never part of the
-    attack."""
+def _check_single_options_law(inventory: list) -> str:
+    """The SINGLE_OPTIONS law: the TWO SINGLE_OPTIONS rows are byte-exact the
+    cover choice (contact.anthology_cover_choice, the four named PRD
+    choices) and the review decision (contact.anthology_review_decision, the
+    two gate_engine s5_gate actions — U15-absorbed 2026-08-13). Fail-closed:
+    any other SINGLE_OPTIONS key, a duplicated key, or drifted options is a
+    refusal, never a pass. Both rows are golden — never part of the attack."""
+    found = {}
     for row in inventory:
         if row.get("data_type") == OPTIONS_DATATYPE:
-            if row.get("intended_key") != COVER_CHOICE_KEY:
-                return ("the SINGLE_OPTIONS row is %r, not the byte-exact "
-                        "cover choice %r — the authority drifted"
-                        % (row.get("intended_key"), COVER_CHOICE_KEY))
-            options = tuple(row.get("options") or ())
-            if options != COVER_CHOICE_OPTIONS:
-                return ("the cover choice options %r are not the byte-exact "
-                        "four PRD choices %r — the authority drifted"
-                        % (options, COVER_CHOICE_OPTIONS))
-            return ""
-    return "the inventory carries no SINGLE_OPTIONS row — the cover choice is missing"
+            key = row.get("intended_key")
+            if key not in (COVER_CHOICE_KEY, DECISION_KEY):
+                return ("a SINGLE_OPTIONS row is %r, not one of the two "
+                        "byte-exact choices %r — the authority drifted"
+                        % (key, (COVER_CHOICE_KEY, DECISION_KEY)))
+            if key in found:
+                return ("the SINGLE_OPTIONS key %r appears twice — the "
+                        "authority drifted" % key)
+            found[key] = tuple(row.get("options") or ())
+    if COVER_CHOICE_KEY not in found:
+        return "the cover-choice SINGLE_OPTIONS row is missing"
+    if found[COVER_CHOICE_KEY] != COVER_CHOICE_OPTIONS:
+        return ("the cover choice options %r are not the byte-exact four "
+                "PRD choices %r — the authority drifted"
+                % (found[COVER_CHOICE_KEY], COVER_CHOICE_OPTIONS))
+    if DECISION_KEY not in found:
+        return "the review-decision SINGLE_OPTIONS row is missing"
+    if found[DECISION_KEY] != DECISION_OPTIONS:
+        return ("the decision options %r are not the byte-exact two "
+                "gate_engine s5_gate actions %r — the authority drifted"
+                % (found[DECISION_KEY], DECISION_OPTIONS))
+    return ""
 
 
 def _drifted_key_markers(inventory: list) -> list:
@@ -320,9 +341,10 @@ def _first_free_text_key(inventory: list) -> str:
 def attack_inventory(record: dict = None) -> dict:
     """Build the attack record: the canonical field inventory comes from the
     SINGLE AUTHORITY (config/field-map.json — the dataType LAW, never a
-    second implementation), is checked against the dataType law (28 keys, 27
-    LARGE_TEXT + 1 SINGLE_OPTIONS, the SINGLE_OPTIONS is the byte-exact cover
-    choice, NO row already carries TEXT), then the ONE data_type of the
+    second implementation), is checked against the dataType law (38 keys, 36
+    LARGE_TEXT + 2 SINGLE_OPTIONS, the SINGLE_OPTIONS rows are the byte-exact
+    cover choice and review decision, NO row already carries TEXT), then the
+    ONE data_type of the
     first LARGE_TEXT key is re-declared TEXT — every other field preserved
     byte-for-byte. Any drift raises FixtureError — a wrong fixture is never
     shipped."""
@@ -345,10 +367,10 @@ def attack_inventory(record: dict = None) -> dict:
         raise FixtureError(
             "the canonical inventory breaks the dataType law (%s) — the "
             "authority drifted; refusing to ship an attack payload." % law)
-    cover = _check_cover_choice_law(inventory)
+    cover = _check_single_options_law(inventory)
     if cover:
         raise FixtureError(
-            "the canonical inventory breaks the cover-choice law (%s) — the "
+            "the canonical inventory breaks the SINGLE_OPTIONS law (%s) — the "
             "authority drifted; refusing to ship an attack payload." % cover)
     drift = _first_free_text_key(inventory)
     out = []
@@ -406,7 +428,7 @@ def _verify_one_authority(authority_check, record: dict) -> tuple:
 
 
 def _authority_total_keys(record: dict) -> tuple:
-    """The total-key census: the inventory carries EXACTLY the law's 28 keys.
+    """The total-key census: the inventory carries EXACTLY the law's 38 keys.
     A record with any other count is drift — the census a drifted snapshot
     would produce. The count alone cannot pass the TEXT read — the drift
     already failed the law."""
@@ -421,33 +443,34 @@ def _authority_total_keys(record: dict) -> tuple:
 
 
 def _authority_data_type_law(record: dict) -> tuple:
-    """The dataType census: 27 LARGE_TEXT free-text keys + the one
-    SINGLE_OPTIONS cover choice, NO TEXT anywhere — the exact census every
-    dataType gate must see. A TEXT row is the drift the law bans: the attack
-    read is a FAIL, never a pass."""
+    """The dataType census: 36 LARGE_TEXT free-text keys + the two
+    SINGLE_OPTIONS picklists (cover choice + review decision), NO TEXT
+    anywhere — the exact census every dataType gate must see. A TEXT row is
+    the drift the law bans: the attack read is a FAIL, never a pass."""
     fields = (record or {}).get("fields")
     law = _check_data_type_law(fields) if isinstance(fields, list) else \
         "the record carries no 'fields' list — unparseable"
     if law:
         return False, law
-    return False, ("the 27+1 census is present but a free-text key declared "
+    return False, ("the 36+2 census is present but a free-text key declared "
                    "TEXT instead of the byte-exact LARGE_TEXT is the drift "
                    "this gate must refuse")
 
 
-def _authority_cover_choice(record: dict) -> tuple:
-    """The cover-choice law: the ONE SINGLE_OPTIONS row is byte-exact the
-    cover choice with the four named PRD options — the golden SINGLE_OPTIONS
-    row is never part of the attack. A drifted cover row (or a cover row
-    re-declared TEXT) is drift, never a pass."""
+def _authority_single_options(record: dict) -> tuple:
+    """The SINGLE_OPTIONS law: the TWO SINGLE_OPTIONS rows are byte-exact the
+    cover choice with the four named PRD options and the review decision
+    with the two gate_engine s5_gate actions — both golden, never part of
+    the attack. A drifted row (or a row re-declared TEXT) is drift, never a
+    pass."""
     fields = (record or {}).get("fields")
     if not isinstance(fields, list):
         return False, "the record carries no 'fields' list — unparseable"
-    cover = _check_cover_choice_law(fields)
-    if cover:
-        return False, cover
-    return False, ("the cover choice is intact but the dataType census "
-                   "already failed — never a pass")
+    singles = _check_single_options_law(fields)
+    if singles:
+        return False, singles
+    return False, ("the SINGLE_OPTIONS rows are intact but the dataType "
+                   "census already failed — never a pass")
 
 
 def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
@@ -461,7 +484,7 @@ def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
     on every request, the proven CF-1010 edge fix). The judge is the
     explicit fail: on the TEXT-drift attack the verdict is FAIL, exit 5
     (mismatch family), naming the drifted key by masked marker and the type
-    tokens; on the true golden 27+1 inventory the verdict is PASS, exit 0.
+    tokens; on the true golden 36+2 inventory the verdict is PASS, exit 0.
 
     `authorities` defaults to (_authority_total_keys,
     _authority_data_type_law, _authority_cover_choice) — the three checks of
@@ -477,7 +500,7 @@ def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
     if authorities is None:
         authorities = (_authority_total_keys,
                        _authority_data_type_law,
-                       _authority_cover_choice)
+                       _authority_single_options)
     results = []
     if not isinstance(record, dict):
         results.append({"authority": "n/a", "ok": False,
@@ -488,11 +511,11 @@ def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
         # judged against the single authority. It carries the exact fields
         # the law ships, and it is the ONE shape that is NOT the attack.
         ok_law = not _check_data_type_law(record.get("fields"))
-        ok_cover = not _check_cover_choice_law(record.get("fields"))
+        ok_cover = not _check_single_options_law(record.get("fields"))
         if ok_law and ok_cover:
             results.append({"authority": "golden_control",
                             "ok": True,
-                            "reason": "the 27-LARGE_TEXT + 1-SINGLE_OPTIONS "
+                            "reason": "the 36-LARGE_TEXT + 2-SINGLE_OPTIONS "
                                       "canonical inventory (field-map.json) "
                                       "— a clean census, never the TEXT "
                                       "drift"})
@@ -508,7 +531,7 @@ def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
             results.append({"authority": getattr(auth, "__name__", "?"),
                             "ok": ok, "reason": reason})
     # The law's ONE verdict: the TEXT-drift attack MUST FAIL every dataType
-    # authority, and the golden 27+1 control MUST PASS — the pass/fail split
+    # authority, and the golden 36+2 control MUST PASS — the pass/fail split
     # discriminates the TEXT boundary, never a broken instrument.
     ok = bool(results) and all(r["ok"] for r in results)
     markers = []
@@ -523,7 +546,7 @@ def verify_inventory(record: dict, authorities=None, *, out=None) -> int:
             if isinstance(row, dict) and isinstance(row.get("data_type"), str):
                 counts[row["data_type"]] = counts.get(row["data_type"], 0) + 1
     detail = ("all dataType authorities pass: the inventory carries the "
-              "byte-exact 27 LARGE_TEXT + 1 SINGLE_OPTIONS census and the "
+              "byte-exact 36 LARGE_TEXT + 2 SINGLE_OPTIONS census and the "
               "golden control PASSES this judge"
               if ok else (
                   "%d dataType authority(ies) refuse the inventory — TEXT "
@@ -635,11 +658,11 @@ def payload(*, out=None) -> int:
 
 def payload_true(*, out=None) -> int:
     """The CONTROL gate (negative-result contract): the TRUE canonical
-    27+1 inventory must PASS exit 0 — so a payload gate that fails
+    36+2 inventory must PASS exit 0 — so a payload gate that fails
     EVERYTHING (a broken instrument) is never mistaken for a real TEXT-drift
     discrimination. Derives the golden inventory via the dataType authority
     (never a second implementation) and pins the law on it: if the authority
-    ever regresses (a TEXT appears, the 27+1 census breaks, the cover choice
+    ever regresses (a TEXT appears, the 36+2 census breaks, a picklist row
     drifts), the control REFUSES with exit 5 — a regression is caught HERE
     first."""
     out = out or sys.stderr
@@ -659,11 +682,11 @@ def payload_true(*, out=None) -> int:
                       "dataType law: %s" % law,
         }, indent=2, sort_keys=True))
         return EX_MISMATCH
-    cover = _check_cover_choice_law(inventory)
+    cover = _check_single_options_law(inventory)
     if cover:
         out.write("[attack-text-drift] payload-true REFUSED: the dataType "
-                  "authority no longer satisfies the cover-choice law (%s) — "
-                  "the law regressed; refusing.\n" % cover)
+                  "authority no longer satisfies the SINGLE_OPTIONS law (%s) "
+                  "— the law regressed; refusing.\n" % cover)
         print(json.dumps({
             "contract": ATTACK_CONTRACT + "-true",
             "schema_version": 1,
@@ -671,7 +694,7 @@ def payload_true(*, out=None) -> int:
             "verdict": "REFUSED",
             "record": None,
             "detail": "config/field-map.json no longer satisfies the "
-                      "cover-choice law: %s" % cover,
+                      "SINGLE_OPTIONS law: %s" % cover,
         }, indent=2, sort_keys=True))
         return EX_MISMATCH
     print(json.dumps({
@@ -684,7 +707,7 @@ def payload_true(*, out=None) -> int:
         "data_type_counts": {"LARGE_TEXT": COUNT_LARGE_TEXT,
                              "SINGLE_OPTIONS": COUNT_SINGLE_OPTIONS},
         "detail": "control: the true canonical inventory carries the "
-                  "byte-exact 27 LARGE_TEXT + 1 SINGLE_OPTIONS census and "
+                  "byte-exact 36 LARGE_TEXT + 2 SINGLE_OPTIONS census and "
                   "passes exit 0 — the TEXT-drift attack fails by "
                   "comparison, never by a broken gate.",
     }, indent=2, sort_keys=True))
@@ -710,15 +733,15 @@ def plan(*, out=None) -> int:
         "dry_run": True,
         "note": "offline plan only — no network, no credential needed. The "
                 "attack re-declares the ONE data_type of the first free-text "
-                "key of the canonical 28-key inventory (config/field-map."
+                "key of the canonical 38-key inventory (config/field-map."
                 "json, the single authority) as TEXT instead of the "
                 "byte-exact LARGE_TEXT — the exact repo-vs-live drift the "
                 "spec called out — with every other field preserved "
-                "byte-for-byte and the SINGLE_OPTIONS cover choice left "
+                "byte-for-byte and the two SINGLE_OPTIONS picklists left "
                 "golden: the TEXT-drift read that MUST FAIL every byte-exact "
                 "dataType gate (provision-fields exact-match, the CI drift "
                 "gates, the U02 live template re-verify, the snapshot "
-                "fixture's 27+1 invariant).",
+                "fixture's 36+2 invariant).",
     }, indent=2, sort_keys=True))
     return EX_OK
 
@@ -748,11 +771,11 @@ def _self_test_body(dev) -> None:
     assert _check_data_type_law(inventory) == "", \
         "the authority must satisfy the dataType law, got %r" \
         % _check_data_type_law(inventory)
-    assert _check_cover_choice_law(inventory) == "", \
-        "the authority must satisfy the cover-choice law, got %r" \
-        % _check_cover_choice_law(inventory)
-    assert len(inventory) == TOTAL_KEYS == 28, \
-        "the authority must carry EXACTLY the law's 28 keys, got %d" \
+    assert _check_single_options_law(inventory) == "", \
+        "the authority must satisfy the SINGLE_OPTIONS law, got %r" \
+        % _check_single_options_law(inventory)
+    assert len(inventory) == TOTAL_KEYS == 38, \
+        "the authority must carry EXACTLY the law's 38 keys, got %d" \
         % len(inventory)
     assert ATTACK_DATATYPE == "TEXT" and GOLDEN_DATATYPE == "LARGE_TEXT", \
         "the drift direction must be TEXT-vs-LARGE_TEXT, got %r/%r" \
@@ -781,9 +804,9 @@ def _self_test_body(dev) -> None:
     assert len(diffs) == 1 and diffs[0][1] == "LARGE_TEXT" and \
         diffs[0][2] == "TEXT", \
         "the attack must differ in the ONE data_type only, got %r" % diffs
-    # the cover choice is NOT part of the attack — it stays golden
-    assert _check_cover_choice_law(record["fields"]) == "", \
-        "the SINGLE_OPTIONS cover choice must stay golden in the attack"
+    # the two SINGLE_OPTIONS rows are NOT part of the attack — they stay golden
+    assert _check_single_options_law(record["fields"]) == "", \
+        "both SINGLE_OPTIONS rows must stay golden in the attack"
     # the full canonical inventory never rides a surface: the record's drift
     # key is carried by marker only in the report shape, and the payload
     # ships counts + marker, never the raw record
@@ -826,7 +849,7 @@ def _self_test_body(dev) -> None:
     with contextlib.redirect_stdout(buf):
         rc = verify_inventory(GOLDEN_RECORD, out=io.StringIO())
     assert rc == EX_OK, \
-        "the golden 27+1 control must PASS (exit 0), got %s" % rc
+        "the golden 36+2 control must PASS (exit 0), got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["verdict"] == "PASS" and parsed["ok"] is True, \
         "the golden read must be PASS, got %s" % parsed["verdict"]
@@ -855,7 +878,9 @@ def _self_test_body(dev) -> None:
         rc = verify_inventory(two, out=io.StringIO())
     assert rc == EX_MISMATCH, \
         "a double-drift inventory must FAIL (exit 5), got %s" % rc
-    # 2. a drift on the COVER choice (SINGLE_OPTIONS -> TEXT) -> FAIL
+    # 2. a drift on either SINGLE_OPTIONS picklist row (SINGLE_OPTIONS ->
+    #    TEXT) -> FAIL (cover choice or review decision drifted to TEXT is
+    #    the same dataType law break)
     cover_drift = {"fields": [dict(r) for r in record["fields"]]}
     for row in cover_drift["fields"]:
         if row.get("data_type") == "SINGLE_OPTIONS":
@@ -865,7 +890,7 @@ def _self_test_body(dev) -> None:
     with contextlib.redirect_stdout(buf):
         rc = verify_inventory(cover_drift, out=io.StringIO())
     assert rc == EX_MISMATCH, \
-        "a cover-choice drift must FAIL (exit 5), got %s" % rc
+        "a SINGLE_OPTIONS drift must FAIL (exit 5), got %s" % rc
     # 3. a LARGE_TEXT -> SINGLE_OPTIONS swap (the wrong-direction drift) -> FAIL
     swap = {"fields": [dict(r) for r in record["fields"]]}
     for row in swap["fields"]:
@@ -913,9 +938,9 @@ def _self_test_body(dev) -> None:
     assert parsed["ok"] is True and parsed["verdict"] == "PASS"
     assert parsed["contract"] == ATTACK_CONTRACT
     assert parsed["drifted"] == "TEXT" and parsed["golden"] == "LARGE_TEXT"
-    assert parsed["data_type_counts"] == {"LARGE_TEXT": 26,
+    assert parsed["data_type_counts"] == {"LARGE_TEXT": 35,
                                           "TEXT": 1,
-                                          "SINGLE_OPTIONS": 1}, \
+                                          "SINGLE_OPTIONS": 2}, \
         "the payload must ship the exact one-TEXT-drift census, got %r" \
         % parsed["data_type_counts"]
     assert parsed["drift_key_marker"] == record["drift_key_marker"]
@@ -948,7 +973,7 @@ def _self_test_body(dev) -> None:
         rc = payload(out=io.StringIO())
     assert rc == EX_OK, "payload must still ship the attack after the refusal"
 
-    # payload-true (the control): the true canonical 27+1 inventory passes
+    # payload-true (the control): the true canonical 36+2 inventory passes
     # exit 0
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -957,8 +982,8 @@ def _self_test_body(dev) -> None:
         "payload-true on the true authority must exit 0, got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["ok"] is True and parsed["verdict"] == "PASS"
-    assert parsed["data_type_counts"] == {"LARGE_TEXT": 27,
-                                          "SINGLE_OPTIONS": 1}
+    assert parsed["data_type_counts"] == {"LARGE_TEXT": 36,
+                                          "SINGLE_OPTIONS": 2}
 
     # ---- attack fixtures: every drift REFUSED, never shipped ---------------
     # 1. an inventory that already carries TEXT -> refusal (the double-swap a
@@ -974,7 +999,7 @@ def _self_test_body(dev) -> None:
         raise AssertionError("a truncated inventory was NOT refused")
     except FixtureError:
         pass
-    # 3. an inventory with the cover choice re-declared -> refusal
+    # 3. an inventory with a SINGLE_OPTIONS key re-declared -> refusal
     cover_broken = {"fields": list(inventory)}
     for row in cover_broken["fields"]:
         if row.get("data_type") == "SINGLE_OPTIONS":
@@ -982,7 +1007,7 @@ def _self_test_body(dev) -> None:
             break
     try:
         attack_inventory(cover_broken)
-        raise AssertionError("a drifted cover choice was NOT refused")
+        raise AssertionError("a drifted SINGLE_OPTIONS key was NOT refused")
     except FixtureError:
         pass
     # 4. a non-mapping record -> refusal
@@ -1003,28 +1028,29 @@ def _self_test_body(dev) -> None:
     assert rc == EX_OK, "plan must exit 0"
     p = json.loads(buf.getvalue())
     assert p["drifted"] == "TEXT" and p["golden"] == "LARGE_TEXT"
-    assert p["total_keys"] == 28
-    assert p["golden_counts"] == {"LARGE_TEXT": 27, "SINGLE_OPTIONS": 1}
+    assert p["total_keys"] == 38
+    assert p["golden_counts"] == {"LARGE_TEXT": 36, "SINGLE_OPTIONS": 2}
     assert "pit-" not in buf.getvalue()
 
     dev.write("attack_text_drift self-test: OK (dataType authority pinned "
-              "(config/field-map.json: %d keys, 27 LARGE_TEXT + 1 "
-              "SINGLE_OPTIONS cover choice, no TEXT anywhere); canonical "
-              "one-TEXT-drift inventory re-declaring the ONE data_type of "
-              "the first free-text key as TEXT instead of the byte-exact "
-              "LARGE_TEXT — the repo-vs-live drift the spec called out — "
-              "with every other field preserved byte-for-byte and the cover "
-              "choice left golden; judge FAILs the TEXT-drift read with "
-              "exit 5 through EVERY dataType authority naming the drifted "
-              "key by masked marker while the golden 27+1 control PASSES "
-              "exit 0; double-drift / cover-drift / wrong-direction-swap / "
-              "missing-data_type / truncated / non-mapping records FAIL; "
-              "payload gate ships the one-TEXT-drift attack and REFUSES "
-              "under a pre-drifted or drifted authority while payload-true "
-              "control PASSes the canonical census; 4 attack fixtures "
-              "refused (pre-drifted / truncated / drifted cover / "
-              "non-mapping); CAF_BROWSER_UA pinned; never a token shape, "
-              "never a full key; plan offline)\n" % TOTAL_KEYS)
+              "(config/field-map.json: %d keys, 36 LARGE_TEXT + 2 "
+              "SINGLE_OPTIONS (cover choice + review decision), no TEXT "
+              "anywhere); canonical one-TEXT-drift inventory re-declaring "
+              "the ONE data_type of the first free-text key as TEXT instead "
+              "of the byte-exact LARGE_TEXT — the repo-vs-live drift the "
+              "spec called out — with every other field preserved "
+              "byte-for-byte and both SINGLE_OPTIONS rows left golden; "
+              "judge FAILs the TEXT-drift read with exit 5 through EVERY "
+              "dataType authority naming the drifted key by masked marker "
+              "while the golden 36+2 control PASSES exit 0; double-drift / "
+              "choice-drift / wrong-direction-swap / missing-data_type / "
+              "truncated / non-mapping records FAIL; payload gate ships the "
+              "one-TEXT-drift attack and REFUSES under a pre-drifted or "
+              "drifted authority while payload-true control PASSes the "
+              "canonical census; 4 attack fixtures refused (pre-drifted / "
+              "truncated / drifted SINGLE_OPTIONS key / non-mapping); "
+              "CAF_BROWSER_UA pinned; never a token shape, never a full "
+              "key; plan offline)\n" % TOTAL_KEYS)
 
 
 # ---------------------------------------------------------------------------
@@ -1037,12 +1063,12 @@ def main(argv=None):
                     "LARGE_TEXT), must FAIL (Skill 59, U07 tooling): the "
                     "adversarial sibling of the engine's dataType law, "
                     "shipping the deterministic one-TEXT-drift inventory "
-                    "(the canonical 28-key field inventory read from "
+                    "(the canonical 38-key field inventory read from "
                     "config/field-map.json with the ONE data_type of one "
                     "free-text key re-declared TEXT, every other field "
                     "preserved) that every byte-exact dataType gate must "
                     "refuse, and the fail-closed offline gates that prove "
-                    "it (the golden 27+1 control PASSES).")
+                    "it (the golden 36+2 control PASSES).")
     ap.add_argument("--record", default=None,
                     help="field-inventory record to judge (verify); "
                          "defaults to the first stdin line (e.g. a gate-"

@@ -92,13 +92,15 @@
 #      scope_check.py is the PAYLOAD-side gate: a submission fires the
 #      Intake Fire trigger ONLY when it identifies as the universal
 #      author-intake form.
-#   6. CUSTOM FIELD count + dataTypes — all 28 contract fields present BY
+#   6. CUSTOM FIELD count + dataTypes — all 38 contract fields present BY
 #      KEY, BYTE-EXACT against config/field-map.json provisioning.fields
 #      (19 base PRD Section 6 + 4 Gap G10 chapter-rewrite-preservation +
-#      5 U8 cover-style keys; 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice
-#      with the four named options in order: Signature, Bold Editorial,
-#      Fine Art, Pure Type). A strict subset is a MISSING (STOP, exit 2);
-#      extra/mutated keys fail closed (exit 5).
+#      5 U8 cover-style + 10 U15-absorbed keys; 36 LARGE_TEXT + 2
+#      SINGLE_OPTIONS: the cover choice (four named options in order:
+#      Signature, Bold Editorial, Fine Art, Pure Type) and the review
+#      decision (approve_as_is, request_rewrite_with_notes). A strict
+#      subset is a MISSING (STOP, exit 2); extra/mutated keys fail closed
+#      (exit 5).
 #   7. CUSTOM VALUES — the four contract location custom values present BY
 #      KEY (anthology_webhook_url / anthology_hook_secret / producer /
 #      producer_email), each holding ONLY a clearly-labeled placeholder; a
@@ -253,12 +255,13 @@ VERIFY_ITEMS = (
     {
         "item": 6,
         "title": "Custom field count + dataTypes",
-        "asserts": ("all 28 contract fields present BY KEY, BYTE-EXACT "
+        "asserts": ("all 38 contract fields present BY KEY, BYTE-EXACT "
                     "(19 base PRD Section 6 + 4 Gap G10 rewrite-preservation + "
-                    "5 U8 cover-style; 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover "
-                    "choice with the four named options in order: Signature, "
-                    "Bold Editorial, Fine Art, Pure Type); a strict subset is "
-                    "a MISSING, extra/mutated keys fail closed"),
+                    "5 U8 cover-style + 10 U15-absorbed; 36 LARGE_TEXT + 2 "
+                    "SINGLE_OPTIONS: the cover choice with its four named "
+                    "options and the review decision with its two gate "
+                    "actions); a strict subset is a MISSING, extra/mutated "
+                    "keys fail closed"),
         "source": "config/field-map.json provisioning.fields",
         "fails": "AF-AE-TEMPLATE-FIELD-MISSING (STOP, exit 2) / "
                  "AF-AE-TEMPLATE-KEY-MISMATCH (exit 5)",
@@ -345,7 +348,7 @@ MODULES = (
         "name": "golden_fields.py",
         "place": "scripts/u02_modules/",
         "manifest_row": None,
-        "role": ("the golden 28-record field-list fixture, derived "
+        "role": ("the golden 38-record field-list fixture, derived "
                  "BYTE-FOR-BYTE from field-map.json (never a hardcoded key "
                  "list); MappingProxyType-frozen canonical payload, tuple "
                  "options; payload() REFUSES (exit 5) on any contract drift"),

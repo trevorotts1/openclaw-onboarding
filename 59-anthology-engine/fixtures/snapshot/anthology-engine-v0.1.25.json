@@ -5,7 +5,7 @@
     "custom_values": 4,
     "forms": 4,
     "tags": 8,
-    "workflows": 8
+    "workflows": 24
   },
   "custom_fields": [
     {
@@ -144,12 +144,7 @@
       "dataType": "SINGLE_OPTIONS",
       "fieldKey": "contact.anthology_cover_choice",
       "name": "anthology_cover_choice",
-      "options": [
-        "Signature",
-        "Bold Editorial",
-        "Fine Art",
-        "Pure Type"
-      ]
+      "options": []
     },
     {
       "dataType": "LARGE_TEXT",
@@ -203,10 +198,7 @@
       "dataType": "SINGLE_OPTIONS",
       "fieldKey": "contact.anthology_review_decision",
       "name": "anthology_review_decision",
-      "options": [
-        "approve_as_is",
-        "request_rewrite_with_notes"
-      ]
+      "options": []
     },
     {
       "dataType": "LARGE_TEXT",
@@ -271,8 +263,8 @@
       "value": "REPLACE-ME"
     }
   ],
-  "cut_at": "2026-08-14T01:58:05Z",
-  "fixture_version": "1.0.0",
+  "cut_at": "2026-08-13T20:10:08Z",
+  "fixture_version": "0.1.25",
   "forms": {
     "contract_bound_per_anthology": [
       {
@@ -427,6 +419,58 @@
   },
   "workflows": [
     {
+      "name": "00-Start Anthology Writer with Avatar Alchemist",
+      "status": "draft",
+      "steps": 10,
+      "trigger_active": false,
+      "trigger_conditions": [
+        {
+          "field": "survey.id",
+          "operator": "is-any-of",
+          "title": "Survey is",
+          "type": "string",
+          "value": [
+            "9ZpRlxlevxEMs7mdkoHg"
+          ]
+        }
+      ],
+      "trigger_type": "survey_submission"
+    },
+    {
+      "name": "Anthology Intake Fire",
+      "status": "published",
+      "steps": 1,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "form.id",
+          "operator": "is-any-of",
+          "title": "Form is",
+          "type": "string",
+          "value": [
+            "U65pwoeMTy1niMqllKWG"
+          ]
+        }
+      ],
+      "trigger_type": "form_submission"
+    },
+    {
+      "name": "Anthology Pipeline Manager and Notification System",
+      "status": "published",
+      "steps": 16,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "opportunity.pipelineId",
+          "operator": "==",
+          "title": "In pipeline",
+          "type": "select",
+          "value": "puUkr2fhsVkZkjf0MU4U"
+        }
+      ],
+      "trigger_type": "opportunity_changed"
+    },
+    {
       "name": "Anthology Release: Avatar",
       "status": "published",
       "steps": 2,
@@ -438,18 +482,16 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-avatar"
-          ]
+          "value": "anthology-release-avatar"
         }
       ],
       "trigger_type": "contact_tag"
     },
     {
       "name": "Anthology Release: Chapter",
-      "status": "published",
+      "status": "unknown",
       "steps": 2,
-      "trigger_active": true,
+      "trigger_active": false,
       "trigger_conditions": [
         {
           "field": "tagsAdded",
@@ -457,18 +499,16 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-chapter"
-          ]
+          "value": "anthology-release-chapter"
         }
       ],
       "trigger_type": "contact_tag"
     },
     {
       "name": "Anthology Release: Cover Picks",
-      "status": "published",
+      "status": "unknown",
       "steps": 2,
-      "trigger_active": true,
+      "trigger_active": false,
       "trigger_conditions": [
         {
           "field": "tagsAdded",
@@ -476,9 +516,7 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-cover"
-          ]
+          "value": "anthology-release-cover"
         }
       ],
       "trigger_type": "contact_tag"
@@ -495,9 +533,7 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-final"
-          ]
+          "value": "anthology-release-final"
         }
       ],
       "trigger_type": "contact_tag"
@@ -514,18 +550,16 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-outline"
-          ]
+          "value": "anthology-release-outline"
         }
       ],
       "trigger_type": "contact_tag"
     },
     {
       "name": "Anthology Release: Rewrite",
-      "status": "published",
+      "status": "unknown",
       "steps": 2,
-      "trigger_active": true,
+      "trigger_active": false,
       "trigger_conditions": [
         {
           "field": "tagsAdded",
@@ -533,9 +567,7 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-rewrite"
-          ]
+          "value": "anthology-release-rewrite"
         }
       ],
       "trigger_type": "contact_tag"
@@ -552,12 +584,46 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-release-tone"
-          ]
+          "value": "anthology-release-tone"
         }
       ],
       "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Review Fire",
+      "status": "published",
+      "steps": 1,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "form.id",
+          "operator": "is-any-of",
+          "title": "Form is",
+          "type": "string",
+          "value": [
+            "riNlAkYbcW3g92VRLqq0"
+          ]
+        }
+      ],
+      "trigger_type": "form_submission"
+    },
+    {
+      "name": "Anthology Title Fire",
+      "status": "published",
+      "steps": 1,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "form.id",
+          "operator": "is-any-of",
+          "title": "Form is",
+          "type": "string",
+          "value": [
+            "UgiiSoZsA4vyqOVfO5fi"
+          ]
+        }
+      ],
+      "trigger_type": "form_submission"
     },
     {
       "name": "Anthology: Book Delivered",
@@ -571,9 +637,194 @@
           "operator": "index-of-true",
           "title": "Tag Added",
           "type": "select",
-          "value": [
-            "anthology-delivered"
-          ]
+          "value": "anthology-delivered"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Book Delivered",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-delivered"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Chapter Approval Ready",
+      "status": "published",
+      "steps": 1,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-producer-chapter-ready"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Cover Ready Notice",
+      "status": "published",
+      "steps": 1,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-cover-ready"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Avatar",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-avatar"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Chapter",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-chapter"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Cover Picks",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-cover"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Final Chapter",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-final"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Outline & Blurb",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-outline"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Rewrite",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-rewrite"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Titles",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-title"
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Release: Tone",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": "anthology-release-tone"
         }
       ],
       "trigger_type": "contact_tag"

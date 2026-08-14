@@ -732,7 +732,7 @@ def _self_test_body(dev) -> None:
     cv_keys = _contract_custom_value_keys(contract)
 
     # ---- contract coherence (the same assertions the U02 verifier runs) ----
-    assert len(want_keys) == 28, "field-map must carry exactly 28 keys, got %d" % len(want_keys)
+    assert len(want_keys) == 38, "field-map must carry exactly 38 keys, got %d" % len(want_keys)
     assert len(want_stages) == 9, "field-map must carry exactly 9 stages, got %d" % len(want_stages)
     assert len(cv_keys) == 4, "contract must carry exactly 4 custom values"
     assert field_map["pipeline"]["standard_pipeline_name"] == "Anthology Engine"
@@ -954,7 +954,7 @@ def _self_test_body(dev) -> None:
         rc = plan(field_map, contract, location_id="loc_tmpl", out=io.StringIO())
     assert rc == EX_OK, "plan must exit 0"
     p = json.loads(buf.getvalue())
-    assert p["custom_fields"]["expected_count"] == 28
+    assert p["custom_fields"]["expected_count"] == 38
     assert p["custom_values"]["expected_keys"] == cv_keys
     assert p["pipeline"]["expected_stages"] == want_stages
 
@@ -964,7 +964,7 @@ def _self_test_body(dev) -> None:
     parsed = json.loads(buf.getvalue())
     assert parsed["verdict"] == report["verdict"]
 
-    dev.write("delta_reporter self-test: OK (contract coherence 28 fields / 9 "
+    dev.write("delta_reporter self-test: OK (contract coherence 38 fields / 9 "
               "stages / 4 custom values; diff primitive names missing / extra / "
               "value drift both sides; credential-shaped value, non-list input, "
               "unnameable row, and empty expected all REFUSED; build_report "
@@ -1001,7 +1001,7 @@ def main(argv=None):
         description="JSON delta report (U02, Skill 59): diff the live "
                     "Anthology Convert and Flow TEMPLATE location against the "
                     "engine's sources of truth (pipeline name + nine stages, "
-                    "28 custom field keys, 4 location custom values) and name "
+                    "38 custom field keys, 4 location custom values) and name "
                     "every delta as JSON on stdout — never a secret, never a "
                     "token, fail-closed.")
     ap.add_argument("--location-id", default="",

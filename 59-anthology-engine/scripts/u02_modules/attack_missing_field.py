@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: u02_modules/attack_missing_field.py
-# ATTACK FIXTURE — 27 OF 28 FIELDS, MUST FAIL (U02 tooling, extension module).
+# ATTACK FIXTURE — 37 OF 38 FIELDS, MUST FAIL (U02 tooling, extension module).
 # The adversarial sibling of golden_fields.py: a live customFields read that
-# carries EVERY contract field except one — a strict 27-key subset of the 28
+# carries EVERY contract field except one — a strict 37-key subset of the 38
 # intended keys a Convert and Flow location must carry. The U02 verifier's
 # byte-exact field gate (fields_check.py) MUST FAIL this read in BOTH of its
 # directions (the missing key is a strict-subset MISSING, never a pass) and
 # THIS module's own gate payload() MUST REFUSE it fail-closed with exit 5 —
-# a 27-key read is drift, never a golden payload. The one dropped field is
+# a 37-key read is drift, never a golden payload. The one dropped field is
 # DETERMINISTIC: the LAST key of the field-map's provisioning.fields inventory
 # (the control slot contact.anthology_rewrite_count today), so the fixture
 # survives map edits — derive by position, never by hardcoded key (the field-
@@ -28,34 +28,34 @@
 # use resolves anthology_registry from scripts/.
 #
 # WHAT THIS OWNS:
-#   1. ATTACK_FIELDS — a frozen, deterministic list of the 27 field records
+#   1. ATTACK_FIELDS — a frozen, deterministic list of the 37 field records
 #      ({fieldKey, name, dataType, id, options}) exactly as a live customFields
 #      read would return them for a location missing the LAST contract field:
 #      fieldKey and name byte-equal the map's intended_key and create_name,
 #      dataType carries the map's declared type (LARGE_TEXT for every free-text
-#      key, Gap G11; SINGLE_OPTIONS for the lone U8 cover-choice key, with its
-#      four picklist options), and each record carries the SAME stable
+#      key, Gap G11; SINGLE_OPTIONS for the U8 cover-choice key and the U15-absorbed
+#      review decision, each with its picklist options), and each record carries the SAME stable
 #      synthetic field id the golden sibling ships (fld_golden_000 ..
-#      fld_golden_026 — the missing field's id fld_golden_027 is absent, and
+#      fld_golden_036 — the missing field's id fld_golden_037 is absent, and
 #      its record is absent: the attack is a STRICT SUBSET, the exact shape
 #      that must never pass). The OPTIONS container is a tuple (never a list),
 #      so an attack record can never be mutated through the module's public
 #      surface.
 #   2. attack_fields() — the builder, fail-closed: a missing/malformed
 #      provisioning.fields inventory or a contract that does not satisfy the
-#      28-key law raises FixtureError instead of shipping a wrong fixture.
+#      38-key law raises FixtureError instead of shipping a wrong fixture.
 #      The drop is applied by POSITION (the last inventory row), never by a
 #      hardcoded key.
 #   3. verify_live(client, location_id, field_map) — the JUDGE: reports the
-#      27-key read against the field-map contract and exits 5 (mismatch family)
-#      with missing=["<the last intended key>"], never a pass; on the true 28
+#      37-key read against the field-map contract and exits 5 (mismatch family)
+#      with missing=["<the last intended key>"], never a pass; on the true 38-
 #      key read it exits 0. The one place this module makes the FAIL explicit:
 #      an attack fixture that PASSES any field gate is a broken gate.
 #   4. payload() / payload_true() — the FAIL-CLOSED gates. payload() REFUSES
-#      the 27-key fixture with exit 5 (verdict REFUSED — the fixture must fail,
+#      the 37-key fixture with exit 5 (verdict REFUSED — the fixture must fail,
 #      and it must fail HERE, offline, before any live read). payload_true()
-#      is the control: the TRUE 28-key golden payload passes exit 0, so the
-#      self-test's pass/fail split discriminates the 27/28 boundary and never
+#      is the control: the TRUE 38-key golden payload passes exit 0, so the
+#      self-test's pass/fail split discriminates the 37/38 boundary and never
 #      a broken instrument (the negative-result contract: a negative is a
 #      claim and carries the same burden of proof as a positive one — a gate
 #      that fails everything is a broken check, not a real fault).
@@ -80,23 +80,23 @@
 #     a registry regression is caught HERE first.
 #
 # EXIT CODE CONTRACT (house convention; mirrors the U02 verifier):
-#   0  verified success — the golden 28-key payload is internally consistent
+#   0  verified success — the golden 38-key payload is internally consistent
 #      and byte-equal to the field-map contract; also self-test / plan OK
 #   1  unexpected error (malformed/unreadable field-map JSON)
 #   4  self-test FAILED (AF-AE-ATTACKMISSINGFIELD-* family, enforced violation)
-#   5  mismatch — the 27-key attack fixture is REFUSED (payload), the 27-key
+#   5  mismatch — the 37-key attack fixture is REFUSED (payload), the 37-key
 #      read is FAIL (verify_live), or the map drifted from the fixture
-#      contract (inventory length != 28, or total_keys != the inventory
+#      contract (inventory length != 38, or total_keys != the inventory
 #      length) — all FAIL-CLOSED refusals, never a blind pass
 #
 # STDLIB ONLY. Calls NO model. Sibling import bootstrap identical to
 # golden_fields.py: sys.path.insert to scripts/ then
 # `import anthology_registry as reg`.
 # =============================================================================
-"""attack_missing_field.py — the 27-of-28-field attack fixture that must FAIL.
+"""attack_missing_field.py — the 37-of-38-field attack fixture that must FAIL.
 
-The adversarial sibling of golden_fields.py: a deterministic strict 27-key
-subset of the 28 contract fields, which the byte-exact field gate must never
+The adversarial sibling of golden_fields.py: a deterministic strict 37-key
+subset of the 38 contract fields, which the byte-exact field gate must never
 pass and which this module's own gates refuse fail-closed (exit 5).
 """
 
@@ -121,30 +121,34 @@ EX_VIOLATION = 4  # enforced violation detected (self-test FAILED)
 SKILL_DIR = Path(__file__).resolve().parent.parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
 
-# The one fixed report contract. The 28 field KEYS themselves are NEVER
+# The one fixed report contract. The 38 field KEYS themselves are NEVER
 # hardcoded here — they come from the field-map (the single source of truth);
 # a hardcoded key list would drift and defeat the fixture's whole purpose.
 ATTACK_CONTRACT = "anthology-engine-attack-missing-field"
 
 # The contract total, fixed by the PRD (19 base Section 6 link/control keys +
-# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys). The
-# attack fixture drops exactly ONE of these: 27 is the adversarial count.
-CONTRACT_TOTAL = 28
-ATTACK_TOTAL = CONTRACT_TOTAL - 1  # 27 of 28 — the strict-subset attack
+# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10
+# U15-absorbed live fields). The attack fixture drops exactly ONE of these:
+# 37 is the adversarial count.
+CONTRACT_TOTAL = 38
+ATTACK_TOTAL = CONTRACT_TOTAL - 1  # 37 of 38 — the strict-subset attack
 
-# The ONE non-free-text field in the contract (PRD Section 6 / U8): the
-# cover-choice picklist. Everything else must be LARGE_TEXT (Gap G11). The
-# picklist's four options are the named cover styles the client picks from.
+# The TWO non-free-text fields in the contract: the U8 cover-choice picklist
+# and the U15-absorbed review decision (PRD Section 4). Everything else must
+# be LARGE_TEXT (Gap G11). The picklists' options are the named cover styles
+# the client picks from and the gate_engine s5_gate actions.
 # Mirrors golden_fields.py byte-for-byte: the fixture stays golden-shaped
 # on every field it KEEPS, so the ONLY deviation is the missing field.
 COVER_CHOICE_KEY = "contact.anthology_cover_choice"
 COVER_CHOICE_OPTIONS = ("Signature", "Bold Editorial", "Fine Art", "Pure Type")
+DECISION_KEY = "contact.anthology_review_decision"
+DECISION_OPTIONS = ("approve_as_is", "request_rewrite_with_notes")
 
 # The drop position: the LAST row of the field-map's provisioning.fields
-# inventory (the control slot contact.anthology_rewrite_count today). By
+# inventory (the last U15-absorbed intake row today). By
 # POSITION, never by hardcoded key — the field-map is the single source of
 # truth, so the attack tracks the map's own ordering. Drop exactly one: a
-# 27-key strict subset, the shape that must NEVER pass a field gate.
+# 37-key strict subset, the shape that must NEVER pass a field gate.
 DROP_INDEX = -1
 
 
@@ -186,10 +190,10 @@ def _contract_intended_keys(field_map: dict) -> list:
 # The attack builder — fail-closed, deterministic, golden-shaped minus one.
 # ---------------------------------------------------------------------------
 def attack_fields(field_map: dict) -> list:
-    """Derive the 27-record attack payload from the field-map: every contract
+    """Derive the 37-record attack payload from the field-map: every contract
     field EXCEPT the last inventory row, byte-exact golden shape (fieldKey and
     name byte-equal the map's intended_key and create_name, dataType per the
-    G11/U8 law, stable synthetic field id). Raises FixtureError on ANY contract
+    G11/U8/U15 law, stable synthetic field id). Raises FixtureError on ANY contract
     drift — a wrong fixture is never shipped.
 
     The returned list is a deep copy; mutating it never touches the internal
@@ -206,7 +210,8 @@ def attack_fields(field_map: dict) -> list:
         raise FixtureError(
             "field-map provisioning.fields carries %d keys, but the golden "
             "contract is %d (19 base PRD Section 6 + 4 Gap G10 rewrite + 5 U8 "
-            "cover-style) — the map drifted; refusing to ship an attack payload."
+            "cover-style + 10 U15-absorbed) — the map drifted; refusing to ship "
+            "an attack payload."
             % (len(inventory), CONTRACT_TOTAL))
 
     seen = {}
@@ -239,15 +244,21 @@ def attack_fields(field_map: dict) -> list:
                 "intended_key %r repeats in the inventory — refusing." % intended)
         seen[intended] = True
 
-        # The G11 / U8 data-type law, byte-exact: every free-text key is
-        # LARGE_TEXT (the multi-line law, matching live provisioning); the lone
-        # cover-choice key is SINGLE_OPTIONS carrying its four picklist options.
+        # The G11 / U8 / U15 data-type law, byte-exact: every free-text key is
+        # LARGE_TEXT (the multi-line law, matching live provisioning); the two
+        # picklist keys are SINGLE_OPTIONS, each carrying its own options.
         if intended == COVER_CHOICE_KEY:
             if dtype != "SINGLE_OPTIONS":
                 raise FixtureError(
                     "%s must be declared SINGLE_OPTIONS (U8), got %r — refusing."
                     % (intended, dtype))
             options = COVER_CHOICE_OPTIONS
+        elif intended == DECISION_KEY:
+            if dtype != "SINGLE_OPTIONS":
+                raise FixtureError(
+                    "%s must be declared SINGLE_OPTIONS (PRD Section 4), got "
+                    "%r — refusing." % (intended, dtype))
+            options = DECISION_OPTIONS
         else:
             if dtype != "LARGE_TEXT":
                 raise FixtureError(
@@ -285,7 +296,7 @@ def _build_attack() -> tuple:
         for f in attack_fields(fm))
 
 
-# The canonical attack payload: 27 records, tuple-frozen — 28 minus the last
+# The canonical attack payload: 37 records, tuple-frozen — 38 minus the last
 # contract field. A live customFields read shaped exactly like this MUST FAIL
 # every byte-exact field gate (missing strict subset); payload() below refuses
 # it HERE, offline, so no live read ever has to.
@@ -305,14 +316,14 @@ def _mask_location(loc: str) -> str:
 
 
 def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
-    """Judge the 27-key attack read against the field-map contract.
+    """Judge the 37-key attack read against the field-map contract.
 
     READ-ONLY and OFFLINE: the read surface is the ATTACK_FIELDS canonical
     payload (this module never makes a network call — reg.CafClient is the
     only thing that ever talks to Convert and Flow, and it sends
     CAF_BROWSER_UA on every request, the proven CF-1010 edge fix). The judge
-    is the explicit fail: on the 27-key fixture the verdict is FAIL, exit 5
-    (mismatch family), naming the missing key; on a true 28-key read the
+    is the explicit fail: on the 37-key fixture the verdict is FAIL, exit 5
+    (mismatch family), naming the missing key; on a true 38-key read the
     verdict is PASS, exit 0. The client argument exists so a future caller
     can hand a live read surface to the same judge; it is never called with
     anything but an in-memory fixture in this module.
@@ -333,7 +344,7 @@ def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
     want_keys = _contract_intended_keys(field_map)
     if len(want_keys) != CONTRACT_TOTAL:
         raise FixtureError(
-            "field-map must carry %d intended keys to judge the 27-key attack "
+            "field-map must carry %d intended keys to judge the 37-key attack "
             "fixture; got %d — refusing." % (CONTRACT_TOTAL, len(want_keys)))
 
     live = _collect_read(client, location_id)
@@ -365,7 +376,7 @@ def verify_live(client, location_id: str, field_map: dict, *, out=None) -> int:
         "fail_closed": {
             "strict_subset_fails": True,
             "byte_exact_required": True,
-            "note": "a 27-of-28 read is a MISSING strict subset — exit 5, "
+            "note": "a 37-of-38 read is a MISSING strict subset — exit 5, "
                     "never a pass. An attack fixture that passes ANY field "
                     "gate is a broken gate."},
     }, indent=2, sort_keys=True))
@@ -401,10 +412,10 @@ def _collect_read(client, location_id: str) -> dict:
 # Fail-closed payload gates — the offline verdict the self-test rides on.
 # ---------------------------------------------------------------------------
 def payload(field_map: dict, *, out=None) -> int:
-    """The FAIL-CLOSED gate: the 27-key attack fixture must NEVER ship as a
+    """The FAIL-CLOSED gate: the 37-key attack fixture must NEVER ship as a
     golden payload. Any payload whose record count is not exactly the
-    CONTRACT_TOTAL (28) is REFUSED with exit 5 (verdict REFUSED, ok False) —
-    including the canonical 27-key attack. Returns the exit code; emits the
+    CONTRACT_TOTAL (38) is REFUSED with exit 5 (verdict REFUSED, ok False) —
+    including the canonical 37-key attack. Returns the exit code; emits the
     ONE JSON report object on stdout, human notes on stderr."""
     out = out or sys.stderr
     try:
@@ -430,7 +441,7 @@ def payload(field_map: dict, *, out=None) -> int:
             "ok": False,
             "verdict": "REFUSED",
             "total": len(attack),
-            "detail": "attack fixture must carry exactly %d records (28 minus "
+            "detail": "attack fixture must carry exactly %d records (38 minus "
                       "one dropped field), got %d — drift." % (ATTACK_TOTAL, len(attack)),
         }, indent=2, sort_keys=True))
         return EX_MISMATCH
@@ -444,16 +455,16 @@ def payload(field_map: dict, *, out=None) -> int:
         "missing": [ATTACK_MISSING_KEY],
         "fields": attack,
         "detail": "%d-record attack fixture derived byte-exact from field-map.json "
-                  "(27 of 28 — the strict-subset read that MUST FAIL every "
+                  "(37 of 38 — the strict-subset read that MUST FAIL every "
                   "byte-exact field gate)" % len(attack),
     }, indent=2, sort_keys=True))
     return EX_OK
 
 
 def payload_true(field_map: dict, *, out=None) -> int:
-    """The CONTROL gate (negative-result contract): the TRUE 28-key golden
+    """The CONTROL gate (negative-result contract): the TRUE 38-key golden
     payload must PASS exit 0 — so a payload gate that fails EVERYTHING (a
-    broken instrument) is never mistaken for a real 27/28 discrimination.
+    broken instrument) is never mistaken for a real 37/38 discrimination.
     Derives the full golden payload via the golden sibling (never a second
     implementation) and exits 0 only on exactly CONTRACT_TOTAL records."""
     out = out or sys.stderr
@@ -468,7 +479,7 @@ def payload_true(field_map: dict, *, out=None) -> int:
             "ok": False,
             "verdict": "REFUSED",
             "total": None,
-            "detail": "control gate cannot derive the golden 28-key payload — "
+            "detail": "control gate cannot derive the golden 38-key payload — "
                       "golden_fields.py unavailable.",
         }, indent=2, sort_keys=True))
         return EX_ERR
@@ -492,7 +503,7 @@ def payload_true(field_map: dict, *, out=None) -> int:
         "verdict": "PASS",
         "total": len(golden),
         "detail": "control: the true %d-key golden payload passes exit 0 — the "
-                  "27-key attack fails by comparison, never by a broken gate."
+                  "37-key attack fails by comparison, never by a broken gate."
                   % len(golden),
     }, indent=2, sort_keys=True))
     return EX_OK
@@ -546,7 +557,7 @@ def self_test(out=None) -> int:
 
 class _FixtureReader:
     """The in-memory read surface verify_live judges: hands back the canonical
-    attack payload (27 of 28) — never a network call, never a token."""
+    attack payload (37 of 38) — never a network call, never a token."""
 
     def __init__(self, fields=None):
         self._fields = fields  # None -> the canonical ATTACK_FIELDS
@@ -574,7 +585,8 @@ def _self_test_body(dev) -> None:
     assert total is not None and len(inventory) == total, \
         "inventory must equal provisioning.total_keys (%s != %s)" % (len(inventory), total)
     assert len(inventory) == CONTRACT_TOTAL, \
-        "field-map must carry exactly 28 keys (19 base + 4 G10 + 5 U8), got %d" % len(inventory)
+        "field-map must carry exactly 38 keys (19 base + 4 G10 + 5 U8 + 10 " \
+        "U15-absorbed), got %d" % len(inventory)
     assert len(set(want_keys)) == CONTRACT_TOTAL, "intended keys must be unique"
     assert all(k.startswith(reg._KEY_PREFIX) for k in want_keys), \
         "every intended key must carry the contact. prefix"
@@ -584,9 +596,9 @@ def _self_test_body(dev) -> None:
     assert ATTACK_MISSING_KEY == dropped, \
         "ATTACK_MISSING_KEY must track the last inventory row (%r)" % dropped
 
-    # ---- the canonical fixture: 27 records, byte-exact, tuple-frozen --------
+    # ---- the canonical fixture: 37 records, byte-exact, tuple-frozen --------
     assert isinstance(ATTACK_FIELDS, tuple) and len(ATTACK_FIELDS) == ATTACK_TOTAL, \
-        "ATTACK_FIELDS must be the tuple-frozen 27-record payload, got %d" % len(ATTACK_FIELDS)
+        "ATTACK_FIELDS must be the tuple-frozen 37-record payload, got %d" % len(ATTACK_FIELDS)
     assert isinstance(ATTACK_FIELDS[0]["options"], tuple), \
         "attack options containers must be tuples (immutable canonical surface)"
     kept = [f["fieldKey"] for f in ATTACK_FIELDS]
@@ -599,15 +611,19 @@ def _self_test_body(dev) -> None:
             "attack name must derive back to the fieldKey (%r)" % f["fieldKey"]
         assert f["dataType"] in ("LARGE_TEXT", "SINGLE_OPTIONS"), f["dataType"]
         assert f["id"].startswith("fld_golden_"), f["id"]
-    assert sum(1 for f in ATTACK_FIELDS if f["dataType"] == "SINGLE_OPTIONS") == 1, \
-        "exactly one SINGLE_OPTIONS field (the U8 cover choice) survives the drop"
-    cover = next(f for f in ATTACK_FIELDS if f["dataType"] == "SINGLE_OPTIONS")
-    assert cover["fieldKey"] == COVER_CHOICE_KEY
+    singles = [f for f in ATTACK_FIELDS if f["dataType"] == "SINGLE_OPTIONS"]
+    assert len(singles) == 2, \
+        "exactly TWO SINGLE_OPTIONS fields (the U8 cover choice + the U15 " \
+        "review decision) must survive the drop, got %d" % len(singles)
+    cover = next(f for f in singles if f["fieldKey"] == COVER_CHOICE_KEY)
     assert cover["options"] == COVER_CHOICE_OPTIONS, \
         "the cover-choice picklist options must be the four U8 cover styles"
+    decision = next(f for f in singles if f["fieldKey"] == DECISION_KEY)
+    assert decision["options"] == DECISION_OPTIONS, \
+        "the decision picklist options must be the two gate_engine s5_gate actions"
     assert all(f["dataType"] == "LARGE_TEXT" for f in ATTACK_FIELDS
-               if f["fieldKey"] != COVER_CHOICE_KEY), \
-        "every non-cover attack field must be LARGE_TEXT (Gap G11)"
+               if f["fieldKey"] not in (COVER_CHOICE_KEY, DECISION_KEY)), \
+        "every non-picklist attack field must be LARGE_TEXT (Gap G11)"
 
     # ---- the canonical fixture can never be mutated through the surface -----
     from types import MappingProxyType
@@ -644,16 +660,16 @@ def _self_test_body(dev) -> None:
     assert ATTACK_FIELDS[0]["fieldKey"] == kept[0], \
         "the returned copy must not alias the canonical payload"
 
-    # ---- the judge: 27-key read MUST FAIL, 28-key control MUST PASS ---------
+    # ---- the judge: 37-key read MUST FAIL, 38-key control MUST PASS ---------
     reader = _FixtureReader()
     import contextlib
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = verify_live(reader, "loc_fx", field_map, out=io.StringIO())
-    assert rc == EX_MISMATCH, "the 27-key attack read must FAIL (exit 5), got %s" % rc
+    assert rc == EX_MISMATCH, "the 37-key attack read must FAIL (exit 5), got %s" % rc
     parsed = json.loads(buf.getvalue())
     assert parsed["verdict"] == "FAIL" and parsed["ok"] is False, \
-        "the 27-key attack read must be FAIL, got %s" % parsed["verdict"]
+        "the 37-key attack read must be FAIL, got %s" % parsed["verdict"]
     assert parsed["total"] == ATTACK_TOTAL and parsed["expected"] == CONTRACT_TOTAL
     assert parsed["missing"] == [dropped], \
         "the attack read must name the dropped key as missing, got %s" % parsed["missing"]
@@ -667,45 +683,45 @@ def _self_test_body(dev) -> None:
     assert "pit-" not in blob and "Bearer" not in blob, \
         "the judge output must never carry a token shape"
 
-    # ---- the fail-closed gates: 27 REFUSED, true 28 PASSES (the control) ----
+    # ---- the fail-closed gates: 37 REFUSED, true 38 PASSES (the control) ----
     buf2 = io.StringIO()
     with contextlib.redirect_stdout(buf2):
         rc = payload(field_map, out=io.StringIO())
     assert rc == EX_OK, "payload on the true map must exit 0, got %s" % rc
     parsed2 = json.loads(buf2.getvalue())
     assert parsed2["ok"] is True and parsed2["verdict"] == "PASS"
-    assert parsed2["total"] == ATTACK_TOTAL == 27, \
-        "the attack fixture must carry exactly 27 records"
+    assert parsed2["total"] == ATTACK_TOTAL == 37, \
+        "the attack fixture must carry exactly 37 records"
     assert parsed2["missing"] == [dropped], \
         "the attack payload must name the dropped key"
     assert parsed2["contract"] == ATTACK_CONTRACT
 
     # the attack payload can never be mistaken for a GOLDEN payload: the
-    # golden gate REFUSES it (27 != 28) — cross-module fail-closed proof.
+    # golden gate REFUSES it (37 != 38) — cross-module fail-closed proof.
     from golden_fields import golden_fields, FixtureError as GoldenError
     try:
         golden_fields(field_map)
         golden_attack = None
     except GoldenError:
         golden_attack = None  # unreachable on the true map — assert below
-    # the real cross-check: the golden builder applied to a 27-key inventory
+    # the real cross-check: the golden builder applied to a 37-key inventory
     tampered = copy.deepcopy(field_map)
     tampered["provisioning"]["fields"] = tampered["provisioning"]["fields"][:-1]
     tampered["provisioning"]["total_keys"] = ATTACK_TOTAL
     try:
         golden_fields(tampered)
-        raise AssertionError("the golden builder must REFUSE a 27-key inventory")
+        raise AssertionError("the golden builder must REFUSE a 37-key inventory")
     except GoldenError:
         pass
 
-    # payload-true (the control): the true 28-key golden payload passes exit 0
+    # payload-true (the control): the true 38-key golden payload passes exit 0
     buf3 = io.StringIO()
     with contextlib.redirect_stdout(buf3):
         rc = payload_true(field_map, out=io.StringIO())
     assert rc == EX_OK, "payload-true on the true map must exit 0, got %s" % rc
     parsed3 = json.loads(buf3.getvalue())
     assert parsed3["ok"] is True and parsed3["verdict"] == "PASS"
-    assert parsed3["total"] == CONTRACT_TOTAL == 28
+    assert parsed3["total"] == CONTRACT_TOTAL == 38
 
     # ---- attack fixtures: every drift REFUSED, never shipped ---------------
     # 1. a mutated fieldKey/name derivation -> FixtureError, never a wrong fixture
@@ -732,14 +748,14 @@ def _self_test_body(dev) -> None:
         raise AssertionError("total_keys drift was NOT refused")
     except FixtureError:
         pass
-    # 4. inventory length drift (29th key) -> refusal
+    # 4. inventory length drift (39th key) -> refusal
     tampered = copy.deepcopy(field_map)
     tampered["provisioning"]["fields"].append(
         {"intended_key": "contact.anthology_extra", "create_name": "anthology_extra",
          "data_type": "LARGE_TEXT", "field_key": None, "field_id": None})
     try:
         attack_fields(tampered)
-        raise AssertionError("a 29-key inventory was NOT refused")
+        raise AssertionError("a 39-key inventory was NOT refused")
     except FixtureError:
         pass
     # 5. duplicate intended_key -> refusal
@@ -785,17 +801,17 @@ def _self_test_body(dev) -> None:
         rc = plan(field_map, out=io.StringIO())
     assert rc == EX_OK, "plan must exit 0"
     p = json.loads(buf4.getvalue())
-    assert p["dropped_key"] == dropped and p["attack_total"] == 27
+    assert p["dropped_key"] == dropped and p["attack_total"] == 37
 
     dev.write("attack_missing_field self-test: OK (field-map coherence %d keys "
-              "== total_keys; canonical 27-record tuple-frozen attack payload "
+              "== total_keys; canonical 37-record tuple-frozen attack payload "
               "byte-exact minus the last inventory row [%s]; immutability + "
-              "deep-copy surface; judge FAILs the 27-key read with exit 5 and "
-              "names the missing key; payload gate PASSes the 27-key attack "
+              "deep-copy surface; judge FAILs the 37-key read with exit 5 and "
+              "names the missing key; payload gate PASSes the 37-key attack "
               "fixture while the GOLDEN gate REFUSES it; payload-true control "
-              "PASSes the 28-key golden payload; 8 attack fixtures refused "
+              "PASSes the 38-key golden payload; 8 attack fixtures refused "
               "(derivation-law violation / TEXT regression / total_keys drift / "
-              "29-key inventory / duplicate key / missing inventory / "
+              "39-key inventory / duplicate key / missing inventory / "
               "prefix-less key / non-list read); masked location; CAF_BROWSER_UA "
               "pinned; plan offline)\n" % (CONTRACT_TOTAL, dropped))
 
@@ -806,12 +822,12 @@ def _self_test_body(dev) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="attack_missing_field.py",
-        description="Attack fixture — 27 of 28 contact custom fields, must FAIL "
+        description="Attack fixture — 37 of 38 contact custom fields, must FAIL "
                     "(Skill 59, U02 tooling): the adversarial sibling of "
                     "golden_fields.py, shipping the deterministic strict-subset "
                     "read that every byte-exact field gate must refuse, and the "
-                    "fail-closed offline gates that prove it (27 REFUSED, the "
-                    "28-key golden control PASSES).")
+                    "fail-closed offline gates that prove it (37 REFUSED, the "
+                    "38-key golden control PASSES).")
     ap.add_argument("--field-map", default=str(FIELD_MAP_PATH),
                     help="path to field-map.json (the single source of truth)")
     ap.add_argument("cmd", nargs="?", choices=["payload", "payload-true",

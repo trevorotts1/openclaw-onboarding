@@ -4,7 +4,7 @@
 # FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE (U07 tooling) — the single
 # implementation of the field-map.json load-and-verify law for this package:
 # read config/field-map.json and return its provisioning.fields inventory
-# (the 28 keys, with their declared data types) ONLY when the map satisfies
+# (the 38 keys, with their declared data types) ONLY when the map satisfies
 # its own contract; refuse anything else. It is the OFFLINE, READ-ONLY,
 # NETWORK-FREE surface of the field-map — the sibling of the U02 byte-exact
 # LIVE check (u02_modules/fields_check.py) and of the registry's provisioning
@@ -25,12 +25,14 @@
 # WHAT THIS OWNS (byte-exact, fail-closed, never a token):
 #   1. THE LOAD LAW: parse field-map.json and return ONLY a contract-verified
 #      provisioning.fields inventory. The contract (config/field-map.json
-#      provisioning_rule): exactly twenty-eight keys — the ten deliverable
+#      provisioning_rule): exactly thirty-eight keys — the ten deliverable
 #      Doc/PDF field pairs (20 keys: the eight base deliverables plus the two
 #      chapter-rewrite-preservation pairs rewrite1/rewrite2 from PRD Gap
 #      G10) plus the three control fields plus the five U8 cover-style
 #      fields (four LARGE_TEXT sample-url fields + one SINGLE_OPTIONS choice
-#      field). provisioning.total_keys MUST byte-match the inventory length;
+#      field) plus the ten U15-absorbed live fields (9 LARGE_TEXT + the
+#      SINGLE_OPTIONS review decision). provisioning.total_keys MUST
+#      byte-match the inventory length;
 #      a map that drifted from its own contract is a refusal (FieldMapError,
 #      exit 2 STOP family), never a silent load. An unresolved field_id slot
 #      (the committed template ships every resolved slot null) is a NORMAL
@@ -43,16 +45,19 @@
 #      fieldKey on create. Every row's create_name MUST derive back to its
 #      intended_key byte-exact (reg.derive_field_key); a violating row is
 #      drift, never loaded.
-#   3. THE TYPE LAW (PRD Gap G11 + U8, byte-exact): every free-text key is
+#   3. THE TYPE LAW (PRD Gap G11 + U8 + U15, byte-exact): every free-text
+#      key is
 #      declared LARGE_TEXT (the multi-line law, matching live provisioning —
 #      the earlier TEXT declaration was a repo-vs-live drift the spec called
-#      out); the ONE SINGLE_OPTIONS key is the U8 cover choice
+#      out); the TWO SINGLE_OPTIONS keys are the U8 cover choice
 #      (contact.anthology_cover_choice) carrying EXACTLY the four named
 #      style options ("Signature", "Bold Editorial", "Fine Art", "Pure
-#      Type") in order. A non-contract data_type on any key is a refusal,
-#      never a load.
+#      Type") in order, and the U15-absorbed review decision
+#      (contact.anthology_review_decision) carrying EXACTLY the two gate
+#      actions ("approve_as_is", "request_rewrite_with_notes") in order. A
+#      non-contract data_type on any key is a refusal, never a load.
 #   4. THE KEY LAW: every intended_key carries the "contact." prefix
-#      (reg._KEY_PREFIX), the twenty-eight keys are unique, and the
+#      (reg._KEY_PREFIX), the thirty-eight keys are unique, and the
 #      inventory is a list of objects — a non-list inventory, a non-object
 #      row, a missing key, a duplicate, or a wrong prefix is a refusal,
 #      never a blind pass.
@@ -77,7 +82,7 @@
 #      inventory was loaded; also self-test OK
 #   1  unexpected error (top-level guard; never a secret leak)
 #   2  STOP — field-map.json missing/unreadable/malformed JSON, or any
-#      FieldMapError contract refusal (28-key count, total_keys mismatch,
+#      FieldMapError contract refusal (38-key count, total_keys mismatch,
 #      derivation law, type law, key law); also empty --field-map usage
 #   3  HELD — reserved for live surfaces; this module never returns 3
 #   4  self-test FAILED (AF-AE-FIELDMAP-* family, enforced violation)
@@ -123,21 +128,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import anthology_registry as reg  # noqa: E402
 
 # The contract total, fixed by the PRD (19 base Section 6 link/control keys +
-# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys). This
-# module asserts this exact number — a map that carries more or fewer keys
-# has drifted and the loader refuses to ship it. (The same 28 that
-# u02_modules/golden_fields.py pins as CONTRACT_TOTAL; the loader is the
-# load-side of that fixture's contract.)
-CONTRACT_TOTAL = 28
+# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + the
+# 10 U15-absorbed live fields 2026-08-13). This module asserts this exact
+# number — a map that carries more or fewer keys has drifted and the loader
+# refuses to ship it. (The same 38 that u02_modules/golden_fields.py pins as
+# CONTRACT_TOTAL; the loader is the load-side of that fixture's contract.)
+CONTRACT_TOTAL = 38
 
-# The ONE non-free-text key in the contract (PRD Section 6 / U8): the
-# cover-choice picklist. Everything else must be LARGE_TEXT (Gap G11). The
-# picklist's four options are the named cover styles the client picks from
-# (their byte-exact names MUST equal scripts/cover_render.py STYLE_NAMES in
-# order — the field-map's own cover_style_fields.choice_options is the
-# checked source, and this module asserts the row against it, never against
-# a hardcoded list).
+# The cover-choice picklist key (PRD Section 6 / U8). Everything except the
+# TWO SINGLE_OPTIONS keys must be LARGE_TEXT (Gap G11). The cover picklist's
+# four options are the named cover styles the client picks from (their
+# byte-exact names MUST equal scripts/cover_render.py STYLE_NAMES in order —
+# the field-map's own cover_style_fields.choice_options is the checked
+# source, and this module asserts the row against it, never against a
+# hardcoded list).
 COVER_CHOICE_KEY = "contact.anthology_cover_choice"
+
+# The review-decision picklist key (PRD Section 4 / U15-absorbed): the TWO
+# decision options are the gate_engine s5_gate actions, and the field-map's
+# own review_decision_field.options block is the checked source (the map is
+# now the authority; the row and the block must byte-equal).
+DECISION_KEY = "contact.anthology_review_decision"
 
 
 class FieldMapError(Exception):
@@ -197,8 +208,8 @@ def load_field_map(path: str | Path) -> dict:
     p = Path(path)
     if not p.exists():
         raise FieldMapError(
-            "field-map.json not found at %s (owned by W1.8; the 28 PRD "
-            "Section 6 keys cannot be loaded without it)" % p)
+            "field-map.json not found at %s (owned by W1.8; the 38 PRD "
+            "Section 6 + U15-absorbed keys cannot be loaded without it)" % p)
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (ValueError, OSError) as exc:
@@ -217,8 +228,8 @@ def load_field_map(path: str | Path) -> dict:
         raise FieldMapError(
             "field-map provisioning.fields carries %d keys, but the "
             "contract is %d (19 base PRD Section 6 + 4 Gap G10 rewrite + 5 "
-            "U8 cover-style) -- the map drifted; refusing to load."
-            % (len(inventory), CONTRACT_TOTAL))
+            "U8 cover-style + 10 U15-absorbed) -- the map drifted; refusing "
+            "to load." % (len(inventory), CONTRACT_TOTAL))
     if len(inventory) != total:
         raise FieldMapError(
             "field-map provisioning.fields carries %d rows but "
@@ -226,9 +237,10 @@ def load_field_map(path: str | Path) -> dict:
             "own contract; refusing to load." % (len(inventory), total))
 
     choice_options = _choice_options_from_map(data)
+    decision_options = _decision_options_from_map(data)
     seen = set()
     for i, item in enumerate(inventory):
-        _verify_row(i, item, seen, choice_options)
+        _verify_row(i, item, seen, choice_options, decision_options)
 
     return inventory
 
@@ -236,10 +248,12 @@ def load_field_map(path: str | Path) -> dict:
 # ---------------------------------------------------------------------------
 # Row verification — the derivation law, the key law, and the type law.
 # ---------------------------------------------------------------------------
-def _verify_row(i: int, item: dict, seen: set, choice_options: list) -> None:
+def _verify_row(i: int, item: dict, seen: set, choice_options: list,
+                decision_options: list) -> None:
     """Verify ONE inventory row byte-exact against the field-map contract.
     Raises FieldMapError on any drift. `choice_options` is the map's own
-    cover_style_fields.choice_options block (resolved once by the loader).
+    cover_style_fields.choice_options block and `decision_options` the
+    review_decision_field.options block (each resolved once by the loader).
     Pure: never prints, never writes."""
     intended = item.get("intended_key")
     cname = item.get("create_name")
@@ -283,6 +297,17 @@ def _verify_row(i: int, item: dict, seen: set, choice_options: list) -> None:
                 "%s options %r must byte-equal the map's own "
                 "cover_style_fields.choice_options %r -- refusing."
                 % (intended, got, choice_options))
+    elif intended == DECISION_KEY:
+        if dtype != "SINGLE_OPTIONS":
+            raise FieldMapError(
+                "%s must be declared SINGLE_OPTIONS (PRD Section 4), got %r "
+                "-- refusing." % (intended, dtype))
+        got = item.get("options")
+        if not isinstance(got, list) or got != decision_options:
+            raise FieldMapError(
+                "%s options %r must byte-equal the map's own "
+                "review_decision_field.options %r -- refusing."
+                % (intended, got, decision_options))
     else:
         if dtype != "LARGE_TEXT":
             raise FieldMapError(
@@ -303,6 +328,20 @@ def _choice_options_from_map(field_map: dict) -> list:
             "list, or empty -- the cover choice picklist cannot be verified; "
             "refusing to load.")
     return list(cs)
+
+def _decision_options_from_map(field_map: dict) -> list:
+    """The review-decision picklist options, from the map's own
+    review_decision_field block (the single source of truth; the options are
+    the gate_engine s5_gate decision actions byte-exact). A missing,
+    non-list, or empty block is a refusal -- the loader never invents the
+    options."""
+    ds = (field_map.get("review_decision_field") or {}).get("options")
+    if not isinstance(ds, list) or not ds:
+        raise FieldMapError(
+            "field-map review_decision_field.options is missing, not a "
+            "list, or empty -- the review-decision picklist cannot be "
+            "verified; refusing to load.")
+    return list(ds)
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +432,7 @@ def main(argv=None):
         sys.stdout.write(
             "fieldmap_loader.py -- Skill 59 U07 fail-closed field-map "
             "loader and contract gate\n"
-            "  run [--field-map PATH]       load-and-verify the 28-key\n"
+            "  run [--field-map PATH]       load-and-verify the 38-key\n"
             "                               provisioning.fields inventory;\n"
             "                               refuses ANY contract drift\n"
             "                               (STOP, exit 2) -- never a\n"
@@ -403,7 +442,7 @@ def main(argv=None):
             "                               no secrets\n"
             "  --json                        ONE JSON object on stdout\n"
             "Exit codes: 0 loaded/verified; 2 STOP (missing/unreadable/\n"
-            "malformed map, or any contract drift: 28-key count, "
+            "malformed map, or any contract drift: 38-key count, "
             "total_keys mismatch, derivation law, type law, key law); 4 "
             "self-test FAILED.\n")
         return reg.EX_OK if args.cmd else reg.EX_STOP
@@ -435,8 +474,11 @@ def self_test():
         "cover_style_fields": {
             "choice_options": ["Signature", "Bold Editorial", "Fine Art", "Pure Type"],
         },
+        "review_decision_field": {
+            "options": ["approve_as_is", "request_rewrite_with_notes"],
+        },
         "provisioning": {
-            "total_keys": 28,
+            "total_keys": 38,
             "fields": [
                 {"intended_key": "contact.anthology_%s_%s_url" % (d, s),
                  "create_name": "anthology_%s_%s_url" % (d, s),
@@ -484,22 +526,83 @@ def self_test():
                  "slot": "rewrite_count",
                  "field_id": None, "field_key": None, "verified_at": None,
                  "location_masked": None},
+                {"intended_key": "contact.anthology_book_name",
+                 "create_name": "anthology_book_name",
+                 "data_type": "LARGE_TEXT", "deliverable": "intake",
+                 "slot": "book_name",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.anthology_title_choice",
+                 "create_name": "anthology_title_choice",
+                 "data_type": "LARGE_TEXT", "deliverable": "title",
+                 "slot": "title_choice",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.anthology_subtitle_choice",
+                 "create_name": "anthology_subtitle_choice",
+                 "data_type": "LARGE_TEXT", "deliverable": "title",
+                 "slot": "subtitle_choice",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.anthology_review_decision",
+                 "create_name": "anthology_review_decision",
+                 "data_type": "SINGLE_OPTIONS", "deliverable": "review",
+                 "slot": "decision",
+                 "options": ["approve_as_is", "request_rewrite_with_notes"],
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.anthology_review_notes",
+                 "create_name": "anthology_review_notes",
+                 "data_type": "LARGE_TEXT", "deliverable": "review",
+                 "slot": "notes",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.anthology_review_stage",
+                 "create_name": "anthology_review_stage",
+                 "data_type": "LARGE_TEXT", "deliverable": "review",
+                 "slot": "stage",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.chapter_about",
+                 "create_name": "chapter_about",
+                 "data_type": "LARGE_TEXT", "deliverable": "intake",
+                 "slot": "chapter_about",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.ideal_avatar",
+                 "create_name": "ideal_avatar",
+                 "data_type": "LARGE_TEXT", "deliverable": "intake",
+                 "slot": "ideal_avatar",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.niche",
+                 "create_name": "niche",
+                 "data_type": "LARGE_TEXT", "deliverable": "intake",
+                 "slot": "niche",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
+                {"intended_key": "contact.primary_goal",
+                 "create_name": "primary_goal",
+                 "data_type": "LARGE_TEXT", "deliverable": "intake",
+                 "slot": "primary_goal",
+                 "field_id": None, "field_key": None, "verified_at": None,
+                 "location_masked": None},
             ],
         },
     }
 
-    # 1. load the golden map: 28 rows, all five contract laws satisfied
+    # 1. load the golden map: 38 rows, all five contract laws satisfied
     inv = load_field_map(_write_tmp(golden, dev))
-    assert len(inv) == CONTRACT_TOTAL == 28, \
-        "golden map must load 28 keys, got %d" % len(inv)
+    assert len(inv) == CONTRACT_TOTAL == 38, \
+        "golden map must load 38 keys, got %d" % len(inv)
     keys = [r["intended_key"] for r in inv]
-    assert len(set(keys)) == 28, "golden keys must be unique"
+    assert len(set(keys)) == 38, "golden keys must be unique"
     assert all(k.startswith(reg._KEY_PREFIX) for k in keys), \
         "every key must carry the contact. prefix"
 
     # 2. the report: status only, the field_id VALUE never surfaces
     report = build_report(inv, source="memory")
-    assert report["ok"] is True and report["loaded"] == 28
+    assert report["ok"] is True and report["loaded"] == 38
     assert report["resolved"] == 0, "null slots must read UNRESOLVED"
     for f in report["fields"]:
         assert f["resolved_status"] == "UNRESOLVED", \
@@ -596,7 +699,7 @@ def self_test():
     _cleanup_temp(dev)
 
     sys.stderr.write(
-        "fieldmap_loader self-test: OK (golden 28-key load; status-only "
+        "fieldmap_loader self-test: OK (golden 38-key load; status-only "
         "report, resolved slot value never surfaced; and 14 attack "
         "fixtures refused fail-closed: missing provisioning / missing "
         "inventory / empty inventory / non-list inventory / non-object row "

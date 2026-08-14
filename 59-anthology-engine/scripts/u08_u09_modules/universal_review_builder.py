@@ -225,8 +225,10 @@ REVIEW_HIDDEN_LAW = ("anthology_id", "stage")
 # "request_rewrite_with_notes"); ENGINE-MANIFEST.json gate_table
 # "s5_participant": "participant token page; exactly two actions; notes feed
 # chapter_updates verbatim"; the sibling u08_u09_modules.dropdown_module
-# owns the decision KEY contact.anthology_review_decision and the two-option
-# law for the contact custom FIELD, and attack_bad_dropdown.py certifies
+# owns the two-option law for the contact custom FIELD (its decision KEY
+# contact.anthology_review_decision is MAP-OWNED since the U15 absorb —
+# config/field-map.json review_decision_field block), and
+# attack_bad_dropdown.py certifies
 # that picklist byte-exact against the same gate law — the FORM surface
 # below is the same law, so the form dropdown and the contact field can
 # never disagree). The DECISION_OPTION_VALUES below are the engine action

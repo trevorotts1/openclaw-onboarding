@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: u07_modules/golden_all_present.py  (U07 tooling)
-# GOLDEN ALL-28-PRESENT FIXTURE — the canonical in-memory payload of the U07
-# FIELD-CENSUS law in its GOLDEN state: ALL 28 Convert and Flow contact custom
+# GOLDEN ALL-38-PRESENT FIXTURE — the canonical in-memory payload of the U07
+# FIELD-CENSUS law in its GOLDEN state: ALL 38 Convert and Flow contact custom
 # fields a provisioned location must carry are on the listing BY EXACT KEY,
 # every one present — the golden control of the U07 all-present gate (the
 # anti-attack mirror of the U07 absent-key fixture, which certifies the state
@@ -16,33 +16,34 @@
 # manifest row and NOT a checker: it ships the GOLDEN all-present surface the
 # offline self-tests of the U07 verifier and its sibling checkers assert
 # against, so every checker's happy path is judged against the SAME payload
-# and a drift in the engine's 28-key law breaks THIS module's self-test first
+# and a drift in the engine's 38-key law breaks THIS module's self-test first
 # (fail-closed: an inconsistent law is a refusal, never a blind pass).
 #
 # WHAT THIS OWNS (the U07 ALL-PRESENT LAW, PRD Section 6 / Gap G10 / U8,
 # provisioned by anthology_registry.provision_fields — the ONE provisioning
 # authority):
 #   1. THE PRESENT-STATE LAW: the U07 census gate is count-then-key, and the
-#      GOLDEN state is EXACTLY 28 field rows on the listing — the contract
+#      GOLDEN state is EXACTLY 38 field rows on the listing — the contract
 #      total (19 base PRD Section 6 link/control keys + 4 Gap G10
-#      chapter-rewrite-preservation keys + 5 U8 cover-style keys), each
+#      chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10
+#      U15-absorbed live fields), each
 #      matched BY EXACT KEY (the exact-key law: a row's fieldKey must
 #      byte-equal the intended key — a renamed, re-prefixed, or drifted key
 #      is indistinguishable from an absent one and BOTH refuse fail-closed).
-#      The golden surface carries ALL 28 under the golden keys, every one
+#      The golden surface carries ALL 38 under the golden keys, every one
 #      present (id_masked on every operator surface, full synthetic id inside
 #      the JSON payload a machine consumer reads) — a listing that loses a
 #      contract key is a FAIL, never a blind pass.
-#   2. THE KEY LAW IS READ ONCE: the 28 intended keys are NEVER retyped here —
+#   2. THE KEY LAW IS READ ONCE: the 38 intended keys are NEVER retyped here —
 #      they come BYTE-EXACT from config/field-map.json provisioning.fields
 #      read through anthology_registry.load_field_map (the single
 #      single-implementation doctrine: a contract read once, in one file; the
-#      same source of truth the U02 golden_fields sibling derives its 28
-#      records from and the registry's own self-test pins at 28). A drift in
+#      same source of truth the U02 golden_fields sibling derives its 38
+#      records from and the registry's own self-test pins at 38). A drift in
 #      the field-map breaks THIS fixture's self-test first — never silently.
 #   3. GOLDEN_ALL_PRESENT — the deep-frozen canonical record: a dict keyed by
-#      the 28 map-derived intended keys, each carrying {"present": True,
-#      "id_masked": <non-reversible last-4 marker>} — all 28 present, field
+#      the 38 map-derived intended keys, each carrying {"present": True,
+#      "id_masked": <non-reversible last-4 marker>} — all 38 present, field
 #      ids SYNTHETIC only (fld_golden_000 .. fld_golden_027 — the fixture
 #      discipline: a fixture id is never a real field id; the same synthetic
 #      id series the U02 golden_fields sibling pins, so a per-box resolved
@@ -60,9 +61,9 @@
 #      dataType, id, options — the shape the U02 golden_fields sibling
 #      emulates for the SAME read).
 #   5. payload — a FAIL-CLOSED all-present gate: the golden listing carries
-#      ALL 28 contract keys byte-exact by their golden keys (each present
+#      ALL 38 contract keys byte-exact by their golden keys (each present
 #      with its one synthetic id, each matched BY EXACT KEY) -> PASS exit 0
-#      with the dispatcher-consumed dict surface {"ok": True, "count": 28,
+#      with the dispatcher-consumed dict surface {"ok": True, "count": 38,
 #      "af_code": "FIELDS-ALL-PRESENT", "note": ...}. ANY deviation (a
 #      contract key absent or renamed, a foreign key that is not in the
 #      contract, a listing of the wrong size, a malformed listing, a
@@ -102,7 +103,7 @@
 # THE SUBJECT MATERIAL IS NEVER HARDCODED HERE AS A LIVE VALUE (SPEC M8): the
 # fixture ships SYNTHETIC deterministic ids only (fld_golden_000 .. — the
 # discipline of the u02/u03/u04/u05 siblings: a fixture id is never a real
-# participant, form, workflow, or field id). The LAW (the 28 contract keys,
+# participant, form, workflow, or field id). The LAW (the 38 contract keys,
 # the exact-key census shape) is pinned from the engine sources:
 # config/field-map.json provisioning.fields read through
 # anthology_registry.load_field_map (the ONE keying authority — read once,
@@ -123,11 +124,11 @@
 #
 # STDLIB ONLY. Calls NO model. Sibling import bootstrap identical to the
 # u02/u03/u04/u05/u06 golden siblings: sys.path.insert to scripts/ then
-# `import anthology_registry as reg` for its canonical constants, and the 28
+# `import anthology_registry as reg` for its canonical constants, and the 38
 # contract keys are read through reg.load_field_map(config/field-map.json
 # provisioning.fields) — never duplicated here.
 # =============================================================================
-"""golden_all_present.py — golden ALL-28-PRESENT fixture for the U07
+"""golden_all_present.py — golden ALL-38-PRESENT fixture for the U07
 self-tests. Pure data + the fail-closed all-present gate; never prints a
 token; the --execute write gate lives in the dispatcher, never here."""
 
@@ -142,7 +143,7 @@ from pathlib import Path
 
 # Sibling import bootstrap (house convention): the registry owns the
 # Cloudflare browser-UA wiring, the exit-code contract, and the field-map IO;
-# the 28 contract keys are read ONCE from the field-map through
+# the 38 contract keys are read ONCE from the field-map through
 # reg.load_field_map — the one source of truth the provisioner, the registry
 # self-test, and the U02 golden_fields sibling all derive from. A fixture
 # never re-implements what a sibling owns.
@@ -162,12 +163,13 @@ FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
 FIXTURE_CONTRACT = "anthology-engine-golden-all-present"
 
 # The contract total, fixed by the PRD (19 base Section 6 link/control keys +
-# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys) — the
-# SAME 28 the registry's self-test and the U02 golden_fields sibling pin. The
+# 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10
+# U15-absorbed live keys) — the
+# SAME 38 the registry's self-test and the U02 golden_fields sibling pin. The
 # golden fixture asserts this exact number against the field-map inventory; a
 # map that carries more or fewer keys has drifted and the fixture refuses to
 # ship.
-CONTRACT_TOTAL = 28
+CONTRACT_TOTAL = 38
 
 # The U07 WRITE-ACTION LAW (Trevor-gated, per the u07 package-init doctrine),
 # pinned here exactly as the U06 golden_found sibling pins its archive gate:
@@ -200,9 +202,9 @@ class FixtureError(Exception):
 # Contract readers (fail-closed: a missing law is a refusal, never a pass)
 # ---------------------------------------------------------------------------
 def _contract_keys() -> tuple:
-    """The 28 intended keys, fail-closed. Read ONCE from
+    """The 38 intended keys, fail-closed. Read ONCE from
     config/field-map.json provisioning.fields through reg.load_field_map —
-    the single source of truth; a map that cannot name the 28 contract keys
+    the single source of truth; a map that cannot name the 38 contract keys
     is a refusal, never a pass (a fixture that does not know what it is a
     fixture OF is worthless)."""
     fm = reg.load_field_map(FIELD_MAP_PATH)
@@ -229,12 +231,12 @@ def _contract_keys() -> tuple:
         raise FixtureError(
             "field-map provisioning.fields carries %d keys, but the golden "
             "contract is %d (19 base PRD Section 6 + 4 Gap G10 rewrite + 5 "
-            "U8 cover-style) — the map drifted; refusing to ship a golden "
-            "payload." % (len(out), CONTRACT_TOTAL))
+            "U8 cover-style + 10 U15-absorbed) — the map drifted; refusing "
+            "to ship a golden payload." % (len(out), CONTRACT_TOTAL))
     if len(set(out)) != CONTRACT_TOTAL:
         raise FixtureError(
             "field-map provisioning.fields carries duplicate intended_key "
-            "values — the census must bind to 28 distinct byte-exact keys, "
+            "values — the census must bind to 38 distinct byte-exact keys, "
             "never duplicates.")
     return tuple(out)
 
@@ -275,7 +277,7 @@ def _is_blank(value) -> bool:
 # The golden builder — fail-closed, deterministic, never a live id.
 # ---------------------------------------------------------------------------
 def golden_all_present() -> dict:
-    """The canonical all-present record: all 28 contract fields present by
+    """The canonical all-present record: all 38 contract fields present by
     exact key, each with its synthetic id masked to its non-reversible
     last-4 marker (the house surface shape for every operator-facing mention
     of an id; the full synthetic id rides inside the JSON payload a machine
@@ -294,7 +296,7 @@ def golden_all_present() -> dict:
 
 
 def golden_fields_payload() -> dict:
-    """The canonical all-present listing surface: {"fields": [...]} — all 28
+    """The canonical all-present listing surface: {"fields": [...]} — all 38
     contract fields by the golden keys, exact, in the row shape a live
     /locations/{id}/customFields read of a fully provisioned location
     returns (fieldKey, name, dataType, id, options — the same shape the U02
@@ -338,7 +340,7 @@ def _build_golden() -> tuple:
 # through every route).
 GOLDEN_ALL_PRESENT = _build_golden()[0]
 
-# The canonical count of the golden state — the contract total (28), derived
+# The canonical count of the golden state — the contract total (38), derived
 # from the frozen record itself (a count drift breaks the fixture first).
 GOLDEN_COUNT = len(GOLDEN_ALL_PRESENT)
 
@@ -391,11 +393,11 @@ def _judge(payload: dict, *, out) -> tuple:
         detail = str(exc)
     else:
         # The foreign-key law: the census must carry EXACTLY the contract —
-        # a row whose key is not in the 28-key contract is drift, refused.
+        # a row whose key is not in the 38-key contract is drift, refused.
         foreign = sorted({_row_key(r) for r in rows} - set(keys))
         if foreign:
             detail = ("the listing carries FOREIGN field key(s) not in the "
-                      "28-key contract: %s — a drifted location surface is "
+                      "38-key contract: %s — a drifted location surface is "
                       "never a pass" % ", ".join(repr(k) for k in foreign))
         elif len(rows) != CONTRACT_TOTAL:
             detail = ("the listing carries %d field row(s) — the all-present "
@@ -447,10 +449,10 @@ def payload(candidate: dict = None, *, out=None) -> dict:
     Returns the dispatcher-consumed dict {"ok", "count", "af_code", "note"}
     (the surface main_skeleton's verify_live reads).
 
-    READ-ONLY: asserts the U07 all-present law — ALL 28 contract fields the
+    READ-ONLY: asserts the U07 all-present law — ALL 38 contract fields the
     census binds to are on the listing byte-exact by the golden keys, each
     present with its one synthetic id, each matched BY EXACT KEY. An absent
-    or renamed contract key, a foreign key outside the 28-key contract, a
+    or renamed contract key, a foreign key outside the 38-key contract, a
     wrong-size listing, a malformed listing (no 'fields' array, non-object
     rows), a non-object candidate, or a credential-shaped value is a
     FAIL-CLOSED refusal (exit 5 in the report), never a blind pass. With no
@@ -506,9 +508,9 @@ def _self_test_body(dev) -> None:
     keys = _contract_keys()
 
     # ---- contract coherence: the keys come ONCE from the field-map ---------
-    assert len(keys) == CONTRACT_TOTAL == 28, \
-        "the golden contract must be 28 keys (19 base + 4 G10 rewrite + 5 U8 cover-style)"
-    assert len(set(keys)) == 28, "the golden keys must be distinct"
+    assert len(keys) == CONTRACT_TOTAL == 38, \
+        "the golden contract must be 38 keys (19 base + 4 G10 rewrite + 5 U8 cover-style + 10 U15-absorbed)"
+    assert len(set(keys)) == 38, "the golden keys must be distinct"
     assert all(k.startswith("contact.") for k in keys), \
         "every golden key must carry the contact. prefix (the exact-key law)"
     # the derivation law holds for every golden key (create_name derives back)
@@ -517,7 +519,7 @@ def _self_test_body(dev) -> None:
     for item in inventory:
         assert reg.derive_field_key(item["create_name"]) == item["intended_key"], \
             "the derivation law broke for %r" % item["intended_key"]
-    # pinned spot keys — the load-bearing members of the 28 (a drift breaks
+    # pinned spot keys — the load-bearing members of the 38 (a drift breaks
     # THIS fixture first, never silently)
     assert "contact.anthology_avatar_doc_url" in keys
     assert "contact.anthology_chapter_doc_url" in keys
@@ -530,8 +532,8 @@ def _self_test_body(dev) -> None:
     # ---- the canonical fixture: all-present record deep-frozen --------------
     assert isinstance(GOLDEN_ALL_PRESENT, MappingProxyType), \
         "GOLDEN_ALL_PRESENT must be mappingproxy-frozen"
-    assert GOLDEN_COUNT == 28, \
-        "the golden record must carry all 28 fields, got %d" % GOLDEN_COUNT
+    assert GOLDEN_COUNT == 38, \
+        "the golden record must carry all 38 fields, got %d" % GOLDEN_COUNT
     for key in keys:
         row = GOLDEN_ALL_PRESENT[key]
         assert row["present"] is True, \
@@ -541,12 +543,12 @@ def _self_test_body(dev) -> None:
 
     # ---- the payload surfaces cover the law on every shape ------------------
     rec = golden_all_present()
-    assert len(rec) == 28 and all(v["present"] is True for v in rec.values()), \
+    assert len(rec) == 38 and all(v["present"] is True for v in rec.values()), \
         "the canonical record drifted from the golden contract"
     listing = golden_fields_payload()
     assert isinstance(listing, dict) and isinstance(listing.get("fields"), list) \
-        and len(listing["fields"]) == 28, \
-        "the listing surface must carry exactly 28 rows"
+        and len(listing["fields"]) == 38, \
+        "the listing surface must carry exactly 38 rows"
     assert _row_key(listing["fields"][0]) == keys[0]
     assert all(_row_key(r) in keys for r in listing["fields"]), \
         "every listing row must carry a contract key"
@@ -617,7 +619,7 @@ def _self_test_body(dev) -> None:
         result = payload()
     assert result["ok"] is True, \
         "payload on the golden listing must PASS, got %r" % result
-    assert result["count"] == 28, "the golden result must count 28 fields"
+    assert result["count"] == 38, "the golden result must count 38 fields"
     assert result["af_code"] == "FIELDS-ALL-PRESENT"
     parsed = json.loads(buf.getvalue())
     assert parsed["ok"] is True and parsed["verdict"] == "PASS"
@@ -684,8 +686,8 @@ def _self_test_body(dev) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="golden_all_present.py",
-        description="Golden ALL-28-PRESENT fixture for the U07 self-tests "
-                    "(Skill 59): the listing where all 28 contract fields the "
+        description="Golden ALL-38-PRESENT fixture for the U07 self-tests "
+                    "(Skill 59): the listing where all 38 contract fields the "
                     "census binds to are present byte-exact by the golden key "
                     "— fail-closed, offline, never prints a token; the "
                     "--execute write gate lives in the dispatcher, never in a "
@@ -709,7 +711,7 @@ def main(argv=None):
             return self_test()
         if args.cmd == "plan":
             # Offline plan (no network, no credentials): the golden all-present
-            # surface — the 28 contract keys (from the field-map, never
+            # surface — the 38 contract keys (from the field-map, never
             # retyped), the present state, the --execute-gated write action.
             keys = _contract_keys()
             print(json.dumps({

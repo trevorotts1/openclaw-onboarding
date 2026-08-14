@@ -11,11 +11,11 @@
 #   config/field-map.json                 (THE source of truth for pipeline + fields)
 #     * fixture.pipeline.name            == field-map.pipeline.standard_pipeline_name
 #     * fixture.pipeline.stages[].name   == field-map.pipeline.standard_stages[].name (9, in order)
-#     * fixture.custom_fields[].fieldKey == field-map.provisioning.fields[].intended_key (28, in order)
+#     * fixture.custom_fields[].fieldKey == field-map.provisioning.fields[].intended_key (38, in order)
 #     * fixture.custom_fields[].name     == field-map.provisioning.fields[].create_name
 #     * fixture.custom_fields[].dataType == field-map.provisioning.fields[].data_type
 #     * fixture.custom_fields[].options  == field-map.provisioning.fields[].options (cover choice only)
-#     * the ONE SINGLE_OPTIONS field is contact.anthology_cover_choice with the four
+#     * the cover-choice SINGLE_OPTIONS field is contact.anthology_cover_choice with the four
 #       style options in order (byte-equal field-map.cover_style_fields.choice_options)
 #   ENGINE-MANIFEST.json                  (the orchestrator contract)
 #     * the manifest's S0..S9 stage names are the PIPELINE STAGE names (the snapshot's
@@ -25,7 +25,7 @@
 #       stage names in order)
 #
 # INTERNAL CONTRACT INVARIANTS (guard the fixture's own shape):
-#   * 27 LARGE_TEXT free-text keys + exactly 1 SINGLE_OPTIONS (the cover choice)
+#   * 36 LARGE_TEXT free-text keys + exactly 2 SINGLE_OPTIONS (cover choice + review decision)
 #   * 4 REPLACE-ME location custom values (anthology_webhook_url,
 #     anthology_hook_secret [secret+placeholder], producer, producer_email)
 #   * 8 release-tag slugs; exactly the 3 LIVE slugs avatar/tone/outline
@@ -113,7 +113,7 @@ FIXTURE = SKILL_DIR / "fixtures" / "snapshot" / "anthology-engine-v1.0.0.json"
 FIELD_MAP = SKILL_DIR / "config" / "field-map.json"
 ENGINE_MANIFEST = SKILL_DIR / "ENGINE-MANIFEST.json"
 
-EXPECTED_TOTAL = 28
+EXPECTED_TOTAL = 38
 EXPECTED_COVER_OPTIONS = ["Signature", "Bold Editorial", "Fine Art", "Pure Type"]
 EXPECTED_TAG_SLUGS = [
     "anthology-release-avatar", "anthology-release-tone", "anthology-release-outline",
@@ -229,30 +229,47 @@ if f_tup != fm_tup:
             first, (f_tup[first:first + 1] or ["<none>"])[0], (fm_tup[first:first + 1] or ["<none>"])[0])
     drift.append("custom_fields drift from field-map provisioning.fields%s" % detail)
 
-# ---- data-type census: 27 LARGE_TEXT + exactly 1 SINGLE_OPTIONS -------------
+# ---- data-type census: 36 LARGE_TEXT + exactly 2 SINGLE_OPTIONS -------------
 large = [f for f in f_fields if f.get("dataType") == "LARGE_TEXT"]
 single = [f for f in f_fields if f.get("dataType") == "SINGLE_OPTIONS"]
 other = [f for f in f_fields if f.get("dataType") not in ("LARGE_TEXT", "SINGLE_OPTIONS")]
-need(len(large) == 27, "expected 27 LARGE_TEXT fields, fixture has %d" % len(large))
-need(len(single) == 1, "expected exactly 1 SINGLE_OPTIONS field, fixture has %d" % len(single))
+need(len(large) == 36, "expected 36 LARGE_TEXT fields, fixture has %d" % len(large))
+need(len(single) == 2, "expected exactly 2 SINGLE_OPTIONS fields, fixture has %d" % len(single))
 need(not other, "unexpected dataType(s) in fixture: %s" % [(f.get('fieldKey'), f.get('dataType')) for f in other])
 
-# the SINGLE_OPTIONS field IS the cover choice, and its options match — in order —
-# both the field-map inventory row AND cover_style_fields.choice_options.
+# the TWO SINGLE_OPTIONS fields are the U8 cover choice and the U15-absorbed
+# review decision; each one's options match — in order — both the field-map
+# inventory row AND the field-map's own option authority blocks.
+EXPECTED_DECISION_OPTIONS = ["approve_as_is", "request_rewrite_with_notes"]
 if single:
-    cover = single[0]
-    need(cover.get("fieldKey") == "contact.anthology_cover_choice",
-         "the SINGLE_OPTIONS field must be contact.anthology_cover_choice, got %r" % cover.get("fieldKey"))
-    need(cover.get("options") == EXPECTED_COVER_OPTIONS,
-         "cover-choice options drift: fixture %s != %s" % (cover.get("options"), EXPECTED_COVER_OPTIONS))
-    fm_choice_opts = (fm.get("cover_style_fields", {}) or {}).get("choice_options")
-    need(cover.get("options") == fm_choice_opts,
-         "cover-choice options: fixture %s != field-map cover_style_fields.choice_options %s"
-         % (cover.get("options"), fm_choice_opts))
-    fm_cover_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_cover_choice"), None)
-    need(fm_cover_row is not None and fm_cover_row.get("options") == EXPECTED_COVER_OPTIONS,
-         "field-map cover-choice inventory row options drift: %s"
-         % (fm_cover_row.get("options") if fm_cover_row else "<row missing>"))
+    cover = next((f for f in single if f.get("fieldKey") == "contact.anthology_cover_choice"), None)
+    need(cover is not None,
+         "the fixture must carry the cover-choice SINGLE_OPTIONS field contact.anthology_cover_choice")
+    if cover is not None:
+        need(cover.get("options") == EXPECTED_COVER_OPTIONS,
+             "cover-choice options drift: fixture %s != %s" % (cover.get("options"), EXPECTED_COVER_OPTIONS))
+        fm_choice_opts = (fm.get("cover_style_fields", {}) or {}).get("choice_options")
+        need(cover.get("options") == fm_choice_opts,
+             "cover-choice options: fixture %s != field-map cover_style_fields.choice_options %s"
+             % (cover.get("options"), fm_choice_opts))
+        fm_cover_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_cover_choice"), None)
+        need(fm_cover_row is not None and fm_cover_row.get("options") == EXPECTED_COVER_OPTIONS,
+             "field-map cover-choice inventory row options drift: %s"
+             % (fm_cover_row.get("options") if fm_cover_row else "<row missing>"))
+    decision = next((f for f in single if f.get("fieldKey") == "contact.anthology_review_decision"), None)
+    need(decision is not None,
+         "the fixture must carry the review-decision SINGLE_OPTIONS field contact.anthology_review_decision")
+    if decision is not None:
+        need(decision.get("options") == EXPECTED_DECISION_OPTIONS,
+             "review-decision options drift: fixture %s != %s" % (decision.get("options"), EXPECTED_DECISION_OPTIONS))
+        fm_decision_opts = ((fm.get("review_decision_field") or {}).get("options")) or []
+        need(decision.get("options") == fm_decision_opts,
+             "review-decision options: fixture %s != field-map review_decision_field.options %s"
+             % (decision.get("options"), fm_decision_opts))
+        fm_decision_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_review_decision"), None)
+        need(fm_decision_row is not None and fm_decision_row.get("options") == EXPECTED_DECISION_OPTIONS,
+             "field-map review-decision inventory row options drift: %s"
+             % (fm_decision_row.get("options") if fm_decision_row else "<row missing>"))
 
 # ---- custom values (REPLACE-ME placeholders only) ----------------------------
 cv = fixture.get("custom_values") or []
@@ -312,7 +329,7 @@ need(sorted(set(wf_tags)) == sorted(EXPECTED_TAG_SLUGS),
 
 # ---- counts block self-consistency ---------------------------------------------
 counts = fixture.get("counts") or {}
-need(counts.get("custom_fields") == 28, "counts.custom_fields != 28")
+need(counts.get("custom_fields") == 38, "counts.custom_fields != 38")
 need(counts.get("custom_values") == 4, "counts.custom_values != 4")
 need(counts.get("tags") == 8, "counts.tags != 8")
 need(counts.get("forms") == 4, "counts.forms != 4")
@@ -336,7 +353,7 @@ else:
     print("")
     if not drift:
         print("RESULT: PASS — the snapshot fixture agrees byte-exact with the engine's source of truth")
-        print("  pipeline 'Anthology Engine' + 9 stages, 28 fields (27 LARGE_TEXT + 1 SINGLE_OPTIONS),")
+        print("  pipeline 'Anthology Engine' + 9 stages, 38 fields (36 LARGE_TEXT + 2 SINGLE_OPTIONS),")
         print("  cover options, 4 REPLACE-ME custom values, 8 tags (3 LIVE), forms + workflow set,")
         print("  and the ENGINE-MANIFEST S0..S9 stage set.")
     else:

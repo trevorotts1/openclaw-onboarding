@@ -28,7 +28,7 @@
 #      stamps the RESOLVED field_key / field_id / verified_at / location_masked
 #      slots IN PLACE, as the node user, per box. The re-verify asserts the
 #      file that now sits on disk is still valid JSON, still the contract
-#      shape, still carries the 28 intended keys byte-exact, and — when the
+#      shape, still carries the 38 intended keys byte-exact, and — when the
 #      stamp resolved — that the stamped field_id matches the LIVE field id
 #      and the stamped field_key byte-equals the intended key. A stamp that
 #      drifted from the live read-back is drift, never a pass. The committed
@@ -220,7 +220,7 @@ def is_placeholder(value: str) -> bool:
 # ---------------------------------------------------------------------------
 def check_stamp(field_map: dict) -> dict:
     """Verify the field-map.json that sits on disk is the coherent contract
-    shape — valid JSON (the caller's loader already proved that), the 28
+    shape — valid JSON (the caller's loader already proved that), the 38
     intended keys unique with the contact. prefix, the inventory equaling
     provisioning.total_keys, and — when the per-box stamp resolved slots —
     every stamped field_key byte-equal to its intended_key and every stamped
