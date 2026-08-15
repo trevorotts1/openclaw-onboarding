@@ -1,5 +1,5 @@
 {
-  "manifest_version": 47,
+  "manifest_version": 48,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -2906,6 +2906,15 @@
       "level": "deck",
       "in_ruleset": true,
       "trigger": "closeout with no CC task_id and no logged deliverable-register attempt (fail-closed on never-attempted; fail-soft on transport)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_cc_registered"
+    },
+    {
+      "code": "AF-CC-UNVERIFIED",
+      "stage": "Process",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "closeout where CC registration could NOT be verified: cc_register_attempted=True but no cc_task_id (transport/partial failure or outage), or a cc_task_id whose cc_registration HMAC receipt does not verify (hand-written or stale — not provably produced by a real cc_board.ingest_deck_task round-trip). Could-not-verify NEVER counts as verified; the gate fails with an explicit honest message (fail-soft: a genuine Command Center outage is surfaced truthfully, never read as verified)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_cc_registered"
     },

@@ -1,3 +1,3 @@
-content_sha256=53464e5863f620b2cd2914554dd291ed3964e845353ff69b79e6e69a032136cb
-generated=2026-08-13T17:57:58Z
-source=PIPELINE-MANIFEST.json (v47, u07 CAPACITY -- AF-CAPACITY-UNMEASURED registered in autofails and MASTER-QC-AUTOFAIL-RULESET Section 5 per SOP-SLIDE-06 step (i)+(iii); this restamp also repairs a stale stamp inherited from origin/main, which recorded acaadd547d256a154eb3b24a81f2730810ee7e3faa3e90a353cc5c0f6cb4250d for a manifest whose content_sha256 was already b071bdff15c0f211fe0371af1b9d35e347a47126fd79f54e198a1b8b7699fd1f)
+content_sha256=c7a96168c0f0f99eb89fc64c629cb7f16b25575bb487586aa015b3d3c8e51439
+generated=2026-08-15T01:43:50Z
+source=PIPELINE-MANIFEST.json (v48, u07 CAPACITY -- AF-CAPACITY-UNMEASURED registered in autofails and MASTER-QC-AUTOFAIL-RULESET Section 5 per SOP-SLIDE-06 step (i)+(iii); restamped at integration merge 0612bbc5 after the T2 stack bumped the manifest to v48)

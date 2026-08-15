@@ -1501,6 +1501,115 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
     return _v
 
 
+def _registry_gate_verifier(gate: str) -> Callable:
+    """SLICE-2: wire a PHASE_VERIFIERS entry to a registered verifier from
+    verifier_registry.py (the shared gate-conversion infra, built in the same
+    commit that added the registry). Returns a callable with the SAME
+    (run_dir) -> (ok, reasons) contract the phase verifiers already use,
+    delegating to verifier_registry.run_gate(gate, run_dir) — a named
+    verifier re-measuring the REAL artifact + sealed RunFacts, fail naming
+    the exact discrepancy. The import is lazy (inside the call, not at module
+    top) so this module never creates an import cycle: verifier_registry
+    imports presentation_job.runfacts, which lazily imports build_deck at
+    seal time; phase_verifiers is imported by build_deck itself, so a
+    top-level import of verifier_registry here would recurse. Never raises
+    into a caller: registry failure degrades to fail-closed with the reason
+    named (a gate that cannot run its verifier does not pass — D10)."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        try:
+            from verifier_registry import run_gate
+        except Exception as exc:  # noqa: BLE001
+            return False, [f"{gate}: verifier registry unavailable ({exc!r}) — "
+                           "fail-closed, not a pass"]
+        return run_gate(gate, run_dir)
+    return _v
+
+
+def _register_slice2_verifiers() -> None:
+    """SLICE-2: register the report-shape gate verifiers into the shared
+    registry ONCE at module load. Idempotent (last registration wins), so
+    re-imports and test re-collection are safe. The registry import is
+    deliberately local and wrapped: phase_verifiers is imported by
+    build_deck.py at its own module top, and verifier_registry -> runfacts
+    only lazily imports build_deck, so no cycle — but a broken/absent
+    registry must never break a phase module import (registration is wiring,
+    not a verdict)."""
+    try:
+        from verifier_registry import (
+            final_qc_verifier,
+            priority_shift_verifier,
+            qc_report_verifier,
+            register_verifier,
+        )
+        # Increment-1 gate (P-TYPO-QC) stays shadow-wired via
+        # _shadow_qc_verifier; its registry entry is registered so the
+        # registry is a complete map of every converted gate.
+        register_verifier(qc_report_verifier("typography"))
+        # SLICE-2 conversions — the phase gates these back.
+        register_verifier(qc_report_verifier("speech"))
+        register_verifier(priority_shift_verifier())
+        register_verifier(final_qc_verifier())
+    except Exception as exc:  # noqa: BLE001 — wiring failure degrades to the
+        # per-gate fail-closed path in _registry_gate_verifier, never a crash
+        try:
+            print(f"TRUST-BOUNDARY-SLICE2-WIRE-ERROR: {exc!r}", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+def _shadow_composite_verifier(gate: str, legacy_fn: Callable) -> Callable:
+    """Wrap a PHASE_VERIFIERS callable with a RunFacts shadow check for a
+    SLICE-3 composite gate. Same contract as _shadow_qc_verifier: the legacy
+    result is ALWAYS what gets returned unless PRES_TRUST_BOUNDARY_ENFORCE=1,
+    this can only make the gate STRICTER when enforcing, and it can never
+    raise into a caller. The RunFacts verdict re-measures the REAL artifacts
+    (sealed facts, never the legacy fn's own report); a divergence prints one
+    greppable TRUST-BOUNDARY-DIVERGENCE line. The registry spec is looked up
+    by gate name so phase_verifiers never re-implements the seal — the spec's
+    own legacy shadow is NOT used here (the phase-level wrap owns the
+    compare), which is why the spec is registered with legacy=None."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        legacy_ok, legacy_reasons = legacy_fn(run_dir)
+        try:
+            from presentation_job import runfacts as _rf
+            import verifier_registry as _vr
+            spec = _vr.get_verifier(gate)
+            if spec is None:
+                # Registry not populated (e.g. an import cut this module off
+                # before registration) — degrade to legacy, log loudly.
+                try:
+                    print(f"TRUST-BOUNDARY-SHADOW-ERROR {gate}: no registered "
+                          f"verifier (registry empty?) — legacy result used",
+                          file=sys.stderr)
+                except Exception:  # noqa: BLE001
+                    pass
+                return legacy_ok, legacy_reasons
+            facts, had_input = spec.seal_into(Path(run_dir))
+            verdict, detail = spec.verdict_on(facts)
+            if not had_input:
+                detail = f"no input artifact found ({'; '.join(spec.artifacts)}) — a gate whose input is absent does not pass"
+            _rf.shadow_compare(gate, legacy_ok, "; ".join(legacy_reasons),
+                               verdict, detail, run_dir=run_dir)
+            if _rf.enforcing():
+                if verdict is _rf.Verdict.PASS:
+                    return True, []
+                return False, [f"[RunFacts enforcing] {gate}: {detail}"]
+        except Exception as exc:  # noqa: BLE001 — shadow must never break a gate
+            try:
+                print(f"TRUST-BOUNDARY-SHADOW-ERROR {gate}: {exc!r}", file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
+        return legacy_ok, legacy_reasons
+    return _v
+
+
+# SLICE 3 — wire the composite gates through the registry shadow. register_slice3()
+# is idempotent and cheap; it must run before any shadowed phase verifier is called.
+try:
+    import verifier_registry as _vr_slice3
+    _vr_slice3.register_slice3()
+except Exception:  # noqa: BLE001 — registry absence degrades to legacy at call time
+    pass
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -1535,19 +1644,46 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 4.95  Image QC
     "P-IMAGE-QC":         _verify_render,
     # Phase 7.5   Priority-Shift Ship Gate
-    "P-SHIFT-QC":         _verify_json_artifact("working/qc/priority_shift_report.json"),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.priority_shift_verifier, gate "qc:priority_shift"):
+    # re-derives the ledger's decided value from the seal instead of trusting
+    # the file's existence. Fail semantics identical to the legacy
+    # _verify_json_artifact fail-hard on an absent report (D10: a gate whose
+    # input is missing does not pass). The pre-render / no-doctrine DEFER lives
+    # in build_deck._chk_priority_shift_ledger (the report's writer), which
+    # simply does not produce the ledger yet — unchanged.
+    "P-SHIFT-QC":         _registry_gate_verifier("qc:priority_shift"),
     # Phase 8     PPTX Assembly
     "P8-ASSEMBLE":        _verify_assemble,
     # Phase 8.5   Presenter Speech
     "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
-    "P-SPEECH-QC":        _verify_json_artifact("working/qc/speech_qc_report.json"),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.qc_report_verifier("speech"), gate
+    # "qc:speech"): re-derives the SAME five-ground rubric build_deck.
+    # _qc_report_gate enforces for this report (gate label / average>=8.5 /
+    # no autofails / pass IS True / independence / anti-rubber-stamp) from the
+    # seal. The pre-delivery DEFER for a not-yet-produced report lives in
+    # build_deck._chk_speech_qc (returns "" when the report path is None) —
+    # unchanged; once the report exists this gate enforces it.
+    "P-SPEECH-QC":        _registry_gate_verifier("qc:speech"),
     # Phase 8.65  Final QC Aggregation (combines the six domain QC reports)
-    "P-QC-AGGREGATE":     _verify_json_artifact("working/qc/final_qc_report.json", ("schema", "pass")),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.final_qc_verifier, gate "qc:final"):
+    # re-measures the REAL artifacts — every one of the six sealed domain
+    # facts the aggregate claims to combine is independently re-derived under
+    # the same per-domain rubric, and the aggregate's average must be a
+    # numeric >= 8.5. Absent aggregate fails hard exactly like the legacy
+    # _verify_json_artifact(("schema","pass")) did.
+    "P-QC-AGGREGATE":     _registry_gate_verifier("qc:final"),
     # Phase 8.7   Notes-Pane Sync (reorder — AF-EMPTY-NOTES-PANE)
-    "P9.5-NOTES-SYNC":    _verify_notes_sync,
+    # Slice 3: shadowed against the sealed notes-sync RunFacts verdict
+    # (verify_notes_sync) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9.5-NOTES-SYNC":    _shadow_composite_verifier("notes_sync:sync", _verify_notes_sync),
     # Phase 9     Delivery
-    "P9-DELIVER":         _verify_delivery,
+    # Slice 3: shadowed against the sealed 10-key bundle verdict
+    # (verify_deliverables) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9-DELIVER":         _shadow_composite_verifier("deliverables:bundle", _verify_delivery),
     # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)
     "P-SP-INTAKE":        _verify_sp_intake,
     # Phase 4.1   Signature-Presentation SACRED Structure (Skill 51)
@@ -1558,15 +1694,25 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html", 10240),
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
     "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
-    "P8.4-FISH-TAG":      _verify_fish_tag,
+    # Slice 3: shadowed against the sealed dual-file strip-equals verdict
+    # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
     # --- Feature L2-H: webinarized speech audio (welcome + Q&A + crescendo close) ---
     "P9-SPEECH-WEBINAR-INTRO": _verify_webinarized_speech,
     "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
-    "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
+    # Slice 3: shadowed against the sealed media-library ledger verdict
+    # (verify_media_library) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    # The READ-ONLY GHL list-back stays inside _verify_ghl_upload (network —
+    # never a sealed fact; NOTE-degrades when the LOCATION PIT does not resolve).
+    "P9.2-GHL-UPLOAD":    _shadow_composite_verifier("ghl_upload:ledger", _verify_ghl_upload),
     # --- Feature L2-D: fillable PDF workbook ---
-    "P8.25-WORKBOOK":     _verify_workbook,
+    # Slice 3: shadowed against the sealed dual-PDF verdict (verify_workbook) —
+    # report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P8.25-WORKBOOK":     _shadow_composite_verifier("workbook:both", _verify_workbook),
     # --- Feature L2-G: webinar video ---
-    "P9.6-WEBINAR-VIDEO": _verify_webinar_video,
+    # Slice 3: shadowed against the sealed video+timing verdict
+    # (verify_webinar_video) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9.6-WEBINAR-VIDEO": _shadow_composite_verifier("webinar_video:video", _verify_webinar_video),
     # --- U012 SP registry gaps ---
     "P-SP-CLAIM":         _verify_sp_claim,
     "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,
@@ -1774,6 +1920,11 @@ def _selftest() -> None:
         sys.exit(1)
     print("[phase_verifiers selftest] PASS — all self-tests passed.", flush=True)
     sys.exit(0)
+
+
+# SLICE-2 wiring: register the converted gate verifiers into the shared
+# registry at module load (idempotent; see _register_slice2_verifiers).
+_register_slice2_verifiers()
 
 
 if __name__ == "__main__":

@@ -28,17 +28,30 @@
 #     decision requests, not status) but still dedup per episode.
 #   * Digest-class (aged-out drops, daily-cap deferrals, soft-ceiling warnings)
 #     never send immediately; they accumulate and flush once per day.
+#   * NOTIFY-RETRY: a failed gateway send is CLASSIFIED AT THE DISPATCH SITE from
+#     the gateway detail string only: transport-down (timeout, connection
+#     refused, binary absent) keeps retrying with capped exponential backoff and
+#     is NEVER discarded - a BLOCKED alert is wanted when infrastructure breaks.
+#     A POISONED payload (application-layer rejection: bad target, chat not
+#     found, malformed content) is parked to state_dir/alert-park/parked.jsonl
+#     with its FULL content preserved and surfaced; it is never re-dispatched.
+#     No distinguishing evidence -> UNDETERMINED -> the safe default: unbounded
+#     retry with backoff. There is NO terminal retry cap anywhere: an alert is
+#     retried forever or parked, never dropped. Parking is automatic (no human
+#     flag) and a parked key can never re-enter the retry loop via cron.
 #
 # STDLIB ONLY. No network except the gateway CLI subprocess. No model turn, no
 # MCP, no third-party imports. Runs identically on operator and client boxes.
 #
 # EXIT CODE CONTRACT:
-#   0  OK              - alert processed (sent, suppressed, deferred, recovered,
-#                        flushed, or noop). The decision JSON is on stdout.
+#   0  OK              - alert processed (sent, suppressed, deferred, parked,
+#                        recovered, flushed, or noop). The decision JSON is on
+#                        stdout.
 #   2  SEND_FAILED     - a send was warranted but the gateway invocation failed
 #                        (nonzero rc or the openclaw binary is absent). State is
-#                        still recorded; the caller may retry. Never crashes the
-#                        pipeline.
+#                        still recorded; the alert is retry-pending (capped
+#                        exponential backoff) or parked, never lost. Never
+#                        crashes the pipeline.
 #   3  USAGE/IO        - bad arguments, or the state directory is unreadable /
 #                        unwritable (fail-closed, still emits JSON where possible).
 #   4  NO_FOUNDER      - a send was warranted but NO founder/operator target is
@@ -74,6 +87,69 @@ EXIT_NO_FOUNDER = 4
 # ---- design defaults (furnace-design.md Section 8; per-client overridable) ---
 DEFAULT_DEDUP_WINDOW_HOURS = 6
 DEFAULT_MAX_FOUNDER_ALERTS_PER_CLIENT_PER_DAY = 4
+
+# ---- failure classification + retry semantics --------------------------------
+# A founder alert is NEVER silently dropped. When the gateway send fails, the
+# failure is classified from the evidence the dispatch site actually has (the
+# gateway detail string) into one of three classes:
+#   * transport-down     - the network/gateway/CLI layer refused the attempt
+#     (connection refused, timeout, binary absent, etc.). The alert is BLOCKED,
+#     and a blocked alert is exactly the condition the founder wants to hear
+#     about: keep retrying with exponential backoff, NEVER discard, NEVER a
+#     terminal cap that loses the alert.
+#   * poisoned           - the payload itself was rejected at the application
+#     layer (a 4xx-class gateway response, a bad/unroutable target, malformed
+#     content). Retrying can never change the verdict, so the message is parked:
+#     its full content is kept, it is surfaced to an operator-facing park file,
+#     and it is NEVER re-dispatched (no retry, not recoverable into an unbounded
+#     retry loop by any cron).
+#   * undetermined       - no distinguishing evidence either way. The safe
+#     default is RETRY with backoff forever; a terminal cap that loses alerts is
+#     structurally impossible here.
+#
+# Backoff is exponential with a cap on the DELAY (never a cap on attempts):
+#   delay = BACKOFF_BASE_SECONDS * 2^(attempt-1), capped at BACKOFF_MAX_SECONDS.
+# Defaults: 60s, 120s, 240s, 480s, then 900s forever after (cap 15 minutes).
+# NOTIFY_RETRY_BASE_SECONDS exists only so the test harness can shrink the
+# delays; unset in production the shipped values above stand.
+BACKOFF_BASE_SECONDS = 60
+BACKOFF_MAX_SECONDS = 900
+
+# Detail substrings that identify TRANSPORT-layer failures (retry forever).
+# Everything here is evidence the SEND never got a verdict from the gateway.
+_TRANSPORT_EVIDENCE = (
+    "gateway send timed out",
+    "gateway send failed:",          # OSError/SubprocessError subclasses
+    "openclaw binary not found",
+    "openclaw binary not executable",
+    "connection refused",
+    "network is unreachable",
+    "getaddrinfo failed",
+    "name or service not known",
+    "temporary failure in name resolution",
+)
+# Detail substrings that identify POISONED messages (application-layer rejection
+# that no retry can fix). rc>=4xx alone is not enough: the gateway returns rc=1
+# for ordinary send failures, so only explicit application-layer rejection text
+# parks. A plain gateway error with no such text is UNDETERMINED (retry).
+_POISONED_EVIDENCE = (
+    "chat not found",
+    "chat_id not found",
+    "user not found",
+    "bad request",
+    "bad target",
+    "invalid target",
+    "unauthorized",
+    "forbidden",
+    "cannot parse entities",
+    "message is too long",
+    "rejected message",
+    "invalid message",
+)
+
+PARK_DIRNAME = "alert-park"            # operator-facing park surface under the state dir
+PARK_LOCK_FILENAME = "alerts-park.lock"  # advisory lock guarding the park file
+PARK_FILENAME = "parked.jsonl"         # lossless park ledger: one JSON row per message
 
 # ---- severities -------------------------------------------------------------
 SEV_STATUS = "status"      # service failures; window + storm cap apply
@@ -172,6 +248,10 @@ def _load_config(path: str | None) -> dict:
         v = alerts.get(k)
         if isinstance(v, (int, float)) and v > 0:
             cfg[k] = v
+    for k in ("retry_backoff_base_seconds", "retry_backoff_max_seconds"):
+        v = alerts.get(k)
+        if isinstance(v, (int, float)) and v > 0:
+            cfg[k] = int(v)
     return cfg
 
 
@@ -261,6 +341,110 @@ def _save_state(state_dir: Path, state: dict) -> None:
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+
+
+# ---------------------------------------------------------------------------
+# failure classification + retry / park semantics (NOTIFY-RETRY)
+# ---------------------------------------------------------------------------
+def _empty_retry() -> dict:
+    return {"attempt": 0, "next_attempt_at": None, "last_failure": None}
+
+
+def _get_retry(rec: dict) -> dict:
+    r = rec.get("retry")
+    if not isinstance(r, dict):
+        r = {}
+    if "attempt" not in r:
+        r["attempt"] = 0
+    if "next_attempt_at" not in r:
+        r["next_attempt_at"] = None
+    if "last_failure" not in r:
+        r["last_failure"] = None
+    return r
+
+
+def _backoff_delay(attempt: int, cfg: dict | None = None) -> int:
+    """Exponential backoff delay for a 1-based attempt number, capped on the
+    DELAY only (attempts are never capped - an alert is never given up on).
+    Override order: config alerts.retry_backoff_base_seconds >
+    NOTIFY_RETRY_BASE_SECONDS (test hook) > BACKOFF_BASE_SECONDS (60)."""
+    cfg = cfg or {}
+    base = float(
+        cfg.get("retry_backoff_base_seconds")
+        or os.environ.get("NOTIFY_RETRY_BASE_SECONDS")
+        or BACKOFF_BASE_SECONDS
+    )
+    try:
+        d = int(base * (2 ** (max(attempt, 1) - 1)))
+    except (OverflowError, ValueError):
+        d = BACKOFF_MAX_SECONDS
+    cap = int(cfg.get("retry_backoff_max_seconds") or BACKOFF_MAX_SECONDS)
+    return min(d, cap)
+
+
+def classify_failure(detail: str) -> str:
+    """Classify a failed gateway send from the dispatch-site evidence ONLY:
+    the detail string _gateway_send returned. Returns 'transport', 'poisoned',
+    or 'undetermined'. The detail may be None/empty (rc-only) - that is
+    undetermined. Matching is case-insensitive; the evidence strings are long
+    enough that accidental prefix collisions are not a practical concern."""
+    if not detail:
+        return "undetermined"
+    hay = str(detail).lower()
+    for token in _POISONED_EVIDENCE:
+        if token.lower() in hay:
+            return "poisoned"
+    for token in _TRANSPORT_EVIDENCE:
+        if token.lower() in hay:
+            return "transport"
+    return "undetermined"
+
+
+def _park_path(state_dir: Path) -> Path:
+    return state_dir / PARK_DIRNAME / PARK_FILENAME
+
+
+def _park_lock_path(state_dir: Path) -> Path:
+    return state_dir / PARK_DIRNAME / PARK_LOCK_FILENAME
+
+
+def _park_message(state_dir: Path, key: str, rec: dict, text: str,
+                  detail: str, ts: str) -> dict:
+    """Park a poisoned message: keep its FULL content, surface it in an
+    operator-facing park file (state_dir/alert-park/parked.jsonl), and stamp the
+    key so it is NEVER re-dispatched. Park rows are append-only and lossless;
+    nothing here is ever deleted by the engine. Returns the parked row."""
+    row = {
+        "parked_at": ts,
+        "key": key,
+        "client": rec.get("client"),
+        "service": rec.get("service"),
+        "failure_class": rec.get("failure_class"),
+        "severity": rec.get("severity"),
+        "detail": detail,
+        "message": text,
+    }
+    d = state_dir / PARK_DIRNAME
+    d.mkdir(parents=True, exist_ok=True)
+    lock_fh = None
+    if _HAVE_FCNTL:
+        try:
+            lock_fh = open(_park_lock_path(state_dir), "w")
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            lock_fh = None
+    try:
+        with open(_park_path(state_dir), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    finally:
+        if lock_fh is not None:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            finally:
+                lock_fh.close()
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +614,58 @@ def _perform_send(target, text, dry_run):
     return True, ok, detail, (EXIT_OK if ok else EXIT_SEND_FAILED)
 
 
+def _send_with_retry_policy(state, rec, state_dir, key, target, text,
+                            dry_run, cfg=None):
+    """Dispatch one send and apply the NOTIFY-RETRY policy to a FAILED send.
+    Returns (sent, send_ok, detail, exit_hint, retry_state). Preserves the
+    legacy exit-code contract: a real send that fails returns EXIT_SEND_FAILED
+    (the caller may retry, and now the alert is also durably retry-pending or
+    parked); a missing target returns EXIT_NO_FOUNDER; dry-run returns EXIT_OK.
+    Sent-or-dry-run leaves retry state untouched (a clean send clears nothing;
+    the next failure restarts the backoff clock). On failure the failure class
+    decides:
+      * transport   - retry state advances (attempt+1, next_attempt_at with
+        capped exponential backoff). NEVER discarded, NEVER capped: the alert is
+        BLOCKED and stays blocked until infrastructure returns.
+      * poisoned    - the message is parked to the operator-facing park file
+        with its full content; the key is stamped parked and never re-dispatched.
+      * undetermined- the safe default: same unbounded retry as transport.
+    """
+    sent, send_ok, send_detail, hint = _perform_send(target, text, dry_run)
+    if (sent and send_ok) or dry_run:
+        return sent, send_ok, send_detail, hint, None
+    if hint == EXIT_NO_FOUNDER:
+        # No target configured: nothing was attempted, nothing to retry.
+        return sent, send_ok, send_detail, hint, None
+    # Failed send: classify from the dispatch-site evidence (the detail string).
+    cls = classify_failure(send_detail)
+    retry = _get_retry(rec)
+    ts = _iso(_now())
+    if cls == "poisoned":
+        retry["attempt"] = int(retry.get("attempt") or 0) + 1
+        retry["parked"] = True
+        retry["parked_at"] = ts
+        retry["next_attempt_at"] = None  # parked: never re-dispatched
+        retry["last_failure"] = send_detail
+        _park_message(state_dir, key, rec, text, send_detail, ts)
+        # sent stays True: the legacy decision contract reports "attempted, not
+        # ok" for a send that was made and failed. The action field ("parked")
+        # carries the NOTIFY-RETRY verdict.
+        return True, False, "poisoned; parked", EXIT_SEND_FAILED, retry
+    # transport + undetermined share the same policy: keep retrying with
+    # capped exponential backoff, never a terminal cap that loses the alert.
+    attempt = int(retry.get("attempt") or 0) + 1
+    retry["attempt"] = attempt
+    delay = _backoff_delay(attempt, cfg)
+    next_ts = _now().timestamp() + delay
+    from datetime import datetime as _dt
+    retry["next_attempt_at"] = _iso(_dt.fromtimestamp(next_ts, tz=timezone.utc))
+    retry["last_failure"] = send_detail
+    retry.pop("parked", None)
+    retry.pop("parked_at", None)
+    return True, False, "%s; retry pending" % cls, EXIT_SEND_FAILED, retry
+
+
 # ---------------------------------------------------------------------------
 # command: raise
 # ---------------------------------------------------------------------------
@@ -463,14 +699,16 @@ def cmd_raise(args) -> int:
             if severity == SEV_DECISION:
                 return _raise_decision(state, state_dir, args, daily, target)
             return _raise_status(
-                state, state_dir, args, daily, target, now, window_hours, max_per_day
+                state, state_dir, args, daily, target, now, window_hours,
+                max_per_day, cfg
             )
     except OSError as exc:
         _emit_error("state IO error: %s" % exc)
         return EXIT_USAGE
 
 
-def _raise_status(state, state_dir, args, daily, target, now, window_hours, max_per_day):
+def _raise_status(state, state_dir, args, daily, target, now, window_hours,
+                  max_per_day, cfg=None):
     key = "%s|%s|%s" % (args.client, args.service, args.failure_class)
     rec = state["keys"].get(key)
     window_secs = window_hours * 3600.0
@@ -483,6 +721,9 @@ def _raise_status(state, state_dir, args, daily, target, now, window_hours, max_
             "last_sent": None,
             "count": 0,
             "affected_episodes": [],
+            "client": args.client,
+            "service": args.service,
+            "failure_class": args.failure_class,
         }
         state["keys"][key] = rec
         _track_episode(rec, args.episode)
@@ -491,7 +732,7 @@ def _raise_status(state, state_dir, args, daily, target, now, window_hours, max_
         text = _msg_first(args.client, args.service, args.message, n)
         return _finalize_status_send(
             state, state_dir, args, daily, target, rec, key, n, text,
-            capped, "first_occurrence"
+            capped, "first_occurrence", cfg
         )
 
     # existing key
@@ -500,9 +741,31 @@ def _raise_status(state, state_dir, args, daily, target, now, window_hours, max_
     n = _affected_count(rec, args.queued_count)
     last_sent = _parse_iso(rec["last_sent"]) if rec.get("last_sent") else None
     within_window = last_sent is not None and (now - last_sent).total_seconds() < window_secs
+    retry = _get_retry(rec)
 
-    if within_window:
-        # SUPPRESS: counter and affected list already updated in place.
+    if rec.get("retry", {}).get("parked"):
+        # POISONED and parked: the message content is preserved in the
+        # operator-facing park file; this key is NEVER re-dispatched. Still
+        # acknowledge the fire (a parked alert is a parked alert) so nothing
+        # silently spins, but the state transition is terminal for dispatch.
+        # This check is deliberately FIRST: it must hold regardless of the
+        # dedup window, so no cron re-fire can ever route a parked key back
+        # into the retry loop.
+        _save_state(state_dir, state)
+        _emit(_decision(
+            "parked", "poisoned payload; parked to alert-park (never re-dispatched)",
+            key, SEV_STATUS, False, None, target, n, daily["sent_count"],
+            capped, args.dry_run
+        ))
+        return EXIT_OK
+
+    next_attempt = retry.get("next_attempt_at")
+    retry_pending = bool(next_attempt) and _now() < _parse_iso(next_attempt)
+    if within_window or retry_pending:
+        # SUPPRESS: counter and affected list already updated in place. A retry
+        # pending key is suppressed until its backoff deadline - the alert is
+        # not discarded, it is being retried on schedule, and a blocked alert
+        # deliberately does NOT hammer the gateway while the backoff clock runs.
         _save_state(state_dir, state)
         _emit(_decision(
             "suppressed", "within %gh dedup window" % window_hours, key, SEV_STATUS,
@@ -517,12 +780,12 @@ def _raise_status(state, state_dir, args, daily, target, now, window_hours, max_
     text = _msg_still_down(args.client, args.service, args.message, n, oldest_days)
     return _finalize_status_send(
         state, state_dir, args, daily, target, rec, key, n, text,
-        capped, "window_expired_still_failing"
+        capped, "window_expired_still_failing", cfg
     )
 
 
 def _finalize_status_send(state, state_dir, args, daily, target, rec, key, n, text,
-                          capped, reason):
+                          capped, reason, cfg=None):
     """Shared tail for status sends: honor the storm cap, send or defer, persist."""
     if capped and not args.dry_run:
         # Storm cap reached: collapse into the per-client end-of-day digest
@@ -538,14 +801,22 @@ def _finalize_status_send(state, state_dir, args, daily, target, rec, key, n, te
         ))
         return EXIT_OK
 
-    sent, send_ok, detail, exit_hint = _perform_send(target, text, args.dry_run)
+    sent, send_ok, detail, exit_hint, retry = _send_with_retry_policy(
+        state, rec, state_dir, key, target, text, args.dry_run, cfg
+    )
     if sent and send_ok:
         rec["last_sent"] = _iso(_now())
         daily["sent_count"] += 1
+    if retry is not None:
+        rec["retry"] = retry
     _save_state(state_dir, state)
+    action = "sent" if sent else ("would_send" if args.dry_run else "send_skipped")
+    if retry is not None and retry.get("parked"):
+        action = "parked"
+    elif retry is not None:
+        action = "retry_pending"
     _emit(_decision(
-        "sent" if sent else ("would_send" if args.dry_run else "send_skipped"),
-        "%s; %s" % (reason, detail), key, SEV_STATUS,
+        action, "%s; %s" % (reason, detail), key, SEV_STATUS,
         sent, send_ok, target, n, daily["sent_count"], capped, args.dry_run
     ))
     return exit_hint
