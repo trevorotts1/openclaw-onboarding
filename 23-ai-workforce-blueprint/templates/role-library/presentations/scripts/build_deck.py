@@ -193,6 +193,7 @@ ENVIRONMENT:
 
 import concurrent.futures
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -3070,6 +3071,19 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     # and a headline average inflated over the report's own per-criterion scores.
     for sub in _qc_report_substance_problems(obj):
         return f"AF-COPY-QC: {sub}. See SOP-SLIDE-00 / qc-specialist-presentations-sops.md."
+    # Report shape is valid — now apply the deterministic re-measure teeth: re-derive
+    # truth from the ACTUAL rendered copy (slides.json copy[]) and reject a pass:true
+    # report that contradicts it. The report lives at <run_dir>/working/qc/
+    # copy_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_copy_qc_teeth(run_dir)
+            if teeth:
+                return teeth
     return ""
 
 
@@ -3165,6 +3179,368 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
             "(>= 9,000 chars, 8-class negative block, per-string spelling-lock, the slide's "
             "verbatim copy baked, real density) and re-run the Prompt QC Specialist. "
             "Offenders: " + offenders + more + ".")
+
+
+def check_copy_qc_teeth(run_dir: Path) -> str:
+    """AF-COPY-QC — the DETERMINISTIC RE-MEASURE behind the copy-QC gate.
+
+    The legacy _chk_copy_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE (gate string, average >= 8.5, no triggered autofails, pass:true, independence)
+    and never opened the copy it graded, so an agent could type 8.9/pass:true over a deck
+    whose real copy violates the AF-COPY-BAND character bands and it sailed through. This
+    is the equivalent upgrade the prompt/image gates already got: it RE-DERIVES TRUTH from
+    the ACTUAL rendered slides.json copy[] (the file the renderer bakes verbatim into the
+    pixels), RE-MEASURES every slide's copy against the shared COPY_* band constants, and
+    rejects a copy-QC report whose pass claims do not match the on-disk copy.
+
+    Two independent classes of failure, both fatal:
+      A. SLIDE-COVERAGE — the report's per_slide_scores must cover every slide the
+         renderer will actually render (one graded row per slide, none dropped), and
+         every row must carry a real verdict. A report that grades 10 of 20 slides is
+         not a copy-QC pass.
+      B. COPY-BAND RE-MEASURE — every rendered slide's copy[] must clear the
+         deterministic character bands (HEADLINE 12-60 / SUBHEAD 20-110 / KICKER <= 40 /
+         <= 3 BULLETS each 8-30 / SLIDE TOTAL 40-180) that AF-COPY-BAND enforces
+         first-party. A pass:true report over copy that violates a band is REJECTED,
+         naming the exact discrepancy (slide + field + chars + band).
+
+    It DEFERS (returns "") ONLY when the rendered copy is genuinely not produced yet —
+    no readable slides.json (its absence is owned by the schema / AF-P1 / slide-count
+    gates, exactly as _chk_copy_density defers). Returns "" on pass, or a fatal
+    AF-COPY-QC message naming the exact discrepancy."""
+    n = _count_output_slides(run_dir)
+    if n is None:
+        return ""  # no slides.json yet — upstream checks own the absence (D10 defer).
+    copy_map = _load_slide_copy_map(run_dir)
+    if not copy_map:
+        return ""  # slides.json unreadable/empty — upstream checks own that failure.
+    arc_tags = _load_slide_arc_tags(run_dir)
+    report_path = run_dir / "working" / "qc" / "copy_qc_report.json"
+    report_obj = _read_json(report_path) if report_path.exists() else None
+
+    problems = []
+
+    # --- A. SLIDE-COVERAGE cross-check (when the report actually grades per-slide) ---
+    # A shape-only report (no per-slide rows) is NOT judged here: verdict-count absence
+    # is owned by check_qc_phase_report_real / AF-QC-PLACEHOLDER. But once a report
+    # DOES carry per-slide rows, it must cover every rendered slide.
+    if report_obj is not None and "__parse_error__" not in report_obj:
+        verdicts = _qc_report_per_slide_verdicts(report_obj)
+        # Coverage is judged only when the report actually grades per-slide; a shape-only
+        # report's verdict-count absence is owned by check_qc_phase_report_real.
+        if verdicts:
+            covered = {}
+            for e in verdicts:
+                s = e.get("slide")
+                if isinstance(s, int) and s >= 1:
+                    covered[s] = e
+            missing = [s for s in range(1, n + 1) if s not in covered]
+            if missing:
+                shown = ", ".join(str(s) for s in missing[:10])
+                more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
+                problems.append(
+                    f"the copy-QC report grades {len(covered)} of {n} rendered slide(s) — "
+                    f"slides {shown}{more} have NO per-slide verdict. A real copy-QC pass "
+                    f"carries one graded row per rendered slide (a partial report is not a "
+                    f"deck-wide pass).")
+            blank = [s for s, e in covered.items() if not _qc_slide_verdict_is_real(e)]
+            if blank:
+                problems.append(
+                    f"copy-QC per-slide rows {', '.join(str(s) for s in blank[:10])} carry "
+                    f"no real verdict (no pass/fail/score) — a bare slide-id row is not a "
+                    f"grade.")
+
+    # --- B. COPY-BAND RE-MEASURE of the actual rendered copy ---
+    for ordinal in range(1, n + 1):
+        copy_val = copy_map.get(ordinal)
+        if not isinstance(copy_val, list) or not copy_val:
+            continue  # missing/malformed copy — schema validation / AF-P1 own this.
+        fields = [str(c) if c is not None else "" for c in copy_val]
+        headline = fields[0]
+        subhead = fields[1] if len(fields) > 1 else None
+        kicker = fields[2] if len(fields) > 2 else None
+        bullets = fields[3:]
+
+        hlen = len(headline)
+        if not (COPY_HEADLINE_CHAR_FLOOR <= hlen <= COPY_HEADLINE_CHAR_CEILING):
+            problems.append(
+                f"slide {ordinal:02d} HEADLINE is {hlen} chars, outside the "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING} band the copy-QC "
+                f"report marked pass")
+
+        if subhead:
+            slen = len(subhead)
+            if not (COPY_SUBHEAD_CHAR_FLOOR <= slen <= COPY_SUBHEAD_CHAR_CEILING):
+                problems.append(
+                    f"slide {ordinal:02d} SUBHEAD is {slen} chars, outside the "
+                    f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} band the copy-QC "
+                    f"report marked pass")
+
+        if kicker:
+            klen = len(kicker)
+            if klen > COPY_KICKER_CHAR_CEILING:
+                problems.append(
+                    f"slide {ordinal:02d} KICKER is {klen} chars, over the "
+                    f"{COPY_KICKER_CHAR_CEILING}-char ceiling the copy-QC report marked pass")
+
+        real_bullets = [b for b in bullets if b]
+        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+            problems.append(
+                f"slide {ordinal:02d} carries {len(real_bullets)} bullets, over the "
+                f"{COPY_BULLET_MAX_COUNT}-bullet max the copy-QC report marked pass")
+        for bi, b in enumerate(real_bullets, start=1):
+            blen = len(b)
+            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+                problems.append(
+                    f"slide {ordinal:02d} BULLET {bi} is {blen} chars, outside the "
+                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band the copy-QC "
+                    f"report marked pass")
+
+        total = sum(len(f) for f in fields)
+        tag_blob = arc_tags.get(ordinal, "")
+        exempt_eligible = _is_hook_or_banner_slide(tag_blob)
+        exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
+        floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
+        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+            problems.append(
+                f"slide {ordinal:02d} SLIDE TOTAL is {total} chars, outside the "
+                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band the copy-QC report marked pass")
+
+    if problems:
+        return ("AF-COPY-QC: the copy-QC report passed its shape check but the ACTUAL "
+                "rendered copy (slides.json copy[]) CONTRADICTS it — a real copy-QC pass "
+                "RE-MEASURES the copy the renderer bakes into the pixels; a typed pass:true "
+                "over sub-band copy is a fabricated pass. Fix the copy and re-run the Copy "
+                "QC Specialist. Discrepancies: " + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
+
+
+def check_typography_qc_teeth(run_dir: Path) -> str:
+    """AF-TYPOGRAPHY-QC — the DETERMINISTIC RE-MEASURE behind the typography-QC gate.
+
+    The legacy _chk_typography_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE and never opened a design-system artifact, so an agent could type 8.8/pass:true
+    over a design system whose declared tokens violate the AF-FONT-FLOOR deterministic
+    floors (min_body_pt / type_scale_steps / min_contrast_ratio) and it sailed through.
+    This is the equivalent upgrade the prompt/image gates already got: it RE-MEASURES the
+    ACTUAL design-system tokens in working/typography/type_layout_system.md (the gate-of-
+    record artifact AF-FONT-FLOOR parses) against the shared floors, and rejects a
+    typography-QC report whose pass claims do not match the on-disk design system.
+
+    Two independent classes of failure, both fatal:
+      A. FONT-FLOOR RE-MEASURE — the declared tokens must clear the deterministic floors
+         (18pt body / 4-5 scale steps / 4.5:1 contrast; raised 22pt / 7.0:1 under a
+         client dark-theme opt-in), exactly as check_font_floor enforces. A pass:true
+         report over a below-floor token set is REJECTED, naming the token + value + floor.
+      B. SLIDE-COVERAGE — when the report grades per-slide archetypes (per_slide_scores),
+         every slide the deck will render must carry a real verdict row (none dropped).
+
+    It DEFERS (returns "") ONLY pre-typography — no design system produced yet (no
+    type_layout_system.md AND no design_system.json / design-brief, mirroring
+    check_font_floor's defer). Once a design system exists, a missing token file or a
+    below-floor token FAILS (the report cannot claim pass over a phantom/sub-floor
+    design). Returns "" on pass, or a fatal AF-TYPOGRAPHY-QC message naming the exact
+    discrepancy."""
+    layout = run_dir / TYPE_LAYOUT_SYSTEM_REL
+    design_present = (
+        (run_dir / "working" / "typography" / "design_system.json").exists()
+        or any((run_dir / "working" / "research").glob("design-brief-*.md"))
+        if (run_dir / "working").exists() else False
+    )
+    if not layout.exists() and not design_present:
+        return ""  # genuine pre-typography state — defer (D10).
+
+    problems = []
+
+    # --- A. FONT-FLOOR RE-MEASURE of the actual design tokens ---
+    if not layout.exists():
+        problems.append(
+            f"the design system exists but the deterministic type tokens file "
+            f"{TYPE_LAYOUT_SYSTEM_REL} is MISSING — the typography-QC report marked pass "
+            f"over a design system with no measurable type tokens")
+    else:
+        text = layout.read_text(encoding="utf-8", errors="replace")
+
+        def _num(key):
+            m = re.search(rf'(?im)^\s*{re.escape(key)}\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text)
+            return float(m.group(1)) if m else None
+
+        dark = _read_dark_optin(run_dir)
+        pt_floor = DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR
+        contrast_floor = (DARK_THEME_CONTRAST_FLOOR if dark
+                          else CONTRAST_RATIO_FLOOR_NORMAL)
+
+        min_body_pt = _num("min_body_pt")
+        type_scale_steps = _num("type_scale_steps")
+        min_contrast = _num("min_contrast_ratio")
+
+        if min_body_pt is None:
+            problems.append(
+                f"token min_body_pt is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"body size")
+        elif min_body_pt < pt_floor:
+            problems.append(
+                f"min_body_pt={min_body_pt:g} is below the {pt_floor:g}pt "
+                f"{'dark-theme ' if dark else ''}body floor the typography-QC report "
+                f"marked pass (FONT_BODY_PT_FLOOR={FONT_BODY_PT_FLOOR})")
+        if type_scale_steps is None:
+            problems.append(
+                f"token type_scale_steps is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"modular scale")
+        elif not (TYPE_SCALE_STEPS_MIN <= int(type_scale_steps) <= TYPE_SCALE_STEPS_MAX):
+            problems.append(
+                f"type_scale_steps={int(type_scale_steps)} is not a modular "
+                f"{TYPE_SCALE_STEPS_MIN}-{TYPE_SCALE_STEPS_MAX}-step scale the "
+                f"typography-QC report marked pass")
+        if min_contrast is None:
+            problems.append(
+                f"token min_contrast_ratio is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"contrast")
+        elif min_contrast < contrast_floor:
+            problems.append(
+                f"min_contrast_ratio={min_contrast:g} is below the {contrast_floor:g}:1 "
+                f"{'dark-theme AAA ' if dark else 'WCAG AA '}floor the typography-QC "
+                f"report marked pass (CONTRAST_RATIO_FLOOR_NORMAL="
+                f"{CONTRAST_RATIO_FLOOR_NORMAL})")
+
+    # --- B. SLIDE-COVERAGE cross-check (when the report grades per-slide archetypes) ---
+    report_path = run_dir / "working" / "qc" / "typography_qc_report.json"
+    report_obj = _read_json(report_path) if report_path.exists() else None
+    if report_obj is not None and "__parse_error__" not in report_obj:
+        n = _count_output_slides(run_dir)
+        verdicts = _qc_report_per_slide_verdicts(report_obj)
+        if n is not None and verdicts:
+            covered = {}
+            for e in verdicts:
+                s = e.get("slide")
+                if isinstance(s, int) and s >= 1:
+                    covered[s] = e
+            missing = [s for s in range(1, n + 1) if s not in covered]
+            if missing:
+                shown = ", ".join(str(s) for s in missing[:10])
+                more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
+                problems.append(
+                    f"the typography-QC report grades {len(covered)} of {n} rendered "
+                    f"slide(s) — slides {shown}{more} have NO per-slide verdict. A real "
+                    f"typography-QC pass carries one graded row per rendered slide.")
+
+    if problems:
+        return ("AF-TYPOGRAPHY-QC: the typography-QC report passed its shape check but "
+                "the ACTUAL design-system artifacts (working/typography/"
+                "type_layout_system.md tokens) CONTRADICT it — a real typography-QC pass "
+                "RE-MEASURES the declared type system against the deterministic floors; a "
+                "typed pass:true over a missing/sub-floor design is a fabricated pass. Fix "
+                "the design tokens and re-run the Typography QC Specialist. "
+                "Discrepancies: " + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
+
+
+def check_speech_qc_teeth(run_dir: Path) -> str:
+    """AF-SPEECH-QC — the DETERMINISTIC RE-MEASURE behind the speech-QC gate.
+
+    The legacy _chk_speech_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE and never opened the speech it graded, so an agent could type 8.7/pass:true
+    over a speech that does not fill the requested duration (AF-SPEECH-SHORT) or that
+    under-sings / wallpapers the hook (AF-SPEECH-HOOK-COUNT) and it sailed through. This
+    is the equivalent upgrade the prompt/image gates already got: it RE-PARSES the REAL
+    speech file (the same on-disk artifact _chk_speech_length measures), RE-MEASURES the
+    word count against target_talk_minutes x SPEECH_WPM_FLOOR and re-runs the
+    AF-SPEECH-HOOK-COUNT engine, and rejects a speech-QC report whose pass claims do not
+    match reality.
+
+    DEFER SEMANTICS (D10 — identical to the legacy gate):
+      * report ABSENT -> DEFER (returns ""). The speech is written downstream (Phase 9
+        delivery); when no report exists yet the gate passes so the render is not
+        blocked (the existing conditional-by-design contract, unchanged).
+      * report PRESENT but the speech file is ABSENT -> FAIL. A speech-QC report grading
+        a speech that does not exist is a FABRICATED pass — the report cannot be trusted
+        (present-input-but-broken = fail, D10).
+      * speech present, no readable word count / no intake target -> the AF-SPEECH-SHORT
+        half defers (its own contract); the AF-SPEECH-HOOK-COUNT half still fires
+        (5-20x char-exact hook sings).
+
+    Returns "" on pass / defer, or a fatal AF-SPEECH-QC message naming the exact
+    discrepancy."""
+    # Locate the speech artifact with the SAME resolution _chk_speech_length uses
+    # (canonical plural PRESENTERS-SPEECH.md first, legacy singular/scratch names after).
+    speech = None
+    for rel in ("working/presenter-speech/speech.md",
+                "working/delivery/PRESENTERS-SPEECH.md",
+                "working/presenter-speech/PRESENTERS-SPEECH.md",
+                "working/delivery/PRESENTER-SPEECH.md",
+                "working/presenter-speech/PRESENTER-SPEECH.md"):
+        p = run_dir / rel
+        if p.exists():
+            speech = p
+            break
+    report_path = run_dir / "working" / "qc" / "speech_qc_report.json"
+    if speech is None:
+        # D10: when the report EXISTS but the speech it grades does not, the report is
+        # a FABRICATED pass — a QC specialist cannot have graded a speech that is not
+        # on disk. That is present-input-but-broken and FAILS (never a defer).
+        if report_path.exists():
+            return ("AF-SPEECH-QC: the speech-QC report exists but the speech file it "
+                    "grades is MISSING (no working/presenter-speech/speech.md or "
+                    "PRESENTERS-SPEECH.md under working/delivery) — a report grading a "
+                    "nonexistent speech is a FABRICATED pass. Write the speech, then "
+                    "re-run the Speech QC Specialist.")
+        return ""  # no speech AND no report — genuine pre-speech state: defer (D10).
+
+    problems = []
+
+    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        return ""  # no usable duration target — the intake gate owns that case.
+
+    words = len(speech.read_text(errors="replace").split())
+    floor = int(round(target * SPEECH_WPM_FLOOR))
+    if words < floor:
+        problems.append(
+            f"the real speech {speech.name} has {words} words; the floor for a "
+            f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
+            f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
+            f"that does not fill the requested duration (AF-SPEECH-SHORT)")
+
+    # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
+    pec = _import_pitch_engines_check()
+    if pec is not None:
+        try:
+            hook_hits = pec.run(run_dir, phase="SPEECH-QC")
+        except Exception:  # noqa: BLE001
+            hook_hits = []
+        hook_codes = [h for h in hook_hits if str(h.get("code") or "").startswith("AF-")]
+        if hook_codes:
+            problems.append(
+                "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
+                "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) TRIGGERED on the real "
+                "speech: " + "; ".join(
+                    f"{h.get('code')}: {h.get('detail')}" for h in hook_codes[:3]))
+
+    if problems:
+        return ("AF-SPEECH-QC: the speech-QC report passed its shape check but the REAL "
+                "speech file CONTRADICTS it — a genuine speech-QC pass RE-PARSES the "
+                "actual speech (duration floor + hook-count), not a self-typed score. "
+                "Fix the speech and re-run the Speech QC Specialist. Discrepancies: "
+                + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
 
 
 def _chk_prompt_qc(path: Optional[Path]) -> str:
@@ -3277,9 +3653,25 @@ def _chk_typography_qc(path: Optional[Path]) -> str:
     """TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the Design brief (PF-DESIGN), an
     INDEPENDENT QC specialist grades the design system against the written
     typography rubric (weight ladder, per-archetype treatment, anti-template
-    variation, type-scale floor). Self/builder grade refused."""
-    return _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
+    variation, type-scale floor). Self/builder grade refused — AND the report's pass
+    is cross-checked against the on-disk design-system artifacts (the
+    type_layout_system.md tokens) via the deterministic AF-FONT-FLOOR re-measure."""
+    base = _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
                           "qc-specialist-typography-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic design-token teeth. The report
+    # lives at <run_dir>/working/qc/typography_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_typography_qc_teeth(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 def _chk_speech_qc(path: Optional[Path]) -> str:
@@ -3288,12 +3680,28 @@ def _chk_speech_qc(path: Optional[Path]) -> str:
     (pacing, on-slide-sync, persuasion-arc fidelity, audience-facing voice).
     CONDITIONAL by design (the AF-SPEECH-SHORT pattern): the speech is written
     downstream, so when no report exists yet this DEFERS (returns "", pass) rather
-    than blocking the pre-speech render. Once the report exists it is enforced.
-    Self/builder grade refused."""
+    than blocking the pre-speech render. Once the report exists it is enforced —
+    the report-shape gate plus the deterministic re-measure of the REAL speech file
+    (duration floor + hook-count), so a fabricated pass:true over a short/under-sung
+    speech is REJECTED. Self/builder grade refused."""
     if path is None:
         return ""  # speech QC not produced yet (pre-delivery) — gate defers.
-    return _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
+    base = _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
                           "qc-specialist-speech-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic speech-file teeth. The report
+    # lives at <run_dir>/working/qc/speech_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_speech_qc_teeth(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -9844,17 +10252,66 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
+def _cc_registration_verified(manifest: dict) -> bool:
+    """T2 gate teeth: prove a cc_task_id in process_manifest.json was produced
+    by a REAL cc_board.ingest_deck_task round-trip, entirely offline.
+
+    The receipt cc_board.stamp_task_id writes on a successful ingest is
+    ``cc_registration`` = registration_proof(task_id, idempotency_key,
+    deck_slug) — a deterministic HMAC-SHA256 over ``cc_task_id + "|" +
+    idempotency_key`` (no secret, no timestamp: hermetic and replay-proof
+    against hand-editing). idempotency_key is sha256(source_ref+title) on the
+    producer side, so it CANNOT be derived from the task id alone — a forged
+    id cannot forge its matching key, and a key for a different deck cannot
+    match. The gate recomputes the HMAC over the manifest's own
+    cc_task_id|idempotency_key and compares bytes to the stamped digest.
+
+    Returns True only when: cc_task_id is a non-empty string, cc_registration
+    is a dict whose task_id matches cc_task_id and whose hmac equals the
+    recomputed digest. Everything else (absent cc_registration, mismatched
+    task_id, wrong digest, non-dict receipt) is False — could-not-verify NEVER
+    reads as verified. Never raises (a malformed manifest is just False)."""
+    try:
+        tid = manifest.get("cc_task_id")
+        if not isinstance(tid, str) or not tid.strip():
+            return False
+        receipt = manifest.get("cc_registration")
+        if not isinstance(receipt, dict):
+            return False
+        if receipt.get("task_id") != tid:
+            return False
+        key = receipt.get("idempotency_key")
+        slug = receipt.get("deck_slug")
+        if not isinstance(key, str) or not key or not isinstance(slug, str) or not slug:
+            return False
+        expected = hmac.new(
+            f"{tid}|{key}".encode("utf-8"), b"", hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(str(receipt.get("hmac") or ""), expected)
+    except Exception:  # noqa: BLE001 — a malformed manifest is UNVERIFIED, never fatal
+        return False
+
+
 def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
-    """AF-CC-UNREGISTERED: postflight gate enforcing Command Center registration.
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED: postflight gate enforcing Command
+    Center registration. THREE outcomes (T2 gate teeth):
 
-    Fail-CLOSED on never-attempted (neither cc_task_id nor cc_register_attempted
-    in process_manifest.json). Fail-SOFT on transport failure (a logged failed
-    attempt — cc_register_attempted=True with no cc_task_id — satisfies the gate,
-    mirroring Skill-48's s7-deliver-receipt.json degrade pattern at cc_board.py
-    lines 370-401).
+      VERIFIED    — cc_task_id present AND the cc_registration HMAC proof
+                    verifies (a real cc_board.ingest_deck_task round-trip).
+                    Gate PASSES (returns "").
+      UNVERIFIED  — cc_register_attempted=True but NO verifiable proof: either
+                    no cc_task_id (transport/partial failure) or a task_id
+                    whose receipt does not verify (hand-written/stale). Gate
+                    FAILS with the explicit, honest AF-CC-UNVERIFIED message —
+                    could-not-verify NEVER prints as verified. Fail-soft per
+                    the item: a genuine Command Center outage does not brick
+                    the deck beyond a clear, truthful UNVERIFIED closeout.
+      UNREGISTERED— neither field: cc_board.ingest_deck_task was never called
+                    for this run. Gate FAILS CLOSED (AF-CC-UNREGISTERED,
+                    current behavior, kept).
 
-    Returns "" on pass; an AF-CC-UNREGISTERED message string on fail.
-    Enforced_by: build_deck. py_symbol: _chk_cc_registered.
+    Returns "" on pass; an AF-CC-UNVERIFIED / AF-CC-UNREGISTERED message
+    string on fail. Enforced_by: build_deck. py_symbol: _chk_cc_registered.
     """
     if run_dir is None:
         # adhoc/no-run-dir paths (--adhoc-no-process) skip the gate.
@@ -9872,22 +10329,45 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
         manifest = json.loads(pm.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         return (
-            f"AF-CC-UNREGISTERED: could not read process_manifest.json ({exc}) — "
+            f"AF-CC-UNVERIFIED: could not read process_manifest.json ({exc}) — "
             "cannot verify CC registration. "
             f"Deck: {deck_slug}"
         )
     if not isinstance(manifest, dict):
         return (
-            "AF-CC-UNREGISTERED: process_manifest.json is not a JSON object — "
+            "AF-CC-UNVERIFIED: process_manifest.json is not a JSON object — "
             f"cannot verify CC registration. Deck: {deck_slug}"
         )
-    # Successful registration: task_id written by cc_board.stamp_task_id.
-    if manifest.get("cc_task_id"):
+    tid = manifest.get("cc_task_id")
+    attempted = manifest.get("cc_register_attempted") is True
+    # Successful registration PROVED: task_id written by a real
+    # cc_board.stamp_task_id round-trip (HMAC receipt verifies offline).
+    if isinstance(tid, str) and tid.strip() and _cc_registration_verified(manifest):
         return ""
-    # Fail-SOFT: transport failed but the attempt was logged (cc_register_attempted
-    # stamped BEFORE the HTTP call by cc_board.ingest_deck_task). Satisfies gate.
-    if manifest.get("cc_register_attempted"):
-        return ""
+    # UNVERIFIED — could-not-verify. NEVER printed as verified; fails the gate
+    # with an explicit, honest message (fail-soft: a real CC outage is visible
+    # and truthful, and the run is not bricked beyond closeout).
+    if attempted or (isinstance(tid, str) and tid.strip()):
+        if not (isinstance(tid, str) and tid.strip()):
+            return (
+                "AF-CC-UNVERIFIED: cc_register_attempted=True but no cc_task_id "
+                "in process_manifest.json — the Command Center POST did not "
+                "return a task (transport/partial failure or outage). "
+                "Registration could NOT be verified; this run does NOT count "
+                "as registered. Investigate the cc-board.json movement receipt "
+                "and the [cc_board/presentations] stderr log, then re-run the "
+                "deck or reconcile the card. "
+                f"Deck: {deck_slug}"
+            )
+        return (
+            "AF-CC-UNVERIFIED: cc_task_id is present but its cc_registration "
+            "receipt does not verify (missing, mismatched, or bad HMAC) — this "
+            "task id was NOT provably produced by a real "
+            "cc_board.ingest_deck_task round-trip. Could-not-verify NEVER "
+            "counts as verified. Re-run through the canonical entry path so "
+            "ingest_deck_task stamps a verifiable receipt. "
+            f"Deck: {deck_slug} cc_task_id={tid}"
+        )
     # Neither field: this module was never invoked for this run — fail-CLOSED.
     return (
         "AF-CC-UNREGISTERED: process_manifest.json exists but has neither "
@@ -10343,10 +10823,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         print(f"\n{bar}", file=sys.stderr)
         sys.exit(5)
 
-    # --- AF-CC-UNREGISTERED check (enforced_by:build_deck, symbol:_chk_cc_registered) ---
-    # Fail-CLOSED on never-attempted; fail-SOFT on transport (a logged cc_register_attempted
-    # satisfies the gate). This runs only when the bundle check above has PASSED (all
-    # deliverables verified), so a CC failure is the only remaining blocker.
+    # --- AF-CC-UNREGISTERED / AF-CC-UNVERIFIED check (enforced_by:build_deck,
+    # symbol:_chk_cc_registered) — T2 three-outcome gate. VERIFIED = cc_task_id +
+    # verifiable cc_registration HMAC proof (real ingest round-trip) -> pass.
+    # UNVERIFIED = attempted or bare task_id without a verifying receipt ->
+    # fails with an explicit honest AF-CC-UNVERIFIED message (could-not-verify
+    # never prints as verified; fail-soft on a genuine CC outage). UNREGISTERED
+    # = neither field -> fail-CLOSED. This runs only when the bundle check
+    # above has PASSED (all deliverables verified), so a CC failure is the only
+    # remaining blocker.
     _cc_reason = _chk_cc_registered(run_dir, deck_slug)
     if _cc_reason:
         print(f"\nFATAL: {_cc_reason}", file=sys.stderr)

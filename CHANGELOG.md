@@ -19,6 +19,54 @@ exercised against `qc:typography` with the proven Increment-1 fabricated report
 662 passed / 1 skipped (baseline 654/1 + 8 new, zero regressions).
 `gate_integrity_check.py --purity` contract unchanged: verdict functions must
 stay pure (linted by name in PURITY_ASSERTED_FUNCTIONS).
+## [unversioned] -- 2026-08-14 -- fix(rescue-rangers): ship rescue-escalation-section.md.tpl into the role-library and deliver it to materialized boxes (GAP-DELIVERY-TPL)
+
+**GAP — the .tpl was in neither writer's suffix list, so the escalation template
+never reached a materialized department's scripts/ dir.** The single source of
+truth both `apply-fleet-standards.sh` §5j and
+`stamp-rescue-escalation-section.sh` render onto a box's AGENTS.md
+(`scripts/rescue-escalation-section.md.tpl`) lived ONLY in the repo root
+`scripts/`; `23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/`
+had no copy, and `create_role_workspaces._CANONICAL_SCRIPT_SUFFIXES` /
+`refresh-dept-scripts.py` mirrored only `.py/.sh/.js/.sha256/.pdf` (+ `.json`
+additive). A box that received the role-library department tooling (via
+`refresh-dept-scripts.py`, run unconditionally every roll by update-skills.sh)
+never got the template — `stamp-rescue-escalation-section.sh`'s `_default_tpl()`
+walk (which looks for `scripts/rescue-escalation-section.md.tpl` beside the
+script) could not find it, and its drill in `verify.sh` failed: **4 passed /
+1 failed** on the materialized box.
+
+Fix: (1) the template is now shipped in the role-library at
+`templates/role-library/rescue-rangers/scripts/rescue-escalation-section.md.tpl`
+(byte-identical to the repo-root canonical, which stays the render source for
+apply-fleet-standards.sh §5j — a dedicated tpl-vs-tpl byte-equality check is
+proven in the entry below); (2) `.tpl` added to `_CANONICAL_SCRIPT_SUFFIXES`
+(fleet-owned, always-overwrite — a render template is never a client-local
+override candidate), sourced by BOTH writers from the one shared constant, so
+`scaffold_department()` and `refresh-dept-scripts.py` now deliver it to every
+materialized `departments/rescue-rangers[-dept]/scripts/`.
+
+Executed with the REAL `refresh-dept-scripts.py --apply` against a scratch
+materialized box (`departments/rescue-rangers/scripts/`):
+
+| tree | tpl in role-library | tpl delivered to materialized scripts/ | verify.sh |
+|---|---|---|---|
+| origin/main | NO | NO | **4 passed / 1 failed** (`stamp-rescue-escalation-section.sh --self-test` DRILL FAILED — template not found) |
+| this change | YES | YES | **5 passed / 0 failed**, exit 0 |
+
+Also proven: mirror is idempotent (second `--apply` copies 0 files, rc 0,
+`DEPT_SCRIPTS_STATUS ok=1`); a real `stamp-rescue-escalation-section.sh
+--agents ...` run from the materialized dept scripts/ dir finds the tpl via the
+default walk and stamps a box AGENTS.md with tokens rendered
+(`--self-test` passes in-place on the box, and on a box WITHOUT the tpl it
+still fails exactly as before — the check discriminates).
+
+Files:
+- **`23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue-escalation-section.md.tpl`** — NEW, byte-identical to `scripts/rescue-escalation-section.md.tpl`.
+- **`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`** — `.tpl` added to the shared `_CANONICAL_SCRIPT_SUFFIXES` (+ GAP-DELIVERY-TPL rationale).
+- **`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** — consumes the shared tuple (comment/prose updated).
+- **`update-skills.sh`** — prose only (suffix lists in the refresh-dept-scripts block).
+- **`tests/unit/rescue-escalation-tpl-duplicate-guard.test.sh`** — NEW regression guard: repo-root tpl and role-library tpl must stay byte-identical.
 
 ## [v22.0.27] -- 2026-08-14 -- fix(presentations): heal wave-2 test drift (MIN manifest version 46->47, real magic-byte test fixtures, repo-manifest MIN guard test, skill-version 22.0.27)
 
