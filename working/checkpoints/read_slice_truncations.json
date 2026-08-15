@@ -1,0 +1,54 @@
+{
+  "truncation_events": 0,
+  "reads": [
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/fix19_bytes_49wjr514/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "bytes",
+      "would_exceed_budget": false,
+      "returned_bytes": 1000,
+      "slice": {
+        "offset": 0,
+        "length": 1000,
+        "bytes_total": 169785
+      }
+    },
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/fix19_bytes_49wjr514/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "bytes",
+      "would_exceed_budget": false,
+      "returned_bytes": 250,
+      "slice": {
+        "offset": 500,
+        "length": 250,
+        "bytes_total": 169785
+      }
+    },
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/fix19_bytes_cf5483a8/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "bytes",
+      "would_exceed_budget": false,
+      "returned_bytes": 1000,
+      "slice": {
+        "offset": 0,
+        "length": 1000,
+        "bytes_total": 169785
+      }
+    },
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/fix19_bytes_cf5483a8/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "bytes",
+      "would_exceed_budget": false,
+      "returned_bytes": 250,
+      "slice": {
+        "offset": 500,
+        "length": 250,
+        "bytes_total": 169785
+      }
+    }
+  ],
+  "total_bytes_returned": 2500
+}
