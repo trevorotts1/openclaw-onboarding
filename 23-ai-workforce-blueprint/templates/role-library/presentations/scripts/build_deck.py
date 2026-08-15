@@ -193,6 +193,7 @@ ENVIRONMENT:
 
 import concurrent.futures
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -10251,17 +10252,66 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
+def _cc_registration_verified(manifest: dict) -> bool:
+    """T2 gate teeth: prove a cc_task_id in process_manifest.json was produced
+    by a REAL cc_board.ingest_deck_task round-trip, entirely offline.
+
+    The receipt cc_board.stamp_task_id writes on a successful ingest is
+    ``cc_registration`` = registration_proof(task_id, idempotency_key,
+    deck_slug) — a deterministic HMAC-SHA256 over ``cc_task_id + "|" +
+    idempotency_key`` (no secret, no timestamp: hermetic and replay-proof
+    against hand-editing). idempotency_key is sha256(source_ref+title) on the
+    producer side, so it CANNOT be derived from the task id alone — a forged
+    id cannot forge its matching key, and a key for a different deck cannot
+    match. The gate recomputes the HMAC over the manifest's own
+    cc_task_id|idempotency_key and compares bytes to the stamped digest.
+
+    Returns True only when: cc_task_id is a non-empty string, cc_registration
+    is a dict whose task_id matches cc_task_id and whose hmac equals the
+    recomputed digest. Everything else (absent cc_registration, mismatched
+    task_id, wrong digest, non-dict receipt) is False — could-not-verify NEVER
+    reads as verified. Never raises (a malformed manifest is just False)."""
+    try:
+        tid = manifest.get("cc_task_id")
+        if not isinstance(tid, str) or not tid.strip():
+            return False
+        receipt = manifest.get("cc_registration")
+        if not isinstance(receipt, dict):
+            return False
+        if receipt.get("task_id") != tid:
+            return False
+        key = receipt.get("idempotency_key")
+        slug = receipt.get("deck_slug")
+        if not isinstance(key, str) or not key or not isinstance(slug, str) or not slug:
+            return False
+        expected = hmac.new(
+            f"{tid}|{key}".encode("utf-8"), b"", hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(str(receipt.get("hmac") or ""), expected)
+    except Exception:  # noqa: BLE001 — a malformed manifest is UNVERIFIED, never fatal
+        return False
+
+
 def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
-    """AF-CC-UNREGISTERED: postflight gate enforcing Command Center registration.
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED: postflight gate enforcing Command
+    Center registration. THREE outcomes (T2 gate teeth):
 
-    Fail-CLOSED on never-attempted (neither cc_task_id nor cc_register_attempted
-    in process_manifest.json). Fail-SOFT on transport failure (a logged failed
-    attempt — cc_register_attempted=True with no cc_task_id — satisfies the gate,
-    mirroring Skill-48's s7-deliver-receipt.json degrade pattern at cc_board.py
-    lines 370-401).
+      VERIFIED    — cc_task_id present AND the cc_registration HMAC proof
+                    verifies (a real cc_board.ingest_deck_task round-trip).
+                    Gate PASSES (returns "").
+      UNVERIFIED  — cc_register_attempted=True but NO verifiable proof: either
+                    no cc_task_id (transport/partial failure) or a task_id
+                    whose receipt does not verify (hand-written/stale). Gate
+                    FAILS with the explicit, honest AF-CC-UNVERIFIED message —
+                    could-not-verify NEVER prints as verified. Fail-soft per
+                    the item: a genuine Command Center outage does not brick
+                    the deck beyond a clear, truthful UNVERIFIED closeout.
+      UNREGISTERED— neither field: cc_board.ingest_deck_task was never called
+                    for this run. Gate FAILS CLOSED (AF-CC-UNREGISTERED,
+                    current behavior, kept).
 
-    Returns "" on pass; an AF-CC-UNREGISTERED message string on fail.
-    Enforced_by: build_deck. py_symbol: _chk_cc_registered.
+    Returns "" on pass; an AF-CC-UNVERIFIED / AF-CC-UNREGISTERED message
+    string on fail. Enforced_by: build_deck. py_symbol: _chk_cc_registered.
     """
     if run_dir is None:
         # adhoc/no-run-dir paths (--adhoc-no-process) skip the gate.
@@ -10279,22 +10329,45 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
         manifest = json.loads(pm.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         return (
-            f"AF-CC-UNREGISTERED: could not read process_manifest.json ({exc}) — "
+            f"AF-CC-UNVERIFIED: could not read process_manifest.json ({exc}) — "
             "cannot verify CC registration. "
             f"Deck: {deck_slug}"
         )
     if not isinstance(manifest, dict):
         return (
-            "AF-CC-UNREGISTERED: process_manifest.json is not a JSON object — "
+            "AF-CC-UNVERIFIED: process_manifest.json is not a JSON object — "
             f"cannot verify CC registration. Deck: {deck_slug}"
         )
-    # Successful registration: task_id written by cc_board.stamp_task_id.
-    if manifest.get("cc_task_id"):
+    tid = manifest.get("cc_task_id")
+    attempted = manifest.get("cc_register_attempted") is True
+    # Successful registration PROVED: task_id written by a real
+    # cc_board.stamp_task_id round-trip (HMAC receipt verifies offline).
+    if isinstance(tid, str) and tid.strip() and _cc_registration_verified(manifest):
         return ""
-    # Fail-SOFT: transport failed but the attempt was logged (cc_register_attempted
-    # stamped BEFORE the HTTP call by cc_board.ingest_deck_task). Satisfies gate.
-    if manifest.get("cc_register_attempted"):
-        return ""
+    # UNVERIFIED — could-not-verify. NEVER printed as verified; fails the gate
+    # with an explicit, honest message (fail-soft: a real CC outage is visible
+    # and truthful, and the run is not bricked beyond closeout).
+    if attempted or (isinstance(tid, str) and tid.strip()):
+        if not (isinstance(tid, str) and tid.strip()):
+            return (
+                "AF-CC-UNVERIFIED: cc_register_attempted=True but no cc_task_id "
+                "in process_manifest.json — the Command Center POST did not "
+                "return a task (transport/partial failure or outage). "
+                "Registration could NOT be verified; this run does NOT count "
+                "as registered. Investigate the cc-board.json movement receipt "
+                "and the [cc_board/presentations] stderr log, then re-run the "
+                "deck or reconcile the card. "
+                f"Deck: {deck_slug}"
+            )
+        return (
+            "AF-CC-UNVERIFIED: cc_task_id is present but its cc_registration "
+            "receipt does not verify (missing, mismatched, or bad HMAC) — this "
+            "task id was NOT provably produced by a real "
+            "cc_board.ingest_deck_task round-trip. Could-not-verify NEVER "
+            "counts as verified. Re-run through the canonical entry path so "
+            "ingest_deck_task stamps a verifiable receipt. "
+            f"Deck: {deck_slug} cc_task_id={tid}"
+        )
     # Neither field: this module was never invoked for this run — fail-CLOSED.
     return (
         "AF-CC-UNREGISTERED: process_manifest.json exists but has neither "
@@ -10750,10 +10823,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         print(f"\n{bar}", file=sys.stderr)
         sys.exit(5)
 
-    # --- AF-CC-UNREGISTERED check (enforced_by:build_deck, symbol:_chk_cc_registered) ---
-    # Fail-CLOSED on never-attempted; fail-SOFT on transport (a logged cc_register_attempted
-    # satisfies the gate). This runs only when the bundle check above has PASSED (all
-    # deliverables verified), so a CC failure is the only remaining blocker.
+    # --- AF-CC-UNREGISTERED / AF-CC-UNVERIFIED check (enforced_by:build_deck,
+    # symbol:_chk_cc_registered) — T2 three-outcome gate. VERIFIED = cc_task_id +
+    # verifiable cc_registration HMAC proof (real ingest round-trip) -> pass.
+    # UNVERIFIED = attempted or bare task_id without a verifying receipt ->
+    # fails with an explicit honest AF-CC-UNVERIFIED message (could-not-verify
+    # never prints as verified; fail-soft on a genuine CC outage). UNREGISTERED
+    # = neither field -> fail-CLOSED. This runs only when the bundle check
+    # above has PASSED (all deliverables verified), so a CC failure is the only
+    # remaining blocker.
     _cc_reason = _chk_cc_registered(run_dir, deck_slug)
     if _cc_reason:
         print(f"\nFATAL: {_cc_reason}", file=sys.stderr)

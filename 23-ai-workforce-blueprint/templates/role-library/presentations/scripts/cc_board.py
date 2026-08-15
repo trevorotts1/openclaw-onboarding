@@ -12,9 +12,11 @@ NON-NEGOTIABLE DESIGN RULES (mirrored verbatim from Skill-48)
     error, a timeout, or any other failure is CAUGHT, LOGGED to stderr, and the
     deck build CONTINUES. Boarding the run is a convenience, never a gate. The
     ONLY thing that actually fails a deck job for "not on the board" is the
-    offline _chk_cc_registered() check (AF-CC-UNREGISTERED) in build_deck.py —
-    and that check is satisfied by a LOGGED ATTEMPT even when transport failed
-    (fail-soft on transport; fail-CLOSED only on never-attempted). So every
+    offline _chk_cc_registered() check (AF-CC-UNREGISTERED / AF-CC-UNVERIFIED)
+    in build_deck.py — VERIFIED only with a cc_task_id + a verifying
+    cc_registration HMAC receipt (stamped by a real round-trip); a LOGGED
+    ATTEMPT with no proof is UNVERIFIED (fails with an honest message, never
+    read as verified); never-attempted is UNREGISTERED (fail-closed). So every
     public function here returns a value (task_id / bool) and NEVER raises.
 
   * AUTH PARITY with the CC endpoint:
@@ -70,11 +72,15 @@ Recording is fail-soft; it never raises and never blocks the deck build.
 
 The task_id AND cc_register_attempted=True are written into
 ``working/checkpoints/process_manifest.json`` so the offline AF-CC-UNREGISTERED
-check in build_deck._chk_cc_registered passes whether or not the live POST
-succeeded:
-  - PASS  when cc_task_id is set (successful registration).
-  - PASS  when cc_register_attempted is True (transport failed, attempt logged).
-  - FAIL  when neither field exists (this module was never called for this run).
+check in build_deck._chk_cc_registered can judge the run:
+  - VERIFIED  when cc_task_id is set AND the cc_registration proof (an HMAC
+    over cc_task_id|idempotency_key, stamped only by a real ingest round-trip)
+    verifies — real evidence of registration.
+  - UNVERIFIED when cc_register_attempted is True but there is NO cc_task_id or
+    the proof does not verify (transport/partial failure, or a hand-written
+    id). The gate FAILS with an explicit honest AF-CC-UNVERIFIED message —
+    could-not-verify NEVER prints as verified.
+  - UNREGISTERED when neither field exists (this module was never called).
 
 PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
@@ -102,7 +108,9 @@ PUBLIC API
   post_qc_activities(run_dir, task_id) -> int
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
-  stamp_task_id(run_dir, task_id) -> bool
+  stamp_task_id(run_dir, task_id, idempotency_key="", deck_slug="") -> bool
+      # merge cc_task_id (and, when the ingest idempotency_key is supplied, the
+      # offline-verifiable cc_registration proof) into process_manifest.json.
   register_deliverable(task_id, url, meta=None, *, env=None) -> bool
       # POST /api/tasks/{task_id}/deliverables — the FIX-12 registration bridge
       # (ported from Skill-06 cc_board.py). FAIL-SOFT: never raises; a False
@@ -571,8 +579,10 @@ def ingest_deck_task(
     """Ingest (or idempotently re-fetch) a deck task on the CC board.
 
     Always stamps cc_register_attempted=True in process_manifest.json BEFORE
-    the HTTP call so a transport crash or URL-absent no-op is treated as
-    fail-soft (not never-attempted) by build_deck._chk_cc_registered.
+    the HTTP call so a transport crash or URL-absent no-op is distinguished
+    from never-attempted by build_deck._chk_cc_registered (a failed attempt is
+    UNVERIFIED, never the UNREGISTERED fail-closed, and never read as
+    verified).
 
     Returns the task_id string on success, else None. FAIL-SOFT — a None
     return never blocks the deck build; the offline gate is satisfied by the
@@ -636,7 +646,12 @@ def ingest_deck_task(
             f"task {'deduped (reused)' if deduped else 'created'}: "
             f"task_id={task_id} deck_slug={deck_slug}"
         )
-        stamp_task_id(run_dir, task_id)
+        # T2 gate teeth: the receipt carries the offline-verifiable proof
+        # (registration_proof HMAC over cc_task_id|idempotency_key) so
+        # build_deck._chk_cc_registered can prove this id came from a REAL
+        # round-trip, not a hand-written manifest.
+        stamp_task_id(run_dir, task_id, idempotency_key=idempotency_key,
+                      deck_slug=deck_slug)
 
         # WORK-ITEM-02: after CC card creation, dispatch the engine if it is
         # not already running. This closes the "CC ingest callback stops short"
@@ -1074,12 +1089,58 @@ def _read_certificate_sha(run_dir) -> Optional[str]:
 # AF-CC-UNREGISTERED check passes (degrade-to-ungrouped is logged, not
 # silent). Mirrors Skill-48's stamp_campaign_id pattern at cc_board.py:370-401.
 # ---------------------------------------------------------------------------
-def stamp_task_id(run_dir, task_id: str) -> bool:
+def registration_proof(task_id: str, idempotency_key: str, deck_slug: str) -> Optional[dict]:
+    """Build the offline VERIFIABLE registration receipt the T2 gate
+    (build_deck._chk_cc_registered) can prove WITHOUT any live Command Center
+    call: a deterministic HMAC-SHA256 over ``cc_task_id + "|" + idempotency_key``.
+
+    WHY HMAC: ``cc_task_id`` alone is forgeable — any hand-edited manifest can
+    carry an arbitrary string. ``idempotency_key`` is sha256(source_ref+title),
+    so it is NOT derivable from the task id and CANNOT be forged by someone who
+    only saw the id (a card created for a different deck carries a different
+    key). The gate recomputes the HMAC over the exact same canonical string and
+    compares bytes — a manifest whose cc_task_id was stamped by a REAL
+    cc_board.ingest_deck_task round-trip passes; a hand-written or stale
+    manifest fails as UNVERIFIED (never as verified).
+
+    Deterministic (no timestamp, no secret) so the offline gate is hermetic:
+    same inputs -> same digest, forever, with zero env or network dependency.
+    None when any input is empty (a malformed receipt is unverifiable)."""
+    tid = (task_id or "").strip()
+    key = (idempotency_key or "").strip()
+    slug = (deck_slug or "").strip()
+    if not tid or not key or not slug:
+        return None
+    canonical = f"{tid}|{key}"
+    digest = hmac.new(canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
+    return {
+        "task_id": tid,
+        "idempotency_key": key,
+        "deck_slug": slug,
+        "hmac": digest,
+    }
+
+
+def stamp_task_id(run_dir, task_id: str, idempotency_key: str = "",
+                  deck_slug: str = "") -> bool:
     """Merge cc_task_id into process_manifest.json without disturbing other
-    fields. Atomic replace. Returns True on success. Never raises."""
+    fields. Atomic replace. Returns True on success. Never raises.
+
+    When idempotency_key is supplied (the ingest round-trip path), ALSO stamps
+    ``cc_registration`` — the offline-verifiable proof object (registration_proof)
+    — so build_deck._chk_cc_registered can distinguish a REAL registration
+    round-trip (VERIFIED) from a bare task_id with no proof (UNVERIFIED). The
+    plain cc_task_id merge remains for backward compatibility: callers that
+    only have an id (e.g. a runner re-stamping a recovered id) still write the
+    id without a proof, and the gate treats that as UNVERIFIED, never as
+    verified."""
     if not task_id or run_dir is None:
         return False
-    ok = _merge_manifest(run_dir, {"cc_task_id": task_id})
+    updates: dict = {"cc_task_id": task_id}
+    proof = registration_proof(task_id, idempotency_key, deck_slug)
+    if proof is not None:
+        updates["cc_registration"] = proof
+    ok = _merge_manifest(run_dir, updates)
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
