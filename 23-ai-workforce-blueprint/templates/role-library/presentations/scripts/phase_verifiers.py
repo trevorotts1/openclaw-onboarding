@@ -1555,6 +1555,59 @@ def _register_slice2_verifiers() -> None:
             print(f"TRUST-BOUNDARY-SLICE2-WIRE-ERROR: {exc!r}", file=sys.stderr)
         except Exception:  # noqa: BLE001
             pass
+def _shadow_composite_verifier(gate: str, legacy_fn: Callable) -> Callable:
+    """Wrap a PHASE_VERIFIERS callable with a RunFacts shadow check for a
+    SLICE-3 composite gate. Same contract as _shadow_qc_verifier: the legacy
+    result is ALWAYS what gets returned unless PRES_TRUST_BOUNDARY_ENFORCE=1,
+    this can only make the gate STRICTER when enforcing, and it can never
+    raise into a caller. The RunFacts verdict re-measures the REAL artifacts
+    (sealed facts, never the legacy fn's own report); a divergence prints one
+    greppable TRUST-BOUNDARY-DIVERGENCE line. The registry spec is looked up
+    by gate name so phase_verifiers never re-implements the seal — the spec's
+    own legacy shadow is NOT used here (the phase-level wrap owns the
+    compare), which is why the spec is registered with legacy=None."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        legacy_ok, legacy_reasons = legacy_fn(run_dir)
+        try:
+            from presentation_job import runfacts as _rf
+            import verifier_registry as _vr
+            spec = _vr.get_verifier(gate)
+            if spec is None:
+                # Registry not populated (e.g. an import cut this module off
+                # before registration) — degrade to legacy, log loudly.
+                try:
+                    print(f"TRUST-BOUNDARY-SHADOW-ERROR {gate}: no registered "
+                          f"verifier (registry empty?) — legacy result used",
+                          file=sys.stderr)
+                except Exception:  # noqa: BLE001
+                    pass
+                return legacy_ok, legacy_reasons
+            facts, had_input = spec.seal_into(Path(run_dir))
+            verdict, detail = spec.verdict_on(facts)
+            if not had_input:
+                detail = f"no input artifact found ({'; '.join(spec.artifacts)}) — a gate whose input is absent does not pass"
+            _rf.shadow_compare(gate, legacy_ok, "; ".join(legacy_reasons),
+                               verdict, detail, run_dir=run_dir)
+            if _rf.enforcing():
+                if verdict is _rf.Verdict.PASS:
+                    return True, []
+                return False, [f"[RunFacts enforcing] {gate}: {detail}"]
+        except Exception as exc:  # noqa: BLE001 — shadow must never break a gate
+            try:
+                print(f"TRUST-BOUNDARY-SHADOW-ERROR {gate}: {exc!r}", file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
+        return legacy_ok, legacy_reasons
+    return _v
+
+
+# SLICE 3 — wire the composite gates through the registry shadow. register_slice3()
+# is idempotent and cheap; it must run before any shadowed phase verifier is called.
+try:
+    import verifier_registry as _vr_slice3
+    _vr_slice3.register_slice3()
+except Exception:  # noqa: BLE001 — registry absence degrades to legacy at call time
+    pass
 
 
 PHASE_VERIFIERS: dict[str, Callable] = {
@@ -1624,9 +1677,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # _verify_json_artifact(("schema","pass")) did.
     "P-QC-AGGREGATE":     _registry_gate_verifier("qc:final"),
     # Phase 8.7   Notes-Pane Sync (reorder — AF-EMPTY-NOTES-PANE)
-    "P9.5-NOTES-SYNC":    _verify_notes_sync,
+    # Slice 3: shadowed against the sealed notes-sync RunFacts verdict
+    # (verify_notes_sync) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9.5-NOTES-SYNC":    _shadow_composite_verifier("notes_sync:sync", _verify_notes_sync),
     # Phase 9     Delivery
-    "P9-DELIVER":         _verify_delivery,
+    # Slice 3: shadowed against the sealed 10-key bundle verdict
+    # (verify_deliverables) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9-DELIVER":         _shadow_composite_verifier("deliverables:bundle", _verify_delivery),
     # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)
     "P-SP-INTAKE":        _verify_sp_intake,
     # Phase 4.1   Signature-Presentation SACRED Structure (Skill 51)
@@ -1637,15 +1694,25 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html", 10240),
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
     "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
-    "P8.4-FISH-TAG":      _verify_fish_tag,
+    # Slice 3: shadowed against the sealed dual-file strip-equals verdict
+    # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
     # --- Feature L2-H: webinarized speech audio (welcome + Q&A + crescendo close) ---
     "P9-SPEECH-WEBINAR-INTRO": _verify_webinarized_speech,
     "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
-    "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
+    # Slice 3: shadowed against the sealed media-library ledger verdict
+    # (verify_media_library) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    # The READ-ONLY GHL list-back stays inside _verify_ghl_upload (network —
+    # never a sealed fact; NOTE-degrades when the LOCATION PIT does not resolve).
+    "P9.2-GHL-UPLOAD":    _shadow_composite_verifier("ghl_upload:ledger", _verify_ghl_upload),
     # --- Feature L2-D: fillable PDF workbook ---
-    "P8.25-WORKBOOK":     _verify_workbook,
+    # Slice 3: shadowed against the sealed dual-PDF verdict (verify_workbook) —
+    # report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P8.25-WORKBOOK":     _shadow_composite_verifier("workbook:both", _verify_workbook),
     # --- Feature L2-G: webinar video ---
-    "P9.6-WEBINAR-VIDEO": _verify_webinar_video,
+    # Slice 3: shadowed against the sealed video+timing verdict
+    # (verify_webinar_video) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
+    "P9.6-WEBINAR-VIDEO": _shadow_composite_verifier("webinar_video:video", _verify_webinar_video),
     # --- U012 SP registry gaps ---
     "P-SP-CLAIM":         _verify_sp_claim,
     "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,

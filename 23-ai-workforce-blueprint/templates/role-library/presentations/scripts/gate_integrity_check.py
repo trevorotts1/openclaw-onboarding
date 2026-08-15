@@ -232,6 +232,18 @@ _BANNED_NAMES = {"open"}
 # sealed-RunFacts verifier pattern (verifier_registry.py).
 PURITY_ASSERTED_FUNCTIONS = ("verify_owner_skip", "verify_qc",
                              "verify_priority_shift", "verify_final_qc")
+PURITY_ASSERTED_FUNCTIONS = (
+    "verify_owner_skip",
+    "verify_qc",
+    # SLICE 3 (composite / multi-artifact gates) — pure verdicts over the
+    # sealed facts; the seal does the I/O, the verdict never touches disk.
+    "verify_deliverables",
+    "verify_media_library",
+    "verify_workbook",
+    "verify_webinar_video",
+    "verify_notes_sync",
+    "verify_fish_tag",
+)
 
 
 def _function_bodies(source: str, names) -> dict:

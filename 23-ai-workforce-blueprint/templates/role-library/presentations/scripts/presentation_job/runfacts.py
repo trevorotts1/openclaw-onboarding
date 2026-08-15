@@ -54,6 +54,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -386,6 +387,13 @@ class RunFacts:
     process_manifest: Fact               # Fact[dict]
     owner_skip_records: Fact             # Fact[Tuple[OwnerSkipRecord, ...]]
     qc: Dict[str, Fact]                  # key in QC_REPORTS -> Fact[QcReportInfo]
+    # --- SLICE 3 (composite / multi-artifact gates) ---
+    deliverables: Fact                    # Fact[Tuple[DeliverableInfo, ...]] — P9-DELIVER bundle (10 keys)
+    media_library: Fact                  # Fact[MediaLibraryInfo] — P9.2-GHL-UPLOAD ledger
+    workbook: Fact                       # Fact[WorkbookInfo] — P8.25-WORKBOOK dual-PDF
+    webinar_video: Fact                  # Fact[WebinarVideoInfo] — P9.6-WEBINAR-VIDEO video+timing
+    notes_sync: Fact                     # Fact[NotesSyncInfo] — P9.5-NOTES-SYNC record+pptx
+    fish_tag: Fact                       # Fact[FishTagInfo] — P8.4-FISH-TAG dual-file strip-equals
 
     def to_json(self) -> dict:
         return {
@@ -396,6 +404,12 @@ class RunFacts:
             "process_manifest": self.process_manifest.to_json(),
             "owner_skip_records": self.owner_skip_records.to_json(),
             "qc": {k: f.to_json() for k, f in self.qc.items()},
+            "deliverables": self.deliverables.to_json(),
+            "media_library": self.media_library.to_json(),
+            "workbook": self.workbook.to_json(),
+            "webinar_video": self.webinar_video.to_json(),
+            "notes_sync": self.notes_sync.to_json(),
+            "fish_tag": self.fish_tag.to_json(),
         }
 
     def findings(self) -> list:
@@ -515,6 +529,12 @@ def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> Ru
             process_manifest=pm_fact,
             owner_skip_records=owner_fact,
             qc=qc,
+            deliverables=_deliverables_fact(run_dir),
+            media_library=_media_library_fact(run_dir),
+            workbook=_workbook_fact(run_dir),
+            webinar_video=_webinar_video_fact(run_dir),
+            notes_sync=_notes_sync_fact(run_dir),
+            fish_tag=_fish_tag_fact(run_dir),
         )
         _SEAL_CACHE[key] = facts
 
@@ -729,6 +749,694 @@ def verify_final_qc(facts: RunFacts) -> Tuple[Verdict, str]:
         return Verdict.FAIL, "; ".join(problems)
     return Verdict.PASS, ("qc[final] aggregate declares pass, average "
                           f"{info.average}, all six domain facts independently passing")
+# ---------------------------------------------------------------------------
+# SLICE 3 — composite / multi-artifact / deferred-when-None gates. Each of
+# these gates judges MORE than one artifact (a 10-key deliverable bundle, a
+# JSON ledger, a dual-PDF pair, a video + its timing track, a sync record +
+# the PPTX it mutated). The fact layer seals every artifact the gate must
+# re-measure — each read exactly once at seal time, stored with its epistemic
+# state — and the verdict functions below are PURE: they open nothing, they
+# decide only over what the seal recorded. Absence of any required artifact is
+# FAIL, never UNDETERMINED and never a pass (D10: "a check that defers because
+# its input is missing is a fail-open wearing a fail-closed label").
+#
+# Everything the legacy phase verifiers (phase_verifiers.py) did at call time —
+# globbing delivery dirs, opening PDFs with pypdf, probing mp4 ftyp boxes,
+# python-pptx notes panes — happens here exactly once, at seal() time. The
+# verdict functions mirror the legacy rubric decision-for-decision.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class DeliverableInfo:
+    """One deliverable key's sealed measurement (P9-DELIVER bundle check).
+
+    Mirrors the legacy _verify_delivery rubric (phase_verifiers._DELIVERY_DELIVERABLES,
+    sourced from presentation_job.deliverables.DELIVERABLE_AUDIT_SPEC):
+    existence, size, min_bytes floor, magic-bytes signature at the canonical
+    offset, and the content-substance probe for the keys that have no magic
+    (speech_fish_md -> fish-tag count, teleprompter_html -> HTML structure,
+    webinar_mp4 -> ftyp/moov)."""
+
+    key: str
+    found: bool                     # a file matching the key's pattern existed
+    path: str                       # resolved candidate path ("" if not found)
+    size: int
+    min_bytes: int
+    magic_ok: Optional[bool]        # None = no magic check for this key
+    magic_problem: str              # "" = magic OK / not checked
+    content_problem: str            # "" = content probe OK / not checked
+
+
+@dataclass(frozen=True)
+class MediaLibraryInfo:
+    """Sealed P9.2-GHL-UPLOAD local ledger (working/checkpoints/media_library.json).
+
+    The ledger is the artifact this gate re-measures. The READ-ONLY GHL list-back
+    is a network call and deliberately stays in the legacy verifier (NOTE-degrades
+    when the LOCATION PIT / env does not resolve) — it cannot be a sealed fact
+    because seal() never touches the network; the ledger's recorded ids are what
+    the list-back proves against, so sealing them is exactly what the verdict
+    needs."""
+
+    folder_id: str
+    pptx_media_id: str              # pptx_ghl_media_id or pptx_ghl_url fallback
+    pptx_remote_name: str
+    slide_uploads_complete: int
+    slide_uploads_total: int
+
+
+@dataclass(frozen=True)
+class WorkbookInfo:
+    """Sealed P8.25-WORKBOOK dual-PDF measurement (AF-WORKBOOK-BOTH).
+
+    The regular workbook must be image-only (zero AcroForm fields), the fillable
+    must carry fields + /NeedAppearances, both must exist with >= 2048 bytes and
+    at least one page. pypdf absence NOTE-degrades exactly like the legacy
+    verifier (existence+size only, pass with a note)."""
+
+    regular_found: bool
+    regular_path: str
+    fillable_found: bool
+    fillable_path: str
+    regular_pages: int              # -1 when pypdf could not read it
+    regular_fields: int
+    fillable_pages: int
+    fillable_fields: int
+    fillable_need_appearances: bool
+    pypdf_available: bool           # False -> verdict must degrade, never false-fail
+    too_small: tuple                 # tuple[str] — names of workbook PDFs under 2048 bytes
+
+
+@dataclass(frozen=True)
+class WebinarVideoInfo:
+    """Sealed P9.6-WEBINAR-VIDEO measurement (video + timing track)."""
+
+    video_found: bool
+    video_path: str
+    video_size: int
+    ftyp_ok: bool                    # 'ftyp' box present at offset 4
+    moov_ok: bool                    # 'moov' atom in first 256 KiB (when size >= 8192)
+    timing_parseable: bool
+    timing_count: int
+    timing_contiguous: bool          # slides 1..N in order
+    timing_durations_ok: bool        # every duration is a number > 0
+    timing_problem: str              # "" when the track is fully OK
+
+
+@dataclass(frozen=True)
+class FishTagInfo:
+    """Sealed P8.4-FISH-TAG dual-file measurement (AF-FISH-TAG).
+
+    The tagged speech must be the source speech with [fish] expression tags
+    (and parens) inserted — the strip-equals prover removes every bracket/paren
+    span and whitespace from BOTH files and requires the stripped texts to be
+    identical. Both texts are sealed raw; the verdict does the pure strip
+    comparison (mirrors phase_verifiers._verify_fish_tag's rubric)."""
+
+    tagged_found: bool
+    source_found: bool
+    tagged_path: str
+    source_path: str
+    tagged_size: int
+    source_size: int
+    tagged_text: str                 # "" when unreadable
+    source_text: str                 # "" when unreadable
+
+
+@dataclass(frozen=True)
+class NotesSyncInfo:
+    """Sealed P9.5-NOTES-SYNC measurement (notes_sync.json + the PPTX it mutated).
+
+    The bundle PPTX's empty-notes-pane scan runs through build_deck._chk_notes_pane
+    at seal time (the single source of the AF-EMPTY-NOTES-PANE rubric) — same call
+    the legacy verifier makes, one time, on the sealed snapshot instead of at
+    every gate invocation."""
+
+    status: str                      # "synced" | "no_speech" | "error" | "" (absent)
+    reason: str
+    slides_total: int
+    slides_with_notes: int
+    speech_source: str
+    bundle_pptx: str                 # recorded bundle_pptx path ("" if absent)
+    notes_pane_result: str           # "" = no empty notes panes; else AF-EMPTY-NOTES-PANE finding
+
+
+@dataclass(frozen=True)
+class FishTagInfo:
+    """Sealed P8.4-FISH-TAG dual-file measurement (AF-FISH-TAG).
+
+    The tagged speech must be the source speech with [fish] expression tags
+    (and parens) inserted — the strip-equals prover removes every bracket/paren
+    span and whitespace from BOTH files and requires the stripped texts to be
+    identical. Both texts are sealed raw; the verdict does the pure strip
+    comparison (mirrors phase_verifiers._verify_fish_tag's rubric)."""
+
+    tagged_found: bool
+    source_found: bool
+    tagged_path: str
+    source_path: str
+    tagged_size: int
+    source_size: int
+    tagged_text: str                 # "" when unreadable
+    source_text: str                 # "" when unreadable
+
+
+# ---------------------------------------------------------------------------
+# Seal-time readers for the slice-3 facts. Each reads its source EXACTLY ONCE
+# per seal. None of these may ever raise into seal().
+# ---------------------------------------------------------------------------
+
+def _deliverables_fact(run_dir: Path) -> Fact:
+    """Seal the P9-DELIVER bundle: every DELIVERABLE_AUDIT_SPEC key, measured.
+    Uses the canonical spec's min_bytes / magic_bytes / magic_offset, and the
+    same per-key pre-curation globs the legacy phase verifier uses
+    (phase_verifiers._DELIVERY_PATTERN_BY_KEY / _DELIVERY_CONTENT_CHECK_BY_KEY).
+    The content-substance probes mirror _deliverable_content_check: fish tags
+    for speech_fish_md, HTML structure for teleprompter_html, ftyp/moov for
+    webinar_mp4."""
+    try:
+        from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DAS
+    except Exception:  # noqa: BLE001 — the spec module must exist (U05); degrade loudly
+        return Fact.untrusted(
+            "presentation_job.deliverables.DELIVERABLE_AUDIT_SPEC could not be "
+            "imported — the P9-DELIVER bundle cannot be measured. This is a "
+            "module-level packaging break, not a run-dir state.")
+
+    # Pre-curation glob per key — mirrors phase_verifiers._DELIVERY_PATTERN_BY_KEY.
+    _pattern = {
+        "deck_pptx":         "working/delivery/*-FINAL.pptx",
+        "deck_pdf":          "working/delivery/*-FINAL.pdf",
+        "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
+        "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
+        "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
+        "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
+        "infographic_png":   "working/delivery/infographic.png",
+        "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
+        "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
+    }
+
+    infos = []
+    for spec in _DAS:
+        key = spec["key"]
+        pattern = _pattern.get(key) or spec.get("filename_template")
+        hits = sorted(run_dir.glob(pattern)) if pattern else []
+        if not hits:
+            infos.append(DeliverableInfo(
+                key=key, found=False, path="", size=0,
+                min_bytes=int(spec["min_bytes"]), magic_ok=None,
+                magic_problem="", content_problem=""))
+            continue
+        p = hits[0]
+        try:
+            size = p.stat().st_size
+        except OSError as exc:  # noqa: BLE001
+            infos.append(DeliverableInfo(
+                key=key, found=False, path="", size=0,
+                min_bytes=int(spec["min_bytes"]), magic_ok=None,
+                magic_problem="", content_problem=f"unreadable: {exc!r}"))
+            continue
+
+        magic_ok: Optional[bool] = None
+        magic_problem = ""
+        magic = spec.get("magic_bytes")
+        if magic is not None:
+            try:
+                with open(p, "rb") as fh:
+                    fh.seek(int(spec.get("magic_offset") or 0))
+                    head = fh.read(len(magic))
+                magic_ok = head == magic
+                if not magic_ok:
+                    magic_problem = (f"expected {spec.get('magic_desc') or 'magic bytes'} "
+                                     f"at offset {spec.get('magic_offset') or 0}, got {head!r}")
+            except OSError as exc:  # noqa: BLE001
+                magic_ok = False
+                magic_problem = f"cannot read for magic check: {exc!r}"
+
+        content_problem = ""
+        if key == "speech_fish_md":
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                n = len(re.findall(r"\[fish\b[^\]]*\]", text, re.IGNORECASE))
+                if n < 3:
+                    content_problem = (f"only {n} [fish] tags (min 3 expected) — a renamed "
+                                       f"plain text file is not a fish-tagged speech")
+            except Exception as exc:  # noqa: BLE001
+                content_problem = f"cannot read for fish-tag check: {exc!r}"
+        elif key == "teleprompter_html":
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                if not re.search(r"<\s*html", text, re.IGNORECASE):
+                    content_problem = "not HTML (no <html> tag found)"
+                elif (not re.search(r"<\s*(?:div|section|article)", text, re.IGNORECASE)
+                        and "slide" not in text.lower()):
+                    content_problem = ("lacks slide structure (no <div>/<section> "
+                                       "elements, no 'slide' text)")
+            except Exception as exc:  # noqa: BLE001
+                content_problem = f"cannot read for HTML check: {exc!r}"
+        elif key == "webinar_mp4":
+            try:
+                with open(p, "rb") as fh:
+                    head = fh.read(8)
+                if len(head) < 8 or head[4:8] != b"ftyp":
+                    content_problem = (f"not a valid MP4 (no 'ftyp' box at offset 4, "
+                                       f"got {head[4:8]!r})")
+                elif size >= 8192:
+                    with open(p, "rb") as fh:
+                        chunk = fh.read(262144)
+                    if b"moov" not in chunk:
+                        content_problem = ("has ftyp but no 'moov' atom in first "
+                                           "256 KiB — a header-only stub is not a "
+                                           "rendered video")
+            except Exception as exc:  # noqa: BLE001
+                content_problem = f"cannot read for video check: {exc!r}"
+
+        infos.append(DeliverableInfo(
+            key=key, found=True, path=str(p), size=size,
+            min_bytes=int(spec["min_bytes"]), magic_ok=magic_ok,
+            magic_problem=magic_problem, content_problem=content_problem))
+
+    return Fact.known(tuple(infos),
+                      detail=f"{len(infos)} deliverable keys sealed from DELIVERABLE_AUDIT_SPEC")
+
+
+def _media_library_fact(run_dir: Path) -> Fact:
+    """Seal the P9.2-GHL-UPLOAD local ledger (working/checkpoints/media_library.json)."""
+    p = run_dir / "working" / "checkpoints" / "media_library.json"
+    if not p.is_file():
+        return Fact.absent("working/checkpoints/media_library.json: file not found")
+    obj, digest, err = _load_json_bytes(p)
+    if obj is None:
+        return Fact.unparseable(f"working/checkpoints/media_library.json: {err}")
+    slides = [e for e in (obj.get("slides") or []) if isinstance(e, dict)]
+    complete = [e for e in slides
+                if (e.get("ghl_media_id") or e.get("file_id"))
+                and str(e.get("ghl_upload_status") or "").lower() == "complete"]
+    info = MediaLibraryInfo(
+        folder_id=str(obj.get("ghl_folder_id") or "").strip(),
+        pptx_media_id=str(obj.get("pptx_ghl_media_id") or obj.get("pptx_ghl_url") or "").strip(),
+        pptx_remote_name=str(obj.get("pptx_ghl_remote_name") or "").strip(),
+        slide_uploads_complete=len(complete),
+        slide_uploads_total=len(slides),
+    )
+    return Fact.known(info, detail=f"media_library.json sealed sha256={digest[:12]}")
+
+
+def _workbook_fact(run_dir: Path) -> Fact:
+    """Seal the P8.25-WORKBOOK dual-PDF measurement. pypdf is opened lazily and
+    defensively — a box without pypdf records pypdf_available=False and the
+    verdict degrades to existence+size, exactly like the legacy verifier."""
+    dl = run_dir / "working" / "deliverables"
+    regulars = sorted(dl.glob("*-WORKBOOK.pdf")) if dl.is_dir() else []
+    fillables = sorted(dl.glob("*-WORKBOOK-FILLABLE.pdf")) if dl.is_dir() else []
+    if not regulars and not fillables:
+        return Fact.absent("no *-WORKBOOK.pdf / *-WORKBOOK-FILLABLE.pdf in working/deliverables")
+
+    too_small = tuple(p.name for p in regulars + fillables
+                      if p.stat().st_size < 2048)
+
+    def _empty_workbook_info() -> WorkbookInfo:
+        return WorkbookInfo(
+            regular_found=False, regular_path="",
+            fillable_found=False, fillable_path="",
+            regular_pages=0, regular_fields=0,
+            fillable_pages=0, fillable_fields=0,
+            fillable_need_appearances=False,
+            pypdf_available=False, too_small=too_small)
+
+    info = WorkbookInfo(
+        regular_found=bool(regulars),
+        regular_path=str(regulars[0]) if regulars else "",
+        fillable_found=bool(fillables),
+        fillable_path=str(fillables[0]) if fillables else "",
+        regular_pages=0, regular_fields=0,
+        fillable_pages=0, fillable_fields=0,
+        fillable_need_appearances=False,
+        pypdf_available=False, too_small=too_small)
+    if not regulars or not fillables:
+        return Fact.known(info, detail="workbook dual-PDF: at least one side absent")
+
+    try:
+        from pypdf import PdfReader
+
+        def _read(pdf: Path):
+            r = PdfReader(str(pdf))
+            fields = r.get_fields() or {}
+            need_app = False
+            try:
+                need_app = bool(r.trailer["/Root"]["/AcroForm"]["/NeedAppearances"])
+            except Exception:  # noqa: BLE001
+                need_app = False
+            return (len(r.pages), len(fields), need_app)
+
+        reg_pages, reg_fields, _ = _read(regulars[0])
+        fill_pages, fill_fields, need_app = _read(fillables[0])
+        info = WorkbookInfo(
+            regular_found=True, regular_path=str(regulars[0]),
+            fillable_found=True, fillable_path=str(fillables[0]),
+            regular_pages=reg_pages, regular_fields=reg_fields,
+            fillable_pages=fill_pages, fillable_fields=fill_fields,
+            fillable_need_appearances=need_app,
+            pypdf_available=True, too_small=too_small)
+        return Fact.known(info, detail="workbook dual-PDF sealed via pypdf")
+    except ImportError:
+        return Fact.known(info, detail="pypdf not importable — workbook fact degraded (existence+size only)")
+    except Exception as exc:  # noqa: BLE001 — never let pypdf blow up the seal
+        return Fact.known(info, detail=f"pypdf read failed ({exc!r}) — workbook fact degraded")
+
+
+def _webinar_video_fact(run_dir: Path) -> Fact:
+    """Seal the P9.6-WEBINAR-VIDEO measurement: the mp4 + its timing track."""
+    delivery = run_dir / "working" / "delivery"
+    candidates = sorted(delivery.glob("*-WEBINAR.mp4")) if delivery.is_dir() else []
+    if not candidates:
+        video_found, video_path, video_size, ftyp_ok, moov_ok = False, "", 0, False, False
+    else:
+        video_found, video_path = True, str(candidates[0])
+        try:
+            video_size = candidates[0].stat().st_size
+        except OSError:
+            video_size = 0
+        ftyp_ok = False
+        moov_ok = False
+        try:
+            with open(candidates[0], "rb") as fh:
+                head = fh.read(8)
+            ftyp_ok = len(head) >= 8 and head[4:8] == b"ftyp"
+            if video_size >= 8192:
+                with open(candidates[0], "rb") as fh:
+                    chunk = fh.read(262144)
+                moov_ok = b"moov" in chunk
+        except Exception:  # noqa: BLE001
+            ftyp_ok, moov_ok = False, False
+
+    timing_parseable, timing_count, timing_contiguous = False, 0, False
+    timing_durations_ok, timing_problem = False, ""
+    timing_p = run_dir / "working" / "checkpoints" / "webinar_timing.json"
+    obj, _, _ = _load_json_bytes(timing_p)
+    timing = obj.get("timing") if isinstance(obj, dict) else None
+    if not isinstance(timing, list) or not timing:
+        timing_problem = "absent or has no timing[] entries"
+    else:
+        timing_parseable = True
+        timing_count = len(timing)
+        expected = 1
+        contiguous = True
+        durations_ok = True
+        for i, entry in enumerate(timing):
+            if not isinstance(entry, dict):
+                timing_problem = f"timing[{i}] is not an object"
+                contiguous = durations_ok = False
+                break
+            if entry.get("slide") != expected:
+                timing_problem = (f"slides must be contiguous 1..N; got slide "
+                                  f"{entry.get('slide')!r} at index {i} (expected {expected})")
+                contiguous = False
+                break
+            dur = entry.get("duration")
+            if not isinstance(dur, (int, float)) or dur <= 0:
+                timing_problem = f"timing[{i}] duration must be > 0, got {dur!r}"
+                durations_ok = False
+                break
+            expected += 1
+        timing_contiguous, timing_durations_ok = contiguous, durations_ok
+
+    info = WebinarVideoInfo(
+        video_found=video_found, video_path=video_path, video_size=video_size,
+        ftyp_ok=ftyp_ok, moov_ok=moov_ok,
+        timing_parseable=timing_parseable, timing_count=timing_count,
+        timing_contiguous=timing_contiguous,
+        timing_durations_ok=timing_durations_ok, timing_problem=timing_problem)
+    if not video_found and not timing_parseable:
+        return Fact.absent("no *-WEBINAR.mp4 in working/delivery and no webinar_timing.json")
+    return Fact.known(info, detail="webinar video + timing track sealed")
+
+
+def _notes_sync_fact(run_dir: Path) -> Fact:
+    """Seal the P9.5-NOTES-SYNC measurement: the sync record + the empty-notes-pane
+    scan of the bundle PPTX it names (via build_deck._chk_notes_pane — the single
+    source of the AF-EMPTY-NOTES-PANE rubric; same call the legacy verifier makes,
+    made once at seal time)."""
+    p = run_dir / "working" / "checkpoints" / "notes_sync.json"
+    if not p.is_file():
+        return Fact.absent("working/checkpoints/notes_sync.json: file not found")
+    obj, digest, err = _load_json_bytes(p)
+    if obj is None:
+        return Fact.unparseable(f"working/checkpoints/notes_sync.json: {err}")
+    status = str(obj.get("status") or "").strip()
+    bundle_pptx = str(obj.get("bundle_pptx") or "").strip()
+    notes_pane_result = ""
+    if bundle_pptx:
+        try:
+            _bd = _import_build_deck()
+            if _bd is not None and _bd._chk_notes_pane is not None:
+                notes_pane_result = _bd._chk_notes_pane(
+                    Path(bundle_pptx).parent, run_dir=run_dir, slides_path=None) or ""
+            else:
+                notes_pane_result = ""
+        except Exception as exc:  # noqa: BLE001 — degrade, never crash the seal
+            notes_pane_result = ""
+    info = NotesSyncInfo(
+        status=status,
+        reason=str(obj.get("reason") or "").strip(),
+        slides_total=int(obj.get("slides_total") or 0),
+        slides_with_notes=int(obj.get("slides_with_notes") or 0),
+        speech_source=str(obj.get("speech_source") or "").strip(),
+        bundle_pptx=bundle_pptx,
+        notes_pane_result=notes_pane_result)
+    return Fact.known(info, detail=f"notes_sync.json sealed sha256={digest[:12]}")
+
+
+def _fish_tag_fact(run_dir: Path) -> Fact:
+    """Seal the P8.4-FISH-TAG dual-file measurement: both speech files' raw
+    text, sizes, existence. The strip-equals comparison happens in the pure
+    verdict; the seal only captures what both files actually contain."""
+    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
+    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
+    if not tagged_p.exists() and not source_p.exists():
+        return Fact.absent("PRESENTERS-SPEECH-FISH-TAGGED.md and PRESENTERS-SPEECH.md "
+                           "not found in working/deliverables")
+    tagged_found = tagged_p.exists()
+    source_found = source_p.exists()
+    tagged_text = ""
+    source_text = ""
+    if tagged_found:
+        try:
+            tagged_text = tagged_p.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            tagged_text = ""
+    if source_found:
+        try:
+            source_text = source_p.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            source_text = ""
+    info = FishTagInfo(
+        tagged_found=tagged_found, source_found=source_found,
+        tagged_path=str(tagged_p), source_path=str(source_p),
+        tagged_size=tagged_p.stat().st_size if tagged_found else 0,
+        source_size=source_p.stat().st_size if source_found else 0,
+        tagged_text=tagged_text, source_text=source_text)
+    return Fact.known(info, detail="fish-tag dual speech files sealed")
+
+
+# ---------------------------------------------------------------------------
+# SLICE 3 — pure verdict functions: (RunFacts, ...) -> (Verdict, str).
+# Each mirrors the legacy phase-verifier rubric decision-for-decision, sourced
+# from the sealed facts. None opens a file (see gate_integrity_check --purity).
+# ---------------------------------------------------------------------------
+def verify_deliverables(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P9-DELIVER verdict over the sealed 10-key bundle. Mirrors
+    phase_verifiers._verify_delivery: every key must exist, meet its min_bytes
+    floor, pass magic bytes (where the spec defines them) and the content probe
+    (fish tags / HTML structure / ftyp+moov). A missing artifact is FAIL (D10),
+    and every FAIL reason names the exact discrepancy."""
+    fact = facts.deliverables
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"deliverables {fact.state.value} ({fact.detail})"
+    problems = []
+    for d in fact.value:
+        if not d.found:
+            problems.append(f"{d.key}: no matching file found (min {d.min_bytes} bytes)")
+            continue
+        if d.size == 0:
+            problems.append(f"{d.key}: {d.path} is zero bytes")
+            continue
+        if d.size < d.min_bytes:
+            problems.append(f"{d.key}: {d.path} is {d.size} bytes (minimum {d.min_bytes} bytes)")
+            continue
+        if d.magic_ok is False:
+            problems.append(f"{d.key}: {d.path} is not a valid file ({d.magic_problem})")
+            continue
+        if d.content_problem:
+            problems.append(f"{d.key}: {d.content_problem}")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, f"all {len(fact.value)} deliverables verified (existence, size, magic, substance)"
+
+
+def verify_media_library(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P9.2-GHL-UPLOAD verdict over the sealed local ledger. Mirrors the
+    local half of phase_verifiers._verify_ghl_upload (the ledger checks BEFORE
+    the network list-back). The list-back itself stays in the legacy verifier
+    (network, NOTE-degrades) — this verdict re-measures the ledger: folder id
+    resolved, every slide upload complete, pptx recorded in the library."""
+    fact = facts.media_library
+    if fact.state is Epistemic.ABSENT:
+        # Legacy NOTE-degrades here (returns True + NOTE). D10: an absent input
+        # does not pass; but this gate's whole point is the ledger — absent
+        # means the upload phase did not run, which a fail-closed gate blocks.
+        return Verdict.FAIL, f"media_library ABSENT ({fact.detail})"
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"media_library {fact.state.value} ({fact.detail})"
+    info: MediaLibraryInfo = fact.value
+    problems = []
+    if not info.folder_id:
+        problems.append("ghl_folder_id is null or empty — the per-deck media folder was never resolved")
+    if info.slide_uploads_complete == 0:
+        problems.append("no per-slide upload carries a real ghl_media_id with status 'complete'")
+    elif info.slide_uploads_complete != info.slide_uploads_total:
+        problems.append(f"{info.slide_uploads_total - info.slide_uploads_complete} "
+                        f"of {info.slide_uploads_total} slide uploads are incomplete")
+    if not info.pptx_media_id:
+        problems.append("pptx_ghl_media_id is absent — the assembled deck is not in the media library")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, (f"ledger clean: folder_id={info.folder_id[:24]}…, "
+                          f"{info.slide_uploads_complete}/{info.slide_uploads_total} "
+                          f"slide uploads complete, pptx_ghl_media_id recorded")
+
+
+def verify_workbook(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P8.25-WORKBOOK verdict (AF-WORKBOOK-BOTH). Mirrors
+    phase_verifiers._verify_workbook: both PDFs exist and exceed 2048 bytes,
+    the regular is image-only (zero AcroForm fields), the fillable carries
+    fields and /NeedAppearances. pypdf absence NOTE-degrades to existence+size
+    (never a false fail on a genuine box)."""
+    fact = facts.workbook
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"workbook {fact.state.value} ({fact.detail})"
+    info: WorkbookInfo = fact.value
+    problems = []
+    if info.too_small:
+        problems.extend(f"workbook PDF {n} is only < 2048 bytes — too small" for n in info.too_small)
+    if not info.regular_found:
+        problems.append("regular workbook PDF (*-WORKBOOK.pdf) not found in working/deliverables")
+    if not info.fillable_found:
+        problems.append("fillable workbook PDF (*-WORKBOOK-FILLABLE.pdf) not found — "
+                        "AF-WORKBOOK-BOTH requires BOTH deliverables")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    if not info.pypdf_available:
+        return Verdict.PASS, "NOTE: pypdf not importable — workbook verdict degraded to existence+size check (pass)"
+    if info.regular_pages < 1:
+        problems.append(f"regular workbook {info.regular_path}: pypdf read {info.regular_pages} pages")
+    if info.regular_fields != 0:
+        problems.append(f"regular workbook {info.regular_path}: pypdf read {info.regular_fields} "
+                        "AcroForm fields — the regular PDF must be image-only (no overlay)")
+    if info.fillable_pages < 1:
+        problems.append(f"fillable workbook {info.fillable_path}: pypdf read {info.fillable_pages} pages")
+    if info.fillable_fields < 1:
+        problems.append(f"fillable workbook {info.fillable_path}: pypdf read ZERO AcroForm "
+                        "fields — the fillable form did not survive")
+    if not info.fillable_need_appearances:
+        problems.append(f"fillable workbook {info.fillable_path}: /NeedAppearances not set — "
+                        "fields will not render in viewers")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, ("both workbook PDFs verified: regular image-only "
+                          f"({info.regular_pages} pages), fillable with "
+                          f"{info.fillable_fields} fields + /NeedAppearances")
+
+
+def verify_webinar_video(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P9.6-WEBINAR-VIDEO verdict. Mirrors phase_verifiers._verify_webinar_video:
+    mp4 exists, >= 4096 bytes, real ftyp box, timing track parseable and
+    contiguous 1..N with positive durations. Absent video or absent timing
+    track is FAIL (D10) — a phase attestation cannot pass without the video."""
+    fact = facts.webinar_video
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"webinar video {fact.state.value} ({fact.detail})"
+    info: WebinarVideoInfo = fact.value
+    problems = []
+    if not info.video_found:
+        problems.append("webinar video (*-WEBINAR.mp4) not found in working/delivery")
+    elif info.video_size < 4096:
+        problems.append(f"webinar video {info.video_path} is only {info.video_size} bytes — "
+                        "too small for a real rendered mp4 (no slide content)")
+    elif not info.ftyp_ok:
+        problems.append(f"webinar video {info.video_path} is not a real MP4 (no 'ftyp' "
+                        "box at offset 4) — a decoy/stub is not a video")
+    if not info.timing_parseable:
+        problems.append("webinar timing track (working/checkpoints/webinar_timing.json) is "
+                        f"absent or has no timing[] entries ({info.timing_problem})")
+    elif info.timing_problem:
+        problems.append(f"webinar timing track: {info.timing_problem}")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, (f"video {info.video_path} verified (ftyp + {info.video_size} bytes) "
+                          f"with contiguous timing track ({info.timing_count} slides)")
+
+
+def verify_notes_sync(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P9.5-NOTES-SYNC verdict. Mirrors phase_verifiers._verify_notes_sync:
+    notes_sync.json must record status='synced' — 'no_speech' is a HARD FAIL (by
+    this phase's precondition, P9-SPEECH/P-SPEECH-QC are attested, so a speech
+    MUST exist) — and the bundle PPTX it names must have no empty notes panes
+    (AF-EMPTY-NOTES-PANE, scanned at seal time)."""
+    fact = facts.notes_sync
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"notes_sync {fact.state.value} ({fact.detail})"
+    info: NotesSyncInfo = fact.value
+    problems = []
+    if info.status == "error":
+        problems.append(f"notes_sync.json status=error: {info.reason}")
+    elif info.status == "no_speech":
+        problems.append("notes_sync.json status=no_speech — P9-SPEECH/P-SPEECH-QC are "
+                        "attested (this phase's own precondition) but no speech was found "
+                        "at re-sync time; the notes pane would still ship empty.")
+    elif info.status != "synced":
+        problems.append(f"notes_sync.json has unexpected status={info.status!r}")
+    if info.notes_pane_result:
+        problems.append(info.notes_pane_result)
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, (f"notes synced ({info.slides_with_notes}/{info.slides_total} "
+                          f"slides with notes), no empty notes panes")
+
+
+def verify_fish_tag(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. P8.4-FISH-TAG verdict (AF-FISH-TAG). Mirrors
+    phase_verifiers._verify_fish_tag: the tagged speech must exist, exceed the
+    2048-byte floor, and its [fish]-tag-stripped text must equal the source
+    speech's stripped text (strip-equals prover)."""
+    fact = facts.fish_tag
+    if fact.state is not Epistemic.KNOWN:
+        return Verdict.FAIL, f"fish tag {fact.state.value} ({fact.detail})"
+    info: FishTagInfo = fact.value
+    problems = []
+    if not info.tagged_found:
+        problems.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH-FISH-TAGGED.md not found")
+    if not info.source_found:
+        problems.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH.md (source) not found")
+    if not info.tagged_found or not info.source_found:
+        return Verdict.FAIL, "; ".join(problems)
+    if info.tagged_size < 2048:
+        problems.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {info.tagged_size} bytes < 2048")
+    if not info.tagged_text or not info.source_text:
+        problems.append("AF-FISH-TAG: cannot read tagged or source speech file")
+        return Verdict.FAIL, "; ".join(problems)
+
+    def _strip(t: str) -> str:
+        t = re.sub(r"\[.*?\]", " ", t)
+        t = re.sub(r"\(.*?\)", " ", t)
+        return re.sub(r"\s+", " ", t).strip()
+
+    if _strip(info.tagged_text) != _strip(info.source_text):
+        problems.append("AF-FISH-TAG: strip-equals prover failed — the tagged speech's "
+                        "stripped text does not match the source speech (removing every "
+                        "[tag] and (paren) span must reproduce the source exactly)")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, "fish-tag strip-equals prover passed (tagged speech is the source plus tags)"
 
 
 def shadow_compare(label: str, legacy_ok: bool, legacy_reason: str,

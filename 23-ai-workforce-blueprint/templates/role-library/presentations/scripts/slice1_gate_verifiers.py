@@ -348,6 +348,12 @@ def _slice_verifier(gate: str, artifacts: Tuple[str, ...],
             process_manifest=facts.process_manifest,
             owner_skip_records=facts.owner_skip_records,
             qc=facts.qc,
+            deliverables=facts.deliverables,
+            media_library=facts.media_library,
+            workbook=facts.workbook,
+            webinar_video=facts.webinar_video,
+            notes_sync=facts.notes_sync,
+            fish_tag=facts.fish_tag,
             snapshot=snapshot_fact,
         )
         return slice_facts, True
