@@ -433,7 +433,8 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # scripts/build_webinar_video.py) + AF-WEBINAR-SIZE autofail — raising manifest_version
 # to 40 in the same commit.
 # 46 -> 47: wave-2 integrate 56d18ad2 — PIPELINE-MANIFEST.json bumped to 47 in the same commit; MIN follows so the U019 floor moves WITH the manifest (proven by the repo-manifest guard test in test_client_package.py).
-MIN_MANIFEST_VERSION = 47  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 47 -> 48: swarm integration 0612bbc5 — T2 stack bumped PIPELINE-MANIFEST.json to 48; MIN follows.
+MIN_MANIFEST_VERSION = 48  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
