@@ -1,3 +1,10 @@
+## [v22.0.28] -- 2026-08-14 -- big integration: 53-gate conversion (verifier registry + sealed RunFacts), QC-report gate teeth, three-outcome cc-registered, notify retry semantics, rescue-rangers tpl
+
+Merged as squash `83cd9595` (feat(presentations): gate-conversion + gate teeth +
+notify retry + rescue-rangers — one big v22.0.28 integration, PR #913). One big
+integration release: 53-gate conversion (verifier registry + sealed RunFacts),
+QC-report gate teeth, three-outcome cc-registered gate, notify retry semantics
+(transport vs poisoned), rescue-rangers tpl shipped into the role-library.
 ## [v22.0.28] -- 2026-08-14 -- fix(presentations): gate-conversion infra — verifier registry + sealed RunFacts helpers (Trust Boundary Increment 2, shared base)
 
 Shared machinery the gate-conversion slices (T1 QC-report teeth, T2 CC-registered
