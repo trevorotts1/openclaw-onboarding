@@ -167,6 +167,7 @@ EX_OK=0; EX_ERR=1; EX_STOP=2; EX_HELD=3; EX_VIOLATION=4; EX_MISMATCH=5
 # --------------------------------------------------------------------------
 MODE="live"                # live | plan | dryrun | selftest
 REQUIRE_LIVE=0
+INSTALL_MODE=0             # deferred-credential install: gate reports missing labels but does not STOP install
 JSONOUT=0
 PRODUCER_NAME=""
 PRODUCER_ID=""
@@ -195,6 +196,7 @@ while [ $# -gt 0 ]; do
         --self-test)            MODE="selftest"; shift ;;
         --wire-department)      MODE="wiredept"; shift ;;
         --require-live)         REQUIRE_LIVE=1; shift ;;
+        --install-mode)         INSTALL_MODE=1; shift ;;
         --producer)             PRODUCER_NAME="${2:-}"; shift 2 ;;
         --producer-id)          PRODUCER_ID="${2:-}"; shift 2 ;;
         --producer-email)       PRODUCER_EMAIL="${2:-}"; shift 2 ;;
@@ -490,6 +492,19 @@ step1_credentials() {
     fi
     printf '%s\n' "$out" >&2
     set_crc "$rc"
+    if [ "$rc" = "2" ] && [ "$INSTALL_MODE" = "1" ]; then
+        # Deferred-credential install (Trevor GO 2026-08-14): a box missing the
+        # PER-CLIENT delivery levers is still INSTALLED — the skill ships, the
+        # gate outcome is recorded for the use-time readiness check, and the
+        # drive/snapshot steps stay gated. A missing PIT/location (the Convert
+        # and Flow pair) is NOT deferred — nothing can install without it.
+        if echo "$out" | grep -qiE "(google_sa_key_file|google_impersonate_user|google_drive_root_folder)"; then
+            mkdir -p "$STATE_DIR"
+            echo "$EX_HELD" | tee "$STATE_DIR/credentials-pending" >/dev/null
+            note "  (install-mode) delivery levers missing — recorded, install CONTINUES (drive + snapshot stay gated)"
+            echo "$EX_OK"; return
+        fi
+    fi
     echo "$(normalize_rc "$rc")"; return
 }
 
@@ -520,6 +535,18 @@ step3_pipeline() {
     # in the UI, or bind a pre-existing pipeline with `bind --pipeline-id`.
     n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-pipeline \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
+    # Deferred-credential install (Trevor GO 2026-08-14): the standard pipeline is
+    # a UI-only object whose canonical source is the SNAPSHOT IMPORT (step 7.5,
+    # itself credential-gated). In install-mode, an absent pipeline is DEFERRED
+    # (recorded) instead of STOPPING the install — the pipeline lands when the
+    # snapshot import runs after the client's levers are wired. Fail-closed
+    # semantics unchanged outside install-mode.
+    if [ "$n" != "$EX_OK" ] && [ "$INSTALL_MODE" = "1" ]; then
+        mkdir -p "$STATE_DIR"
+        echo "$EX_HELD" | tee "$STATE_DIR/pipeline-pending" >/dev/null
+        note "  (install-mode) pipeline absent — recorded pipeline-pending, install CONTINUES (bind when snapshot import runs)"
+        echo "$EX_OK"; return
+    fi
     echo "$n"
 }
 
