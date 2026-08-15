@@ -2384,7 +2384,19 @@ _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
 # the additive one. Before this fix .js appeared in neither list in either
 # writer (here nor in refresh-dept-scripts.py), so relay_brain_validation.js
 # was silently dropped by every delivery path — never auto-delivered at all.
-_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".sha256", ".pdf")
+# GAP-DELIVERY-TPL: .tpl is a fleet-owned canonical asset exactly like
+# .py/.sh/.js (e.g. rescue-rangers/scripts/rescue-escalation-section.md.tpl —
+# the single source of truth both apply-fleet-standards.sh §5j and
+# stamp-rescue-escalation-section.sh render onto a box's AGENTS.md), so it
+# belongs in THIS tuple, not the additive one. Before this fix .tpl appeared
+# in NEITHER suffix list in EITHER writer (here nor in refresh-dept-scripts.py)
+# — so a materialized department's scripts/ dir never received the template,
+# stamp-rescue-escalation-section.sh's _default_tpl() walk (which looks for
+# scripts/rescue-escalation-section.md.tpl beside the script) could not find
+# it, and the stamp drill in verify.sh could not pass on a box that only had
+# the role-library copy. .tpl is never a client-local override candidate, so
+# the canonical/mirror policy (always overwrite) is correct for it.
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf")
 
 # Additive/box-owned script suffixes: copied only if the destination is
 # missing, NEVER overwritten (may carry a client-local override). Named here
@@ -2552,7 +2564,7 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # forever. Walks the full tree now (via _iter_scripts_tree_files, shared
     # with verify_scripts_materialization below so copy and verify can never
     # disagree about what the tree contains); only real cache/hidden dirs are
-    # pruned, and the per-file mirror(.py/.sh/.js/.sha256/.pdf)-vs-fork(.json)
+    # pruned, and the per-file mirror(.py/.sh/.js/.tpl/.sha256/.pdf)-vs-fork(.json)
     # policy is unchanged and now applies at every depth, not just depth 1.
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
@@ -2748,7 +2760,7 @@ def main():
     # never invoke the materializer at all). Point this at a LIVE
     # department's scripts/ dir and its role-library source and it reports,
     # loudly and with an itemized list, whether the box actually has every
-    # canonical (.py/.sh/.js/.sha256/.pdf) file the library ships, at every
+    # canonical (.py/.sh/.js/.tpl/.sha256/.pdf) file the library ships, at every
     # depth — instead of a roll silently reporting success while a box never
     # received the update. Never writes anything.
     parser.add_argument(
