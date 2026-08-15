@@ -9218,6 +9218,18 @@ PYEOF
   fi
   # <<< TRAP3-CC-BOOTSTRAP-BRANCH-END
 
+  # POST-REFRESH CC CURRENCY PROBE (2026-08-15 fix): the pre-refresh probe call
+  # above wrote the marker BEFORE the CC refresh ran. run-full-install.sh's
+  # Phase 6b seed (seed-workspaces.py -> generate-brand-css.py) re-stamps
+  # public/brand.css AFTER the refresh, re-dirtying the tree — so the marker
+  # was written while the tree was still clean and never updated after the
+  # refresh dirtied it, leaving 3-4 boxes perpetually state=dirty even though
+  # their CC code is at origin/main. Re-probe HERE, after the refresh
+  # completes, so the marker reflects the true post-update state. Same
+  # marker-write/report-only contract: return value intentionally discarded,
+  # must never gate or alter anything.
+  _cc_currency_probe || true
+
   fi
 
   # ----------------------------------------------------------
