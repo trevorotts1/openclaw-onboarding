@@ -227,7 +227,11 @@ _BANNED_NAMES = {"open"}
 # Functions in presentation_job/runfacts.py this increment asserts are pure:
 # (RunFacts, ...) -> (Verdict, str), reading ONLY already-sealed fields off
 # the RunFacts object passed in — never touching disk themselves.
-PURITY_ASSERTED_FUNCTIONS = ("verify_owner_skip", "verify_qc")
+# SLICE-2: verify_priority_shift / verify_final_qc were added when the
+# report-shape phase gates (P-SHIFT-QC, P-QC-AGGREGATE) converted to the
+# sealed-RunFacts verifier pattern (verifier_registry.py).
+PURITY_ASSERTED_FUNCTIONS = ("verify_owner_skip", "verify_qc",
+                             "verify_priority_shift", "verify_final_qc")
 
 
 def _function_bodies(source: str, names) -> dict:

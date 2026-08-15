@@ -242,6 +242,15 @@ QC_REPORTS: Dict[str, Dict[str, Optional[str]]] = {
     "typography":     {"path": "working/qc/typography_qc_report.json",  "gate_label": "Phase Typography-QC"},
     "speech":         {"path": "working/qc/speech_qc_report.json",      "gate_label": "Phase Speech-QC"},
     "priority_shift": {"path": "working/qc/priority_shift_report.json", "gate_label": None},
+    # P-QC-AGGREGATE (order 8.65) — the FINAL aggregate produced by
+    # qc_aggregate.py (scripts/qc_aggregate.py), consumed by gates.py's
+    # fail-closed _qc_gate. Slice-2 conversion adds it to the sealed set so
+    # the aggregate verifier re-measures it from the seal. Deliberately NOT
+    # added to WIRED_QC_KEYS: the aggregate's shape is not a 0-10 rubric
+    # report (no independence block, `average` null on any blocking finding),
+    # so RunFacts.findings()'s WIRED rubric must not shout about it before
+    # the aggregate verifier exists to judge it properly.
+    "final":          {"path": "working/qc/final_qc_report.json",       "gate_label": None},
 }
 
 # Which of the six sealed QC facts are actually consumed by a shadow verifier
@@ -264,6 +273,8 @@ class QcReportInfo:
     triggered_autofails: tuple
     independence_reason: str    # "" == independent, provenance OK
     substance_problems: tuple   # empty == no rubber-stamp / foreign-signature hit
+    schema: str                 # the report's declared "schema" ("" when absent)
+    items: tuple = ()           # raw ledger rows for ledger-shaped reports (priority_shift / final)
 
 
 def _load_json_bytes(p: Path) -> Tuple[Optional[dict], Optional[str], str]:
@@ -318,6 +329,10 @@ def _qc_report_fact(run_dir: Path, key: str, spec: Dict[str, Optional[str]]) -> 
         independence_reason = ""
         substance_problems = (f"NOTE: independence/substance check unavailable ({exc!r})",)
 
+    schema = str(obj.get("schema", "") or "").strip()
+    raw_items = obj.get("items")
+    items = tuple(raw_items) if isinstance(raw_items, list) else ()
+
     info = QcReportInfo(
         rel_path=spec["path"],
         sha256=digest or "",
@@ -328,6 +343,8 @@ def _qc_report_fact(run_dir: Path, key: str, spec: Dict[str, Optional[str]]) -> 
         triggered_autofails=triggered,
         independence_reason=independence_reason,
         substance_problems=substance_problems,
+        schema=schema,
+        items=items,
     )
     return Fact.known(info, detail=f"{spec['path']} sealed sha256={digest[:12]}")
 
@@ -630,6 +647,88 @@ def verify_qc(facts: RunFacts, key: str) -> Tuple[Verdict, str]:
     if problems:
         return Verdict.FAIL, "; ".join(problems)
     return Verdict.PASS, f"qc[{key}] declared pass, independent, no rubber-stamp signature"
+
+
+def verify_priority_shift(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. SLICE-2: P-SHIFT-QC (order 7.5). Re-derives the priority-shift ship
+    gate's decided value from the SEALED ledger fact instead of a fresh read —
+    the ledger (working/qc/priority_shift_report.json, written by
+    build_deck._chk_priority_shift_ledger from its own 14-item + per-slide
+    measurements) is the REAL artifact; the legacy phase verifier only proved
+    the file existed. The verdict re-derives the exact contract the ledger's
+    writer enforces: schema matches, pass is literal True, and every ledger
+    item row is structurally pass:true. A ledger whose rows contradict its
+    pass flag is a rubber stamp and is REJECTED naming the failing rows."""
+    fact = facts.qc["priority_shift"]
+    if fact.state is Epistemic.ABSENT:
+        return Verdict.FAIL, f"qc[priority_shift] ABSENT ({fact.detail})"
+    if fact.state is Epistemic.UNPARSEABLE:
+        return Verdict.FAIL, f"qc[priority_shift] UNPARSEABLE ({fact.detail})"
+    info: QcReportInfo = fact.value
+    problems = []
+    if info.schema != "priority_shift_report/v1":
+        problems.append(f"schema={info.schema!r}, expected 'priority_shift_report/v1'")
+    if info.pass_declared is not True:
+        problems.append(f"report does not affirmatively mark pass:true (got {info.pass_declared!r})")
+    if not info.items:
+        problems.append("ledger carries no item rows — the 14-item ship checklist is empty")
+    else:
+        failed = [str(r.get("item") or r.get("id") or f"row#{i}")
+                  for i, r in enumerate(info.items)
+                  if isinstance(r, dict) and r.get("pass") is not True]
+        if failed:
+            problems.append("ledger items failing (contradict the pass flag): "
+                            + ", ".join(failed[:5]))
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, ("qc[priority_shift] ledger declares pass with all "
+                          f"{len(info.items)} item rows passing")
+
+
+def verify_final_qc(facts: RunFacts) -> Tuple[Verdict, str]:
+    """PURE. SLICE-2: P-QC-AGGREGATE (order 8.65). Re-derives the FINAL aggregate
+    verdict from the SEALED six-domain facts + the sealed aggregate report —
+    the same six sources qc_aggregate.py (the real producer) reads, exactly
+    once, at seal time. This is the re-measure the task demands: the verifier
+    never trusts the aggregate's headline alone; it independently confirms
+    every one of the six domain facts it claims to aggregate is KNOWN and
+    passing under the SAME rubric the per-domain gates enforce (verify_qc).
+    The aggregate's own `average` must be a numeric >= 8.5 (a blocked
+    aggregate writes average:null on purpose — that is a FAIL naming it)."""
+    agg_fact = facts.qc["final"]
+    if agg_fact.state is Epistemic.ABSENT:
+        return Verdict.FAIL, f"qc[final] ABSENT ({agg_fact.detail})"
+    if agg_fact.state is Epistemic.UNPARSEABLE:
+        return Verdict.FAIL, f"qc[final] UNPARSEABLE ({agg_fact.detail})"
+    info: QcReportInfo = agg_fact.value
+    problems = []
+    if info.schema != "final_qc_report/v1":
+        problems.append(f"schema={info.schema!r}, expected 'final_qc_report/v1'")
+    if info.pass_declared is not True:
+        problems.append(f"report does not affirmatively mark pass:true (got {info.pass_declared!r})")
+    if info.average is None:
+        problems.append("average is null — the aggregate carries no numeric score "
+                        "(qc_aggregate writes average:null on ANY blocking finding)")
+    elif info.average < 8.5:
+        problems.append(f"average={info.average!r} below the 8.5 pass threshold")
+    if info.triggered_autofails:
+        problems.append(f"triggered autofails present: {list(info.triggered_autofails)}")
+    for key in ("copy", "prompt", "image", "typography", "speech"):
+        dverdict, ddetail = verify_qc(facts, key)
+        if dverdict is not Verdict.PASS:
+            problems.append(f"domain qc[{key}] does not pass: {ddetail}")
+    ps = facts.qc["priority_shift"]
+    if ps.state is not Epistemic.KNOWN:
+        problems.append("domain qc[priority_shift] absent/unreadable — the ship gate "
+                        "must be present and passing for the aggregate to pass")
+    else:
+        pverdict, pdetail = verify_priority_shift(facts)
+        if pverdict is not Verdict.PASS:
+            problems.append(f"domain qc[priority_shift] does not pass: {pdetail}")
+    if problems:
+        return Verdict.FAIL, "; ".join(problems)
+    return Verdict.PASS, ("qc[final] aggregate declares pass, average "
+                          f"{info.average}, all six domain facts independently passing")
 
 
 def shadow_compare(label: str, legacy_ok: bool, legacy_reason: str,

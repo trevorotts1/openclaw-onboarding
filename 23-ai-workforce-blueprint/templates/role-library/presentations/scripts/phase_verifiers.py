@@ -1501,6 +1501,62 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
     return _v
 
 
+def _registry_gate_verifier(gate: str) -> Callable:
+    """SLICE-2: wire a PHASE_VERIFIERS entry to a registered verifier from
+    verifier_registry.py (the shared gate-conversion infra, built in the same
+    commit that added the registry). Returns a callable with the SAME
+    (run_dir) -> (ok, reasons) contract the phase verifiers already use,
+    delegating to verifier_registry.run_gate(gate, run_dir) — a named
+    verifier re-measuring the REAL artifact + sealed RunFacts, fail naming
+    the exact discrepancy. The import is lazy (inside the call, not at module
+    top) so this module never creates an import cycle: verifier_registry
+    imports presentation_job.runfacts, which lazily imports build_deck at
+    seal time; phase_verifiers is imported by build_deck itself, so a
+    top-level import of verifier_registry here would recurse. Never raises
+    into a caller: registry failure degrades to fail-closed with the reason
+    named (a gate that cannot run its verifier does not pass — D10)."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        try:
+            from verifier_registry import run_gate
+        except Exception as exc:  # noqa: BLE001
+            return False, [f"{gate}: verifier registry unavailable ({exc!r}) — "
+                           "fail-closed, not a pass"]
+        return run_gate(gate, run_dir)
+    return _v
+
+
+def _register_slice2_verifiers() -> None:
+    """SLICE-2: register the report-shape gate verifiers into the shared
+    registry ONCE at module load. Idempotent (last registration wins), so
+    re-imports and test re-collection are safe. The registry import is
+    deliberately local and wrapped: phase_verifiers is imported by
+    build_deck.py at its own module top, and verifier_registry -> runfacts
+    only lazily imports build_deck, so no cycle — but a broken/absent
+    registry must never break a phase module import (registration is wiring,
+    not a verdict)."""
+    try:
+        from verifier_registry import (
+            final_qc_verifier,
+            priority_shift_verifier,
+            qc_report_verifier,
+            register_verifier,
+        )
+        # Increment-1 gate (P-TYPO-QC) stays shadow-wired via
+        # _shadow_qc_verifier; its registry entry is registered so the
+        # registry is a complete map of every converted gate.
+        register_verifier(qc_report_verifier("typography"))
+        # SLICE-2 conversions — the phase gates these back.
+        register_verifier(qc_report_verifier("speech"))
+        register_verifier(priority_shift_verifier())
+        register_verifier(final_qc_verifier())
+    except Exception as exc:  # noqa: BLE001 — wiring failure degrades to the
+        # per-gate fail-closed path in _registry_gate_verifier, never a crash
+        try:
+            print(f"TRUST-BOUNDARY-SLICE2-WIRE-ERROR: {exc!r}", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -1535,15 +1591,38 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 4.95  Image QC
     "P-IMAGE-QC":         _verify_render,
     # Phase 7.5   Priority-Shift Ship Gate
-    "P-SHIFT-QC":         _verify_json_artifact("working/qc/priority_shift_report.json"),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.priority_shift_verifier, gate "qc:priority_shift"):
+    # re-derives the ledger's decided value from the seal instead of trusting
+    # the file's existence. Fail semantics identical to the legacy
+    # _verify_json_artifact fail-hard on an absent report (D10: a gate whose
+    # input is missing does not pass). The pre-render / no-doctrine DEFER lives
+    # in build_deck._chk_priority_shift_ledger (the report's writer), which
+    # simply does not produce the ledger yet — unchanged.
+    "P-SHIFT-QC":         _registry_gate_verifier("qc:priority_shift"),
     # Phase 8     PPTX Assembly
     "P8-ASSEMBLE":        _verify_assemble,
     # Phase 8.5   Presenter Speech
     "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
-    "P-SPEECH-QC":        _verify_json_artifact("working/qc/speech_qc_report.json"),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.qc_report_verifier("speech"), gate
+    # "qc:speech"): re-derives the SAME five-ground rubric build_deck.
+    # _qc_report_gate enforces for this report (gate label / average>=8.5 /
+    # no autofails / pass IS True / independence / anti-rubber-stamp) from the
+    # seal. The pre-delivery DEFER for a not-yet-produced report lives in
+    # build_deck._chk_speech_qc (returns "" when the report path is None) —
+    # unchanged; once the report exists this gate enforces it.
+    "P-SPEECH-QC":        _registry_gate_verifier("qc:speech"),
     # Phase 8.65  Final QC Aggregation (combines the six domain QC reports)
-    "P-QC-AGGREGATE":     _verify_json_artifact("working/qc/final_qc_report.json", ("schema", "pass")),
+    # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
+    # pattern (verifier_registry.final_qc_verifier, gate "qc:final"):
+    # re-measures the REAL artifacts — every one of the six sealed domain
+    # facts the aggregate claims to combine is independently re-derived under
+    # the same per-domain rubric, and the aggregate's average must be a
+    # numeric >= 8.5. Absent aggregate fails hard exactly like the legacy
+    # _verify_json_artifact(("schema","pass")) did.
+    "P-QC-AGGREGATE":     _registry_gate_verifier("qc:final"),
     # Phase 8.7   Notes-Pane Sync (reorder — AF-EMPTY-NOTES-PANE)
     "P9.5-NOTES-SYNC":    _verify_notes_sync,
     # Phase 9     Delivery
@@ -1774,6 +1853,11 @@ def _selftest() -> None:
         sys.exit(1)
     print("[phase_verifiers selftest] PASS — all self-tests passed.", flush=True)
     sys.exit(0)
+
+
+# SLICE-2 wiring: register the converted gate verifiers into the shared
+# registry at module load (idempotent; see _register_slice2_verifiers).
+_register_slice2_verifiers()
 
 
 if __name__ == "__main__":
