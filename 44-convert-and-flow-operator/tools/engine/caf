@@ -62,4 +62,10 @@ if [ -z "$GHL_API_KEY" ]; then
     exit 1
 fi
 
+# Some installed venvs pair Python 3.9 with LibreSSL (stock macOS python3), which
+# makes urllib3 v2 emit NotOpenSSLWarning to stderr on EVERY invocation — noise
+# an agent can misread as failure even though the exit code is honest. Targeted
+# suppression only (that one warning class); nothing else is silenced.
+export PYTHONWARNINGS="${PYTHONWARNINGS:+$PYTHONWARNINGS,}ignore::urllib3.exceptions.NotOpenSSLWarning"
+
 exec "$VENV_PYTHON" -m cli_anything.gohighlevel "$@"

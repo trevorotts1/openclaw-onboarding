@@ -1,5 +1,43 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.18] - 2026-08-17 — `workflows build`: idempotent folder/workflow creation + quiet stderr
+
+### Fixed
+- **`CampaignBuilder.build()` had no pre-existence check.** Every call to `_build_locked()`
+  unconditionally POSTed a new workflow-folder (when `folder_id` wasn't passed) and unconditionally
+  POSTed a new workflow per campaign entry. A repeated build against the same location therefore
+  created duplicates every run — a repeated build in one morning produced duplicate workflows and
+  7 duplicate folders. `build()` now fetches the location's existing workflow/folder listing ONCE
+  per call (not once per workflow), before any create POST fires:
+  - **Folder collision → reuse.** A folder is a pure organizational container, so an existing
+    folder with the target name is reused by id instead of creating a duplicate.
+  - **Workflow-name collision → refuse, don't reuse.** Reusing an existing *workflow*'s id would
+    run the tag/trigger/step-save/sync writes against content the build did not create and cannot
+    prove is safe to overwrite (a human may have hand-edited it since). The collision is instead
+    recorded in `stats["errors"]` and that workflow is skipped — surfacing a clear, actionable
+    error (existing id + what to do about it) beats a silent duplicate or a silent unwanted edit.
+  - **Listing fetch failure → abort, don't guess.** If the pre-check itself can't be read (missing,
+    transport error, or an unrecognized response shape), the build aborts with a clear error rather
+    than proceeding blind — the same failure mode this fix exists to close.
+  - New `_index_existing()` parses the listing defensively (bare list, or a dict wrapping the list
+    under `workflows`/`folders`/`data`/`items`) since this GET has not yet been captured against a
+    live backend (see `fixtures/README.md`); an unrecognized shape returns `None` (fail loud) rather
+    than being treated as "nothing exists".
+- **Stderr noise on every invocation.** venvs pairing Python 3.9 with LibreSSL (stock macOS
+  `python3`) make urllib3 v2 emit `NotOpenSSLWarning` on import, stacking with the `[caf] Allowed
+  write locations set to...` notice so a healthy run never has empty stderr — a contributing cause
+  of agents rebuilding blind on the mistaken belief that non-empty stderr meant failure. The `caf`,
+  `convertandflow`, and `ghl` wrappers now export a targeted `PYTHONWARNINGS` suppression for that
+  one warning class only, before exec'ing the venv interpreter.
+- **`SKILL.md`** gained a binding Step 0.7 pre-build existence check (`caf workflows list` before
+  `workflows build`) and an explicit instruction to treat the CLI exit code as authoritative —
+  never re-run a build solely because stderr was non-empty.
+
+### Unchanged
+- `link_steps()` and `_emit_build_result()` were already correct — not touched by this fix.
+
+---
+
 ## [1.3.16] - 2026-08-03 — REVERT: `2023-02-21` on `POST /users/` was correct all along
 
 ### Reverted

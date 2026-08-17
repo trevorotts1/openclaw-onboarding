@@ -29,6 +29,18 @@ DEPENDENCY PRE-CHECK → OUTLINE → CHECKLIST (instantiate references/workflow-
 IMPROVEMENTS → PRESENT + GATING QUESTIONS (publish: DRAFT vs LIVE? / re-entry: once vs
 allow-multiple?). Rushing to a default build is NOT the best outcome and is a VIOLATION.
 
+**Step 0.7 — PRE-BUILD EXISTENCE CHECK (before any `caf workflows build`):** BINDING GATE —
+run `caf workflows list` and confirm the target folder/workflow names are not already present
+before building. The engine itself now checks this too (an existing folder is reused; an
+existing workflow name is refused into `errors` rather than duplicated or silently modified) —
+this step is the human-in-loop backstop for catching a bad/reused name choice early, not
+permission to skip the engine's own check. **Treat the CLI EXIT CODE as authoritative, never
+stderr.** A healthy run prints an SSL/urllib3 version notice and the `[caf] Allowed write
+locations set to...` line on EVERY invocation — non-empty stderr on exit 0 is NORMAL, not a
+failure signal. NEVER re-run a build solely because stderr was non-empty. If genuinely
+uncertain whether the last build succeeded, verify with `caf workflows list` (or
+`workflows export`) before rebuilding — never rebuild blind.
+
 **Step 9 — QC GATE (before declaring done):** BINDING GATE — the build agent MUST NOT say
 "done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
 checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent

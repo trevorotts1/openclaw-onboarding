@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
@@ -237,6 +237,69 @@ def validate_campaign(campaign: dict) -> list[str]:
     return errors
 
 
+# ── Existing-state indexing (idempotency) ──────────────────────────────────
+
+def _index_existing(
+    raw: Union[dict, list, None],
+) -> Optional[tuple[dict[str, str], dict[str, str]]]:
+    """Parse a GET /workflow/{loc} listing into name->id maps for reuse checks.
+
+    Returns (workflow_name_to_id, folder_name_to_id) on success (empty dicts
+    mean "confirmed nothing exists yet" — a valid, common result). Returns
+    None when the response can't be read as a listing at all (missing,
+    transport `_error`, or a shape with no recognizable item collection) —
+    callers MUST treat None as "existing state unknown" and abort rather
+    than build blind, since guessing wrong here is exactly the bug this
+    function exists to prevent.
+
+    UNVERIFIED response shape: this call has not been captured against a
+    live GHL backend (see fixtures/README.md). It reuses the same collection
+    path already verified for folder/workflow creation (folder() /
+    workflow_create() in internal/endpoints.py) on the assumption a GET
+    lists what a POST creates into that same collection. Tolerant of the two
+    most likely shapes — a bare list, or a dict wrapping the list under
+    "workflows"/"folders"/"data"/"items" — but does NOT guess further than
+    that; an unrecognized dict shape returns None rather than being silently
+    treated as an empty list. Capture the live shape and tighten this before
+    first production use.
+
+    Item classification: an item is a folder when item["type"] == "directory"
+    — the exact value this module already POSTs when creating a folder — and
+    a workflow otherwise. Items missing "name" or "id"/"_id" are skipped.
+    """
+    if isinstance(raw, list):
+        items = raw
+    elif isinstance(raw, dict):
+        if raw.get("_error"):
+            return None
+        items = []
+        found_key = False
+        for key in ("workflows", "folders", "data", "items"):
+            val = raw.get(key)
+            if isinstance(val, list):
+                items.extend(val)
+                found_key = True
+        if not found_key:
+            return None
+    else:
+        return None
+
+    workflow_ids: dict[str, str] = {}
+    folder_ids: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        item_id = item.get("id") or item.get("_id")
+        if not name or not item_id:
+            continue
+        if item.get("type") == "directory":
+            folder_ids[name] = item_id
+        else:
+            workflow_ids[name] = item_id
+    return workflow_ids, folder_ids
+
+
 # ── Campaign Builder ──────────────────────────────────────────────────────
 
 class CampaignBuilder:
@@ -269,6 +332,11 @@ class CampaignBuilder:
         Pass `folder_id` to drop the campaign into an existing folder; pass
         `folder_name` to create a new folder. Exactly one is required.
 
+        Idempotent: a repeated call reuses an existing folder with the same
+        name instead of creating a duplicate, and refuses (via stats["errors"])
+        to touch a campaign workflow whose name already exists rather than
+        silently duplicating or silently modifying it. See `_index_existing`.
+
         Serialization: the entire build is wrapped in a WriteLock for the
         location so that concurrent builds to the same location are
         serialized — second build waits for the first to complete before
@@ -291,7 +359,32 @@ class CampaignBuilder:
         if errors:
             self.stats["errors"].extend(errors)
 
-        # Resolve folder: reuse existing if folder_id given, else create.
+        # Idempotency pre-check — fetch the location's existing workflow/folder
+        # listing ONCE per build() call (not once per workflow, to avoid N extra
+        # API calls), before any create POST fires.  A repeated build with no
+        # pre-existence check was unconditionally POSTing a new folder/workflow
+        # every run; this is what let one morning's re-runs produce duplicate
+        # workflows and 7 duplicate folders.  If we can't determine what
+        # already exists, we FAIL LOUD and abort rather than risk creating
+        # duplicates blind — the exact failure mode this fix targets.
+        existing = _index_existing(self.client.request("GET", f"/workflow/{self.loc}"))
+        if existing is None:
+            self.stats["errors"].append(
+                "Could not read the existing workflow/folder list before "
+                "building (idempotency pre-check failed) — aborting instead "
+                "of risking duplicate creation. Retry, or check GHL "
+                "internal-API connectivity."
+            )
+            self.stats["end_time"] = time.time()
+            return self.stats
+        existing_workflow_ids, existing_folder_ids = existing
+
+        # Resolve folder: reuse existing if folder_id given, else look up by
+        # name and reuse it, else create.  Reuse is the safe default for a
+        # folder — it's a pure organizational container, so silently reusing
+        # one that already carries the target name can't corrupt anything a
+        # human built (unlike reusing a workflow — see the collision check
+        # below).
         if not folder_id:
             if not folder_name:
                 self.stats["errors"].append(
@@ -299,25 +392,50 @@ class CampaignBuilder:
                 )
                 self.stats["end_time"] = time.time()
                 return self.stats
-            # Bug 2a — the folder-creation POST omitted workflow_name, so the
-            # safety gate saw an empty name and the ZHC- standing-approval check
-            # (safety_gate._is_approved) always failed for it: a ZHC- *folder*
-            # name was forced to demand CAF_APPROVAL_TOKEN even though a ZHC-
-            # *workflow* name in the very same build was standing-approved.
-            # Pass folder_name as the gate's workflow_name so ZHC- folder names
-            # carry standing approval exactly like ZHC- workflow names.  The
-            # gate's behaviour is unchanged for non-ZHC names (still requires a
-            # token).
-            folder = self.client.request(
-                "POST", f"/workflow/{self.loc}",
-                {"name": folder_name, "type": "directory"},
-                workflow_name=folder_name,
-            )
-            folder_id = folder.get("id") if folder else None
+            folder_id = existing_folder_ids.get(folder_name)
             if not folder_id:
-                self.stats["errors"].append("Failed to create campaign folder")
-                self.stats["end_time"] = time.time()
-                return self.stats
+                # Bug 2a — the folder-creation POST omitted workflow_name, so the
+                # safety gate saw an empty name and the ZHC- standing-approval check
+                # (safety_gate._is_approved) always failed for it: a ZHC- *folder*
+                # name was forced to demand CAF_APPROVAL_TOKEN even though a ZHC-
+                # *workflow* name in the very same build was standing-approved.
+                # Pass folder_name as the gate's workflow_name so ZHC- folder names
+                # carry standing approval exactly like ZHC- workflow names.  The
+                # gate's behaviour is unchanged for non-ZHC names (still requires a
+                # token).
+                folder = self.client.request(
+                    "POST", f"/workflow/{self.loc}",
+                    {"name": folder_name, "type": "directory"},
+                    workflow_name=folder_name,
+                )
+                folder_id = folder.get("id") if folder else None
+                if not folder_id:
+                    self.stats["errors"].append("Failed to create campaign folder")
+                    self.stats["end_time"] = time.time()
+                    return self.stats
+
+        # Idempotency: a campaign workflow whose name already exists at this
+        # location is surfaced as a build ERROR, not silently reused and not
+        # silently skipped.  Unlike a folder, reusing an existing workflow's id
+        # would run the tag/trigger/step-save/sync writes below against content
+        # this build did not create and cannot prove is safe to overwrite — a
+        # human may have hand-edited it since.  Filtered out here, before the
+        # ThreadPoolExecutor starts, so no create POST ever fires for a
+        # colliding name.
+        to_build: dict[str, dict] = {}
+        for key, wf_def in campaign.items():
+            wf_name = wf_def.get("name") if isinstance(wf_def, dict) else None
+            existing_wf_id = existing_workflow_ids.get(wf_name) if wf_name else None
+            if existing_wf_id:
+                self.stats["errors"].append(
+                    f"{wf_name}: a workflow with this name already exists "
+                    f"(id {existing_wf_id}) — skipped to avoid creating a "
+                    "duplicate or silently modifying it. Rename it, delete "
+                    "the existing one, or use 'workflows update'/'patch-*' "
+                    "to change it directly."
+                )
+                continue
+            to_build[key] = wf_def
 
         wf_ids: dict[str, str] = {}
 
@@ -470,11 +588,13 @@ class CampaignBuilder:
 
             return key, wf_id, steps_ok, trigger_ok, step_err
 
-        # Run all workflows in parallel (burst-capped; CAF_INTERNAL_MAX_WORKERS)
+        # Run all (non-colliding) workflows in parallel (burst-capped;
+        # CAF_INTERNAL_MAX_WORKERS). `to_build` excludes any name already
+        # caught by the collision check above.
         with ThreadPoolExecutor(max_workers=_build_max_workers()) as pool:
             futures = [
                 pool.submit(_create_workflow, key, wf_def)
-                for key, wf_def in campaign.items()
+                for key, wf_def in to_build.items()
             ]
 
             for future in as_completed(futures):

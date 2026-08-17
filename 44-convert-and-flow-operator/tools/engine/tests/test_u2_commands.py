@@ -1016,6 +1016,11 @@ class TestWorkflowsBuildFromPlan(unittest.TestCase):
             if method == "PUT":
                 return {"id": "WF001", "name": "ZHC-3Email-Nurture", "status": "draft"}
             if method == "GET":
+                # Idempotency pre-check GET (bare collection path) — report empty
+                # so this test still exercises the create path; the per-workflow
+                # sync GET below still needs the single-workflow shape.
+                if path == "/workflow/LOC001":
+                    return {"workflows": [], "folders": []}
                 return {"id": "WF001", "name": "ZHC-3Email-Nurture", "version": 2, "meta": {}}
             return {"id": "WF001"}
 
