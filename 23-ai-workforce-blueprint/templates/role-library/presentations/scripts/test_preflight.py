@@ -1471,11 +1471,22 @@ def test_postflight_speech_length_reverify():
         (root / "working" / "presenter-speech").mkdir(parents=True, exist_ok=True)
         (root / "working" / "presenter-speech" / "speech.md").write_text(
             " ".join(["word"] * words))
-        # Satisfy the UNRELATED AF-CC-UNREGISTERED closeout gate (_chk_cc_registered)
-        # so this fixture isolates the speech-length re-check specifically — once
-        # run_dir is threaded into run_postflight_gate, every run-dir-scoped closeout
-        # sub-check fires, not just the one under test.
+        # Satisfy the UNRELATED closeout sub-checks (_chk_cc_registered AND, since
+        # gates-absence g5, _chk_kie_baked(require_rendered=True)) so this fixture
+        # isolates the speech-length re-check specifically — once run_dir is
+        # threaded into run_postflight_gate, EVERY run-dir-scoped closeout sub-check
+        # fires, not just the one under test.
         (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        # A real-shaped KIE render record (same fixture pattern test_chk_kie_baked
+        # already uses): one baked slide, real taskId, a PNG above
+        # PLACEHOLDER_MIN_BYTES, a unique sha256. slides_path is never threaded
+        # into this call (run_postflight_gate's own kie_baked invocation omits it
+        # too), so _count_output_slides() returns None and the slide-count
+        # cross-check is skipped — only "is there a real render record" matters here.
+        png_path = root / "kie-baked-1.png"
+        png_body = b"\x89PNG\r\n\x1a\n" + (b"\x00" * (build_deck.PLACEHOLDER_MIN_BYTES + 1024))
+        png_path.write_bytes(png_body)
+        import hashlib as _hashlib
         (root / "working" / "checkpoints" / "process_manifest.json").write_text(
             json.dumps({
                 "phase_attestations": [],
@@ -1483,6 +1494,16 @@ def test_postflight_speech_length_reverify():
                 "cc_register_attempted": True,
                 "cc_registration": _cc_registration_receipt(
                     "task-pf-speech-test", "sha256-deck-key", "test-deck"),
+                "phases": [{
+                    "phase": "render",
+                    "output_slide_count": 1,
+                    "slides": [{
+                        "slide": 1,
+                        "taskId": "kie-task-pf-speech-1",
+                        "image": str(png_path),
+                        "image_sha256": _hashlib.sha256(png_body).hexdigest(),
+                    }],
+                }],
             }))
         return root
 
