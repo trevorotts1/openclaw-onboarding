@@ -3,6 +3,39 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v22.0.30] - 2026-08-17 - fix(qc): match the FULL canonical set — companyName/industry transcript fallback was dead code
+
+Follow-up to v22.0.29. That release made the structural `companyName`/`industry`
+checks in `check_mandatory_fields()` satisfiable by answered-transcript
+evidence — the core of the D3 web-lane fix. But `transcript_answered_ids` was
+still computed from `branding_questions` alone, and `company_name`/`industry`
+are **not** branding ids; `branding-questions.json` holds only the eight
+`brand_*` / `customer_feeling` / `ideal_customer` / `unique_differentiator`
+entries. Both live in `IDENTITY_QUESTIONS_CANONICAL`.
+
+`"company_name" in transcript_answered_ids` was therefore unreachable — the
+acceptance was DEAD CODE, and a pure web-lane interview that answered both
+still hard-failed `Missing mandatory fields: companyName, industry`, which is
+precisely the D3 symptom the change was meant to eliminate.
+
+`transcript_answered_ids` is now matched against the FULL canonical set
+(`IDENTITY_QUESTIONS_CANONICAL` + branding + `OPERATIONS_QUESTIONS_CANONICAL`),
+using the same byte-identical Command-Center matching semantics as before.
+
+Evidence: against the shipped v22.0.29 tree, a transcript answering both
+identity questions with neither value in build-state reported
+`['...', 'companyName', 'industry']`; after this fix the same input reports
+neither. Fail-closed preserved: empty transcript + empty state still reports
+`companyName`, `industry`, `departments[at-least-one]`.
+
+Battery, all rc 0: mandatory-fields 9/9; structured-coverage 10/10;
+transcript-decryption 20/20; evidence-gate 5/5; nudge-cadence 9/9;
+bounded-resume 59/59.
+
+Unchanged from v22.0.29 and re-verified on main: the `plumbing` demotion of
+`ownerChat`/`agentName`, and `departments[at-least-one]` accepting a recorded
+`canonicalReconciliation.decisions` yes.
+
 ## [v22.0.29] - 2026-08-17 - fix(interview): repair the interview-completion path — nine defects that stranded finished interviews
 
 An owner could answer every question and still never reach a built workforce.
