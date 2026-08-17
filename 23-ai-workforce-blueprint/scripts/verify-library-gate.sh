@@ -1,4 +1,28 @@
 #!/usr/bin/env bash
+
+# ─── Durable jq resolution (2026-08-17) ──────────────────────────────────────
+# The OpenClaw container image does not ship jq, and a jq installed with the
+# distro package manager VANISHES on container recreate — the documented
+# failure that silently killed owner nudges (fix/jq-hard-dep) and, under
+# `set -euo pipefail`, aborts this script outright with rc 127.
+#
+# ~/.openclaw is a persistent bind mount on container boxes, so a static jq
+# kept at ~/.openclaw/bin/jq survives recreate. Prefer PATH's jq when present;
+# otherwise fall back to the persistent copy. Prepending a PATH entry cannot
+# change any filter's semantics, which is why this is done here rather than by
+# hand-translating ~80 jq expressions.
+if ! command -v jq >/dev/null 2>&1; then
+  for _oc_jq_dir in "${HOME:-/root}/.openclaw/bin" /data/.openclaw/bin; do
+    if [ -x "$_oc_jq_dir/jq" ]; then
+      PATH="$_oc_jq_dir:$PATH"
+      export PATH
+      break
+    fi
+  done
+  unset _oc_jq_dir
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
 # verify-library-gate.sh — v10.18.1 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME + CONTENT FLOOR)
 #
 # v10.18.1 (BUG 1 FIX): the gate no longer trusts the <!-- Filled from role-library -->
