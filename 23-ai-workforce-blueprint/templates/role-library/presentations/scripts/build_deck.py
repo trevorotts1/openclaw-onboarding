@@ -206,6 +206,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
+from presentation_job.result import CheckResult
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
@@ -3941,9 +3942,37 @@ def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         template (forty copies of one layout) and FAILS;
       * cliche copy — if slide copy contains any FORBIDDEN_CLICHE_PHRASES, FAILS.
     Reads working/typography/design_system.json (per-slide archetype map) and
-    working/copy/slides_copy.md. Defers (passes) when neither artifact exists yet
-    (those absences are owned by _chk_design_brief / _chk_slides_copy). Returns ""
-    on pass, or a fatal AF-CREATIVITY message."""
+    working/copy/slides_copy.md.
+
+    Cliche copy defers (passes) pre-copy — that absence is genuinely owned by
+    _chk_slides_copy (same PREFLIGHT_REQUIRED list, fails closed on a missing
+    slides_copy.md).
+
+    Archetype dominance is NOT symmetrically owned. design_system.json is the
+    Typography Architect's own primary output (typography-architect.md /
+    typography-architect-sops.md: "You produce one artifact, the DESIGN SYSTEM
+    SPEC ... working/typography/design_system.json"), distinct from
+    working/research/design-brief-*.md (a Deep-Research-Specialist INPUT the
+    Typography Architect consumes, owned by _chk_design_brief) and from
+    working/typography/type_layout_system.md (the font-floor gate-of-record
+    artifact, owned by check_font_floor / check_typography_qc_teeth). No
+    PREFLIGHT_REQUIRED gate requires design_system.json itself to exist, so a
+    Typography Architect pass that writes type_layout_system.md but never
+    writes design_system.json previously sailed through here silently — the
+    anti-template-sameness half of AF-CREATIVITY simply never fired, forever,
+    and nothing else caught it (Root Cause 2: absence read as approval).
+
+    Fix: once TYPE_LAYOUT_SYSTEM_REL exists (the same signal check_font_floor /
+    check_typography_qc_teeth already use to decide "the design phase is
+    underway/complete, its artifacts are now mandatory"), a still-missing
+    design_system.json is UNDETERMINED, not silently clean -- and on this
+    completeness-style preflight gate UNDETERMINED behaves like FAIL
+    (CheckResult doctrine, presentation_job/result.py), so it is reported as an
+    AF-CREATIVITY problem rather than dropped. Genuinely PRE-typography (neither
+    type_layout_system.md nor design_system.json produced yet) still defers —
+    that is a real "not produced yet" state, not a hole.
+
+    Returns "" on pass, or a fatal AF-CREATIVITY message."""
     problems = []
     # --- archetype dominance ---
     ds = None
@@ -3953,6 +3982,24 @@ def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         if p.exists():
             ds = p
             break
+    archetype_result = CheckResult.PASS
+    if ds is None:
+        if (run_dir / TYPE_LAYOUT_SYSTEM_REL).exists():
+            # Design phase is demonstrably underway (the font-floor gate-of-record
+            # artifact exists) yet design_system.json — the Typography Architect's
+            # own primary output — never showed up. No other gate owns this. We
+            # cannot verify archetype dominance without it: UNDETERMINED, and this
+            # completeness gate treats UNDETERMINED as FAIL (do not silently pass).
+            archetype_result = CheckResult.UNDETERMINED
+        # else: genuinely pre-typography — nothing produced yet, legitimate defer.
+    if not archetype_result.ok and ds is None:
+        problems.append(
+            "archetype dominance could not be verified: "
+            f"{TYPE_LAYOUT_SYSTEM_REL} exists (the design phase is underway/"
+            "complete) but design_system.json (the Typography Architect's own "
+            "archetype-plan output) is absent — UNDETERMINED, refused rather than "
+            "silently passed (SOP-DESIGN-03 / typography-architect-sops.md "
+            "'Outputs: working/typography/design_system.json')")
     if ds is not None:
         obj = _read_json(ds)
         if isinstance(obj, dict) and "__parse_error__" not in obj:
