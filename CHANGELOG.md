@@ -1,3 +1,45 @@
+## [v22.0.37] -- 2026-08-17 -- fix(presentations): slice 5 -- close 4 delivery/bundle/postflight absence holes (gates-absence slice g5)
+
+Of the 7 `_chk_*` gates run_postflight_gate calls directly at closeout
+(`_chk_notes_pane`, `_chk_kie_baked`, `_chk_no_overlay`, `_chk_text_fits`,
+`_chk_spelling`, `_chk_type_size`, `_chk_cc_registered`), 4 had a real
+UNKNOWABLE==PASS collapse, now closed:
+
+1. `_chk_kie_baked` -- the pre-render "no render record yet" defer is
+   legitimate ONLY at preflight. The SAME defer fired again, unchanged, at
+   the postflight closeout call, where a deck.pptx already exists -- so a
+   missing render record there is a lost/corrupted manifest on an
+   already-shipped deck. Added a keyword-only `require_rendered` flag
+   (default False, every preflight caller unaffected), set True only at the
+   postflight call site.
+2. `_delivered_pptx_native_text` (feeds `_chk_no_overlay`) -- returned `""`
+   both when python-pptx was unavailable and when `Presentation()` raised on
+   a file the caller found and asked to inspect. False for a zip with a
+   valid PK signature and passing size but a corrupted internal part only
+   python-pptx's parser catches.
+3. `_chk_notes_pane` -- identical hole, independently implemented: a pptx
+   matched by the bundle_dir glob that python-pptx could not open was
+   silently `continue`d past instead of counted.
+4. `_chk_text_fits` / `_chk_spelling` / `_chk_type_size` -- landed by
+   gates-absence g3 (v22.0.34); slice g5 independently authored an
+   equivalent fix for the same three wrappers, reconciled to g3's single
+   surviving definition during this merge (no duplicate logic on main).
+
+Two companion test-fixture fixes landed in this same release, proving the
+production fix intact in BOTH directions with the real build_deck.py
+functions (never a reimplementation): the shared `_postflight_bundle_dir`
+fixture now writes a genuinely-openable python-pptx deck for `deck_pptx`
+(the magic-byte-only padding it used before was never a real pptx, a fact
+this slice's own fix correctly started surfacing), and gates-absence g2's
+postflight speech-length fixture now carries a real kie-baked render record
+so its independent assertion is no longer masked by this slice's stricter
+closeout check. A genuinely corrupt pptx still correctly fails closed on
+both checks (negative control, verified directly against the real functions).
+
+Full `test_preflight.py` suite: zero new failures (the 1 pre-existing
+SP-GOLDEN failure, unrelated to this slice, is unchanged on both branch and
+origin/main control).
+
 ## [v22.0.36] -- 2026-08-17 -- fix(presentations): close 2 absence-as-approval holes in gates slice 2 (gates-absence slice g2)
 
 Two real, previously-silent holes closed in the coverage/speech-length family:
