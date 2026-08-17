@@ -146,21 +146,42 @@ class StateStore:
 
 
 class RunLock:
-    """Exclusive advisory lock per run dir. Two engines over one state.json corrupts it."""
+    """Exclusive advisory lock per run dir. Two engines over one state.json corrupts it.
 
-    def __init__(self, run_dir: Path) -> None:
+    fatal=True (default, unchanged): contention is a hard error -- die() ->
+    EXIT_LOCK_HELD. Every existing write-path caller (--run/--resume/--close/
+    --sweep-undeliverable, and every existing test) keeps this behaviour
+    exactly as before.
+
+    fatal=False: contention is reported via `.acquired` (False) instead of
+    killing the process. This exists for exactly one caller: cmd_status's
+    opportunistic notify-retry-queue flush (see report.flush_undeliverable).
+    --status must keep working as a pure, non-blocking read even while a live
+    engine already holds the lock -- it must never die() just because it
+    tried, best-effort, to drain a few due retries. Callers passing
+    fatal=False MUST check `.acquired` before mutating/saving state.
+    """
+
+    def __init__(self, run_dir: Path, fatal: bool = True) -> None:
         self.path = run_dir / LOCK_FILENAME
         self._fh = None
+        self.fatal = fatal
+        self.acquired = False
 
     def __enter__(self) -> "RunLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh = self.path.open("a+")
+        fh = self.path.open("a+")
         try:
-            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            self._fh.close()
-            die(EXIT_LOCK_HELD,
-                f"another presentation_job owns {self.path.parent} — refusing to start a second")
+            fh.close()
+            if self.fatal:
+                die(EXIT_LOCK_HELD,
+                    f"another presentation_job owns {self.path.parent} — refusing to start a second")
+            self.acquired = False
+            return self
+        self._fh = fh
+        self.acquired = True
         self._fh.seek(0)
         self._fh.truncate()
         self._fh.write(f"{os.getpid()} {utcnow()}\n")

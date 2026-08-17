@@ -93,6 +93,20 @@ def describe_park(state: dict, run_dir=None) -> list[str]:
         total_events = len(state.get("events") or [])
         lines.append("")
         lines.append(f"undeliverable messages: {len(undeliverable)} of {total_events} total events "
-                      "\u2014 the requester was NOT told about these")
+                      "\u2014 the requester was NOT told about these; retried automatically on backoff")
+
+    # -- Parked (poisoned) messages --------------------------------------------
+    # These stopped retrying because the SAME content kept failing while the
+    # transport was independently confirmed working for other messages -- see
+    # report.flush_undeliverable()'s docstring. Content is preserved, never
+    # discarded, and never re-attempted automatically.
+    parked = state.get("parked") or []
+    if parked:
+        lines.append("")
+        lines.append(f"parked (poisoned) messages: {len(parked)} \u2014 retries stopped, "
+                      "content preserved, the requester was NOT told about these")
+        for m in parked:
+            lines.append(f"  [{m.get('kind','?')}] {m.get('message','')[:100]!r} "
+                         f"\u2014 {m.get('parked_reason','no reason recorded')}")
 
     return lines

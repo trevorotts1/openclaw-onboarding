@@ -5,7 +5,7 @@ import json
 import os
 import shlex
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .result import CheckResult
 from .state import StateStore, utcnow
@@ -13,6 +13,51 @@ from .state import StateStore, utcnow
 PROGRESS_MIN_INTERVAL_MINUTES = 10
 BLOCKED_DEDUPE_MINUTES = 10
 EVENTS_MAX = 2000
+
+# ---------------------------------------------------------------------------
+# NOTIFY RETRY SEMANTICS (transport-down vs poisoned).
+#
+# WHAT EVIDENCE ACTUALLY EXISTS at the dispatch site (dispatch3() below):
+# PRESENTATION_NOTIFY_CMD is an arbitrary external command. The only things
+# report.py can ever observe about a failed send are: cmd unset (FAIL),
+# OSError starting it (couldn't even launch -- unambiguously transport),
+# subprocess.TimeoutExpired (unambiguously transport: a hang/unreachable
+# network), or a non-zero exit code (CheckResult.UNDETERMINED -- and this one
+# is NOT distinguishable from here. A non-zero exit is produced identically
+# by "network down" and by "the API rejected this exact message." There is no
+# stderr taxonomy report.py can trust: PRESENTATION_NOTIFY_CMD can point at
+# ANY script, and hard-coding a parse of one particular script's stderr text
+# into the generic dispatch path would be exactly the kind of guessed signal
+# this module refuses to invent -- see result.py's doctrine.
+#
+# So: a non-zero exit, by itself, is NOT evidence of poisoning. Per the
+# explicit instruction this module follows -- "if no signal distinguishes the
+# two cases, default to retry-with-backoff forever, never discarding" -- every
+# UNDETERMINED and every FAIL retries forever on a capped backoff. NOTHING is
+# ever discarded on attempt-count alone (that was the first failed attempt at
+# this fix: a terminal cap that silently lost an alert an outage-then-recovery
+# would otherwise have delivered).
+#
+# The ONE piece of real, non-guessed evidence this module DOES have for
+# "poisoned" is cross-message correlation: state["transport"]["last_ok_at"] is
+# stamped every time ANY dispatch, for ANY message, is CONFIRMED delivered
+# (CheckResult.PASS) -- whether that was a live send or a queued retry. If a
+# specific queued message keeps failing on repeated retries made AFTER the
+# transport has been independently proven to work (something else got
+# through), that message's own content -- not the transport -- is what's
+# rejecting it. POISON_CONFIRM_THRESHOLD such confirmations park it: retries
+# stop, but the content is preserved and surfaced (state["parked"]), never
+# silently dropped. A message with no such corroborating evidence (transport
+# never independently proven up since it started failing) just keeps
+# retrying forever on backoff -- a nuisance, never a loss.
+POISON_CONFIRM_THRESHOLD = 3
+
+# Capped exponential backoff for automatic retry. Never grows past the cap,
+# so no caller -- however often it invokes the retry path, human or cron --
+# can turn this into a hot loop. This delay is the ONLY thing that is ever
+# bounded here; the number of attempts is not (see flush_undeliverable()).
+RETRY_BACKOFF_BASE_SECONDS = 30
+RETRY_BACKOFF_CAP_SECONDS = 900  # 15 minutes
 
 _PROGRESS_MILESTONES = {
     "P4-RENDER",
@@ -26,6 +71,46 @@ def _parse_minutes(ts: str) -> float:
         return dt.timestamp() / 60.0
     except (ValueError, TypeError):
         return 0.0
+
+
+def _parse_iso(ts: Any) -> Optional[datetime.datetime]:
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+
+
+def _add_seconds(ts: str, seconds: float) -> str:
+    dt = _parse_iso(ts) or datetime.datetime.now(datetime.timezone.utc)
+    return (dt + datetime.timedelta(seconds=seconds)).isoformat(timespec="seconds")
+
+
+def _backoff_seconds(attempts: int) -> float:
+    """Capped exponential backoff. `attempts` is the attempt number just made
+    (>=1). 30s, 60s, 120s, ... capped at RETRY_BACKOFF_CAP_SECONDS (15min),
+    where it stays forever -- retried, never dropped, never faster than every
+    15 minutes no matter how long the outage runs."""
+    return min(RETRY_BACKOFF_BASE_SECONDS * (2 ** max(0, attempts - 1)),
+               RETRY_BACKOFF_CAP_SECONDS)
+
+
+def _stamp_sent_kind(state: Dict[str, Any], kind: str) -> None:
+    """Record a CONFIRMED delivery. Shared by Reporter._stamp_sent (a live
+    send) and flush_undeliverable (a retried send) -- one implementation, not
+    two independently-maintained copies. See dispatch3()'s docstring for why
+    a second copy of shared dispatch/record logic is exactly the shape this
+    codebase's worst bugs have shipped as before (U069)."""
+    sent = state.setdefault("sent", {})
+    prior = sent.get(kind)
+    if not isinstance(prior, dict):
+        sent[kind] = {"count": 0, "first_at": prior, "last_at": prior}
+    rec = sent[kind]
+    rec["count"] = rec.get("count", 0) + 1
+    now = utcnow()
+    rec["first_at"] = rec["first_at"] or now
+    rec["last_at"] = now
 
 
 def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
@@ -83,6 +168,131 @@ def dispatch(chat_id: str, kind: str, message: str) -> bool:
     return dispatch3(chat_id, kind, message) is CheckResult.PASS
 
 
+def flush_undeliverable(state: Dict[str, Any], store: StateStore) -> Dict[str, int]:
+    """Retry every DUE queued message. THIS is the only retry driver in the
+    system -- everything that ever recovers a notify outage goes through this
+    one function:
+
+      - Reporter.to_requester() calls it automatically, unconditionally, on
+        every ack/progress/blocked/done -- i.e. on every normal thing a live
+        job already does. An active job heals its own backlog with zero
+        additional action from anyone.
+      - cmd_status() calls it opportunistically (best-effort, non-blocking)
+        so that even a job that has already gone terminal heals the next time
+        anyone runs the ordinary, pre-existing --status command -- not a
+        special recovery flag, not a cron entry invented for this fix.
+      - cmd_sweep_undeliverable() (--sweep-undeliverable) also calls it, kept
+        for an operator who wants to force an immediate check -- but it is no
+        longer LOAD-BEARING for recovery, and, critically, it is not a
+        DIFFERENT code path: because it shares this exact function, it obeys
+        the exact same next_attempt_at backoff gate and the exact same
+        poisoned/transport split as the automatic callers. A cron entry
+        calling --sweep-undeliverable on a tight schedule cannot hot-loop the
+        transport (due-check throttles every caller identically) and cannot
+        un-park a poisoned message (this function only ever reads
+        state["undeliverable"]; state["parked"] is never touched by it) --
+        this is what closes the second failed attempt's hole ("putting the
+        flag in a cron line recreated unbounded retry").
+
+    Never discards. A message leaves state["undeliverable"] only by being
+    CONFIRMED delivered (state["sent"]) or by being independently proven
+    poisoned (state["parked"], content preserved -- see the module docstring
+    above for what evidence justifies that move). Everything else -- however
+    long the outage runs, however many times this is invoked -- stays queued,
+    retried on capped backoff, forever.
+
+    Returns {"delivered": N, "still_queued": N, "parked": N}.
+    """
+    undeliverable = state.get("undeliverable") or []
+    if not undeliverable:
+        return {"delivered": 0, "still_queued": 0, "parked": 0}
+
+    now = utcnow()
+    now_dt = _parse_iso(now)
+    due: List[Dict[str, Any]] = []
+    not_due: List[Dict[str, Any]] = []
+    for msg in undeliverable:
+        nat = _parse_iso(msg.get("next_attempt_at"))
+        # Missing/unparseable next_attempt_at (e.g. a pre-fix state.json, or a
+        # record with no chat_id/kind at all) is treated as "due" -- never as
+        # a reason to skip forever.
+        if nat is None or now_dt is None or nat <= now_dt:
+            due.append(msg)
+        else:
+            not_due.append(msg)
+    if not due:
+        return {"delivered": 0, "still_queued": len(undeliverable), "parked": 0}
+
+    transport = state.setdefault("transport", {})
+    delivered = 0
+    remaining: List[Dict[str, Any]] = list(not_due)
+    parked_now: List[Dict[str, Any]] = []
+
+    for msg in due:
+        chat_id = msg.get("chat_id", "")
+        kind = msg.get("kind", "")
+        message = msg.get("message", "")
+        if not (chat_id and kind):
+            # Nothing to attempt (malformed record) -- keep it queued as-is
+            # rather than silently dropping it; do not spin on it.
+            remaining.append(msg)
+            continue
+
+        result = dispatch3(chat_id, kind, message)
+        if result is CheckResult.PASS:
+            delivered += 1
+            _stamp_sent_kind(state, kind)
+            transport["last_ok_at"] = now
+            continue
+
+        attempts = msg.get("attempts", 0) + 1
+        msg["attempts"] = attempts
+        msg["last_attempt_at"] = now
+        msg["outcome"] = result.value
+
+        # Poisoning evidence: transport independently confirmed working
+        # (state["transport"]["last_ok_at"]) AT OR AFTER this exact
+        # message first started failing (msg["at"]), yet it failed again just
+        # now. That is real, observed evidence the content -- not the
+        # transport -- is the problem. `>=` (not strict `>`): a sibling
+        # success timestamped in the SAME second (state.py's utcnow() has
+        # second resolution) is still a real, independent confirmation the
+        # transport answered for someone -- it is not weaker evidence for
+        # being contemporaneous. No such evidence at all -> leave the counter
+        # alone; it just backs off and stays queued (see module docstring).
+        last_ok = _parse_iso(transport.get("last_ok_at"))
+        queued_at = _parse_iso(msg.get("at"))
+        if last_ok is not None and queued_at is not None and last_ok >= queued_at:
+            msg["confirmed_up_failures"] = msg.get("confirmed_up_failures", 0) + 1
+
+        if msg.get("confirmed_up_failures", 0) >= POISON_CONFIRM_THRESHOLD:
+            msg["parked_at"] = now
+            msg["parked_reason"] = (
+                f"failed {msg['confirmed_up_failures']} time(s) AFTER the transport "
+                "was independently confirmed working (another queued message got "
+                "through since this one first failed) -- retrying is pointless; "
+                "content preserved below, never re-attempted automatically")
+            parked_now.append(msg)
+            continue
+
+        msg["next_attempt_at"] = _add_seconds(now, _backoff_seconds(attempts))
+        remaining.append(msg)
+
+    state["undeliverable"] = remaining
+    if parked_now:
+        parked_list = state.setdefault("parked", [])
+        parked_list.extend(parked_now)
+        events = state.setdefault("events", [])
+        for m in parked_now:
+            events.append({"at": now, "kind": "report.parked",
+                           "message": f"poisoned {m.get('kind','?')} message parked "
+                                      f"after {m.get('confirmed_up_failures')} confirmed-up "
+                                      f"failures -- content preserved, never told to the "
+                                      f"requester"})
+    store.save(state)
+    return {"delivered": delivered, "still_queued": len(remaining), "parked": len(parked_now)}
+
+
 class Reporter:
     def __init__(self, state: Dict[str, Any], store: StateStore) -> None:
         self.state = state
@@ -110,6 +320,13 @@ class Reporter:
                      phase_id: Optional[str] = None,
                      reason: Optional[str] = None) -> None:
         """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours."""
+        # Automatic, unconditional retry drain BEFORE handling this new
+        # message. This is what makes recovery from a notify outage require
+        # NO human action: every ack/progress/blocked/done a live job already
+        # sends also opportunistically clears whatever is due in the backlog.
+        # See flush_undeliverable()'s docstring.
+        flush_undeliverable(self.state, self.store)
+
         req = self.state.get("requester") or {}
         chat_id = req.get("chat_id")
         self.event(f"report.{kind}", message, requester=bool(chat_id))
@@ -128,6 +345,11 @@ class Reporter:
         result = self._dispatch3(chat_id, kind, message)
         if result is CheckResult.PASS:
             self._stamp_sent(kind)
+            # Stamp the transport heartbeat -- this live confirmed send is
+            # exactly the same kind of evidence a flush-retried send is (see
+            # flush_undeliverable()'s poisoning check), so it must update the
+            # same field.
+            self.state.setdefault("transport", {})["last_ok_at"] = utcnow()
             if kind == "blocked" and phase_id and reason:
                 # B6-1 fix: stamp the dedupe timer ONLY on a CONFIRMED delivery, and
                 # only here -- never in _throttle_decision, and never before this
@@ -144,12 +366,17 @@ class Reporter:
                 self._blocked_dedupe[self._blocked_key(phase_id, reason)] = _parse_minutes(utcnow())
         else:
             # FAIL (no transport configured) or UNDETERMINED (timeout / non-zero
-            # exit / could not start): never discard. Queue for the sweeper
-            # (--sweep-undeliverable / cmd_sweep_undeliverable) and do NOT stamp
-            # the dedupe timer -- see above.
+            # exit / could not start): never discard. Queue with a backoff
+            # schedule -- flush_undeliverable() (called automatically, see
+            # above) retries it forever until either CONFIRMED delivered or
+            # independently proven poisoned. Do NOT stamp the blocked dedupe
+            # timer -- see above.
+            now = utcnow()
             self.state.setdefault("undeliverable", []).append(
-                {"at": utcnow(), "kind": kind, "message": message,
-                 "chat_id": chat_id, "attempts": 1, "outcome": result.value})
+                {"at": now, "kind": kind, "message": message,
+                 "chat_id": chat_id, "attempts": 1, "outcome": result.value,
+                 "next_attempt_at": _add_seconds(now, _backoff_seconds(1)),
+                 "confirmed_up_failures": 0})
         self.store.save(self.state)
 
     @staticmethod
@@ -157,14 +384,7 @@ class Reporter:
         return f"{phase_id}\x00{reason}"
 
     def _stamp_sent(self, kind: str) -> None:
-        sent = self.state.setdefault("sent", {})
-        prior = sent.get(kind)
-        if not isinstance(prior, dict):
-            sent[kind] = {"count": 0, "first_at": prior, "last_at": prior}
-        rec = sent[kind]
-        rec["count"] = rec.get("count", 0) + 1
-        rec["first_at"] = rec["first_at"] or utcnow()
-        rec["last_at"] = utcnow()
+        _stamp_sent_kind(self.state, kind)
 
     def _throttle_decision(self, kind: str, message: str,
                            phase_id: Optional[str],

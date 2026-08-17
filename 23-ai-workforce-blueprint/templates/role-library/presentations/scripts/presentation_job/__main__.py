@@ -15,7 +15,7 @@ from .state import (
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
-from .report import dispatch
+from .report import flush_undeliverable
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 from .sweep import reconcile_sweep
@@ -127,6 +127,7 @@ def cmd_new(args, scripts_dir: Path) -> int:
         "events": [],
         "sent": {},
         "undeliverable": [],
+        "parked": [],
         "heartbeat": {},
         "terminal": None,
     }
@@ -142,8 +143,23 @@ def cmd_new(args, scripts_dir: Path) -> int:
 
 
 def cmd_status(args) -> int:
-    store = StateStore(args.run_dir.expanduser().resolve())
+    run_dir = args.run_dir.expanduser().resolve()
+    store = StateStore(run_dir)
     st = store.load()
+    # Opportunistic, non-blocking retry drain -- see report.flush_undeliverable's
+    # docstring. --status is an ordinary, pre-existing, read-oriented command;
+    # piggybacking the drain on it (instead of requiring a dedicated flag or a
+    # cron entry invented for this fix) is what lets a job that has already
+    # gone terminal heal the next time ANYONE checks on it, with no human
+    # action beyond normal operation. fatal=False: if a live engine already
+    # holds the run lock, this is skipped rather than killing --status, which
+    # must keep working as a pure read regardless of what else is running.
+    if st.get("undeliverable"):
+        lock = RunLock(run_dir, fatal=False)
+        with lock:
+            if lock.acquired:
+                st = store.load()  # re-read under the lock: don't clobber a concurrent writer
+                flush_undeliverable(st, store)
     if args.json:
         print(json.dumps(st, indent=2))
         return EXIT_OK
@@ -184,53 +200,40 @@ def cmd_status(args) -> int:
     undelivered = st.get("undeliverable")
     if undelivered:
         print(f"UNDELIVERABLE messages: {len(undelivered)} "
-              "(the requester was NOT told — see F2)")
+              "(the requester was NOT told — see F2; retried automatically on backoff)")
+    parked = st.get("parked")
+    if parked:
+        print(f"PARKED (poisoned) messages: {len(parked)} "
+              "(retries stopped — content preserved, never told to the requester)")
     return EXIT_OK
 
 
 def cmd_sweep_undeliverable(args) -> int:
-    """Retry every queued undeliverable message, oldest first. Takes the run lock."""
+    """Force an immediate check of the queue. Takes the run lock.
+
+    NOT load-bearing for recovery -- see report.flush_undeliverable's
+    docstring. This exists purely as an operator convenience (an explicit
+    "check right now" instead of waiting for the next automatic trigger);
+    normal recovery never depends on a human or a cron ever calling this.
+    It shares flush_undeliverable() with every automatic caller, so it obeys
+    the identical next_attempt_at backoff gate (a cron calling this every
+    minute still cannot hot-loop the transport) and never touches
+    state["parked"] (a cron calling this cannot resurrect a poisoned
+    message) -- this is what closes the second failed attempt at this fix
+    ("putting the flag in a cron line recreated unbounded retry")."""
     run_dir = args.run_dir.expanduser().resolve()
     with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
-        undeliverable = state.get("undeliverable", [])
-        if not undeliverable:
+        total = len(state.get("undeliverable") or [])
+        if total == 0:
             print("0 queued, 0 delivered, 0 still undeliverable")
             return EXIT_OK
-        delivered = 0
-        remaining = []
-        for msg in undeliverable:
-            chat_id = msg.get("chat_id", "")
-            kind = msg.get("kind", "")
-            message = msg.get("message", "")
-            attempts = msg.get("attempts", 0) + 1
-            # U069: route through the single shared report.dispatch() --
-            # do not re-derive a subprocess.run(cmd, shell=True, ...) call
-            # here. A hand-rolled third copy of this logic (independent of
-            # report.py's dispatch() and Reporter._dispatch()) is exactly
-            # the drift U069's closure exists to prevent.
-            ok = bool(chat_id and kind) and dispatch(chat_id, kind, message)
-            if ok:
-                delivered += 1
-                sent = state.setdefault("sent", {})
-                prior = sent.get(kind)
-                if not isinstance(prior, dict):
-                    sent[kind] = {"count": 0, "first_at": prior, "last_at": prior}
-                rec = sent[kind]
-                rec["count"] = rec.get("count", 0) + 1
-                rec["first_at"] = rec["first_at"] or utcnow()
-                rec["last_at"] = utcnow()
-            else:
-                msg["attempts"] = attempts
-                msg["last_attempt_at"] = utcnow()
-                remaining.append(msg)
-        total = len(undeliverable)
-        still = len(remaining)
-        state["undeliverable"] = remaining
-        store.save(state)
-        print(f"{total} queued, {delivered} delivered, {still} still undeliverable")
-        return EXIT_OK if still == 0 else 1
+        stats = flush_undeliverable(state, store)
+        suffix = f", {stats['parked']} newly parked (poisoned)" if stats["parked"] else ""
+        print(f"{total} queued, {stats['delivered']} delivered, "
+              f"{stats['still_queued']} still undeliverable{suffix}")
+        return EXIT_OK if stats["still_queued"] == 0 else 1
 
 
 def cmd_capacity(args) -> int:
