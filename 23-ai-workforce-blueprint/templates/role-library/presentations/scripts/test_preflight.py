@@ -1178,6 +1178,62 @@ def _valid_bytes_for(key: str, total: int) -> bytes:
     return head + (b"\x00" * pad)
 
 
+def _real_pptx_bytes(min_bytes: int) -> bytes:
+    """Build a GENUINELY openable .pptx (via python-pptx, not magic-byte padding) that
+    clears `min_bytes`, has NO native on-slide text (image-only, per Decision 5C), and
+    a non-empty speaker-notes pane on every slide (per the notes-injection doctrine).
+
+    WHY THIS EXISTS (gates-absence slice g5, PR follow-up): g5's own fix makes
+    _chk_notes_pane / _delivered_pptx_native_text return CheckResult.UNDETERMINED (FAIL
+    on this completeness gate) when the delivered .pptx exists but python-pptx cannot
+    actually open it — closing a real hole where a corrupted-but-magic-byte-valid file
+    silently passed as clean. The postflight test fixtures (_postflight_bundle_dir)
+    previously wrote magic-byte-only padding for deck_pptx via _valid_bytes_for, which
+    was NEVER a real openable pptx -- it only ever cleared the C2 magic-byte/size gate,
+    a fact g5's fix now correctly surfaces. This helper restores the "all artifacts
+    present" test scenarios to their true intent (a genuinely complete, valid bundle)
+    without touching g5's production fix at all. Uses incompressible random-noise
+    images (not a solid fill) so the real byte count clears the 1MB floor honestly,
+    the same way a real gpt-image-2 render would."""
+    import random as _random
+    from pptx import Presentation
+    from pptx.util import Inches
+    from PIL import Image
+
+    rnd = _random.Random(20260817)  # deterministic, not a source of flakiness
+
+    def _noise_png(w: int, h: int) -> bytes:
+        im = Image.new("RGB", (w, h))
+        im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
+                    for _ in range(w * h)])
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", compress_level=1)
+        return buf.getvalue()
+
+    prs = Presentation()
+    blank_layout = prs.slide_layouts[6]  # blank layout: no text placeholders at all
+    slide_count = 0
+    buf = io.BytesIO()
+    while True:
+        slide = prs.slides.add_slide(blank_layout)
+        slide_count += 1
+        slide.shapes.add_picture(io.BytesIO(_noise_png(900, 700)), 0, 0,
+                                  width=Inches(10), height=Inches(7.5))
+        slide.notes_slide.notes_text_frame.text = (
+            f"Speaker notes for slide {slide_count} -- injected from the "
+            "QC-passed presenter speech, never empty.")
+        buf.seek(0)
+        buf.truncate(0)
+        prs.save(buf)
+        if buf.tell() >= min_bytes or slide_count >= 6:
+            break
+    data = buf.getvalue()
+    assert len(data) >= min_bytes, (
+        f"_real_pptx_bytes could not clear {min_bytes} bytes in {slide_count} slides "
+        f"(got {len(data)}) -- raise the per-slide image size, not the slide cap.")
+    return data
+
+
 def _write_publish_ledger(bundle_dir: Path, status="published",
                           verified_http_status=200,
                           public_url="https://teleprompter.zerohumanworkforce.com/"
@@ -1219,8 +1275,15 @@ def _postflight_bundle_dir(present_keys: set, with_publish: bool = True) -> tupl
         fname = build_deck._expand_filename(spec["filename"], deck_slug)
         fpath = bundle_dir / fname
         if key in present_keys:
-            # Write a real-magic file that exceeds the threshold by a comfortable margin.
-            fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
+            if key == "deck_pptx":
+                # GENUINELY openable (python-pptx), image-only, notes-populated --
+                # magic-byte padding alone no longer represents "a real delivered
+                # deck" now that _chk_notes_pane / _delivered_pptx_native_text
+                # (gates-absence g5) fail-closed on a file they cannot actually open.
+                fpath.write_bytes(_real_pptx_bytes(spec["min_bytes"]))
+            else:
+                # Write a real-magic file that exceeds the threshold by a comfortable margin.
+                fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
     if with_publish and "teleprompter_html" in present_keys:
         _write_publish_ledger(bundle_dir)
     return bundle_dir, ledger_path, deck_slug
@@ -1408,11 +1471,22 @@ def test_postflight_speech_length_reverify():
         (root / "working" / "presenter-speech").mkdir(parents=True, exist_ok=True)
         (root / "working" / "presenter-speech" / "speech.md").write_text(
             " ".join(["word"] * words))
-        # Satisfy the UNRELATED AF-CC-UNREGISTERED closeout gate (_chk_cc_registered)
-        # so this fixture isolates the speech-length re-check specifically — once
-        # run_dir is threaded into run_postflight_gate, every run-dir-scoped closeout
-        # sub-check fires, not just the one under test.
+        # Satisfy the UNRELATED closeout sub-checks (_chk_cc_registered AND, since
+        # gates-absence g5, _chk_kie_baked(require_rendered=True)) so this fixture
+        # isolates the speech-length re-check specifically — once run_dir is
+        # threaded into run_postflight_gate, EVERY run-dir-scoped closeout sub-check
+        # fires, not just the one under test.
         (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        # A real-shaped KIE render record (same fixture pattern test_chk_kie_baked
+        # already uses): one baked slide, real taskId, a PNG above
+        # PLACEHOLDER_MIN_BYTES, a unique sha256. slides_path is never threaded
+        # into this call (run_postflight_gate's own kie_baked invocation omits it
+        # too), so _count_output_slides() returns None and the slide-count
+        # cross-check is skipped — only "is there a real render record" matters here.
+        png_path = root / "kie-baked-1.png"
+        png_body = b"\x89PNG\r\n\x1a\n" + (b"\x00" * (build_deck.PLACEHOLDER_MIN_BYTES + 1024))
+        png_path.write_bytes(png_body)
+        import hashlib as _hashlib
         (root / "working" / "checkpoints" / "process_manifest.json").write_text(
             json.dumps({
                 "phase_attestations": [],
@@ -1420,6 +1494,16 @@ def test_postflight_speech_length_reverify():
                 "cc_register_attempted": True,
                 "cc_registration": _cc_registration_receipt(
                     "task-pf-speech-test", "sha256-deck-key", "test-deck"),
+                "phases": [{
+                    "phase": "render",
+                    "output_slide_count": 1,
+                    "slides": [{
+                        "slide": 1,
+                        "taskId": "kie-task-pf-speech-1",
+                        "image": str(png_path),
+                        "image_sha256": _hashlib.sha256(png_body).hexdigest(),
+                    }],
+                }],
             }))
         return root
 
