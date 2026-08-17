@@ -2399,14 +2399,22 @@ def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
 
     exempt = _notes_pane_exempt_slide_numbers(slides_path)
     empty_slides = []
+    unreadable = []
     for pptx_path in pptx_candidates:
         try:
             prs = Presentation(str(pptx_path))
-        except Exception:  # noqa: BLE001
-            # A file python-pptx cannot open is NOT a valid deck to scan here — the
-            # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) and
-            # the C2 content-type check own malformed/decoy .pptx files. Defer rather
-            # than false-fail AF-EMPTY-NOTES-PANE (mirrors _delivered_pptx_native_text).
+        except Exception as exc:  # noqa: BLE001
+            # UNDETERMINED-is-not-PASS (Root Cause 2): this used to `continue` on the
+            # theory that AF-BUNDLE-COMPLETE's magic-byte gate "owns" a malformed
+            # .pptx. False for a file with a valid PK signature + passing size but a
+            # corrupted internal part that only python-pptx's parser detects — that
+            # combination cleared the magic-byte gate and then got silently skipped
+            # here too, so a candidate matched by the glob above was NEVER ACTUALLY
+            # SCANNED and the empty-notes-pane rubric read as clean by omission.
+            # CheckResult.UNDETERMINED for this file; this security/completeness
+            # gate treats UNDETERMINED as FAIL (mirrors _delivered_pptx_native_text's
+            # own fix for the identical hole).
+            unreadable.append((pptx_path.name, str(exc)))
             continue
         for idx, slide in enumerate(prs.slides, start=1):
             if idx in exempt:
@@ -2416,6 +2424,15 @@ def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
                     if has_notes_part else "")
             if not text:
                 empty_slides.append((pptx_path.name, idx))
+
+    if unreadable:
+        _r = CheckResult.UNDETERMINED
+        listing = "; ".join(f"{fname} ({err})" for fname, err in unreadable[:10])
+        return (f"AF-EMPTY-NOTES-PANE: could not verify -- {len(unreadable)} delivered "
+                f".pptx file(s) in {bundle_dir} could not be opened by python-pptx and "
+                f"so were never scanned for empty notes panes: {listing} ({_r.name}, "
+                f"treated as FAIL). A valid zip signature and passing size are NOT "
+                f"proof the internal parts are intact; re-assemble and re-verify.")
 
     if empty_slides:
         listing = "; ".join(f"{fname} slide {n}" for fname, n in empty_slides[:20])
@@ -4655,7 +4672,8 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
-def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
+                    require_rendered: bool = False) -> str:
     """KIE-BAKED gate (AF-I14, fail-loud). EVERY rendered slide must have been BAKED
     by the image model (a real KIE task that produced a real, above-floor PNG) — not
     drawn natively (Pillow/PPTX/ImageDraw), not a flat-colour placeholder, not a stub.
@@ -4688,9 +4706,27 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     gate where it always exists), the gate is the source of truth that the slides were
     actually KIE-baked. This is wired into the lockstep so it can never be silently
     skipped once a render record is on disk.
-    """
+
+    `require_rendered` (UNDETERMINED-is-not-PASS, Root Cause 2): set True ONLY by
+    the caller that fires AFTER render + assembly have definitely already happened
+    (run_postflight_gate's closeout scan). At THAT call site "no process_manifest.
+    json" / "no render record" is no longer the legitimate pre-render defer this
+    docstring describes -- a deck.pptx already exists in the bundle, so a render
+    record's absence there means the render manifest was lost/corrupted/never
+    written for a deck that shipped anyway, which is CheckResult.UNDETERMINED and,
+    per this security/completeness gate's doctrine, UNDETERMINED behaves like FAIL.
+    The default (False) preserves the exact pre-render defer for every existing
+    preflight caller -- unchanged."""
     ckpt = run_dir / "working" / "checkpoints" / "process_manifest.json"
     if not ckpt.exists():
+        if require_rendered:
+            _r = CheckResult.UNDETERMINED
+            return ("AF-I14: closeout reached with NO "
+                    "working/checkpoints/process_manifest.json on disk, so the KIE bake "
+                    f"of this already-assembled deck cannot be proven ({_r.name}, "
+                    "treated as FAIL). A deck.pptx exists without a render manifest -- "
+                    "re-run build_deck render for every slide so the manifest is "
+                    "written, then re-assemble.")
         return ""  # no render yet — gate defers to the post-render run.
     obj = _read_json(ckpt)
     if not isinstance(obj, dict) or "__parse_error__" in obj:
@@ -4701,6 +4737,13 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     render_recs = [p for p in phases if isinstance(p, dict) and p.get("phase") == "render"] \
         if isinstance(phases, list) else []
     if not render_recs:
+        if require_rendered:
+            _r = CheckResult.UNDETERMINED
+            return ("AF-I14: closeout reached with a process_manifest.json that carries "
+                    f"NO phase==\"render\" record, so the KIE bake of this already-"
+                    f"assembled deck cannot be proven ({_r.name}, treated as FAIL). "
+                    "re-run build_deck render for every slide so a render record is "
+                    "written, then re-assemble.")
         return ""  # manifest exists but no render record yet — gate defers.
     rec = render_recs[-1]  # the LAST render record is authoritative for this run.
 
@@ -6176,20 +6219,39 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
 def _delivered_pptx_native_text(pptx_path: Path) -> str:
     """Return a non-empty reason if the delivered PPTX carries any native on-slide
     text run (a shape with non-empty text_frame text on a slide). The off-slide
-    speaker-notes part is NOT on-slide and is explicitly allowed. Returns "" when
-    the deck is image-only (the required state) or when python-pptx is unavailable
-    (cannot scan — defers rather than false-fail)."""
+    speaker-notes part is NOT on-slide and is explicitly allowed. Returns "" only
+    when the deck was ACTUALLY OPENED and scanned image-only clean.
+
+    UNDETERMINED-is-not-PASS (Root Cause 2, presentation_job/result.py): this used
+    to `return ""` both when python-pptx was unavailable and when Presentation()
+    raised on the very file the caller found and asked to inspect, on the theory
+    that AF-BUNDLE-COMPLETE's magic-byte gate "owns" a malformed/decoy .pptx. That
+    theory is FALSE for the case that actually matters here — a zip with a valid
+    leading PK\\x03\\x04 signature and a large-enough size (so it clears the magic
+    + min_bytes checks cleanly) but a corrupted/truncated internal part that only
+    python-pptx's own parser detects. Nothing else in this pipeline re-opens the
+    file to look for a native text run, so that combination used to read as a
+    silently-verified image-only deck. Internally this is a CheckResult.UNDETERMINED
+    (could not inspect the delivered artifact at all) and, per this security/
+    completeness gate's own doctrine, UNDETERMINED behaves like FAIL: a file this
+    function was asked to inspect and could not is never reported as clean."""
     try:
         from pptx import Presentation
     except ImportError:
-        return ""  # cannot scan without python-pptx; the file-presence half still fires.
+        _r = CheckResult.UNDETERMINED
+        return (f"AF-OVERLAY-DELIVERED: could not verify {pptx_path.name} is image-only "
+                f"— python-pptx is not installed, so the native-on-slide-text scan could "
+                f"not run at all ({_r.name}, treated as FAIL — install python-pptx before "
+                f"delivery; the eliminated-overlay-file check still ran independently).")
     try:
         prs = Presentation(str(pptx_path))
-    except Exception:  # noqa: BLE001
-        # A file python-pptx cannot open is NOT a valid deck to scan here — the
-        # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) owns
-        # malformed / decoy .pptx files. Defer rather than false-fail AF-OVERLAY-DELIVERED.
-        return ""
+    except Exception as exc:  # noqa: BLE001
+        _r = CheckResult.UNDETERMINED
+        return (f"AF-OVERLAY-DELIVERED: {pptx_path.name} could not be opened by "
+                f"python-pptx ({exc}) — the native-on-slide-text scan could not run on "
+                f"this file ({_r.name}, treated as FAIL). A valid PK zip signature and "
+                f"passing size are NOT proof the internal parts are intact; re-render "
+                f"and re-assemble this deck.")
     offenders = []
     for idx, slide in enumerate(prs.slides, start=1):
         for shape in slide.shapes:
@@ -7457,7 +7519,12 @@ def _slide_geometry_undetermined(af_code: str) -> str:
     fatal message string (never ""), so a broken slide_geometry.py can no longer pass
     silently through run_postflight_gate's WARN-by-default loop (which only prints/
     blocks on a truthy return) NOR disappear from the picture once
-    SLIDE_GEOMETRY_ENFORCE_ENV=1 promotes these to hard failures."""
+    SLIDE_GEOMETRY_ENFORCE_ENV=1 promotes these to hard failures.
+
+    (Landed by gates-absence slice g3, PR #925 / v22.0.34. Slice g5 independently
+    authored an equivalent fix for the same three wrappers; this is the single
+    surviving definition post-rebase — see gates-absence g5's PR description for
+    the full duplicate-work note.)"""
     assert CheckResult.UNDETERMINED.ok is False  # doctrine check, not a defer
     return (f"{af_code}: UNDETERMINED — slide_geometry.py (ships beside build_deck.py) "
             "could not be imported, so this check never actually ran. A checker that "
@@ -10604,7 +10671,11 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
     # failing a caller that has no run dir.
     kie_fail_reason = ""
     if run_dir is not None:
-        kie_reason = _chk_kie_baked(run_dir, slides_path)
+        # require_rendered=True: closeout means render+assembly already happened, so
+        # an absent manifest/render-record here is UNDETERMINED->FAIL, not the
+        # legitimate pre-render defer the bare `_chk_kie_baked` default preserves for
+        # every preflight caller (see the docstring / Root Cause 2 note on the gate).
+        kie_reason = _chk_kie_baked(run_dir, slides_path, require_rendered=True)
         if kie_reason:
             kie_fail_reason = kie_reason
             missing_or_short.append((
