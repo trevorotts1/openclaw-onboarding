@@ -1,3 +1,34 @@
+## [v22.0.30] -- 2026-08-17 -- fix(qc): companyName/industry transcript fallback was dead code
+
+Follow-up to v22.0.29 (PR #917). v22.0.29 made the structural
+`companyName`/`industry` checks in `check_mandatory_fields()` satisfiable by
+answered-transcript evidence — the core of the D3 web-lane fix — but
+`transcript_answered_ids` was still built from `branding_questions` alone, and
+**those two are not branding ids**: `branding-questions.json` contains only
+`brand_primary_color`, `brand_logo`, `brand_evokes`, `customer_feeling`,
+`brand_descriptors`, `brand_voice`, `ideal_customer`, `unique_differentiator`.
+`company_name` and `industry` live in `IDENTITY_QUESTIONS_CANONICAL`.
+
+So `"company_name" in transcript_answered_ids` could never be true — the
+acceptance was DEAD CODE, and a pure web-lane interview that genuinely answered
+both still hard-failed `Missing mandatory fields: companyName, industry`. That
+is the exact D3 symptom v22.0.29 set out to remove.
+
+The match is now built from the FULL canonical set (identity + branding +
+operations). Proven against the shipped v22.0.29 tree: a transcript answering
+both identity questions, with neither mirrored into build-state, reported both
+as hard-missing; after the fix the same input reports neither. Fail-closed is
+preserved — an empty transcript with empty state still reports `companyName`,
+`industry` and `departments[at-least-one]`.
+
+Found by cross-checking the shipped derivation against `fable-skill23-repo-diag`'s
+verbatim EDIT 1a, which arrived after v22.0.29 had already merged.
+
+The rest of v22.0.29's EDIT 1 is unchanged and verified working on main:
+`ownerChat`/`agentName` demoted to a `plumbing` warning, and
+`departments[at-least-one]` satisfied by a recorded
+`canonicalReconciliation.decisions` yes.
+
 ## [v22.0.29] -- 2026-08-17 -- fix(interview): repair the Skill 23 interview-completion path (nine defects)
 
 An owner could answer every question and still never reach a built workforce.
