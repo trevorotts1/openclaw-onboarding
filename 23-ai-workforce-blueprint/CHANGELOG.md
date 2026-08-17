@@ -3,6 +3,126 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v22.0.29] - 2026-08-17 - fix(interview): repair the interview-completion path — nine defects that stranded finished interviews
+
+An owner could answer every question and still never reach a built workforce.
+Nine independent defects on the completion path, each individually capable of
+producing the same client-visible symptom ("I finished the interview and nothing
+happened"), fixed together because they compound.
+
+**D1 — hard `jq` dependency under `set -euo pipefail` (`update-interview-state.sh`).**
+`jq` is not in the OpenClaw container image and has vanished from boxes on
+container recreate. Absent, the shell aborted with **rc 127 before the write
+landed** — not a soft degradation. Two client-visible failures: every
+per-question progress stamp died, freezing `interviewProgress.lastQuestionNumber`
+at its last pre-breakage value while the client kept answering; and `--complete`
+died *after* the evidence gate had already PASSED, so a genuinely-complete
+interview never got `interviewComplete`. De-jq'd the whole client-facing path:
+`apply_interview_stamp()`, the `--complete` combined write, and all six remaining
+reads (a new `state_read()` helper mirrors `jq -r '<path> // <default>'`,
+including jq's treatment of `false` as absent). `python3` was already a hard
+dependency of this script — the deferred spool, the phases parser, and
+`lib-interview-rate-limit.sh` all require it and all run *before* any jq call —
+so this removes a dependency rather than adding one. Verified with jq genuinely
+absent from `PATH`: rc 127 → rc 0, `lastQuestionNumber` written as an int.
+`resume-workforce-build.sh` / `record-dept-decision.sh` still use jq (~100 call
+sites, same disease) — deliberately out of scope, follow-up work.
+
+**D2 — the transcript resolver never probed where the conversational lane writes
+(`_interview_transcript.py`).** `candidate_bases()` stopped after the two
+`<workspace>/company-discovery/` paths, but the Telegram/agent interview logs
+answers to the **master-files tree** (`~/Downloads/openclaw-master-files` on Mac,
+`/data/openclaw-master-files` on VPS, `MASTER_FILES_DIR` when overridden), and
+the Command Center probes a **flat `<workspace>/` fallback** its own
+`answersFilePath()` accepts. A fully-answered interview therefore reported
+"transcript not found", which the gate treats as unverifiable → `exit 87`,
+forever. Both locations added; the list is now a strict superset of every
+writer's, with existing entries keeping their exact priority.
+
+**D3 — the mandatory-field gate was unsatisfiable on the web lane, the only lane
+clients use (`qc-interview-completion.py`).** `ownerChat` and `agentName` are box
+plumbing, not interview answers: the owner is never asked for either, nothing on
+the web path populates them, and `ownerChat` is seeded as the integer `0`
+(`backfill-build-state.py`) — which is **falsy**, so a field that WAS present read
+as missing. A client who answered everything hard-failed on
+`Missing mandatory fields: ownerChat, agentName`. Both are demoted to a
+`plumbing` WARNING (still named, so an unconfigured box gets follow-up).
+`companyName`/`industry` are now satisfiable by answered-transcript evidence like
+every branding field. `departments[at-least-one]` now also accepts a recorded
+`canonicalReconciliation.decisions` **yes** — on the standard-first/web lane
+`departments[]` is deliberately not materialized until the apply-diff build runs,
+so an owner who explicitly kept departments still presented an empty array and
+failed for a decision they had in fact made. `no`/`later` deliberately do not count.
+
+**D4 — the grading standard was chosen by the last stamp alone.**
+`is_structured_web_interview()` reads exactly one field —
+`interviewProgress.lastQuestionAskedBy` — so *who stamped the final answer*
+decided how the entire interview was graded. Answered-everything hard-failed in
+**both** directions on any mixed-channel interview: a fully-covered web deck whose
+last answer came back via Telegram was graded on raw count (~19 blocks, below the
+25 floor); a rich 25-35 question conversational interview whose last stamp
+happened to be `interview-web` was graded on deck coverage it never matched.
+Check #1 now grades on **either satisfied standard** and hard-fails only when
+neither is met. Both standards keep full strength: coverage still requires every
+REQUIRED canonical question answered with substance, and the conversational chain
+is untouched — including the ABSOLUTE `>36` ceiling, the 25-35 band, and the
+24/36 borderline soft fail (which the mixed-channel branch inherits).
+
+**D5 — `INSTRUCTIONS.md` ordered a hand-write that bypassed the evidence gate.**
+Moment 1 listed `interviewComplete: true` / `interviewCompletedAt` among the
+fields the orchestrator must write by hand — walking straight around the one
+chokepoint that requires QC evidence. The resulting failure is silent and
+terminal: `interviewComplete: true` alongside `interviewQc.status: fail`, which
+every build lane refuses, while the nudge cron (which self-removes the moment
+`interviewComplete` flips true) has already torn itself down. Nothing nudges,
+nothing builds, nothing reports why. Both fields removed from the hand-write
+list, with an explicit prohibition and instructions for handling an `exit 87`
+refusal. Two downstream sentences that contradicted the new rule were corrected
+in the same pass.
+
+**D6 — rate-limit amplifier.** The `--complete` budget of 3/hour is consumed even
+when the evidence gate REFUSES, and a refusal is exactly what a client retries.
+An owner refused three times — for a cause they cannot see and did not create —
+was then locked out for a full hour *even after the fault was repaired*. Raised
+to 6, still far below the 60/hour ordinary-submission budget, still
+env-overridable.
+
+**D7 — `CHECK_SHARED_HOST` compared a URL against a bare hostname
+(`send-interview-link.sh`).** Its only caller passes `"$DASH"`, a full URL, so
+`host in ("localhost","127.0.0.1")` was never true and the box-own-CC branch was
+**dead code for every input**. A genuine localhost dashboard was classified
+"shared", sent down the gate-status probe, failed to verify, and degraded to the
+Telegram-native invite — so boxes with a working local Command Center stopped
+handing owners the web link at all. Now parses the hostname with `urlparse`
+(handles scheme-less `host:port`, and treats `::1` as the loopback it is).
+
+**D9 — the recovery lane still demanded a strict `pass`
+(`resume-workforce-build.sh`).** Every other gate had been reconciled to
+"`pass` OR `needs-review`", and nothing anywhere promotes `needs-review` → `pass`.
+So a `needs-review` interview was refused by the one lane built to rescue it, and
+refused again on every subsequent cron fire — a permanent silent strand for a
+client who had actually finished. `fail`/`pending` still block (`--complete`'s own
+evidence gate refuses those with `exit 87`).
+
+**Test fixture repair (not a production change).**
+`test-qc-question-count-structured-coverage.py` had been **red since the day it
+was written**: one shared fixture builder hardcoded `lastQuestionNumber: 11` for
+every case, so U1 (19 blocks) and U4 (29 blocks) tripped the counter-vs-transcript
+disagreement HARD FAIL and never reached the logic they assert. The disagreement
+guard predates the test (2026-06-10 vs 2026-07-30). Each case now carries a
+counter consistent with its own transcript, and a new **U6** pins the guard
+directly: the same 29-question transcript that PASSES in U4 must HARD FAIL when
+the counter is frozen back to 11. The guard is not weakened anywhere — it keeps
+full production strength and remains covered by
+`test-interview-completion-evidence-gate.sh`.
+
+**Deliberately NOT changed:** the counter-vs-transcript disagreement hard fail
+(2026-07-30 anti-fabrication decision), the jargon / no-fabrication /
+decline-provenance checks, the absolute `>36` ceiling, the 25-35 standard, and
+the workspace-override path split (`detect_platform.py` / `paths.ts` mirror the
+skill's two hardcoded branches BY DESIGN — fixing the scripts alone would create
+a new split; it needs one shared resolver applied in lockstep).
+
 ## [v22.0.26] - 2026-08-14 - fix(presentations): close the sixth bypass — owner-skip anchor (Trust Boundary Increment 2)
 
 `build_deck.py:_owner_skip_approved()` waived 13 gates (AF-IMAGE-QC-VISION,

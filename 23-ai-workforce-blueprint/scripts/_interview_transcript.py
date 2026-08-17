@@ -206,6 +206,33 @@ def candidate_bases(
     build-workforce.py / _qc_no_web_store.py, so behavior for a non-encrypted
     client is UNCHANGED. `.enc` siblings are derived from this same list by
     read_transcript() below — one candidate list drives both extensions.
+
+    D2 FIX — the resolver never probed where the CONVERSATIONAL lane writes.
+    This list used to stop after the two `<workspace>/company-discovery/`
+    paths. Two real write locations were therefore invisible to it:
+
+      (a) THE MASTER-FILES TREE. The Telegram/agent-conducted interview logs
+          answers to `<master-files>/company-discovery/workforce-interview-
+          answers.md` — `~/Downloads/openclaw-master-files` on Mac,
+          `/data/openclaw-master-files` on VPS, `MASTER_FILES_DIR` when
+          overridden (the same convention build-workforce.py's
+          find_master_files_folder() / get_openclaw_paths() resolve, and the
+          location SKILL.md and INSTALL.md both document as the permanent
+          answer record). Because this resolver never looked there, a fully
+          answered conversational interview reported "transcript not found",
+          which the completion gate treats as unverifiable and refuses —
+          `exit 87`, forever, on an interview that was genuinely finished.
+
+      (b) THE FLAT WORKSPACE FALLBACK. blackceo-command-center's
+          answersFilePath() (src/lib/interview/paths.ts) probes
+          `<workspace>/workforce-interview-answers.md` as its third candidate.
+          This resolver did not, so the two sides of the same seam disagreed
+          about where the transcript lives.
+
+    Adding both makes this list a strict SUPERSET of every writer's location.
+    Nothing is removed and the existing entries keep their exact priority, so a
+    box whose transcript already resolved keeps resolving it from the same
+    place — the new paths are only ever reached when the old ones miss.
     """
     home = os.path.expanduser("~")
     candidates = []
@@ -213,8 +240,21 @@ def candidate_bases(
         candidates.append(str(recorded_path))
     if company_discovery_dir:
         candidates.append(os.path.join(str(company_discovery_dir), "workforce-interview-answers.md"))
-    for base in ("/data/.openclaw/workspace", os.path.join(home, ".openclaw", "workspace")):
+    workspace_bases = ("/data/.openclaw/workspace", os.path.join(home, ".openclaw", "workspace"))
+    for base in workspace_bases:
         candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
+    # (a) master-files tree — where the conversational/Telegram lane logs answers.
+    master_files_bases = []
+    env_master = os.environ.get("MASTER_FILES_DIR")
+    if env_master:
+        master_files_bases.append(env_master)
+    master_files_bases.append("/data/openclaw-master-files")
+    master_files_bases.append(os.path.join(home, "Downloads", "openclaw-master-files"))
+    for base in master_files_bases:
+        candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
+    # (b) flat workspace fallback — matches the Command Center's third probe.
+    for base in workspace_bases:
+        candidates.append(os.path.join(base, "workforce-interview-answers.md"))
     # De-dup while preserving order (recorded_path can coincide with a standard one).
     seen = set()
     ordered = []

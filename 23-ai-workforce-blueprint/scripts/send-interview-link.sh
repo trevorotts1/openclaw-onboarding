@@ -196,11 +196,30 @@ fi
 #   * any other dashboard host          -> gate-status must answer
 #     interviewComplete:false for this company, else FAIL to the
 #     Telegram-native invite (never send an unverifiable web link).
+# D7 FIX: this compared the caller's argument against the bare strings
+# "localhost"/"127.0.0.1", but its ONE caller passes "$DASH" — a full URL such
+# as `http://localhost:3000` or `https://<client>.zerohumanworkforce.com`. A URL
+# never equals a bare hostname, so the box-own-CC branch was UNREACHABLE: even a
+# genuine localhost dashboard was classified "shared", which sent the script
+# down the gate-status curl path. When that probe cannot verify (no route to a
+# local-only CC from that context, non-JSON body, any non-"0" answer), the
+# script blanks $LINK and falls back to the Telegram-native invite — so a box
+# with a perfectly good local dashboard stopped handing its owner the web link
+# at all. Parse the hostname properly instead of string-matching the URL.
 CHECK_SHARED_HOST() {
   python3 - "$1" <<'PYEOF'
 import sys
-host = sys.argv[1].lower()
-if host in ("localhost", "127.0.0.1"):
+from urllib.parse import urlparse
+
+raw = (sys.argv[1] or "").strip()
+# A bare "host:port" has no scheme; "//" makes urlparse read it as authority
+# rather than a path, so both "localhost:3000" and "http://localhost:3000" work.
+parsed = urlparse(raw if "://" in raw else "//" + raw, scheme="https")
+host = (parsed.hostname or "").lower()
+
+# ::1 is the IPv6 spelling of 127.0.0.1 — the same box-own CC, so it belongs in
+# the same branch rather than being misfiled as a shared host.
+if host in ("localhost", "127.0.0.1", "::1"):
     sys.exit(0)  # box-own CC: state read above is authoritative
 # Shared/unknown host: the caller verifies gate-status externally.
 sys.exit(1)

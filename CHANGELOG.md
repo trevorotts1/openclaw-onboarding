@@ -1,3 +1,46 @@
+## [v22.0.29] -- 2026-08-17 -- fix(interview): repair the Skill 23 interview-completion path (nine defects)
+
+An owner could answer every question and still never reach a built workforce.
+Nine independent defects on the completion path, each individually capable of
+producing the same symptom, fixed together because they compound:
+
+- **D1** hard `jq` dependency under `set -euo pipefail` in
+  `update-interview-state.sh` — jq is absent from the OpenClaw container image, so
+  the shell aborted **rc 127 before the write landed**, freezing
+  `lastQuestionNumber` and killing `--complete` *after* the evidence gate had
+  passed. De-jq'd the client-facing path (stamp, `--complete` write, six reads via
+  a new `state_read()` helper). Proven with jq genuinely off `PATH`: rc 127 → rc 0.
+- **D2** the transcript resolver never probed the master-files tree (where the
+  conversational lane writes) or the Command Center's flat workspace fallback →
+  "transcript not found" → `exit 87` forever on a finished interview.
+- **D3** the mandatory-field gate was unsatisfiable on the web lane: `ownerChat` /
+  `agentName` are box plumbing the owner is never asked for, and `ownerChat` is
+  seeded as the **falsy integer 0**. Demoted to a warning; `companyName`/`industry`
+  now satisfiable by transcript evidence; `departments[at-least-one]` now accepts a
+  recorded `canonicalReconciliation.decisions` yes.
+- **D4** the grading standard was chosen by *who stamped the last question*, so
+  mixed-channel interviews hard-failed in both directions. Check #1 now grades on
+  **either satisfied standard**; both keep full strength.
+- **D5** `INSTRUCTIONS.md` ordered a hand-write of `interviewComplete` that bypassed
+  the evidence gate, producing a silent terminal strand (`interviewComplete: true` +
+  `interviewQc: fail`) after the nudge cron had self-removed.
+- **D6** the `--complete` rate-limit budget was consumed by *refused* attempts,
+  locking an owner out for an hour even after the fault was fixed (3 → 6).
+- **D7** `CHECK_SHARED_HOST` compared a full URL against a bare hostname, making the
+  box-own-CC branch dead code for every input, so local dashboards stopped sending
+  the web link. Now parses the hostname via `urlparse`.
+- **D9** the recovery lane still demanded a strict `pass` while every other gate
+  accepted `pass|needs-review`, and nothing promotes `needs-review` → `pass` — a
+  permanent silent strand.
+
+Also repairs `test-qc-question-count-structured-coverage.py`, red since it was
+written (a shared fixture hardcoded the frozen-counter value the disagreement
+guard exists to catch), and adds **U6** pinning that guard directly. The
+disagreement hard fail, jargon / no-fabrication / decline-provenance checks, the
+absolute `>36` ceiling and the 25-35 standard are all deliberately unchanged. The
+workspace-override path split (`detect_platform.py` / `paths.ts`) is deliberately
+out of scope — it needs one shared resolver applied in lockstep.
+
 ## [v22.0.28] -- 2026-08-14 -- big integration: 53-gate conversion (verifier registry + sealed RunFacts), QC-report gate teeth, three-outcome cc-registered, notify retry semantics, rescue-rangers tpl
 
 Merged as squash `83cd9595` (feat(presentations): gate-conversion + gate teeth +
