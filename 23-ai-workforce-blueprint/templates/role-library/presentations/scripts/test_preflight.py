@@ -716,6 +716,20 @@ def test_chk_coverage():
     if reason:
         fails.append(f"COVERAGE: source absent (Mode A) should PASS but got: {reason!r}")
 
+    # mission_prd.json PRESENT but malformed/unparseable (absence-vs-malformed hole,
+    # CheckResult.UNDETERMINED doctrine) => must FAIL/refuse, NEVER silently collapse
+    # to Mode A's source=0 default. A genuinely-absent file is a legitimate Mode A
+    # pass (tested above); a present-but-corrupt file is a DIFFERENT, THIRD state
+    # that could be hiding a real Mode-B source_slide_count, so it must refuse.
+    rd = _coverage_run_dir(None, 3)
+    (rd / "working" / "copy" / "mission_prd.json").write_text("{not valid json!!!")
+    reason = build_deck._chk_coverage(rd)
+    if not reason:
+        fails.append("COVERAGE: malformed mission_prd.json should FAIL/UNDETERMINED "
+                     "(not silently collapse to Mode A) but passed")
+    elif "AF-COVERAGE-1" not in reason or "unreadable" not in reason.lower():
+        fails.append(f"COVERAGE: malformed-mission_prd fail message malformed: {reason!r}")
+
     print(f"COVERAGE (anti-compression) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
@@ -1359,6 +1373,89 @@ def test_postflight_gate():
     print(f"POSTFLIGHT-I (byte-floor doctrine reconcile) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I' in f] else 'FAIL'}")
 
     print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_postflight_speech_length_reverify():
+    """SPEECH-LENGTH closeout re-check (AF-SPEECH-SHORT) — absence-vs-not-yet-produced
+    gap fix: the DELIVERABLES_REQUIRED speech_md entry only proves a >=2KB
+    PRESENTERS-SPEECH.md exists in the bundle (~290 words) — far below the real
+    target_talk_minutes x 120wpm floor for a long talk. _chk_speech_length is
+    CONDITIONAL BY DESIGN at the single pre-render run_preflight() call (the speech
+    genuinely does not exist yet there, so it legitimately defers), but nothing
+    previously re-verified the real word-count floor once the speech was actually
+    written — a short-but-not-empty speech could clear the generic byte floor
+    forever uncaught. run_postflight_gate() now re-invokes _chk_speech_length(run_dir)
+    at closeout, mirroring the pre-existing _chk_kie_baked re-check pattern.
+
+      (a) run_dir with a 30-min target + a speech well UNDER the 3,600-word floor,
+          with a bundle speech_md that still clears the generic byte floor -> exit 5.
+      (b) run_dir with a 30-min target + a speech AT the floor -> PASSES.
+      (c) run_dir=None (bare gate-only invocation) -> the sub-check is skipped,
+          matching the existing kie_baked/brand/visual-variety contract (never fails
+          a caller that has no run dir).
+
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    def _speech_run_dir_for_postflight(words: int) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="deck_postflight_speech_test_"))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"interview_confirmed": True, "presentation_mode": "general",
+             "audience_mode": "STANDARD", "target_talk_minutes": 30}))
+        (root / "working" / "presenter-speech").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "presenter-speech" / "speech.md").write_text(
+            " ".join(["word"] * words))
+        # Satisfy the UNRELATED AF-CC-UNREGISTERED closeout gate (_chk_cc_registered)
+        # so this fixture isolates the speech-length re-check specifically — once
+        # run_dir is threaded into run_postflight_gate, every run-dir-scoped closeout
+        # sub-check fires, not just the one under test.
+        (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({
+                "phase_attestations": [],
+                "cc_task_id": "task-pf-speech-test",
+                "cc_register_attempted": True,
+                "cc_registration": _cc_registration_receipt(
+                    "task-pf-speech-test", "sha256-deck-key", "test-deck"),
+            }))
+        return root
+
+    # (a) speech well under the 30min x 120wpm = 3,600-word floor -> exit 5.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(500)  # far under 3,600
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+        fails.append("PF-SPEECH-A: 500-word speech (30min target) should exit 5 "
+                     "(SPEECH_TOO_SHORT) but gate passed -- the closeout re-check "
+                     "did not fire")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"PF-SPEECH-A: expected exit 5, got {exc.code}")
+    print(f"PF-SPEECH-A (short speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-A' in f] else 'FAIL'}")
+
+    # (b) speech at the floor -> PASSES.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(3600)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-B: 3,600-word speech (30min target, at floor) should "
+                     f"PASS, got sys.exit({exc.code})")
+    print(f"PF-SPEECH-B (floor speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-B' in f] else 'FAIL'}")
+
+    # (c) no run_dir threaded -> sub-check skipped, matches existing kie_baked contract.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-C: no run_dir threaded should not fail on speech-length "
+                     f"(sub-check skipped), got sys.exit({exc.code})")
+    print(f"PF-SPEECH-C (no run_dir)     -> {'PASS' if not [f for f in fails if 'PF-SPEECH-C' in f] else 'FAIL'}")
+
+    print(f"PF-SPEECH (closeout re-verify)-> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -5144,6 +5241,13 @@ def main():
     # hard-required (never silently skipped); proves ~/Downloads is the default
     # destination; proves DELIVERABLES_REQUIRED has exactly the 10 required keys.
     failures += test_postflight_gate()
+
+    # Unit test — SPEECH-LENGTH closeout re-check (absence-vs-not-yet-produced gap
+    # fix): proves a short speech that clears only the generic byte floor now exit-5s
+    # at closeout (mirrors the pre-existing _chk_kie_baked re-check pattern), a
+    # floor-clearing speech still passes, and a bare gate-only call (no run_dir)
+    # is unaffected.
+    failures += test_postflight_speech_length_reverify()
 
     # Unit test — TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE):
     # proves a full bundle with no/unverified teleprompter_publish.json fails (exit 5),

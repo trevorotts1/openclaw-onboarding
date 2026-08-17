@@ -4296,7 +4296,19 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     deck. Reads mission_prd.json's top-level integer 'source_slide_count' (Mode A =
     absent/0, which always passes) and compares to the output slide count from
     slides.json (or arc_allocation.json). Returns "" on pass, or a fatal AF message
-    string (run_preflight maps a returned reason to exit 3)."""
+    string (run_preflight maps a returned reason to exit 3).
+
+    ABSENCE-VS-MALFORMED (CheckResult doctrine, presentation_job/result.py): a
+    genuinely ABSENT mission_prd.json is Mode A (no client source deck) and
+    legitimately always passes here. A mission_prd.json that EXISTS but is
+    unreadable/unparseable is a DIFFERENT, THIRD state — CheckResult.UNDETERMINED,
+    never silently folded into "source=0 -> Mode A -> pass". A real Mode-B
+    source_slide_count could be hiding behind that parse failure; silently
+    defaulting to 0 would let a genuinely-compressed deck ship undetected, which is
+    exactly the "absence/unreadable reads as approval" defect this gate exists to
+    prevent. This is a completeness gate, so per doctrine UNDETERMINED behaves like
+    FAIL (refuse to pass a deck this gate could not actually check) — it refuses
+    rather than silently passing."""
     # An EXPLICIT client-requested slide count is an explicit client instruction that
     # overrides the Mode-B anti-compression floor (the client may deliberately ask to
     # set their deck to an exact length below the source). AF-SLIDE-COUNT-EXACT owns
@@ -4305,6 +4317,8 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         return ""
     # Resolve mission_prd.json (Mode A: absent -> source 0 -> always pass).
     source = 0
+    mission_prd_result = CheckResult.PASS  # no mission_prd.json found at all == Mode A
+    parse_err = None
     for rel in ("working/copy/mission_prd.json", "mission_prd.json",
                 "working/mission_prd.json"):
         p = run_dir / rel
@@ -4316,7 +4330,21 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                     source = int(raw)
                 except (TypeError, ValueError):
                     source = 0
+                mission_prd_result = CheckResult.PASS
+            else:
+                # File EXISTS but could not be read/parsed. Distinct from "absent" —
+                # do NOT silently default source=0 here (see doctrine note above).
+                mission_prd_result = CheckResult.UNDETERMINED
+                parse_err = obj.get("__parse_error__") if isinstance(obj, dict) else None
             break
+
+    if mission_prd_result is CheckResult.UNDETERMINED:
+        return (f"AF-COVERAGE-1: mission_prd.json exists but is unreadable/unparseable "
+                f"({parse_err or 'unknown parse error'}) — source_slide_count cannot be "
+                f"determined, so the Mode-B anti-compression floor (ADD-only) cannot be "
+                f"proven either way. Refusing rather than silently treating this as "
+                f"Mode A (a real source_slide_count could be hiding behind the parse "
+                f"failure). Fix or regenerate mission_prd.json.")
 
     if source <= 0:
         return ""  # Mode A — no client source deck; coverage check does not apply.
@@ -10587,6 +10615,35 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             # Record the AF-I14 reason on the deck entry so the ledger carries it.
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=kie_reason)
+
+    # --- SPEECH-LENGTH sub-check (AF-SPEECH-SHORT) — at closeout, re-prove the
+    # delivered speech clears the target_talk_minutes x 120wpm floor.
+    #
+    # WHY THIS EXISTS (absence-vs-not-yet-produced gap): _chk_speech_length is
+    # CONDITIONAL BY DESIGN at the single pre-render run_preflight() call — the
+    # speech genuinely does not exist yet at that phase (written at Phase 9
+    # delivery), so it legitimately defers ("" / pass) there. Its own docstring
+    # says the gate "is wired into the lockstep so it can never be silently
+    # skipped once the speech is written" — but run_preflight() is called exactly
+    # ONCE (pre-render), so nothing ever re-invoked the real word-count floor once
+    # the speech was actually on disk. The DELIVERABLES_REQUIRED speech_md entry
+    # above only proves a >=2KB file exists (~290 words) — far below the floor for
+    # a 20+ minute talk (2,400+ words) — so a short-but-not-empty speech could
+    # clear the byte floor while never being checked against the REAL duration
+    # floor. This mirrors the exact re-check pattern already proven for
+    # _chk_kie_baked above so the promise in _chk_speech_length's own docstring is
+    # actually kept, not just documented.
+    if run_dir is not None:
+        speech_len_reason = _chk_speech_length(run_dir)
+        if speech_len_reason:
+            missing_or_short.append((
+                "speech_md",
+                _expand_filename("PRESENTERS-SPEECH.md", deck_slug),
+                "presenter speech meets the target_talk_minutes x 120wpm word floor "
+                "(AF-SPEECH-SHORT)",
+                0, 0, "SPEECH_TOO_SHORT"))
+            update_deliverable_status(ledger_path, "speech_md", "failed",
+                                      error=speech_len_reason)
 
     # --- AF-PACKAGE-CLEAN sub-check (2026-06-19, deck-quality gate) ---
     # The final bundle must contain ONLY the canonical deliverable files. Dev artifacts

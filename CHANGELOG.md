@@ -1,3 +1,29 @@
+## [v22.0.36] -- 2026-08-17 -- fix(presentations): close 2 absence-as-approval holes in gates slice 2 (gates-absence slice g2)
+
+Two real, previously-silent holes closed in the coverage/speech-length family:
+
+1. `_chk_coverage` (AF-COVERAGE-1, anti-compression): a `mission_prd.json` that
+   EXISTS but is unreadable/unparseable silently defaulted `source_slide_count`
+   to 0, collapsing into Mode A ("no source deck, always pass") --
+   indistinguishable from a genuinely-absent file. Now modeled explicitly as
+   `CheckResult.UNDETERMINED` and refused; a genuinely-absent `mission_prd.json`
+   (legitimate Mode A) is unaffected and still passes.
+
+2. `_chk_speech_length` (AF-SPEECH-SHORT): correctly defers pre-render, but its
+   own docstring's claim that the gate "can never be silently skipped once the
+   speech is written" was false -- `run_preflight()` fires exactly once,
+   pre-render, so the word-count-vs-target-duration floor was never re-verified
+   once the speech existed. Closed by re-invoking `_chk_speech_length` at
+   closeout inside `run_postflight_gate`, mirroring the already-proven
+   `_chk_kie_baked` re-check pattern.
+
+Acceptance (`test_preflight.py`, executed): malformed `mission_prd.json` ->
+FAIL/UNDETERMINED (was silent pass); a 500-word speech (30min target) now
+exit(5)s at closeout (was previously unchecked forever); a 3,600-word speech
+(at the floor) still PASSES. Full suite: zero new failures (the 1 pre-existing
+SP-GOLDEN failure, unrelated to this slice, is unchanged on both branch and
+origin/main control).
+
 ## [v22.0.35] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the priority-shift doctrine spine (gates-absence slice g4)
 
 `_doctrine_active()` (the priority-shift "no-regression master switch") returned
