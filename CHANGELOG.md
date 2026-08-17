@@ -1,3 +1,25 @@
+## [v22.0.34] -- 2026-08-17 -- fix(presentations): slide-geometry checker import failure must not read as a clean deck (gates-absence slice g3)
+
+`_chk_text_fits` / `_chk_spelling` / `_chk_type_size` (AF-TEXT-OVERFLOW /
+AF-SPELLING / AF-TYPE-SIZE-MEASURED) silently returned `""` (pass) whenever
+`slide_geometry.py` -- first-party code that ships beside `build_deck.py`, not
+an optional plugin -- failed to import. A broken/missing/corrupted
+`slide_geometry.py` therefore read as a deck with no text-overflow, spelling,
+or type-size problems: a checker that never ran was indistinguishable from a
+checker that ran and found nothing.
+
+Uses the already-merged `CheckResult` type: these are deck-quality/
+completeness gates, so `UNDETERMINED` lands on the FAIL side. The three
+wrappers now return a non-empty `AF-*: UNDETERMINED` message instead of `""`,
+so `run_postflight_gate`'s existing WARN-by-default loop always surfaces it,
+and `PRESENTATION_SLIDE_GEOMETRY_ENFORCE=1` can no longer be silently defeated
+by an import failure. Verified against the REAL shipped `slide_geometry.py`
+(not a synthetic fixture): genuine import failure -> all three now return
+non-empty `UNDETERMINED`; genuine pre-render state -> all three still return
+`""` exactly as before (no regression). Full suite: zero new failures (the 1
+pre-existing SP-GOLDEN failure is unchanged on both branch and origin/main
+control).
+
 ## [v22.0.32] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the _chk_creativity archetype gate (gates-absence slice g1)
 
 `_chk_creativity`'s archetype-dominance half claimed its absence was "owned by
