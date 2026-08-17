@@ -80,6 +80,29 @@ GOVERNANCE_PERSONA_FALLBACK = "covey-7-habits"
 #      governance fallback, which every box has had since the 81-persona set.
 DEFAULT_PERSONA_FALLBACK = "blackceo-house-voice"
 
+# Selector spawn ceiling, in seconds. The canonical selector's Stage-C path —
+# and especially the ``--blend`` branch — runs an LLM decompose plus semantic
+# retrieval before it emits a single byte. On a loaded box that routinely takes
+# longer than a minute, so the previous 60s ceiling aborted legitimate work
+# mid-flight. Because the abort surfaces at the caller as a silent empty result,
+# it reads as a HANG rather than a timeout, and a full production pipeline can
+# block on it (observed: the podcast engine's Step 2 voice-governance seam).
+# 600s is the value proven against real client hardware. Operators can retune
+# per box, or clamp it back down in CI, via PERSONA_FOR_JOB_TIMEOUT.
+def _default_selector_timeout(fallback: int = 600) -> int:
+    raw = os.environ.get("PERSONA_FOR_JOB_TIMEOUT", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return fallback
+        if parsed > 0:
+            return parsed
+    return fallback
+
+
+DEFAULT_SELECTOR_TIMEOUT = _default_selector_timeout()
+
 # persona_source values that mean "the client named this persona explicitly" —
 # FINAL, never overridden, selector never consulted.
 CLIENT_FINAL_SOURCES = frozenset({
@@ -423,7 +446,7 @@ def persona_for_job(job_text: str, department: str, *,
                     sop_slug: "str | None" = None, sop_hints=None,
                     client_persona_id: "str | None" = None,
                     persona_source: "str | None" = None,
-                    record: bool = True, timeout: int = 60,
+                    record: bool = True, timeout: int = DEFAULT_SELECTOR_TIMEOUT,
                     section4_chars: int = 1400,
                     blend: bool = False,
                     topic_hint: "str | None" = None) -> dict:
@@ -543,7 +566,8 @@ def persona_for_jobs(jobs: list) -> list:
             sop_slug=spec.get("sop_slug"), sop_hints=spec.get("sop_hints"),
             client_persona_id=spec.get("client_persona_id"),
             persona_source=spec.get("persona_source"),
-            record=spec.get("record", True), timeout=spec.get("timeout", 60),
+            record=spec.get("record", True),
+            timeout=spec.get("timeout", DEFAULT_SELECTOR_TIMEOUT),
             section4_chars=spec.get("section4_chars", 1400),
             blend=spec.get("blend", False), topic_hint=spec.get("topic_hint")))
     return out
@@ -566,7 +590,9 @@ def main(argv: list) -> int:
     ap.add_argument("--persona-source", dest="persona_source", default=None,
                     help="config|adapter|client-choice|locked (client-* is FINAL)")
     ap.add_argument("--no-record", dest="record", action="store_false")
-    ap.add_argument("--timeout", type=int, default=60)
+    ap.add_argument("--timeout", type=int, default=DEFAULT_SELECTOR_TIMEOUT,
+                    help="selector spawn ceiling in seconds (default %(default)s; "
+                         "override the default with PERSONA_FOR_JOB_TIMEOUT)")
     ap.add_argument("--blend", dest="blend", action="store_true",
                     help="(A-U1) resolve the voice-first persona-BUNDLE "
                          "superset instead of a single persona (default off; "
