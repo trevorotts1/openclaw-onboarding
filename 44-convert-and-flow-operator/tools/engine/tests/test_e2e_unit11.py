@@ -2069,6 +2069,132 @@ class TestBuildIdempotency(unittest.TestCase):
 
 # ── Standalone runner ─────────────────────────────────────────────────────────
 
+class TestFolderDerivationProductionShape(unittest.TestCase):
+    """Folder idempotency against the REAL listing shape.
+
+    The live `GET /workflow/{loc}` returns a BARE LIST of workflow items only
+    — verified against a production backend. It never returns an item with
+    type == "directory", even when folders demonstrably exist (their ids show
+    up as the workflows' `parentId`). The public API is worse: no `type`, no
+    `parentId`. So folder de-duplication BY NAME is impossible, and
+    `existing_folders` in the other tests exercises a shape production never
+    sends.
+
+    TEST D — with the production shape, the folder is DERIVED from an existing
+             campaign workflow's parentId, so a re-run drops new workflows into
+             the SAME folder instead of creating another one. This is the fix
+             for the duplicate-folder incident.
+    TEST E — when nothing exists to derive from, the folder is created (the
+             only option) but the build records an explicit note that it could
+             NOT confirm uniqueness. It must never imply it de-duplicated.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["CAF_DATA_DIR"] = self.tmp
+
+    def tearDown(self):
+        os.environ.pop("CAF_DATA_DIR", None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def _two_workflow_plan():
+        """FIXTURE_PLAN plus a second, not-yet-existing workflow."""
+        plan = {k: dict(v) for k, v in FIXTURE_PLAN.items()}
+        second_key = "second_campaign"
+        first = plan["nurture_consultation"]
+        plan[second_key] = {
+            **{k: v for k, v in first.items()},
+            "name": "ZHC-Second-Not-Yet-Built",
+        }
+        return plan
+
+    def test_d_folder_derived_from_existing_workflow_parent(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        # Production shape: bare list, workflow items only, carrying parentId.
+        production_listing = [{
+            "id": "WF_ALREADY_THERE",
+            "_id": "WF_ALREADY_THERE",
+            "name": "ZHC-3Email-Nurture",
+            "type": "workflow",
+            "parentId": "FOLDER_DERIVED",
+        }]
+        client = _make_idempotency_adapter(
+            list_response_override=production_listing,
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(self._two_workflow_plan(), folder_name="ZHC-Some-Folder")
+
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertEqual(
+            folder_posts, [],
+            "Folder must be DERIVED from the existing workflow's parentId, "
+            f"not re-created. Folder POSTs seen: {folder_posts}",
+        )
+
+        wf_posts = [
+            r for r in request_log
+            if r["method"] == "POST" and (r.get("body") or {}).get("parentId")
+        ]
+        self.assertGreater(
+            len(wf_posts), 0,
+            "The not-yet-existing workflow should still have been created.",
+        )
+        for r in wf_posts:
+            self.assertEqual(
+                r["body"]["parentId"], "FOLDER_DERIVED",
+                "New workflows must land in the DERIVED folder, not a new one.",
+            )
+
+        notes = " ".join(stats.get("notes", []))
+        self.assertIn(
+            "FOLDER_DERIVED", notes,
+            f"The derivation must be reported in stats['notes']. Got: {stats.get('notes')}",
+        )
+
+    def test_e_unprovable_folder_uniqueness_is_reported_not_hidden(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        client = _make_idempotency_adapter(
+            list_response_override=[],  # production shape, nothing exists yet
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(FIXTURE_PLAN, folder_name="ZHC-Brand-New-Folder")
+
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertEqual(
+            len(folder_posts), 1,
+            "With nothing to derive from, the folder must be created exactly once.",
+        )
+
+        notes = stats.get("notes", [])
+        self.assertTrue(
+            any("WITHOUT being able" in n for n in notes),
+            "A build that cannot prove folder uniqueness MUST say so in "
+            f"stats['notes'] rather than implying it de-duplicated. Got: {notes}",
+        )
+        self.assertEqual(
+            stats.get("errors", []), [],
+            "The unprovable-uniqueness caveat is a NOTE, not an error — it "
+            f"must not fail the build. Got errors: {stats.get('errors')}",
+        )
+
+
 if __name__ == "__main__":
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -2079,6 +2205,7 @@ if __name__ == "__main__":
         TestBuildFailsLoudAndEmitsOrdering,
         TestZHCFolderStandingApprovalAndFolderKeyPlan,
         TestBuildIdempotency,
+        TestFolderDerivationProductionShape,
     ]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
 

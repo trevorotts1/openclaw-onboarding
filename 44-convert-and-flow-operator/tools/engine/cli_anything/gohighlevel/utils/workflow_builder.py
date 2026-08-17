@@ -241,27 +241,33 @@ def validate_campaign(campaign: dict) -> list[str]:
 
 def _index_existing(
     raw: Union[dict, list, None],
-) -> Optional[tuple[dict[str, str], dict[str, str]]]:
+) -> Optional[tuple[dict[str, str], dict[str, str], dict[str, str]]]:
     """Parse a GET /workflow/{loc} listing into name->id maps for reuse checks.
 
-    Returns (workflow_name_to_id, folder_name_to_id) on success (empty dicts
-    mean "confirmed nothing exists yet" — a valid, common result). Returns
-    None when the response can't be read as a listing at all (missing,
-    transport `_error`, or a shape with no recognizable item collection) —
-    callers MUST treat None as "existing state unknown" and abort rather
-    than build blind, since guessing wrong here is exactly the bug this
-    function exists to prevent.
+    Returns (workflow_name_to_id, folder_name_to_id, workflow_name_to_parent_id)
+    on success (empty dicts mean "confirmed nothing exists yet" — a valid,
+    common result). Returns None when the response can't be read as a listing
+    at all (missing, transport `_error`, or a shape with no recognizable item
+    collection) — callers MUST treat None as "existing state unknown" and
+    abort rather than build blind, since guessing wrong here is exactly the
+    bug this function exists to prevent.
 
-    UNVERIFIED response shape: this call has not been captured against a
-    live GHL backend (see fixtures/README.md). It reuses the same collection
-    path already verified for folder/workflow creation (folder() /
-    workflow_create() in internal/endpoints.py) on the assumption a GET
-    lists what a POST creates into that same collection. Tolerant of the two
-    most likely shapes — a bare list, or a dict wrapping the list under
-    "workflows"/"folders"/"data"/"items" — but does NOT guess further than
-    that; an unrecognized dict shape returns None rather than being silently
-    treated as an empty list. Capture the live shape and tighten this before
-    first production use.
+    VERIFIED response shape (captured against a live backend): a BARE LIST of
+    item dicts. Each item carries `id` and `_id` (identical), `name`, `type`
+    (observed value "workflow"), and `parentId` (the containing folder's id).
+    The dict-wrapped branches below are retained as defensive tolerance for
+    other deployments, but the bare list is what production returns.
+
+    IMPORTANT LIMITATION — folders are NOT listed. The live response contains
+    workflow items only; no item with type == "directory" is ever returned,
+    even when folders demonstrably exist (their ids appear as the workflows'
+    `parentId`). The public API (`GET /workflows/?locationId=`) is worse still
+    — it omits `type` and `parentId` entirely. There is no folder-listing
+    endpoint on either transport, so `folder_name_to_id` is populated only on
+    deployments that do return directory items, and is empty in production.
+    Folder de-duplication therefore CANNOT be done by name; the caller derives
+    it from `workflow_name_to_parent_id` instead. Do not "fix" the empty folder
+    map by assuming no folder exists — that is the duplicate-folder bug.
 
     Item classification: an item is a folder when item["type"] == "directory"
     — the exact value this module already POSTs when creating a folder — and
@@ -286,6 +292,7 @@ def _index_existing(
 
     workflow_ids: dict[str, str] = {}
     folder_ids: dict[str, str] = {}
+    workflow_parents: dict[str, str] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -297,7 +304,10 @@ def _index_existing(
             folder_ids[name] = item_id
         else:
             workflow_ids[name] = item_id
-    return workflow_ids, folder_ids
+            parent = item.get("parentId")
+            if parent:
+                workflow_parents[name] = parent
+    return workflow_ids, folder_ids, workflow_parents
 
 
 # ── Campaign Builder ──────────────────────────────────────────────────────
@@ -317,6 +327,14 @@ class CampaignBuilder:
             "steps_saved": 0,
             "triggers_created": 0,
             "errors": [],
+            # Non-fatal caveats the operator must still see — chiefly the
+            # folder-idempotency limitation (this API exposes no folder
+            # listing, so a created folder cannot be proven unique). These are
+            # NOT errors and must not fail the build, but they must never be
+            # silent either: a build that quietly implies it de-duplicated
+            # folders when it could not is the false-success failure mode this
+            # module already got burned by once.
+            "notes": [],
             "start_time": 0.0,
             "end_time": 0.0,
         }
@@ -377,7 +395,7 @@ class CampaignBuilder:
             )
             self.stats["end_time"] = time.time()
             return self.stats
-        existing_workflow_ids, existing_folder_ids = existing
+        existing_workflow_ids, existing_folder_ids, existing_workflow_parents = existing
 
         # Resolve folder: reuse existing if folder_id given, else look up by
         # name and reuse it, else create.  Reuse is the safe default for a
@@ -394,6 +412,34 @@ class CampaignBuilder:
                 return self.stats
             folder_id = existing_folder_ids.get(folder_name)
             if not folder_id:
+                # Name lookup fails in production: the listing never returns
+                # directory items (see _index_existing). Derive the folder
+                # instead — if any workflow from THIS campaign already exists,
+                # it is already sitting in the folder a previous run created,
+                # so reuse its parentId. This is what actually stops the
+                # re-run-creates-another-folder bug.
+                for key in campaign:
+                    wf_name = campaign[key].get("name") if isinstance(campaign[key], dict) else None
+                    if wf_name and wf_name in existing_workflow_parents:
+                        folder_id = existing_workflow_parents[wf_name]
+                        self.stats.setdefault("notes", []).append(
+                            f"Reused folder {folder_id} derived from existing "
+                            f"workflow '{wf_name}' (folders are not listable "
+                            f"by name on this API)."
+                        )
+                        break
+            if not folder_id:
+                # Genuinely could not determine whether a folder of this name
+                # exists — no directory listing, and no campaign workflow
+                # already present to derive from. Creating is the only option,
+                # but say so plainly: this build canNOT claim it de-duplicated
+                # folders, and a folder named `folder_name` may already exist.
+                self.stats.setdefault("notes", []).append(
+                    f"Created a new folder '{folder_name}' WITHOUT being able "
+                    f"to confirm no folder of that name already exists — this "
+                    f"API exposes no folder listing. If duplicates appear, "
+                    f"remove them in the GHL UI and pass folder_id explicitly."
+                )
                 # Bug 2a — the folder-creation POST omitted workflow_name, so the
                 # safety gate saw an empty name and the ZHC- standing-approval check
                 # (safety_gate._is_approved) always failed for it: a ZHC- *folder*
@@ -634,6 +680,12 @@ class CampaignBuilder:
         ]
         for e in self.stats["errors"]:
             lines.append(f"    - {e}")
+
+        notes = self.stats.get("notes") or []
+        if notes:
+            lines.append(f"  Notes:     {len(notes)}")
+            for n in notes:
+                lines.append(f"    - {n}")
 
         wf_ids = self.stats.get("workflow_ids", {})
         if wf_ids:

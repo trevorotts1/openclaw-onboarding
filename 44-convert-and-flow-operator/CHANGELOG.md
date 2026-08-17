@@ -9,8 +9,17 @@
   created duplicates every run — a repeated build in one morning produced duplicate workflows and
   7 duplicate folders. `build()` now fetches the location's existing workflow/folder listing ONCE
   per call (not once per workflow), before any create POST fires:
-  - **Folder collision → reuse.** A folder is a pure organizational container, so an existing
-    folder with the target name is reused by id instead of creating a duplicate.
+  - **Folder collision → derive, and say so when you can't.** Folder de-duplication BY NAME turned
+    out to be impossible, so the first attempt at this could not have worked. Captured live:
+    `GET /workflow/{loc}` returns a bare list of *workflow* items only — never an item with
+    `type == "directory"`, even when folders provably exist (their ids appear as the workflows'
+    `parentId`). The public `GET /workflows/?locationId=` is worse: no `type`, no `parentId`.
+    Neither transport exposes a folder listing. So the builder derives instead — if any workflow
+    from the plan already exists, its `parentId` becomes the folder, which is what actually stops
+    a re-run creating another folder. Where nothing exists to derive from, the folder is created
+    (the only option) and an explicit caveat lands in the new `stats["notes"]` saying uniqueness
+    could NOT be confirmed. Notes render in `format_summary()` and `--json`; non-fatal by design,
+    never silent. Pass `folder_id` explicitly when you need a guarantee.
   - **Workflow-name collision → refuse, don't reuse.** Reusing an existing *workflow*'s id would
     run the tag/trigger/step-save/sync writes against content the build did not create and cannot
     prove is safe to overwrite (a human may have hand-edited it since). The collision is instead
@@ -20,9 +29,14 @@
     transport error, or an unrecognized response shape), the build aborts with a clear error rather
     than proceeding blind — the same failure mode this fix exists to close.
   - New `_index_existing()` parses the listing defensively (bare list, or a dict wrapping the list
-    under `workflows`/`folders`/`data`/`items`) since this GET has not yet been captured against a
-    live backend (see `fixtures/README.md`); an unrecognized shape returns `None` (fail loud) rather
-    than being treated as "nothing exists".
+    under `workflows`/`folders`/`data`/`items`); an unrecognized shape returns `None` (fail loud)
+    rather than being treated as "nothing exists". The live shape HAS now been captured against a
+    production backend: a bare list whose items carry `id`, `_id`, `name`, `type` (`"workflow"`)
+    and `parentId`. The dict-wrapped branches stay as tolerance for other deployments. It returns
+    a third map — workflow name → `parentId` — which is what makes folder derivation possible.
+  - Two tests added against the production listing shape (derivation reuses the parent; an
+    underivable folder records the caveat), both proven non-vacuous by disabling the fix and
+    confirming they fail.
 - **`pip install -e .` was broken two independent ways**, so the package could never actually be
   installed correctly — this is the root cause behind agents concluding the CLI itself was broken:
   - `setup.py`'s `find_namespace_packages(include=["cli_anything.*"])` matches SUB-packages only;
