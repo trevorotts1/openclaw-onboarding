@@ -1,3 +1,21 @@
+## [v22.0.35] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the priority-shift doctrine spine (gates-absence slice g4)
+
+`_doctrine_active()` (the priority-shift "no-regression master switch") returned
+the SAME `None`/false for "`priority_shift_spec.json` genuinely absent" (a
+legitimate legacy/pre-P0B defer) and "the file EXISTS but is unparseable / not
+a JSON object" (Phase P0B-PRIORITY ran and wrote something broken). Every one
+of the ten `_doctrine_active()`-gated gates in this slice short-circuited on
+that bool before doing anything else, so a CORRUPTED spec was indistinguishable
+from "the phase never touched this deck" and silently PASSED.
+
+Fix uses the already-merged three-valued `CheckResult`: `_chk_priority_shift`
+(the doctrine's own spine gate) is the correct single owner -- once the file
+exists at any candidate path, a parse failure is `CheckResult.UNDETERMINED`,
+which behaves like FAIL on this completeness-style preflight gate, closing the
+hole for all ten gates at the caller. Full `test_preflight.py` suite: zero new
+failures (the 1 pre-existing SP-GOLDEN failure, unrelated to this slice, is
+unchanged on both branch and origin/main control).
+
 ## [v22.0.34] -- 2026-08-17 -- fix(presentations): slide-geometry checker import failure must not read as a clean deck (gates-absence slice g3)
 
 `_chk_text_fits` / `_chk_spelling` / `_chk_type_size` (AF-TEXT-OVERFLOW /
