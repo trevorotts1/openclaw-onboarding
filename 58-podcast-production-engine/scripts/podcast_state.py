@@ -37,6 +37,17 @@
 # Keep the stage taxonomy, status enum, and label map STABLE: the dashboard slice
 # depends on this schema and vocabulary.
 
+# PEP 563 — REQUIRED, not cosmetic. This module annotates with PEP 604 unions
+# (`str | None`), which are evaluated AT DEF TIME on Python 3.9 and raise
+# "TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'". macOS
+# ships 3.9 at /usr/bin/python3, and a non-interactive shell resolves there
+# before Homebrew, so without this line THE SOLE STATE WRITER cannot be imported
+# on a stock Mac box. The failure is doubly costly because the step driver
+# reports the resulting ImportError as "podcast_state.py ... is missing from the
+# build", sending operators to reinstall a file that is present and intact.
+# 19 of the 29 sibling scripts in this directory already carry this import.
+from __future__ import annotations
+
 import argparse
 import hashlib
 import hmac
