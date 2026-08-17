@@ -170,6 +170,39 @@ except Exception as e:
 recorded_version = manifest.get("version", "")
 recorded_skills = manifest.get("skills", {})
 
+# >>> A4-HASHER-PARITY-BEGIN (INSTALLER-COMPLETENESS-V1)
+# The digests in the manifest are produced by scripts/skill-content-hash.sh,
+# whose exclusion list (__pycache__, OpenMontage/, node_modules/, working/,
+# model-map.json, persona-selection-log.md, .DS_Store, *.pyc, the two cross-skill
+# injected paths, …) has grown to ~130 lines. The inline re-implementation below
+# carried only four of those exclusions, so it reported digest_mismatch on
+# perfectly healthy boxes — cry-wolf that trains an operator to ignore the one
+# signal that detects a partial install. Prefer the canonical hasher whenever it
+# is on the box (the updater delivers it to ~/.openclaw/scripts/), so both sides
+# of the comparison are computed by the SAME code. The inline path below remains
+# only as a last-resort fallback.
+import subprocess as _sp
+canonical_digests = None
+for _cand in (os.path.expanduser("~/.openclaw/scripts/skill-content-hash.sh"),
+              "/data/.openclaw/scripts/skill-content-hash.sh",
+              os.path.expanduser("~/.openclaw/onboarding/scripts/skill-content-hash.sh")):
+    if not os.path.isfile(_cand):
+        continue
+    try:
+        _r = _sp.run(["bash", _cand, skills_dir], capture_output=True, text=True, timeout=600)
+        if _r.returncode == 0 and _r.stdout.strip():
+            canonical_digests = {}
+            for _line in _r.stdout.splitlines():
+                if "|" not in _line:
+                    continue
+                _n, _d = _line.split("|", 1)
+                if _n != "__TREE_SHA__":
+                    canonical_digests[_n] = _d.strip()
+            break
+    except Exception:
+        canonical_digests = None
+# <<< A4-HASHER-PARITY-END
+
 # Check SHA tool
 import subprocess
 sha_cmd = None
@@ -191,6 +224,11 @@ for skill_name, recorded_digest in recorded_skills.items():
     skill_dir = Path(skills_dir) / skill_name
     if not skill_dir.is_dir():
         drift.append(f"{skill_name}:missing")
+        continue
+
+    if canonical_digests is not None:
+        if canonical_digests.get(skill_name) != recorded_digest:
+            drift.append(f"{skill_name}:digest_mismatch")
         continue
 
     exclude_names = {".wired-", "skill-version.txt", ".onboarding-version",
@@ -223,6 +261,14 @@ for skill_name, recorded_digest in recorded_skills.items():
 
     if skill_digest != recorded_digest:
         drift.append(f"{skill_name}:digest_mismatch")
+
+# A SELECTIVE (--only) run writes content_verified="partial": the receipt covers
+# only the skills that run actually verified. Such a box must never be reported
+# as content-verified, even when every recorded digest still matches — the
+# recorded set is knowingly incomplete.
+_cv = manifest.get("content_verified", "true")
+if _cv != "true":
+    drift.append(f"__scope__:{manifest.get('verified_scope', _cv)}")
 
 if drift:
     print("drift:" + ",".join(drift))

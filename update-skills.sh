@@ -3817,16 +3817,124 @@ main() {
 
   # A2: Compute SOURCE manifest from the pulled tree BEFORE the copy loop.
   # This is what the destination must match after install (A3 gate).
+  #
+  # >>> A2-SOURCE-COVERAGE-ASSERTION-BEGIN (INSTALLER-COMPLETENESS-V1)
+  # WHY THIS EXISTS. Everything downstream — the A3 content-gate, the
+  # .onboarding-content-manifest.json receipt, and check-updates.sh's drift
+  # detector — trusts SRC_MANIFEST as "the complete truth about the release".
+  # Nothing verified that claim. Two silent-truncation paths existed:
+  #
+  #   (1) TRUNCATED MANIFEST. `SRC_MANIFEST=$(bash … 2>/dev/null || true)`
+  #       swallowed skill-content-hash.sh's exit code AND its stderr. That
+  #       script runs `set -euo pipefail`; if it aborted after emitting, say,
+  #       30 of 59 skill lines, SRC_MANIFEST held 30 lines, the `|| true`
+  #       reported success, A3 then verified only those 30, and the receipt
+  #       recorded only those 30 — while the copy loop had already installed
+  #       (or failed to install) all 59. Skills 31..59 were UNVERIFIED and the
+  #       run still exited 0 with a full-looking stamp.
+  #
+  #   (2) TRUNCATED SOURCE. A3 compares the box against the tree we just
+  #       pulled — not against a canonical expectation. A half-extracted zip
+  #       (the `ditto … || true` / `unzip … || true` fallback below swallows
+  #       extraction failure) yields a short source, a short SRC_MANIFEST, a
+  #       short install, and a PASSING A3, because truncated-vs-truncated
+  #       matches. The box is then stamped as current on a partial release.
+  #
+  # Both are closed here, BEFORE a single byte is copied: capture the real exit
+  # code, assert the manifest names EVERY non-archived numbered skill dir in the
+  # pulled tree, and refuse a source that has shrunk implausibly against what
+  # this box last verified. A failure is FATAL — nothing is copied, no stamp is
+  # written, and the box keeps whatever it already had.
   _CONTENT_HASH_SCRIPT="$EXTRACTED_DIR/scripts/skill-content-hash.sh"
   SRC_MANIFEST=""
+  _SRC_MANIFEST_RC=0
+  _SRC_MANIFEST_ERR="/tmp/openclaw-update-src-manifest.err"
   if [ -f "$_CONTENT_HASH_SCRIPT" ]; then
-    SRC_MANIFEST=$(bash "$_CONTENT_HASH_SCRIPT" "$EXTRACTED_DIR" 2>/dev/null || true)
+    # `if ! VAR="$(cmd)"` is the pipefail-correct capture shape used throughout
+    # this file (see the note at the D4[F] capture) — never `cmd; rc=$?`.
+    if ! SRC_MANIFEST="$(bash "$_CONTENT_HASH_SCRIPT" "$EXTRACTED_DIR" 2>"$_SRC_MANIFEST_ERR")"; then
+      _SRC_MANIFEST_RC=$?
+    fi
     printf '%s\n' "$SRC_MANIFEST" > /tmp/openclaw-update-src-manifest.txt
-    echo "  [A2] Source content manifest computed ($(echo "$SRC_MANIFEST" | wc -l | tr -d ' ') lines)"
+
+    # Enumerate what the pulled tree ACTUALLY ships, using the same selection
+    # rule as the copy loop below (numbered dirs, ARCHIVED excluded) and as
+    # skill-content-hash.sh (which globs '[0-9]*' and skips *ARCHIVED*). Any
+    # divergence between these two enumerations is the truncation signal.
+    _SRC_DIR_COUNT=0
+    _SRC_MISSING_FROM_MANIFEST=""
+    for _a2_dir in "$EXTRACTED_DIR"/[0-9]*/; do
+      [ -d "$_a2_dir" ] || continue
+      _a2_name="$(basename "$_a2_dir")"
+      case "$_a2_name" in *ARCHIVED*) continue ;; esac
+      _SRC_DIR_COUNT=$((_SRC_DIR_COUNT + 1))
+      if ! printf '%s\n' "$SRC_MANIFEST" | grep -q "^${_a2_name}|"; then
+        _SRC_MISSING_FROM_MANIFEST="${_SRC_MISSING_FROM_MANIFEST} ${_a2_name}"
+      fi
+    done
+
+    # SOURCE-SHRINK GUARD. Canonical does retire skills, so a box legitimately
+    # ends up with MORE installed dirs than the release ships (the copy loop is
+    # additive and never deletes) — a box-vs-source count comparison would
+    # false-fire fleet-wide. The self-calibrating signal is the box's OWN last
+    # receipt: how many skills the previous verified release carried. A normal
+    # retirement drops one or two; a truncated clone or half-extracted zip drops
+    # a large fraction. Refuse only on the disaster shape (>10% smaller), and
+    # leave an explicit operator override for a genuinely large planned
+    # retirement.
+    _SRC_PREV_COUNT=0
+    _A2_PREV_MANIFEST="$SKILLS_DIR/.onboarding-content-manifest.json"
+    if [ -f "$_A2_PREV_MANIFEST" ] && command -v python3 >/dev/null 2>&1; then
+      _SRC_PREV_COUNT="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    s=d.get('skills') or {}
+    print(len(s) if isinstance(s,dict) else 0)
+except Exception:
+    print(0)
+" "$_A2_PREV_MANIFEST" 2>/dev/null || echo 0)"
+      _SRC_PREV_COUNT="${_SRC_PREV_COUNT:-0}"
+    fi
+    _SRC_SHRANK=""
+    if [ "${_SRC_PREV_COUNT:-0}" -gt 0 ] 2>/dev/null \
+       && [ "$((_SRC_DIR_COUNT * 10))" -lt "$((_SRC_PREV_COUNT * 9))" ] 2>/dev/null; then
+      if [ "${OPENCLAW_ALLOW_SOURCE_SHRINK:-0}" = "1" ]; then
+        echo "  ⚠ [A2] source ships ${_SRC_DIR_COUNT} skills vs ${_SRC_PREV_COUNT} in this box's last receipt — accepted because OPENCLAW_ALLOW_SOURCE_SHRINK=1."
+      else
+        _SRC_SHRANK=1
+      fi
+    fi
+
+    if [ "$_SRC_MANIFEST_RC" -ne 0 ] || [ "$_SRC_DIR_COUNT" -eq 0 ] \
+       || [ -n "$_SRC_MISSING_FROM_MANIFEST" ] || [ -n "$_SRC_SHRANK" ]; then
+      echo ""
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      echo "  [A2] SOURCE-COVERAGE ASSERTION FAILED — nothing copied, stamp NOT written."
+      echo "  The pulled source tree cannot be trusted as a complete release, so"
+      echo "  installing from it would produce a PARTIAL box that A3 would still"
+      echo "  pass (A3 compares the box against this same source)."
+      echo "    source tree      : $EXTRACTED_DIR"
+      echo "    numbered skills  : $_SRC_DIR_COUNT (non-archived, on disk in source)"
+      echo "    manifest exit    : $_SRC_MANIFEST_RC"
+      [ "$_SRC_MANIFEST_RC" -ne 0 ] && [ -s "$_SRC_MANIFEST_ERR" ] && {
+        echo "    manifest stderr  :"; sed 's/^/      /' "$_SRC_MANIFEST_ERR" | head -20; }
+      [ "$_SRC_DIR_COUNT" -eq 0 ] && echo "    → the source tree contains NO numbered skill directories at all."
+      [ -n "$_SRC_MISSING_FROM_MANIFEST" ] && \
+        echo "    → present in source but ABSENT from the computed manifest:${_SRC_MISSING_FROM_MANIFEST}"
+      [ -n "$_SRC_SHRANK" ] && \
+        echo "    → source ships $_SRC_DIR_COUNT skills but this box's last receipt recorded $_SRC_PREV_COUNT (>10% shrink). If this release genuinely retires that many skills, re-run with OPENCLAW_ALLOW_SOURCE_SHRINK=1."
+      echo "  ACTION: re-run the updater (a fresh clone usually fixes a truncated pull)."
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+      exit 1
+    fi
+    echo "  [A2] Source content manifest computed ($(printf '%s\n' "$SRC_MANIFEST" | wc -l | tr -d ' ') lines) — covers all $_SRC_DIR_COUNT non-archived numbered skills in the pulled tree."
   else
     echo "  [A2] skill-content-hash.sh not found in source — content verification unavailable (non-fatal for this install)"
     SRC_MANIFEST=""
   fi
+  # <<< A2-SOURCE-COVERAGE-ASSERTION-END
 
 # ────────────────────────────────────────────────────────────────────────────
 # CONTENT COMPARISON — the sync signal. Version strings are NOT.
@@ -7523,17 +7631,67 @@ if isinstance(n, int) and n > 0:
   _SKILLS_JSON=""
   _TREE_SHA="unknown"
   _CONTENT_VERIFIED="true"
+  _VERIFIED_SCOPE="full"
   if [ -n "$SRC_MANIFEST" ]; then
-    # Build the per-skill JSON block from the A2/A3 source manifest.
+    # >>> MANIFEST-SCOPE-HONESTY-BEGIN (INSTALLER-COMPLETENESS-V1)
+    # THE RULE THIS ENFORCES: the receipt may only record a digest that was
+    # ACTUALLY COMPARED AGAINST THIS BOX during this run.
+    #
+    # THE DEFECT IT FIXES. This block built skills{} from SRC_MANIFEST — every
+    # skill the RELEASE ships — and hardcoded content_verified:"true", with no
+    # awareness of $ONLY_SKILLS. But a `--only` run installs only the named
+    # prefixes (copy loop, "--only filter") and A3 verifies only the named
+    # prefixes (content-gate, "U004: when --only is set, restrict A3 check").
+    # So a selective run emitted a receipt asserting a verified digest for every
+    # skill in the release, including skills that were never copied, never
+    # compared, and in the observed case NOT PRESENT ON THE BOX AT ALL — then
+    # wrote the version stamp. check-updates.sh (A4) reads exactly this file to
+    # detect drift, so the one detector that could have caught the partial box
+    # was handed a fabricated all-clear. A stale tree with a stale stamp is
+    # honest; a partial tree with a full receipt is not.
+    #
+    # Out-of-scope skills are NOT invented here. They are carried forward from
+    # the box's PREVIOUS receipt by the merge in the python block below, so they
+    # keep whatever digest was last genuinely verified — and a skill with no
+    # prior entry is simply absent, which A4 reports as needing an update rather
+    # than silently passing.
     while IFS='|' read -r _sn _sd; do
       [ -z "$_sn" ] && continue
       [[ "$_sn" == "__TREE_SHA__" ]] && continue
       case "$_sn" in *ARCHIVED*) continue ;; esac
+      if [ -n "$ONLY_SKILLS" ]; then
+        _MF_PREFIX=$(echo "$_sn" | cut -d'-' -f1)
+        _MF_IN_SCOPE="false"
+        _MF_OIFS=$IFS; IFS=','
+        for _mf_want in $ONLY_SKILLS; do
+          if [ "$_MF_PREFIX" = "$(echo "$_mf_want" | tr -d '[:space:]')" ]; then
+            _MF_IN_SCOPE="true"
+            break
+          fi
+        done
+        IFS=$_MF_OIFS
+        [ "$_MF_IN_SCOPE" = "true" ] || continue
+      fi
       [ -n "$_SKILLS_JSON" ] && _SKILLS_JSON="${_SKILLS_JSON},"
       _SKILLS_JSON="${_SKILLS_JSON}\"${_sn}\":\"${_sd}\""
     done <<< "$SRC_MANIFEST"
-    _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1 || true)
-    [ -z "$_TREE_SHA" ] && _TREE_SHA="unknown"
+    if [ -n "$ONLY_SKILLS" ]; then
+      # tree_sha is a rollup over the WHOLE source tree. On a selective run the
+      # box was never compared against the whole tree, so recording it as this
+      # box's tree_sha would be the same lie one level up.
+      _TREE_SHA="partial"
+      _CONTENT_VERIFIED="partial"
+      _VERIFIED_SCOPE="only:${ONLY_SKILLS}"
+      echo ""
+      echo "  ⚠ SELECTIVE RUN (--only ${ONLY_SKILLS}): this box is NOT certified complete."
+      echo "    The content receipt records digests ONLY for the skills verified this run;"
+      echo "    every other skill keeps whatever digest the box's previous receipt held."
+      echo "    content_verified=partial — check-updates.sh will report the rest as needing an update."
+    else
+      _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1 || true)
+      [ -z "$_TREE_SHA" ] && _TREE_SHA="unknown"
+    fi
+    # <<< MANIFEST-SCOPE-HONESTY-END
   else
     # Legacy path: skill-content-hash.sh was unavailable in source, so A3 was
     # skipped and there are no per-skill digests. Still emit a manifest so the
@@ -7544,15 +7702,42 @@ if isinstance(n, int) and n > 0:
   # Build + validate the manifest to a temp file. A build failure is FATAL:
   # the stamp is withheld so this box is never reported "current" without a manifest.
   if ! python3 -c "
-import json, sys
+import json, os, sys
+verified_this_run = {${_SKILLS_JSON}}
+# CARRY-FORWARD (INSTALLER-COMPLETENESS-V1): on a SELECTIVE run the map above
+# holds ONLY what was verified this run. Never drop the box's earlier receipt
+# for the rest -- those digests were genuinely verified by a previous run and
+# are what A4 needs to detect drift. This-run entries always win.
+#
+# A FULL run deliberately does NOT merge: it verified every skill the release
+# ships, so the prior map adds nothing except entries for skills canonical has
+# since RETIRED. Carrying those forever would (a) leave A4 chasing skills the
+# release no longer contains and (b) inflate the receipt's skill count, which
+# the A2 source-shrink guard uses as its baseline -- a baseline that only ever
+# grows would eventually false-fire on a healthy release. A full run therefore
+# rewrites the map outright.
+skills = {}
+if '${_VERIFIED_SCOPE:-full}' != 'full':
+    _prev_path = '${SKILLS_DIR}/.onboarding-content-manifest.json'
+    if os.path.isfile(_prev_path):
+        try:
+            _prev = json.load(open(_prev_path))
+            _prev_skills = _prev.get('skills') or {}
+            if isinstance(_prev_skills, dict):
+                skills.update(_prev_skills)
+        except Exception:
+            pass  # unreadable/corrupt prior receipt: this run's entries stand alone
+skills.update(verified_this_run)
 data = {
     'version': '${ONBOARDING_VERSION}',
     'src_git_sha': '${SRC_GIT_SHA:-unknown}',
     'src_from_zip': bool(${SRC_FROM_ZIP:-0}),
     'tree_sha': '${_TREE_SHA:-unknown}',
     'content_verified': '${_CONTENT_VERIFIED}',
+    'verified_scope': '${_VERIFIED_SCOPE:-full}',
+    'verified_this_run': sorted(verified_this_run.keys()),
     'installed_at': '${_NOW_ISO}',
-    'skills': {${_SKILLS_JSON}},
+    'skills': skills,
     'activation': {
         'deptAgents': '${_D5_DEPT_STATE:-skipped}',
         'deptAgentCount': ${_D5_AGENT_COUNT:-0},
