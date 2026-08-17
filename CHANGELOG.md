@@ -1,3 +1,33 @@
+## [v22.0.32] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the _chk_creativity archetype gate (gates-absence slice g1)
+
+`_chk_creativity`'s archetype-dominance half claimed its absence was "owned by
+`_chk_design_brief`", but that gate checks a DIFFERENT artifact
+(`working/research/design-brief-*.md`, a Deep-Research-Specialist INPUT) than
+the one `_chk_creativity` actually reads (`working/typography/design_system.json`,
+the Typography Architect's own primary output). No gate anywhere required
+`design_system.json` to exist, so a Typography Architect pass that wrote
+`type_layout_system.md` but never wrote `design_system.json` silently cleared
+the entire anti-template-sameness check, forever — absence read as approval.
+
+Fix uses the already-merged three-valued `CheckResult` (`presentation_job/
+result.py`): once `type_layout_system.md` exists, a still-missing
+`design_system.json` is `UNDETERMINED`, and on this completeness-style
+preflight gate `UNDETERMINED` behaves like FAIL rather than being silently
+dropped. Genuinely pre-typography runs still legitimately defer — verified by
+acceptance test. Full `test_preflight.py` suite: 75/76 pass (the 1 failure is
+pre-existing on origin/main, unrelated to this slice).
+
+## [v22.0.31] -- 2026-08-17 -- release: PRs #918-#922 (interview-completion path, identity/mandatory-field fixes, persona-selector timeout, installer-completeness hardening, podcast py3.9 state fix, skill23 changelog + durable jq resolution)
+
+Roll of the ten version markers to v22.0.31 covering five merged PRs since
+v22.0.30: #916 (skill23 interview-completion-path repair), #917 (skill23
+identity/mandatory-fields), #918 (skill23 v22.0.30 CHANGELOG backfill), #919
+(persona-selector timeout), #920 (installer-completeness-verification
+hardening), #921 (podcast-state Python 3.9 fix), #922 (skill23 durable jq
+resolution — build could not run on container boxes). Backfilled here because
+the original release roll did not carry a CHANGELOG entry (G2 gap discovered
+while landing v22.0.32).
+
 ## [v22.0.30] -- 2026-08-17 -- fix(qc): companyName/industry transcript fallback was dead code
 
 Follow-up to v22.0.29 (PR #917). v22.0.29 made the structural
