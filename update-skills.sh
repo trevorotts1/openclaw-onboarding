@@ -5099,6 +5099,86 @@ print(state + " " + str(len(headers)))
     [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! universal-sops content differences:${_OC_TREE_DIFFERS}" || true
   fi
 
+  # ----------------------------------------------------------
+  # A2.5: EARLY CONTENT-GATE — assert the copy landed, RIGHT HERE.
+  #
+  # This is an ORDERING fix, not a new kind of check. The authoritative A3 gate
+  # lives ~2000 lines below, immediately before the version stamp. Everything
+  # between here and there — QC, workforce provisioning, department floors,
+  # wiring, activation — can terminate the run first. When it does, the copy is
+  # NEVER verified, and the box is left silently truncated with no signal on any
+  # surface.
+  #
+  # Observed in the field: a run copied part of the tree, exited rc=3 on a QC
+  # department-floor failure, and never reached A3. That box then sat for days
+  # missing 17 skill directories and ~43% of one skill's files while every
+  # status surface reported healthy — because the one check that would have
+  # caught it never executed. The gate was sound; it just ran too late to run
+  # at all.
+  #
+  # So the copy is asserted HERE, the moment it finishes, while a failure is
+  # still attributable to the copy that caused it. A3 below is UNCHANGED and
+  # remains authoritative for the stamp; this is a fail-fast tripwire in front
+  # of it, deliberately duplicating that logic rather than moving it.
+  # ----------------------------------------------------------
+  if [ -n "$SRC_MANIFEST" ] && [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+    echo ""
+    echo "  [A2.5] Early content-gate: verifying the copy landed before continuing..."
+    _EARLY_DEST_MANIFEST=$(bash "$_CONTENT_HASH_SCRIPT" "$SKILLS_DIR" 2>/dev/null || true)
+    _EARLY_FAIL=0
+    _EARLY_DETAIL=""
+    if [ -z "$_EARLY_DEST_MANIFEST" ]; then
+      # Could not measure. That is NOT a pass and NOT a failure — defer to A3
+      # rather than inventing a verdict from a broken instrument.
+      echo "  [A2.5] destination manifest unavailable — no early verdict; deferring to the A3 gate" >&2
+    else
+      while IFS='|' read -r _e_skill _e_src; do
+        [ -z "$_e_skill" ] && continue
+        [ "$_e_skill" = "__TREE_SHA__" ] && continue
+        case "$_e_skill" in *ARCHIVED*) continue ;; esac
+
+        # Mirror A3's --only scoping so a deliberately narrow run is not failed
+        # by drift in a skill this run never intended to copy.
+        if [ -n "${ONLY_SKILLS:-}" ]; then
+          _e_prefix=$(echo "$_e_skill" | cut -d'-' -f1)
+          _e_want=0
+          _e_oifs=$IFS; IFS=','
+          for _e_o in $ONLY_SKILLS; do
+            [ "$_e_prefix" = "$(echo "$_e_o" | tr -d '[:space:]')" ] && _e_want=1
+          done
+          IFS=$_e_oifs
+          [ "$_e_want" -eq 1 ] || continue
+        fi
+
+        _e_dest=$(printf '%s\n' "$_EARLY_DEST_MANIFEST" | grep "^${_e_skill}|" | cut -d'|' -f2 | head -1)
+        if [ -z "$_e_dest" ]; then
+          _EARLY_DETAIL="${_EARLY_DETAIL}  ${_e_skill}: expected=${_e_src} found=<missing>\n"
+          _EARLY_FAIL=1
+        elif [ "$_e_dest" != "$_e_src" ]; then
+          _EARLY_DETAIL="${_EARLY_DETAIL}  ${_e_skill}: expected=${_e_src} found=${_e_dest}\n"
+          _EARLY_FAIL=1
+        fi
+      done <<< "$SRC_MANIFEST"
+    fi
+
+    if [ "$_EARLY_FAIL" -eq 1 ]; then
+      echo ""
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      echo "  A2.5 EARLY CONTENT-GATE FAILED — the copy did not land completely."
+      echo ""
+      echo "  Stopping HERE, at the copy site, rather than continuing into QC"
+      echo "  and risking an exit that never reaches the A3 verification below."
+      echo "  The following skills do not match the source tree:"
+      printf '%b' "$_EARLY_DETAIL"
+      echo "  No version stamp has been written."
+      echo "  Re-run this updater from a current checkout to retry the install."
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP" 2>/dev/null || true
+      exit 1
+    fi
+    echo "  [A2.5] Early content-gate PASSED — copy verified at the copy site."
+  fi
+
   # SK1-63 (fleet-installer wiring, update path): mirror the same runtime-dir
   # manifest placement install.sh's install_skill_47_movie_producer() does on
   # fresh installs. executive_producer.py's load_manifest() resolves the
