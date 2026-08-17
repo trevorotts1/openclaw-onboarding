@@ -1,5 +1,25 @@
 <!-- canonical-floor: 30 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
+`scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
+
+## v22.0.31 — durable jq resolution on container boxes
+
+- The container image does not ship `jq`, and a distro-installed `jq` vanishes on
+  container recreate. Under `set -euo pipefail` that aborts the affected script
+  with rc 127 — `resume-workforce-build.sh` exited with "jq not installed -
+  cannot parse state", so a client whose interview was COMPLETE could never have
+  their workforce built.
+- `~/.openclaw` is a persistent bind mount on container boxes, so a static jq at
+  `~/.openclaw/bin/jq` survives recreate. The seven jq-dependent production
+  scripts now prefer PATH's jq and fall back to that persistent copy
+  (`/data/.openclaw/bin` also probed for the VPS layout).
+- Chosen over hand-translating ~80 jq expressions in resume-workforce-build.sh:
+  prepending a PATH entry cannot change filter semantics, whereas a mistranslated
+  filter would break builds silently across the fleet.
+- Scripts patched: resume-workforce-build.sh, verify-zhc-standard.sh,
+  verify-library-gate.sh, send-presentation-dept-welcome.sh, verify-wiring.sh,
+  closeout-readiness-watchdog.sh, interview-nudge-cron.sh.
+
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
@@ -277,7 +297,6 @@ stale `28` framing went uncaught. Replaced the hand-typed forbidden list with
 from every retired state EXCEPT whichever matches the LIVE naming-map count,
 so the number that is correct today can never be forbidden today, and the
 next floor move only requires appending the state being retired.
-`scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 from 4 files to cover every doc/comment site that quotes a floor count, and
 `scripts/check-floor-count-drift.py` Check 3's `-department` (hyphen-
 required) regex and `ast.Constant`-only AST scan — which made `#` comments
