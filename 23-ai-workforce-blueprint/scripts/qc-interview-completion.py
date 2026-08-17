@@ -1147,8 +1147,23 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
     # exact same prompt-normalization + matching semantics as the Command Center's
     # structured-progress.ts, so this gate and the CC's own "answered" notion can
     # never drift apart.
+    # v22.0.29 FOLLOW-UP: match against the FULL canonical set (identity +
+    # branding + operations), not branding alone. `company_name` and `industry`
+    # are IDENTITY questions (IDENTITY_QUESTIONS_CANONICAL), NOT branding ones —
+    # branding-questions.json contains only the eight brand_* / customer_* ids.
+    # The structural companyName/industry checks below accept answered-transcript
+    # evidence, but that acceptance was DEAD CODE while this list was built from
+    # branding_questions alone: `"company_name" in transcript_answered_ids` could
+    # never be true, so a pure web-lane interview that genuinely answered both
+    # still hard-failed "Missing mandatory fields: companyName, industry" — the
+    # exact D3 symptom the structural fix was meant to remove.
+    _all_canonical = (
+        list(IDENTITY_QUESTIONS_CANONICAL)
+        + list(branding_questions)
+        + list(OPERATIONS_QUESTIONS_CANONICAL)
+    )
     transcript_answered_ids = compute_answered_ids(
-        parse_answer_blocks(transcript or ""), branding_questions
+        parse_answer_blocks(transcript or ""), _all_canonical
     )
 
     missing = []
