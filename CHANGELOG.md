@@ -1,3 +1,30 @@
+## [v22.0.38] -- 2026-08-17 -- fix(presentations): slice1 sp_intake test -- stale pre-migration fixture, not a code bug
+
+`test_slice1_gates.py::test_slice1_sp_intake_both_directions` started failing
+because `_pair_sp("intake")`'s "genuine" (must-PASS) fixture wrote
+`prove_sp_intake._valid_runtime_fixture()` -- a runtime record with no
+`turn_ledger_provenance` block. That shape is correctly rejected now: GK-23/D18's
+ratified migration window (`prove_sp_intake.GRACE_WINDOW_UNTIL = 2026-08-15`)
+grandfathers an unstamped record only through that date, and today is
+2026-08-17. The `build_deck.py` / `slice1_gate_verifiers.py` call site
+(`spi.evaluate(intake)`) calls the real, unpinned `date.today()` -- verified
+correct, not an off-by-one or timezone bug -- so a genuine post-window PASS
+fixture must carry the provenance stamp.
+
+Verified the real shape before touching anything: `deck-intake-driver.py`'s
+`build_turn_ledger_provenance()` (`23-ai-workforce-blueprint/scripts/`) writes
+`{"turns": [{"question_id", "turn", "asked_at", "validated_at"}, ...],
+"signature": <HMAC-SHA256>}`, byte-identical to what
+`prove_sp_intake._valid_turn_ledger_provenance()` / `_valid_runtime_fixture_paced()`
+already builds -- the same helper the prover module's own self-test uses for its
+"GK-23-fixtureA-driver-paced" must-PASS case. Swapped the fixture's genuine
+branch to `_valid_runtime_fixture_paced()`. One line changed; no assertion
+removed or relaxed -- the gate is unchanged and, if anything, now exercised by a
+more realistic fixture.
+
+`python3 -m pytest tests/ -q`: 723 passed, 1 skipped, 0 failed (was 722
+passed / 1 failed / 1 skipped on origin/main).
+
 ## [v22.0.37] -- 2026-08-17 -- fix(presentations): slice 5 -- close 4 delivery/bundle/postflight absence holes (gates-absence slice g5)
 
 Of the 7 `_chk_*` gates run_postflight_gate calls directly at closeout
