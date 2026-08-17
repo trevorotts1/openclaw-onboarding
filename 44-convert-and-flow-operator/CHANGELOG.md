@@ -1,5 +1,88 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.18] - 2026-08-17 — `workflows build`: idempotent folder/workflow creation, install/import fixes, quiet stderr
+
+### Fixed
+- **`CampaignBuilder.build()` had no pre-existence check.** Every call to `_build_locked()`
+  unconditionally POSTed a new workflow-folder (when `folder_id` wasn't passed) and unconditionally
+  POSTed a new workflow per campaign entry. A repeated build against the same location therefore
+  created duplicates every run — a repeated build in one morning produced duplicate workflows and
+  7 duplicate folders. `build()` now fetches the location's existing workflow/folder listing ONCE
+  per call (not once per workflow), before any create POST fires:
+  - **Folder collision → derive, and say so when you can't.** Folder de-duplication BY NAME turned
+    out to be impossible, so the first attempt at this could not have worked. Captured live:
+    `GET /workflow/{loc}` returns a bare list of *workflow* items only — never an item with
+    `type == "directory"`, even when folders provably exist (their ids appear as the workflows'
+    `parentId`). The public `GET /workflows/?locationId=` is worse: no `type`, no `parentId`.
+    Neither transport exposes a folder listing. So the builder derives instead — if any workflow
+    from the plan already exists, its `parentId` becomes the folder, which is what actually stops
+    a re-run creating another folder. Where nothing exists to derive from, the folder is created
+    (the only option) and an explicit caveat lands in the new `stats["notes"]` saying uniqueness
+    could NOT be confirmed. Notes render in `format_summary()` and `--json`; non-fatal by design,
+    never silent. Pass `folder_id` explicitly when you need a guarantee.
+  - **Workflow-name collision → refuse, don't reuse.** Reusing an existing *workflow*'s id would
+    run the tag/trigger/step-save/sync writes against content the build did not create and cannot
+    prove is safe to overwrite (a human may have hand-edited it since). The collision is instead
+    recorded in `stats["errors"]` and that workflow is skipped — surfacing a clear, actionable
+    error (existing id + what to do about it) beats a silent duplicate or a silent unwanted edit.
+  - **Listing fetch failure → abort, don't guess.** If the pre-check itself can't be read (missing,
+    transport error, or an unrecognized response shape), the build aborts with a clear error rather
+    than proceeding blind — the same failure mode this fix exists to close.
+  - New `_index_existing()` parses the listing defensively (bare list, or a dict wrapping the list
+    under `workflows`/`folders`/`data`/`items`); an unrecognized shape returns `None` (fail loud)
+    rather than being treated as "nothing exists". The live shape HAS now been captured against a
+    production backend: a bare list whose items carry `id`, `_id`, `name`, `type` (`"workflow"`)
+    and `parentId`. The dict-wrapped branches stay as tolerance for other deployments. It returns
+    a third map — workflow name → `parentId` — which is what makes folder derivation possible.
+  - Two tests added against the production listing shape (derivation reuses the parent; an
+    underivable folder records the caveat), both proven non-vacuous by disabling the fix and
+    confirming they fail.
+- **`pip install -e .` was broken two independent ways**, so the package could never actually be
+  installed correctly — this is the root cause behind agents concluding the CLI itself was broken:
+  - `setup.py`'s `find_namespace_packages(include=["cli_anything.*"])` matches SUB-packages only;
+    the top-level `cli_anything` package never matched, so `import cli_anything` failed even after
+    an install that reported success. Fixed to `include=["cli_anything", "cli_anything.*"]` and
+    given `cli_anything` a real `__init__.py` (see next item). Verified live: a fresh editable
+    install now actually exposes the top-level package.
+  - `setup.py` declared `python_requires=">=3.10"` (and `install.sh` hard-asserted the same) while
+    the shipped venv is stock-macOS `python3` (3.9.6) — every install was refused outright before
+    it could even try. Nothing in this package needs 3.10+ (checked: no `match`/`case`, no
+    `itertools.pairwise`; type hints rely on `from __future__ import annotations`, which is
+    3.9-safe), so both were lowered to `>=3.9`/`>= (3, 9)`. Verified live: `pip install -e .`,
+    `import cli_anything`, and a full CLI invocation all succeed on the actual 3.9.6 interpreter.
+- **The `caf`/`convertandflow`/`ghl` wrappers never put their own engine directory on
+  `PYTHONPATH`.** When no venv exists yet (install never ran, or ran and failed) the wrapper falls
+  back to bare `python3`, which has no way to find `cli_anything` at all — `ModuleNotFoundError`
+  from a clean shell. The wrappers now `export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"`
+  (prepend, never overwrite) before exec'ing the interpreter, so the CLI runs straight from source
+  even with no install. Belt-and-braces alongside the install fix above, not a replacement for it.
+- **Stderr noise on every invocation.** venvs pairing Python 3.9 with LibreSSL (stock macOS
+  `python3`) make urllib3 v2 emit `NotOpenSSLWarning` on import, stacking with the `[caf] Allowed
+  write locations set to...` notice so a healthy run never has empty stderr — a contributing cause
+  of agents rebuilding blind on the mistaken belief that non-empty stderr meant failure. Suppressing
+  this via the wrapper's `PYTHONWARNINGS` env var naming the third-party category doesn't work —
+  CPython parses that env var at interpreter bootstrap, before site-packages is importable, so it
+  can't resolve `urllib3.exceptions` and the warning fires anyway (`Invalid -W option ignored`,
+  verified live). Fixed instead with a `warnings.filterwarnings(..., module=r"^urllib3(\.|$)")`
+  call as the first statement of the new `cli_anything/__init__.py` — registered before urllib3 is
+  ever imported anywhere in the CLI's import chain, and scoped to urllib3's own warnings only (not
+  a blanket mute of every warning the package or its dependencies might raise).
+- **`SKILL.md`** gained a binding Step 0.7 pre-build existence check (`caf workflows list` before
+  `workflows build`) and an explicit instruction to treat the CLI exit code as authoritative —
+  never re-run a build solely because stderr was non-empty.
+
+### Also
+- One test (`test_ecosystem_cli.py::test_foreign_location_create_refused`) accessed
+  `click.testing.Result.stderr` unconditionally. click <8.2 (the newest release that still supports
+  Python 3.9) raises on that access unless the runner is built with `mix_stderr=False`; click ≥8.2
+  always allows it. This was invisible before, since `pip install -e .` couldn't even complete on
+  3.9 to run the suite there at all — now that it can, the test tolerates both click versions.
+
+### Unchanged
+- `link_steps()` and `_emit_build_result()` were already correct — not touched by this fix.
+
+---
+
 ## [1.3.16] - 2026-08-03 — REVERT: `2023-02-21` on `POST /users/` was correct all along
 
 ### Reverted

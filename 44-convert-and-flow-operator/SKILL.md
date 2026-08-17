@@ -29,6 +29,28 @@ DEPENDENCY PRE-CHECK → OUTLINE → CHECKLIST (instantiate references/workflow-
 IMPROVEMENTS → PRESENT + GATING QUESTIONS (publish: DRAFT vs LIVE? / re-entry: once vs
 allow-multiple?). Rushing to a default build is NOT the best outcome and is a VIOLATION.
 
+**Step 0.7 — PRE-BUILD EXISTENCE CHECK (before any `caf workflows build`):** BINDING GATE —
+run `caf workflows list` and confirm the target folder/workflow names are not already present
+before building. The engine now checks workflows too (an existing workflow name is refused into
+`errors` rather than duplicated or silently modified) — this step is the human-in-loop backstop
+for catching a bad/reused name choice early, not permission to skip the engine's own check.
+
+⚠️ **FOLDERS ARE YOUR JOB, NOT THE ENGINE'S.** Neither the internal nor the public API exposes a
+folder listing — `GET /workflow/{loc}` returns workflow items only, and the public
+`GET /workflows/?locationId=` omits `type` and `parentId` entirely. So the engine CANNOT
+de-duplicate folders by name. It does the one thing it can: if a workflow from your plan already
+exists, it reuses that workflow's `parentId` so a re-run drops into the SAME folder instead of
+creating another. When nothing exists to derive from, it creates the folder and records an
+explicit note in `stats["notes"]` saying it could not prove uniqueness. **Read the notes.** If you
+are rebuilding into a folder that may already exist, check the GHL UI and pass `--folder-id`
+explicitly rather than trusting a name. Duplicate folders are the one failure mode this fix
+cannot close for you. **Treat the CLI EXIT CODE as authoritative, never
+stderr.** A healthy run prints an SSL/urllib3 version notice and the `[caf] Allowed write
+locations set to...` line on EVERY invocation — non-empty stderr on exit 0 is NORMAL, not a
+failure signal. NEVER re-run a build solely because stderr was non-empty. If genuinely
+uncertain whether the last build succeeded, verify with `caf workflows list` (or
+`workflows export`) before rebuilding — never rebuild blind.
+
 **Step 9 — QC GATE (before declaring done):** BINDING GATE — the build agent MUST NOT say
 "done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
 checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent
