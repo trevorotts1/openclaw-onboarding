@@ -8362,7 +8362,47 @@ def _chk_priority_shift(run_dir: Path, slides_path: Optional[Path] = None) -> st
     """AF-NO-SHIFT (P33/P105) — the priority-shift SPINE gate. The deck must carry a
     real priority_shift_spec.json (true_goal + a named priority_stack[]) AND plant the
     eight build-move beat tags monotonically in slides_copy.md so the arc actually
-    engineers the re-rank. Defers when the doctrine is not active."""
+    engineers the re-rank. Defers when the doctrine is not active.
+
+    Root Cause 2 fix: the no-regression master switch (_doctrine_active) is a
+    plain bool, and _read_priority_spec() returns the SAME None for "genuinely
+    absent" (a legitimate legacy/pre-P0B defer) and "present but unparseable /
+    not an object" (Phase P0B-PRIORITY ran and wrote something broken). Before
+    this fix a corrupted spec was therefore indistinguishable from "the phase
+    never touched this deck" and silently PASSED — not just here, but for
+    every other _doctrine_active()-gated gate in this file (_chk_mode,
+    _chk_priority_stack, _chk_rerank, _chk_trigger, _chk_proclamation_hedge,
+    _chk_peak_end, _chk_salience_apex, _chk_persuasion_beats,
+    _chk_priority_shift_ledger all short-circuit on the same bool before doing
+    anything else). No other PREFLIGHT_REQUIRED gate reads
+    priority_shift_spec.json's raw parse state — check_phase_preconditions'
+    P0B-PRIORITY binding (run_preflight) only proves the phase was ATTESTED,
+    not that the artifact it was supposed to write is valid. This function —
+    the doctrine's own SPINE gate, whose job is already "prove the spec is
+    real" — is the correct, single owner: once the file exists at any
+    candidate path, a parse failure is UNDETERMINED (CheckResult doctrine,
+    presentation_job/result.py), and on this completeness-style preflight gate
+    UNDETERMINED behaves like FAIL, never a silent defer to the pre-doctrine
+    PASS every other doctrine gate would otherwise still take. A run_preflight
+    failure here blocks the WHOLE run (all-problems-collected, exit 3), so
+    fixing the one owning gate closes the hole for all ten."""
+    spec_parse_result = CheckResult.PASS
+    for _rel in (PRIORITY_SPEC_REL, "priority_shift_spec.json",
+                 "working/priority_shift_spec.json"):
+        _p = run_dir / _rel
+        if _p.exists():
+            _obj = _read_json(_p)
+            if not (isinstance(_obj, dict) and "__parse_error__" not in _obj):
+                spec_parse_result = CheckResult.UNDETERMINED
+            break
+    if not spec_parse_result.ok:
+        return ("AF-NO-SHIFT: priority_shift_spec.json exists but is not valid JSON / "
+                "not a JSON object. Phase P0B-PRIORITY produced something, but a broken "
+                "spec is NOT the same as 'the phase never ran' — every doctrine gate in "
+                "this file would otherwise silently treat it that way and PASS. "
+                "UNDETERMINED, not clean (CheckResult doctrine, presentation_job/"
+                "result.py): re-run Phase P0B-PRIORITY so it writes a valid spec, or fix "
+                "the file by hand (SOP-NORTHSTAR-00 / SOP-PRIORITY-02).")
     if not _doctrine_active(run_dir):
         return ""
     spec = _read_priority_spec(run_dir) or {}
