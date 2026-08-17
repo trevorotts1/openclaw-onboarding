@@ -7445,6 +7445,27 @@ def _import_slide_geometry():
     return None
 
 
+def _slide_geometry_undetermined(af_code: str) -> str:
+    """CheckResult.UNDETERMINED, applied: slide_geometry.py SHIPS BESIDE build_deck.py
+    (it is not an optional external plugin — verified present in every checkout), so a
+    failed import means the module is missing/corrupted/broken, never that "there is
+    nothing to check yet". The three callers below used to `return ""` on this exact
+    condition — an import failure read as a clean deck. These are deck-quality/
+    completeness gates (the same class result.py assigns to gates.py's
+    _canonical_prompt_dir_problems), so UNDETERMINED lands on the FAIL side: refuse to
+    call a deck clean when the checker that would have proven it never ran. Returns the
+    fatal message string (never ""), so a broken slide_geometry.py can no longer pass
+    silently through run_postflight_gate's WARN-by-default loop (which only prints/
+    blocks on a truthy return) NOR disappear from the picture once
+    SLIDE_GEOMETRY_ENFORCE_ENV=1 promotes these to hard failures."""
+    assert CheckResult.UNDETERMINED.ok is False  # doctrine check, not a defer
+    return (f"{af_code}: UNDETERMINED — slide_geometry.py (ships beside build_deck.py) "
+            "could not be imported, so this check never actually ran. A checker that "
+            "cannot run is not a clean deck; restore/fix slide_geometry.py and re-run. "
+            "This is refused, not deferred, even under the default WARN-only slide-"
+            "geometry policy.")
+
+
 def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-TEXT-OVERFLOW wrapper — the geometry lives in slide_geometry.py; this is the
     build_deck-side symbol the manifest's py_symbol lockstep resolves against. Passes
@@ -7452,7 +7473,7 @@ def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     slide_geometry.py's enforced margin can never silently diverge."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""    # module absent -> defer, exactly as _import_prompt_gate callers do
+        return _slide_geometry_undetermined("AF-TEXT-OVERFLOW")
     return sg.check_text_fits(
         run_dir, slides_path, edge_margin_frac=SLIDE_GEOMETRY_EDGE_MARGIN_FRAC)
 
@@ -7461,7 +7482,7 @@ def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-SPELLING wrapper."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""
+        return _slide_geometry_undetermined("AF-SPELLING")
     return sg.check_spelling(run_dir, slides_path)
 
 
@@ -7471,7 +7492,7 @@ def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     declared floor are the same number by construction."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""
+        return _slide_geometry_undetermined("AF-TYPE-SIZE-MEASURED")
     dark = _read_dark_optin(run_dir)
     return sg.check_type_size(
         run_dir, slides_path,
