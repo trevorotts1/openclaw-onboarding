@@ -333,8 +333,16 @@ def _pair_sp(prover_kind):
             write_fixture(rd, "working/copy/sp_intake.json", f)
         def genuine(rd):
             _signature_intake(rd)
+            # GK-23/D18: the bare fixture (no turn_ledger_provenance) is only
+            # grandfathered through prove_sp_intake.GRACE_WINDOW_UNTIL
+            # (2026-08-15); a genuine post-window PASS fixture must carry the
+            # real driver-paced provenance stamp -- the SAME helper the
+            # prover module's own self-test uses for its
+            # "GK-23-fixtureA-driver-paced" must-PASS case, built to mirror
+            # exactly what deck-intake-driver.py's build_turn_ledger_provenance()
+            # writes (per-question turn id + asked_at/validated_at, HMAC-signed).
             write_fixture(rd, "working/copy/sp_intake.json",
-                          spi._valid_runtime_fixture())
+                          spi._valid_runtime_fixture_paced())
     elif prover_kind == "structure":
         def fabricate(rd):
             _signature_intake(rd)
