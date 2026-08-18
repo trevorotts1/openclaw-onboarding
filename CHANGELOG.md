@@ -1,3 +1,44 @@
+## [v22.0.44] -- 2026-08-18 -- fix(privacy): client-name gate could not detect the class it exists for
+
+`scripts/qc-assert-no-client-names.sh` keeps real client identities out of this
+fleet-wide repo. It only matched a roster entry as the literal "First Last" string --
+both words, one space, together. Every other form walked past it.
+
+Proven, not asserted: the OLD gate exits 0 on a fixture containing a first-name-only
+prose line and a `<name>.zerohumanworkforce.com` hostname line. The NEW gate exits 1 and
+catches both. Run against main as it stood, the new gate reports 25 client-name hits the
+old one reported as clean.
+
+DETECTION ADDED (via new scripts/qc-expand-roster-name-forms.py, which derives forms per
+roster entry and emits only tagged patterns -- never a name -- across the pipe):
+- dash-joined, underscore-joined and fused compounds (a bare \b does not match across an
+  underscore or a fused join, though it does across '.' and '-')
+- hostname-corroborated `<name>.zerohumanworkforce.com` / `<name>.myvps`
+- backup-filename-corroborated `bak-<name>` / `<name>-bak`
+- standalone first/last name, case-sensitive only, dictionary-filtered
+
+FALSE-POSITIVE CONTROL (a gate that cries wolf gets disabled, which is worse than a leaky
+one):
+- case-insensitive standalone matching produced 400+ false hits across ~150 files;
+  case-sensitive-only dropped every sampled candidate to 0 with no measured recall loss
+- one token still matched 108 files ambiently against a <=7-file ceiling for every real
+  candidate -- a 2-order-of-magnitude gap. Added a per-token ambient-frequency check:
+  >10 files demotes to an advisory stderr note (count only), never a silent drop
+- genuine collisions with published authors, a targeting keyword, and the operator's own
+  team resolved by 2 directory-level and 10 file-level self-exclusions, each documented
+  inline -- content edits were not appropriate there
+
+SWEEP: 6,698 tracked files, ~6s. 52 hit-lines across 36 files reviewed by hand.
+25 hit-lines in 11 files were genuine leaks and were fixed to the conventions established
+in 03276e73 (name -> "a client", box alias -> `rescue-<client>`, hostname ->
+`<client>.zerohumanworkforce.com`, backup suffix -> `-client-`, pronouns -> they/them).
+The largest single cluster was the root CHANGELOG, including one line naming six client
+box aliases at once. 27 were the false positives above.
+
+Also fixed a real perf cliff found while measuring: macOS system grep took ~20s for a
+30-alternative case-insensitive scan of ~7,000 files; GNU grep does it in ~1.3s. The gate
+now prefers ggrep when present and falls back silently -- identical matches either way.
+
 ## [v22.0.43] -- 2026-08-18 -- fix(presentations): dead exclusion, fabricated deck-type fallback, missing verifier, 6-source threshold split-brain
 
 Four defects, all the same shape: a check that reports success without checking.
