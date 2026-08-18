@@ -213,6 +213,19 @@ def _build_snapshot(run_dir: Path) -> dict:
 
     spec_p = _first_existing(rd, _SPEC_RELS)
     snap["priority_spec"] = _read_json(spec_p) if spec_p else None
+    # RECONCILIATION FIX (trust-recon): _read_json collapses "unparseable" into
+    # None just like "absent" (see its own docstring, "unparseable == absent
+    # for the rubric") -- the EXACT Root-Cause-2 ambiguity build_deck.
+    # _chk_priority_shift was hand-patched to close (gates-absence g4, PR
+    # #926). Without this flag v_priority_shift below would read a CORRUPT
+    # priority_shift_spec.json the same as a MISSING one and silently defer
+    # (PASS) on a file that Phase P0B-PRIORITY demonstrably wrote but wrote
+    # broken -- reopening, in the structural mechanism, the exact hole the
+    # legacy hand-patch already closed. spec_p is not None here means the
+    # file EXISTS; priority_spec is None means _read_json's except branch
+    # fired (JSONDecodeError / not a dict) -- present-but-unparseable, never
+    # "genuinely absent".
+    snap["priority_spec_unparseable"] = spec_p is not None and snap["priority_spec"] is None
 
     copy_p = _first_existing(rd, _COPY_RELS)
     snap["slides_copy_lc"] = copy_p.read_text(errors="replace").lower() if copy_p else None
@@ -339,7 +352,27 @@ def _slice_verifier(gate: str, artifacts: Tuple[str, ...],
         # and passes a no-signal deck; P-SP-INTAKE-TRACE fails an absent
         # transcript). had_input is therefore always True here: the verdict owns
         # the outcome, exactly as the legacy _chk_* functions did.
-        snapshot_fact = Fact.known("slice1 gate snapshot", snap)
+        # RECONCILIATION FIX (trust-recon): Fact.known's signature is
+        # known(payload, detail="") -- see presentation_job/runfacts.py and
+        # every OTHER call site in this codebase (e.g. runfacts.py:350,511,
+        # 518,1018,1041,1076,1100,1102,1104,1171,1206,1238, all
+        # `Fact.known(payload, detail=...)`). This call had the two
+        # arguments SWAPPED: `snap` (the dict every v_* verdict function
+        # reads) landed in the STR-typed `detail` slot, and the literal
+        # string "slice1 gate snapshot" landed in `.value`. `_snap()` below
+        # gates on `isinstance(facts.snapshot.value, dict)`, which a string
+        # payload always fails, so `_snap()` silently returned {} for EVERY
+        # slice-1 verdict function, on every run, no matter what was on
+        # disk -- collapsing genuinely-present, malformed, AND genuinely-
+        # absent inputs into the exact same "{}.get(x) is None -> defer"
+        # branch every v_* function starts with. Invisible in report-only
+        # mode (run_verifier() returns the shadow-compared LEGACY verdict
+        # unless PRES_TRUST_BOUNDARY_ENFORCE=1), which is how 685 tests
+        # passed around it: both_directions()/run_gate() assert on
+        # run_verifier()'s LEGACY-backed return, never on the raw verdict
+        # fn. The moment enforce mode goes live, all 18 slice-1 "highest-
+        # risk" gates would have silently PASSED every run, unconditionally.
+        snapshot_fact = Fact.known(snap, detail="slice1 gate snapshot")
         slice_facts = SliceFacts(
             run_dir=facts.run_dir,
             sealed_at=facts.sealed_at,
@@ -464,8 +497,23 @@ def v_mode(facts: SliceFacts) -> Tuple[Verdict, str]:
 
 def v_priority_shift(facts: SliceFacts) -> Tuple[Verdict, str]:
     """AF-NO-SHIFT — the priority-shift SPINE gate: spec true_goal + named
-    priority_stack[] + >=5/8 build-move tags monotonic in slides_copy.md."""
+    priority_stack[] + >=5/8 build-move tags monotonic in slides_copy.md.
+
+    RECONCILIATION FIX (trust-recon): matches build_deck._chk_priority_shift's
+    own hand-patch (gates-absence g4, PR #926) — a priority_shift_spec.json
+    that EXISTS but fails to parse is NOT the same as the doctrine never
+    having engaged, and must not silently defer to PASS (see
+    _build_snapshot's priority_spec_unparseable comment)."""
     snap = _snap(facts)
+    if snap.get("priority_spec_unparseable"):
+        return Verdict.FAIL, (
+            "AF-NO-SHIFT: priority_shift_spec.json exists but is not valid JSON / "
+            "not a JSON object. Phase P0B-PRIORITY produced something, but a broken "
+            "spec is NOT the same as 'the phase never ran' -- silently deferring here "
+            "would reopen the hole build_deck._chk_priority_shift's own hand-patch "
+            "(gates-absence g4, PR #926) already closed. Re-run Phase P0B-PRIORITY so "
+            "it writes a valid spec, or fix the file by hand (SOP-NORTHSTAR-00 / "
+            "SOP-PRIORITY-02).")
     if snap.get("priority_spec") is None:
         return Verdict.PASS, ""  # doctrine inactive — defer.
     spec = snap["priority_spec"] or {}
