@@ -22,3 +22,4 @@ v11.16.0  # historical: cut from a branch commit that never landed on main
 v11.20.0  # historical: release bump lost to a rebase collision
 v14.1.1   # historical: cut from a branch commit that never landed on main
 v14.1.2   # historical: cut from a branch commit that never landed on main
+v22.0.5   # historical: Wave-2 batch tag cut 2026-08-10 from branch commit aa46ba4c, which never landed; the same WI-06/WI-09/WI-10 content shipped on main under v22.0.6 (75bd7a06), so no commit truthfully carries v22.0.5
