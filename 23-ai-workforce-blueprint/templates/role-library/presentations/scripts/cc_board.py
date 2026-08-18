@@ -646,10 +646,14 @@ def ingest_deck_task(
             f"task {'deduped (reused)' if deduped else 'created'}: "
             f"task_id={task_id} deck_slug={deck_slug}"
         )
-        # T2 gate teeth: the receipt carries the offline-verifiable proof
-        # (registration_proof HMAC over cc_task_id|idempotency_key) so
-        # build_deck._chk_cc_registered can prove this id came from a REAL
-        # round-trip, not a hand-written manifest.
+        # T2 gate teeth (fakehmac fix, 2026-08-18): the receipt carries a
+        # same-file consistency tag (registration_linkage_tag — sha256 over
+        # cc_task_id|idempotency_key, NOT a cryptographic proof/signature; no
+        # secret is available offline for this to be a real MAC) so
+        # build_deck._chk_cc_registered can spot an internally-inconsistent
+        # manifest. A match is a hint only, never authorization — anyone with
+        # this source can compute a matching tag without ever calling this
+        # function, so it cannot prove a real round-trip happened.
         stamp_task_id(run_dir, task_id, idempotency_key=idempotency_key,
                       deck_slug=deck_slug)
 
@@ -1089,35 +1093,57 @@ def _read_certificate_sha(run_dir) -> Optional[str]:
 # AF-CC-UNREGISTERED check passes (degrade-to-ungrouped is logged, not
 # silent). Mirrors Skill-48's stamp_campaign_id pattern at cc_board.py:370-401.
 # ---------------------------------------------------------------------------
-def registration_proof(task_id: str, idempotency_key: str, deck_slug: str) -> Optional[dict]:
-    """Build the offline VERIFIABLE registration receipt the T2 gate
-    (build_deck._chk_cc_registered) can prove WITHOUT any live Command Center
-    call: a deterministic HMAC-SHA256 over ``cc_task_id + "|" + idempotency_key``.
+def registration_linkage_tag(task_id: str, idempotency_key: str, deck_slug: str) -> Optional[dict]:
+    """Build a same-file CONSISTENCY TAG for the closeout gate
+    (build_deck._chk_cc_registered) to spot-check offline. This is NOT a
+    cryptographic proof and NOT a signature, despite this function's former
+    name (``registration_proof``) and former field name (``hmac``) claiming
+    otherwise — renamed 2026-08-18 (fakehmac fix) because that naming
+    overclaimed a security property this value cannot provide.
 
-    WHY HMAC: ``cc_task_id`` alone is forgeable — any hand-edited manifest can
-    carry an arbitrary string. ``idempotency_key`` is sha256(source_ref+title),
-    so it is NOT derivable from the task id and CANNOT be forged by someone who
-    only saw the id (a card created for a different deck carries a different
-    key). The gate recomputes the HMAC over the exact same canonical string and
-    compares bytes — a manifest whose cc_task_id was stamped by a REAL
-    cc_board.ingest_deck_task round-trip passes; a hand-written or stale
-    manifest fails as UNVERIFIED (never as verified).
+    WHAT THIS IS: ``sha256(cc_task_id + "|" + idempotency_key)``, stored in
+    the SAME process_manifest.json as the ``cc_task_id`` and
+    ``idempotency_key`` it was computed from. It is deterministic and it
+    catches ACCIDENTAL inconsistency: a ``cc_task_id`` string copied into a
+    manifest without its matching ``idempotency_key``/``deck_slug``, a
+    partially-applied hand-edit, or truncated/corrupted field writes.
 
-    Deterministic (no timestamp, no secret) so the offline gate is hermetic:
-    same inputs -> same digest, forever, with zero env or network dependency.
-    None when any input is empty (a malformed receipt is unverifiable)."""
+    WHAT THIS IS NOT: a genuine MAC needs a key the verifier can check but a
+    forger cannot produce — i.e. an actual SECRET. This construction has no
+    secret. The previous implementation additionally used the fully
+    attacker-computable ``canonical`` string as the HMAC *key* over an EMPTY
+    message, which is not a meaningful use of HMAC at all. ``idempotency_key``
+    is ``sha256(source_ref + title)`` — derived from data the manifest's
+    author already knows, not a server-issued token — and this function
+    itself ships in the repo (it is not secret). Anyone who can write
+    process_manifest.json can read this code and compute a matching tag for
+    ANY task_id/idempotency_key/deck_slug triple of their own choosing,
+    without ever calling cc_board.ingest_deck_task or touching the network.
+
+    A MATCH therefore proves only that these three fields are internally
+    consistent with each other IN THIS FILE. It is NOT evidence that a live
+    Command Center round-trip occurred. No caller may treat a match as
+    authorization or as cryptographic proof of anything — it is a hint /
+    staleness-and-typo guard only. No env-provided secret is available to
+    the offline gate that reads this (by design: zero network/env
+    dependency), so a real MAC is not achievable in this code path; see this
+    module's WEBHOOK_SECRET-signed outbound requests for what an actual
+    keyed signature looks like when a real secret IS available.
+
+    None when any input is empty (a malformed receipt proves nothing at
+    all, not even self-consistency)."""
     tid = (task_id or "").strip()
     key = (idempotency_key or "").strip()
     slug = (deck_slug or "").strip()
     if not tid or not key or not slug:
         return None
     canonical = f"{tid}|{key}"
-    digest = hmac.new(canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
+    tag = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return {
         "task_id": tid,
         "idempotency_key": key,
         "deck_slug": slug,
-        "hmac": digest,
+        "tag": tag,
     }
 
 
@@ -1127,19 +1153,22 @@ def stamp_task_id(run_dir, task_id: str, idempotency_key: str = "",
     fields. Atomic replace. Returns True on success. Never raises.
 
     When idempotency_key is supplied (the ingest round-trip path), ALSO stamps
-    ``cc_registration`` — the offline-verifiable proof object (registration_proof)
-    — so build_deck._chk_cc_registered can distinguish a REAL registration
-    round-trip (VERIFIED) from a bare task_id with no proof (UNVERIFIED). The
-    plain cc_task_id merge remains for backward compatibility: callers that
-    only have an id (e.g. a runner re-stamping a recovered id) still write the
-    id without a proof, and the gate treats that as UNVERIFIED, never as
-    verified."""
+    ``cc_registration`` — a same-file consistency tag (registration_linkage_tag;
+    NOT a cryptographic proof — see its docstring) — so
+    build_deck._chk_cc_registered can distinguish a task_id whose accompanying
+    fields are internally consistent from a bare task_id with no tag at all.
+    Neither state is a security guarantee: a consistent tag is trivially
+    reproducible by anyone with the source, so treat it strictly as a hint,
+    never as authorization. The plain cc_task_id merge remains for backward
+    compatibility: callers that only have an id (e.g. a runner re-stamping a
+    recovered id) still write the id without a tag, and the gate treats that
+    as UNVERIFIED, never as verified."""
     if not task_id or run_dir is None:
         return False
     updates: dict = {"cc_task_id": task_id}
-    proof = registration_proof(task_id, idempotency_key, deck_slug)
-    if proof is not None:
-        updates["cc_registration"] = proof
+    linkage = registration_linkage_tag(task_id, idempotency_key, deck_slug)
+    if linkage is not None:
+        updates["cc_registration"] = linkage
     ok = _merge_manifest(run_dir, updates)
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")

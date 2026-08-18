@@ -10455,25 +10455,36 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
-def _cc_registration_verified(manifest: dict) -> bool:
-    """T2 gate teeth: prove a cc_task_id in process_manifest.json was produced
-    by a REAL cc_board.ingest_deck_task round-trip, entirely offline.
+def _cc_registration_linkage_matches(manifest: dict) -> bool:
+    """T2 gate teeth (fakehmac fix, 2026-08-18 — renamed from
+    ``_cc_registration_verified``): check whether a cc_task_id in
+    process_manifest.json is internally CONSISTENT with its own
+    cc_registration tag, entirely offline.
 
-    The receipt cc_board.stamp_task_id writes on a successful ingest is
-    ``cc_registration`` = registration_proof(task_id, idempotency_key,
-    deck_slug) — a deterministic HMAC-SHA256 over ``cc_task_id + "|" +
-    idempotency_key`` (no secret, no timestamp: hermetic and replay-proof
-    against hand-editing). idempotency_key is sha256(source_ref+title) on the
-    producer side, so it CANNOT be derived from the task id alone — a forged
-    id cannot forge its matching key, and a key for a different deck cannot
-    match. The gate recomputes the HMAC over the manifest's own
-    cc_task_id|idempotency_key and compares bytes to the stamped digest.
+    This is NOT proof that cc_board.ingest_deck_task made a real network
+    round-trip — the old name and the old docstring claimed that, and the old
+    construction (HMAC keyed on fully attacker-computable data, over an EMPTY
+    message) could not deliver it. cc_registration.tag is
+    ``sha256(cc_task_id + "|" + idempotency_key)`` — see
+    cc_board.registration_linkage_tag for the full explanation of what this
+    does and does not establish. Because both the "key" material
+    (idempotency_key = sha256(source_ref+title), derived from data the
+    manifest's author already knows) and this recompute code (public, in the
+    repo, not secret) are available to anyone who can write
+    process_manifest.json, a MATCH here proves only that cc_task_id,
+    idempotency_key and deck_slug are self-consistent WITHIN THIS FILE — it
+    does not and cannot prove a live Command Center round-trip happened. No
+    secret is available to this offline check, so no stronger claim is
+    possible in this code path. Treat True as a hint (internally consistent,
+    no accidental corruption detected), never as authorization or as
+    cryptographic verification.
 
     Returns True only when: cc_task_id is a non-empty string, cc_registration
-    is a dict whose task_id matches cc_task_id and whose hmac equals the
+    is a dict whose task_id matches cc_task_id and whose tag equals the
     recomputed digest. Everything else (absent cc_registration, mismatched
-    task_id, wrong digest, non-dict receipt) is False — could-not-verify NEVER
-    reads as verified. Never raises (a malformed manifest is just False)."""
+    task_id, wrong digest, non-dict receipt, legacy ``hmac``-only receipt) is
+    False — could-not-confirm-consistency NEVER reads as a pass. Never raises
+    (a malformed manifest is just False)."""
     try:
         tid = manifest.get("cc_task_id")
         if not isinstance(tid, str) or not tid.strip():
@@ -10487,10 +10498,8 @@ def _cc_registration_verified(manifest: dict) -> bool:
         slug = receipt.get("deck_slug")
         if not isinstance(key, str) or not key or not isinstance(slug, str) or not slug:
             return False
-        expected = hmac.new(
-            f"{tid}|{key}".encode("utf-8"), b"", hashlib.sha256
-        ).hexdigest()
-        return hmac.compare_digest(str(receipt.get("hmac") or ""), expected)
+        expected = hashlib.sha256(f"{tid}|{key}".encode("utf-8")).hexdigest()
+        return hmac.compare_digest(str(receipt.get("tag") or ""), expected)
     except Exception:  # noqa: BLE001 — a malformed manifest is UNVERIFIED, never fatal
         return False
 
@@ -10499,19 +10508,30 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
     """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED: postflight gate enforcing Command
     Center registration. THREE outcomes (T2 gate teeth):
 
-      VERIFIED    — cc_task_id present AND the cc_registration HMAC proof
-                    verifies (a real cc_board.ingest_deck_task round-trip).
-                    Gate PASSES (returns "").
-      UNVERIFIED  — cc_register_attempted=True but NO verifiable proof: either
+      VERIFIED    — cc_task_id present AND the cc_registration linkage tag
+                    matches (fakehmac fix, 2026-08-18: this is a same-file
+                    consistency check, NOT a cryptographic proof — a matching
+                    tag does not by itself establish that a real
+                    cc_board.ingest_deck_task round-trip occurred; see
+                    _cc_registration_linkage_matches / cc_board's
+                    registration_linkage_tag for exactly what it does and does
+                    not establish). Treat "VERIFIED" here as "no
+                    accidental-corruption evidence found" — a hint, not
+                    authorization. Gate PASSES (returns "") because no
+                    stronger offline signal is available: there is no secret
+                    for this code path to check against.
+      UNVERIFIED  — cc_register_attempted=True but NO matching tag: either
                     no cc_task_id (transport/partial failure) or a task_id
-                    whose receipt does not verify (hand-written/stale). Gate
-                    FAILS with the explicit, honest AF-CC-UNVERIFIED message —
-                    could-not-verify NEVER prints as verified. Fail-soft per
-                    the item: a genuine Command Center outage does not brick
-                    the deck beyond a clear, truthful UNVERIFIED closeout.
+                    whose receipt tag does not match (hand-written/stale/
+                    inconsistent). Gate FAILS with the explicit, honest
+                    AF-CC-UNVERIFIED message — could-not-confirm-consistency
+                    NEVER prints as verified. Fail-soft per the item: a
+                    genuine Command Center outage does not brick the deck
+                    beyond a clear, truthful UNVERIFIED closeout.
       UNREGISTERED— neither field: cc_board.ingest_deck_task was never called
                     for this run. Gate FAILS CLOSED (AF-CC-UNREGISTERED,
-                    current behavior, kept).
+                    current behavior, kept). This outcome does not depend on
+                    the linkage tag at all — it is a plain presence check.
 
     Returns "" on pass; an AF-CC-UNVERIFIED / AF-CC-UNREGISTERED message
     string on fail. Enforced_by: build_deck. py_symbol: _chk_cc_registered.
@@ -10543,13 +10563,15 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
         )
     tid = manifest.get("cc_task_id")
     attempted = manifest.get("cc_register_attempted") is True
-    # Successful registration PROVED: task_id written by a real
-    # cc_board.stamp_task_id round-trip (HMAC receipt verifies offline).
-    if isinstance(tid, str) and tid.strip() and _cc_registration_verified(manifest):
+    # Internally consistent: task_id and its linkage tag agree. This is a
+    # same-file self-consistency check, NOT proof of a real
+    # cc_board.stamp_task_id round-trip — see _cc_registration_linkage_matches.
+    if isinstance(tid, str) and tid.strip() and _cc_registration_linkage_matches(manifest):
         return ""
-    # UNVERIFIED — could-not-verify. NEVER printed as verified; fails the gate
-    # with an explicit, honest message (fail-soft: a real CC outage is visible
-    # and truthful, and the run is not bricked beyond closeout).
+    # UNVERIFIED — could-not-confirm-consistency. NEVER printed as verified;
+    # fails the gate with an explicit, honest message (fail-soft: a real CC
+    # outage is visible and truthful, and the run is not bricked beyond
+    # closeout).
     if attempted or (isinstance(tid, str) and tid.strip()):
         if not (isinstance(tid, str) and tid.strip()):
             return (
@@ -10564,11 +10586,15 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
             )
         return (
             "AF-CC-UNVERIFIED: cc_task_id is present but its cc_registration "
-            "receipt does not verify (missing, mismatched, or bad HMAC) — this "
-            "task id was NOT provably produced by a real "
-            "cc_board.ingest_deck_task round-trip. Could-not-verify NEVER "
-            "counts as verified. Re-run through the canonical entry path so "
-            "ingest_deck_task stamps a verifiable receipt. "
+            "receipt does not match (missing, mismatched, or a legacy/tampered "
+            "tag) — this task id was NOT provably produced by a real "
+            "cc_board.ingest_deck_task round-trip. (A matching tag would not "
+            "have proven that either — it is a same-file consistency check, "
+            "not a secret-backed proof — but a MISMATCH is still meaningful: "
+            "it means this manifest's own fields disagree with each other.) "
+            "Could-not-confirm-consistency NEVER counts as verified. Re-run "
+            "through the canonical entry path so ingest_deck_task stamps a "
+            "fresh, consistent receipt. "
             f"Deck: {deck_slug} cc_task_id={tid}"
         )
     # Neither field: this module was never invoked for this run — fail-CLOSED.
@@ -11061,8 +11087,12 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
 
     # --- AF-CC-UNREGISTERED / AF-CC-UNVERIFIED check (enforced_by:build_deck,
     # symbol:_chk_cc_registered) — T2 three-outcome gate. VERIFIED = cc_task_id +
-    # verifiable cc_registration HMAC proof (real ingest round-trip) -> pass.
-    # UNVERIFIED = attempted or bare task_id without a verifying receipt ->
+    # matching cc_registration linkage tag -> pass. NOTE (fakehmac fix,
+    # 2026-08-18): the tag is a same-file consistency check, not a
+    # cryptographic proof of a real ingest round-trip — see
+    # _cc_registration_linkage_matches for exactly what it does and does not
+    # establish; treat a pass as a hint, not authorization.
+    # UNVERIFIED = attempted or bare task_id without a matching receipt ->
     # fails with an explicit honest AF-CC-UNVERIFIED message (could-not-verify
     # never prints as verified; fail-soft on a genuine CC outage). UNREGISTERED
     # = neither field -> fail-CLOSED. This runs only when the bundle check

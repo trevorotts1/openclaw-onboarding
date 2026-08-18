@@ -6158,17 +6158,21 @@ def test_deck_type_u021() -> list:
 
 
 def _cc_registration_receipt(cc_task_id: str, idempotency_key: str, deck_slug: str) -> dict:
-    """Build a cc_registration receipt exactly as cc_board.registration_proof
-    does (deterministic HMAC over cc_task_id|idempotency_key) so the gate test
-    fixtures can mint a VERIFIED receipt without importing cc_board."""
-    import hashlib as _hl, hmac as _hm
+    """Build a cc_registration receipt exactly as
+    cc_board.registration_linkage_tag does (deterministic sha256 over
+    cc_task_id|idempotency_key) so the gate test fixtures can mint a
+    self-consistent receipt without importing cc_board. NOTE: this is a
+    same-file consistency tag, not a cryptographic proof/signature — see
+    cc_board.registration_linkage_tag's docstring for what it does and does
+    not establish."""
+    import hashlib as _hl
     canonical = f"{cc_task_id}|{idempotency_key}"
-    digest = _hm.new(canonical.encode("utf-8"), b"", _hl.sha256).hexdigest()
+    digest = _hl.sha256(canonical.encode("utf-8")).hexdigest()
     return {
         "task_id": cc_task_id,
         "idempotency_key": idempotency_key,
         "deck_slug": deck_slug,
-        "hmac": digest,
+        "tag": digest,
     }
 
 
@@ -6182,11 +6186,13 @@ def test_chk_cc_registered() -> list:
       (B) cc_register_attempted=True but NO cc_task_id -> FAIL
           AF-CC-UNVERIFIED (transport/partial failure; could-not-verify must
           NOT read as verified — bare attempted is NOT a pass).
-      (C) cc_task_id + VERIFYING cc_registration HMAC receipt (a real
-          cc_board.ingest_deck_task round-trip) -> PASS ("").
+      (C) cc_task_id + a MATCHING cc_registration linkage tag (consistent
+          with what a real cc_board.ingest_deck_task round-trip would stamp;
+          NOTE: matching is a same-file consistency check, not a
+          cryptographic proof of the round-trip itself) -> PASS ("").
       (F) cc_task_id present but cc_registration receipt MISSING (hand-written
-          or stale id, no proof) -> FAIL AF-CC-UNVERIFIED (never verified).
-      (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged)
+          or stale id, no tag) -> FAIL AF-CC-UNVERIFIED (never verified).
+      (G) cc_task_id + receipt whose tag does NOT match (corrupted/stale)
           -> FAIL AF-CC-UNVERIFIED.
       (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
       (E) process_manifest.json absent entirely -> FAIL (fail-closed: manifest
@@ -6296,13 +6302,13 @@ def test_chk_cc_registered() -> list:
     print(f"CC-REG-F (bare id no receipt UNVERIFIED) -> "
           f"{'PASS' if 'CC-REG-F' not in str(fails) else 'FAIL'}")
 
-    # (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged
-    # proof) -> FAIL AF-CC-UNVERIFIED, never verified.
+    # (G) cc_task_id + receipt whose tag does NOT match (corrupted/stale) ->
+    # FAIL AF-CC-UNVERIFIED, never verified.
     rd_g = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_g_"))
     (rd_g / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     _bad_receipt = _cc_registration_receipt(
         "task-abc-123", "sha256-deck-key", "test-deck")
-    _bad_receipt["hmac"] = "0" * 64  # forged digest
+    _bad_receipt["tag"] = "0" * 64  # mismatched digest
     (rd_g / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": [],
                     "cc_task_id": "task-abc-123",

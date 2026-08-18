@@ -595,12 +595,14 @@ class DeliverableTest(unittest.TestCase):
 
 
 class RegistrationGateRoundTripTest(unittest.TestCase):
-    """T2 gate teeth: a REAL HMAC-signed cc_board.ingest_deck_task round-trip
-    stamps an offline-verifiable cc_registration receipt, and
-    build_deck._chk_cc_registered accepts it as VERIFIED (""); a bare
-    cc_register_attempted (no task id) must NOT read as verified; neither
-    field fails closed. No live network — the fake recorder intercepts every
-    HTTP call exactly as the other suites do."""
+    """T2 gate teeth: a REAL cc_board.ingest_deck_task round-trip stamps a
+    cc_registration receipt carrying a same-file consistency tag (NOT a
+    cryptographic proof/signature — see cc_board.registration_linkage_tag and
+    build_deck._cc_registration_linkage_matches for exactly what it does and
+    does not establish), and build_deck._chk_cc_registered's gate returns ""
+    for it; a bare cc_register_attempted (no task id) must NOT read as
+    consistent/verified; neither field fails closed. No live network — the
+    fake recorder intercepts every HTTP call exactly as the other suites do."""
 
     def setUp(self):
         self.rec = _Recorder()
@@ -616,7 +618,7 @@ class RegistrationGateRoundTripTest(unittest.TestCase):
         try:
             import build_deck
             self._chk = build_deck._chk_cc_registered
-            self._cc_verified = build_deck._cc_registration_verified
+            self._cc_verified = build_deck._cc_registration_linkage_matches
         except ImportError:
             pass
 
@@ -653,27 +655,29 @@ class RegistrationGateRoundTripTest(unittest.TestCase):
         expected_key = hashlib.sha256(
             b"deck-rtRound Trip Deck").hexdigest()
         self.assertEqual(receipt["idempotency_key"], expected_key)
-        # The HMAC digest verifies against the recomputed canonical string.
+        # The consistency tag matches the recomputed canonical string. This is
+        # NOT a cryptographic signature check (there is no secret here) — it
+        # only confirms the receipt's own fields agree with each other.
         canonical = f"{pm['cc_task_id']}|{receipt['idempotency_key']}"
-        expected_hmac = hmac.new(
-            canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
-        self.assertEqual(receipt["hmac"], expected_hmac)
-        # Gate: VERIFIED -> passes ("").
+        expected_tag = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        self.assertEqual(receipt["tag"], expected_tag)
+        # Gate: internally consistent -> passes ("").
         self.assertEqual(self._chk(rd, "deck-rt"), "")
 
     def test_gate_verifies_receipt_offline(self):
-        # The gate's own HMAC recompute (no cc_board import needed by the gate)
-        # agrees with the receipt minted by the real round-trip.
+        # The gate's own tag recompute (no cc_board import needed by the gate)
+        # agrees with the receipt minted by the real round-trip. This proves
+        # only self-consistency, not a cryptographic signature (no secret).
         if self._cc_verified is None:
             self.skipTest("build_deck not importable in this environment")
         rd = self._round_trip_run_dir()
         pm = json.loads(
             (rd / "working" / "checkpoints" / "process_manifest.json").read_text())
         self.assertTrue(self._cc_verified(pm))
-        # Tamper the digest -> NOT verified.
+        # Tamper the digest -> NOT consistent.
         pm2 = json.loads(json.dumps(pm))
         pm2["cc_registration"] = dict(pm2["cc_registration"])
-        pm2["cc_registration"]["hmac"] = "0" * 64
+        pm2["cc_registration"]["tag"] = "0" * 64
         self.assertFalse(self._cc_verified(pm2))
 
     def test_bare_attempted_never_reads_as_verified(self):
