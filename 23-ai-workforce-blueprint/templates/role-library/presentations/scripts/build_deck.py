@@ -9991,7 +9991,15 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
         try:
             _preflight_shadow.record(
                 _pf_shadow, label=label, display=display,
-                resolved_path=(found if rel is not None else None), legacy_reason=reason)
+                resolved_path=(found if rel is not None else None), legacy_reason=reason,
+                # artifact_spec=rel: the entry's OWN PIPELINE-MANIFEST.json
+                # produces_artifact-matching key, so record() can SCOPE any
+                # attestation-explained divergence to the phase(s) the manifest
+                # actually names as THIS artifact's producer — never a global
+                # hash pool across every artifact in the run. See
+                # presentation_job/preflight_shadow.py's module docstring
+                # ("SCOPED ATTESTATION-EXPLAINED DIVERGENCES").
+                artifact_spec=rel)
         except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
             try:
                 print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: record failed for "

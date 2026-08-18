@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "22.0.44",
+  "version": "22.0.45",
   "total_roles": 438,
   "total_departments": 36,
   "departments": {
@@ -6123,7 +6123,7 @@
     {
       "slug": "deep-research-specialist-sales",
       "dept": "sales",
-      "title": "Deep Research Specialist — Sales",
+      "title": "Deep Research Specialist \u2014 Sales",
       "role_type": "specialist",
       "word_count": 8639,
       "sop_count": 8,
@@ -6219,7 +6219,7 @@
     {
       "slug": "qc-specialist-sales",
       "dept": "sales",
-      "title": "QC Specialist — Sales",
+      "title": "QC Specialist \u2014 Sales",
       "role_type": "specialist",
       "word_count": 8703,
       "sop_count": 8,
