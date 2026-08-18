@@ -219,6 +219,175 @@ class SealTypographyQcTest(unittest.TestCase):
             os.environ.pop(rf.ENFORCE_ENV, None)
 
 
+class EnforcementModeSealedAtAdmissionTest(unittest.TestCase):
+    """FIX: enforcing() used to be read from os.environ AT CALL TIME by every
+    consumer, so a single run's enforcement mode could change mid-run purely
+    because the environment changed after the run was already admitted. A
+    prior version of this fix sealed the mode into RunFacts.enforcing once at
+    seal() time -- but only protected the NOT-forced (cached) path: every
+    force=True reseal (verifier_registry.VerifierSpec.seal_into's
+    "transactional" seal, used by the MAJORITY of registered gates —
+    qc_report_verifier, priority_shift_verifier, final_qc_verifier,
+    artifact_verifier, and all six slice-3 composite_verifier specs) still
+    called the live enforcing() primitive fresh on every single call, so the
+    SAME bug reappeared one layer deeper. This class proves the CURRENT fix
+    closes both: (1)+(2) the front-door (cached) path, matching the earlier
+    fix's own proof; (3) the force=True registry reseal path the verifier
+    used to break it; (4) the default (unset env) is still inert/report-only,
+    unchanged by this fix."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._td.name)
+        rf.reset_cache_for_tests()
+        os.environ.pop(rf.ENFORCE_ENV, None)
+
+    def tearDown(self):
+        self._td.cleanup()
+        os.environ.pop(rf.ENFORCE_ENV, None)
+        rf.reset_cache_for_tests()
+
+    def test_runfacts_carries_a_sealed_enforcing_field(self):
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIn("enforcing", facts.__dataclass_fields__)
+        self.assertIs(facts.enforcing, False)
+
+    def test_default_unset_env_is_still_inert_report_only(self):
+        """Confirms still inert by default: with the env var unset (the real
+        production default -- nothing sets it today), a freshly sealed run's
+        mode is False, matching the module's documented default."""
+        self.assertNotIn(rf.ENFORCE_ENV, os.environ)
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIs(facts.enforcing, False)
+        self.assertIs(rf.enforcing(), False)
+
+    def test_sealed_mode_survives_env_mutated_after_admission(self):
+        """The front-door acceptance proof: admit a run with the flag OFF,
+        THEN set the env var mid-run (no re-admission), and confirm the
+        ALREADY SEALED record's mode did not move -- including through a
+        LATER force=True reseal of the SAME run_dir, which is exactly the
+        path the rejected fix left open."""
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIs(facts.enforcing, False)
+        os.environ[rf.ENFORCE_ENV] = "1"
+        try:
+            # rf.enforcing() itself is the raw, unsealed, live primitive --
+            # it correctly reflects the new environment (that is its job).
+            self.assertIs(rf.enforcing(), True)
+            # But the RECORD ALREADY SEALED for this run must be untouched.
+            self.assertIs(facts.enforcing, False)
+            cached_again = rf.get_or_seal(self.run_dir)
+            self.assertIs(cached_again is facts, True,
+                          "get_or_seal must return the SAME cached record, "
+                          "not re-admit / re-read the environment")
+            self.assertIs(cached_again.enforcing, False)
+            # THE PART THE REJECTED FIX GOT WRONG: a force=True reseal of the
+            # SAME run_dir, after the env changed, must STILL carry the
+            # run's original mode -- not a fresh live read.
+            reforced = rf.seal(self.run_dir, force=True)
+            self.assertIs(reforced.enforcing, False,
+                          "force=True re-measures artifact facts; it must "
+                          "NOT re-poll the enforcement policy for a run_dir "
+                          "that has already been touched in this process")
+        finally:
+            os.environ.pop(rf.ENFORCE_ENV, None)
+
+    def test_a_real_gate_verdict_does_not_flip_when_env_changes_mid_run(self):
+        """End-to-end via the front-door (get_or_seal) path: seal a run with a
+        proven-tampered typography report (gate:'typography', pass:false --
+        the module's own documented P-TYPO-QC gap) while the flag is OFF,
+        THEN flip the flag ON without re-admitting. The wired gate must
+        return the SAME (permissive, report-only) result both times -- pre-
+        fix, this flipped to a FAIL the instant the flag was set, on the SAME
+        already-sealed run."""
+        p = self.run_dir / "working" / "qc" / "typography_qc_report.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"gate": "typography", "pass": False, "average": 2.1}))
+
+        self.assertNotIn(rf.ENFORCE_ENV, os.environ)
+        ok_before, reasons_before = pv.verify("P-TYPO-QC", self.run_dir)
+        self.assertTrue(ok_before, "report-only admission must pass the legacy result")
+
+        os.environ[rf.ENFORCE_ENV] = "1"
+        try:
+            # deliberately NOT calling rf.reset_cache_for_tests() -- the run
+            # was already admitted above; nothing should re-seal it just
+            # because the environment changed.
+            ok_after, reasons_after = pv.verify("P-TYPO-QC", self.run_dir)
+            self.assertEqual(
+                ok_before, ok_after,
+                "the SAME sealed run's gate verdict must not change just "
+                "because the environment changed after admission",
+            )
+            self.assertTrue(ok_after)
+            self.assertEqual(reasons_after, [])
+        finally:
+            os.environ.pop(rf.ENFORCE_ENV, None)
+
+    def test_registry_force_reseal_does_not_drift_mid_run(self):
+        """THE DEFECT THE VERIFIER FOUND, reproduced as a regression test:
+        every VerifierSpec.seal_into() (verifier_registry.py, the base for
+        every T1/T2/slice-3 gate) unconditionally calls
+        presentation_job.runfacts.seal(..., force=True) -- the "transactional
+        seal" that re-measures artifact facts on every single gate check.
+        The rejected fix sealed the mode only inside the not-forced cached
+        branch, so THIS force=True path kept calling the live enforcing()
+        primitive fresh on every call -- meaning two checks of the SAME
+        registry gate, on the SAME already-admitted run, could see two
+        DIFFERENT modes if the environment changed between them.
+
+        This reproduces exactly that shape: admit the run (front door, flag
+        OFF), run a registered qc_report_verifier gate through the registry
+        ONCE, flip the env var with NO re-admission, then run the SAME gate
+        through the registry AGAIN. Both calls must agree -- the second call
+        must NOT pick up the live env change, because this run_dir was
+        already touched (this is a force=True reseal of an EXISTING
+        admission, not a new one)."""
+        import verifier_registry as vr
+
+        p = self.run_dir / "working" / "qc" / "typography_qc_report.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"gate": "typography", "pass": False, "average": 2.1}))
+
+        def _legacy_always_pass(_run_dir):
+            return True, []
+
+        base_spec = vr.qc_report_verifier("typography")
+        spec = vr.VerifierSpec(gate=base_spec.gate, verifier=base_spec.verifier,
+                               verdict=base_spec.verdict, artifacts=base_spec.artifacts,
+                               legacy=_legacy_always_pass, config=None)
+
+        # --- front-door admission, flag OFF ---
+        self.assertNotIn(rf.ENFORCE_ENV, os.environ)
+        front_door = rf.get_or_seal(self.run_dir)
+        self.assertIs(front_door.enforcing, False)
+
+        # --- registry gate check #1 (force=True inside seal_into), flag OFF ---
+        ok1, _reasons1 = spec.run_verifier(self.run_dir)
+        self.assertTrue(ok1, "report-only: the always-pass legacy result wins")
+
+        # --- mid-run drift: env flips, NO re-admission ---
+        os.environ[rf.ENFORCE_ENV] = "1"
+        try:
+            # the front-door record for THIS run_dir is still cached False
+            still_cached = rf._SEAL_CACHE.get(str(self.run_dir.resolve()))
+            self.assertIsNotNone(still_cached)
+            self.assertIs(still_cached.enforcing, False)
+
+            # --- registry gate check #2, SAME run_dir, SAME (unforced) admission ---
+            ok2, reasons2 = spec.run_verifier(self.run_dir)
+            self.assertEqual(
+                ok1, ok2,
+                "a force=True registry reseal of an ALREADY-admitted run_dir "
+                "must not pick up a live environment change mid-run -- this "
+                "is the exact defect the verifier found in the prior fix",
+            )
+            self.assertTrue(ok2)
+            self.assertEqual(reasons2, [])
+        finally:
+            os.environ.pop(rf.ENFORCE_ENV, None)
+
+
 class GateIntegrityPurityTest(unittest.TestCase):
     """Confirms gate_integrity_check.py --purity (Guard B) actually parses
     runfacts.py and finds the two migrated verdict functions clean — a light
@@ -236,7 +405,8 @@ def main() -> int:
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for cls in (FactAndVerdictPrimitivesTest, SealOwnerSkipTest,
-                SealTypographyQcTest, GateIntegrityPurityTest):
+                SealTypographyQcTest, EnforcementModeSealedAtAdmissionTest,
+                GateIntegrityPurityTest):
         suite.addTests(loader.loadTestsFromTestCase(cls))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1

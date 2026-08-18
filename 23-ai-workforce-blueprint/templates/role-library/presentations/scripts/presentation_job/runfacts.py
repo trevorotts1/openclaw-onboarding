@@ -63,7 +63,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Generic, Optional, Tuple, TypeVar
 
-RUNFACTS_SCHEMA_VERSION = 1
+RUNFACTS_SCHEMA_VERSION = 2  # v2: RunFacts carries `enforcing`, sealed once per run_dir per process (was a live os.environ read at every call site, including every force=True reseal)
 SEALED_REL = Path("working") / "checkpoints" / ".runfacts.sealed.json"
 ENFORCE_ENV = "PRES_TRUST_BOUNDARY_ENFORCE"
 DIVERGENCE_PREFIX = "TRUST-BOUNDARY-DIVERGENCE"
@@ -188,7 +188,28 @@ def enforcing() -> bool:
     report-only to enforcing. Default is report-only (unset, '0', 'false',
     'no' all read as report-only) — shipping enforcing-by-default would risk
     bricking a real client run on the very first divergence this increment
-    finds, which is the one thing the task forbids."""
+    finds, which is the one thing the task forbids.
+
+    THIS IS A LIVE, UNSEALED os.environ READ. Its ONLY sanctioned caller is
+    seal() itself, which resolves the run's ONE enforcement mode through
+    _resolve_enforcing_mode() below — never by calling this function a second
+    time for an already-touched run_dir (see that function's docstring for
+    exactly when a fresh read is and is not taken). The other sanctioned
+    caller is presentation_job.preflight_shadow's audit-only ledger stamp,
+    which is documented to have no enforcing()-gated branch at all and never
+    lets its value influence a gate's outcome.
+
+    Everything else — any code deciding whether a gate should PASS or FAIL —
+    MUST NOT call this function. It must already hold (or obtain) a sealed
+    RunFacts and read `facts.enforcing` instead. This includes code that
+    seals with force=True: force re-measures the run's ARTIFACT facts from
+    disk, it does not re-admit the run under a possibly-different policy.
+    Calling this function directly for a pass/fail decision — including from
+    inside a force=True reseal — is precisely the bug RunFacts.enforcing
+    exists to close: it lets the mode drift mid-run whenever the environment
+    changes after the run was first touched, which contradicts "a run must
+    execute under exactly one mode from start to finish." See
+    RunFacts.enforcing and seal()'s docstring."""
     return (os.environ.get(ENFORCE_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
@@ -394,6 +415,37 @@ class RunFacts:
     webinar_video: Fact                  # Fact[WebinarVideoInfo] — P9.6-WEBINAR-VIDEO video+timing
     notes_sync: Fact                     # Fact[NotesSyncInfo] — P9.5-NOTES-SYNC record+pptx
     fish_tag: Fact                       # Fact[FishTagInfo] — P8.4-FISH-TAG dual-file strip-equals
+    # --- ENFORCEMENT MODE, SEALED ONCE PER run_dir PER PROCESS ---
+    # The operator's PRES_TRUST_BOUNDARY_ENFORCE choice, resolved by
+    # _resolve_enforcing_mode() (called from inside seal(), under _SEAL_LOCK)
+    # the FIRST time this run_dir is touched by seal() in this process —
+    # regardless of whether that first touch passed force=True or force=False.
+    # Every LATER seal() call for the SAME run_dir in the SAME process reuses
+    # that already-resolved mode via _ENFORCING_CACHE and does not read
+    # os.environ again, INCLUDING every subsequent force=True reseal (that is
+    # the fix: force re-measures artifact facts, it does not re-poll policy).
+    # A consumer that already holds (or can obtain) a RunFacts MUST read
+    # `facts.enforcing`, never call the module-level `enforcing()` function
+    # again — see that function's docstring. Required (no default): every
+    # RunFacts must be sealed with an explicit mode, never silently default
+    # to one.
+    #
+    # HONEST LIMIT — process-scoped, not run-scoped: _ENFORCING_CACHE lives in
+    # this process's memory, exactly like _SEAL_CACHE (see seal()'s own
+    # docstring: "EXACTLY ONCE per process per run_dir"). If this run's
+    # phases are dispatched as separate OS processes for the SAME run_dir
+    # (e.g. run_signature_deck.py invoking build_deck.py as a subprocess for
+    # the render phase), each process resolves its own mode independently on
+    # its own first touch — an env flip BETWEEN those process launches is NOT
+    # sealed by this field, because there is no durable, out-of-process
+    # anchor for it (see the module's own HONEST LIMIT section; .runfacts
+    # .sealed.json is a same-UID audit trail, never read back to seed a live
+    # decision — see _best_effort_save's docstring). What this field DOES
+    # guarantee, unconditionally: within one process, once a run_dir is first
+    # touched, its mode is fixed for the rest of that process's life, and
+    # cannot be moved by ANY subsequent seal() call for that run_dir, forced
+    # or not.
+    enforcing: bool
 
     def to_json(self) -> dict:
         return {
@@ -401,6 +453,7 @@ class RunFacts:
             "sealed_at": self.sealed_at,
             "schema_version": self.schema_version,
             "nonce_bound": self.nonce_bound,
+            "enforcing": self.enforcing,
             "process_manifest": self.process_manifest.to_json(),
             "owner_skip_records": self.owner_skip_records.to_json(),
             "qc": {k: f.to_json() for k, f in self.qc.items()},
@@ -476,6 +529,54 @@ class RunFacts:
 
 _SEAL_LOCK = threading.Lock()
 _SEAL_CACHE: Dict[str, RunFacts] = {}
+# Enforcement mode, keyed the SAME way as _SEAL_CACHE (str(resolved run_dir)),
+# but DELIBERATELY a separate cache with its own lifetime rule — see
+# _resolve_enforcing_mode() immediately below for why force=True must NOT
+# clear this one the way it bypasses _SEAL_CACHE.
+_ENFORCING_CACHE: Dict[str, bool] = {}
+
+
+def _resolve_enforcing_mode(key: str) -> bool:
+    """Return the ONE enforcement mode this run_dir was admitted under in this
+    process, resolving it via a live enforcing() read on FIRST TOUCH only.
+
+    MUST be called while holding _SEAL_LOCK (mirrors _SEAL_CACHE's own
+    locking contract; not re-entrant-safe otherwise).
+
+    This is the fix: `force` on seal() means "re-measure this run's artifact
+    FACTS from disk," a deliberate, correct, and frequent operation (every
+    verifier_registry.VerifierSpec.seal_into() transactional reseal does
+    exactly this, once per gate check, to pick up fixture/report changes).
+    `force` does NOT mean, and must never be allowed to mean, "re-admit this
+    run under whatever policy os.environ currently holds." Conflating the two
+    was the exact defect a prior version of this fix left open: every
+    force=True reseal called the live enforcing() primitive fresh, so a run's
+    registry-checked gates (the MAJORITY of gates — every qc_report_verifier,
+    priority_shift_verifier, final_qc_verifier, artifact_verifier, and all
+    six slice-3 composite_verifier specs force-reseal on every single check)
+    could each see a DIFFERENT mode than the run's true front-door admission,
+    and than each other, purely because the environment changed BETWEEN two
+    gate checks in the same run — the identical class of bug this module
+    exists to close, just relocated one call deeper.
+
+    The fix: key this decision by run_dir, not by call. The first time this
+    run_dir is EVER touched by seal() in this process — force=True or not —
+    enforcing() is read exactly once and the result is cached here. Every
+    later seal() call for the SAME run_dir, no matter how many times, no
+    matter whether force=True, reuses that cached value and never reads
+    os.environ again. Only reset_cache_for_tests() (never called by
+    production code — see its own docstring) or a brand-new run_dir clears
+    this and allows a fresh read; that is a NEW admission, not a mutation of
+    an existing one.
+
+    Process-scoped, like _SEAL_CACHE itself: see RunFacts.enforcing's
+    docstring for the honest limit on a run whose phases span more than one
+    OS process."""
+    if key in _ENFORCING_CACHE:
+        return _ENFORCING_CACHE[key]
+    mode = enforcing()
+    _ENFORCING_CACHE[key] = mode
+    return mode
 
 
 def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> RunFacts:
@@ -491,12 +592,27 @@ def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> Ru
     to stderr at seal time, in addition to whatever shadow_compare() prints
     later at each individual gate call — the seal-time findings on their own
     already answer "the report names the specific fact that failed
-    validation" without requiring any gate to actually run."""
+    validation" without requiring any gate to actually run.
+
+    ENFORCEMENT MODE IS SEALED PER run_dir, NOT PER CALL: unlike the artifact
+    facts below (which force=True deliberately re-measures from disk every
+    time it is asked to), RunFacts.enforcing is resolved by
+    _resolve_enforcing_mode() ONCE per run_dir per process, on this run_dir's
+    FIRST touch — including when that first touch itself passes force=True.
+    Every subsequent seal() call for the same run_dir, forced or not, reuses
+    that same resolved mode. This is what makes "a run executes under exactly
+    one mode from start to finish" actually true for EVERY consumer,
+    including the transactional force=True reseals in verifier_registry.py —
+    not just the cached (not-forced) path. See _resolve_enforcing_mode()'s
+    docstring for the full reasoning and RunFacts.enforcing for the
+    documented process-scope limit."""
     run_dir = Path(run_dir).resolve()
     key = str(run_dir)
     with _SEAL_LOCK:
         if not force and key in _SEAL_CACHE:
             return _SEAL_CACHE[key]
+
+        enforcing_mode = _resolve_enforcing_mode(key)
 
         pm_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
         if not pm_path.is_file():
@@ -535,6 +651,7 @@ def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> Ru
             webinar_video=_webinar_video_fact(run_dir),
             notes_sync=_notes_sync_fact(run_dir),
             fish_tag=_fish_tag_fact(run_dir),
+            enforcing=enforcing_mode,
         )
         _SEAL_CACHE[key] = facts
 
@@ -1440,22 +1557,49 @@ def verify_fish_tag(facts: RunFacts) -> Tuple[Verdict, str]:
 
 
 def shadow_compare(label: str, legacy_ok: bool, legacy_reason: str,
-                    new_verdict: Verdict, new_reason: str, *, run_dir) -> bool:
+                    new_verdict: Verdict, new_reason: str, *, run_dir,
+                    facts: "Optional[RunFacts]" = None) -> bool:
     """Compare a legacy boolean verdict against the sealed-RunFacts Verdict for
     the SAME gate query. On divergence, print ONE greppable line to stderr
     naming the gate, both verdicts, and both reasons, and return True (caller
     may use this to count divergences). Report-only: this function NEVER
     raises and NEVER changes what the caller returns — that decision is made
-    by the caller using enforcing()."""
+    by the caller reading the run's SEALED enforcement mode, not by this
+    function.
+
+    The `enforcing=` value stamped on the log line is the run's SEALED mode,
+    not a fresh os.environ read — an audit line must report what mode the
+    run actually executed under, not whatever the environment happens to say
+    at the moment this line is printed. Resolved in this priority order:
+      1. `facts.enforcing`, when the caller passes the SAME sealed RunFacts
+         its gate decision was already made from (the exact, correct value —
+         pass this whenever you have it, which is every real call site).
+      2. `_ENFORCING_CACHE[run_dir]` — the run's resolved mode, for a caller
+         that has a run_dir but no `facts` handy. Unlike the old fallback to
+         `_SEAL_CACHE` (which a transactional seal_into() deliberately hides
+         by restoring the shared cache to its pre-call state), this cache is
+         NEVER hidden by that restore — see _resolve_enforcing_mode() — so it
+         is reliable even for a transactional caller that skips `facts`.
+      3. the live enforcing() read, only if this run_dir has never been
+         touched by seal() at all yet — defensive last resort, not expected
+         to fire from a real gate call site (every gate seals before it
+         shadow-compares)."""
     legacy_as_verdict = Verdict.PASS if legacy_ok else Verdict.FAIL
     if legacy_as_verdict is new_verdict:
         return False
     try:
+        if facts is not None:
+            enforcing_mode = facts.enforcing
+        else:
+            key = str(Path(run_dir).resolve()) if run_dir is not None else None
+            enforcing_mode = _ENFORCING_CACHE.get(key) if key is not None else None
+            if enforcing_mode is None:
+                enforcing_mode = enforcing()
         print(
             f"{DIVERGENCE_PREFIX} gate={label} run_dir={run_dir} "
             f"legacy={legacy_as_verdict.value}({_trunc(legacy_reason)!r}) "
             f"runfacts={new_verdict.value}({_trunc(new_reason)!r}) "
-            f"enforcing={enforcing()}",
+            f"enforcing={enforcing_mode}",
             file=sys.stderr,
         )
     except Exception:  # noqa: BLE001
@@ -1471,9 +1615,17 @@ def _trunc(s: str, n: int = 220) -> str:
 def reset_cache_for_tests() -> None:
     """Test-only: clear the per-process seal cache so a test can seal the same
     run_dir path twice with different fixture content. Not called by any
-    production code path."""
+    production code path.
+
+    Also clears _ENFORCING_CACHE: a test that wants to simulate a NEW
+    admission under a different mode (as opposed to mid-run drift on an
+    ALREADY-admitted run, which is the thing this fix forbids) must call this
+    first, exactly like it already must for the artifact-fact cache. Without
+    this, the enforcement-mode fix above would leak one test's resolved mode
+    into the next test that reuses the same run_dir path."""
     with _SEAL_LOCK:
         _SEAL_CACHE.clear()
+        _ENFORCING_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------

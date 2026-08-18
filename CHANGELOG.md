@@ -1,3 +1,123 @@
+## [v22.0.47] -- 2026-08-18 -- fix(presentations): cc_board registration receipt is not a signature -- say so without breaking legacy receipts
+
+Rebuild of `fix/trust-fakehmac`, which a verifier rejected: it correctly
+identified that `cc_board.registration_proof` / `build_deck._chk_cc_registered`
+overclaimed a security property this value never had (it is
+`hmac.new(cc_task_id + "|" + idempotency_key, b"", sha256)` -- the "key"
+material is fully attacker/author-computable from data already sitting in the
+same file, so this is a same-file consistency check, not a real MAC), but it
+ALSO renamed the receipt's wire-format dict key from `"hmac"` to `"tag"` and
+switched the digest formula from an HMAC-shaped call to plain
+`sha256(canonical)`. Since the CONSUMER (`build_deck._chk_cc_registered`) was
+changed in lockstep to expect the new key/formula, producer and consumer
+agreed with EACH OTHER -- but not with any `cc_registration` receipt already
+stamped on disk by the old code, which carries `"hmac"`, not `"tag"`. A legacy
+receipt hit `receipt.get("tag") or ""` -> empty -> mismatch -> AF-CC-UNVERIFIED
+-> `sys.exit(5)`: a genuine, previously-passing registration now hard-BLOCKED.
+
+FIX: renamed the Python symbols (`registration_proof` ->
+`registration_linkage_tag`, `_cc_registration_verified` ->
+`_cc_registration_linkage_matches`) and rewrote every docstring/message to be
+honest about what a match does and does not prove (a same-file consistency
+hint, never authorization, never proof of a live Command Center round-trip) --
+but left the WIRE FORMAT untouched: the stamped dict key stays `"hmac"` and
+the digest computation stays byte-for-byte `hmac.new(canonical, b"", sha256)`,
+so every `process_manifest.json` already on disk, and every one stamped going
+forward, verifies identically. Deprecated aliases
+(`registration_proof = registration_linkage_tag`,
+`_cc_registration_verified = _cc_registration_linkage_matches`) keep any
+external importer of the old names working. `MASTER-QC-AUTOFAIL-RULESET.md`'s
+AF-CC-UNVERIFIED row was updated to match.
+
+Independently verified by a separate verifying agent: a legacy-format receipt
+(hand-constructed with the pre-fix `"hmac"` field and formula) is correctly
+ACCEPTED here and on `main` pre-fix, but hits AF-CC-UNVERIFIED /
+`sys.exit(5)` on the rejected `fix/trust-fakehmac`. A tampered/garbage receipt
+is still correctly REJECTED on all three -- the gate's real teeth are intact,
+only the honest labelling and backward compatibility changed. Full-codebase
+grep confirms `cc_registration` has exactly one consumer, and it never treats
+a match as authorization. Full test suite (1021 tests) green with no
+regressions.
+
+## [v22.0.46] -- 2026-08-18 -- fix(trust-boundary): seal enforcement mode into RunFacts for EVERY seal path, including force=True reseal
+
+Rebuild of `fix/trust-flag`, which a verifier rejected: it sealed
+`PRES_TRUST_BOUNDARY_ENFORCE` into `RunFacts.enforcing` at admission, but only
+skipped re-reading `os.environ` on the CACHED (`force=False`) path of
+`presentation_job/runfacts.py`'s `seal()`. `verifier_registry.py`'s
+`VerifierSpec.seal_into()` -- the base every T1/T2/slice-3 registry gate goes
+through -- calls `seal(..., force=True)` on EVERY single gate check (a
+"transactional reseal" that re-measures artifact facts from disk). Because the
+rejected fix's cache-skip only covered `force=False`, every one of those
+force=True reseals kept calling the live `enforcing()` primitive fresh --
+letting the run's enforcement mode drift mid-run if `PRES_TRUST_BOUNDARY_ENFORCE`
+changed in the environment between two gate checks of the SAME already-admitted
+run, even though the docstrings claimed the mode was sealed everywhere.
+
+FIX: added `_ENFORCING_CACHE`, keyed by run_dir (separate from the artifact-fact
+`_SEAL_CACHE`, which force=True is SUPPOSED to bypass). `_resolve_enforcing_mode()`
+reads `enforcing()` exactly once per run_dir, on that run_dir's FIRST touch --
+forced or not -- and every later `seal()` call for that run_dir, forced or not,
+reuses the cached value for the life of the process. Every call site that
+previously called the live `_rf.enforcing()` directly to make a pass/fail
+decision (verifier_registry.py, phase_verifiers.py's `_shadow_qc_verifier` /
+`_shadow_composite_verifier`, slice1_gate_verifiers.py's subclass propagation,
+build_deck.py's `_owner_skip_approved`) now reads the sealed `facts.enforcing`
+instead. The two remaining live-read call sites (`seal()`'s own resolving call,
+and `preflight_shadow.py`'s audit-only ledger stamp, which never gates a
+pass/fail decision) are the only sanctioned exceptions, and the docstrings now
+say so explicitly.
+
+Independently verified by a separate verifying agent, two ways: (1) a
+standalone repro script that admits a run with the flag off, flips the env var
+mid-run with NO re-admission, then does a `force=True` reseal via
+`verifier_registry.qc_report_verifier(...).seal_into()` -- `facts.enforcing`
+flips on `fix/trust-flag`, stays fixed at the admission value here; (2) this
+fix's own new regression test (`test_registry_force_reseal_does_not_drift_mid_run`)
+copied onto `fix/trust-flag` FAILS there with an observed PASS->FAIL flip on
+the SAME registered gate, purely from env timing. Full test suite (1021 tests)
+green with no regressions. Report-only default (`PRES_TRUST_BOUNDARY_ENFORCE`
+unset) unchanged.
+
+## [v22.0.45] -- 2026-08-18 -- fix(presentations): trust-boundary FALSEPOS v2 -- scope attestation reuse to the owning artifact+phase
+
+Rebuild of `fix/trust-falsepos`, which a verifier rejected: it fixed the
+legitimate-retry false-positive in `presentation_job/preflight_shadow.py`'s
+attestation-explained-divergence check, but via an UNSCOPED global pool of
+every `artifact_sha` ever attested for a run -- a hash legitimately attested
+for one artifact's phase could wrongly explain a real tamper on a completely
+different artifact, silently laundering it as "explained" instead of
+would-have-blocked.
+
+FIX: `_phase_ids_for_artifact_spec()` resolves, from
+`PIPELINE-MANIFEST.json`'s own `phases[].produces_artifact` declarations, the
+phase_id(s) that actually own a given artifact spec. `_attested_artifact_shas_for()`
+then only collects `artifact_sha` values from `phase_attestations` entries
+whose `phase_id` is in that owner set -- never a global pool. `record()` now
+takes an `artifact_spec` parameter (build_deck.py's `run_preflight()` passes
+each PREFLIGHT_REQUIRED entry's own `rel`), so a hash can only explain a
+divergence for the SAME artifact it was actually attested for.
+
+PROVEN (`test_preflight_shadow_scoped.py`, three cases, all through the real
+`build_deck.run_preflight()` dispatch loop and the real
+`run_signature_deck.attest_phase()` harness -- no simulated fixtures):
+- CASE D: a genuine QC-retry re-attestation under the artifact's own owning
+  phase still explains the divergence -- the original false-positive stays
+  fixed.
+- CASE E: the SAME attested hash, hand-copied onto a DIFFERENT, untouched
+  artifact owned by a different phase, does NOT explain that artifact's
+  divergence -- the laundering hole the verifier found is closed.
+- CASE F: mechanism-level, side-by-side proof against the rejected fix's own
+  unscoped lookup (transcribed verbatim) vs. the new scoped one on identical
+  input.
+
+Independently reproduced by a separate verifying agent: the original
+false-positive defect reproduces on `main` pre-fix; the rejected v1's
+laundering hole reproduces by running this fix's own scoped test against
+`fix/trust-falsepos` (`_attested_artifact_shas_for` does not exist there).
+Full test suite (1015 tests) green with no regressions. Report-only invariant
+unchanged -- `preflight_shadow.record()` still never blocks a run.
+
 ## [v22.0.44] -- 2026-08-18 -- fix(privacy): client-name gate could not detect the class it exists for
 
 `scripts/qc-assert-no-client-names.sh` keeps real client identities out of this
