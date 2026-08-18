@@ -9820,6 +9820,32 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
         else:
             print(f"  OK   {display}", flush=True)
 
+    # ---------------------------------------------------------------------
+    # BLIND-SPOT SHADOW READ-AUDIT (report-only). 50 of PREFLIGHT_REQUIRED's
+    # 60 gates carry rel=None (run-dir-scoped: the check needs more than one
+    # file, or the exact file depends on run-time content), so any
+    # snapshot-by-declared-rel mechanism has NO file to snapshot for those 50
+    # and is mathematically incapable of ever registering a divergence for
+    # them. This closes that gap WITHOUT touching what any gate returns
+    # above: sys.addaudithook (presentation_job.gate_read_audit) records the
+    # REAL file(s) each check() call just made under run_dir — not what its
+    # tuple declares — and seals their content hashes so a later
+    # `python3 -m presentation_job.gate_read_audit --verify <run_dir>` call
+    # can detect drift. Runs regardless of problems (a failed preflight still
+    # deserves an audit trail of what was actually read). Never blocks; any
+    # error here is caught and logged, never raised — mirrors the existing
+    # TRUST-BOUNDARY-SEAL-ERROR posture in main().
+    # ---------------------------------------------------------------------
+    try:
+        from presentation_job import gate_read_audit as _gra  # noqa: PLC0415
+        _gra.seal_gate_reads(run_dir, PREFLIGHT_REQUIRED, slides_path)
+    except Exception as _gra_exc:  # noqa: BLE001 — audit must never block preflight
+        try:
+            print(f"GATE-READ-AUDIT-SEAL-ERROR: could not seal gate reads for "
+                  f"{run_dir}: {_gra_exc!r} (report-only)", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+
     if problems:
         print("\nFATAL: PROCESS PREFLIGHT FAILED — refusing to render or assemble.", file=sys.stderr)
         print("build_deck.py is only the deterministic renderer/assembler; it cannot", file=sys.stderr)
