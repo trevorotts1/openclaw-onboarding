@@ -1,3 +1,90 @@
+## [v22.0.39] -- 2026-08-18 -- fix(presentations): trust-boundary batch -- blind-spot close, parser fix, slice1 reconciliation, CI purity wiring, 2 gates closed, u058 false-fail fix
+
+Six independently verifier-approved branches merged as one batch (six PRs
+worth of review compressed into one merge -- not six separate merges):
+`fix/trust-blind`, `fix/trust-parser`, `fix/trust-recon`, `fix/trust-ci`,
+`fix/two-remaining-gates`, `fix/selftest-exit-codes-1`. Three of the six
+(`trust-parser`, `trust-recon`, `trust-ci`) were built on a shared,
+never-pushed local integration of three feature branches (`feat/trust-core`,
+`feat/trust-obs`, `feat/trust-wrap` -- the surface-A RunFacts admission
+validator, observability surface, and report-only dispatch-point wrapper).
+That shared base was merged into this batch exactly ONCE (via
+`fix/trust-parser`); `fix/trust-recon` and `fix/trust-ci` each contributed
+only their own one-commit delta on top of the already-present base
+(confirmed: both branches' own commits cherry-pick clean onto bare
+origin/main with zero dependency on the shared base's files). Three
+branches (`trust-blind`, `two-remaining-gates`, `selftest-exit-codes-1`)
+were fully independent, single-commit, no shared-base entanglement.
+
+1. **trust-blind**: `gate_read_audit.py` (sys.addaudithook) closes the 83%
+   PREFLIGHT_REQUIRED blind spot -- 50 of 60 gates carry `rel=None`
+   (run-dir-scoped), so any snapshot keyed off the declared `rel` had no
+   file to snapshot for those 50. Empirically observes what each gate's
+   `check()` call actually opens under `run_dir` instead of trusting the
+   declared tuple. Report-only, wired into `run_preflight()` alongside the
+   existing loop, never changes what any gate returns.
+2. **trust-parser**: `trust_boundary_observability.KNOWN_KINDS` only listed
+   the three older runfacts.py/phase_verifiers.py prefixes and was blind to
+   all four `-PREFLIGHT-`-infixed prefixes `preflight_shadow.py` actually
+   emits -- the monitor could not parse a single line from the exact system
+   it exists to watch. Fixed via a new `trust_boundary_prefixes.py`.
+3. **trust-recon**: reconciled `slice1_gate_verifiers.py`'s RunFacts
+   verifier against the gates-absence g4 hand-patch (`_chk_priority_shift`
+   vs `v_priority_shift`) -- they disagreed. Two bugs fixed: a swapped
+   `Fact.known(payload, detail)` argument order, and the structural
+   verifier's own logic gap.
+4. **trust-ci**: wired the pre-existing `gate_integrity_check.py --purity`
+   Guard B AST purity lint into `presentations-lockstep.yml` -- it existed
+   since Trust Boundary Increment 1 but nothing in CI ever invoked it. No
+   `|| true` / continue-on-error: a real violation now fails the step, same
+   as every other gate in this job. Verified green on both this batch and
+   bare origin/main before wiring (activates a currently-passing lint; does
+   not turn a green CI red).
+5. **two-remaining-gates**: closed 2 of 3 remaining gates-absence holes.
+   `STYLE_PHASE_GATE` (new) ships in `"warn"` mode BY DESIGN (Rule 3.5:
+   warn -> remediate -> enforce) because the shared `make_workdir` test
+   fixture doesn't yet stamp a P-STYLE-PREVIEW attestation -- flipping to
+   enforce is a deliberate, separate, later commit. `_chk_sp_claim`'s
+   `mod is None` fallback now checks all 4 SP signals its own docstring
+   already promised (was checking 1 of 4). Gate 3
+   (`_chk_priority_shift_ledger`) is documented dead code, left alone,
+   flagged for a dedicated follow-up.
+6. **selftest-exit-codes-1**: `tests/unit/u058-anthology-eight-stage-contract.test.sh`'s
+   T2 grepped for `"ALL ASSERTIONS PASSED"`, a convention `run_anthology.py`
+   never emits (it prints `"ALL ASSERTIONS [PASS]"`) -- a healthy,
+   passing script was reported FAIL and the wrapper's own exit code
+   followed that false verdict. Corrected the string match only; the
+   check itself (`run_anthology.py --self-test` succeeds) is unchanged.
+
+One real merge conflict, resolved deliberately (not auto-resolved): both
+`trust-blind`'s BLIND-SPOT SHADOW READ-AUDIT block and the shared base's
+`_preflight_shadow.close_run()` summary line landed at the same point in
+`build_deck.py`'s preflight loop tail. Both are independent, non-blocking,
+report-only side effects -- kept both, `close_run()` first (closes the
+per-gate shadow ledger for the loop that just completed) then
+`seal_gate_reads()` (audits what was actually read), each in its own
+`try/except Exception` that never reaches `problems.append()`.
+
+Report-only re-proven after the merge: all four shadow/audit call sites in
+`build_deck.py` (`open_run`, `record`, `close_run`, `seal_gate_reads`) are
+each wrapped in `try/except Exception`, none can reach `problems.append()`,
+and `STYLE_PHASE_GATE_STAGE == "warn"` (non-blocking) confirmed by direct
+read of the merged source. Nothing in this batch newly blocks a run.
+
+Full presentations-department suite (`pytest scripts/`, includes
+`test_preflight.py`, `tests/`, and every loose `test_*.py`) run against
+this batch and a control clone of bare origin/main: batch 1007 passed / 1
+failed / 2 skipped vs control 979 passed / 1 failed / 2 skipped -- the
+single failure (`test_fix2_qc_unskippable::test_qc_phase_skip_record_refused_in_load_skip_approvals`)
+is identical and pre-existing on both; zero new failures, +28 net-new
+passing tests. `tests/unit/u058-anthology-eight-stage-contract.test.sh`:
+PASS=4/FAIL=0 on the batch versus PASS=3/FAIL=1 (the exact false-negative
+the fix targets) on control.
+
+Excluded from this batch, per verifier rejection with specific defects,
+being rebuilt separately: `fix/trust-falsepos`, `fix/trust-fakehmac`,
+`fix/trust-flag`.
+
 ## [v22.0.38] -- 2026-08-17 -- fix(presentations): slice1 sp_intake test -- stale pre-migration fixture, not a code bug
 
 `test_slice1_gates.py::test_slice1_sp_intake_both_directions` started failing
