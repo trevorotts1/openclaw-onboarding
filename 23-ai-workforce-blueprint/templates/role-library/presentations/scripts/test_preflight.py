@@ -3746,8 +3746,16 @@ def test_sp_wrappers():
         print("SP wrappers -> FAIL (provers not importable)")
         return fails
 
-    # (a) GOLDEN signature deck — all three wrappers PASS ("").
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), sp_structure=sps._valid_fixture())
+    # (a) GOLDEN signature deck — all three wrappers PASS (""). GK-23/D18: the bare
+    # fixture (no turn_ledger_provenance) is only grandfathered through
+    # prove_sp_intake.GRACE_WINDOW_UNTIL (2026-08-15); a genuine post-window PASS
+    # fixture must carry the real driver-paced provenance stamp — the SAME helper
+    # the prover module's own self-test uses for its "GK-23-fixtureA-driver-paced"
+    # must-PASS case, built to mirror exactly what deck-intake-driver.py's
+    # build_turn_ledger_provenance() writes (per-question turn id +
+    # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
+    # test_slice1_gates.py's genuine SP-intake fixture.
+    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(), sp_structure=sps._valid_fixture())
     for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
                  "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(gold)

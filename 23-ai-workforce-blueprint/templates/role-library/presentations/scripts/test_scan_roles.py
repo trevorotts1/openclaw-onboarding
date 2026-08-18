@@ -3,6 +3,12 @@
 test_scan_roles.py — proves scan_roles_and_sops() inventory is layout-agnostic,
 filters infra dirs and non-role docs, and handles de-numbering correctly.
 
+Each `test_*` function is a thin pytest-visible wrapper around a `_check_*`
+helper that does the actual work and returns a `fails` list; the wrapper
+asserts the list empty so a broken guard FAILS under pytest, not only under
+`python3 <file>`. `main()` calls the `_check_*` helpers directly so
+script-mode aggregation / exit-code behavior is unchanged.
+
 Run:  python3 test_scan_roles.py
 Exit: 0 = all assertions passed; 1 = a failure occurred.
 """
@@ -18,7 +24,7 @@ sys.path.insert(0, str(HERE))
 import sync_check
 
 
-def test_repo_flat_layout():
+def _check_repo_flat_layout():
     """Repo layout: flat *.md files, no directories with how-to.md."""
     fails = []
     tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_repo_"))
@@ -53,7 +59,12 @@ def test_repo_flat_layout():
     return fails
 
 
-def test_deployed_dir_layout():
+def test_repo_flat_layout():
+    fails = _check_repo_flat_layout()
+    assert not fails, "\n".join(fails)
+
+
+def _check_deployed_dir_layout():
     """Deployed department layout: <NN->?<slug>/how-to.md for roles, infra filtered."""
     fails = []
     tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_deployed_"))
@@ -101,7 +112,12 @@ def test_deployed_dir_layout():
     return fails
 
 
-def test_denumbering_anchor():
+def test_deployed_dir_layout():
+    fails = _check_deployed_dir_layout()
+    assert not fails, "\n".join(fails)
+
+
+def _check_denumbering_anchor():
     """De-numbering regex is anchored ^\\d\\d-, not \\d+-."""
     fails = []
     tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_denum_"))
@@ -133,7 +149,12 @@ def test_denumbering_anchor():
     return fails
 
 
-def test_flat_and_dir_together():
+def test_denumbering_anchor():
+    fails = _check_denumbering_anchor()
+    assert not fails, "\n".join(fails)
+
+
+def _check_flat_and_dir_together():
     """Both flat *.md and directory roles coexist in the same layout."""
     fails = []
     tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_mixed_"))
@@ -163,7 +184,12 @@ def test_flat_and_dir_together():
     return fails
 
 
-def test_symlink_followed_dir():
+def test_flat_and_dir_together():
+    fails = _check_flat_and_dir_together()
+    assert not fails, "\n".join(fails)
+
+
+def _check_symlink_followed_dir():
     """d.is_dir() follows symlinks; a symlinked role directory counts."""
     fails = []
     tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_symlink_"))
@@ -190,7 +216,12 @@ def test_symlink_followed_dir():
     return fails
 
 
-def test_module_constants_exist():
+def test_symlink_followed_dir():
+    fails = _check_symlink_followed_dir()
+    assert not fails, "\n".join(fails)
+
+
+def _check_module_constants_exist():
     """Prove _INFRA_DIRS and _NON_ROLE_DOCS exist with correct types and values."""
     fails = []
     if not hasattr(sync_check, "_INFRA_DIRS"):
@@ -207,13 +238,35 @@ def test_module_constants_exist():
     elif not isinstance(sync_check._NON_ROLE_DOCS, set):
         fails.append(f"CONST: _NON_ROLE_DOCS is {type(sync_check._NON_ROLE_DOCS).__name__}, expected set")
     else:
-        expected_docs = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS", "how-to-use-this-department"}
+        # Exact-match by design, not a subset/superset check: this set is a
+        # manifest, not a floor. Every entry must be the literal p.stem of a
+        # real fleet-scaffolding file the deployed department carries (see
+        # sync_check.py's per-entry comments for provenance), and every
+        # addition/removal in production must consciously update this
+        # expectation in the SAME commit. A subset assertion would have let
+        # the 2026-08-07 GOVERNING-PERSONAS case-mismatch bug (constant said
+        # "GOVERNING-PERSONAS", the real on-disk file is "governing-personas.md"
+        # -> p.stem "governing-personas", so the exclusion never matched)
+        # ship silently forever. This set is EXPECTED TO GROW as departments
+        # gain new fleet-synced scaffolding doc types — when it does, update
+        # this literal alongside the sync_check.py change, with the same
+        # evidence (grep the actual writer, confirm the exact on-disk stem).
+        expected_docs = {
+            "BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS", "how-to-use-this-department",
+            "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER",
+            "ROSTER", "governing-personas",
+        }
         if sync_check._NON_ROLE_DOCS != expected_docs:
             fails.append(f"CONST: _NON_ROLE_DOCS is {sync_check._NON_ROLE_DOCS}, expected {expected_docs}")
     return fails
 
 
-def test_mutation_proof_non_role_docs_removal():
+def test_module_constants_exist():
+    fails = _check_module_constants_exist()
+    assert not fails, "\n".join(fails)
+
+
+def _check_mutation_proof_non_role_docs_removal():
     """Prove the _NON_ROLE_DOCS guard is effective. Monkey-patch it to empty set;
     the five non-role docs should then appear in role_stems."""
     fails = []
@@ -251,7 +304,12 @@ def test_mutation_proof_non_role_docs_removal():
     return fails
 
 
-def test_mutation_proof_infra_dirs_removal():
+def test_mutation_proof_non_role_docs_removal():
+    fails = _check_mutation_proof_non_role_docs_removal()
+    assert not fails, "\n".join(fails)
+
+
+def _check_mutation_proof_infra_dirs_removal():
     """Prove the _INFRA_DIRS guard is effective. Monkey-patch it to empty set;
     infra dirs with how-to.md should then appear in role_stems."""
     fails = []
@@ -289,16 +347,21 @@ def test_mutation_proof_infra_dirs_removal():
     return fails
 
 
+def test_mutation_proof_infra_dirs_removal():
+    fails = _check_mutation_proof_infra_dirs_removal()
+    assert not fails, "\n".join(fails)
+
+
 def main():
     test_groups = [
-        ("module constants", test_module_constants_exist),
-        ("repo flat layout", test_repo_flat_layout),
-        ("deployed dir layout", test_deployed_dir_layout),
-        ("de-numbering anchor", test_denumbering_anchor),
-        ("mixed flat+dir layout", test_flat_and_dir_together),
-        ("symlink followed dir", test_symlink_followed_dir),
-        ("mutation: non-role docs", test_mutation_proof_non_role_docs_removal),
-        ("mutation: infra dirs", test_mutation_proof_infra_dirs_removal),
+        ("module constants", _check_module_constants_exist),
+        ("repo flat layout", _check_repo_flat_layout),
+        ("deployed dir layout", _check_deployed_dir_layout),
+        ("de-numbering anchor", _check_denumbering_anchor),
+        ("mixed flat+dir layout", _check_flat_and_dir_together),
+        ("symlink followed dir", _check_symlink_followed_dir),
+        ("mutation: non-role docs", _check_mutation_proof_non_role_docs_removal),
+        ("mutation: infra dirs", _check_mutation_proof_infra_dirs_removal),
     ]
 
     all_failures = []

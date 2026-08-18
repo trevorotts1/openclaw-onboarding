@@ -228,17 +228,17 @@ of a driver-only CLI reproduction with no content-authoring agent in the loop,
 not a regression. `tests/unit/presentation-deck-intake-driver-workspace.test.sh`:
 9/9 PASS, zero regressions.
 
-## [v22.0.17] - 2026-08-13 - fix(send-interview-link): shared-dashboard tenant verification (Janet incident)
+## [v22.0.17] - 2026-08-13 - fix(send-interview-link): shared-dashboard tenant verification (shared-dashboard incident)
 
-Janet Pinkney (box #39, Contabo) clicked her AI Workforce Interview link
-(`https://janet.zerohumanworkforce.com/interview`) and the page flashed the
+A client (box #39, Contabo) clicked their AI Workforce Interview link
+(`https://<client>.zerohumanworkforce.com/interview`) and the page flashed the
 interview then jumped straight to the Command Center dashboard. Root cause:
-her hostname is served by the OPERATOR's SHARED Command Center deployment
+that hostname is served by the OPERATOR's SHARED Command Center deployment
 (the single CC serving every client dashboard), whose interview-state
 endpoint was hostname-blind and answered from the OPERATOR's own canonical
 interview files — a fresh client was told `interviewComplete: true` and the
-interview page's own redirect (`interviewComplete -> /`) bounced her to the
-dashboard. She had zero interview answers; she was never served her own
+interview page's own redirect (`interviewComplete -> /`) bounced them to the
+dashboard. They had zero interview answers; they were never served their own
 interview.
 
 This entry fixes the SKILL side so no future client hits the class:
@@ -251,7 +251,7 @@ Telegram-native reply-here invite instead of sending the broken link. A
 `localhost`/`127.0.0.1` dashboard (the box's OWN CC, reading this same state
 file) is exempt — the state read above is authoritative. New env:
 `INTERVIEW_GATE_URL` overrides the base used for the check (defaults to the
-dashboard host). Backed up as `send-interview-link.sh.bak-janet-skill23-fix-20260813`.
+dashboard host). Backed up as `send-interview-link.sh.bak-client-skill23-fix-20260813`.
 
 The COMMAND CENTER side of the fix (tenant-scoped `/api/interview/state` +
 `/api/interview/gate-status` + turn relay to the client's own gateway +
@@ -362,7 +362,7 @@ is entirely absent was invisible to it"). That false premise is corrected in the
 workflow.
 
 Observed impact: `listings` present on 30/30 reachable boxes, including
-`rescue-eddie-otts`, whose build-state records an OWNER DECLINE of all six
+`rescue-<client>`, whose build-state records an OWNER DECLINE of all six
 universal-primary verticals and an operator-signed 18-department subset floor —
 it still carried all 36.
 

@@ -17,6 +17,7 @@
     {"id": "LP-A7", "family": "A", "f_taxonomy": "F2", "name": "memory dreaming / re-embedding storm", "detector": "D2", "tier_default": 2},
     {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "self-blocking flush run / transcript poison", "detector": "D5", "tier_default": 1},
     {"id": "LP-A9", "family": "A", "f_taxonomy": "F16", "name": "semantic retry loop / reworded-intent hunt against a fail-closed dependency", "detector": "D6", "tier_default": 2},
+    {"id": "LP-A10", "family": "A", "f_taxonomy": "F15", "name": "agent-to-agent cross-run resend loop", "detector": "D7", "tier_default": 1},
     {"id": "LP-B1", "family": "B", "f_taxonomy": "F5", "name": "supervisor boot-crash restart storm", "detector": "D1", "tier_default": 1},
     {"id": "LP-B2", "family": "B", "f_taxonomy": "F4", "name": "watchdog kill-spawn loop", "detector": "D1", "tier_default": 1},
     {"id": "LP-B3", "family": "B", "f_taxonomy": "F5-adjacent", "name": "gateway deferral deadlock / orphan handoff", "detector": "D4", "tier_default": 1},

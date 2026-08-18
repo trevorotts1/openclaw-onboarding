@@ -190,8 +190,8 @@ grep -q '\[REUSE\] roster:INTERVIEW' "$WORK/steps.log" || fail "P2: INTERVIEW no
 pass "P2: re-run reuses existing rows, inserts no duplicates, same env lines"
 
 # --- P5: PODCAST_CLIENT_LAST_NAME override ----------------------------------
-run_provision 0 "sample@example.com" "Dolce" "SOLO:channelC3" >/dev/null || fail "P5: provision exited nonzero"
-[ "$(jq -r '[.[] | select(.podbean_channel_id=="channelC3")] | .[0].last_name' "$STATE")" = "Dolce" ] \
+run_provision 0 "sample@example.com" "Placeholder" "SOLO:channelC3" >/dev/null || fail "P5: provision exited nonzero"
+[ "$(jq -r '[.[] | select(.podbean_channel_id=="channelC3")] | .[0].last_name' "$STATE")" = "Placeholder" ] \
   || fail "P5: override last_name not stored"
 pass "P5: PODCAST_CLIENT_LAST_NAME overrides the derived last name"
 
@@ -237,8 +237,8 @@ pass "P4: failing roster read dies fail-closed (exit 17), never guesses"
 # --- R1: ALL rows for the client flipped; other clients untouched ------------
 cat > "$WORK/seed2.json" <<'SEED'
 [
- {"id": 101, "email": "client@example.com", "last_name": "Dolce", "podbean_channel_id": "channelA1", "good_standing": "YES", "first_name": "", "notes": ""},
- {"id": 102, "email": "client@example.com", "last_name": "Dolce", "podbean_channel_id": "channelB2", "good_standing": "YES", "first_name": "", "notes": ""},
+ {"id": 101, "email": "client@example.com", "last_name": "Placeholder", "podbean_channel_id": "channelA1", "good_standing": "YES", "first_name": "", "notes": ""},
+ {"id": 102, "email": "client@example.com", "last_name": "Placeholder", "podbean_channel_id": "channelB2", "good_standing": "YES", "first_name": "", "notes": ""},
  {"id": 103, "email": "other@example.com",  "last_name": "Other",  "podbean_channel_id": "channelZ9", "good_standing": "YES", "first_name": "", "notes": ""}
 ]
 SEED

@@ -2,7 +2,10 @@
 import ast, importlib, json, sys, pathlib, tempfile, pytest
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
-from presentation_job.gates import Gates, GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES, ALL_GATE_KEYS
+from presentation_job.gates import (
+    Gates, GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES, ALL_GATE_KEYS,
+    _MIN_BYTES as GATES_MIN_BYTES,
+)
 from presentation_job.result import CheckResult
 from presentation_job.waivers import WaiverError, load_waivers, validate_waiver
 from phase_verifiers import verify
@@ -170,7 +173,14 @@ def test_no_gate_is_warn_only_anymore():
     (rd / "working" / "qc").mkdir(parents=True, exist_ok=True)
     (rd / "renders").mkdir(parents=True, exist_ok=True)
     _w(rd, "working/deliverables/PRESENTERS-SPEECH.md", "x" * 3000)
-    _w(rd, "working/deliverables/presenter-teleprompter.html", "y" * 12000)
+    # RECONCILED (split-brain fix, 2026-08-18): was a hardcoded "y" * 12000 -- a real
+    # teleprompter render is never that small (build_teleprompter.py's own template is
+    # ~40KB before any speech content), and 12000 only ever passed this gate because
+    # gates.py's floor was itself a stale 10_240. Derived from the same spec the gate
+    # now reads, with headroom, so this fixture tracks the doctrine floor instead of
+    # drifting back to an arbitrary undersized stub.
+    _w(rd, "working/deliverables/presenter-teleprompter.html",
+       "y" * (GATES_MIN_BYTES["teleprompter_html"] + 1000))
     _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
     _wj(rd, "working/checkpoints/media_library.json",
         {"ghl_folder_id": "root", "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}], "pptx_ghl_media_id": "p9"})

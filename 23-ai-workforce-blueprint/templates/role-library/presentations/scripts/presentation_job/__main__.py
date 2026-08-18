@@ -188,18 +188,42 @@ def cmd_status(args) -> int:
     return EXIT_OK
 
 
+# RCA #7: dispatch()/dispatch3() collapse "definitely permanent" and "maybe
+# transient" into the same False/UNDETERMINED result -- dispatch3()'s own
+# docstring says a failure "could mean a transient network blip just as
+# easily as a permanent rejection." There is no structural signal in this
+# codebase that tells the two apart on a single attempt (Reporter.to_requester
+# treats FAIL and UNDETERMINED identically too). Consecutive failed sweeps is
+# therefore the only available proxy: it survives any single blip (each sweep
+# run is a separate, time-spaced retry opportunity) while still bounding the
+# damage a permanently-bad chat id can do. 5 gives a stale/deleted chat id
+# five independent chances to prove itself transient before it is quarantined.
+MAX_DELIVERY_ATTEMPTS = 5
+
+
 def cmd_sweep_undeliverable(args) -> int:
-    """Retry every queued undeliverable message, oldest first. Takes the run lock."""
+    """Retry every queued undeliverable message, oldest first. Takes the run lock.
+
+    A message that still fails after MAX_DELIVERY_ATTEMPTS tries is moved to
+    state["dead_letter"] instead of being re-queued forever (RCA #7) -- it is
+    quarantined, not silently dropped: the record stays in state.json with the
+    reason and timestamp, and a DEAD-LETTERED line is printed so an operator
+    scanning sweep output (or state["dead_letter"] via --status/--json) can
+    find it. A message that succeeds on any attempt before the cap is
+    delivered normally regardless of its attempt count.
+    """
     run_dir = args.run_dir.expanduser().resolve()
     with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
         undeliverable = state.get("undeliverable", [])
         if not undeliverable:
-            print("0 queued, 0 delivered, 0 still undeliverable")
+            print("0 queued, 0 delivered, 0 still undeliverable, 0 dead-lettered")
             return EXIT_OK
         delivered = 0
+        dead_lettered = 0
         remaining = []
+        dead_letter = state.setdefault("dead_letter", [])
         for msg in undeliverable:
             chat_id = msg.get("chat_id", "")
             kind = msg.get("kind", "")
@@ -221,6 +245,19 @@ def cmd_sweep_undeliverable(args) -> int:
                 rec["count"] = rec.get("count", 0) + 1
                 rec["first_at"] = rec["first_at"] or utcnow()
                 rec["last_at"] = utcnow()
+            elif attempts >= MAX_DELIVERY_ATTEMPTS:
+                msg["attempts"] = attempts
+                msg["last_attempt_at"] = utcnow()
+                msg["dead_lettered_at"] = utcnow()
+                msg["dead_letter_reason"] = (
+                    f"undeliverable after {attempts} attempts "
+                    f"(cap {MAX_DELIVERY_ATTEMPTS}); chat_id={chat_id!r} kind={kind!r}"
+                )
+                dead_letter.append(msg)
+                dead_lettered += 1
+                print(f"DEAD-LETTERED: {kind!r} to chat_id={chat_id!r} after "
+                      f"{attempts} attempts (cap {MAX_DELIVERY_ATTEMPTS}) -- "
+                      "quarantined in state['dead_letter'], will not be retried again")
             else:
                 msg["attempts"] = attempts
                 msg["last_attempt_at"] = utcnow()
@@ -229,8 +266,9 @@ def cmd_sweep_undeliverable(args) -> int:
         still = len(remaining)
         state["undeliverable"] = remaining
         store.save(state)
-        print(f"{total} queued, {delivered} delivered, {still} still undeliverable")
-        return EXIT_OK if still == 0 else 1
+        print(f"{total} queued, {delivered} delivered, {still} still undeliverable, "
+              f"{dead_lettered} dead-lettered")
+        return EXIT_OK if still == 0 and dead_lettered == 0 else 1
 
 
 def cmd_capacity(args) -> int:

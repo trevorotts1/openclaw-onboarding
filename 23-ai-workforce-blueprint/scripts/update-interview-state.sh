@@ -6,7 +6,7 @@
 # writer existed.
 #
 # EVIDENCE-GATED COMPLETION (2026-07-30 incident, a client Mac mini box /
-# rescue-cassandra-henriquez): `--complete` used to write
+# rescue-<client>): `--complete` used to write
 # `.interviewComplete = true` UNCONDITIONALLY and only ran
 # qc-interview-completion.py AFTERWARD, best-effort/non-fatal ("WARN ...
 # non-fatal"). A 19-question interview with 5 missing mandatory fields was
@@ -325,7 +325,7 @@ elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
   fi
 fi
 
-# ── EVIDENCE GATE (2026-07-30 fix, a client Mac mini box / rescue-cassandra-henriquez) ──
+# ── EVIDENCE GATE (2026-07-30 fix, a client Mac mini box / rescue-<client>) ──
 # `--complete` used to write `.interviewComplete = true` UNCONDITIONALLY (see the
 # write block below) and only ran qc-interview-completion.py AFTERWARD,
 # best-effort/non-fatal ("WARN ... non-fatal - interviewQc.status stays pending").

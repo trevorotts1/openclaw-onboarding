@@ -15,7 +15,7 @@ entire canonical question set of only ~11 questions (2 identity + 8 branding +
 qc.OPERATIONS_QUESTIONS_CANONICAL). A client who substantively answers EVERY
 one of those 11 questions can never reach 25 raw blocks without the
 interviewer drilling an already-answered question again for zero new
-coverage. Verified on a real client transcript (rescue-cassandra-henriquez):
+coverage. Verified on a real client transcript (rescue-<client>):
 11/11 canonical questions matched, every required branding field answered with
 534-921 real characters, yet only 18-19 raw blocks (a couple of fields were
 drilled multiple rounds) — HARD-FAILED as "too shallow" on an interview that

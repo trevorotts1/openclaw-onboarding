@@ -6562,9 +6562,21 @@ def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     reason, a real parseable timestamp, and a reason that is not a copy-pasted
     blanket-skip signature shared by more than _OWNER_SKIP_BLANKET_REASON_LIMIT other
     af_codes (see _owner_skip_evaluate / _owner_skip_structurally_valid — Trust
-    Boundary Increment 2). No agent may self-skip and the absence of a token means
-    the gate is ENFORCED. Returns the matching record (so callers can log who
-    approved what) or None.
+    Boundary Increment 2).
+
+    HONEST CLAIM (corrected 2026-08-18, Part 6 #9 of the 2026-08-17 fix review; see
+    the "THE HONEST LIMIT" block above _OWNER_SKIP_REASON_MIN_CHARS for the full
+    architecture note): this validity rule raises the cost of a casual, accidental,
+    or drifted skip from "edit one field" to "reconstruct a consistent, plausible
+    approval record" and makes every use or rejected attempt unconditionally loud
+    (see _owner_skip_disclose). It does NOT stop a deliberate forger — the token
+    lives in process_manifest.json, which is written by the same UID that would
+    forge it, and nothing in this architecture can exclude a run-dir-privileged
+    writer. Treat a returned record as a tamper-evidence / health-signal finding,
+    never as proof of an authorization decision an adversary could not have faked.
+    The previous wording here ("No agent may self-skip and the absence of a token
+    means the gate is ENFORCED") overstated that guarantee; it is corrected above.
+    Returns the matching record (so callers can log who approved what) or None.
 
     Delegates to _owner_skip_evaluate and discards its events — kept as a separate,
     stable name because run_signature_deck.py and the test suite call this directly
@@ -9984,7 +9996,15 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
         try:
             _preflight_shadow.record(
                 _pf_shadow, label=label, display=display,
-                resolved_path=(found if rel is not None else None), legacy_reason=reason)
+                resolved_path=(found if rel is not None else None), legacy_reason=reason,
+                # artifact_spec=rel: the entry's OWN PIPELINE-MANIFEST.json
+                # produces_artifact-matching key, so record() can SCOPE any
+                # attestation-explained divergence to the phase(s) the manifest
+                # actually names as THIS artifact's producer — never a global
+                # hash pool across every artifact in the run. See
+                # presentation_job/preflight_shadow.py's module docstring
+                # ("SCOPED ATTESTATION-EXPLAINED DIVERGENCES").
+                artifact_spec=rel)
         except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
             try:
                 print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: record failed for "
