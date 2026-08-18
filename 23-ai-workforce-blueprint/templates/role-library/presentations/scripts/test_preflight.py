@@ -2960,6 +2960,121 @@ def test_runner_attestation_seen_by_preconditions():
     return fails
 
 
+def _style_attested_workdir() -> Path:
+    """Gate 1 (fix/two-remaining-gates) — the SAME 'full modern pipeline' fixture
+    make_workdir(with_artifacts=True) builds, but with P-STYLE-PREVIEW ALSO
+    attested in process_manifest.json's phases[] (alongside the P0B-PRIORITY
+    attestation make_workdir already writes). Proves the POSITIVE case: once the
+    style-preview phase really is attested, the STYLE_PHASE_GATE binding passes in
+    BOTH warn and enforce stage."""
+    root = make_workdir(with_artifacts=True)
+    pm_path = root / "working" / "checkpoints" / "process_manifest.json"
+    pm = json.loads(pm_path.read_text())
+    pm["phases"].append({"phase_id": "P-STYLE-PREVIEW",
+                         "role": "style-preview", "status": "artifact_present"})
+    pm_path.write_text(json.dumps(pm))
+    return root
+
+
+def test_style_phase_gate() -> list:
+    """Gate 1 close (fix/two-remaining-gates): run_preflight()'s STYLE_PHASE_GATE
+    binding (mirrors the v16.0.1 P0B-PRIORITY binding) closes the hole where a
+    DIRECT build_deck.py invocation could render past the owner's 3-style-preview
+    pick with zero enforcement (the runner already makes P-STYLE-PREVIEW mandatory
+    for P4-RENDER; only the direct-call path lacked the binding). Staged per Rule
+    3.5 (STYLE_PHASE_GATE_STAGE, default 'warn'). Proves BOTH directions plus the
+    owner-skip waiver, calling run_preflight() directly (no subprocess):
+      (a) WARN stage, P-STYLE-PREVIEW NOT attested (the make_workdir(with_artifacts=
+          True) shared fixture — used by CASE2 and everything layered on it) ->
+          run_preflight() completes WITHOUT sys.exit(3); stderr carries a WARN line
+          naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW. THIS is the one that matters
+          most: a legitimate run that reaches the gate before the style-preview
+          artifact exists still proceeds, unbricked, at the shipped default stage.
+      (b) ENFORCE stage (monkeypatched), SAME unattested fixture -> run_preflight()
+          NOW sys.exit(3), naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW in the refusal
+          — proving the genuinely-missing artifact is caught once enforce ships, and
+          the block does not read as approval (exit 3, explicit reason, not a
+          silent pass).
+      (c) P-STYLE-PREVIEW attested (a runner-attested / real pipeline run) -> PASSES
+          in BOTH stages (no sys.exit(3) either way).
+      (d) an owner-authorized STYLE_PHASE_ID skip record (owner_msg_id present,
+          the SAME shape check_phase_preconditions already accepts) -> passes in
+          ENFORCE stage too, on the otherwise-unattested fixture."""
+    fails = []
+    orig_stage = build_deck.STYLE_PHASE_GATE_STAGE
+    try:
+        # (a) WARN stage (the shipped default) — must NOT brick the shared fixture.
+        build_deck.STYLE_PHASE_GATE_STAGE = "warn"
+        root = make_workdir(with_artifacts=True)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                build_deck.run_preflight(root)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-A: warn-stage should NOT exit, got sys.exit({exc.code})")
+        stderr_text = err.getvalue()
+        if "AF-PHASE-SKIPPED" not in stderr_text or "P-STYLE-PREVIEW" not in stderr_text:
+            fails.append("STYLE-GATE-A: expected a WARN line naming AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW on stderr, got: {stderr_text!r}")
+        if "WARN" not in stderr_text:
+            fails.append(f"STYLE-GATE-A: expected a WARN-prefixed line, got: {stderr_text!r}")
+
+        # (b) ENFORCE stage, same unattested fixture -> must sys.exit(3).
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root2 = make_workdir(with_artifacts=True)
+        out2, err2 = io.StringIO(), io.StringIO()
+        exited = False
+        try:
+            with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(err2):
+                build_deck.run_preflight(root2)
+        except SystemExit as exc:
+            exited = True
+            if exc.code != 3:
+                fails.append(f"STYLE-GATE-B: enforce-stage should exit 3, got {exc.code}")
+        if not exited:
+            fails.append("STYLE-GATE-B: enforce-stage should sys.exit(3) on an unattested "
+                         "style-preview phase but run_preflight() returned normally")
+        combined2 = out2.getvalue() + err2.getvalue()
+        if "AF-PHASE-SKIPPED" not in combined2 or "P-STYLE-PREVIEW" not in combined2:
+            fails.append("STYLE-GATE-B: expected the refusal to name AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW, got: {combined2!r}")
+
+        # (c) P-STYLE-PREVIEW attested -> passes in BOTH stages.
+        for stage in ("warn", "enforce"):
+            build_deck.STYLE_PHASE_GATE_STAGE = stage
+            root3 = _style_attested_workdir()
+            out3, err3 = io.StringIO(), io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out3), contextlib.redirect_stderr(err3):
+                    build_deck.run_preflight(root3)
+            except SystemExit as exc:
+                fails.append(f"STYLE-GATE-C ({stage}): style-attested fixture should PASS, "
+                             f"got sys.exit({exc.code})")
+
+        # (d) owner-authorized skip of STYLE_PHASE_ID -> passes in ENFORCE stage too.
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root4 = make_workdir(with_artifacts=True)
+        ckpt4 = root4 / "working" / "checkpoints"
+        ckpt4.mkdir(parents=True, exist_ok=True)
+        (ckpt4 / "phase_skip_approvals.json").write_text(json.dumps(
+            {"approvals": [{"phase_id": "P-STYLE-PREVIEW", "owner_approved": True,
+                            "approved_by": "owner", "reason": "test waiver",
+                            "timestamp": "2026-06-20T00:00:00Z",
+                            "owner_msg_id": "owner-msg-style-preview"}]}))
+        out4, err4 = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out4), contextlib.redirect_stderr(err4):
+                build_deck.run_preflight(root4)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-D: owner-authorized skip should PASS in enforce "
+                         f"stage, got sys.exit({exc.code})")
+    finally:
+        build_deck.STYLE_PHASE_GATE_STAGE = orig_stage
+
+    print(f"STYLE-PHASE-GATE (Gate 1)    -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_runner_next_turn_gate():
     """FOUNDATION (--next phase turn-gate). The runner — not prose — is the agent's
     interface to what is next. Proves, directly against emit_next's phase selector:
@@ -3656,6 +3771,98 @@ def test_sp_wrappers():
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
     print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def _sp_claim_fallback_run_dir(*, intake_extra=None, sp_intake_present=False,
+                               ledger=None) -> Path:
+    """fix/two-remaining-gates (Gate 2) — a bare run dir for exercising
+    _chk_sp_claim's `mod is None` fallback directly, independent of the real
+    prove_sp_routing.py signal set. intake_extra merges into intake.json (deck_type
+    omitted unless the caller supplies it); sp_intake_present writes an EMPTY
+    working/copy/sp_intake.json (signal 1); ledger writes
+    working/interview/intake_ledger.json verbatim (signal 4)."""
+    rd = Path(tempfile.mkdtemp(prefix="deck_sp_claim_fallback_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    intake = dict(intake_extra or {})
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    if sp_intake_present:
+        (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps({}))
+    if ledger is not None:
+        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+        (rd / "working" / "interview" / "intake_ledger.json").write_text(json.dumps(ledger))
+    return rd
+
+
+def test_sp_claim_mod_none_fallback() -> list:
+    """Gate 2 close (fix/two-remaining-gates): _chk_sp_claim's `mod is None` fallback
+    (prove_sp_routing.py not co-located) formerly checked ONLY signal 1
+    (sp_intake.json presence) — signals 2-4 that the docstring already promises
+    (signature_frame, presentation_type=='signature', intake_ledger.json entries)
+    were silently open. Forces mod is None via _SP_PROVER_CACHE and proves:
+      (a) signal 2 (intake.json.signature_frame set) + deck_type unset -> NOW fails
+          AF-SP-TYPE-UNDECLARED (previously silently passed -- the closed hole);
+      (b) signal 3 (intake.json.presentation_type=='signature') + deck_type unset
+          -> same;
+      (c) signal 4a (intake_ledger.json entries.signature_frame) + deck_type unset
+          -> same;
+      (d) signal 4b (intake_ledger.json sp_entries.sp_mode) + deck_type unset
+          -> same;
+      (e) REGRESSION GUARD: a plain non-signature deck (NO signals at all) with
+          mod is None still returns "" -- the common non-SP-deck-on-a-degraded-box
+          path stays unblocked;
+      (f) REGRESSION GUARD: signals present but deck_type IS declared
+          signature_presentation -> "" (the claim is made, nothing to block)."""
+    fails = []
+    orig_cache = dict(build_deck._SP_PROVER_CACHE)
+    try:
+        build_deck._SP_PROVER_CACHE["prove_sp_routing"] = None
+
+        # (a) signature_frame set, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"signature_frame": "vault"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-A (signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (b) presentation_type=='signature', deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"presentation_type": "signature"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-B (presentation_type): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (c) ledger entries.signature_frame, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"entries": {"signature_frame": {"value": "rulebook"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-C (ledger signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (d) ledger sp_entries.sp_mode, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"sp_entries": {"sp_mode": {"value": "QUICK"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-D (ledger sp_mode): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (e) REGRESSION GUARD -- no signals at all, mod is None -> must stay "".
+        rd = _sp_claim_fallback_run_dir(intake_extra={"interview_confirmed": True})
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-E (no signals): expected '', got {r!r}")
+
+        # (f) REGRESSION GUARD -- signals present AND deck_type declared -> "".
+        rd = _sp_claim_fallback_run_dir(
+            intake_extra={"signature_frame": "vault",
+                         "deck_type": "signature_presentation"},
+            sp_intake_present=True)
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-F (declared): expected '', got {r!r}")
+    finally:
+        build_deck._SP_PROVER_CACHE.clear()
+        build_deck._SP_PROVER_CACHE.update(orig_cache)
+
+    print(f"SP-CLAIM mod-is-None fallback (Gate 2) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -5409,6 +5616,12 @@ def main():
     # advances on attestation, honors owner-authorized skips, and never picks out-of-order.
     failures += test_runner_next_turn_gate()
 
+    # Gate 1 close (fix/two-remaining-gates) — STYLE_PHASE_GATE binds run_preflight() to
+    # P-STYLE-PREVIEW at every DIRECT entry point, staged warn->enforce (Rule 3.5): warn
+    # stage never bricks the shared with_artifacts=True fixture; enforce stage refuses an
+    # unattested style-preview phase; an attested/waived phase passes in both stages.
+    failures += test_style_phase_gate()
+
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
 
@@ -5431,6 +5644,14 @@ def main():
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
     failures += test_sp_wrappers()
+
+    # Gate 2 close (fix/two-remaining-gates) — _chk_sp_claim's `mod is None` fallback
+    # (prove_sp_routing.py not co-located) now checks all four SP signals the docstring
+    # already promises, not just sp_intake.json presence: signature_frame, presentation_
+    # type=='signature', and two intake_ledger.json shapes all now trip AF-SP-TYPE-
+    # UNDECLARED; a plain non-signature deck (no signals) and a declared deck both still
+    # pass "" (regression guards).
+    failures += test_sp_claim_mod_none_fallback()
 
     # U027 -- check_ocr_readback (AF-OCR-READBACK): no renders defers; missing
     # sidecars/checked:false/matched:false/malformed-JSON/partial-missing all FAIL;

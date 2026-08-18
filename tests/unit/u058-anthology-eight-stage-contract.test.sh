@@ -41,8 +41,14 @@ PY
 
 echo "== T2: the built-in self-test passes (contract is machine-checkable) =="
 out="$(python3 "$RUN" --self-test 2>&1)"; rc=$?
-if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q "ALL ASSERTIONS PASSED"; then
-  pass "run_anthology.py --self-test passes (exit 0, ALL ASSERTIONS PASSED)"
+# run_anthology.py's actual banner is "== run_anthology self-test: ALL ASSERTIONS [PASS] =="
+# (see run_anthology.py's self_test(), line ~1321) — NOT the "ALL ASSERTIONS PASSED" wording
+# used elsewhere in this repo (e.g. prove_sp_intake.py). This wrapper was checking for the
+# wrong string, so it reported FAIL against a script that was genuinely passing (rc=0, healthy
+# banner) — a false negative caused by wording drift between conventions, not a real defect in
+# run_anthology.py. Match the real banner so the wrapper's own verdict is honest.
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -qF "ALL ASSERTIONS [PASS]"; then
+  pass "run_anthology.py --self-test passes (exit 0, ALL ASSERTIONS [PASS])"
 else
   fail "run_anthology.py --self-test failed (exit $rc)"
 fi
