@@ -31,7 +31,7 @@ from typing import Dict, List, Optional, Tuple
 # (MIN_MANIFEST_VERSION). Bump the two TOGETHER -- a floor one behind the
 # manifest is the split-brain this check exists to prevent.
 MIN_MANIFEST_VERSION = 48
-MIN_MANIFEST_PHASES = 26
+MIN_MANIFEST_PHASES = 36
 MIN_AF_SP_CODES = 16
 
 
