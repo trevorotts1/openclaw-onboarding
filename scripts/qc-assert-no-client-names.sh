@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
-# qc-assert-no-client-names.sh — v2.4.0
+# qc-assert-no-client-names.sh — v2.5.0
+#
+# v2.5.0 FIX (CRITICAL-1 escaped detection — only ~25% effective): a real
+# client's identity was found committed in 4 tracked-file locations while
+# this gate reported PASS. Root cause: a two-word roster entry is loaded as
+# the literal "First Last" string, which only matches when both words appear
+# together with a single space — so 1 of the 4 occurrences matched (the full
+# name) and 3 did not (first name alone in prose, a
+# <firstname>.zerohumanworkforce.com hostname, and a
+# bak-<firstname>-...-<date> backup-filename suffix). FIX:
+# scripts/qc-expand-roster-name-forms.py now derives first-name/last-name-
+# alone and hyphen/underscore/fused-compound forms from every multi-word
+# roster entry and folds them into the same scan pattern — see that script's
+# header for the two-tier precision guard (self-corroborating compounds get
+# no filter; standalone single words are dropped when they also read as
+# ordinary English, via the same dictionary check
+# qc-derive-roster-from-accounts.py already uses for single-word candidates,
+# so a client literally named a common word does not flag ordinary prose
+# everywhere). Never echoes a name; only pattern shapes are described here.
 #
 # v2.4.0 FIX (bypass was unprovable): --no-verify leaves no trace, and until
 # now this gate wrote nothing durable of its own, so "the gate was never
@@ -208,6 +226,25 @@ _load_derived_roster() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ─── Fast grep binary (v2.5.0) ─────────────────────────────────────────────
+# The v2.5.0 expanded pattern set (see below) roughly triples the number of
+# alternatives in the scan regex. Measured directly on this repo's own
+# ~7,000 tracked files: macOS's system BSD grep takes ~20s for a 30-
+# alternative case-insensitive scan; GNU grep (Homebrew's `ggrep`, or plain
+# `grep` when it's already GNU — e.g. every Linux CI runner) does the SAME
+# scan in ~1.3s. A gate slow enough to make a pre-commit hook painful gets
+# `--no-verify`'d, which is the same "gate that cannot do its job" failure
+# mode as a false-positive flood — so prefer the fast engine when present,
+# and silently keep working on the slower one otherwise (this is a
+# performance choice, not a correctness one: both engines return identical
+# matches for the ERE patterns this script builds).
+GREP_BIN="grep"
+if command -v ggrep >/dev/null 2>&1; then
+  GREP_BIN="ggrep"
+elif grep --version 2>/dev/null | head -1 | grep -q "GNU grep"; then
+  GREP_BIN="grep"
+fi
+
 # ─── Durable audit log (OUTSIDE the repo) ──────────────────────────────────
 # Fix for "--no-verify leaves no trace, so 'the gate was never bypassed' is
 # unprovable": this gate now writes ONE append-only line per invocation to a
@@ -297,13 +334,52 @@ else
   fi
 fi
 
-# Build a single ERE alternation pattern: always-on tokens in both modes, plus
-# the external roster patterns when a roster is available.
+# Build the ERE alternation pattern(s): always-on tokens in both modes, plus
+# the external roster patterns when a roster is available. v2.5.0 splits this
+# into TWO alternations at two different precision tiers — see
+# scripts/qc-expand-roster-name-forms.py's header for the full rationale:
+#   PATTERN     (case-INSENSITIVE scan) — always-on tokens, the roster's own
+#     full-name/single-word literals (UNCHANGED from pre-v2.5.0), plus the
+#     "CI:" expansion forms (compounds + hostname- and backup-filename-
+#     corroborated forms), all of which carry their own corroborating
+#     structure so case-insensitivity does not flood the scan with ordinary-
+#     prose collisions.
+#   CS_PATTERN  (case-SENSITIVE scan) — the "CS:" expansion forms only
+#     (bare first-name/last-name-alone \bWord\b patterns). Measured on this
+#     repo's own tracked tree: case-INSENSITIVE bare-word matching produced
+#     100+ false-positive file hits per noisy candidate; every one of those
+#     vanished under an exact-case match, with zero measured recall loss
+#     (real name mentions in prose are capitalized the same way the roster
+#     derived them). Kept as a SEPARATE pass (not folded into PATTERN)
+#     specifically so it does not inherit -i.
 SCAN_TOKENS=("${ALWAYS_ON_TOKENS[@]}")
+CS_TOKENS=()
 if [ "$MODE" = "full" ]; then
   SCAN_TOKENS+=("${CLIENT_NAMES[@]}")
+  # v2.5.0 FIX (CRITICAL-1 escaped detection): a two-word roster entry is
+  # loaded above as the literal "First Last" — it only matches when BOTH
+  # words appear together, in that order, with a single space. A real client
+  # leaked into 4 tracked-file locations while this gate reported PASS: 1
+  # occurrence matched the full-name literal; the other 3 used the first
+  # name ALONE (prose + a <firstname>.zerohumanworkforce.com hostname) and a
+  # bak-<firstname>-... backup-filename suffix, none of which contain the
+  # full-name substring. scripts/qc-expand-roster-name-forms.py derives the
+  # additional forms that catch that class. Never echoes a name; only new
+  # ERE patterns, each tagged "CI:" or "CS:", cross this pipe.
+  EXPAND_SCRIPT="$SCRIPT_DIR/qc-expand-roster-name-forms.py"
+  if [ -f "$EXPAND_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+    while IFS= read -r tagged_pattern; do
+      [ -z "$tagged_pattern" ] && continue
+      case "$tagged_pattern" in
+        CI:*) SCAN_TOKENS+=("${tagged_pattern#CI:}") ;;
+        CS:*) CS_TOKENS+=("${tagged_pattern#CS:}") ;;
+      esac
+    done < <(printf '%s\n' "${CLIENT_NAMES[@]}" | python3 "$EXPAND_SCRIPT" 2>/dev/null)
+  fi
 fi
 PATTERN=$(printf '%s\n' "${SCAN_TOKENS[@]}" | paste -sd'|' -)
+# CS_PATTERN is finalized further below, AFTER the tracked-file list exists —
+# see the "ambient-frequency filter" block near the scan loop for why.
 
 HITS=0
 OFFENDERS=()
@@ -371,6 +447,41 @@ _is_excluded() {
     */06-ghl-install-pages/tests/test_ghl_secret_hygiene.py) return 0 ;;
     # Working / scratch ledger files — not shipped to clients
     */working/*)                                   return 0 ;;
+    # v2.5.0: directories whose LEGITIMATE, intended content is real public
+    # figures' names — not clients. Measured on this repo's own tree while
+    # building the v2.5.0 expanded detection: a roster candidate's surname
+    # collided with a real, unrelated, published author cited by this skill's
+    # own core content (e.g. a book-persona extraction citing that book's
+    # actual author). This is structural, not a one-off: every file in this
+    # directory is, by the skill's own design, a summary of a named, publicly
+    # published book — proper names are the intended content, not incidental.
+    */22-book-to-persona-coaching-leadership-system/personas/*) return 0 ;;
+    # The operator co-mingling-guard skill exists specifically to repeatedly
+    # name the BlackCEO operator team (Trevor / LeAnne / Spaulding) so a
+    # client box never routes to them as "workers" — see this script's own
+    # ALWAYS_ON_TOKENS comment: "the AGENCY and operator team members are NOT
+    # clients." One operator team member's surname also happens to match a
+    # roster candidate; excluding the directory whose entire purpose is
+    # naming the operator team is the structural fix, not a one-off.
+    */15-blackceo-team-management/*)               return 0 ;;
+    # Single-occurrence public-figure citations, confirmed by manual review
+    # during the v2.5.0 sweep — each is a specific book/author reference in
+    # role-library "recommended reading" material (reused verbatim across
+    # every client, not client-specific), or a real public entrepreneur's
+    # name used as a Facebook ad-interest-targeting keyword (not a person
+    # this repo is about). Listed individually (not directory-scoped) because
+    # each is an isolated collision, not a systemic pattern like the two
+    # directories above.
+    */23-ai-workforce-blueprint/templates/role-library/app-development/deep-research-specialist-app-development.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/_stage1_drafts/app-development/deep-research-specialist-app-development.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/graphics/presentation-designer-slides-decks.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/_stage1_drafts/graphics/presentation-designer-slides-decks.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/openclaw-maintenance/deep-research-role--openclaw-maintenance.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/_stage1_drafts/openclaw-maintenance/deep-research-role--openclaw-maintenance.md) return 0 ;;
+    */42-personal-assistant-library/specialists/07-brainstorming-ideation/governing-personas.md) return 0 ;;
+    */42-personal-assistant-library/specialists/07-brainstorming-ideation/how-to.md) return 0 ;;
+    */52-avatar-alchemist/prompts/15-facebook-audiences/user.md) return 0 ;;
+    */44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh) return 0 ;;
   esac
   return 1
 }
@@ -388,6 +499,55 @@ while IFS= read -r f; do
   FILES+=("$f")
 done < <(_list_files "$REPO_ROOT")
 
+# ─── v2.5.0: ambient-frequency filter for CS_TOKENS (standalone bare-word
+# forms) ─────────────────────────────────────────────────────────────────
+# A standalone \bWord\b form (case-sensitive, dictionary-filtered) can still
+# collide with THIS repo's own vocabulary in ways a literary dictionary
+# check cannot catch — Title Case is the default casing for markdown
+# headers and table headers throughout ~7,000 tracked files, so a roster
+# word component that ALSO happens to double as ordinary repo vocabulary
+# floods the gate exactly the way a client literally named "Grace" or
+# "Mark" was the risk to guard against. MEASURED on this repo's own tree
+# before shipping: every genuinely name-shaped CS candidate matched 7 or
+# fewer tracked files; one candidate that also reads as an ordinary
+# business/doc term matched 108 — a two-order-of-magnitude gap with a clean
+# separation, not a borderline call.
+# FIX: before a CS_TOKEN is allowed to BLOCK, pre-check how many tracked
+# files it matches on THIS run's own tree. A real, isolated identity leak
+# appears in a handful of related files; a token that saturates the repo is
+# functionally indistinguishable from ordinary vocabulary regardless of
+# what generated it. Tokens over the ceiling are dropped from the blocking
+# CS_PATTERN and reported via a single ADVISORY count to stderr instead
+# (never the word itself, never which candidate) — the same non-blocking-
+# but-visible treatment this script already gives
+# qc-heuristic-name-shapes.py's own measured-too-noisy findings. The full
+# multi-word name literal, and the compound/hostname/backup-filename forms
+# for the SAME roster entry, remain fully enforced above regardless — this
+# filter only ever removes the single riskiest form, never the others.
+CS_AMBIENT_FILE_CEILING=10
+CS_TOKENS_FILTERED=()
+CS_TOKENS_SUPPRESSED=0
+if [ "${#CS_TOKENS[@]}" -gt 0 ] && [ "${#FILES[@]}" -gt 0 ]; then
+  for cs_tok in "${CS_TOKENS[@]}"; do
+    tok_file_count=$(printf '%s\0' "${FILES[@]}" \
+      | xargs -0 "$GREP_BIN" -E -l "$cs_tok" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${tok_file_count:-0}" -gt "$CS_AMBIENT_FILE_CEILING" ]; then
+      CS_TOKENS_SUPPRESSED=$((CS_TOKENS_SUPPRESSED + 1))
+    else
+      CS_TOKENS_FILTERED+=("$cs_tok")
+    fi
+  done
+  if [ "$CS_TOKENS_SUPPRESSED" -gt 0 ]; then
+    echo "NOTE: $CS_TOKENS_SUPPRESSED standalone-name detection pattern(s) suppressed" \
+         "(matched more than $CS_AMBIENT_FILE_CEILING tracked files ambiently on this run —" \
+         "indistinguishable from ordinary repo vocabulary at this scope, so NOT enforced" \
+         "as a blocking check here; the full name, and the hostname/backup-filename/" \
+         "compound forms for the same roster entries, are still enforced above)." >&2
+  fi
+fi
+CS_PATTERN=""
+[ "${#CS_TOKENS_FILTERED[@]}" -gt 0 ] && CS_PATTERN=$(printf '%s\n' "${CS_TOKENS_FILTERED[@]}" | paste -sd'|' -)
+
 declare -A _PER_FILE_HITS=()
 if [ "${#FILES[@]}" -gt 0 ]; then
   while IFS= read -r hit_line; do
@@ -400,7 +560,25 @@ if [ "${#FILES[@]}" -gt 0 ]; then
     OFFENDERS+=("  $hit_line")
     HITS=$((HITS + 1))
   done < <(printf '%s\0' "${FILES[@]}" \
-             | xargs -0 grep -E -Hin "$PATTERN" 2>/dev/null)
+             | xargs -0 "$GREP_BIN" -E -Hin "$PATTERN" 2>/dev/null)
+
+  # v2.5.0: second pass, CASE-SENSITIVE, for the "CS:" standalone bare-word
+  # forms only (see the PATTERN/CS_PATTERN build comment above for why this
+  # cannot be folded into the -i pass above). Same per-file cap, same
+  # OFFENDERS/HITS accounting — a hit is a hit regardless of which pass
+  # found it.
+  if [ -n "$CS_PATTERN" ]; then
+    while IFS= read -r hit_line; do
+      [ -z "$hit_line" ] && continue
+      path="${hit_line%%:*}"
+      n=$(( ${_PER_FILE_HITS["$path"]:-0} + 1 ))
+      _PER_FILE_HITS["$path"]=$n
+      [ "$n" -gt 20 ] && continue
+      OFFENDERS+=("  $hit_line")
+      HITS=$((HITS + 1))
+    done < <(printf '%s\0' "${FILES[@]}" \
+               | xargs -0 "$GREP_BIN" -E -Hn "$CS_PATTERN" 2>/dev/null)
+  fi
 fi
 
 # ─── Advisory (non-blocking) roster-free floor ─────────────────────────────
