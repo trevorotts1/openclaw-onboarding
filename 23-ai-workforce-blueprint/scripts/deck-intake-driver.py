@@ -427,9 +427,21 @@ def _normalize_enum_value(text: str, question: dict) -> str:
     """Best-effort match of a free-text enum answer to one of the question's
     allowed_values: exact match, case/punctuation-insensitive match, keyword
     containment against the value or its value_labels entry, else the
-    question's declared default. Never raises and never returns a string
-    outside allowed_values (or the raw default) — downstream mapping tables
-    never see an out-of-band presentation_type."""
+    question's declared default. Never raises.
+
+    LANDMINE CLOSED (2026-08-18): this used to fall back to `allowed[0]` when
+    no default was declared AND no match was found -- for presentation_type,
+    allowed[0] is 'from_scratch', so a client's genuine-but-unparseable free
+    text (passes validate_answer's length floor, matches nothing) was
+    silently converted into an answer the client never gave, identical in
+    effect to the JSON `default: from_scratch` landmine this closes. Only a
+    question's own EXPLICIT `default` is ever honored now; absent that, the
+    raw (unmatched) text is returned as-is -- deliberately OUTSIDE
+    allowed_values -- so a caller like derive_legacy_fields() sees an
+    out-of-band value and fails closed (raises ValueError, writes nothing)
+    instead of silently approving a guessed value. Downstream mapping tables
+    must treat an out-of-band presentation_type as unanswered, never as
+    approval."""
     allowed = question.get("allowed_values") or []
     if not allowed:
         return (text or "").strip()
@@ -448,7 +460,8 @@ def _normalize_enum_value(text: str, question: dict) -> str:
         label = str(labels.get(val, "")).lower()
         if label and (label in lowered_free or lowered_free in label):
             return val
-    return question.get("default", allowed[0])
+    default = question.get("default")
+    return default if default is not None else stripped
 
 
 # ---------------------------------------------------------------------------
