@@ -3,6 +3,198 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.0] - 2026-08-18
+
+New loop class **LP-A10: agent-to-agent cross-run resend loop**, closing a real
+incident verified live on a client box on 2026-08-04. Repo-only change (this
+skill's rollout gate stays HELD, `config/rollout.json` unchanged); no box is
+armed, activated, or touched by this release.
+
+**Merge-forward note.** This work was written and reviewed on 2026-08-04
+against `LP-A8` / `LF-9`, the first free ids at the time. `main` moved 448
+commits in the two weeks this sat as a PR, and the very next day (0.4.0,
+2026-08-05, below) independently claimed **both** those ids for an unrelated
+class — D5's self-blocking flush-run / transcript-poison detector. That is a
+genuinely different fault (a run wedged against the runtime's own identical-
+call guard, filling its OWN transcript with refusals) from this one (an
+orchestrator misreading a cross-agent delivery timeout and resending as a
+brand-new top-level run) — same `F15` taxonomy family, different mechanism,
+different detector, different remediation. Reconciled by renumbering this
+release's ids forward to the next free slots, `LP-A10` / `LF-12` (family A
+already reached `LP-A9` and fix classes `LF-11` by the time of this merge) —
+every reference below, in code, config, docs, and tests, reflects the
+renumbered ids; nothing else about the design, thresholds, or mechanism
+changed.
+
+**The incident.** An orchestrator agent routed work to a department agent via
+`sessions_send`, then waited. `sessions_send` falls back to a HARDCODED 30000ms
+timeout when the caller omits `timeoutSeconds`. The target department was busy
+and did not reply within 30s. The orchestrator misread the LOCAL TIMEOUT as a
+DELIVERY FAILURE and re-sent the byte-identical message as a BRAND-NEW
+top-level run - 6-8 times, ~34s apart (30s timeout + ~4s overhead is the resend
+cadence fingerprint). The victim department churned past 154,000 input tokens
+with no brake. Nothing caught it: OpenClaw's own `tools.loopDetection` counts
+repeated tool calls WITHIN one run, and `session.agentToAgent.maxPingPongTurns`
+bounds the INNER exchange of a single `sessions_send` call - every resend here
+was a separate top-level run id, so both counters reset to a clean slate each
+time. Zero firings across a 57MB gateway log while the loop was raging; tuning
+either existing threshold is a structural no-op for this class.
+
+**The detection signal (proven on the live box).** Every inbound cross-agent
+message the gateway delivers is stamped in the RECEIVING agent's session
+transcript as `message.provenance = {kind:"inter_session",
+sourceTool:"sessions_send", sourceSessionKey:...}` - structural, and present
+regardless of what the sending side logged (a resend is a fresh run at the
+sender, so nothing the sender wrote survives the resend boundary; only the
+receiver's transcript does).
+
+**Post-push correction (same day, before merge).** A second verification pass
+against a LIVE OpenClaw 2026.7.1-2 box checked this release's two remaining
+"plausible, confirm during burn-in" items and found one right and one wrong:
+the provenance/payload shape was CONFIRMED CORRECT as designed (see the
+tightened field list below); the abort mechanism was NOT - `openclaw sessions
+--help` on that box lists only `cleanup / compact / export-trajectory / list`,
+there is NO `sessions abort` CLI subcommand, so the originally-shipped
+`openclaw sessions abort --session <key> --json` call would have failed on
+every invocation and, because it was designed to fail soft, would have
+returned `{ok:false}`, applied only the park, and LOOKED fine while never
+actually aborting anything - precisely the silent-no-op failure mode this
+skill exists to prevent. Both are fixed below before this ever merged; no box
+was ever armed with the wrong command (repo-only PR, rollout gate HELD).
+
+Added:
+- **D7 - cross-run resend (provenance-stamped)** (`loop_detectors.py
+  :: d7_cross_run_resend`). Reads AGENT SESSION transcripts
+  (`agents/*/sessions/*.jsonl` - a DIFFERENT stream from the
+  `*.trajectory.jsonl` event log D1-D4 read; a bare `*.jsonl` glob is
+  explicitly filtered to exclude the trajectory suffix), offset-tracked
+  (`loop_watchdog.py :: collect_cross_run_sends` / `_read_new_session_rows`,
+  its own `loop-sess:<path>` cursor namespace, never colliding with D3's
+  `loop-traj:<path>`), bounded to recently-modified files - cheap enough for a
+  60s cadence even though it currently rides the existing 15-minute tick (no
+  new cron/pulse-lane is added by this release; see Known gaps below). Groups
+  by (source, target, normalized-payload-hash) and slides a 300s window over
+  each group's DISTINCT run ids; `>= 3` inside the window is loop-confirmed P1,
+  `== 2` is WARN-only, and a genuine multi-message handoff (distinct payload
+  hashes per send) never accumulates a group at all - conservative by default.
+  D5 and D6 landed independently on `main` on 2026-08-05 (self-blocking
+  flush-run / transcript poison, and semantic retry burst - see the
+  merge-forward note above); D7 is unrelated to both and does not consume
+  either detector number.
+  **Field shape CONFIRMED against a live OpenClaw 2026.7.1-2 box** (real
+  captured row, not a guess): top-level row `{type, id, parentId, timestamp,
+  message}`; `message: {role, content, timestamp, provenance}`;
+  `message.provenance = {kind:"inter_session", sourceSessionKey,
+  sourceTool:"sessions_send", [sourceChannel]}`; qualifying rows are
+  `role:"user"`. The confirmed path is now PRIMARY in every candidate list
+  (`_PROVENANCE_PATHS`, `_PAYLOAD_PATHS` -> `message.content`,
+  `_TIMESTAMP_PATHS` -> `timestamp` not the old guessed `ts`), with the prior
+  guesses kept only as defensive fallbacks. `sourceChannel` is CONFIRMED
+  optional (present on one live sample, absent on another) and is never read
+  or required - its absence cannot cause a miss (drilled in
+  `loop_watchdog.py`'s self-test: one resend row carries it, two don't, all
+  three still match). There is no confirmed per-run identifier field on this
+  row shape (no `runId`); the row's own `id` (confirmed present on every row)
+  is used as the run/delivery identifier instead - `runId`/`run_id` are tried
+  first only in case a differently-enveloped row attaches one directly.
+  `loop_common.py :: parse_iso8601` was hardened to also accept a numeric
+  epoch timestamp (seconds or milliseconds, including as a numeric STRING)
+  as a defensive fallback alongside ISO-8601, since the `timestamp` field
+  NAME is now confirmed but its VALUE shape was not independently verified.
+- **Never-log-raw-body boundary** (`loop_common.py ::
+  normalize_inter_session_payload` / `cross_run_payload_hash`). The raw
+  message body - which can carry a live client credential pasted
+  mid-conversation - is normalized (leading bracketed preamble stripped,
+  whitespace collapsed) and SHA-256 hashed (16-hex, matching
+  `signature_hash`'s truncation) INSIDE the collector, one call, one stack
+  frame; unlike D3 (whose structural fields carry no client content), the
+  hash boundary sits at the collector here so the raw text never crosses into
+  a detector, a finding, the ledger, or any log line anywhere in this skill.
+- **LF-12 - abort + park** (`loop_killcards.py :: lf12_abort_cross_run_resend`,
+  Tier 1, config-free like LF-6, so it applies for real in-tick on an armed
+  box). Calls the native `sessions.abort` RPC on the resending SOURCE
+  session's in-flight run via **`openclaw gateway call sessions.abort
+  --params '{"key":"<session-key>","agentId":"<agent-id>"}'`**
+  (`_sessions_abort_via_gateway_rpc`; `agentId` is best-effort-extracted from
+  the session key's own `agent:<agentId>:...` shape via
+  `_agent_id_from_session_key`) then parks the source unit visible-red. NEVER
+  pkill node, NEVER restarts the gateway. **CONFIRMED live** (OpenClaw
+  2026.7.1-2, 2026-08-04): `openclaw sessions --help` lists only
+  `cleanup / compact / export-trajectory / list` - there is no `sessions
+  abort` CLI subcommand, so this is the ONLY real call path (`openclaw
+  gateway --help` -> `call  Call a Gateway method`); exercised live against a
+  session with no active run and confirmed to return
+  `{"ok":true,"abortedRunId":null,"status":"no-active-run"}` - a documented
+  SAFE no-op, so it is safe to call speculatively. Response parsing
+  (`_rpc_signals_success_or_noop`) treats `status:"no-active-run"` as a
+  SUCCESSFUL no-op independent of whether `ok` is also present - never a
+  failed fix, never a retry trigger; only the healer breaker (>3 fixes on the
+  same target/24h, or any verify failure) governs whether LF-12 fires again. A
+  600s action cooldown (the incident's own proven-safe spacing) is enforced
+  via the ledger's EXISTING digest/dedup primitive (the same one the alert
+  path uses) - a second call inside the window is REFUSED, never re-applied.
+  `run_fix()`'s `fix <finding-id>` operator path gained a matching `fc ==
+  "LF-12"` branch (mirrors the LF-6 branch exactly).
+- **`resend` breaker** (`config/breakers.json`, `loop_breaker.py ::
+  resend_breaker_trips`) - the independent ceiling-copy predicate every other
+  breaker carries (the S4 cap-raise-without-stamp pattern).
+- **`config/thresholds.json :: d7_cross_run_resend`** - `window_seconds: 300`,
+  `warn_repeat: 2`, `p1_repeat: 3`, `action_cooldown_seconds: 600` - the
+  proven-safe values from the live incident.
+- **`config/signatures.json` / `docs/LOOP-CLASS-CATALOG.md`**: `LP-A10`
+  registered (family A, `F15` - the taxonomy's next LP-introduced extension
+  after `F14`=LP-A1, per SKILL.md's "F14+" rule - `LP-A8`/`LP-A9` having since
+  been claimed by D5/D6, see the merge-forward note above), detector `D7`,
+  tier default 1.
+- **Tests**: `tests/fixtures/cross-run-resend.sends.json` (3 groups: a 3-send
+  true positive, a 2-send below-threshold pair, and a 3-message legitimate
+  fan-out with distinct payloads) + `tests/drills/D-RESEND.md`, wired into
+  `verify.sh` step 3 (now twenty-three drills, alongside D5/D6's own nine
+  landed 2026-08-05) and into `loop_detectors.py` /
+  `loop_watchdog.py` / `loop_killcards.py` / `loop_breaker.py`'s own
+  `--self-test`s.
+
+Known gaps (stated plainly, not silently dropped; updated after the live-box
+verification pass above - two of the original three are now CONFIRMED, not
+just plausible):
+
+1. **Still open, unchanged.** D7 rides the EXISTING 15-minute tick, not a
+   dedicated 60s pulse-lane cron. It is built cheap enough to run at 60s
+   (offset cursors, recent-mtime file filtering, no gateway-log tail) but no
+   new cron/pulse-lane infrastructure ships in this release - that remains a
+   separate, larger change. D5/D6 (landed 2026-08-05) also ride the same
+   15-minute tick, not a dedicated pulse lane.
+2. **RESOLVED - confirmed correct, not merely plausible.** The provenance /
+   payload field shape (`message.provenance`, `message.content`,
+   `role:"user"`, optional `sourceChannel`) was independently verified
+   against a live OpenClaw 2026.7.1-2 box's real captured session row and
+   matches this design exactly; the confirmed path is now primary in every
+   candidate list (see the D7 "Field shape CONFIRMED" note above). What
+   remains genuinely unconfirmed on this row shape: whether `timestamp`'s
+   VALUE is always an ISO-8601 string (the FIELD NAME is confirmed; the value
+   shape is defended, not proven, by the new numeric-epoch fallback in
+   `parse_iso8601`), and whether a `sourceSessionKey` is ever shaped
+   differently from the observed `agent:<agentId>:<channel>:<mode>:<kind>:
+   <chatId>` convention `_agent_id_from_session_key` relies on.
+3. **RESOLVED - was a real, confirmed defect; now fixed.** The abort
+   mechanism originally called a `sessions abort` CLI subcommand that does
+   not exist on a live box (`openclaw sessions --help` lists only
+   `cleanup / compact / export-trajectory / list`); because the call was
+   designed to fail soft, this would have silently returned `{ok:false}`,
+   still applied the park, and reported the fix as "applied" while never
+   actually aborting anything on a live box - exactly the silent-no-op
+   failure mode this skill exists to catch in OTHER systems. Replaced with
+   the verified real path, `openclaw gateway call sessions.abort --params
+   '{"key":"<session-key>","agentId":"<agent-id>"}'`, independently exercised
+   live and confirmed to return `{"ok":true,"abortedRunId":null,"status":
+   "no-active-run"}` against a session with nothing to abort - a documented
+   safe no-op. The `agentId` param's extraction from the session key
+   (`agent:<agentId>:...`) is a best-effort convention inferred from the one
+   live sample seen; a session key of a different shape degrades to using the
+   whole key as `agentId` (never a crash), and the RPC call itself remains
+   best-effort - an unreachable/wrong response still parks the source (the
+   park, not the RPC, is what actually breaks the loop).
+
 ## [0.5.0] - 2026-08-05
 
 **The post-update restore-verify script lands in the skill.**
