@@ -1,3 +1,44 @@
+## [v22.0.47] -- 2026-08-18 -- fix(presentations): cc_board registration receipt is not a signature -- say so without breaking legacy receipts
+
+Rebuild of `fix/trust-fakehmac`, which a verifier rejected: it correctly
+identified that `cc_board.registration_proof` / `build_deck._chk_cc_registered`
+overclaimed a security property this value never had (it is
+`hmac.new(cc_task_id + "|" + idempotency_key, b"", sha256)` -- the "key"
+material is fully attacker/author-computable from data already sitting in the
+same file, so this is a same-file consistency check, not a real MAC), but it
+ALSO renamed the receipt's wire-format dict key from `"hmac"` to `"tag"` and
+switched the digest formula from an HMAC-shaped call to plain
+`sha256(canonical)`. Since the CONSUMER (`build_deck._chk_cc_registered`) was
+changed in lockstep to expect the new key/formula, producer and consumer
+agreed with EACH OTHER -- but not with any `cc_registration` receipt already
+stamped on disk by the old code, which carries `"hmac"`, not `"tag"`. A legacy
+receipt hit `receipt.get("tag") or ""` -> empty -> mismatch -> AF-CC-UNVERIFIED
+-> `sys.exit(5)`: a genuine, previously-passing registration now hard-BLOCKED.
+
+FIX: renamed the Python symbols (`registration_proof` ->
+`registration_linkage_tag`, `_cc_registration_verified` ->
+`_cc_registration_linkage_matches`) and rewrote every docstring/message to be
+honest about what a match does and does not prove (a same-file consistency
+hint, never authorization, never proof of a live Command Center round-trip) --
+but left the WIRE FORMAT untouched: the stamped dict key stays `"hmac"` and
+the digest computation stays byte-for-byte `hmac.new(canonical, b"", sha256)`,
+so every `process_manifest.json` already on disk, and every one stamped going
+forward, verifies identically. Deprecated aliases
+(`registration_proof = registration_linkage_tag`,
+`_cc_registration_verified = _cc_registration_linkage_matches`) keep any
+external importer of the old names working. `MASTER-QC-AUTOFAIL-RULESET.md`'s
+AF-CC-UNVERIFIED row was updated to match.
+
+Independently verified by a separate verifying agent: a legacy-format receipt
+(hand-constructed with the pre-fix `"hmac"` field and formula) is correctly
+ACCEPTED here and on `main` pre-fix, but hits AF-CC-UNVERIFIED /
+`sys.exit(5)` on the rejected `fix/trust-fakehmac`. A tampered/garbage receipt
+is still correctly REJECTED on all three -- the gate's real teeth are intact,
+only the honest labelling and backward compatibility changed. Full-codebase
+grep confirms `cc_registration` has exactly one consumer, and it never treats
+a match as authorization. Full test suite (1021 tests) green with no
+regressions.
+
 ## [v22.0.46] -- 2026-08-18 -- fix(trust-boundary): seal enforcement mode into RunFacts for EVERY seal path, including force=True reseal
 
 Rebuild of `fix/trust-flag`, which a verifier rejected: it sealed
