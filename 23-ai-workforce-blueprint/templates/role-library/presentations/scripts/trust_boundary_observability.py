@@ -23,16 +23,53 @@ each of them prints today —
                                             (phase_verifiers.py / verifier_registry.py:
                                              the shadow wrapper's own except clause)
 
-Those three prefixes and that shape are not something this module invented —
-they are already-merged, already-executing code (grep DIVERGENCE_PREFIX /
-FINDING_PREFIX / ERROR_PREFIX in runfacts.py, and the two `print(...,
-file=sys.stderr)` call sites in phase_verifiers.py / verifier_registry.py).
-Today every one of those lines is printed once and lost: nothing captures
-them, nothing persists them, nothing aggregates them, and the ONE existing
-test that exercises the divergence path (test_runfacts.py::
+...and a SECOND, later-added surface with its own four-prefix contract, all
+carrying a `-PREFLIGHT-` infix (presentation_job/preflight_shadow.py, the
+Phase 1 surface A wrapper around build_deck.run_preflight()'s
+PREFLIGHT_REQUIRED dispatch loop):
+
+    TRUST-BOUNDARY-PREFLIGHT-DIVERGENCE gate=<label> run_dir=<path>
+        path=<path> hash_at_seal=<hex|None> hash_at_check=<hex|None>
+        legacy=<PASS|FAIL> enforcing_flag_set=<bool>
+    TRUST-BOUNDARY-PREFLIGHT-WOULD-BLOCK gate=<label> run_dir=<path>
+        fact=<label!r> source=<path> reason='<fixed text>' (<trailer>)
+    TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR <detail>
+                                            (preflight_shadow.py's OWN open_run()/
+                                             record() except clauses, no colon after
+                                             the prefix -- AND build_deck.py's own
+                                             defense-in-depth except clauses around
+                                             each call site, WITH a colon; both are
+                                             the same signal from two call sites and
+                                             both are recognised here)
+    TRUST-BOUNDARY-PREFLIGHT-SUMMARY run_dir=<path> entries=<n>
+        divergences=<n> would_have_blocked=<n> ledger=<path>
+                                            (presentation_job/preflight_shadow.py:
+                                             open_run / record / close_run)
+
+Those seven prefixes and their shapes are not something this module invented
+— they are already-merged, already-executing code (grep DIVERGENCE_PREFIX /
+FINDING_PREFIX / ERROR_PREFIX in runfacts.py; the two `print(..., file=
+sys.stderr)` call sites in phase_verifiers.py / verifier_registry.py; and
+presentation_job/preflight_shadow.py's own four prefixes, imported from
+trust_boundary_prefixes.py — see that file for why this second family gets a
+shared-import treatment the first family doesn't). Today every one of those
+lines is printed once and lost: nothing captures them, nothing persists
+them, nothing aggregates them, and the ONE existing test that exercises the
+divergence path (test_runfacts.py::
 test_proven_gap_pass_false_report_still_returns_legacy_true_in_report_only)
 asserts on the return value only — it never looks at stderr at all. That gap
 is what this module closes.
+
+INCIDENT NOTE (fix/trust-parser): for a period, this module's KNOWN_KINDS
+only listed the FIRST three prefixes above. Because parse_line() gates entry
+on `line.startswith(p) for p in KNOWN_KINDS`, and none of the four
+`-PREFLIGHT-`-infixed prefixes is a prefix-match of any of the first three
+(the infix sits in the middle, not the end), parse_line() returned None on
+every single line preflight_shadow.py printed — the monitor was blind to the
+exact system it was built to watch. Reproduced and fixed by driving the REAL
+build_deck.run_preflight() + presentation_job.preflight_shadow through every
+one of its real emission paths (see test_trust_boundary_observability.py's
+TestPreflightFamily) and asserting zero lines come back unparsed.
 
 WHY A LOG-CAPTURE DESIGN INSTEAD OF EDITING shadow_compare()/seal() DIRECTLY:
 three builders are splitting this trust-boundary work in parallel
@@ -84,6 +121,14 @@ import time
 from pathlib import Path
 from typing import IO, Any, Dict, List, Optional, Sequence
 
+from trust_boundary_prefixes import (
+    PREFLIGHT_DIVERGENCE_PREFIX,
+    PREFLIGHT_WOULD_BLOCK_PREFIX,
+    PREFLIGHT_ERROR_PREFIX,
+    PREFLIGHT_SUMMARY_PREFIX,
+    PREFLIGHT_KNOWN_KINDS,
+)
+
 # Persisted alongside (never overwriting) runfacts.py's own sealed-record file
 # (presentation_job/runfacts.py: SEALED_REL = working/checkpoints/
 # .runfacts.sealed.json) -- same directory, a DIFFERENT filename, append-only
@@ -103,7 +148,18 @@ DIVERGENCE_PREFIX = "TRUST-BOUNDARY-DIVERGENCE"
 FINDING_PREFIX = "TRUST-BOUNDARY-SEAL-FINDING"
 ERROR_PREFIX = "TRUST-BOUNDARY-SHADOW-ERROR"
 
-KNOWN_KINDS = (DIVERGENCE_PREFIX, FINDING_PREFIX, ERROR_PREFIX)
+# presentation_job/preflight_shadow.py — Phase 1 surface A (the
+# PREFLIGHT_REQUIRED dispatch-loop wrapper around build_deck.run_preflight()).
+# THIS is the family that was missing entirely: these four prefixes were
+# never in KNOWN_KINDS, so `line.startswith(p) for p in KNOWN_KINDS` was
+# False for every single line preflight_shadow.py prints -- parse_line()
+# returned None before it even got a chance to try a shape-specific regex.
+# Imported (not re-hardcoded) from trust_boundary_prefixes.py, the same
+# module presentation_job/preflight_shadow.py itself now imports these exact
+# four strings from -- one definition, both sides, cannot drift apart again.
+# See trust_boundary_prefixes.py's docstring for the incident writeup.
+
+KNOWN_KINDS = (DIVERGENCE_PREFIX, FINDING_PREFIX, ERROR_PREFIX) + PREFLIGHT_KNOWN_KINDS
 
 # Matches shadow_compare()'s exact f-string (runfacts.py ~line 1450):
 #   TRUST-BOUNDARY-DIVERGENCE gate={label} run_dir={run_dir} legacy={V}({reason!r})
@@ -127,6 +183,61 @@ _FINDING_RE = re.compile(
 #   TRUST-BOUNDARY-SHADOW-ERROR qc:{qc_key}: {exc!r}
 #   TRUST-BOUNDARY-SHADOW-ERROR verifier={gate} seal raised {exc!r}
 _ERROR_RE = re.compile(r"^" + re.escape(ERROR_PREFIX) + r" (?P<detail>.*)$")
+
+# --- presentation_job/preflight_shadow.py's four shapes -------------------
+#
+# Matches record()'s divergence line (preflight_shadow.py ~line 246):
+#   TRUST-BOUNDARY-PREFLIGHT-DIVERGENCE gate={label} run_dir={run_dir}
+#       path={resolved_path} hash_at_seal={h} hash_at_check={h}
+#       legacy={PASS|FAIL} enforcing_flag_set={bool}
+# `gate` is a PREFLIGHT_REQUIRED label and MAY contain spaces (e.g.
+# "intake.json (interview_confirmed:true, presentation_mode one-person|general)"
+# is a real, observed label) -- unlike the runfacts family's `gate`, this
+# cannot be matched with \S+. Every field is instead bounded by the next
+# field's own literal `name=` marker via a non-greedy `.+?`.
+_PREFLIGHT_DIVERGENCE_RE = re.compile(
+    r"^" + re.escape(PREFLIGHT_DIVERGENCE_PREFIX) + r" gate=(?P<gate>.+?) run_dir=(?P<run_dir>.+?) "
+    r"path=(?P<path>.+?) hash_at_seal=(?P<hash_at_seal>\S+) hash_at_check=(?P<hash_at_check>\S+) "
+    r"legacy=(?P<legacy>PASS|FAIL) enforcing_flag_set=(?P<enforcing>True|False)\s*$"
+)
+
+# Matches record()'s would-have-blocked line (preflight_shadow.py ~line 257):
+#   TRUST-BOUNDARY-PREFLIGHT-WOULD-BLOCK gate={label} run_dir={run_dir}
+#       fact={label!r} source={resolved_path}
+#       reason='artifact changed between preflight admission and this gate
+#       reading it' (report-only — run proceeds, no block issued)
+# `reason=` is always this one hardcoded plain string (not a repr, so never
+# contains an internal quote) -- matched literally between quotes; the
+# trailing parenthetical is captured generically rather than pinned to its
+# exact wording/punctuation (including the em dash) so a copy-edit of that
+# fixed suffix can't silently reopen this same bug.
+_PREFLIGHT_WOULD_BLOCK_RE = re.compile(
+    r"^" + re.escape(PREFLIGHT_WOULD_BLOCK_PREFIX) + r" gate=(?P<gate>.+?) run_dir=(?P<run_dir>.+?) "
+    r"fact=(?P<fact>.+?) source=(?P<source>.+?) reason='(?P<reason>[^']*)'\s*(?P<trailer>.*)$"
+)
+
+# Matches close_run()'s one-line summary (preflight_shadow.py ~line 278):
+#   TRUST-BOUNDARY-PREFLIGHT-SUMMARY run_dir={run_dir} entries={n}
+#       divergences={n} would_have_blocked={n} ledger={path}
+_PREFLIGHT_SUMMARY_RE = re.compile(
+    r"^" + re.escape(PREFLIGHT_SUMMARY_PREFIX) + r" run_dir=(?P<run_dir>.+?) entries=(?P<entries>\d+) "
+    r"divergences=(?P<divergences>\d+) would_have_blocked=(?P<would_have_blocked>\d+) "
+    r"ledger=(?P<ledger>.+)$"
+)
+
+# Matches ALL FOUR "shadow error" call sites for this surface -- two inside
+# preflight_shadow.py's own try/except (no colon right after the prefix,
+# a space then free text: "...SHADOW-ERROR open_run: {exc!r} (...)" /
+# "...SHADOW-ERROR record gate={label}: {exc!r} (...)"), and two in
+# build_deck.py's own defense-in-depth try/except around each call site
+# (a colon right after the prefix, no space: "...SHADOW-ERROR: open_run
+# failed: {exc!r} (...)" / "...SHADOW-ERROR: record failed for {label!r}:
+# {exc!r} (...)"). `[:\s]+` accepts either separator shape uniformly instead
+# of hardcoding one of the two -- the exact kind of two-callers-one-parser
+# split that caused this bug in the first place.
+_PREFLIGHT_ERROR_RE = re.compile(
+    r"^" + re.escape(PREFLIGHT_ERROR_PREFIX) + r"[:\s]+(?P<detail>.*)$"
+)
 
 
 def _utcnow() -> str:
@@ -164,8 +275,19 @@ class ShadowObservation:
         would-have-blocked (the legacy side won, by construction of
         report-only mode, whenever enforcing=False). A SEAL-FINDING or
         SHADOW-ERROR is a signal worth surfacing to an operator but is not
-        itself a pass/fail divergence, so it does not count here."""
-        return self.kind == DIVERGENCE_PREFIX and self.new_verdict != "PASS"
+        itself a pass/fail divergence, so it does not count here.
+
+        preflight_shadow.py's own PREFLIGHT-WOULD-BLOCK line is the dedicated
+        signal for the exact same shape on that surface (record() only ever
+        emits it when the legacy gate PASSED but the artifact it read had
+        already changed since admission) -- always True by construction, so
+        this module doesn't need to re-derive it from the paired
+        PREFLIGHT-DIVERGENCE line and risk double-counting the one event."""
+        if self.kind == DIVERGENCE_PREFIX:
+            return self.new_verdict != "PASS"
+        if self.kind == PREFLIGHT_WOULD_BLOCK_PREFIX:
+            return True
+        return False
 
     def to_json(self) -> Dict[str, Any]:
         d = dataclasses.asdict(self)
@@ -226,6 +348,83 @@ def parse_line(line: str) -> Optional[ShadowObservation]:
             captured_at=_utcnow(),
             kind=ERROR_PREFIX,
             source="phase_verifiers/verifier_registry shadow wrapper",
+            gate=None,
+            run_dir=None,
+            legacy_verdict=None,
+            legacy_reason=None,
+            new_verdict=None,
+            new_reason=None,
+            enforcing=None,
+            detail=g["detail"],
+            raw_line=line,
+        )
+
+    m = _PREFLIGHT_DIVERGENCE_RE.match(line)
+    if m is not None:
+        g = m.groupdict()
+        return ShadowObservation(
+            captured_at=_utcnow(),
+            kind=PREFLIGHT_DIVERGENCE_PREFIX,
+            source="presentation_job.preflight_shadow.record",
+            gate=g["gate"],
+            run_dir=g["run_dir"],
+            legacy_verdict=g["legacy"],
+            legacy_reason=None,
+            new_verdict=None,
+            new_reason=None,
+            enforcing=(g["enforcing"] == "True"),
+            detail=(f"path={g['path']} hash_at_seal={g['hash_at_seal']} "
+                    f"hash_at_check={g['hash_at_check']}"),
+            raw_line=line,
+        )
+
+    m = _PREFLIGHT_WOULD_BLOCK_RE.match(line)
+    if m is not None:
+        g = m.groupdict()
+        return ShadowObservation(
+            captured_at=_utcnow(),
+            kind=PREFLIGHT_WOULD_BLOCK_PREFIX,
+            source="presentation_job.preflight_shadow.record",
+            gate=g["gate"],
+            run_dir=g["run_dir"],
+            # record() only ever emits WOULD-BLOCK on the legacy_ok branch --
+            # see the would_have_blocked property docstring above.
+            legacy_verdict="PASS",
+            legacy_reason=None,
+            new_verdict=None,
+            new_reason=None,
+            enforcing=None,
+            detail=f"fact={g['fact']} source={g['source']} reason={g['reason']!r}",
+            raw_line=line,
+        )
+
+    m = _PREFLIGHT_SUMMARY_RE.match(line)
+    if m is not None:
+        g = m.groupdict()
+        return ShadowObservation(
+            captured_at=_utcnow(),
+            kind=PREFLIGHT_SUMMARY_PREFIX,
+            source="presentation_job.preflight_shadow.close_run",
+            gate=None,
+            run_dir=g["run_dir"],
+            legacy_verdict=None,
+            legacy_reason=None,
+            new_verdict=None,
+            new_reason=None,
+            enforcing=None,
+            detail=(f"entries={g['entries']} divergences={g['divergences']} "
+                    f"would_have_blocked={g['would_have_blocked']} ledger={g['ledger']}"),
+            raw_line=line,
+        )
+
+    m = _PREFLIGHT_ERROR_RE.match(line)
+    if m is not None:
+        g = m.groupdict()
+        return ShadowObservation(
+            captured_at=_utcnow(),
+            kind=PREFLIGHT_ERROR_PREFIX,
+            source=("presentation_job.preflight_shadow / "
+                    "build_deck.run_preflight shadow error handling"),
             gate=None,
             run_dir=None,
             legacy_verdict=None,

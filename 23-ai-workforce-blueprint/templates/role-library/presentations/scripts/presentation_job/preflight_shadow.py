@@ -79,12 +79,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-SHADOW_LEDGER_REL = Path("working") / "checkpoints" / "preflight-shadow.jsonl"
+# Single source of truth for these four literals — see
+# trust_boundary_prefixes.py's module docstring for why this changed from a
+# locally-hardcoded copy (the parser, trust_boundary_observability.py, had
+# its own independent copy that omitted the `-PREFLIGHT-` infix entirely and
+# silently parsed none of this module's output as a result).
+from trust_boundary_prefixes import (  # noqa: E402
+    PREFLIGHT_DIVERGENCE_PREFIX as DIVERGENCE_PREFIX,
+    PREFLIGHT_WOULD_BLOCK_PREFIX as WOULD_BLOCK_PREFIX,
+    PREFLIGHT_ERROR_PREFIX as ERROR_PREFIX,
+    PREFLIGHT_SUMMARY_PREFIX as SUMMARY_PREFIX,
+)
 
-DIVERGENCE_PREFIX = "TRUST-BOUNDARY-PREFLIGHT-DIVERGENCE"
-WOULD_BLOCK_PREFIX = "TRUST-BOUNDARY-PREFLIGHT-WOULD-BLOCK"
-ERROR_PREFIX = "TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR"
-SUMMARY_PREFIX = "TRUST-BOUNDARY-PREFLIGHT-SUMMARY"
+SHADOW_LEDGER_REL = Path("working") / "checkpoints" / "preflight-shadow.jsonl"
 
 
 def _hash_and_mtime(path: Optional[Path]) -> Tuple[Optional[str], Optional[float]]:

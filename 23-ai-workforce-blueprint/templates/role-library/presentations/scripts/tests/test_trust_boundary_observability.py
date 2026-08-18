@@ -47,6 +47,10 @@ import trust_boundary_report as report  # noqa: E402
 from presentation_job import runfacts as rf  # noqa: E402  (real, unmodified)
 import phase_verifiers as pv  # noqa: E402  (real, unmodified)
 
+import build_deck  # noqa: E402  (real, unmodified -- drives the PREFLIGHT family below)
+from presentation_job import preflight_shadow  # noqa: E402  (real, unmodified)
+from test_preflight import make_workdir  # noqa: E402  -- REUSE the real fixture, author none here
+
 
 # ---------------------------------------------------------------------------
 # Part 1 — parse_line() against literal, hand-verified stderr lines. These
@@ -302,6 +306,193 @@ class TestEnforcingIsOrthogonalToRecording:
             assert divergences[0].enforcing is True
         finally:
             os.environ.pop(rf.ENFORCE_ENV, None)
+
+
+# ---------------------------------------------------------------------------
+# Part 4 — the PREFLIGHT family (presentation_job/preflight_shadow.py, wired
+# into build_deck.run_preflight()). REGRESSION GUARD for the exact bug fixed
+# on fix/trust-parser: parse_line()'s KNOWN_KINDS never listed any of these
+# four `-PREFLIGHT-`-infixed prefixes, so it returned None on every line this
+# surface printed. Every line asserted on below comes from calling the REAL
+# build_deck.run_preflight() (in-process, same pattern as
+# test_preflight_shadow.py's own CASE A/B/C) or the REAL preflight_shadow
+# open_run()/record() functions directly with an input shaped to make their
+# OWN internal except clauses fire -- nothing here is a hand-typed fixture
+# string standing in for wrapper output.
+# ---------------------------------------------------------------------------
+
+def _run_preflight_captured(root: pathlib.Path):
+    import contextlib
+    import io
+    out, err = io.StringIO(), io.StringIO()
+    exited_3 = False
+    slides_path = root / "slides.json"
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            build_deck.run_preflight(root, slides_path=slides_path)
+        except SystemExit as e:
+            exited_3 = (e.code == 3)
+    return exited_3, out.getvalue(), err.getvalue()
+
+
+class TestPreflightFamily:
+    def _assert_every_trust_boundary_line_parses(self, stderr_text: str):
+        tb_lines = [ln for ln in stderr_text.splitlines() if "TRUST-BOUNDARY" in ln]
+        assert tb_lines, "expected at least one TRUST-BOUNDARY line to check"
+        unparsed = [ln for ln in tb_lines if obs.parse_line(ln) is None]
+        assert unparsed == [], (
+            f"parse_line() returned None for {len(unparsed)}/{len(tb_lines)} real "
+            f"wrapper lines (the exact regression this test guards): {unparsed}"
+        )
+        return tb_lines
+
+    def test_clean_run_summary_line_is_parsed(self):
+        root = make_workdir(with_artifacts=True)
+        exited_3, _out, err = _run_preflight_captured(root)
+        assert not exited_3
+        tb_lines = self._assert_every_trust_boundary_line_parses(err)
+        summaries = [obs.parse_line(ln) for ln in tb_lines
+                     if ln.startswith(obs.PREFLIGHT_SUMMARY_PREFIX)]
+        assert len(summaries) == 1
+        s = summaries[0]
+        assert s.kind == obs.PREFLIGHT_SUMMARY_PREFIX
+        assert s.run_dir == str(root)
+        assert "entries=60" in s.detail
+        assert "divergences=0" in s.detail
+        assert s.would_have_blocked is False
+
+    def test_tampered_run_divergence_and_would_block_lines_are_parsed(self):
+        root = make_workdir(with_artifacts=True)
+        idx = None
+        for i, entry in enumerate(build_deck.PREFLIGHT_REQUIRED):
+            if entry[0] == "working/copy/intake.json":
+                idx = i
+                break
+        assert idx is not None
+        rel, label, phase, real_check = build_deck.PREFLIGHT_REQUIRED[idx]
+
+        def _tamper_then_check(path):
+            p = pathlib.Path(path)
+            o = json.loads(p.read_text())
+            o["_test_injected_field"] = "race"
+            p.write_text(json.dumps(o))
+            return real_check(path)
+
+        build_deck.PREFLIGHT_REQUIRED[idx] = (rel, label, phase, _tamper_then_check)
+        try:
+            exited_3, _out, err = _run_preflight_captured(root)
+        finally:
+            build_deck.PREFLIGHT_REQUIRED[idx] = (rel, label, phase, real_check)
+        assert not exited_3, "report-only surface must never block"
+
+        tb_lines = self._assert_every_trust_boundary_line_parses(err)
+        parsed = [obs.parse_line(ln) for ln in tb_lines]
+
+        divergences = [o for o in parsed if o.kind == obs.PREFLIGHT_DIVERGENCE_PREFIX]
+        assert len(divergences) == 1
+        d = divergences[0]
+        assert d.gate == label  # names the SPECIFIC gate, including its spaces
+        assert d.run_dir == str(root)
+        assert d.legacy_verdict == "PASS"
+        assert d.enforcing is False
+        assert "intake.json" in d.detail  # names WHERE the fact came from
+
+        would_blocks = [o for o in parsed if o.kind == obs.PREFLIGHT_WOULD_BLOCK_PREFIX]
+        assert len(would_blocks) == 1
+        wb = would_blocks[0]
+        assert wb.gate == label
+        assert wb.would_have_blocked is True
+        assert "artifact changed" in wb.detail
+
+    def test_preflight_shadow_own_open_run_error_is_parsed(self):
+        # Real trigger for preflight_shadow.py's OWN internal except (no
+        # colon after the prefix): Path(run_dir) raises inside open_run()'s
+        # own try/except when given a non-path-like object.
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            result = preflight_shadow.open_run(object(), [])
+        assert result is None
+        line = buf.getvalue().strip()
+        assert line.startswith(obs.PREFLIGHT_ERROR_PREFIX)
+        o = obs.parse_line(line)
+        assert o is not None
+        assert o.kind == obs.PREFLIGHT_ERROR_PREFIX
+        assert "open_run" in o.detail
+
+    def test_preflight_shadow_own_record_error_is_parsed(self):
+        # Real trigger for preflight_shadow.py's OWN internal except in
+        # record(): a ctx object missing the attribute record() unconditionally
+        # touches (entry_count) makes record()'s own try/except fire.
+        import contextlib
+        import io
+
+        class _BrokenCtx:
+            pass
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            preflight_shadow.record(_BrokenCtx(), label="test_gate", display="x",
+                                     resolved_path=None, legacy_reason=None)
+        line = buf.getvalue().strip()
+        assert line.startswith(obs.PREFLIGHT_ERROR_PREFIX)
+        o = obs.parse_line(line)
+        assert o is not None
+        assert o.kind == obs.PREFLIGHT_ERROR_PREFIX
+        assert "test_gate" in o.detail
+
+    def test_build_deck_own_defense_in_depth_open_run_error_is_parsed(self):
+        # Real trigger for build_deck.py's OWN except (colon variant, a
+        # DIFFERENT call site than preflight_shadow.py's own): monkeypatch
+        # preflight_shadow.open_run itself to raise, bypassing its internal
+        # try/except entirely -- build_deck.py's own wrapping try/except
+        # around the call site is what fires. Same technique as
+        # test_preflight_shadow.py's CASE C.
+        root = make_workdir(with_artifacts=True)
+        real_open_run = preflight_shadow.open_run
+
+        def _boom(*a, **k):
+            raise RuntimeError("test-injected open_run failure")
+
+        preflight_shadow.open_run = _boom
+        try:
+            exited_3, _out, err = _run_preflight_captured(root)
+        finally:
+            preflight_shadow.open_run = real_open_run
+        assert not exited_3
+
+        tb_lines = self._assert_every_trust_boundary_line_parses(err)
+        errors = [obs.parse_line(ln) for ln in tb_lines
+                  if ln.startswith(obs.PREFLIGHT_ERROR_PREFIX)]
+        assert errors, "expected at least one PREFLIGHT-SHADOW-ERROR line"
+        assert any("open_run failed" in (e.detail or "") for e in errors)
+
+    def test_build_deck_own_defense_in_depth_record_error_is_parsed(self):
+        # Same technique, the OTHER call site: monkeypatch
+        # preflight_shadow.record itself to raise, so build_deck.py's own
+        # try/except around ITS record() call (not record()'s own internal
+        # one) is what fires -- the fourth and last distinct emission path.
+        root = make_workdir(with_artifacts=True)
+        real_record = preflight_shadow.record
+
+        def _boom(*a, **k):
+            raise RuntimeError("test-injected record failure")
+
+        preflight_shadow.record = _boom
+        try:
+            exited_3, _out, err = _run_preflight_captured(root)
+        finally:
+            preflight_shadow.record = real_record
+        assert not exited_3
+
+        tb_lines = self._assert_every_trust_boundary_line_parses(err)
+        errors = [obs.parse_line(ln) for ln in tb_lines
+                  if ln.startswith(obs.PREFLIGHT_ERROR_PREFIX)]
+        # One per PREFLIGHT_REQUIRED entry -- record() is monkeypatched to
+        # raise on every call in the loop, not just one.
+        assert len(errors) == len(build_deck.PREFLIGHT_REQUIRED)
+        assert all("record failed" in (e.detail or "") for e in errors)
 
 
 if __name__ == "__main__":  # pragma: no cover
