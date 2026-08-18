@@ -31,6 +31,40 @@ edits to any gate body:
      exactly the shape a future Stage-1 enforcement would refuse. Phase 1
      records it. It never blocks.
 
+SCOPED ATTESTATION-EXPLAINED DIVERGENCES (retried/resumed phases, see
+`_attested_artifact_shas_for` and `record()`'s `artifact_spec` param): a bare
+hash divergence cannot tell "the pipeline itself legitimately rewrote this
+artifact between admission and this gate reading it" (a QC send-back loop's
+re-author-and-remeasure retry — `run_signature_deck.run_copy_qc_loop` /
+`run_prompt_qc_loop` — or a resumed phase re-dispatched via `--phase`) apart
+from "something changed it that shouldn't have" — both are, at the byte
+level, just "different content than what was sealed". Verified empirically
+(driving real retries through the actual `run_signature_deck.py` phase
+harness, not simulated): every legitimate phase completion computes
+`sha256(current artifact bytes)` via `run_signature_deck._compute_artifact_sha`
+and writes it as `attest_phase()`'s `artifact_sha` into
+`process_manifest.json`'s `phase_attestations`, keyed by that phase's own
+`phase_id`, BEFORE this preflight pass can observe the new content.
+
+A REJECTED earlier version of this fix explained a divergence whenever
+`hash_at_check` matched ANY artifact_sha EVER attested for the WHOLE run,
+regardless of which artifact or phase attested it — an unscoped global pool.
+That traded the false positive for a worse defect: real tampering of artifact
+B is silently laundered as "explained" the moment its bytes happen to match
+something legitimately attested for a completely different artifact A under a
+different phase (proven — see `test_preflight_shadow_scoped.py`'s
+`case_scoping_closes_cross_artifact_laundering`). THIS version never makes
+that mistake: `_attested_artifact_shas_for(run_dir, artifact_spec)` first
+resolves, from `PIPELINE-MANIFEST.json`'s own `phases[].produces_artifact`
+declarations (the SAME authoritative spec `_compute_artifact_sha` resolves
+against when a real attestation is written), the SET of phase_id(s) the
+manifest actually names as THIS artifact's producer — then only collects
+`artifact_sha` values from `phase_attestations` entries whose `phase_id` is in
+that set. A hash attested for a different artifact's phase can never explain
+THIS gate's divergence, no matter how it got there. A hand-edit that bypasses
+the phase harness entirely (no attestation exists under any owning phase_id)
+is unaffected and still flags exactly as before.
+
 REPORT-ONLY, BY CONSTRUCTION, NOT BY DISCIPLINE:
   - Every public function here returns None, or a value the caller already
     had before calling it — nothing this module computes is consulted by
@@ -150,6 +184,150 @@ def _resolve_entry_path(run_dir: Path, rel: Optional[str]) -> Optional[Path]:
         return None
 
 
+def _find_manifest_path() -> Optional[Path]:
+    """Locate PIPELINE-MANIFEST.json the SAME way `manifest_source.resolve_manifest()`
+    does (installed `sops/` dir, cluster walk-up, legacy fallback paths) WITHOUT ever
+    calling that function directly: `resolve_manifest()` calls its own `refuse()` ->
+    `sys.exit(2)` on ANY resolution failure (missing manifest, or a
+    MANIFEST-SOURCE.txt content_sha256 mismatch) — a hard process exit that would
+    violate this module's report-only, can-never-abort-the-process contract the
+    instant this function ran inside `record()`.
+
+    Deliberately skips `resolve_manifest()`'s provenance-hash ENFORCEMENT (the
+    content_sha256 comparison that triggers `refuse()`) — irrelevant for what this
+    function is used for (a read-only, best-effort lookup of which phase_id owns
+    an artifact spec, purely to scope attestation reuse). A stale-hash manifest
+    can only make ownership resolution LESS available here, same as every other
+    failure mode in this module — the SAFE direction, never the reverse.
+
+    Never raises. Returns None on any failure (repo root not found, no manifest
+    file exists at any candidate path)."""
+    try:
+        # Same HERE run_signature_deck.py resolves against: this module lives one
+        # directory deeper (presentation_job/), so .parent.parent lands on the
+        # shared `presentations/scripts` directory.
+        here = Path(__file__).resolve().parent.parent
+        sops_dir = here.parent / "sops"
+        installed = sops_dir / "PIPELINE-MANIFEST.json"
+        if (sops_dir / "MANIFEST-SOURCE.txt").is_file() and installed.is_file():
+            return installed
+        from manifest_source import find_repo_root  # noqa: PLC0415
+        root = find_repo_root(here)
+        if root is not None:
+            cluster = root / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+            if cluster.is_file():
+                return cluster
+        if installed.is_file():
+            return installed
+        legacy = here.parent / "PIPELINE-MANIFEST.json"
+        if legacy.is_file():
+            return legacy
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _phase_ids_for_artifact_spec(artifact_spec: Optional[str]) -> frozenset:
+    """Resolve which phase_id(s) `PIPELINE-MANIFEST.json` names as the legitimate
+    producer of `artifact_spec` — the EXACT `rel` string a PREFLIGHT_REQUIRED entry
+    carries (a plain path or an unexpanded glob, e.g. `working/qc/copy_qc_report.json`
+    or `working/research/brief-*.md`). Matched by literal string equality against
+    each phase's own `produces_artifact` field, split on `' + '` for the one
+    paired-artifact phase (`P8.25-WORKBOOK`) — the SAME spec string
+    `run_signature_deck._compute_artifact_sha` resolves when a real attestation is
+    written, so this is a direct read of the single source of truth `attest_phase()`
+    itself is grounded in, not a guessed or hand-maintained mapping. More than one
+    phase_id may legitimately own the same spec (e.g. `working/copy/intake.json` is
+    produced by `P-CONVERTER`, `P0A-INTAKE`, AND `P-SP-CLAIM` in the manifest as of
+    this writing) — all are returned; ownership is a set membership test, not a
+    single winner.
+
+    Never raises. Degrades to an empty frozenset on any failure (manifest
+    unreadable, `artifact_spec` falsy/None, no phase declares this spec) — the SAFE
+    direction: no resolved owner means no hash can ever explain a divergence on
+    this artifact, so a failure here can only leave `record()` MORE likely to flag,
+    never less."""
+    if not artifact_spec:
+        return frozenset()
+    try:
+        manifest_path = _find_manifest_path()
+        if manifest_path is None:
+            return frozenset()
+        obj = json.loads(manifest_path.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(obj, dict):
+            return frozenset()
+        owners = set()
+        for ph in obj.get("phases", []) or []:
+            if not isinstance(ph, dict):
+                continue
+            art = ph.get("produces_artifact", "")
+            if not isinstance(art, str) or not art:
+                continue
+            members = [m.strip() for m in art.split(" + ") if m.strip()]
+            if artifact_spec in members:
+                pid = ph.get("id")
+                if isinstance(pid, str) and pid:
+                    owners.add(pid)
+        return frozenset(owners)
+    except Exception:  # noqa: BLE001
+        return frozenset()
+
+
+def _attested_artifact_shas_for(run_dir: Path, artifact_spec: Optional[str]) -> frozenset:
+    """Read `working/checkpoints/process_manifest.json`'s `phase_attestations`
+    (written ONLY by `run_signature_deck.attest_phase` — the same harness every
+    phase, QC send-back loop retry, and resumed run goes through on legitimate
+    completion) and return the set of `artifact_sha` values attested by a phase_id
+    that `PIPELINE-MANIFEST.json` names as `artifact_spec`'s OWN legitimate
+    producer (`_phase_ids_for_artifact_spec`) — SCOPED, never a global pool across
+    every artifact in the run.
+
+    This is the fix for the laundering hole a REJECTED earlier version of this
+    module had: that version's `_attested_artifact_shas()` collected artifact_sha
+    from EVERY attestation in the whole run with no phase/artifact filter at all,
+    so a hash legitimately attested for artifact A's phase could wrongly explain a
+    divergence on a completely unrelated artifact B. Filtering `att.get("phase_id")`
+    against the owner set resolved for THIS SPECIFIC artifact_spec closes that: a
+    hash can only explain this gate's divergence if it was attested BY THE
+    PHASE(S) THE MANIFEST NAMES AS THIS ARTIFACT'S OWN producer.
+
+    If no owner phase_id resolves for `artifact_spec` (manifest unreadable, or
+    this spec isn't a declared `produces_artifact` at all), returns an empty
+    frozenset immediately — there is no legitimate-rewrite explanation available,
+    and nothing in `phase_attestations` should be trusted to supply one.
+
+    `attest_phase()` REFUSES to attest with an empty `artifact_sha` (FATAL, exits
+    2 — see its own docstring) and always uses `"no-artifact-spec"` as the marker
+    for phases with no concrete artifact; that marker is excluded here so it can
+    never accidentally "explain" a real file's divergence.
+
+    Never raises. Missing/unparseable/absent `process_manifest.json`, or any
+    attestation entry missing/malformed, degrades to an empty set — the SAFE
+    direction, matching `_phase_ids_for_artifact_spec`'s own contract."""
+    owners = _phase_ids_for_artifact_spec(artifact_spec)
+    if not owners:
+        return frozenset()
+    try:
+        pm_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
+        if not pm_path.is_file():
+            return frozenset()
+        obj = json.loads(pm_path.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(obj, dict):
+            return frozenset()
+        shas = set()
+        for att in obj.get("phase_attestations", []) or []:
+            if not isinstance(att, dict):
+                continue
+            if att.get("phase_id") not in owners:
+                continue
+            sha = att.get("artifact_sha")
+            if isinstance(sha, str) and sha and sha != "no-artifact-spec":
+                shas.add(sha)
+        return frozenset(shas)
+    except Exception:  # noqa: BLE001
+        return frozenset()
+
+
 @dataclass
 class PreflightShadowContext:
     """One instance per run_preflight() call — created by open_run(), threaded
@@ -169,6 +347,7 @@ class PreflightShadowContext:
     ledger_path: Optional[Path] = None
     entry_count: int = 0
     divergence_count: int = 0
+    explained_divergence_count: int = 0
     would_have_blocked: List[dict] = field(default_factory=list)
 
 
@@ -206,7 +385,8 @@ def open_run(run_dir: Path, entries) -> Optional[PreflightShadowContext]:
 
 
 def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
-           resolved_path: Optional[Path], legacy_reason) -> None:
+           resolved_path: Optional[Path], legacy_reason,
+           artifact_spec: Optional[str] = None) -> None:
     """Call ONCE per PREFLIGHT_REQUIRED entry, immediately after the loop's own
     `check(...)` call has already produced `legacy_reason` — this function
     never receives the check callable itself and therefore can never call
@@ -215,6 +395,15 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
     string on fail — the same value run_preflight()'s own `if reason:`
     branch already tests, so this module's PASS/FAIL bookkeeping can never
     disagree with what the real loop just decided with that same value).
+
+    `artifact_spec` is the entry's OWN `rel` value from PREFLIGHT_REQUIRED (the
+    literal path/glob string build_deck.py already has in scope in its loop) —
+    passed explicitly, never inferred from `display` (which happens to equal
+    `rel` today only by call-site convention, too fragile a coupling to lean on
+    for a scoping decision this security-relevant). Defaults to None so any
+    existing/older call site that omits it degrades to the SAFE behavior: no
+    artifact_spec means no attestation lookup can ever explain a divergence for
+    that call, i.e. behaves exactly like the pre-attestation-aware baseline.
 
     NEVER raises. NEVER returns a value the caller could act on — this is a
     pure side effect (one JSONL ledger line + at most two stderr lines)."""
@@ -231,6 +420,17 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
         diverged = (hash_at_seal is not None or hash_at_check is not None) and (
             hash_at_seal != hash_at_check
         )
+        # SCOPED attestation check (see module docstring's "SCOPED
+        # ATTESTATION-EXPLAINED DIVERGENCES" section and
+        # _attested_artifact_shas_for's own docstring for the full rationale
+        # and the laundering hole this closes). hash_at_check is the only side
+        # ever matched (never hash_at_seal) — the question is always "is the
+        # CURRENT content something the phase(s) that own THIS artifact
+        # (per PIPELINE-MANIFEST.json) themselves vouch for", not the stale
+        # seal, and never "does this hash appear ANYWHERE in the run".
+        explained = False
+        if diverged and hash_at_check is not None:
+            explained = hash_at_check in _attested_artifact_shas_for(ctx.run_dir, artifact_spec)
         enforcing_now = _enforcing_flag()
         entry = {
             "gate_label": label,
@@ -244,10 +444,20 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
             "mtime_at_seal": mtime_at_seal,
             "mtime_at_check": mtime_at_check,
             "toctou_divergence": diverged,
+            "explained_by_attestation": explained,
             "enforcing_flag_set": enforcing_now,
         }
         _append_ledger(ctx.ledger_path, entry)
-        if diverged:
+        if diverged and explained:
+            # A real divergence, but PIPELINE-MANIFEST.json-scoped
+            # phase_attestations independently corroborate the CURRENT bytes
+            # as a legitimate completion of THE PHASE(S) THAT OWN THIS
+            # ARTIFACT — a retried/resumed phase rewriting its own output, not
+            # tamper. Recorded in the ledger for audit (nothing hidden), but
+            # never counted as a divergence/would-have-blocked and never
+            # shouted to stderr as one.
+            ctx.explained_divergence_count += 1
+        elif diverged:
             ctx.divergence_count += 1
             _safe_print(
                 f"{DIVERGENCE_PREFIX} gate={label} run_dir={ctx.run_dir} "
@@ -258,14 +468,17 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
             if legacy_ok:
                 # The exact shape Stage-1 enforcement would refuse: the legacy
                 # gate said PASS, but the artifact it just read is provably
-                # NOT the same bytes this preflight pass sealed at admission.
+                # NOT the same bytes this preflight pass sealed at admission,
+                # AND no manifest-scoped phase attestation vouches for the new
+                # bytes either.
                 # Phase 1 records this and STILL lets the run proceed.
                 ctx.would_have_blocked.append(entry)
                 _safe_print(
                     f"{WOULD_BLOCK_PREFIX} gate={label} run_dir={ctx.run_dir} "
                     f"fact={label!r} source={entry['resolved_path']} "
                     f"reason='artifact changed between preflight admission and "
-                    f"this gate reading it' (report-only — run proceeds, no "
+                    f"this gate reading it, and the new content is not an "
+                    f"attested phase output' (report-only — run proceeds, no "
                     f"block issued)"
                 )
     except Exception as exc:  # noqa: BLE001
@@ -281,6 +494,23 @@ def close_run(ctx: Optional[PreflightShadowContext]) -> None:
     if ctx is None:
         return
     try:
+        # WIRE FORMAT IS A CONTRACT, NOT COSMETIC: trust_boundary_observability.py's
+        # _PREFLIGHT_SUMMARY_RE is a strict, field-order-and-adjacency regex parsing
+        # this EXACT line shape (run_dir=... entries=... divergences=...
+        # would_have_blocked=... ledger=...), proven by
+        # tests/test_trust_boundary_observability.py's
+        # test_clean_run_summary_line_is_parsed. Inserting a new field here (an
+        # earlier draft of this fix added `explained_divergences=` between
+        # divergences= and would_have_blocked=) silently breaks that parser to
+        # "UNRECOGNISED-SHAPE" — this module's OWN docstring warns this exact
+        # failure mode already happened once (trust_boundary_observability.py's
+        # prefix-constant drift). explained_divergence_count is NOT dropped —
+        # it's a real field on `ctx` and every explained divergence already has
+        # its own full JSONL ledger line (explained_by_attestation=true) via
+        # record(), which is the durable per-gate audit trail this one-line
+        # human-skim summary was never meant to duplicate. Do not add fields to
+        # this f-string without updating trust_boundary_observability.py's
+        # _PREFLIGHT_SUMMARY_RE and its test in the SAME change.
         _safe_print(
             f"{SUMMARY_PREFIX} run_dir={ctx.run_dir} entries={ctx.entry_count} "
             f"divergences={ctx.divergence_count} "
