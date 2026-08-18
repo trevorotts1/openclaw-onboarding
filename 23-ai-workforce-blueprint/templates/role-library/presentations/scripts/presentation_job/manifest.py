@@ -100,23 +100,36 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
 MAX_HEARTBEAT_INTERVAL_MINUTES = max(PHASE_BUDGET_MINUTES.values())  # 240 as of this table
 
 
-def is_sane_heartbeat_minutes(value: Any) -> bool:
+def is_sane_heartbeat_minutes(value: Any, phase_budget_minutes: Optional[int] = None) -> bool:
     """True iff `value` is a heartbeat_minutes a consumer may trust as-is (present, a real
-    int -- not bool -- strictly positive, and no larger than MAX_HEARTBEAT_INTERVAL_MINUTES).
+    int -- not bool -- strictly positive, and no larger than the applicable ceiling).
+
+    HARDEN G3 follow-up (RCA §1.5, §7): MAX_HEARTBEAT_INTERVAL_MINUTES (240) is the
+    slowest phase in the WHOLE engine, not a bound on any one phase. Applied globally to
+    every phase it let a 15-minute phase declare heartbeat_minutes=240 and pass this
+    check, blinding the stall detector for that phase even though it can never
+    legitimately run that long. When the caller passes `phase_budget_minutes` (that
+    phase's OWN Phase.budget_minutes), the ceiling is tightened to
+    min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes) so no phase can declare a
+    heartbeat looser than its own total timeout. `phase_budget_minutes=None` (the
+    default) falls back to the flat global ceiling for callers with no phase context.
 
     Used directly by Phase.heartbeat_interval_minutes below (the runtime source that writes
     state.json's heartbeat.interval_minutes) and by sync_check.py's E3 manifest check, which
     imports this module's MAX_HEARTBEAT_INTERVAL_MINUTES rather than re-declaring its own copy.
     watchdog.py and process_reaper.py read heartbeat.interval_minutes back OFF state.json as
     defense in depth (a pre-fix or foreign-written state.json could still carry a poisoned
-    value) and mirror this same MAX_HEARTBEAT_INTERVAL_MINUTES ceiling inline rather than
-    calling this function, because they also tolerate a bare float there (state.json is
-    parsed JSON, not manifest-authored input) -- one ceiling value, imported everywhere it is
-    checked, so no consumer can silently diverge on WHERE the line is, even where the
-    surrounding type check differs by design.
+    value) and mirror this same per-phase ceiling inline rather than calling this function,
+    because they also tolerate a bare float there (state.json is parsed JSON, not
+    manifest-authored input) -- one ceiling FORMULA, applied everywhere it is checked, so
+    no consumer can silently diverge on WHERE the line is, even where the surrounding type
+    check differs by design.
     """
+    ceiling = MAX_HEARTBEAT_INTERVAL_MINUTES
+    if phase_budget_minutes is not None:
+        ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes)
     return (isinstance(value, int) and not isinstance(value, bool)
-            and 0 < value <= MAX_HEARTBEAT_INTERVAL_MINUTES)
+            and 0 < value <= ceiling)
 
 # ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
@@ -159,12 +172,13 @@ class Phase:
         timeout. The watchdog compares last-checkpoint AGE against this, never total elapsed.
         Falls back to the full budget for phases that checkpoint only on completion, OR for a
         heartbeat_minutes that fails is_sane_heartbeat_minutes — absent, non-int, <= 0, or past
-        MAX_HEARTBEAT_INTERVAL_MINUTES (HARDEN G3, see the block above). This is the runtime
-        SOURCE that _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes,
-        so refusing an insane value here means it can never reach the watchdog/reaper at all —
+        min(MAX_HEARTBEAT_INTERVAL_MINUTES, this phase's OWN budget_minutes) (HARDEN G3 +
+        per-phase follow-up, see the block above). This is the runtime SOURCE that
+        _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes, so
+        refusing an insane value here means it can never reach the watchdog/reaper at all —
         independent of whether the manifest that produced it ever passed through sync_check.
         """
-        if is_sane_heartbeat_minutes(self.heartbeat_minutes):
+        if is_sane_heartbeat_minutes(self.heartbeat_minutes, self.budget_minutes):
             return int(self.heartbeat_minutes)
         return self.budget_minutes
 
