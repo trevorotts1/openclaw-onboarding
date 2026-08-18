@@ -85,6 +85,21 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
+
+# PDF_MIN_BYTES is DERIVED from presentation_job/deliverables.py (THE single
+# source of truth for deliverable min_bytes, U05) rather than hardcoded here --
+# this file does not touch build_deck.py / sync_check.py / PIPELINE-MANIFEST.json
+# (see module docstring), but reading the canonical VALUE is not touching those
+# files; it is the fix for the exact class of drift that let this producer's own
+# floor disagree with the doctrine (2026-08-18 split-brain reconciliation).
+try:
+    from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
+except ImportError:
+    _SCRIPTS_DIR = Path(__file__).resolve().parent
+    if str(_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS_DIR))
+    from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
@@ -109,7 +124,18 @@ MIN_FONT_PT = 14.0  # HARD FLOOR (teleprompter). SOP 9.2: no text below 14pt.
 # truncated/empty reportlab PDF is ~1.5 KB, while even a one-slide real speech
 # clears this comfortably. The producer hard-fails (exit 3) rather than emit a
 # sub-floor file, so a gated phase invocation halts instead of shipping junk.
-PDF_MIN_BYTES = 20480   # matches PIPELINE-MANIFEST deliverables_required.speech_pdf.min_bytes
+#
+# RECONCILED (split-brain fix, 2026-08-18): this used to hardcode 20_480 with a
+# comment claiming it "matches PIPELINE-MANIFEST" -- true only because that
+# manifest entry was itself stale (dated 2026-06-17, git blame; PREDATES the
+# 2026-07-12 doctrine reconciliation, commit eaae2e33). The doctrine-ratified
+# floor is presentations/presenters-speech-writer.md + sops/presenters-speech-
+# writer-sops.md's AF-BUNDLE-COMPLETE gate-tie-in line, verbatim: "PDF >= 3,000
+# bytes" -- the same text build_deck.py's DELIVERABLES_REQUIRED entry cites.
+# Now DERIVED from presentation_job/deliverables.py (the single source of
+# truth, U05) instead of a fifth hardcoded copy, so this can never drift again.
+PDF_MIN_BYTES = next(
+    s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC if s["key"] == "speech_pdf")
 
 # A slim per-stage TINT carried on the slide bar only (NOT a full color band).
 # The bar-per-slide layout is the navigation surface; the tint is a faint hint of

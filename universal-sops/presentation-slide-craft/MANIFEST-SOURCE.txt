@@ -1,3 +1,3 @@
-content_sha256=d1daec92df79330f21f8651b5e4f4dfe3cd47d45894165139d4c7b662d3fb7e6
-generated=2026-08-18T10:16:00Z
-source=PIPELINE-MANIFEST.json (v49, heartbeat-ceiling repair -- 13 phases' heartbeat_minutes tightened to heartbeat_minutes = min(old_value, that phase's own PHASE_BUDGET_MINUTES entry) so no phase declares a checkpoint cadence looser than its own total timeout; content_sha256 restamped against the merged content)
+content_sha256=a159c4b216a7d25fde2f24a40a9f8aa0343c7344e597e951843689e441133e63
+generated=2026-08-18T14:30:19Z
+source=PIPELINE-MANIFEST.json (v50, min_bytes split-brain reconciliation -- speech_pdf min_bytes 20480 -> 3000 and teleprompter_html min_bytes 10240 -> 20000, both orphaned pre-doctrine values dated 2026-06-17 that predated the 2026-07-12 SOP reconciliation (commit eaae2e33) and disagreed with deliverables.py / build_deck.py's already-reconciled floors; content_sha256 restamped against the merged content)

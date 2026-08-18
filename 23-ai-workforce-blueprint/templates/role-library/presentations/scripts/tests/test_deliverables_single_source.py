@@ -25,6 +25,7 @@ import importlib.util
 import json
 import pathlib
 import sys
+import tempfile
 
 import pytest
 
@@ -35,9 +36,11 @@ if str(SCRIPTS) not in sys.path:
 import build_deck  # noqa: E402
 import fix_bundle_complete as fbc  # noqa: E402
 import phase_verifiers as pv  # noqa: E402
+import presenters_speech_pdf as psp  # noqa: E402
 import self_audit  # noqa: E402
 from presentation_job import curate  # noqa: E402
 from presentation_job import deliverables  # noqa: E402
+from presentation_job import gates as gates_mod  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +165,137 @@ def test_no_min_bytes_drift_between_deliverables_and_build_deck():
         "deliverables.DELIVERABLE_AUDIT_SPEC and build_deck.DELIVERABLES_REQUIRED "
         "disagree on min_bytes for the following shared key(s) -- these two tables "
         "gate the SAME artifacts and must never drift apart:\n  " + "\n  ".join(mismatches))
+
+
+def _locate_pipeline_manifest() -> pathlib.Path:
+    """Walk up from this test file to find PIPELINE-MANIFEST.json -- same strategy
+    as test_canonical_spec_matches_pipeline_manifest above, independent of CWD."""
+    cur = pathlib.Path(__file__).resolve().parent
+    for _ in range(8):
+        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if cand.is_file():
+            return cand
+        cur = cur.parent
+    raise FileNotFoundError(
+        f"PIPELINE-MANIFEST.json not found walking up from {pathlib.Path(__file__)}")
+
+
+def test_no_min_bytes_drift_across_all_known_copies():
+    """The EXTENDED drift guard (2026-08-18, second reconciliation pass).
+
+    test_no_min_bytes_drift_between_deliverables_and_build_deck (above) only
+    compared deliverables.py against build_deck.py. A follow-up audit against the
+    doctrine sources (sops/presenters-speech-writer-sops.md's AF-BUNDLE-COMPLETE
+    gate-tie-in line + commit eaae2e33, 2026-07-12) found the SAME two thresholds
+    -- speech_pdf and teleprompter_html -- still stale in FOUR more independently-
+    maintained places:
+      * PIPELINE-MANIFEST.json (speech_pdf 20480, teleprompter_html 10240 -- both
+        orphaned, dated 2026-06-17 by git blame, predating the doctrine fix).
+      * presenters_speech_pdf.py's PDF_MIN_BYTES (20480, with a comment claiming it
+        "matches PIPELINE-MANIFEST" -- true only because the manifest was itself stale).
+      * presentation_job/gates.py's teleprompter artifact-gate floor (10240 -- a
+        THIRD independent hardcoded copy, in a gates system not derived from
+        deliverables.py at all).
+      * phase_verifiers.py's P7-TELEPROMPTER / P9.1-SPEECH-PDF phase verifiers
+        (10240 / 20480 -- found in the same file that already imports the
+        canonical spec for its P9-DELIVER whitelist, but did not use it here).
+
+    presenters_speech_pdf.py, presentation_job/gates.py, and phase_verifiers.py now
+    DERIVE these two floors from deliverables.DELIVERABLE_AUDIT_SPEC instead of
+    hardcoding a fifth (sixth, seventh...) copy. PIPELINE-MANIFEST.json is JSON and
+    cannot import Python, so it stays an independently hand-maintained copy -- this
+    test is ALSO the guard for that one.
+
+    NOT value-checked against the derived intermediate for gates.py / phase_verifiers.py:
+    both bake their min_bytes into a CLOSURE at call-site time (gates.py's
+    evaluate_all() reads _MIN_BYTES[...] once per call; phase_verifiers.py's
+    _verify_text_artifact(...) captures it once at PHASE_VERIFIERS-dict-construction
+    time). A hand-verified probe during this fix proved that swapping the call-site
+    argument back to a bare literal (bypassing _MIN_BYTES entirely) left the
+    _MIN_BYTES dict itself untouched and correct -- a value-equality check against
+    _MIN_BYTES would have stayed GREEN through that exact regression. So those two
+    are checked BEHAVIORALLY below: a fixture one byte under the canonical floor must
+    FAIL, and one at the floor must not fail on size -- this exercises the real
+    enforcement path, not an intermediate that can go stale unread.
+    """
+    canonical = {s["key"]: s["min_bytes"] for s in deliverables.DELIVERABLE_AUDIT_SPEC}
+
+    manifest = json.loads(_locate_pipeline_manifest().read_text())
+    manifest_min_bytes = {d["key"]: d["min_bytes"] for d in manifest["deliverables_required"]}
+
+    # source_name -> {key: value} -- direct-read copies, safe to value-check because
+    # each is read straight from its module attribute at its own enforcement point
+    # (no intervening closure/call-site copy).
+    sources = {
+        "PIPELINE-MANIFEST.json deliverables_required": manifest_min_bytes,
+        "presenters_speech_pdf.PDF_MIN_BYTES": {"speech_pdf": psp.PDF_MIN_BYTES},
+    }
+
+    mismatches = [
+        f"{source_name}[{key}] = {value:,} bytes vs canonical "
+        f"deliverables.py[{key}] = {canonical[key]:,} bytes"
+        for source_name, values in sources.items()
+        for key, value in values.items()
+        if value != canonical[key]
+    ]
+
+    # --- Behavioral checks: gates.py's Gates.evaluate_all() teleprompter gate ---
+    floor = canonical["teleprompter_html"]
+    rd_short = pathlib.Path(tempfile.mkdtemp())
+    (rd_short / "working" / "deliverables").mkdir(parents=True)
+    (rd_short / "working" / "deliverables" / "presenter-teleprompter.html").write_text(
+        "y" * (floor - 1), encoding="utf-8")
+    g_short = gates_mod.Gates(rd_short, {}).evaluate_all()
+    if g_short["teleprompter"]["state"] != "fail":
+        mismatches.append(
+            f"presentation_job.gates.Gates.evaluate_all()[teleprompter]: a "
+            f"{floor - 1:,}-byte file (one under the canonical {floor:,}-byte "
+            f"teleprompter_html floor) did not fail -- the gate's real runtime floor "
+            f"is below doctrine")
+
+    rd_ok = pathlib.Path(tempfile.mkdtemp())
+    (rd_ok / "working" / "deliverables").mkdir(parents=True)
+    (rd_ok / "working" / "deliverables" / "presenter-teleprompter.html").write_text(
+        "y" * floor, encoding="utf-8")
+    g_ok = gates_mod.Gates(rd_ok, {}).evaluate_all()
+    if g_ok["teleprompter"]["state"] == "fail":
+        mismatches.append(
+            f"presentation_job.gates.Gates.evaluate_all()[teleprompter]: a "
+            f"{floor:,}-byte file (exactly the canonical floor) failed on size -- "
+            f"the gate's real runtime floor is above doctrine: {g_ok['teleprompter']}")
+
+    # --- Behavioral checks: phase_verifiers.py's P7-TELEPROMPTER / P9.1-SPEECH-PDF ---
+    for phase_id, rel_path, key in (
+        ("P7-TELEPROMPTER", "working/deliverables/presenter-teleprompter.html", "teleprompter_html"),
+        ("P9.1-SPEECH-PDF", "working/deliverables/PRESENTERS-SPEECH.pdf", "speech_pdf"),
+    ):
+        pv_floor = canonical[key]
+        rd_pv_short = pathlib.Path(tempfile.mkdtemp())
+        p = rd_pv_short / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("z" * (pv_floor - 1), encoding="utf-8")
+        ok_short, _ = pv.PHASE_VERIFIERS[phase_id](rd_pv_short)
+        if ok_short:
+            mismatches.append(
+                f"phase_verifiers.PHASE_VERIFIERS[{phase_id!r}]: a {pv_floor - 1:,}-byte "
+                f"file (one under the canonical {pv_floor:,}-byte {key} floor) passed -- "
+                f"the verifier's real runtime floor is below doctrine")
+
+        rd_pv_ok = pathlib.Path(tempfile.mkdtemp())
+        p = rd_pv_ok / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("z" * pv_floor, encoding="utf-8")
+        ok_at_floor, reasons = pv.PHASE_VERIFIERS[phase_id](rd_pv_ok)
+        if not ok_at_floor:
+            mismatches.append(
+                f"phase_verifiers.PHASE_VERIFIERS[{phase_id!r}]: a {pv_floor:,}-byte file "
+                f"(exactly the canonical floor) failed on size -- the verifier's real "
+                f"runtime floor is above doctrine: {reasons}")
+
+    assert not mismatches, (
+        "min_bytes drift detected across independently-maintained copies of the "
+        "same threshold -- these all gate the SAME artifact and must never "
+        "disagree:\n  " + "\n  ".join(mismatches))
 
 
 def test_phase_verifiers_delivery_min_bytes_matches_canonical():

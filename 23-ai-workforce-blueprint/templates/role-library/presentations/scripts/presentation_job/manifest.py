@@ -455,7 +455,13 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # same class of change (heartbeat_minutes values across all 36 phases, no new phase/AF
 # code). Tightened via heartbeat_minutes = min(old_value, PHASE_BUDGET_MINUTES[id]) on
 # those 13 phases only; MIN follows to 49 in the same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 49  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 49 -> 50: min_bytes split-brain reconciliation (2026-08-18) -- speech_pdf and
+# teleprompter_html carried orphaned pre-doctrine values (20480 / 10240, dated
+# 2026-06-17, predating the 2026-07-12 SOP reconciliation) that disagreed with
+# deliverables.py / build_deck.py's already-reconciled floors (3000 / 20000).
+# Content-only edit to two existing entries, same class of change as WI-10
+# (44 -> 45, heartbeat_minutes-only); MIN follows the manifest in the same commit.
+MIN_MANIFEST_VERSION = 50  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
