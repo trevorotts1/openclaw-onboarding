@@ -455,7 +455,16 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # same class of change (heartbeat_minutes values across all 36 phases, no new phase/AF
 # code). Tightened via heartbeat_minutes = min(old_value, PHASE_BUDGET_MINUTES[id]) on
 # those 13 phases only; MIN follows to 49 in the same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 49  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 49 -> 50: P-QC-AGGREGATE step-contract repair — sync_check.py's W1 warning
+# ("phase P-QC-AGGREGATE declares no verifier") flagged the one phase of 36 that never
+# declared `verifier` in PIPELINE-MANIFEST.json (its `executor` was already present).
+# Declared "verifier": "phase_verifiers.verify" — the identical value every other phase
+# already carries, and phase_verifiers.py already registers a P-QC-AGGREGATE entry
+# (qc:final) in its dispatch table, so the implementation was ready and only the
+# manifest declaration was missing. Content-only edit; no new phase/AF code. Same
+# precedent class as 48->49 (a declaration-only content edit still bumps the floor).
+# MIN follows to 50 in the same commit per U019 step 8.
+MIN_MANIFEST_VERSION = 50  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

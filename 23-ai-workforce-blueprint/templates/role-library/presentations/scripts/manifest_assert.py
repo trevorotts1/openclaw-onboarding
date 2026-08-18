@@ -33,7 +33,15 @@ from typing import Dict, List, Optional, Tuple
 # 48 -> 49: heartbeat-ceiling repair -- 13 phases' heartbeat_minutes tightened to
 # fit their own PHASE_BUDGET_MINUTES (E3 drift repair); see presentation_job/manifest.py
 # for the full rationale. MIN follows the manifest in the same commit (U019 step 8).
-MIN_MANIFEST_VERSION = 49
+# 49 -> 50: P-QC-AGGREGATE step-contract repair -- sync_check.py's W1 warning
+# ("phase P-QC-AGGREGATE declares no verifier") flagged the one phase of 36 that
+# never declared `verifier` in PIPELINE-MANIFEST.json (its `executor` was already
+# present). Declared "verifier": "phase_verifiers.verify" -- the identical value
+# every other phase already carries, and phase_verifiers.py already registers a
+# P-QC-AGGREGATE entry (qc:final) in its dispatch table, so the implementation was
+# ready and only the manifest declaration was missing. Content-only edit; no new
+# phase/AF code. MIN follows the manifest in the same commit (U019 step 8).
+MIN_MANIFEST_VERSION = 50
 MIN_MANIFEST_PHASES = 36
 MIN_AF_SP_CODES = 16
 
