@@ -207,6 +207,7 @@ from pathlib import Path
 
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from presentation_job.result import CheckResult
+from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
@@ -9763,6 +9764,24 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
     import inspect as _inspect
     print(f"=== PROCESS PREFLIGHT — run dir: {run_dir} ===", flush=True)
     problems = []
+    # TRUST BOUNDARY wrap (report-only, presentation_job/preflight_shadow.py):
+    # seal every PREFLIGHT_REQUIRED entry's resolved-path hash/mtime BEFORE any
+    # gate below runs. Generic, gate-agnostic, never blocks — see that module's
+    # docstring. Defense in depth: open_run() already catches its own errors
+    # internally, but this call site is ALSO wrapped (matching the existing
+    # RunFacts admission-seal pattern a few hundred lines below in main()) so
+    # that even a totally broken preflight_shadow import/module can never
+    # turn into a refused/crashed preflight — degrades to _pf_shadow=None,
+    # and every call below already no-ops safely on None.
+    try:
+        _pf_shadow = _preflight_shadow.open_run(run_dir, PREFLIGHT_REQUIRED)
+    except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
+        _pf_shadow = None
+        try:
+            print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: open_run failed: {_pf_exc!r} "
+                  f"(report-only — preflight proceeds)", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
 
     # === v16.0.1 — BIND RENDER TO PHASE P0B-PRIORITY AT EVERY ENTRY POINT ===
     # The deterministic runner (run_signature_deck.py) makes P0B-PRIORITY a mandatory
@@ -9815,10 +9834,38 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
                 found = p if p.exists() else None
             reason = check(found)
             display = rel
+        # TRUST BOUNDARY wrap (report-only): tee this gate's already-decided
+        # `reason` into the shadow ledger. Receives the result, never the
+        # `check` callable itself — cannot call it, delay it, skip it, or
+        # change what it returned. See presentation_job/preflight_shadow.py.
+        # Defense in depth (see the open_run() call site above for why):
+        # wrapped here too, so this loop can never be interrupted by a bug in
+        # the shadow module — a raise here would otherwise abort the SAME
+        # loop that decides whether the real render/assembly may proceed.
+        try:
+            _preflight_shadow.record(
+                _pf_shadow, label=label, display=display,
+                resolved_path=(found if rel is not None else None), legacy_reason=reason)
+        except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
+            try:
+                print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: record failed for "
+                      f"{label!r}: {_pf_exc!r} (report-only — preflight proceeds)",
+                      file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
         if reason:
             problems.append((display, label, phase, reason))
         else:
             print(f"  OK   {display}", flush=True)
+
+    # TRUST BOUNDARY wrap (report-only): one summary line to stderr — every
+    # individual gate already got its own ledger line via record() above,
+    # win or lose, so this runs regardless of which branch below is taken.
+    # Defense in depth, same reasoning as the two call sites above.
+    try:
+        _preflight_shadow.close_run(_pf_shadow)
+    except Exception:  # noqa: BLE001 — shadow must never block preflight
+        pass
 
     if problems:
         print("\nFATAL: PROCESS PREFLIGHT FAILED — refusing to render or assemble.", file=sys.stderr)
