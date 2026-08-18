@@ -630,7 +630,12 @@ def _seed_curated_bundle(run_dir):
             lambda sz: b"x" * sz,
         ),
         "presenter-teleprompter.html": (
-            12000,
+            # Was a hardcoded 12000 (stale against the old deliverables.py floor of
+            # 5_000 -- happened to clear it with room to spare, but silently fell
+            # below the reconciled 20_000 doctrine floor, 2026-08-18 split-brain fix).
+            # Every other entry in this dict already derives its size from
+            # _min_bytes(); this one now matches so it can't drift again.
+            _min_bytes("presenter-teleprompter.html"),
             lambda sz: _seed_bytes(b"<!DOCTYPE html>\n", sz),
         ),
         "DECK-FINAL.pptx": (

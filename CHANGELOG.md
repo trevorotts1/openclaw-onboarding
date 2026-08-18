@@ -1,3 +1,34 @@
+## [v22.0.43] -- 2026-08-18 -- fix(presentations): dead exclusion, fabricated deck-type fallback, missing verifier, 6-source threshold split-brain
+
+Four defects, all the same shape: a check that reports success without checking.
+
+- `sync_check.py`'s `_NON_ROLE_DOCS` excluded "GOVERNING-PERSONAS" while the writer
+  emits `governing-personas.md` (lowercase-with-dashes). The names never matched, so
+  the exclusion was dead code and every deployed box carrying that file was
+  false-DRIFTing on A5. Zero repo references to the uppercase form; 128 use the
+  lowercase one. Surfaced only because #930 gave test_scan_roles.py real assertions.
+- Removed `"default": "from_scratch"` from the presentation_type question AND closed a
+  second fabrication path: `deck-intake-driver.py`'s `_normalize_enum_value()` fell back
+  to `question.get("default", allowed[0])`, and allowed[0] IS "from_scratch" -- an
+  unrecognised free-text answer silently became a webinar independent of the JSON key.
+  Now fails closed.
+- P-QC-AGGREGATE was the 1 phase of 36 declaring no `verifier` (sync_check W1).
+  phase_verifiers.py already registered it as qc:final; only the declaration was
+  missing. W1 count 1 -> 0. manifest_version 49 -> 50.
+- min_bytes split-brain reconciled across SIX sources (deliverables.py, build_deck.py,
+  PIPELINE-MANIFEST.json, presenters_speech_pdf.py, gates.py, phase_verifiers.py).
+  9 of 10 keys disagreed, up to 21x (deck_pptx 50,000 vs 1,048,576). speech_pdf was
+  LOWERED 20480 -> 3000 and speech_md 5000 -> 2048 -- eaae2e33 (2026-07-12) reconciled
+  away from the larger values deliberately, so raising would have reintroduced a
+  documented mistake. Root cause: deliverables.py's table was bulk-copied from a stale
+  source 2026-08-13 and never reconciled.
+
+Drift guards added for each, every one proven able to fail. One was rewritten after its
+author proved it a false-safe: value-checking a derived dict still passed when a literal
+was hardcoded at the call site, so it now tests runtime behaviour.
+
+Suite: 747 passed, 0 failed, 2 skipped.
+
 ## [v22.0.42] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
 
 PR #851 (`feat/lp-a8-cross-run-resend-loop`) sat 448 commits behind `main` since
