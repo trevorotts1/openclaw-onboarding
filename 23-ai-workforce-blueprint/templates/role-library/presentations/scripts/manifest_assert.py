@@ -30,8 +30,11 @@ from typing import Dict, List, Optional, Tuple
 # The canonical manifest floor, mirrored from presentation_job/manifest.py
 # (MIN_MANIFEST_VERSION). Bump the two TOGETHER -- a floor one behind the
 # manifest is the split-brain this check exists to prevent.
-MIN_MANIFEST_VERSION = 43
-MIN_MANIFEST_PHASES = 26
+# 48 -> 49: heartbeat-ceiling repair -- 13 phases' heartbeat_minutes tightened to
+# fit their own PHASE_BUDGET_MINUTES (E3 drift repair); see presentation_job/manifest.py
+# for the full rationale. MIN follows the manifest in the same commit (U019 step 8).
+MIN_MANIFEST_VERSION = 49
+MIN_MANIFEST_PHASES = 36
 MIN_AF_SP_CODES = 16
 
 

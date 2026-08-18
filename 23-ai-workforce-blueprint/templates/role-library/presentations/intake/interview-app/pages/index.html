@@ -247,6 +247,17 @@
 
     /* ---- embedded question set (source: questions.json) ---- */
     var QUESTIONS = /*__QUESTIONS__*/[
+      { id: "presentation_type", order: 0, kind: "enum",
+        prompt: "What <span class=\"emph\">kind of presentation</span> do you need?",
+        help: "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length.",
+        label: "Presentation type", required: true, storeOn: "pre_presentation_capture.PRESENTATION_TYPE",
+        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"],
+        value_labels: {
+          "from_scratch": "From scratch — brainstorm and build a brand-new presentation",
+          "content_personal": "From something I already have, for ONE specific person",
+          "content_general": "From something I already have, for a room or wider audience",
+          "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
+        } },
       { id: "offer_name", order: 1, kind: "text",
         prompt: "What are you selling at the end — the exact name of your product or offer?",
         help: "The offer sold at the end of the presentation — never invented.",
@@ -304,7 +315,7 @@
     ];
 
     var MAX_QUESTIONS = 20;
-    var TOTAL = QUESTIONS.length; /* 12 curated questions -> "Question N of 12" */
+    var TOTAL = QUESTIONS.length; /* 13 curated questions -> "Question N of 13" */
     var answers = {};             /* qid -> { raw, value, storeOn, kind, label } */
 
     var stage = document.getElementById("stage");
@@ -662,13 +673,12 @@
         else brief[key] = v;
       });
 
-      return {
+      var payload = {
         interview_confirmed: true,
         deck_type: "webinar",
         presentation_mode: "general",
         audience_mode: "STANDARD",
         target_talk_minutes: 20,
-        presentation_type: "from_scratch",
         created_at: new Date().toISOString(),
         source: "presentation-interview-app",
         intake_session_id: qid,
@@ -683,6 +693,15 @@
           return m;
         }, {})
       };
+      /* presentation_type is never fabricated (PRES-DEPT-FIX-REVIEW-2026-08-17.md
+         Part 6 #3): it is only ever the client's own answer to the
+         presentation_type question above. No default, no fallback — if the
+         question was somehow never answered, the key is simply absent and the
+         box-side intake_writer.py fails closed rather than guessing a deck type. */
+      if (answers.presentation_type && answers.presentation_type.value) {
+        payload.presentation_type = answers.presentation_type.value;
+      }
+      return payload;
     }
 
     /* write the intake JSON file (client-side download + POST to the box sink) */

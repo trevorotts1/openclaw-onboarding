@@ -1,3 +1,30 @@
+## [v22.0.40] -- 2026-08-18 -- fix(presentations): 12 fixes -- gate bypasses, no-op guards, stale floors, heartbeat drift
+
+Twelve fixes, all the same pathology: a check that reports success without checking.
+
+- Interview intake fabricated deck_type in THREE places -- intake_writer.py invented
+  it, pages/index.html hardcoded `presentation_type: "from_scratch"`, and the Worker
+  API curated list never asked. A client requesting a signature keynote silently
+  received a webinar. Backend now fails closed (exit 3) naming the missing answer;
+  the form asks the question first (required, no default reachable); the Worker list
+  includes it with a guard asserting it stays first.
+- Guard tests that could not fail: test_fix2_qc_unskippable.py, test_fix9_audio_mp3.py
+  and test_scan_roles.py carried 20 test functions and ZERO assertions -- they returned
+  failure lists that pytest discarded. Proven: with QC-skip protection deliberately
+  sabotaged the old tests passed (exit 0); the fixed tests fail (exit 1).
+- MIN_MANIFEST_VERSION 43 -> 49 (floor was 5 behind the manifest).
+- MIN_MANIFEST_PHASES 26 -> 36 (10 phases could have vanished undetected).
+- Heartbeat ceiling now bounds against each phase's own budget instead of a global
+  240 (manifest.py, sync_check.py, watchdog.py, process_reaper.py).
+- 13 phases declared heartbeat_minutes ABOVE their own budget -- every QC phase plus
+  delivery, up to 3x over, so a stall in those phases could never be detected in time.
+  Tightened via min(old, budget); over-budget count now 0. manifest_version 48 -> 49,
+  MANIFEST-SOURCE.txt and universal-sops/_content-manifest.json restamped.
+- Dead-letter cap (5 attempts) on cmd_sweep_undeliverable, which previously re-queued
+  a failed notification forever with no ceiling.
+
+Full suite: 727 passed, 0 failed, 2 skipped.
+
 ## [v22.0.39] -- 2026-08-18 -- fix(presentations): trust-boundary batch -- blind-spot close, parser fix, slice1 reconciliation, CI purity wiring, 2 gates closed, u058 false-fail fix
 
 Six independently verifier-approved branches merged as one batch (six PRs

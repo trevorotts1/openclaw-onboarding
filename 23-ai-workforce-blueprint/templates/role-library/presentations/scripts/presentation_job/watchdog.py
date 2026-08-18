@@ -88,14 +88,20 @@ def watchdog(
 
         interval = hb.get("interval_minutes")
         source = hb.get("interval_source") or "state"
-        # HARDEN G3: reject not just <=0 but anything past MAX_HEARTBEAT_INTERVAL_MINUTES too.
+        # HARDEN G3 + per-phase follow-up: reject not just <=0 but anything past THIS
+        # phase's own ceiling -- min(MAX_HEARTBEAT_INTERVAL_MINUTES, that phase's
+        # PHASE_BUDGET_MINUTES entry), not the flat engine-wide 240 max. The flat max
+        # let a 15-minute phase's poisoned/foreign-written interval_minutes:240 sail
+        # through unchanged and blind the stall check for that phase alone.
         # Phase.heartbeat_interval_minutes (manifest.py) now refuses an insane value at the
         # source, but the watchdog is read-only (Super Spec 8.3) and must independently distrust
         # whatever it finds on disk -- a state.json written before this fix, or by any other
         # writer, could still carry a poisoned interval_minutes. Without this bound a value like
         # 999999999 sails past `interval <= 0` unchanged and blinds the stall check for millennia.
+        phase_ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES,
+                             PHASE_BUDGET_MINUTES.get(pid, DEFAULT_PHASE_BUDGET_MINUTES))
         if (not isinstance(interval, (int, float)) or isinstance(interval, bool)
-                or interval <= 0 or interval > MAX_HEARTBEAT_INTERVAL_MINUTES):
+                or interval <= 0 or interval > phase_ceiling):
             interval = PHASE_BUDGET_MINUTES.get(pid, DEFAULT_PHASE_BUDGET_MINUTES)
             source = ("budget_table" if pid in PHASE_BUDGET_MINUTES
                       else f"DEFAULT_{DEFAULT_PHASE_BUDGET_MINUTES}min_NO_ENTRY_FOR_{pid}")

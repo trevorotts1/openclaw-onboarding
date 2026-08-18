@@ -28,6 +28,13 @@ No network and no Fish key are used: the probe is exercised against fixtures. Th
 live Fish synthesis itself is the operator's runtime test (FISH_AUDIO_API_KEY /
 FISH_AUDIO_VOICE_ID come from the env stores; this file never reads or prints them).
 
+Each `test_*` function is a thin pytest-visible wrapper around a `_check_*`
+helper that does the actual work and returns a `fails` list; the wrapper
+asserts the list empty so a broken guard FAILS under pytest, not only under
+`python3 <file>`. `main()` calls the `_check_*` helpers directly so
+script-mode aggregation / exit-code behavior (including --list-only) is
+unchanged.
+
 Run:  python3 test_fix9_audio_mp3.py
 Exit: 0 = all assertions passed; 1 = a case failed.
 """
@@ -77,7 +84,7 @@ def _make_real_mp3(path: Path, seconds: int = 3) -> Path:
 # ---------------------------------------------------------------------------
 # Test cases
 # ---------------------------------------------------------------------------
-def test_model_truth() -> list:
+def _check_model_truth() -> list:
     """The producer must default to the current PAID production model s2.1-pro,
     and never default to the interim s2-pro or the client-prohibited free tier."""
     fails = []
@@ -101,7 +108,12 @@ def test_model_truth() -> list:
     return fails
 
 
-def test_producer_wiring() -> list:
+def test_model_truth() -> None:
+    fails = _check_model_truth()
+    assert not fails, "\n".join(fails)
+
+
+def _check_producer_wiring() -> list:
     """The manifest P9-DELIVER phase must wire synthesize_full_speech.py to produce
     the canonical PRESENTER-AUDIO.mp3 (audio_mp3) in working/delivery/, reading the
     FISH-TAGGED speech so [bracket] reader tags reach the Fish API (the expressive
@@ -143,7 +155,12 @@ def test_producer_wiring() -> list:
     return fails
 
 
-def test_verify_mp3_probe() -> list:
+def test_producer_wiring() -> None:
+    fails = _check_producer_wiring()
+    assert not fails, "\n".join(fails)
+
+
+def _check_verify_mp3_probe() -> list:
     """verify_mp3: real MP3 PASSES; garbage/text/missing/undersized FAIL. This is
     the exact probe the producer runs per-chunk and on the final deliverable."""
     fails = []
@@ -188,7 +205,12 @@ def test_verify_mp3_probe() -> list:
     return fails
 
 
-def test_af_probe_aligns_with_ffprobe() -> list:
+def test_verify_mp3_probe() -> None:
+    fails = _check_verify_mp3_probe()
+    assert not fails, "\n".join(fails)
+
+
+def _check_af_probe_aligns_with_ffprobe() -> list:
     """The python probe and ffprobe agree the real fixture is decodable audio
     (afinfo-equivalent cross-check, no shell grep)."""
     fails = []
@@ -208,14 +230,19 @@ def test_af_probe_aligns_with_ffprobe() -> list:
     return fails
 
 
+def test_af_probe_aligns_with_ffprobe() -> None:
+    fails = _check_af_probe_aligns_with_ffprobe()
+    assert not fails, "\n".join(fails)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="FIX-9 / T-10 audio MP3 QC gate")
     ap.add_argument("--list-only", action="store_true",
                     help="print the case list and exit 0 (no assertions)")
     args = ap.parse_args()
 
-    cases = [test_model_truth, test_producer_wiring, test_verify_mp3_probe,
-             test_af_probe_aligns_with_ffprobe]
+    cases = [_check_model_truth, _check_producer_wiring, _check_verify_mp3_probe,
+             _check_af_probe_aligns_with_ffprobe]
     if args.list_only:
         for c in cases:
             print(c.__name__)

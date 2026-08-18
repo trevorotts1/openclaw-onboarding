@@ -100,23 +100,36 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
 MAX_HEARTBEAT_INTERVAL_MINUTES = max(PHASE_BUDGET_MINUTES.values())  # 240 as of this table
 
 
-def is_sane_heartbeat_minutes(value: Any) -> bool:
+def is_sane_heartbeat_minutes(value: Any, phase_budget_minutes: Optional[int] = None) -> bool:
     """True iff `value` is a heartbeat_minutes a consumer may trust as-is (present, a real
-    int -- not bool -- strictly positive, and no larger than MAX_HEARTBEAT_INTERVAL_MINUTES).
+    int -- not bool -- strictly positive, and no larger than the applicable ceiling).
+
+    HARDEN G3 follow-up (RCA §1.5, §7): MAX_HEARTBEAT_INTERVAL_MINUTES (240) is the
+    slowest phase in the WHOLE engine, not a bound on any one phase. Applied globally to
+    every phase it let a 15-minute phase declare heartbeat_minutes=240 and pass this
+    check, blinding the stall detector for that phase even though it can never
+    legitimately run that long. When the caller passes `phase_budget_minutes` (that
+    phase's OWN Phase.budget_minutes), the ceiling is tightened to
+    min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes) so no phase can declare a
+    heartbeat looser than its own total timeout. `phase_budget_minutes=None` (the
+    default) falls back to the flat global ceiling for callers with no phase context.
 
     Used directly by Phase.heartbeat_interval_minutes below (the runtime source that writes
     state.json's heartbeat.interval_minutes) and by sync_check.py's E3 manifest check, which
     imports this module's MAX_HEARTBEAT_INTERVAL_MINUTES rather than re-declaring its own copy.
     watchdog.py and process_reaper.py read heartbeat.interval_minutes back OFF state.json as
     defense in depth (a pre-fix or foreign-written state.json could still carry a poisoned
-    value) and mirror this same MAX_HEARTBEAT_INTERVAL_MINUTES ceiling inline rather than
-    calling this function, because they also tolerate a bare float there (state.json is
-    parsed JSON, not manifest-authored input) -- one ceiling value, imported everywhere it is
-    checked, so no consumer can silently diverge on WHERE the line is, even where the
-    surrounding type check differs by design.
+    value) and mirror this same per-phase ceiling inline rather than calling this function,
+    because they also tolerate a bare float there (state.json is parsed JSON, not
+    manifest-authored input) -- one ceiling FORMULA, applied everywhere it is checked, so
+    no consumer can silently diverge on WHERE the line is, even where the surrounding type
+    check differs by design.
     """
+    ceiling = MAX_HEARTBEAT_INTERVAL_MINUTES
+    if phase_budget_minutes is not None:
+        ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes)
     return (isinstance(value, int) and not isinstance(value, bool)
-            and 0 < value <= MAX_HEARTBEAT_INTERVAL_MINUTES)
+            and 0 < value <= ceiling)
 
 # ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
@@ -159,12 +172,13 @@ class Phase:
         timeout. The watchdog compares last-checkpoint AGE against this, never total elapsed.
         Falls back to the full budget for phases that checkpoint only on completion, OR for a
         heartbeat_minutes that fails is_sane_heartbeat_minutes — absent, non-int, <= 0, or past
-        MAX_HEARTBEAT_INTERVAL_MINUTES (HARDEN G3, see the block above). This is the runtime
-        SOURCE that _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes,
-        so refusing an insane value here means it can never reach the watchdog/reaper at all —
+        min(MAX_HEARTBEAT_INTERVAL_MINUTES, this phase's OWN budget_minutes) (HARDEN G3 +
+        per-phase follow-up, see the block above). This is the runtime SOURCE that
+        _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes, so
+        refusing an insane value here means it can never reach the watchdog/reaper at all —
         independent of whether the manifest that produced it ever passed through sync_check.
         """
-        if is_sane_heartbeat_minutes(self.heartbeat_minutes):
+        if is_sane_heartbeat_minutes(self.heartbeat_minutes, self.budget_minutes):
             return int(self.heartbeat_minutes)
         return self.budget_minutes
 
@@ -434,11 +448,18 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # to 40 in the same commit.
 # 46 -> 47: wave-2 integrate 56d18ad2 — PIPELINE-MANIFEST.json bumped to 47 in the same commit; MIN follows so the U019 floor moves WITH the manifest (proven by the repo-manifest guard test in test_client_package.py).
 # 47 -> 48: swarm integration 0612bbc5 — T2 stack bumped PIPELINE-MANIFEST.json to 48; MIN follows.
-MIN_MANIFEST_VERSION = 48  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 48 -> 49: heartbeat-ceiling repair — 13 of 36 phases declared heartbeat_minutes greater
+# than that phase's own PHASE_BUDGET_MINUTES entry (E3 drift; a heartbeat interval longer
+# than the whole phase can never detect a stall inside it). Precedent for bumping on a
+# heartbeat_minutes-only content edit: WI-10 (CHANGELOG v22.0.5) bumped 44 -> 45 for the
+# same class of change (heartbeat_minutes values across all 36 phases, no new phase/AF
+# code). Tightened via heartbeat_minutes = min(old_value, PHASE_BUDGET_MINUTES[id]) on
+# those 13 phases only; MIN follows to 49 in the same commit per U019 step 8.
+MIN_MANIFEST_VERSION = 49  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
-MIN_MANIFEST_PHASES = 26
+MIN_MANIFEST_PHASES = 36
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""
