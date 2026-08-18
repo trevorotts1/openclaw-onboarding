@@ -2105,9 +2105,11 @@ def signature_selftest() -> bool:
         print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
         return ok
 
-    def _assemble_and_prove(record: dict) -> Tuple[int, str]:
+    def _assemble_and_prove(record: dict, provenance: Optional[dict] = None) -> Tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
             intake = assemble_sp_intake(record, "blk_sig_selftest")
+            if provenance is not None:
+                intake["turn_ledger_provenance"] = provenance
             p = pathlib.Path(td) / "sp_intake.json"
             p.write_text(json.dumps(intake), encoding="utf-8")
             return _run_sp_prover(p)
@@ -2124,7 +2126,21 @@ def signature_selftest() -> bool:
         "offer_token_ledger": ["The Signature Intensive"],
     }
 
-    rc, out = _assemble_and_prove(valid)
+    # GK-23/D18: since GRACE_WINDOW_UNTIL (2026-08-15) closed, a must-PASS record
+    # needs a genuine turn_ledger_provenance stamp too. Build it with this file's
+    # OWN build_turn_ledger_provenance() -- the exact function the real turn-gate
+    # (cmd_sp_next/_sp_finalize) calls -- from synthetic but real ledger-shaped
+    # entries (one ascending turn per required question), so Test 2 proves the
+    # driver's real provenance builder clears the prover, not a hand-rolled blob.
+    valid_entries = {
+        qid: {"validated": True, "turn": i + 1,
+              "asked_at": f"2026-07-15T12:{i:02d}:00", "validated_at": f"2026-07-15T12:{i:02d}:30"}
+        for i, qid in enumerate(SP_REQUIRED_QUESTIONS)
+    }
+    valid_provenance = build_turn_ledger_provenance(
+        valid_entries, list(SP_REQUIRED_QUESTIONS), "signature_presentation", "blk_sig_selftest")
+
+    rc, out = _assemble_and_prove(valid, valid_provenance)
     step2 = rc == 0
     ok = ok and step2
     print(f"[sig-selftest] Test 2 {'PASS' if step2 else 'FAIL'}: VALID record -> prover exit {rc} (want 0)")
