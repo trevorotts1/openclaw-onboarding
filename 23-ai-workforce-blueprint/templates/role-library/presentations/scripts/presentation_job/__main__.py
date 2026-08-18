@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -74,6 +75,70 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--enforce", action="store_true",
                    help="exit 5 on a stall (default: report and exit 0)")
     return p
+
+
+# ---------------------------------------------------------------------------
+# Work-Order Dispatcher auto-wiring (the fix for the defect this file's own
+# git history documents: _run_agent_phase writes working/work-orders/<phase>.json
+# and polls for it every 15s -- but nothing ever consumed it, so every
+# agent-authored phase timed out. presentation_job/dispatcher.py is the
+# consumer; this is where a NORMAL run gets it, automatically, with no
+# operator action, per the same "wire it into the real path" doctrine this
+# file already applies to run_signature_deck.py vs the engine.
+#
+# Deliberately minimal and fail-soft, mirroring the board-mirror pattern
+# already in phases.py (Engine.__init__: "board init failed -- running
+# without board mirror"): a dispatcher that fails to spawn must NEVER stop a
+# client's job from starting. It is spawned DETACHED (its own process group)
+# so it outlives this process if this CLI invocation itself exits early, and
+# it is entirely self-terminating -- watch_run_dir() exits on its own the
+# moment state.json's terminal is set (DONE or BLOCKED), so nothing here
+# ever needs to track or kill it.
+#
+# The dispatcher NEVER touches state.json, NEVER takes RunLock, and NEVER
+# marks a phase done (see dispatcher.py's own module docstring) -- it only
+# ever writes the artifact file phase_verifiers.verify() checks, exactly the
+# channel Engine._run_agent_phase's poll loop already watches. Spawning it
+# here is Engine-side plumbing, not a second decision-maker.
+#
+# PRESENTATION_DISPATCHER_DISABLE=1 is the escape hatch for tests/CI that
+# want a bare engine run with no live DeepSeek calls.
+# ---------------------------------------------------------------------------
+def _spawn_dispatcher_if_available(run_dir: Path, scripts_dir: Path) -> None:
+    if os.environ.get("PRESENTATION_DISPATCHER_DISABLE"):
+        print("[dispatcher] PRESENTATION_DISPATCHER_DISABLE set -- not spawning",
+              file=sys.stderr, flush=True)
+        return
+    dispatcher_path = scripts_dir / "work_order_dispatcher.py"
+    if not dispatcher_path.is_file():
+        print(f"[dispatcher] {dispatcher_path} not found -- agent-authored phases "
+              "will time out and BLOCK until it is installed (this is the SAME "
+              "fail-soft posture as a missing board mirror: never stop the job)",
+              file=sys.stderr, flush=True)
+        return
+    wo_dir = run_dir / "working" / "work-orders"
+    wo_dir.mkdir(parents=True, exist_ok=True)
+    log_path = wo_dir / "dispatcher.out.log"
+    try:
+        log_fh = open(log_path, "a", encoding="utf-8")
+        kwargs: Dict[str, Any] = dict(
+            cwd=str(scripts_dir), stdout=log_fh, stderr=subprocess.STDOUT,
+        )
+        # Detach: its own session, so it is never reaped alongside this CLI
+        # process and outlives a --resume invocation that itself exits after
+        # a single phase (--phase / --until callers still get autonomous
+        # phases serviced for the run's remaining lifetime).
+        if hasattr(os, "setsid"):
+            kwargs["start_new_session"] = True
+        subprocess.Popen(
+            [sys.executable, str(dispatcher_path), "--run-dir", str(run_dir), "--watch"],
+            **kwargs,
+        )
+        print(f"[dispatcher] spawned, watching {run_dir} (log: {log_path})",
+              file=sys.stderr, flush=True)
+    except OSError as exc:
+        print(f"[dispatcher] failed to spawn: {exc} -- agent-authored phases will "
+              "time out and BLOCK until it can run", file=sys.stderr, flush=True)
 
 
 def cmd_new(args, scripts_dir: Path) -> int:
@@ -445,4 +510,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "job.resume",
                 "resuming from checkpoint; banked artifacts reused" +
                 (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
+
+        # Wire the Work-Order Dispatcher in automatically -- a normal --run or
+        # --resume now gets its agent-authored phases serviced with no operator
+        # action, which is the entire point (see _spawn_dispatcher_if_available's
+        # docstring above). Spawned AFTER the resume bookkeeping above so it never
+        # races state.pop("blocked")/store.save(); it only ever touches artifact
+        # files and its own sidecar log, never state.json.
+        _spawn_dispatcher_if_available(run_dir, scripts_dir)
+
         return engine.run(only=args.phase, until=args.until)
