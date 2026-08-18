@@ -219,6 +219,104 @@ class SealTypographyQcTest(unittest.TestCase):
             os.environ.pop(rf.ENFORCE_ENV, None)
 
 
+class EnforcementModeSealedAtAdmissionTest(unittest.TestCase):
+    """FIX: enforcing() used to be read from os.environ AT CALL TIME by every
+    consumer, so a single run's enforcement mode could change mid-run purely
+    because the environment changed after the run was already admitted. The
+    fix seals the mode into RunFacts.enforcing exactly once, at seal() time
+    (admission) -- every consumer must read facts.enforcing, never call
+    enforcing() again for a decision. This class proves: (1) the sealed value
+    survives a later env mutation unchanged: a real gate, sealed under one
+    mode, produces the SAME verdict even after the env var flips mid-run with
+    no re-admission; (2) the default (unset env) is still inert/report-only,
+    unchanged by this fix."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._td.name)
+        rf.reset_cache_for_tests()
+        os.environ.pop(rf.ENFORCE_ENV, None)
+
+    def tearDown(self):
+        self._td.cleanup()
+        os.environ.pop(rf.ENFORCE_ENV, None)
+        rf.reset_cache_for_tests()
+
+    def test_runfacts_carries_a_sealed_enforcing_field(self):
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIn("enforcing", facts.__dataclass_fields__)
+        self.assertIs(facts.enforcing, False)
+
+    def test_default_unset_env_is_still_inert_report_only(self):
+        """Confirms still inert by default: with the env var unset (the real
+        production default -- nothing sets it today), a freshly sealed run's
+        mode is False, matching the module's documented default."""
+        self.assertNotIn(rf.ENFORCE_ENV, os.environ)
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIs(facts.enforcing, False)
+        self.assertIs(rf.enforcing(), False)
+
+    def test_sealed_mode_survives_env_mutated_after_admission(self):
+        """The literal acceptance proof: admit a run with the flag OFF, THEN
+        set the env var mid-run (no re-admission), and confirm the ALREADY
+        SEALED record's mode did not move."""
+        facts = rf.seal(self.run_dir, force=True)
+        self.assertIs(facts.enforcing, False)
+        os.environ[rf.ENFORCE_ENV] = "1"
+        try:
+            # rf.enforcing() itself is the raw, unsealed, live primitive --
+            # it correctly reflects the new environment (that is its job; it
+            # is what seal() would read on the NEXT admission).
+            self.assertIs(rf.enforcing(), True)
+            # But the RECORD ALREADY SEALED for this run must be untouched --
+            # this is the actual guarantee: a run executes under exactly one
+            # mode from start to finish.
+            self.assertIs(facts.enforcing, False)
+            cached_again = rf.get_or_seal(self.run_dir)
+            self.assertIs(cached_again is facts, True,
+                          "get_or_seal must return the SAME cached record, "
+                          "not re-admit / re-read the environment")
+            self.assertIs(cached_again.enforcing, False)
+        finally:
+            os.environ.pop(rf.ENFORCE_ENV, None)
+
+    def test_a_real_gate_verdict_does_not_flip_when_env_changes_mid_run(self):
+        """End-to-end: seal a run with a proven-tampered typography report
+        (gate:'typography', pass:false -- the module's own documented
+        P-TYPO-QC gap) while the flag is OFF, THEN flip the flag ON without
+        re-admitting. The wired gate must return the SAME (permissive,
+        report-only) result both times -- pre-fix, this flipped to a FAIL the
+        instant the flag was set, on the SAME already-sealed run."""
+        p = self.run_dir / "working" / "qc" / "typography_qc_report.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"gate": "typography", "pass": False, "average": 2.1}))
+
+        self.assertNotIn(rf.ENFORCE_ENV, os.environ)
+        ok_before, reasons_before = pv.verify("P-TYPO-QC", self.run_dir)
+        self.assertTrue(ok_before, "report-only admission must pass the legacy result")
+
+        os.environ[rf.ENFORCE_ENV] = "1"
+        try:
+            # NOTE: deliberately NOT calling rf.reset_cache_for_tests() here --
+            # this is the whole point: the run was already admitted/sealed
+            # above, and nothing should re-seal it just because the
+            # environment changed. Compare with
+            # test_enforcing_flag_flips_the_gate_and_never_regresses_a_legit_report
+            # above, which resets the cache first and DOES expect a flip --
+            # that is a NEW admission under the new mode, which is correct
+            # and unaffected by this fix.
+            ok_after, reasons_after = pv.verify("P-TYPO-QC", self.run_dir)
+            self.assertEqual(
+                ok_before, ok_after,
+                "the SAME sealed run's gate verdict must not change just "
+                "because the environment changed after admission",
+            )
+            self.assertTrue(ok_after)
+            self.assertEqual(reasons_after, [])
+        finally:
+            os.environ.pop(rf.ENFORCE_ENV, None)
+
+
 class GateIntegrityPurityTest(unittest.TestCase):
     """Confirms gate_integrity_check.py --purity (Guard B) actually parses
     runfacts.py and finds the two migrated verdict functions clean — a light

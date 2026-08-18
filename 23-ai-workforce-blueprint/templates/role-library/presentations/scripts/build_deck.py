@@ -6610,9 +6610,13 @@ def _owner_skip_approved(run_dir: Path, af_code: str):
             f"owner_skip:{af_code}",
             legacy_result is not None,
             "approved" if legacy_result is not None else "no matching valid record",
-            verdict, detail, run_dir=run_dir,
+            verdict, detail, run_dir=run_dir, facts=facts,
         )
-        if _rf.enforcing():
+        # SEALED mode, not a live re-read: facts.enforcing was frozen into this
+        # record at seal() time (admission), so it cannot drift mid-run even if
+        # PRES_TRUST_BOUNDARY_ENFORCE changes in the environment after this run
+        # was already admitted. See presentation_job/runfacts.py's enforcing().
+        if facts.enforcing:
             if verdict is _rf.Verdict.PASS:
                 return legacy_result if legacy_result is not None else {
                     "owner_approved": True, "af_code": af_code.strip().upper(),

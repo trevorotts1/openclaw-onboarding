@@ -174,10 +174,15 @@ class VerifierSpec:
         try:
             _rf.shadow_compare(self.gate, bool(legacy_ok),
                                "; ".join(legacy_reasons), verdict, detail,
-                               run_dir=run_dir)
+                               run_dir=run_dir, facts=facts)
         except Exception:  # noqa: BLE001 — shadow compare never breaks a gate
             pass
-        if _rf.enforcing():
+        # SEALED mode (facts.enforcing, frozen at seal()/admission time) --
+        # never a live os.environ re-read -- so this decision cannot drift
+        # mid-run even though facts here may come from a TRANSACTIONAL seal
+        # (seal_into() above) that is never visible in the shared _SEAL_CACHE.
+        # See presentation_job/runfacts.py's enforcing() docstring.
+        if facts.enforcing:
             if verdict is Verdict.PASS:
                 return True, []
             if verdict is Verdict.UNDETERMINED:

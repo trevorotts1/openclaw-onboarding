@@ -63,7 +63,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Generic, Optional, Tuple, TypeVar
 
-RUNFACTS_SCHEMA_VERSION = 1
+RUNFACTS_SCHEMA_VERSION = 2  # v2: RunFacts carries `enforcing`, sealed at admission (was live os.environ)
 SEALED_REL = Path("working") / "checkpoints" / ".runfacts.sealed.json"
 ENFORCE_ENV = "PRES_TRUST_BOUNDARY_ENFORCE"
 DIVERGENCE_PREFIX = "TRUST-BOUNDARY-DIVERGENCE"
@@ -188,7 +188,27 @@ def enforcing() -> bool:
     report-only to enforcing. Default is report-only (unset, '0', 'false',
     'no' all read as report-only) — shipping enforcing-by-default would risk
     bricking a real client run on the very first divergence this increment
-    finds, which is the one thing the task forbids."""
+    finds, which is the one thing the task forbids.
+
+    THIS IS A LIVE, UNSEALED os.environ READ — it can return a different
+    answer on every call, for as long as the process lives, if the
+    environment changes underneath it. That is exactly correct for its ONE
+    sanctioned caller: seal() calls this ONCE, at admission, and freezes the
+    result into RunFacts.enforcing. It is also correct for a caller that
+    explicitly wants only an AUDIT-TIME snapshot of the live flag and never
+    lets that value influence what a gate returns (e.g.
+    presentation_job.preflight_shadow's ledger stamp, which is documented to
+    have no enforcing()-gated branch at all).
+
+    Everything else — any code deciding whether a gate should PASS or FAIL —
+    MUST NOT call this function. It must already hold (or obtain) a sealed
+    RunFacts and read `facts.enforcing` instead. Calling this function a
+    second time, after a run has already been admitted, to make a pass/fail
+    decision is precisely the bug this module's `RunFacts.enforcing` field
+    exists to close: it lets the mode drift mid-run whenever the environment
+    changes after sealing, which contradicts "a run must execute under
+    exactly one mode from start to finish." See RunFacts.enforcing and
+    seal()'s docstring."""
     return (os.environ.get(ENFORCE_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
@@ -394,6 +414,20 @@ class RunFacts:
     webinar_video: Fact                  # Fact[WebinarVideoInfo] — P9.6-WEBINAR-VIDEO video+timing
     notes_sync: Fact                     # Fact[NotesSyncInfo] — P9.5-NOTES-SYNC record+pptx
     fish_tag: Fact                       # Fact[FishTagInfo] — P8.4-FISH-TAG dual-file strip-equals
+    # --- ENFORCEMENT MODE, SEALED AT ADMISSION (the fix this field exists for) ---
+    # The operator's PRES_TRUST_BOUNDARY_ENFORCE choice, read from os.environ
+    # EXACTLY ONCE, by seal() itself, at the moment this record is built — the
+    # same "front door" moment every other fact is captured. This is the
+    # AUTHORITATIVE mode for the run this record belongs to. A consumer that
+    # already holds (or can obtain) a RunFacts MUST read `facts.enforcing`,
+    # never call the module-level `enforcing()` function again — that raw,
+    # unsealed, live os.environ read exists ONLY so seal() has something to
+    # seal; calling it a second time after admission is exactly the bug this
+    # field closes (the mode drifting mid-run because the environment changed
+    # after the run was already admitted). Required (no default): every
+    # RunFacts must be sealed with an explicit mode, never silently default
+    # to one — see seal()'s single construction call site.
+    enforcing: bool
 
     def to_json(self) -> dict:
         return {
@@ -401,6 +435,7 @@ class RunFacts:
             "sealed_at": self.sealed_at,
             "schema_version": self.schema_version,
             "nonce_bound": self.nonce_bound,
+            "enforcing": self.enforcing,
             "process_manifest": self.process_manifest.to_json(),
             "owner_skip_records": self.owner_skip_records.to_json(),
             "qc": {k: f.to_json() for k, f in self.qc.items()},
@@ -491,12 +526,25 @@ def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> Ru
     to stderr at seal time, in addition to whatever shadow_compare() prints
     later at each individual gate call — the seal-time findings on their own
     already answer "the report names the specific fact that failed
-    validation" without requiring any gate to actually run."""
+    validation" without requiring any gate to actually run.
+
+    ENFORCEMENT MODE IS SEALED HERE, ONCE: enforcing() (the raw os.environ
+    read) is called EXACTLY ONE TIME per seal, right here at admission, and
+    its result is frozen into the returned record as RunFacts.enforcing. A
+    cached return (the `not force and key in _SEAL_CACHE` branch above) does
+    NOT re-read the environment — it returns the SAME already-sealed mode a
+    prior seal() call captured, which is the whole point: once a run is
+    admitted under a mode, nothing that happens to the environment for the
+    rest of that run's lifetime can change what mode it is judged under.
+    Only a fresh seal (force=True, or a new run_dir) samples the environment
+    again — and that is a NEW admission, not a mutation of an existing one."""
     run_dir = Path(run_dir).resolve()
     key = str(run_dir)
     with _SEAL_LOCK:
         if not force and key in _SEAL_CACHE:
             return _SEAL_CACHE[key]
+
+        enforcing_mode = enforcing()  # the ONE sanctioned live read — see seal()'s docstring above
 
         pm_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
         if not pm_path.is_file():
@@ -535,6 +583,7 @@ def seal(run_dir: Path, *, nonce_bound: bool = False, force: bool = False) -> Ru
             webinar_video=_webinar_video_fact(run_dir),
             notes_sync=_notes_sync_fact(run_dir),
             fish_tag=_fish_tag_fact(run_dir),
+            enforcing=enforcing_mode,
         )
         _SEAL_CACHE[key] = facts
 
@@ -1440,22 +1489,45 @@ def verify_fish_tag(facts: RunFacts) -> Tuple[Verdict, str]:
 
 
 def shadow_compare(label: str, legacy_ok: bool, legacy_reason: str,
-                    new_verdict: Verdict, new_reason: str, *, run_dir) -> bool:
+                    new_verdict: Verdict, new_reason: str, *, run_dir,
+                    facts: "Optional[RunFacts]" = None) -> bool:
     """Compare a legacy boolean verdict against the sealed-RunFacts Verdict for
     the SAME gate query. On divergence, print ONE greppable line to stderr
     naming the gate, both verdicts, and both reasons, and return True (caller
     may use this to count divergences). Report-only: this function NEVER
     raises and NEVER changes what the caller returns — that decision is made
-    by the caller using enforcing()."""
+    by the caller reading the SEALED facts.enforcing for this run, not by
+    this function.
+
+    The `enforcing=` value stamped on the log line is the run's SEALED mode,
+    not a fresh os.environ read — an audit line must report what mode the
+    run actually executed under, not whatever the environment happens to say
+    at the moment this line is printed. Resolved in this priority order:
+      1. `facts.enforcing`, when the caller passes the SAME sealed RunFacts
+         its gate decision was already made from (the correct, exact value —
+         pass this whenever you have it, which is every real call site).
+      2. the process-wide seal cache for run_dir, for a caller that has a
+         run_dir but no `facts` handy. NOTE this misses a transactional seal
+         (VerifierSpec.seal_into() deliberately restores the shared cache to
+         its pre-call state in a `finally`, so a transactional record is
+         never visible here) — pass `facts` explicitly to avoid depending on
+         this fallback.
+      3. the live enforcing() read, only if neither above resolved anything —
+         defensive last resort, never expected to fire in a real call site."""
     legacy_as_verdict = Verdict.PASS if legacy_ok else Verdict.FAIL
     if legacy_as_verdict is new_verdict:
         return False
     try:
+        if facts is not None:
+            enforcing_mode = facts.enforcing
+        else:
+            cached = _SEAL_CACHE.get(str(Path(run_dir).resolve())) if run_dir is not None else None
+            enforcing_mode = cached.enforcing if cached is not None else enforcing()
         print(
             f"{DIVERGENCE_PREFIX} gate={label} run_dir={run_dir} "
             f"legacy={legacy_as_verdict.value}({_trunc(legacy_reason)!r}) "
             f"runfacts={new_verdict.value}({_trunc(new_reason)!r}) "
-            f"enforcing={enforcing()}",
+            f"enforcing={enforcing_mode}",
             file=sys.stderr,
         )
     except Exception:  # noqa: BLE001
