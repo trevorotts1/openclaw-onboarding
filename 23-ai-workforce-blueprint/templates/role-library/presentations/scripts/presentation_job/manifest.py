@@ -438,7 +438,7 @@ MIN_MANIFEST_VERSION = 48  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
-MIN_MANIFEST_PHASES = 26
+MIN_MANIFEST_PHASES = 36
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""
