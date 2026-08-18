@@ -999,6 +999,48 @@ def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
     return _v
 
 
+# fix/run-slides: P-CONVERTER (Phase -1, "Content-to-Presentation Conversion")
+# used to be _verify_json_artifact("working/copy/intake.json", ("slides",)) --
+# demanding a "slides" key that NO writer anywhere in this codebase (grepped
+# clean, production and test alike) ever puts into intake.json, for either
+# creation path. The owning role's own SOP (content-to-presentation-architect/
+# how-to.md line 25: "You never build slides yourself... Your single
+# deliverable is the source-derived presentation brief") and SOP 9.8 ("hand
+# source_brief.json to the Director") both confirm this phase's real output is
+# a SOURCE BRIEF, handed off to the Director's OWN later phase (P0A-INTAKE),
+# which is what actually writes intake.json. The candidate paths below are the
+# exact ones build_deck.py._chk_converter_no_invent already reads for this
+# same artifact (AF-CONVERTER-NO-INVENT, P167d) -- both checks now agree on
+# where the converter's output lives. This is the gate MOVED to the artifact
+# the phase actually produces, per its own SOP -- not weakened: absence is
+# still a hard FAIL, same as every other primary substance gate in this file.
+_CONVERTER_SOURCE_BRIEF_CANDIDATES = (
+    "working/copy/source_brief.json",
+    "working/copy/source_brief.md",
+    "working/converter/source_brief.md",
+    "working/copy/source_brief.txt",
+)
+
+
+def _verify_converter(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-CONVERTER: pass when the content-to-presentation-architect's source
+    brief exists with real content. FAIL-HARD when absent — this phase is a
+    PRIMARY gate like every other phase here, not a secondary/advisory one."""
+    for rel in _CONVERTER_SOURCE_BRIEF_CANDIDATES:
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        txt = _read_text(p)
+        if txt is not None and len(txt.strip()) >= 50:
+            return True, []
+    return False, [
+        "none of " + ", ".join(_CONVERTER_SOURCE_BRIEF_CANDIDATES) +
+        " present with real content — the content-to-presentation-architect's "
+        "source brief was never written (P-CONVERTER produces a source brief, "
+        "per its own SOP 9.8 — never a 'slides' key in intake.json)"
+    ]
+
+
 def _verify_text_artifact(pattern: str, min_bytes: int = 50,
                           scale_by_slides: bool = False):
     """Factory returning a verifier that checks a text artifact. When
@@ -1627,7 +1669,7 @@ except Exception:  # noqa: BLE001 — registry absence degrades to legacy at cal
 
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
-    "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
+    "P-CONVERTER":        _verify_converter,
     # Phase -0.5  Deep Research
     "P-0.5-RESEARCH":     _verify_research,
     # Phase 0.1   Intake / Interview Confirm

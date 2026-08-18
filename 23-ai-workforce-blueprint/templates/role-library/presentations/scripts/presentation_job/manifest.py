@@ -146,6 +146,14 @@ class Phase:
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
+    # fix/run-slides: the manifest already declares "converter_path": true +
+    # a routing_note ("Content-first path only") on P-CONVERTER, but until this
+    # fix NOTHING parsed either field — Manifest._parse_phases silently dropped
+    # them, so Engine.run() (phases.py) walked every phase unconditionally,
+    # including P-CONVERTER on a from_scratch deck that has no source to convert.
+    # Parsing this flag is what lets the engine finally honor its own manifest's
+    # routing intent. See Engine._deck_creation_mode / Engine.run in phases.py.
+    converter_path: bool = False
     # P8.25-WORKBOOK fix: the manifest declares the " + " pair with the directory
     # on the FIRST pattern only ("working/deliverables/{deck_slug}-WORKBOOK.pdf +
     # {deck_slug}-WORKBOOK-FILLABLE.pdf"). A token-bearing bare filename inherits
@@ -274,6 +282,7 @@ class Manifest:
                 client_report=p.get("client_report") or {},
                 heartbeat_minutes=p.get("heartbeat_minutes"),
                 long_running=bool(p.get("long_running")),
+                converter_path=bool(p.get("converter_path")),
             ))
         out.sort(key=lambda x: x.order)
         return out

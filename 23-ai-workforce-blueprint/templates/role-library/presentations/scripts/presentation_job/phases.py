@@ -103,6 +103,73 @@ class Engine:
         except Exception:  # noqa: BLE001
             pass
 
+    # -- fix/run-slides: converter routing ---------------------------------
+    # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P-CONVERTER
+    # (manifest order -1) declares "converter_path": true and a routing_note of
+    # "Content-first path only" -- but nothing in this package ever read either
+    # field, so every deck, including a from_scratch deck with no source to
+    # convert, walked straight into P-CONVERTER's substance verifier, which
+    # then demanded a "slides" key inside working/copy/intake.json that NO
+    # writer in this codebase (production or otherwise) ever produces -- the
+    # owning role's own SOP (content-to-presentation-architect/how-to.md line
+    # 25: "You never build slides yourself... Your single deliverable is the
+    # source-derived presentation brief") confirms this phase's real output is
+    # a source brief, not a "slides" key, and that it only applies when a
+    # content source exists at all (creation_mode content_personal /
+    # content_general -- build_deck.py:8212 CREATION_MODES). This is a
+    # dispatch/routing defect, not a substance-check defect: the fix routes
+    # converter-only phases around a from_scratch deck instead of touching
+    # what the substance check demands of a deck the phase actually applies to.
+    _CONTENT_FIRST_CREATION_MODES = ("content_personal", "content_general")
+
+    def _deck_creation_mode(self) -> Optional[str]:
+        """Best-effort read of working/copy/intake.json's creation_mode.
+
+        Returns None on ANY absence/parse failure -- a routing decision that
+        depends on this must NEVER skip a phase on missing information, only
+        on a positively-read, confirmed creation_mode. This mirrors the
+        fail-open-to-full-enforcement posture the rest of this module already
+        uses (e.g. _artifacts_present, the substance verifier's FAIL-HARD
+        rule): when in doubt, the phase still runs and still has to earn its
+        pass the normal way.
+        """
+        p = self.run_dir / "working" / "copy" / "intake.json"
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return None
+        if not isinstance(obj, dict):
+            return None
+        val = obj.get("creation_mode")
+        return val if isinstance(val, str) and val else None
+
+    def _route_around_converter_phase(self, phase: Phase, creation_mode: str) -> None:
+        """Record a converter_path phase as not applicable to this deck, WITHOUT
+        running its executor or its substance verifier, and WITHOUT disguising
+        the routing decision as a genuine execution.
+
+        This is not an owner_skip_approval bypass (that mechanism silences a
+        gate that fired; this phase's gate never fires at all, because the
+        phase itself does not apply). status="done" so certificate/gap/
+        all_done accounting stays consistent with a deck that never had this
+        phase's precondition to begin with -- but `routed_around` +
+        `routed_around_reason` make the distinction from a real, verified
+        execution fully auditable, permanently, in state.json and the event
+        log. verifier_ok stays None (never checked, not "checked and passed")
+        and artifacts stays empty (nothing was produced), so
+        _mint_process_certificate's substance_unverified scan
+        (verifier_ok is None and artifacts) does not misflag it either.
+        """
+        reason = (f"creation_mode={creation_mode!r} — {phase.id} declares "
+                  "converter_path:true (\"Content-first path only\"); not "
+                  "applicable to this deck, so it was never dispatched")
+        self.report.event("phase.routed_around", f"{phase.id}: {reason}")
+        self._checkpoint(phase.id, status="done", attested_at=utcnow(),
+                         artifacts=[], sha256={}, verifier_ok=None,
+                         verifier_notes=[f"NOTE: {reason}"],
+                         owner_skip_approval=None, routed_around=True,
+                         routed_around_reason=reason)
+
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
         missing = []
@@ -486,6 +553,22 @@ class Engine:
         elif until:
             stop = self.manifest.phase(until)
             phases = [p for p in phases if p.order <= stop.order]
+
+        # fix/run-slides: route converter_path phases (P-CONVERTER) around any
+        # deck whose confirmed creation_mode is not a content-conversion mode.
+        # `only` means the operator explicitly asked to dispatch this ONE phase
+        # by id -- that direct request is always honored as-is, never silently
+        # rerouted. `until` still gets the filter: it walks the same automatic
+        # phase list this routing decision governs.
+        if not only:
+            creation_mode = self._deck_creation_mode()
+            if creation_mode is not None and creation_mode not in self._CONTENT_FIRST_CREATION_MODES:
+                keep, routed = [], []
+                for p in phases:
+                    (routed if p.converter_path else keep).append(p)
+                for p in routed:
+                    self._route_around_converter_phase(p, creation_mode)
+                phases = keep
 
         if not self.state.get("sent", {}).get("ack"):
             n = len(phases)
