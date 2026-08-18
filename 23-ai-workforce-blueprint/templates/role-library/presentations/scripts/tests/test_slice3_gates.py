@@ -197,7 +197,7 @@ def _genuine_bundle(rd: pathlib.Path) -> None:
     (dls / "PRESENTERS-SPEECH-FISH-TAGGED.md").write_text(
         "This [fish calm] is the presenter [fish slow] speech. [fish warm] " * 300)
     _write_mp3(dl / "PRESENTER-AUDIO.mp3", 100_000)
-    _write_png(dl / "infographic.png", 10_000)
+    _write_png(dl / "infographic.png", 102_400)  # doctrine floor, Part 6 #8 (was 10_000)
     _write_html(dls / "presenter-teleprompter.html", 5_000)
     _write_mp4(dl / "demo-WEBINAR.mp4", 500_000)
 

@@ -116,6 +116,21 @@ def test_phase_verifiers_delivery_whitelist_matches_canonical_keys():
     assert "speech_md" in delivery_keys
 
 
+def test_infographic_floor_matches_doctrine():
+    """Pin the infographic_png min_bytes floor to the doctrine value (Part 6 #8 of the
+    2026-08-17 fix review). PIPELINE-MANIFEST.json's own note reads '>100KB; one-page
+    infographic slide exported as PNG', and build_deck.py's DELIVERABLES_REQUIRED
+    carries the same 102_400 (100 KB) floor with the identical rationale comment.
+    Single-sourcing the whitelist into this file (U05) silently carried a
+    never-chosen 10_000 instead -- nobody picked it, no test pinned it, and it let a
+    10-99KB placeholder/thumbnail pass a gate the doctrine floor was built to reject.
+    This test is the pin so it cannot drift back unnoticed."""
+    spec = next(s for s in deliverables.DELIVERABLE_AUDIT_SPEC if s["key"] == "infographic_png")
+    assert spec["min_bytes"] == 102_400, (
+        f"infographic_png min_bytes drifted from the 100KB doctrine floor: "
+        f"got {spec['min_bytes']}")
+
+
 def test_phase_verifiers_delivery_min_bytes_matches_canonical():
     """The byte-size floor per key must come from the canonical spec, not a
     locally hardcoded (and driftable) number."""

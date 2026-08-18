@@ -146,7 +146,13 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "INFOGRAPHIC.png",
         "label": "infographic checklist PNG",
         "expected_suffix": ".png",
-        "min_bytes": 10000,
+        # RECONCILED (Part 6 #8, 2026-08-18) to the doctrine floor: PIPELINE-MANIFEST.json
+        # ">100KB; one-page infographic slide exported as PNG" and build_deck.py's own
+        # DELIVERABLES_REQUIRED entry ("min_bytes": 102_400, "a real 2K-resolution
+        # infographic floor"). Single-sourcing this file (U05) had carried it at 10_000 --
+        # an unchosen side effect nobody picked and no test pinned -- which silently
+        # accepted a 10-99KB placeholder/thumbnail that the doctrine floor rejects.
+        "min_bytes": 102_400,             # 100 KB — real 2K-resolution infographic floor
         "magic_bytes": b"\x89PNG",
         "magic_offset": 0,
         "magic_desc": "PNG image",
