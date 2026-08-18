@@ -41,6 +41,12 @@ from typing import Dict, List, Optional, Tuple
 # P-QC-AGGREGATE entry (qc:final) in its dispatch table, so the implementation was
 # ready and only the manifest declaration was missing. Content-only edit; no new
 # phase/AF code. MIN follows the manifest in the same commit (U019 step 8).
+# 49 -> 50: min_bytes split-brain reconciliation (2026-08-18) -- speech_pdf and
+# teleprompter_html carried orphaned pre-doctrine values (20480 / 10240, dated
+# 2026-06-17, predating the 2026-07-12 SOP reconciliation) that disagreed with
+# deliverables.py / build_deck.py's already-reconciled floors (3000 / 20000).
+# Content-only edit to two existing entries, same class of change as WI-10
+# (44 -> 45); MIN follows the manifest in the same commit.
 MIN_MANIFEST_VERSION = 50
 MIN_MANIFEST_PHASES = 36
 MIN_AF_SP_CODES = 16

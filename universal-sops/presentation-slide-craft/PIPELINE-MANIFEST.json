@@ -34,8 +34,8 @@
       "key": "speech_pdf",
       "filename": "PRESENTERS-SPEECH.pdf",
       "label": "presenter speech teleprompter PDF",
-      "min_bytes": 20480,
-      "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP."
+      "min_bytes": 3000,
+      "note": ">3KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP. RECONCILED (split-brain fix, 2026-08-18): this entry orphaned a pre-doctrine 20480 dated 2026-06-17 (git blame), predating the 2026-07-12 SOP reconciliation (commit eaae2e33) that ratified 3000 -- see sops/presenters-speech-writer-sops.md AF-BUNDLE-COMPLETE gate-tie-in."
     },
     {
       "key": "speech_fish_md",
@@ -64,8 +64,8 @@
       "key": "teleprompter_html",
       "filename": "presenter-teleprompter.html",
       "label": "presenter teleprompter web app",
-      "min_bytes": 10240,
-      "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
+      "min_bytes": 20000,
+      "note": ">20KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP. RECONCILED (split-brain fix, 2026-08-18): this entry orphaned a pre-doctrine 10240 dated 2026-06-17 (git blame), predating the 2026-07-12 SOP reconciliation (commit eaae2e33) that ratified 20000 -- matches build_teleprompter.py's own TELEPROMPTER_MIN_BYTES self-check."
     },
     {
       "key": "webinar_mp4",

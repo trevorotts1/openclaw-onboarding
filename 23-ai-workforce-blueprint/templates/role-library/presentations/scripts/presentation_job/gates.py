@@ -3,8 +3,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from .deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
 from .result import CheckResult
 GATE_KEYS = ("script", "teleprompter", "prompt_floor", "ghl_upload", "qc")
+# DERIVED from presentation_job/deliverables.py (the single source of truth,
+# U05) rather than hardcoded -- this used to be a THIRD independent copy of the
+# teleprompter_html floor (10_240, stale) alongside deliverables.py and
+# build_deck.py's DELIVERABLES_REQUIRED (split-brain fix, 2026-08-18).
+_MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
 QC_PASS_THRESHOLD = 8.5
@@ -100,7 +106,15 @@ class Gates:
     def evaluate_all(self) -> Dict[str, Dict[str, Any]]:
         g = self.state.setdefault("gates", {})
         g["script"] = self._artifact_gate_any(["working/deliverables/PRESENTERS-SPEECH.md","working/presenter-speech/PRESENTERS-SPEECH.md"], 2048)
-        g["teleprompter"] = self._artifact_gate("working/deliverables/presenter-teleprompter.html", 10240)
+        # RECONCILED (split-brain fix, 2026-08-18): the doctrine-ratified floor is
+        # sops/presenters-speech-writer-sops.md's AF-BUNDLE-COMPLETE gate-tie-in line,
+        # verbatim "HTML >= 20,000 bytes", also enforced at production time by
+        # build_teleprompter.py's own TELEPROMPTER_MIN_BYTES. This gate previously
+        # hardcoded 10_240 (a never-cited number this codebase's own git history shows
+        # was copied from PIPELINE-MANIFEST.json's own orphaned pre-doctrine value,
+        # dated 2026-06-17 -- before the 2026-07-12 reconciliation, commit eaae2e33).
+        g["teleprompter"] = self._artifact_gate(
+            "working/deliverables/presenter-teleprompter.html", _MIN_BYTES["teleprompter_html"])
         g["prompt_floor"] = self._prompt_floor_gate()
         g["ghl_upload"] = self._ghl_gate()
         g["qc"] = self._qc_gate()
