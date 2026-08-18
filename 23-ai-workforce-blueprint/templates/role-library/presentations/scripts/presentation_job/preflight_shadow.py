@@ -31,6 +31,31 @@ edits to any gate body:
      exactly the shape a future Stage-1 enforcement would refuse. Phase 1
      records it. It never blocks.
 
+FALSE-POSITIVE FIX (retried phases / resumed runs, see `_attested_artifact_shas`
+and `record()`): a bare hash divergence cannot tell "the pipeline itself
+rewrote this artifact in the normal course of work" (a QC send-back loop's
+re-author-and-remeasure retry — `run_signature_deck.run_copy_qc_loop` /
+`run_prompt_qc_loop` — or a resumed phase re-dispatched via `--phase`) apart
+from "something changed it that shouldn't have" — both are, at the byte
+level, just "different content than what was sealed". Verified empirically
+(driving real retries through the actual `run_signature_deck.py` phase
+harness, not simulated): every legitimate phase completion — first pass OR a
+retry — computes `sha256(current artifact bytes)` via
+`run_signature_deck._compute_artifact_sha` and writes it as
+`attest_phase()`'s `artifact_sha` into `process_manifest.json`'s
+`phase_attestations`, BEFORE this preflight pass can observe the new
+content. `record()` checks whether the CURRENT hash it just computed
+(`hash_at_check`) appears in that attested set; if so, the divergence is
+`explained_by_attestation` — still recorded in the ledger (nothing hidden),
+but never added to `divergence_count` / `would_have_blocked` and never
+shouted to stderr, because it IS the pipeline's own legitimate output, not
+tamper. A hand-edit that bypasses the phase harness (the pipeline never
+attested it) has no matching `artifact_sha` and still flags exactly as
+before. Shares this module's honest limit with the rest of this
+trust-boundary work (see `runfacts.py`'s docstring): same-UID
+tamper-evidence, not a cryptographic guarantee against an adversary who
+could also forge an attestation by going through `attest_phase()` itself.
+
 REPORT-ONLY, BY CONSTRUCTION, NOT BY DISCIPLINE:
   - Every public function here returns None, or a value the caller already
     had before calling it — nothing this module computes is consulted by
@@ -122,6 +147,49 @@ def _enforcing_flag() -> bool:
         return False
 
 
+def _attested_artifact_shas(run_dir: Path) -> frozenset:
+    """FALSE-POSITIVE FIX (see module docstring addendum below _resolve_entry_path):
+    read working/checkpoints/process_manifest.json's `phase_attestations` (written
+    ONLY by run_signature_deck.attest_phase — the same harness every phase, QC
+    send-back loop retry, and resumed run goes through on legitimate completion,
+    verified empirically: run_copy_qc_loop/run_prompt_qc_loop call
+    `_compute_artifact_sha` then `attest_phase` on every pass including after
+    re-authoring, and the plain per-phase dispatch path
+    (run_signature_deck.py's `--phase` handling) does the same) and return the
+    set of every `artifact_sha` value it has ever recorded for this run_dir.
+
+    attest_phase() REFUSES to attest with an empty artifact_sha (FATAL, exits 2 —
+    see its own docstring), and `_compute_artifact_sha` computes it as sha256 of
+    the artifact's OWN current bytes at attestation time — for a single, non-glob
+    file this is byte-identical to this module's own `_hash_and_mtime`'s hash
+    (both are plain `hashlib.sha256(file_bytes).hexdigest()`), so a hash minted by
+    THIS module matching one already vouched for by attest_phase is proof that
+    exact content was independently produced and hashed by the pipeline's own
+    phase-completion machinery — not merely present on disk.
+
+    Never raises. Missing/unparseable/absent process_manifest.json, or any
+    attestation entry missing/malformed, degrades to an empty set — the SAFE
+    direction: a read failure here can only leave record() MORE likely to flag
+    a divergence, never less, matching this module's existing report-only,
+    never-more-permissive-on-error contract."""
+    try:
+        pm_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
+        if not pm_path.is_file():
+            return frozenset()
+        obj = json.loads(pm_path.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(obj, dict):
+            return frozenset()
+        shas = set()
+        for att in obj.get("phase_attestations", []) or []:
+            if isinstance(att, dict):
+                sha = att.get("artifact_sha")
+                if isinstance(sha, str) and sha and sha != "no-artifact-spec":
+                    shas.add(sha)
+        return frozenset(shas)
+    except Exception:  # noqa: BLE001 — degrade to "nothing attested", never raise
+        return frozenset()
+
+
 def _resolve_entry_path(run_dir: Path, rel: Optional[str]) -> Optional[Path]:
     """Mirror run_preflight()'s OWN artifact-resolution semantics exactly (same
     glob-if-'*'-in-rel-else-direct-exists-check, build_deck.py:9810-9815) so
@@ -162,6 +230,7 @@ class PreflightShadowContext:
     ledger_path: Optional[Path] = None
     entry_count: int = 0
     divergence_count: int = 0
+    explained_divergence_count: int = 0
     would_have_blocked: List[dict] = field(default_factory=list)
 
 
@@ -224,6 +293,24 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
         diverged = (hash_at_seal is not None or hash_at_check is not None) and (
             hash_at_seal != hash_at_check
         )
+        # FALSE-POSITIVE FIX: a diverged hash alone cannot tell "the pipeline
+        # itself legitimately rewrote this between admission and this gate
+        # reading it" (a QC send-back loop's re-author-and-remeasure retry, a
+        # resumed phase) apart from "something changed it that shouldn't
+        # have" -- both look identical as a bare byte-content diff. The
+        # discriminator is process_manifest.json's phase_attestations (see
+        # _attested_artifact_shas): every legitimate completion of the phase
+        # that owns this artifact -- first pass OR a retry -- computes
+        # sha256(current bytes) via run_signature_deck._compute_artifact_sha
+        # and writes it as attest_phase()'s artifact_sha BEFORE this preflight
+        # pass can observe the new content. A hand-edit that bypasses that
+        # harness (the pipeline never touched it) leaves no such record.
+        # hash_at_check is only ever matched (never hash_at_seal) — the
+        # question is always "is the CURRENT content something the pipeline
+        # itself vouches for", not the stale seal.
+        explained = False
+        if diverged and hash_at_check is not None:
+            explained = hash_at_check in _attested_artifact_shas(ctx.run_dir)
         enforcing_now = _enforcing_flag()
         entry = {
             "gate_label": label,
@@ -237,10 +324,20 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
             "mtime_at_seal": mtime_at_seal,
             "mtime_at_check": mtime_at_check,
             "toctou_divergence": diverged,
+            "explained_by_attestation": explained,
             "enforcing_flag_set": enforcing_now,
         }
         _append_ledger(ctx.ledger_path, entry)
-        if diverged:
+        if diverged and explained:
+            # A real divergence, but process_manifest.json's own
+            # phase_attestations independently corroborate the CURRENT bytes
+            # as a legitimate phase completion -- a retried/resumed phase
+            # rewriting its own output, not tamper. Recorded for audit
+            # (nothing is hidden), but never counted as a divergence/
+            # would-have-blocked and never shouted to stderr as one -- this
+            # is exactly the "flag never flips on for honest work" fix.
+            ctx.explained_divergence_count += 1
+        elif diverged:
             ctx.divergence_count += 1
             _safe_print(
                 f"{DIVERGENCE_PREFIX} gate={label} run_dir={ctx.run_dir} "
@@ -251,14 +348,16 @@ def record(ctx: Optional[PreflightShadowContext], *, label: str, display: str,
             if legacy_ok:
                 # The exact shape Stage-1 enforcement would refuse: the legacy
                 # gate said PASS, but the artifact it just read is provably
-                # NOT the same bytes this preflight pass sealed at admission.
+                # NOT the same bytes this preflight pass sealed at admission,
+                # AND no phase attestation vouches for the new bytes either.
                 # Phase 1 records this and STILL lets the run proceed.
                 ctx.would_have_blocked.append(entry)
                 _safe_print(
                     f"{WOULD_BLOCK_PREFIX} gate={label} run_dir={ctx.run_dir} "
                     f"fact={label!r} source={entry['resolved_path']} "
                     f"reason='artifact changed between preflight admission and "
-                    f"this gate reading it' (report-only — run proceeds, no "
+                    f"this gate reading it, and the new content is not an "
+                    f"attested phase output' (report-only — run proceeds, no "
                     f"block issued)"
                 )
     except Exception as exc:  # noqa: BLE001
@@ -277,6 +376,7 @@ def close_run(ctx: Optional[PreflightShadowContext]) -> None:
         _safe_print(
             f"{SUMMARY_PREFIX} run_dir={ctx.run_dir} entries={ctx.entry_count} "
             f"divergences={ctx.divergence_count} "
+            f"explained_divergences={ctx.explained_divergence_count} "
             f"would_have_blocked={len(ctx.would_have_blocked)} "
             f"ledger={ctx.ledger_path}"
         )
