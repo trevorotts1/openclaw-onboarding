@@ -2396,7 +2396,26 @@ _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
 # it, and the stamp drill in verify.sh could not pass on a box that only had
 # the role-library copy. .tpl is never a client-local override candidate, so
 # the canonical/mirror policy (always overwrite) is correct for it.
-_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf")
+# GAP-DELIVERY-MD-TEMPLATE (FIX-DELIVERY-03): .md and .template are fleet-owned
+# canonical assets exactly like .py/.sh/.js/.tpl — e.g.
+# presentations/scripts/WORKBOOK-PAGE-PROMPT-TEMPLATE.md (read programmatically
+# by workbook_builder.py as an input template, not client documentation) and
+# presentations/scripts/presentation-watchdog.plist.template (rendered by
+# presentation-watchdog.sh onto a box's launchd plist). Before this fix NEITHER
+# suffix appeared in _CANONICAL_SCRIPT_SUFFIXES nor _ADDITIVE_SCRIPT_SUFFIXES in
+# EITHER writer (here nor in refresh-dept-scripts.py), so _iter_scripts_tree_files
+# callers silently `continue`d past them in BOTH the copy loop AND
+# verify_scripts_materialization() — a stale/missing .md or .template file could
+# never be detected, never be copied, and never fail the post-write verify, no
+# matter how far it drifted from the library. Proven live: refresh-dept-scripts.py
+# reported "DEPT_SCRIPTS_STATUS ok=1 failed_inscope=0" (exit 0) with a
+# deliberately stale WORKBOOK-PAGE-PROMPT-TEMPLATE.md and
+# presentation-watchdog.plist.template left completely untouched at the
+# destination — the exact "reports success without delivering" defect class.
+# Neither suffix is a client-local override candidate (both are read
+# programmatically, never operator-edited), so the canonical/mirror policy
+# (always overwrite when divergent) is correct for them, same as .tpl.
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".md", ".template")
 
 # Additive/box-owned script suffixes: copied only if the destination is
 # missing, NEVER overwritten (may carry a client-local override). Named here

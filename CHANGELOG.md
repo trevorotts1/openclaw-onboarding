@@ -1,3 +1,90 @@
+## [v22.0.49] -- 2026-08-18 -- fix(presentations): P-CONVERTER routing/verifier for from_scratch decks + refresh-dept-scripts.py .md/.template coverage gap
+
+Batch merge of `fix/run-slides` + `fix/run-refresh` onto v22.0.48. Both fixes
+were independently verified against the REAL production driver
+(`presentation_job.py`, `Engine`/`Manifest`/`phase_verifiers`,
+`mirror_dept_scripts`/`verify_scripts_materialization`) before merge. A third
+candidate, `fix/run-bakdirs`, was reviewed and REJECTED (confirmed
+drift-hiding regression) -- it is NOT part of this release.
+
+### fix/run-slides -- P-CONVERTER blocked every from_scratch signature deck
+
+`Engine.run()` (phases.py) dispatched P-CONVERTER (manifest "converter_path":
+true, "Content-first path only") unconditionally, including for
+`from_scratch` decks with nothing to convert. Its substance verifier then
+FAIL-HARD-blocked on an intake.json `"slides"` key that no writer in this
+codebase, for any creation_mode, ever produces -- a permanently
+unsatisfiable precondition. This is the exact defect class behind the live
+incident (job_id pj_34a56a26caca04532ec6e9cba6): BLOCKED at phase 1 with
+terminal state stuck at P-CONVERTER despite a complete, validated intake.
+
+CHANGED:
+  - `manifest.py`: parses the manifest's own `converter_path` flag onto
+    `Phase` (previously silently dropped).
+  - `phases.py`: `Engine.run()` reads the deck's confirmed `creation_mode`
+    from `working/copy/intake.json` and routes `converter_path` phases
+    around any deck that is not `content_personal`/`content_general`.
+    Routed-around phases are recorded `status="done"` with an explicit,
+    permanent `routed_around`/`routed_around_reason` audit trail --
+    `verifier_ok` stays `null`, never disguised as a real pass, and never an
+    `owner_skip_approval` bypass (that silences a gate that fired; here the
+    gate never applies). An explicit `--phase P-CONVERTER` request is never
+    auto-rerouted. Absent `creation_mode` fails safe -- routing does not
+    fire and the phase runs normally.
+  - `phase_verifiers.py`: P-CONVERTER's verifier now checks for the artifact
+    the owning role's own SOP says it produces
+    (`source_brief.{json,md,txt}`, the same candidates
+    `build_deck.py._chk_converter_no_invent` already reads) instead of the
+    never-written `"slides"` key -- still FAIL-HARD on absence for the deck
+    types this phase legitimately applies to, moved, not weakened.
+
+VERIFIED (real driver, both directions): a `from_scratch` deck now routes
+around P-CONVERTER and proceeds to P-0.5-RESEARCH. A `content_personal` deck
+with NO `source_brief` still FAIL-HARD blocks at P-CONVERTER (not silently
+routed around); the same deck WITH a real `source_brief.md` passes and
+proceeds. Full suite green (1032 passed, 2 skipped, 0 failed --
+`templates/role-library/presentations/scripts`).
+
+### fix/run-refresh -- refresh-dept-scripts.py silently skipped .md/.template canonical files
+
+`_CANONICAL_SCRIPT_SUFFIXES` (create_role_workspaces.py) omitted `.md` and
+`.template`, even though the presentations role-library `scripts/` tree
+ships two genuinely canonical, programmatically-consumed files of those
+suffixes (`WORKBOOK-PAGE-PROMPT-TEMPLATE.md`, read by workbook_builder.py;
+`presentation-watchdog.plist.template`, rendered by
+presentation-watchdog.sh). Both the copy loop (`mirror_dept_scripts`) and
+the post-write verifier (`verify_scripts_materialization`) silently
+`continue`d past both suffixes -- so a stale or missing file of either kind
+could never be detected, copied, or fail the completeness gate, no matter
+how far it drifted. Live-fixture proof: with both files deliberately stale,
+`refresh-dept-scripts.py --apply` printed
+`DEPT_SCRIPTS_STATUS ok=1 failed_inscope=0` and exited 0 while the stale
+bytes sat untouched.
+
+FIX: added `.md` and `.template` to `_CANONICAL_SCRIPT_SUFFIXES`, the single
+module-level constant `scaffold_department()` and
+`refresh-dept-scripts.py`'s `mirror_dept_scripts()`/
+`verify_scripts_materialization()` all source from, so the existing
+re-hash-after-write verification now also covers these two suffixes with no
+other code path change.
+
+VERIFIED: fixture re-run copies all 3 deliberately-stale files
+(.py/.md/.template) byte-identical; `DEPT_SCRIPTS_STATUS ok=1
+failed_inscope=0` is now a true, re-hashed claim. The genuine-write-failure
+path (chmod 444 destination) still correctly reports `COPY FAILED`,
+`ok=0 failed_inscope=1`, exit 3, `receipt ok:false` -- unchanged, verified
+against regression. `test_role_workspace_symlinks.py`: 4/4 pass.
+
+### fix/run-bakdirs -- REJECTED, not merged
+
+Verifier confirmed a drift-hiding regression; DO-NOT-MERGE-AS-IS is final.
+Left on its own branch (`fix/run-bakdirs`) pending a rebuild.
+
+Full repository test suite (`tests/`): 32 passed, 0 skipped, 0 failed.
+Presentations suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`):
+1032 passed, 2 skipped, 0 failed -- identical pass/skip counts to the
+v22.0.48 floor, confirming no regression from either merged fix.
+
 ## [v22.0.48] -- 2026-08-18 -- fix(presentations): capacity doctrine -- do not limit someone who brought their own capacity
 
 Operator ruling (fix/capacity-uncap-byok): `capacity.py`'s cap table pinned
