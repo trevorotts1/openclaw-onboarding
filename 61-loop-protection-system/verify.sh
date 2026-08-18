@@ -8,8 +8,8 @@
 # NEVER touches an external API - the D-ESCALATE drill injects a failing transport
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
 # end to end: every script self-test, the four merge-gate scanners clean over the
-# tree, and one drill per class (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN,
-# D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
+# tree, and one drill per class (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN,
+# D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
 # D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
@@ -51,7 +51,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -93,6 +93,30 @@ runs = load("identical-signature.runs.json")
 f3 = D.d3_identical_signature(runs, th)
 check("D-SIG identical signature x5 = P1 loop-confirmed",
       any(x["severity"] == "P1" and x["loop_class"] == "LP-A1" for x in f3))
+
+# D-RESEND: 3 identical cross-run resends within the window = D7 loop-confirmed
+# P1 (LP-A10, the 2026-08-04 sessions_send-timeout-misread incident); a 2-send
+# pair below the P1 threshold never reaches P1 (WARN only, at most); a
+# legitimate 3-message fan-out with DISTINCT payloads (a real multi-step
+# handoff) never fires at all. The hash is computed HERE from the fixture's
+# plaintext payload via the real C.cross_run_payload_hash (never a pre-baked
+# literal), and the raw payload text is asserted absent from every finding
+# (hash only - a transcript can carry a live client credential).
+resend_raw = load("cross-run-resend.sends.json")
+sends = [dict(source=r["source"], target=r["target"], run_id=r["run_id"], ts=r["ts"],
+             hash=C.cross_run_payload_hash(r["source"], r["target"], r["payload"]))
+        for r in resend_raw]
+f7 = D.d7_cross_run_resend(sends, th)
+p1_units = {x["unit"] for x in f7 if x["severity"] == "P1" and x["loop_class"] == "LP-A10"}
+all_units = {x["unit"] for x in f7}
+all_findings_text = C.canonical(f7)
+raw_leaked = any(r["payload"] in all_findings_text for r in resend_raw)
+check("D-RESEND 3 identical cross-run resends = P1 loop-confirmed; 2-send stays "
+      "below P1; distinct-payload fan-out never fires; raw payload never in a finding",
+      "agent:orchestrator-1:main" in p1_units
+      and "agent:orchestrator-2:main" not in p1_units
+      and "agent:orchestrator-3:main" not in all_units
+      and not raw_leaked)
 
 # D-OFFSET: corrupted offset rewinds to oldest-1, byte-verified.
 with tempfile.TemporaryDirectory() as td:

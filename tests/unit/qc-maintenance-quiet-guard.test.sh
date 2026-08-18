@@ -7,7 +7,7 @@
 # skill pull. qc-completeness.sh resolved channels.telegram.allowFrom[0] — the
 # CLIENT's own chat — and sent it a "workforce QC status" Telegram whenever
 # STATUS != PASS, so a routine fleet ROLL messaged the client (a real client,
-# teresa-pelham, was messaged during a v17.0.17-class roll).
+# was messaged during a v17.0.17-class roll).
 #
 # THE v20.0.9 FIX (defense in depth):
 #   • qc-completeness.sh no longer resolves allowFrom[0]. Its != PASS alert now

@@ -1,3 +1,183 @@
+## [v22.0.44] -- 2026-08-18 -- fix(privacy): client-name gate could not detect the class it exists for
+
+`scripts/qc-assert-no-client-names.sh` keeps real client identities out of this
+fleet-wide repo. It only matched a roster entry as the literal "First Last" string --
+both words, one space, together. Every other form walked past it.
+
+Proven, not asserted: the OLD gate exits 0 on a fixture containing a first-name-only
+prose line and a `<name>.zerohumanworkforce.com` hostname line. The NEW gate exits 1 and
+catches both. Run against main as it stood, the new gate reports 25 client-name hits the
+old one reported as clean.
+
+DETECTION ADDED (via new scripts/qc-expand-roster-name-forms.py, which derives forms per
+roster entry and emits only tagged patterns -- never a name -- across the pipe):
+- dash-joined, underscore-joined and fused compounds (a bare \b does not match across an
+  underscore or a fused join, though it does across '.' and '-')
+- hostname-corroborated `<name>.zerohumanworkforce.com` / `<name>.myvps`
+- backup-filename-corroborated `bak-<name>` / `<name>-bak`
+- standalone first/last name, case-sensitive only, dictionary-filtered
+
+FALSE-POSITIVE CONTROL (a gate that cries wolf gets disabled, which is worse than a leaky
+one):
+- case-insensitive standalone matching produced 400+ false hits across ~150 files;
+  case-sensitive-only dropped every sampled candidate to 0 with no measured recall loss
+- one token still matched 108 files ambiently against a <=7-file ceiling for every real
+  candidate -- a 2-order-of-magnitude gap. Added a per-token ambient-frequency check:
+  >10 files demotes to an advisory stderr note (count only), never a silent drop
+- genuine collisions with published authors, a targeting keyword, and the operator's own
+  team resolved by 2 directory-level and 10 file-level self-exclusions, each documented
+  inline -- content edits were not appropriate there
+
+SWEEP: 6,698 tracked files, ~6s. 52 hit-lines across 36 files reviewed by hand.
+25 hit-lines in 11 files were genuine leaks and were fixed to the conventions established
+in 03276e73 (name -> "a client", box alias -> `rescue-<client>`, hostname ->
+`<client>.zerohumanworkforce.com`, backup suffix -> `-client-`, pronouns -> they/them).
+The largest single cluster was the root CHANGELOG, including one line naming six client
+box aliases at once. 27 were the false positives above.
+
+Also fixed a real perf cliff found while measuring: macOS system grep took ~20s for a
+30-alternative case-insensitive scan of ~7,000 files; GNU grep does it in ~1.3s. The gate
+now prefers ggrep when present and falls back silently -- identical matches either way.
+
+## [v22.0.43] -- 2026-08-18 -- fix(presentations): dead exclusion, fabricated deck-type fallback, missing verifier, 6-source threshold split-brain
+
+Four defects, all the same shape: a check that reports success without checking.
+
+- `sync_check.py`'s `_NON_ROLE_DOCS` excluded "GOVERNING-PERSONAS" while the writer
+  emits `governing-personas.md` (lowercase-with-dashes). The names never matched, so
+  the exclusion was dead code and every deployed box carrying that file was
+  false-DRIFTing on A5. Zero repo references to the uppercase form; 128 use the
+  lowercase one. Surfaced only because #930 gave test_scan_roles.py real assertions.
+- Removed `"default": "from_scratch"` from the presentation_type question AND closed a
+  second fabrication path: `deck-intake-driver.py`'s `_normalize_enum_value()` fell back
+  to `question.get("default", allowed[0])`, and allowed[0] IS "from_scratch" -- an
+  unrecognised free-text answer silently became a webinar independent of the JSON key.
+  Now fails closed.
+- P-QC-AGGREGATE was the 1 phase of 36 declaring no `verifier` (sync_check W1).
+  phase_verifiers.py already registered it as qc:final; only the declaration was
+  missing. W1 count 1 -> 0. manifest_version 49 -> 50.
+- min_bytes split-brain reconciled across SIX sources (deliverables.py, build_deck.py,
+  PIPELINE-MANIFEST.json, presenters_speech_pdf.py, gates.py, phase_verifiers.py).
+  9 of 10 keys disagreed, up to 21x (deck_pptx 50,000 vs 1,048,576). speech_pdf was
+  LOWERED 20480 -> 3000 and speech_md 5000 -> 2048 -- eaae2e33 (2026-07-12) reconciled
+  away from the larger values deliberately, so raising would have reintroduced a
+  documented mistake. Root cause: deliverables.py's table was bulk-copied from a stale
+  source 2026-08-13 and never reconciled.
+
+Drift guards added for each, every one proven able to fail. One was rewritten after its
+author proved it a false-safe: value-checking a derived dict still passed when a literal
+was hardcoded at the call site, so it now tests runtime behaviour.
+
+Suite: 747 passed, 0 failed, 2 skipped.
+
+## [v22.0.42] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
+
+PR #851 (`feat/lp-a8-cross-run-resend-loop`) sat 448 commits behind `main` since
+2026-08-04. Brought current: verified the feature is NOT redundant with anything
+`main` grew in the interim (`main`'s own `loop_watchdog.py` docstring still says
+"a send-guard detector over the sendguard ledger (a future D7) ... is likewise not
+built"; the only related thing on any box is an out-of-repo launchd hack `main`'s
+own CHANGELOG explicitly disclaims as "an unrelated cross-run resend-loop breaker
+... zero Skill-61 markers in it"), then merged and reconciled on the merits.
+
+- **D7 - cross-run resend (provenance-stamped)** lands in Skill 61
+  (`61-loop-protection-system`): detects an orchestrator resending a
+  byte-identical `sessions_send` payload as a brand-new top-level run after the
+  tool's own hardcoded 30s fallback timeout is misread as delivery failure --
+  the 2026-08-04 incident that neither `tools.loopDetection` (within-run) nor
+  `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one call) can see,
+  because every resend is a fresh run id. **LF-12** aborts the source session's
+  in-flight run via the native `sessions.abort` RPC (`openclaw gateway call
+  sessions.abort`, no-op-safe when nothing is active) and parks the source.
+  Repo-only; the skill's rollout gate stays HELD, no box is armed or touched.
+- **ID collision, resolved by renumbering.** The branch's original ids,
+  `LP-A8`/`LF-9`, were the first free slots on 2026-08-04. In the 448 commits
+  since, `main` independently shipped D5 (`LP-A8`, self-blocking flush-run /
+  transcript poison, 2026-08-05) and D6 (`LP-A9`, semantic retry burst) -- a
+  genuinely different fault in the same `F15` taxonomy family. Renumbered this
+  release's ids forward to the next free slots, `LP-A10`/`LF-12`, across every
+  script, config, doc, and test; the design, thresholds, and mechanism are
+  otherwise unchanged from what was reviewed and live-verified on 2026-08-04.
+  Full account in `61-loop-protection-system/CHANGELOG.md` [0.6.0].
+- Skill 61 bumped `0.5.0` -> `0.6.0` (`skill-version.txt` + `SKILL.md`
+  frontmatter in lockstep); detector/breaker counts in `SKILL.md` corrected to
+  seven detectors (D1-D7) and seven circuit breakers; `verify.sh` drill count
+  corrected to twenty-three (adds `D-RESEND` to the twenty-two `main` already
+  carried for D1-D6).
+
+Full suite: 745 passed, 0 failed, 1 skipped (identical to a same-day rerun of
+plain `origin/main` -- the skip count itself is pre-existing flakiness in
+`test_client_package.py`, unrelated to this merge; the first same-day baseline
+run measured 744/0/2, a same-tree rerun already drifted to 745/0/1 before any
+change here). Skill 61's own battery: `verify.sh` 23/23 drills PASS, all four
+merge-gate scanners clean, every script `--self-test` PASS including the new
+D7 cases run alongside D5/D6.
+
+## [v22.0.41] -- 2026-08-18 -- chore(pr-878): unstick 8-day-stale batch/wave-1-merge; scrub a real client name caught by CRITICAL-1
+
+PR #878 (`batch/wave-1-merge`, opened 2026-08-10 at v22.0.4) sat 214 commits behind
+`main` with 6 failing checks. Merged `origin/main` (982f561c, v22.0.40) into the
+branch and resolved 5 conflicts (`version`, `README.md`, `install.sh`,
+`universal-sops/_content-manifest.json`, `CHANGELOG.md`) by taking `main`'s side --
+confirmed a strict superset of the branch's stale content in every case (e.g. the
+manifest's 112 files include all 111 the branch had, plus one `main` added since).
+
+The branch's own payload (WI-01 manifest v44, WI-11 14 SOP fixes, WI-12 capacity
+probe -- commit b94534d6) turned out to already be on `main`, independently
+reimplemented as fresh commits (v22.0.4 through v22.0.6) rather than merged from
+this branch -- `b94534d6` is not an ancestor of `main` despite identical file
+contents. Net effect: after conflict resolution the branch's tree was byte-identical
+to `origin/main`. One exception: the merge would have silently resurrected
+`51-signature-presentation/scripts/presentation_job/capacity.py`, which `main`
+deliberately deleted on 2026-08-14 (#910) as an orphan superseded by the
+`23-ai-workforce-blueprint` version -- removed it again rather than reverting that
+decision.
+
+- 10 version markers rolled v22.0.40 -> v22.0.41 (`scripts/bump-version.sh`), since
+  the branch's stale v22.0.4 was now behind the floor.
+- **CRITICAL-1 (`qc-assert-no-client-names.sh`) was failing on plain `main` too**,
+  independent of this PR: a real client's full name was committed in the v22.0.17
+  CHANGELOG entry documenting the 2026-08-13 shared-dashboard tenant-bleed incident
+  (`23-ai-workforce-blueprint/CHANGELOG.md`), plus the same identifying token in that
+  entry's doctrine-citation comments in `send-interview-link.sh` and in the root
+  CHANGELOG's backfilled duplicate entry. Genericized all four occurrences (name,
+  hostname, backup-filename suffix, pronouns) to placeholder text consistent with
+  the `<client>.zerohumanworkforce.com` convention already used elsewhere in the
+  same entries. Confirmed via a clean `origin/main` control worktree that this
+  failure pre-dates and is unrelated to PR #878's own changes.
+- The other 5 originally-failing checks (G3, version markers, `.clawdbot`
+  pre-clear/CC-bootstrap, GIP band-routing reconciliation, library lockstep) were
+  ALL failing purely because the branch was stale against a fast-moving `main` --
+  confirmed passing cleanly on a clean `origin/main` control worktree before this
+  merge landed; the merge alone resolves them.
+
+## [v22.0.40] -- 2026-08-18 -- fix(presentations): 12 fixes -- gate bypasses, no-op guards, stale floors, heartbeat drift
+
+Twelve fixes, all the same pathology: a check that reports success without checking.
+
+- Interview intake fabricated deck_type in THREE places -- intake_writer.py invented
+  it, pages/index.html hardcoded `presentation_type: "from_scratch"`, and the Worker
+  API curated list never asked. A client requesting a signature keynote silently
+  received a webinar. Backend now fails closed (exit 3) naming the missing answer;
+  the form asks the question first (required, no default reachable); the Worker list
+  includes it with a guard asserting it stays first.
+- Guard tests that could not fail: test_fix2_qc_unskippable.py, test_fix9_audio_mp3.py
+  and test_scan_roles.py carried 20 test functions and ZERO assertions -- they returned
+  failure lists that pytest discarded. Proven: with QC-skip protection deliberately
+  sabotaged the old tests passed (exit 0); the fixed tests fail (exit 1).
+- MIN_MANIFEST_VERSION 43 -> 49 (floor was 5 behind the manifest).
+- MIN_MANIFEST_PHASES 26 -> 36 (10 phases could have vanished undetected).
+- Heartbeat ceiling now bounds against each phase's own budget instead of a global
+  240 (manifest.py, sync_check.py, watchdog.py, process_reaper.py).
+- 13 phases declared heartbeat_minutes ABOVE their own budget -- every QC phase plus
+  delivery, up to 3x over, so a stall in those phases could never be detected in time.
+  Tightened via min(old, budget); over-budget count now 0. manifest_version 48 -> 49,
+  MANIFEST-SOURCE.txt and universal-sops/_content-manifest.json restamped.
+- Dead-letter cap (5 attempts) on cmd_sweep_undeliverable, which previously re-queued
+  a failed notification forever with no ceiling.
+
+Full suite: 727 passed, 0 failed, 2 skipped.
+
 ## [v22.0.39] -- 2026-08-18 -- fix(presentations): trust-boundary batch -- blind-spot close, parser fix, slice1 reconciliation, CI purity wiring, 2 gates closed, u058 false-fail fix
 
 Six independently verifier-approved branches merged as one batch (six PRs
@@ -780,10 +960,10 @@ its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
 blocking the merge lane; G2 then requires this header. Summary is taken verbatim
 from that commit's own message -- no claim here was measured by this entry.
 
-Janet incident (2026-08-13): the shared Command Center serves every client
+Shared-dashboard incident (2026-08-13): the shared Command Center serves every client
 dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
 endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
-completed interview, so her `/interview` page immediately redirected to the
+completed interview, so their `/interview` page immediately redirected to the
 dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
 #896 is the skill-side guard.
 
@@ -1369,11 +1549,11 @@ Complete the interview-app → presentation-department wiring.
 
 ## [v22.0.0]  -  2026-08-07  -  CAPSTONE: Presentation Department Gauntlet Loop + BAR-MET closure — the 10-fix E2E train lands on the v21.7.38 Loop completion (v21.7.38 -> v22.0.0)
 
-**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by the Kofi run into `main`. This capstone adds the **10 E2E-found defects** from the same Kofi live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
+**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by a client's run into `main`. This capstone adds the **10 E2E-found defects** from the same client's live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
 
 All 10 version markers rolled `v21.7.38` -> **v22.0.0** in lockstep via `scripts/bump-version.sh` (plus the script-embedded browser-manager sub-markers and the two skill dirs those markers live in, `06-ghl-install-pages` and `23-ai-workforce-blueprint`, so CI guard G3 stays green). Annotated tag `v22.0.0` cut on this release commit.
 
-### The 10 E2E-found fixes (from the Kofi live run)
+### The 10 E2E-found fixes (from a client's live run)
 
 1. **presenter_guide.py `_SLIDE_SPLIT_RE`:** accept both `## Slide N` and plain `SLIDE N` headings (the plain form was being missed).
 2. **presenter_guide.py byte floor:** scale the guide floor by deck size (was a fixed 51,200 bytes, which rejected a legitimate 20-slide guide).
@@ -1390,12 +1570,12 @@ Verified on the train: 33/33 phases attest, `bundle_complete.json` complete, `PR
 
 ### What the previous release (v21.7.38) already closed
 
-The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by the Kofi E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
+The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by a client's E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
 
 
 ## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
 
-The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by a client's E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
 
 ## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
 
@@ -6644,7 +6824,7 @@ Touches: `23-ai-workforce-blueprint/templates/role-library/_index.json`,
 ## [v21.4.1]  -  2026-07-28  -  BOOTSTRAP GAP: the Command Center no longer waits on the interview it exists to unblock
 
 A brand-new client could not start. The AI Workforce interview is a web page at `/interview`
-on the client's OWN Command Center (verified live: `https://jennifer.zerohumanworkforce.com/interview`
+on the client's OWN Command Center (verified live: `https://<client>.zerohumanworkforce.com/interview`
 returns HTTP 200, "Your AI Workforce Interview"). So no Command Center meant no interview, and
 provisioning waited on the interview. Nothing bootstrapped.
 
@@ -7103,7 +7283,7 @@ is corrected here.
 
 Four boxes were found with their ENTIRE 36-department tree created fresh on
 2026-07-20 (`mtime == birthtime`) while running the POST-demotion naming map
-(2.6.2). One of them, `rescue-eddie-otts`, records an OWNER DECLINE of all six
+(2.6.2). One of them, `rescue-<client>`, records an OWNER DECLINE of all six
 universal-primary verticals and carries an operator-signed 18-department subset
 floor — it still had all 36. Reproduced offline: a scratch workspace holding only
 `marketing/` comes out of detect -> make-gap -> floor-fill `--apply` with exactly
@@ -8594,9 +8774,9 @@ reality rather than assumption:
 run read-only on every box in `box-registry.json` (36 boxes; nothing written to
 any box). **0 of the 30 reachable boxes newly fail.** All 30 resolve a
 departments workspace and hold hundreds of role artifacts (min 481, max 1727).
-The 6 unreachable boxes were skipped and recorded (`leanne-dolce`,
-`rescue-barret-matthews`, `rescue-christy-staples`, `rescue-erin-garrett`,
-`rescue-jill-bulluck`, `rescue-talaya-kelley`) — the same 6 skipped in the Jul-20
+The 6 unreachable boxes were skipped and recorded (`<client>`,
+`rescue-<client>`, `rescue-<client>`, `rescue-<client>`,
+`rescue-<client>`, `rescue-<client>`) — the same 6 skipped in the Jul-20
 roll. 30 + 6 = 36.
 
 **Tests** (`tests/unit/provisioning-completeness-gate.test.py`, hermetic fixtures

@@ -35,7 +35,7 @@
 #     .workforce-build-state.json + interview-handoff.md and writes ONLY its
 #     own non-canonical ledger line. It never touches build-state, the
 #     transcript, or the handoff.
-#   • SHARED-DASHBOARD SAFETY (Janet incident 2026-08-13 — BINDING). A link is
+#   • SHARED-DASHBOARD SAFETY (shared-dashboard incident 2026-08-13 — BINDING). A link is
 #     only emitted when the dashboard host that serves it ANSWERS for THIS
 #     company. The shared Command Center deployment serves every client
 #     hostname (<client>.zerohumanworkforce.com -> the operator's CC), and a
@@ -187,7 +187,7 @@ if [ -n "$DASH" ]; then
   fi
 fi
 
-# ── Shared-dashboard safety (Janet incident 2026-08-13; doctrine above) ───────
+# ── Shared-dashboard safety (shared-dashboard incident 2026-08-13; doctrine above) ───────
 # Only the *shared* dashboard host needs the interview-state check: a host
 # that serves THIS box's own CC reads this same state file (already read
 # above), while the shared operator CC is hostname-blind to this company

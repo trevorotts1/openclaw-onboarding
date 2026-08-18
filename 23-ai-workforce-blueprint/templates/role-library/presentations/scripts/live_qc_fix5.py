@@ -48,7 +48,7 @@ def main() -> int:
     bd.ENV_API_KEY = key  # not used by batch path, but harmless
 
     # Run dir must mirror the canonical layout: run_dir/working/prompts/slide-NN.txt
-    # The 20 real prompts were pulled from Kofi's box into /tmp/gl-fix5/live-run.
+    # The 20 real prompts were pulled from a client's box into /tmp/gl-fix5/live-run.
     run_dir = Path("/tmp/gl-fix5/live-run")
     prompts_dir = run_dir / "working" / "prompts"
     if not prompts_dir.is_dir():

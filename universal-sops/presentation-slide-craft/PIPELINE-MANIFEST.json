@@ -1,5 +1,5 @@
 {
-  "manifest_version": 48,
+  "manifest_version": 50,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -34,8 +34,8 @@
       "key": "speech_pdf",
       "filename": "PRESENTERS-SPEECH.pdf",
       "label": "presenter speech teleprompter PDF",
-      "min_bytes": 20480,
-      "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP."
+      "min_bytes": 3000,
+      "note": ">3KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP. RECONCILED (split-brain fix, 2026-08-18): this entry orphaned a pre-doctrine 20480 dated 2026-06-17 (git blame), predating the 2026-07-12 SOP reconciliation (commit eaae2e33) that ratified 3000 -- see sops/presenters-speech-writer-sops.md AF-BUNDLE-COMPLETE gate-tie-in."
     },
     {
       "key": "speech_fish_md",
@@ -64,8 +64,8 @@
       "key": "teleprompter_html",
       "filename": "presenter-teleprompter.html",
       "label": "presenter teleprompter web app",
-      "min_bytes": 10240,
-      "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
+      "min_bytes": 20000,
+      "note": ">20KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP. RECONCILED (split-brain fix, 2026-08-18): this entry orphaned a pre-doctrine 10240 dated 2026-06-17 (git blame), predating the 2026-07-12 SOP reconciliation (commit eaae2e33) that ratified 20000 -- matches build_teleprompter.py's own TELEPROMPTER_MIN_BYTES self-check."
     },
     {
       "key": "webinar_mp4",
@@ -403,7 +403,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 60
+      "heartbeat_minutes": 45
     },
     {
       "id": "P-SHIFT-QC",
@@ -432,7 +432,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     },
     {
       "id": "P1Q-COPY-QC",
@@ -483,7 +483,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     },
     {
       "id": "P3-ARC",
@@ -651,7 +651,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     },
     {
       "id": "P4-PROMPT",
@@ -705,7 +705,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     },
     {
       "id": "P4-RENDER",
@@ -881,7 +881,7 @@
         "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 60
+      "heartbeat_minutes": 30
     },
     {
       "id": "P9-SPEECH",
@@ -978,7 +978,7 @@
         "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 15
     },
     {
       "id": "P-SPEECH-QC",
@@ -1005,7 +1005,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-QC-AGGREGATE",
@@ -1026,7 +1026,8 @@
         "kind": "script",
         "cmd": "python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode"
       },
-      "heartbeat_minutes": 30
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10
     },
     {
       "id": "P9.5-NOTES-SYNC",
@@ -1117,7 +1118,7 @@
         "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
+      "heartbeat_minutes": 10
     },
     {
       "id": "P9-DELIVER",
@@ -1145,7 +1146,7 @@
         "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 60
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-SP-CLAIM",
@@ -1172,7 +1173,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
+      "heartbeat_minutes": 10
     },
     {
       "id": "P-SP-INTAKE",
@@ -1292,7 +1293,7 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
+      "heartbeat_minutes": 20
     }
   ],
   "autofails": [

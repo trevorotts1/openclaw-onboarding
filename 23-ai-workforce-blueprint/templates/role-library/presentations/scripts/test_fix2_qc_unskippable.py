@@ -27,6 +27,13 @@ Covers:
      attests clean for all four QC phases.
   4. A verdict-less or sub-floor report is refused even when its JSON is large.
 
+Every `test_*` function below is a thin pytest-visible wrapper around a
+`_check_*` helper that does the actual work and returns a `fails` list. The
+wrapper asserts the list empty so a broken guard FAILS under pytest, not just
+under the `python3 <file>` script path — a check that can only fail when run
+one specific way is not a check. `main()` calls the `_check_*` helpers
+directly so script-mode aggregation/exit-code behavior is unchanged.
+
 Run:  python3 test_fix2_qc_unskippable.py
       python3 -m pytest test_fix2_qc_unskippable.py -q
 """
@@ -34,6 +41,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -97,11 +105,24 @@ def _write_skip_approval(run_dir: Path, phase_ids, approved_by="Trevor BlackCEO"
 # ---------------------------------------------------------------------------
 # 1. SKIP-RECORD REFUSAL (AF-QC-SKIP)
 # ---------------------------------------------------------------------------
-def test_qc_phase_skip_record_refused_in_load_skip_approvals():
+def _check_qc_phase_skip_record_refused_in_load_skip_approvals():
     fails = []
     rd = _run_dir("fix2_skip_load_")
-    _write_skip_approval(rd, [QC_PHASES[1], NON_QC_PHASE])  # P-PROMPT-QC + P3-ARC
-    approvals = rsd.load_skip_approvals(rd)
+    owner_msg_id = "real-owner-msg-001"
+    _write_skip_approval(rd, [QC_PHASES[1], NON_QC_PHASE],
+                         owner_msg_id=owner_msg_id)  # P-PROMPT-QC + P3-ARC
+    # FIXTURE FIX: this run dir has no cc_task_id / reachable Command Center, so
+    # the real owner-message oracle is legitimately UNDETERMINED — and production
+    # correctly fails closed on that (AF-FORGED-APPROVAL, "undetermined never
+    # opens the gate"). That refusal is CORRECT and must never be weakened. What
+    # THIS test is actually proving is a different, later gate: that once an
+    # owner_msg_id is authenticated, a QC-phase skip is STILL refused. So the
+    # fixture stubs the oracle to resolve the exact id it wrote — i.e. it makes
+    # the approval genuinely verifiable — isolating AF-QC-SKIP from the separate,
+    # correctly-fail-closed AF-FORGED-APPROVAL path.
+    with patch.object(rsd, "_resolve_owner_msg_ids",
+                      return_value=frozenset({owner_msg_id})):
+        approvals = rsd.load_skip_approvals(rd)
     if QC_PHASES[1] in approvals:
         fails.append(f"AF-QC-SKIP: QC phase {QC_PHASES[1]!r} must NOT be in "
                      f"load_skip_approvals, got {sorted(approvals)}")
@@ -112,7 +133,12 @@ def test_qc_phase_skip_record_refused_in_load_skip_approvals():
     return fails
 
 
-def test_qc_phase_skip_record_refused_in_check_phase_preconditions():
+def test_qc_phase_skip_record_refused_in_load_skip_approvals():
+    fails = _check_qc_phase_skip_record_refused_in_load_skip_approvals()
+    assert not fails, "\n".join(fails)
+
+
+def _check_qc_phase_skip_record_refused_in_check_phase_preconditions():
     fails = []
     rd = _run_dir("fix2_skip_precond_")
     _write_skip_approval(rd, [QC_PHASES[1]])  # P-PROMPT-QC
@@ -133,7 +159,12 @@ def test_qc_phase_skip_record_refused_in_check_phase_preconditions():
     return fails
 
 
-def test_qc_phase_skip_record_refused_in_guard_missing_attestations():
+def test_qc_phase_skip_record_refused_in_check_phase_preconditions():
+    fails = _check_qc_phase_skip_record_refused_in_check_phase_preconditions()
+    assert not fails, "\n".join(fails)
+
+
+def _check_qc_phase_skip_record_refused_in_guard_missing_attestations():
     fails = []
     rd = _run_dir("fix2_skip_guard_")
     _write_skip_approval(rd, [QC_PHASES[1]])
@@ -155,7 +186,12 @@ def test_qc_phase_skip_record_refused_in_guard_missing_attestations():
     return fails
 
 
-def test_qc_phase_skip_never_satisfies_next_required_phase():
+def test_qc_phase_skip_record_refused_in_guard_missing_attestations():
+    fails = _check_qc_phase_skip_record_refused_in_guard_missing_attestations()
+    assert not fails, "\n".join(fails)
+
+
+def _check_qc_phase_skip_never_satisfies_next_required_phase():
     fails = []
     phases = rsd.load_manifest()["phases"]
     # Attest every NON-QC phase so the ONLY phases remaining are the QC phases.
@@ -189,10 +225,15 @@ def test_qc_phase_skip_never_satisfies_next_required_phase():
     return fails
 
 
+def test_qc_phase_skip_never_satisfies_next_required_phase():
+    fails = _check_qc_phase_skip_never_satisfies_next_required_phase()
+    assert not fails, "\n".join(fails)
+
+
 # ---------------------------------------------------------------------------
 # 2. PLACEHOLDER FAIL (AF-QC-PLACEHOLDER at attest)
 # ---------------------------------------------------------------------------
-def test_placeholder_report_attest_refused_all_four_qc_phases():
+def _check_placeholder_report_attest_refused_all_four_qc_phases():
     fails = []
     report_files = {
         "P1Q-COPY-QC": "copy_qc_report.json",
@@ -214,7 +255,12 @@ def test_placeholder_report_attest_refused_all_four_qc_phases():
     return fails
 
 
-def test_verdict_less_big_report_attest_refused():
+def test_placeholder_report_attest_refused_all_four_qc_phases():
+    fails = _check_placeholder_report_attest_refused_all_four_qc_phases()
+    assert not fails, "\n".join(fails)
+
+
+def _check_verdict_less_big_report_attest_refused():
     fails = []
     # A report LARGER than 256 bytes but with no per-slide verdicts (a fat rubber
     # stamp) must ALSO be refused — size alone is not real QC.
@@ -237,10 +283,15 @@ def test_verdict_less_big_report_attest_refused():
     return fails
 
 
+def test_verdict_less_big_report_attest_refused():
+    fails = _check_verdict_less_big_report_attest_refused()
+    assert not fails, "\n".join(fails)
+
+
 # ---------------------------------------------------------------------------
 # 3. REAL REPORT PASS (the known-good control)
 # ---------------------------------------------------------------------------
-def test_real_report_attests_for_all_four_qc_phases():
+def _check_real_report_attests_for_all_four_qc_phases():
     fails = []
     specs = {
         "P1Q-COPY-QC": ("copy_qc_report.json", "Phase 1Q", "slide-copywriter",
@@ -280,10 +331,15 @@ def test_real_report_attests_for_all_four_qc_phases():
     return fails
 
 
+def test_real_report_attests_for_all_four_qc_phases():
+    fails = _check_real_report_attests_for_all_four_qc_phases()
+    assert not fails, "\n".join(fails)
+
+
 # ---------------------------------------------------------------------------
 # 4. check_qc_reports_real aggregate floor (used by the pre-delivery guard)
 # ---------------------------------------------------------------------------
-def test_aggregate_report_floor():
+def _check_aggregate_report_floor():
     fails = []
     # Placeholder copy report + REAL prompt/typography/shift reports -> the
     # aggregate floor must fail SPECIFICALLY on the placeholder copy report.
@@ -331,16 +387,21 @@ def test_aggregate_report_floor():
     return fails
 
 
+def test_aggregate_report_floor():
+    fails = _check_aggregate_report_floor()
+    assert not fails, "\n".join(fails)
+
+
 def main():
     fails = []
-    for fn in [test_qc_phase_skip_record_refused_in_load_skip_approvals,
-               test_qc_phase_skip_record_refused_in_check_phase_preconditions,
-               test_qc_phase_skip_record_refused_in_guard_missing_attestations,
-               test_qc_phase_skip_never_satisfies_next_required_phase,
-               test_placeholder_report_attest_refused_all_four_qc_phases,
-               test_verdict_less_big_report_attest_refused,
-               test_real_report_attests_for_all_four_qc_phases,
-               test_aggregate_report_floor]:
+    for fn in [_check_qc_phase_skip_record_refused_in_load_skip_approvals,
+               _check_qc_phase_skip_record_refused_in_check_phase_preconditions,
+               _check_qc_phase_skip_record_refused_in_guard_missing_attestations,
+               _check_qc_phase_skip_never_satisfies_next_required_phase,
+               _check_placeholder_report_attest_refused_all_four_qc_phases,
+               _check_verdict_less_big_report_attest_refused,
+               _check_real_report_attests_for_all_four_qc_phases,
+               _check_aggregate_report_floor]:
         try:
             fails += fn()
         except Exception as exc:  # noqa: BLE001
