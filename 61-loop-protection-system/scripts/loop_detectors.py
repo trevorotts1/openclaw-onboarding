@@ -290,6 +290,126 @@ def d5_transcript_poison(sessions, thresholds):
 
 
 # --------------------------------------------------------------------------- #
+# D6 - futile retry burst (SEMANTIC repetition; argument-blind)
+# --------------------------------------------------------------------------- #
+def d6_futile_retry_burst(bursts, thresholds, signatures=None):
+    """The blind spot every OTHER loop guard on this fleet shares: they all key on
+    the ARGUMENTS.
+
+      - The OpenClaw runtime's own identical-call guard keys on (toolName, argsHash).
+      - This repo's always-armed runaway patch keys on (toolName, argsHash,
+        resultHash) - STRICTER still, so it is blind in exactly the same way.
+      - D3 above hashes (outcome class + tool sequence + TARGET).
+
+    An agent that REWORDS a failing intent therefore defeats all three at once. The
+    incident this detector comes from: an agent hit a fail-closed API, then made
+    thirteen tool calls in forty-nine seconds - every one a differently-worded
+    attempt at the same intent. Every call carried distinct arguments, so every
+    args-keyed guard stayed silent and the run was only stopped by the human
+    watching it narrate the hunt.
+
+    D6 never looks at arguments. It asks the only question that survives rewording:
+    *is this tool being called over and over while producing no progress?*
+
+    `bursts` = list of per (transcript, tool) measurements, already reduced by the
+    collector to counts inside one sliding window (pure data, no content):
+      {unit, path, tool, calls, errors, failclosed, span_seconds}
+        calls       tool calls to THIS tool inside the window
+        errors      how many returned a tool-layer error/blocked result
+        failclosed  how many returned a FAIL-CLOSED DEPENDENCY marker
+                    (auth-class refusal: unauthorized / forbidden / invalid key /
+                    authentication failed) counted from the result payload
+    Only counts ever reach this function - never arguments, never result text.
+
+    TWO FACES, and the second is the one that matters:
+
+      FAILING BURST (secondary). Many calls to one tool in the window, most of them
+        failing at the TOOL layer. Sound, but it only sees failures the runtime
+        already labels as failures.
+
+      FAIL-CLOSED DEPENDENCY (primary). The call SUCCEEDS and the dependency
+        refuses inside the payload - `exec` running a curl that returns
+        {"error":"Unauthorized"} exits 0 and is recorded `status: completed`. The
+        tool layer sees nothing wrong at all, which is precisely why every existing
+        guard missed the incident. Retrying an auth-class refusal cannot succeed by
+        being reworded, so attempt number three is already a loop. This face is the
+        detector encoding of the doctrine rule: STOP AFTER <= 2 ATTEMPTS.
+
+    THE SILENCE RULE (inherited from D5, and load-bearing here): a burst with zero
+    errors AND zero fail-closed markers yields ZERO findings no matter how many
+    calls it contains. Volume alone is NEVER a loop. This is not caution - it is
+    measured: the real local corpus (998 transcripts, 12,465 tool results) contains
+    a perfectly healthy burst of 460 `exec` calls in 48.2 seconds with 2 errors.
+    Any count-only detector - the obvious design, and the one this deliberately
+    rejects - would fire on that and on ~100 other healthy bursts. Futility, not
+    volume, is the signal."""
+    t = thresholds["d6_futile_retry_burst"]
+    sig = signatures if signatures is not None else C.load_signatures()  # noqa: F841
+    out = []
+    for b in bursts:
+        calls = int(b.get("calls", 0) or 0)
+        errors = int(b.get("errors", 0) or 0)
+        failclosed = int(b.get("failclosed", 0) or 0)
+        # THE SILENCE RULE - no evidence of futility, no finding, at ANY volume.
+        if errors <= 0 and failclosed <= 0:
+            continue
+        tool = b.get("tool") or "<tool>"
+        unit = b.get("unit") or "session:<unknown>"
+        span = float(b.get("span_seconds", 0.0) or 0.0)
+        window = int(t["window_seconds"])
+        ratio = (float(errors) / calls) if calls else 0.0
+
+        reasons = []
+        severity = None
+
+        # ---- FAIL-CLOSED DEPENDENCY (primary) --------------------------------
+        if failclosed >= t["p1_failclosed_calls"]:
+            severity = P1
+            reasons.append(
+                "FAIL-CLOSED DEPENDENCY: %d calls to `%s` in %.0fs returned an "
+                "auth-class refusal (>= %d) - retrying a fail-closed dependency "
+                "cannot succeed by rewording the request"
+                % (failclosed, tool, span, t["p1_failclosed_calls"]))
+        elif failclosed >= t["warn_failclosed_calls"]:
+            severity = WARN
+            reasons.append(
+                "FAIL-CLOSED DEPENDENCY: %d calls to `%s` in %.0fs returned an "
+                "auth-class refusal - doctrine allows <= %d attempts before "
+                "stopping and reporting what is blocked"
+                % (failclosed, tool, span, t["doctrine_max_attempts"]))
+
+        # ---- FAILING BURST (secondary) ---------------------------------------
+        if calls >= t["p1_burst_calls"] and ratio >= t["p1_error_ratio"]:
+            severity = P1
+            reasons.append(
+                "FAILING BURST: %d/%d calls to `%s` failed inside a %ds window "
+                "(%.0f%% >= %.0f%%)"
+                % (errors, calls, tool, window, ratio * 100,
+                   float(t["p1_error_ratio"]) * 100))
+        elif (severity is None and calls >= t["min_burst_calls"]
+              and ratio >= t["warn_error_ratio"]):
+            severity = WARN
+            reasons.append(
+                "FAILING BURST: %d/%d calls to `%s` failed inside a %ds window "
+                "(%.0f%% >= %.0f%%)"
+                % (errors, calls, tool, window, ratio * 100,
+                   float(t["warn_error_ratio"]) * 100))
+
+        if severity is None:
+            continue
+
+        # Arguments are NEVER inspected, so say so in the finding: this is the one
+        # detector whose verdict survives an agent rewording its way around every
+        # args-keyed guard on the box.
+        reasons.append("argument-blind: %d distinct-argument calls would defeat "
+                       "every (toolName,argsHash) guard" % calls)
+        out.append(_finding("LP-A9", severity, unit, "; ".join(reasons), "D6",
+                            tier=2, evidence_path=b.get("path"),
+                            dedup_key="LP-A9|%s|%s" % (unit, tool)))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # self-test (deterministic, no box access, no network, no model)
 # --------------------------------------------------------------------------- #
 def self_test():
@@ -405,6 +525,58 @@ def self_test():
               poisoned_checkpoints=0, bytes=100000)], th) == []
     print("  D5 case: PASS (poisoned=P1 ignition+carrier; 17MB clean control SILENT; "
           "smallest-observed burst 8=P1; stutter=WARN, oversized stutter=P1; blip silent)")
+
+    # D6: SEMANTIC repetition. The incident shape - 13 tool calls in 49s, every
+    # one a differently-worded attempt at the same intent, against a fail-closed
+    # API. Every call carried DISTINCT arguments, so the runtime's
+    # (toolName,argsHash) guard and this repo's stricter
+    # (toolName,argsHash,resultHash) runaway patch both stayed silent all day.
+    incident = [{"unit": "session:example-incident", "tool": "exec", "calls": 13,
+                 "errors": 0, "failclosed": 6, "span_seconds": 49.0,
+                 "path": "/example/incident.jsonl"}]
+    f6 = d6_futile_retry_burst(incident, th)
+    assert len(f6) == 1 and f6[0]["severity"] == P1 and f6[0]["loop_class"] == "LP-A9"
+    assert "FAIL-CLOSED DEPENDENCY" in f6[0]["detail"]
+    # NOTE the errors=0 above: those 13 exec calls SUCCEEDED at the tool layer
+    # (a curl against a fail-closed API exits 0, recorded status=completed). Any
+    # detector keyed on tool-layer failure is blind to this entire class.
+
+    # THE CONTROL, and the reason this detector counts futility instead of volume:
+    # a REAL measured burst from the operator box's own corpus - 460 exec calls in
+    # 48.2 seconds, 35x the incident's call count - with no failures and no
+    # fail-closed refusals. It must be PERFECTLY SILENT. A count-only detector
+    # (the obvious design) fires here, and on ~100 more healthy bursts in the same
+    # corpus, which is precisely why count-only was rejected.
+    healthy_burst = [{"unit": "session:example-healthy", "tool": "exec", "calls": 460,
+                      "errors": 0, "failclosed": 0, "span_seconds": 48.2}]
+    assert d6_futile_retry_burst(healthy_burst, th) == []
+    # Even a big burst with a FEW incidental errors stays below the ratio floor.
+    assert d6_futile_retry_burst(
+        [dict(healthy_burst[0], errors=2)], th) == []
+
+    # The doctrine boundary: 2 attempts against a fail-closed dependency is
+    # allowed (that IS the rule), the 3rd is a WARN, the 5th a P1.
+    assert d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 2, "errors": 0, "failclosed": 2,
+          "span_seconds": 5.0}], th) == []
+    f6b = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 3, "errors": 0, "failclosed": 3,
+          "span_seconds": 8.0}], th)
+    assert f6b and f6b[0]["severity"] == WARN
+
+    # FAILING-BURST face: the measured 36-call/36-error read burst from the real
+    # corpus is a P1; the measured 24-call/18-error exec burst is a WARN.
+    f6c = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "read", "calls": 36, "errors": 36, "failclosed": 0,
+          "span_seconds": 60.0}], th)
+    assert f6c and f6c[0]["severity"] == P1 and "FAILING BURST" in f6c[0]["detail"]
+    f6d = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 24, "errors": 18, "failclosed": 0,
+          "span_seconds": 59.4}], th)
+    assert f6d and f6d[0]["severity"] == WARN
+    print("  D6 case: PASS (13-call reworded hunt=P1 though every call SUCCEEDED; "
+          "real 460-call healthy burst SILENT; 2 attempts allowed, 3rd=WARN; "
+          "36/36 failing burst=P1)")
 
     print("[loop_detectors] self-test: PASS")
     return 0

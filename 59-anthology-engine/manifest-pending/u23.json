@@ -1,0 +1,183 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-PROVPHONE-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "provisioning (the create POST) or SMS verification (the send-test-message POST) was requested without the operator's explicit --execute (the Trevor gate) \u2014 a refusal, never a silent no-op and never a silent write"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-READ-REFUSED",
+      "exit": 3,
+      "meaning": "listing numbers for the location failed (scope / validation / edge block / transport) \u2014 STOP (exit 2) or HELD (exit 3) per class, never a silent skip, never a provision-into-the-unknown"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-CREATE-REFUSED",
+      "exit": 3,
+      "meaning": "the POST /phones/numbers was rejected (validation / scope / edge block / transport), or the response carried no number id \u2014 STOP, HELD or MISMATCH per class, never recorded as provisioned"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-VERIFY-REFUSED",
+      "exit": 3,
+      "meaning": "the verify read-back or the send-test-message POST failed (scope / validation / edge / transport) \u2014 STOP or HELD per class, never a false pass"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-VERIFY-STALLED",
+      "exit": 3,
+      "meaning": "the verification read-back never confirmed sending-capable within the bounded window \u2014 HELD (exit 3), never a false pass"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "the post-create read-back returned no number object for the created id \u2014 nothing is ever reported provisioned without read-back"
+    },
+    {
+      "code": "AF-AE-PROVPHONE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation)"
+    }
+  ],
+  "authored_by": "U23",
+  "check_modules": [
+    "phone_lister",
+    "provision_action",
+    "sms_verifier",
+    "sms_sender",
+    "golden_has_phone",
+    "attack_sms_failed",
+    "attack_no_phone",
+    "docs_u23",
+    "house_rules",
+    "checklist_note"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u23-sms-phone",
+  "exit_codes": {
+    "0": "verified success \u2014 all checks PASS (also plan / dry-run / self-test)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / an ACTION (provision, send, verify) without --execute / a module missing from u23_modules/ (AF-AE-U23-ASSEMBLY-INCOMPLETE) / a genuine scope denial",
+    "3": "HELD \u2014 Convert and Flow API unreachable / verification not confirmed / upstream edge block (CF error 1010); retryable, never mislabeled as a scope problem",
+    "4": "self-test FAILED \u2014 an assertion in the OFFLINE self-test tripped (AF-AE-PROVPHONE-* / AF-AE-SMSVER-* / AF-AE-TEMPLATE-ATTACK family). A tamper NEVER masquerades as exit 1",
+    "5": "data or read-back mismatch \u2014 a create returned no number id / a verify read-back returned no number / a send returned 200 with no SID / the golden or attack fixture drifted; the fail-closed default"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the no-phone listing is refused UP FRONT (AF-AE-PROVPHONE-NO-PHONE) and the non-200 send attack FAILS every SMS-verification gate with the golden 200-send control PASSING \u2014 the pass/fail splits discriminate the ONE-variable boundaries, never a broken instrument; the PROVISIONING ACTION requires --execute (Trevor-gated), never a silent write."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "provision_sms_phone.py",
+  "u23_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the family dispatcher CLI (plan / self-test / live aggregate)"
+    },
+    {
+      "name": "phone_lister.py",
+      "role": "the LIVE PHONE LISTER \u2014 READ-ONLY GET-first side of the phone surface"
+    },
+    {
+      "name": "provision_action.py",
+      "role": "the TREVOR-GATED POST /phones/numbers provisioning ACTION"
+    },
+    {
+      "name": "sms_verifier.py",
+      "role": "the FAIL-CLOSED SMS SEND VERIFIER (outbound rail, HTTP 200 + SID)"
+    },
+    {
+      "name": "sms_sender.py",
+      "role": "the GHL-GATED TEST-SMS SENDER (conversation rail, bounded read-back)"
+    },
+    {
+      "name": "golden_has_phone.py",
+      "role": "the GOLDEN PHONE-PROVISIONED fixture (idempotent no-op control)"
+    },
+    {
+      "name": "attack_sms_failed.py",
+      "role": "the U23 ATTACK \u2014 the non-200 send MUST FAIL every SMS gate"
+    },
+    {
+      "name": "attack_no_phone.py",
+      "role": "the NO-PHONE ATTACK \u2014 the empty listing is refused up front"
+    },
+    {
+      "name": "docs_u23.py",
+      "role": "the U23 README/catalog data + drift gate"
+    },
+    {
+      "name": "house_rules.py",
+      "role": "the ONE canonical house-law constants surface"
+    },
+    {
+      "name": "checklist_note.py",
+      "role": "the READ-ONLY checklist gate (snapshot push flag)"
+    },
+    {
+      "name": "example_usage.py",
+      "role": "the fail-closed WORKED EXAMPLE of the U23 dispatch"
+    },
+    {
+      "name": "test_phone_lister.py",
+      "role": "offline pytest battery for phone_lister"
+    },
+    {
+      "name": "test_provision_action.py",
+      "role": "offline pytest battery for provision_action"
+    },
+    {
+      "name": "test_sms_verifier.py",
+      "role": "offline pytest battery for sms_verifier"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "phone_lister",
+      "item": 1,
+      "title": "the live phone read \u2014 GET /phones/numbers, masked markers, GET-first idempotency"
+    },
+    {
+      "id": "provision_action",
+      "item": 2,
+      "title": "the provision surface \u2014 Trevor-gated --execute, create-only-absent, post-create read-back"
+    },
+    {
+      "id": "sms_verifier",
+      "item": 3,
+      "title": "the SMS verification surface \u2014 the outbound send under --execute requiring HTTP 200 PLUS a SID"
+    },
+    {
+      "id": "attack_no_phone",
+      "item": 4,
+      "title": "the no-phone attack boundary \u2014 the EMPTY / no-SMS-capable listing MUST be refused"
+    },
+    {
+      "id": "golden_has_phone",
+      "item": 5,
+      "title": "the golden already-provisioned gate \u2014 the canonical SMS-PHONE-PROVISIONED state"
+    },
+    {
+      "id": "attack_sms_failed",
+      "item": 6,
+      "title": "the attack boundary \u2014 the non-200 send fixture MUST fail while the golden control passes"
+    },
+    {
+      "id": "docs_u23",
+      "item": 7,
+      "title": "the catalog drift gate \u2014 the family inventory and the four v2 surfaces as DATA"
+    },
+    {
+      "id": "house_rules",
+      "item": 8,
+      "title": "the house-law constant gate \u2014 browser UA + version header + AF table pinned"
+    },
+    {
+      "id": "checklist_note",
+      "item": 9,
+      "title": "the checklist gate \u2014 SMS phone number verified present before snapshot push"
+    }
+  ]
+}

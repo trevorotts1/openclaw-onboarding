@@ -12,9 +12,11 @@ NON-NEGOTIABLE DESIGN RULES (mirrored verbatim from Skill-48)
     error, a timeout, or any other failure is CAUGHT, LOGGED to stderr, and the
     deck build CONTINUES. Boarding the run is a convenience, never a gate. The
     ONLY thing that actually fails a deck job for "not on the board" is the
-    offline _chk_cc_registered() check (AF-CC-UNREGISTERED) in build_deck.py —
-    and that check is satisfied by a LOGGED ATTEMPT even when transport failed
-    (fail-soft on transport; fail-CLOSED only on never-attempted). So every
+    offline _chk_cc_registered() check (AF-CC-UNREGISTERED / AF-CC-UNVERIFIED)
+    in build_deck.py — VERIFIED only with a cc_task_id + a verifying
+    cc_registration HMAC receipt (stamped by a real round-trip); a LOGGED
+    ATTEMPT with no proof is UNVERIFIED (fails with an honest message, never
+    read as verified); never-attempted is UNREGISTERED (fail-closed). So every
     public function here returns a value (task_id / bool) and NEVER raises.
 
   * AUTH PARITY with the CC endpoint:
@@ -70,15 +72,28 @@ Recording is fail-soft; it never raises and never blocks the deck build.
 
 The task_id AND cc_register_attempted=True are written into
 ``working/checkpoints/process_manifest.json`` so the offline AF-CC-UNREGISTERED
-check in build_deck._chk_cc_registered passes whether or not the live POST
-succeeded:
-  - PASS  when cc_task_id is set (successful registration).
-  - PASS  when cc_register_attempted is True (transport failed, attempt logged).
-  - FAIL  when neither field exists (this module was never called for this run).
+check in build_deck._chk_cc_registered can judge the run:
+  - VERIFIED  when cc_task_id is set AND the cc_registration proof (an HMAC
+    over cc_task_id|idempotency_key, stamped only by a real ingest round-trip)
+    verifies — real evidence of registration.
+  - UNVERIFIED when cc_register_attempted is True but there is NO cc_task_id or
+    the proof does not verify (transport/partial failure, or a hand-written
+    id). The gate FAILS with an explicit honest AF-CC-UNVERIFIED message —
+    could-not-verify NEVER prints as verified.
+  - UNREGISTERED when neither field exists (this module was never called).
 
 PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
       -> task_id str | None
+  ingest_child_task(run_dir, parent_task_id, phase_id, title, description,
+      priority="normal") -> task_id str | None
+      # Option B: one child card per phase, nested under parent_task_id.
+      # Idempotency key sha256(parent_task_id + ':' + phase_id). Call site
+      # (BoardMirror.child_report in presentation_job/board.py) checks
+      # read_child_task_id()/state FIRST so a phase reporting progress twice
+      # never reaches this function twice.
+  read_child_task_id(run_dir, phase_id) -> task_id str | None
+  stamp_child_task_id(run_dir, phase_id, task_id) -> bool
   patch_phase(run_dir, task_id, phase_id, status, note="") -> bool
       # task-level STATUS change. The producer's TERMINAL close is status='review'
       # (never a self-closed 'done'); on 'review'/'done' it auto-attaches the cert
@@ -93,7 +108,9 @@ PUBLIC API
   post_qc_activities(run_dir, task_id) -> int
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
-  stamp_task_id(run_dir, task_id) -> bool
+  stamp_task_id(run_dir, task_id, idempotency_key="", deck_slug="") -> bool
+      # merge cc_task_id (and, when the ingest idempotency_key is supplied, the
+      # offline-verifiable cc_registration proof) into process_manifest.json.
   register_deliverable(task_id, url, meta=None, *, env=None) -> bool
       # POST /api/tasks/{task_id}/deliverables — the FIX-12 registration bridge
       # (ported from Skill-06 cc_board.py). FAIL-SOFT: never raises; a False
@@ -120,6 +137,50 @@ from typing import Optional
 _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "presentations"
 _PERSONA = "Director of Presentations"
+
+# WORK-ITEM-02 engine dispatch: the single callback that wires the presentation
+# engine into the CC ingest completion path. Called after a CC task card is
+# successfully created (or re-fetched via idempotency). Best-effort, fail-soft
+# -- a failed engine launch never blocks the deck build or the board registration.
+def _dispatch_engine_if_idle(run_dir) -> None:
+    """If the engine is not running for this run_dir, launch it as a background
+    subprocess via presentation_job --run. Fail-soft: never raises."""
+    import subprocess as _subprocess
+    run_path = Path(run_dir) if not isinstance(run_dir, Path) else run_dir
+    state_json = run_path / "state.json"
+    if not state_json.is_file():
+        return  # no state.json -- engine was never created (not an error)
+    try:
+        st = json.loads(state_json.read_text(encoding="utf-8"))
+        terminal = st.get("terminal")
+    except (json.JSONDecodeError, OSError):
+        return
+    # Do not re-launch a job that is already done/blocked, or one whose engine
+    # PID is already alive.
+    if terminal in ("DONE", "BLOCKED"):
+        return
+    pid = st.get("engine_pid")
+    if isinstance(pid, int) and pid > 0:
+        try:
+            os.kill(pid, 0)
+            return  # already running
+        except OSError:
+            pass  # dead PID -- safe to re-launch
+
+    # Resolve the engine entry point from this module's location.
+    here = Path(__file__).resolve().parent  # scripts/
+    engine = here / "presentation_job.py"
+    if not engine.is_file():
+        return
+    try:
+        _subprocess.Popen(
+            [sys.executable or "python3", str(engine), "--run", "--run-dir", str(run_path)],
+            shell=False, cwd=str(here),
+            start_new_session=True, close_fds=True,
+        )
+        _log(f"engine dispatched for {run_path}")
+    except (OSError, _subprocess.SubprocessError) as exc:
+        _log(f"engine dispatch failed for {run_path}: {exc}")
 
 # U030 (audit E1): the statuses whose PATCH payload carries proof the narrower
 # status endpoint cannot accept. POST /api/tasks/{id}/status validates against
@@ -518,8 +579,10 @@ def ingest_deck_task(
     """Ingest (or idempotently re-fetch) a deck task on the CC board.
 
     Always stamps cc_register_attempted=True in process_manifest.json BEFORE
-    the HTTP call so a transport crash or URL-absent no-op is treated as
-    fail-soft (not never-attempted) by build_deck._chk_cc_registered.
+    the HTTP call so a transport crash or URL-absent no-op is distinguished
+    from never-attempted by build_deck._chk_cc_registered (a failed attempt is
+    UNVERIFIED, never the UNREGISTERED fail-closed, and never read as
+    verified).
 
     Returns the task_id string on success, else None. FAIL-SOFT — a None
     return never blocks the deck build; the offline gate is satisfied by the
@@ -583,12 +646,155 @@ def ingest_deck_task(
             f"task {'deduped (reused)' if deduped else 'created'}: "
             f"task_id={task_id} deck_slug={deck_slug}"
         )
-        stamp_task_id(run_dir, task_id)
+        # T2 gate teeth: the receipt carries the offline-verifiable proof
+        # (registration_proof HMAC over cc_task_id|idempotency_key) so
+        # build_deck._chk_cc_registered can prove this id came from a REAL
+        # round-trip, not a hand-written manifest.
+        stamp_task_id(run_dir, task_id, idempotency_key=idempotency_key,
+                      deck_slug=deck_slug)
+
+        # WORK-ITEM-02: after CC card creation, dispatch the engine if it is
+        # not already running. This closes the "CC ingest callback stops short"
+        # gap: the intake completes, the CC card is created, and the engine
+        # starts walking every manifest phase mechanically -- instead of sitting
+        # dead at "Being Prepared" forever.
+        _dispatch_engine_if_idle(run_dir)
+
         return task_id
 
     _log(
         f"ingest POST non-OK (HTTP {status}): {body}; "
         "run continues ungrouped. cc_register_attempted=True already logged."
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# CHILD CARDS (Option B) — one task card per phase, nested under the deck's
+# parent task via the `parent_task_id` field on the SAME /api/tasks/ingest
+# endpoint ingest_deck_task uses above. Field name and idempotency-key
+# derivation (sha256(parent_task_id + ':' + stage)) match the established
+# parent/child convention already live in master-orchestrator-dept/SOP-07
+# (Full-Funnel epic + staged child cards) -- this is the second producer to
+# mint children under that same contract, not a new one.
+#
+# The phase_id -> child_task_id mapping is persisted into
+# process_manifest.json's cc_child_task_ids map the same way the single
+# parent task_id is persisted via stamp_task_id/cc_task_id, so a resumed run
+# recovers each phase's card instead of re-minting it. BoardMirror.child_report
+# (board.py) is the idempotent caller: it checks this mapping (plus its
+# state.json mirror) BEFORE ever invoking ingest_child_task, so a phase
+# reporting progress twice never reaches this function twice.
+# ---------------------------------------------------------------------------
+_CHILD_MANIFEST_KEY = "cc_child_task_ids"
+
+
+def read_child_task_id(run_dir, phase_id: str) -> Optional[str]:
+    """process_manifest.json half of the phase_id -> child_task_id dual
+    recovery (the state.json half is BoardMirror's ["board"]["children"] map,
+    read by the caller directly -- mirrors task_id_anywhere's two-source
+    check for the parent). Returns None on any absent/unreadable manifest or
+    missing entry. Never raises."""
+    children = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    if isinstance(children, dict):
+        val = children.get(phase_id)
+        if val:
+            return str(val)
+    return None
+
+
+def stamp_child_task_id(run_dir, phase_id: str, task_id: str) -> bool:
+    """Merge {phase_id: task_id} into process_manifest.json's cc_child_task_ids
+    map without disturbing any other phase already recorded there or any other
+    manifest field. Atomic replace (via _merge_manifest). Returns True on
+    success. Never raises."""
+    if not task_id or not phase_id or run_dir is None:
+        return False
+    existing = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    children = dict(existing) if isinstance(existing, dict) else {}
+    children[phase_id] = task_id
+    ok = _merge_manifest(run_dir, {_CHILD_MANIFEST_KEY: children})
+    if not ok:
+        _log(f"stamp_child_task_id failed for phase={phase_id} task_id={task_id}.")
+    return ok
+
+
+def ingest_child_task(
+    run_dir,
+    parent_task_id: str,
+    phase_id: str,
+    title: str,
+    description: str,
+    priority: str = "normal",
+    env: Optional[dict] = None,
+) -> Optional[str]:
+    """Ingest (or idempotently re-fetch) a per-phase CHILD task card, nested
+    under `parent_task_id` via the `parent_task_id` field on the ingest
+    payload.
+
+    Idempotency key is sha256(parent_task_id + ':' + phase_id) -- deterministic
+    per (deck, phase), so a retried POST for the same phase re-fetches the
+    same server-side row instead of minting a duplicate. That server-side
+    guard is the SECOND line of defense; the FIRST is the caller
+    (BoardMirror.child_report) checking read_child_task_id()/state and never
+    calling this function at all once a child_task_id is already known.
+
+    Returns the child task_id string on success, else None. FAIL-SOFT — same
+    contract as ingest_deck_task: never raises, and a None return never
+    blocks the deck build. No parent_task_id => nothing to nest under => a
+    clean no-op (there is no cc_register_attempted-style hard gate on a child
+    card the way there is on the parent)."""
+    if run_dir is None or not parent_task_id or not phase_id:
+        return None
+
+    cfg = board_config(env)
+    if cfg is None:
+        _log(
+            "COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — CC board disabled "
+            f"(no-op); child card for phase {phase_id} not created."
+        )
+        return None
+
+    source_ref = f"{parent_task_id}:{phase_id}"
+    idempotency_key = hashlib.sha256(source_ref.encode("utf-8")).hexdigest()
+
+    payload: dict = {
+        "title": title,
+        "description": description,
+        "priority": priority,
+        "source": "build_deck_phase",
+        "source_ref": source_ref,
+        "department_slug": _DEPARTMENT_SLUG,
+        "persona": _PERSONA,
+        "external_session_id": source_ref,
+        "parent_task_id": parent_task_id,
+        "stage": phase_id,
+        "idempotency_key": idempotency_key,
+    }
+
+    url = f"{cfg['base_url']}/api/tasks/ingest"
+    try:
+        status, body = _request("POST", url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"child ingest POST failed for phase {phase_id} "
+            f"({type(exc).__name__}: {exc}); run continues without a child card."
+        )
+        return None
+
+    if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
+        task_id = str(body["task_id"])
+        deduped = body.get("deduped", False)
+        _log(
+            f"child task {'deduped (reused)' if deduped else 'created'} for "
+            f"phase {phase_id}: task_id={task_id} parent_task_id={parent_task_id}"
+        )
+        stamp_child_task_id(run_dir, phase_id, task_id)
+        return task_id
+
+    _log(
+        f"child ingest POST non-OK for phase {phase_id} (HTTP {status}): {body}; "
+        "run continues without a child card."
     )
     return None
 
@@ -883,12 +1089,58 @@ def _read_certificate_sha(run_dir) -> Optional[str]:
 # AF-CC-UNREGISTERED check passes (degrade-to-ungrouped is logged, not
 # silent). Mirrors Skill-48's stamp_campaign_id pattern at cc_board.py:370-401.
 # ---------------------------------------------------------------------------
-def stamp_task_id(run_dir, task_id: str) -> bool:
+def registration_proof(task_id: str, idempotency_key: str, deck_slug: str) -> Optional[dict]:
+    """Build the offline VERIFIABLE registration receipt the T2 gate
+    (build_deck._chk_cc_registered) can prove WITHOUT any live Command Center
+    call: a deterministic HMAC-SHA256 over ``cc_task_id + "|" + idempotency_key``.
+
+    WHY HMAC: ``cc_task_id`` alone is forgeable — any hand-edited manifest can
+    carry an arbitrary string. ``idempotency_key`` is sha256(source_ref+title),
+    so it is NOT derivable from the task id and CANNOT be forged by someone who
+    only saw the id (a card created for a different deck carries a different
+    key). The gate recomputes the HMAC over the exact same canonical string and
+    compares bytes — a manifest whose cc_task_id was stamped by a REAL
+    cc_board.ingest_deck_task round-trip passes; a hand-written or stale
+    manifest fails as UNVERIFIED (never as verified).
+
+    Deterministic (no timestamp, no secret) so the offline gate is hermetic:
+    same inputs -> same digest, forever, with zero env or network dependency.
+    None when any input is empty (a malformed receipt is unverifiable)."""
+    tid = (task_id or "").strip()
+    key = (idempotency_key or "").strip()
+    slug = (deck_slug or "").strip()
+    if not tid or not key or not slug:
+        return None
+    canonical = f"{tid}|{key}"
+    digest = hmac.new(canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
+    return {
+        "task_id": tid,
+        "idempotency_key": key,
+        "deck_slug": slug,
+        "hmac": digest,
+    }
+
+
+def stamp_task_id(run_dir, task_id: str, idempotency_key: str = "",
+                  deck_slug: str = "") -> bool:
     """Merge cc_task_id into process_manifest.json without disturbing other
-    fields. Atomic replace. Returns True on success. Never raises."""
+    fields. Atomic replace. Returns True on success. Never raises.
+
+    When idempotency_key is supplied (the ingest round-trip path), ALSO stamps
+    ``cc_registration`` — the offline-verifiable proof object (registration_proof)
+    — so build_deck._chk_cc_registered can distinguish a REAL registration
+    round-trip (VERIFIED) from a bare task_id with no proof (UNVERIFIED). The
+    plain cc_task_id merge remains for backward compatibility: callers that
+    only have an id (e.g. a runner re-stamping a recovered id) still write the
+    id without a proof, and the gate treats that as UNVERIFIED, never as
+    verified."""
     if not task_id or run_dir is None:
         return False
-    ok = _merge_manifest(run_dir, {"cc_task_id": task_id})
+    updates: dict = {"cc_task_id": task_id}
+    proof = registration_proof(task_id, idempotency_key, deck_slug)
+    if proof is not None:
+        updates["cc_registration"] = proof
+    ok = _merge_manifest(run_dir, updates)
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok

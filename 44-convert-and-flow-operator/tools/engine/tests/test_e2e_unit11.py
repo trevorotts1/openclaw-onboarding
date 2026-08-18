@@ -404,6 +404,13 @@ def _make_sandbox_adapter(
         if request_log is not None:
             request_log.append({"method": method, "path": path, "body": body})
         if method == "GET":
+            # Idempotency pre-check: build() GETs the bare collection path once
+            # before creating anything. Report a fresh/empty location so these
+            # tests keep exercising the create path (nothing pre-exists) —
+            # distinct from the per-workflow sync GET below, which targets
+            # /workflow/<loc>/<wf_id> and must keep returning the fixture.
+            if path == f"/workflow/{location_id}":
+                return {"workflows": [], "folders": []}
             return dict(wf)
         if method == "PUT":
             if put_bodies is not None:
@@ -1222,6 +1229,11 @@ class TestCriterion21Serialization(unittest.TestCase):
                         return {"id": "TRG001"}
                     return {"id": "FOLDER001", "name": "caf-build"}
                 if method == "GET":
+                    # Idempotency pre-check GET (bare collection path) must report
+                    # empty so the serialization test still exercises the create
+                    # path; the per-workflow sync GET below still needs the fixture.
+                    if path == f"/workflow/{SANDBOX_LOCATION_ID}":
+                        return {"workflows": [], "folders": []}
                     return dict(FIXTURE_WORKFLOW)
                 if method == "PUT":
                     with lock:
@@ -1379,6 +1391,11 @@ def _make_failing_save_adapter(
         if request_log is not None:
             request_log.append({"method": method, "path": path, "body": body})
         if method == "GET":
+            # Idempotency pre-check GET (bare collection path) — report empty so
+            # this test still reaches the create path it's actually regression-
+            # testing; the per-workflow sync GET below still needs the fixture.
+            if path == f"/workflow/{location_id}":
+                return {"workflows": [], "folders": []}
             return dict(wf)
         if method == "PUT":
             if put_bodies is not None:
@@ -1670,6 +1687,11 @@ def _make_gated_adapter(
                 "workflow_name": workflow_name,
             })
         if method == "GET":
+            # Idempotency pre-check GET (bare collection path) — report empty
+            # so these Bug 2a/2b regression tests still reach the folder POST
+            # they exist to exercise.
+            if path == f"/workflow/{location_id}":
+                return {"workflows": [], "folders": []}
             return dict(wf)
         if method == "PUT":
             return {"id": wf["id"], "name": wf["name"], "status": "draft"}
@@ -1854,7 +1876,324 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
         )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGRESSION: repeated `workflows build` created duplicate folders/workflows
+# (no pre-existence check) — a repeated build in one morning produced
+# duplicate workflows and 7 duplicate folders on a client box.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_NO_OVERRIDE = object()
+
+
+def _make_idempotency_adapter(
+    location_id: str = SANDBOX_LOCATION_ID,
+    existing_workflows: list | None = None,
+    existing_folders: list | None = None,
+    list_response_override: Any = _NO_OVERRIDE,
+    request_log: list | None = None,
+):
+    """Mock client for the pre-build existing-workflow/folder listing.
+
+    The ONE listing GET `_build_locked()` issues (bare `/workflow/<loc>`,
+    before any create) reports `existing_workflows`/`existing_folders` as
+    {"workflows": [...], "folders": [...]} (folder items carry
+    type="directory" — the discriminator `_index_existing` matches on).
+    `list_response_override` replaces that response outright, for exercising
+    an unparseable/failed listing. Everything else (creates, the per-item
+    sync GET, PUT) behaves like `_make_sandbox_adapter`.
+    """
+    from cli_anything.gohighlevel.internal.adapter_types import AdapterResult
+
+    wf = dict(FIXTURE_WORKFLOW)
+    client = MagicMock()
+    client.location_id = location_id
+    client._adapter = None  # force CampaignBuilder onto the legacy .request() path
+
+    if list_response_override is not _NO_OVERRIDE:
+        list_response = list_response_override
+    else:
+        list_response = {
+            "workflows": [dict(w) for w in (existing_workflows or [])],
+            "folders": [
+                {**f, "type": "directory"} for f in (existing_folders or [])
+            ],
+        }
+
+    def mock_request(method, path, body=None, workflow_name="", _apply_step_backoff=False):
+        if request_log is not None:
+            request_log.append({"method": method, "path": path, "body": body})
+        if method == "GET":
+            if path == f"/workflow/{location_id}":
+                return list_response
+            return dict(wf)
+        if method == "PUT":
+            return {"id": wf["id"], "name": wf["name"], "status": "draft"}
+        if method == "POST":
+            if "tags/create" in str(path):
+                return {"id": "TAG001"}
+            if "/trigger" in str(path):
+                return {"id": "TRG001"}
+            return {"id": "FOLDER001", "name": "caf-build"}
+        return {"id": wf["id"]}
+
+    client.request.side_effect = mock_request
+    client.get_workflow.side_effect = lambda wid: AdapterResult(ok=True, data=dict(wf))
+    return client
+
+
+class TestBuildIdempotency(unittest.TestCase):
+    """Fix: `build()` must not blindly duplicate an existing folder/workflow.
+
+    TEST A — an existing folder with the target name is REUSED (no folder-
+             creation POST; the workflow-creation POST carries its id as
+             parentId).
+    TEST B — an existing workflow with the target name is REFUSED, not
+             reused or silently skipped: no workflow-creation POST for that
+             name fires, and the collision is recorded in stats["errors"]
+             (so the build fails loud rather than reporting false success).
+    TEST C — when the pre-build listing GET itself fails/returns something
+             unparseable, the build aborts BEFORE any create POST — it must
+             never guess "nothing exists" and build blind.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["CAF_DATA_DIR"] = self.tmp
+
+    def tearDown(self):
+        os.environ.pop("CAF_DATA_DIR", None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_a_existing_folder_is_reused_not_duplicated(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        client = _make_idempotency_adapter(
+            existing_folders=[{"name": "ZHC-Reused-Folder", "id": "FOLDER_EXISTING"}],
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(FIXTURE_PLAN, folder_name="ZHC-Reused-Folder")
+
+        self.assertEqual(
+            stats.get("errors", []), [],
+            f"Reusing an existing folder must not itself be an error. Got: {stats.get('errors')}",
+        )
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertEqual(
+            folder_posts, [],
+            f"An existing folder must be REUSED, not re-created. POSTs: {folder_posts}",
+        )
+        self.assertEqual(
+            stats.get("folder_id"), "FOLDER_EXISTING",
+            "stats['folder_id'] must be the reused existing folder's id.",
+        )
+        wf_posts = [
+            r for r in request_log
+            if r["method"] == "POST" and (r.get("body") or {}).get("parentId")
+        ]
+        self.assertGreater(len(wf_posts), 0, "No workflow-creation POST observed.")
+        self.assertEqual(
+            wf_posts[0]["body"]["parentId"], "FOLDER_EXISTING",
+            "The workflow-creation POST must target the REUSED folder id.",
+        )
+
+    def test_b_existing_workflow_name_is_refused_not_duplicated(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        wf_name = list(FIXTURE_PLAN.values())[0]["name"]  # "ZHC-3Email-Nurture"
+        request_log = []
+        client = _make_idempotency_adapter(
+            existing_workflows=[{"name": wf_name, "id": "WF_EXISTING"}],
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(FIXTURE_PLAN, folder_name="caf-build")
+
+        self.assertTrue(
+            stats.get("errors"),
+            "A workflow-name collision must be recorded in stats['errors'] "
+            "(fail loud), not silently reused or silently skipped.",
+        )
+        joined = " ".join(str(e) for e in stats["errors"])
+        self.assertIn(
+            "WF_EXISTING", joined,
+            f"The error must name the existing workflow's id. Got: {stats['errors']!r}",
+        )
+        wf_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("name") == wf_name
+            and r["body"].get("type") != "directory"
+        ]
+        self.assertEqual(
+            wf_posts, [],
+            f"A colliding workflow name must NOT be re-created. POSTs: {wf_posts}",
+        )
+        self.assertEqual(
+            stats.get("workflows_created", 0), 0,
+            "The colliding workflow must not count as created.",
+        )
+
+    def test_c_unreadable_listing_aborts_before_any_write(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        # An empty dict has no recognizable "workflows"/"folders"/"data"/"items"
+        # key — _index_existing must treat this as unparseable, not as "empty".
+        client = _make_idempotency_adapter(
+            list_response_override={},
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(FIXTURE_PLAN, folder_name="caf-build")
+
+        self.assertTrue(
+            stats.get("errors"),
+            "An unreadable pre-build listing must record an error (fail loud).",
+        )
+        write_calls = [r for r in request_log if r["method"] in ("POST", "PUT")]
+        self.assertEqual(
+            write_calls, [],
+            f"No write may fire when the pre-build listing can't be read. "
+            f"Got: {write_calls}",
+        )
+        self.assertEqual(stats.get("workflows_created", 0), 0)
+
+
 # ── Standalone runner ─────────────────────────────────────────────────────────
+
+class TestFolderDerivationProductionShape(unittest.TestCase):
+    """Folder idempotency against the REAL listing shape.
+
+    The live `GET /workflow/{loc}` returns a BARE LIST of workflow items only
+    — verified against a production backend. It never returns an item with
+    type == "directory", even when folders demonstrably exist (their ids show
+    up as the workflows' `parentId`). The public API is worse: no `type`, no
+    `parentId`. So folder de-duplication BY NAME is impossible, and
+    `existing_folders` in the other tests exercises a shape production never
+    sends.
+
+    TEST D — with the production shape, the folder is DERIVED from an existing
+             campaign workflow's parentId, so a re-run drops new workflows into
+             the SAME folder instead of creating another one. This is the fix
+             for the duplicate-folder incident.
+    TEST E — when nothing exists to derive from, the folder is created (the
+             only option) but the build records an explicit note that it could
+             NOT confirm uniqueness. It must never imply it de-duplicated.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["CAF_DATA_DIR"] = self.tmp
+
+    def tearDown(self):
+        os.environ.pop("CAF_DATA_DIR", None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def _two_workflow_plan():
+        """FIXTURE_PLAN plus a second, not-yet-existing workflow."""
+        plan = {k: dict(v) for k, v in FIXTURE_PLAN.items()}
+        second_key = "second_campaign"
+        first = plan["nurture_consultation"]
+        plan[second_key] = {
+            **{k: v for k, v in first.items()},
+            "name": "ZHC-Second-Not-Yet-Built",
+        }
+        return plan
+
+    def test_d_folder_derived_from_existing_workflow_parent(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        # Production shape: bare list, workflow items only, carrying parentId.
+        production_listing = [{
+            "id": "WF_ALREADY_THERE",
+            "_id": "WF_ALREADY_THERE",
+            "name": "ZHC-3Email-Nurture",
+            "type": "workflow",
+            "parentId": "FOLDER_DERIVED",
+        }]
+        client = _make_idempotency_adapter(
+            list_response_override=production_listing,
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(self._two_workflow_plan(), folder_name="ZHC-Some-Folder")
+
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertEqual(
+            folder_posts, [],
+            "Folder must be DERIVED from the existing workflow's parentId, "
+            f"not re-created. Folder POSTs seen: {folder_posts}",
+        )
+
+        wf_posts = [
+            r for r in request_log
+            if r["method"] == "POST" and (r.get("body") or {}).get("parentId")
+        ]
+        self.assertGreater(
+            len(wf_posts), 0,
+            "The not-yet-existing workflow should still have been created.",
+        )
+        for r in wf_posts:
+            self.assertEqual(
+                r["body"]["parentId"], "FOLDER_DERIVED",
+                "New workflows must land in the DERIVED folder, not a new one.",
+            )
+
+        notes = " ".join(stats.get("notes", []))
+        self.assertIn(
+            "FOLDER_DERIVED", notes,
+            f"The derivation must be reported in stats['notes']. Got: {stats.get('notes')}",
+        )
+
+    def test_e_unprovable_folder_uniqueness_is_reported_not_hidden(self):
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        request_log = []
+        client = _make_idempotency_adapter(
+            list_response_override=[],  # production shape, nothing exists yet
+            request_log=request_log,
+        )
+        builder = CampaignBuilder(client)
+        stats = builder.build(FIXTURE_PLAN, folder_name="ZHC-Brand-New-Folder")
+
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertEqual(
+            len(folder_posts), 1,
+            "With nothing to derive from, the folder must be created exactly once.",
+        )
+
+        notes = stats.get("notes", [])
+        self.assertTrue(
+            any("WITHOUT being able" in n for n in notes),
+            "A build that cannot prove folder uniqueness MUST say so in "
+            f"stats['notes'] rather than implying it de-duplicated. Got: {notes}",
+        )
+        self.assertEqual(
+            stats.get("errors", []), [],
+            "The unprovable-uniqueness caveat is a NOTE, not an error — it "
+            f"must not fail the build. Got errors: {stats.get('errors')}",
+        )
+
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()
@@ -1865,6 +2204,8 @@ if __name__ == "__main__":
         TestCriterion21Serialization,
         TestBuildFailsLoudAndEmitsOrdering,
         TestZHCFolderStandingApprovalAndFolderKeyPlan,
+        TestBuildIdempotency,
+        TestFolderDerivationProductionShape,
     ]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
 

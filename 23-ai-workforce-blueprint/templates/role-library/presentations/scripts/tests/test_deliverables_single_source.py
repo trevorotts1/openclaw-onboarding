@@ -1,0 +1,217 @@
+"""Tests for U05 — single-source the deliverable whitelist into deliverables.py.
+
+Bar:
+  * presentation_job/deliverables.py is THE single source of truth: ten keys,
+    matching PIPELINE-MANIFEST.build_bundle_files.
+  * fix_bundle_complete.py, presentation_job/curate.py, phase_verifiers.py, and
+    self_audit.py all derive an IDENTICAL key set from it -- no consumer may
+    see a whitelist that has drifted from the canonical spec (the exact bug
+    this file exists to prevent: phase_verifiers.py previously carried a
+    "workbook_pdf" key that was never part of the canonical bundle while
+    silently missing "speech_md", and the repo's own fix_bundle_complete.py
+    had gone stale at nine pieces while the live deployed copy had ten).
+  * self_audit.py has NO inline fallback list -- if the canonical whitelist
+    cannot be imported, self_audit.py fails LOUDLY (ImportError) rather than
+    silently auditing against a stale hand-copied list.
+
+No network. Stdlib + pytest only, matching the repo's other flat-import tests
+(see test_fix8_bundle_complete.py) -- SCRIPTS is inserted onto sys.path so the
+top-level bare modules (fix_bundle_complete, phase_verifiers, self_audit) and
+the presentation_job package resolve identically to how the real pipeline
+imports them.
+"""
+
+import importlib.util
+import json
+import pathlib
+import sys
+
+import pytest
+
+SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+import fix_bundle_complete as fbc  # noqa: E402
+import phase_verifiers as pv  # noqa: E402
+import self_audit  # noqa: E402
+from presentation_job import curate  # noqa: E402
+from presentation_job import deliverables  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# The canonical spec itself
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_spec_has_ten_unique_keys():
+    """The single source of truth is exactly ten deliverables, no duplicates."""
+    assert len(deliverables.DELIVERABLE_AUDIT_SPEC) == 10
+    assert len(deliverables.REQUIRED_KEYS) == 10
+    assert len(set(deliverables.REQUIRED_KEYS)) == 10, "duplicate key in DELIVERABLE_AUDIT_SPEC"
+    assert deliverables.DELIVERABLE_COUNT == 10
+
+
+def test_canonical_spec_matches_pipeline_manifest():
+    """The canonical key set must never drift from PIPELINE-MANIFEST.build_bundle_files
+    (the same lockstep fix_bundle_complete.py's own self-test enforces)."""
+    cur = pathlib.Path(deliverables.__file__).resolve().parent
+    manifest = None
+    for _ in range(8):
+        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if cand.is_file():
+            manifest = cand
+            break
+        cur = cur.parent
+    assert manifest is not None, "PIPELINE-MANIFEST.json not found"
+    man = json.loads(manifest.read_text())
+    assert sorted(man.get("build_bundle_files", [])) == sorted(deliverables.REQUIRED_KEYS)
+
+
+# ---------------------------------------------------------------------------
+# Every consumer imports the SAME object / derives the SAME key set
+# ---------------------------------------------------------------------------
+
+
+def test_fix_bundle_complete_imports_the_canonical_object():
+    """fix_bundle_complete.py must not define its own DELIVERABLE_AUDIT_SPEC --
+    it must be the literal same list object as the canonical source."""
+    assert fbc.DELIVERABLE_AUDIT_SPEC is deliverables.DELIVERABLE_AUDIT_SPEC
+    assert fbc.REQUIRED_KEYS == deliverables.REQUIRED_KEYS
+    assert fbc.REQUIRED_DELIVERABLES == deliverables.REQUIRED_DELIVERABLES
+    assert fbc.BUNDLE_COMPLETE_FILENAME == deliverables.BUNDLE_COMPLETE_FILENAME
+    assert fbc.AF_BUNDLE_INCOMPLETE == deliverables.AF_BUNDLE_INCOMPLETE
+
+
+def test_curate_imports_the_canonical_object():
+    """curate.py must not define its own copy -- same list object, same keys."""
+    assert curate.DELIVERABLE_AUDIT_SPEC is deliverables.DELIVERABLE_AUDIT_SPEC
+    assert curate.REQUIRED_KEYS == deliverables.REQUIRED_KEYS
+    assert set(curate.DESTINATION_FILENAMES.keys()) == set(deliverables.REQUIRED_KEYS)
+
+
+def test_self_audit_derives_identical_keys():
+    """self_audit.DELIVERABLE_AUDIT_LIST is DERIVED from the canonical spec --
+    same key set, same min_bytes per key."""
+    audit_keys = {item["key"] for item in self_audit.DELIVERABLE_AUDIT_LIST}
+    assert audit_keys == set(deliverables.REQUIRED_KEYS)
+
+    canonical_min_bytes = {s["key"]: s["min_bytes"] for s in deliverables.DELIVERABLE_AUDIT_SPEC}
+    for item in self_audit.DELIVERABLE_AUDIT_LIST:
+        assert item["min_bytes"] == canonical_min_bytes[item["key"]], (
+            f"{item['key']}: self_audit min_bytes drifted from canonical spec")
+
+
+def test_phase_verifiers_delivery_whitelist_matches_canonical_keys():
+    """phase_verifiers._DELIVERY_DELIVERABLES must carry EXACTLY the canonical
+    key set -- this is the concrete drift bug U05 fixes: the prior hardcoded
+    list carried a 'workbook_pdf' key that was never part of the canonical
+    bundle (the workbook is a separate P8.25-WORKBOOK deliverable with its own
+    gate) while silently missing 'speech_md'."""
+    delivery_keys = {item["key"] for item in pv._DELIVERY_DELIVERABLES}
+    assert delivery_keys == set(deliverables.REQUIRED_KEYS)
+    assert "workbook_pdf" not in delivery_keys, (
+        "workbook_pdf is not part of the canonical whitelist and must not "
+        "reappear in the P9-DELIVER check")
+    assert "speech_md" in delivery_keys
+
+
+def test_phase_verifiers_delivery_min_bytes_matches_canonical():
+    """The byte-size floor per key must come from the canonical spec, not a
+    locally hardcoded (and driftable) number."""
+    canonical_min_bytes = {s["key"]: s["min_bytes"] for s in deliverables.DELIVERABLE_AUDIT_SPEC}
+    for item in pv._DELIVERY_DELIVERABLES:
+        assert item["min_bytes"] == canonical_min_bytes[item["key"]], (
+            f"{item['key']}: phase_verifiers min_bytes drifted from canonical spec")
+
+
+def test_all_four_consumers_see_an_identical_key_set():
+    """The acceptance bar for U05: every consumer's key set, compared pairwise
+    against the canonical spec AND against each other, must be identical."""
+    canonical = set(deliverables.REQUIRED_KEYS)
+    consumer_key_sets = {
+        "fix_bundle_complete.REQUIRED_KEYS": set(fbc.REQUIRED_KEYS),
+        "curate.REQUIRED_KEYS": set(curate.REQUIRED_KEYS),
+        "self_audit.DELIVERABLE_AUDIT_LIST": {i["key"] for i in self_audit.DELIVERABLE_AUDIT_LIST},
+        "phase_verifiers._DELIVERY_DELIVERABLES": {i["key"] for i in pv._DELIVERY_DELIVERABLES},
+    }
+    for name, keys in consumer_key_sets.items():
+        assert keys == canonical, (
+            f"{name} drifted from the canonical whitelist: "
+            f"missing={canonical - keys} extra={keys - canonical}")
+    # And pairwise against each other, not just against canonical.
+    all_sets = list(consumer_key_sets.values())
+    for other in all_sets[1:]:
+        assert other == all_sets[0]
+
+
+# ---------------------------------------------------------------------------
+# self_audit.py: no inline fallback -- a missing canonical source is a HARD
+# ImportError, never a silent stale-copy audit.
+# ---------------------------------------------------------------------------
+
+
+def test_self_audit_hard_fails_when_canonical_source_unavailable(monkeypatch):
+    """If presentation_job.deliverables cannot be imported, self_audit.py must
+    raise ImportError at import time -- never fall back to a hardcoded list."""
+    # Block the canonical module: setting a sys.modules entry to None makes
+    # the import system raise ImportError for that name (stdlib-documented
+    # negative-cache behavior), without touching the real module for other
+    # tests in this session.
+    monkeypatch.setitem(sys.modules, "presentation_job.deliverables", None)
+
+    spec = importlib.util.spec_from_file_location(
+        "self_audit_reload_for_test", str(SCRIPTS / "self_audit.py"))
+    mod = importlib.util.module_from_spec(spec)
+    with pytest.raises(ImportError):
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+
+def test_self_audit_source_has_no_inline_deliverable_literal():
+    """Structural guard: self_audit.py's `except ImportError` block must RAISE,
+    never assign a fallback list literal (the exact bug this unit deletes --
+    a deployed self-audit that silently keeps running against a stale
+    hand-copied whitelist when the canonical import fails)."""
+    src = (SCRIPTS / "self_audit.py").read_text()
+    # No hardcoded per-deliverable filename literals of the kind the deleted
+    # fallback contained (e.g. "DECK-FINAL.pptx" as a bare dict value) may
+    # appear outside the derived comprehension.
+    for literal in ("\"DECK-FINAL.pptx\"", "\"PRESENTER-GUIDE.pdf\"", "\"WEBINAR-VIDEO.mp4\""):
+        assert literal not in src, (
+            f"self_audit.py must not hardcode deliverable filenames like {literal} "
+            f"-- DELIVERABLE_AUDIT_LIST must be derived from the imported canonical "
+            f"spec only")
+    # The except-block must raise, not silently assign a replacement spec.
+    except_block = src.split("except ImportError", 1)[1].split("DELIVERABLE_AUDIT_LIST", 1)[0]
+    assert "raise" in except_block, (
+        "self_audit.py's except ImportError block must raise -- a caught "
+        "ImportError that falls through to a fallback assignment is the "
+        "exact silent-drift bug this unit deletes")
+    assert "_AUDIT_SPEC = [" not in except_block, (
+        "self_audit.py must not assign a fallback _AUDIT_SPEC list literal "
+        "inside the except ImportError block")
+
+
+# ---------------------------------------------------------------------------
+# Import smoke — curate, phases (via phase_verifiers wiring), self_audit
+# ---------------------------------------------------------------------------
+
+
+def test_import_smoke_curate_phase_verifiers_self_audit():
+    """All four consumers import cleanly with the single-sourced whitelist
+    wired in, and phase_verifiers.PHASE_VERIFIERS still registers P9-DELIVER
+    against the refactored _verify_delivery."""
+    assert hasattr(curate, "DESTINATION_FILENAMES")
+    assert hasattr(self_audit, "DELIVERABLE_AUDIT_LIST")
+    assert "P9-DELIVER" in pv.PHASE_VERIFIERS
+    # SLICE 3: P9-DELIVER is wired through the sealed-RunFacts shadow wrapper
+    # (_shadow_composite_verifier) — report-only by default, stricter only
+    # under PRES_TRUST_BOUNDARY_ENFORCE=1. The wrapper still delegates to the
+    # refactored single-sourced _verify_delivery, so the whitelist contract
+    # the legacy verifier enforces stays live on every report-only run.
+    assert pv.PHASE_VERIFIERS["P9-DELIVER"] is not pv._verify_delivery
+    assert pv.PHASE_VERIFIERS["P9-DELIVER"].__closure__ is not None
+    wrapped = [c.cell_contents for c in pv.PHASE_VERIFIERS["P9-DELIVER"].__closure__]
+    assert any(cell is pv._verify_delivery for cell in wrapped), (
+        "P9-DELIVER shadow wrapper must delegate to the single-sourced "
+        "_verify_delivery (legacy verdict still enforced report-only)")

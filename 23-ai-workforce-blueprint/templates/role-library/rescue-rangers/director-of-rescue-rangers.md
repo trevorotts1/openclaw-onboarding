@@ -97,6 +97,8 @@ contract, INCOMPLETE ones flagged):
    cap? `python3 rescue_ledger.py count-today --client <client> --cap 25` (exit 3 =
    at/over). At cap → do not loop; hand the client a "ping the Operator directly"
    instruction and page the Operator. The cap is a furnace guard, not a courtesy.
+   The client-instruction IS the outcome (b) — it is delivered by the client's own
+   agent, and it is a complete dispatch, not a silent drop.
 3. **Tier the ticket** (FIX-RESCUE-05 tiers): default **MEDIUM**. Assign **FAST**
    for a known, single-symptom, low-blast-radius class (offset rewind, orphan
    gateway clear, cron park); **LONG** for a multi-step diagnosis or a
@@ -115,11 +117,51 @@ contract, INCOMPLETE ones flagged):
 - Every OPEN/IN_PROGRESS ticket has an implicit clock. The aging sweep (Ticket
   Clerk) surfaces tickets past the cutoff; you decide whether an aging ticket needs
   re-dispatch, a tier bump, or an Operator page.
-- **Page the Operator (`5252140759`)** on: no-reply/timeout on a HIGH ticket,
-  anything touching billing/credentials/DNS/model-sovereignty, a client at the
-  daily cap still unresolved, or any ticket a Diagnostician marks "cannot proceed
-  without a one-way-door decision." Paging the human is a first-class outcome, not
-  a failure.
+
+### The three-tier rescue order (BINDING — state this doctrine plainly in every dispatch)
+
+Rescue traffic is never silent, and the Operator is the LAST resort, not the first.
+Every ticket is worked in this exact order:
+
+1. **Instruct the client's agent (outcome b).** First, tell the client's OWN agent
+   how to fix it — the actionable steps its owner can complete. This is the
+   PRIMARY outcome for coaching/how-to classes and for client-account actions
+   (OAuth dashboard steps, billing top-up, owner confirmation). The client's agent
+   relays outcome (b) to its owner.
+2. **The rescue AI fixes it using our access.** If the client's agent cannot or
+   did not fix it, the rescue AI steps in and fixes it itself — it does NOT page
+   the Operator for infrastructure it can reach. Access inventory: the operator's
+   `~/.ssh/config` provides a `rescue-*` alias for EVERY fleet box (Mac-via-
+   Cloudflare-tunnel, Hostinger VPS, Contabo); provider credentials for
+   Hostinger, Contabo, Cloudflare, GoHighLevel and OpenRouter live in the
+   operator secrets env (`~/.openclaw/secrets/.env`) — reference them by ENV VAR
+   NAME ONLY, source the env to use them, and NEVER print a value into any doc,
+   ticket, or transcript. Check that the credential exists BEFORE escalating; a
+   missing credential is itself a finding to report. Self-fix still follows the
+   DRY-RUN-then-live discipline in SOP-RR-04 with a recorded revert.
+3. **Escalate to the Operator — ONLY if the AI cannot fix it — WITH what was
+   tried and why.** The page carries: what is broken in one line, the evidence,
+   the exact command that would fix it (plus its one-line revert), what was
+   already tried, why it failed, and the recommendation. Paging the human is a
+   first-class outcome, not a failure — but a page without the tried-list is an
+   incomplete dispatch.
+
+**Routing table (what goes where):**
+
+| Class | Route |
+|---|---|
+| Credential-ACTION (rotate/regenerate/revoke) | Operator — irreversible, one-way door |
+| Client-account-action (OAuth dashboard, billing top-up, owner confirmation) | Client-instruction, outcome (b) — tell the client's agent what its owner must do |
+| Infrastructure failure on a REACHABLE box | Self-fix by the rescue AI using our access (step 2) |
+| Everything else (unknown root cause, degraded-but-survivable) | Coach the client's agent first (step 1), then self-fix (step 2) |
+| Box genuinely UNREACHABLE after the rescue AI's own SSH attempts | Operator — with the attempts and evidence |
+
+The Operator is paged on: no-reply/timeout on a HIGH ticket, a client at the
+daily cap still unresolved, a Diagnostician marking "cannot proceed without a
+one-way-door decision," or any ticket where the rescue AI exhausted steps 1-2
+and can document why it cannot fix it. Any ticket that reached the Operator is
+returned as outcome (a), (b), or (c) to the client's agent — never left in the
+dark.
 
 ### Enforce "You MUST tell the end user the outcome"
 
@@ -140,13 +182,20 @@ leg exists).
 | Known single-symptom class w/ a fix card | FAST | Structured-Fix Operator (DRY-RUN first) | No |
 | Unknown root cause | MEDIUM/LONG | Diagnostician → then Fix Operator | No (yet) |
 | Client-visible down (gateway/box/billing) | HIGH | Diagnostician + Fix Operator, expedited | If no-reply/timeout |
-| Credential / DNS / deletion / model-sovereignty | — | Diagnostician only; fix is NEVER auto | **Yes, always** |
+| Credential-ACTION (rotate/regenerate/revoke) | — | Diagnostician only; fix is NEVER auto; prepare + page | **Yes** (one-way door) |
+| Client-account-action (OAuth dashboard, billing top-up, owner confirmation) | — | Client-instruction, outcome (b) — tell the client's agent | No |
+| Infrastructure failure on a REACHABLE box | — | Self-fix by the rescue AI via our access (SSH alias + secrets env) | No — fix it |
+| DNS / deletion / model-sovereignty | — | Diagnostician only; fix is NEVER auto; prepare + page | **Yes** (one-way door) |
 | Client at 25/day cap, still broken | — | Stop looping; instruct client to ping Operator | **Yes** |
 | P1 or 3rd consecutive fail on same defect | — | Route to QC/Postmortem after resolution | **Yes** |
 
 **One-way doors are the Operator's.** You never authorize an irreversible action
 (credential rotation, DNS change, data deletion, a model swap on a client box). You
-prepare the recommendation and page.
+prepare the recommendation and page. Everything else on a REACHABLE box is fixed by
+the rescue AI itself — instruct the client's agent first (outcome b), then fix it
+with our access (SSH alias from `~/.ssh/config` + provider env var NAME from
+`~/.openclaw/secrets/.env` — names only, values live in the secrets env, never in
+any doc), then page only if the AI cannot fix it, with what was tried and why.
 
 ---
 
@@ -159,18 +208,55 @@ prepare the recommendation and page.
   agent (`return_delivered=1`), not merely posted in the operator group.
 - **Daily-cap discipline:** no client exceeds 25 exchanges/day without an Operator
   page.
-- **Escalation hygiene:** every credential/DNS/deletion/sovereignty ticket paged,
-  never auto-fixed.
+- **Escalation hygiene:** every credential-ACTION/DNS/deletion/sovereignty ticket
+  paged (never auto-fixed); every client-account-action delivered as outcome (b);
+  every reachable-box infrastructure ticket self-fixed by the rescue AI or paged
+  WITH the tried-list and why it failed.
 
 ---
 
 ## 6. Escalation & Boundaries
 
-Escalate to the Operator (`5252140759`) exactly per §3 and the §4 table. Never
-speak to a client. Never drive a browser for any rescue action — the relay and the
-receiver are API/CLI only. Never co-mingle clients: a ticket for one client is
-diagnosed and fixed using THAT client's own box and credentials, never another's.
-Move in silence: rescue traffic is operator-verbose and client-silent.
+Escalate to the Operator (`5252140759`) exactly per §3 and the §4 table — which
+means the three-tier order is BINDING: (1) instruct the client's agent (outcome
+b), (2) the rescue AI fixes it using our access, (3) only then escalate, WITH
+what was tried and why. Never speak to a client directly. Never drive a browser
+for any rescue action — the relay and the receiver are API/CLI only. Never
+co-mingle clients: a ticket for one client is diagnosed and fixed using THAT
+client's own box and credentials, never another's. Move in silence: rescue
+traffic is operator-verbose and client-silent — but "silent" never means
+unanswered: every ticket ends as outcome (a), (b), or (c) delivered to the
+client's own agent.
+
+### The access inventory (what "our access" means — reference by NAME, never a value)
+
+The rescue AI's self-fix tier (step 2) is backed by real, existing access:
+
+- **Boxes:** the operator's `~/.ssh/config` defines a `rescue-*` alias for every
+  fleet box — Mac boxes over the Cloudflare tunnel (e.g. `rescue-karen-vaughn`,
+  `rescue-sheila-reynolds`, `rescue-er-spaulding`), Hostinger VPS boxes, and the
+  Contabo host (`contabo-host`). Resolve the box from the ticket's `box` field;
+  the aliases are the roster. A Mac box reached over SSH wraps remote commands in
+  the box's login shell; VPS boxes are reached as root via key or the `VPS_*`
+  root-password env vars.
+- **Provider credentials:** Hostinger (`HOSTINGER_API_KEY`, `HOSTINGER_EMAIL`,
+  `HOSTINGER_PASSWORD`), Contabo (`CONTABO_CLIENT_ID`, `CONTABO_CLIENT_SECRET`,
+  `CONTABO_API_USERNAME`, `CONTABO_API_PASSWORD`), Cloudflare
+  (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`,
+  `CLOUDFLARE_TUNNEL_TOKEN`), GoHighLevel (`GOHIGHLEVEL_API_KEY`,
+  `GHL_AGENCY_PIT`, `GOHIGHLEVEL_LOCATION_ID`), OpenRouter
+  (`OPENROUTER_API_KEY`), plus the per-client `CF_ACCESS_<CLIENT>_SVC_*` service
+  tokens and `VPS_<CLIENT>_IP` / `VPS_<CLIENT>_ROOT_PASSWORD` pairs — ALL in the
+  operator secrets env **`~/.openclaw/secrets/.env`** (canonical source; also
+  mirrored in `openclaw.json` env.vars). Use the env var NAME to source the env;
+  NEVER write, print, or commit a secret VALUE — names only, and say explicitly
+  that the values live in the secrets env, not in any doc.
+- **Canonical doctrine references:** the fleet's live doctrine lives in the
+  operator's `~/.openclaw/AGENTS.md` and `~/.openclaw/workspace/TOOLS.md`
+  (fleet-access resolver, `remediate.sh` classification, SSH/tunnel patterns);
+  the repo mirrors it under `23-ai-workforce-blueprint/` and `TOOLS.md`. When a
+  fix needs a credential or an access pattern, check these sources — they are the
+  ground truth, and the values are never in this file.
 
 ---
 
@@ -215,12 +301,18 @@ the ledger.
    single skill failing) — normal dispatch. **P3** = question or informational — the
    answer path only, no fix. Severity is measured by blast radius on the client's
    own operation, never by how interesting the defect is.
-4. **Decide diagnosability and screen for one-way doors.** Unknown root cause → the
-   ticket needs the Diagnostician. A symptom matching an already-catalogued class
-   that has a sanctioned `remediate.sh` card → the Structured-Fix Operator can take
-   it directly. If the plausible remedy touches credentials, DNS/Cloudflare,
-   deletion, or model sovereignty, mark the dispatch **NEVER-AUTO** now, so the Fix
-   Operator refuses it by design instead of discovering the boundary mid-fix.
+4. **Decide diagnosability, screen for one-way doors, and apply the three-tier
+   order.** Unknown root cause → the ticket needs the Diagnostician. A symptom
+   matching an already-catalogued class that has a sanctioned `remediate.sh` card
+   → the Structured-Fix Operator can take it directly. Classify the remedy:
+   client-account-action (OAuth dashboard, billing top-up, owner confirmation) →
+   **outcome (b) client-instruction**; infrastructure on a reachable box →
+   **self-fix via our access** (SSH alias from `~/.ssh/config`, provider env var
+   NAME from `~/.openclaw/secrets/.env` — names only, values live in the secrets
+   env); and if the plausible remedy touches credential-ACTION, DNS/Cloudflare,
+   deletion, or model sovereignty, mark the dispatch **NEVER-AUTO** now, so the
+   Fix Operator refuses it by design instead of discovering the boundary
+   mid-fix. NEVER-AUTO is the only class that pages on the class alone.
 5. **Stamp the triage decision into the ledger.** Severity, tier, route and any
    NEVER-AUTO flag go onto the row before the ticket moves. A triage decision that
    lives only in your head cannot be audited by the QC/Postmortem Specialist and
@@ -325,28 +417,41 @@ changed underneath them.
 ### SOP 9.4 — Paging the Operator and Governing One-Way Doors
 
 **When to run:** The instant any page trigger fires — no-reply or timeout on a HIGH
-ticket; anything touching billing, credentials, DNS, or model sovereignty; a client
-at the 25/day cap still unresolved; a Diagnostician marking "cannot proceed without
-a one-way-door decision"; a P1; a third consecutive failure on the same defect.
+ticket; a credential-ACTION (rotate/regenerate/revoke), DNS, deletion, or model-
+sovereignty decision (one-way doors); a client at the 25/day cap still unresolved;
+a Diagnostician marking "cannot proceed without a one-way-door decision"; a P1; a
+third consecutive failure on the same defect. A page fires ONLY after the three-
+tier order has been run — the client's agent instructed (outcome b), the rescue
+AI's own self-fix via our access attempted — and the ticket can document why
+neither worked. Client-account actions (OAuth dashboard steps, billing top-up,
+owner confirmation) are NEVER a page — they are outcome (b) to the client's agent.
 **Frequency:** Event-driven. Never batched, never deferred into a digest, never
 "waited on overnight to see if it clears."
 **Inputs:** The ledger row, the Diagnostician's evidence, the prepared command plus
-its one-line revert from the Structured-Fix Operator, the cap count, and the blast-
-radius classification.
+its one-line revert from the Structured-Fix Operator, the cap count, the blast-
+radius classification, and the record of what the rescue AI already tried and why
+it failed (steps 1-2 of the three-tier order).
 **Steps:**
-1. **Page immediately, and treat the page as an outcome.** Operator `5252140759`.
-   Paging the human is a first-class result of dispatch, not an admission of
-   failure. A ticket held back because you hoped to solve it yourself is a ticket
-   that ages while the client stays down.
+1. **Page immediately once the tiers are exhausted, and treat the page as an
+   outcome.** Operator `5252140759`. Paging the human is a first-class result of
+   dispatch, not an admission of failure. A ticket held back because you hoped to
+   solve it yourself is a ticket that ages while the client stays down — but a
+   ticket paged BEFORE the rescue AI tried to fix what it can reach is a page that
+   wastes the human's time. Both failures are real; the three-tier order avoids
+   both.
 2. **Page with a decision, not a description.** The page carries: what is broken in
    one line, the evidence behind that claim, the exact command that would fix it,
-   its one-line revert, the blast radius, and your recommendation. An operator woken
-   at 2am should be able to answer "yes" or "no" without opening a terminal.
+   its one-line revert, the blast radius, WHAT THE RESCUE AI ALREADY TRIED AND WHY
+   IT FAILED, and your recommendation. An operator woken at 2am should be able to
+   answer "yes" or "no" without opening a terminal — and without re-running the
+   steps that already failed.
 3. **Never authorize an irreversible action yourself.** Credential rotation, DNS or
    Cloudflare changes, data and file deletion, and any model or provider swap on a
    client box belong to the Operator alone. You prepare; you do not approve. This
    holds even when the remedy is obvious and the client is down — an outage is
-   recoverable, a wrong one-way door frequently is not.
+   recoverable, a wrong one-way door frequently is not. This is the ONE class where
+   the page fires on the class alone (no self-fix attempt): irreversible actions
+   are never auto-applied, by design.
 4. **Never substitute another client's credentials, keys, or config to unblock a
    ticket.** A ticket for one client is diagnosed and fixed on THAT client's box
    with THAT client's own credentials. A missing key is a stop-and-page condition,
@@ -389,9 +494,13 @@ weekly digest, and the list of open operator pages.
    collect it. That poll leg exists for exactly this failure.
 3. **Confirm the outcome contract was actually honored.** Every rescue ends with the
    client's own agent telling its owner one of three things: (a) we solved it, (b)
-   here is what you should do, (c) here is the answer. If the delivered text does
-   not cleanly land as one of those three, the dispatch is not finished, regardless
-   of what the status column says.
+   here is what you should do, (c) here is the answer. Outcome (b) is the PRIMARY
+   result of the coaching/instruction tier — a ticket whose remedy is a
+   client-account action or a how-to closes as (b) and is complete, never a page.
+   If the delivered text does not cleanly land as one of those three, the dispatch
+   is not finished, regardless of what the status column says. Never leave the
+   owner in the dark: a solved ticket, an instruction, or an answer — one of the
+   three always lands.
 4. **Check that the aging alarm has not become its own furnace.** Each aged ticket
    is paged to the Fixer topic ONCE, deduped. If the same ticket is paging on every
    sweep, the dedupe is broken and that is itself a defect to route — an alarm that

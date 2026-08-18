@@ -1,0 +1,1078 @@
+#!/usr/bin/env python3
+"""
+deck-intake-driver.py -- THE ONE sanctioned intake bridge for Presentations.
+
+WORK-ITEM-06: Un-hardcode deck_type. This driver is the SINGLE place deck_type
+is written -- via derive_legacy_fields() from the ONE presentation_type answer.
+Never hand-typed. Never defaulted to "webinar" by a hardcoded write.
+
+Reads its question schema from intake/deck-intake-questions.json (the canonical
+source of truth). Supports two interview modes:
+
+  STANDARD  (--next / --answer / --complete)
+    One question per turn, machine-paced. The presentation_type picker runs
+    first; its answer derives all four legacy axis fields (deck_type,
+    creation_mode, presentation_mode, audience_mode) automatically via
+    derive_legacy_fields(). Conditional follow-ups (recipient_name,
+    signature_source, extracted_substance) auto-skip when unmet.
+
+  SIGNATURE (--signature --next / --signature --answer)
+    Choice-first (QUICK vs IN-DEPTH), then the SACRED 8 Questions +
+    frame-selection question ONE at a time. Answers are assembled into ONE
+    atomic record per sp-8-questions.json. The turn-gate is REQUIRED --
+    a batch dump is AF-INTAKE-BATCH.
+
+At --complete, the driver writes/merges working/copy/intake.json with all
+derived fields, runs prove_sp_routing.py unconditionally for claim-gate
+enforcement, and marks the intake ledger complete.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# canonical paths
+# ---------------------------------------------------------------------------
+SCRIPTS_DIR = Path(__file__).resolve().parent
+DEPT_ROOT = SCRIPTS_DIR.parent
+INTAKE_DIR = DEPT_ROOT / "intake"
+QUESTIONS_PATH = INTAKE_DIR / "deck-intake-questions.json"
+
+# ---------------------------------------------------------------------------
+# legacy_field_mapping -- the canonical derivation table.
+# MIRROR of intake/deck-intake-questions.json's legacy_field_mapping.
+# THIS IS THE SOURCE OF TRUTH for deck_type. Every other consumer reads
+# intake.json.deck_type -- never derives it independently.
+# ---------------------------------------------------------------------------
+LEGACY_FIELD_MAPPING: Dict[str, Dict[str, Any]] = {
+    "from_scratch": {
+        "deck_type": "webinar",
+        "creation_mode": "from_scratch",
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+    },
+    "content_personal": {
+        "deck_type": "webinar",
+        "creation_mode": "content_personal",
+        "presentation_mode": "one-person",
+        "audience_mode": "PERSONAL",
+        "requires": ["recipient_name", "extracted_substance"],
+    },
+    "content_general": {
+        "deck_type": "webinar",
+        "creation_mode": "content_general",
+        "presentation_mode": "general",
+        "audience_mode": "GENERAL",
+        "requires": ["extracted_substance"],
+    },
+    "signature": {
+        "deck_type": "signature_presentation",
+        "creation_mode": "from_scratch",
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+        "note": "creation_mode defaults to from_scratch; overridden to "
+                "content_personal/content_general by the signature_source "
+                "follow-up when the client is converting existing material "
+                "into the signature talk. Never left unset (AF-MODE-UNSET).",
+    },
+}
+
+# legal presentation_type values -- mirrors __main__.py cmd_new
+LEGAL_PRESENTATION_TYPES = ("from_scratch", "content_personal",
+                            "content_general", "signature")
+
+
+# ---------------------------------------------------------------------------
+# derive_legacy_fields -- the ONE function that writes deck_type
+# ---------------------------------------------------------------------------
+def derive_legacy_fields(presentation_type: str,
+                         signature_source: Optional[str] = None) -> Dict[str, Any]:
+    """Map presentation_type to {deck_type, creation_mode, presentation_mode,
+    audience_mode}. This is THE SINGLE derivation point -- every other consumer
+    reads intake.json.deck_type; nothing else derives it.
+
+    For presentation_type='signature', signature_source overrides creation_mode:
+      'existing_content' -> creation_mode defaults to 'content_general' (safe
+      default) until the signature intake clarifies the audience, then corrected.
+      'from_scratch' (or unset) -> creation_mode stays 'from_scratch'.
+    """
+    if presentation_type not in LEGAL_PRESENTATION_TYPES:
+        raise ValueError(
+            f"presentation_type {presentation_type!r} is not one of "
+            f"{LEGAL_PRESENTATION_TYPES}. This is the ONE answer that derives "
+            f"deck_type -- it cannot be unset or invalid (AF-MODE-UNSET).")
+
+    mapping = LEGACY_FIELD_MAPPING[presentation_type]
+    derived = dict(mapping)  # shallow copy
+
+    if presentation_type == "signature" and signature_source:
+        if signature_source == "existing_content":
+            # Safe default: content_general until the signature intake
+            # clarifies audience scope. Never left unset (AF-MODE-UNSET).
+            derived["creation_mode"] = "content_general"
+        # 'from_scratch' keeps the default
+
+    return derived
+
+
+# ---------------------------------------------------------------------------
+# question schema loader
+# ---------------------------------------------------------------------------
+def load_question_schema() -> Dict[str, Any]:
+    """Read the canonical question schema from intake/deck-intake-questions.json.
+    Returns the full parsed document. Exits 2 if missing."""
+    if not QUESTIONS_PATH.is_file():
+        print(f"FATAL: question schema not found at {QUESTIONS_PATH}",
+              file=sys.stderr)
+        print("  This is the canonical source of truth for intake questions. "
+              "Re-materialize the Presentations department.", file=sys.stderr)
+        sys.exit(2)
+    with open(QUESTIONS_PATH, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def get_questions(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the ordered question list from the schema."""
+    questions = schema.get("questions", [])
+    questions.sort(key=lambda q: q.get("order", 999))
+    return questions
+
+
+# ---------------------------------------------------------------------------
+# conditional evaluation
+# ---------------------------------------------------------------------------
+def should_ask(question: Dict[str, Any],
+               answers: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """Determine if a conditional question should be asked given current answers.
+
+    Returns (should_ask, skip_reason).
+    """
+    # conditional_on: {id, equals} or {id, in: [...]}
+    cond = question.get("conditional_on")
+    if cond:
+        cond_id = cond.get("id", "")
+        cond_val = answers.get(cond_id)
+        if "equals" in cond:
+            if cond_val != cond.get("equals"):
+                return False, f"conditional_on {cond_id}!={cond['equals']}"
+        if "in" in cond:
+            if cond_val not in cond.get("in", []):
+                return False, f"conditional_on {cond_id} not in {cond['in']}"
+
+    # ask_if: {question_id, equals}, {question_id, contains}, etc.
+    ask_if = question.get("ask_if")
+    if ask_if:
+        qid = ask_if.get("question_id", "")
+        qval = answers.get(qid)
+        if "equals" in ask_if:
+            if qval != ask_if["equals"]:
+                return False, f"ask_if {qid}!={ask_if['equals']}"
+        if "contains" in ask_if:
+            if not isinstance(qval, str) or ask_if["contains"] not in qval:
+                return False, f"ask_if {qid} does not contain {ask_if['contains']}"
+        if "contains_any" in ask_if:
+            if not isinstance(qval, str) or not any(
+                    t in qval for t in ask_if["contains_any"]):
+                return False, f"ask_if {qid} contains none of {ask_if['contains_any']}"
+        if "truthy" in ask_if:
+            if not qval:
+                return False, f"ask_if {qid} is not truthy"
+
+    return True, None
+
+
+# ---------------------------------------------------------------------------
+# intake JSON read/write
+# ---------------------------------------------------------------------------
+def read_intake_json(run_dir: Path) -> Dict[str, Any]:
+    """Read working/copy/intake.json. Returns empty dict if absent."""
+    path = run_dir / "working" / "copy" / "intake.json"
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+            return obj if isinstance(obj, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def write_intake_json(run_dir: Path, intake: Dict[str, Any]) -> None:
+    """Write working/copy/intake.json atomically."""
+    dest = run_dir / "working" / "copy"
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / "intake.json"
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(intake, fh, indent=2, default=str)
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# requester identity -- fix/deck-type-routing-bypass follow-up.
+#
+# b01d2a09 diagnosed the gap in these exact words: "the dispatcher knows it
+# but never writes it down." Two dispatchers (mc-route.sh's REQUESTER_CHAT_ID
+# / REQUESTER_CHANNEL and whatever exports PRESENTATION_REQUESTER_CHAT_ID /
+# ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID before invoking
+# this driver) already know the requester at dispatch time, and cc_board.py's
+# resolve_requester() already reads that SAME set of env keys -- but only for
+# CC-board task registration, a different purpose than the engine's own hard
+# gate (presentation_job.py --new dies with no requester.chat_id; see
+# presentation_job/__main__.py cmd_new). Neither dispatcher ever persisted the
+# value into working/copy/intake.json, the ONE file resolve_intake.py (and
+# therefore the engine) actually reads. This driver is where intake.json is
+# actually produced, so --complete is the correct place to make the stamp
+# durable: whichever env var the calling dispatcher exported is read once,
+# here, and merged into intake -- never overwriting a value already on disk
+# (an upstream writer or a re-run always wins over the environment).
+#
+# _REQUESTER_ENV_KEYS mirrors cc_board.py's own constant of the same name
+# byte-for-byte -- one vocabulary, read in two places for two purposes.
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
+
+
+def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, str]:
+    """Return {requester_chat_id, requester_channel} updates to merge into
+    working/copy/intake.json, sourced from the environment the dispatcher
+    already sets (see _REQUESTER_ENV_KEYS above). Returns {} -- never a
+    fabricated value -- when intake already has a requester_chat_id (do not
+    clobber) or when none of the env keys are set (a genuinely
+    operator-initiated / requester-less run). The engine's own hard gate on
+    an empty requester.chat_id is left to fire exactly as designed in that
+    second case -- this function only closes the "dispatcher knew it but
+    nobody wrote it down" gap, never the case where nobody knew it at all.
+    """
+    if str(existing_intake.get("requester_chat_id") or "").strip():
+        return {}
+    chat_id = ""
+    for key in _REQUESTER_ENV_KEYS:
+        val = str(os.environ.get(key) or "").strip()
+        if val:
+            chat_id = val
+            break
+    if not chat_id:
+        return {}
+    channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+    return {"requester_chat_id": chat_id, "requester_channel": channel}
+
+
+def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
+    """Read working/interview/intake_ledger.json. Returns empty dict if absent."""
+    path = run_dir / "working" / "interview" / "intake_ledger.json"
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+            return obj if isinstance(obj, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def write_intake_ledger(run_dir: Path, ledger: Dict[str, Any]) -> None:
+    """Write working/interview/intake_ledger.json atomically."""
+    dest = run_dir / "working" / "interview"
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / "intake_ledger.json"
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(ledger, fh, indent=2, default=str)
+    os.replace(tmp, path)
+
+
+def read_intake_transcript(run_dir: Path) -> List[Dict[str, Any]]:
+    """Read working/interview/intake_transcript.json. Returns empty list if absent."""
+    path = run_dir / "working" / "interview" / "intake_transcript.json"
+    if not path.is_file():
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+            return obj if isinstance(obj, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def write_intake_transcript(run_dir: Path,
+                            transcript: List[Dict[str, Any]]) -> None:
+    """Write working/interview/intake_transcript.json atomically."""
+    dest = run_dir / "working" / "interview"
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / "intake_transcript.json"
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(transcript, fh, indent=2, default=str)
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# STANDARD mode -- turn-gate: --next / --answer / --complete
+# ---------------------------------------------------------------------------
+def _first_unanswered(questions: List[Dict[str, Any]],
+                      answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Find the first question whose storeOn key is not in answers,
+    respecting conditional skips."""
+    for q in questions:
+        qid = q["id"]
+        store_on = q.get("storeOn", qid)
+        if store_on in answers or qid in answers:
+            continue
+        should, _reason = should_ask(q, answers)
+        if not should:
+            continue
+        return q
+    return None
+
+
+def cmd_next(args) -> int:
+    """Return exactly ONE question -- the next unanswered one."""
+    run_dir = args.run_dir.expanduser().resolve()
+    schema = load_question_schema()
+    questions = get_questions(schema)
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    # BUGFIX (fresh-process --next after presentation_type is answered): entries
+    # are nested ledger records ({"value": ..., "validated": ..., ...}), never
+    # bare strings. Flatten through the SAME tolerant accessor cmd_answer already
+    # uses to build its post-answer `answers` dict (below, and in cmd_complete's
+    # val extraction) -- reusing it here rather than adding a fourth way to read
+    # the same field. Feeding the raw nested entries dict straight into
+    # derive_legacy_fields() (or into should_ask()'s conditional_on/ask_if
+    # comparisons via _first_unanswered) crashed cmd_next with a ValueError on
+    # every bare --next call once presentation_type had been recorded.
+    answers = {k: (v.get("value") if isinstance(v, dict) else v)
+               for k, v in entries.items()
+               if not k.startswith("_")}
+
+    # If presentation_type is answered, auto-derive legacy fields
+    ptype = answers.get("presentation_type")
+    if ptype:
+        try:
+            sig_src = answers.get("signature_source")
+            derived = derive_legacy_fields(ptype, signature_source=sig_src)
+            intake = read_intake_json(run_dir)
+            intake.update(derived)
+            intake["presentation_type"] = ptype
+            write_intake_json(run_dir, intake)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 1
+
+    next_q = _first_unanswered(questions, answers)
+    if next_q is None:
+        print(json.dumps({"status": "complete",
+                          "message": "All questions answered. Run --complete to "
+                                     "finalize."}))
+        return 0
+
+    return _emit_question(next_q, answers)
+
+
+def cmd_answer(args) -> int:
+    """Record one answer and return the next question."""
+    run_dir = args.run_dir.expanduser().resolve()
+    qid = args.question_id
+    text = args.text
+    schema = load_question_schema()
+    questions = get_questions(schema)
+
+    # Find the question definition
+    qdef = None
+    for q in questions:
+        if q["id"] == qid:
+            qdef = q
+            break
+    if qdef is None:
+        print(json.dumps({"error": f"Unknown question id: {qid}"}))
+        return 1
+
+    # Validate enum values
+    allowed = qdef.get("allowed_values")
+    if allowed and text.strip() not in allowed:
+        print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
+                                   f"Allowed: {allowed}"}))
+        return 1
+
+    # Record the answer
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    store_on = qdef.get("storeOn", qid)
+    entries[store_on] = {"value": text.strip(), "validated": True,
+                         "source": "deck-intake-driver",
+                         "answered_at": datetime.now(timezone.utc).isoformat()}
+    # Also store by question id for lookup
+    entries[qid] = entries[store_on]
+
+    # Handle presentation_type -- derive legacy fields immediately
+    if qid == "presentation_type":
+        ptype = text.strip()
+        if ptype not in LEGAL_PRESENTATION_TYPES:
+            print(json.dumps({"error": f"Invalid presentation_type {ptype!r}"}))
+            return 1
+        try:
+            derived = derive_legacy_fields(ptype)
+            intake = read_intake_json(run_dir)
+            intake.update(derived)
+            intake["presentation_type"] = ptype
+            write_intake_json(run_dir, intake)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 1
+
+    # Handle signature_source -- override creation_mode if needed
+    if qid == "signature_source":
+        ptype = entries.get("presentation_type", {}).get("value", "")
+        sig_src = text.strip()
+        if ptype == "signature":
+            try:
+                derived = derive_legacy_fields(ptype, signature_source=sig_src)
+                intake = read_intake_json(run_dir)
+                intake.update(derived)
+                intake["signature_source"] = sig_src
+                write_intake_json(run_dir, intake)
+            except ValueError as exc:
+                print(json.dumps({"error": str(exc)}))
+                return 1
+
+    # Save ledger
+    ledger["entries"] = entries
+    ledger["status"] = "in_progress"
+    ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
+    write_intake_ledger(run_dir, ledger)
+
+    # Append to transcript
+    transcript = read_intake_transcript(run_dir)
+    transcript.append({"turn": len(transcript) + 1,
+                       "question_id": qid,
+                       "answer": text.strip(),
+                       "ts": datetime.now(timezone.utc).isoformat()})
+    write_intake_transcript(run_dir, transcript)
+
+    # Return next question (or complete signal)
+    answers = {k: (v.get("value") if isinstance(v, dict) else v)
+               for k, v in entries.items()
+               if not k.startswith("_")}
+    next_q = _first_unanswered(questions, answers)
+    if next_q is None:
+        print(json.dumps({"status": "complete",
+                          "message": "All questions answered. Run --complete "
+                                     "to finalize."}))
+        return 0
+
+    return _emit_question(next_q, answers)
+
+
+def _emit_question(qdef: Dict[str, Any],
+                   answers: Dict[str, Any]) -> int:
+    """Print one question as JSON to stdout."""
+    prompt = qdef.get("prompt", "")
+    help_text = qdef.get("help", "")
+    kind = qdef.get("kind", "text")
+    allowed = qdef.get("allowed_values")
+    value_labels = qdef.get("value_labels")
+    default = qdef.get("default")
+    required = qdef.get("required", False)
+    block_gate = qdef.get("block_gate", False)
+
+    output = {
+        "question_id": qdef["id"],
+        "order": qdef.get("order"),
+        "prompt": prompt,
+        "kind": kind,
+        "required": required,
+        "block_gate": block_gate,
+    }
+    if help_text:
+        output["help"] = help_text
+    if allowed:
+        output["allowed_values"] = allowed
+        if value_labels:
+            output["value_labels"] = value_labels
+    if default is not None:
+        output["default"] = default
+
+    print(json.dumps(output, indent=2))
+    return 0
+
+
+def cmd_complete(args) -> int:
+    """Finalize the intake: write merged intake.json, run SP claim gate,
+    mark ledger complete."""
+    run_dir = args.run_dir.expanduser().resolve()
+    ledger = read_intake_ledger(run_dir)
+
+    if not ledger.get("entries"):
+        print(json.dumps({"error": "No intake answers recorded. Run "
+                                   "--next / --answer first."}))
+        return 1
+
+    # Merge all answers into intake.json
+    entries = ledger.get("entries", {})
+    intake = read_intake_json(run_dir)
+    for store_key, entry in entries.items():
+        if isinstance(entry, dict):
+            val = entry.get("value")
+            if val is not None:
+                intake[store_key] = val
+
+    # Ensure deck_type is set (should already be from derive_legacy_fields)
+    if not intake.get("deck_type"):
+        ptype = intake.get("presentation_type") or \
+                (entries.get("presentation_type", {}).get("value")
+                 if isinstance(entries.get("presentation_type"), dict) else
+                 entries.get("presentation_type"))
+        if ptype:
+            derived = derive_legacy_fields(ptype)
+            intake.update(derived)
+        else:
+            print(json.dumps({"error": "presentation_type was never answered. "
+                                       "Cannot derive deck_type."}))
+            return 1
+
+    # SP claim gate -- run unconditionally for every deck
+    sp_result = _run_sp_claim_gate(run_dir, intake)
+    if sp_result:
+        print(json.dumps({"error": "SP claim gate failed",
+                          "failures": sp_result}))
+        return 2
+
+    # fix/deck-type-routing-bypass follow-up: stamp the requester identity
+    # (env -> intake.json) so the engine's resolve_intake.py has something to
+    # read besides an empty ledger. See _resolve_requester_from_env() above.
+    intake.update(_resolve_requester_from_env(intake))
+
+    # Mark interview_confirmed
+    intake["interview_confirmed"] = True
+    intake["interview_completed_at"] = \
+        datetime.now(timezone.utc).isoformat()
+    write_intake_json(run_dir, intake)
+
+    # Mark ledger complete
+    ledger["status"] = "complete"
+    ledger["complete"] = True
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    write_intake_ledger(run_dir, ledger)
+
+    result = {
+        "status": "complete",
+        "deck_type": intake.get("deck_type"),
+        "creation_mode": intake.get("creation_mode"),
+        "presentation_type": intake.get("presentation_type"),
+        "intake_path": str(run_dir / "working" / "copy" / "intake.json"),
+    }
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _run_sp_claim_gate(run_dir: Path,
+                       intake: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Run the SP claim gate unconditionally. Returns list of (code, reason)
+    failures, or empty list on pass.
+
+    If sp_intake.json is present but deck_type != signature_presentation,
+    fail-closed AF-SP-TYPE-UNDECLARED. A non-signature deck with no SP signal
+    passes untouched."""
+    sp_intake = run_dir / "working" / "copy" / "sp_intake.json"
+    declared = intake.get("deck_type") == "signature_presentation"
+
+    if sp_intake.is_file() and not declared:
+        return [("AF-SP-TYPE-UNDECLARED",
+                 f"working/copy/sp_intake.json is present but intake.json "
+                 f"does not declare deck_type == signature_presentation "
+                 f"(declared={intake.get('deck_type')!r}). A signature "
+                 f"presentation must declare its type -- omitting the magic "
+                 f"word makes every SP gate no-op.")]
+
+    return []
+
+
+# ---------------------------------------------------------------------------
+# SIGNATURE mode -- turn-gate with 8 Sacred Questions + frame selection
+# ---------------------------------------------------------------------------
+SP_EIGHT_QUESTIONS_SPEC: Optional[Dict[str, Any]] = None
+
+
+def _load_sp_spec() -> Dict[str, Any]:
+    """Lazily load the SACRED 8 Questions spec."""
+    global SP_EIGHT_QUESTIONS_SPEC
+    if SP_EIGHT_QUESTIONS_SPEC is not None:
+        return SP_EIGHT_QUESTIONS_SPEC
+    # Try known paths
+    cands = [
+        DEPT_ROOT / "51-signature-presentation" / "intake" / "sp-8-questions.json",
+        SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "intake" / "sp-8-questions.json",
+        Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "intake" / "sp-8-questions.json",
+    ]
+    for cand in cands:
+        if cand.is_file():
+            with open(cand, "r", encoding="utf-8") as fh:
+                SP_EIGHT_QUESTIONS_SPEC = json.load(fh)
+            return SP_EIGHT_QUESTIONS_SPEC
+    # Fallback: embedded minimal spec
+    SP_EIGHT_QUESTIONS_SPEC = {
+        "questions": [
+            {"id": "sp_q1", "order": 0, "prompt": "What is the OFFER this signature talk sells?",
+             "kind": "text", "required": True},
+            {"id": "sp_q2", "order": 1, "prompt": "Who is the ONE ideal client?",
+             "kind": "text", "required": True},
+            {"id": "sp_q3", "order": 2, "prompt": "What is their #1 PROBLEM right now?",
+             "kind": "text", "required": True},
+        ],
+        "frame_question": {
+            "id": "signature_frame", "prompt": "Choose a Signature frame: The Rulebook / The Vault / The Quest / The Original.",
+            "kind": "enum", "allowed_values": ["rulebook", "vault", "quest", "original"],
+        },
+    }
+    return SP_EIGHT_QUESTIONS_SPEC
+
+
+def cmd_signature(args) -> int:
+    """SIGNATURE mode entry. With --next: return the choice-first offer
+    (QUICK vs IN-DEPTH). With --answer: record one answer. With --record:
+    assemble pre-gathered answers into one atomic record and run prove_sp_intake.
+
+    Legacy bare --signature (no subcommand): returns a pointer to use the
+    turn-gate. The old escape hatch that dumped the full payload is gone."""
+    run_dir = args.run_dir.expanduser().resolve()
+
+    if getattr(args, 'sig_next', False):
+        return _sig_next(run_dir)
+    if getattr(args, 'sig_answer', None):
+        # sig_answer is a list of [question_id, text] from nargs=2
+        sig_answer_val = args.sig_answer
+        if isinstance(sig_answer_val, list) and len(sig_answer_val) == 2:
+            return _sig_answer(run_dir, sig_answer_val[0], sig_answer_val[1])
+        else:
+            print(json.dumps({"error": "--sig-answer requires ID and TEXT"}))
+            return 2
+    if getattr(args, 'sig_record_file', None):
+        return _sig_record(run_dir, args.sig_record_file)
+    if getattr(args, 'sig_plan', False):
+        return _sig_plan()
+
+    # Bare --signature: pointer to turn-gate
+    print(json.dumps({
+        "status": "use_turn_gate",
+        "next_command": "deck-intake-driver.py --signature --next --run-dir <RUN_DIR>",
+        "message": "The signature intake is a turn-gate interview. Use --next "
+                   "to get the first question (choice-first: QUICK vs IN-DEPTH), "
+                   "then --answer to record each response. The old batch-dump "
+                   "escape hatch is removed -- a batch is AF-INTAKE-BATCH.",
+    }))
+    return 0
+
+
+def _sig_next(run_dir: Path) -> int:
+    """Emit the next signature question."""
+    ledger = read_intake_ledger(run_dir)
+    sp_entries = ledger.get("sp_entries", {})
+
+    # Step 1: choice-first -- QUICK vs IN-DEPTH
+    if "sp_mode" not in sp_entries:
+        print(json.dumps({
+            "question_id": "sp_mode",
+            "prompt": "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
+                      "4-phase signature talk (100+ slides, 8 Questions, frame "
+                      "selection).",
+            "kind": "enum",
+            "allowed_values": ["QUICK", "IN-DEPTH"],
+            "value_labels": {"QUICK": "QUICK (1-2hr build)",
+                             "IN-DEPTH": "IN-DEPTH (full signature talk)"},
+            "required": True,
+        }))
+        return 0
+
+    mode = sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH") \
+        if isinstance(sp_entries.get("sp_mode"), dict) else "IN-DEPTH"
+
+    # QUICK mode: skip the 8 Questions
+    if mode == "QUICK":
+        if "signature_frame" not in sp_entries:
+            return _emit_frame_question()
+        return _sig_finalize(run_dir, ledger, sp_entries)
+
+    # IN-DEPTH: ask the 8 Questions one at a time
+    spec = _load_sp_spec()
+    sp_questions = spec.get("questions", [])
+
+    for sq in sp_questions:
+        sqid = sq["id"]
+        if sqid not in sp_entries:
+            print(json.dumps({
+                "question_id": sqid,
+                "prompt": sq.get("prompt", ""),
+                "kind": sq.get("kind", "text"),
+                "required": sq.get("required", True),
+                "help": sq.get("help", ""),
+            }))
+            return 0
+
+    # After all 8 Questions: frame selection
+    if "signature_frame" not in sp_entries:
+        return _emit_frame_question()
+
+    return _sig_finalize(run_dir, ledger, sp_entries)
+
+
+def _emit_frame_question() -> int:
+    """Emit the frame-selection question."""
+    print(json.dumps({
+        "question_id": "signature_frame",
+        "prompt": "Choose a Signature frame: The Rulebook / The Vault / "
+                  "The Quest / The Original.",
+        "kind": "enum",
+        "allowed_values": ["rulebook", "vault", "quest", "original"],
+        "value_labels": {
+            "rulebook": "The Rulebook -- your methodology codified",
+            "vault": "The Vault -- your unique IP/proprietary system",
+            "quest": "The Quest -- the client's transformation journey",
+            "original": "The Original -- a new signature frame you define",
+        },
+        "required": True,
+        "help": "This frame shapes every slide in the deck. The Signature "
+                "Presentation Architect will enforce it at every QC gate.",
+    }))
+    return 0
+
+
+def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
+    """Record one signature answer and return the next question."""
+    ledger = read_intake_ledger(run_dir)
+    sp_entries = ledger.get("sp_entries", {})
+
+    # Validate frame selection
+    if qid == "signature_frame":
+        allowed = ["rulebook", "vault", "quest", "original"]
+        if text.strip() not in allowed:
+            print(json.dumps({"error": f"Invalid frame {text!r}. "
+                                       f"Must be one of: {allowed}"}))
+            return 1
+
+    sp_entries[qid] = {"value": text.strip(), "validated": True,
+                       "source": "deck-intake-driver --signature",
+                       "answered_at": datetime.now(timezone.utc).isoformat()}
+    ledger["sp_entries"] = sp_entries
+    ledger["status"] = "in_progress"
+    ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
+    write_intake_ledger(run_dir, ledger)
+
+    # Append to transcript
+    transcript = read_intake_transcript(run_dir)
+    transcript.append({"turn": len(transcript) + 1,
+                       "signature_question": qid,
+                       "answer": text.strip(),
+                       "ts": datetime.now(timezone.utc).isoformat()})
+    write_intake_transcript(run_dir, transcript)
+
+    return _sig_next(run_dir)
+
+
+def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
+                  sp_entries: Dict[str, Any]) -> int:
+    """Assemble the ONE atomic record, write sp_intake.json, run prove_sp_intake."""
+    # Build the atomic record
+    record = {
+        "committed_at": datetime.now(timezone.utc).isoformat(),
+        "record_committed_atomically": True,
+        "one_block": True,
+        "mode": sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH")
+            if isinstance(sp_entries.get("sp_mode"), dict)
+            else sp_entries.get("sp_mode", "IN-DEPTH"),
+        "signature_frame": sp_entries.get("signature_frame", {}).get("value")
+            if isinstance(sp_entries.get("signature_frame"), dict)
+            else sp_entries.get("signature_frame"),
+    }
+
+    # Add the 8 Questions (if IN-DEPTH)
+    spec = _load_sp_spec()
+    for sq in spec.get("questions", []):
+        sqid = sq["id"]
+        entry = sp_entries.get(sqid, {})
+        val = entry.get("value") if isinstance(entry, dict) else entry
+        record[sqid] = val or ""
+
+    # Write sp_intake.json atomically
+    sp_dest = run_dir / "working" / "copy"
+    sp_dest.mkdir(parents=True, exist_ok=True)
+    sp_path = sp_dest / "sp_intake.json"
+    sp_tmp = sp_path.with_suffix(".json.tmp")
+    with open(sp_tmp, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=2, default=str)
+    os.replace(sp_tmp, sp_path)
+
+    # Ensure deck_type is signature_presentation
+    intake = read_intake_json(run_dir)
+    intake["deck_type"] = "signature_presentation"
+    intake["presentation_type"] = "signature"
+    intake["signature_frame"] = record.get("signature_frame")
+    write_intake_json(run_dir, intake)
+
+    # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
+    # build_deck.py's preflight is the real enforcement). The driver's early
+    # prove is advisory only; it must never block intake completion.
+    prove_warnings = _run_prove_sp_intake(run_dir)
+    if prove_warnings:
+        for code, reason in prove_warnings:
+            print(f"  WARN  [{code}] {reason}", file=sys.stderr)
+
+    # Mark ledger complete
+    ledger["status"] = "complete"
+    ledger["complete"] = True
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    write_intake_ledger(run_dir, ledger)
+
+    print(json.dumps({
+        "status": "complete",
+        "deck_type": "signature_presentation",
+        "signature_frame": record.get("signature_frame"),
+        "mode": record.get("mode"),
+        "sp_intake_path": str(sp_path),
+        "message": "Signature intake complete. Atomic record written. "
+                   "SP intake prover passed.",
+    }))
+    return 0
+
+
+def _sig_record(run_dir: Path, record_file: str) -> int:
+    """Assemble a pre-gathered answers file into one atomic record and verify.
+    For tooling that already ran the turn-gate through another surface
+    (e.g., the intake mini-app bridge)."""
+    try:
+        with open(record_file, "r", encoding="utf-8") as fh:
+            answers = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(json.dumps({"error": f"Cannot read record file: {exc}"}))
+        return 1
+
+    # Validate it has at minimum a signature_frame
+    if not answers.get("signature_frame"):
+        print(json.dumps({"error": "Record is missing signature_frame. "
+                                   "A signature intake MUST select a frame."}))
+        return 1
+
+    # Write the atomic record
+    record = dict(answers)
+    record["committed_at"] = datetime.now(timezone.utc).isoformat()
+    record["record_committed_atomically"] = True
+    record["one_block"] = True
+
+    sp_dest = run_dir / "working" / "copy"
+    sp_dest.mkdir(parents=True, exist_ok=True)
+    sp_path = sp_dest / "sp_intake.json"
+    sp_tmp = sp_path.with_suffix(".json.tmp")
+    with open(sp_tmp, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=2, default=str)
+    os.replace(sp_tmp, sp_path)
+
+    # Set deck_type
+    intake = read_intake_json(run_dir)
+    intake["deck_type"] = "signature_presentation"
+    intake["presentation_type"] = "signature"
+    intake["signature_frame"] = record.get("signature_frame")
+    write_intake_json(run_dir, intake)
+
+    # Prove it (fail-soft -- build_deck.py preflight is the real gate)
+    prove_warnings = _run_prove_sp_intake(run_dir)
+    if prove_warnings:
+        for code, reason in prove_warnings:
+            print(f"  WARN  [{code}] {reason}", file=sys.stderr)
+
+    # Mark complete
+    ledger = read_intake_ledger(run_dir)
+    ledger["status"] = "complete"
+    ledger["complete"] = True
+    ledger["sp_entries"] = record
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    write_intake_ledger(run_dir, ledger)
+
+    print(json.dumps({
+        "status": "complete",
+        "deck_type": "signature_presentation",
+        "signature_frame": record.get("signature_frame"),
+        "sp_intake_path": str(sp_path),
+    }))
+    return 0
+
+
+def _sig_plan() -> int:
+    """Print the full signature question set for offline inspection.
+    Read-only, never a substitute for driving the live interview."""
+    spec = _load_sp_spec()
+    output = {
+        "mode": "signature_plan",
+        "choice_first": {
+            "question_id": "sp_mode",
+            "prompt": "QUICK or IN-DEPTH?",
+            "options": ["QUICK", "IN-DEPTH"],
+        },
+        "questions": spec.get("questions", []),
+        "frame_question": spec.get("frame_question", {}),
+        "warning": "This is a READ-ONLY plan for inspection. The live "
+                   "interview MUST use --signature --next / --answer. "
+                   "A batch dump of all questions is AF-INTAKE-BATCH.",
+    }
+    print(json.dumps(output, indent=2))
+    return 0
+
+
+def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
+    """Run prove_sp_intake.py if available. Returns list of (code, reason)
+    failures, or empty list on pass. Fail-closed: a missing prover is a
+    non-blocking warn (the claim gate in build_deck.py will catch it)."""
+    sp_intake = run_dir / "working" / "copy" / "sp_intake.json"
+    if not sp_intake.is_file():
+        return [("AF-SP-8Q-MISSING",
+                 "working/copy/sp_intake.json was not written")]
+
+    # Try importing prove_sp_intake
+    from importlib import util as importlib_util
+    cands = [
+        SCRIPTS_DIR / "prove_sp_intake.py",
+        SCRIPTS_DIR.parent / "51-signature-presentation" / "scripts" / "prove_sp_intake.py",
+        SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "scripts" / "prove_sp_intake.py",
+        Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "scripts" / "prove_sp_intake.py",
+    ]
+    for cand in cands:
+        if cand.is_file():
+            try:
+                spec = importlib_util.spec_from_file_location(
+                    "prove_sp_intake", cand)
+                mod = importlib_util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                fails = mod.evaluate(sp_intake)
+                return fails if fails else []
+            except Exception as exc:
+                return [("AF-SP-8Q-MISSING",
+                         f"prove_sp_intake raised {exc} -- fail-closed")]
+    # Prover not found -- warn but don't block (build_deck.py will catch)
+    print(f"  WARN  prove_sp_intake.py not found -- SP intake prover not run. "
+          f"The claim gate in build_deck.py will verify at preflight.",
+          file=sys.stderr)
+    return []
+
+
+# ---------------------------------------------------------------------------
+# question-set export
+# ---------------------------------------------------------------------------
+def cmd_question_set(args) -> int:
+    """Export the full question bank (all modes). Read-only."""
+    schema = load_question_schema()
+    questions = get_questions(schema)
+
+    output = {
+        "schema_version": schema.get("version", "unknown"),
+        "description": schema.get("description", ""),
+        "legacy_field_mapping": schema.get("legacy_field_mapping", {}),
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+    print(json.dumps(output, indent=2))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="deck-intake-driver.py",
+        description="THE ONE sanctioned intake bridge for Presentations. "
+                    "Writes deck_type via derive_legacy_fields() -- never "
+                    "hardcoded, never hand-typed.")
+    p.add_argument("--run-dir", type=Path, required=True,
+                   help="the deck's run directory")
+
+    # Standard mode
+    std = p.add_argument_group("standard mode (one question per turn)")
+    std.add_argument("--next", action="store_true",
+                     help="return the next unanswered question")
+    std.add_argument("--answer", metavar=("ID", "TEXT"), nargs=2,
+                     help="record one answer: --answer <question_id> <text>")
+    std.add_argument("--complete", action="store_true",
+                     help="finalize intake: merge fields, run SP claim gate, "
+                          "mark ledger complete")
+
+    # Signature mode
+    sig = p.add_argument_group("signature mode (8 Sacred Questions + frame)")
+    sig.add_argument("--signature", action="store_true",
+                     help="enter SIGNATURE intake mode")
+    sig.add_argument("--sig-next", dest="sig_next", action="store_true",
+                     help="signature: return next question (choice-first)")
+    sig.add_argument("--sig-answer", dest="sig_answer", nargs=2,
+                     metavar=("ID", "TEXT"),
+                     help="signature: record one answer")
+    sig.add_argument("--sig-record", dest="sig_record_file", metavar="FILE",
+                     help="signature: assemble pre-gathered answers from FILE "
+                          "into atomic record and verify")
+    sig.add_argument("--sig-plan", dest="sig_plan", action="store_true",
+                     help="signature: print full question set for inspection "
+                          "(read-only -- never a substitute for the live "
+                          "interview)")
+
+    # Export
+    p.add_argument("--question-set", action="store_true",
+                   help="export the full question bank (all modes, read-only)")
+
+    return p
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if not args.run_dir:
+        print("FATAL: --run-dir is required", file=sys.stderr)
+        return 2
+
+    run_dir = args.run_dir.expanduser().resolve()
+
+    # --question-set
+    if args.question_set:
+        # Import here to avoid circular issues with the parser's run_dir requirement
+        return cmd_question_set(args)
+
+    # Signature mode
+    if args.signature:
+        return cmd_signature(args)
+
+    # Standard mode: --next
+    if args.next:
+        return cmd_next(args)
+
+    # Standard mode: --answer ID TEXT
+    if args.answer:
+        # argparse gives us nargs=2 directly as a list; we need to extract
+        # question_id and text from the args
+        setattr(args, 'question_id', args.answer[0])
+        setattr(args, 'text', args.answer[1])
+        return cmd_answer(args)
+
+    # Standard mode: --complete
+    if args.complete:
+        return cmd_complete(args)
+
+    # No mode selected
+    print(json.dumps({
+        "error": "No mode selected. Use one of: --next, --answer, --complete, "
+                 "--signature --next, --signature --answer, --question-set.",
+        "usage": "deck-intake-driver.py --run-dir <DIR> [--next | --answer "
+                 "ID TEXT | --complete | --signature [--next | --answer ID TEXT "
+                 "| --record FILE] | --question-set]",
+    }))
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

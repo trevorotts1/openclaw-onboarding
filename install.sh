@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v22.0.4"
+ONBOARDING_VERSION="v22.0.40"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -824,6 +824,19 @@ for n in candidates:
 #
 # Apostrophe-free body required by macOS bash 3.2 quoted-heredoc-in-$() parser
 # (see v10.13.6 changelog). Uses "do not" / "is not" / "I will" verbatim.
+#
+# R1 (2026-08-11): a single apostrophe reintroduced in step 6b's text ("the
+# box's own role-library") violated this rule and broke `bash -n` under stock
+# /bin/bash 3.2.57 -- not AT this line, but as a cascading misparse that only
+# surfaced as an "unexpected token" error hundreds of lines further down
+# (bisected empirically: fixing this one line alone moved the reported error
+# from line ~985 to ~5242; a second, independent stray apostrophe at the
+# "so we don't leave {} noise" comment in the browser-heal python heredoc
+# further down this file was the other half -- fixing BOTH together is what
+# makes the whole file parse clean under bash 3.2). Comment-text-only fix,
+# zero behaviour change: "the box's own role-library" -> "the local
+# role-library". If you must express a possessive in this block, rephrase
+# around it -- do not add an apostrophe back.
 build_kickoff_paste_block() {
     # Legacy shim — kept for back-compat. Returns ONLY the paste block (between
     # scissor lines). New code should call build_kickoff_telegram_message which
@@ -858,7 +871,7 @@ Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10,
 
 PHASE 3 — Verify:
 6. Run ~/.openclaw/scripts/qc-system-integrity.sh — must exit 0.
-6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh "$(hostname)" --apply — its Step 2b floor-fill (scripts/floor-fill-driver.py, fed by scripts/make-gap-from-staleness.py) idempotently MATERIALIZES any missing canonical floor roles/SOPs (e.g. the v16 per-dept devils-advocate / healer and the video/graphics/presentations expansions) from the box's own role-library. This is a skip-existing, no-clobber completeness backstop: on a fresh fully-built floor it is a no-op, but it guarantees BOTH the install path and the update path end with a complete floor. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
+6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh "$(hostname)" --apply — its Step 2b floor-fill (scripts/floor-fill-driver.py, fed by scripts/make-gap-from-staleness.py) idempotently MATERIALIZES any missing canonical floor roles/SOPs (e.g. the v16 per-dept devils-advocate / healer and the video/graphics/presentations expansions) from the local role-library. This is a skip-existing, no-clobber completeness backstop: on a fresh fully-built floor it is a no-op, but it guarantees BOTH the install path and the update path end with a complete floor. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
 7. Message __OWNER_NAME__: All skills installed. Ready for the 30-question business interview? About 35 min of your focused time — your answers shape your entire AI team. Reply yes when ready.
 Wait for confirmation before proceeding.
 
@@ -1280,7 +1293,7 @@ PYEOF
     # secret — it is a public, outbound-reachable webhook — but it IS seeded into
     # the agent's env so the escalation command can reference $RESCUE_RANGERS_WEBHOOK_URL
     # rather than a hardcoded URL. Overridable via the operator env var of the same name.
-    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rescue-rangers"
+    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rr-v2-intake"
     local RR_WEBHOOK="${RESCUE_RANGERS_WEBHOOK_URL:-$RR_WEBHOOK_DEFAULT}"
     _shared_write_env "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
@@ -3114,7 +3127,7 @@ sub['maxChildrenPerAgent'] = 20
 sub['maxSpawnDepth']       = 4
 # maxConcurrent: CAPACITY-AWARE (WS-8 dual-key fix, 2026-08-01).
 #
-# WAS: `max(100, prev) if prev >= 50 else 100` — a hard-overwrite to 100 on
+# WAS: max(100, prev) if prev >= 50 else 100 — a hard-overwrite to 100 on
 # EVERY box. This is the "100 everywhere" bug WS-8 exists to kill: a base 8GB
 # Mac mini and a 64GB VPS both got 100, and worse, the old rule could only ever
 # RAISE the number, so every install/re-install CLOBBERED a value that
@@ -3830,7 +3843,7 @@ fi
 # to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
 # can resolve them on EVERY box, and so the registered crons survive a temp-clone
 # cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
-for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh; do
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh guard-toolsearch-directory.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
@@ -3913,7 +3926,7 @@ browser = d.get("browser")
 if isinstance(browser, dict) and "agentBrowser" in browser:
     del browser["agentBrowser"]
     changed.append("browser.agentBrowser")
-    # Drop an emptied browser object too, so we don't leave {} noise.
+    # Drop an emptied browser object too, so we do not leave {} noise.
     if not browser:
         d.pop("browser", None)
 

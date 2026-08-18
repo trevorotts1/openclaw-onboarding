@@ -62,4 +62,18 @@ if [ -z "$GHL_API_KEY" ]; then
     exit 1
 fi
 
+# Belt-and-braces: guarantee cli_anything importable even with no venv at all
+# (the "else" branch above falls back to bare `python3`). The package should
+# normally be `pip install -e`'d into the venv, but if that never ran /
+# partially failed, this still lets the CLI run straight from source. Prepend
+# (never overwrite) so a caller's own PYTHONPATH still wins on conflicts.
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
+# NOTE: the urllib3 NotOpenSSLWarning noise (Python 3.9 + LibreSSL, i.e. stock
+# macOS python3) is suppressed inside the package itself
+# (cli_anything/__init__.py) rather than here — a PYTHONWARNINGS env var
+# naming a third-party category is parsed at interpreter bootstrap, before
+# site-packages is importable, so it can't resolve 'urllib3.exceptions' and
+# the warning fires anyway (proven live: "Invalid -W option ignored").
+
 exec "$VENV_PYTHON" -m cli_anything.gohighlevel "$@"

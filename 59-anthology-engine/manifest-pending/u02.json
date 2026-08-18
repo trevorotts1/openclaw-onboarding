@@ -1,0 +1,178 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-TEMPLATE-PIPELINE-MISSING",
+      "exit": 2,
+      "meaning": "the standard pipeline is absent or renamed on the template location"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-STAGE-DRIFT",
+      "exit": 5,
+      "meaning": "a present pipeline is missing a contract stage or carries an extra/renamed/out-of-order stage"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-FIELD-MISSING",
+      "exit": 2,
+      "meaning": "a contract custom-field key is absent on the live location"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-KEY-MISMATCH",
+      "exit": 5,
+      "meaning": "the field-key set differs in any other way (extra/mutated), a dataType/options drift, or a real-looking custom value"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-CUSTOM-VALUE-REAL",
+      "exit": 5,
+      "meaning": "a custom value holds a real-looking value (never-a-real-token)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-INTAKE-FIRE",
+      "exit": 5,
+      "meaning": "the intake-fire side drifted: the webhook custom value absent/misplaced, or a live workflow inlines an intake URL instead of the {{ custom_values.anthology_webhook_url }} merge"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation)"
+    }
+  ],
+  "authored_by": "U02",
+  "check_modules": [
+    "pipeline_check",
+    "stages_check",
+    "fields_check",
+    "custom_values_check",
+    "forms_check",
+    "workflows_check",
+    "scope_check"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-template-live-verify",
+  "custom_value_keys": [
+    "anthology_webhook_url",
+    "anthology_hook_secret",
+    "producer",
+    "producer_email"
+  ],
+  "exit_codes": {
+    "0": "verified success \u2014 all checks PASS (also plan / dry-run / self-test)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / a contract section missing / a pipeline or field section absent live",
+    "3": "HELD \u2014 Convert and Flow API unreachable incl. the Cloudflare edge 403 (CF error 1010) or the internal rail unavailable; retryable",
+    "4": "self-test FAILED (AF-AE-*-ATTACK family, enforced violation)",
+    "5": "mismatch / fail-closed default \u2014 drift, extra or mutated keys, a real-looking custom value, or a DEFERRED live check without --allow-deferred"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "a DEFERRED live read (internal-rail credential NOT SET) counts as FAIL unless --allow-deferred \u2014 the verify never fabricates an unread surface."
+  },
+  "kind": "self-test",
+  "manifest_row": 54,
+  "schema_version": 1,
+  "script": "live_verify_template.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u02_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed empty package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the check-module dispatcher CLI (plan / self-test / live verify)"
+    },
+    {
+      "name": "pipeline_check.py",
+      "role": "check_pipeline_name \u2014 pipeline name BYTE-EXACT"
+    },
+    {
+      "name": "stages_check.py",
+      "role": "check_stages \u2014 nine stages BY NAME IN ORDER 0..8"
+    },
+    {
+      "name": "fields_check.py",
+      "role": "check_fields_live \u2014 38 field keys byte-exact"
+    },
+    {
+      "name": "custom_values_check.py",
+      "role": "check_custom_values \u2014 four REPLACE-ME values"
+    },
+    {
+      "name": "forms_check.py",
+      "role": "check_forms \u2014 named forms + hidden-field contract"
+    },
+    {
+      "name": "workflows_check.py",
+      "role": "check_workflows_live \u2014 EIGHT release workflows"
+    },
+    {
+      "name": "scope_check.py",
+      "role": "check \u2014 Intake Fire trigger scope gate (pure)"
+    },
+    {
+      "name": "golden_pipeline.py",
+      "role": "golden pipeline fixture (field-map derived)"
+    },
+    {
+      "name": "golden_fields.py",
+      "role": "golden 38-record field-list fixture"
+    },
+    {
+      "name": "golden_forms.py",
+      "role": "golden three-form payload fixture"
+    },
+    {
+      "name": "attack_missing_field.py",
+      "role": "attack fixture: a contract key ABSENT live"
+    },
+    {
+      "name": "attack_wrong_name.py",
+      "role": "attack fixture: a pipeline/field RENAMED"
+    },
+    {
+      "name": "delta_reporter.py",
+      "role": "the ONE JSON delta-report contract"
+    },
+    {
+      "name": "docs_u02.py",
+      "role": "the U02 README/catalog data + drift gate"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "pipeline",
+      "item": 1,
+      "title": "Pipeline name BYTE-EXACT 'Anthology Engine'"
+    },
+    {
+      "id": "stages",
+      "item": 2,
+      "title": "Nine stages BY NAME IN ORDER, contiguous positions 0..8"
+    },
+    {
+      "id": "forms",
+      "item": 3,
+      "title": "Forms count + field mapping (named forms + hidden-field contract)"
+    },
+    {
+      "id": "workflows",
+      "item": 4,
+      "title": "Workflows count + folder 'Anthology Engine' (EIGHT release workflows)"
+    },
+    {
+      "id": "intake_fire",
+      "item": 5,
+      "title": "Intake Fire trigger scope (webhook-to-route, never an inlined URL)"
+    },
+    {
+      "id": "custom_fields",
+      "item": 6,
+      "title": "Custom field count + dataTypes (38 keys byte-exact)"
+    },
+    {
+      "id": "custom_values",
+      "item": 7,
+      "title": "Custom values (four keys, REPLACE-ME placeholders, never-a-real-token)"
+    }
+  ]
+}

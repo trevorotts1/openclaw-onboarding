@@ -138,6 +138,47 @@ _resolve_resume_prompt_file() {
 }
 
 # ------------------------------------------------------------
+# _resolve_onboarding_state_file — echo the first readable
+#   .onboarding-state.json. Mirrors scripts/resume-onboarding.sh's own
+#   resolution (WS="$OC_ROOT/workspace"; STATE_FILE="$WS/.onboarding-
+#   state.json", OC_ROOT = /data/.openclaw or $HOME/.openclaw) plus lib-
+#   onboarding-state.sh's OC_WORKSPACE_DEFAULT convention
+#   ("${OC_WORKSPACE_DEFAULT:-$OC_CONFIG/workspace}"), so this guard reads the
+#   SAME file resume-onboarding.sh writes resumeEscalated into — on either the
+#   Mac ($HOME/.openclaw) or VPS (/data/.openclaw) layout. ONBOARDING_STATE_FILE
+#   (an explicit override, used by tests and some callers) always wins.
+# ------------------------------------------------------------
+_resolve_onboarding_state_file() {
+    local c
+    for c in \
+        "${ONBOARDING_STATE_FILE:-}" \
+        "${OC_WORKSPACE_DEFAULT:-}/.onboarding-state.json" \
+        "${OC_CONFIG:-}/workspace/.onboarding-state.json" \
+        "/data/.openclaw/workspace/.onboarding-state.json" \
+        "$HOME/.openclaw/workspace/.onboarding-state.json"; do
+        [ -n "$c" ] && [ -f "$c" ] && { printf '%s' "$c"; return 0; }
+    done
+    return 1
+}
+
+# ------------------------------------------------------------
+# _onboarding_resume_already_escalated — 0 (true) only when a resolvable
+#   state file exists, is readable, and its .resumeEscalated field is
+#   literally `true`. FAIL-OPEN in every other case (missing file, unreadable
+#   file, no jq, malformed JSON) — returns 1 so the caller proceeds with a
+#   normal install. Absence of evidence must never block a legitimate
+#   first-time install.
+# ------------------------------------------------------------
+_onboarding_resume_already_escalated() {
+    command -v jq >/dev/null 2>&1 || return 1
+    local _sf _val
+    _sf="$(_resolve_onboarding_state_file 2>/dev/null || true)"
+    [ -n "$_sf" ] && [ -r "$_sf" ] || return 1
+    _val="$(jq -r '.resumeEscalated // false' "$_sf" 2>/dev/null || true)"
+    [ "$_val" = "true" ]
+}
+
+# ------------------------------------------------------------
 # install_onboarding_resume_cron
 #   Register the */30 SILENT main-session onboarding-resume cron. Idempotent;
 #   never messages a client. Returns 0 always (best-effort; never aborts a
@@ -149,8 +190,30 @@ install_onboarding_resume_cron() {
         return 0
     fi
     # IDEMPOTENT: if one already exists, leave it in place (never stack a duplicate).
-    if openclaw cron list 2>/dev/null | grep -qi "onboarding-resume"; then
+    # `cron list` HIDES DISABLED JOBS (--all defaults to false). Without --all this
+    # guard cannot see a cron an operator deliberately disabled, so every roll
+    # re-creates it ENABLED and re-arms the */30 main-session self-ping loop.
+    if openclaw cron list --all 2>/dev/null | grep -qi "onboarding-resume"; then
         success "onboarding-resume cron already installed"
+        return 0
+    fi
+
+    # SECOND GUARD (fix/loop-fault-class-20260811): do not re-arm after a
+    # declared escalation. scripts/resume-onboarding.sh sets .onboarding-
+    # state.json's `.resumeEscalated = true` when it hits
+    # MAX_RUNS_BEFORE_ESCALATE and self-deletes — the box already gave up and
+    # told the operator so. Without this guard, a later roll through THIS
+    # installer saw no cron (the first guard above found nothing, because the
+    # prior cron self-removed) and re-created it ENABLED anyway, re-arming the
+    # */30 self-ping into a box that had already escalated. If the box already
+    # escalated, leave the cron OFF until an operator deliberately re-arms it.
+    if _onboarding_resume_already_escalated; then
+        warn "onboarding-resume: this box already ESCALATED (resumeEscalated=true in its onboarding state file) — NOT re-arming the */30 cron."
+        warn "  A prior run hit MAX_RUNS_BEFORE_ESCALATE and self-deleted after giving up (see scripts/resume-onboarding.sh)."
+        warn "  Re-creating the cron here would silently re-loop a box that already declared defeat."
+        warn "  Operator action to re-enable deliberately: investigate first (bash scripts/onboarding-state.sh on the box),"
+        warn "  fix what is blocking the verification gate, then either clear resumeEscalated in the onboarding state file"
+        warn "  or re-run update-skills.sh once ready to retry."
         return 0
     fi
 

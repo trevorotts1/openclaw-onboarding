@@ -146,7 +146,7 @@ AF_BUNDLE_COMPLETE = "AF-BUNDLE-COMPLETE"
 #            delivery. Exit criterion: U012 an ancestor of main, plus a zero warn count
 #            across the golden corpus.
 # ---------------------------------------------------------------------------
-UPLOAD_GATE_WARN_ONLY = True
+UPLOAD_GATE_WARN_ONLY = False
 
 # sync_check.py LOCKSTEP — HOLE B / C1 emission registry. sync_check scans every
 # script named in an autofails[].check_script for `"code": "AF-..."` emission dicts
@@ -190,7 +190,7 @@ _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n
 # reject every historical package dir on sight. Drive the warning count to zero
 # across the corpus, then promote to frozenset() in a separate change.
 # ---------------------------------------------------------------------------
-CLIENT_PACKAGE_WARN_ONLY = frozenset({"teleprompter_html", "webinar_mp4"})
+CLIENT_PACKAGE_WARN_ONLY = frozenset()
 
 
 def _categorize(name: str) -> str:
@@ -832,9 +832,19 @@ def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=
     pkg.mkdir(parents=True, exist_ok=True)
     deck = _mk_pptx(pkg / "demo-deck-FINAL.pptx", with_text=with_text)
     for nm in ("demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
-               "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3"):
+               "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3",
+               "demo-deck-WEBINAR.mp4"):
         (pkg / nm).write_text("x")
-    _write_media(base, {"pptx_ghl_media_id": "gid"})
+    # Complete GHL upload record (R3 U09 ten-piece contract): the per-deck
+    # folder id, per-slide PNG uploads, and the final PPTX upload — the HARD
+    # closeout gate (ghl_media_push.gate_ghl_media_complete) requires all three
+    # once the webinar joined the required client-package set.
+    _write_media(base, {
+        "pptx_ghl_media_id": "gid",
+        "ghl_folder_id": "root",
+        "slides": [{"slide_number": 1, "local_path": "working/slides/slide-01.png",
+                    "ghl_media_id": "img1"}],
+    })
     _write_plan(base, {"destinations": [
         {"type": "ghl", "status": "uploaded"},
         {"type": "mac_downloads", "verify_anchor": str(deck)},

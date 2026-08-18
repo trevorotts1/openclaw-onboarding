@@ -36,6 +36,9 @@ tmp/
 # backup files from automated fixes
 *.bak*
 
+# 59-anthology-engine pre-fix snapshot dirs from automated fixes — never ship
+59-anthology-engine/.backup-*/
+
 # NOTE (v14.10.0): the Skill-6 funnel-matcher catalog index is now COMMITTED. It is
 # written PORTABLY (relative root/sourcePath, no system-specific absolute path), so the
 # old ignore of 06-ghl-install-pages/tools/catalog-index.json was removed. Rebuild with:
@@ -70,3 +73,12 @@ client-roster.txt
 # (real model names, not <CLIENT_*> placeholders) into the skill dir at runtime.
 # The engine docs explicitly forbid committing it.
 59-anthology-engine/model-map.json
+
+# ─── 59-anthology-engine operator-canary runtime state (NEVER commit) ──
+# canary_e2e_test.py persists live-run state under canary-run/state/: certs,
+# per-participant env payloads, SQLite DBs (anthology_state.db, gate_nonce.db,
+# dedup.db + journal/WAL/SHM sidecars), intake payloads, and run transcripts.
+# All of it is runtime-only (secrets + operator-generated payloads). The one
+# committed artifact is the PASS report (canary-run/reports/CANARY-REPORT.json),
+# which lives OUTSIDE state/ and stays tracked.
+59-anthology-engine/canary-run/state/

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+
+from .result import CheckResult
 GATE_KEYS = ("script", "teleprompter", "prompt_floor", "ghl_upload", "qc")
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
@@ -51,6 +53,50 @@ class Gates:
             return importlib.import_module("prompt_gate")
         except Exception:  # noqa: BLE001
             return None
+    def _canonical_prompt_dir_problems(self) -> Tuple[CheckResult, List[str]]:
+        """Directory-level prompt problems (duplicates / non-canonical names) as this
+        gate's strictness requires them. Runs the shared prompt_gate detector (FIX-22 /
+        D16), then applies build_deck's R3 3-digit-canonical OVERLAY on its verdict —
+        _canonical_prompt_dir_problems in build_deck.py is the SINGLE source of that
+        re-judgement: signature decks have a 100-slide floor, so a name whose ordinal
+        field is exactly 2 OR 3 digits is canonical (slide-01..slide-99, slide-100..
+        slide-999, plus the -prompt variants). AF-PROMPT-NAME is relaxed accordingly;
+        AF-PROMPT-DUP-FILE passes through unchanged (a same-ordinal collision stays
+        fatal at any digit width, R3). The shared prompt_gate module itself is
+        deliberately left %02d-only (other consumers depend on that contract).
+        build_deck imports cleanly with no side effects (verified: stdlib + its own
+        package's checkpoint only), so this route is preferred whenever it is
+        importable; on any failure it degrades to the raw shared-detector verdict
+        (the pre-R3 behaviour).
+
+        Returns (CheckResult, problems). CheckResult.UNDETERMINED means the detector
+        itself could not run at all -- both the build_deck route AND the shared
+        prompt_gate fallback failed -- and `problems` is `[]` in that case for the
+        same reason `[]` means "checked, clean" in the other two outcomes: an empty
+        list alone can't tell those two apart. This used to just `return []` on a
+        double-fallback failure, which read as "no duplicate-prompt-file problems"
+        to every caller -- a genuine slide-1.txt/slide-01.txt collision (D16) would
+        have gone completely undetected and this gate would have reported PASS.
+        This is a security/completeness gate: UNDETERMINED refuses (see result.py)."""
+        try:
+            import importlib
+            import sys as _sys
+            here = Path(__file__).resolve().parent.parent  # scripts/
+            if str(here) not in _sys.path:
+                _sys.path.insert(0, str(here))
+            bd = importlib.import_module("build_deck")
+            problems = bd._canonical_prompt_dir_problems(self.run_dir)
+            problems = list(problems) if problems else []
+            return (CheckResult.FAIL if problems else CheckResult.PASS), problems
+        except Exception:  # noqa: BLE001 — degrade to the raw shared verdict
+            _pg = self._prompt_gate()
+            if _pg is None:
+                return CheckResult.UNDETERMINED, []
+            try:
+                problems = list(_pg.prompt_dir_problems(self.run_dir / "working" / "prompts"))
+            except Exception:  # noqa: BLE001 — the fallback detector itself failed too
+                return CheckResult.UNDETERMINED, []
+            return (CheckResult.FAIL if problems else CheckResult.PASS), problems
     def evaluate_all(self) -> Dict[str, Dict[str, Any]]:
         g = self.state.setdefault("gates", {})
         g["script"] = self._artifact_gate_any(["working/deliverables/PRESENTERS-SPEECH.md","working/presenter-speech/PRESENTERS-SPEECH.md"], 2048)
@@ -81,12 +127,26 @@ class Gates:
         # FIX-22 / D16: a zero-padding naming collision (slide-1.txt vs slide-01.txt)
         # or any non-canonical prompt filename fails the gate BEFORE the floor measure —
         # two files for one slide would silently ship a wrong/duplicate render.
-        _pg = self._prompt_gate()
-        if _pg is not None:
-            dir_problems = _pg.prompt_dir_problems(d)
-            if dir_problems:
-                return {"state":"fail","evidence":"working/prompts",
-                        "reason":"; ".join(dir_problems[:5])}
+        # R3 / D10: the verdict runs through build_deck's canonical overlay
+        # (2-OR-3-digit ordinals are canonical, since signature decks have a 100-slide
+        # floor) — see _canonical_prompt_dir_problems above, whose build_deck route is
+        # the single source of the overlay.
+        dir_result, dir_problems = self._canonical_prompt_dir_problems()
+        if dir_result is CheckResult.UNDETERMINED:
+            # Both the build_deck and shared prompt_gate detectors failed to run --
+            # this gate cannot tell you there ISN'T a slide-1.txt/slide-01.txt
+            # collision, so it refuses rather than silently passing. Fix the
+            # import path (build_deck / prompt_gate both unreachable from here)
+            # and re-run; do not waive this away as if it were a normal fail.
+            return {"state":"fail","evidence":"working/prompts",
+                    "reason":"prompt duplicate/canonical-name detector could not run "
+                             "(both the build_deck route and the shared prompt_gate "
+                             "fallback raised) -- UNDETERMINED, not checked. Refusing: "
+                             "a security/completeness gate never treats 'could not "
+                             "check' as a pass. See FIX-22 / D16."}
+        if dir_problems:
+            return {"state":"fail","evidence":"working/prompts",
+                    "reason":"; ".join(dir_problems[:5])}
         files = sorted(d.glob("slide-*.txt"))
         if not files: return {"state":"fail","evidence":"working/prompts","reason":"prompts directory is empty"}
         lengths = [(f.name, len(f.read_text(encoding="utf-8", errors="replace"))) for f in files]

@@ -463,11 +463,26 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
     is empty (the phase declares no concrete artifact — gate accepts this marker).
 
     '{deck_slug}' placeholder is expanded to the run's deck slug first (mirroring
-    _artifact_present)."""
+    _artifact_present). A " + "-separated PAIR is split and hashed as one
+    combined feed so a multi-artifact phase yields a single sha (U01-R2, QC FAIL
+    6.46)."""
     spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return "no-artifact-spec"
     h = hashlib.sha256()
+    # U01-R2: a " + " pair (P8.25-WORKBOOK) is one artifact contract -- hash the
+    # concat of EVERY member so the attestation sha proves the whole contract.
+    specs = [s.strip() for s in spec.split(" + ") if s.strip()]
+    for spec in specs:
+        _artifact_sha_feed(run_dir, spec, h)
+    return h.hexdigest() if specs else "no-artifact-spec"
+
+def _artifact_sha_feed(run_dir: Path, spec: str, h) -> None:
+    """Feed the bytes of ONE resolved artifact spec into the running sha256 h.
+
+    Glob specs feed every matching file (sorted path order). Missing specs
+    contribute nothing -- the sha then reflects whatever DID exist, and
+    _artifact_present is the gate that decides presence, not this feed."""
     if "*" in spec or "?" in spec:
         candidates = sorted(run_dir.glob(spec))
         if not candidates:
@@ -477,7 +492,7 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
                 h.update(p.read_bytes())
             except Exception:  # noqa: BLE001
                 pass
-        return h.hexdigest() if candidates else "no-match"
+        return
     p = run_dir / spec
     if not p.exists():
         cands = list(run_dir.glob("**/" + spec.split("/")[-1]))
@@ -485,10 +500,8 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
     if p and p.exists():
         try:
             h.update(p.read_bytes())
-            return h.hexdigest()
         except Exception:  # noqa: BLE001
-            return "read-error"
-    return "not-found"
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1183,10 +1196,21 @@ def _artifact_present(run_dir: Path, produces_artifact: str) -> bool:
 
     '{deck_slug}' placeholder in the spec is expanded to the run's deck slug
     first (the manifest convention for deck-owned artifacts like
-    '{deck_slug}-WORKBOOK.pdf' / '{deck_slug}-WEBINAR.mp4')."""
+    '{deck_slug}-WORKBOOK.pdf' / '{deck_slug}-WEBINAR.mp4'). A " + "-separated
+    PAIR (P8.25-WORKBOOK declares 'working/deliverables/{deck_slug}-WORKBOOK.pdf
+    + {deck_slug}-WORKBOOK-FILLABLE.pdf') is split into its two entries and ALL
+    of them must exist -- an unsplit pair could never both be present on disk
+    (U01-R2, QC FAIL 6.46)."""
     spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return True
+    specs = [s.strip() for s in spec.split(" + ") if s.strip()]
+    return all(_artifact_spec_present(run_dir, s) for s in specs)
+
+def _artifact_spec_present(run_dir: Path, spec: str) -> bool:
+    """True when ONE resolved artifact spec exists in the run dir.
+
+    Try run-dir-relative, then a bundle-style bare filename glob anywhere."""
     # Try run-dir-relative, then a bundle-style bare filename glob anywhere.
     if "*" in spec or "?" in spec:
         if list(run_dir.glob(spec)):

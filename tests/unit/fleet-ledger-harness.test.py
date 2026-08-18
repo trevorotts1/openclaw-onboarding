@@ -64,6 +64,10 @@ EXPECTATIONS = {
     "repo_version": "v19.44.0",
     "repo_sha": "002f8333aaaabbbbccccddddeeeeffff00001111",
     "openclaw_min_version": "2026.5.22",
+    # What the fleet RECORD claims. check_config_schema compares the MEASURED
+    # `openclaw --version` against this and FAILS the box on a mismatch — the
+    # record for the box that went dark was two minor versions stale.
+    "openclaw_recorded_version": "2026.5.22",
     "run_retries_max": 3,
     "writeback_url": "http://127.0.0.1:4000/api/tasks/ingest",
 }
@@ -77,6 +81,11 @@ def healthy_probes() -> dict:
         H.PROBE_VERSION: {"rc": 0, "stdout": "2026.5.22"},
         H.PROBE_RUN_RETRIES: {"rc": 0, "stdout": "3"},
         H.PROBE_STAMP: {"rc": 0, "stdout": f"{EXPECTATIONS['repo_version']}\n{EXPECTATIONS['repo_sha']}"},
+        # No legacy `agents.list`; gateway plist keeps a real stderr log.
+        H.PROBE_CONFIG_SCHEMA: {
+            "rc": 0,
+            "stdout": "CLEAN\nstderr=/Users/svc/Library/Logs/openclaw/gateway.err.log",
+        },
     }
 
 

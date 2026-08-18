@@ -15,8 +15,8 @@
 #     * pipeline.standard_stages          == contract.pipeline.stages (position + name, in order)
 #     * provisioning.fields               == contract.custom_fields.fields
 #                                            (intended_key, create_name, data_type, order, count)
-#     * provisioning.total_keys == 28     == contract.custom_fields.total_keys
-#     * the ONE SINGLE_OPTIONS cover choice + its 4 options, in order, byte-equal
+#     * provisioning.total_keys == 38     == contract.custom_fields.total_keys
+#     * the cover-choice SINGLE_OPTIONS + its 4 options, in order, byte-equal
 #       cover_style_fields.choice_options
 #   config/engine-config.template.json
 #     * intake.route_path                 == contract.intake.route_path
@@ -25,7 +25,7 @@
 #     * registry_defaults.caf_pit_label / caf_location_label == contract.credential_labels.*
 #
 # INTERNAL CONTRACT INVARIANTS (guard the fixture's own shape):
-#   * 27 LARGE_TEXT free-text keys + exactly 1 SINGLE_OPTIONS (the cover choice)
+#   * 36 LARGE_TEXT free-text keys + exactly 2 SINGLE_OPTIONS (cover choice + review decision)
 #   * cover choice options == ["Signature","Bold Editorial","Fine Art","Pure Type"], in order
 #   * 8 release-tag slugs; the 3 LIVE slugs are avatar/tone/outline
 #   * 4 REQUIRED location custom values (anthology_webhook_url, anthology_hook_secret,
@@ -77,7 +77,7 @@ CONTRACT = SKILL_DIR / "config" / "anthology-snapshot-contract.json"
 FIELD_MAP = SKILL_DIR / "config" / "field-map.json"
 ENGINE_CFG = SKILL_DIR / "config" / "engine-config.template.json"
 
-EXPECTED_TOTAL = 28
+EXPECTED_TOTAL = 38
 EXPECTED_COVER_OPTIONS = ["Signature", "Bold Editorial", "Fine Art", "Pure Type"]
 EXPECTED_TAG_SLUGS = [
     "anthology-release-avatar", "anthology-release-tone", "anthology-release-outline",
@@ -153,32 +153,49 @@ if c_tup != fm_tup:
             first, (c_tup[first:first + 1] or ["<none>"])[0], (fm_tup[first:first + 1] or ["<none>"])[0])
     drift.append("custom_fields drift from field-map provisioning.fields%s" % detail)
 
-# ---- data-type census: 27 LARGE_TEXT + exactly 1 SINGLE_OPTIONS -------------
+# ---- data-type census: 36 LARGE_TEXT + exactly 2 SINGLE_OPTIONS -------------
 large = [f for f in c_fields if f.get("data_type") == "LARGE_TEXT"]
 single = [f for f in c_fields if f.get("data_type") == "SINGLE_OPTIONS"]
 other = [f for f in c_fields if f.get("data_type") not in ("LARGE_TEXT", "SINGLE_OPTIONS")]
-need(len(large) == 27, "expected 27 LARGE_TEXT fields, contract has %d" % len(large))
-need(len(single) == 1, "expected exactly 1 SINGLE_OPTIONS field, contract has %d" % len(single))
+need(len(large) == 36, "expected 36 LARGE_TEXT fields, contract has %d" % len(large))
+need(len(single) == 2, "expected exactly 2 SINGLE_OPTIONS fields, contract has %d" % len(single))
 need(not other, "unexpected data_type(s) in contract: %s" % [(f.get('intended_key'), f.get('data_type')) for f in other])
 need((contract.get("custom_fields", {}) or {}).get("free_text_data_type") == "LARGE_TEXT",
      "contract free_text_data_type must be LARGE_TEXT")
 
-# the SINGLE_OPTIONS field IS the cover choice, and its options match — in order —
-# both the field-map inventory row AND cover_style_fields.choice_options.
+# the TWO SINGLE_OPTIONS fields are the U8 cover choice and the U15-absorbed
+# review decision; each one's options match — in order — both the field-map
+# inventory row AND the field-map's own option authority blocks.
+EXPECTED_DECISION_OPTIONS = ["approve_as_is", "request_rewrite_with_notes"]
 if single:
-    cover = single[0]
-    need(cover.get("intended_key") == "contact.anthology_cover_choice",
-         "the SINGLE_OPTIONS field must be contact.anthology_cover_choice, got %r" % cover.get("intended_key"))
-    need(cover.get("options") == EXPECTED_COVER_OPTIONS,
-         "cover-choice options drift: contract %s != %s" % (cover.get("options"), EXPECTED_COVER_OPTIONS))
-    fm_choice_opts = (fm.get("cover_style_fields", {}) or {}).get("choice_options")
-    need(cover.get("options") == fm_choice_opts,
-         "cover-choice options: contract %s != field-map cover_style_fields.choice_options %s"
-         % (cover.get("options"), fm_choice_opts))
-    fm_cover_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_cover_choice"), None)
-    need(fm_cover_row is not None and fm_cover_row.get("options") == EXPECTED_COVER_OPTIONS,
-         "field-map cover-choice inventory row options drift: %s"
-         % (fm_cover_row.get("options") if fm_cover_row else "<row missing>"))
+    cover = next((f for f in single if f.get("intended_key") == "contact.anthology_cover_choice"), None)
+    need(cover is not None,
+         "the contract must carry the cover-choice SINGLE_OPTIONS field contact.anthology_cover_choice")
+    if cover is not None:
+        need(cover.get("options") == EXPECTED_COVER_OPTIONS,
+             "cover-choice options drift: contract %s != %s" % (cover.get("options"), EXPECTED_COVER_OPTIONS))
+        fm_choice_opts = (fm.get("cover_style_fields", {}) or {}).get("choice_options")
+        need(cover.get("options") == fm_choice_opts,
+             "cover-choice options: contract %s != field-map cover_style_fields.choice_options %s"
+             % (cover.get("options"), fm_choice_opts))
+        fm_cover_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_cover_choice"), None)
+        need(fm_cover_row is not None and fm_cover_row.get("options") == EXPECTED_COVER_OPTIONS,
+             "field-map cover-choice inventory row options drift: %s"
+             % (fm_cover_row.get("options") if fm_cover_row else "<row missing>"))
+    decision = next((f for f in single if f.get("intended_key") == "contact.anthology_review_decision"), None)
+    need(decision is not None,
+         "the contract must carry the review-decision SINGLE_OPTIONS field contact.anthology_review_decision")
+    if decision is not None:
+        need(decision.get("options") == EXPECTED_DECISION_OPTIONS,
+             "review-decision options drift: contract %s != %s" % (decision.get("options"), EXPECTED_DECISION_OPTIONS))
+        fm_decision_opts = ((fm.get("review_decision_field") or {}).get("options")) or []
+        need(decision.get("options") == fm_decision_opts,
+             "review-decision options: contract %s != field-map review_decision_field.options %s"
+             % (decision.get("options"), fm_decision_opts))
+        fm_decision_row = next((f for f in fm_fields if f.get("intended_key") == "contact.anthology_review_decision"), None)
+        need(fm_decision_row is not None and fm_decision_row.get("options") == EXPECTED_DECISION_OPTIONS,
+             "field-map review-decision inventory row options drift: %s"
+             % (fm_decision_row.get("options") if fm_decision_row else "<row missing>"))
 
 # ---- intake route + credential labels vs engine-config ----------------------
 c_intake = contract.get("intake", {}) or {}
@@ -258,7 +275,7 @@ else:
     print("")
     if not drift:
         print("RESULT: PASS — the snapshot fixture agrees with the engine's source of truth")
-        print("  pipeline 'Anthology Engine' + 9 stages, 28 fields (27 LARGE_TEXT + 1 SINGLE_OPTIONS),")
+        print("  pipeline 'Anthology Engine' + 9 stages, 38 fields (36 LARGE_TEXT + 2 SINGLE_OPTIONS),")
         print("  cover options + intake route + credential labels + 8 tags + 4 custom values + forms,")
         print("  and the agency->subaccount push remains REJECTED.")
     else:

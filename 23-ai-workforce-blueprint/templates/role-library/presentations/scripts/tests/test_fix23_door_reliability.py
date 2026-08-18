@@ -23,9 +23,31 @@ from pathlib import Path
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parent.parent  # .../presentations/scripts
-DEPT_ROOT = SCRIPTS.parents[3]                    # .../23-ai-workforce-blueprint
-ENTRY = DEPT_ROOT / "scripts" / "presentation-canonical-entry.sh"
-MANIFEST = Path(__file__).resolve().parents[6] / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+# Deployed tree: the canonical entry script lives in scripts/ itself
+# (scripts/presentation-canonical-entry.sh). The old repo-layout path
+# (~/23-ai-workforce-blueprint/scripts/...) is a fallback for checkout runs.
+_ENTRY_DEPLOYED = SCRIPTS / "presentation-canonical-entry.sh"
+_ENTRY_REPO = SCRIPTS.parents[3] / "scripts" / "presentation-canonical-entry.sh"
+ENTRY = _ENTRY_DEPLOYED if _ENTRY_DEPLOYED.is_file() else _ENTRY_REPO
+# Manifest: deployed layout first (scripts/../sops/PIPELINE-MANIFEST.json), repo
+# walk-up fallback (universal-sops/presentation-slide-craft/) — mirrors
+# manifest_source.resolve_manifest's installed-then-cluster tiering.
+_DEPLOYED_MANIFEST = SCRIPTS.parent / "sops" / "PIPELINE-MANIFEST.json"
+if _DEPLOYED_MANIFEST.is_file():
+    MANIFEST = _DEPLOYED_MANIFEST
+else:
+    _cur = Path(__file__).resolve().parent
+    _m = None
+    for _ in range(12):
+        _cand = _cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if _cand.is_file():
+            _m = _cand
+            break
+        if _cur.parent == _cur:
+            break
+        _cur = _cur.parent
+    assert _m is not None, "PIPELINE-MANIFEST.json not found (deployed sops/ or universal-sops walk-up)"
+    MANIFEST = _m
 
 
 # ---------------------------------------------------------------------------
@@ -309,13 +331,45 @@ def test_ghl_media_imports_cleanly():
     assert "GHM-OK" in r.stdout
 
 
+def _skill48_sibling() -> Path:
+    """The canonical Skill-48 ghl_media module the deployed _skill48_ghl_media.py
+    is copied from. Locate it the way the installer does: the
+    48-facebook-ad-generator skill's tools/ dir inside the skills tree (searched
+    under the openclaw skills roots), falling back to a repo-checkout walk-up."""
+    candidates = []
+    skills_roots = []
+    env_val = os.environ.get("OPENCLAW_SKILLS_DIR")
+    if env_val:
+        skills_roots.append(Path(env_val))
+    home = Path.home()
+    skills_roots += [home / ".openclaw" / "skills", home / ".claude" / "skills",
+                     home / ".claude-nine" / "skills"]
+    for root in skills_roots:
+        if root.is_dir():
+            candidates.append(root / "48-facebook-ad-generator" / "tools" / "ghl_media.py")
+            candidates.append(root / "facebook-ad-generator" / "tools" / "ghl_media.py")
+    cur = Path(__file__).resolve().parent
+    for _ in range(10):
+        candidates.append(cur / "48-facebook-ad-generator" / "tools" / "ghl_media.py")
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    for c in candidates:
+        if c.is_file():
+            return c
+    raise FileNotFoundError(
+        "Skill-48 canonical ghl_media.py not found (searched OPENCLAW_SKILLS_DIR, "
+        "~/.openclaw/skills, ~/.claude/skills, ~/.claude-nine/skills, and the "
+        "48-facebook-ad-generator walk-up)")
+
+
 def test_ghl_co_location_sibling_resolution(tmp_path):
     """A deployed dept scripts dir (no repo sibling reachable) resolves the
     Skill-48 canonical module from the co-located _skill48_ghl_media.py copy."""
     dept = tmp_path / "departments" / "Presentations" / "scripts"
     dept.mkdir(parents=True)
     src_ghl = SCRIPTS / "ghl_media.py"
-    src_sibling = Path(__file__).resolve().parents[6] / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+    src_sibling = _skill48_sibling()
     assert src_ghl.is_file()
     assert src_sibling.is_file(), f"sibling not found at {src_sibling}"
     (dept / "ghl_media.py").write_bytes(src_ghl.read_bytes())

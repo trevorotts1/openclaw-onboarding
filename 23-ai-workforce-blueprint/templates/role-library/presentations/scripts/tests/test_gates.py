@@ -1,8 +1,9 @@
 """U013 gate tests."""
-import ast, json, sys, pathlib, tempfile, pytest
+import ast, importlib, json, sys, pathlib, tempfile, pytest
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 from presentation_job.gates import Gates, GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES, ALL_GATE_KEYS
+from presentation_job.result import CheckResult
 from presentation_job.waivers import WaiverError, load_waivers, validate_waiver
 from phase_verifiers import verify
 
@@ -57,6 +58,95 @@ def test_prompt_floor_names_short_file():
     assert g["prompt_floor"]["state"] == "fail"
     r = g["prompt_floor"].get("reason", "")
     assert "8999" in r and "slide-02" in r
+
+
+class TestCanonicalPromptDirProblemsThreeValued:
+    """B4-1 acceptance. _canonical_prompt_dir_problems() used to `return []` when
+    BOTH the build_deck route and the shared prompt_gate fallback failed --
+    identical to "checked, no duplicates". Now it returns
+    (CheckResult.UNDETERMINED, []) instead, and the prompt_floor gate refuses
+    rather than passing on that verdict."""
+
+    def _boom_build_deck(self, monkeypatch):
+        """Simulate the build_deck import route failing, forcing the function
+        into its except branch (its documented, real fallback path)."""
+        real_import_module = importlib.import_module
+        def _raise_for_build_deck(name, *a, **kw):
+            if name == "build_deck":
+                raise ImportError("simulated build_deck import failure")
+            return real_import_module(name, *a, **kw)
+        monkeypatch.setattr(importlib, "import_module", _raise_for_build_deck)
+
+    def test_good_clean_dir_is_pass_with_no_problems(self):
+        """GOOD control: canonical, non-duplicate prompt files -> PASS, []."""
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        result, problems = Gates(rd, {})._canonical_prompt_dir_problems()
+        assert result is CheckResult.PASS
+        assert problems == []
+
+    def test_bad_real_duplicate_is_fail_with_problems_listed(self):
+        """BAD control: a genuine slide-1.txt/slide-01.txt collision (D16) ->
+        FAIL, with the collision named in the problem list. Detector runs
+        successfully end-to-end here -- nothing simulated."""
+        rd = _rd()
+        _w(rd, "working/prompts/slide-1.txt", "p" * 9500)
+        _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        result, problems = Gates(rd, {})._canonical_prompt_dir_problems()
+        assert result is CheckResult.FAIL
+        assert problems, "a real duplicate must produce at least one problem string"
+        assert any("DUP-FILE" in p for p in problems)
+        # And the gate built on top of this must actually block:
+        gate = Gates(rd, {})._prompt_floor_gate()
+        assert gate["state"] == "fail"
+
+    def test_unknowable_both_fallbacks_failing_is_undetermined_not_pass(self, monkeypatch):
+        """THE regression proof. build_deck import raises AND the shared
+        prompt_gate fallback is unavailable (_prompt_gate() -> None) -- the
+        exact double-fallback-failure shape the sweep found. Must be
+        UNDETERMINED, never PASS, and never silently equal to the GOOD case's
+        (PASS, [])."""
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        self._boom_build_deck(monkeypatch)
+        g = Gates(rd, {})
+        monkeypatch.setattr(g, "_prompt_gate", lambda: None)
+        result, problems = g._canonical_prompt_dir_problems()
+        assert result is CheckResult.UNDETERMINED
+        assert result is not CheckResult.PASS
+        assert problems == []
+
+    def test_unknowable_detector_no_longer_reads_as_a_pass_at_the_gate_level(self, monkeypatch):
+        """The same UNDETERMINED case, but observed through the public gate
+        this feeds: _prompt_floor_gate(). The prompt files here are otherwise
+        entirely legitimate (long enough, canonically named) -- with a working
+        detector this would PASS. Because the duplicate/name detector itself
+        could not run, the gate must refuse (state=fail), not silently pass a
+        deck it never actually checked for D16 collisions."""
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        self._boom_build_deck(monkeypatch)
+        g = Gates(rd, {})
+        monkeypatch.setattr(g, "_prompt_gate", lambda: None)
+        gate = g._prompt_floor_gate()
+        assert gate["state"] == "fail", (
+            "a security/completeness gate must refuse when it could not check, "
+            f"got: {gate}"
+        )
+        assert "could not run" in gate["reason"] or "UNDETERMINED" in gate["reason"]
+
+    def test_only_prompt_gate_fallback_failing_is_also_undetermined(self, monkeypatch):
+        """Second way to reach UNDETERMINED: build_deck import raises AND the
+        recovered prompt_gate module's own detector call raises too (not just
+        _prompt_gate() returning None). Must still be UNDETERMINED, not an
+        uncaught exception and not a silent pass."""
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        self._boom_build_deck(monkeypatch)
+        g = Gates(rd, {})
+        class _BoomingPromptGate:
+            def prompt_dir_problems(self, _dir):
+                raise RuntimeError("simulated shared prompt_gate failure")
+        monkeypatch.setattr(g, "_prompt_gate", lambda: _BoomingPromptGate())
+        result, problems = g._canonical_prompt_dir_problems()
+        assert result is CheckResult.UNDETERMINED
+        assert problems == []
 
 def test_all_gates_fail_on_empty_dir():
     rd = _rd(); (rd / "working").mkdir(parents=True, exist_ok=True)

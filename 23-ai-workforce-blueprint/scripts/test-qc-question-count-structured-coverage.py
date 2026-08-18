@@ -232,7 +232,22 @@ def build_conversational_transcript(n_questions: int) -> str:
     return "\n".join(lines)
 
 
-def _base_state(asked_by: str) -> dict:
+def _base_state(asked_by: str, last_question_number: int = 11) -> dict:
+    """
+    FIXTURE FIX: `last_question_number` used to be hardcoded to 11 for every
+    case. That is not a neutral default — it is the exact "frozen counter"
+    signature the counter-vs-transcript disagreement HARD FAIL exists to catch
+    (qc-interview-completion.py, 2026-06-10 anti-fabrication decision). Any case
+    whose transcript held materially more than 11 Q-blocks therefore hard-failed
+    on the DISAGREEMENT, never reaching the count/coverage logic this suite is
+    meant to exercise — so U1 (19 blocks) and U4 (29 blocks) had been red since
+    the day this file was written, for a reason unrelated to what they assert.
+
+    Each case now passes a counter consistent with its own transcript. The
+    disagreement guard is NOT weakened anywhere — it keeps its full strength in
+    production, is still covered by test-interview-completion-evidence-gate.sh,
+    and U6 below now pins it directly in this file as well.
+    """
     return {
         "interviewComplete": True,
         "companyName": "Acme Rescue Co",
@@ -240,7 +255,10 @@ def _base_state(asked_by: str) -> dict:
         "ownerChat": "12345",
         "agentName": "Rescue Agent",
         "departments": [{"id": "operations", "status": "done"}],
-        "interviewProgress": {"lastQuestionNumber": 11, "lastQuestionAskedBy": asked_by},
+        "interviewProgress": {
+            "lastQuestionNumber": last_question_number,
+            "lastQuestionAskedBy": asked_by,
+        },
     }
 
 
@@ -288,7 +306,11 @@ def main():
         )
         raw_blocks = full_transcript.count("**Q:**")
         state_path_1 = tmproot / "state1.json"
-        state_path_1.write_text(json.dumps(_base_state("interview-web")), encoding="utf-8")
+        # Counter consistent with THIS fixture's own transcript (see _base_state).
+        state_path_1.write_text(
+            json.dumps(_base_state("interview-web", last_question_number=raw_blocks)),
+            encoding="utf-8",
+        )
         transcript_path_1 = tmproot / "transcript1.md"
         transcript_path_1.write_text(full_transcript, encoding="utf-8")
         details_1 = run_qc_cli(transcript_path_1, state_path_1)
@@ -365,7 +387,14 @@ def main():
               "28-question transcript) -> still PASSES, exactly as before this fix")
         rich_transcript = build_conversational_transcript(n_questions=23)  # 5 branding + 23 filler = 28
         state_path_4 = tmproot / "state4.json"
-        state_path_4.write_text(json.dumps(_base_state("Rescue Agent")), encoding="utf-8")
+        # Counter consistent with THIS fixture's own transcript (see _base_state).
+        state_path_4.write_text(
+            json.dumps(_base_state(
+                "Rescue Agent",
+                last_question_number=rich_transcript.count("**Q:**"),
+            )),
+            encoding="utf-8",
+        )
         transcript_path_4 = tmproot / "transcript4.md"
         transcript_path_4.write_text(rich_transcript, encoding="utf-8")
         details_4 = run_qc_cli(transcript_path_4, state_path_4)
@@ -442,6 +471,32 @@ def main():
                "caught again -- the suite is not vacuously passing")
         else:
             bad(f"restore did not return to catching the real gap: verdict={verdict_restored}")
+
+        # ── U6: THE DISAGREEMENT HARD FAIL STILL BITES ───────────────────────
+        # Guard for the fixture change in _base_state(). The old fixture pinned
+        # lastQuestionNumber=11 for every case, which meant U1/U4 were failing on
+        # the counter-vs-transcript DISAGREEMENT rather than on anything this
+        # suite asserts. Those two cases now carry a consistent counter -- so this
+        # case exists to prove that consistency did NOT come from the guard going
+        # soft. Same PASSING fixture as U4, counter frozen back to 11: it MUST
+        # hard-fail, and it must fail specifically on the disagreement.
+        print("\n[U6] anti-regression: a frozen lastQuestionNumber still HARD FAILS "
+              "(the 2026-06-10 anti-fabrication guard is intact, not weakened by the U1/U4 fixture fix)")
+        state_path_6 = tmproot / "state6.json"
+        state_path_6.write_text(
+            json.dumps(_base_state("Rescue Agent", last_question_number=11)),
+            encoding="utf-8",
+        )
+        details_6 = run_qc_cli(transcript_path_4, state_path_6)  # U4's PASSING transcript
+        hard_fail_text_6 = " ".join(details_6.get("hardFailures", []))
+        if details_6.get("verdict") == "FAIL" and "disagree" in hard_fail_text_6:
+            ok(f"frozen counter (11) against the same {details_6.get('questionCount')}-question "
+               f"transcript that PASSES in U4 still HARD FAILS on the disagreement -- the guard "
+               f"has teeth and the U1/U4 fixture fix did not launder it")
+        else:
+            bad(f"the counter-vs-transcript disagreement hard fail did NOT fire on a frozen "
+                f"counter -- the guard may have been weakened. verdict={details_6.get('verdict')!r} "
+                f"hardFailures={details_6.get('hardFailures')}")
 
     finally:
         shutil.rmtree(tmproot, ignore_errors=True)

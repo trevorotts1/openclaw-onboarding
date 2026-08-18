@@ -18,11 +18,11 @@ default, by silence, or by timeout.
 | Piece | Path | What it is |
 |---|---|---|
 | Per-box ledger | `shared-utils/fleet_ledger.py` | one persistent JSON row per box at **`/tmp/<sweep>/<box>.json`**, plus a `_sweep.json` rollup. Bash-callable CLI, so the roll's own fan-out loop writes rows with no Python glue. |
-| Validation harness | `shared-utils/fleet_validation_harness.py` (CLI: `scripts/fleet-validate.sh`) | runs the five REQUIRED checks against each box and writes the verdict into that box's ledger row. |
+| Validation harness | `shared-utils/fleet_validation_harness.py` (CLI: `scripts/fleet-validate.sh`) | runs the six REQUIRED checks against each box and writes the verdict into that box's ledger row. |
 
 ---
 
-## The five REQUIRED per-box checks
+## The six REQUIRED per-box checks
 
 | # | Check id | PASS means | FAIL means |
 |---|---|---|---|
@@ -31,6 +31,7 @@ default, by silence, or by timeout.
 | 3 | `browser_probe` | the agent-browser preflight exits 0 **and** prints its PASS marker | preflight failed (or exited 0 in silence -> `UNKNOWN`, never green) |
 | 4 | `openclaw_ceiling` | `openclaw --version` >= the declared minimum **and** the `runRetries` ceiling row is present and within the declared ceiling | version below minimum (the box did not take the roll / was DOWNGRADED), or the **runRetries row is ABSENT** — an absent row is a FAIL, never a default |
 | 5 | `repo_stamp` | the box's onboarding checkout reports the expected **version + sha** | mismatch — **`update-skills.sh` piped from a stale checkout silently rolls a box BACKWARDS**, and the stamp is the only thing that catches it |
+| 6 | `config_schema` | the box's `openclaw.json` carries **no legacy `agents.list` key**, **and** the **measured** `openclaw --version` matches `openclaw_recorded_version` | the legacy key is present — the 2026.7.2-beta line rejects it, the gateway exits 78 every ~11s, and the crash-loop breaker latches channels OFF until the box is **DARK** (harmless on 2026.7.1-2, which is what makes it a landmine); or the box measures a version the **record** does not claim. Also reports (advisory, non-failing) when the gateway LaunchAgent discards stderr — the reason that crash stayed invisible for ten days |
 
 **Exit-code trap, encoded on purpose:** `check-credential.sh` exits **3** (`NEEDS_BLOCK`) for
 `MC_API_TOKEN`, and that is a **perfectly healthy** verdict — `MC_API_TOKEN` is not a model-provider
@@ -68,18 +69,29 @@ Exit codes: `0` all PASS · `2` any FAIL · `3` any UNKNOWN · `4` sweep refused
 
 ```json
 {
-  "repo_version":         "v19.44.0",
-  "repo_sha":             "002f8333...",
-  "openclaw_min_version": "2026.5.22",
-  "run_retries_max":      3,
-  "writeback_url":        "http://127.0.0.1:4000/api/tasks/ingest",
-  "repo_dir":             "$HOME/openclaw-onboarding"
+  "repo_version":              "v19.44.0",
+  "repo_sha":                  "002f8333...",
+  "openclaw_min_version":      "2026.5.22",
+  "openclaw_recorded_version": "2026.5.22",
+  "run_retries_max":           3,
+  "writeback_url":             "http://127.0.0.1:4000/api/tasks/ingest",
+  "repo_dir":                  "$HOME/openclaw-onboarding"
 }
 ```
 
-Every field except `repo_dir` is **mandatory**. The expectations are hashed into each ledger row, so
-a PASS recorded against the *previous* roll target can never satisfy the next one — `--resume` will
-correctly re-probe the box.
+Every field except `repo_dir` is **mandatory**.
+
+`openclaw_recorded_version` is what **the fleet record claims** these boxes are on — not a floor, and not
+a wish. The `config_schema` check measures `openclaw --version` on each box and FAILS the box when the two
+disagree, because **the record is the thing that was wrong**: the record for the box that went dark was two
+minor versions stale, and every decision taken from it was wrong. A mismatch means correct the record (or
+explain the drift) — never trust it. Version is measured, never read from a document.
+
+It is mandatory for the same reason as every other expectation: you cannot detect a record drifting from
+reality without first naming what the record says. A gate you cannot fail is not a gate.
+
+The expectations are hashed into each ledger row, so a PASS recorded against the *previous* roll target
+can never satisfy the next one — `--resume` will correctly re-probe the box.
 
 ### 2. Wave loop (<= 20 boxes), writing the ledger as you go
 

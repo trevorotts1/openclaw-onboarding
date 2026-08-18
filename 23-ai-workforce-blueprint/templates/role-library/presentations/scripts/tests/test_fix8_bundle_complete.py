@@ -165,14 +165,22 @@ def test_manifest_lockstep():
     """The REQUIRED_KEYS must equal PIPELINE-MANIFEST.build_bundle_files —
     they must never drift apart."""
     import os
-    cur = pathlib.Path(fbc.__file__).resolve().parent
-    manifest = None
-    for _ in range(8):
-        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if cand.is_file():
-            manifest = cand
-            break
-        cur = cur.parent
+    here = pathlib.Path(fbc.__file__).resolve().parent
+    # Deployed layout first (scripts/../sops/), repo walk-up fallback
+    # (universal-sops/presentation-slide-craft/) — mirrors
+    # manifest_source.resolve_manifest's installed-then-cluster tiering.
+    deployed = here.parent / "sops" / "PIPELINE-MANIFEST.json"
+    if deployed.is_file():
+        manifest = deployed
+    else:
+        manifest = None
+        cur = here
+        for _ in range(8):
+            cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+            if cand.is_file():
+                manifest = cand
+                break
+            cur = cur.parent
     assert manifest is not None, "PIPELINE-MANIFEST.json not found"
     man = json.loads(manifest.read_text())
     assert sorted(man.get("build_bundle_files", [])) == sorted(REQUIRED_KEYS), (

@@ -394,6 +394,13 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # R3 AF-DECK-TYPE-UNSET: a full-artifacts run dir must declare a deck type
+        # (webinar|signature_presentation) — derive_legacy_fields() writes it from the
+        # ONE presentation_type answer, and every preflight refuses an unset deck_type.
+        _deck_type = Path(root / "working" / "copy" / "intake.json")
+        _intake = json.loads(_deck_type.read_text())
+        _intake["deck_type"] = "webinar"
+        _deck_type.write_text(json.dumps(_intake))
         # v16.0.1 — a NON-adhoc render is now bound to Phase P0B-PRIORITY at EVERY entry
         # point (build_deck.run_preflight reuses check_phase_preconditions to refuse unless
         # P0B-PRIORITY is attested in process_manifest.json). A full modern pipeline run
@@ -708,6 +715,20 @@ def test_chk_coverage():
     reason = build_deck._chk_coverage(rd)
     if reason:
         fails.append(f"COVERAGE: source absent (Mode A) should PASS but got: {reason!r}")
+
+    # mission_prd.json PRESENT but malformed/unparseable (absence-vs-malformed hole,
+    # CheckResult.UNDETERMINED doctrine) => must FAIL/refuse, NEVER silently collapse
+    # to Mode A's source=0 default. A genuinely-absent file is a legitimate Mode A
+    # pass (tested above); a present-but-corrupt file is a DIFFERENT, THIRD state
+    # that could be hiding a real Mode-B source_slide_count, so it must refuse.
+    rd = _coverage_run_dir(None, 3)
+    (rd / "working" / "copy" / "mission_prd.json").write_text("{not valid json!!!")
+    reason = build_deck._chk_coverage(rd)
+    if not reason:
+        fails.append("COVERAGE: malformed mission_prd.json should FAIL/UNDETERMINED "
+                     "(not silently collapse to Mode A) but passed")
+    elif "AF-COVERAGE-1" not in reason or "unreadable" not in reason.lower():
+        fails.append(f"COVERAGE: malformed-mission_prd fail message malformed: {reason!r}")
 
     print(f"COVERAGE (anti-compression) -> {'PASS' if not fails else 'FAIL'}")
     return fails
@@ -1157,6 +1178,62 @@ def _valid_bytes_for(key: str, total: int) -> bytes:
     return head + (b"\x00" * pad)
 
 
+def _real_pptx_bytes(min_bytes: int) -> bytes:
+    """Build a GENUINELY openable .pptx (via python-pptx, not magic-byte padding) that
+    clears `min_bytes`, has NO native on-slide text (image-only, per Decision 5C), and
+    a non-empty speaker-notes pane on every slide (per the notes-injection doctrine).
+
+    WHY THIS EXISTS (gates-absence slice g5, PR follow-up): g5's own fix makes
+    _chk_notes_pane / _delivered_pptx_native_text return CheckResult.UNDETERMINED (FAIL
+    on this completeness gate) when the delivered .pptx exists but python-pptx cannot
+    actually open it — closing a real hole where a corrupted-but-magic-byte-valid file
+    silently passed as clean. The postflight test fixtures (_postflight_bundle_dir)
+    previously wrote magic-byte-only padding for deck_pptx via _valid_bytes_for, which
+    was NEVER a real openable pptx -- it only ever cleared the C2 magic-byte/size gate,
+    a fact g5's fix now correctly surfaces. This helper restores the "all artifacts
+    present" test scenarios to their true intent (a genuinely complete, valid bundle)
+    without touching g5's production fix at all. Uses incompressible random-noise
+    images (not a solid fill) so the real byte count clears the 1MB floor honestly,
+    the same way a real gpt-image-2 render would."""
+    import random as _random
+    from pptx import Presentation
+    from pptx.util import Inches
+    from PIL import Image
+
+    rnd = _random.Random(20260817)  # deterministic, not a source of flakiness
+
+    def _noise_png(w: int, h: int) -> bytes:
+        im = Image.new("RGB", (w, h))
+        im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
+                    for _ in range(w * h)])
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", compress_level=1)
+        return buf.getvalue()
+
+    prs = Presentation()
+    blank_layout = prs.slide_layouts[6]  # blank layout: no text placeholders at all
+    slide_count = 0
+    buf = io.BytesIO()
+    while True:
+        slide = prs.slides.add_slide(blank_layout)
+        slide_count += 1
+        slide.shapes.add_picture(io.BytesIO(_noise_png(900, 700)), 0, 0,
+                                  width=Inches(10), height=Inches(7.5))
+        slide.notes_slide.notes_text_frame.text = (
+            f"Speaker notes for slide {slide_count} -- injected from the "
+            "QC-passed presenter speech, never empty.")
+        buf.seek(0)
+        buf.truncate(0)
+        prs.save(buf)
+        if buf.tell() >= min_bytes or slide_count >= 6:
+            break
+    data = buf.getvalue()
+    assert len(data) >= min_bytes, (
+        f"_real_pptx_bytes could not clear {min_bytes} bytes in {slide_count} slides "
+        f"(got {len(data)}) -- raise the per-slide image size, not the slide cap.")
+    return data
+
+
 def _write_publish_ledger(bundle_dir: Path, status="published",
                           verified_http_status=200,
                           public_url="https://teleprompter.zerohumanworkforce.com/"
@@ -1198,8 +1275,15 @@ def _postflight_bundle_dir(present_keys: set, with_publish: bool = True) -> tupl
         fname = build_deck._expand_filename(spec["filename"], deck_slug)
         fpath = bundle_dir / fname
         if key in present_keys:
-            # Write a real-magic file that exceeds the threshold by a comfortable margin.
-            fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
+            if key == "deck_pptx":
+                # GENUINELY openable (python-pptx), image-only, notes-populated --
+                # magic-byte padding alone no longer represents "a real delivered
+                # deck" now that _chk_notes_pane / _delivered_pptx_native_text
+                # (gates-absence g5) fail-closed on a file they cannot actually open.
+                fpath.write_bytes(_real_pptx_bytes(spec["min_bytes"]))
+            else:
+                # Write a real-magic file that exceeds the threshold by a comfortable margin.
+                fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
     if with_publish and "teleprompter_html" in present_keys:
         _write_publish_ledger(bundle_dir)
     return bundle_dir, ledger_path, deck_slug
@@ -1352,6 +1436,110 @@ def test_postflight_gate():
     print(f"POSTFLIGHT-I (byte-floor doctrine reconcile) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I' in f] else 'FAIL'}")
 
     print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_postflight_speech_length_reverify():
+    """SPEECH-LENGTH closeout re-check (AF-SPEECH-SHORT) — absence-vs-not-yet-produced
+    gap fix: the DELIVERABLES_REQUIRED speech_md entry only proves a >=2KB
+    PRESENTERS-SPEECH.md exists in the bundle (~290 words) — far below the real
+    target_talk_minutes x 120wpm floor for a long talk. _chk_speech_length is
+    CONDITIONAL BY DESIGN at the single pre-render run_preflight() call (the speech
+    genuinely does not exist yet there, so it legitimately defers), but nothing
+    previously re-verified the real word-count floor once the speech was actually
+    written — a short-but-not-empty speech could clear the generic byte floor
+    forever uncaught. run_postflight_gate() now re-invokes _chk_speech_length(run_dir)
+    at closeout, mirroring the pre-existing _chk_kie_baked re-check pattern.
+
+      (a) run_dir with a 30-min target + a speech well UNDER the 3,600-word floor,
+          with a bundle speech_md that still clears the generic byte floor -> exit 5.
+      (b) run_dir with a 30-min target + a speech AT the floor -> PASSES.
+      (c) run_dir=None (bare gate-only invocation) -> the sub-check is skipped,
+          matching the existing kie_baked/brand/visual-variety contract (never fails
+          a caller that has no run dir).
+
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    def _speech_run_dir_for_postflight(words: int) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="deck_postflight_speech_test_"))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"interview_confirmed": True, "presentation_mode": "general",
+             "audience_mode": "STANDARD", "target_talk_minutes": 30}))
+        (root / "working" / "presenter-speech").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "presenter-speech" / "speech.md").write_text(
+            " ".join(["word"] * words))
+        # Satisfy the UNRELATED closeout sub-checks (_chk_cc_registered AND, since
+        # gates-absence g5, _chk_kie_baked(require_rendered=True)) so this fixture
+        # isolates the speech-length re-check specifically — once run_dir is
+        # threaded into run_postflight_gate, EVERY run-dir-scoped closeout sub-check
+        # fires, not just the one under test.
+        (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        # A real-shaped KIE render record (same fixture pattern test_chk_kie_baked
+        # already uses): one baked slide, real taskId, a PNG above
+        # PLACEHOLDER_MIN_BYTES, a unique sha256. slides_path is never threaded
+        # into this call (run_postflight_gate's own kie_baked invocation omits it
+        # too), so _count_output_slides() returns None and the slide-count
+        # cross-check is skipped — only "is there a real render record" matters here.
+        png_path = root / "kie-baked-1.png"
+        png_body = b"\x89PNG\r\n\x1a\n" + (b"\x00" * (build_deck.PLACEHOLDER_MIN_BYTES + 1024))
+        png_path.write_bytes(png_body)
+        import hashlib as _hashlib
+        (root / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({
+                "phase_attestations": [],
+                "cc_task_id": "task-pf-speech-test",
+                "cc_register_attempted": True,
+                "cc_registration": _cc_registration_receipt(
+                    "task-pf-speech-test", "sha256-deck-key", "test-deck"),
+                "phases": [{
+                    "phase": "render",
+                    "output_slide_count": 1,
+                    "slides": [{
+                        "slide": 1,
+                        "taskId": "kie-task-pf-speech-1",
+                        "image": str(png_path),
+                        "image_sha256": _hashlib.sha256(png_body).hexdigest(),
+                    }],
+                }],
+            }))
+        return root
+
+    # (a) speech well under the 30min x 120wpm = 3,600-word floor -> exit 5.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(500)  # far under 3,600
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+        fails.append("PF-SPEECH-A: 500-word speech (30min target) should exit 5 "
+                     "(SPEECH_TOO_SHORT) but gate passed -- the closeout re-check "
+                     "did not fire")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"PF-SPEECH-A: expected exit 5, got {exc.code}")
+    print(f"PF-SPEECH-A (short speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-A' in f] else 'FAIL'}")
+
+    # (b) speech at the floor -> PASSES.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(3600)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-B: 3,600-word speech (30min target, at floor) should "
+                     f"PASS, got sys.exit({exc.code})")
+    print(f"PF-SPEECH-B (floor speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-B' in f] else 'FAIL'}")
+
+    # (c) no run_dir threaded -> sub-check skipped, matches existing kie_baked contract.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-C: no run_dir threaded should not fail on speech-length "
+                     f"(sub-check skipped), got sys.exit({exc.code})")
+    print(f"PF-SPEECH-C (no run_dir)     -> {'PASS' if not [f for f in fails if 'PF-SPEECH-C' in f] else 'FAIL'}")
+
+    print(f"PF-SPEECH (closeout re-verify)-> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -2772,6 +2960,121 @@ def test_runner_attestation_seen_by_preconditions():
     return fails
 
 
+def _style_attested_workdir() -> Path:
+    """Gate 1 (fix/two-remaining-gates) — the SAME 'full modern pipeline' fixture
+    make_workdir(with_artifacts=True) builds, but with P-STYLE-PREVIEW ALSO
+    attested in process_manifest.json's phases[] (alongside the P0B-PRIORITY
+    attestation make_workdir already writes). Proves the POSITIVE case: once the
+    style-preview phase really is attested, the STYLE_PHASE_GATE binding passes in
+    BOTH warn and enforce stage."""
+    root = make_workdir(with_artifacts=True)
+    pm_path = root / "working" / "checkpoints" / "process_manifest.json"
+    pm = json.loads(pm_path.read_text())
+    pm["phases"].append({"phase_id": "P-STYLE-PREVIEW",
+                         "role": "style-preview", "status": "artifact_present"})
+    pm_path.write_text(json.dumps(pm))
+    return root
+
+
+def test_style_phase_gate() -> list:
+    """Gate 1 close (fix/two-remaining-gates): run_preflight()'s STYLE_PHASE_GATE
+    binding (mirrors the v16.0.1 P0B-PRIORITY binding) closes the hole where a
+    DIRECT build_deck.py invocation could render past the owner's 3-style-preview
+    pick with zero enforcement (the runner already makes P-STYLE-PREVIEW mandatory
+    for P4-RENDER; only the direct-call path lacked the binding). Staged per Rule
+    3.5 (STYLE_PHASE_GATE_STAGE, default 'warn'). Proves BOTH directions plus the
+    owner-skip waiver, calling run_preflight() directly (no subprocess):
+      (a) WARN stage, P-STYLE-PREVIEW NOT attested (the make_workdir(with_artifacts=
+          True) shared fixture — used by CASE2 and everything layered on it) ->
+          run_preflight() completes WITHOUT sys.exit(3); stderr carries a WARN line
+          naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW. THIS is the one that matters
+          most: a legitimate run that reaches the gate before the style-preview
+          artifact exists still proceeds, unbricked, at the shipped default stage.
+      (b) ENFORCE stage (monkeypatched), SAME unattested fixture -> run_preflight()
+          NOW sys.exit(3), naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW in the refusal
+          — proving the genuinely-missing artifact is caught once enforce ships, and
+          the block does not read as approval (exit 3, explicit reason, not a
+          silent pass).
+      (c) P-STYLE-PREVIEW attested (a runner-attested / real pipeline run) -> PASSES
+          in BOTH stages (no sys.exit(3) either way).
+      (d) an owner-authorized STYLE_PHASE_ID skip record (owner_msg_id present,
+          the SAME shape check_phase_preconditions already accepts) -> passes in
+          ENFORCE stage too, on the otherwise-unattested fixture."""
+    fails = []
+    orig_stage = build_deck.STYLE_PHASE_GATE_STAGE
+    try:
+        # (a) WARN stage (the shipped default) — must NOT brick the shared fixture.
+        build_deck.STYLE_PHASE_GATE_STAGE = "warn"
+        root = make_workdir(with_artifacts=True)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                build_deck.run_preflight(root)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-A: warn-stage should NOT exit, got sys.exit({exc.code})")
+        stderr_text = err.getvalue()
+        if "AF-PHASE-SKIPPED" not in stderr_text or "P-STYLE-PREVIEW" not in stderr_text:
+            fails.append("STYLE-GATE-A: expected a WARN line naming AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW on stderr, got: {stderr_text!r}")
+        if "WARN" not in stderr_text:
+            fails.append(f"STYLE-GATE-A: expected a WARN-prefixed line, got: {stderr_text!r}")
+
+        # (b) ENFORCE stage, same unattested fixture -> must sys.exit(3).
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root2 = make_workdir(with_artifacts=True)
+        out2, err2 = io.StringIO(), io.StringIO()
+        exited = False
+        try:
+            with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(err2):
+                build_deck.run_preflight(root2)
+        except SystemExit as exc:
+            exited = True
+            if exc.code != 3:
+                fails.append(f"STYLE-GATE-B: enforce-stage should exit 3, got {exc.code}")
+        if not exited:
+            fails.append("STYLE-GATE-B: enforce-stage should sys.exit(3) on an unattested "
+                         "style-preview phase but run_preflight() returned normally")
+        combined2 = out2.getvalue() + err2.getvalue()
+        if "AF-PHASE-SKIPPED" not in combined2 or "P-STYLE-PREVIEW" not in combined2:
+            fails.append("STYLE-GATE-B: expected the refusal to name AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW, got: {combined2!r}")
+
+        # (c) P-STYLE-PREVIEW attested -> passes in BOTH stages.
+        for stage in ("warn", "enforce"):
+            build_deck.STYLE_PHASE_GATE_STAGE = stage
+            root3 = _style_attested_workdir()
+            out3, err3 = io.StringIO(), io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out3), contextlib.redirect_stderr(err3):
+                    build_deck.run_preflight(root3)
+            except SystemExit as exc:
+                fails.append(f"STYLE-GATE-C ({stage}): style-attested fixture should PASS, "
+                             f"got sys.exit({exc.code})")
+
+        # (d) owner-authorized skip of STYLE_PHASE_ID -> passes in ENFORCE stage too.
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root4 = make_workdir(with_artifacts=True)
+        ckpt4 = root4 / "working" / "checkpoints"
+        ckpt4.mkdir(parents=True, exist_ok=True)
+        (ckpt4 / "phase_skip_approvals.json").write_text(json.dumps(
+            {"approvals": [{"phase_id": "P-STYLE-PREVIEW", "owner_approved": True,
+                            "approved_by": "owner", "reason": "test waiver",
+                            "timestamp": "2026-06-20T00:00:00Z",
+                            "owner_msg_id": "owner-msg-style-preview"}]}))
+        out4, err4 = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out4), contextlib.redirect_stderr(err4):
+                build_deck.run_preflight(root4)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-D: owner-authorized skip should PASS in enforce "
+                         f"stage, got sys.exit({exc.code})")
+    finally:
+        build_deck.STYLE_PHASE_GATE_STAGE = orig_stage
+
+    print(f"STYLE-PHASE-GATE (Gate 1)    -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_runner_next_turn_gate():
     """FOUNDATION (--next phase turn-gate). The runner — not prose — is the agent's
     interface to what is next. Proves, directly against emit_next's phase selector:
@@ -3443,8 +3746,16 @@ def test_sp_wrappers():
         print("SP wrappers -> FAIL (provers not importable)")
         return fails
 
-    # (a) GOLDEN signature deck — all three wrappers PASS ("").
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), sp_structure=sps._valid_fixture())
+    # (a) GOLDEN signature deck — all three wrappers PASS (""). GK-23/D18: the bare
+    # fixture (no turn_ledger_provenance) is only grandfathered through
+    # prove_sp_intake.GRACE_WINDOW_UNTIL (2026-08-15); a genuine post-window PASS
+    # fixture must carry the real driver-paced provenance stamp — the SAME helper
+    # the prover module's own self-test uses for its "GK-23-fixtureA-driver-paced"
+    # must-PASS case, built to mirror exactly what deck-intake-driver.py's
+    # build_turn_ledger_provenance() writes (per-question turn id +
+    # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
+    # test_slice1_gates.py's genuine SP-intake fixture.
+    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(), sp_structure=sps._valid_fixture())
     for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
                  "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(gold)
@@ -3468,6 +3779,98 @@ def test_sp_wrappers():
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
     print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def _sp_claim_fallback_run_dir(*, intake_extra=None, sp_intake_present=False,
+                               ledger=None) -> Path:
+    """fix/two-remaining-gates (Gate 2) — a bare run dir for exercising
+    _chk_sp_claim's `mod is None` fallback directly, independent of the real
+    prove_sp_routing.py signal set. intake_extra merges into intake.json (deck_type
+    omitted unless the caller supplies it); sp_intake_present writes an EMPTY
+    working/copy/sp_intake.json (signal 1); ledger writes
+    working/interview/intake_ledger.json verbatim (signal 4)."""
+    rd = Path(tempfile.mkdtemp(prefix="deck_sp_claim_fallback_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    intake = dict(intake_extra or {})
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    if sp_intake_present:
+        (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps({}))
+    if ledger is not None:
+        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+        (rd / "working" / "interview" / "intake_ledger.json").write_text(json.dumps(ledger))
+    return rd
+
+
+def test_sp_claim_mod_none_fallback() -> list:
+    """Gate 2 close (fix/two-remaining-gates): _chk_sp_claim's `mod is None` fallback
+    (prove_sp_routing.py not co-located) formerly checked ONLY signal 1
+    (sp_intake.json presence) — signals 2-4 that the docstring already promises
+    (signature_frame, presentation_type=='signature', intake_ledger.json entries)
+    were silently open. Forces mod is None via _SP_PROVER_CACHE and proves:
+      (a) signal 2 (intake.json.signature_frame set) + deck_type unset -> NOW fails
+          AF-SP-TYPE-UNDECLARED (previously silently passed -- the closed hole);
+      (b) signal 3 (intake.json.presentation_type=='signature') + deck_type unset
+          -> same;
+      (c) signal 4a (intake_ledger.json entries.signature_frame) + deck_type unset
+          -> same;
+      (d) signal 4b (intake_ledger.json sp_entries.sp_mode) + deck_type unset
+          -> same;
+      (e) REGRESSION GUARD: a plain non-signature deck (NO signals at all) with
+          mod is None still returns "" -- the common non-SP-deck-on-a-degraded-box
+          path stays unblocked;
+      (f) REGRESSION GUARD: signals present but deck_type IS declared
+          signature_presentation -> "" (the claim is made, nothing to block)."""
+    fails = []
+    orig_cache = dict(build_deck._SP_PROVER_CACHE)
+    try:
+        build_deck._SP_PROVER_CACHE["prove_sp_routing"] = None
+
+        # (a) signature_frame set, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"signature_frame": "vault"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-A (signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (b) presentation_type=='signature', deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"presentation_type": "signature"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-B (presentation_type): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (c) ledger entries.signature_frame, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"entries": {"signature_frame": {"value": "rulebook"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-C (ledger signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (d) ledger sp_entries.sp_mode, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"sp_entries": {"sp_mode": {"value": "QUICK"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-D (ledger sp_mode): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (e) REGRESSION GUARD -- no signals at all, mod is None -> must stay "".
+        rd = _sp_claim_fallback_run_dir(intake_extra={"interview_confirmed": True})
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-E (no signals): expected '', got {r!r}")
+
+        # (f) REGRESSION GUARD -- signals present AND deck_type declared -> "".
+        rd = _sp_claim_fallback_run_dir(
+            intake_extra={"signature_frame": "vault",
+                         "deck_type": "signature_presentation"},
+            sp_intake_present=True)
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-F (declared): expected '', got {r!r}")
+    finally:
+        build_deck._SP_PROVER_CACHE.clear()
+        build_deck._SP_PROVER_CACHE.update(orig_cache)
+
+    print(f"SP-CLAIM mod-is-None fallback (Gate 2) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -3551,6 +3954,21 @@ def emit_af_coverage():
         record("AF-P1", str(exc))
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
+
+    # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
+    # a prompts dir holding a 1-digit name (slide-1.txt — non-canonical even under
+    # the R3 2/3-digit overlay), a 4-digit name (slide-0100.txt), AND a zero-pad
+    # collision (slide-01.txt vs slide-1.txt) FAILS the shared choke point with
+    # both codes. This closes the AF-QC-INDEPENDENCE-class no-op for the two
+    # autofails U02-SYNCFIX registered (AF-PROMPT-NAME, AF-PROMPT-DUP-FILE).
+    _pp_root = Path(tempfile.mkdtemp(prefix="deck_prompt_dir_problems_"))
+    (_pp_root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (_pp_root / "working" / "prompts" / "slide-1.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-01.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-0100.txt").write_text("x")
+    for _prob in build_deck._canonical_prompt_dir_problems(_pp_root):
+        record("AF-PROMPT-NAME", _prob)
+        record("AF-PROMPT-DUP-FILE", _prob)
 
     # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
     over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
@@ -4300,6 +4718,16 @@ def emit_af_coverage():
         json.dumps({"phase_attestations": []}))
     _cc_reason = build_deck._chk_cc_registered(_cc_root, "probe-deck")
     record("AF-CC-UNREGISTERED", _cc_reason)
+
+    # AF-CC-UNVERIFIED — probe (T2 gate teeth): cc_register_attempted=True with NO
+    # cc_task_id (transport/partial failure — could-not-verify must fail the gate
+    # with an honest message, never read as verified).
+    _ccu_root = Path(_tf_cc.mkdtemp(prefix="deck_coverage_cc_unverified_probe_"))
+    (_ccu_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_ccu_root / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
+    _ccu_reason = build_deck._chk_cc_registered(_ccu_root, "probe-deck")
+    record("AF-CC-UNVERIFIED", _ccu_reason)
 
     # Skill 51 — AF-SP-* Signature-Presentation gates. One deliberately-failing signature
     # fixture per code trips its build_deck._chk_sp_* wrapper (Guard-A negative coverage).
@@ -5113,6 +5541,13 @@ def main():
     # destination; proves DELIVERABLES_REQUIRED has exactly the 10 required keys.
     failures += test_postflight_gate()
 
+    # Unit test — SPEECH-LENGTH closeout re-check (absence-vs-not-yet-produced gap
+    # fix): proves a short speech that clears only the generic byte floor now exit-5s
+    # at closeout (mirrors the pre-existing _chk_kie_baked re-check pattern), a
+    # floor-clearing speech still passes, and a bare gate-only call (no run_dir)
+    # is unaffected.
+    failures += test_postflight_speech_length_reverify()
+
     # Unit test — TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE):
     # proves a full bundle with no/unverified teleprompter_publish.json fails (exit 5),
     # a published+HTTP-200 record passes, a 404 fails, skipped_adhoc passes, and a
@@ -5189,6 +5624,12 @@ def main():
     # advances on attestation, honors owner-authorized skips, and never picks out-of-order.
     failures += test_runner_next_turn_gate()
 
+    # Gate 1 close (fix/two-remaining-gates) — STYLE_PHASE_GATE binds run_preflight() to
+    # P-STYLE-PREVIEW at every DIRECT entry point, staged warn->enforce (Rule 3.5): warn
+    # stage never bricks the shared with_artifacts=True fixture; enforce stage refuses an
+    # unattested style-preview phase; an attested/waived phase passes in both stages.
+    failures += test_style_phase_gate()
+
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
 
@@ -5211,6 +5652,14 @@ def main():
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
     failures += test_sp_wrappers()
+
+    # Gate 2 close (fix/two-remaining-gates) — _chk_sp_claim's `mod is None` fallback
+    # (prove_sp_routing.py not co-located) now checks all four SP signals the docstring
+    # already promises, not just sp_intake.json presence: signature_frame, presentation_
+    # type=='signature', and two intake_ledger.json shapes all now trip AF-SP-TYPE-
+    # UNDECLARED; a plain non-signature deck (no signals) and a declared deck both still
+    # pass "" (regression guards).
+    failures += test_sp_claim_mod_none_fallback()
 
     # U027 -- check_ocr_readback (AF-OCR-READBACK): no renders defers; missing
     # sidecars/checked:false/matched:false/malformed-JSON/partial-missing all FAIL;
@@ -5937,24 +6386,69 @@ def test_deck_type_u021() -> list:
     return fails
 
 
-def test_chk_cc_registered() -> list:
-    """AF-CC-UNREGISTERED negative test (Fix 5a):
-    Verifies that build_deck._chk_cc_registered enforces the CC registration gate.
+def _cc_registration_receipt(cc_task_id: str, idempotency_key: str, deck_slug: str) -> dict:
+    """Build a cc_registration receipt exactly as cc_board.registration_proof
+    does (deterministic HMAC over cc_task_id|idempotency_key) so the gate test
+    fixtures can mint a VERIFIED receipt without importing cc_board."""
+    import hashlib as _hl, hmac as _hm
+    canonical = f"{cc_task_id}|{idempotency_key}"
+    digest = _hm.new(canonical.encode("utf-8"), b"", _hl.sha256).hexdigest()
+    return {
+        "task_id": cc_task_id,
+        "idempotency_key": idempotency_key,
+        "deck_slug": deck_slug,
+        "hmac": digest,
+    }
 
-    Cases:
-      (A) process_manifest.json with NEITHER cc_task_id NOR cc_register_attempted
-          -> FAIL (fail-closed: never-attempted is a hard fail).
-      (B) process_manifest.json with cc_register_attempted=True but no cc_task_id
-          -> PASS (fail-soft: transport failure satisfies the gate).
-      (C) process_manifest.json with cc_task_id set (successful registration)
-          -> PASS.
+
+def test_chk_cc_registered() -> list:
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED gate test (Fix 5a + T2 gate teeth):
+    Verifies that build_deck._chk_cc_registered enforces the CC registration
+    gate with THREE outcomes:
+
+      (A) NEITHER cc_task_id NOR cc_register_attempted -> FAIL
+          AF-CC-UNREGISTERED (fail-closed: never-attempted is a hard fail).
+      (B) cc_register_attempted=True but NO cc_task_id -> FAIL
+          AF-CC-UNVERIFIED (transport/partial failure; could-not-verify must
+          NOT read as verified — bare attempted is NOT a pass).
+      (C) cc_task_id + VERIFYING cc_registration HMAC receipt (a real
+          cc_board.ingest_deck_task round-trip) -> PASS ("").
+      (F) cc_task_id present but cc_registration receipt MISSING (hand-written
+          or stale id, no proof) -> FAIL AF-CC-UNVERIFIED (never verified).
+      (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged)
+          -> FAIL AF-CC-UNVERIFIED.
       (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
-      (E) process_manifest.json absent entirely
-          -> FAIL (fail-closed: manifest missing at closeout).
+      (E) process_manifest.json absent entirely -> FAIL (fail-closed: manifest
+          missing at closeout).
 
     Returns a list of failure strings ([] = all passed).
     """
     fails = []
+
+    def _assert_fail(label: str, result, code: str):
+        if not result or code not in result:
+            fails.append(
+                f"{label}: expected a FAIL carrying {code}, got: {result!r}"
+            )
+        # Could-not-verify must be UNREADABLE as verified: the failure text
+        # must not claim the run VERIFIED/registered as a pass (a bare
+        # "registered" claim would read as verified). "not verified" /
+        # "could not be verified" / "does not count as registered" are honest
+        # negations and fine; the assertion targets affirmative claims.
+        _upper = result.upper()
+        # Strip the AF code names themselves ("AF-CC-UNVERIFIED" / "AF-CC-
+        # UNREGISTERED" legitimately contain VERIFIED/REGISTERED) plus honest
+        # negations, then require NO affirmative verified/registered claim.
+        for _tok in ("AF-CC-UNVERIFIED", "AF-CC-UNREGISTERED",
+                     "UNVERIFIED", "UNREGISTERED",
+                     "NOT BE VERIFIED", "NOT COUNT AS REGISTERED",
+                     "NEVER COUNTS AS VERIFIED", "NOT PROVABLY PRODUCED"):
+            _upper = _upper.replace(_tok, "")
+        if "VERIFIED" in _upper or "REGISTERED" in _upper:
+            fails.append(
+                f"{label}: failure text must not read as verified/registered, "
+                f"got: {result!r}"
+            )
 
     # (A) Neither cc_task_id nor cc_register_attempted -> FAIL (fail-closed).
     rd_a = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_a_"))
@@ -5962,39 +6456,42 @@ def test_chk_cc_registered() -> list:
     (rd_a / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": []}))
     r_a = build_deck._chk_cc_registered(rd_a, "test-deck")
-    if not r_a or "AF-CC-UNREGISTERED" not in r_a:
-        fails.append(
-            f"CC-REG-A: no cc_task_id and no cc_register_attempted must FAIL "
-            f"AF-CC-UNREGISTERED, got: {r_a!r}"
-        )
+    _assert_fail("CC-REG-A", r_a, "AF-CC-UNREGISTERED")
     print(f"CC-REG-A (never-attempted fail-closed) -> "
           f"{'PASS' if 'CC-REG-A' not in str(fails) else 'FAIL'}")
 
-    # (B) cc_register_attempted=True but no cc_task_id -> PASS (fail-soft).
+    # (B) cc_register_attempted=True but NO cc_task_id -> FAIL AF-CC-UNVERIFIED.
+    # T2: bare attempted without a task id must NOT satisfy the gate, and must
+    # never print as verified.
     rd_b = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_b_"))
     (rd_b / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_b / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
     r_b = build_deck._chk_cc_registered(rd_b, "test-deck")
-    if r_b:
-        fails.append(
-            f"CC-REG-B: cc_register_attempted=True must PASS (fail-soft), got: {r_b!r}"
-        )
-    print(f"CC-REG-B (transport-fail soft-pass)    -> "
+    _assert_fail("CC-REG-B", r_b, "AF-CC-UNVERIFIED")
+    if "cc_register_attempted" not in (r_b or ""):
+        fails.append("CC-REG-B: UNVERIFIED message must say the attempt was logged "
+                     f"(cc_register_attempted), got: {r_b!r}")
+    print(f"CC-REG-B (attempted-no-id UNVERIFIED)  -> "
           f"{'PASS' if 'CC-REG-B' not in str(fails) else 'FAIL'}")
 
-    # (C) cc_task_id set (successful registration) -> PASS.
+    # (C) cc_task_id + VERIFYING cc_registration receipt -> PASS (real round-trip).
     rd_c = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_c_"))
     (rd_c / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_c / "working" / "checkpoints" / "process_manifest.json").write_text(
-        json.dumps({"phase_attestations": [], "cc_task_id": "task-abc-123",
-                    "cc_register_attempted": True}))
+        json.dumps({
+            "phase_attestations": [],
+            "cc_task_id": "task-abc-123",
+            "cc_register_attempted": True,
+            "cc_registration": _cc_registration_receipt(
+                "task-abc-123", "sha256-deck-key", "test-deck"),
+        }))
     r_c = build_deck._chk_cc_registered(rd_c, "test-deck")
     if r_c:
         fails.append(
-            f"CC-REG-C: cc_task_id set must PASS (successful registration), got: {r_c!r}"
+            f"CC-REG-C: cc_task_id + verifying receipt must PASS, got: {r_c!r}"
         )
-    print(f"CC-REG-C (successful-reg pass)         -> "
+    print(f"CC-REG-C (verified receipt pass)       -> "
           f"{'PASS' if 'CC-REG-C' not in str(fails) else 'FAIL'}")
 
     # (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
@@ -6011,13 +6508,39 @@ def test_chk_cc_registered() -> list:
     (rd_e / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     # No process_manifest.json written.
     r_e = build_deck._chk_cc_registered(rd_e, "test-deck")
-    if not r_e or "AF-CC-UNREGISTERED" not in r_e:
-        fails.append(
-            f"CC-REG-E: absent process_manifest.json must FAIL AF-CC-UNREGISTERED, "
-            f"got: {r_e!r}"
-        )
+    _assert_fail("CC-REG-E", r_e, "AF-CC-UNREGISTERED")
     print(f"CC-REG-E (manifest-absent fail-closed) -> "
           f"{'PASS' if 'CC-REG-E' not in str(fails) else 'FAIL'}")
+
+    # (F) cc_task_id WITHOUT a cc_registration receipt (bare id, no proof —
+    # hand-written or stale) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_f = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_f_"))
+    (rd_f / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_f / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True}))
+    r_f = build_deck._chk_cc_registered(rd_f, "test-deck")
+    _assert_fail("CC-REG-F", r_f, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-F (bare id no receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-F' not in str(fails) else 'FAIL'}")
+
+    # (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged
+    # proof) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_g = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_g_"))
+    (rd_g / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    _bad_receipt = _cc_registration_receipt(
+        "task-abc-123", "sha256-deck-key", "test-deck")
+    _bad_receipt["hmac"] = "0" * 64  # forged digest
+    (rd_g / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True,
+                    "cc_registration": _bad_receipt}))
+    r_g = build_deck._chk_cc_registered(rd_g, "test-deck")
+    _assert_fail("CC-REG-G", r_g, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-G (tampered receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-G' not in str(fails) else 'FAIL'}")
 
     print(f"CC-REGISTERED (gate tests)   -> {'PASS' if not fails else 'FAIL'}")
     return fails

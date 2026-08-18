@@ -47,13 +47,18 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "verify: FATAL python3 required" >&2; exit 4; }
 
 SELF_DIR="$SELF_DIR" python3 - <<'PY'
-import io, json, os, re, subprocess, sys
+import hashlib, io, json, os, re, shutil, subprocess, sys, tempfile
 
 root = os.environ["SELF_DIR"]
 def p(*a): return os.path.join(root, *a)
 fails = []
 def need(cond, msg):
     if not cond: fails.append(msg)
+
+# 'man' is resolved at module scope so a malformed ENGINE-MANIFEST can NEVER
+# become a NameError traceback (rc=1): every later use goes through the
+# isinstance guard, and the failure is reported as a clean DRIFT issue instead.
+man = None
 
 # --- house layout presence ---
 for rel in ["SKILL.md", "ENGINE-MANIFEST.json", "INSTRUCTIONS.md", "HOW-TO-USE.md",
@@ -93,11 +98,17 @@ except Exception as exc:
     fails.append("version check error: %s" % exc)
 
 # --- ENGINE-MANIFEST parses with S0..S9 ---
+# Try to resolve 'man' here so the inventory and DRIFT recompute sections can
+# trust it below; when parsing fails, every consumer must isinstance-guard.
 try:
     man = json.load(io.open(p("ENGINE-MANIFEST.json"), encoding="utf-8"))
-    stage_ids = {s.get("id") for s in man.get("stages", [])}
-    for i in range(10):
-        need(("S%d" % i) in stage_ids, "ENGINE-MANIFEST missing stage S%d" % i)
+    if not isinstance(man, dict):
+        fails.append("ENGINE-MANIFEST does not parse to a JSON object")
+        man = None
+    else:
+        stage_ids = {s.get("id") for s in man.get("stages", [])}
+        for i in range(10):
+            need(("S%d" % i) in stage_ids, "ENGINE-MANIFEST missing stage S%d" % i)
 except Exception as exc:
     fails.append("ENGINE-MANIFEST parse error: %s" % exc)
 
@@ -181,6 +192,127 @@ for f in stage_files:
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     need(rc == 0, "stage runner --self-test failed: %s" % f)
 
+# --- tooling CLIs: enumerate the 10 assembled U02-U23 dispatchers and run --self-test ---
+# The W1.1-sibling tooling layer (U02..U23) ships ten assembled CLIs, each with
+# an OFFLINE --self-test battery (golden PASS / attack FAIL; exit 4 on any
+# failure, never exit 1). They are enumerated by exact basename — the same
+# roster discipline as stage_files above — and their self-tests run on every
+# verify so a drifted family module, a manifest-mirror AF table, or a broken
+# assembly FAILS this verify (exit 4) instead of shipping green. Exit 0 = the
+# battery passed; anything else (2/3/4/5) is DRIFT.
+#
+# READ-ONLY ISOLATION: the dispatchers write manifest-pending/<unit>.json
+# after a PASS (their designed stage surface). This verify is READ-ONLY over
+# the shipped tree, so the self-tests run against a temp COPY of the engine
+# (scripts/ + config/ + ENGINE-MANIFEST.json, pycache excluded) — the pending
+# writes land in the copy's manifest-pending/ and the shipped tree is never
+# mutated, never clobbered, even when another writer has in-flight changes.
+cli_files = [
+    "live_verify_template.py", "check_pipeline_name.py", "fix_intake_form.py",
+    "check_intake_fire_scope.py", "archive_legacy_workflows.py",
+    "provision_fields.py", "build_anthology_forms.py",
+    "build_anthology_workflows.py", "provision_sms_phone.py",
+    "cc_board_hygiene.py", "copy_qc_workflows.py",
+]
+cli_missing = [f for f in cli_files if not os.path.isfile(p("scripts", f))]
+for f in cli_missing:
+    fails.append("missing tooling CLI: scripts/%s" % f)
+cli_copy = None
+if not cli_missing:
+    try:
+        cli_copy = tempfile.mkdtemp(prefix="anthology-engine-verify-")
+        shutil.copytree(p("scripts"), os.path.join(cli_copy, "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(p("config"), os.path.join(cli_copy, "config"))
+        # Root-level files the CLIs read from their resolved SKILL_DIR: the
+        # manifest (house_rules mirror), HOW-TO-USE.md + skill-version.txt
+        # (the U20 welcome-builder card law), and fixtures/ when present.
+        for _root_f in ("ENGINE-MANIFEST.json", "HOW-TO-USE.md",
+                        "skill-version.txt"):
+            if os.path.isfile(p(_root_f)):
+                shutil.copy(p(_root_f), cli_copy)
+        if os.path.isdir(p("fixtures")):
+            shutil.copytree(p("fixtures"), os.path.join(cli_copy, "fixtures"))
+        for f in cli_files:
+            fp = os.path.join(cli_copy, "scripts", f)
+            rc = subprocess.call([sys.executable, "-m", "py_compile", fp])
+            need(rc == 0, "tooling CLI does not byte-compile: %s" % f)
+            rc = subprocess.call([sys.executable, fp, "--self-test"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 timeout=600, cwd=cli_copy)
+            need(rc == 0, "tooling CLI --self-test failed (rc=%d): %s"
+                 % (rc, f))
+    finally:
+        if cli_copy:
+            shutil.rmtree(cli_copy, ignore_errors=True)
+
+# --- U14 copy-QC gate: every built workflow template passes the copy law ---
+# The U10-U13 template documents (scripts/u10_u13_workflows/*.json) are the
+# source of what deploys, so the U14 copy law (editors never AI/ghostwriter,
+# zero em-dashes, email AND SMS for author-facing releases, stage-appropriate
+# links, per-stage copy invariants) must hold over them on every verify. Runs
+# inside the isolated copy above (read-only over the shipped tree).
+if not cli_missing:
+    _qc_copy = None
+    try:
+        _qc_copy = tempfile.mkdtemp(prefix="anthology-engine-verify-qc-")
+        shutil.copytree(p("scripts"), os.path.join(_qc_copy, "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(p("config"), os.path.join(_qc_copy, "config"))
+        for _root_f in ("ENGINE-MANIFEST.json", "HOW-TO-USE.md",
+                        "skill-version.txt"):
+            if os.path.isfile(p(_root_f)):
+                shutil.copy(p(_root_f), _qc_copy)
+        _qc_py = os.path.join(_qc_copy, "scripts", "copy_qc_workflows.py")
+        _qc_dir = os.path.join(_qc_copy, "scripts", "u10_u13_workflows")
+        if os.path.isfile(_qc_py) and os.path.isdir(_qc_dir):
+            _r = subprocess.run(
+                [sys.executable, _qc_py, "check", "--templates",
+                 "--directory", _qc_dir],
+                capture_output=True, text=True, timeout=300, cwd=_qc_copy)
+            if _r.returncode != 0:
+                _tail = (_r.stdout or _r.stderr or "").strip()[-500:]
+                fails.append("U14 copy-QC gate FAILED (rc=%d): %s"
+                             % (_r.returncode, _tail))
+        else:
+            fails.append("U14 copy-QC gate missing target: scripts/copy_qc_"
+                         "workflows.py or scripts/u10_u13_workflows/")
+    finally:
+        if _qc_copy:
+            shutil.rmtree(_qc_copy, ignore_errors=True)
+
+# --- U17 drift gate: the snapshot fixture must agree with the source of truth ---
+# scripts/qc-snapshot-fixture.sh (ENGINE-MANIFEST row 52, authored_by U17) is the
+# CI drift gate over fixtures/snapshot/anthology-engine-v1.0.0.json. It runs HERE
+# on every verify so a stale fixture -- or a renamed ENGINE-MANIFEST stage name,
+# field-map key, or form-field name -- fails the engine's own self-verify (exit 4)
+# before it can ship. Exit contract of the gate: 0 agree, 1 DRIFT, 2 blind.
+_gsnap = p("scripts", "qc-snapshot-fixture.sh")
+if os.path.isfile(_gsnap):
+    _r = subprocess.run(["bash", _gsnap, "--skill-dir", root, "--json"],
+                        capture_output=True, text=True, timeout=120)
+    if _r.returncode != 0:
+        _tail = "\n".join((_r.stdout or "").splitlines()[-6:])
+        fails.append("snapshot-fixture drift gate FAILED (rc=%d): %s" % (_r.returncode, _tail))
+else:
+    fails.append("missing U17 drift gate: scripts/qc-snapshot-fixture.sh")
+
+# --- runner roster: the U17 drift gate's own mutation self-test ---
+# The gate must DISCRIMINATE: an untouched tree passes, a manifest-name tamper
+# fails. A gate that passes when the world drifts is dead; a gate that fails on
+# a clean tree is broken. Same roster discipline as the stage-runner
+# --self-test loop above.
+_sg = p("scripts", "qc-snapshot-fixture.sh")
+if os.path.isfile(_sg):
+    _r = subprocess.run(["bash", _sg, "--self-test", "--skill-dir", root],
+                        capture_output=True, text=True, timeout=180)
+    need(_r.returncode == 0,
+         "qc-snapshot-fixture --self-test failed (rc=%d): %s"
+         % (_r.returncode, (_r.stderr or _r.stdout or "").strip().splitlines()[-1] if ((_r.stderr or _r.stdout or "").strip()) else ""))
+else:
+    fails.append("missing U17 drift gate self-test target: scripts/qc-snapshot-fixture.sh")
+
 # --- no Anthropic-family id in any owned text file ---
 owned = ["SKILL.md", "INSTRUCTIONS.md", "HOW-TO-USE.md", "MASTERDOC.md", "REPAIRS.md",
          "CHANGELOG.md", "ENGINE-MANIFEST.json", "anthology-engine-entry.sh",
@@ -210,7 +342,7 @@ if os.path.isdir(scripts_dir):
             shipped_scripts.add(fn)
 
 inventory_script_names = set()
-if isinstance(man.get("script_inventory"), list):
+if isinstance(man, dict) and isinstance(man.get("script_inventory"), list):
     for row in man["script_inventory"]:
         raw = (row.get("script") or "")
         raw = re.sub(r'\s*\([^)]+\)', '', raw)
@@ -219,30 +351,97 @@ if isinstance(man.get("script_inventory"), list):
             if part:
                 inventory_script_names.add(part)
 
-# Only cross-check names that resolve to scripts/ basenames
-shipped_missing_from_inventory = shipped_scripts - inventory_script_names
-inventory_missing_from_disk = {n for n in inventory_script_names
-                               if n not in shipped_scripts and n.endswith('.py')}
+# Only cross-check names that resolve to scripts/ basenames. Skipped entirely
+# when the manifest did not parse (man is None): the parse error is already a
+# DRIFT issue, and an empty inventory would flag every shipped script as
+# unaccounted -- noise, not signal.
+if isinstance(man, dict):
+    shipped_missing_from_inventory = shipped_scripts - inventory_script_names
+    inventory_missing_from_disk = {n for n in inventory_script_names
+                                   if n not in shipped_scripts and n.endswith('.py')}
 
-if shipped_missing_from_inventory:
-    for fn in sorted(shipped_missing_from_inventory):
-        fails.append("script shipped but NOT in ENGINE-MANIFEST script_inventory: scripts/%s" % fn)
+    if shipped_missing_from_inventory:
+        for fn in sorted(shipped_missing_from_inventory):
+            fails.append("script shipped but NOT in ENGINE-MANIFEST script_inventory: scripts/%s" % fn)
 
-if inventory_missing_from_disk:
-    for fn in sorted(inventory_missing_from_disk):
-        fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
+    if inventory_missing_from_disk:
+        for fn in sorted(inventory_missing_from_disk):
+            fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
 
-    # --- no Google API key literal in any owned text file ---
-    _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
-    for rel in owned:
-        fp = p(rel)
-        if not os.path.isfile(fp): continue
-        try:
-            txt = io.open(fp, encoding="utf-8", errors="replace").read()
-        except Exception:
-            continue
-        if _google_api_re.search(txt):
-            fails.append("Google API key literal found in owned file: %s" % rel)
+        # --- no Google API key literal in any owned text file ---
+        _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
+        for rel in owned:
+            fp = p(rel)
+            if not os.path.isfile(fp): continue
+            try:
+                txt = io.open(fp, encoding="utf-8", errors="replace").read()
+            except Exception:
+                continue
+            if _google_api_re.search(txt):
+                fails.append("Google API key literal found in owned file: %s" % rel)
+
+# --- enforcement-set hash vs ENGINE-PIN.sha256 (DRIFT recompute) ---
+# The entry's GATE 3 (AF-AE-HASH-PIN) enforces the pin at dispatch time; this
+# READ-ONLY recompute mirrors it so a drift is caught by verify.sh itself as a
+# clean DRIFT (exit 4) -- the same six enforcement candidates, in the same
+# canonical order, as the entry gate and the stamp-pin subcommand.
+enforce_candidates = [
+    p("anthology-engine-entry.sh"),
+    p("ENGINE-MANIFEST.json"),
+    p("scripts", "guard-prompt-pins.py"),
+    p("scripts", "guard-no-anthropic-runtime.py"),
+    p("scripts", "guard-font-floor.py"),
+    p("scripts", "guard-cron-inventory.py"),
+]
+present = [f for f in enforce_candidates if os.path.isfile(f)]
+pin_path = p("ENGINE-PIN.sha256")
+if os.path.isfile(pin_path):
+    try:
+        expected = io.open(pin_path, encoding="utf-8").read().strip()
+    except Exception as exc:
+        fails.append("ENGINE-PIN.sha256 unreadable: %s" % exc)
+        expected = None
+    if expected:
+        if len(present) != len(enforce_candidates):
+            fails.append("enforcement-set DRIFT: %d of %d candidates present (missing: %s)" % (
+                len(present), len(enforce_candidates),
+                ", ".join(os.path.relpath(f, root) for f in enforce_candidates if f not in present)))
+        else:
+            try:
+                h = hashlib.sha256()
+                for f in enforce_candidates:
+                    with io.open(f, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(65536), b""):
+                            h.update(chunk)
+                computed = h.hexdigest()
+                if computed != expected:
+                    fails.append("enforcement-set DRIFT: recomputed %s != pinned %s" % (computed, expected))
+            except Exception as exc:
+                fails.append("enforcement-set hash recompute failed: %s" % exc)
+
+
+# --- clean-env secrets-source regression guard (2026-08-10) ---
+# preflight.sh must resolve credential gates (KIE_API_KEY etc.) from the box's
+# canonical secrets file even when invoked in a CLEAN environment (no exported
+# vars) -- e.g. a fleet-roll SSH that does not export the box's own secrets.
+# Without this, the IMAGE tier fails closed with "KIE_API_KEY not set" on any
+# box whose key exists only in ~/.openclaw/secrets/.env. This guard re-runs
+# preflight in a scrubbed env and asserts it does NOT report the IMAGE-tier
+# unresolved warning (which is the false-negative signature).
+try:
+    _clean = subprocess.run(
+        ["/usr/bin/env", "-i",
+         "HOME=%s" % os.environ.get("HOME", ""),
+         "PATH=/usr/bin:/bin:/usr/local/bin",
+         os.path.join(root, "preflight.sh"), "--check"],
+        capture_output=True, text=True, timeout=120)
+    _out = (_clean.stdout or "") + (_clean.stderr or "")
+    if "IMAGE tier unresolved" in _out:
+        fails.append("clean-env preflight reports 'IMAGE tier unresolved' -- "
+                     "secrets-source guard missing or KIE_API_KEY absent from "
+                     "the canonical secrets file")
+except Exception as _e:
+    fails.append("clean-env preflight guard could not run: %s" % _e)
 
 
 if fails:

@@ -1,0 +1,55 @@
+{
+  "actions": [
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "send-email",
+      "send-sms"
+    ],
+    "email": {
+      "body": "Dear {{ contact.first_name }},\n\nCongratulations. Your book is delivered, and you are a published author. From your first chapter to this finished manuscript, our editors have worked alongside you at every step.\n\nView your book PDF here:\n{{ contact.anthology_manuscript_pdf_url }}\n\nEdit your manuscript in the Google Doc here:\n{{ contact.anthology_manuscript_doc_url }}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you have any final requests, open the delivery form here:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=delivered\n\nWarm regards,\nThe Editors",
+      "from_name_merge": "{{ custom_values.producer }}",
+      "link_fields": [
+        "{{contact.anthology_manuscript_pdf_url}}",
+        "{{contact.anthology_manuscript_doc_url}}"
+      ],
+      "sign_off": "The Editors",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=delivered",
+      "subject": "Your book is delivered"
+    },
+    "gate_cursor": "delivered",
+    "note": "offline template only \u2014 a REAL location write must ride the house clients (CAF_BROWSER_UA on every request \u2014 CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live; the tag is stamped by the assembly cockpit on every contact at S9 delivery, not by the per-contact producer-gate bus",
+    "producer_gate": "s9_producer",
+    "sms": {
+      "body": "Your book is delivered, and you are a published author. View it here: {{contact.anthology_manuscript_pdf_url}}",
+      "shape": "link-only short message (one warm sentence plus ONE link)"
+    },
+    "stage": "delivered",
+    "trigger_tag": "anthology-delivered",
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow_name": "Anthology: Book Delivered"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_manuscript_pdf_url}}",
+      "{{contact.anthology_manuscript_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_manuscript_pdf_url}}"
+  },
+  "module": "w11_delivered",
+  "name": "Anthology: Book Delivered",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 10,
+  "status": "DOCTRINE",
+  "trigger": {
+    "tag": "anthology-delivered",
+    "type": "contact_tag"
+  }
+}

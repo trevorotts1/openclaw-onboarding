@@ -7,6 +7,7 @@ import shlex
 import subprocess
 from typing import Any, Dict, Optional
 
+from .result import CheckResult
 from .state import StateStore, utcnow
 
 PROGRESS_MIN_INTERVAL_MINUTES = 10
@@ -27,21 +28,29 @@ def _parse_minutes(ts: str) -> float:
         return 0.0
 
 
-def dispatch(chat_id: str, kind: str, message: str) -> bool:
-    """Transport boundary. Returns True only on CONFIRMED delivery.
+def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
+    """Transport boundary, three-valued. This is the ONLY implementation of the
+    PRESENTATION_NOTIFY_CMD dispatch path anywhere in this package -- dispatch()
+    below and Reporter._dispatch3 both delegate here instead of re-running their
+    own subprocess.run. A second, independently-maintained copy of this logic is
+    exactly how U069 shipped with a live shell-injection hole: the class method
+    got the tokenise-first fix and a module-level twin did not, so watchdog.py
+    (which imports the dispatch path directly) stayed exploitable.
 
-    Standalone for callers without a StateStore (e.g. the watchdog, and
-    __main__.cmd_sweep_undeliverable). This is the ONLY implementation of the
-    PRESENTATION_NOTIFY_CMD dispatch path anywhere in this package --
-    Reporter._dispatch delegates here instead of re-running its own
-    subprocess.run. A second, independently-maintained copy of this logic is
-    exactly how U069 shipped with a live shell-injection hole: the class
-    method got the tokenise-first fix and this module-level twin did not, so
-    watchdog.py (which imports this function directly) stayed exploitable.
+    CheckResult.PASS         -- the notify command ran and exited 0. CONFIRMED delivery.
+    CheckResult.FAIL         -- PRESENTATION_NOTIFY_CMD is unset. A known, stable fact
+                                 about this environment, not an unknown -- there is no
+                                 transport to retry against until the env var is set.
+    CheckResult.UNDETERMINED -- the command ran and exited non-zero, OR timed out, OR
+                                 could not be started (OSError). We do NOT know whether
+                                 the message actually reached anyone: a non-zero exit
+                                 could mean a transient network blip just as easily as a
+                                 permanent rejection. Per the transport rule (see
+                                 result.py): unknown means keep trying, never discard.
     """
     cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
     if not cmd:
-        return False
+        return CheckResult.FAIL
     # U069: tokenise, refuse on unparseable, shell=False.
     try:
         argv = shlex.split(cmd)
@@ -54,9 +63,24 @@ def dispatch(chat_id: str, kind: str, message: str) -> bool:
         r = subprocess.run(argv, shell=False, input=json.dumps(
             {"chat_id": chat_id, "kind": kind, "message": message}),
             text=True, capture_output=True, timeout=30)
-        return r.returncode == 0
+        return CheckResult.PASS if r.returncode == 0 else CheckResult.UNDETERMINED
     except (subprocess.TimeoutExpired, OSError):
-        return False
+        return CheckResult.UNDETERMINED
+
+
+def dispatch(chat_id: str, kind: str, message: str) -> bool:
+    """Back-compat bool wrapper over dispatch3(), for callers that only ever had
+    a binary decision to make (watchdog.py's fire-and-forget stall notice,
+    __main__.cmd_sweep_undeliverable's per-message retry loop). True ONLY on
+    CheckResult.PASS -- both FAIL and UNDETERMINED collapse to False here,
+    which is the correct, unchanged behaviour for those two callers: they
+    already queue/re-attempt on any False, so nothing about their retry
+    semantics changes. Standalone (module-level, not a Reporter method) for
+    callers without a StateStore. Do not re-derive the subprocess.run call
+    anywhere else -- see dispatch3()'s docstring for why that's exactly the
+    U069 bypass shape.
+    """
+    return dispatch3(chat_id, kind, message) is CheckResult.PASS
 
 
 class Reporter:
@@ -95,18 +119,42 @@ class Reporter:
             return
 
         should_send = self._throttle_decision(kind, message, phase_id, reason)
-        if should_send:
-            ok = self._dispatch(chat_id, kind, message)
-            if ok:
-                self._stamp_sent(kind)
-            else:
-                self.state.setdefault("undeliverable", []).append(
-                    {"at": utcnow(), "kind": kind, "message": message,
-                     "chat_id": chat_id, "attempts": 1})
-        else:
+        if not should_send:
             throttled = self.state.setdefault("throttled", 0)
             self.state["throttled"] = throttled + 1
+            self.store.save(self.state)
+            return
+
+        result = self._dispatch3(chat_id, kind, message)
+        if result is CheckResult.PASS:
+            self._stamp_sent(kind)
+            if kind == "blocked" and phase_id and reason:
+                # B6-1 fix: stamp the dedupe timer ONLY on a CONFIRMED delivery, and
+                # only here -- never in _throttle_decision, and never before this
+                # point. The old code stamped the timer the moment a blocked event
+                # was ALLOWED to attempt dispatch, before the outcome was known. If
+                # that first attempt then failed to reach the transport (FAIL or
+                # UNDETERMINED), the timer was already set, so the very next
+                # identical (phase_id, reason) blocked event -- typically seconds
+                # later, from heal.py's own retry loop -- was silently throttled:
+                # never dispatched, never queued to `undeliverable`, an alert about
+                # a real failure just... suppressed for BLOCKED_DEDUPE_MINUTES. A
+                # transport's unknown must keep trying, never be treated as if it
+                # had already gotten through (see result.py).
+                self._blocked_dedupe[self._blocked_key(phase_id, reason)] = _parse_minutes(utcnow())
+        else:
+            # FAIL (no transport configured) or UNDETERMINED (timeout / non-zero
+            # exit / could not start): never discard. Queue for the sweeper
+            # (--sweep-undeliverable / cmd_sweep_undeliverable) and do NOT stamp
+            # the dedupe timer -- see above.
+            self.state.setdefault("undeliverable", []).append(
+                {"at": utcnow(), "kind": kind, "message": message,
+                 "chat_id": chat_id, "attempts": 1, "outcome": result.value})
         self.store.save(self.state)
+
+    @staticmethod
+    def _blocked_key(phase_id: str, reason: str) -> str:
+        return f"{phase_id}\x00{reason}"
 
     def _stamp_sent(self, kind: str) -> None:
         sent = self.state.setdefault("sent", {})
@@ -125,12 +173,15 @@ class Reporter:
             return True
         if kind == "blocked":
             if phase_id and reason:
-                key = f"{phase_id}\x00{reason}"
+                key = self._blocked_key(phase_id, reason)
                 now_min = _parse_minutes(utcnow())
                 last = self._blocked_dedupe.get(key)
                 if last is not None and (now_min - last) < BLOCKED_DEDUPE_MINUTES:
                     return False
-                self._blocked_dedupe[key] = now_min
+                # NOTE: the timer is deliberately NOT stamped here -- only
+                # to_requester() stamps it, and only on a CONFIRMED PASS. See the
+                # B6-1 comment in to_requester() for why "allowed to attempt" and
+                # "actually delivered" must not be conflated.
                 return True
             return True
         if kind == "progress":
@@ -157,9 +208,9 @@ class Reporter:
                 return True
         return False
 
-    def _dispatch(self, chat_id: str, kind: str, message: str) -> bool:
-        # U069: delegates to the module-level dispatch() -- do not re-derive
-        # the tokenise-first / shell=False logic here. See dispatch()'s
+    def _dispatch3(self, chat_id: str, kind: str, message: str) -> CheckResult:
+        # U069: delegates to the module-level dispatch3() -- do not re-derive
+        # the tokenise-first / shell=False logic here. See dispatch3()'s
         # docstring: a second copy of this is precisely the bypass U069
         # closure exists to prevent.
-        return dispatch(chat_id, kind, message)
+        return dispatch3(chat_id, kind, message)

@@ -9,7 +9,7 @@ creds because they were never there.
 
 ## Deployment state (live)
 
-The shipped 53-node asset (`anthology-drive-broker.workflow.json`) is deployed and
+The shipped 54-node asset (`anthology-drive-broker.workflow.json`) is deployed and
 **active** on the n8n instance at `https://main.blackceoautomations.com`. Only one
 workflow on the `anthology-drive` webhook path is active:
 
@@ -21,8 +21,9 @@ workflow on the `anthology-drive` webhook path is active:
 
 The GK-02 divergent workflow (`S8E6c41WfB8fAGiL`) was deactivated because it missed the
 Retry-with-Notification node on the producer editor share (the 53-node shipped asset added
-it). The old 20-node broker (`F2X3SxZVhWRDxHOV`) is a pre-tree-building stub, also inactive.
-The shipped 53-node asset is the sole active broker.
+it; U25 later added the Share Confirmed? gate, making the asset 54 nodes). The old 20-node
+broker (`F2X3SxZVhWRDxHOV`) is a pre-tree-building stub, also inactive.
+The shipped 54-node asset is the sole active broker.
 
 ## Import / re-import (if re-deploying from the shipped asset)
 
@@ -75,7 +76,7 @@ The shipped 53-node asset is the sole active broker.
 }
 ```
 
-Response (200):
+Response (200) — the ONLY success shape:
 
 ```
 { "ok": true, "action": "create_book_tree", "via": "n8n_broker",
@@ -87,28 +88,29 @@ Response (200):
 Behaviour: idempotent get-or-create of `root/client_key/producer_email/book_title`
 (re-runs return the same ids), then a named-user **editor** (writer) share of the book
 folder to `producer_email`. The first permissions request uses
-`sendNotificationEmail=false`. If Google returns a non-2xx response (including the
-consumer/non-Workspace-domain `400` case), the workflow follows the HTTP Request
-node's error output and retries the same writer share once with
-`sendNotificationEmail=true`.
+`sendNotificationEmail=false`. If Google returns a non-2xx response, the workflow
+follows the HTTP Request node's error output and retries the same writer share once
+with `sendNotificationEmail=true`.
 
-If either permissions request succeeds, the response above contains
-`producer_editor_shared: true` and no warning. If the notification-enabled retry also
-fails, folder creation remains successful and the webhook still returns `200`, but it
-truthfully reports the non-fatal share failure:
+**Fail-closed (U25).** The producer editor share is NOT optional — the engine must
+never receive a book tree the producer cannot edit. Two layers enforce this:
 
-```
-{ "ok": true, "action": "create_book_tree", "via": "n8n_broker",
-  "root_folder_id": "...", "client_folder_id": "...",
-  "producer_folder_id": "...", "book_folder_id": "...",
-  "producer_editor_shared": false,
-  "warning": {
-    "code": "producer_editor_share_failed",
-    "message": "Book folder created, but editor sharing failed after retrying with notification email enabled."
-  } }
-```
+1. **Up-front email gate.** `create_book_tree` is rejected with **`422`** (Respond
+   Rejected, `{ "ok": false, "error": "producer_email_not_shareable", ... }`) when
+   `producer_email` is not a Google Workspace / Drive-shareable account (consumer
+   Gmail and other domains Google refuses to grant a Drive role to). The rejection
+   happens BEFORE any folder or share is created — the tree is never half-provisioned.
+2. **Share confirmation.** If both the first share attempt and the
+   notification-enabled retry fail, the workflow responds **`502`** with
+   `{ "ok": false, "error": "producer_editor_share_failed", ... }` (via Respond
+   Rejected). A `200` is returned ONLY when the share is confirmed; there is no
+   "200-with-warning" contract. The client side (`drive_adapter.broker_create_book_tree`)
+   raises `DependencyError` on any response whose `producer_editor_shared` is not
+   `true`, whose `warning.code` is `producer_editor_share_failed`, or whose `ok` is not
+   confirmed `true`.
 
-Bad/absent token → `401`; missing fields → `400`.
+Bad/absent token → `401`; missing fields → `400`; non-shareable producer email → `422`;
+double share failure → `502`.
 
 **Implemented — the per-participant tree + the four per-Doc actions.** These close the
 E9 gap so the WHOLE S0..S8 Drive path runs on a pure client box through the broker:

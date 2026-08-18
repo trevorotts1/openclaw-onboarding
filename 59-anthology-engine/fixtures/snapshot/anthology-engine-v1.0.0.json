@@ -1,0 +1,582 @@
+{
+  "$schema_note": "MACHINE-READABLE EXTRACT of the Anthology Convert and Flow template location (fixtures/snapshot/...). Produced by scripts/snapshot_cut.py (NEW-1); gated byte-exact against config/field-map.json. Structured inventory ONLY — carries no GHL workflow JSON export (scan-no-json-exports.sh bans those), no connections/pinData graph, no real token, no real hook URL.",
+  "counts": {
+    "custom_fields": 38,
+    "custom_values": 4,
+    "forms": 4,
+    "tags": 8,
+    "workflows": 8
+  },
+  "custom_fields": [
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_avatar_doc_url",
+      "name": "anthology_avatar_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_avatar_pdf_url",
+      "name": "anthology_avatar_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_tone_doc_url",
+      "name": "anthology_tone_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_tone_pdf_url",
+      "name": "anthology_tone_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_titles_doc_url",
+      "name": "anthology_titles_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_titles_pdf_url",
+      "name": "anthology_titles_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_blurb_doc_url",
+      "name": "anthology_blurb_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_blurb_pdf_url",
+      "name": "anthology_blurb_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_outline_doc_url",
+      "name": "anthology_outline_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_outline_pdf_url",
+      "name": "anthology_outline_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_doc_url",
+      "name": "anthology_chapter_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_pdf_url",
+      "name": "anthology_chapter_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_rewrite1_doc_url",
+      "name": "anthology_chapter_rewrite1_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_rewrite1_pdf_url",
+      "name": "anthology_chapter_rewrite1_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_rewrite2_doc_url",
+      "name": "anthology_chapter_rewrite2_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_chapter_rewrite2_pdf_url",
+      "name": "anthology_chapter_rewrite2_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_image_url",
+      "name": "anthology_cover_image_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_drive_url",
+      "name": "anthology_cover_drive_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_sample1_url",
+      "name": "anthology_cover_sample1_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_sample2_url",
+      "name": "anthology_cover_sample2_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_sample3_url",
+      "name": "anthology_cover_sample3_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_cover_sample4_url",
+      "name": "anthology_cover_sample4_url",
+      "options": []
+    },
+    {
+      "dataType": "SINGLE_OPTIONS",
+      "fieldKey": "contact.anthology_cover_choice",
+      "name": "anthology_cover_choice",
+      "options": [
+        "Signature",
+        "Bold Editorial",
+        "Fine Art",
+        "Pure Type"
+      ]
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_manuscript_doc_url",
+      "name": "anthology_manuscript_doc_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_manuscript_pdf_url",
+      "name": "anthology_manuscript_pdf_url",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_active_id",
+      "name": "anthology_active_id",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_stage",
+      "name": "anthology_stage",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_rewrite_count",
+      "name": "anthology_rewrite_count",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_book_name",
+      "name": "anthology_book_name",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_title_choice",
+      "name": "anthology_title_choice",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_subtitle_choice",
+      "name": "anthology_subtitle_choice",
+      "options": []
+    },
+    {
+      "dataType": "SINGLE_OPTIONS",
+      "fieldKey": "contact.anthology_review_decision",
+      "name": "anthology_review_decision",
+      "options": [
+        "approve_as_is",
+        "request_rewrite_with_notes"
+      ]
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_review_notes",
+      "name": "anthology_review_notes",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.anthology_review_stage",
+      "name": "anthology_review_stage",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.chapter_about",
+      "name": "chapter_about",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.ideal_avatar",
+      "name": "ideal_avatar",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.niche",
+      "name": "niche",
+      "options": []
+    },
+    {
+      "dataType": "LARGE_TEXT",
+      "fieldKey": "contact.primary_goal",
+      "name": "primary_goal",
+      "options": []
+    }
+  ],
+  "custom_values": [
+    {
+      "key": "anthology_webhook_url",
+      "name": "anthology_webhook_url",
+      "secret": false,
+      "value": "REPLACE-ME"
+    },
+    {
+      "key": "anthology_hook_secret",
+      "name": "anthology_hook_secret",
+      "secret": true,
+      "value": "REPLACE-ME"
+    },
+    {
+      "key": "producer",
+      "name": "producer",
+      "secret": false,
+      "value": "REPLACE-ME"
+    },
+    {
+      "key": "producer_email",
+      "name": "producer_email",
+      "secret": false,
+      "value": "REPLACE-ME"
+    }
+  ],
+  "cut_at": "2026-08-14T01:58:05Z",
+  "fixture_version": "1.0.0",
+  "forms": {
+    "contract_bound_per_anthology": [
+      {
+        "hidden_fields": [
+          "contact_id",
+          "anthology_id",
+          "stage"
+        ],
+        "required": false,
+        "role": "title-subtitle-selection",
+        "stage": "s3"
+      },
+      {
+        "hidden_fields": [
+          "contact_id",
+          "anthology_id",
+          "stage"
+        ],
+        "required": false,
+        "role": "outline-approval",
+        "stage": "s4"
+      },
+      {
+        "hidden_fields": [
+          "contact_id",
+          "anthology_id",
+          "stage"
+        ],
+        "required": false,
+        "role": "chapter-approve-or-rewrite",
+        "stage": "s5"
+      }
+    ],
+    "provenance": "contract (no proven live read surface in this repo; Skill 44 doctrine)",
+    "required": [
+      {
+        "hidden_fields": [
+          "contact_id",
+          "anthology_id",
+          "stage"
+        ],
+        "note": "The intake front door. The minted link is <forms_base_url>/widget/form/<universal_intake_form_id>?anthology_id=<minted>, built by anthology_book.py with a fleet-default hosted-form domain + a single universal author-intake form id baked in.",
+        "required": true,
+        "role": "universal-author-intake"
+      }
+    ],
+    "universal_hidden_fields": [
+      "contact_id",
+      "anthology_id",
+      "stage"
+    ]
+  },
+  "pipeline": {
+    "id": "puUkr2fhsVkZkjf0MU4U",
+    "name": "Anthology Engine",
+    "stages": [
+      {
+        "id": "18224491-c7ae-4b2a-81fe-0b1561df2385",
+        "name": "Intake",
+        "position": 0
+      },
+      {
+        "id": "f280fea3-6027-46b0-b56d-337064b3577a",
+        "name": "Avatar",
+        "position": 1
+      },
+      {
+        "id": "bae5fc39-4b61-40b6-ae52-26ff9fdd2391",
+        "name": "Tone",
+        "position": 2
+      },
+      {
+        "id": "28429c91-c44b-4dcd-ac93-dce3fb2d79d9",
+        "name": "Title",
+        "position": 3
+      },
+      {
+        "id": "9c0e86c9-831e-4da4-86e1-540d5d7afcbe",
+        "name": "Outline",
+        "position": 4
+      },
+      {
+        "id": "8300c834-3322-44d8-b746-6e8aec5fc807",
+        "name": "Chapter",
+        "position": 5
+      },
+      {
+        "id": "fed82cdd-e5a4-47d9-8127-681b5e6f783b",
+        "name": "Cover",
+        "position": 6
+      },
+      {
+        "id": "cbcbd675-2356-4534-b359-728d40fc8734",
+        "name": "Delivered",
+        "position": 7
+      },
+      {
+        "id": "a9a44057-ce5d-4457-9da7-2c64a8d84440",
+        "name": "Assembled",
+        "position": 8
+      }
+    ]
+  },
+  "schema_version": 1,
+  "snapshot_version": "anthology-engine-snapshot-20260710-r2",
+  "source_template_location": "2HIKGNgsixWx0yds7Qnx",
+  "tags": {
+    "provenance": "contract (no proven live read surface in this repo; Skill 44 doctrine)",
+    "seed_recommended": true,
+    "slugs": [
+      {
+        "producer_gate": "s1_producer",
+        "slug": "anthology-release-avatar",
+        "status": "LIVE"
+      },
+      {
+        "producer_gate": "s2_producer",
+        "slug": "anthology-release-tone",
+        "status": "LIVE"
+      },
+      {
+        "producer_gate": "s4_producer",
+        "slug": "anthology-release-outline",
+        "status": "LIVE"
+      },
+      {
+        "producer_gate": "s5_producer",
+        "slug": "anthology-release-chapter",
+        "status": "WIRED-AHEAD"
+      },
+      {
+        "producer_gate": "s6_producer",
+        "slug": "anthology-release-rewrite",
+        "status": "WIRED-AHEAD"
+      },
+      {
+        "producer_gate": "s7_producer",
+        "slug": "anthology-release-cover",
+        "status": "WIRED-AHEAD"
+      },
+      {
+        "producer_gate": "S8 final",
+        "slug": "anthology-release-final",
+        "status": "DOCTRINE"
+      },
+      {
+        "producer_gate": "S9 assembly cockpit",
+        "slug": "anthology-delivered",
+        "status": "DOCTRINE"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "Anthology Release: Avatar",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-avatar"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Chapter",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-chapter"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Cover Picks",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-cover"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Final Chapter",
+      "status": "unknown",
+      "steps": 2,
+      "trigger_active": false,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-final"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Outline & Blurb",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-outline"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Rewrite",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-rewrite"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology Release: Tone",
+      "status": "published",
+      "steps": 2,
+      "trigger_active": true,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-release-tone"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    },
+    {
+      "name": "Anthology: Book Delivered",
+      "status": "unknown",
+      "steps": 2,
+      "trigger_active": false,
+      "trigger_conditions": [
+        {
+          "field": "tagsAdded",
+          "id": "tag-added",
+          "operator": "index-of-true",
+          "title": "Tag Added",
+          "type": "select",
+          "value": [
+            "anthology-delivered"
+          ]
+        }
+      ],
+      "trigger_type": "contact_tag"
+    }
+  ]
+}

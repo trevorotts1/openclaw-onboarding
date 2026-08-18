@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v22.0.3"
+ONBOARDING_VERSION="v22.0.40"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -629,12 +629,25 @@ PYEOF
 #
 # RESOLUTION ORDER (identical to obs_resolve_workspace / install.sh Step 10):
 #   1. obs_resolve_workspace, when the shim really did define it
-#   2. THIS box's openclaw.json -> agents.list[id=main].workspace
-#   3. THIS box's openclaw.json -> agents.defaults.workspace
-#   4. the canonical <oc-root>/workspace default -- ONLY when a readable,
+#   2. THIS box's openclaw.json -> agents.entries.main.workspace   (NEW schema)
+#   3. THIS box's openclaw.json -> agents.list[id=main].workspace  (LEGACY schema)
+#   4. THIS box's openclaw.json -> agents.defaults.workspace
+#   5. the canonical <oc-root>/workspace default -- ONLY when a readable,
 #      parseable openclaw.json exists and simply declares no workspace at all
 #      (that is the documented default, not a guess) -- still announced, with
 #      its reason, on every run.
+#
+# ⚠️ WHY STEP 2 EXISTS AND WHY IT COMES FIRST. The schema migration renames
+# `agents.list` (array) to `agents.entries` (object keyed by agent id). Before
+# this resolver understood `entries`, a migrated box fell straight through to
+# `agents.defaults.workspace` — so on any box that declared its workspace ONLY
+# inside the legacy array, the migration silently RELOCATED the resolved
+# workspace. That path is CANON_DIR, the symlink TARGET for the box's shared
+# AGENTS.md / TOOLS.md / USER.md, so the effect would have been to re-point
+# those files: a loud crash-loop traded for a silent outage. Reading the new
+# shape FIRST makes this function return the SAME answer either side of a
+# migration, which is exactly the invariant scripts/oc-atomic-upgrade.sh
+# asserts before it will commit one. Keep the two reads in this order.
 # ----------------------------------------------------------
 oc_resolve_workspace_announced() {
   local _ctx="${1:-workspace}"
@@ -654,21 +667,39 @@ oc_resolve_workspace_announced() {
     [ -n "$OC_WS_RESOLVED" ] && OC_WS_SOURCE="obs_resolve_workspace() from the onboarding-state.sh shim"
   fi
 
-  # (2)+(3) read THIS box's own config directly. This is the SAME intended means
-  # (the config), not a guess -- so it is a legitimate fallback, and it is
+  # (2)+(3)+(4) read THIS box's own config directly. This is the SAME intended
+  # means (the config), not a guess -- so it is a legitimate fallback, and it is
   # announced below with the reason the primary resolver was unavailable.
+  # Reads BOTH schema shapes, new one first, so the answer is invariant across a
+  # migration (see the RESOLUTION ORDER note above).
   if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && command -v python3 >/dev/null 2>&1; then
     OC_WS_RESOLVED="$(OC_JSON="$_ws_ocjson" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
+    agents = cfg.get("agents") or {}
+    if not isinstance(agents, dict):
+        agents = {}
+    ws = None
+    # (2) NEW schema: agents.entries is a dict keyed by agent id.
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        main = entries.get("main")
+        if isinstance(main, dict) and main.get("workspace"):
+            ws = main["workspace"]
+    # (3) LEGACY schema: agents.list is an array whose entries carry their own id.
+    if not ws:
+        for ag in (agents.get("list") or []):
+            if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+                ws = ag["workspace"]
+                break
+    # (4) the shared default.
+    if not ws:
+        defaults = agents.get("defaults") or {}
+        if isinstance(defaults, dict):
+            ws = defaults.get("workspace")
+    if ws:
+        print(os.path.expanduser(ws))
 except Exception:
     pass
 PYEOF
@@ -678,12 +709,12 @@ PYEOF
     fi
   fi
 
-  # (4) config is readable+parseable but declares no workspace anywhere.
+  # (5) config is readable+parseable but declares no workspace anywhere.
   if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && [ -r "$_ws_ocjson" ] \
      && command -v python3 >/dev/null 2>&1 \
      && OC_JSON="$_ws_ocjson" python3 -c 'import json,os; json.load(open(os.environ["OC_JSON"]))' 2>/dev/null; then
     OC_WS_RESOLVED="$_ws_ocroot/workspace"
-    OC_WS_SOURCE="canonical default -- FALLBACK USED because $_ws_ocjson parses but declares NO agents.list[id=main].workspace and NO agents.defaults.workspace"
+    OC_WS_SOURCE="canonical default -- FALLBACK USED because $_ws_ocjson parses but declares NO agents.entries.main.workspace, NO agents.list[id=main].workspace and NO agents.defaults.workspace"
   fi
 
   if [ -z "$OC_WS_RESOLVED" ]; then
@@ -1366,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v22.0.3 - safe_json_edit
+# v22.0.40 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2145,6 +2176,833 @@ preclear_2026_7_1() {
 # <<< TRAP1-PRECLEAR-END
 
 # ----------------------------------------------------------
+# LEGACY `agents.list` SCHEMA DETECTOR  (v22.0.8)
+# ----------------------------------------------------------
+# WHAT: reports whether this box's openclaw.json still carries the legacy
+# `agents.list` array, and routes a migration request to the one procedure that
+# can actually perform it (scripts/oc-atomic-upgrade.sh). It is a DETECTOR and a
+# DISPATCHER — it never migrates a config itself, and on the roll path it never
+# blocks. Both of those are deliberate; see the two numbered points below.
+#
+# THE LANDMINE. The 2026.7.2-beta line REJECTS that key outright:
+#
+#     Gateway failed to start: Invalid config at ~/.openclaw/openclaw.json:
+#     agents: Unrecognized key: "list"
+#
+# The gateway exits 78 (EX_CONFIG) about 0.4s after launch. The shipped
+# LaunchAgent sets KeepAlive with ThrottleInterval=10, so launchd respawns it
+# every ~11s, forever. One affected box booted 701 times in 10 days before the
+# crash-loop breaker latched channel auto-start OFF — at which point the box was
+# COMPLETELY DARK: nothing in, nothing out, and 24 queued deliveries permanently
+# lost.
+#
+# AND IT WAS SILENT. That LaunchAgent wrote StandardErrorPath = /dev/null, so
+# the startup exception was DISCARDED — it survived only in
+# /tmp/openclaw/openclaw-<date>.log. Ten days of investigation walked straight
+# past the actual error for exactly that reason. (The plist defect is fixed
+# separately, but a box provisioned before that fix still throws its startup
+# errors away, so this gate must never depend on reading a gateway log.)
+#
+# WHY A *PRE*-UPGRADE GATE AND NOT A HEALTH CHECK. The key is harmless on
+# 2026.7.1-2 — a box carrying it runs fine and looks completely healthy right up
+# to the moment a version change moves it onto the beta line. By the time a
+# health check could see the crash-loop, the client is already dark. The only
+# useful place to look is BEFORE the box moves. At least one live box still
+# carries this key today, safe only because of the line it happens to be on.
+#
+# WHY HERE (placement is load-bearing, same reason as heal_weekly_cron_updater
+# and reap_dead_skill_manifest above): every exit path below the UPDATE-PENDING
+# prompt and the version gate is an `exit 0`. A box carrying `agents.list` is
+# precisely an ALREADY-POISONED box, i.e. exactly the box that reaches those
+# early exits and would otherwise never be inspected. This call must stay above
+# both of them.
+#
+# ⚠️ THIS GATE DOES NOT MIGRATE, AND IT NO LONGER BLOCKS THE ROLL. Both of
+# those are corrections of a defect this gate shipped with, and the reasons are
+# the whole point of this comment.
+#
+# (a) `openclaw doctor --fix` CANNOT PERFORM THIS MIGRATION. The first version
+#     of this gate called it, because the gateway's own error text prescribes
+#     it. Measured on 12 boxes: the config's SHA-256 was BYTE-IDENTICAL before
+#     and after. `openclaw config schema` on 2026.7.1 / 2026.7.1-2 reports the
+#     `agents` properties as exactly ["defaults","list"] — there is no `entries`
+#     for it to migrate TO. It also has a measured SIDE EFFECT: on one box it
+#     silently rewrote `agents.defaults.models` pins. So the old migrate path
+#     could only ever fail its own re-validation, and it risked model pins to do
+#     it. It is gone.
+#
+# (b) A SKILL ROLL IS NOT A VERSION CHANGE, SO REFUSING ONE PROTECTS NOTHING.
+#     This updater installs no binary: it contains no `npm install -g openclaw`,
+#     no `openclaw@<version>`, no `openclaw update/upgrade`, no docker pull (see
+#     the note above preclear_2026_7_1, which says the same thing for the same
+#     reason). The legacy key is harmless on the line these boxes are on. But
+#     the earlier gate exited 78 on detection — which froze the roll on 35 of 38
+#     boxes, AND the roll is the very thing that delivers scripts/ to a box
+#     (deliver_canonical_scripts_tree, below this call). The gate was therefore
+#     blocking the only delivery vehicle for its own fix: a deadlock in which
+#     the tool that repairs the fleet can never reach the fleet.
+#
+#     So on a legacy box this gate now WARNS LOUDLY, records a marker, and lets
+#     the roll proceed. Blocking is reserved for the paths that actually change
+#     the version — the weekly `npm update -g openclaw` cron and the F1
+#     remediations — which fail closed unless the atomic procedure runs.
+#
+# THE REAL MIGRATION lives in scripts/oc-atomic-upgrade.sh and is only valid
+# INSIDE an upgrade window: gateway stopped and PROVEN stopped, new binary
+# installed, config rewritten to `agents.entries`, verified lossless against the
+# NEW schema, gateway started and proven to STAY up. It cannot be done earlier,
+# because `additionalProperties:false` is set on `agents` in BOTH versions (no
+# config is valid on both), the deployed runtime has NO `entries` reader (an
+# early migration enumerates ZERO agents — a silent total outage), and a live
+# gateway re-serializes openclaw.json about once a minute from an in-memory
+# model that only knows `agents.list`, silently reverting anything written while
+# it runs.
+#
+# THE WORKSPACE TRAP IS HANDLED UPSTREAM NOW. oc_resolve_workspace_announced()
+# above reads `agents.entries.main.workspace` BEFORE the legacy array, so the
+# resolved workspace — CANON_DIR, the symlink target for this box's shared
+# AGENTS.md/TOOLS.md/USER.md — is invariant across the migration by
+# construction. oc-atomic-upgrade.sh asserts that invariant before committing.
+#
+# WHY WE NEVER HAND-DELETE THE KEY. The legacy array holds agent definitions.
+# Deleting it is not a migration; it is agent loss. The transform is `list` ->
+# `entries` keyed by each agent's `id`, and nothing here improvises it.
+#
+# MODES (OPENCLAW_AGENTS_LIST_MODE, or the mode argument):
+#   report   (default, used by the roll) detect and report. Never mutates.
+#            Returns 0 even on a legacy box — see (b) — after writing the
+#            marker file and printing the banner.
+#   check    detect and report only, and RETURN 3 when the legacy key is
+#            present. This is the pre-flight a fleet driver runs before it moves
+#            any box onto a new build. Never mutates anything.
+#   migrate  delegates to scripts/oc-atomic-upgrade.sh --upgrade if that tool is
+#            on this box, and REFUSES if it is not. This gate never migrates by
+#            itself: outside an upgrade window there is no correct migration.
+#
+# RETURNS: 0 = clear, or legacy-but-reported (report mode). 3 = REFUSED /
+# needs a human, matching preclear_2026_7_1's contract.
+#
+# SELF-CONTAINED ON PURPOSE: this runs on the `curl ... | bash` path, BEFORE the
+# repo is cloned, so it cannot source scripts/qc-assert-legacy-agents-list.sh.
+# That script is the standalone/CI counterpart and asserts the same invariant.
+# ----------------------------------------------------------
+agents_list_gate() {
+  # DEFAULT IS 'report', NOT 'migrate'. The roll changes no binary version, so
+  # it has nothing to migrate for and everything to lose by refusing -- see (b)
+  # in the block comment above.
+  local mode="${1:-${OPENCLAW_AGENTS_LIST_MODE:-report}}"
+  local ocjson verdict detail box marker atomic _al_rc
+
+  box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
+  ocjson="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && ocjson="/data/.openclaw/openclaw.json"
+
+  if [ ! -f "$ocjson" ]; then
+    echo "  [agents-list] no config at $ocjson (fresh box) -- nothing to inspect."
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    # We cannot READ the config, so we cannot prove the key is absent. An
+    # unprovable absence is not an absence (see the negative-result contract in
+    # this repo's other gates): refuse rather than assume clean.
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "python3 is NOT AVAILABLE on this box, so the config could not be parsed at all." \
+      "The legacy \`agents.list\` key was NOT ruled out -- it was never looked for."
+    return 3
+  fi
+
+  verdict="$(_agents_list_detect "$ocjson")"
+  detail="${verdict#*|}"
+  verdict="${verdict%%|*}"
+
+  case "$verdict" in
+    ABSENT)
+      echo "  [agents-list] $ocjson carries no legacy \`agents.list\` key -- safe to proceed. ($detail)"
+      return 0
+      ;;
+    UNDETERMINED)
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The config could not be inspected: $detail" \
+        "An unreadable config is NOT a clean config. Nothing was changed."
+      return 3
+      ;;
+    PRESENT)
+      : # fall through to the refuse/migrate decision below
+      ;;
+    *)
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The detector returned an unrecognised verdict (${verdict:-<empty>})." \
+        "Refusing to treat an unrecognised verdict as clean. Nothing was changed."
+      return 3
+      ;;
+  esac
+
+  echo ""
+  echo "  [agents-list] LEGACY SCHEMA DETECTED on $box: $detail"
+
+  # Record it where a human and the next sweep will both trip over it. A line in
+  # a log nobody reads is how this fault stayed invisible for ten days.
+  marker="$(dirname "$ocjson")/.openclaw-agents-list-legacy"
+  {
+    printf 'detected=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
+    printf 'config=%s\n' "$ocjson"
+    printf 'detail=%s\n' "$detail"
+    printf 'remedy=bash %s/scripts/oc-atomic-upgrade.sh --upgrade\n' "$(dirname "$ocjson")"
+  } > "$marker" 2>/dev/null || true
+
+  # The atomic procedure, if this box has taken a roll that delivered it.
+  atomic="$(dirname "$ocjson")/scripts/oc-atomic-upgrade.sh"
+
+  if [ "$mode" = "check" ]; then
+    # Pre-flight mode: a fleet driver asking "is this box safe to move?". The
+    # answer is no, and it must be a non-zero one.
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The legacy \`agents.list\` key IS PRESENT ($detail). This box MUST NOT be moved onto a new OpenClaw build as-is." \
+      "Mode is 'check' -- detection only. Nothing was changed. Migrate it with: bash $atomic --upgrade"
+    return 3
+  fi
+
+  if [ "$mode" = "migrate" ]; then
+    # Delegate. This gate performs no migration itself, because outside an
+    # upgrade window there is no correct one: the deployed runtime has no
+    # `entries` reader, so writing the new shape here would enumerate ZERO
+    # agents, and a live gateway would re-serialize the old shape back within
+    # about a minute anyway.
+    if [ ! -f "$atomic" ]; then
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The legacy \`agents.list\` key IS PRESENT ($detail), and the atomic upgrade tool is NOT on this box (looked for $atomic)." \
+        "Nothing was changed. Run a normal update-skills.sh roll first -- it delivers scripts/ to this box -- then re-run with --agents-list-migrate."
+      return 3
+    fi
+    echo "  [agents-list] delegating to the atomic upgrade procedure: $atomic --upgrade"
+    _al_rc=0
+    bash "$atomic" --upgrade || _al_rc=$?
+    if [ "$_al_rc" -eq 0 ]; then
+      echo "  [agents-list] atomic upgrade COMPLETED -- this box is migrated and running."
+      rm -f "$marker" 2>/dev/null || true
+      return 0
+    fi
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The atomic upgrade procedure exited $_al_rc (78 = refused and rolled back, 70 = ROLLBACK FAILED and this box needs a human NOW, 3 = undetermined)." \
+      "See its output above for the exact step that failed."
+    return 3
+  fi
+
+  # ── DEFAULT ('report'): warn loudly, then LET THE ROLL PROCEED. ─────────────
+  # This updater changes no OpenClaw binary, so it cannot trigger the landmine;
+  # and it is the mechanism that delivers scripts/oc-atomic-upgrade.sh to this
+  # box. Refusing here would block the only delivery vehicle for the fix on
+  # every affected box -- a deadlock. Blocking belongs on the paths that DO
+  # change the version: the weekly `npm update -g openclaw` cron and the F1
+  # remediations, both of which fail closed without the atomic procedure.
+  echo "  ################################################################"
+  echo "  ##  LEGACY \`agents.list\` SCHEMA ON THIS BOX  --  NOT YET FATAL  ##"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $ocjson"
+  echo "  ##  Detail : $detail"
+  echo "  ##"
+  echo "  ##  This roll is CONTINUING on purpose: it installs no OpenClaw"
+  echo "  ##  binary, so it cannot move this box onto the line that rejects"
+  echo "  ##  the key -- and it is what delivers the fix below to this box."
+  echo "  ##"
+  echo "  ##  BUT THIS BOX IS NOT SAFE TO UPGRADE. The 2026.7.2-beta line"
+  echo "  ##  rejects \`agents.list\` outright, the gateway exits 78 ~0.4s"
+  echo "  ##  after start, launchd respawns it every ~11s, and the crash-loop"
+  echo "  ##  breaker latches channels OFF until the box is COMPLETELY DARK."
+  echo "  ##"
+  echo "  ##  MIGRATE IT (stops the gateway, installs the new build, rewrites"
+  echo "  ##  the config, verifies, restarts -- rolling back on any failure):"
+  echo "  ##    bash $atomic --upgrade"
+  echo "  ##  Inspect first, changing nothing:"
+  echo "  ##    bash $atomic --detect"
+  echo "  ##"
+  echo "  ##  ⚠️  \`openclaw doctor --fix\` DOES NOT DO THIS. Measured on 12"
+  echo "  ##  boxes: config SHA-256 identical before and after. It also"
+  echo "  ##  silently rewrote agents.defaults.models pins on one box."
+  echo "  ##"
+  echo "  ##  Marker written: $marker"
+  echo "  ################################################################"
+  echo ""
+  return 0
+}
+
+# Detect the legacy key in a config. Prints "<VERDICT>|<detail>" where VERDICT is
+# ABSENT, PRESENT or UNDETERMINED. Never fails, never writes.
+_agents_list_detect() {
+  local cfg="$1" py out rc
+  # The python source goes to a temp FILE and is then run as a plain
+  # `python3 "$file"` command substitution -- never a heredoc directly inside
+  # `$(...)`. bash 3.2.57 (stock macOS /bin/bash, which is what the fleet's Macs
+  # run) has a parser bug where a multi-line `(` inside a heredoc BODY nested in
+  # `$(...)` breaks its paren matching for the OUTER command substitution and
+  # aborts at PARSE time. Dev boxes running Homebrew bash 5.x never see it, so
+  # the heredoc form can look perfectly fine while being dead on every client
+  # box. Same two-step, same reason, as scripts/qc-assert-config-write-chown.sh.
+  # R0 (2026-08-11): NO literal suffix after the X's. BSD/macOS `mktemp` (every
+  # Mac in the fleet) only substitutes a TRAILING run of X's -- a template
+  # with anything after them (".py" here) is treated as a literal filename,
+  # not a pattern: the first call "succeeds" by creating that exact
+  # unrandomized file, and every call after it (or any concurrent run) fails
+  # with "mkstemp failed ...: File exists" until that stale file is removed.
+  # Proven via mutation test: `mktemp .../foo.XXXXXX.py` called twice in a row
+  # fails the second time on this exact bash 3.2.57 / macOS mktemp; dropping
+  # the suffix (`mktemp .../foo.XXXXXX`) succeeds every time. `python3 "$file"`
+  # runs a script with no extension identically to one with `.py` -- the
+  # suffix was cosmetic, never functional.
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-detect.XXXXXX")" || {
+    printf 'UNDETERMINED|could not create a temp file to run the detector\n'; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('UNDETERMINED|cannot parse as JSON: %s' % e)
+    raise SystemExit(0)
+
+if not isinstance(cfg, dict):
+    print('UNDETERMINED|top level is not a JSON object')
+    raise SystemExit(0)
+
+agents = cfg.get('agents')
+if agents is None:
+    print('ABSENT|no `agents` block at all')
+    raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('UNDETERMINED|`agents` is a %s, not an object' % type(agents).__name__)
+    raise SystemExit(0)
+if 'list' not in agents:
+    print('ABSENT|`agents` block has %d key(s), none of them `list`' % len(agents))
+    raise SystemExit(0)
+
+val = agents['list']
+if isinstance(val, list):
+    shape = '%d entr(y/ies)' % len(val)
+elif val is None:
+    shape = 'null'
+else:
+    shape = 'a %s' % type(val).__name__
+print('PRESENT|legacy `agents.list` key holds %s' % shape)
+PYEOF
+  rc=0
+  out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+  rm -f "$py"
+  if [ "$rc" -ne 0 ]; then
+    printf 'UNDETERMINED|detector exited %s: %s\n' "$rc" "${out:-<no output>}"
+    return 0
+  fi
+  if [ -z "$out" ]; then
+    printf 'UNDETERMINED|detector produced no output\n'
+    return 0
+  fi
+  printf '%s\n' "$out"
+  return 0
+}
+
+# Print the workspace this config resolves to, using the SAME precedence as
+# oc_resolve_workspace_announced(): agents.list[id=main].workspace first, then
+# agents.defaults.workspace. Prints empty when neither is declared. Never fails,
+# never writes. Used to prove a migration did not move the workspace.
+_agents_list_workspace() {
+  local cfg="$1" py out
+  # R0 (2026-08-11): no literal suffix after the X's -- see the mktemp note in
+  # _agents_list_detect() above (BSD/macOS mktemp does not randomize a
+  # template with a trailing ".py"; the second call ever made to this exact
+  # template fails "File exists" on every Mac in the fleet).
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-workspace.XXXXXX")" || { printf ''; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import os
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+    agents = cfg.get('agents') or {}
+    if not isinstance(agents, dict):
+        agents = {}
+    for ag in (agents.get('list') or []):
+        if isinstance(ag, dict) and ag.get('id') == 'main' and ag.get('workspace'):
+            print(os.path.expanduser(ag['workspace']))
+            raise SystemExit(0)
+    defaults = agents.get('defaults') or {}
+    ws = defaults.get('workspace') if isinstance(defaults, dict) else None
+    if ws:
+        print(os.path.expanduser(ws))
+except SystemExit:
+    raise
+except Exception:
+    pass
+PYEOF
+  out="$(python3 "$py" "$cfg" 2>/dev/null || true)"
+  rm -f "$py"
+  printf '%s' "$out"
+  return 0
+}
+
+# Roll a config back from its backup. Uses `cat >` rather than `cp`/`mv` so the
+# ORIGINAL inode, owner and mode survive: on a root-run updater a `cp` would
+# leave openclaw.json owned root:root, the gateway (a non-root uid) would get
+# EACCES on reload, and every config-touching feature would go dark while the
+# gateway still reported healthy -- the exact fault
+# scripts/qc-assert-config-write-chown.sh exists to catch.
+_agents_list_restore() {
+  local cfg="$1" backup="$2"
+  # QC-ALLOW-NO-CHOWN: `cat >` writes THROUGH the existing inode, so the file's
+  # owner, group and mode are unchanged by construction -- there is no ownership
+  # to restore. A cp/mv here is what would need a chown; that is exactly why
+  # this is a redirect.
+  if cat "$backup" > "$cfg" 2>/dev/null; then
+    echo "  [agents-list] config RESTORED from $backup (original inode/owner/mode preserved)" >&2
+  else
+    echo "  [agents-list] ✗ RESTORE FAILED -- the backup is still at $backup; restore it by hand before starting the gateway." >&2
+  fi
+}
+
+# The one loud refusal banner, so every refusal path names the box, the config,
+# the reason and the fix in the same shape. Matches preclear_2026_7_1's banner.
+_agents_list_refuse_banner() {
+  local box="$1" cfg="$2" reason="$3" state="$4"
+  echo ""
+  echo "  ################################################################"
+  echo "  ##  ROLL REFUSED -- LEGACY \`agents.list\` SCHEMA GATE           ##"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $cfg"
+  echo "  ##"
+  echo "  ##  $reason"
+  echo "  ##  $state"
+  echo "  ##"
+  echo "  ##  WHY THIS BLOCKS THE ROLL:"
+  echo "  ##    The 2026.7.2-beta line rejects that key outright --"
+  echo "  ##      agents: Unrecognized key: \"list\""
+  echo "  ##    -- and exits 78 (EX_CONFIG) ~0.4s after start. launchd's"
+  echo "  ##    KeepAlive + ThrottleInterval=10 then respawns it every ~11s"
+  echo "  ##    (701 boots in 10 days on the box this was measured on) until"
+  echo "  ##    the crash-loop breaker latches channel auto-start OFF and the"
+  echo "  ##    box goes COMPLETELY DARK. 24 queued deliveries were lost."
+  echo "  ##"
+  echo "  ##  IT IS SILENT: LaunchAgents provisioned before the plist fix set"
+  echo "  ##  StandardErrorPath = /dev/null, so the startup exception is"
+  echo "  ##  DISCARDED. Look in /tmp/openclaw/openclaw-<date>.log, NOT in the"
+  echo "  ##  LaunchAgent's stderr -- there is none."
+  echo "  ##"
+  echo "  ##  THE FIX (run on the box, then re-run this):"
+  echo "  ##    bash <oc-root>/scripts/oc-atomic-upgrade.sh --upgrade"
+  echo "  ##"
+  echo "  ##  ⚠️  NOT \`openclaw doctor --fix\`. It CANNOT do this: measured on"
+  echo "  ##  12 boxes, the config SHA-256 was IDENTICAL before and after, and"
+  echo "  ##  \`openclaw config schema\` on this line lists the agents keys as"
+  echo "  ##  exactly [defaults, list] -- there is no \`entries\` to migrate to."
+  echo "  ##  It also silently rewrote agents.defaults.models pins on one box."
+  echo "  ##"
+  echo "  ##  Verify it took (exit 0 = clean, 1 = still legacy, 3 = unreadable):"
+  echo "  ##    bash scripts/qc-assert-legacy-agents-list.sh"
+  echo "  ##"
+  echo "  ##  DO NOT hand-delete the key, and DO NOT write \`entries\` early."
+  echo "  ##  The array holds agent definitions, and the CURRENTLY INSTALLED"
+  echo "  ##  runtime has no \`entries\` reader -- migrating before the binary"
+  echo "  ##  changes enumerates ZERO agents: a silent total outage, worse"
+  echo "  ##  than the crash-loop. The migration belongs INSIDE the upgrade"
+  echo "  ##  window, which is what oc-atomic-upgrade.sh exists to provide."
+  echo "  ##"
+  echo "  ##  ⚠️  AFTER ANY plist CHANGE: \`launchctl kickstart -k\` does NOT"
+  echo "  ##  reload a plist -- it only restarts the running process, and the"
+  echo "  ##  OLD plist stays loaded. Activation needs bootout + bootstrap:"
+  echo "  ##    launchctl bootout gui/\$(id -u)/<label> 2>/dev/null || true"
+  echo "  ##    launchctl bootstrap gui/\$(id -u) <plist-path>"
+  echo "  ################################################################"
+  echo ""
+}
+
+# ----------------------------------------------------------
+# R0 REGISTRY-PARITY GATE  (2026-08-11, post registry-strip incident)
+# ----------------------------------------------------------
+# WHAT HAPPENED THAT THIS GATE EXISTS TO CATCH: on 2026-08-11, 16 boxes had
+# their `agents` registry reduced to `main`-only (every department
+# de-registered) while a raw writer (source UNDETERMINED) raced a fleet roll.
+# `config validate` returned valid (rc=0) on every one of them -- a config
+# with zero departments is a perfectly valid config, so VALIDITY IS NOT
+# HEALTH. Worse: THIS updater's own agents_list_gate() read the resulting
+# near-empty/ABSENT registry as "safe to proceed" on every box it reached,
+# because that gate checks SCHEMA SHAPE (does the legacy key exist), never
+# COUNT. A roll that walks past a just-emptied registry calling it clean is
+# exactly the failure this gate exists to close.
+#
+# ⚠️ NEVER TRUST `openclaw config validate` (or the ABSENT verdict from
+# agents_list_gate) as a substitute for this check. This gate never calls
+# validate and never treats ABSENT as automatically safe.
+#
+# TWO INDEPENDENT CHECKS. Either one alone REFUSES the run (exit 78):
+#
+#   (1) ABSOLUTE FLOOR (runs on 'pre' AND 'post'): the registry declares <= 1
+#       agent while this box's own `<oc-root>/agents/` directory tree still
+#       holds > 2 per-agent subdirectories. Those directories are created and
+#       gate-tested elsewhere in this repo as a 1:1 mapping to
+#       `agents.list[].id` / `agents.entries` keys (see
+#       23-ai-workforce-blueprint/scripts/verify-wiring.sh, which already
+#       fails loud when that pairing breaks) -- so a registry that has
+#       collapsed while the directories it is supposed to describe are still
+#       there is exactly the strip signature, not a coincidence. This check
+#       alone would have refused every one of the 15 reached boxes in the
+#       2026-08-11 incident.
+#   (2) REGRESSION (runs on 'post' only, against the 'pre' snapshot captured
+#       earlier in THIS SAME RUN): the registry's entry COUNT dropped, or any
+#       agent id present at 'pre' is MISSING at 'post' -- even if the total
+#       count happens to match (a drop-one/add-one swap can hide a real loss
+#       behind a matching total; identity is checked, not just count). This
+#       catches partial loss below the absolute floor, and loss with no
+#       surviving directory evidence at all.
+#
+# NEVER AUTO-RESTORES. A parity violation could be an intentional, human-
+# driven roster change (a real department retirement) -- indistinguishable
+# from damage by this gate alone. On violation it writes a marker, prints a
+# banner designed to be impossible to miss, best-effort escalates to Rescue
+# Rangers (a documented no-op when the webhook env vars are not set -- most
+# boxes today -- in which case the marker + banner ARE the escalation
+# record), and REFUSES. A human, or the box's own standing sentinel, makes
+# the call on whether the change was intended.
+#
+# PLACEMENT IS LOAD-BEARING, same reason as agents_list_gate's placement
+# above it: 'pre' must run before ANY write this updater makes; 'post' must
+# run after EVERY write this updater makes, immediately before the final
+# return -- see the two call sites (search REGISTRY-PARITY-CALL).
+#
+# SCHEMA-AGNOSTIC ON PURPOSE. Reads BOTH `agents.list` (array, current fleet
+# schema -- confirmed zero `agents.entries` readers anywhere in this repo as
+# of this commit) and `agents.entries` (object, the post-migration schema),
+# taking the union of ids if a config somehow briefly carries both. A box
+# migrated by the atomic upgrade procedure is measured the same way as one
+# still on the legacy schema.
+# ----------------------------------------------------------
+_REGISTRY_PARITY_PRE_VERDICT=""
+_REGISTRY_PARITY_PRE_COUNT=""
+_REGISTRY_PARITY_PRE_IDS=""
+_REGISTRY_PARITY_PRE_DIRCOUNT=""
+
+_registry_parity_ocjson() {
+  local p="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && p="/data/.openclaw/openclaw.json"
+  printf '%s' "$p"
+}
+
+_registry_parity_agentsdir() {
+  local p="$HOME/.openclaw/agents"
+  [ -d "/data/.openclaw/agents" ] && p="/data/.openclaw/agents"
+  printf '%s' "$p"
+}
+
+# Prints "<verdict>|<count>|<comma-separated-sorted-ids>" for the agents
+# registry in $1 (an openclaw.json path). verdict is OK, ABSENT or
+# UNDETERMINED. Never fails, never writes to $1.
+_registry_snapshot() {
+  local cfg="$1" py out rc
+  if [ ! -f "$cfg" ]; then
+    printf 'NO-CONFIG|0|\n'
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'UNDETERMINED|0|python3 not on PATH\n'
+    return 0
+  fi
+  # Same bash-3.2.57-heredoc-in-$()-parser workaround as _agents_list_detect
+  # above: write the python source to a temp FILE and run it as a plain
+  # command substitution, never a heredoc directly inside $(...). No literal
+  # suffix after the X's -- see the mktemp note in _agents_list_detect():
+  # BSD/macOS mktemp does not randomize ".XXXXXX.py"; found by this gate's
+  # OWN test suite failing "File exists" on the second call.
+  py="$(mktemp "${TMPDIR:-/tmp}/registry-snapshot.XXXXXX")" || {
+    printf 'UNDETERMINED|0|could not create a temp file to run the detector\n'; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('UNDETERMINED|0|cannot parse as JSON: %s' % e)
+    raise SystemExit(0)
+
+if not isinstance(cfg, dict):
+    print('UNDETERMINED|0|top level is not a JSON object')
+    raise SystemExit(0)
+
+agents = cfg.get('agents')
+if agents is None:
+    print('ABSENT|0|no `agents` block at all')
+    raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('UNDETERMINED|0|`agents` is not an object')
+    raise SystemExit(0)
+
+has_entries = isinstance(agents.get('entries'), dict)
+has_list = isinstance(agents.get('list'), list)
+
+if not has_entries and not has_list:
+    print('ABSENT|0|no `agents.list` or `agents.entries` key present')
+    raise SystemExit(0)
+
+ids = set()
+if has_entries:
+    for k in agents['entries'].keys():
+        ids.add(str(k))
+if has_list:
+    for item in agents['list']:
+        if isinstance(item, dict) and item.get('id'):
+            ids.add(str(item['id']))
+
+ids_sorted = sorted(ids)
+print('OK|%d|%s' % (len(ids_sorted), ','.join(ids_sorted)))
+PYEOF
+  rc=0
+  out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+  rm -f "$py"
+  if [ "$rc" -ne 0 ]; then
+    printf 'UNDETERMINED|0|detector exited %s: %s\n' "$rc" "${out:-<no output>}"
+    return 0
+  fi
+  if [ -z "$out" ]; then
+    printf 'UNDETERMINED|0|detector produced no output\n'
+    return 0
+  fi
+  printf '%s\n' "$out"
+  return 0
+}
+
+# Prints "<count>|<sorted-comma-list>" of subdirectories under $1. "0|" when
+# the directory does not exist (fresh/unprovisioned box -- not a fault, just
+# no baseline to compare against).
+_registry_agent_dirs() {
+  local dir="$1" n=0 f b names=""
+  if [ ! -d "$dir" ]; then
+    printf '0|\n'
+    return 0
+  fi
+  for f in "$dir"/*/; do
+    [ -d "$f" ] || continue
+    b="$(basename "$f")"
+    n=$((n + 1))
+    if [ -z "$names" ]; then names="$b"; else names="$names,$b"; fi
+  done
+  if [ "$n" -gt 0 ]; then
+    names="$(printf '%s' "$names" | tr ',' '\n' | sort | tr '\n' ',' | sed 's/,$//')"
+  fi
+  printf '%s|%s\n' "$n" "$names"
+  return 0
+}
+
+# The one loud refusal banner for a parity violation, plus the marker file
+# and the best-effort RR escalation. Matches the shape of
+# _agents_list_refuse_banner above so every gate in this file refuses the
+# same way.
+_registry_parity_refuse() {
+  local box="$1" cfg="$2" phase="$3" reason="$4" detail="$5" marker
+  marker="$(dirname "$cfg")/.openclaw-registry-parity-refused"
+  {
+    printf 'refused_at=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
+    printf 'phase=%s\n' "$phase"
+    printf 'box=%s\n' "$box"
+    printf 'config=%s\n' "$cfg"
+    printf 'reason=%s\n' "$reason"
+    printf 'detail=%s\n' "$detail"
+  } > "$marker" 2>/dev/null || true
+
+  echo ""
+  echo "  ################################################################"
+  echo "  ##  ROLL REFUSED -- REGISTRY-PARITY GATE ($phase)"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $cfg"
+  echo "  ##"
+  echo "  ##  $reason"
+  echo "  ##  $detail"
+  echo "  ##"
+  echo "  ##  \`openclaw config validate\` WOULD PASS on this box right now --"
+  echo "  ##  a config with zero (or fewer) departments is a perfectly valid"
+  echo "  ##  config. Validity is not health. Do not use it to override this."
+  echo "  ##"
+  echo "  ##  THIS GATE NEVER AUTO-RESTORES. A parity violation could be an"
+  echo "  ##  intended roster change; only a human (or this box's own"
+  echo "  ##  standing sentinel) can tell the difference. Marker written:"
+  echo "  ##    $marker"
+  echo "  ##"
+  echo "  ##  RECOVERY: look for a pre-incident backup BEFORE restoring"
+  echo "  ##  anything -- verify its agent count first:"
+  echo "  ##    ${cfg}.bak-pre-agents-list-migration-*"
+  echo "  ##    ${cfg}.last-good  (⚠ can be poisoned by the same writer that"
+  echo "  ##                       caused the loss -- verify its count too)"
+  echo "  ##  Copy whichever backup verifies clean to a path no updater or"
+  echo "  ##  migration touches BEFORE restoring it."
+  echo "  ################################################################"
+  echo ""
+
+  _registry_parity_escalate "$box" "$cfg" "$phase" "$reason" "$detail"
+}
+
+# Best-effort Rescue Rangers escalation. NEVER fails the gate: on most boxes
+# today RESCUE_RANGERS_WEBHOOK_URL is not set, and that is a documented,
+# silent no-op -- the marker file and banner above are the escalation record
+# in that case. When it IS set, POSTs the same nine-field payload shape the
+# agent-side escalation template uses (rescue-escalation-section.md.tpl).
+_registry_parity_escalate() {
+  local box="$1" cfg="$2" phase="$3" reason="$4" detail="$5" payload rc
+  if [ -z "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
+    echo "  [registry-parity] RESCUE_RANGERS_WEBHOOK_URL not set on this box -- skipping the live escalation POST. The marker file and banner above ARE the escalation record." >&2
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    echo "  [registry-parity] curl or python3 not on PATH -- skipping the live escalation POST." >&2
+    return 0
+  fi
+  # No literal suffix after the X's -- see the mktemp note in
+  # _agents_list_detect() above.
+  payload="$(mktemp "${TMPDIR:-/tmp}/registry-parity-escalation.XXXXXX")" || return 0
+  RPG_BOX="${FLEET_STANDING_BOX_SLUG:-$box}" RPG_PHASE="$phase" RPG_REASON="$reason" RPG_DETAIL="$detail" RPG_CFG="$cfg" \
+    python3 -c '
+import json, os
+print(json.dumps({
+    "action": "escalate",
+    "person": "update-skills.sh registry-parity gate (automated)",
+    "clientName": "a box",
+    "agentName": "registry-parity-gate",
+    "boxName": os.environ.get("RPG_BOX", "unknown-box"),
+    "boxType": "unknown",
+    "openclawVersion": "unknown",
+    "problem": "REGISTRY-STRIP (%s): %s" % (os.environ.get("RPG_PHASE", ""), os.environ.get("RPG_REASON", "")),
+    "alreadyTried": "registry-parity gate refused the roll (exit 78) and wrote a marker next to %s; no restore attempted. %s" % (os.environ.get("RPG_CFG", ""), os.environ.get("RPG_DETAIL", "")),
+    "returnTo": "repo-gate",
+}))
+' > "$payload" 2>/dev/null
+
+  # NOT a bash array here on purpose. `"${arr[@]}"` on a ZERO-LENGTH array
+  # under `set -u` (this script runs `set -euo pipefail`) throws "unbound
+  # variable" on stock bash 3.2.57 and would ABORT the whole updater at
+  # exactly the moment it is trying to report a registry-parity refusal --
+  # the CLAUDE.md negative-result contract names this exact trap ("bash 3.2
+  # `set -u` on an empty array"). Two explicit curl invocations instead of
+  # one array-built one: more lines, zero cleverness, nothing to trip on.
+  rc=0
+  if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
+    curl -s -m 10 -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      -H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}" \
+      --data-binary "@$payload" >/dev/null 2>&1 || rc=$?
+  else
+    curl -s -m 10 -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      --data-binary "@$payload" >/dev/null 2>&1 || rc=$?
+  fi
+  rm -f "$payload" 2>/dev/null || true
+  if [ "$rc" -ne 0 ]; then
+    echo "  [registry-parity] escalation POST failed/unavailable (rc=$rc, non-fatal) -- marker + banner remain the record." >&2
+  else
+    echo "  [registry-parity] escalation POSTed to Rescue Rangers." >&2
+  fi
+  return 0
+}
+
+# The gate itself. $1 = "pre" or "post". Returns 0 = clear, 78 = REFUSED (a
+# parity violation was found -- the caller must exit 78 immediately, matching
+# the same EX_CONFIG contract agents_list_gate uses).
+registry_parity_gate() {
+  local phase="$1" ocjson agentsdir box
+  local snap sverdict scount sids dirsnap dircount dirnames
+
+  box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
+  ocjson="$(_registry_parity_ocjson)"
+  agentsdir="$(_registry_parity_agentsdir)"
+
+  if [ ! -f "$ocjson" ]; then
+    echo "  [registry-parity:$phase] no config at $ocjson (fresh box) -- nothing to check."
+    [ "$phase" = "pre" ] && _REGISTRY_PARITY_PRE_VERDICT="NO-CONFIG"
+    return 0
+  fi
+
+  snap="$(_registry_snapshot "$ocjson")"
+  sverdict="${snap%%|*}"
+  scount="$(printf '%s' "$snap" | cut -d'|' -f2)"
+  sids="$(printf '%s' "$snap" | cut -d'|' -f3-)"
+
+  dirsnap="$(_registry_agent_dirs "$agentsdir")"
+  dircount="${dirsnap%%|*}"
+  dirnames="${dirsnap#*|}"
+
+  echo "  [registry-parity:$phase] registry=$sverdict count=$scount ids=[${sids:-<none>}] | agents-dir($agentsdir) count=$dircount"
+
+  if [ "$sverdict" = "UNDETERMINED" ]; then
+    echo "  [registry-parity:$phase] ⚠ config could not be read/parsed -- an unreadable config is NOT proof of a healthy registry. Count checks SKIPPED this phase (not silently passed)."
+    [ "$phase" = "pre" ] && _REGISTRY_PARITY_PRE_VERDICT="UNDETERMINED"
+    return 0
+  fi
+
+  # Normalize ABSENT/NO-CONFIG to a zero count for the arithmetic below.
+  case "$sverdict" in ABSENT|NO-CONFIG) scount=0 ;; esac
+
+  # ---- CHECK 1: ABSOLUTE FLOOR (every phase) ----
+  if [ "$scount" -le 1 ] && [ "$dircount" -gt 2 ]; then
+    _registry_parity_refuse "$box" "$ocjson" "$phase" \
+      "ABSOLUTE FLOOR: the registry declares only $scount agent(s) (ids=[${sids:-<none>}]) while $agentsdir holds $dircount agent subdirectories (names=[${dirnames:-<none>}])." \
+      "This is the exact signature of the 2026-08-11 registry-strip incident: the on-disk agent identities survived; only the registry pointing to them was emptied."
+    return 78
+  fi
+
+  if [ "$phase" = "pre" ]; then
+    _REGISTRY_PARITY_PRE_VERDICT="$sverdict"
+    _REGISTRY_PARITY_PRE_COUNT="$scount"
+    _REGISTRY_PARITY_PRE_IDS="$sids"
+    _REGISTRY_PARITY_PRE_DIRCOUNT="$dircount"
+    return 0
+  fi
+
+  # ---- CHECK 2: REGRESSION (post only, vs this run's own pre snapshot) ----
+  if [ -z "$_REGISTRY_PARITY_PRE_VERDICT" ] || [ "$_REGISTRY_PARITY_PRE_VERDICT" = "UNDETERMINED" ] || [ "$_REGISTRY_PARITY_PRE_VERDICT" = "NO-CONFIG" ]; then
+    echo "  [registry-parity:post] no usable 'pre' snapshot from this run (was: ${_REGISTRY_PARITY_PRE_VERDICT:-<never captured>}) -- regression check skipped; the absolute-floor check above still ran."
+    return 0
+  fi
+
+  if [ "$scount" -lt "$_REGISTRY_PARITY_PRE_COUNT" ]; then
+    _registry_parity_refuse "$box" "$ocjson" "post" \
+      "REGRESSION: the registry held $_REGISTRY_PARITY_PRE_COUNT agent(s) at the START of this run and holds only $scount now." \
+      "pre ids=[${_REGISTRY_PARITY_PRE_IDS:-<none>}]  post ids=[${sids:-<none>}]. This run's own writes are not trusted; nothing after this point in the run proceeds."
+    return 78
+  fi
+
+  # Identity check: every id present at 'pre' must still be present at
+  # 'post', even if the count happens to match -- a drop-one/add-one swap is
+  # not a loss by count, but it IS a loss of that specific agent.
+  local missing="" id_pre save_ifs
+  save_ifs="$IFS"
+  IFS=','
+  for id_pre in $_REGISTRY_PARITY_PRE_IDS; do
+    IFS="$save_ifs"
+    [ -z "$id_pre" ] && continue
+    case ",${sids}," in
+      *",${id_pre},"*) : ;;
+      *)
+        if [ -z "$missing" ]; then missing="$id_pre"; else missing="$missing,$id_pre"; fi
+        ;;
+    esac
+    IFS=','
+  done
+  IFS="$save_ifs"
+
+  if [ -n "$missing" ]; then
+    _registry_parity_refuse "$box" "$ocjson" "post" \
+      "IDENTITY LOSS: agent id(s) present at the START of this run are GONE from the registry now: [$missing]." \
+      "pre ids=[${_REGISTRY_PARITY_PRE_IDS:-<none>}]  post ids=[${sids:-<none>}]. Count alone did not catch this -- a swap can hide a real loss behind a matching total."
+    return 78
+  fi
+
+  echo "  [registry-parity:post] ✓ no loss: pre=$_REGISTRY_PARITY_PRE_COUNT post=$scount, all pre ids still present."
+  return 0
+}
+
+# ----------------------------------------------------------
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
@@ -2576,6 +3434,9 @@ main() {
   if [ "${OPENCLAW_PRECLEAR_2026_7_1:-0}" = "1" ]; then
     PRECLEAR_MODE="apply"
   fi
+  # Standalone legacy-`agents.list` run (--agents-list-check/--agents-list-migrate).
+  # Empty = not standalone; the gate still runs automatically inside the roll.
+  AGENTS_LIST_STANDALONE=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --only)
@@ -2591,8 +3452,19 @@ main() {
       --preclear-2026-7-1)
         PRECLEAR_MODE="apply"
         ;;
+      # Legacy `agents.list` gate, run standalone. The gate ALSO runs
+      # automatically on every roll (see the call in main() below) -- these
+      # flags exist to inspect or migrate a box on its own, before a version
+      # change, without performing a skill update.
+      --agents-list-check)
+        AGENTS_LIST_STANDALONE="check"
+        ;;
+      --agents-list-migrate)
+        AGENTS_LIST_STANDALONE="migrate"
+        ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
+        echo "                        [--agents-list-check | --agents-list-migrate]"
         echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
         echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
         echo "  (no flag)     Install/update all skills"
@@ -2600,6 +3472,22 @@ main() {
         echo "  --preclear-check       Report whether this box carries OpenClaw 2026.7.1 startup-gate"
         echo "                         relics (~/.clawdbot, plugins/installs.json) and whether they are"
         echo "                         SAFE to move. Never moves anything. Exit 3 = live, needs a human."
+        echo ""
+        echo "  --agents-list-check    Report whether this box's openclaw.json still carries the LEGACY"
+        echo "                         \`agents.list\` array. Never changes anything. Exit 3 = present."
+        echo "                         This is the pre-flight to run against every box BEFORE moving any"
+        echo "                         of them onto a new OpenClaw build."
+        echo "  --agents-list-migrate  Delegates to scripts/oc-atomic-upgrade.sh --upgrade, which is the"
+        echo "                         only procedure that can do this safely: it STOPS the gateway (and"
+        echo "                         proves it stopped), installs the new build, rewrites the config"
+        echo "                         from \`agents.list\` to \`agents.entries\`, verifies the rewrite is"
+        echo "                         lossless against the NEW schema, restarts, and proves the gateway"
+        echo "                         STAYS up -- rolling back binary AND config on any failure."
+        echo "                         NOTE: \`openclaw doctor --fix\` does NOT perform this migration."
+        echo "                         Measured on 12 boxes: config SHA-256 identical before and after."
+        echo "                         (The detector also runs automatically on every normal update run,"
+        echo "                         where it reports and does not block.)"
+        echo ""
         echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
         echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
         echo "                         Needed only immediately before an OpenClaw binary roll to 2026.7.1;"
@@ -2618,6 +3506,16 @@ main() {
     local _pc_rc=0
     preclear_2026_7_1 "$PRECLEAR_MODE" || _pc_rc=$?
     exit "$_pc_rc"
+  fi
+
+  # Standalone legacy-`agents.list` run: inspect (or migrate) this box and exit
+  # WITHOUT performing a skill update. This is the pre-flight a fleet driver runs
+  # against every box BEFORE it moves any of them onto a new OpenClaw build.
+  # Exit 3 = REFUSED / needs a human (same contract as the pre-clear above).
+  if [ -n "$AGENTS_LIST_STANDALONE" ]; then
+    local _al_rc=0
+    agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
+    exit "$_al_rc"
   fi
 
   echo "============================================"
@@ -2652,6 +3550,56 @@ main() {
   # on a run that copies nothing. See reap_dead_skill_manifest() for why this
   # file is deleted rather than restamped.
   reap_dead_skill_manifest
+
+  # LEGACY `agents.list` SCHEMA DETECTOR. See agents_list_gate() above for the
+  # full rationale. Placement is load-bearing for the SAME reason as the two
+  # calls immediately above: every exit path below this line is an `exit 0`, and
+  # a box carrying `agents.list` is exactly an already-poisoned box that would
+  # otherwise reach one of those early exits and never be inspected.
+  #
+  # ⚠️ A LEGACY CONFIG NO LONGER BLOCKS THIS ROLL, AND THAT IS THE FIX, NOT A
+  # RELAXATION. The previous version exited 78 here on detection. Because this
+  # updater installs no OpenClaw binary, that refusal prevented no crash — while
+  # freezing the roll on 35 of 38 boxes, including the roll that delivers
+  # scripts/oc-atomic-upgrade.sh (deliver_canonical_scripts_tree, below). The
+  # gate was blocking the only delivery vehicle for its own remedy. In 'report'
+  # mode the detector now warns loudly, writes a marker, and returns 0.
+  #
+  # WHAT STILL BLOCKS: a return of 3, which the detector reserves for the
+  # genuinely UNKNOWN — an unparseable config, or no python3 to read it with. An
+  # absence that cannot be proven is not an absence, and a box whose config does
+  # not parse is not a box to keep writing to. That population is disjoint from
+  # the 35: their configs parse fine, they simply carry the old key.
+  #
+  # The version-changing paths are where the real block lives now, and they fail
+  # closed without the atomic procedure: the weekly `npm update -g openclaw`
+  # cron (scripts/setup-weekly-update.sh) and the F1 remediations
+  # (scripts/fleet-audit-remediate.sh, scripts/u126-remediate.sh).
+  _AGENTS_LIST_RC=0
+  agents_list_gate || _AGENTS_LIST_RC=$?
+  if [ "$_AGENTS_LIST_RC" -ne 0 ]; then
+    echo "FATAL: the \`agents.list\` schema detector could NOT READ this box's config (exit 78 / EX_CONFIG)." >&2
+    echo "       This is the fail-closed path for an UNKNOWN, not for a known-legacy box." >&2
+    echo "       Nothing was installed and no version stamp was written." >&2
+    exit 78
+  fi
+
+  # REGISTRY-PARITY-CALL (pre). See registry_parity_gate() above for the full
+  # rationale. Placement is load-bearing for the SAME reason as
+  # agents_list_gate immediately above: this must run before ANY write this
+  # updater makes, so the baseline snapshot reflects the box exactly as it
+  # was found, not as this run has already started changing it. It ALSO
+  # catches a box that arrives here ALREADY stripped (the absolute-floor
+  # check does not need a 'post' phase to fire) -- a state the schema gate
+  # above cannot see, because ABSENT is exactly what that gate calls "safe to
+  # proceed."
+  _REGISTRY_PARITY_RC=0
+  registry_parity_gate pre || _REGISTRY_PARITY_RC=$?
+  if [ "$_REGISTRY_PARITY_RC" -ne 0 ]; then
+    echo "FATAL: registry-parity gate REFUSED this roll (exit 78 / EX_CONFIG) -- see the banner above." >&2
+    echo "       Nothing was installed and no version stamp was written." >&2
+    exit 78
+  fi
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
@@ -3740,6 +4688,141 @@ print(state + " " + str(len(headers)))
         exit 0
       fi
       echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
+      echo "    Trying the FAST convergence-only sub-pass before committing to a full content sync..."
+      # >>> CONVERGENCE-FAST-PATH-BEGIN (2026-08-10)
+      # WHEN THIS RUNS: content is current (A3 digest match) but at least one
+      # convergence probe fired. The old behavior fell through to the FULL
+      # sync, which re-copies every numbered skill (rm -rf + cp -r per skill)
+      # and re-runs the ~77s skill-content-hash.sh per skill on a ~450MB /
+      # 16,789-file tree — a multi-minute hang on every already-current re-roll
+      # (observed live: all 10 VPS boxes, deterministic). The convergence steps
+      # the probes stand in for are SMALL, idempotent repairs; this sub-pass
+      # runs exactly those, then re-probes. Only if a probe still fires after
+      # the fast pass (or content genuinely drifted) do we fall through to the
+      # full sync — the full pass remains the never-weaker backstop.
+      # GUARDS: never deletes a healthy skill; never touches a dirty CC
+      # checkout with uncommitted client work; every repair is idempotent and
+      # reverts to the full pass on any uncertainty.
+      _FAST_CONVERGED=1
+      if [ -n "${_RECHECK_DRIFT:-}" ]; then
+        # Content genuinely drifted — the full sync is required. Do not run
+        # the fast path; fall straight through below.
+        _FAST_CONVERGED=0
+      else
+        # --- CC currency (state=behind or state=dirty on a CC checkout) ----
+        # Repair: fetch + fast-forward reset to origin/main — but ONLY when
+        # the checkout is clean (no uncommitted client work). A dirty checkout
+        # is load-bearing (the probe's own comment: "uncommitted work on a
+        # client box is load-bearing") — do NOT reset it; report and let the
+        # full pass (which also refuses to touch it) surface the same state.
+        for _fast_p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+                      "$HOME/projects/command-center" "/data/projects/command-center" \
+                      "$HOME/projects/blackceo-command-center" \
+                      "/data/projects/blackceo-command-center" \
+                      "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+                      "/opt/mission-control" "/app"; do
+          [ -n "$_fast_p" ] || continue
+          [ -d "$_fast_p/.git" ] || continue
+          _fast_remote="$(git -C "$_fast_p" remote get-url origin 2>/dev/null || true)"
+          case "$_fast_remote" in *command-center*) : ;; *) continue ;; esac
+          _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null || true)"
+          if [ -n "$_fast_dirty" ]; then
+            echo "    [fast-path] CC checkout $_fast_p has uncommitted changes (load-bearing) — NOT reset; full pass will surface the same state."
+            continue
+          fi
+          if git -C "$_fast_p" fetch --quiet origin 2>/dev/null \
+             && git -C "$_fast_p" reset --hard origin/main >/dev/null 2>&1; then
+            echo "    [fast-path] CC checkout $_fast_p fast-forwarded to origin/main."
+          else
+            echo "    [fast-path] CC checkout $_fast_p could not be refreshed (offline? locked?) — full pass will retry."
+          fi
+          break
+        done
+        # --- SOP library under-populated (U6c) ------------------------------
+        if [ -n "${_U6C_SOPLIB_FAIL:-}" ]; then : # probe reported missing ingester / no reader — full pass handles it
+        else
+          _fast_sop_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
+                        || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+          if [ -n "$_fast_sop_db" ] && [ -f "$_fast_sop_db" ]; then
+            _fast_sop_canon="${_U6C_CANON:-2555}"
+            _fast_sop_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_sop_db" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+            _fast_sop_rows="${_fast_sop_rows:-0}"
+            if [ "${_fast_sop_rows:-0}" -lt "${_fast_sop_canon}" ] 2>/dev/null; then
+              _fast_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-library/ingest-sop-library.sh"
+              [ -f "$_fast_ingest" ] || _fast_ingest="${EXTRACTED_DIR:-}/shared-utils/sop-library/ingest-sop-library.sh"
+              if [ -f "$_fast_ingest" ]; then
+                echo "    [fast-path] SOP library under-populated (${_fast_sop_rows} < ${_fast_sop_canon}) — running ingest..."
+                bash "$_fast_ingest" >/dev/null 2>&1 && echo "    [fast-path] SOP library ingest completed." || echo "    [fast-path] SOP library ingest failed (rc=$?) — full pass will retry."
+              else
+                echo "    [fast-path] ingest-sop-library.sh not found — full pass handles it."
+              fi
+            fi
+          fi
+        fi
+        # --- SOP-embeddings under-populated (U6c2) --------------------------
+        _fast_emb_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
+                       || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+        if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
+          _fast_emb_canon="${_U6C_EMB_CANON:-0}"
+          if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then
+            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+            _fast_emb_rows="${_fast_emb_rows:-0}"
+            if [ "${_fast_emb_rows:-0}" -lt "${_fast_emb_canon}" ] 2>/dev/null; then
+              _fast_emb_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-embed-once/embed-sops.sh"
+              [ -f "$_fast_emb_ingest" ] || _fast_emb_ingest="${EXTRACTED_DIR:-}/shared-utils/sop-embed-once/embed-sops.sh"
+              if [ -f "$_fast_emb_ingest" ]; then
+                echo "    [fast-path] SOP-embeddings under-populated (${_fast_emb_rows} < ${_fast_emb_canon}) — running embedder..."
+                bash "$_fast_emb_ingest" >/dev/null 2>&1 && echo "    [fast-path] SOP-embeddings ingest completed." || echo "    [fast-path] SOP-embeddings ingest failed (rc=$?) — full pass will retry."
+              else
+                echo "    [fast-path] embed-sops.sh not found — full pass handles it."
+              fi
+            fi
+          fi
+        fi
+        # --- persona-index provisioner (U6b) --------------------------------
+        _fast_pidx="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-persona-index.sh"
+        [ -f "$_fast_pidx" ] || _fast_pidx="${EXTRACTED_DIR:-}/shared-utils/provision-persona-index.sh"
+        if [ -f "$_fast_pidx" ]; then
+          echo "    [fast-path] provisioning persona index..."
+          bash "$_fast_pidx" >/dev/null 2>&1 && echo "    [fast-path] persona index provisioned." || echo "    [fast-path] persona-index provisioning failed (rc=$?) — full pass will retry."
+        fi
+        # --- weekly-onboarding-update cron (U6c-adjacent) -------------------
+        if command -v install_onboarding_resume_cron >/dev/null 2>&1; then
+          echo "    [fast-path] registering weekly onboarding-update cron..."
+          install_onboarding_resume_cron >/dev/null 2>&1 && echo "    [fast-path] weekly cron registered." || echo "    [fast-path] weekly cron registration failed (rc=$?) — full pass will retry."
+        fi
+        # --- AGENTS.md dedup / orphan hygiene -------------------------------
+        if [ -f "${EXTRACTED_DIR:-}/scripts/apply-fleet-standards.sh" ]; then
+          echo "    [fast-path] running AGENTS.md hygiene..."
+          bash "${EXTRACTED_DIR:-}/scripts/apply-fleet-standards.sh" >/dev/null 2>&1 && echo "    [fast-path] AGENTS.md hygiene complete." || echo "    [fast-path] AGENTS.md hygiene reported non-zero (rc=$?) — full pass will retry."
+        fi
+        # --- PENDING flag ----------------------------------------------------
+        for _fast_pending in "${PENDING_PATHS[@]:-}"; do
+          [ -n "$_fast_pending" ] || continue
+          if [ -f "$_fast_pending" ]; then
+            rm -f "$_fast_pending" 2>/dev/null && echo "    [fast-path] cleared UPDATE PENDING flag at $_fast_pending."
+          fi
+        done
+      fi
+      if [ "$_FAST_CONVERGED" -eq 1 ]; then
+        # Re-probe once. If clean now, we are done WITHOUT the expensive sync.
+        _CONVERGENCE_TRIGGERS=""
+        _cc_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center currency"
+        _sop_library_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }SOP library/embeddings population"
+        _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
+        _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
+        _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+        _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
+        if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
+          echo "  ✓ [CONVERGENCE FAST PATH] all outstanding convergence steps repaired without a content sync — nothing to do."
+          rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+          exit 0
+        fi
+        echo "  ✗ [CONVERGENCE FAST PATH] still outstanding after the fast pass: ${_CONVERGENCE_TRIGGERS}"
+        echo "    Proceeding with a full pass so they run — the fast path is exhausted, the full pass is the backstop."
+      fi
+      # <<< CONVERGENCE-FAST-PATH-END
+      echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
       echo "    Proceeding with a full pass so they run — the version/content stamp is not a signal for any of them."
       # <<< CONTENT-RECHECK-CONVERGENCE-GATE-END
     fi
@@ -4016,6 +5099,86 @@ print(state + " " + str(len(headers)))
     [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! universal-sops content differences:${_OC_TREE_DIFFERS}" || true
   fi
 
+  # ----------------------------------------------------------
+  # A2.5: EARLY CONTENT-GATE — assert the copy landed, RIGHT HERE.
+  #
+  # This is an ORDERING fix, not a new kind of check. The authoritative A3 gate
+  # lives ~2000 lines below, immediately before the version stamp. Everything
+  # between here and there — QC, workforce provisioning, department floors,
+  # wiring, activation — can terminate the run first. When it does, the copy is
+  # NEVER verified, and the box is left silently truncated with no signal on any
+  # surface.
+  #
+  # Observed in the field: a run copied part of the tree, exited rc=3 on a QC
+  # department-floor failure, and never reached A3. That box then sat for days
+  # missing 17 skill directories and ~43% of one skill's files while every
+  # status surface reported healthy — because the one check that would have
+  # caught it never executed. The gate was sound; it just ran too late to run
+  # at all.
+  #
+  # So the copy is asserted HERE, the moment it finishes, while a failure is
+  # still attributable to the copy that caused it. A3 below is UNCHANGED and
+  # remains authoritative for the stamp; this is a fail-fast tripwire in front
+  # of it, deliberately duplicating that logic rather than moving it.
+  # ----------------------------------------------------------
+  if [ -n "$SRC_MANIFEST" ] && [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+    echo ""
+    echo "  [A2.5] Early content-gate: verifying the copy landed before continuing..."
+    _EARLY_DEST_MANIFEST=$(bash "$_CONTENT_HASH_SCRIPT" "$SKILLS_DIR" 2>/dev/null || true)
+    _EARLY_FAIL=0
+    _EARLY_DETAIL=""
+    if [ -z "$_EARLY_DEST_MANIFEST" ]; then
+      # Could not measure. That is NOT a pass and NOT a failure — defer to A3
+      # rather than inventing a verdict from a broken instrument.
+      echo "  [A2.5] destination manifest unavailable — no early verdict; deferring to the A3 gate" >&2
+    else
+      while IFS='|' read -r _e_skill _e_src; do
+        [ -z "$_e_skill" ] && continue
+        [ "$_e_skill" = "__TREE_SHA__" ] && continue
+        case "$_e_skill" in *ARCHIVED*) continue ;; esac
+
+        # Mirror A3's --only scoping so a deliberately narrow run is not failed
+        # by drift in a skill this run never intended to copy.
+        if [ -n "${ONLY_SKILLS:-}" ]; then
+          _e_prefix=$(echo "$_e_skill" | cut -d'-' -f1)
+          _e_want=0
+          _e_oifs=$IFS; IFS=','
+          for _e_o in $ONLY_SKILLS; do
+            [ "$_e_prefix" = "$(echo "$_e_o" | tr -d '[:space:]')" ] && _e_want=1
+          done
+          IFS=$_e_oifs
+          [ "$_e_want" -eq 1 ] || continue
+        fi
+
+        _e_dest=$(printf '%s\n' "$_EARLY_DEST_MANIFEST" | grep "^${_e_skill}|" | cut -d'|' -f2 | head -1)
+        if [ -z "$_e_dest" ]; then
+          _EARLY_DETAIL="${_EARLY_DETAIL}  ${_e_skill}: expected=${_e_src} found=<missing>\n"
+          _EARLY_FAIL=1
+        elif [ "$_e_dest" != "$_e_src" ]; then
+          _EARLY_DETAIL="${_EARLY_DETAIL}  ${_e_skill}: expected=${_e_src} found=${_e_dest}\n"
+          _EARLY_FAIL=1
+        fi
+      done <<< "$SRC_MANIFEST"
+    fi
+
+    if [ "$_EARLY_FAIL" -eq 1 ]; then
+      echo ""
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      echo "  A2.5 EARLY CONTENT-GATE FAILED — the copy did not land completely."
+      echo ""
+      echo "  Stopping HERE, at the copy site, rather than continuing into QC"
+      echo "  and risking an exit that never reaches the A3 verification below."
+      echo "  The following skills do not match the source tree:"
+      printf '%b' "$_EARLY_DETAIL"
+      echo "  No version stamp has been written."
+      echo "  Re-run this updater from a current checkout to retry the install."
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP" 2>/dev/null || true
+      exit 1
+    fi
+    echo "  [A2.5] Early content-gate PASSED — copy verified at the copy site."
+  fi
+
   # SK1-63 (fleet-installer wiring, update path): mirror the same runtime-dir
   # manifest placement install.sh's install_skill_47_movie_producer() does on
   # fresh installs. executive_producer.py's load_manifest() resolves the
@@ -4161,6 +5324,7 @@ PYEOF
   # WITHHOLDS the stamp because the skills CONTENT is not verifiably current):
   _U6B_PERSONA_FAIL=0            # persona-index CONTENT wiring (sentinel != pinned release_tag, triad-divergent library, or helper did not run)
   _D2_REFRESH_STATUS="ok"       # in-scope role/SOP CONTENT refresh (refresh-stale-roles.py rc 3 -- new library content that SHOULD have re-applied to an EXISTING artifact did not)
+  _D2_DEPTSCRIPTS_STATUS="ok"   # UNCONDITIONAL dept scripts/ mirror (refresh-dept-scripts.py rc 3 -- a materialized department's canonical scripts/ file missing/diverged from the library AFTER the copy step; runs every roll, independent of any gap map -- fixes delivery causes 2/3)
   _SHAREDCORE_STATUS="ok"       # shared-core-file wiring step (link_shared_core_files)
   # WORKFORCE-provisioning latches (v20.0.10: DECOUPLED from the content stamp --
   # they describe "is the client's workforce fully built", NOT "is the skills
@@ -4256,8 +5420,8 @@ PYEOF
   # and this satisfies it truthfully rather than working around it.
   [ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600 "$_U6B_OC_SECRETS_ENV" 2>/dev/null || true
 
-  _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
-  [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
+  _U6B_HELPER="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-persona-index.sh"
+  [ -f "$_U6B_HELPER" ] || _U6B_HELPER="${EXTRACTED_DIR:-}/shared-utils/provision-persona-index.sh"
 
   # Workspace + Skill-22 source for the persona reconcile (v14.27.2).
   _U6B_WS="$HOME/.openclaw/workspace"
@@ -5970,6 +7134,57 @@ else:
   fi
 
   # ----------------------------------------------------------
+  # FIX-DELIVERY-02: UNCONDITIONAL DEPARTMENT-SCRIPTS MIRROR.
+  # The refresh-stale-roles.py drain immediately above -- like every other
+  # repair step on this box -- only ever acts on rows detect-stale-artifacts.py
+  # put in a queue. detect-stale-artifacts.py's load_current() never emits a
+  # "scripts" kind at all (the literal string never appears in the manifest,
+  # and there is no code path that could produce one), so a department's
+  # canonical scripts/ files (build_deck.py, capacity.py, deliverables.py,
+  # self_audit.py, qc_check.py, ...) can NEVER be queued STALE or MISSING --
+  # not on a fresh install, and never again afterward. The only other writer,
+  # scaffold_department() (create_role_workspaces.py), has exactly one runtime
+  # caller (floor-fill-driver.py), gated behind migrate-existing-workforce.sh's
+  # `FF_GAP_DEPTS -gt 0` check -- on a HEALTHY steady-state box (no missing
+  # roles/sops/depts) that gate is false and floor-fill-driver.py never runs,
+  # so not even the depth-1 files this repo already treats as fleet-owned
+  # (.py/.sh/.js/.tpl/.sha256/.pdf) ever refresh again after day one.
+  #
+  # refresh-dept-scripts.py closes both gaps at once: it mirrors every
+  # role-library department's scripts/ tree onto the box's materialized
+  # department directory UNCONDITIONALLY, every roll, with no gap-map
+  # dependency (same unconditional-every-roll shape as refresh-stale-roles.py
+  # above), honoring the same ownership policy scaffold_department already
+  # enforces (.py/.sh/.js/.tpl/.sha256/.pdf fleet-owned/always-overwrite-when-
+  # divergent; .json box-owned/additive/missing-only). Its pass/fail verdict
+  # is re-derived from the filesystem AFTER the copy step (sha256 of the
+  # library file vs the destination file), never from its own copy-loop
+  # counter, so an incomplete or sabotaged copy is caught here exactly like
+  # scaffold_department's own post-materialization proof.
+  #
+  # A poisoned/missing department is a benign SKIP (not this script's job to
+  # create one -- that stays floor-fill-driver.py's MISSING-department job).
+  # Only a materialized department whose canonical files fail to verify AFTER
+  # the copy counts against the completeness contract (rc 3), which trips
+  # _D2_DEPTSCRIPTS_STATUS below -- same pipefail-correct `if PIPE; then`
+  # capture as the refresh-stale-roles.py block above. A MISSING generator
+  # (older bundle) is still a benign skip -- see the else branch.
+  # ----------------------------------------------------------
+  DEPT_SCRIPTS_REFRESH="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py"
+  if [ -f "$DEPT_SCRIPTS_REFRESH" ] && command -v python3 >/dev/null 2>&1; then
+    echo ""
+    echo "  Mirroring department scripts/ trees (unconditional, every roll)..."
+    if python3 "$DEPT_SCRIPTS_REFRESH" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE"; then
+      :
+    else
+      echo "  refresh-dept-scripts.py: completed with warnings (see $LOG_FILE)"
+      _D2_DEPTSCRIPTS_STATUS="fail"
+    fi
+  else
+    echo "  (refresh-dept-scripts.py not found or python3 unavailable -- skipping dept scripts/ mirror; older bundle)"
+  fi
+
+  # ----------------------------------------------------------
   # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
   # checks role docs against the departments/ tree. If that directory is absent
   # while .workforce-build-state.json says interviewComplete=true, the drain has
@@ -6246,6 +7461,11 @@ if isinstance(n, int) and n > 0:
   #     content refresh that SHOULD have re-applied the new library content to an
   #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
   #     rows exit 0 and never land here.)
+  #   - _D2_DEPTSCRIPTS_STATUS: refresh-dept-scripts.py rc 3 (FIX-DELIVERY-02) --
+  #     a MATERIALIZED department's canonical scripts/ file (.py/.sh/.js/.tpl/.sha256/.pdf)
+  #     was missing or hash-diverged from the role library AFTER this run's own
+  #     copy step -- an incomplete/sabotaged mirror. (A department not yet
+  #     materialized on this box is a benign skip and never lands here.)
   #   - _U6C_SOPLIB_FAIL: SOP V2 library CONTENT population (U6c) -- the ingester
   #     is missing, failed, or ran and left the `sops` table below the manifest's
   #     canonical population. A box whose SOP database is a demo fixture must
@@ -6276,6 +7496,9 @@ if isinstance(n, int) and n > 0:
   fi
   if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - in-scope role/SOP content refresh (D2, refresh-stale-roles.py rc 3): an in-scope refresh that SHOULD have applied did not — see $LOG_FILE\n"
+  fi
+  if [ "${_D2_DEPTSCRIPTS_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - department scripts/ mirror (FIX-DELIVERY-02, refresh-dept-scripts.py rc 3): a materialized department's canonical scripts/ file did not verify after the copy step — see $LOG_FILE\n"
   fi
   if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
@@ -6316,6 +7539,27 @@ if isinstance(n, int) and n > 0:
     echo "  Driven to completion by the post-stamp qc-completeness run and the"
     echo "  onboarding-resume cron (re-fires wiring + QC until green)."
     echo "  ------------------------------------------------------------"
+  fi
+
+  # --- Claude Code subagent concurrency (operator directive 2026-08-14) -------
+  # Merges CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS + CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
+  # into this box's Claude Code profile(s). Runs AFTER the shared-utils refresh so
+  # the helper is present. Deliberately NON-GATING: a box with no Claude Code
+  # profile, or an unparseable settings.json we refuse to touch, is an advisory —
+  # it must never withhold the content stamp or fail a fleet roll. The helper is
+  # idempotent, merge-only, backs up before writing, and restores on any failure.
+  # It does NOT change the Workflow tool's per-run cap, which is computed from the
+  # box's own CPU count (min(16, max(2, cores-2))) and reads no env var.
+  _CCS_HELPER="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/provision-claude-settings.sh"
+  [ -f "$_CCS_HELPER" ] || _CCS_HELPER="${EXTRACTED_DIR:-}/shared-utils/provision-claude-settings.sh"
+  if [ -f "$_CCS_HELPER" ]; then
+    echo ""
+    echo "  Provisioning Claude Code subagent concurrency (500 concurrent / 10000 per session)..."
+    if ! bash "$_CCS_HELPER"; then
+      echo "  ⚠️  Claude subagent-concurrency provisioning reported a problem (advisory — does NOT withhold the stamp)." >&2
+    fi
+  else
+    echo "  ⚠️  provision-claude-settings.sh not found on this box — subagent concurrency left at platform defaults (advisory)." >&2
   fi
 
   if [ -n "$_STEP_GATE_FAILS" ]; then
@@ -8054,6 +9298,18 @@ PYEOF
   fi
   # <<< TRAP3-CC-BOOTSTRAP-BRANCH-END
 
+  # POST-REFRESH CC CURRENCY PROBE (2026-08-15 fix): the pre-refresh probe call
+  # above wrote the marker BEFORE the CC refresh ran. run-full-install.sh's
+  # Phase 6b seed (seed-workspaces.py -> generate-brand-css.py) re-stamps
+  # public/brand.css AFTER the refresh, re-dirtying the tree — so the marker
+  # was written while the tree was still clean and never updated after the
+  # refresh dirtied it, leaving 3-4 boxes perpetually state=dirty even though
+  # their CC code is at origin/main. Re-probe HERE, after the refresh
+  # completes, so the marker reflects the true post-update state. Same
+  # marker-write/report-only contract: return value intentionally discarded,
+  # must never gate or alter anything.
+  _cc_currency_probe || true
+
   fi
 
   # ----------------------------------------------------------
@@ -8408,6 +9664,21 @@ BACKUP_BLOCK
   # above already uses, so fleet drivers do not need a new code to recognize
   # it.
   # ----------------------------------------------------------
+  # REGISTRY-PARITY-CALL (post). Runs after EVERY write this updater makes,
+  # immediately before the final return -- see registry_parity_gate() above.
+  # A registry-parity failure is more severe than the infra-degraded (exit 2)
+  # cases below: it is possible agent data was just lost, so this OVERRIDES
+  # whatever exit code the rest of this run would otherwise report and exits
+  # 78 (EX_CONFIG) directly, the moment it is detected, rather than folding
+  # into the normal return-code decision tree.
+  _REGISTRY_PARITY_POST_RC=0
+  registry_parity_gate post || _REGISTRY_PARITY_POST_RC=$?
+  if [ "$_REGISTRY_PARITY_POST_RC" -ne 0 ]; then
+    echo "FATAL: registry-parity gate REFUSED at the END of this run (exit 78 / EX_CONFIG) -- see the banner above." >&2
+    echo "       Skills content may already be current on disk, but the agent registry did not verify -- treat this box as UNVERIFIED, not updated." >&2
+    exit 78
+  fi
+
   if [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
     {
       echo ""

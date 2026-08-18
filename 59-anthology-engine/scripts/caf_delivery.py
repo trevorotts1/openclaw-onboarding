@@ -1294,7 +1294,7 @@ class _StubCaf:
             "contact.anthology_rewrite_count": "cf_rw",
             # G10 (U70/GK-08): the base chapter pair + BOTH chapter-rewrite-preservation
             # pairs, so the stub can stand in for a location that has actually run
-            # `anthology_registry.py provision-fields` end to end (all 28 keys), not
+            # `anthology_registry.py provision-fields` end to end (all 38 keys), not
             # just the avatar pair. Without these three pairs present here, no self-test
             # can ever exercise write_and_verify() against rewrite1/rewrite2 -- the exact
             # deliverable this unit is about -- because resolve_field_ids() would refuse

@@ -476,6 +476,58 @@ def merge_intake_json(run_dir: pathlib.Path, updates: dict) -> pathlib.Path:
     return p
 
 
+# ---------------------------------------------------------------------------
+# requester identity -- fix/deck-type-routing-bypass follow-up.
+#
+# b01d2a09 diagnosed the gap in these exact words: "the dispatcher knows it
+# but never writes it down." Two dispatchers (mc-route.sh's REQUESTER_CHAT_ID
+# / REQUESTER_CHANNEL and whatever exports PRESENTATION_REQUESTER_CHAT_ID /
+# ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID before invoking
+# this driver) already know the requester at dispatch time, and cc_board.py's
+# resolve_requester() already reads that SAME set of env keys -- but only for
+# CC-board task registration, a different purpose than the engine's own hard
+# gate (presentation_job.py --new dies with no requester.chat_id; see
+# presentation_job/__main__.py cmd_new). Neither dispatcher ever persisted the
+# value into working/copy/intake.json, the ONE file resolve_intake.py (and
+# therefore the engine) actually reads. This driver is where intake.json is
+# actually produced, so --complete is the correct place to make the stamp
+# durable: whichever env var the calling dispatcher exported is read once,
+# here, and merged into intake.json -- never overwriting a value already on
+# disk (an upstream writer or a re-run always wins over the environment).
+#
+# _REQUESTER_ENV_KEYS mirrors cc_board.py's own constant of the same name
+# byte-for-byte -- one vocabulary, read in two places for two purposes.
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
+
+
+def _resolve_requester_from_env(existing_intake: dict) -> dict:
+    """Return {requester_chat_id, requester_channel} updates to merge into
+    working/copy/intake.json, sourced from the environment the dispatcher
+    already sets (see _REQUESTER_ENV_KEYS above). Returns {} -- never a
+    fabricated value -- when intake.json already has a requester_chat_id
+    (do not clobber) or when none of the env keys are set (a genuinely
+    operator-initiated / requester-less run). The engine's own hard gate on
+    an empty requester.chat_id is left to fire exactly as designed in that
+    second case -- this function only closes the "dispatcher knew it but
+    nobody wrote it down" gap, never the case where nobody knew it at all.
+    """
+    if str(existing_intake.get("requester_chat_id") or "").strip():
+        return {}
+    chat_id = ""
+    for key in _REQUESTER_ENV_KEYS:
+        val = str(os.environ.get(key) or "").strip()
+        if val:
+            chat_id = val
+            break
+    if not chat_id:
+        return {}
+    channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+    return {"requester_chat_id": chat_id, "requester_channel": channel}
+
 
 def _build_waiver_records(qdata: dict, ledger: dict) -> list:
     """U026 — assemble the CLIENT CONSENT records from the intake ledger.
@@ -941,6 +993,20 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     # permission slip. A write failure must fail --complete loudly.
     waivers = _build_waiver_records(qdata, ledger)
     merge_intake_json(run_dir, {"waivers": waivers})
+
+    # fix/deck-type-routing-bypass follow-up: stamp the requester identity
+    # (env -> intake.json) so the engine's resolve_intake.py has something to
+    # read besides an empty ledger. See _resolve_requester_from_env() above.
+    try:
+        intake_p = run_dir / INTAKE_JSON_REL
+        existing_for_requester = {}
+        if intake_p.exists():
+            existing_for_requester = json.loads(intake_p.read_text(encoding="utf-8"))
+        requester_updates = _resolve_requester_from_env(existing_for_requester)
+        if requester_updates:
+            merge_intake_json(run_dir, requester_updates)
+    except (OSError, json.JSONDecodeError):
+        pass
 
     # GK-23/D18: non-signature deck intake gets the SAME turn-ledger provenance
     # stamp as the signature path (deck-intake-questions.json order enforcement
@@ -2039,9 +2105,11 @@ def signature_selftest() -> bool:
         print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
         return ok
 
-    def _assemble_and_prove(record: dict) -> Tuple[int, str]:
+    def _assemble_and_prove(record: dict, provenance: Optional[dict] = None) -> Tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
             intake = assemble_sp_intake(record, "blk_sig_selftest")
+            if provenance is not None:
+                intake["turn_ledger_provenance"] = provenance
             p = pathlib.Path(td) / "sp_intake.json"
             p.write_text(json.dumps(intake), encoding="utf-8")
             return _run_sp_prover(p)
@@ -2058,7 +2126,21 @@ def signature_selftest() -> bool:
         "offer_token_ledger": ["The Signature Intensive"],
     }
 
-    rc, out = _assemble_and_prove(valid)
+    # GK-23/D18: since GRACE_WINDOW_UNTIL (2026-08-15) closed, a must-PASS record
+    # needs a genuine turn_ledger_provenance stamp too. Build it with this file's
+    # OWN build_turn_ledger_provenance() -- the exact function the real turn-gate
+    # (cmd_sp_next/_sp_finalize) calls -- from synthetic but real ledger-shaped
+    # entries (one ascending turn per required question), so Test 2 proves the
+    # driver's real provenance builder clears the prover, not a hand-rolled blob.
+    valid_entries = {
+        qid: {"validated": True, "turn": i + 1,
+              "asked_at": f"2026-07-15T12:{i:02d}:00", "validated_at": f"2026-07-15T12:{i:02d}:30"}
+        for i, qid in enumerate(SP_REQUIRED_QUESTIONS)
+    }
+    valid_provenance = build_turn_ledger_provenance(
+        valid_entries, list(SP_REQUIRED_QUESTIONS), "signature_presentation", "blk_sig_selftest")
+
+    rc, out = _assemble_and_prove(valid, valid_provenance)
     step2 = rc == 0
     ok = ok and step2
     print(f"[sig-selftest] Test 2 {'PASS' if step2 else 'FAIL'}: VALID record -> prover exit {rc} (want 0)")

@@ -1,0 +1,185 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U07-ASSEMBLY-INCOMPLETE",
+      "exit": 2,
+      "meaning": "the U07 check-module set named in U07_MODULES is not fully present, or a module violates the one-entry-point self_test contract \u2014 a check family is never silently skipped (dispatcher STOP)"
+    },
+    {
+      "code": "AF-AE-U07-CREATE-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "a CREATE ACTION was requested without --execute (the Trevor gate) \u2014 creation is never silent; the missing-field list is the payload, the create is the gate"
+    },
+    {
+      "code": "AF-AE-FIELDMAP-*",
+      "exit": 2,
+      "meaning": "the field-map contract gate refused (38-key count / total_keys mismatch / derivation law / type law / key law \u2014 never a silent load); an attack tripped the loader's OFFLINE self-test (exit 4)"
+    },
+    {
+      "code": "FIELDS-ALL-PRESENT",
+      "exit": 0,
+      "meaning": "the golden all-present census gate PASSED (golden_all_present payload; the U07 all-present state holds)"
+    },
+    {
+      "code": "FIELDS-NOT-ALL-PRESENT",
+      "exit": 5,
+      "meaning": "the census gate REFUSED (golden_all_present payload: an absent / renamed / duplicated / foreign / wrong-size / malformed listing \u2014 never a blind pass)"
+    },
+    {
+      "code": "AF-AE-FIELD-MISSING",
+      "exit": 2,
+      "meaning": "an intended field is absent from the live listing (missing_finder; without --execute a STOP exit 2 that lists them, never a silent pass); the deep strict-subset census (attack_missing_14: nineteen of thirty-eight fields present) MUST be detected and refused exit 5, never passed"
+    },
+    {
+      "code": "AF-AE-FIELD-KEY-MISMATCH",
+      "exit": 5,
+      "meaning": "a live field name carries a non-derived key (name-squat drift, human-fix, never created) or a created fieldKey read back NOT byte-equal to its intended key \u2014 the derivation law changed or the server drifted, and NOTHING about that key is certified"
+    },
+    {
+      "code": "AF-AE-GOLDENALLPRESENT-*",
+      "exit": 4,
+      "meaning": "an attack tripped the all-present fixture's OFFLINE self-test (enforced violation) \u2014 an absent / renamed / duplicate / foreign contract key, a wrong-size or malformed census, or a credential-shaped value was not refused HERE first"
+    },
+    {
+      "code": "AF-AE-MISSINGFINDER-*",
+      "exit": 4,
+      "meaning": "an attack tripped the missing-finder's OFFLINE self-test (enforced violation) \u2014 a drifted missing/create gate law was not caught HERE first"
+    },
+    {
+      "code": "AF-AE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "a post-write read-back does not prove the fix byte-for-byte \u2014 the shared house code with the U02 / U03 / U04 / U05 / U06 families (already stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of the dispatcher or a family battery (enforced violation \u2014 the house code, shared with the U02 / U03 / U04 / U05 / U06 families)"
+    }
+  ],
+  "authored_by": "U07",
+  "check_modules": [
+    "fieldmap_loader",
+    "live_fields_reader",
+    "missing_finder",
+    "type_checker",
+    "byte_verifier",
+    "golden_all_present",
+    "attack_missing_14",
+    "attack_text_drift",
+    "house_rules",
+    "docs_u07",
+    "example_usage"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u07-field-map-compliance",
+  "exit_codes": {
+    "0": "verified success \u2014 the census agrees with its source of truth and every write step ran under its gate (also plan / self-test; an EMPTY custom-field set is a truthful PASS; nothing missing is a clean no-op PASS)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 a CREATE ACTION without --execute (the Trevor gate, AF-AE-U07-CREATE-NO-EXECUTE) / label NOT SET / a non-pit- value / usage / the U07 check-module assembly incomplete (AF-AE-U07-ASSEMBLY-INCOMPLETE) / a field-map that drifted from its own contract (FieldMapError: 38-key count, total_keys mismatch, derivation law, type law, key law \u2014 never a silent load) / a map-vs-cover_render options mismatch / the cover_render style import failed / a missing field WITHOUT --execute (the Trevor gate, AF-AE-FIELD-MISSING family \u2014 creation is never silent) / a GENUINE scope denial (the response body matched the Convert and Flow scope signature) / a module STOP-family refusal",
+    "3": "HELD \u2014 Convert and Flow unreachable (transport) or an upstream/edge block (CF error 1010, Cloudflare edge 403) / a malformed listing (UNDETERMINED, never a verdict \u2014 a bare 401/403 is HELD, never mislabeled as a scope problem)",
+    "4": "self-test FAILED (AF-AE-FIELDMAP-* / AF-AE-GOLDENALLPRESENT-* / AF-AE-MISSINGFINDER-* / AF-AE-FIELD-MISSING / AF-AE-FIELD-KEY-MISMATCH / AF-AE-TEMPLATE-ATTACK family, enforced violation) \u2014 a tamper never masquerades as exit 1",
+    "5": "mismatch / fail-closed default \u2014 a contract key absent or renamed (FIELDS-NOT-ALL-PRESENT), a foreign key outside the 38-key contract, a wrong-size or malformed census, a credential-shaped or full-id surface (leak-scan REFUSAL), a name-squat drift (a live name under a non-derived key), a created fieldKey that is not byte-equal to its intended key, a live field of the wrong dataType (not LARGE_TEXT / not SINGLE_OPTIONS / drifted options), a read-back mismatch; the fail-closed default"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the ONE live read (live_fields_reader) is PIT-gated (the client's OWN location-scoped private-integration token BY LABEL) and HELD (exit 3) when the rail is unreachable \u2014 never a fabricated pass; the CREATE ACTION is Trevor-gated (--execute) and is create-only-missing with a byte-exact read-back \u2014 this assembler never writes."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "provision_fields.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u07_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the U07 live field-map compliance dispatcher CLI (plan / self-test / live verify; the ONE entry-point contract over the check modules)"
+    },
+    {
+      "name": "fieldmap_loader.py",
+      "role": "the FAIL-CLOSED FIELD-MAP LOADER AND CONTRACT GATE \u2014 the single implementation of the field-map.json load-and-verify law: read config/field-map.json and return its provisioning.fields inventory (exactly 38 keys) ONLY when the map satisfies its own contract (38-key count, total_keys byte-match, derivation law, type law \u2014 36 LARGE_TEXT + 2 SINGLE_OPTIONS \u2014 key law with the 'contact.' prefix) \u2014 refuse anything else (FieldMapError, exit 2 STOP family), never a partial load. OFFLINE, READ-ONLY, NETWORK-FREE; a field id is reported by status only (RESOLVED / UNRESOLVED), never by value"
+    },
+    {
+      "name": "live_fields_reader.py",
+      "role": "the LIVE CUSTOM-FIELDS READER \u2014 the read surface of the U07 family: the location's contact custom fields through the PROVEN public rail GET /locations/{locationId}/customFields (reg.CafClient.list_custom_fields \u2014 the W0.5-verified surface the U02 fields_check gate and the provision path exercise). READ-ONLY BY CONSTRUCTION: no write surface, no ACTION verb, no --execute (nothing to gate). An EMPTY field set is a truthful PASS; a missing credential is a STOP (exit 2); an unreachable rail / edge block / unparseable listing is HELD (exit 3), never a fabricated list"
+    },
+    {
+      "name": "missing_finder.py",
+      "role": "the MISSING-FIELD FINDER \u2014 the get-check-by-name half of the presence law: PRESENT (byte-equal server fieldKey) / MISSING (no live field under the derived key AND no live field under the create name) / NAME-SQUAT DRIFT (a live field named exactly the create_name but keyed otherwise \u2014 a human-fix drift, NEVER counted missing, NEVER created). With the operator's explicit --execute (Trevor-gated) it CREATES each missing field by name via the proven create surface (reg.CafClient.create_custom_field) and reads the server-returned fieldKey back byte-for-byte against the intended key \u2014 idempotent create-or-verify; a created fieldKey NOT byte-equal is a MISMATCH (exit 5). Without --execute a location with missing fields is a STOP (exit 2) that lists them \u2014 creation is never silent"
+    },
+    {
+      "name": "type_checker.py",
+      "role": "the LIVE FIELD-TYPE CHECKER \u2014 the type-law half of the U07 family: asserts EVERY free-text field in the inventory is live LARGE_TEXT (the 36-key every-text-input-field-is-multi-line law, PRD Gap G11) and the TWO SINGLE_OPTIONS fields (contact.anthology_cover_choice and contact.anthology_review_decision) are live with EXACTLY their named options byte-exact in order (the picklist imported from cover_render.STYLE_NAMES, self-pinned against the field-map's own declared options so the two surfaces can never drift). With --execute (Trevor-gated) each MISSING free-text key is created at its declared LARGE_TEXT data_type and the choice field at SINGLE_OPTIONS with the four options, then the location is RE-LISTED and every created key re-verified against the read-back \u2014 a report never claims a type that was not read back. A live field of the WRONG type is NEVER re-created and never re-typed: it is a FAIL (exit 5)"
+    },
+    {
+      "name": "byte_verifier.py",
+      "role": "the POST-CREATE READ-BACK VERIFIER \u2014 the read-back half of the U07 create law: after provisioning creates a custom field, RE-READS the location's custom-field inventory through the SAME live read surface the create used (reg.CafClient.list_custom_fields, browser UA on every request) and confirms EVERY server fieldKey byte-exact against config/field-map.json provisioning.fields (the SINGLE SOURCE OF TRUTH; each expectation derived through reg.derive_field_key, the single implementation). READ-ONLY by construction: it never creates, never stamps, never writes; the verify ACTION is Trevor-gated (--execute) \u2014 without it a STOP (exit 2, the family gate), with it the ACTION is reported and nothing is mutated; a missing / mismatched / extra key is a MISMATCH (exit 5), an unreadable Convert and Flow is HELD (exit 3)"
+    },
+    {
+      "name": "golden_all_present.py",
+      "role": "the GOLDEN ALL-38-PRESENT FIXTURE \u2014 the canonical in-memory payload of the U07 FIELD-CENSUS law in its GOLDEN state: ALL 38 contract custom fields on the listing BY EXACT KEY (the 19 base PRD Section 6 link/control keys + 4 Gap G10 chapter-rewrite-preservation keys + 5 U8 cover-style keys + 10 U15-absorbed live fields, the intended keys read ONCE from config/field-map.json through reg.load_field_map, never retyped), the canonical record mappingproxy-frozen (every container a tuple, so no caller can mutate the law); the payload() gate is fail-closed \u2014 an absent / renamed / duplicated / foreign / wrong-size / malformed / credential-shaped listing is REFUSED exit 5 (FIELDS-NOT-ALL-PRESENT), never a blind pass, and the WRITE ACTION (provision) is --execute-gated (GOLDEN_EXECUTE_REQUIRED \u2014 the gate lives in this dispatcher, never in a fixture)"
+    },
+    {
+      "name": "attack_missing_14.py",
+      "role": "the U07 ATTACK #1: a deterministic DEEP strict-subset customFields read carrying only NINETEEN of the thirty-eight contract fields (the canonical census minus its nineteen even-positioned records \u2014 a location missing half its fields) that every byte-exact field census MUST DETECT and refuse (verify_live(...) exit 5, missing keys by MASKED MARKER only) while the golden 38-key control (payload_true) PASSES exit 0 \u2014 the pass/fail split discriminates the deep-strict-subset boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"
+    },
+    {
+      "name": "attack_text_drift.py",
+      "role": "the U07 ATTACK #2: a deterministic SINGLE-VARIABLE dataType drift \u2014 the canonical field inventory read once from the field-map (the dataType LAW surface: 38 keys, 36 LARGE_TEXT + 2 SINGLE_OPTIONS, the cover choice and the review decision each with their named options), then the ONE data_type of the first free-text key re-declared TEXT with every other field byte-for-byte preserved \u2014 that every dataType gate (the 36+2 invariant, the provision-fields exact-match verify, every U07 type law) MUST FAIL, never a pass; the golden 36+2 control (GOLDEN_RECORD / payload_true) PASSES exit 0 \u2014 the pass/fail split discriminates the TEXT-vs-LARGE_TEXT boundary, never a broken instrument. READ-ONLY and OFFLINE by construction: it never makes a network call"
+    },
+    {
+      "name": "house_rules.py",
+      "role": "the ONE canonical house-law constant surface for the U07 family (browser UA \u2014 CAF_BROWSER_UA, CF 1010 \u2014 / version header \u2014 CAF_VERSION_HEADER \u2014 / the complete AF autofail table, the manifest's 75 rows, the U07 family's authority); the offline self-test pins the UA and version header byte-exact against the registry and the AF table byte-exact against ENGINE-MANIFEST.json autofails \u2014 a tamper never masquerades as exit 1 (exit 4, the AF-AE-HASH-PIN family)"
+    },
+    {
+      "name": "docs_u07.py",
+      "role": "the U07 tooling README/catalog data + drift gate \u2014 the module inventory, the FIVE verified items, the house exit codes and af codes as DATA (the module inventory and the shipped tree never drift; a doc that names a module that does not ship FAILS its self-test exit 4)"
+    },
+    {
+      "name": "example_usage.py",
+      "role": "the fail-closed WORKED EXAMPLE of the U07 dispatch \u2014 the field-map contract gate + the golden all-present census + the missing-14 attack boundary with its golden control + the live read + the missing-field presence law + the type law, composed in the documented order with every sibling exit code honored verbatim (a STOP refusal is NEVER downgraded to a pass). NOT a gate and NOT a checker: it makes NO judgment of its own \u2014 every judgment is delegated to the sibling modules, which stay the single implementation of each law"
+    },
+    {
+      "name": "test_missing_finder.py",
+      "role": "the independent pytest battery over the missing-finder (provenance only)"
+    },
+    {
+      "name": "test_type_checker.py",
+      "role": "the independent pytest battery over the type-checker (provenance only)"
+    },
+    {
+      "name": "test_byte_verifier.py",
+      "role": "the independent pytest battery over the byte-verifier (provenance only)"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "census_law",
+      "item": 1,
+      "title": "38-key census law \u2014 the field-map contract loads byte-exact"
+    },
+    {
+      "id": "all_present",
+      "item": 2,
+      "title": "All-present law \u2014 the golden 38 are present BY EXACT KEY"
+    },
+    {
+      "id": "live_read",
+      "item": 3,
+      "title": "Live-read law \u2014 the census is read LIVE through the PROVEN rail"
+    },
+    {
+      "id": "create_gate",
+      "item": 4,
+      "title": "Create gate law \u2014 a missing field STOPS without --execute"
+    },
+    {
+      "id": "type_law",
+      "item": 5,
+      "title": "Type law \u2014 every free-text key live LARGE_TEXT, the two picklists exact"
+    }
+  ]
+}

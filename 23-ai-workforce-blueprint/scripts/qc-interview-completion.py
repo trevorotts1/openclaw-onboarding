@@ -1121,16 +1121,49 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
         # branding-questions.json must be readable — if not, hard fail
         raise
 
-    # Structural build-state requireds
-    structural_required = ["companyName", "industry", "ownerChat", "agentName"]
+    # Structural build-state requireds.
+    #
+    # D3 FIX — this gate was UNSATISFIABLE on the web lane, the only lane
+    # clients actually use. `ownerChat` and `agentName` are BOX PLUMBING, not
+    # interview answers: the owner is never asked for either one, and nothing on
+    # the web path populates them (the Command Center has no Telegram chat id to
+    # record). Worse, `ownerChat` is seeded as the integer 0 (see
+    # backfill-build-state.py), and `0` is FALSY — so `not state.get("ownerChat")`
+    # read a field that WAS present as missing. The result: a client could answer
+    # every single question and still hard-fail "Missing mandatory fields:
+    # ownerChat, agentName", which makes update-interview-state.sh --complete
+    # refuse with exit 87 forever, on evidence that was never the client's to
+    # provide.
+    #
+    # They are NOT dropped — they move to `plumbingMissing`, which build_verdict()
+    # surfaces as a WARNING so a genuinely unconfigured box still gets named for
+    # operator follow-up. Only the two fields that ARE real interview content
+    # remain hard requirements.
+    structural_required = ["companyName", "industry"]
+    plumbing_required = ["ownerChat", "agentName"]
 
     # Transcript-sourced answers (2026-07-30 fix): match the transcript's Q/A blocks
     # against the FULL branding question set (not just the required ones) using the
     # exact same prompt-normalization + matching semantics as the Command Center's
     # structured-progress.ts, so this gate and the CC's own "answered" notion can
     # never drift apart.
+    # v22.0.29 FOLLOW-UP: match against the FULL canonical set (identity +
+    # branding + operations), not branding alone. `company_name` and `industry`
+    # are IDENTITY questions (IDENTITY_QUESTIONS_CANONICAL), NOT branding ones —
+    # branding-questions.json contains only the eight brand_* / customer_* ids.
+    # The structural companyName/industry checks below accept answered-transcript
+    # evidence, but that acceptance was DEAD CODE while this list was built from
+    # branding_questions alone: `"company_name" in transcript_answered_ids` could
+    # never be true, so a pure web-lane interview that genuinely answered both
+    # still hard-failed "Missing mandatory fields: companyName, industry" — the
+    # exact D3 symptom the structural fix was meant to remove.
+    _all_canonical = (
+        list(IDENTITY_QUESTIONS_CANONICAL)
+        + list(branding_questions)
+        + list(OPERATIONS_QUESTIONS_CANONICAL)
+    )
     transcript_answered_ids = compute_answered_ids(
-        parse_answer_blocks(transcript or ""), branding_questions
+        parse_answer_blocks(transcript or ""), _all_canonical
     )
 
     missing = []
@@ -1150,18 +1183,34 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
         if not field_present(fid):
             missing.append(fid)
 
-    # Structural
-    if not state.get("companyName") and not state.get("company_name"):
+    # Structural. D3 FIX: these two ARE real interview content — the branding
+    # deck asks them as `company_name` and `industry` — so they are satisfiable
+    # by ANSWERED TRANSCRIPT EVIDENCE exactly like every branding field above,
+    # not only by a build-state mirror. A client who answered them in the
+    # interview must not be reported missing merely because no flow copied the
+    # value into build-state. Fail-closed is preserved: neither source present
+    # is still missing.
+    if not (
+        state.get("companyName")
+        or state.get("company_name")
+        or "company_name" in transcript_answered_ids
+    ):
         missing.append("companyName")
-    if not state.get("industry"):
+    if not (state.get("industry") or "industry" in transcript_answered_ids):
         missing.append("industry")
+
+    # Box plumbing — WARNING-level only (see structural_required above). Reported
+    # separately so a genuinely unconfigured box is still named, without letting
+    # a field the owner was never asked for block a complete interview.
+    plumbing_missing = []
     if not state.get("ownerChat") and not state.get("owner_chat"):
-        missing.append("ownerChat")
+        plumbing_missing.append("ownerChat")
     if not state.get("agentName") and not state.get("agent_name"):
-        missing.append("agentName")
+        plumbing_missing.append("agentName")
 
     # At least one locked department
     departments = state.get("departments", [])
+    locked = []
     if isinstance(departments, list):
         # "prebuilt" (standard-first, PHASE 7): a department materialized by the
         # operator-triggered prebuild-standard-workforce.sh BEFORE the interview
@@ -1169,13 +1218,40 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
         # artifact + board lane), so it satisfies this field exactly like a
         # planned department. Legacy boxes never carry this status, so the
         # legacy lane is byte-identical.
-        locked = [d for d in departments if d.get("status") in ("done", "building", "pending", "prebuilt")]
-        if not locked:
-            missing.append("departments[at-least-one]")
+        locked = [
+            d for d in departments
+            if isinstance(d, dict) and d.get("status") in ("done", "building", "pending", "prebuilt")
+        ]
+
+    # D3 FIX: departments[] is not the only place a locked department is
+    # recorded. record-dept-decision.sh writes the owner's per-department
+    # choices to `canonicalReconciliation.decisions`, and on the standard-first
+    # / web lane departments[] is deliberately NOT materialized until the
+    # apply-diff build runs (update-interview-state.sh --complete only seeds it
+    # as an EMPTY array sentinel, and refuses to fabricate entries). So an owner
+    # who explicitly kept departments during the interview still presented an
+    # empty departments[] to this check and hard-failed
+    # "departments[at-least-one]" — for a decision they had in fact made. A
+    # recorded `yes` decision is direct evidence of a locked department, so it
+    # satisfies this check exactly like a departments[] entry. `no` (a decline)
+    # and `later` (deferred) deliberately do NOT count.
+    reconciliation = state.get("canonicalReconciliation") or {}
+    decisions = reconciliation.get("decisions") or {}
+    kept_decisions = []
+    if isinstance(decisions, dict):
+        kept_decisions = [
+            dept_id for dept_id, rec in decisions.items()
+            if isinstance(rec, dict) and rec.get("decision") == "yes"
+        ]
+
+    if not locked and not kept_decisions:
+        missing.append("departments[at-least-one]")
 
     return {
         "missing": list(dict.fromkeys(missing)),  # dedup, preserve order
+        "plumbingMissing": list(dict.fromkeys(plumbing_missing)),
         "checked": branding_required + structural_required + ["departments[at-least-one]"],
+        "plumbingChecked": plumbing_required,
     }
 
 
@@ -1649,36 +1725,94 @@ def build_verdict(
     # branch REPLACES the raw-count floor/ceiling/borderline decision below for
     # this path only; the conversational path (elif chain below) is unchanged.
     is_structured = is_structured_web_interview(state)
+    sc = structured_coverage or {}
+    coverage_complete = bool(sc.get("complete"))
 
-    if is_structured:
-        sc = structured_coverage or {}
-        if sc.get("complete"):
-            warnings.append(
-                f"[structured-coverage GRANTED] interviewProgress.lastQuestionAskedBy=="
-                f"'interview-web' (structured web deck). "
-                f"{len(sc.get('answeredIds', []))}/{sc.get('total', 0)} canonical questions "
-                f"covered with substance ({sc.get('requiredTotal', 0)} required, all present). "
-                f"The 25-35 raw-**Q:**-block standard does not apply to this path — see "
-                f"check_structured_coverage(). Raw count was {count}. Jargon, mandatory-field, "
-                f"and no-fabrication checks STILL applied in full."
+    # D4 FIX — MIXED-CHANNEL INTERVIEWS. Which standard applied used to be chosen
+    # by is_structured_web_interview() ALONE, and that function reads exactly one
+    # thing: interviewProgress.lastQuestionAskedBy, i.e. WHO STAMPED THE LAST
+    # QUESTION. A single field about the final answer decided how the whole
+    # interview was graded, so an owner who answered everything hard-failed in
+    # BOTH directions whenever the channel changed mid-interview:
+    #
+    #   • web deck fully covered, but the last question came back through the
+    #     Telegram/agent lane -> is_structured False -> graded on RAW COUNT, and a
+    #     complete ~11-question canonical deck is only ~19 raw blocks, i.e. below
+    #     the 25 floor -> HARD FAIL on a complete interview.
+    #   • rich conversational interview (25-35 real questions), but the last
+    #     stamp happened to be 'interview-web' -> is_structured True -> graded on
+    #     DECK COVERAGE, which a conversational transcript does not match id-for-
+    #     id -> HARD FAIL on a complete interview.
+    #
+    # The fix grades on EITHER SATISFIED STANDARD: an interview passes check #1
+    # if the canonical deck is fully covered with substance OR the raw-count
+    # standard is met. It hard-fails only when NEITHER is satisfied. Both
+    # standards keep their full strength — coverage still demands every REQUIRED
+    # canonical question answered with real substance (check_structured_coverage
+    # does the judging, not a flag), and the conversational chain below is
+    # untouched, including the ABSOLUTE >36 ceiling and the 25-35 band.
+    conversational_satisfied = 24 <= count <= 36
+
+    if coverage_complete:
+        channel_note = (
+            "interviewProgress.lastQuestionAskedBy=='interview-web' (structured web deck)"
+            if is_structured
+            else f"lastQuestionAskedBy=='{(state or {}).get('interviewProgress', {}).get('lastQuestionAskedBy', '?')}' "
+                 f"(MIXED CHANNEL: the last answer came back outside the web deck, but the "
+                 f"canonical deck is fully covered, so the coverage standard is the one this "
+                 f"interview satisfies)"
+        )
+        warnings.append(
+            f"[structured-coverage GRANTED] {channel_note}. "
+            f"{len(sc.get('answeredIds', []))}/{sc.get('total', 0)} canonical questions "
+            f"covered with substance ({sc.get('requiredTotal', 0)} required, all present). "
+            f"The 25-35 raw-**Q:**-block standard does not apply to this path — see "
+            f"check_structured_coverage(). Raw count was {count}. Jargon, mandatory-field, "
+            f"and no-fabrication checks STILL applied in full."
+        )
+    elif is_structured and conversational_satisfied:
+        # Deck incomplete, but this interview satisfies the RAW-COUNT standard.
+        # Fall through to the conversational chain below rather than hard-failing
+        # on a standard this interview was never really conducted under.
+        warnings.append(
+            f"[mixed-channel] lastQuestionAskedBy=='interview-web' but the canonical deck is "
+            f"NOT fully covered ("
+            + "; ".join(
+                p for p in (
+                    (f"never answered: {', '.join(sc.get('missingRequiredIds', []))}"
+                     if sc.get("missingRequiredIds") else ""),
+                    (f"answered but too shallow/generic: {', '.join(sc.get('shallowRequiredIds', []))}"
+                     if sc.get("shallowRequiredIds") else ""),
+                ) if p
             )
-        else:
-            missing_named = sc.get("missingRequiredIds", [])
-            shallow_named = sc.get("shallowRequiredIds", [])
-            parts = []
-            if missing_named:
-                parts.append(f"never answered: {', '.join(missing_named)}")
-            if shallow_named:
-                parts.append(f"answered but too shallow/generic: {', '.join(shallow_named)}")
-            hard_failures.append(
-                "[structured-coverage] Structured web-deck interview (askedBy=interview-web) "
-                "does not cover every REQUIRED canonical question with real substance"
-                + (f" — {'; '.join(parts)}" if parts else "")
-                + f". Raw count ({count}) is not the standard for this path; coverage of the "
-                f"{sc.get('total', '?')}-question canonical deck is."
+            + f"). Grading on the raw-count standard instead, which this interview DOES satisfy "
+            f"({count} questions). Both standards were evaluated; neither was waived."
+        )
+        # The raw-count standard's own borderline rule still applies here — this
+        # branch grades BY that standard, so it inherits its soft fail too.
+        if count == 24 or count == 36:
+            soft_failures.append(
+                f"Question count {count} is borderline (target 25-35). Human review required."
             )
+    elif is_structured:
+        # Neither standard satisfied — the original structured hard fail, intact.
+        missing_named = sc.get("missingRequiredIds", [])
+        shallow_named = sc.get("shallowRequiredIds", [])
+        parts = []
+        if missing_named:
+            parts.append(f"never answered: {', '.join(missing_named)}")
+        if shallow_named:
+            parts.append(f"answered but too shallow/generic: {', '.join(shallow_named)}")
+        hard_failures.append(
+            "[structured-coverage] Structured web-deck interview (askedBy=interview-web) "
+            "does not cover every REQUIRED canonical question with real substance"
+            + (f" — {'; '.join(parts)}" if parts else "")
+            + f". Raw count ({count}) does not satisfy the raw-count standard either, so "
+            f"NEITHER standard is met; coverage of the "
+            f"{sc.get('total', '?')}-question canonical deck is the standard for this path."
+        )
     # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
-    # path only; a structured interview is graded above, never here.)
+    # path only; a fully-covered structured interview is granted above.)
     elif count > 36:
         hard_failures.append(
             f"Question count {count} is outside the acceptable range (25-35). "
@@ -1749,6 +1883,22 @@ def build_verdict(
     if missing_fields:
         hard_failures.append(
             f"Missing mandatory fields: {', '.join(missing_fields)}"
+        )
+
+    # Box-plumbing fields (D3): WARNING, never a hard fail. ownerChat/agentName
+    # are not interview answers — the owner is never asked for them and the web
+    # lane has no value to record — so their absence says nothing about whether
+    # THIS interview is complete. It is still surfaced by name so a genuinely
+    # unconfigured box gets operator follow-up instead of silence.
+    plumbing_missing = field_result.get("plumbingMissing", [])
+    if plumbing_missing:
+        warnings.append(
+            "[plumbing] Box plumbing not populated in build-state: "
+            + ", ".join(plumbing_missing)
+            + ". These are NOT interview answers and do not block completion; "
+            "configure them on the box (ownerChat is the owner's Telegram chat "
+            "id, agentName the box's agent) so owner-facing sends and the "
+            "build-kick can address the right recipient."
         )
 
     # Nudge wiring check (2026-07-30: WARNING, not a HARD FAIL — see the

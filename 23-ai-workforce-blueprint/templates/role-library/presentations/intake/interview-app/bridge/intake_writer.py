@@ -18,6 +18,19 @@ Worker, this writer stamps the run dir, then cc_board.ingest_deck_task opens the
 kanban card — the presentation department start. No shortcuts: the deck can only
 build through presentation-canonical-entry.sh's gates.
 
+FAIL-CLOSED on deck type (PRES-DEPT-FIX-REVIEW-2026-08-17.md Part 6 #3): this
+module used to hardcode deck_type="webinar" (+ creation_mode/presentation_mode/
+audience_mode) unconditionally, so a client who asked for a signature talk
+silently got a webinar with "complete": true written on top of it -- a
+fabricated answer made to look like an approved one. It no longer guesses.
+deck_type is derived ONLY from a real `presentation_type` answer (see
+_grounded_deck_type_fields()); when that answer is missing or unrecognized,
+write_intake_file()/write_ledger() raise UngroundedDeckTypeError and write
+NOTHING rather than mark an intake complete on a fabricated field. Full
+routing through deck-intake-driver.py's presentation_type picker + turn
+ledger + prove_sp_routing.py is the correct long-term fix and is deliberately
+NOT implemented here -- see UngroundedDeckTypeError.__doc__.
+
 Stdlib only. Run:
   python3 intake_writer.py --intake intake.json --run-dir /path/to/run
 """
@@ -38,6 +51,120 @@ MANDATORY_PRE_CAPTURE = (
     "DARK_OK",
     "HOOK_SEED",
 )
+
+# presentation_type -> {deck_type, creation_mode, presentation_mode,
+# audience_mode}. Mirrors deck-intake-driver.py:LEGACY_FIELD_MAPPING /
+# intake/deck-intake-questions.json's legacy_field_mapping -- THE SOURCE OF
+# TRUTH for deck_type (same mirroring pattern as MANDATORY_PRE_CAPTURE above;
+# this module runs standalone, stdlib only, so it cannot import the driver).
+# presentation_type is the ONE client answer that legitimately determines
+# these fields. Deliberately omits the driver table's "requires"/signature_
+# source handling (recipient_name, extracted_substance, signature_source
+# overrides) -- that is real intake-flow logic belonging to the driver
+# integration named in UngroundedDeckTypeError.__doc__, not this patch.
+LEGACY_FIELD_MAPPING = {
+    "from_scratch": {
+        "deck_type": "webinar",
+        "creation_mode": "from_scratch",
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+    },
+    "content_personal": {
+        "deck_type": "webinar",
+        "creation_mode": "content_personal",
+        "presentation_mode": "one-person",
+        "audience_mode": "PERSONAL",
+    },
+    "content_general": {
+        "deck_type": "webinar",
+        "creation_mode": "content_general",
+        "presentation_mode": "general",
+        "audience_mode": "GENERAL",
+    },
+    "signature": {
+        "deck_type": "signature_presentation",
+        "creation_mode": "from_scratch",
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+    },
+}
+
+
+class UngroundedDeckTypeError(RuntimeError):
+    """Raised when deck_type/creation_mode/presentation_mode/audience_mode
+    cannot be derived from an answer the client actually gave.
+
+    FAIL CLOSED (PRES-DEPT-FIX-REVIEW-2026-08-17.md Part 6 #3): this is the
+    replacement for the hardcoded deck_type="webinar" bug. When
+    presentation_type was not actually answered -- note the interview app's
+    current 12-question set (interview-app/pages/index.html QUESTIONS) never
+    asks it, so today this ALWAYS raises for every real app submission --
+    callers must not write any file claiming the intake is complete. A
+    caller-supplied deck_type/presentation_type claim (e.g. the app
+    frontend's own buildIntakePayload(), which separately hardcodes
+    presentation_type: "from_scratch" in JS) is never trusted either; only
+    the client's own answers are. Full routing through
+    deck-intake-driver.py's presentation_type picker, its turn-gated ledger,
+    and prove_sp_routing.py (--signature --sig-record) is the correct
+    long-term fix and is deliberately NOT implemented here -- that is a real
+    design task (turn-ledger shape reconciliation between the two sanctioned
+    driver copies, a non-signature batch-record path that does not exist
+    today) out of scope for this fail-closed patch. See
+    PRES-DEPT-FIX-REVIEW-2026-08-17.md Part 6 #3.
+    """
+
+
+def _grounded_deck_type_fields(answers: dict) -> dict:
+    """Derive {deck_type, creation_mode, presentation_mode, audience_mode,
+    presentation_type} from the client's OWN presentation_type answer.
+
+    Never defaults, never fabricates -- raises UngroundedDeckTypeError naming
+    exactly what is missing/invalid when presentation_type was not answered
+    or was answered with something unrecognized. This is the ONE function
+    permitted to set these four fields; nothing else in this module may
+    hardcode them.
+    """
+    raw = answers.get("presentation_type")
+    if isinstance(raw, dict):
+        raw = raw.get("value", "")
+    raw = str(raw or "").strip()
+    if not raw:
+        raise UngroundedDeckTypeError(
+            "no 'presentation_type' answer was captured in this intake -- "
+            "cannot determine deck_type/creation_mode/presentation_mode/"
+            "audience_mode. Refusing to default to webinar (or any other "
+            "type). See UngroundedDeckTypeError.__doc__ for why and what to "
+            "do instead."
+        )
+    if raw not in LEGACY_FIELD_MAPPING:
+        raise UngroundedDeckTypeError(
+            f"presentation_type answer {raw!r} is not one of "
+            f"{sorted(LEGACY_FIELD_MAPPING)} -- refusing to guess a deck_type."
+        )
+    derived = dict(LEGACY_FIELD_MAPPING[raw])
+    derived["presentation_type"] = raw
+    return derived
+
+
+def _require_grounded_deck_type(intake: dict) -> dict:
+    """Validate -- and correct -- intake's deck-type axis against its OWN
+    `answers`, in place.
+
+    Called by both write_intake_file() and write_ledger() so the gate holds
+    no matter which caller built `intake`: assemble_intake() below is NOT the
+    only path into this module. intake_bridge.py's cmd_ingest() -- the real
+    submit-trigger the app actually uses in production -- builds `intake`
+    straight from the Worker payload and calls write_intake_file()/
+    write_ledger() directly, never through assemble_intake(). Overwrites the
+    four derived fields with the grounded values (never trusts whatever a
+    caller pre-stamped there) so a stale or fabricated claim can never
+    survive into a written file. Raises UngroundedDeckTypeError -- nothing is
+    written -- if it cannot be grounded.
+    """
+    grounded = _grounded_deck_type_fields(intake.get("answers") or {})
+    intake.update(grounded)
+    return intake
+
 
 # Question id -> intake.json field key (deck_brief section unless noted).
 # Mirrors the canonical deck-intake-questions.json storeTarget mapping so the
@@ -121,13 +248,14 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
             brief[field] = v
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
 
+    # deck_type/creation_mode/presentation_mode/audience_mode/
+    # presentation_type: grounded ONLY in the client's own presentation_type
+    # answer -- may raise UngroundedDeckTypeError. This used to be a
+    # hardcoded "webinar" here; see UngroundedDeckTypeError.__doc__.
+    deck_type_fields = _grounded_deck_type_fields(answers)
+
     intake = {
         "interview_confirmed": True,
-        "deck_type": "webinar",
-        "creation_mode": "from_scratch",
-        "presentation_mode": "general",
-        "audience_mode": "STANDARD",
-        "presentation_type": "from_scratch",
         "target_talk_minutes": 20,
         "created_at": now,
         "source": "presentation-interview-app",
@@ -145,11 +273,20 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
         "intake": intake_flat,
         "answers": answers,
     }
+    intake.update(deck_type_fields)
     return intake
 
 
 def write_intake_file(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
-    """Write working/copy/intake.json in the run dir (the deck brief)."""
+    """Write working/copy/intake.json in the run dir (the deck brief).
+
+    FAIL CLOSED: raises UngroundedDeckTypeError -- writing nothing -- if
+    `intake`'s deck-type axis cannot be grounded in its own `answers`. Runs
+    for every caller, not just assemble_intake()'s output: intake_bridge.py's
+    cmd_ingest() calls this directly with a raw Worker payload. See
+    _require_grounded_deck_type().
+    """
+    _require_grounded_deck_type(intake)
     out = run_dir / "working" / "copy" / "intake.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -163,7 +300,12 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     the _intake_provenance_gate's ledger-consistency check for app-captured
     runs. `answers` carries the captured Q&A pairs so the ledger is NOT an
     empty fabrication.
+
+    FAIL CLOSED: raises UngroundedDeckTypeError -- writing nothing, never
+    "complete": true -- if `intake`'s deck-type axis cannot be grounded in
+    its own `answers`. See _require_grounded_deck_type().
     """
+    _require_grounded_deck_type(intake)
     ledger_path = run_dir / "working" / "interview" / "intake_ledger.json"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     answers = intake.get("answers") or {}
@@ -263,11 +405,17 @@ def _question_text(qid: str, brief: dict) -> str:
 
 def cmd(args) -> int:
     raw = json.loads(pathlib.Path(args.intake).read_text(encoding="utf-8"))
-    intake = assemble_intake(raw, run_id=args.run_id)
-    run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
-    ipath = write_intake_file(run_dir, intake)
-    lpath = write_ledger(run_dir, intake)
-    tpath = write_transcript(run_dir, intake)
+    try:
+        intake = assemble_intake(raw, run_id=args.run_id)
+        run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+        ipath = write_intake_file(run_dir, intake)
+        lpath = write_ledger(run_dir, intake)
+        tpath = write_transcript(run_dir, intake)
+    except UngroundedDeckTypeError as exc:
+        # Fail closed: nothing above wrote a file before raising. Exit 3
+        # distinguishes "ungrounded deck type" from other failures.
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
     if args.verbose:
         print(f"wrote {ipath}")
         print(f"wrote {lpath}")

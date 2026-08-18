@@ -230,7 +230,15 @@ def measure_workingset(run_dir: Path, phase_id: str,
         except Exception:  # noqa: BLE001
             ph = None
         if ph is not None:
-            globs = list(getattr(ph, "produces_artifact", []) or [])
+            # U01-R2 (QC FAIL 6.46): the manifest may declare {deck_slug}-templated
+            # patterns (e.g. P8.25-WORKBOOK's
+            # 'working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf').
+            # Resolve the tokens against the run dir so the working-set measurement
+            # globs the REAL artifact paths; the literal token path never matches disk.
+            try:
+                globs = list(ph.resolve_artifact_patterns(run_dir) or [])
+            except Exception:  # noqa: BLE001 -- never fail a measurement on resolution
+                globs = list(getattr(ph, "produces_artifact", []) or [])
             checked_manifest = True
     if globs is None:
         globs = list(_UNKNOWN_PHASE_GLOBS)

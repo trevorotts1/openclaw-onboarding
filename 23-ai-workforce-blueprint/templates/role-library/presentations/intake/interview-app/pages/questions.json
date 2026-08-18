@@ -4,8 +4,26 @@
   "version": "1.0.0",
   "question_set": "standard",
   "source": "deck-intake-questions.json (v1.3.0, curated)",
-  "description": "Curated 12-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.3.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 12. Progress label is 'Question N of 12'.",
+  "description": "Curated 13-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.3.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 13. Progress label is 'Question N of 13'. presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it.",
   "questions": [
+    {
+      "id": "presentation_type",
+      "section": "deck-intake",
+      "order": 0,
+      "prompt": "What kind of presentation do you need?",
+      "help": "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length. Pick the one that fits.",
+      "kind": "text",
+      "storeOn": "pre_presentation_capture.PRESENTATION_TYPE",
+      "allowed_values": ["from_scratch", "content_personal", "content_general", "signature"],
+      "value_labels": {
+        "from_scratch": "From scratch — we brainstorm your topic and build a brand-new presentation",
+        "content_personal": "From something I already have, made for ONE specific person",
+        "content_general": "From something I already have, made for a room or wider audience",
+        "signature": "The full Signature Presentation — a longer, multi-part keynote (100+ slides)"
+      },
+      "required": true,
+      "block_gate": true
+    },
     {
       "id": "offer_name",
       "section": "deck-intake",

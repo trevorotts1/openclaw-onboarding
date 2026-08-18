@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-10T15:45:33Z",
-  "file_count": 111,
+  "generated_at": "2026-08-18T10:28:32Z",
+  "file_count": 112,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "ab426f2c7ba20b8083605fd1b94dc154981d9b97a94388240ea4e4c805604dfb",
@@ -17,8 +17,12 @@
       "bytes": 9146
     },
     "SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md": {
-      "sha256": "220ad6b825f909aac54b416c60c0765663116c12fb59a0e99ddbcab76cd84305",
-      "bytes": 42211
+      "sha256": "01952bb2d3067cbf67f195473bd8aef1a88b9663e06546fb796ea72fdd8fdd2c",
+      "bytes": 43202
+    },
+    "SOP-RR-LOOP-TRIAGE.md": {
+      "sha256": "b67c2bbdf6518f787e41e5787efadcfd019a26dd19857c15283db8fa80889d95",
+      "bytes": 14728
     },
     "adding-capability-after-build.md": {
       "sha256": "c76d22285751b707c6d58d14e930c042122cc1f7f0426b43210e3f7979b947b8",
@@ -293,12 +297,12 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "68d94dff77080db592b57ef06eff734494e78d6788a0c72569d0d7c444c2e3cb",
-      "bytes": 112996
+      "sha256": "69f992692d19afb0e2928c0516251dd416b1600bfa558787265d759fcf76eda4",
+      "bytes": 116461
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "4cb5fb68706cf1f3dc2c8928c3a1334ae14e12e0882dedb4c301c7c7e7eb0ddf",
-      "bytes": 147897
+      "sha256": "d1daec92df79330f21f8651b5e4f4dfe3cd47d45894165139d4c7b662d3fb7e6",
+      "bytes": 152863
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",

@@ -1,5 +1,5 @@
 {
-  "manifest_version": 44,
+  "manifest_version": 49,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -208,7 +208,7 @@
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10,
+      "heartbeat_minutes": 15,
       "executor": {
         "kind": "agent"
       },
@@ -244,7 +244,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P0A-INTAKE",
@@ -307,7 +308,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P0B-PRIORITY",
@@ -372,7 +374,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-STYLE-PREVIEW",
@@ -399,7 +402,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 45
     },
     {
       "id": "P-SHIFT-QC",
@@ -427,7 +431,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P1Q-COPY-QC",
@@ -477,7 +482,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P3-ARC",
@@ -523,7 +529,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-3.5-RESEARCH-MAP",
@@ -547,7 +554,7 @@
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10,
+      "heartbeat_minutes": 15,
       "executor": {
         "kind": "agent"
       },
@@ -590,7 +597,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "PF-DESIGN",
@@ -614,7 +622,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-TYPO-QC",
@@ -641,7 +650,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P4-PROMPT",
@@ -667,7 +677,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-PROMPT-QC",
@@ -693,7 +704,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P4-RENDER",
@@ -729,7 +741,7 @@
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10,
+      "heartbeat_minutes": 60,
       "executor": {
         "kind": "agent"
       },
@@ -767,7 +779,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P8-ASSEMBLE",
@@ -796,7 +809,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P8.1-PDF-EXPORT",
@@ -817,7 +831,8 @@
         "kind": "script",
         "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P8.2-GUIDE",
@@ -838,7 +853,8 @@
         "kind": "script",
         "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P8.25-WORKBOOK",
@@ -862,9 +878,10 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/workbook_builder.py --run-dir {run_dir}"
+        "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P9-SPEECH",
@@ -891,7 +908,8 @@
         "kind": "script",
         "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P8.4-FISH-TAG",
@@ -912,7 +930,8 @@
         "kind": "script",
         "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P9-SPEECH-WEBINAR-INTRO",
@@ -936,7 +955,8 @@
         "kind": "script",
         "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO-WEBINAR.mp3 --webinar-intro-outro"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 120
     },
     {
       "id": "P9.1-SPEECH-PDF",
@@ -957,7 +977,8 @@
         "kind": "script",
         "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P-SPEECH-QC",
@@ -983,7 +1004,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-QC-AGGREGATE",
@@ -1003,7 +1025,8 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode"
-      }
+      },
+      "heartbeat_minutes": 10
     },
     {
       "id": "P9.5-NOTES-SYNC",
@@ -1025,7 +1048,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P9.2-GHL-UPLOAD",
@@ -1046,7 +1070,8 @@
         "kind": "script",
         "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P9.6-WEBINAR-VIDEO",
@@ -1067,9 +1092,10 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
+        "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 120
     },
     {
       "id": "P7-TELEPROMPTER",
@@ -1090,7 +1116,8 @@
         "kind": "script",
         "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10
     },
     {
       "id": "P9-DELIVER",
@@ -1117,7 +1144,8 @@
         "kind": "script",
         "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-SP-CLAIM",
@@ -1143,7 +1171,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10
     },
     {
       "id": "P-SP-INTAKE",
@@ -1173,7 +1202,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P-SP-INTAKE-TRACE",
@@ -1199,7 +1229,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P-SP-STRUCTURE",
@@ -1233,7 +1264,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
     },
     {
       "id": "P-SP-P3-HYGIENE",
@@ -1259,7 +1291,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     }
   ],
   "autofails": [
@@ -1809,6 +1842,24 @@
       "secondary_py_symbols": [
         "_qc_independence_reason"
       ]
+    },
+    {
+      "code": "AF-PROMPT-NAME",
+      "stage": "3",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt file in working/prompts/ has a NON-canonical name (the prompt_gate scan_prompt_dir / prompt_dir_problems verdict): the R3 canonical family is exactly 2 or 3 digits (slide-01..slide-99, slide-100..slide-999, plus the -prompt variants); a 1-digit (slide-1.txt) or 4+ digit (slide-0100.txt, slide-1000.txt) name fails. R3 overlay: _canonical_prompt_dir_problems re-judges the shared verdict so a name whose ordinal FIELD is exactly 2 or 3 digits is canonical (a name whose only offender is now-canonical is dropped).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_canonical_prompt_dir_problems"
+    },
+    {
+      "code": "AF-PROMPT-DUP-FILE",
+      "stage": "3",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "two or more prompt files in working/prompts/ target the SAME slide ordinal (prompt_gate scan_prompt_dir / prompt_dir_problems verdict; e.g. slide-01.txt vs slide-1.txt, slide-100.txt vs slide-0100.txt). R3 passes duplicate verdicts through unchanged: exactly one canonical file per slide is the rule at any digit width (the %02d and %03d families are the SAME spelling for ordinals 100+ and target the same slide for ordinals 1-99, so a collision is always same-ordinal).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_canonical_prompt_dir_problems"
     },
     {
       "code": "AF-IMAGE-QC",
@@ -2859,6 +2910,15 @@
       "py_symbol": "_chk_cc_registered"
     },
     {
+      "code": "AF-CC-UNVERIFIED",
+      "stage": "Process",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "closeout where CC registration could NOT be verified: cc_register_attempted=True but no cc_task_id (transport/partial failure or outage), or a cc_task_id whose cc_registration HMAC receipt does not verify (hand-written or stale — not provably produced by a real cc_board.ingest_deck_task round-trip). Could-not-verify NEVER counts as verified; the gate fails with an explicit honest message (fail-soft: a genuine Command Center outage is surfaced truthfully, never read as verified)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_cc_registered"
+    },
+    {
       "code": "AF-SP-TYPE-UNDECLARED",
       "stage": "Intake",
       "level": "DECK",
@@ -3080,6 +3140,16 @@
       "enforced_by": "synthesize_full_speech",
       "py_symbol": null,
       "check_script": "scripts/phase_verifiers.py::_verify_webinarized_speech"
+    },
+    {
+      "code": "AF-CAPACITY-UNMEASURED",
+      "stage": "0",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the engine was dispatched (or an execution plan was built) without a capacity measurement for THIS client's account. capacity.probe() detects the client's provider and plan in a fixed order -- (a) a declared capacity_override.json in the department config dir, (b) the 9Router configuration, (c) the OpenClaw agent model configuration, (d) provider known but plan undeclared, which PARKS behind a one-time interview question whose answer persists to capacity_override.json, (e) nothing found, which reports UNDETERMINED and falls back to DEFAULT_CONSERVATIVE = 3 -- and the cap table is exact: ollama-cloud $20/month = 3 concurrent agents, ollama-cloud $100/month = 10, deepseek-direct v4-pro = 500, deepseek-direct v4-flash = 2500. An unknown provider or plan is NEVER guessed upward. The autofail fires when the probe cannot produce a dispatchable number at all (status PARKED or FAILED): launcher.dispatch refuses before any engine process is created and exits non-zero, and execution_plan.build_execution_plan refuses rather than substituting a constant wave width. Wave width is min(ready phases, measured available) -- never a hard-coded per-workflow number, which on a small client plan would over-dispatch by orders of magnitude. Detection is read-only and never reads a credential VALUE, only which provider is configured. Repair: answer the capacity interview question (the answer is stored once), or fix/remove the malformed capacity_override.json named in the refusal payload.",
+      "enforced_by": "launcher",
+      "py_symbol": null,
+      "check_script": "scripts/presentation_job/capacity.py::probe"
     }
   ],
   "roles": [

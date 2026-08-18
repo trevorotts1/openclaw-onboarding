@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +74,64 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
+# HARDEN G3 — heartbeat_minutes sanity ceiling.
+# ---------------------------------------------------------------------------
+# GAP G3's first fix (sync_check.py check E3, 2026-08-13) asserted heartbeat_minutes is
+# PRESENT and > 0 on every phase. An adversarial re-attack proved presence-and-positivity
+# is not a range: setting heartbeat_minutes to 999999999 on all 33 non-long-running phases
+# still passes E3 (present, positive) with zero drift, and heartbeat_interval_minutes below
+# used to hand that value straight to the watchdog/reaper untouched -- a ~2,853-year stall
+# threshold (999999999 min x 1.5 grace) that reports a 12-hour-silent job HEALTHY. The fix
+# that closed the ORIGINAL gap (deletion) was strictly milder than this one: with the field
+# absent, the budget-minutes fallback below still fired and the stall was still detected.
+#
+# The ceiling is not an arbitrary round number -- that would just be a bigger number to
+# guess past. It is this engine's own PHASE_BUDGET_MINUTES table above, which already
+# declares, for every phase, the longest time that phase is EVER allowed to run before the
+# engine kills it outright (the subprocess timeout enforced in phases.py). The single
+# largest entry in that table -- 240 minutes, shared by P4-RENDER (62-slide image render),
+# P9.6-WEBINAR-VIDEO and P9-SPEECH-WEBINAR-INTRO (ffmpeg assembly + a 500MB GHL upload) --
+# is the slowest legitimate unit of work this engine EVER performs. A checkpoint cadence
+# looser than the slowest thing the whole system does is not "this phase checkpoints
+# rarely", it can only be a watchdog being blinded. Every real phase's declared
+# heartbeat_minutes is well inside this ceiling (15-120 across all 36 phases; see
+# universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json), so the ceiling costs the
+# legitimate path nothing.
+MAX_HEARTBEAT_INTERVAL_MINUTES = max(PHASE_BUDGET_MINUTES.values())  # 240 as of this table
+
+
+def is_sane_heartbeat_minutes(value: Any, phase_budget_minutes: Optional[int] = None) -> bool:
+    """True iff `value` is a heartbeat_minutes a consumer may trust as-is (present, a real
+    int -- not bool -- strictly positive, and no larger than the applicable ceiling).
+
+    HARDEN G3 follow-up (RCA §1.5, §7): MAX_HEARTBEAT_INTERVAL_MINUTES (240) is the
+    slowest phase in the WHOLE engine, not a bound on any one phase. Applied globally to
+    every phase it let a 15-minute phase declare heartbeat_minutes=240 and pass this
+    check, blinding the stall detector for that phase even though it can never
+    legitimately run that long. When the caller passes `phase_budget_minutes` (that
+    phase's OWN Phase.budget_minutes), the ceiling is tightened to
+    min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes) so no phase can declare a
+    heartbeat looser than its own total timeout. `phase_budget_minutes=None` (the
+    default) falls back to the flat global ceiling for callers with no phase context.
+
+    Used directly by Phase.heartbeat_interval_minutes below (the runtime source that writes
+    state.json's heartbeat.interval_minutes) and by sync_check.py's E3 manifest check, which
+    imports this module's MAX_HEARTBEAT_INTERVAL_MINUTES rather than re-declaring its own copy.
+    watchdog.py and process_reaper.py read heartbeat.interval_minutes back OFF state.json as
+    defense in depth (a pre-fix or foreign-written state.json could still carry a poisoned
+    value) and mirror this same per-phase ceiling inline rather than calling this function,
+    because they also tolerate a bare float there (state.json is parsed JSON, not
+    manifest-authored input) -- one ceiling FORMULA, applied everywhere it is checked, so
+    no consumer can silently diverge on WHERE the line is, even where the surrounding type
+    check differs by design.
+    """
+    ceiling = MAX_HEARTBEAT_INTERVAL_MINUTES
+    if phase_budget_minutes is not None:
+        ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget_minutes)
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and 0 < value <= ceiling)
+
+# ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
 # ---------------------------------------------------------------------------
 @dataclass
@@ -87,6 +146,12 @@ class Phase:
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
+    # P8.25-WORKBOOK fix: the manifest declares the " + " pair with the directory
+    # on the FIRST pattern only ("working/deliverables/{deck_slug}-WORKBOOK.pdf +
+    # {deck_slug}-WORKBOOK-FILLABLE.pdf"). A token-bearing bare filename inherits
+    # this directory context at resolution time so the fillable resolves to the
+    # directory the builder actually writes to. Set by Manifest._parse_phases.
+    _dir_context: Optional[str] = None
 
     @property
     def budget_minutes(self) -> int:
@@ -105,11 +170,57 @@ class Phase:
         """
         How often this phase is expected to CHECKPOINT — the watchdog's comparison value, not a
         timeout. The watchdog compares last-checkpoint AGE against this, never total elapsed.
-        Falls back to the full budget for phases that checkpoint only on completion.
+        Falls back to the full budget for phases that checkpoint only on completion, OR for a
+        heartbeat_minutes that fails is_sane_heartbeat_minutes — absent, non-int, <= 0, or past
+        min(MAX_HEARTBEAT_INTERVAL_MINUTES, this phase's OWN budget_minutes) (HARDEN G3 +
+        per-phase follow-up, see the block above). This is the runtime SOURCE that
+        _checkpoint() in phases.py writes into state.json's heartbeat.interval_minutes, so
+        refusing an insane value here means it can never reach the watchdog/reaper at all —
+        independent of whether the manifest that produced it ever passed through sync_check.
         """
-        if self.heartbeat_minutes:
+        if is_sane_heartbeat_minutes(self.heartbeat_minutes, self.budget_minutes):
             return int(self.heartbeat_minutes)
         return self.budget_minutes
+
+    # -----------------------------------------------------------------------
+    # {deck_slug} / {run_dir} token resolution (fix P8.25-WORKBOOK).
+    #
+    # The canonical manifest declares P8.25-WORKBOOK's produces_artifact as
+    #   "working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf"
+    # The literal token must be substituted with the run's deck slug before the
+    # engine's artifact-presence check globs for it -- otherwise it looks for a
+    # file literally named "{deck_slug}-WORKBOOK.pdf" and hard-blocks the phase
+    # even though both real workbook PDFs exist and pass the substance verifier.
+    # Resolution chain mirrors curate._resolve_deck_slug (curate.py:593):
+    #   1. working/copy/intake.json["deck_slug"]   -- engine-upkept (LIVE)
+    #   2. working/copy/intake.json["title"]        -- fallback for slugless decks
+    #   3. state.json["intake"]["deck_slug"]         -- frozen snapshot (STALE)
+    #   4. state.json["intake"]["title"]             -- last fallback
+    #   5. run_dir.name                              -- ultimate fallback
+    # After resolution the string is slugified to [a-z0-9-]. The {run_dir} token
+    # (used by the phase executor cmd) resolves to run_dir.name.
+    # -----------------------------------------------------------------------
+    def resolve_artifact_pattern(self, rel: str, run_dir: Optional[Path] = None) -> str:
+        """Substitute {deck_slug} / {run_dir} tokens in ONE artifact pattern.
+
+        No run_dir (or an unreadable intake/state) leaves the pattern untouched --
+        never a crash, never a guessed slug. The engine's artifact-presence check
+        passes the run dir it already holds, so a live run resolves to real paths.
+        """
+        if run_dir is None or "{deck_slug}" not in rel and "{run_dir}" not in rel:
+            return rel
+        slug = _resolve_deck_slug(run_dir)
+        resolved = rel.replace("{deck_slug}", slug).replace("{run_dir}", run_dir.name)
+        # A token-bearing bare filename inherits the phase's declared directory
+        # context ("working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-...
+        # FILLABLE.pdf" declares the directory on the first pattern only).
+        if self._dir_context and "/" not in resolved and not resolved.startswith("{deck_slug}"):
+            resolved = f"{self._dir_context}/{resolved}"
+        return resolved
+
+    def resolve_artifact_patterns(self, run_dir: Optional[Path] = None) -> List[str]:
+        """Token-substitute every pattern in produces_artifact (see resolve_artifact_pattern)."""
+        return [self.resolve_artifact_pattern(rel, run_dir) for rel in self.produces_artifact]
 
 
 
@@ -140,11 +251,20 @@ class Manifest:
         out: List[Phase] = []
         for p in self.raw.get("phases", []):
             ex = p.get("executor") or {}
+            patterns = _split_artifact_patterns(_as_list(p.get("produces_artifact")))
+            dir_context = _common_dir_prefix(patterns)
             out.append(Phase(
                 id=p["id"],
                 order=float(p.get("order", 0)),
                 owning_role=p.get("owning_role") or "",
-                produces_artifact=_as_list(p.get("produces_artifact")),
+                # P8.25-WORKBOOK fix: the canonical manifest declares produces_artifact with a
+                # literal "{deck_slug}" token (and the " + " separator between the two workbook
+                # PDFs). Both must be normalized at phase-definition time: split " + " into the
+                # two patterns, keep the {deck_slug} token for lazy substitution by
+                # resolve_artifact_patterns() at artifact-presence-check time (run_dir is not
+                # available here -- callers construct Manifest before the run dir is passed on).
+                produces_artifact=patterns,
+                _dir_context=dir_context,
                 # NOTE: no phase in either shipped manifest declares an executor, and `verifier`
                 # is not a field at all. Until the phase contract lands (fix A3), everything
                 # resolves to "agent" — which is exactly why A3 must ship in warn-mode first.
@@ -211,6 +331,78 @@ def _as_list(v: Any) -> List[str]:
     return list(v) if isinstance(v, (list, tuple)) else [str(v)]
 
 
+def _split_artifact_patterns(patterns: List[str]) -> List[str]:
+    """Split " + "-separated artifact patterns into individual entries.
+
+    P8.25-WORKBOOK fix: the canonical manifest declares
+      "working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf"
+    as a single string. The engine's presence check treats each entry as ONE path,
+    so an unsplit pair could never both exist. No real phase pattern uses " + " as
+    a glob metacharacter, so splitting is safe for every shipped phase.
+    """
+    out: List[str] = []
+    for rel in patterns:
+        for piece in rel.split(" + "):
+            piece = piece.strip()
+            if piece:
+                out.append(piece)
+    return out
+
+
+def _common_dir_prefix(patterns: List[str]) -> Optional[str]:
+    """Directory context shared by a phase's artifact patterns.
+
+    P8.25-WORKBOOK fix: the manifest declares the pair with the directory on the
+    first pattern only. A token-bearing bare filename ("{deck_slug}-WORKBOOK-
+    FILLABLE.pdf") inherits the common directory of the phase's own patterns so
+    it resolves where the builder actually writes it. Returns None when the
+    patterns do not share one directory.
+    """
+    dirs = [str(Path(p).parent) for p in patterns if p and str(Path(p).parent) != "."]
+    unique = sorted(set(dirs))
+    if len(unique) == 1:
+        return unique[0]
+    return None
+
+
+def _resolve_deck_slug(run_dir: Path) -> str:
+    """Resolve the deck slug for {deck_slug} pattern substitution.
+
+    Mirrors curate._resolve_deck_slug (curate.py:593): prefer the engine-upkept
+    working/copy/intake.json, fall back to the frozen state.json snapshot, then to
+    run_dir.name. Slugified to [a-z0-9-] so a deck title can never produce a path
+    with characters the shell or the filesystem would mangle.
+    """
+    slug = None
+
+    # Pass 1: engine-upkept copy (LIVE).
+    engine_copy = run_dir / "working" / "copy" / "intake.json"
+    try:
+        obj = json.loads(engine_copy.read_text(encoding="utf-8"))
+        if isinstance(obj, dict):
+            slug = obj.get("deck_slug") or obj.get("title") or None
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    # Pass 2: frozen state.json (STALE -- fallback only).
+    if not slug:
+        state_file = run_dir / "state.json"
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            intake = state.get("intake") or {}
+            slug = intake.get("deck_slug") or intake.get("title") or None
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Pass 3: ultimate fallback.
+    if not slug:
+        slug = run_dir.name
+
+    slug = str(slug)
+    slug = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-") or "deck"
+    return slug
+
+
 # The canonical manifest as of this writing. A resolved manifest below this version is
 # the stale fork and MUST NOT be run: it lacks the six signature phases and all sixteen
 # AF-SP-* codes, so a job would pass every gate it knows about while skipping the gates
@@ -254,13 +446,20 @@ def _as_list(v: Any) -> List[str]:
 # webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,
 # scripts/build_webinar_video.py) + AF-WEBINAR-SIZE autofail — raising manifest_version
 # to 40 in the same commit.
-MIN_MANIFEST_VERSION = 44  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 46 -> 47: wave-2 integrate 56d18ad2 — PIPELINE-MANIFEST.json bumped to 47 in the same commit; MIN follows so the U019 floor moves WITH the manifest (proven by the repo-manifest guard test in test_client_package.py).
+# 47 -> 48: swarm integration 0612bbc5 — T2 stack bumped PIPELINE-MANIFEST.json to 48; MIN follows.
+# 48 -> 49: heartbeat-ceiling repair — 13 of 36 phases declared heartbeat_minutes greater
+# than that phase's own PHASE_BUDGET_MINUTES entry (E3 drift; a heartbeat interval longer
+# than the whole phase can never detect a stall inside it). Precedent for bumping on a
+# heartbeat_minutes-only content edit: WI-10 (CHANGELOG v22.0.5) bumped 44 -> 45 for the
+# same class of change (heartbeat_minutes values across all 36 phases, no new phase/AF
+# code). Tightened via heartbeat_minutes = min(old_value, PHASE_BUDGET_MINUTES[id]) on
+# those 13 phases only; MIN follows to 49 in the same commit per U019 step 8.
+MIN_MANIFEST_VERSION = 49  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
-    # (44 = LOOP2B-1 2026-08-07: AF-RESEARCH-REACHES-RENDER autofail + _chk_research_reaches_render
-    #  — research validated in slides_copy.md must reach the RENDER copy slides.json copy[])
-MIN_MANIFEST_PHASES = 26
+MIN_MANIFEST_PHASES = 36
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""

@@ -30,6 +30,30 @@
 
 set -u
 
+# ─── Durable jq resolution (2026-08-17) ──────────────────────────────────────
+# The OpenClaw container image does not ship jq, and a jq installed with the
+# distro package manager VANISHES on container recreate — the documented
+# failure that silently killed owner nudges (fix/jq-hard-dep) and, under
+# `set -euo pipefail`, aborts this script outright with rc 127.
+#
+# ~/.openclaw is a persistent bind mount on container boxes, so a static jq
+# kept at ~/.openclaw/bin/jq survives recreate. Prefer PATH's jq when present;
+# otherwise fall back to the persistent copy. Prepending a PATH entry cannot
+# change any filter's semantics, which is why this is done here rather than by
+# hand-translating ~80 jq expressions.
+if ! command -v jq >/dev/null 2>&1; then
+  for _oc_jq_dir in "${HOME:-/root}/.openclaw/bin" /data/.openclaw/bin; do
+    if [ -x "$_oc_jq_dir/jq" ]; then
+      PATH="$_oc_jq_dir:$PATH"
+      export PATH
+      break
+    fi
+  done
+  unset _oc_jq_dir
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 # ---- platform detection (vps default; mac override) ----
 if [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
@@ -674,12 +698,25 @@ if [[ "$interview_complete" != "true" ]]; then
   else
     log "RECOVERY: qc-interview-completion.py not found at $QC_SCRIPT_RECOVER - cannot verify completeness; leaving unflagged for the watchdog."
   fi
-  if [[ "$_recover_qc_status" == "pass" ]]; then
+  # D9 FIX: promote on `pass` OR `needs-review`, not `pass` alone.
+  # This was the last gate in the chain still demanding a strict `pass`, and it
+  # is the RECOVERY lane — the net that catches an interview whose content is
+  # complete but whose flag never got written. Every other gate had already been
+  # reconciled to "pass OR needs-review" (see the v21.x GATE-CONSISTENCY FIX in
+  # update-interview-state.sh: the evidence gate treats QC rc=0 and rc=2 alike,
+  # writes interviewComplete, and kicks the build for both). NOTHING anywhere
+  # promotes needs-review -> pass. So a needs-review interview arriving here was
+  # refused by the one lane that existed to rescue it, and then refused again on
+  # every subsequent cron fire — a permanent silent strand for a client who had
+  # actually finished. `fail` and `pending` still block: --complete's own
+  # evidence gate refuses those with exit 87, so a bad interview cannot be
+  # promoted through this path either way.
+  if [[ "$_recover_qc_status" == "pass" || "$_recover_qc_status" == "needs-review" ]]; then
     # Content verified complete. Promote via the canonical idempotent writer so the
     # same flag + gate-seeding + build-kick path runs as a normal --complete.
     COMPLETE_WRITER="${SCRIPT_DIR}/update-interview-state.sh"
     if [[ -f "$COMPLETE_WRITER" ]]; then
-      log "RECOVERY: QC=pass - promoting interview to complete via update-interview-state.sh --complete (idempotent; seeds build + kicks it)."
+      log "RECOVERY: QC=$_recover_qc_status (build-eligible) - promoting interview to complete via update-interview-state.sh --complete (idempotent; seeds build + kicks it)."
       bash "$COMPLETE_WRITER" --complete >>"$LOG_FILE" 2>&1 || log "RECOVERY: update-interview-state.sh --complete returned non-zero (non-fatal; setting flag inline as fallback)."
     fi
     interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")

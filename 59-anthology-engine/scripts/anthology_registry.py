@@ -569,6 +569,40 @@ class InternalRailClient:
         return out.get("pipelines") or []
 
 
+class RailFallbackClient:
+    """A CafClient-shaped READ surface that routes through the internal rail
+    when the public-v2 PIT surface is edge-blocked (GK-09, proven live
+    2026-08-12: /locations/{id}/customFields, /locations/{id}/customValues,
+    /forms/?locationId= ALL read through the rail while the PIT 403s at the
+    edge). Covers the read methods the U02/U14/U15 checks call so a blocked
+    PIT DEFERS to the rail (never fabricated, never a STOP where a read is
+    possible). Writes are REFUSED with an AttributeError — a fallback client
+    must never silently write."""
+
+    def __init__(self, rail: "InternalRailClient"):
+        self._rail = rail
+
+    def list_custom_fields(self, location_id: str):
+        out = self._rail._get("/locations/%s/customFields"
+                              % urllib.parse.quote(location_id, safe=""))
+        rows = out.get("customFields")
+        return rows if isinstance(rows, list) else []
+
+    def list_custom_values(self, location_id: str):
+        out = self._rail._get("/locations/%s/customValues"
+                              % urllib.parse.quote(location_id, safe=""))
+        rows = out.get("customValues")
+        return rows if isinstance(rows, list) else []
+
+    def list_pipelines(self, location_id: str):
+        return self._rail.list_pipelines(location_id)
+
+    def __getattr__(self, name):
+        raise AttributeError(
+            "RailFallbackClient is READ-ONLY (rail-backed); %r is not a "
+            "supported read surface" % name)
+
+
 # ---------------------------------------------------------------------------
 # fieldKey derivation law (verified at W0.5). The API DERIVES the fieldKey; it is
 # not accepted on create. We create with name = the intended key minus the
@@ -628,10 +662,11 @@ def _stop(out, title: str, lines) -> None:
 # ---------------------------------------------------------------------------
 def provision_fields(client, field_map_path: Path, location_id: str, *,
                      dry_run: bool = False, out=None, jsonout=None):
-    """py_symbol: verify_fields. Create-or-verify all 28 fields (the 19 base PRD
+    """py_symbol: verify_fields. Create-or-verify all 38 fields (the 19 base PRD
     Section 6 link/control keys + the 4 chapter-rewrite-preservation keys, Gap G10 +
-    the 5 U8 cover-style keys); every free-text key is LARGE_TEXT (Gap G11) and the
-    lone cover-choice key is SINGLE_OPTIONS. Exact-match verify each server fieldKey,
+    the 5 U8 cover-style keys + the 10 U15-absorbed live fields); every free-text
+    key is LARGE_TEXT (Gap G11) and the two picklist keys — the cover choice and the
+    review decision — are SINGLE_OPTIONS. Exact-match verify each server fieldKey,
     and persist into field-map.json. Returns an exit code."""
     out = out or sys.stderr
     fm = load_field_map(field_map_path)
@@ -737,8 +772,9 @@ def provision_fields(client, field_map_path: Path, location_id: str, *,
             jsonout.write("\n")
         return EX_MISMATCH
 
-    # All 28 resolved (U70/GK-08: includes the two G10 chapter-rewrite-preservation
-    # pairs, rewrite1/rewrite2, alongside every other declared key). Stamp in place.
+    # All 38 resolved (U70/GK-08: includes the two G10 chapter-rewrite-preservation
+    # pairs, rewrite1/rewrite2, and the ten U15-absorbed live keys, alongside every
+    # other declared key). Stamp in place.
     save_field_map(field_map_path, fm)
     out.write("[provision-fields] OK (marker %s): %d newly created, %d verified-by-key, %d total resolved. "
               "field-map.json stamped.\n" % (masked, len(created), len(verified), len(verified) + len(created)))
@@ -1325,21 +1361,23 @@ def self_test() -> int:
     assert create_name_of("contact.anthology_avatar_doc_url") == "anthology_avatar_doc_url"
     assert derive_field_key("anthology_avatar_doc_url") == "contact.anthology_avatar_doc_url"
 
-    # -- inventory integrity: 28 keys, each derives cleanly --------------------
-    #    (19 base PRD Section 6 link/control keys + 4 G10 rewrite keys + 5 U8 cover-style)
+    # -- inventory integrity: 38 keys, each derives cleanly --------------------
+    #    (19 base PRD Section 6 link/control keys + 4 G10 rewrite keys + 5 U8 cover-style + 10 U15-absorbed)
     fm0 = load_field_map(FIELD_MAP_PATH)
     inv = fm0["provisioning"]["fields"]
-    assert len(inv) == 28, "expected 28 fields (19 base + 4 G10 rewrite + 5 U8 cover-style), got %d" % len(inv)
+    assert len(inv) == 38, "expected 38 fields (19 base + 4 G10 rewrite + 5 U8 cover-style + 10 U15-absorbed), got %d" % len(inv)
     keys = {i["intended_key"] for i in inv}
-    assert len(keys) == 28, "duplicate intended_key in inventory"
+    assert len(keys) == 38, "duplicate intended_key in inventory"
     for i in inv:
         assert derive_field_key(i["create_name"]) == i["intended_key"], i["intended_key"]
         assert i["field_key"] is None and i["field_id"] is None, "template must ship resolved=null"
         # Gap G11: every FREE-TEXT key is declared LARGE_TEXT (matches live), not TEXT.
-        # The one exception is the U8 cover-choice picklist, which is SINGLE_OPTIONS.
-        if i["intended_key"] == "contact.anthology_cover_choice":
+        # The two exceptions are the U8 cover-choice picklist and the U15-absorbed
+        # review-decision picklist, which are SINGLE_OPTIONS.
+        if i["intended_key"] in ("contact.anthology_cover_choice",
+                                 "contact.anthology_review_decision"):
             assert i["data_type"] == "SINGLE_OPTIONS", \
-                "the cover choice must be SINGLE_OPTIONS, got %s" % i.get("data_type")
+                "%s must be SINGLE_OPTIONS, got %s" % (i["intended_key"], i.get("data_type"))
         else:
             assert i["data_type"] == "LARGE_TEXT", \
                 "%s must declare LARGE_TEXT (G11), got %s" % (i["intended_key"], i.get("data_type"))
@@ -1349,11 +1387,19 @@ def self_test() -> int:
         assert ("contact.anthology_chapter_%s" % slot) in keys, "G10 missing %s" % slot
     assert "contact.anthology_chapter_doc_url" in keys and \
            "contact.anthology_chapter_rewrite1_doc_url" in keys, "G10 base + rewrite1 both present"
-    # U8: exactly one SINGLE_OPTIONS field (the cover choice), and it ships its options
+    # U8 + U15: exactly two SINGLE_OPTIONS fields (the cover choice and the
+    # review decision), and each ships its options
     single_opts = [i for i in inv if i.get("data_type") == "SINGLE_OPTIONS"]
-    assert len(single_opts) == 1 and single_opts[0]["intended_key"] == "contact.anthology_cover_choice"
-    assert single_opts[0].get("options"), "the SINGLE_OPTIONS choice field must ship its picklist options"
-    # every PRD Section 6 deliverable + control key AND the U8 cover-style keys are represented
+    assert len(single_opts) == 2, "expected 2 SINGLE_OPTIONS fields, got %d" % len(single_opts)
+    by_key = {i["intended_key"]: i for i in single_opts}
+    assert set(by_key) == {"contact.anthology_cover_choice",
+                           "contact.anthology_review_decision"}, \
+        "the two SINGLE_OPTIONS fields must be the cover choice and the review decision"
+    for i in single_opts:
+        assert i.get("options"), \
+            "the SINGLE_OPTIONS field %s must ship its picklist options" % i["intended_key"]
+    # every PRD Section 6 deliverable + control key, the U8 cover-style keys, and
+    # the U15-absorbed review decision key are represented
     contract_keys = set()
     for pair in fm0["deliverable_fields"].values():
         contract_keys.update(pair.values())
@@ -1362,7 +1408,14 @@ def self_test() -> int:
     contract_keys.update((csf0.get("sample_url_fields") or {}).values())
     if csf0.get("choice_field"):
         contract_keys.add(csf0["choice_field"])
-    assert contract_keys == keys, "inventory drifted from the deliverable/control/cover-style contract"
+    rdf0 = fm0.get("review_decision_field") or {}
+    if rdf0.get("key"):
+        contract_keys.add(rdf0["key"])
+    af0 = fm0.get("absorbed_fields") or {}
+    for group in af0.values():
+        if isinstance(group, dict):
+            contract_keys.update(group.values())
+    assert contract_keys == keys, "inventory drifted from the deliverable/control/cover-style/review-decision/absorbed contract"
 
     # -- fields: happy path create-or-verify + persist ----------------------
     p1 = _tmp_field_map()
@@ -1373,17 +1426,20 @@ def self_test() -> int:
     assert all(i["field_key"] == i["intended_key"] and i["field_id"] for i in fm1["provisioning"]["fields"])
     assert verify_fields_resolved(p1, out=dev) == EX_OK
     # Gap G11: create-or-verify on a FRESH location yields LARGE_TEXT for every
-    # free-text field, matching live (no TEXT ever created). All 28 keys are created on
-    # the empty box; the lone U8 cover-choice field is created as SINGLE_OPTIONS.
-    assert len(caf.fields) == 28, "fresh location should hold all 28 created fields, got %d" % len(caf.fields)
+    # free-text field, matching live (no TEXT ever created). All 38 keys are created on
+    # the empty box; the two picklist fields (U8 cover choice, U15 review decision)
+    # are created as SINGLE_OPTIONS.
+    assert len(caf.fields) == 38, "fresh location should hold all 38 created fields, got %d" % len(caf.fields)
     created_types = {f["dataType"] for f in caf.fields.values()}
     assert created_types == {"LARGE_TEXT", "SINGLE_OPTIONS"}, \
-        "fresh-location create must be LARGE_TEXT for free-text + SINGLE_OPTIONS for the cover choice (G11), got %s" % created_types
-    # and the persisted map records LARGE_TEXT on every free-text row (all but the cover choice)
+        "fresh-location create must be LARGE_TEXT for free-text + SINGLE_OPTIONS for the picklists (G11), got %s" % created_types
+    # and the persisted map records LARGE_TEXT on every free-text row (all but the two picklists)
+    picklist_keys = {"contact.anthology_cover_choice",
+                     "contact.anthology_review_decision"}
     assert all(i["data_type"] == "LARGE_TEXT" for i in fm1["provisioning"]["fields"]
-               if i["intended_key"] != "contact.anthology_cover_choice")
-    assert next(i for i in fm1["provisioning"]["fields"]
-                if i["intended_key"] == "contact.anthology_cover_choice")["data_type"] == "SINGLE_OPTIONS"
+               if i["intended_key"] not in picklist_keys)
+    assert all(i["data_type"] == "SINGLE_OPTIONS" for i in fm1["provisioning"]["fields"]
+               if i["intended_key"] in picklist_keys)
     # idempotent re-run: fields now exist -> verified-by-key, still OK
     rc = provision_fields(caf, p1, "loc_test_QcDX", out=dev)
     assert rc == EX_OK, "idempotent provision_fields rc=%s" % rc
@@ -1748,7 +1804,8 @@ def self_test() -> int:
     assert bind_anthology(regp, p6, anthology_id="", location_id="", out=dev) == EX_MISMATCH
 
     print("anthology_registry self-test: OK "
-          "(derivation, 28-field inventory incl. 4 G10 rewrite + 5 U8 cover-style/SINGLE_OPTIONS, "
+          "(derivation, 38-field inventory incl. 4 G10 rewrite + 5 U8 cover-style + "
+          "10 U15-absorbed, two SINGLE_OPTIONS picklists, "
           "create/verify/persist, exact-match STOP, "
           "scope STOP, dry-run, pipeline find-and-bind + idempotent, "
           "browser-control create: bind-on-verified-read / fail-closed STOP / "
@@ -1779,7 +1836,7 @@ def main(argv=None):
         ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no API create)"),
         ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it; when absent, attempt "
                                "ONE Skill 6 browser-control creation, re-read, and bind only what the API shows"),
-        ("provision-fields", "create-or-verify the 28 fields (19 PRD Section 6 + 4 G10 rewrite + 5 U8 cover-style); persist server fieldKey + id"),
+        ("provision-fields", "create-or-verify the 38 fields (19 PRD Section 6 + 4 G10 rewrite + 5 U8 cover-style + 10 U15-absorbed); persist server fieldKey + id"),
         ("provision-all", "provision-pipeline then provision-fields (stops on first STOP)"),
         ("verify-fields", "READ-ONLY: assert field-map.json is fully resolved and exact-match"),
         ("bind", "bind an anthology_id to a pipeline, stage map, forms, and Drive folder"),

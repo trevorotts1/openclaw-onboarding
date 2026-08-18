@@ -74,6 +74,30 @@ KILL_GRACE_SECONDS = 5                       # SIGTERM -> SIGKILL grace
 DEFAULT_HEARTBEAT_GRACE_MULTIPLIER = 1.5
 DEFAULT_MAX_PROCESS_AGE_SECONDS = 24 * 3600  # a build process older than a day is a stray
 
+# HARDEN G3: sanity ceiling for a state.json heartbeat.interval_minutes value (mirrors
+# presentation_job/manifest.py's MAX_HEARTBEAT_INTERVAL_MINUTES -- the longest total
+# per-phase budget the engine grants ANY phase, i.e. the slowest legitimate unit of work
+# this engine ever performs; see that module for the full rationale). Without this bound,
+# _run_dir_liveness() below only rejected interval<=0, so a poisoned
+# interval_minutes=999999999 read straight off disk made every run look "alive" no matter
+# how stale its last checkpoint really was. PHASE_BUDGET_MINUTES / DEFAULT_PHASE_BUDGET_MINUTES
+# are imported alongside it for the per-phase follow-up (RCA §1.5, §7): the flat 240 max is
+# the slowest phase in the WHOLE engine, not a bound on any one phase, so it is tightened
+# below to min(MAX_HEARTBEAT_INTERVAL_MINUTES, that phase's OWN budget). Imported when
+# presentation_job is reachable so the modules can never silently diverge on what "sane"
+# means; the literal fallbacks keep the reaper functional even if this file is ever
+# deployed without presentation_job/ beside it (normally it sits in this same scripts/
+# directory: imported by phases.py, and run standalone by presentation-watchdog.sh, both
+# of which put scripts/ on sys.path).
+try:
+    from presentation_job.manifest import (
+        MAX_HEARTBEAT_INTERVAL_MINUTES, PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES,
+    )
+except ImportError:  # pragma: no cover — see comment above
+    MAX_HEARTBEAT_INTERVAL_MINUTES = 240
+    PHASE_BUDGET_MINUTES = {}
+    DEFAULT_PHASE_BUDGET_MINUTES = 20
+
 
 class ProcessTableError(RuntimeError):
     """Raised when the process table cannot be enumerated at all (both psutil and ps
@@ -278,9 +302,20 @@ def _run_dir_liveness(run_dir: Path, grace_multiplier: float) -> Tuple[str, str]
     except (ValueError, TypeError):
         return "alive", "unparseable heartbeat timestamp (defer to watchdog)"
     interval = hb.get("interval_minutes")
-    if not isinstance(interval, (int, float)) or interval <= 0:
-        # No manifest interval recorded — fall back to the engine default budget.
-        interval = 20
+    pid = hb.get("current_phase") or st.get("current_phase") or "?"
+    # HARDEN G3 + per-phase follow-up: reject not just <=0 but anything past THIS phase's
+    # own ceiling -- min(MAX_HEARTBEAT_INTERVAL_MINUTES, that phase's PHASE_BUDGET_MINUTES
+    # entry), not the flat engine-wide 240 max (mirrors watchdog.py's identical bound). A
+    # state.json written before the manifest.py fix (or by any other writer) could still
+    # carry a poisoned interval_minutes, and this reaper reads state.json independently of
+    # the watchdog, so it needs its own bound rather than trusting the value on disk.
+    phase_ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES,
+                         PHASE_BUDGET_MINUTES.get(pid, DEFAULT_PHASE_BUDGET_MINUTES))
+    if (not isinstance(interval, (int, float)) or isinstance(interval, bool)
+            or interval <= 0 or interval > phase_ceiling):
+        # No manifest interval recorded, or an insane value — fall back to this phase's
+        # own budget-table entry (or the engine default) rather than trust it.
+        interval = PHASE_BUDGET_MINUTES.get(pid, DEFAULT_PHASE_BUDGET_MINUTES)
     threshold = interval * grace_multiplier
     if age_min > threshold:
         return "stale", (f"heartbeat {age_min:.1f} min old > threshold {threshold:.1f} "

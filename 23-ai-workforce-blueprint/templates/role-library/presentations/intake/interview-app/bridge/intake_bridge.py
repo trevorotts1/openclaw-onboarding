@@ -105,6 +105,24 @@ def cmd_ingest(args) -> int:
     intake = intake_payload.get("intake") or intake_payload
     intake.setdefault("intake_session_id", args.session_id)
 
+    # fix/deck-type-routing-bypass follow-up: this bridge already has
+    # PRESENTER_CHAT_ID in hand (it is read a few lines below, but only to
+    # pass to cc.ingest_deck_task() for CC-board registration -- a different
+    # purpose than the engine's own hard gate on requester.chat_id; see
+    # presentation_job/resolve_intake.py and __main__.py cmd_new). It was
+    # never stamped into the record intake_writer.write_intake_file() below
+    # persists as working/copy/intake.json -- the ONE file the engine's
+    # resolve_intake.py reads -- so an app-submitted deck's engine job could
+    # never report to the client who submitted it. Stamp it into `intake`
+    # itself, here, BEFORE the write, so it lands in the run-dir record.
+    # Never overwrites a value the app itself already supplied.
+    if not str(intake.get("requester_chat_id") or "").strip():
+        _presenter_chat_id = os.environ.get("PRESENTER_CHAT_ID", "").strip()
+        if _presenter_chat_id:
+            intake["requester_chat_id"] = _presenter_chat_id
+            intake["requester_channel"] = \
+                os.environ.get("PRESENTER_CHANNEL", "").strip() or "telegram"
+
     # 1) Write the run-dir record (dept-format intake.json + completed ledger
     #    + the GATE 0b conversation transcript).
     if intake_writer is not None:

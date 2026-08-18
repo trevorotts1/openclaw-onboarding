@@ -168,14 +168,42 @@ python3 <skills-dir>/23-ai-workforce-blueprint/scripts/create_role_workspaces.py
 This creates the 7-file role layout (4 unique + 3 symlinks + how-to.md) AND the SOP/ subfolder AND writes `governing-personas.md` at department level.
 
 ### 12. Install Sunday cron
-Install the weekly update-check cron at `0 3 * * 0` (3am Sunday):
+Install the weekly update-check cron at `0 3 * * 0` (3am Sunday).
+
+**Register it SILENT — no `--channel`, no `--to`, no `--announce`:**
 
 ```
-openclaw cron create --name weekly-onboarding-update \
+openclaw cron create --name weekly-onboarding-update --agent main \
   --cron "0 3 * * 0" --tz America/New_York \
-  --channel telegram --to <chat_id> \
-  --message-file <config-root>/cron-prompt.txt
+  --session main --system-event "$(cat <config-root>/cron-prompt.txt)"
 ```
+
+On CLI builds older than 2026.6.11, `--session main --system-event` is not
+accepted; use `--session-target main --message "$(cat <config-root>/cron-prompt.txt)"`
+instead. (`install.sh` probes `openclaw cron add --help` and picks the accepted
+form automatically — this manual path has to choose.)
+
+> **Do NOT add `--channel telegram --to <chat_id>` here.** That was the original
+> wiring on this page and it is the bug. `cron-prompt.txt` already delivers its
+> own messages deliberately, with `openclaw message send`, to a chat resolved by
+> `resolve_owner_chat_id` (which rejects operator IDs). Adding cron-level
+> delivery on top gives the job TWO independent delivery paths: the scheduler
+> auto-delivers whatever the agent's final turn text happens to be — which, per
+> the prompt's own "wait for the client's reply, do not exit" rule, is routinely
+> a partial or internal status line, not the composed summary — while the real
+> deliverable goes out separately. The run still reports success. That is how a
+> fully-generated client deliverable gets silently lost.
+>
+> `install.sh` registers this cron SILENT and actively detects-and-deletes the
+> old `--announce --channel telegram --to <client-chat-id>` wiring on
+> already-provisioned boxes (see its CRON REWRITE MIGRATION block). A box
+> onboarded from this page must land in the same state, not the one the
+> installer exists to undo.
+>
+> Rule of thumb for every cron on a box: **exactly one delivery path.** Either
+> the cron delivers (and the prompt must never self-send), or the cron is silent
+> (and the prompt's own `message send` is the only delivery). Never both, and
+> never a prompt that names a raw topic/chat id inline instead of resolving it.
 
 ### 13. Triple-fire confirmation
 Confirm the install kickoff fired on all three channels:

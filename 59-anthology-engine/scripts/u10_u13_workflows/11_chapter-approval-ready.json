@@ -1,0 +1,51 @@
+{
+  "actions": [
+    "send-email"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "send-email"
+    ],
+    "channel": "EMAIL ONLY (producer notification; the author-facing release rows carry the link-only SMS, this workflow has no SMS action)",
+    "email": {
+      "body": "Dear {{ custom_values.producer }},\n\nOur editors have finished the chapter, and it is ready for your review at the board.\n\nView the chapter PDF here:\n{{ contact.anthology_chapter_pdf_url }}\n\nEdit the chapter in the Google Doc here:\n{{ contact.anthology_chapter_doc_url }}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nYou have used {{ contact.anthology_rewrite_count }} of 2 rewrites.\n\nIf you would like to approve or request further changes, open the review form here:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s5\n\nWarm regards,\nThe Editors",
+      "from_name_merge": "{{ custom_values.producer }}",
+      "link_fields": [
+        "{{contact.anthology_chapter_pdf_url}}",
+        "{{contact.anthology_chapter_doc_url}}"
+      ],
+      "reply_to_merge": "{{ custom_values.producer_email }}",
+      "sign_off": "The Editors",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s5",
+      "subject": "Chapter ready for review"
+    },
+    "gate_cursor": "s5_chapter",
+    "note": "offline template only - a REAL location write must ride the house clients (CAF_BROWSER_UA on every request - CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live; the producer notification notifies the PRODUCER, not the author (contract workflows.producer_notify_out_of_scope)",
+    "producer_gate": "s5_producer",
+    "producer_merges": {
+      "producer_email_merge": "{{ custom_values.producer_email }}",
+      "producer_name_merge": "{{ custom_values.producer }}"
+    },
+    "stage": "s5",
+    "trigger_tag": "anthology-producer-chapter-ready",
+    "workflow_name": "Chapter Approval Ready"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_chapter_pdf_url}}",
+      "{{contact.anthology_chapter_doc_url}}"
+    ],
+    "sms_link": ""
+  },
+  "module": "w12_chapter_ready",
+  "name": "Chapter Approval Ready",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 11,
+  "status": "PRODUCER-NOTIFY",
+  "trigger": {
+    "tag": "anthology-producer-chapter-ready",
+    "type": "contact_tag"
+  }
+}

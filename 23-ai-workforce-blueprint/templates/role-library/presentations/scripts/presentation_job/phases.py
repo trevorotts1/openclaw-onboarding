@@ -20,6 +20,7 @@ from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
 from . import persona
+from . import curate as _curate
 # FIX-21 (D21): run_with_cleanup spawns the phase exec in a NEW PROCESS GROUP and, on
 # budget expiry, kills the WHOLE group (SIGTERM -> SIGKILL) so a timed-out phase leaves
 # no orphaned grandchildren (the D21 zombie path). Direct-child-only `subprocess.run`
@@ -53,6 +54,15 @@ class Engine:
         except Exception:
             self.report.event("warn", "board init failed — running without board mirror")
             self.board = None
+
+    # -- Option B child cards -----------------------------------------------
+    def _child_card_meta(self, phase: Phase) -> Tuple[str, str]:
+        """(title, description) for phase.id's Command Center child card."""
+        return (
+            f"{phase.id} — {phase.owning_role}",
+            f"Phase {phase.id} of presentation build {self.run_dir.name}, "
+            f"owned by {phase.owning_role}.",
+        )
 
     # -- state helpers ----------------------------------------------------
     def _phase_state(self, pid: str) -> Dict[str, Any]:
@@ -96,7 +106,13 @@ class Engine:
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
         missing = []
-        for rel in phase.produces_artifact:
+        # U01-R2 (QC FAIL 6.46): the phase's raw produces_artifact may carry
+        # {deck_slug}/{run_dir} tokens (P8.25-WORKBOOK declares
+        # 'working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf').
+        # Resolve EVERY pattern through phase.resolve_artifact_patterns(run_dir) BEFORE
+        # globbing/existence checks -- the literal token path never exists on disk and
+        # previously hard-blocked the phase despite real workbook PDFs being present.
+        for rel in phase.resolve_artifact_patterns(self.run_dir):
             matches = list(self.run_dir.glob(rel)) if any(c in rel for c in "*?[") \
                 else ([self.run_dir / rel] if (self.run_dir / rel).exists() else [])
             if not matches:
@@ -112,7 +128,7 @@ class Engine:
                                         recorded_sha=shas.get(rel))
             if not ok:
                 bad.append(f"{rel}: {why}")
-        if not (ps.get("artifacts") or []) and phase.produces_artifact:
+        if not (ps.get("artifacts") or []) and phase.resolve_artifact_patterns(self.run_dir):
             bad.append("phase recorded status=done with an empty artifact list")
         return bad
 
@@ -170,29 +186,73 @@ class Engine:
                     return self._block(phase, f"regeneration reported success but produced "
                                               f"nothing: missing {', '.join(missing)}")
             shas = {}
-            for rel in phase.produces_artifact:
+            # U01-R2: resolve tokens before globbing -- same rule as _artifacts_present,
+            # so the banked sha256 list covers the RESOLVED files, never the literal
+            # {deck_slug} path.
+            for rel in phase.resolve_artifact_patterns(self.run_dir):
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
             # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            # WORK-ITEM-14 (R3 U03): a FAILING substance verifier no longer records a warning
+            # and advances. It BLOCKS the phase (parked resumable) unless an AUTHENTIC
+            # owner_skip_approval token covers this exact phase.
+            # R3 U03-R2 (QC FAIL 8.00): the ONLY authentic source is the operator-signed
+            # waivers.json ledger (validated against the client's own recorded words by
+            # waivers.validate_waiver — client_request_quote + captured_at + issuer).
+            # A token found in this run's own process_manifest.json is a self-mint and
+            # authorizes nothing; owner_skip_approval_authorizes returns None and appends
+            # an AF-FORGED-APPROVAL reason (naming the missing authenticity field) to the
+            # live verifier_notes list, so the block message carries it.
+            # The credential-dependent allowed_simulated exception stays — it degrades the
+            # verifier to a NOTE pass inside phase_verifiers.verify(), so it never reaches
+            # this branch.
             verifier_ok = None
             verifier_notes = None
+            verifier_skipped = None
             try:
                 import phase_verifiers
                 verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
                 if not verifier_ok:
-                    self.report.event("phase.verifier_warn",
-                                      f"{phase.id}: {'; '.join(verifier_notes)}")
+                    # Mechanical gate: a substance FAIL parks the phase unless the owner has
+                    # recorded an authentic skip-approval waiver for this exact phase
+                    # (waivers.json, rule mapped to the phase id).  Rejection reasons are
+                    # appended to verifier_notes in place by the authorizer.
+                    token = phase_verifiers.owner_skip_approval_authorizes(
+                        phase.id, verifier_notes, self.run_dir)
+                    if token is not None:
+                        verifier_skipped = token
+                        self.report.event(
+                            "phase.verifier_skipped",
+                            f"{phase.id}: substance check failed ({'; '.join(verifier_notes)}) "
+                            f"but an owner_skip_approval token ({token.get('gate') or token.get('phase_id')}) "
+                            f"recorded by {token.get('approved_by')} authorizes the skip")
+                    else:
+                        self.report.event("phase.verifier_block",
+                                          f"{phase.id}: {'; '.join(verifier_notes)}")
+                        return self._block(
+                            phase,
+                            f"substance check failed: {'; '.join(verifier_notes)}. "
+                            "An owner_skip_approval token for this phase is required to "
+                            "advance it to done.")
             except ImportError:
                 self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
                                           "substance check skipped")
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
                              artifacts=sorted(shas.keys()),
-                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes,
+                             owner_skip_approval=verifier_skipped)
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
             if self.board:
                 self.board.phase_progress(phase.id, done_msg)
+                # Option B: the phase's verifier has already passed by this point
+                # (a failing verifier returns via _block() above, never reaching
+                # here) -- so this phase's FIRST progress report both mints its
+                # child card (idempotent, see BoardMirror.child_report) and closes
+                # it 'done' in the same call.
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description, "done", done_msg)
         return rc
 
     def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
@@ -221,8 +281,18 @@ class Engine:
                 f"({exc}). Fix the manifest; this is not sanitised for you."
             ) from exc
         run_dir_str = str(self.run_dir)
-        return [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
-                for tok in argv]
+        tokens = [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+                  for tok in argv]
+        # D2 (canary DEFECT D2): resolve relative scripts/xxxx.py paths against
+        # the actual scripts directory (parent of the presentation_job package).
+        # Without this, subprocess.run(cwd=run_dir) interprets "scripts/pdf_export.py"
+        # relative to /tmp/canary-spaulding-.../ where no scripts/ subdirectory exists,
+        # causing "can't open file" and a hard BLOCKED after 3 retries.
+        scripts_dir = Path(__file__).resolve().parent.parent
+        return [str(scripts_dir / tok[len('scripts/'):])
+                if tok.startswith('scripts/') and not tok.startswith('/')
+                else tok
+                for tok in tokens]
 
     def _run_script_phase(self, phase: Phase) -> int:
         # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
@@ -239,7 +309,10 @@ class Engine:
         self._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
                              str(m.relative_to(self.run_dir))
-                             for rel in phase.produces_artifact
+                             # U01-R2: resolve {deck_slug}/{run_dir} tokens before the scan
+                             # so pre_run_artifacts reflects the real files, not the literal
+                             # token path (QC FAIL 6.46).
+                             for rel in phase.resolve_artifact_patterns(self.run_dir)
                              for m in (self.run_dir.glob(rel) if any(c in rel for c in "*?[")
                                        else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
                              if m.is_file()))
@@ -353,6 +426,12 @@ class Engine:
         self.store.save(self.state)
         if self.board:
             self.board.mark_blocked(phase.id, reason)
+            # Option B: a gate failure on a phase that never reached its own
+            # progress report (the success-path child_report call above) still
+            # needs a child card -- child_report mints one on demand (idempotent,
+            # same as the success path) and closes it 'blocked' with the reason.
+            title, description = self._child_card_meta(phase)
+            self.board.child_report(phase.id, title, description, "blocked", reason)
         safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
                    "-- nothing you sent us is lost."
         if not lost:
@@ -431,6 +510,205 @@ class Engine:
             return EXIT_OK
         return self.close()
 
+    def _mint_process_certificate(self) -> dict:
+        """U067 -- WORK-ITEM-05: Mint PROCESS-CERTIFICATE inside engine close().
+
+        Imports prove-deck's cert minting logic. Checks every declared step:
+        attestation record, substance_verified, client_reports start+done,
+        monotonic timestamps, no gaps. Writes PROCESS-CERTIFICATE.json to
+        working/checkpoints/. Records sha256 in state. Returns the cert dict.
+        """
+        now = utcnow()
+        phases = self.state.get('phases', [])
+        manifest_version = self.state.get('manifest_version', 'unknown')
+        manifest_sha = self.state.get('manifest_sha256', '')[:12]
+
+        # 1. Collect attestation records -- every phase that reached status 'done'
+        attested = [p for p in phases if p.get('status') == 'done']
+        all_phase_ids = [p.get('id') for p in phases]
+
+        # 2. Verify no gaps
+        manifest_phase_ids = [p.id for p in self.manifest.phases]
+        unentered = [pid for pid in manifest_phase_ids if pid not in all_phase_ids]
+        incomplete = [p.get('id') for p in phases if p.get('status') not in ('done', 'blocked')]
+
+        # 3. Check substance verification
+        substance_unverified = [
+            p.get('id') for p in attested
+            if p.get('verifier_ok') is False
+            or (p.get('verifier_ok') is None and p.get('artifacts'))
+        ]
+        substance_verified_count = len([
+            p for p in attested if p.get('verifier_ok') is True
+        ])
+
+        # 4. Check client reports
+        sent = self.state.get('sent') or {}
+        has_ack = bool(sent.get('ack'))
+        has_done = bool(sent.get('done'))
+        progress_sent = (sent.get('progress', {}).get('count', 0)
+                         if isinstance(sent.get('progress'), dict) else 0)
+        blocked_sent = (sent.get('blocked', {}).get('count', 0)
+                        if isinstance(sent.get('blocked'), dict) else 0)
+
+        # 5. Monotonic timestamp check
+        timestamps = []
+        for p in attested:
+            at = p.get('attested_at')
+            if at:
+                timestamps.append((p.get('id'), at))
+        monotonic_violations = []
+        for i in range(1, len(timestamps)):
+            if timestamps[i][1] < timestamps[i-1][1]:
+                monotonic_violations.append(
+                    f"{timestamps[i][0]} @ {timestamps[i][1]} < "
+                    f"{timestamps[i-1][0]} @ {timestamps[i-1][1]}"
+                )
+
+        # 6. Gate results
+        gates_state = self.state.get('gates', {})
+        gate_pass_count = sum(
+            1 for g in gates_state.values()
+            if isinstance(g, dict) and g.get('state') in ('pass', 'waived')
+        )
+        gate_total = len(ALL_GATE_KEYS)
+        gate_failures = [
+            k for k, v in gates_state.items()
+            if isinstance(v, dict) and v.get('state') not in ('pass', 'waived')
+        ]
+
+        # 7. Build the certificate
+        cert = {
+            'certificate_version': 1,
+            'job_id': self.state.get('job_id'),
+            'run_dir': str(self.run_dir),
+            'minted_at': now,
+            'manifest': {
+                'version': manifest_version,
+                'sha256': manifest_sha,
+            },
+            'phase_integrity': {
+                'manifest_phase_count': len(manifest_phase_ids),
+                'phases_attested': len(attested),
+                'phases_incomplete': len(incomplete),
+                'phases_unentered': len(unentered),
+                'unentered_phase_ids': unentered,
+                'incomplete_phase_ids': incomplete,
+                'no_gaps': len(unentered) == 0,
+                'all_done': len(attested) == len(manifest_phase_ids),
+            },
+            'substance_verification': {
+                'verified_count': substance_verified_count,
+                'unverified_phase_ids': substance_unverified,
+                'all_verified': len(substance_unverified) == 0,
+            },
+            'client_reports': {
+                'ack_sent': has_ack,
+                'done_sent': has_done,
+                'progress_messages': progress_sent,
+                'blocked_messages': blocked_sent,
+            },
+            'timestamp_integrity': {
+                'attestation_count': len(timestamps),
+                'monotonic': len(monotonic_violations) == 0,
+                'violations': monotonic_violations,
+            },
+            'gate_results': {
+                'passed': gate_pass_count,
+                'total': gate_total,
+                'failed_gate_keys': gate_failures,
+                'all_passed': len(gate_failures) == 0,
+            },
+            'integrity_pass': (
+                len(unentered) == 0 and
+                len(substance_unverified) == 0 and
+                len(monotonic_violations) == 0 and
+                len(gate_failures) == 0
+            ),
+            'integrity_fail_reasons': [],
+        }
+
+        if not cert['integrity_pass']:
+            if unentered:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(unentered)} manifest phase(s) '
+                    'never entered: ' + ', '.join(unentered))
+            if substance_unverified:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(substance_unverified)} phase(s) '
+                    'without substance verification: ' + ', '.join(substance_unverified))
+            if monotonic_violations:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(monotonic_violations)} timestamp '
+                    'monotonicity violation(s)')
+
+        # 8. Write to checkpoints (atomic, same pattern as state.save())
+        import tempfile as _tempfile
+        import os as _os
+        checkpoints_dir = self.run_dir / 'working' / 'checkpoints'
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        cert_path = checkpoints_dir / 'PROCESS-CERTIFICATE.json'
+        cert_json = json.dumps(cert, indent=2, ensure_ascii=False, sort_keys=True)
+        fd, tmp = _tempfile.mkstemp(dir=str(checkpoints_dir),
+                                    prefix='.cert-', suffix='.tmp')
+        try:
+            with _os.fdopen(fd, 'w', encoding='utf-8') as fh:
+                fh.write(cert_json)
+                fh.flush()
+                _os.fsync(fh.fileno())
+            _os.replace(tmp, str(cert_path))
+        except Exception:
+            try:
+                _os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+        # 9. Compute sha256 and record in state
+        cert_sha = sha256_file(cert_path)
+        self.state['process_certificate'] = {
+            'path': str(cert_path.relative_to(self.run_dir)),
+            'sha256': cert_sha,
+            'minted_at': now,
+            'integrity_pass': cert['integrity_pass'],
+        }
+
+        self.report.event(
+            'certificate.minted',
+            f'PROCESS-CERTIFICATE minted: sha256={cert_sha[:12]}, '
+            f'integrity={"PASS" if cert["integrity_pass"] else "FAIL"}, '
+            f'{len(attested)}/{len(manifest_phase_ids)} phases attested'
+        )
+        print(f'CERT: {cert_path.relative_to(self.run_dir)} '
+              f'sha256={cert_sha[:12]} '
+              f'integrity={"PASS" if cert["integrity_pass"] else "FAIL"}', flush=True)
+
+        return cert
+
+    def _run_self_audit(self) -> Tuple[bool, str, str]:
+        """WORK-ITEM-16 (ANTI-DRIFT CORE): mechanical self-audit of the run
+        directory, run as the FINAL step before handoff. Invokes
+        self_audit.py as a subprocess against this run's deliverables; a
+        non-zero exit means one or more deliverables failed verification
+        (missing, undersized, or wrong file type) and handoff must be
+        rejected.
+
+        Returns (ok, reason, output) -- output is captured stdout+stderr,
+        truncated to a sane length for state.json.
+        """
+        scripts_dir = Path(__file__).resolve().parent.parent
+        self_audit_path = scripts_dir / "self_audit.py"
+        argv = ["python3", str(self_audit_path), "--run-dir", str(self.run_dir)]
+        try:
+            r = subprocess.run(argv, cwd=str(self.run_dir), capture_output=True,
+                               text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return False, f"self-audit could not run: {exc}", str(exc)[-4000:]
+        output = ((r.stdout or "") + (r.stderr or ""))[-4000:]
+        if r.returncode != 0:
+            return False, f"self-audit exited {r.returncode}", output
+        return True, "", output
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
@@ -469,6 +747,43 @@ class Engine:
                         if r.get("state") != "pass"]
             if not failures:
                 # All failed gates passed on re-evaluation.
+                # WORK-ITEM-05: Mint certificate BEFORE terminal transition.
+                self._mint_process_certificate()
+                # WORK-ITEM-13: assemble flat deliverables/ folder.
+                try:
+                    _curate.curate(self.run_dir)
+                except _curate.AFBundleIncomplete as exc:
+                    self.state["terminal"] = "BLOCKED"
+                    self.state["blocked"] = {
+                        "phase": "CURATION",
+                        "reason": str(exc),
+                        "at": utcnow(),
+                        "missing_keys": exc.missing_keys,
+                    }
+                    self.store.save(self.state)
+                    self.report.to_requester(
+                        "blocked",
+                        f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+                    print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
+                    return EXIT_GATE_BLOCKED
+                # WORK-ITEM-16: self-audit runs as the FINAL step before
+                # handoff -- after curation succeeds, before terminal=DONE.
+                # A non-zero exit REJECTS the handoff.
+                audit_ok, audit_reason, audit_output = self._run_self_audit()
+                if not audit_ok:
+                    self.state["terminal"] = "BLOCKED"
+                    self.state["blocked"] = {
+                        "phase": "SELF-AUDIT",
+                        "reason": audit_reason,
+                        "at": utcnow(),
+                        "output": audit_output,
+                    }
+                    self.store.save(self.state)
+                    self.report.to_requester(
+                        "blocked",
+                        f"Self-audit failed before handoff — {audit_reason}")
+                    print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
+                    return EXIT_GATE_BLOCKED
                 if self.board:
                     self.board.mark_review()
                 self.state["terminal"] = "DONE"
@@ -496,6 +811,43 @@ class Engine:
             print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.", file=sys.stderr)
             print("\n  continue with:", file=sys.stderr)
             print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
+        # WORK-ITEM-05: Mint certificate BEFORE terminal DONE transition.
+        self._mint_process_certificate()
+        # WORK-ITEM-13: assemble flat deliverables/ folder.
+        try:
+            _curate.curate(self.run_dir)
+        except _curate.AFBundleIncomplete as exc:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": "CURATION",
+                "reason": str(exc),
+                "at": utcnow(),
+                "missing_keys": exc.missing_keys,
+            }
+            self.store.save(self.state)
+            self.report.to_requester(
+                "blocked",
+                f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+            print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
+        # WORK-ITEM-16: self-audit runs as the FINAL step before handoff --
+        # after curation succeeds, before terminal=DONE. A non-zero exit
+        # REJECTS the handoff.
+        audit_ok, audit_reason, audit_output = self._run_self_audit()
+        if not audit_ok:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": "SELF-AUDIT",
+                "reason": audit_reason,
+                "at": utcnow(),
+                "output": audit_output,
+            }
+            self.store.save(self.state)
+            self.report.to_requester(
+                "blocked",
+                f"Self-audit failed before handoff — {audit_reason}")
+            print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if self.board:
             self.board.mark_review()

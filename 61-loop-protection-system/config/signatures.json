@@ -16,6 +16,7 @@
     {"id": "LP-A6", "family": "A", "f_taxonomy": "F3", "name": "context-bloat zero-tool-call loop", "detector": "D2", "tier_default": 1},
     {"id": "LP-A7", "family": "A", "f_taxonomy": "F2", "name": "memory dreaming / re-embedding storm", "detector": "D2", "tier_default": 2},
     {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "self-blocking flush run / transcript poison", "detector": "D5", "tier_default": 1},
+    {"id": "LP-A9", "family": "A", "f_taxonomy": "F16", "name": "semantic retry loop / reworded-intent hunt against a fail-closed dependency", "detector": "D6", "tier_default": 2},
     {"id": "LP-B1", "family": "B", "f_taxonomy": "F5", "name": "supervisor boot-crash restart storm", "detector": "D1", "tier_default": 1},
     {"id": "LP-B2", "family": "B", "f_taxonomy": "F4", "name": "watchdog kill-spawn loop", "detector": "D1", "tier_default": 1},
     {"id": "LP-B3", "family": "B", "f_taxonomy": "F5-adjacent", "name": "gateway deferral deadlock / orphan handoff", "detector": "D4", "tier_default": 1},
@@ -41,6 +42,22 @@
     "checkpoint_text_marker": "Session execution blocked to prevent runaway loops",
     "flush_run_marker": "Continue the OpenClaw runtime event.",
     "flush_run_note": "The runtime-event prompt that opens a memory-flush run. Measured 9 occurrences (role=user) in the incident transcript, matching the observed burst count - a flush run is the usual ignition context. Recorded as CONTEXT data only; D5 does not require it to fire, because the structural block signature above is sufficient and higher-precision."
+  },
+  "fail_closed_markers": {
+    "detector": "D6",
+    "match": "case-insensitive substring over the tool RESULT payload text",
+    "markers": [
+      "unauthorized",
+      "forbidden",
+      "invalid_api_key",
+      "invalid api key",
+      "authentication failed",
+      "not authenticated",
+      "missing credentials"
+    ],
+    "note": "The D6 fail-closed signature is pinned as DATA here, exactly like the D5 checkpoint_text_marker, because detecting it requires a text COUNT over the tool-result payload rather than a structural enum match. ONLY THE COUNT ever reaches a finding - the matched text, the surrounding payload, the tool arguments, and any value are never stored, printed, or reproduced. This is the face that catches the incident class the structural signatures cannot: a tool call that SUCCEEDS while the dependency behind it refuses. `exec` running a curl against a fail-closed API exits 0 and is recorded status=completed, so details.status/isError are both clean and every error-keyed detector stays silent. Retrying an auth-class refusal cannot succeed by rewording the request, which is what makes >2 attempts a loop rather than persistence.",
+    "deliberately_excluded": ["401", "403"],
+    "deliberately_excluded_note": "Bare HTTP status numbers are NOT markers. Measured on the operator box's real 998-transcript corpus: including them raises the >=3-in-window pair count from 13 to 37 (2.8x) because '401'/'403' collide with ordinary numeric output - line numbers, byte counts, ports, hashes. The narrow word-shaped marker set is the shippable one; the broad set is recorded here only so a future contributor does not 'improve' the detector by adding them back."
   },
   "secret_shapes": {
     "detector": "scan-no-secrets.sh",
