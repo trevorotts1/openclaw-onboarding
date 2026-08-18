@@ -1493,8 +1493,12 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             facts = _rf.get_or_seal(Path(run_dir))
             verdict, detail = _rf.verify_qc(facts, qc_key)
             _rf.shadow_compare(f"qc:{qc_key}", legacy_ok, "; ".join(legacy_reasons),
-                                verdict, detail, run_dir=run_dir)
-            if _rf.enforcing():
+                                verdict, detail, run_dir=run_dir, facts=facts)
+            # SEALED mode (facts.enforcing, resolved once per run_dir on first
+            # touch — see presentation_job/runfacts.py's
+            # _resolve_enforcing_mode()) -- never a live os.environ re-read --
+            # so this decision cannot drift mid-run.
+            if facts.enforcing:
                 if verdict is _rf.Verdict.PASS:
                     return True, []
                 return False, [f"[RunFacts enforcing] qc[{qc_key}]: {detail}"]
@@ -1593,8 +1597,13 @@ def _shadow_composite_verifier(gate: str, legacy_fn: Callable) -> Callable:
             if not had_input:
                 detail = f"no input artifact found ({'; '.join(spec.artifacts)}) — a gate whose input is absent does not pass"
             _rf.shadow_compare(gate, legacy_ok, "; ".join(legacy_reasons),
-                               verdict, detail, run_dir=run_dir)
-            if _rf.enforcing():
+                               verdict, detail, run_dir=run_dir, facts=facts)
+            # SEALED mode (facts.enforcing, resolved once per run_dir on first
+            # touch -- see presentation_job/runfacts.py's
+            # _resolve_enforcing_mode()) -- never a live os.environ re-read --
+            # so this decision cannot drift mid-run, even though `facts` here
+            # comes from spec.seal_into()'s TRANSACTIONAL force=True reseal.
+            if facts.enforcing:
                 if verdict is _rf.Verdict.PASS:
                     return True, []
                 return False, [f"[RunFacts enforcing] {gate}: {detail}"]

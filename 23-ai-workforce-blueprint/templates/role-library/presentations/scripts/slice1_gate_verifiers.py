@@ -387,6 +387,13 @@ def _slice_verifier(gate: str, artifacts: Tuple[str, ...],
             webinar_video=facts.webinar_video,
             notes_sync=facts.notes_sync,
             fish_tag=facts.fish_tag,
+            # Propagate the ALREADY-resolved enforcement mode from the inner
+            # seal() call above -- do not re-derive it. RunFacts.enforcing is
+            # resolved once per run_dir on first touch (see
+            # presentation_job/runfacts.py's _resolve_enforcing_mode()); a
+            # subclass instance must carry the SAME value its base seal
+            # carried, never re-read the environment a second time.
+            enforcing=facts.enforcing,
             snapshot=snapshot_fact,
         )
         return slice_facts, True

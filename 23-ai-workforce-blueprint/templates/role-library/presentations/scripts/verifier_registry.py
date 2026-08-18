@@ -174,10 +174,18 @@ class VerifierSpec:
         try:
             _rf.shadow_compare(self.gate, bool(legacy_ok),
                                "; ".join(legacy_reasons), verdict, detail,
-                               run_dir=run_dir)
+                               run_dir=run_dir, facts=facts)
         except Exception:  # noqa: BLE001 — shadow compare never breaks a gate
             pass
-        if _rf.enforcing():
+        # SEALED mode (facts.enforcing) -- never a live os.environ re-read --
+        # so this decision cannot drift mid-run. `facts` here comes from
+        # self.seal_into() above, i.e. from a TRANSACTIONAL force=True
+        # reseal: presentation_job/runfacts.py resolves the enforcement mode
+        # once per run_dir on FIRST touch and reuses it for every later
+        # seal() call for that run_dir, forced or not (see
+        # _resolve_enforcing_mode()) -- so this is the run's one true sealed
+        # mode, not a fresh read for this particular gate check.
+        if facts.enforcing:
             if verdict is Verdict.PASS:
                 return True, []
             if verdict is Verdict.UNDETERMINED:
