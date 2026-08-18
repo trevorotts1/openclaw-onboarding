@@ -22,7 +22,7 @@ the build pipeline is allowed to proceed. Five checks:
      up to 8 branding + 1 operations), so a client who substantively answers EVERY
      one of them can never reach 25 raw blocks without the interviewer drilling an
      already-answered question again for zero new coverage. Verified on a real
-     client transcript (rescue-cassandra-henriquez): 11/11 canonical questions
+     client transcript (rescue-<client>): 11/11 canonical questions
      matched, every required branding field answered with 534-921 real characters,
      yet only 18-19 raw blocks — HARD-FAILED as "too shallow" on an interview that
      was, by every other measure, complete. For an interview identified as
@@ -1270,7 +1270,7 @@ def check_nudges_wired(repo_root: Path) -> dict:
     mandatory-fields fix / PR #775): this USED to grep repo_root/"install.sh"
     for the string "interview-nudge-cron". install.sh is a PROVISIONING-TIME
     script — it runs once during a full install and is NEVER copied into the
-    skills tree. Verified live on a hot-patched box (rescue-cassandra-henriquez):
+    skills tree. Verified live on a hot-patched box (rescue-<client>):
     install.sh is absent from ~/.openclaw entirely. Every box patched via
     update-skills.sh (the fleet hot-patch path) therefore hard-failed this
     check permanently, for a reason with nothing to do with the client's

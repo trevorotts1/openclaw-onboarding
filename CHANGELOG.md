@@ -1434,11 +1434,11 @@ Complete the interview-app → presentation-department wiring.
 
 ## [v22.0.0]  -  2026-08-07  -  CAPSTONE: Presentation Department Gauntlet Loop + BAR-MET closure — the 10-fix E2E train lands on the v21.7.38 Loop completion (v21.7.38 -> v22.0.0)
 
-**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by the Kofi run into `main`. This capstone adds the **10 E2E-found defects** from the same Kofi live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
+**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by a client's run into `main`. This capstone adds the **10 E2E-found defects** from the same client's live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
 
 All 10 version markers rolled `v21.7.38` -> **v22.0.0** in lockstep via `scripts/bump-version.sh` (plus the script-embedded browser-manager sub-markers and the two skill dirs those markers live in, `06-ghl-install-pages` and `23-ai-workforce-blueprint`, so CI guard G3 stays green). Annotated tag `v22.0.0` cut on this release commit.
 
-### The 10 E2E-found fixes (from the Kofi live run)
+### The 10 E2E-found fixes (from a client's live run)
 
 1. **presenter_guide.py `_SLIDE_SPLIT_RE`:** accept both `## Slide N` and plain `SLIDE N` headings (the plain form was being missed).
 2. **presenter_guide.py byte floor:** scale the guide floor by deck size (was a fixed 51,200 bytes, which rejected a legitimate 20-slide guide).
@@ -1455,12 +1455,12 @@ Verified on the train: 33/33 phases attest, `bundle_complete.json` complete, `PR
 
 ### What the previous release (v21.7.38) already closed
 
-The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by the Kofi E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
+The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by a client's E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
 
 
 ## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
 
-The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by a client's E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
 
 ## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
 
@@ -6709,7 +6709,7 @@ Touches: `23-ai-workforce-blueprint/templates/role-library/_index.json`,
 ## [v21.4.1]  -  2026-07-28  -  BOOTSTRAP GAP: the Command Center no longer waits on the interview it exists to unblock
 
 A brand-new client could not start. The AI Workforce interview is a web page at `/interview`
-on the client's OWN Command Center (verified live: `https://jennifer.zerohumanworkforce.com/interview`
+on the client's OWN Command Center (verified live: `https://<client>.zerohumanworkforce.com/interview`
 returns HTTP 200, "Your AI Workforce Interview"). So no Command Center meant no interview, and
 provisioning waited on the interview. Nothing bootstrapped.
 
@@ -7168,7 +7168,7 @@ is corrected here.
 
 Four boxes were found with their ENTIRE 36-department tree created fresh on
 2026-07-20 (`mtime == birthtime`) while running the POST-demotion naming map
-(2.6.2). One of them, `rescue-eddie-otts`, records an OWNER DECLINE of all six
+(2.6.2). One of them, `rescue-<client>`, records an OWNER DECLINE of all six
 universal-primary verticals and carries an operator-signed 18-department subset
 floor — it still had all 36. Reproduced offline: a scratch workspace holding only
 `marketing/` comes out of detect -> make-gap -> floor-fill `--apply` with exactly
@@ -8659,9 +8659,9 @@ reality rather than assumption:
 run read-only on every box in `box-registry.json` (36 boxes; nothing written to
 any box). **0 of the 30 reachable boxes newly fail.** All 30 resolve a
 departments workspace and hold hundreds of role artifacts (min 481, max 1727).
-The 6 unreachable boxes were skipped and recorded (`leanne-dolce`,
-`rescue-barret-matthews`, `rescue-christy-staples`, `rescue-erin-garrett`,
-`rescue-jill-bulluck`, `rescue-talaya-kelley`) — the same 6 skipped in the Jul-20
+The 6 unreachable boxes were skipped and recorded (`<client>`,
+`rescue-<client>`, `rescue-<client>`, `rescue-<client>`,
+`rescue-<client>`, `rescue-<client>`) — the same 6 skipped in the Jul-20
 roll. 30 + 6 = 36.
 
 **Tests** (`tests/unit/provisioning-completeness-gate.test.py`, hermetic fixtures

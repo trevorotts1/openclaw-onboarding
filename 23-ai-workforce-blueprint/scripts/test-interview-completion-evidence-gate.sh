@@ -2,7 +2,7 @@
 # test-interview-completion-evidence-gate.sh
 #
 # Regression battery for the 2026-07-30 incident (a client Mac mini box /
-# rescue-cassandra-henriquez): `update-interview-state.sh --complete` wrote
+# rescue-<client>): `update-interview-state.sh --complete` wrote
 # `.interviewComplete = true` UNCONDITIONALLY and only ran
 # qc-interview-completion.py AFTERWARD, best-effort/non-fatal. A 19-question
 # transcript with 5 missing mandatory fields (brand_evokes, customer_feeling,

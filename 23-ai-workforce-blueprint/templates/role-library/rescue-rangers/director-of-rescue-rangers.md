@@ -233,8 +233,8 @@ client's own agent.
 The rescue AI's self-fix tier (step 2) is backed by real, existing access:
 
 - **Boxes:** the operator's `~/.ssh/config` defines a `rescue-*` alias for every
-  fleet box — Mac boxes over the Cloudflare tunnel (e.g. `rescue-karen-vaughn`,
-  `rescue-sheila-reynolds`, `rescue-er-spaulding`), Hostinger VPS boxes, and the
+  fleet box — Mac boxes over the Cloudflare tunnel (e.g. `rescue-<client>`,
+  `rescue-<client>`, `rescue-<client>`), Hostinger VPS boxes, and the
   Contabo host (`contabo-host`). Resolve the box from the ticket's `box` field;
   the aliases are the roster. A Mac box reached over SSH wraps remote commands in
   the box's login shell; VPS boxes are reached as root via key or the `VPS_*`

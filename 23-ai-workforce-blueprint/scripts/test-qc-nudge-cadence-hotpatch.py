@@ -9,7 +9,7 @@ BUG THIS LOCKS: check_nudges_wired() used to grep repo_root/"install.sh" for
 the string "interview-nudge-cron" as its ONLY evidence that the interview-nudge
 cron is registered. install.sh is a PROVISIONING-TIME script — it runs once
 during a full install and is NEVER copied into the deployed skills tree.
-Verified live on a hot-patched box (rescue-cassandra-henriquez): install.sh is
+Verified live on a hot-patched box (rescue-<client>): install.sh is
 absent from ~/.openclaw entirely, while grep -a over update-skills.sh shows it
 only ever REFERENCES install.sh in comments, never copies it in. Every box
 patched via update-skills.sh (the fleet hot-patch path) therefore HARD-FAILED

@@ -362,7 +362,7 @@ is entirely absent was invisible to it"). That false premise is corrected in the
 workflow.
 
 Observed impact: `listings` present on 30/30 reachable boxes, including
-`rescue-eddie-otts`, whose build-state records an OWNER DECLINE of all six
+`rescue-<client>`, whose build-state records an OWNER DECLINE of all six
 universal-primary verticals and an operator-signed 18-department subset floor —
 it still carried all 36.
 
