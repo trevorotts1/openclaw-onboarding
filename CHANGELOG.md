@@ -1,3 +1,42 @@
+## [v22.0.45] -- 2026-08-18 -- fix(presentations): trust-boundary FALSEPOS v2 -- scope attestation reuse to the owning artifact+phase
+
+Rebuild of `fix/trust-falsepos`, which a verifier rejected: it fixed the
+legitimate-retry false-positive in `presentation_job/preflight_shadow.py`'s
+attestation-explained-divergence check, but via an UNSCOPED global pool of
+every `artifact_sha` ever attested for a run -- a hash legitimately attested
+for one artifact's phase could wrongly explain a real tamper on a completely
+different artifact, silently laundering it as "explained" instead of
+would-have-blocked.
+
+FIX: `_phase_ids_for_artifact_spec()` resolves, from
+`PIPELINE-MANIFEST.json`'s own `phases[].produces_artifact` declarations, the
+phase_id(s) that actually own a given artifact spec. `_attested_artifact_shas_for()`
+then only collects `artifact_sha` values from `phase_attestations` entries
+whose `phase_id` is in that owner set -- never a global pool. `record()` now
+takes an `artifact_spec` parameter (build_deck.py's `run_preflight()` passes
+each PREFLIGHT_REQUIRED entry's own `rel`), so a hash can only explain a
+divergence for the SAME artifact it was actually attested for.
+
+PROVEN (`test_preflight_shadow_scoped.py`, three cases, all through the real
+`build_deck.run_preflight()` dispatch loop and the real
+`run_signature_deck.attest_phase()` harness -- no simulated fixtures):
+- CASE D: a genuine QC-retry re-attestation under the artifact's own owning
+  phase still explains the divergence -- the original false-positive stays
+  fixed.
+- CASE E: the SAME attested hash, hand-copied onto a DIFFERENT, untouched
+  artifact owned by a different phase, does NOT explain that artifact's
+  divergence -- the laundering hole the verifier found is closed.
+- CASE F: mechanism-level, side-by-side proof against the rejected fix's own
+  unscoped lookup (transcribed verbatim) vs. the new scoped one on identical
+  input.
+
+Independently reproduced by a separate verifying agent: the original
+false-positive defect reproduces on `main` pre-fix; the rejected v1's
+laundering hole reproduces by running this fix's own scoped test against
+`fix/trust-falsepos` (`_attested_artifact_shas_for` does not exist there).
+Full test suite (1015 tests) green with no regressions. Report-only invariant
+unchanged -- `preflight_shadow.record()` still never blocks a run.
+
 ## [v22.0.44] -- 2026-08-18 -- fix(privacy): client-name gate could not detect the class it exists for
 
 `scripts/qc-assert-no-client-names.sh` keeps real client identities out of this
