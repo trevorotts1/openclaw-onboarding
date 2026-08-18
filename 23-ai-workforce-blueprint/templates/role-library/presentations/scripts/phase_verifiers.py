@@ -64,6 +64,12 @@ except ImportError:
         sys.path.insert(0, str(_SCRIPTS_DIR))
     from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC
 
+# DERIVED min_bytes lookup, keyed by deliverable -- used below so the P7-TELEPROMPTER
+# / P9.1-SPEECH-PDF phase verifiers can't independently drift from the canonical spec
+# the way they did before the 2026-08-18 split-brain reconciliation (both were found
+# still carrying the pre-doctrine 10_240 / 20_480 values during that pass).
+_MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
+
 # ---------------------------------------------------------------------------
 # Defensive engine-checker imports (all optional)
 # ---------------------------------------------------------------------------
@@ -1487,8 +1493,12 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             facts = _rf.get_or_seal(Path(run_dir))
             verdict, detail = _rf.verify_qc(facts, qc_key)
             _rf.shadow_compare(f"qc:{qc_key}", legacy_ok, "; ".join(legacy_reasons),
-                                verdict, detail, run_dir=run_dir)
-            if _rf.enforcing():
+                                verdict, detail, run_dir=run_dir, facts=facts)
+            # SEALED mode (facts.enforcing, resolved once per run_dir on first
+            # touch — see presentation_job/runfacts.py's
+            # _resolve_enforcing_mode()) -- never a live os.environ re-read --
+            # so this decision cannot drift mid-run.
+            if facts.enforcing:
                 if verdict is _rf.Verdict.PASS:
                     return True, []
                 return False, [f"[RunFacts enforcing] qc[{qc_key}]: {detail}"]
@@ -1587,8 +1597,13 @@ def _shadow_composite_verifier(gate: str, legacy_fn: Callable) -> Callable:
             if not had_input:
                 detail = f"no input artifact found ({'; '.join(spec.artifacts)}) — a gate whose input is absent does not pass"
             _rf.shadow_compare(gate, legacy_ok, "; ".join(legacy_reasons),
-                               verdict, detail, run_dir=run_dir)
-            if _rf.enforcing():
+                               verdict, detail, run_dir=run_dir, facts=facts)
+            # SEALED mode (facts.enforcing, resolved once per run_dir on first
+            # touch -- see presentation_job/runfacts.py's
+            # _resolve_enforcing_mode()) -- never a live os.environ re-read --
+            # so this decision cannot drift mid-run, even though `facts` here
+            # comes from spec.seal_into()'s TRANSACTIONAL force=True reseal.
+            if facts.enforcing:
                 if verdict is _rf.Verdict.PASS:
                     return True, []
                 return False, [f"[RunFacts enforcing] {gate}: {detail}"]
@@ -1691,7 +1706,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 4.15  Signature-Presentation Phase-3 No-Pitch Hygiene (Skill 51)
     "P-SP-P3-HYGIENE":    _verify_sp_no_pitch,
     # --- U012 new phases ---
-    "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html", 10240),
+    # RECONCILED (split-brain fix, 2026-08-18): was hardcoded 10_240 -- a FOURTH
+    # independent copy of the stale pre-doctrine teleprompter_html floor, found
+    # alongside deliverables.py, build_deck.py, PIPELINE-MANIFEST.json, and
+    # presentation_job/gates.py during that pass. Now derived from the canonical
+    # spec (already imported above for the P9-DELIVER whitelist).
+    "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html",
+                                                  _MIN_BYTES["teleprompter_html"]),
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
     "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
@@ -1699,7 +1720,12 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
     # --- Feature L2-H: webinarized speech audio (welcome + Q&A + crescendo close) ---
     "P9-SPEECH-WEBINAR-INTRO": _verify_webinarized_speech,
-    "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
+    # RECONCILED (split-brain fix, 2026-08-18): was hardcoded 20_480, the SAME
+    # never-cited pre-doctrine number found in PIPELINE-MANIFEST.json and
+    # presenters_speech_pdf.py's own PDF_MIN_BYTES self-check during this pass.
+    # Now derived from the canonical spec (speech_pdf: 3_000, the doctrine floor).
+    "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf",
+                                                  _MIN_BYTES["speech_pdf"]),
     # Slice 3: shadowed against the sealed media-library ledger verdict
     # (verify_media_library) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     # The READ-ONLY GHL list-back stays inside _verify_ghl_upload (network —

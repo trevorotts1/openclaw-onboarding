@@ -89,7 +89,13 @@ from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo
 # definition of "sane" shared by the manifest check and the runtime consumers, so this
 # script (whose whole job is catching exactly this kind of two-numbers-silently-diverge
 # drift) can never itself become a second source that drifts from the engine it checks.
-from presentation_job.manifest import MAX_HEARTBEAT_INTERVAL_MINUTES
+# PHASE_BUDGET_MINUTES / DEFAULT_PHASE_BUDGET_MINUTES are imported alongside it for the
+# per-phase follow-up: the ceiling below is tightened to THIS phase's own budget, not just
+# the flat engine-wide 240 max (a 15-minute phase must not be able to declare
+# heartbeat_minutes:240 and pass).
+from presentation_job.manifest import (
+    MAX_HEARTBEAT_INTERVAL_MINUTES, PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES,
+)
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -361,7 +367,14 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # governing-personas.md ship into deployed department dirs but are
                   # not department roles. Exclude them so A5 does not false-DRIFT a
                   # box that is fully on the current manifest (FIX-23c + roll fix).
-                  "ROSTER", "GOVERNING-PERSONAS"}
+                  # NOTE: governing-personas.md is written lowercase-with-dashes by
+                  # create_role_workspaces.py (dept_path / "governing-personas.md");
+                  # p.stem on that file is "governing-personas", not
+                  # "GOVERNING-PERSONAS". The prior uppercase entry never matched
+                  # the real on-disk file, so this exclusion was dead code and every
+                  # deployed dept with governing-personas.md still false-DRIFTed on
+                  # A5. Fixed to the actual stem case.
+                  "ROSTER", "governing-personas"}
 
 
 def scan_roles_and_sops():
@@ -789,8 +802,18 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     # constant: it is this engine's own PHASE_BUDGET_MINUTES maximum — the longest any
     # phase is ever allowed to run — so it costs the legitimate path nothing (real values
     # run 15-120) while rejecting a manifest that only LOOKS positive.
+    #
+    # PER-PHASE FOLLOW-UP: the flat 240-minute ceiling above is the slowest phase in the
+    # WHOLE engine, not a bound on any ONE phase. Applied globally it let a 15-minute
+    # phase (e.g. most of the 36) declare heartbeat_minutes:240 and still pass — a
+    # plausible in-manifest edit that blinds the stall detector for that phase alone
+    # while leaving E3 green. Each phase's ceiling is therefore tightened to
+    # min(MAX_HEARTBEAT_INTERVAL_MINUTES, that phase's own PHASE_BUDGET_MINUTES entry) —
+    # a phase may never declare a checkpoint cadence looser than its own total timeout.
     for ph in phases:
         hb = ph.get("heartbeat_minutes")
+        phase_budget = PHASE_BUDGET_MINUTES.get(ph["id"], DEFAULT_PHASE_BUDGET_MINUTES)
+        phase_ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget)
         if hb is None:
             add("E3", ph["id"],
                 f"phase {ph['id']} declares no heartbeat_minutes. Manifest v45+ "
@@ -804,16 +827,18 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"sane positive integer. heartbeat_minutes must be a whole number of "
                 f"minutes > 0 (the manifest's existing values run 15-120). Fix the "
                 f"value for this phase in PIPELINE-MANIFEST.json.")
-        elif hb > MAX_HEARTBEAT_INTERVAL_MINUTES:
+        elif hb > phase_ceiling:
             add("E3", ph["id"],
                 f"phase {ph['id']} declares heartbeat_minutes={hb}, which exceeds the "
-                f"{MAX_HEARTBEAT_INTERVAL_MINUTES}-minute ceiling (HARDEN G3). A value "
-                f"this large does not mean \"this phase checkpoints rarely\" — it is "
-                f"past PHASE_BUDGET_MINUTES's own maximum, the longest ANY phase in this "
-                f"engine is ever allowed to run, so it can only blind the watchdog "
-                f"(e.g. 999999999 -> a ~2,853-year stall threshold). The manifest's "
-                f"existing values run 15-120. Fix the value for this phase in "
-                f"PIPELINE-MANIFEST.json.")
+                f"{phase_ceiling}-minute ceiling for THIS phase (min of the "
+                f"{MAX_HEARTBEAT_INTERVAL_MINUTES}-minute engine-wide HARDEN G3 cap and "
+                f"this phase's own {phase_budget}-minute PHASE_BUDGET_MINUTES entry). A "
+                f"value this large does not mean \"this phase checkpoints rarely\" — it "
+                f"is past the longest this phase is ever allowed to run, so it can only "
+                f"blind the watchdog for this phase specifically (e.g. a 15-minute phase "
+                f"declaring heartbeat_minutes:240 -> the stall detector never fires while "
+                f"that phase runs). The manifest's existing values run 15-120. Fix the "
+                f"value for this phase in PIPELINE-MANIFEST.json.")
 
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match

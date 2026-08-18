@@ -30,8 +30,25 @@ from typing import Dict, List, Optional, Tuple
 # The canonical manifest floor, mirrored from presentation_job/manifest.py
 # (MIN_MANIFEST_VERSION). Bump the two TOGETHER -- a floor one behind the
 # manifest is the split-brain this check exists to prevent.
-MIN_MANIFEST_VERSION = 43
-MIN_MANIFEST_PHASES = 26
+# 48 -> 49: heartbeat-ceiling repair -- 13 phases' heartbeat_minutes tightened to
+# fit their own PHASE_BUDGET_MINUTES (E3 drift repair); see presentation_job/manifest.py
+# for the full rationale. MIN follows the manifest in the same commit (U019 step 8).
+# 49 -> 50: P-QC-AGGREGATE step-contract repair -- sync_check.py's W1 warning
+# ("phase P-QC-AGGREGATE declares no verifier") flagged the one phase of 36 that
+# never declared `verifier` in PIPELINE-MANIFEST.json (its `executor` was already
+# present). Declared "verifier": "phase_verifiers.verify" -- the identical value
+# every other phase already carries, and phase_verifiers.py already registers a
+# P-QC-AGGREGATE entry (qc:final) in its dispatch table, so the implementation was
+# ready and only the manifest declaration was missing. Content-only edit; no new
+# phase/AF code. MIN follows the manifest in the same commit (U019 step 8).
+# 49 -> 50: min_bytes split-brain reconciliation (2026-08-18) -- speech_pdf and
+# teleprompter_html carried orphaned pre-doctrine values (20480 / 10240, dated
+# 2026-06-17, predating the 2026-07-12 SOP reconciliation) that disagreed with
+# deliverables.py / build_deck.py's already-reconciled floors (3000 / 20000).
+# Content-only edit to two existing entries, same class of change as WI-10
+# (44 -> 45); MIN follows the manifest in the same commit.
+MIN_MANIFEST_VERSION = 50
+MIN_MANIFEST_PHASES = 36
 MIN_AF_SP_CODES = 16
 
 
