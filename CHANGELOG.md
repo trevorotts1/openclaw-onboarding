@@ -1,4 +1,4 @@
-## [v22.0.41] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
+## [v22.0.42] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
 
 PR #851 (`feat/lp-a8-cross-run-resend-loop`) sat 448 commits behind `main` since
 2026-08-04. Brought current: verified the feature is NOT redundant with anything
@@ -40,6 +40,44 @@ run measured 744/0/2, a same-tree rerun already drifted to 745/0/1 before any
 change here). Skill 61's own battery: `verify.sh` 23/23 drills PASS, all four
 merge-gate scanners clean, every script `--self-test` PASS including the new
 D7 cases run alongside D5/D6.
+
+## [v22.0.41] -- 2026-08-18 -- chore(pr-878): unstick 8-day-stale batch/wave-1-merge; scrub a real client name caught by CRITICAL-1
+
+PR #878 (`batch/wave-1-merge`, opened 2026-08-10 at v22.0.4) sat 214 commits behind
+`main` with 6 failing checks. Merged `origin/main` (982f561c, v22.0.40) into the
+branch and resolved 5 conflicts (`version`, `README.md`, `install.sh`,
+`universal-sops/_content-manifest.json`, `CHANGELOG.md`) by taking `main`'s side --
+confirmed a strict superset of the branch's stale content in every case (e.g. the
+manifest's 112 files include all 111 the branch had, plus one `main` added since).
+
+The branch's own payload (WI-01 manifest v44, WI-11 14 SOP fixes, WI-12 capacity
+probe -- commit b94534d6) turned out to already be on `main`, independently
+reimplemented as fresh commits (v22.0.4 through v22.0.6) rather than merged from
+this branch -- `b94534d6` is not an ancestor of `main` despite identical file
+contents. Net effect: after conflict resolution the branch's tree was byte-identical
+to `origin/main`. One exception: the merge would have silently resurrected
+`51-signature-presentation/scripts/presentation_job/capacity.py`, which `main`
+deliberately deleted on 2026-08-14 (#910) as an orphan superseded by the
+`23-ai-workforce-blueprint` version -- removed it again rather than reverting that
+decision.
+
+- 10 version markers rolled v22.0.40 -> v22.0.41 (`scripts/bump-version.sh`), since
+  the branch's stale v22.0.4 was now behind the floor.
+- **CRITICAL-1 (`qc-assert-no-client-names.sh`) was failing on plain `main` too**,
+  independent of this PR: a real client's full name was committed in the v22.0.17
+  CHANGELOG entry documenting the 2026-08-13 shared-dashboard tenant-bleed incident
+  (`23-ai-workforce-blueprint/CHANGELOG.md`), plus the same identifying token in that
+  entry's doctrine-citation comments in `send-interview-link.sh` and in the root
+  CHANGELOG's backfilled duplicate entry. Genericized all four occurrences (name,
+  hostname, backup-filename suffix, pronouns) to placeholder text consistent with
+  the `<client>.zerohumanworkforce.com` convention already used elsewhere in the
+  same entries. Confirmed via a clean `origin/main` control worktree that this
+  failure pre-dates and is unrelated to PR #878's own changes.
+- The other 5 originally-failing checks (G3, version markers, `.clawdbot`
+  pre-clear/CC-bootstrap, GIP band-routing reconciliation, library lockstep) were
+  ALL failing purely because the branch was stale against a fast-moving `main` --
+  confirmed passing cleanly on a clean `origin/main` control worktree before this
+  merge landed; the merge alone resolves them.
 
 ## [v22.0.40] -- 2026-08-18 -- fix(presentations): 12 fixes -- gate bypasses, no-op guards, stale floors, heartbeat drift
 
@@ -850,10 +888,10 @@ its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
 blocking the merge lane; G2 then requires this header. Summary is taken verbatim
 from that commit's own message -- no claim here was measured by this entry.
 
-Janet incident (2026-08-13): the shared Command Center serves every client
+Shared-dashboard incident (2026-08-13): the shared Command Center serves every client
 dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
 endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
-completed interview, so her `/interview` page immediately redirected to the
+completed interview, so their `/interview` page immediately redirected to the
 dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
 #896 is the skill-side guard.
 
