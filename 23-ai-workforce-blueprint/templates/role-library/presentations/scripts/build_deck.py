@@ -8183,6 +8183,14 @@ PRIORITY_SHIFT_REPORT_REL = "working/qc/priority_shift_report.json"
 # render cannot render doctrine-blind by simply omitting the spec (see run_preflight).
 PRIORITY_PHASE_ID = "P0B-PRIORITY"
 RENDER_PHASE_ID = "P4-RENDER"
+# STYLE_PHASE_GATE (2-gate close, fix/two-remaining-gates) -- P-STYLE-PREVIEW (manifest
+# order 4.85) is the 3-style sample-render + owner-pick phase that must precede
+# P4-RENDER. The deterministic runner already makes this mandatory (it is in
+# run_signature_deck.py's _GOVERNED_VERIFIER_PHASES, so check_phase_preconditions
+# refuses a runner-driven P4-RENDER dispatch without it). A DIRECT build_deck.py
+# invocation had no such binding -- mirrors the P0B-PRIORITY binding immediately
+# above (see run_preflight).
+STYLE_PHASE_ID = "P-STYLE-PREVIEW"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # U021 -- the CLOSED set of deck_type values. Mirrors deck-intake-driver.py's
@@ -8205,6 +8213,17 @@ MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
 # department (deck-intake-driver.py in <dept>/scripts/, U006/A4, or U058).
 # The dated window below REPORTS that the window has closed; it does not enforce.
 DECK_TYPE_GATE_STAGE = "enforce"          # "warn" | "enforce"
+# STYLE_PHASE_GATE stage flag -- MODULE SCOPE, beside STYLE_PHASE_ID above. Rule 3.5:
+# warn -> remediate -> enforce (same doctrine as DECK_TYPE_GATE_STAGE just above); the
+# enforce flip is a SEPARATE, later, single-line commit. WARN is the correct ship stage
+# right now: test_preflight.py's make_workdir(with_artifacts=True) "full modern
+# pipeline" fixture -- the shared happy-path used by multiple direct call sites --
+# stamps ONLY P0B-PRIORITY in process_manifest.json's phases[]; it stamps NO
+# P-STYLE-PREVIEW attestation (deliberately -- see the comment at make_workdir's P0B
+# block). An immediate enforce would brick that fixture and everything layered on it
+# the moment this binding lands. Flip to "enforce" only once a remediation pass has
+# added P-STYLE-PREVIEW attestation to the fixtures/run dirs that need it.
+STYLE_PHASE_GATE_STAGE = "warn"           # "warn" | "enforce"
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (
@@ -8778,7 +8797,23 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
     Runs all 14 sub-assertions (reusing the shift-left gates), writes a per-item
     pass/fail ledger to working/qc/priority_shift_report.json, and refuses ship until
     all 14 PASS. Item 0 is the North Star itself: the #1 job is to hold attention.
-    Defers pre-render and without doctrine; waivable only by a logged owner skip."""
+    Defers pre-render and without doctrine; waivable only by a logged owner skip.
+
+    OUT OF SCOPE for fix/two-remaining-gates -- NOT modified by this change. RISK
+    NOTED, not fixed: this function's ONLY registration in PREFLIGHT_REQUIRED (see
+    below) is dispatched by run_preflight(), whose sole call site in main() is
+    preceded by the comment "Runs BEFORE any API key load, render, or assembly" --
+    so `_gather_rendered_pngs(run_dir)` a few lines below is provably always empty
+    on THAT path, and this function returns "" (defer) before any of the 14
+    sub-assertions evaluate. Through run_preflight() alone, the 14-item ledger
+    (including item 0, the North Star) never actually fires. It is ALSO registered
+    in slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger") as the
+    legacy/shadow-compare fn against v_priority_shift_ledger -- whether THAT path
+    dispatches it post-render (giving it real teeth there) was not investigated as
+    part of this change; do not assume either way. A genuine fix likely requires
+    moving (or adding) a post-render dispatch of this check, which is a structural
+    change to run_preflight()/the P-SHIFT-QC wiring outside this change's scope --
+    left alone pending a dedicated, separately-reviewed line item."""
     if not _doctrine_active(run_dir):
         return ""
     pngs = _gather_rendered_pngs(run_dir)
@@ -9063,6 +9098,52 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
     return "AF-INTAKE-BATCH: " + reasons
 
 
+def _sp_signals_present_fallback(run_dir: Path) -> bool:
+    """fix/two-remaining-gates — mirror of prove_sp_routing._sp_signals_present()
+    for the `mod is None` fallback path in _chk_sp_claim, used only when the
+    Skill-51 routing prover cannot be imported. Checks the SAME four SP signals
+    _chk_sp_claim's own docstring (and prove_sp_routing.py's docstring) already
+    promise:
+      1. working/copy/sp_intake.json exists (the atomic SP intake record)
+      2. intake.json.signature_frame is one of rulebook|vault|quest|original
+      3. intake.json.presentation_type == 'signature'
+      4. working/interview/intake_ledger.json records a signature_frame entry
+         (entries or sp_entries), a presentation_type=='signature' entry, or an
+         sp_entries.sp_mode entry
+    Uses build_deck's own _read_intake_obj / _read_json readers (the same reads
+    _sp_active already performs) — literal boolean dict-key checks, not new
+    detection logic. A non-signature run dir (all four signals absent) returns
+    False, exactly as prove_sp_routing._sp_signals_present() would."""
+    # Signal 1.
+    if (run_dir / "working" / "copy" / "sp_intake.json").is_file():
+        return True
+    # Signals 2 and 3.
+    intake = _read_intake_obj(run_dir)
+    if isinstance(intake, dict):
+        sig_frame = intake.get("signature_frame")
+        if sig_frame in ("rulebook", "vault", "quest", "original"):
+            return True
+        if intake.get("presentation_type") == "signature":
+            return True
+    # Signal 4.
+    ledger = _read_json(run_dir / "working" / "interview" / "intake_ledger.json")
+    if isinstance(ledger, dict) and "__parse_error__" not in ledger:
+        entries = ledger.get("entries") or {}
+        sp_entries = ledger.get("sp_entries") or {}
+        if not isinstance(entries, dict):
+            entries = {}
+        if not isinstance(sp_entries, dict):
+            sp_entries = {}
+        if "signature_frame" in entries or "signature_frame" in sp_entries:
+            return True
+        ptype_e = entries.get("presentation_type", {})
+        if isinstance(ptype_e, dict) and ptype_e.get("value") == "signature":
+            return True
+        if "sp_mode" in sp_entries:
+            return True
+    return False
+
+
 def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """P-SP-CLAIM — the routing/claim gate. Runs for EVERY deck (does NOT defer,
     unlike the three gates above): if the run carries signature-presentation signals
@@ -9074,16 +9155,23 @@ def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     every SP gate no-ops). A non-signature deck with no SP signal passes untouched."""
     mod = _sp_prover("prove_sp_routing")
     if mod is None:
-        # Routing prover not co-located: still block the unambiguous case we can
-        # detect without it, so the bypass cannot ride a missing prover.
+        # Routing prover not co-located (install.sh puts skill 51 on every box
+        # unconditionally — this is a degraded/install-defect state, not routine).
+        # FIX (fix/two-remaining-gates): the prior fallback checked ONLY signal 1
+        # (sp_intake.json presence) — three of the four signals this docstring (and
+        # prove_sp_routing.py's own docstring) already promise were silently open.
+        # _sp_signals_present_fallback() below checks all four, using the SAME reads
+        # _sp_active already uses — completing what the docstring already claims,
+        # not inventing a second detection mechanism.
         obj = _read_intake_obj(run_dir)
         declared = isinstance(obj, dict) and obj.get("deck_type") == "signature_presentation"
-        sp_present = (run_dir / "working" / "copy" / "sp_intake.json").is_file()
-        if sp_present and not declared:
-            return ("AF-SP-TYPE-UNDECLARED: working/copy/sp_intake.json is present but "
-                    "intake.json does not declare deck_type == signature_presentation "
-                    "(install 51-signature-presentation/scripts/prove_sp_routing.py next to "
-                    "build_deck.py for the full signal set). Fail-closed.")
+        if _sp_signals_present_fallback(run_dir) and not declared:
+            return ("AF-SP-TYPE-UNDECLARED: signature-presentation signals detected "
+                    "(working/copy/sp_intake.json, intake.json.signature_frame/"
+                    "presentation_type, or an intake_ledger.json entry) but intake.json "
+                    "does not declare deck_type == signature_presentation (install "
+                    "51-signature-presentation/scripts/prove_sp_routing.py next to "
+                    "build_deck.py for the full routing prover). Fail-closed.")
         return ""
     try:
         fails = mod.evaluate_run_dir(run_dir)
@@ -9810,6 +9898,52 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
             "Phase 0.2 — Attention-Content Strategist "
             "(run_signature_deck.py P0B-PRIORITY, AF-PHASE-SKIPPED)",
             p0b_reason))
+
+    # === STYLE_PHASE_GATE (fix/two-remaining-gates) — BIND RENDER TO PHASE
+    # P-STYLE-PREVIEW AT EVERY ENTRY POINT ===
+    # Mirrors the v16.0.1 P0B-PRIORITY binding immediately above. The deterministic
+    # runner (run_signature_deck.py) already makes P-STYLE-PREVIEW a mandatory
+    # order-based precondition of P4-RENDER (it is in run_signature_deck.py's
+    # _GOVERNED_VERIFIER_PHASES, so a runner-driven render can never reach kie.ai
+    # doctrine-blind of the 3-style sample-render + owner-pick). But a DIRECT
+    # `build_deck.py` call bypasses the runner exactly as it did for P0B: with
+    # style_samples_manifest.json absent, _chk_style_preview (below, in
+    # PREFLIGHT_REQUIRED) DEFERS ("" — style-preview phase not run yet), so nothing
+    # stops a direct render from skipping the owner's style pick entirely.
+    # Reuses the SHARED check_phase_preconditions machinery (single source of
+    # truth — not a parallel gate); the ONLY waiver is a logged owner-authorized
+    # skip, exactly as P0B allows.
+    #
+    # STAGED per Rule 3.5 (warn -> remediate -> enforce; see STYLE_PHASE_GATE_STAGE
+    # above, module scope, beside DECK_TYPE_GATE_STAGE — same doctrine, same idiom).
+    # WARN-FIRST IS NOT PRECAUTIONARY HERE: test_preflight.py's make_workdir(
+    # with_artifacts=True) "full modern pipeline" fixture — the shared happy-path
+    # used by at least 4 direct call sites plus everything layered on it — stamps
+    # ONLY P0B-PRIORITY in process_manifest.json's phases[] and writes no
+    # style_samples_manifest.json / no P-STYLE-PREVIEW attestation (by deliberate
+    # design — see the comment at that fixture's P0B block). An immediate
+    # hard-enforce would brick that fixture and every test built on it the moment
+    # this binding lands. Warn-first defers that break to a separately-reviewed
+    # "enforce" flip, exactly as Rule 3.5 exists to do — flip
+    # STYLE_PHASE_GATE_STAGE to "enforce" only once the fixture and any in-flight
+    # legacy run dirs are remediated.
+    style_reason = check_phase_preconditions(run_dir, RENDER_PHASE_ID, [STYLE_PHASE_ID])
+    if style_reason:
+        if STYLE_PHASE_GATE_STAGE == "enforce":
+            problems.append((
+                STYLE_SAMPLES_MANIFEST_REL,
+                "Phase P-STYLE-PREVIEW attested in process_manifest.json (the 3-style "
+                "sample-render + owner-pick phase, order 4.85) — a direct build_deck "
+                "render is bound to P-STYLE-PREVIEW exactly as the runner is, so it can "
+                "never render past the owner's style pick",
+                "Phase 4.85 — Style Preview "
+                "(run_signature_deck.py P-STYLE-PREVIEW, AF-PHASE-SKIPPED)",
+                style_reason))
+        else:
+            overdue = ("" if date.today() <= MIGRATION_WINDOW_UNTIL
+                       else " [WINDOW CLOSED -- the enforce unit is overdue]")
+            print("  WARN  " + style_reason + " [warn-mode until "
+                  + MIGRATION_WINDOW_UNTIL.isoformat() + "]" + overdue, file=sys.stderr)
 
     for rel, label, phase, check in PREFLIGHT_REQUIRED:
         if rel is None:
