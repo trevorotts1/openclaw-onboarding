@@ -33,13 +33,33 @@ and by giving a genuinely unrecognised provider's declaration its own status --
 DECLARED_UNVERIFIED, bounded to DEFAULT_CONSERVATIVE -- so it is never
 mistaken for a real measurement again.
 
-THE CAP TABLE (binding)
------------------------
-    ollama-cloud    + $20/month    ->     3 concurrent agents
-    ollama-cloud    + $100/month   ->    10 concurrent agents
-    deepseek-direct + v4-pro       ->   500 subagents
-    deepseek-direct + v4-flash     ->  2500 subagents
-    unknown provider OR plan       ->     3 (DEFAULT_CONSERVATIVE)
+THE CAP TABLE (binding) -- operator ruling fix/capacity-uncap-byok
+--------------------------------------------------------------------
+Do not limit someone who brought their own capacity. A bring-your-own-key
+direct provider is money the client is already paying for directly; this
+module is not the place to invent a ceiling on it.
+
+    ollama-cloud    + $20/month    ->     3 concurrent agents  (structural:
+    ollama-cloud    + $100/month   ->    10 concurrent agents   the account
+                                          itself enforces this, not us)
+    deepseek-direct                 ->  NO CAP (UNBOUNDED)
+    openrouter                      ->  NO CAP (UNBOUNDED)
+    any other declared BYOK-direct
+      provider added to NO_CAP_PROVIDERS -> NO CAP (UNBOUNDED)
+    unknown provider (cannot even be identified) -> 3 (DEFAULT_CONSERVATIVE)
+
+ollama-cloud is the ONLY provider with a real ceiling in this table, because
+its limit is structural to the account (a $20/month seat cannot run more than
+3 concurrent no matter what anyone declares) -- that is exactly why it is the
+only provider that still PARKs behind the one-time plan interview. DeepSeek
+Direct, OpenRouter, and any other provider the client pays for directly have
+no such structural ceiling that THIS module can observe, so it stops
+pretending one exists: `available` for those providers is the UNBOUNDED
+sentinel (see below) unless the operator/client DECLARES a lower number for
+this run via capacity_override.json's `max_concurrent` (self-throttling is
+always honoured; inventing an upward ceiling never is). UNBOUNDED is never
+a large magic integer -- see execution_plan.cap_wave_width(), which is what
+actually keeps a wave's width bounded by the number of items ready to run.
 
 DETECTION ORDER (first hit wins; every step is read-only)
 ---------------------------------------------------------
@@ -50,9 +70,13 @@ DETECTION ORDER (first hit wins; every step is read-only)
        `combos.name` / `combos.models` columns are read).
     c. the OpenClaw agent model configuration -- the provider namespace prefix
        on the primary model (~/.openclaw/openclaw.json, `agents.*.model.primary`).
-    d. provider known but plan unknown -> emit the interview question and PARK.
-       The answer is persisted to capacity_override.json so the question is asked
-       ONCE, never every run.
+    d. provider is on the cap table (ollama-cloud) but plan unknown -> emit the
+       interview question and PARK. The answer is persisted to
+       capacity_override.json so the question is asked ONCE, never every run.
+       A NO_CAP_PROVIDERS hit (deepseek-direct, openrouter, ...) never reaches
+       this step -- it resolves MEASURED/UNBOUNDED at step b or c regardless
+       of whether a plan could be determined, because no plan of theirs
+       changes the ceiling: there isn't one.
     e. nothing found -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED line.
 
 CREDENTIAL SAFETY (binding)
@@ -67,24 +91,36 @@ returns UNDETERMINED instead.
 
 STATUSES
 --------
-    MEASURED           -- provider + plan BOTH resolved against the cap table;
-                          `available` is the cap-table number (a declared
-                          max_concurrent may lower it, never raise it).
+    MEASURED           -- either (a) provider + plan BOTH resolved against the
+                          structural cap table (ollama-cloud): `available` is
+                          the cap-table number, and a declared max_concurrent
+                          may lower it, never raise it; or (b) the provider is
+                          a NO_CAP_PROVIDERS BYOK provider (deepseek-direct,
+                          openrouter, ...): `available` is UNBOUNDED, or the
+                          declared max_concurrent verbatim when the
+                          operator/client chose to self-throttle this run --
+                          there is no table ceiling to reconcile it against.
     DECLARED_UNVERIFIED -- max_concurrent was declared for a provider that is
-                          not on the cap table at all. A declaration is not a
-                          measurement: `available` is the declared value bounded
-                          to DEFAULT_CONSERVATIVE so a typo cannot produce a
-                          four-digit fan-out, and it is never labelled MEASURED.
+                          not recognised at all (not on the cap table, not a
+                          NO_CAP_PROVIDERS entry -- normalize_provider()
+                          returned None). A declaration about an unidentified
+                          provider is not a measurement: `available` is the
+                          declared value bounded to DEFAULT_CONSERVATIVE so a
+                          typo cannot produce a four-digit fan-out, and it is
+                          never labelled MEASURED.
     UNDETERMINED       -- nothing resolved; `available` = DEFAULT_CONSERVATIVE (3).
-    PARKED             -- provider known (on the cap table) but its plan is not;
-                          `available` is None and an interview question is
-                          attached. Dispatch must REFUSE. This fires even when a
-                          max_concurrent was declared alongside the provider: a
-                          known provider's real ceiling is a physical fact the
-                          operator cannot opt out of by typing a bigger number,
-                          and clamping to that provider's highest cap-table row
-                          would still be a guess about which of its plans is
-                          actually in effect -- this module never guesses upward.
+    PARKED             -- provider is on the STRUCTURAL cap table (ollama-cloud)
+                          but its plan is not; `available` is None and an
+                          interview question is attached. Dispatch must REFUSE.
+                          This fires even when a max_concurrent was declared
+                          alongside the provider: ollama-cloud's real ceiling is
+                          a physical fact the operator cannot opt out of by
+                          typing a bigger number, and clamping to its highest
+                          cap-table row would still be a guess about which plan
+                          is actually in effect -- this module never guesses
+                          upward. NO_CAP_PROVIDERS entries NEVER reach this
+                          status: they have no plan-dependent ceiling to park
+                          behind in the first place.
     FAILED             -- a declared config exists but is unusable (e.g. malformed
                           capacity_override.json); `available` is None. Dispatch
                           must REFUSE. A broken declaration is never silently
@@ -122,26 +158,49 @@ PROBE_MODE = "live"  # NEVER "SIMULATED"
 
 PROVIDER_OLLAMA_CLOUD = "ollama-cloud"
 PROVIDER_DEEPSEEK_DIRECT = "deepseek-direct"
+PROVIDER_OPENROUTER = "openrouter"
 
 PLAN_OLLAMA_20 = "$20/month"
 PLAN_OLLAMA_100 = "$100/month"
+#: DeepSeek's plan labels are kept as metadata (which model/product the
+#: client is on) even though -- per the operator ruling below -- neither one
+#: changes the capacity ceiling any more. Reported in `probe()['plan']`
+#: purely for audit/debugging; never consulted by the cap logic.
 PLAN_DEEPSEEK_PRO = "v4-pro"
 PLAN_DEEPSEEK_FLASH = "v4-flash"
 
-#: (provider, plan) -> concurrent agents. The single source of truth for capacity.
+#: (provider, plan) -> concurrent agents. The single source of truth for the
+#: providers that have a REAL, structural ceiling -- one this module can
+#: observe and that the account itself enforces. As of fix/capacity-uncap-byok
+#: this is ollama-cloud ONLY: its $20/$100 tiers are hard account limits, not
+#: a number anyone chose. A bring-your-own-key direct provider (DeepSeek
+#: Direct, OpenRouter, ...) has no such table row -- see NO_CAP_PROVIDERS.
 CAP_TABLE = {
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): 3,
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): 10,
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_PRO): 500,
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_FLASH): 2500,
 }
 
-#: Which plans a provider can be on -- drives the interview question and the
-#: "provider known, plan unknown" PARK.
+#: Providers on CAP_TABLE, derived rather than hand-duplicated: the set for
+#: which "plan known but unresolved" means PARK (see PLANS_BY_PROVIDER below).
+CAP_TABLE_PROVIDERS = frozenset(provider for provider, _plan in CAP_TABLE)
+
+#: Which plans a structural cap-table provider can be on -- drives the
+#: interview question and the "provider known, plan unknown" PARK. Only
+#: CAP_TABLE providers belong here; a BYOK provider in NO_CAP_PROVIDERS has no
+#: plan-dependent ceiling to interview the operator about.
 PLANS_BY_PROVIDER = {
     PROVIDER_OLLAMA_CLOUD: (PLAN_OLLAMA_20, PLAN_OLLAMA_100),
-    PROVIDER_DEEPSEEK_DIRECT: (PLAN_DEEPSEEK_PRO, PLAN_DEEPSEEK_FLASH),
 }
+
+#: OPERATOR RULING (fix/capacity-uncap-byok): "Do not limit someone who
+#: brought their own capacity." Every provider in this set is a
+#: bring-your-own-key direct account the client is already paying for --
+#: dispatch never invents a ceiling on it. `available` for a NO_CAP_PROVIDERS
+#: hit is UNBOUNDED (see below) unless the operator/client declares a lower
+#: max_concurrent for THIS run, which is always honoured as a self-throttle.
+#: Extend this set (never CAP_TABLE) for any other BYOK-direct provider --
+#: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
+NO_CAP_PROVIDERS = frozenset({PROVIDER_DEEPSEEK_DIRECT, PROVIDER_OPENROUTER})
 
 STATUS_MEASURED = "MEASURED"
 STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
@@ -176,6 +235,96 @@ PROCESS_PATTERN = re.compile(r"^(claude|openclaw)")
 
 class CapacityUnmeasured(RuntimeError):
     """Raised when a caller demands a number this probe could not produce."""
+
+
+# ---------------------------------------------------------------------------
+# The UNBOUNDED sentinel -- "no cap", genuinely, never a large magic number
+# ---------------------------------------------------------------------------
+class _Unbounded:
+    """`available`'s value for a NO_CAP_PROVIDERS hit (deepseek-direct,
+    openrouter, ...): a real measurement ("this account has no structural
+    ceiling"), not an absence of one and not a stand-in integer like 999999
+    that would eventually be wrong. A single module-level instance (UNBOUNDED,
+    below) is the only one ever constructed; compare with `is`, not `==`,
+    though `==` also works (see __eq__).
+
+    Comparison contract -- this is the part that keeps every downstream
+    consumer safe without special-casing it:
+      * UNBOUNDED compares as GREATER than every finite int (never less).
+      * Consequently `min(ready_items, UNBOUNDED) == ready_items` for any
+        finite `ready_items`, regardless of argument order. This is the ONLY
+        property execution_plan.cap_wave_width() relies on: a wave's width
+        stays governed by the actual number of DAG items ready to run, never
+        by this sentinel itself -- "no cap on the provider" is not "no bound
+        on one wave's width".
+      * UNBOUNDED is truthy and int()-incompatible on purpose: nothing in
+        this codebase may treat it as a literal count to range()/multiply/
+        spawn -- that would defeat the entire point of a genuine sentinel.
+
+    JSON: never serializes as Python's non-standard `Infinity` (invalid JSON)
+    or as a magic integer. Pass `default=json_default` to any `json.dumps()`
+    call whose payload might carry this value; it becomes the string
+    "UNBOUNDED"."""
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return "UNBOUNDED"
+
+    def __str__(self):
+        return "UNBOUNDED"
+
+    def __eq__(self, other):
+        return isinstance(other, _Unbounded)
+
+    def __ne__(self, other):
+        return not isinstance(other, _Unbounded)
+
+    def __hash__(self):
+        return hash("presentation_job.capacity._Unbounded")
+
+    def __lt__(self, other):
+        return False  # UNBOUNDED is never less than anything, including itself
+
+    def __le__(self, other):
+        return isinstance(other, _Unbounded)
+
+    def __gt__(self, other):
+        return not isinstance(other, _Unbounded)
+
+    def __ge__(self, other):
+        return True
+
+    def __bool__(self):
+        return True
+
+    def __int__(self):
+        raise TypeError(
+            "UNBOUNDED has no finite integer value -- callers must branch on "
+            "is_unbounded()/`is UNBOUNDED` before treating capacity as a count "
+            "(e.g. execution_plan.cap_wave_width(), which bounds the WAVE width "
+            "by ready_items instead)"
+        )
+
+
+#: The single instance every "no structural ceiling" measurement uses.
+UNBOUNDED = _Unbounded()
+
+
+def is_unbounded(value) -> bool:
+    """True when `value` is the UNBOUNDED sentinel."""
+    return isinstance(value, _Unbounded)
+
+
+def json_default(obj):
+    """`json.dumps(..., default=json_default)` hook. Any capacity result (or
+    anything derived from one, e.g. launcher.py's `.capacity-status.json`
+    sidecar) that might carry UNBOUNDED must route its json.dumps() call
+    through this so it serializes to the literal string "UNBOUNDED" instead
+    of raising TypeError or falling back to JSON-invalid `Infinity`."""
+    if is_unbounded(obj):
+        return "UNBOUNDED"
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +384,10 @@ def normalize_provider(raw) -> Optional[str]:
         return PROVIDER_DEEPSEEK_DIRECT
     if token.startswith("deepseek"):
         return PROVIDER_DEEPSEEK_DIRECT
+    if token in ("openrouter", "open-router", "openrouterai", "openrouter-direct"):
+        return PROVIDER_OPENROUTER
+    if token.startswith("openrouter"):
+        return PROVIDER_OPENROUTER
     return None
 
 
@@ -279,12 +432,20 @@ def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
 
 
 def interview_question(provider: str) -> str:
-    """The ONE question that resolves a known provider with an unknown plan."""
-    return (
-        f"Which plan is your {provider} account on? "
-        "(Ollama Cloud: $20 -> 3 parallel agents, $100 -> 10. "
-        "DeepSeek direct: v4 Pro -> 500, v4 Flash -> 2,500.)"
-    )
+    """The ONE question that resolves a STRUCTURAL cap-table provider (today,
+    only ollama-cloud) with an unknown plan. NO_CAP_PROVIDERS entries
+    (deepseek-direct, openrouter, ...) never reach PARK, so this is never
+    called for them -- there is no plan that would change their ceiling."""
+    if provider == PROVIDER_OLLAMA_CLOUD:
+        return (
+            "Which plan is your ollama-cloud account on? "
+            "($20/month -> 3 parallel agents, $100/month -> 10.)"
+        )
+    plans = PLANS_BY_PROVIDER.get(provider, ())
+    if plans:
+        rows = ", ".join(f"{p} -> {CAP_TABLE.get((provider, p), '?')}" for p in plans)
+        return f"Which plan is your {provider} account on? ({rows}.)"
+    return f"Which plan is your {provider} account on?"
 
 
 # ---------------------------------------------------------------------------
@@ -332,28 +493,42 @@ def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Op
 def _resolve_override(record: dict, path: Path) -> dict:
     """Turn a declared {provider, plan, max_concurrent} into a resolution dict.
 
-    A declaration is not a measurement. The three cases below are checked in
-    THIS order on purpose:
+    A declaration is not a measurement -- except for a NO_CAP_PROVIDERS entry,
+    where a declared number is exactly what it claims to be: the operator/
+    client choosing to self-throttle a provider that has no ceiling to
+    reconcile against in the first place. The cases below are checked in THIS
+    order on purpose:
 
-      1. (provider, plan) BOTH resolve to a cap-table row -> that row is
-         authoritative; a declared max_concurrent may only lower it.
-      2. provider resolves (it IS on the cap table) but plan does not -> PARK,
-         no matter what max_concurrent says. The provider's real ceiling is a
-         physical fact the operator cannot opt out of by typing a bigger
-         number, and clamping to that provider's own highest cap-table row
-         would still be a guess about which plan is actually in effect (a
+      0. provider resolves to a NO_CAP_PROVIDERS entry (deepseek-direct,
+         openrouter, ...) -> MEASURED, no matter what the plan says. "Do not
+         limit someone who brought their own capacity": `available` is the
+         declared max_concurrent verbatim when given (a self-throttle is
+         always honoured, and never clamped -- there is no table row to clamp
+         it against), or UNBOUNDED when no number was declared. This check
+         runs FIRST so a BYOK provider can never fall through to the
+         structural-cap-table cases below, which do not apply to it.
+      1. (provider, plan) BOTH resolve to a STRUCTURAL cap-table row
+         (ollama-cloud) -> that row is authoritative; a declared
+         max_concurrent may only lower it.
+      2. provider resolves (it IS on the structural cap table) but plan does
+         not -> PARK, no matter what max_concurrent says. The provider's real
+         ceiling is a physical fact the operator cannot opt out of by typing a
+         bigger number, and clamping to that provider's own highest cap-table
+         row would still be a guess about which plan is actually in effect (a
          $20/month Ollama Cloud account cannot run 10 just because a
          $100/month account can) -- this module never guesses upward, so it
          asks instead of assuming. This check MUST come before case 3 below:
          if the bare-declared-int fallback ran first it would swallow every
          "provider known, plan missing, max_concurrent present" declaration
-         and PARK would never fire -- that ordering mistake is the bug this
-         function fixes.
-      3. provider does not resolve at all (not a cap-table row, e.g. an
-         entirely unrecognised or absent provider name) -> the declared number
-         is the only information available, but it is a self-report, not a
-         measurement. It is honoured only up to DEFAULT_CONSERVATIVE, so a
-         typo (784 instead of 8, or a placeholder 9999) cannot produce a
+         and PARK would never fire -- that ordering mistake is the bug u07's
+         hardening fixed, and case 0 above must never reopen it for a
+         structural provider (it only ever fires for NO_CAP_PROVIDERS).
+      3. provider does not resolve at all (neither a cap-table row nor a
+         NO_CAP_PROVIDERS entry, e.g. an entirely unrecognised or absent
+         provider name) -> the declared number is the only information
+         available, but it is a self-report about an unidentified provider,
+         not a measurement. It is honoured only up to DEFAULT_CONSERVATIVE, so
+         a typo (784 instead of 8, or a placeholder 9999) cannot produce a
          four-digit fan-out, and the result is labelled DECLARED_UNVERIFIED,
          never MEASURED.
     """
@@ -366,8 +541,30 @@ def _resolve_override(record: dict, path: Path) -> dict:
 
     notes = []
 
-    # Case 1: a full known (provider, plan) pair -- the table is authoritative.
-    if provider and plan:
+    # Case 0: a bring-your-own-key direct provider -- NO CAP, by operator
+    # ruling. Never reaches PARK; a declared number self-throttles, verbatim,
+    # never clamped (there is nothing to clamp it against).
+    if provider in NO_CAP_PROVIDERS:
+        if declared_int is not None:
+            available = declared_int
+            notes.append(
+                f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, no "
+                f"structural ceiling) -- declared max_concurrent={declared_int} is honoured "
+                f"verbatim as a self-throttle for this run, never clamped upward or downward"
+            )
+        else:
+            available = UNBOUNDED
+            notes.append(
+                f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, no "
+                f"structural ceiling) -- no max_concurrent declared, so capacity is "
+                f"UNBOUNDED: dispatch as wide as the ready work allows"
+            )
+        return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
+                "available": available, "notes": notes}
+
+    # Case 1: a full known (provider, plan) pair on the STRUCTURAL cap table
+    # -- the table is authoritative.
+    if provider and plan and (provider, plan) in CAP_TABLE:
         capped = CAP_TABLE[(provider, plan)]
         if declared_int is not None and declared_int != capped:
             # A declared number may lower it (an operator throttling
@@ -383,39 +580,41 @@ def _resolve_override(record: dict, path: Path) -> dict:
         return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
                 "available": available, "notes": notes}
 
-    # Case 2: provider is on the cap table, plan is not resolvable -> PARK.
-    # Checked BEFORE the bare-declared-int fallback so a max_concurrent typed
-    # alongside a known provider can never bypass the interview question.
-    if provider and not plan:
+    # Case 2: provider is on the structural cap table, plan is not resolvable
+    # -> PARK. Checked BEFORE the bare-declared-int fallback so a
+    # max_concurrent typed alongside a known provider can never bypass the
+    # interview question.
+    if provider in CAP_TABLE_PROVIDERS and not plan:
         if declared_int is not None:
             notes.append(
                 f"{path} declares provider {provider} with max_concurrent={declared_int}, "
                 f"but no recognisable plan -- a declared number is never authoritative for "
-                f"a known cap-table provider until its plan is confirmed, so the declared "
-                f"value is disregarded and this PARKS behind the interview question instead "
-                f"of clamping to a guessed ceiling"
+                f"a structural cap-table provider until its plan is confirmed, so the "
+                f"declared value is disregarded and this PARKS behind the interview "
+                f"question instead of clamping to a guessed ceiling"
             )
         else:
             notes.append(f"{path} declares provider {provider} but no recognisable plan")
         return {"status": STATUS_PARKED, "provider": provider, "plan": None,
                 "available": None, "notes": notes}
 
-    # Case 3: provider is not a cap-table row at all -- a self-reported number,
+    # Case 3: provider is not recognised at all -- a self-reported number,
     # bounded, honestly labelled, never MEASURED.
     if declared_int is not None:
         available = min(declared_int, DEFAULT_CONSERVATIVE)
         notes.append(
-            f"({record.get('provider')!r}, {record.get('plan')!r}) is not a cap-table row; "
-            f"declared max_concurrent={declared_int} is a self-report, not a measurement -- "
-            f"bounded to DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE} -> {available}"
+            f"({record.get('provider')!r}, {record.get('plan')!r}) is not a cap-table row "
+            f"and not a recognised NO_CAP_PROVIDERS entry; declared max_concurrent="
+            f"{declared_int} is a self-report, not a measurement -- bounded to "
+            f"DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE} -> {available}"
         )
         return {"status": STATUS_DECLARED_UNVERIFIED, "provider": provider, "plan": plan,
                 "available": available, "notes": notes}
 
     return {"status": STATUS_UNDETERMINED, "provider": provider, "plan": plan,
             "available": DEFAULT_CONSERVATIVE,
-            "notes": [f"{path} declares neither a cap-table provider/plan pair nor a "
-                      f"positive integer max_concurrent"]}
+            "notes": [f"{path} declares neither a cap-table provider/plan pair, a "
+                      f"NO_CAP_PROVIDERS entry, nor a positive integer max_concurrent"]}
 
 
 def persist_plan_answer(provider: str, plan: str,
@@ -738,11 +937,23 @@ def detect(config_dir: Optional[Path] = None) -> dict:
         trail.append({"step": step, "source": source,
                       "result": "HIT" if plan else "HIT (plan unknown)",
                       "detail": found.get("detail", "")})
+        # NO_CAP_PROVIDERS (deepseek-direct, openrouter, ...): MEASURED and
+        # UNBOUNDED regardless of whether a plan was found -- no plan of
+        # theirs changes the ceiling, because there isn't one. Checked BEFORE
+        # the structural cap-table lookup so a BYOK provider never falls
+        # through to PARK.
+        if provider in NO_CAP_PROVIDERS:
+            return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
+                    "available": UNBOUNDED, "source": source,
+                    "override_path": str(path), "trail": trail,
+                    "notes": [f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, "
+                              f"no structural ceiling) -- available is UNBOUNDED"]}
         if plan and (provider, plan) in CAP_TABLE:
             return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
                     "available": CAP_TABLE[(provider, plan)], "source": source,
                     "override_path": str(path), "trail": trail, "notes": []}
-        # (d) provider known, plan unknown -> PARK behind the interview question
+        # (d) provider is on the structural cap table (ollama-cloud), plan
+        # unknown -> PARK behind the interview question.
         trail.append({"step": "d", "source": source, "result": "PARK",
                       "detail": f"provider {provider} detected but its plan cannot be "
                                 f"read from any configuration -- asking once"})
@@ -798,18 +1009,28 @@ def probe(config_dir: Optional[Path] = None) -> dict:
     return result
 
 
-def available_or_none(result: dict) -> Optional[int]:
-    """The one accessor the dispatch path needs: a positive int, or None."""
+def available_or_none(result: dict):
+    """The one accessor the dispatch path needs: a positive int, UNBOUNDED, or
+    None. UNBOUNDED is a real measurement (a NO_CAP_PROVIDERS hit) and is
+    returned as-is -- never coerced to None (that would PARK/refuse a
+    bring-your-own-key provider that has nothing to be unmeasured about) and
+    never coerced to a magic int (that would be exactly the defect this fix
+    removes)."""
     if not isinstance(result, dict):
         return None
     value = result.get("available")
+    if is_unbounded(value):
+        return value
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         return None
     return value
 
 
-def require_available(result: dict) -> int:
-    """available_or_none(), but refuses instead of returning None."""
+def require_available(result: dict):
+    """available_or_none(), but refuses instead of returning None. Returns a
+    positive int OR the UNBOUNDED sentinel -- never a bare int guaranteed;
+    callers that must loop/range/spawn a concrete count (never this module)
+    are expected to branch on is_unbounded() first."""
     value = available_or_none(result)
     if value is None:
         raise CapacityUnmeasured(refusal_message(result))
@@ -911,7 +1132,7 @@ def format_report(result: dict) -> str:
     for entry in result.get("detection_trail", []):
         lines.append(f"  ({entry.get('step')}) {entry.get('source')}: "
                      f"{entry.get('result')} -- {entry.get('detail')}")
-    lines += ["", "=== JSON ===", json.dumps(result, indent=2)]
+    lines += ["", "=== JSON ===", json.dumps(result, indent=2, default=json_default)]
     return "\n".join(lines)
 
 

@@ -1,3 +1,56 @@
+## [v22.0.48] -- 2026-08-18 -- fix(presentations): capacity doctrine -- do not limit someone who brought their own capacity
+
+Operator ruling (fix/capacity-uncap-byok): `capacity.py`'s cap table pinned
+`deepseek-direct` to 500 (v4-pro) / 2500 (v4-flash) subagents -- arbitrary
+ceilings on a bring-your-own-key provider the client is already paying for
+directly. Ollama Cloud's $20/$100 tiers are a REAL structural ceiling (the
+account itself enforces it); DeepSeek Direct and OpenRouter have no such
+ceiling this module can observe, so it stops inventing one.
+
+CHANGED:
+  - `CAP_TABLE` now holds ollama-cloud ONLY ($20/month -> 3, $100/month ->
+    10). DeepSeek Direct's old 500/2500 rows are gone.
+  - New `NO_CAP_PROVIDERS` registry (`deepseek-direct`, `openrouter`, and any
+    future BYOK-direct provider added there, never to `CAP_TABLE`): a hit
+    resolves `status=MEASURED`, `available=UNBOUNDED` -- dispatch as wide as
+    the ready work allows -- regardless of whether a plan could be
+    determined. It never PARKs; there is no plan-dependent ceiling to
+    interview the operator about.
+  - New `UNBOUNDED` sentinel (`capacity._Unbounded` / `capacity.UNBOUNDED`):
+    a genuine "no cap" measurement, not a large magic integer and not
+    Python's non-standard `Infinity` JSON literal. Compares as greater than
+    every finite int, so `min(ready_items, UNBOUNDED) == ready_items` always
+    -- `execution_plan.cap_wave_width()` keeps a wave's width bounded by the
+    actual number of DAG items ready to run even when the account itself has
+    no ceiling. `json_default()`/`is_unbounded()` added so every
+    `json.dumps()` call that might carry it (capacity.py's own report,
+    launcher.py's `.capacity-status.json` sidecar) serializes it to the
+    string `"UNBOUNDED"` instead of raising `TypeError` or emitting invalid
+    JSON.
+  - A NO_CAP_PROVIDERS declaration's `max_concurrent` is honoured VERBATIM,
+    never clamped up or down -- there is no table row to reconcile it
+    against (unlike ollama-cloud, where a declared number may only lower the
+    table's ceiling, never raise it).
+  - `normalize_provider()` now recognises `openrouter` (previously
+    unrecognised -> UNDETERMINED).
+  - Unchanged, per the ruling: an unrecognised provider still collapses to
+    `DEFAULT_CONSERVATIVE=3` with a loud `UNDETERMINED`, and ollama-cloud
+    with an unresolved plan still `PARK`s behind the one-time interview
+    question -- this fix removes an invented ceiling, not the module's
+    never-guess-upward discipline.
+
+Verified executed (branch checkout, not narrated): deepseek-direct declaring
+`max_concurrent=100` -> `available=100`, `status=MEASURED`; deepseek-direct
+with no declared number -> `available` is `UNBOUNDED`, `status=MEASURED`
+(never PARKED); ollama-cloud $20/$100 -> 3/10 unchanged; an unrecognised
+provider -> `UNDETERMINED`/3 unchanged; a 5-item DAG wave against
+`available=100` and against `available=UNBOUNDED` both dispatch a wave of 5,
+never 100 and never "unbounded" -- `execution_plan.py`'s wave scheduler is
+still bounded by the number of items actually ready to run. Full existing
+suite (`tests/test_capacity_detection.py`, `tests/test_executor_dispatch.py`)
+updated for the new doctrine and green; full `tests/` collection (760 tests)
+still imports and collects cleanly.
+
 ## [v22.0.47] -- 2026-08-18 -- fix(presentations): cc_board registration receipt is not a signature -- say so without breaking legacy receipts
 
 Rebuild of `fix/trust-fakehmac`, which a verifier rejected: it correctly

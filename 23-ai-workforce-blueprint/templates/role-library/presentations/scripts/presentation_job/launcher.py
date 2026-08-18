@@ -316,7 +316,23 @@ def _record_capacity_status(run_path: Path, result: dict) -> None:
     sidecar (never depends on state.json existing yet -- the --new window,
     before cmd_new runs, is exactly when this matters) and merged into
     state.json too once it exists, mirroring _write_engine_pid's dual-write
-    pattern. Best-effort: a write failure here must never affect dispatch."""
+    pattern. Best-effort: a write failure here must never affect dispatch.
+
+    `result["available"]` is UNDETERMINED-only at this call site today (a
+    plain int, capacity.DEFAULT_CONSERVATIVE), but this function takes any
+    capacity result -- so the json.dumps() calls below still route through
+    capacity.json_default in case a future caller ever records a
+    NO_CAP_PROVIDERS (UNBOUNDED) result through here; that must serialize to
+    the string "UNBOUNDED", never raise TypeError, never hang."""
+    try:
+        try:
+            from . import capacity
+        except ImportError:
+            import capacity
+        json_default = capacity.json_default
+    except Exception:  # noqa: BLE001 -- a broken import must not block recording
+        json_default = None
+
     record = {
         "status": result.get("status"),
         "available": result.get("available"),
@@ -330,7 +346,7 @@ def _record_capacity_status(run_path: Path, result: dict) -> None:
         run_path.mkdir(parents=True, exist_ok=True)
         sidecar = run_path / ".capacity-status.json"
         tmp = sidecar.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(record, indent=2, default=json_default), encoding="utf-8")
         os.replace(tmp, sidecar)
     except OSError as exc:
         print(f"launcher: could not record capacity status: {exc}", file=sys.stderr)
@@ -344,7 +360,7 @@ def _record_capacity_status(run_path: Path, result: dict) -> None:
         state["capacity_status"] = record
         tmp = state_path.with_suffix(".json.tmp")
         try:
-            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            tmp.write_text(json.dumps(state, indent=2, default=json_default), encoding="utf-8")
             os.replace(tmp, state_path)
         except OSError as exc:
             print(f"launcher: could not merge capacity status into state.json: {exc}",

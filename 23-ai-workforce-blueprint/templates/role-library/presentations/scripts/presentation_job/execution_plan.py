@@ -48,11 +48,13 @@ except ImportError:
     from state import EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED  # direct file run
 
 try:
-    from .capacity import (AUTOFAIL_CODE, CapacityUnmeasured, autofail_payload,
-                           refusal_message, require_available)
+    from .capacity import (AUTOFAIL_CODE, UNBOUNDED, CapacityUnmeasured,
+                           autofail_payload, is_unbounded, refusal_message,
+                           require_available)
 except ImportError:  # direct file run from scripts/
-    from capacity import (AUTOFAIL_CODE, CapacityUnmeasured, autofail_payload,
-                          refusal_message, require_available)
+    from capacity import (AUTOFAIL_CODE, UNBOUNDED, CapacityUnmeasured,
+                          autofail_payload, is_unbounded, refusal_message,
+                          require_available)
 
 
 # ---------------------------------------------------------------------------
@@ -150,27 +152,50 @@ def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
 # ---------------------------------------------------------------------------
 # Wave scheduling
 # ---------------------------------------------------------------------------
-def cap_wave_width(available: Optional[int], ready_items: Optional[int] = None) -> int:
+def cap_wave_width(available, ready_items: Optional[int] = None) -> int:
     """The width of ONE wave: min(ready_items, available). No constant involved.
 
     `available` is the measured ceiling of THIS client's account
-    (capacity.probe()['available']). There is deliberately no fallback: an
-    unmeasured capacity raises CapacityUnmeasured rather than substituting a
-    number, because the substituted number is exactly the defect this unit
-    exists to remove. `ready_items` is how many phases have all their
-    dependencies satisfied right now; when omitted the width is the measured
-    ceiling alone.
+    (capacity.probe()['available']) -- a positive int, or the UNBOUNDED
+    sentinel for a bring-your-own-key provider with no structural ceiling
+    (operator ruling fix/capacity-uncap-byok: "do not limit someone who
+    brought their own capacity"). There is deliberately no fallback: an
+    unmeasured capacity (`None`) raises CapacityUnmeasured rather than
+    substituting a number, because the substituted number is exactly the
+    defect this unit exists to remove. `ready_items` is how many phases have
+    all their dependencies satisfied right now; when omitted the width is the
+    measured ceiling alone.
+
+    UNBOUNDED never becomes the literal wave width: `min(ready_items,
+    UNBOUNDED)` always evaluates to `ready_items` (see capacity._Unbounded's
+    comparison contract), so a provider with no cap still only dispatches as
+    many agents as there is READY work for -- "no cap on the account" is not
+    "no bound on one wave". Calling with `ready_items=None` while `available`
+    is UNBOUNDED has no ready-item count to bound against, so it raises
+    CapacityUnmeasured rather than ever returning an unbounded "width".
     """
-    if available is None or isinstance(available, bool) or not isinstance(available, int):
+    if available is None:
         raise CapacityUnmeasured(
             f"{AUTOFAIL_CODE}: wave width needs a measured capacity, got "
             f"available={available!r}"
         )
-    if available < 1:
-        raise CapacityUnmeasured(
-            f"{AUTOFAIL_CODE}: measured capacity {available} is not dispatchable"
-        )
+    if not is_unbounded(available):
+        if isinstance(available, bool) or not isinstance(available, int):
+            raise CapacityUnmeasured(
+                f"{AUTOFAIL_CODE}: wave width needs a measured capacity, got "
+                f"available={available!r}"
+            )
+        if available < 1:
+            raise CapacityUnmeasured(
+                f"{AUTOFAIL_CODE}: measured capacity {available} is not dispatchable"
+            )
     if ready_items is None:
+        if is_unbounded(available):
+            raise CapacityUnmeasured(
+                f"{AUTOFAIL_CODE}: capacity is UNBOUNDED (bring-your-own-key provider, "
+                f"no structural ceiling) -- wave width can only be computed against a "
+                f"concrete ready-item count, and is never itself reported as unbounded"
+            )
         return available
     return max(1, min(int(ready_items), available))
 
