@@ -62,7 +62,15 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "DECK-FINAL.pptx",
         "label": "assembled deck PPTX",
         "expected_suffix": ".pptx",
-        "min_bytes": 50000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # value, which PIPELINE-MANIFEST.json's deck_pptx entry also carries verbatim:
+        # "a real multi-slide rendered deck with 2K images is always several MB; < 1 MB
+        # implies the pptx is empty or contains placeholder content (zero-image shell
+        # < 100KB)." deliverables.py had carried a never-chosen 50_000 (21x looser) that
+        # no doctrine source cites — build_deck.py's own P8-ASSEMBLE gate (which runs
+        # first, in production, on every real build) already rejects anything under
+        # 1_048_576, so this only closes a gap the audit-side gate never should have had.
+        "min_bytes": 1_048_576,           # 1 MB — multi-slide 2K-image deck floor
         "magic_bytes": b"PK\x03\x04",
         "magic_offset": 0,
         "magic_desc": "ZIP/PPTX container",
@@ -74,7 +82,12 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "DECK-FINAL.pdf",
         "label": "deck PDF export",
         "expected_suffix": ".pdf",
-        "min_bytes": 50000,
+        # RECONCILED (split-brain fix, 2026-08-18): build_deck.py's DELIVERABLES_REQUIRED
+        # and PIPELINE-MANIFEST.json both carry 51_200 ("a minimal 1-slide PDF export is
+        # ~20-30KB; 50KB ensures at least two slides' worth of rendered content").
+        # deliverables.py had carried 50_000 — a 1,200-byte rounding drift, not a real
+        # doctrine disagreement.
+        "min_bytes": 51_200,              # 50 KB — PDF export of at least 2 slides
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",
@@ -86,7 +99,11 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "PRESENTER-GUIDE.pdf",
         "label": "presenter guide PDF",
         "expected_suffix": ".pdf",
-        "min_bytes": 20000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # / PIPELINE-MANIFEST.json value: "a minimal guide covers all slides with talking
+        # points and timing; < 50KB implies only a stub header." deliverables.py had
+        # carried a never-chosen 20_000 that no doctrine source cites.
+        "min_bytes": 51_200,              # 50 KB — guide covers all slides with talking points
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",
@@ -98,7 +115,11 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "PRESENTERS-SPEECH.md",
         "label": "presenter speech markdown (pure)",
         "expected_suffix": ".md",
-        "min_bytes": 5000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # / PIPELINE-MANIFEST.json value: "a word-for-word script for any real webinar
+        # talk will be thousands of words; 2KB floors an obvious empty or stub."
+        # deliverables.py had carried a never-chosen 5_000 that no doctrine source cites.
+        "min_bytes": 2_048,               # 2 KB — word-for-word script stub floor
         "magic_bytes": None,
         "magic_offset": 0,
         "magic_desc": "text/markdown (no magic bytes — content check only)",
@@ -110,7 +131,18 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "PRESENTERS-SPEECH.pdf",
         "label": "presenter speech teleprompter PDF",
         "expected_suffix": ".pdf",
-        "min_bytes": 20000,
+        # RECONCILED (split-brain fix, 2026-08-18) to the doctrine-ratified floor:
+        # presentations/presenters-speech-writer.md + sops/presenters-speech-writer-sops.md
+        # AF-BUNDLE-COMPLETE gate-tie-in line states verbatim "PDF >= 3,000 bytes" — the
+        # same text build_deck.py's DELIVERABLES_REQUIRED entry cites (commit eaae2e33,
+        # 2026-07-12, "P3-01(c)5 — RECONCILED to the doctrine-ratified floor"). This is a
+        # LOWER number than deliverables.py's prior 20_000: PIPELINE-MANIFEST.json still
+        # carries an orphaned 20_480 dated 2026-06-17 (git blame), which PREDATES the
+        # 2026-07-12 doctrine reconciliation and was never updated afterward — it is the
+        # stale copy, not build_deck.py's 3_000. Trusting the manifest's raw number over
+        # its own SOP's plain-English floor is the exact trap: the SOP text is the
+        # deliberate, dated, human-authored decision; the orphaned JSON field is not.
+        "min_bytes": 3_000,               # 3 KB — doctrine floor (AF-BUNDLE-COMPLETE)
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",
@@ -122,7 +154,11 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "PRESENTERS-SPEECH-FISH-TAGGED.md",
         "label": "presenter speech (Fish-Audio expression-tagged)",
         "expected_suffix": ".md",
-        "min_bytes": 5000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # / PIPELINE-MANIFEST.json value: the fish-tagged variant carries the same 2KB
+        # script-stub floor as speech_md. deliverables.py had carried a never-chosen
+        # 5_000 that no doctrine source cites.
+        "min_bytes": 2_048,               # 2 KB — fish-tagged variant of the script floor
         "magic_bytes": None,
         "magic_offset": 0,
         "magic_desc": "text/markdown (no magic bytes — content check only)",
@@ -134,7 +170,12 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "PRESENTER-AUDIO.mp3",
         "label": "presenter audio MP3",
         "expected_suffix": ".mp3",
-        "min_bytes": 100000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # / PIPELINE-MANIFEST.json value: "a real Fish Audio S2 rendition of a 30-min
+        # script is typically 50-150MB; 500KB floors the obvious failure case (silence
+        # stub or failed render < 100KB per SOP-PITCH-05)." deliverables.py had carried a
+        # never-chosen 100_000 that no doctrine source cites.
+        "min_bytes": 512_000,             # 500 KB — real Fish Audio S2 rendition floor
         "magic_bytes": b"ID3",
         "magic_offset": 0,
         "magic_desc": "MP3 audio (ID3 tag)",
@@ -146,7 +187,13 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "INFOGRAPHIC.png",
         "label": "infographic checklist PNG",
         "expected_suffix": ".png",
-        "min_bytes": 10000,
+        # RECONCILED (Part 6 #8, 2026-08-18) to the doctrine floor: PIPELINE-MANIFEST.json
+        # ">100KB; one-page infographic slide exported as PNG" and build_deck.py's own
+        # DELIVERABLES_REQUIRED entry ("min_bytes": 102_400, "a real 2K-resolution
+        # infographic floor"). Single-sourcing this file (U05) had carried it at 10_000 --
+        # an unchosen side effect nobody picked and no test pinned -- which silently
+        # accepted a 10-99KB placeholder/thumbnail that the doctrine floor rejects.
+        "min_bytes": 102_400,             # 100 KB — real 2K-resolution infographic floor
         "magic_bytes": b"\x89PNG",
         "magic_offset": 0,
         "magic_desc": "PNG image",
@@ -158,7 +205,17 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "presenter-teleprompter.html",
         "label": "presenter teleprompter web app",
         "expected_suffix": ".html",
-        "min_bytes": 5000,
+        # RECONCILED (split-brain fix, 2026-08-18) to the doctrine-ratified floor:
+        # presentations/presenters-speech-writer.md + sops/presenters-speech-writer-sops.md
+        # AF-BUNDLE-COMPLETE gate-tie-in line states verbatim "HTML >= 20,000 bytes" — the
+        # same text build_deck.py's DELIVERABLES_REQUIRED entry cites (commit eaae2e33,
+        # 2026-07-12, "P3-01(c)5"), and build_teleprompter.py's own TELEPROMPTER_MIN_BYTES
+        # self-check (20_000) enforces at the point of production. deliverables.py had
+        # carried a never-chosen 5_000. PIPELINE-MANIFEST.json still carries an orphaned
+        # 10_240 dated 2026-06-17 (git blame) that PREDATES the doctrine reconciliation —
+        # the SOP text and the producer's own hard-fail floor decide this one, not the
+        # stale manifest copy.
+        "min_bytes": 20_000,              # 20 KB — a real self-contained scrolling
         "magic_bytes": None,
         "magic_offset": 0,
         "magic_desc": "text/html (no magic bytes — content check: must contain <html or <!DOCTYPE)",
@@ -177,7 +234,16 @@ DELIVERABLE_AUDIT_SPEC = [
         "standardized_dest": "WEBINAR-VIDEO.mp4",
         "label": "webinar video mp4",
         "expected_suffix": ".mp4",
-        "min_bytes": 500000,
+        # RECONCILED (split-brain fix, 2026-08-18) to build_deck.py's DELIVERABLES_REQUIRED
+        # / PIPELINE-MANIFEST.json value (both 1_048_576, dated 2026-08-07, Feature L2-G /
+        # Gauntlet Loop 2 — "the fluid webinar video slideshow ... always several MB").
+        # deliverables.py had carried 500_000 from a 2026-08-13 bulk copy-in of a stale
+        # external source (commit 56d18ad2e, "copied verbatim ... the only copy anywhere
+        # on this machine") that predates neither doctrine value — it was simply never
+        # cross-checked against build_deck.py at copy time. Found during this reconciliation
+        # pass; not one of the 9 keys in the original review table, but the same class of
+        # drift and caught by the same drift guard.
+        "min_bytes": 1_048_576,           # 1 MB — a real rendered webinar video floor
         "magic_bytes": None,
         "magic_offset": 4,
         "magic_desc": "MP4 video (ftyp box at offset 4 — checked via content scan)",

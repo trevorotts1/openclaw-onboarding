@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -61,6 +62,88 @@ def canonical(value) -> str:
 
 def sha256_of_value(value) -> str:
     return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
+
+
+# --------------------------------------------------------------------------- #
+# shared timestamp parsing (D7's rolling window; any other detector that needs
+# to reason about elapsed time between rows)
+# --------------------------------------------------------------------------- #
+def parse_iso8601(s):
+    """ISO-8601 -> aware UTC datetime, or None on any miss (never a crash - a bad
+    or missing timestamp just drops the row, exactly like every other defensive
+    reader in this skill). A naive stamp (no offset) is treated as UTC.
+
+    Also accepts a NUMERIC epoch timestamp - seconds or milliseconds,
+    disambiguated by magnitude - as a defensive fallback, including a
+    numeric-looking STRING (the evidence-dict convention throughout this
+    skill stringifies every field, so a numeric `timestamp` value arrives
+    here as a string, not a raw int/float). Added 2026-08-04 alongside D7's
+    switch to the CONFIRMED `timestamp` field name (live-box row shape): the
+    field NAME is confirmed, but its VALUE shape is not, so this stays
+    fail-soft in both directions rather than assuming ISO-only."""
+    if s is None or s == "" or isinstance(s, bool):
+        return None
+    try:
+        dt = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except (ValueError, TypeError):
+        pass
+    try:
+        v = float(s)
+    except (TypeError, ValueError):
+        return None
+    if v > 10_000_000_000:  # 13-digit ms-epoch vs 10-digit s-epoch
+        v = v / 1000.0
+    try:
+        return datetime.fromtimestamp(v, timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# D7 cross-run resend payload hash (content-based; NEVER stores the raw body)
+# --------------------------------------------------------------------------- #
+# Plausible inter-session envelope preamble OpenClaw prepends ahead of the
+# original message body when a sessions_send delivery lands in the target's
+# transcript (a bracketed header line, e.g. "[from agent-x via sessions_send]") -
+# CONFIRM the exact wrapper text on the operator canary during burn-in, same
+# defensive posture as every other plausible-schema constant in this skill
+# (_CRON_LAST_RUN_FIELDS, _USAGE_TOTAL_FIELDS in loop_watchdog.py). A preamble
+# that does not match this pattern is simply left in the normalized text - never
+# a crash, never a skip - because two BYTE-IDENTICAL resends still hash
+# identically either way: the incident's resends all carried the SAME wrapper
+# (or none), so the comparison stays valid regardless of whether the strip hits.
+_INTER_SESSION_PREAMBLE_RE = re.compile(r"^\s*\[[^\]\n]{0,200}\]\s*\n?")
+
+
+def normalize_inter_session_payload(text) -> str:
+    """Best-effort normalization of an inbound inter-session message body before
+    hashing (D7 / LP-A10): strip a leading bracketed envelope/preamble line if
+    present, then collapse every whitespace run to a single space. The caller
+    hashes the RETURN value immediately and discards it - the normalized text is
+    never stored, printed, or placed in a ledger row or finding detail (a session
+    transcript can carry a live client credential pasted mid-conversation, and
+    THAT is exactly what a 'preview' field would leak - SKILL.md doctrine 3)."""
+    s = str(text or "")
+    s = _INTER_SESSION_PREAMBLE_RE.sub("", s, count=1)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def cross_run_payload_hash(source, target, payload_text) -> str:
+    """SHA-256 (16-hex, matching signature_hash's truncation) over (source, target,
+    NORMALIZED payload) - the D7 signature. Only this hash is ever returned;
+    `payload_text` is discarded by the caller the instant this call returns -
+    never stored, never logged, never placed in a finding detail. Unlike D3
+    (whose structural fields carry no client content), a session transcript can
+    carry a live credential pasted mid-conversation, so the hash boundary sits
+    here, at the COLLECTOR - the raw body never crosses into a detector, a
+    finding, or the ledger anywhere in this skill."""
+    normalized = normalize_inter_session_payload(payload_text)
+    payload = canonical({"source": str(source or ""), "target": str(target or ""),
+                         "payload": normalized})
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 # --------------------------------------------------------------------------- #
@@ -270,6 +353,31 @@ def self_test():
     h3 = signature_hash("ContextTooLarge", ["read", "delete"], "session:main")
     assert h1 == h2 and h1 != h3
     print("  signature-hash case: PASS (same failure -> same hash; order/content matters)")
+
+    assert parse_iso8601("2026-08-04T00:00:00Z") is not None
+    assert parse_iso8601("2026-08-04T00:00:00Z") == parse_iso8601("2026-08-04T00:00:00+00:00")
+    assert parse_iso8601("not-a-date") is None and parse_iso8601(None) is None
+    assert parse_iso8601(1700000000) == parse_iso8601(1700000000000), \
+        "s-epoch and ms-epoch of the SAME instant must parse identically"
+    assert parse_iso8601("1700000000") == parse_iso8601(1700000000), \
+        "a numeric-looking STRING epoch (the evidence-dict convention) must parse too"
+    assert parse_iso8601(True) is None, "a bool is never a timestamp"
+    print("  parse-iso8601 case: PASS (valid ISO parses to UTC; numeric epoch - int, "
+          "float, or numeric string, s or ms - also parses; bad/missing/bool -> None)")
+
+    a1 = cross_run_payload_hash("agent:orch:main", "agent:dept:main", "please pick up  ticket 42")
+    a2 = cross_run_payload_hash("agent:orch:main", "agent:dept:main", "please  pick up ticket 42   ")
+    assert a1 == a2, "whitespace-only differences must hash IDENTICAL (byte-identical resend proof)"
+    a3 = cross_run_payload_hash("agent:orch:main", "agent:dept:main",
+                                "[from agent:orch:main via sessions_send]\nplease pick up ticket 42")
+    assert a1 == a3, "the leading bracketed preamble must be stripped before hashing"
+    a4 = cross_run_payload_hash("agent:orch:main", "agent:other:main", "please pick up ticket 42")
+    assert a1 != a4, "a different TARGET must hash differently"
+    a5 = cross_run_payload_hash("agent:orch:main", "agent:dept:main", "please pick up ticket 99")
+    assert a1 != a5, "a different PAYLOAD must hash differently"
+    assert "please pick up ticket 42" not in a1  # the hash never carries the raw body
+    print("  cross-run-payload-hash case: PASS (whitespace/preamble normalize identical; "
+          "target/content changes discriminate; raw text never in the hash)")
 
     # pm2 filter must DROP the env (which carries secret VALUES) and keep 4 fields
     secret_marker = "<PLACEHOLDER_provider_key_env_value>"  # placeholder, never a real secret

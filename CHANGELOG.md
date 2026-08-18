@@ -1,3 +1,77 @@
+## [v22.0.43] -- 2026-08-18 -- fix(presentations): dead exclusion, fabricated deck-type fallback, missing verifier, 6-source threshold split-brain
+
+Four defects, all the same shape: a check that reports success without checking.
+
+- `sync_check.py`'s `_NON_ROLE_DOCS` excluded "GOVERNING-PERSONAS" while the writer
+  emits `governing-personas.md` (lowercase-with-dashes). The names never matched, so
+  the exclusion was dead code and every deployed box carrying that file was
+  false-DRIFTing on A5. Zero repo references to the uppercase form; 128 use the
+  lowercase one. Surfaced only because #930 gave test_scan_roles.py real assertions.
+- Removed `"default": "from_scratch"` from the presentation_type question AND closed a
+  second fabrication path: `deck-intake-driver.py`'s `_normalize_enum_value()` fell back
+  to `question.get("default", allowed[0])`, and allowed[0] IS "from_scratch" -- an
+  unrecognised free-text answer silently became a webinar independent of the JSON key.
+  Now fails closed.
+- P-QC-AGGREGATE was the 1 phase of 36 declaring no `verifier` (sync_check W1).
+  phase_verifiers.py already registered it as qc:final; only the declaration was
+  missing. W1 count 1 -> 0. manifest_version 49 -> 50.
+- min_bytes split-brain reconciled across SIX sources (deliverables.py, build_deck.py,
+  PIPELINE-MANIFEST.json, presenters_speech_pdf.py, gates.py, phase_verifiers.py).
+  9 of 10 keys disagreed, up to 21x (deck_pptx 50,000 vs 1,048,576). speech_pdf was
+  LOWERED 20480 -> 3000 and speech_md 5000 -> 2048 -- eaae2e33 (2026-07-12) reconciled
+  away from the larger values deliberately, so raising would have reintroduced a
+  documented mistake. Root cause: deliverables.py's table was bulk-copied from a stale
+  source 2026-08-13 and never reconciled.
+
+Drift guards added for each, every one proven able to fail. One was rewritten after its
+author proved it a false-safe: value-checking a derived dict still passed when a literal
+was hardcoded at the call site, so it now tests runtime behaviour.
+
+Suite: 747 passed, 0 failed, 2 skipped.
+
+## [v22.0.42] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
+
+PR #851 (`feat/lp-a8-cross-run-resend-loop`) sat 448 commits behind `main` since
+2026-08-04. Brought current: verified the feature is NOT redundant with anything
+`main` grew in the interim (`main`'s own `loop_watchdog.py` docstring still says
+"a send-guard detector over the sendguard ledger (a future D7) ... is likewise not
+built"; the only related thing on any box is an out-of-repo launchd hack `main`'s
+own CHANGELOG explicitly disclaims as "an unrelated cross-run resend-loop breaker
+... zero Skill-61 markers in it"), then merged and reconciled on the merits.
+
+- **D7 - cross-run resend (provenance-stamped)** lands in Skill 61
+  (`61-loop-protection-system`): detects an orchestrator resending a
+  byte-identical `sessions_send` payload as a brand-new top-level run after the
+  tool's own hardcoded 30s fallback timeout is misread as delivery failure --
+  the 2026-08-04 incident that neither `tools.loopDetection` (within-run) nor
+  `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one call) can see,
+  because every resend is a fresh run id. **LF-12** aborts the source session's
+  in-flight run via the native `sessions.abort` RPC (`openclaw gateway call
+  sessions.abort`, no-op-safe when nothing is active) and parks the source.
+  Repo-only; the skill's rollout gate stays HELD, no box is armed or touched.
+- **ID collision, resolved by renumbering.** The branch's original ids,
+  `LP-A8`/`LF-9`, were the first free slots on 2026-08-04. In the 448 commits
+  since, `main` independently shipped D5 (`LP-A8`, self-blocking flush-run /
+  transcript poison, 2026-08-05) and D6 (`LP-A9`, semantic retry burst) -- a
+  genuinely different fault in the same `F15` taxonomy family. Renumbered this
+  release's ids forward to the next free slots, `LP-A10`/`LF-12`, across every
+  script, config, doc, and test; the design, thresholds, and mechanism are
+  otherwise unchanged from what was reviewed and live-verified on 2026-08-04.
+  Full account in `61-loop-protection-system/CHANGELOG.md` [0.6.0].
+- Skill 61 bumped `0.5.0` -> `0.6.0` (`skill-version.txt` + `SKILL.md`
+  frontmatter in lockstep); detector/breaker counts in `SKILL.md` corrected to
+  seven detectors (D1-D7) and seven circuit breakers; `verify.sh` drill count
+  corrected to twenty-three (adds `D-RESEND` to the twenty-two `main` already
+  carried for D1-D6).
+
+Full suite: 745 passed, 0 failed, 1 skipped (identical to a same-day rerun of
+plain `origin/main` -- the skip count itself is pre-existing flakiness in
+`test_client_package.py`, unrelated to this merge; the first same-day baseline
+run measured 744/0/2, a same-tree rerun already drifted to 745/0/1 before any
+change here). Skill 61's own battery: `verify.sh` 23/23 drills PASS, all four
+merge-gate scanners clean, every script `--self-test` PASS including the new
+D7 cases run alongside D5/D6.
+
 ## [v22.0.41] -- 2026-08-18 -- chore(pr-878): unstick 8-day-stale batch/wave-1-merge; scrub a real client name caught by CRITICAL-1
 
 PR #878 (`batch/wave-1-merge`, opened 2026-08-10 at v22.0.4) sat 214 commits behind
