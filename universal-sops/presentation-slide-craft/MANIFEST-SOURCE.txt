@@ -1,3 +1,3 @@
-content_sha256=c7a96168c0f0f99eb89fc64c629cb7f16b25575bb487586aa015b3d3c8e51439
-generated=2026-08-15T01:43:50Z
-source=PIPELINE-MANIFEST.json (v48, u07 CAPACITY -- AF-CAPACITY-UNMEASURED registered in autofails and MASTER-QC-AUTOFAIL-RULESET Section 5 per SOP-SLIDE-06 step (i)+(iii); restamped at integration merge 0612bbc5 after the T2 stack bumped the manifest to v48)
+content_sha256=d1daec92df79330f21f8651b5e4f4dfe3cd47d45894165139d4c7b662d3fb7e6
+generated=2026-08-18T10:16:00Z
+source=PIPELINE-MANIFEST.json (v49, heartbeat-ceiling repair -- 13 phases' heartbeat_minutes tightened to heartbeat_minutes = min(old_value, that phase's own PHASE_BUDGET_MINUTES entry) so no phase declares a checkpoint cadence looser than its own total timeout; content_sha256 restamped against the merged content)

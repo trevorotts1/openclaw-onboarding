@@ -448,7 +448,14 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # to 40 in the same commit.
 # 46 -> 47: wave-2 integrate 56d18ad2 — PIPELINE-MANIFEST.json bumped to 47 in the same commit; MIN follows so the U019 floor moves WITH the manifest (proven by the repo-manifest guard test in test_client_package.py).
 # 47 -> 48: swarm integration 0612bbc5 — T2 stack bumped PIPELINE-MANIFEST.json to 48; MIN follows.
-MIN_MANIFEST_VERSION = 48  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 48 -> 49: heartbeat-ceiling repair — 13 of 36 phases declared heartbeat_minutes greater
+# than that phase's own PHASE_BUDGET_MINUTES entry (E3 drift; a heartbeat interval longer
+# than the whole phase can never detect a stall inside it). Precedent for bumping on a
+# heartbeat_minutes-only content edit: WI-10 (CHANGELOG v22.0.5) bumped 44 -> 45 for the
+# same class of change (heartbeat_minutes values across all 36 phases, no new phase/AF
+# code). Tightened via heartbeat_minutes = min(old_value, PHASE_BUDGET_MINUTES[id]) on
+# those 13 phases only; MIN follows to 49 in the same commit per U019 step 8.
+MIN_MANIFEST_VERSION = 49  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
