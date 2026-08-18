@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 # The canonical manifest floor, mirrored from presentation_job/manifest.py
 # (MIN_MANIFEST_VERSION). Bump the two TOGETHER -- a floor one behind the
 # manifest is the split-brain this check exists to prevent.
-MIN_MANIFEST_VERSION = 43
+MIN_MANIFEST_VERSION = 48
 MIN_MANIFEST_PHASES = 26
 MIN_AF_SP_CODES = 16
 
