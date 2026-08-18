@@ -350,6 +350,54 @@ def parse_check_scripts(manifest):
 # (memory, scripts, sops) are infra; 57 are roles; 35 unique after de-numbering.
 _INFRA_DIRS = {"scripts", "sops", "memory", "working", ".openclaw"}
 
+# BACKUP/SCRATCH SIBLING GUARD — a STRUCTURAL exemption, not one more literal name.
+#
+# THE BUG (2026-08): every department refresh backs a directory up before overwriting
+# it — e.g. `cp -R scripts scripts.bak-20260817-150923` — producing a byte-for-byte
+# copy that carries the original's how-to.md right along with it. The directory-scan
+# rule below only ever excluded the LITERAL name "scripts" (via _INFRA_DIRS); the
+# backup copy is named "scripts.bak-20260817-150923", which is not in that allowlist,
+# so it registered as a phantom undeclared role (A5) and broke the lockstep gate. This
+# recurs on every single refresh, and it is not limited to infra dirs — the identical
+# copy-before-overwrite step can just as easily back up a REAL role dir (e.g.
+# "01-slide-copywriter.bak-<ts>"), which would then register as a SECOND, differently
+# named phantom role for the same role.
+#
+# Widening _INFRA_DIRS by one more literal entry ("scripts.bak-20260817-150923") fixes
+# today's timestamp and nothing else — the next refresh mints a new timestamp and
+# breaks the gate again. The fix instead recognizes the NAMING CONVENTION: this exact
+# codebase already tags every backup, file or directory, with a "bak" token set off by
+# a `.`/`_`/`-` separator (proven site-wide: AGENTS.md.bak-unify-<TS>,
+# build_deck.py.bak-loop2-<TS>, build_deck.py.bak.<TS>, build_deck.py.bak-pre-v12.33.0-
+# <TS>, board-reconcile-sweep.sh.bak-wi04b-fix-<TS> — dozens of instances across the
+# deployed department and the repo). Matching that convention catches every backup of
+# every directory (infra or role), under any timestamp or suffix, forever — not just
+# today's three.
+#
+# REJECTED ALTERNATIVE — "only directories declared in PIPELINE-MANIFEST.roles count
+# as roles": disqualified on inspection, not merely unchosen. scan_roles_and_sops()'s
+# whole reason to walk the filesystem independently of the manifest is so A5 (below)
+# can catch a role that ships on disk but was NEVER added to the manifest. If "declared
+# in the manifest" were the definition of "is a role" in the first place, role_stems
+# would equal manifest_role_ids by construction and A5 could never fire — the exact
+# undeclared-role detection this scanner exists for would go silently dead. The
+# manifest is authoritative for what SHOULD exist; it cannot also be the source for
+# what DOES exist on disk without erasing the check that compares the two.
+#
+# "bak" must be its own token — bounded by a separator or the start/end of the name —
+# so a real slug that merely CONTAINS the substring "bak" (e.g. a hypothetical
+# "bakery-specialist" role: the character after "bak" there is "e", not a separator)
+# never false-positives into being treated as a backup.
+_BACKUP_SIBLING_RE = re.compile(r'(?:^|[._-])bak(?:[._-]|$)', re.IGNORECASE)
+
+
+def _is_backup_sibling(name: str) -> bool:
+    """True if `name` (a file stem or directory name) is a backup/scratch copy under
+    this codebase's own `.bak-<suffix>` / `.bak.<suffix>` convention — never a role,
+    regardless of what it contains."""
+    return bool(_BACKUP_SIBLING_RE.search(name))
+
+
 # Flat *.md files at the department root that are agent scaffolding, not roles. They
 # are declared in PIPELINE-MANIFEST.roles today; U009 removes them from the manifest in
 # THIS SAME COMMIT, and without this set that removal creates five new A5 items.
@@ -390,9 +438,13 @@ def scan_roles_and_sops():
             continue
         if name in _NON_ROLE_DOCS:
             continue
+        if _is_backup_sibling(name):
+            continue
         role_stems.add(name)
     for d in PRES_DIR.iterdir():
         if not d.is_dir() or d.name in _INFRA_DIRS:
+            continue
+        if _is_backup_sibling(d.name):
             continue
         if (d / "how-to.md").exists():
             role_stems.add(re.sub(r"^\d\d-", "", d.name))

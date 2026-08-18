@@ -352,6 +352,131 @@ def test_mutation_proof_infra_dirs_removal():
     assert not fails, "\n".join(fails)
 
 
+def _check_backup_sibling_dirs_excluded():
+    """THE BUG (2026-08): a department refresh backs a directory up before
+    overwriting it (`cp -R scripts scripts.bak-<timestamp>`), producing a
+    byte-for-byte copy that carries the original's how-to.md along with it.
+    Before the fix, only the LITERAL name "scripts" was exempt (_INFRA_DIRS),
+    so "scripts.bak-<timestamp>" registered as a phantom undeclared role (A5)
+    and broke the lockstep gate on every single refresh. Proves the fix
+    generalizes across timestamp suffixes, dot- and dash-separator styles, and
+    backups of BOTH infra dirs and real role dirs — not just one hardcoded name."""
+    fails = []
+    tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_bakdirs_"))
+    try:
+        (tmp / "sops").mkdir()
+        # A real role, so we can prove its backup is excluded while it survives.
+        real = tmp / "01-alpha"
+        real.mkdir()
+        (real / "how-to.md").write_text("role content")
+
+        backup_names = [
+            "scripts.bak-20260817-150923",       # infra dir, dash-timestamp (the reported bug)
+            "sops.bak.20260818-160500",           # infra dir, dot-timestamp variant
+            "01-alpha.bak-20260818-160600",       # backup of a REAL role dir
+            "memory.bak-pre-v12.33.0-20260619",   # infra dir, non-numeric suffix
+        ]
+        for name in backup_names:
+            d = tmp / name
+            d.mkdir()
+            (d / "how-to.md").write_text("copied content")
+
+        # scripts/sops/memory also present for real, as _INFRA_DIRS siblings.
+        for infra in ["scripts", "sops", "memory", "working", ".openclaw"]:
+            d = tmp / infra
+            d.mkdir(exist_ok=True)
+            (d / "how-to.md").write_text("infra content")
+
+        with (
+            patch.object(sync_check, "PRES_DIR", tmp),
+            patch.object(sync_check, "SOPS_DIR", tmp / "sops"),
+        ):
+            role_stems, sop_files = sync_check.scan_roles_and_sops()
+
+        for name in backup_names:
+            if name in role_stems:
+                fails.append(f"BAKDIRS: backup dir {name!r} leaked into role_stems (bug reproduced)")
+        if "alpha" not in role_stems:
+            fails.append(f"BAKDIRS: real role 'alpha' lost, got: {sorted(role_stems)}")
+        if len(role_stems) != 1:
+            fails.append(f"BAKDIRS: expected exactly 1 role stem ('alpha'), got {len(role_stems)}: {sorted(role_stems)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return fails
+
+
+def test_backup_sibling_dirs_excluded():
+    fails = _check_backup_sibling_dirs_excluded()
+    assert not fails, "\n".join(fails)
+
+
+def _check_backup_sibling_flat_files_excluded():
+    """Same convention, flat-file side: a *.md role backup (e.g. an editor that
+    appends `.bak.md`, or any future `-bak-<ts>.md` scheme) must not register as
+    a second, differently-named phantom role either."""
+    fails = []
+    tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_bak_flat_"))
+    try:
+        (tmp / "sops").mkdir()
+        (tmp / "real-role.md").write_text("role")
+        (tmp / "real-role.bak.md").write_text("stale copy")
+        (tmp / "real-role.bak-20260818.md").write_text("stale copy 2")
+
+        with (
+            patch.object(sync_check, "PRES_DIR", tmp),
+            patch.object(sync_check, "SOPS_DIR", tmp / "sops"),
+        ):
+            role_stems, sop_files = sync_check.scan_roles_and_sops()
+
+        if "real-role.bak" in role_stems or "real-role.bak-20260818" in role_stems:
+            fails.append(f"BAKDIRS-FLAT: a .bak.md sibling leaked into role_stems: {sorted(role_stems)}")
+        if "real-role" not in role_stems:
+            fails.append(f"BAKDIRS-FLAT: real-role lost, got: {sorted(role_stems)}")
+        if len(role_stems) != 1:
+            fails.append(f"BAKDIRS-FLAT: expected exactly 1 role stem, got {len(role_stems)}: {sorted(role_stems)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return fails
+
+
+def test_backup_sibling_flat_files_excluded():
+    fails = _check_backup_sibling_flat_files_excluded()
+    assert not fails, "\n".join(fails)
+
+
+def _check_bak_substring_not_falsely_excluded():
+    """Guard the guard: 'bak' must be its own separator-bounded token. A real slug
+    that merely CONTAINS the substring "bak" mid-word (e.g. a hypothetical
+    "bakery-specialist" role — the character after "bak" there is "e", not a
+    separator) must NOT be excluded."""
+    fails = []
+    tmp = Path(tempfile.mkdtemp(prefix="test_scan_roles_bak_substr_"))
+    try:
+        (tmp / "sops").mkdir()
+        (tmp / "10-bakery-specialist").mkdir()
+        ((tmp / "10-bakery-specialist") / "how-to.md").write_text("role")
+        (tmp / "outbaker.md").write_text("role")
+
+        with (
+            patch.object(sync_check, "PRES_DIR", tmp),
+            patch.object(sync_check, "SOPS_DIR", tmp / "sops"),
+        ):
+            role_stems, sop_files = sync_check.scan_roles_and_sops()
+
+        if "bakery-specialist" not in role_stems:
+            fails.append(f"BAK-SUBSTR: 'bakery-specialist' wrongly excluded, got: {sorted(role_stems)}")
+        if "outbaker" not in role_stems:
+            fails.append(f"BAK-SUBSTR: 'outbaker' wrongly excluded, got: {sorted(role_stems)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return fails
+
+
+def test_bak_substring_not_falsely_excluded():
+    fails = _check_bak_substring_not_falsely_excluded()
+    assert not fails, "\n".join(fails)
+
+
 def main():
     test_groups = [
         ("module constants", _check_module_constants_exist),
@@ -362,6 +487,9 @@ def main():
         ("symlink followed dir", _check_symlink_followed_dir),
         ("mutation: non-role docs", _check_mutation_proof_non_role_docs_removal),
         ("mutation: infra dirs", _check_mutation_proof_infra_dirs_removal),
+        ("backup sibling dirs excluded", _check_backup_sibling_dirs_excluded),
+        ("backup sibling flat files excluded", _check_backup_sibling_flat_files_excluded),
+        ("bak substring not falsely excluded", _check_bak_substring_not_falsely_excluded),
     ]
 
     all_failures = []
