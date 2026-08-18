@@ -1,3 +1,43 @@
+## [v22.0.46] -- 2026-08-18 -- fix(trust-boundary): seal enforcement mode into RunFacts for EVERY seal path, including force=True reseal
+
+Rebuild of `fix/trust-flag`, which a verifier rejected: it sealed
+`PRES_TRUST_BOUNDARY_ENFORCE` into `RunFacts.enforcing` at admission, but only
+skipped re-reading `os.environ` on the CACHED (`force=False`) path of
+`presentation_job/runfacts.py`'s `seal()`. `verifier_registry.py`'s
+`VerifierSpec.seal_into()` -- the base every T1/T2/slice-3 registry gate goes
+through -- calls `seal(..., force=True)` on EVERY single gate check (a
+"transactional reseal" that re-measures artifact facts from disk). Because the
+rejected fix's cache-skip only covered `force=False`, every one of those
+force=True reseals kept calling the live `enforcing()` primitive fresh --
+letting the run's enforcement mode drift mid-run if `PRES_TRUST_BOUNDARY_ENFORCE`
+changed in the environment between two gate checks of the SAME already-admitted
+run, even though the docstrings claimed the mode was sealed everywhere.
+
+FIX: added `_ENFORCING_CACHE`, keyed by run_dir (separate from the artifact-fact
+`_SEAL_CACHE`, which force=True is SUPPOSED to bypass). `_resolve_enforcing_mode()`
+reads `enforcing()` exactly once per run_dir, on that run_dir's FIRST touch --
+forced or not -- and every later `seal()` call for that run_dir, forced or not,
+reuses the cached value for the life of the process. Every call site that
+previously called the live `_rf.enforcing()` directly to make a pass/fail
+decision (verifier_registry.py, phase_verifiers.py's `_shadow_qc_verifier` /
+`_shadow_composite_verifier`, slice1_gate_verifiers.py's subclass propagation,
+build_deck.py's `_owner_skip_approved`) now reads the sealed `facts.enforcing`
+instead. The two remaining live-read call sites (`seal()`'s own resolving call,
+and `preflight_shadow.py`'s audit-only ledger stamp, which never gates a
+pass/fail decision) are the only sanctioned exceptions, and the docstrings now
+say so explicitly.
+
+Independently verified by a separate verifying agent, two ways: (1) a
+standalone repro script that admits a run with the flag off, flips the env var
+mid-run with NO re-admission, then does a `force=True` reseal via
+`verifier_registry.qc_report_verifier(...).seal_into()` -- `facts.enforcing`
+flips on `fix/trust-flag`, stays fixed at the admission value here; (2) this
+fix's own new regression test (`test_registry_force_reseal_does_not_drift_mid_run`)
+copied onto `fix/trust-flag` FAILS there with an observed PASS->FAIL flip on
+the SAME registered gate, purely from env timing. Full test suite (1021 tests)
+green with no regressions. Report-only default (`PRES_TRUST_BOUNDARY_ENFORCE`
+unset) unchanged.
+
 ## [v22.0.45] -- 2026-08-18 -- fix(presentations): trust-boundary FALSEPOS v2 -- scope attestation reuse to the owning artifact+phase
 
 Rebuild of `fix/trust-falsepos`, which a verifier rejected: it fixed the
