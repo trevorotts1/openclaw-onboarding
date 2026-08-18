@@ -21,9 +21,10 @@ Both-direction pattern per gate (the mandate's exact rubric):
 Fixtures are real magic-byte files (ZIP/PPTX b'PK\\x03\\x04', PDF b'%PDF',
 MP3 b'ID3' + a real MPEG frame header, PNG b'\\x89PNG', MP4 ftyp+moov, pypdf
 AcroForm PDFs) so a decoy cannot ride a weak check. MIN-BYTE FLOORS: the
-bundle spec demands large files (deck_pptx 50 000, audio_mp3 100 000,
-webinar_mp4 500 000) — fixtures pad with real container-compatible content
-after the magic header, the same way a real build's files do.
+bundle spec demands large files (deck_pptx 1 048 576, audio_mp3 512 000,
+webinar_mp4 1 048 576 — reconciled to build_deck.py's DELIVERABLES_REQUIRED,
+2026-08-18 split-brain fix) — fixtures pad with real container-compatible
+content after the magic header, the same way a real build's files do.
 
 Every verdict is pure (gate_integrity_check --purity asserts all seven by
 name); every run_verifier call below re-seals the run dir (force=True inside
@@ -188,18 +189,18 @@ def _genuine_bundle(rd: pathlib.Path) -> None:
     dls = rd / "working" / "deliverables"
     dl.mkdir(parents=True, exist_ok=True)
     dls.mkdir(parents=True, exist_ok=True)
-    _write_pptx(dl / "demo-FINAL.pptx", 50_000)
-    _write_pdf(dl / "demo-FINAL.pdf", 50_000)
-    _write_pdf(dls / "PRESENTER-GUIDE.pdf", 20_000)
-    speech = "This is the presenter speech. " * 300  # > 5000 bytes
+    _write_pptx(dl / "demo-FINAL.pptx", 1_048_576)  # doctrine floor (split-brain fix, was 50_000)
+    _write_pdf(dl / "demo-FINAL.pdf", 51_200)
+    _write_pdf(dls / "PRESENTER-GUIDE.pdf", 51_200)  # doctrine floor (split-brain fix, was 20_000)
+    speech = "This is the presenter speech. " * 300  # > 2048 bytes
     (dls / "PRESENTERS-SPEECH.md").write_text(speech)
-    _write_pdf(dls / "PRESENTERS-SPEECH.pdf", 20_000)
+    _write_pdf(dls / "PRESENTERS-SPEECH.pdf", 20_000)  # clears the 3_000 doctrine floor
     (dls / "PRESENTERS-SPEECH-FISH-TAGGED.md").write_text(
         "This [fish calm] is the presenter [fish slow] speech. [fish warm] " * 300)
-    _write_mp3(dl / "PRESENTER-AUDIO.mp3", 100_000)
+    _write_mp3(dl / "PRESENTER-AUDIO.mp3", 512_000)  # doctrine floor (split-brain fix, was 100_000)
     _write_png(dl / "infographic.png", 102_400)  # doctrine floor, Part 6 #8 (was 10_000)
-    _write_html(dls / "presenter-teleprompter.html", 5_000)
-    _write_mp4(dl / "demo-WEBINAR.mp4", 500_000)
+    _write_html(dls / "presenter-teleprompter.html", 20_000)  # doctrine floor (split-brain fix, was 5_000)
+    _write_mp4(dl / "demo-WEBINAR.mp4", 1_048_576)  # doctrine floor (split-brain fix, was 500_000)
 
 
 # ---------------------------------------------------------------------------

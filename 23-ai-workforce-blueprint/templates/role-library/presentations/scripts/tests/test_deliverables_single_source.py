@@ -32,6 +32,7 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import build_deck  # noqa: E402
 import fix_bundle_complete as fbc  # noqa: E402
 import phase_verifiers as pv  # noqa: E402
 import self_audit  # noqa: E402
@@ -129,6 +130,38 @@ def test_infographic_floor_matches_doctrine():
     assert spec["min_bytes"] == 102_400, (
         f"infographic_png min_bytes drifted from the 100KB doctrine floor: "
         f"got {spec['min_bytes']}")
+
+
+def test_no_min_bytes_drift_between_deliverables_and_build_deck():
+    """The permanent drift guard (2026-08-18 split-brain fix): deliverables.py's
+    DELIVERABLE_AUDIT_SPEC and build_deck.py's DELIVERABLES_REQUIRED are two
+    independently-maintained tables that carry a per-artifact min_bytes gate for
+    the SAME nine-plus-one deliverables. They drifted apart on 8 of 9 named
+    artifacts (deck_pptx 21x, speech_pdf 6.7x, audio_mp3 5.1x, teleprompter_html
+    4.0x, guide_pdf 2.6x, speech_md 2.4x, speech_fish_md 2.4x, deck_pdf ~1x) plus
+    a 10th unreviewed key (webinar_mp4, 2.1x) found during this reconciliation --
+    a live split-brain where a file could pass one runtime gate (self_audit.py /
+    curate.py / phase_verifiers.py, which import deliverables.py) and fail the
+    other (build_deck.py's own internal P8-ASSEMBLE check) for the exact same
+    artifact. This test is the guard: it fails the instant either table's
+    min_bytes value for any shared key moves without the other -- a one-off
+    reconciliation with no guard just resets the clock until the next drift.
+    """
+    canonical_min_bytes = {s["key"]: s["min_bytes"] for s in deliverables.DELIVERABLE_AUDIT_SPEC}
+    build_deck_min_bytes = {s["key"]: s["min_bytes"] for s in build_deck.DELIVERABLES_REQUIRED}
+    shared_keys = set(canonical_min_bytes) & set(build_deck_min_bytes)
+    assert shared_keys, "expected at least one shared deliverable key between the two tables"
+
+    mismatches = [
+        f"{key}: deliverables.py={canonical_min_bytes[key]:,} bytes vs "
+        f"build_deck.py={build_deck_min_bytes[key]:,} bytes"
+        for key in sorted(shared_keys)
+        if canonical_min_bytes[key] != build_deck_min_bytes[key]
+    ]
+    assert not mismatches, (
+        "deliverables.DELIVERABLE_AUDIT_SPEC and build_deck.DELIVERABLES_REQUIRED "
+        "disagree on min_bytes for the following shared key(s) -- these two tables "
+        "gate the SAME artifacts and must never drift apart:\n  " + "\n  ".join(mismatches))
 
 
 def test_phase_verifiers_delivery_min_bytes_matches_canonical():
