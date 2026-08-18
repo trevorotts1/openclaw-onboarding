@@ -69,14 +69,16 @@ from loop_ledger import Ledger, openclaw_root  # noqa: E402
 
 
 def run_detectors(evidence, thresholds, signatures):
-    """Run D1-D4 and D7 over injected/collected evidence. Returns a flat findings
-    list."""
+    """Run D1-D7 over injected/collected evidence. Returns a flat findings list."""
     findings = []
     findings += D.d1_restart_velocity(evidence.get("units", []), thresholds,
                                       warn_streaks=evidence.get("warn_streaks", {}))
     findings += D.d2_token_burn_rate(evidence.get("windows", []), thresholds, signatures)
     findings += D.d3_identical_signature(evidence.get("runs", []), thresholds)
     findings += D.d4_timer_refire(evidence.get("crons", []), evidence.get("wedge", {}), thresholds)
+    findings += D.d5_transcript_poison(evidence.get("sessions", []), thresholds)
+    findings += D.d6_futile_retry_burst(evidence.get("bursts", []), thresholds,
+                                        signatures)
     findings += D.d7_cross_run_resend(evidence.get("sends", []), thresholds)
     return findings
 
@@ -92,9 +94,17 @@ def _dedup_ok(led, finding, window_hours):
 
 def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     """One deterministic tick over INJECTED evidence. Returns a summary dict:
-      {armed, findings, applied, planned, escalated, alerts}
+      {armed, findings, applied, planned, escalated, alerts, errors}
     Zero model calls. With armed False (DRY_RUN) NOTHING is mutated outside OUR ledger
-    (findings are still recorded - observing is the whole point of burn-in)."""
+    (findings are still recorded - observing is the whole point of burn-in).
+
+    ONE BAD FINDING NEVER KILLS THE TICK. Each finding is handled inside its own
+    failure boundary: an exception out of the plan/apply/escalate path is counted in
+    `errors`, written to stderr, and the tick CONTINUES to the next finding. This is
+    not defensive garnish - an uncaught OSError from a kill card's filesystem write
+    used to abort the whole tick, dropping every finding queued behind it and, in a
+    scheduled job, dying silently run after run. A watchdog that dies quietly is
+    worse than no watchdog, because the box now looks watched."""
     thresholds = C.load_skill_config("thresholds.json")
     signatures = C.load_signatures()
     if armed is None:
@@ -102,74 +112,99 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     window_hours = thresholds["alert"]["dedup_window_hours"]
 
     summary = {"armed": armed, "findings": 0, "applied": 0, "planned": 0,
-               "escalated": 0, "alerts": 0, "by_class": {}}
+               "escalated": 0, "alerts": 0, "errors": 0, "by_class": {}}
 
     findings = run_detectors(evidence, thresholds, signatures)
     for f in findings:
-        fid = led.record_finding(f["loop_class"], f["severity"], unit=f.get("unit"),
-                                 evidence_path=f.get("evidence_path"),
-                                 detail=f.get("detail"), tier=f.get("tier"),
-                                 dedup_key=f.get("dedup_key"))
-        f["finding_id"] = fid
-        summary["findings"] += 1
-        summary["by_class"][f["loop_class"]] = summary["by_class"].get(f["loop_class"], 0) + 1
-
-        kc = KC.plan({"loop_class": f["loop_class"], "finding_id": fid}, box=box)
-        kc["unit"] = f.get("unit")
-        # Route by tier. Tier-1 auto-applies ONLY when armed; else it plans. Tier 2/3
-        # never auto-apply. The ONE safe in-tick mechanical act is parking a crash-
-        # looping PROCESS unit via the process breaker (LF-6: STOP + park, visible-red,
-        # never respawns) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
-        # finding, which is exactly a process-breaker trip: >=10/tick or >=40/day) parks
-        # in-tick; a WARN plans only. Every config-touching kill card (LF-1/2/4/5/7)
-        # stays plan-only in the unattended tick and is applied SOLELY by an explicit
-        # operator `fix`, so the tick never touches client config unattended. DRY_RUN =>
-        # LF-6 plans (mutates nothing - the D-DRYRUN invariant); armed => LF-6 trips the
-        # process breaker + parks the unit. Escalation stays an ADD-ON (the P1 operator
-        # alert below, plus Tier-3 / healer-breaker escalation) - never a substitute for
-        # the park (the old empty-executors bug ESCALATED instead of parking).
-        in_tick_executors = {}
-        if f.get("severity") == "P1" and kc.get("fix_class") == "LF-6" and f.get("unit"):
-            _park_unit = f["unit"]
-            in_tick_executors["LF-6"] = (
-                lambda dry_run, _u=_park_unit: KC.lf6_park_process(_u, led, dry_run=dry_run))
-        # LF-9 is the D7 sibling of LF-6: config-free (touches no client config,
-        # only calls the native sessions.abort RPC on the one named source
-        # session, then parks it), so it too applies for real in-tick on an
-        # armed box rather than waiting for an explicit operator `fix`.
-        if f.get("severity") == "P1" and kc.get("fix_class") == "LF-9" and f.get("unit"):
-            _abort_unit = f["unit"]
-            in_tick_executors["LF-9"] = (
-                lambda dry_run, _u=_abort_unit: KC.lf9_abort_cross_run_resend(_u, led, dry_run=dry_run))
-        result = KC.apply(kc, led, armed=armed, executors=in_tick_executors,
-                          verify_failed_last=False)
-        if result["status"] == "applied":
-            summary["applied"] += 1
-            led.record_fix(fid, kc.get("fix_class"), unit=f.get("unit"),
-                           what=result.get("detail"), verify_outcome="applied",
-                           revert_cmd=kc.get("revert_cmd"), dry_run=False)
-            led.set_finding_state(fid, "fixed")
-        else:
-            summary["planned"] += 1
-
-        # escalate Tier-3 and any healer-breaker escalation via Rescue Rangers
-        if result.get("escalate"):
-            payload = ESC.build_payload(
-                box=box, loop_class=f["loop_class"], finding=f.get("detail"),
-                evidence_path=f.get("evidence_path"),
-                proposed_fix=kc.get("what"), why=result.get("detail"),
-                action_needed="operator decision / approve fix",
-                finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
-                revert_cmd=kc.get("revert_cmd"))
-            ESC.send(payload, transport=escalate_transport)
-            led.set_finding_state(fid, "escalated")
-            summary["escalated"] += 1
-
-        # operator alert (deduped). P1 bypasses batching but not dedup.
-        if f["severity"] in ("P1", "P2") and _dedup_ok(led, f, window_hours):
-            summary["alerts"] += 1
-
+        try:
+            _handle_finding(f, led, thresholds, armed, box, escalate_transport,
+                            window_hours, summary)
+        except Exception as exc:  # noqa: BLE001 - containment is the point
+            summary["errors"] += 1
+            sys.stderr.write(
+                "ERROR [loop_watchdog]: finding %s/%s failed to process (%s: %s); "
+                "CONTINUING to the next finding - one bad unit never kills the tick\n"
+                % (f.get("loop_class"), f.get("unit"), type(exc).__name__, exc))
     return summary
+
+
+def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
+                    window_hours, summary):
+    """Record, route, apply/plan, escalate and alert ONE finding. Mutates `summary`.
+    Raising is contained by tick()'s per-finding boundary."""
+    fid = led.record_finding(f["loop_class"], f["severity"], unit=f.get("unit"),
+                             evidence_path=f.get("evidence_path"),
+                             detail=f.get("detail"), tier=f.get("tier"),
+                             dedup_key=f.get("dedup_key"))
+    f["finding_id"] = fid
+    summary["findings"] += 1
+    summary["by_class"][f["loop_class"]] = summary["by_class"].get(f["loop_class"], 0) + 1
+
+    kc = KC.plan({"loop_class": f["loop_class"], "finding_id": fid}, box=box)
+    kc["unit"] = f.get("unit")
+    # Route by tier. Tier-1 auto-applies ONLY when armed; else it plans. Tier 2/3
+    # never auto-apply. The ONE safe in-tick mechanical act is parking a crash-
+    # looping PROCESS unit via the process breaker (LF-6: STOP + park, visible-red,
+    # never respawns) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
+    # finding, which is exactly a process-breaker trip: >=10/tick or >=40/day) parks
+    # in-tick; a WARN plans only. Every config-touching kill card (LF-1/2/4/5/7)
+    # stays plan-only in the unattended tick and is applied SOLELY by an explicit
+    # operator `fix`, so the tick never touches client config unattended. DRY_RUN =>
+    # LF-6 plans (mutates nothing - the D-DRYRUN invariant); armed => LF-6 trips the
+    # process breaker + parks the unit. Escalation stays an ADD-ON (the P1 operator
+    # alert below, plus Tier-3 / healer-breaker escalation) - never a substitute for
+    # the park (the old empty-executors bug ESCALATED instead of parking).
+    in_tick_executors = {}
+    if f.get("severity") == "P1" and kc.get("fix_class") == "LF-6" and f.get("unit"):
+        _park_unit = f["unit"]
+        in_tick_executors["LF-6"] = (
+            lambda dry_run, _u=_park_unit: KC.lf6_park_process(_u, led, dry_run=dry_run))
+    # LF-10 (D5): the second config-FREE in-tick act - archive a loop-poisoned
+    # session transcript so the next turn starts clean. It touches ONE file, is
+    # reverted by moving it back, and REFUSES a transcript that is still live,
+    # so an unattended tick can never roll the conversation someone is in.
+    if f.get("severity") == "P1" and kc.get("fix_class") == "LF-10" \
+            and f.get("evidence_path"):
+        _sess = f["evidence_path"]
+        _idle = thresholds["d5_transcript_poison"]["roll_min_idle_minutes"]
+        in_tick_executors["LF-10"] = (
+            lambda dry_run, _p=_sess, _m=_idle: KC.lf10_archive_and_roll_session(
+                _p, dry_run=dry_run, min_idle_minutes=_m))
+    # LF-12 is the D7 sibling of LF-6: config-free (touches no client config,
+    # only calls the native sessions.abort RPC on the one named source
+    # session, then parks it), so it too applies for real in-tick on an
+    # armed box rather than waiting for an explicit operator `fix`.
+    if f.get("severity") == "P1" and kc.get("fix_class") == "LF-12" and f.get("unit"):
+        _abort_unit = f["unit"]
+        in_tick_executors["LF-12"] = (
+            lambda dry_run, _u=_abort_unit: KC.lf12_abort_cross_run_resend(_u, led, dry_run=dry_run))
+    result = KC.apply(kc, led, armed=armed, executors=in_tick_executors,
+                      verify_failed_last=False)
+    if result["status"] == "applied":
+        summary["applied"] += 1
+        led.record_fix(fid, kc.get("fix_class"), unit=f.get("unit"),
+                       what=result.get("detail"), verify_outcome="applied",
+                       revert_cmd=kc.get("revert_cmd"), dry_run=False)
+        led.set_finding_state(fid, "fixed")
+    else:
+        summary["planned"] += 1
+
+    # escalate Tier-3 and any healer-breaker escalation via Rescue Rangers
+    if result.get("escalate"):
+        payload = ESC.build_payload(
+            box=box, loop_class=f["loop_class"], finding=f.get("detail"),
+            evidence_path=f.get("evidence_path"),
+            proposed_fix=kc.get("what"), why=result.get("detail"),
+            action_needed="operator decision / approve fix",
+            finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
+            revert_cmd=kc.get("revert_cmd"))
+        ESC.send(payload, transport=escalate_transport)
+        led.set_finding_state(fid, "escalated")
+        summary["escalated"] += 1
+
+    # operator alert (deduped). P1 bypasses batching but not dedup.
+    if f["severity"] in ("P1", "P2") and _dedup_ok(led, f, window_hours):
+        summary["alerts"] += 1
 
 
 # --------------------------------------------------------------------------- #
@@ -204,22 +239,55 @@ def _probes_off():
     return os.environ.get(_PROBES_OFF_ENV, "") == "1"
 
 
-def collect_units():
+def collect_units(led=None, recs=None):
     """Best-effort pm2 jlist -> filtered units (name/status/pid/restarts ONLY). Returns
-    [] on any miss (no pm2, not JSON, no git). NEVER dumps env. A probe miss is DATA."""
-    if _probes_off():
-        return []
-    try:
-        out = subprocess.run(["pm2", "jlist"], capture_output=True, text=True, timeout=5)
-        recs = json.loads(out.stdout or "[]")
-    except Exception:  # noqa: BLE001 - probe failure is data, never a crash
-        return []
+    [] on any miss (no pm2, not JSON, no git). NEVER dumps env. A probe miss is DATA.
+
+    `delta` is restarts SINCE THE LAST TICK, baselined per unit in ledger meta.
+    FIRST SIGHT OF A UNIT IS ALWAYS delta=0. This is load-bearing, not a nicety: pm2
+    reports a unit's LIFETIME restart count, so treating that as a per-tick delta
+    made the very first tick on any real box read a long-lived unit's whole history
+    as one storm - an instant false P1, and on an armed box an instant false park.
+    A baseline that only ever measures the gap between two observations cannot do
+    that. A counter that goes BACKWARDS (pm2 resurrected/reset) re-baselines to 0
+    rather than reporting a negative or a bogus spike. `recs` is injectable so the
+    baseline logic is testable without pm2."""
+    if recs is None:
+        if _probes_off():
+            return []
+        try:
+            out = subprocess.run(["pm2", "jlist"], capture_output=True, text=True,
+                                 timeout=5)
+            recs = json.loads(out.stdout or "[]")
+        except Exception:  # noqa: BLE001 - probe failure is data, never a crash
+            return []
+    seen = {}
+    if led is not None:
+        try:
+            seen = json.loads(led.get_meta("d1_restart_baseline", "{}") or "{}")
+        except (ValueError, TypeError):
+            seen = {}
+        if not isinstance(seen, dict):
+            seen = {}
     units = []
+    baseline = {}
     for rec in recs if isinstance(recs, list) else []:
         f = C.filter_pm2_record(rec)
-        if f.get("name"):
-            f["delta"] = f["restarts"]  # first-seen delta = current count; ledger refines
-            units.append(f)
+        name = f.get("name")
+        if not name:
+            continue
+        total = int(f.get("restarts", 0) or 0)
+        prev = seen.get(name)
+        try:
+            prev = int(prev) if prev is not None else None
+        except (TypeError, ValueError):
+            prev = None
+        # first sight -> 0; a backwards counter -> 0 (re-baseline, never a spike)
+        f["delta"] = max(0, total - prev) if prev is not None and total >= prev else 0
+        baseline[name] = total
+        units.append(f)
+    if led is not None:
+        led.set_meta("d1_restart_baseline", json.dumps(baseline, sort_keys=True))
     return units
 
 
@@ -774,6 +842,264 @@ def collect_wedge(led=None, slice_stats=None, gateway_up=None,
     return wedge
 
 
+def _session_files(max_files=40, root=None):
+    """Live session TRANSCRIPTS (not trajectories) under <openclaw_root>/agents/
+    */sessions/*.jsonl, newest first, bounded. The transcript is the file the model
+    re-reads as its own history, which is why D5 measures THIS and not the
+    trajectory (the trajectory is telemetry the model never sees). [] on any miss.
+
+    TWO exclusions, and the second one is load-bearing:
+      *.trajectory.jsonl   telemetry, not history - never D5's subject.
+      *<ARCHIVE_MARKER>*   a transcript LF-10 has ALREADY rolled. An archive keeps
+                           the wreckage verbatim and keeps the original mtime, so it
+                           re-measures as poisoned AND idle on the very next tick.
+                           Left in scope it is re-archived every tick forever - each
+                           roll appending another marker to the name until the
+                           component passes 255 bytes and the move raises
+                           ENAMETOOLONG, killing the scheduled job (reproduced: 7
+                           rolls, crash on the 8th). The healer self-breaker cannot
+                           catch it either, because the unit name is derived from
+                           the FILENAME and so changes on every roll. An archive is
+                           finished work: out of scope, permanently. D-POISON-REROLL
+                           is the drill that holds this line."""
+    try:
+        files = glob.glob(str((root or openclaw_root()) / "agents" / "*" / "sessions"
+                              / "*.jsonl"))
+    except OSError:
+        return []
+    import time
+    scored = []
+    for f in files:
+        if f.endswith(".trajectory.jsonl"):
+            continue
+        if KC.ARCHIVE_MARKER in os.path.basename(f):
+            continue  # already rolled: finished work, never re-rolled
+        try:
+            scored.append((os.path.getmtime(f), f))
+        except OSError:
+            continue
+    scored.sort(reverse=True)
+    now = time.time()
+    return [(f, (now - mt) / 60.0) for mt, f in scored[:max_files]]
+
+
+def _blocked_tool_of(row):
+    """The blocked tool NAME when `row` is a runtime tool-loop refusal, else None.
+    STRUCTURAL match on two enum fields (details.status=='blocked' and
+    details.deniedReason=='tool-loop') - never on the human-readable `reason`, so
+    it survives wording changes and carries no message content into a finding."""
+    if row.get("type") != "message":
+        return None
+    m = row.get("message")
+    if not isinstance(m, dict) or m.get("role") != "toolResult":
+        return None
+    d = m.get("details")
+    if not isinstance(d, dict):
+        return None
+    if str(d.get("status")) == "blocked" and str(d.get("deniedReason")) == "tool-loop":
+        return str(m.get("toolName") or "<tool>")
+    return None
+
+
+def collect_sessions(files=None, thresholds=None, signatures=None):
+    """D5 evidence: one measurement per session transcript, from a BOUNDED TAIL.
+
+    The tail is the right window on purpose. D5's alarming faces both live at the
+    end of a transcript - the current burst, and the trailing-window share - and a
+    tail keeps the tick CPU-cheap on a box holding thousands of sessions. It also
+    covered every poisoned compaction checkpoint in the archived incident (the
+    deepest sat 1,617,348 bytes from the end, inside the 2,000,000-byte bound).
+
+    Returns [] when no transcript stream exists (a probe miss is DATA). No message
+    content is retained: counts, enum values, and tool NAMES only."""
+    t = (thresholds or C.load_skill_config("thresholds.json"))["d5_transcript_poison"]
+    sig = signatures if signatures is not None else C.load_signatures()
+    blk = sig.get("tool_loop_block") if isinstance(sig, dict) else {}
+    marker = (blk or {}).get("checkpoint_text_marker") or ""
+    if files is None:
+        files = _session_files(max_files=int(t["max_session_files"]))
+    window = int(t["window_records"])
+    gap = int(t["gap_records"])
+    out = []
+    for entry in files:
+        path, idle_minutes = entry if isinstance(entry, (tuple, list)) else (entry, None)
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        blocked = 0
+        tools = set()
+        bursts = []
+        cur = 0
+        since = 0
+        trail = []
+        records = 0
+        cp_rows = 0
+        cp_poisoned = 0
+        for row in _iter_jsonl_tail(path, int(t["tail_bytes"])):
+            if not isinstance(row, dict):
+                continue
+            if row.get("type") == "compaction":
+                summary = row.get("summary")
+                if isinstance(summary, str):
+                    cp_rows += 1
+                    if marker and marker in summary:
+                        cp_poisoned += 1
+                continue
+            if row.get("type") != "message":
+                continue
+            records += 1
+            tool = _blocked_tool_of(row)
+            if tool is not None:
+                blocked += 1
+                tools.add(tool)
+                if cur and since > gap:
+                    bursts.append(cur)
+                    cur = 0
+                cur += 1
+                since = 0
+            else:
+                since += 1
+            trail.append(1 if tool is not None else 0)
+            if len(trail) > window:
+                trail.pop(0)
+        if cur:
+            bursts.append(cur)
+        # Denominator FLOORS at the window size so a 4-record transcript with 3
+        # blocks cannot report a 75% share. Short transcripts are caught by the
+        # ignition face (max_burst), never by an inflated ratio.
+        ratio = sum(trail) / float(max(len(trail), window)) if trail else 0.0
+        out.append({"unit": "session:%s" % os.path.basename(path),
+                    "path": path, "bytes": size, "tail_records": records,
+                    "blocked_records": blocked, "max_burst": max(bursts) if bursts else 0,
+                    "trailing_ratio": round(ratio, 4),
+                    "blocked_tools": sorted(tools),
+                    "checkpoint_rows": cp_rows, "poisoned_checkpoints": cp_poisoned,
+                    "idle_minutes": idle_minutes})
+    return out
+
+
+def _tool_result_of(row):
+    """(toolName, ts, is_error, payload_text) for a tool-result record, else None.
+
+    `payload_text` is handed back ONLY so the caller can COUNT fail-closed markers
+    in it. It is never stored, never returned in a burst measurement, and never
+    reaches a finding - see collect_bursts()."""
+    if row.get("type") != "message":
+        return None
+    m = row.get("message")
+    if not isinstance(m, dict) or m.get("role") != "toolResult":
+        return None
+    name = m.get("toolName")
+    if not isinstance(name, str) or not name:
+        return None
+    ts = _parse_ts(m.get("timestamp")) or _parse_ts(row.get("timestamp")) \
+        or _parse_ts(row.get("ts"))
+    err = m.get("isError") is True
+    d = m.get("details")
+    if not err and isinstance(d, dict):
+        err = str(d.get("status") or "").lower() in ("error", "failed", "blocked", "denied")
+    content = m.get("content")
+    text = ""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for b in content:
+            if isinstance(b, str):
+                parts.append(b)
+            elif isinstance(b, dict):
+                for k in ("text", "output", "content"):
+                    v = b.get(k)
+                    if isinstance(v, str):
+                        parts.append(v)
+        text = "\n".join(parts)
+    elif isinstance(content, dict):
+        for k in ("text", "output"):
+            v = content.get(k)
+            if isinstance(v, str):
+                text = v
+                break
+    return (name, ts, err, text)
+
+
+def collect_bursts(files=None, thresholds=None, signatures=None):
+    """D6 evidence: per (transcript, tool), the heaviest sliding window of calls.
+
+    Reads the SAME bounded transcript tails D5 already reads, so D6 adds a pass
+    over data the tick is holding anyway rather than a new probe surface.
+
+    For each tool name it slides a `window_seconds` window over that tool's call
+    timestamps and keeps the window with the most calls, recording alongside it how
+    many of those calls FAILED at the tool layer and how many carried a FAIL-CLOSED
+    dependency marker in their result payload.
+
+    ⛔ ONLY COUNTS LEAVE THIS FUNCTION. Tool arguments are never read at all - that
+    is the whole design, since arguments are exactly what a rewording agent varies
+    to defeat every other guard. The result payload is scanned for marker presence
+    and then DISCARDED: no matched text, no surrounding payload, no value of any
+    kind enters a burst measurement, so a finding cannot leak a secret that
+    happened to sit next to an auth error.
+
+    Records with no parseable timestamp are counted toward the tool's total but
+    cannot be placed in a window; a transcript where NO record has a timestamp
+    therefore yields no burst rather than a false one. A probe miss is DATA."""
+    th = thresholds or C.load_skill_config("thresholds.json")
+    t = th["d6_futile_retry_burst"]
+    d5t = th["d5_transcript_poison"]
+    sig = signatures if signatures is not None else C.load_signatures()
+    fcm = sig.get("fail_closed_markers") if isinstance(sig, dict) else {}
+    markers = [str(x).lower() for x in ((fcm or {}).get("markers") or [])]
+    if files is None:
+        files = _session_files(max_files=int(d5t["max_session_files"]))
+    window = float(t["window_seconds"])
+    out = []
+    for entry in files:
+        path = entry[0] if isinstance(entry, (tuple, list)) else entry
+        per = {}
+        for row in _iter_jsonl_tail(path, int(d5t["tail_bytes"])):
+            if not isinstance(row, dict):
+                continue
+            hit = _tool_result_of(row)
+            if hit is None:
+                continue
+            name, ts, err, text = hit
+            if ts is None:
+                continue
+            low = text.lower() if text else ""
+            failclosed = bool(low) and any(mk in low for mk in markers)
+            per.setdefault(name, []).append((ts.timestamp(), err, failclosed))
+        for name, seq in per.items():
+            seq.sort()
+            best = None
+            i = 0
+            for j in range(len(seq)):
+                while seq[j][0] - seq[i][0] > window:
+                    i += 1
+                calls = j - i + 1
+                if best is None or calls > best[0]:
+                    errs = 0
+                    fcs = 0
+                    for k in range(i, j + 1):
+                        if seq[k][1]:
+                            errs += 1
+                        if seq[k][2]:
+                            fcs += 1
+                    best = (calls, errs, fcs, seq[j][0] - seq[i][0])
+            if not best:
+                continue
+            # Nothing futile in the heaviest window -> contribute no measurement at
+            # all. The detector's SILENCE RULE would drop it anyway; dropping it
+            # here keeps the evidence dict small on a busy box.
+            if best[1] <= 0 and best[2] <= 0:
+                continue
+            out.append({"unit": "session:%s" % os.path.basename(path),
+                        "path": path, "tool": name, "calls": best[0],
+                        "errors": best[1], "failclosed": best[2],
+                        "span_seconds": round(best[3], 1)})
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # D7 - cross-run resend (provenance-stamped): the 2026-08-04 incident feed.
 # Reads AGENT SESSION transcripts (agents/*/sessions/*.jsonl), a DIFFERENT
@@ -961,19 +1287,24 @@ def collect_evidence(led=None):
     read-only audit path): bounded tail PEEK, nothing persisted, no offset
     advanced.
 
-    D5/D6 attach HERE when they land (fix design 2026-07-13 SS4): a
-    collect_sessions() over the gateway log's model-fetch starts feeds
-    d5_completion_rate (windows already carry per-hour `completions` for it),
-    and a collect_sends() over the sendguard ledger feeds
-    d6_outbound_send_rate; both then ride the 60s pulse lane. D7
-    (collect_cross_run_sends, above) is a DIFFERENT, already-landed detector -
-    it does not consume either reservation."""
+    D5 (transcript poison) attaches via collect_sessions() and is the one collector
+    here that reads a STOCK rather than a flow, so it deliberately does NOT use the
+    offset/slice pattern: re-measuring the same tail every tick is the point - the
+    poison persists until something clears it. D6 (semantic retry burst) attaches
+    via collect_bursts() over those SAME bounded tails, so it costs one extra pass
+    rather than a new probe surface. D7 (cross-run resend) attaches via
+    collect_cross_run_sends(), which DOES use the offset/slice pattern (a separate
+    'loop-sess:<path>' namespace from D3's) since it is a FLOW over the same session
+    transcripts D5/D6 read, not a stock. A completion-rate detector remains unbuilt
+    (windows already carry per-hour `completions` for it)."""
     rows, slice_stats = _read_new_trajectory_rows(led)
-    return {"units": collect_units(),
+    return {"units": collect_units(led),
             "windows": collect_windows(),
             "runs": collect_runs(rows),
             "crons": collect_crons(led),
             "wedge": collect_wedge(led, slice_stats),
+            "sessions": collect_sessions(),
+            "bursts": collect_bursts(),
             "sends": collect_cross_run_sends(led)}
 
 
@@ -1200,16 +1531,179 @@ def self_test():
             "the raw message body must NEVER survive into D7 evidence"
         f7 = run_detectors({"sends": sends}, C.load_skill_config("thresholds.json"),
                            C.load_signatures())
-        assert any(x["severity"] == "P1" and x["loop_class"] == "LP-A8" for x in f7)
+        assert any(x["severity"] == "P1" and x["loop_class"] == "LP-A10" for x in f7)
         assert not any(raw_payload in json.dumps(x) for x in f7)
         sends2 = collect_cross_run_sends(led)
         assert sends2 == []  # the slice was offset-consumed
         print("  D7 collect case: PASS (3 confirmed-shape resends -> real evidence "
-              "-> P1 LP-A8; sourceChannel present-or-absent both match; reply + "
+              "-> P1 LP-A10; sourceChannel present-or-absent both match; reply + "
               "bad-role rows excluded; raw payload never in evidence or a "
               "finding; slice offset-consumed)")
 
         led.close()
+        for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", _PROBES_OFF_ENV):
+            os.environ.pop(k, None)
+
+    # ---- D5 collect_sessions: the STOCK reader, both directions ---------------
+    # The point of D5 is that a paused loop leaves a transcript that is still
+    # poisoned, so this must fire on wreckage that is no longer moving AND stay
+    # silent on a LARGER clean transcript. Both fixtures are synthetic.
+    fixtures = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+        os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+        os.environ[_PROBES_OFF_ENV] = "1"
+        sdir = Path(td) / "openclaw" / "agents" / "main" / "sessions"
+        sdir.mkdir(parents=True)
+        import shutil as _sh
+        for name in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+            _sh.copy2(str(fixtures / name), str(sdir / name))
+        thr = C.load_skill_config("thresholds.json")
+        sess = collect_sessions()
+        by = {os.path.basename(s["path"]): s for s in sess}
+        bad = by["loop-blocked-session.jsonl"]
+        good = by["healthy-session.jsonl"]
+        assert bad["blocked_records"] == 60 and bad["max_burst"] == 60
+        assert bad["poisoned_checkpoints"] == 1 and bad["blocked_tools"] == ["read"]
+        # THE CONTROL: bigger file, more records, more checkpoints, ZERO blocks.
+        assert good["blocked_records"] == 0 and good["max_burst"] == 0
+        assert good["poisoned_checkpoints"] == 0
+        assert good["bytes"] > bad["bytes"] and good["tail_records"] > bad["tail_records"]
+        f5 = D.d5_transcript_poison(sess, thr)
+        assert len(f5) == 1, "D5 must flag exactly ONE transcript, got %d" % len(f5)
+        assert f5[0]["severity"] == "P1" and f5[0]["loop_class"] == "LP-A8"
+        assert "loop-blocked-session.jsonl" in f5[0]["evidence_path"]
+        print("  D5 collect case: PASS (poisoned transcript=P1 LP-A8 incl. the "
+              "checkpoint carrier; LARGER clean transcript SILENT)")
+
+        # An ARMED tick archives the poisoned transcript (move, never delete) and
+        # leaves the clean one untouched; DRY_RUN mutates nothing.
+        led = Ledger()
+        ev_dry = {"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                  "sessions": collect_sessions()}
+        tick(ev_dry, led, armed=False, box="box-example")
+        assert (sdir / "loop-blocked-session.jsonl").is_file()  # DRY_RUN: untouched
+        # age both transcripts past the live-session guard, then arm
+        import time as _t
+        past = _t.time() - 3600
+        for name in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+            os.utime(str(sdir / name), (past, past))
+        ev = {"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+              "sessions": collect_sessions()}
+        s5 = tick(ev, led, armed=True, box="box-example")
+        assert s5["applied"] == 1, "armed tick must archive exactly one transcript"
+        assert not (sdir / "loop-blocked-session.jsonl").exists()
+        arch = list(sdir.glob("loop-blocked-session.loop-archive-*.jsonl"))
+        assert len(arch) == 1 and arch[0].stat().st_size > 0  # MOVED, not deleted
+        assert (sdir / "healthy-session.jsonl").is_file()      # control untouched
+        led.close()
+        print("  D5 roll case: PASS (DRY_RUN untouched; armed MOVES the poisoned "
+              "transcript to an archive, never deletes; clean transcript untouched)")
+
+        # The live-session guard: a transcript still being written is REFUSED.
+        # NOTE: copy2 preserves the SOURCE mtime, which would make this fixture
+        # look stale as soon as the repo checkout aged past roll_min_idle_minutes -
+        # a time-dependent test that passes on a fresh clone and fails later. Stamp
+        # the mtime to NOW so "live" means live at RUN time, always.
+        _sh.copy2(str(fixtures / "loop-blocked-session.jsonl"),
+                  str(sdir / "live-session.jsonl"))
+        os.utime(str(sdir / "live-session.jsonl"), None)
+        led = Ledger()
+        ev_live = {"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                   "sessions": [s for s in collect_sessions()
+                                if s["path"].endswith("live-session.jsonl")]}
+        s6 = tick(ev_live, led, armed=True, box="box-example")
+        assert s6["findings"] == 1 and s6["applied"] == 0
+        assert (sdir / "live-session.jsonl").is_file()
+        led.close()
+        print("  D5 live-guard case: PASS (a transcript still being written is "
+              "REFUSED even when armed; the P1 still lands)")
+
+        # D5 RE-ROLL guard: the archive LF-10 just wrote must leave D5's scope for
+        # good. It is a *.jsonl in the same directory, shutil.move preserved its
+        # mtime, and its bytes are the same wreckage - so left in scope it re-measured
+        # as poisoned AND idle every tick and got archived again, growing the filename
+        # by one marker per tick until the move raised ENAMETOOLONG and killed the
+        # tick outright (measured: crash on the 8th roll). The healer self-breaker
+        # could not catch it: D5's unit is derived from the FILENAME, which changed on
+        # every roll. Repeated ticks must now archive EXACTLY once and go silent.
+        led = Ledger()
+        rolls = 0
+        found = 0
+        for _ in range(10):
+            older = _t.time() - 3600
+            for _f in sdir.iterdir():
+                os.utime(str(_f), (older, older))
+            s_rr = tick({"units": [], "windows": [], "runs": [], "crons": [],
+                         "wedge": {}, "sessions": collect_sessions()},
+                        led, armed=True, box="box-example")
+            rolls += s_rr["applied"]
+            found += s_rr["findings"]
+        led.close()
+        rolled = sorted(p.name for p in sdir.iterdir() if KC.ARCHIVE_MARKER in p.name)
+        assert rolls == 1, "10 ticks must roll ONE transcript once, applied %d" % rolls
+        # FINDINGS is the assertion that catches the collector regression alone: with
+        # the archive back in scope the kill card's own guard still refuses the second
+        # roll (applied stays 1 and the defect hides), but a re-measured archive raises
+        # a fresh P1 every single tick.
+        assert found == 1, "a rolled archive must never be re-found, got %d" % found
+        assert all(n.count(KC.ARCHIVE_MARKER) == 1 for n in rolled), rolled
+        assert all(len(p.name.encode("utf-8")) <= 255 for p in sdir.iterdir())
+        print("  D5 re-roll case: PASS (10 armed ticks archive the poisoned transcript "
+              "EXACTLY once, one finding total; an archive leaves D5 scope for good)")
+
+        # TICK CONTAINMENT: one bad finding must never kill the tick. Injected at the
+        # kill-card seam, with the RAISING transcript first, so a tick that aborts on
+        # it can never reach the one behind it. An uncaught OSError here used to abort
+        # the whole tick - in a scheduled job, a watchdog dying silently every run.
+        for _f in sdir.iterdir():
+            _f.unlink()
+        for name in ("boom-session.jsonl", "good-session.jsonl"):
+            _sh.copy2(str(fixtures / "loop-blocked-session.jsonl"), str(sdir / name))
+            os.utime(str(sdir / name), (_t.time() - 3600,) * 2)
+        _real_lf10 = KC.lf10_archive_and_roll_session
+
+        def _selective(session_path, *a, **k):
+            if "boom-session" in str(session_path):
+                raise OSError(63, "File name too long (injected)")
+            return _real_lf10(session_path, *a, **k)
+        KC.lf10_archive_and_roll_session = _selective
+        try:
+            led = Ledger()
+            ordered = sorted(collect_sessions(),
+                             key=lambda m: 0 if "boom-session" in m["path"] else 1)
+            sc = tick({"units": [], "windows": [], "runs": [], "crons": [],
+                       "wedge": {}, "sessions": ordered}, led, armed=True,
+                      box="box-example")
+            led.close()
+        finally:
+            KC.lf10_archive_and_roll_session = _real_lf10
+        assert "boom-session" in ordered[0]["path"]
+        assert sc["findings"] == 2 and sc["errors"] == 1 and sc["applied"] == 1
+        assert (sdir / "boom-session.jsonl").is_file()      # left exactly as found
+        assert not (sdir / "good-session.jsonl").exists()   # the one behind it ran
+        print("  tick-containment case: PASS (an exception escaping a kill card is "
+              "counted in errors and the tick still processes the finding behind it)")
+
+        # D1 restart BASELINE: pm2 reports a unit's LIFETIME restart count, so the
+        # first sight of any long-lived unit must read as delta 0, never as a storm.
+        # Without this, the first tick on a real box invents a P1 for every unit
+        # that has ever restarted - and on an armed box, parks it.
+        led = Ledger()
+        jl = [{"name": "long-lived", "pid": 1, "pm2_env": {"status": "online",
+                                                           "restart_time": 28}}]
+        u1 = collect_units(led, recs=jl)
+        assert u1[0]["delta"] == 0, "first sight must be 0, got %s" % u1[0]["delta"]
+        assert not D.d1_restart_velocity(u1, thr)      # and therefore SILENT
+        jl[0]["pm2_env"]["restart_time"] = 40          # +12 since last tick
+        u2 = collect_units(led, recs=jl)
+        assert u2[0]["delta"] == 12
+        assert any(x["severity"] == "P1" for x in D.d1_restart_velocity(u2, thr))
+        jl[0]["pm2_env"]["restart_time"] = 2           # counter reset -> re-baseline
+        assert collect_units(led, recs=jl)[0]["delta"] == 0
+        led.close()
+        print("  D1 baseline case: PASS (first sight=0 not a false storm; real "
+              "delta=12 still P1; a reset counter re-baselines instead of spiking)")
         for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", _PROBES_OFF_ENV):
             os.environ.pop(k, None)
 
@@ -1222,6 +1716,14 @@ def _cli(argv=None):
     ap.add_argument("cmd", nargs="?", default="tick", choices=["tick"])
     ap.add_argument("--no-send", action="store_true",
                     help="do not deliver alerts/escalations (still records findings)")
+    # --no-send suppresses DELIVERY only; it does NOT make a tick observe-only. On an
+    # ARMED box a --no-send tick still applies Tier-1 fixes for real. --dry-run is the
+    # flag that forces armed=False regardless of ledger state, for a caller that must
+    # be sure it mutates nothing outside our own ledger (install.sh's post-install
+    # tick, which used to claim DRY_RUN while running armed on an armed box).
+    ap.add_argument("--dry-run", action="store_true",
+                    help="force observe-only (armed=false) whatever the ledger says: "
+                         "record findings, plan fixes, apply NOTHING")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
@@ -1231,7 +1733,8 @@ def _cli(argv=None):
         box = led.get_meta("box", "box")
         evidence = collect_evidence(led)
         tx = (lambda url, body: True) if a.no_send else None
-        summary = tick(evidence, led, escalate_transport=tx, box=box)
+        summary = tick(evidence, led, armed=False if a.dry_run else None,
+                       escalate_transport=tx, box=box)
         print(json.dumps(summary, sort_keys=True))
         return 0
     finally:

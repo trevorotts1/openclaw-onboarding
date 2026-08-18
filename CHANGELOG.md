@@ -1,3 +1,1949 @@
+## [v22.0.41] -- 2026-08-18 -- feat(loop-protection): LP-A8 cross-run resend loop (D7 detector, LF-12 breaker) -- 448-commit merge-forward from a stale PR
+
+PR #851 (`feat/lp-a8-cross-run-resend-loop`) sat 448 commits behind `main` since
+2026-08-04. Brought current: verified the feature is NOT redundant with anything
+`main` grew in the interim (`main`'s own `loop_watchdog.py` docstring still says
+"a send-guard detector over the sendguard ledger (a future D7) ... is likewise not
+built"; the only related thing on any box is an out-of-repo launchd hack `main`'s
+own CHANGELOG explicitly disclaims as "an unrelated cross-run resend-loop breaker
+... zero Skill-61 markers in it"), then merged and reconciled on the merits.
+
+- **D7 - cross-run resend (provenance-stamped)** lands in Skill 61
+  (`61-loop-protection-system`): detects an orchestrator resending a
+  byte-identical `sessions_send` payload as a brand-new top-level run after the
+  tool's own hardcoded 30s fallback timeout is misread as delivery failure --
+  the 2026-08-04 incident that neither `tools.loopDetection` (within-run) nor
+  `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one call) can see,
+  because every resend is a fresh run id. **LF-12** aborts the source session's
+  in-flight run via the native `sessions.abort` RPC (`openclaw gateway call
+  sessions.abort`, no-op-safe when nothing is active) and parks the source.
+  Repo-only; the skill's rollout gate stays HELD, no box is armed or touched.
+- **ID collision, resolved by renumbering.** The branch's original ids,
+  `LP-A8`/`LF-9`, were the first free slots on 2026-08-04. In the 448 commits
+  since, `main` independently shipped D5 (`LP-A8`, self-blocking flush-run /
+  transcript poison, 2026-08-05) and D6 (`LP-A9`, semantic retry burst) -- a
+  genuinely different fault in the same `F15` taxonomy family. Renumbered this
+  release's ids forward to the next free slots, `LP-A10`/`LF-12`, across every
+  script, config, doc, and test; the design, thresholds, and mechanism are
+  otherwise unchanged from what was reviewed and live-verified on 2026-08-04.
+  Full account in `61-loop-protection-system/CHANGELOG.md` [0.6.0].
+- Skill 61 bumped `0.5.0` -> `0.6.0` (`skill-version.txt` + `SKILL.md`
+  frontmatter in lockstep); detector/breaker counts in `SKILL.md` corrected to
+  seven detectors (D1-D7) and seven circuit breakers; `verify.sh` drill count
+  corrected to twenty-three (adds `D-RESEND` to the twenty-two `main` already
+  carried for D1-D6).
+
+Full suite: 745 passed, 0 failed, 1 skipped (identical to a same-day rerun of
+plain `origin/main` -- the skip count itself is pre-existing flakiness in
+`test_client_package.py`, unrelated to this merge; the first same-day baseline
+run measured 744/0/2, a same-tree rerun already drifted to 745/0/1 before any
+change here). Skill 61's own battery: `verify.sh` 23/23 drills PASS, all four
+merge-gate scanners clean, every script `--self-test` PASS including the new
+D7 cases run alongside D5/D6.
+
+## [v22.0.40] -- 2026-08-18 -- fix(presentations): 12 fixes -- gate bypasses, no-op guards, stale floors, heartbeat drift
+
+Twelve fixes, all the same pathology: a check that reports success without checking.
+
+- Interview intake fabricated deck_type in THREE places -- intake_writer.py invented
+  it, pages/index.html hardcoded `presentation_type: "from_scratch"`, and the Worker
+  API curated list never asked. A client requesting a signature keynote silently
+  received a webinar. Backend now fails closed (exit 3) naming the missing answer;
+  the form asks the question first (required, no default reachable); the Worker list
+  includes it with a guard asserting it stays first.
+- Guard tests that could not fail: test_fix2_qc_unskippable.py, test_fix9_audio_mp3.py
+  and test_scan_roles.py carried 20 test functions and ZERO assertions -- they returned
+  failure lists that pytest discarded. Proven: with QC-skip protection deliberately
+  sabotaged the old tests passed (exit 0); the fixed tests fail (exit 1).
+- MIN_MANIFEST_VERSION 43 -> 49 (floor was 5 behind the manifest).
+- MIN_MANIFEST_PHASES 26 -> 36 (10 phases could have vanished undetected).
+- Heartbeat ceiling now bounds against each phase's own budget instead of a global
+  240 (manifest.py, sync_check.py, watchdog.py, process_reaper.py).
+- 13 phases declared heartbeat_minutes ABOVE their own budget -- every QC phase plus
+  delivery, up to 3x over, so a stall in those phases could never be detected in time.
+  Tightened via min(old, budget); over-budget count now 0. manifest_version 48 -> 49,
+  MANIFEST-SOURCE.txt and universal-sops/_content-manifest.json restamped.
+- Dead-letter cap (5 attempts) on cmd_sweep_undeliverable, which previously re-queued
+  a failed notification forever with no ceiling.
+
+Full suite: 727 passed, 0 failed, 2 skipped.
+
+## [v22.0.39] -- 2026-08-18 -- fix(presentations): trust-boundary batch -- blind-spot close, parser fix, slice1 reconciliation, CI purity wiring, 2 gates closed, u058 false-fail fix
+
+Six independently verifier-approved branches merged as one batch (six PRs
+worth of review compressed into one merge -- not six separate merges):
+`fix/trust-blind`, `fix/trust-parser`, `fix/trust-recon`, `fix/trust-ci`,
+`fix/two-remaining-gates`, `fix/selftest-exit-codes-1`. Three of the six
+(`trust-parser`, `trust-recon`, `trust-ci`) were built on a shared,
+never-pushed local integration of three feature branches (`feat/trust-core`,
+`feat/trust-obs`, `feat/trust-wrap` -- the surface-A RunFacts admission
+validator, observability surface, and report-only dispatch-point wrapper).
+That shared base was merged into this batch exactly ONCE (via
+`fix/trust-parser`); `fix/trust-recon` and `fix/trust-ci` each contributed
+only their own one-commit delta on top of the already-present base
+(confirmed: both branches' own commits cherry-pick clean onto bare
+origin/main with zero dependency on the shared base's files). Three
+branches (`trust-blind`, `two-remaining-gates`, `selftest-exit-codes-1`)
+were fully independent, single-commit, no shared-base entanglement.
+
+1. **trust-blind**: `gate_read_audit.py` (sys.addaudithook) closes the 83%
+   PREFLIGHT_REQUIRED blind spot -- 50 of 60 gates carry `rel=None`
+   (run-dir-scoped), so any snapshot keyed off the declared `rel` had no
+   file to snapshot for those 50. Empirically observes what each gate's
+   `check()` call actually opens under `run_dir` instead of trusting the
+   declared tuple. Report-only, wired into `run_preflight()` alongside the
+   existing loop, never changes what any gate returns.
+2. **trust-parser**: `trust_boundary_observability.KNOWN_KINDS` only listed
+   the three older runfacts.py/phase_verifiers.py prefixes and was blind to
+   all four `-PREFLIGHT-`-infixed prefixes `preflight_shadow.py` actually
+   emits -- the monitor could not parse a single line from the exact system
+   it exists to watch. Fixed via a new `trust_boundary_prefixes.py`.
+3. **trust-recon**: reconciled `slice1_gate_verifiers.py`'s RunFacts
+   verifier against the gates-absence g4 hand-patch (`_chk_priority_shift`
+   vs `v_priority_shift`) -- they disagreed. Two bugs fixed: a swapped
+   `Fact.known(payload, detail)` argument order, and the structural
+   verifier's own logic gap.
+4. **trust-ci**: wired the pre-existing `gate_integrity_check.py --purity`
+   Guard B AST purity lint into `presentations-lockstep.yml` -- it existed
+   since Trust Boundary Increment 1 but nothing in CI ever invoked it. No
+   `|| true` / continue-on-error: a real violation now fails the step, same
+   as every other gate in this job. Verified green on both this batch and
+   bare origin/main before wiring (activates a currently-passing lint; does
+   not turn a green CI red).
+5. **two-remaining-gates**: closed 2 of 3 remaining gates-absence holes.
+   `STYLE_PHASE_GATE` (new) ships in `"warn"` mode BY DESIGN (Rule 3.5:
+   warn -> remediate -> enforce) because the shared `make_workdir` test
+   fixture doesn't yet stamp a P-STYLE-PREVIEW attestation -- flipping to
+   enforce is a deliberate, separate, later commit. `_chk_sp_claim`'s
+   `mod is None` fallback now checks all 4 SP signals its own docstring
+   already promised (was checking 1 of 4). Gate 3
+   (`_chk_priority_shift_ledger`) is documented dead code, left alone,
+   flagged for a dedicated follow-up.
+6. **selftest-exit-codes-1**: `tests/unit/u058-anthology-eight-stage-contract.test.sh`'s
+   T2 grepped for `"ALL ASSERTIONS PASSED"`, a convention `run_anthology.py`
+   never emits (it prints `"ALL ASSERTIONS [PASS]"`) -- a healthy,
+   passing script was reported FAIL and the wrapper's own exit code
+   followed that false verdict. Corrected the string match only; the
+   check itself (`run_anthology.py --self-test` succeeds) is unchanged.
+
+One real merge conflict, resolved deliberately (not auto-resolved): both
+`trust-blind`'s BLIND-SPOT SHADOW READ-AUDIT block and the shared base's
+`_preflight_shadow.close_run()` summary line landed at the same point in
+`build_deck.py`'s preflight loop tail. Both are independent, non-blocking,
+report-only side effects -- kept both, `close_run()` first (closes the
+per-gate shadow ledger for the loop that just completed) then
+`seal_gate_reads()` (audits what was actually read), each in its own
+`try/except Exception` that never reaches `problems.append()`.
+
+Report-only re-proven after the merge: all four shadow/audit call sites in
+`build_deck.py` (`open_run`, `record`, `close_run`, `seal_gate_reads`) are
+each wrapped in `try/except Exception`, none can reach `problems.append()`,
+and `STYLE_PHASE_GATE_STAGE == "warn"` (non-blocking) confirmed by direct
+read of the merged source. Nothing in this batch newly blocks a run.
+
+Full presentations-department suite (`pytest scripts/`, includes
+`test_preflight.py`, `tests/`, and every loose `test_*.py`) run against
+this batch and a control clone of bare origin/main: batch 1007 passed / 1
+failed / 2 skipped vs control 979 passed / 1 failed / 2 skipped -- the
+single failure (`test_fix2_qc_unskippable::test_qc_phase_skip_record_refused_in_load_skip_approvals`)
+is identical and pre-existing on both; zero new failures, +28 net-new
+passing tests. `tests/unit/u058-anthology-eight-stage-contract.test.sh`:
+PASS=4/FAIL=0 on the batch versus PASS=3/FAIL=1 (the exact false-negative
+the fix targets) on control.
+
+Excluded from this batch, per verifier rejection with specific defects,
+being rebuilt separately: `fix/trust-falsepos`, `fix/trust-fakehmac`,
+`fix/trust-flag`.
+
+## [v22.0.38] -- 2026-08-17 -- fix(presentations): slice1 sp_intake test -- stale pre-migration fixture, not a code bug
+
+`test_slice1_gates.py::test_slice1_sp_intake_both_directions` started failing
+because `_pair_sp("intake")`'s "genuine" (must-PASS) fixture wrote
+`prove_sp_intake._valid_runtime_fixture()` -- a runtime record with no
+`turn_ledger_provenance` block. That shape is correctly rejected now: GK-23/D18's
+ratified migration window (`prove_sp_intake.GRACE_WINDOW_UNTIL = 2026-08-15`)
+grandfathers an unstamped record only through that date, and today is
+2026-08-17. The `build_deck.py` / `slice1_gate_verifiers.py` call site
+(`spi.evaluate(intake)`) calls the real, unpinned `date.today()` -- verified
+correct, not an off-by-one or timezone bug -- so a genuine post-window PASS
+fixture must carry the provenance stamp.
+
+Verified the real shape before touching anything: `deck-intake-driver.py`'s
+`build_turn_ledger_provenance()` (`23-ai-workforce-blueprint/scripts/`) writes
+`{"turns": [{"question_id", "turn", "asked_at", "validated_at"}, ...],
+"signature": <HMAC-SHA256>}`, byte-identical to what
+`prove_sp_intake._valid_turn_ledger_provenance()` / `_valid_runtime_fixture_paced()`
+already builds -- the same helper the prover module's own self-test uses for its
+"GK-23-fixtureA-driver-paced" must-PASS case. Swapped the fixture's genuine
+branch to `_valid_runtime_fixture_paced()`. One line changed; no assertion
+removed or relaxed -- the gate is unchanged and, if anything, now exercised by a
+more realistic fixture.
+
+`python3 -m pytest tests/ -q`: 723 passed, 1 skipped, 0 failed (was 722
+passed / 1 failed / 1 skipped on origin/main).
+
+## [v22.0.37] -- 2026-08-17 -- fix(presentations): slice 5 -- close 4 delivery/bundle/postflight absence holes (gates-absence slice g5)
+
+Of the 7 `_chk_*` gates run_postflight_gate calls directly at closeout
+(`_chk_notes_pane`, `_chk_kie_baked`, `_chk_no_overlay`, `_chk_text_fits`,
+`_chk_spelling`, `_chk_type_size`, `_chk_cc_registered`), 4 had a real
+UNKNOWABLE==PASS collapse, now closed:
+
+1. `_chk_kie_baked` -- the pre-render "no render record yet" defer is
+   legitimate ONLY at preflight. The SAME defer fired again, unchanged, at
+   the postflight closeout call, where a deck.pptx already exists -- so a
+   missing render record there is a lost/corrupted manifest on an
+   already-shipped deck. Added a keyword-only `require_rendered` flag
+   (default False, every preflight caller unaffected), set True only at the
+   postflight call site.
+2. `_delivered_pptx_native_text` (feeds `_chk_no_overlay`) -- returned `""`
+   both when python-pptx was unavailable and when `Presentation()` raised on
+   a file the caller found and asked to inspect. False for a zip with a
+   valid PK signature and passing size but a corrupted internal part only
+   python-pptx's parser catches.
+3. `_chk_notes_pane` -- identical hole, independently implemented: a pptx
+   matched by the bundle_dir glob that python-pptx could not open was
+   silently `continue`d past instead of counted.
+4. `_chk_text_fits` / `_chk_spelling` / `_chk_type_size` -- landed by
+   gates-absence g3 (v22.0.34); slice g5 independently authored an
+   equivalent fix for the same three wrappers, reconciled to g3's single
+   surviving definition during this merge (no duplicate logic on main).
+
+Two companion test-fixture fixes landed in this same release, proving the
+production fix intact in BOTH directions with the real build_deck.py
+functions (never a reimplementation): the shared `_postflight_bundle_dir`
+fixture now writes a genuinely-openable python-pptx deck for `deck_pptx`
+(the magic-byte-only padding it used before was never a real pptx, a fact
+this slice's own fix correctly started surfacing), and gates-absence g2's
+postflight speech-length fixture now carries a real kie-baked render record
+so its independent assertion is no longer masked by this slice's stricter
+closeout check. A genuinely corrupt pptx still correctly fails closed on
+both checks (negative control, verified directly against the real functions).
+
+Full `test_preflight.py` suite: zero new failures (the 1 pre-existing
+SP-GOLDEN failure, unrelated to this slice, is unchanged on both branch and
+origin/main control).
+
+## [v22.0.36] -- 2026-08-17 -- fix(presentations): close 2 absence-as-approval holes in gates slice 2 (gates-absence slice g2)
+
+Two real, previously-silent holes closed in the coverage/speech-length family:
+
+1. `_chk_coverage` (AF-COVERAGE-1, anti-compression): a `mission_prd.json` that
+   EXISTS but is unreadable/unparseable silently defaulted `source_slide_count`
+   to 0, collapsing into Mode A ("no source deck, always pass") --
+   indistinguishable from a genuinely-absent file. Now modeled explicitly as
+   `CheckResult.UNDETERMINED` and refused; a genuinely-absent `mission_prd.json`
+   (legitimate Mode A) is unaffected and still passes.
+
+2. `_chk_speech_length` (AF-SPEECH-SHORT): correctly defers pre-render, but its
+   own docstring's claim that the gate "can never be silently skipped once the
+   speech is written" was false -- `run_preflight()` fires exactly once,
+   pre-render, so the word-count-vs-target-duration floor was never re-verified
+   once the speech existed. Closed by re-invoking `_chk_speech_length` at
+   closeout inside `run_postflight_gate`, mirroring the already-proven
+   `_chk_kie_baked` re-check pattern.
+
+Acceptance (`test_preflight.py`, executed): malformed `mission_prd.json` ->
+FAIL/UNDETERMINED (was silent pass); a 500-word speech (30min target) now
+exit(5)s at closeout (was previously unchecked forever); a 3,600-word speech
+(at the floor) still PASSES. Full suite: zero new failures (the 1 pre-existing
+SP-GOLDEN failure, unrelated to this slice, is unchanged on both branch and
+origin/main control).
+
+## [v22.0.35] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the priority-shift doctrine spine (gates-absence slice g4)
+
+`_doctrine_active()` (the priority-shift "no-regression master switch") returned
+the SAME `None`/false for "`priority_shift_spec.json` genuinely absent" (a
+legitimate legacy/pre-P0B defer) and "the file EXISTS but is unparseable / not
+a JSON object" (Phase P0B-PRIORITY ran and wrote something broken). Every one
+of the ten `_doctrine_active()`-gated gates in this slice short-circuited on
+that bool before doing anything else, so a CORRUPTED spec was indistinguishable
+from "the phase never touched this deck" and silently PASSED.
+
+Fix uses the already-merged three-valued `CheckResult`: `_chk_priority_shift`
+(the doctrine's own spine gate) is the correct single owner -- once the file
+exists at any candidate path, a parse failure is `CheckResult.UNDETERMINED`,
+which behaves like FAIL on this completeness-style preflight gate, closing the
+hole for all ten gates at the caller. Full `test_preflight.py` suite: zero new
+failures (the 1 pre-existing SP-GOLDEN failure, unrelated to this slice, is
+unchanged on both branch and origin/main control).
+
+## [v22.0.34] -- 2026-08-17 -- fix(presentations): slide-geometry checker import failure must not read as a clean deck (gates-absence slice g3)
+
+`_chk_text_fits` / `_chk_spelling` / `_chk_type_size` (AF-TEXT-OVERFLOW /
+AF-SPELLING / AF-TYPE-SIZE-MEASURED) silently returned `""` (pass) whenever
+`slide_geometry.py` -- first-party code that ships beside `build_deck.py`, not
+an optional plugin -- failed to import. A broken/missing/corrupted
+`slide_geometry.py` therefore read as a deck with no text-overflow, spelling,
+or type-size problems: a checker that never ran was indistinguishable from a
+checker that ran and found nothing.
+
+Uses the already-merged `CheckResult` type: these are deck-quality/
+completeness gates, so `UNDETERMINED` lands on the FAIL side. The three
+wrappers now return a non-empty `AF-*: UNDETERMINED` message instead of `""`,
+so `run_postflight_gate`'s existing WARN-by-default loop always surfaces it,
+and `PRESENTATION_SLIDE_GEOMETRY_ENFORCE=1` can no longer be silently defeated
+by an import failure. Verified against the REAL shipped `slide_geometry.py`
+(not a synthetic fixture): genuine import failure -> all three now return
+non-empty `UNDETERMINED`; genuine pre-render state -> all three still return
+`""` exactly as before (no regression). Full suite: zero new failures (the 1
+pre-existing SP-GOLDEN failure is unchanged on both branch and origin/main
+control).
+
+## [v22.0.32] -- 2026-08-17 -- fix(presentations): close absence=approval hole in the _chk_creativity archetype gate (gates-absence slice g1)
+
+`_chk_creativity`'s archetype-dominance half claimed its absence was "owned by
+`_chk_design_brief`", but that gate checks a DIFFERENT artifact
+(`working/research/design-brief-*.md`, a Deep-Research-Specialist INPUT) than
+the one `_chk_creativity` actually reads (`working/typography/design_system.json`,
+the Typography Architect's own primary output). No gate anywhere required
+`design_system.json` to exist, so a Typography Architect pass that wrote
+`type_layout_system.md` but never wrote `design_system.json` silently cleared
+the entire anti-template-sameness check, forever — absence read as approval.
+
+Fix uses the already-merged three-valued `CheckResult` (`presentation_job/
+result.py`): once `type_layout_system.md` exists, a still-missing
+`design_system.json` is `UNDETERMINED`, and on this completeness-style
+preflight gate `UNDETERMINED` behaves like FAIL rather than being silently
+dropped. Genuinely pre-typography runs still legitimately defer — verified by
+acceptance test. Full `test_preflight.py` suite: 75/76 pass (the 1 failure is
+pre-existing on origin/main, unrelated to this slice).
+
+## [v22.0.31] -- 2026-08-17 -- release: PRs #918-#922 (interview-completion path, identity/mandatory-field fixes, persona-selector timeout, installer-completeness hardening, podcast py3.9 state fix, skill23 changelog + durable jq resolution)
+
+Roll of the ten version markers to v22.0.31 covering five merged PRs since
+v22.0.30: #916 (skill23 interview-completion-path repair), #917 (skill23
+identity/mandatory-fields), #918 (skill23 v22.0.30 CHANGELOG backfill), #919
+(persona-selector timeout), #920 (installer-completeness-verification
+hardening), #921 (podcast-state Python 3.9 fix), #922 (skill23 durable jq
+resolution — build could not run on container boxes). Backfilled here because
+the original release roll did not carry a CHANGELOG entry (G2 gap discovered
+while landing v22.0.32).
+
+## [v22.0.30] -- 2026-08-17 -- fix(qc): companyName/industry transcript fallback was dead code
+
+Follow-up to v22.0.29 (PR #917). v22.0.29 made the structural
+`companyName`/`industry` checks in `check_mandatory_fields()` satisfiable by
+answered-transcript evidence — the core of the D3 web-lane fix — but
+`transcript_answered_ids` was still built from `branding_questions` alone, and
+**those two are not branding ids**: `branding-questions.json` contains only
+`brand_primary_color`, `brand_logo`, `brand_evokes`, `customer_feeling`,
+`brand_descriptors`, `brand_voice`, `ideal_customer`, `unique_differentiator`.
+`company_name` and `industry` live in `IDENTITY_QUESTIONS_CANONICAL`.
+
+So `"company_name" in transcript_answered_ids` could never be true — the
+acceptance was DEAD CODE, and a pure web-lane interview that genuinely answered
+both still hard-failed `Missing mandatory fields: companyName, industry`. That
+is the exact D3 symptom v22.0.29 set out to remove.
+
+The match is now built from the FULL canonical set (identity + branding +
+operations). Proven against the shipped v22.0.29 tree: a transcript answering
+both identity questions, with neither mirrored into build-state, reported both
+as hard-missing; after the fix the same input reports neither. Fail-closed is
+preserved — an empty transcript with empty state still reports `companyName`,
+`industry` and `departments[at-least-one]`.
+
+Found by cross-checking the shipped derivation against `fable-skill23-repo-diag`'s
+verbatim EDIT 1a, which arrived after v22.0.29 had already merged.
+
+The rest of v22.0.29's EDIT 1 is unchanged and verified working on main:
+`ownerChat`/`agentName` demoted to a `plumbing` warning, and
+`departments[at-least-one]` satisfied by a recorded
+`canonicalReconciliation.decisions` yes.
+
+## [v22.0.29] -- 2026-08-17 -- fix(interview): repair the Skill 23 interview-completion path (nine defects)
+
+An owner could answer every question and still never reach a built workforce.
+Nine independent defects on the completion path, each individually capable of
+producing the same symptom, fixed together because they compound:
+
+- **D1** hard `jq` dependency under `set -euo pipefail` in
+  `update-interview-state.sh` — jq is absent from the OpenClaw container image, so
+  the shell aborted **rc 127 before the write landed**, freezing
+  `lastQuestionNumber` and killing `--complete` *after* the evidence gate had
+  passed. De-jq'd the client-facing path (stamp, `--complete` write, six reads via
+  a new `state_read()` helper). Proven with jq genuinely off `PATH`: rc 127 → rc 0.
+- **D2** the transcript resolver never probed the master-files tree (where the
+  conversational lane writes) or the Command Center's flat workspace fallback →
+  "transcript not found" → `exit 87` forever on a finished interview.
+- **D3** the mandatory-field gate was unsatisfiable on the web lane: `ownerChat` /
+  `agentName` are box plumbing the owner is never asked for, and `ownerChat` is
+  seeded as the **falsy integer 0**. Demoted to a warning; `companyName`/`industry`
+  now satisfiable by transcript evidence; `departments[at-least-one]` now accepts a
+  recorded `canonicalReconciliation.decisions` yes.
+- **D4** the grading standard was chosen by *who stamped the last question*, so
+  mixed-channel interviews hard-failed in both directions. Check #1 now grades on
+  **either satisfied standard**; both keep full strength.
+- **D5** `INSTRUCTIONS.md` ordered a hand-write of `interviewComplete` that bypassed
+  the evidence gate, producing a silent terminal strand (`interviewComplete: true` +
+  `interviewQc: fail`) after the nudge cron had self-removed.
+- **D6** the `--complete` rate-limit budget was consumed by *refused* attempts,
+  locking an owner out for an hour even after the fault was fixed (3 → 6).
+- **D7** `CHECK_SHARED_HOST` compared a full URL against a bare hostname, making the
+  box-own-CC branch dead code for every input, so local dashboards stopped sending
+  the web link. Now parses the hostname via `urlparse`.
+- **D9** the recovery lane still demanded a strict `pass` while every other gate
+  accepted `pass|needs-review`, and nothing promotes `needs-review` → `pass` — a
+  permanent silent strand.
+
+Also repairs `test-qc-question-count-structured-coverage.py`, red since it was
+written (a shared fixture hardcoded the frozen-counter value the disagreement
+guard exists to catch), and adds **U6** pinning that guard directly. The
+disagreement hard fail, jargon / no-fabrication / decline-provenance checks, the
+absolute `>36` ceiling and the 25-35 standard are all deliberately unchanged. The
+workspace-override path split (`detect_platform.py` / `paths.ts`) is deliberately
+out of scope — it needs one shared resolver applied in lockstep.
+
+## [v22.0.28] -- 2026-08-14 -- big integration: 53-gate conversion (verifier registry + sealed RunFacts), QC-report gate teeth, three-outcome cc-registered, notify retry semantics, rescue-rangers tpl
+
+Merged as squash `83cd9595` (feat(presentations): gate-conversion + gate teeth +
+notify retry + rescue-rangers — one big v22.0.28 integration, PR #913). One big
+integration release: 53-gate conversion (verifier registry + sealed RunFacts),
+QC-report gate teeth, three-outcome cc-registered gate, notify retry semantics
+(transport vs poisoned), rescue-rangers tpl shipped into the role-library.
+## [v22.0.28] -- 2026-08-14 -- fix(presentations): gate-conversion infra — verifier registry + sealed RunFacts helpers (Trust Boundary Increment 2, shared base)
+
+Shared machinery the gate-conversion slices (T1 QC-report teeth, T2 CC-registered
+gate) build on. New `presentation_job/../verifier_registry.py` (ships beside
+`presentation_job/runfacts.py`): a verifier registry whose entries are
+`(artifact_paths, run_dir, config) -> sealed RunFacts` (transactional seal — the
+shared Increment-1 seal cache is restored after each slice seal), pure
+`(RunFacts) -> (Verdict, str)` verdict functions, the same report-only
+shadow-compare + `PRES_TRUST_BOUNDARY_ENFORCE=1` enforcement gate as Increment 1,
+fail-closed on missing input (a gate whose input is absent does not pass — the
+`Gates._qc_gate` contract), and `register_verifier()` as the slices' wiring
+point (idempotent by gate name, last registration wins). Factories: `qc_report_verifier`
+(the six QC_REPORTS keys, verdict = `runfacts.verify_qc`, same rubric
+`build_deck._qc_report_gate` enforces) and `artifact_verifier`. Shared
+both-direction test harness (`both_directions`): fabricated artifact rejected
+with reasons naming exactly what could not be reproduced / genuine passes —
+exercised against `qc:typography` with the proven Increment-1 fabricated report
+(gate:'typography', pass:false, average:2.1). Suite `presentations/scripts/tests/`:
+662 passed / 1 skipped (baseline 654/1 + 8 new, zero regressions).
+`gate_integrity_check.py --purity` contract unchanged: verdict functions must
+stay pure (linted by name in PURITY_ASSERTED_FUNCTIONS).
+## [unversioned] -- 2026-08-14 -- fix(rescue-rangers): ship rescue-escalation-section.md.tpl into the role-library and deliver it to materialized boxes (GAP-DELIVERY-TPL)
+
+**GAP — the .tpl was in neither writer's suffix list, so the escalation template
+never reached a materialized department's scripts/ dir.** The single source of
+truth both `apply-fleet-standards.sh` §5j and
+`stamp-rescue-escalation-section.sh` render onto a box's AGENTS.md
+(`scripts/rescue-escalation-section.md.tpl`) lived ONLY in the repo root
+`scripts/`; `23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/`
+had no copy, and `create_role_workspaces._CANONICAL_SCRIPT_SUFFIXES` /
+`refresh-dept-scripts.py` mirrored only `.py/.sh/.js/.sha256/.pdf` (+ `.json`
+additive). A box that received the role-library department tooling (via
+`refresh-dept-scripts.py`, run unconditionally every roll by update-skills.sh)
+never got the template — `stamp-rescue-escalation-section.sh`'s `_default_tpl()`
+walk (which looks for `scripts/rescue-escalation-section.md.tpl` beside the
+script) could not find it, and its drill in `verify.sh` failed: **4 passed /
+1 failed** on the materialized box.
+
+Fix: (1) the template is now shipped in the role-library at
+`templates/role-library/rescue-rangers/scripts/rescue-escalation-section.md.tpl`
+(byte-identical to the repo-root canonical, which stays the render source for
+apply-fleet-standards.sh §5j — a dedicated tpl-vs-tpl byte-equality check is
+proven in the entry below); (2) `.tpl` added to `_CANONICAL_SCRIPT_SUFFIXES`
+(fleet-owned, always-overwrite — a render template is never a client-local
+override candidate), sourced by BOTH writers from the one shared constant, so
+`scaffold_department()` and `refresh-dept-scripts.py` now deliver it to every
+materialized `departments/rescue-rangers[-dept]/scripts/`.
+
+Executed with the REAL `refresh-dept-scripts.py --apply` against a scratch
+materialized box (`departments/rescue-rangers/scripts/`):
+
+| tree | tpl in role-library | tpl delivered to materialized scripts/ | verify.sh |
+|---|---|---|---|
+| origin/main | NO | NO | **4 passed / 1 failed** (`stamp-rescue-escalation-section.sh --self-test` DRILL FAILED — template not found) |
+| this change | YES | YES | **5 passed / 0 failed**, exit 0 |
+
+Also proven: mirror is idempotent (second `--apply` copies 0 files, rc 0,
+`DEPT_SCRIPTS_STATUS ok=1`); a real `stamp-rescue-escalation-section.sh
+--agents ...` run from the materialized dept scripts/ dir finds the tpl via the
+default walk and stamps a box AGENTS.md with tokens rendered
+(`--self-test` passes in-place on the box, and on a box WITHOUT the tpl it
+still fails exactly as before — the check discriminates).
+
+Files:
+- **`23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue-escalation-section.md.tpl`** — NEW, byte-identical to `scripts/rescue-escalation-section.md.tpl`.
+- **`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`** — `.tpl` added to the shared `_CANONICAL_SCRIPT_SUFFIXES` (+ GAP-DELIVERY-TPL rationale).
+- **`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** — consumes the shared tuple (comment/prose updated).
+- **`update-skills.sh`** — prose only (suffix lists in the refresh-dept-scripts block).
+- **`tests/unit/rescue-escalation-tpl-duplicate-guard.test.sh`** — NEW regression guard: repo-root tpl and role-library tpl must stay byte-identical.
+
+## [v22.0.27] -- 2026-08-14 -- fix(presentations): heal wave-2 test drift (MIN manifest version 46->47, real magic-byte test fixtures, repo-manifest MIN guard test, skill-version 22.0.27)
+
+Merge sha 3b8a23c97e5dddabf783ddc027ca7340289460e2. This is the version chain entry for the wave-2 test drift heal: the presentations MIN manifest version moved 46 -> 47, test fixtures now carry real magic bytes, a repo-manifest MIN guard test was added, and skill-version rolled to 22.0.27.
+
+## [v22.0.26] -- 2026-08-14 -- fix(presentations): close the sixth bypass — owner-skip anchor (Trust Boundary Increment 2)
+
+`build_deck.py:_owner_skip_approved()` waived 13 gates based on an unsigned,
+agent-writable dict in `process_manifest.json`. Fix adds a real friction
+floor (reason >= 8 chars, real ISO timestamp), a blanket-skip-reason limit
+(one reason may waive at most 2 distinct af_codes), and mandatory,
+unconditional stderr + ledger disclosure of every consumption/rejection.
+Independently reproduced: a 13-gate self-approval with reason="x" waives
+13/13 on the unmodified pre-fix module and 0/13 post-fix; a legitimate
+distinct-substantive-reason approval still waives 13/13 on both. Zero
+regressions (646 passed / 2 skipped / 6 pre-existing failures, identical
+before and after). See `23-ai-workforce-blueprint/CHANGELOG.md` for the
+full writeup.
+
+## [v22.0.25] -- 2026-08-14 -- fix(wi-11): make --sops-only a real, responsive acceptance gate
+
+QC-WI-11's binary acceptance criterion (`sync_check.py --sops-only 2>&1 | grep
+-c "HIGH"` must return 0) was unconditionally satisfiable: `--sops-only` was
+never a recognized flag (silently swallowed, ran the full check instead), and
+the literal string "HIGH" appeared nowhere in the script's output. Fixed:
+`--sops-only` now runs three mechanical SOP checks (phantom-symbol,
+stale-repo-path, unresolved-registration) at severity HIGH; any unrecognized
+`--flag` is now a FATAL exit-2 usage error. Independently reproduced on a
+from-scratch sandbox: the unmodified pre-fix script reports a false PASS
+(exit 0, 0 HIGH) on a tree with SOP-NORTHSTAR-00's registration marker and
+SOP-IMG-01's renderer path both sabotaged; the fixed script correctly reports
+2 HIGH findings and exits 4 on the identical tree. See
+`23-ai-workforce-blueprint/CHANGELOG.md` for the full writeup.
+
+## [v22.0.24] -- 2026-08-14 -- fix(presentations): kill the deck-type routing bypass
+
+A real client intake could not reach the 36-phase deck engine for either
+`from_scratch` or `signature` presentation types: `cmd_next` derived
+`presentation_type`/`requester_chat_id`/`client_name` against an assumed flat
+ledger shape instead of the real nested `intake_ledger.json` shape the driver
+itself writes, crashing the very next bare `--next` with `AF-MODE-UNSET`
+before a single standard-mode question could be asked. `run_signature_deck.py`
+was also silently bypassed by deck-type routing, and `requester_chat_id`
+silently defaulted instead of persisting into `intake.json` at dispatch time.
+Independently reproduced (fresh process per turn, real driver, no fixture):
+pre-fix exits 1 with `AF-MODE-UNSET` on the documented turn 3; post-fix exits
+0 and returns the `standard_mode` question, for both presentation types. See
+`23-ai-workforce-blueprint/CHANGELOG.md` for the full writeup.
+
+## [v22.0.23] -- 2026-08-13 -- trust boundary increment 1: sealed RunFacts, REPORT-ONLY
+
+New `presentation_job/runfacts.py` seals a run's facts ONCE at the admission point
+(right after the front-door nonce verifies) and re-answers two of the pipeline's
+highest-privilege questions from that sealed snapshot instead of from a fresh,
+unsynchronised re-read: the FIX-2 owner-skip waiver
+(`build_deck._owner_skip_approved`) and the QC phase verifiers
+(`phase_verifiers._shadow_qc_verifier`). Divergences between the legacy answer and
+the sealed answer are LOGGED. Nothing else happens.
+
+**Proven report-only, by execution, not by reading the code.**
+
+`_owner_skip_approved` was fired at 13 `process_manifest.json` shapes -- absent,
+empty, valid single, valid in a list, `owner_approved:false`, wrong af_code, blank
+`approved_by`, whitespace `reason`, blank `timestamp`, `owner_approved:"true"` as a
+string, `gate:` key alias, corrupt JSON, list-of-junk -- on both trees:
+
+    origin/main vs this branch, PRES_TRUST_BOUNDARY_ENFORCE unset:
+    13 shapes, 13 IDENTICAL, 0 DIVERGENT
+
+Equal results are not by themselves proof of report-only -- they are also what a
+BROKEN probe returns. So the probe was proven able to SEE a block, using the one
+shape where the sealed verdict genuinely disagrees: a manifest carrying BOTH a valid
+`owner_approved:true` record AND an `owner_approved:false` record for the same
+af_code. Legacy first-match resolves it as waived; RunFacts calls it CONFLICTED ->
+UNDETERMINED:
+
+| tree / mode | result |
+|---|---|
+| `origin/main` | `RECORD` -- gate waived |
+| this branch, env unset (the shipped default) | `RECORD` -- gate waived, **identical to main** |
+| this branch, `PRES_TRUST_BOUNDARY_ENFORCE=1` | `None` -- **gate blocks** |
+
+So the probe does discriminate, the only path to a block is an explicit operator
+opt-in, and that env var is set NOWHERE in this repository (grep over the whole
+tree returns only the two docstrings that name it and the module that reads it).
+
+Additional containment, all verified:
+- Both shadow call sites wrap their whole shadow path in `try/except Exception` and
+  return the legacy result on ANY error -- a bug in the new code cannot break an
+  existing gate.
+- `_owner_skip_approved_legacy` is the untouched original; the new public
+  `_owner_skip_approved` keeps the same name and signature, so all 14 existing call
+  sites are unchanged.
+- When enforcing IS turned on, `_shadow_qc_verifier` can only make a gate STRICTER,
+  never weaker.
+- `gate_integrity_check.py` gains 121 lines that run ONLY under the new `--purity`
+  flag. Default-mode behaviour is byte-identical: rc=2 with the same
+  "af-coverage.json not found" message on BOTH trees. `--purity` proves, by parsing
+  the AST rather than trusting a docstring, that `verify_owner_skip` and `verify_qc`
+  contain no direct file/env I/O -> exit 0.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed**, exactly matching
+`origin/main` at v22.0.22 (646/6) -- the same 6 pre-existing failures, zero
+regressions. `test_runfacts.py` 11/11.
+
+## [v22.0.22] -- 2026-08-13 -- UNDETERMINED becomes representable, and stops reading as a pass
+
+New `presentation_job/result.py`: a three-valued `CheckResult(PASS/FAIL/UNDETERMINED)`
+for anything that inspects state and must report a verdict. `__bool__` is disabled
+ON PURPOSE, so `if result:` cannot silently decide on the type's behalf which side
+UNDETERMINED falls on -- every call site must compare explicitly
+(`result is CheckResult.PASS`) and therefore must hold an actual opinion about the
+unknown case. Three highest-severity instances converted, one per class of check.
+
+**1. `gates.py` -- security/completeness gate: UNDETERMINED REFUSES.**
+`_canonical_prompt_dir_problems()` used to `return []` when BOTH its detector routes
+(build_deck, then the shared prompt_gate) failed -- indistinguishable from "checked,
+nothing wrong". Executed three-way through the PUBLIC `_prompt_floor_gate()`:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: canonical prompts, detector works | `state='pass'` | `state='pass'` |
+| BAD: real `slide-1.txt`/`slide-01.txt` collision | `state='fail'`, AF-PROMPT-DUP-FILE named | identical |
+| **UNKNOWABLE: detector cannot run at all** | **`state='pass'`, reason=None** | **`state='fail'`, "prompt duplicate/canonical-name detector could not run..."** |
+
+`origin/main` passes a deck it never checked for D16 collisions. This change refuses it.
+
+**2. `report.py` -- message transport: UNDETERMINED keeps trying, never discards.**
+`dispatch3()` returns PASS (confirmed) / FAIL (no transport configured) /
+UNDETERMINED (non-zero exit, timeout, OSError). `Reporter.to_requester()`'s "blocked"
+dedupe timer used to be stamped when a blocked event was ALLOWED to attempt dispatch
+-- before the outcome was known -- so a failed first attempt armed a 10-minute window
+that swallowed the very next identical retry (heal.py retries with the same phase_id
+and reason seconds later) without ever queueing it to `undeliverable`. The timer is
+now stamped only on a CONFIRMED `CheckResult.PASS`. `dispatch()` stays a thin bool
+wrapper (`is CheckResult.PASS`) so every existing bool caller (`watchdog.py`,
+`__main__.cmd_sweep_undeliverable`, `launcher.py`) and the U069 shell-injection
+regression tests are unaffected.
+
+**3. `watchdog.py` + `presentation-watchdog.sh` -- health report: UNDETERMINED is
+reported as UNDETERMINED.** Executed:
+
+| case | `origin/main` | this change |
+|---|---|---|
+| GOOD: 1 healthy run dir | rc=0 | rc=0 |
+| **UNKNOWABLE: 0 `state.json` found, warn mode** | **rc=0 ("healthy")** | **rc=13 `EXIT_WATCHDOG_NO_RUNS`** |
+| **UNKNOWABLE: 0 `state.json` found, `--enforce`** | **rc=0** | **rc=13** |
+
+The shell caller now CAPTURES that status (`|| WATCHDOG_RC=$?`) instead of leaving it
+to `set -e`. Demonstrated with the two idioms side by side: the uncaptured form aborts
+the script at the watchdog line (rc=13, reconcile-board and run-discovery never run);
+the captured form logs `WARNING: watchdog exited 13 ... NOT necessarily a failure` and
+both later passes still run.
+
+Suite `presentations/scripts/tests/`: **646 passed / 6 failed** on this branch vs
+**612 passed / 6 failed** on `origin/main` -- the same 6 pre-existing failures, zero
+regressions, 34 net-new passing tests. The 4 new/extended test files
+(`test_result.py`, `test_gates.py`, `test_report.py`, `test_watchdog.py`) are 96/96
+green here and cannot even IMPORT against `origin/main` (`result.py` and
+`EXIT_WATCHDOG_NO_RUNS` do not exist there) -- the machinery is genuinely new.
+
+## [v22.0.21] -- 2026-08-13 -- the .js tool that never reached a single box, and a locked file that crashed the roll
+
+**GAP 1 -- `.js` was in neither writer's suffix list, so
+`rescue-rangers/scripts/relay_brain_validation.js` was silently dropped by every
+delivery path since day one.** `create_role_workspaces.scaffold_department()` and
+`refresh-dept-scripts.py` each carried their own hardcoded tuple; neither included
+`.js`.
+
+Executed, by calling the REAL `scaffold_department()` to materialize the
+department into a scratch dir and listing what landed:
+
+| tree | `_CANONICAL_SCRIPT_SUFFIXES` | `relay_brain_validation.js` delivered |
+|---|---|---|
+| `origin/main` | `('.py','.sh','.sha256','.pdf')` | **NO** |
+| this change | `('.py','.sh','.js','.sha256','.pdf')` | **YES** |
+
+Running the materialized `verify.sh` with real node (v26.7.0):
+`origin/main` -> `MODULE_NOT_FOUND ... relay_brain_validation.js`,
+`DRILL FAILED: relay_brain_validation.js --self-test`, **3 passed / 2 failed**.
+This change -> `[relay_brain_validation] self-test: PASS`, **4 passed / 1 failed**.
+
+The one still-failing drill (`stamp-rescue-escalation-section.sh`) fails
+**identically on `origin/main`** and is an artifact of materializing into a
+scratch dir: that script walks UP to a repo root for
+`scripts/rescue-escalation-section.md.tpl`. Run from inside a repo checkout it is
+`self-test: PASS` on both trees. It is NOT fixed here and is NOT claimed fixed.
+
+Fix: `.js` added to `_CANONICAL_SCRIPT_SUFFIXES` (fleet-owned, always overwritten
+-- it is a versioned tool like any `.py`/`.sh`), `_ADDITIVE_SCRIPT_SUFFIXES`
+(`.json`) introduced as a named constant beside it, and BOTH writers now import
+those two module-level constants instead of re-declaring their own literal tuples
+-- which retires the "two hardcoded lists silently disagree" bug class that
+produced this gap:
+
+    refresh-dept-scripts.py:196  _MIRROR_SUFFIXES   = crw._CANONICAL_SCRIPT_SUFFIXES
+    refresh-dept-scripts.py:197  _ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES
+
+**GAP 2 -- an unwritable destination crashed the whole roll with a raw traceback
+instead of the documented graceful outcome.** Reproduced by chmod-ing a
+materialized `departments/rescue-rangers/scripts/` to `0555` with a divergent
+fleet-owned file inside it and running `refresh-dept-scripts.py --apply`:
+
+| tree | result |
+|---|---|
+| `origin/main` | **rc=1**, uncaught `PermissionError`, raw `Traceback`, run aborted at the FIRST locked file |
+| this change | **rc=3** (the documented code), `COPY FAILED -- <path> -- PermissionError: ...` named per file, loop continues through all 7, receipt lists each as `copy-failed` |
+
+Nothing client-owned is clobbered: with a client-local
+`rescue_ledger_config.json` in place, its sha256 is **byte-identical before and
+after** an `--apply` run that overwrote the fleet-owned `.py` and delivered the
+new `.js` in the same pass.
+
+- **`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`** -- the two
+  shared suffix constants; `scaffold_department()`'s copy loop sources from them.
+- **`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** -- imports both
+  constants; new `_try_copy()` catches `OSError` per file, records path + concrete
+  reason, folds into the existing `problems`/`failed_inscope` contract (deduped
+  against the generic "missing" entry for the same path).
+
+Suites: `test-department-instantiation.sh`, `test-materialize-missing-departments.sh`,
+`test-floor-fill-vertical-gate.sh` (13/13), `both-paths-zhe-delivery.test.sh`,
+`refresh-stale-roles.test.sh` (30/30) -- all rc=0.
+
+## [v22.0.20] -- 2026-08-13 -- new provisions point at the canonical rr-v2-intake relay
+
+`install.sh` seeded `RESCUE_RANGERS_WEBHOOK_URL`'s provisioning default to the
+SUPERSEDED relay path. The canonical intake endpoint on the same host is
+`/webhook/rr-v2-intake` (operator memory; the repository itself carries no
+evidence of it, which is why an earlier pass correctly refused to guess the value
+and waited to be told).
+
+Confirmed by content before and after, each negative run against a control:
+
+- `git grep rr-v2-intake origin/main -- install.sh` -> rc=1, no match.
+  Control on the same path/ref: `git grep webhook -- install.sh` -> 22 matches,
+  rc=0. The file is readable; the absence is real, not a broken search.
+- After: `install.sh:1296 local RR_WEBHOOK_DEFAULT=".../webhook/rr-v2-intake"`.
+
+Executed acceptance -- the two provisioning lines lifted verbatim out of each
+`install.sh` and evaluated in a shell:
+
+| tree | `RR_WEBHOOK` resolved, no operator override |
+|---|---|
+| `origin/main` | `.../webhook/rescue-rangers` (superseded) |
+| this change | `.../webhook/rr-v2-intake` |
+| this change, `RESCUE_RANGERS_WEBHOOK_URL` set | the operator's value -- override still wins |
+
+**No secret and no hash appears anywhere in the diff.** The diff is 8 changed
+lines; all 8 are printed in the PR. Scanning ONLY the added/removed lines for
+`secret|token|password|api[-_]?key|bearer|authorization|[0-9a-f]{32,}|eyJ...`
+returns rc=1 (clean); the same pattern over the whole diff returns 3 hits, all on
+unchanged CONTEXT lines (`RESCUE_RANGERS_WEBHOOK_SECRET` is named but never
+touched) -- so the scan is proven live, not silently matching nothing.
+
+- **`install.sh`** -- `RR_WEBHOOK_DEFAULT` (the provisioning mechanism).
+- **`AGENTS.md`**, **`.../openclaw-maintenance/sops/sop-rescue-rangers-escalation.md`**,
+  **`.../role-library/rescue-rangers/connection-manifest.json`** -- the stated
+  default in each doc, so nothing tells an agent a different URL than install.sh
+  seeds.
+
+SCOPE, stated plainly: this changes where NEWLY PROVISIONED boxes send Rescue
+Rangers escalations. Existing boxes are unaffected unless re-provisioned. Six
+read-time consumer fallbacks still carry the old literal
+(`61-loop-protection-system/scripts/loop_escalate.py:43`,
+`scripts/resume-onboarding.sh:421`,
+`23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh:135`,
+`23-ai-workforce-blueprint/scripts/resume-workforce-build.sh:489,1125,1188`).
+They fire only when `RESCUE_RANGERS_WEBHOOK_URL` is unset, which install.sh always
+seeds; they are deliberately out of scope here and are NOT claimed fixed.
+
+## [v22.0.19] -- 2026-08-13 -- a signature deck stops silently losing 32 of its own questions
+
+The v1.4.0 QUICK/IN-DEPTH picker shipped `standard_mode` with its own
+`conditional_on` restricted to `{from_scratch, content_personal, content_general}`.
+For `presentation_type=='signature'` the picker was therefore NEVER ASKED --
+`auto_skip_conditionals` marked its ledger entry validated+skipped ("not
+applicable") -- and every downstream `ask_if {question_id:'standard_mode',
+equals:'IN-DEPTH'}` then read that skip as a real "not IN-DEPTH" answer and
+auto-skipped too. A signature deck's standard pre-presentation capture (a SEPARATE
+question set from the SACRED-8, which `sp_mode` alone governs inside `--signature`)
+collapsed to the QUICK curated set with no picker ever offered and no way to opt
+back in. Root cause: an ABSENT value silently became a fewer-questions decision.
+
+Measured by driving the REAL CLI (`deck-intake-driver.py --run-dir DIR --next /
+--answer`, answer by answer to completion) and comparing **question-ID sets**, not
+counts, across three trees -- pre-unit (`76e8d55c^`), `origin/main`, and this branch:
+
+| run | pre-unit | origin/main | this branch |
+|---|---|---|---|
+| signature, IN-DEPTH | 45 | **13** | **46** |
+| signature, QUICK | -- | 13 | 14 |
+| from_scratch, QUICK | -- | 13 | 13 |
+| from_scratch, IN-DEPTH | 44 | 45 | 45 |
+| content_personal, QUICK / IN-DEPTH | -- | 15 / 47 | 15 / 47 |
+| content_general, QUICK / IN-DEPTH | -- | 14 / 46 | 14 / 46 |
+
+- **signature vs pre-unit: `origin/main` LOSES 32 question ids**
+  (`representation_mix, audience_composition_note, grounded_content, visual_mix,
+  dark_ok, hook_seed, deliverable_set, want_teleprompter, want_speech_script,
+  want_ghl_upload, want_audio_deliverable, vsl_page_declined_reason, style_source,
+  goal, event_price, access_free, target_feeling, offer_stack, price_mode,
+  duration_min, logo_on_slides, price_anchor, payment_plan, vip_tier, vip_price,
+  vip_spots, primary_objection, proof_assets, style_prefs, slide_count,
+  delivery_destinations, deadline`). **This branch loses 0**; its only addition
+  over pre-unit is `standard_mode` itself.
+- **Both directions checked.** All six non-signature runs produce an
+  **identical question-id SEQUENCE** on this branch and on `origin/main` --
+  zero lost, zero gained. The standard QUICK path is not re-inflated.
+
+FIX: delete `standard_mode`'s `conditional_on` outright rather than special-case
+`presentation_type=='signature'` onto it. `standard_mode` is now unconditionally
+asked for all four presentation types, so the "never answered" state that produced
+the collapse cannot occur for ANY type -- the missing-value class is closed, not
+one instance of it.
+
+- **`.../presentations/intake/deck-intake-questions.json`** (v1.4.0 -> v1.5.0) --
+  the only file changed. `51-signature-presentation/` and `deck-intake-driver.py`
+  have **zero diff**; the SACRED-8 turn-gate is untouched.
+
+Suites on this branch: `presentation-type-contract` 9/9, `presentation-intake-conversation`
+96/96, `presentation-deck-intake-driver-workspace` 9/9 -- all rc=0.
+
+## [v22.0.18] -- 2026-08-13 -- a declared capacity is a claim, not a measurement
+
+`capacity.py::_resolve_override()` had an ordering-plus-trust bug. A
+`capacity_override.json` carrying a `max_concurrent` but no recognisable `plan`
+returned status **MEASURED** with the declared integer verbatim and unbounded --
+and that branch sat AHEAD of the "provider known, plan unknown" PARK branch, so
+PARK was unreachable for any declaration. `{"provider":"ollama-cloud",
+"max_concurrent":9999}` -- a cap-table provider whose highest row anywhere is 10 --
+resolved to MEASURED / available=9999 / autofail_code=None, and `execution_plan`
+would have built a real wave plan at width 9999.
+
+Executed evidence (36 adversarial override shapes -- case variants, whitespace,
+prefix matches, near-miss plans, provider-as-dict, `10**100` -- fired at both
+trees through an isolated `PRESENTATION_CAPACITY_CONFIG_DIR`):
+
+- **origin/main: 31 of 36 breach** (return a value above the cap-table bound for
+  the pair that actually resolved, and/or label a non-cap-table pair MEASURED).
+  `10**100` came back as `available=10**100`, MEASURED.
+- **after this change: 0 of 36 breach.** All 36 are bounded.
+
+`_resolve_override()`'s three cases are now checked in an order that enforces the
+doctrine on its own:
+
+1. `(provider, plan)` both resolve to a cap-table row -> that row is
+   authoritative; a declared `max_concurrent` may only LOWER it (unchanged).
+2. provider resolves but plan does not -> **PARK**, regardless of any declared
+   `max_concurrent`. A known provider's real ceiling is a physical fact the
+   operator cannot opt out of by typing a bigger number, and clamping to that
+   provider's own highest row would still be a guess about which plan is in
+   effect. This check now runs BEFORE the bare-declared-int fallback -- that
+   ordering was the bug.
+3. provider does not resolve at all -> the number is a self-report. Bounded to
+   `DEFAULT_CONSERVATIVE` and labelled with a new status,
+   **`DECLARED_UNVERIFIED`**, so it can never again be read as MEASURED.
+
+- **`.../presentations/scripts/presentation_job/capacity.py`** -- the re-ordering,
+  the `STATUS_DECLARED_UNVERIFIED` constant, and the module docstring's STATUSES
+  table rewritten to describe what the code now does.
+- **`.../presentations/scripts/tests/test_capacity_detection.py`** -- 3 new tests:
+  the exact breach payload, an unknown provider's declaration bounded and
+  relabelled, and a below-`DEFAULT_CONSERVATIVE` self-throttle still honoured.
+
+Suite: `presentations/scripts/tests/` 612 passed / 6 failed on this branch vs
+609 passed / 6 failed on `origin/main` -- the same 6 pre-existing failures
+(`test_client_package`, `test_presentation_job` QC/OCR gates), zero regressions,
+3 net-new passing tests.
+
+## [v22.0.17] -- 2026-08-13 -- shared-dashboard tenant verification before an interview link is emitted
+
+Backfilled entry for the release merged as #896 at `87d2d43de8d4`, which recorded
+its detail in `23-ai-workforce-blueprint/CHANGELOG.md` and left the root
+`CHANGELOG.md` (the file G2 reads) with no `v22.0.17` header. The annotated tag
+`v22.0.17` was published at that same commit by
+`scripts/push-version-tag.sh v22.0.17 87d2d43de8d4` to clear the G1b debt that was
+blocking the merge lane; G2 then requires this header. Summary is taken verbatim
+from that commit's own message -- no claim here was measured by this entry.
+
+Janet incident (2026-08-13): the shared Command Center serves every client
+dashboard hostname (`<client>.zerohumanworkforce.com`), and its interview-state
+endpoint was hostname-blind -- it answered a fresh client with the OPERATOR's
+completed interview, so her `/interview` page immediately redirected to the
+dashboard. The Command-Center-side tenant scoping is deployed on the operator box;
+#896 is the skill-side guard.
+
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** -- verifies any
+  shared-dashboard host answers `/api/interview/gate-status`
+  `interviewComplete:false` for THIS company before emitting the link; falls back
+  to the Telegram-native reply-here invite on mismatch or unverifiable; exempts the
+  box's own Command Center (localhost/127.0.0.1); adds `INTERVIEW_GATE_URL`.
+- 10 version markers rolled v22.0.16 -> v22.0.17 by `scripts/bump-version.sh`.
+
+## [v22.0.16] -- 2026-08-13 -- presentation-notify.sh enters git, at the path production actually reads
+
+`presentation-notify.sh` is what the Presentations engine's Reporter shells out to
+through `PRESENTATION_NOTIFY_CMD`. It had never been in this repository. A
+repo-wide search of `origin/main` for `presentation-notify` returns zero hits
+(rc=1, empty stderr) against a control search for `presentation_job` returning 60
+files (rc=0) -- so the script existed only as an untracked file written directly
+onto a live box, and no roll could ever have fixed it. The hardened rewrite sat
+unmerged on a branch, at a path that would never have reached production anyway.
+
+**Only the script and its wiring land here. No presentation Python is touched** --
+`report.py`, `__main__.py` and `diagnose.py` are being redesigned separately and
+are deliberately excluded from this change. Everything else in the diff is the
+version roll this repo's own gates require: touching anything under
+`23-ai-workforce-blueprint/` makes G3 demand a `skill-version.txt` bump, which
+version-consistency then requires to stay in lockstep with `/version`. The single
+`.py` that appears is one `BROWSER_MANAGER_PY_VERSION` string in skill 06 that
+`scripts/bump-version.sh` owns.
+
+- **`23-ai-workforce-blueprint/tools/presentation-notify.sh`** (NEW, +x) -- the
+  hardened script, committed at the path that reaches production.
+- **`23-ai-workforce-blueprint/wire.sh`** (NEW, +x) -- skill-root wiring installer,
+  which `update-skills.sh`'s generic wiring loop already picks up (priority
+  `wire.sh` > `install.sh` > `scripts/install.sh`). Copies the committed script to
+  `~/.openclaw/tools/presentation-notify.sh` (`/data/.openclaw/tools/` off Darwin),
+  `chmod +x`, byte-exact `cmp` no-op when already current, honours a `TOOLS_DIR`
+  override for tests, logs every failure and **always exits 0** so a per-skill
+  installer can never abort a fleet roll.
+
+**Path choice, which is the load-bearing decision here.** The same hardened script
+also existed at `templates/role-library/presentations/scripts/`. That path is NOT
+authoritative: department materialization would only ever deploy it to
+`~/.openclaw/workspace/departments/Presentations/scripts/`, never to
+`~/.openclaw/tools/`. Checked read-only against a live box -- the deployed script
+is a loose file at `~/.openclaw/tools/presentation-notify.sh`; the env that sets
+`PRESENTATION_NOTIFY_CMD` references `tools/presentation-notify.sh` exactly once
+and the department path zero times; and that department `scripts/` directory holds
+a `presentation-notify.**py**`, not this `.sh`. Exactly ONE copy is committed --
+deliberately not a second orphan at the templates path. The one existing precedent
+for installing into `~/.openclaw/tools/`, skill 44's `convert-and-flow-cli`, uses
+a named SUBDIRECTORY via its own root `wire.sh`; this is the first loose file
+directly under that root.
+
+**Three layered defects the script closes.**
+
+1. *Command injection (remote code execution).* The old script handed a
+   `json.dumps()`-built string to `eval`. `json.dumps` escapes JSON syntax, not
+   shell metacharacters, so `$(...)` and backticks inside the untrusted `message`
+   executed as whoever invoked the script. `python3` now emits the three fields as
+   NUL-delimited literal bytes read with `read -r -d ''`: no `eval`, no
+   string-built command, no path by which the payload reaches a shell parser.
+2. *NUL field-boundary forgery.* A JSON `u0000` escape decodes to a real NUL --
+   which is the wire delimiter -- letting a crafted message forge field breaks and
+   substitute an attacker-chosen `chat_id` for the trusted one. `python3` now
+   strips NUL/CR/LF from every DECODED field before it reaches the wire, so a
+   forged boundary is unrepresentable rather than merely escaped.
+3. *Silent alert loss on an unencodable character.* A lone surrogate
+   (U+D800-U+DFFF, reachable through a `uD800` escape or `surrogateescape` on a
+   non-UTF-8 filename) survived `sanitize()` but raised `UnicodeEncodeError` in a
+   write that sat OUTSIDE the `try`, with stderr discarded by a trailing
+   `2>/dev/null`. Nothing had flushed, so zero bytes reached the pipe, all three
+   `read` calls hit EOF, and the notification vanished leaving no trace at all.
+   The writes now happen INSIDE the `try`, each field is encoded with
+   `errors='replace'` (a mode that cannot raise), and the `2>/dev/null` is gone.
+
+**Verification.** Harness: `env -i`, `LANG`/`LC_ALL` pinned, `HOME` redirected to a
+sandbox so the real secrets file is never sourced, `curl` replaced by a stub that
+records argv and performs no I/O, and `wget`/`nc`/`ncat`/`telnet`/`ssh`/`scp`/
+`openssl` replaced by a guard exiting 97. A preflight ran BEFORE any payload and
+proved `command -v curl` resolves to the stub, `curl --version` prints
+`STUB_CURL_OK`, `wget` exits 97, and python3's stdout/filesystem encoding is
+`utf-8`. Battery of 5 cases against 4 subjects in BOTH `en_US.UTF-8` and `C`:
+
+| subject | injection | NUL forgery | U+D800 | U+DCFF | legit |
+|---|---|---|---|---|---|
+| candidate (sha256 `98f1e597...`) | PASS | PASS | PASS | PASS | PASS |
+| live deployed copy | **EXECUTES** | pass | fail | fail | pass |
+| first injection fix | pass | **REDIRECTS** | fail | fail | pass |
+| pre-amendment fix | pass | pass | **SILENT LOSS** | **SILENT LOSS** | pass |
+
+Every check has a proven positive control, so none of them can pass vacuously: the
+live deployed copy actually created `SENT_DOLLAR` and `SENT_BACKTICK` on disk; the
+first injection fix put `999_ATTACKER_CHAT` on the wire as `chat_id` and truncated
+the message to `legit`; the pre-amendment fix exited rc=1 with `curl` never called.
+The candidate delivers both lone surrogates DEGRADED (`pre?post`, rc=0, surrounding
+text intact -- `?` is Python's encode-side `errors='replace'` output, U+FFFD being
+the decode-side form) and is byte-identical in both locales, which the
+pre-amendment fix is not. Legitimate traffic is unchanged on every subject:
+`text="[Presentation] Deck 3 of 7 rendered"`, `chat_id` from `OWNER_CHAT_ID`.
+`wire.sh` is `bash -n` clean, installs the verified bytes, no-ops byte-exactly on
+re-run, and exits 0 on every path; tested with `TOOLS_DIR` redirected to a sandbox,
+leaving the live tools directory unwritten (mtime and sha256 unchanged after).
+
+**This does not change any running box on merge** -- the live file is untracked, so
+it is picked up on the next roll through `wire.sh`, or by an explicit manual copy.
+
+## [v22.0.15] -- 2026-08-13 -- G5: the reconcile sweep can no longer report success while reconciling nothing
+
+The board-reconcile sweep returned `EXIT_OK` in several shapes where it had in
+fact reconciled nothing, so a box whose live work was entirely invisible looked
+healthy.
+
+- **Zero run dirs** no longer reports success, and its exit code is distinct from
+  the all-rejected code so the two causes are never conflated.
+- **All-rejected** (every run dir refused -- corrupt JSON, unresolvable slug) is
+  no longer a pass. Genuine failures still take priority in the wording.
+- **`too_old` no longer counts toward `reconciled_count`.** Reaching `too_old`
+  means Guard A passed and a deck_slug resolved, but `_classify()` returns before
+  ever looking up a task_id -- a DECLINED inspection, not a reconciled one. The
+  `EXIT_SWEEP_ALL_REJECTED` gate is keyed on `not_a_run_dir_count == scanned`
+  directly, so a `too_old`-only scan still exits 0 -- honestly.
+- **The schema-mismatch-only WARNING is generalized**: any `not_a_run_dir`
+  rejection, of any reason, prints an unmissable WARNING naming count and
+  percentage. A second WARNING fires when `reconciled_count == 0` while not
+  everything was Guard-A-rejected -- the `too_old` + truncated-`state.json` mix
+  that used to be completely silent.
+
+`test_mixed_rejects_and_one_good_still_passes` was REMOVED because it enshrined the
+bypass as intended: it asserted `EXIT_OK` for a scan where 4 of 5 run dirs were
+rejected, checking nothing about warnings. An adversarial re-attack proved that
+exact shape live -- old debris counted as reconciled alongside in-flight dirs whose
+`state.json` was truncated (rejected for `unreadable_or_missing`, which the old
+schema-mismatch warning never fired for), printing a reassuring summary with zero
+warnings and `EXIT_OK` while 100% of live work was unreconciled. It is replaced by
+`test_mixed_rejects_surfaces_loud_warning_even_though_it_passes`, which uses a
+truncated-JSON rejection so it FAILS against the pre-fix warning logic.
+
+KNOWN GAP, deliberately left for a human to decide and labelled as such in code:
+the exit code still stays `EXIT_OK` whenever at least one run dir was genuinely
+reconciled. Whether a rejection FRACTION should move the exit code itself is a
+policy question this change does not invent an answer to -- it surfaces loudly
+instead.
+
+Mutation proof: the new tests were run against the PRE-FIX `sweep.py` and **17
+failed**; against the fixed sweep **38 passed** (origin/main control: 28 passed).
+
+## [v22.0.14] -- 2026-08-13 -- G3: heartbeat_minutes asserted on every phase, and given a sanity ceiling
+
+Two layers, because the first one alone was proven insufficient by re-attack.
+
+- **`sync_check.py` check E3** now asserts `heartbeat_minutes` is present and
+  positive on EVERY phase, not just `long_running` ones.
+- **Sanity ceiling (the hardening).** Presence-and-positivity is not a range:
+  setting `heartbeat_minutes` to `999999999` on all 33 non-long-running phases
+  passed E3 with zero drift, and `heartbeat_interval_minutes` handed that value
+  straight to the watchdog and reaper -- a ~2,853-year stall threshold
+  (999999999 min x 1.5 grace) that reports a 12-hour-silent job HEALTHY. Note the
+  original deletion attack was strictly MILDER: with the field absent, the
+  budget-minutes fallback still fired and the stall was still caught.
+
+`MAX_HEARTBEAT_INTERVAL_MINUTES` is not an arbitrary round number that would just
+be a bigger number to guess past -- it is `max(PHASE_BUDGET_MINUTES.values())`
+(240), this engine's own declaration of the longest any phase may EVER run before
+it is killed outright. A checkpoint cadence looser than the slowest thing the whole
+system does cannot be a real cadence. All 36 real phases declare 15-120, so the
+ceiling costs the legitimate path nothing.
+
+Enforced at the runtime SOURCE (`Phase.heartbeat_interval_minutes`, which is what
+writes `state.json`'s `heartbeat.interval_minutes`) so an insane value can never
+reach a consumer at all, independent of whether its manifest ever passed
+sync_check; `watchdog.py` and `process_reaper.py` additionally re-check the value
+they read back OFF state.json, since a pre-fix or foreign-written state.json is a
+different, still-untrusted input. One ceiling constant, imported everywhere.
+
+Measured: a poisoned `999999999` yields `heartbeat_interval_minutes` of
+**999999999 on the origin/main control** and **240 on this branch**.
+`test_watchdog.py`: 22 passed here vs 20 on the control.
+
+## [v22.0.13] -- 2026-08-13 -- Capacity gate: UNDETERMINED is unmistakable, but an unconfigured box is still usable
+
+`launcher.py`'s capacity gate checked only `available is None`, which treated the
+NO-CONFIG case -- what nearly every client box actually is -- as a clean
+measurement. `capacity.probe()` answers no-config with
+`available = DEFAULT_CONSERVATIVE (3)`: a floor to proceed AT, never a ceiling the
+account was proven to support.
+
+Refusing every unconfigured box would make the department unusable by default,
+which is its own outage, so this gate does NOT refuse on UNDETERMINED alone. It:
+
+1. proceeds at the conservative floor behind a banner that says UNDETERMINED out
+   loud -- never the line MEASURED prints;
+2. records the probe into a `.capacity-status.json` sidecar (and merges it into
+   state.json) so the anomaly outlives the launch log line, including during the
+   `--new` window before `cmd_new` runs;
+3. pings the operator best-effort, never fatal to dispatch, so a fleet quietly
+   running at the floor is visible rather than merely archived.
+
+It DOES refuse -- same `AF-CAPACITY-UNMEASURED`, same non-zero exit, same nothing-
+spawned contract as PARKED/FAILED -- only when a caller declares
+`requested_parallel` ABOVE the floor while capacity is UNDETERMINED. Asking for
+the floor itself, or not declaring a request at all (the overwhelming majority of
+callers), still proceeds.
+
+6 new tests in `tests/test_capacity_detection.py` (41 passed on this branch vs 35
+on the `origin/main` control, nothing broken), including the two that pin the
+contract directly:
+`test_no_config_run_proceeds_at_conservative_floor_and_says_so_unmistakably` and
+`test_dispatch_no_config_requesting_exactly_the_floor_still_proceeds`, alongside
+`test_dispatch_refuses_wide_parallel_request_when_capacity_undetermined`.
+
+## [v22.0.12] -- 2026-08-13 -- Backport: 13 live-ahead presentations hotfixes the every-roll mirror would clobber
+
+v22.0.11 made the department `scripts/` mirror run UNCONDITIONALLY on every roll,
+with `.py/.sh/.sha256/.pdf` fleet-owned and overwritten whenever they diverge from
+the role library. That is the correct ownership policy, but it means any file whose
+live content is AHEAD of git is replaced by the library copy on the next roll.
+Thirteen presentations files were in exactly that state -- their content existed
+only on the operator's box.
+
+Direction was established, not assumed: each live blob was searched for across the
+whole of `origin/main`'s history. The five source files' live blobs appear NOWHERE
+in main's history (genuinely live-ahead), while control files (`build_deck.py`,
+`delivery_gate.py`, `presentation_job/launcher.py`, `test_preflight.py`) matched
+older main commits and are correctly live-behind -- so the roll updating those is
+right and only these needed rescuing.
+
+- **`presentation_job/board.py`** -- module contract header, plus `_resolve_task_id()`
+  run from `__init__`: fills `state["board"]["task_id"]` from state first and
+  `process_manifest.json`'s `cc_task_id` second, and when the board is ENABLED but
+  neither source has an id it emits a WARNING-level `board.no_task_id` event and
+  attempts re-creation from stored `card_params` instead of silently no-oping every
+  downstream call. Merged with, not over, v22.0.10's U11 Option B child-card methods
+  (`_resolve_parent_task_id`, `_resolve_child_task_id`, `_remember_child_task_id`,
+  `child_report`) -- both behaviors are present.
+- **`presentation_job/gates.py`, `presentation_job/watchdog.py`,
+  `presenter_guide.py`, `presentation-canonical-entry.sh`** -- live-ahead content
+  restored to the library byte-for-byte.
+- **8 test files** (`test_canonical_entry_scripts_dir`, `test_client_package`,
+  `test_fix23_door_reliability`, `test_fix8_bundle_complete`, `test_presentation_job`,
+  `test_webinar_builder`, `test_webinar_intro_outro`, `test_workbook_builder`).
+
+Measured under an explicitly constructed environment with outbound HTTP stubbed to
+`127.0.0.1:9` (stub proven to block before the run): this change is 6 failed /
+137 passed against a `origin/main` control of 9 failed / 134 passed, and the same
+9 failures reproduce at pre-merge `af7766ba`. The 6 are a strict SUBSET of main's 9:
+this fixes 3 (`test_stage1_missing_teleprompter_warns_but_passes`,
+`test_u069_space_in_run_dir_preserves_path`, `test_workbook_phase_declared_in_manifest`)
+and introduces none. The remaining 6 are pre-existing on main and NOT addressed here.
+
+## [v22.0.11] -- 2026-08-13 -- Department scripts/ delivery: nested materialization + unconditional every-roll mirror
+
+The delivery defect that kept new presentations engine work from ever reaching a
+client box had three causes; this closes all three.
+
+- **Cause 1 -- `scaffold_department()` (`create_role_workspaces.py`)** iterated the
+  role-library `scripts/` tree at depth 1 and `continue`d on every directory, so
+  nested packages (`presentation_job/`, `tests/`) could never be materialized. It
+  now walks the full tree through a shared `_iter_scripts_tree_files()` and proves
+  the outcome with `verify_scripts_materialization()`, which re-hashes every
+  canonical library file against the destination.
+- **Causes 2 and 3 -- the materializer never ran at all on a healthy box.**
+  `scaffold_department()` has exactly ONE runtime caller, `floor-fill-driver.py`,
+  which iterates a MISSING-only gap map, itself gated behind
+  `migrate-existing-workforce.sh`'s `FF_GAP_DEPTS -gt 0`. In steady state that gate
+  is false and the driver never launches, so not even depth-1 files refreshed. And
+  `detect-stale-artifacts.py` never emits a `scripts` kind, so a dept scripts file
+  could never be queued STALE either. The only writer reaching the dept scripts dir
+  on every roll was `colocate_presentation_entry()` -- a hardcoded two-file list.
+- **New `23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py`** is a third,
+  independent path: it mirrors every role-library department's `scripts/` tree onto
+  the box's materialized department UNCONDITIONALLY on every roll, with no gap-map
+  dependency, modelled on the one repair step that already runs every time
+  (`refresh-stale-roles.py`). Ownership policy is unchanged and sourced from the
+  single existing definition (`_CANONICAL_SCRIPT_SUFFIXES`): `.py/.sh/.sha256/.pdf`
+  fleet-owned and overwritten when divergent, `.json` box-owned, additive, never
+  clobbered. Wired into `update-skills.sh` immediately after the
+  `refresh-stale-roles.py` drain with the same pipefail-correct `if PIPE; then`
+  capture, and latched into the pre-stamp CONTENT-integrity gate via
+  `_D2_DEPTSCRIPTS_STATUS`, so a mirror that cannot repair withholds the stamp.
+
+The pass/fail verdict is re-derived from the filesystem AFTER the copy step
+(sha256 library vs destination), never from the copy loop's own counter: with
+`shutil.copy2` stubbed to a silent no-op the loop reported 139 copies while the
+post-write verify returned `ok=0 failed_inscope=133`, rc 3.
+
+Known residual, pre-existing and unchanged: `presentation-watchdog.plist.template`
+and `WORKBOOK-PAGE-PROMPT-TEMPLATE.md` fall outside the canonical suffix policy and
+are mirrored by neither this script nor `scaffold_department()`. Delivering
+`presentations/intake/` remains a separate, undesigned gap -- it is a SIBLING of
+`scripts/`, outside this change's reach.
+
+## [v22.0.10] -- 2026-08-13 -- U11: producer-side Option B child cards (one Command Center card per phase)
+
+Engine half of D1 Option B (NESTED child cards). The Command Center half is a
+separate change in the `blackceo-command-center` repo -- the read route
+(`/api/presentations/children`) already SELECTed `FROM tasks WHERE
+parent_task_id = ?`, but nothing had ever WRITTEN a child row, so the parent
+card rendered a designed empty state describing a mechanism that did not exist
+on either side.
+
+- **`cc_board.py`** -- `ingest_child_task(run_dir, parent_task_id, phase_id,
+  title, description)` POSTs to the SAME `/api/tasks/ingest` endpoint
+  `ingest_deck_task` uses, adding `parent_task_id` + `stage`. Idempotency key is
+  `sha256(parent_task_id + ':' + phase_id)`, matching the parent/child
+  convention already documented in `master-orchestrator-dept/SOP-07`. FAIL-SOFT:
+  catches `(URLError, OSError, ValueError)` around the HTTP call exactly like
+  `ingest_deck_task` and never raises. `read_child_task_id` /
+  `stamp_child_task_id` hold the `process_manifest.json` half of the
+  `phase_id -> child_task_id` map (`cc_child_task_ids`), mirroring
+  `stamp_task_id` / `cc_task_id` for the parent.
+- **`presentation_job/board.py` (`BoardMirror`)** -- `child_report(phase_id,
+  title, description, status, note)` is the idempotent entry point. It resolves
+  the parent task id from state first and the manifest second (the same two
+  sources `task_id_anywhere` already checks), resolves any existing child id the
+  same dual way, creates the child ONLY when neither source has it, records the
+  new id in `state["board"]["children"][phase_id]`, then PATCHes status through
+  the existing UNMODIFIED `patch_phase` helper. Wrapped in the class's existing
+  `_wrap` (Invariant 1), so a Command Center outage during either the create or
+  the status PATCH returns None/False and never raises into the phase loop.
+- **`presentation_job/phases.py` (`Engine`)** -- two call sites, both where a
+  board-mirror call already lived: `run_phase`'s success path (after the phase's
+  verifier has passed) reports `done`, and `_block()` reports `blocked` so a
+  phase that fails before ever reaching its success path still gets a card.
+  `_child_card_meta(phase)` is the shared (title, description) helper.
+
+15 new tests in `test_u11_producer_child_cards.py`, all passing, covering the
+three acceptance criteria directly: one card per phase
+(`test_a_one_card_created_per_phase`), idempotent on repeat
+(`test_b_same_phase_twice_creates_one_card_not_two`, plus a resumed run that
+recovers the mapping from `process_manifest.json` and re-POSTs nothing), and a
+Command Center outage never raising into the engine
+(`test_c_outage_on_create_does_not_raise`,
+`test_c_outage_on_status_patch_does_not_raise`, and a third proof at the `_wrap`
+layer itself). The tests were mutation-proven, not merely observed green:
+disabling the idempotency lookup in `child_report` fails 4 tests including
+`test_b`, and removing `_wrap`'s fail-soft `except` fails both outage tests --
+each verified against an unmodified control copy at 0 failures.
+
+Full presentations suite on this branch: 828 passed, 10 failed. The same 10
+failures (same test ids) reproduce on a clean `origin/main` control at 813
+passed -- pre-existing and unrelated to this change; the +15 delta is exactly
+this unit's new tests.
+
+## [v22.0.9] -- 2026-08-13 -- Presentations wave 2 (U03-U08, U14): missing enforcement scripts landed, self-audit handoff gate, single-source deliverable whitelist, capacity enforcement -- plus fail-closed CI drift gates
+
+Two merges carry this release. PR #886 landed the seven wave-2 units and
+rolled all 10 version markers 22.0.8 -> 22.0.9. This entry is completed by
+the CI drift-gate PR that adds `scripts/ci/presentations-drift-gates.sh` and
+its workflow.
+
+**Wave 2 units (PR #886, merge commit 56d18ad2):**
+
+- **U03 -- three spec-mandated enforcement scripts that were never on main.**
+  `presentation_job/capacity.py` (WORK-ITEM-12 9Router capacity probe),
+  `qc_check.py` (mechanical enforcement for the 48 manifest autofail codes
+  declared `enforced_by qc_check` -- dead manifest entries until now), and
+  `self_audit.py` (WORK-ITEM-16 pre-handoff deliverable verifier). Each was
+  verified absent at its target path first, then copied byte-identical
+  (MD5-verified) from the only location it existed.
+- **U04 -- self-audit wired into `close()` as a FAIL-CLOSED handoff gate.**
+  WORK-ITEM-16 requires self-audit as the final step before handoff, but no
+  code anywhere in the engine ever called `self_audit.py`.
+  `Engine._run_self_audit()` now runs it against the run directory on BOTH
+  paths that reach `terminal=DONE`; a non-zero exit sets `terminal=BLOCKED`
+  with `phase=SELF-AUDIT` recorded, instead of handing off.
+- **U05 -- the deliverable whitelist is now single-source.**
+  `presentation_job/deliverables.py` holds the canonical
+  `DELIVERABLE_AUDIT_SPEC` / `REQUIRED_KEYS` (10 deliverables);
+  `fix_bundle_complete.py`, `presentation_job/curate.py`, `phase_verifiers.py`
+  and `self_audit.py` all derive their view from it rather than keeping
+  hand-maintained copies that drifted apart.
+- **U06 -- decoy-PPTX bypass closed** on the assemble-phase harmony check.
+- **U07 -- real client-capacity detection with enforcement teeth.**
+- **U08 -- standard deck intake is 12 questions, not ~38**, via a QUICK vs
+  IN-DEPTH fork.
+- **U14 -- an unset `PRESENTATION_NOTIFY_CMD` is now loud** in
+  `presentation-watchdog.sh`. The watchdog runs unattended under launchd with
+  no environment, so the by-design warn-not-crash silence in `report.py`'s
+  `dispatch()` had no surface: two verification sweeps recorded
+  `notify_target = none` while operator progress/blocked/done messages
+  dead-ended with nothing in the log. No transport value was invented -- none
+  is specified anywhere in the repo or the SOPs.
+
+**Presentations CI drift gates (this PR):**
+`.github/workflows/presentations-drift-gates.yml` +
+`scripts/ci/presentations-drift-gates.sh`. Both landmines that motivated this
+suite passed a green 93-check CI, because nothing in CI did a bare
+import-smoke of the package or recomputed the manifest hashes.
+
+- **GATE 1 (import smoke)** -- imports `presentation_job.phases` from a copy of
+  the scripts tree. Catches the class where a canonical symbol goes missing and
+  leaves `curate.py` (and everything importing it) import-broken on main.
+- **GATE 2 (manifest lockstep, both registries)** -- 2a compares
+  `PIPELINE-MANIFEST.json`'s sha256 against `MANIFEST-SOURCE.txt`'s recorded
+  `content_sha256`; 2b hashes it the way `hash-universal-sops-manifest.py`'s own
+  generator does (CRLF->LF normalized) and compares against the
+  `universal-sops/_content-manifest.json` entry. The second leg exists because
+  PR #884's drift MOVED to `_content-manifest.json` once `MANIFEST-SOURCE.txt`
+  was fixed, and a two-registry check never looked there.
+- **GATE 3 (deliverable whitelist parity) -- FAIL-CLOSED, no skip path.** The
+  version of this gate written before U05 compared two hardcoded views, found
+  them unequal for then-real structural reasons, printed
+  `GATE3_SKIP_WITH_REASON` and exited 0 -- a no-op wearing a GATE 3 label, which
+  made whitelist drift the one class the suite could not catch. It now imports
+  canon from `presentation_job/deliverables.py` and each of the four real
+  consumers, extracts each one's RUNTIME whitelist view, and FAILS naming the
+  consumer and the exact diverging keys when a consumer holds a key canon does
+  not have, or omits a canon key that is not pre-declared in an
+  `_ALLOWED_SUBSETS` map with a written reason. That map is empty today (all
+  four consumers prove exact parity post-U05); it exists so a future legitimate
+  subset must be asserted in code, never waved through by a bare skip.
+
+Proven by negative control on scratch copies (never committed): injecting a
+key into `phase_verifiers._DELIVERY_DELIVERABLES` that canon does not have
+made GATE 3 exit 1 naming `phase_verifiers.py: holds key(s) NOT in canonical
+spec (drift/hardcoded): ['bogus_drifted_key']`; zeroing the
+`_content-manifest.json` entry made GATE 2b exit 1 naming the file. The
+unmodified copy exits 0 in both controls.
+
+## [v22.0.8] -- 2026-08-11 -- Presentations Dept R3 fix batch (U01-U09): manifest token resolution, canonical prompt family, authentic skip auth, launcher/discovery wiring, watchdog hardening, drift restoration
+
+Atomic batch merge of the R3 Presentations fix set (merge train U11,
+EXECUTION-PLAN C.5). Every file landed from the live Presentations dept tree
+(cmp-verified) with sync_check --strict exit 0 and py_compile clean on the
+repo tree before commit.
+
+- U01/U01-R2: {deck_slug}/{run_dir} token resolution in manifest.py
+  (resolve_artifact_pattern/_split_artifact_patterns/_dir_context/
+  _resolve_deck_slug) wired into phases.py, workingset.py,
+  run_signature_deck.py; ' + ' artifact pairs split and hashed as one
+  combined feed. MIN_MANIFEST_VERSION 44 -> 46.
+- U02/U02-SYNCFIX: %02d/%03d canonical prompt family +
+  _canonical_prompt_dir_problems; PIPELINE-MANIFEST v46 with
+  AF-PROMPT-NAME + AF-PROMPT-DUP-FILE (175 autofails);
+  MANIFEST-SOURCE.txt restamped; MASTER-QC-AUTOFAIL-RULESET Section 5 rows.
+- U03/U03-R2: verifier FAIL blocks unless an AUTHENTIC owner token —
+  process_manifest.json structurally incapable of issuing a skip
+  (waivers.json-only authenticity; SELF-MINTED exploit closed).
+- U05: launcher.py .engine.pid sidecar; __main__.py --capacity; NEW
+  execution_plan.py, manifest_assert.py, run_discovery.py.
+- U06/U06-R2: presentation-watchdog.sh SCAN_ROOT default + reconcile +
+  discovery + PATH-safe timeout.
+- U09: drift restoration — curate.py (NEW, import-broken without it) and
+  fix_bundle_complete.py restored to live bytes.
+
+## [v22.0.7] -- 2026-08-10 -- Rescue Rangers three-tier rescue order + access inventory (v1.2)
+
+Doctrine rewrite across all 10 rescue-rangers department docs (repo-side; no
+live n8n / VPS / client / GHL touched). The Operator is now the LAST resort,
+never the first: every ticket is worked in a BINDING three-tier order —
+
+1. **Instruct the client's agent (outcome b)** — the PRIMARY route for
+   coaching/how-to classes and client-account actions (OAuth dashboard steps,
+   billing top-up, owner confirmation); never a page.
+2. **The rescue AI self-fixes infrastructure on a REACHABLE box using our
+   access** — the operator's `~/.ssh/config` `rescue-*` alias for every fleet
+   box plus the provider env var NAMES from `~/.openclaw/secrets/.env`
+   (Hostinger, Contabo, Cloudflare, GoHighLevel, OpenRouter, per-client
+   `CF_ACCESS_<CLIENT>_SVC_*`); referenced by NAME ONLY, values live in the
+   secrets env, never printed into a doc/ticket/transcript; credential
+   existence checked BEFORE escalating.
+3. **Page the Operator ONLY after tiers 1-2 ran** — WITH what was tried and why
+   — or on a one-way-door class (credential-ACTION/DNS/deletion/model
+   sovereignty) that pages on the class alone.
+
+Routing table: credential-ACTION -> Operator; client-account-action -> outcome
+(b); infra failure on reachable box -> self-fix; everything else -> coach then
+self-fix; box genuinely UNREACHABLE after the rescue AI's own SSH attempts ->
+Operator, with the attempts and evidence.
+
+Outcome contract made explicit everywhere: every rescue ends as (a) solved,
+(b) here is what you should do, or (c) here is the answer — delivered by the
+client's own agent; outcome (b) is a complete dispatch, never a silent drop.
+
+Files: director, diagnostician, structured-fix-operator, ticket-clerk,
+qc-postmortem-specialist, how-to-use-this-department, TOOLS.md,
+sops/SOP-RR-01/03/04, CHANGELOG-RESCUE-DEPT.md (v1.2), _index.json
+content-manifest re-stamped via the canonical hash-content-manifest.py
+pipeline. Version rolled v22.0.6 -> v22.0.7 in lockstep (10 markers).
+
+## [v22.0.6] -- 2026-08-10 -- Final batch merge: Waves 1+2 + engine launcher + cert + reporter
+
+Atomic batch merge of ALL 11 QC-PASSED Pres Dept work items into one stamp
+(merge record: CONTROL/merge-final-onboarding.md in the pres-dept-fix project).
+
+Wave 1 (b94534d6): WI-01 manifest v44, WI-11 14 SOP fixes, WI-12 capacity probe
+Wave 2 (aa46ba4c): WI-06 deck_type un-hardcode, WI-09 warn-mode flips, WI-10 heartbeat minutes
+Remaining: WI-02-r1 engine launcher (launcher.py, canonical-entry, intake-poll, cc_board dispatch), WI-05 cert minting in close() (phases.py), WI-15a reporter wiring (5/5 binary acceptance verified)
+Config-only: WI-07 CC sweeps (applied .env.local), WI-08 owner chat + notify (applied secrets/.env + tools/)
+Separate repo: WI-15b CC Presentations board (blackceo-command-center), WI-16 self_audit.py (pres-dept-fix)
+
+## [v22.0.5] -- 2026-08-10 -- Wave 2 batch: deck_type un-hardcode, warn-mode flips, heartbeat minutes
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 2 work items (merge record:
+CONTROL/merge-wave2.md in the pres-dept-fix project).
+
+- WI-06 (deck_type un-hardcode): new deck-intake-driver.py -- single sanctioned intake
+  bridge writing deck_type via derive_legacy_fields(). New prove_sp_routing.py --
+  P-SP-CLAIM routing/claim gate running unconditionally, fails AF-SP-TYPE-UNDECLARED.
+- WI-09 (warn-mode flips): CLIENT_PACKAGE_WARN_ONLY -> frozenset(),
+  UPLOAD_GATE_WARN_ONLY -> False, DECK_TYPE_GATE_STAGE -> "enforce".
+- WI-10 (heartbeat minutes): all 36 phases carry heartbeat_minutes (13x 15m, 17x 30m,
+  4x 60m, 2x 120m). Manifest v44 -> v45.
+
+## [v22.0.4] -- 2026-08-10 -- Wave 1 batch: manifest v44, 14 SOP fixes, capacity probe
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 1 work items (merge record:
+`CONTROL/merge-wave1.md` in the pres-dept-fix project).
+
+- **WI-01 (manifest v44):** update-skills.sh U001 workspace-resolution fix --
+  three-candidate fallback (dept agent workspace -> OC_WS_RESOLVED -> canonical
+  <oc-root>/workspace) to prevent silent manifest deployment skips on boxes whose
+  main-agent workspace diverges from the canonical path.
+- **WI-11 (14 SOP fixes):** 11 edits across the Presentations SOP fleet: stale
+  path fix (SOP-IMG-01), DEN-1 doctrinal downgrade (SOP-SLIDE-04), I2I mode
+  (CLIENT-WEBINAR-DECK-SOP), 6 North-Star SOPs PENDING W3 -> DOCTRINE-ONLY,
+  version bumps (IMG-00, DESIGN-00), path notes (SLIDE-06, SIGPRES-00),
+  harmony line-number removal. 3 new SOPs: MECHANICAL-ENFORCEMENT-REGISTRY,
+  CROSS-REFERENCE-MAP, SLIDE-07-PRICE-LADDER-RECONCILIATION -- deployed to
+  both universal-sops and onboarding role-library.
+- **WI-12 (capacity probe):** `51-signature-presentation/scripts/presentation_job/
+  capacity.py` -- read-only measurement of harness + provider capacity from
+  settings.json. dispatchable = min(harness, provider_ceiling, doctrine_width).
+  probe_mode "live" (never SIMULATED). Exits 2 on missing settings, never guesses.
+- sync_check --strict exits 0 (v44, 36 phases, 173 autofails, 34 roles).
+- universal-sops/_content-manifest.json re-stamped (111 files, drift-free).
+
+## [v22.0.3]  -  2026-08-07  -  Presentation Interview app: write GATE 0b intake_transcript.json
+
+Fixes the GATE 0b blocker on app-captured runs. `presentation-canonical-entry.sh`
+GATE 0b requires `working/interview/intake_transcript.json` to exist and be
+`>= 200` bytes — a REAL one-at-a-time conversation trace. The poll bridge wrote
+`intake.json` + `intake_ledger.json` but NOT the transcript, so any app-captured
+run would fail GATE 0b at canonical entry and never build.
+
+- `intake_writer.py`: add `write_transcript()` — builds the trace from the app's
+  captured answers (each Q&A → a dialogue turn). `cmd()` writes it too.
+- `intake_bridge.py`: poll/ingest now also writes the transcript.
+- `test_intake_writer.py`: new GATE 0b test (file exists, `>= 200` bytes, real turns).
+- README: document the transcript file.
+- Verified live E2E: poll → `intake_transcript.json` 989 bytes, 4 real turns.
+- Version rolled v22.0.2 → v22.0.3 in lockstep (10 markers).
+
+
+## [v22.0.2]  -  2026-08-07  -  Presentation Interview app: box-side intake poll cron + worker list endpoint + key fix
+
+Complete the interview-app → presentation-department wiring.
+
+- **Worker:** add `GET /api/intake/list` (admin-auth) so the box can discover
+  finished intakes. Fix pre-existing bug: `intakeKey()` was async but never
+  awaited → every intake stored under the literal `[object Promise]` R2 key,
+  overwriting each other. Made it sync.
+- **intake_bridge.py:** add `poll` command — list finished intakes, ingest each
+  once (write `working/copy/intake.json` + `intake_ledger.json` via
+  `intake_writer.py`, then `cc_board.ingest_deck_task` → CC kanban card), track
+  processed ids in a poll ledger for idempotency; failed ingests retried. Browser
+  UA so Cloudflare 1010 does not block the bridge.
+- **Box cron:** `~/clawd/presentation-intake-bridge/poll.sh` every 5 min (sources
+  `~/.openclaw/secrets/.env` for `INTAKE_ADMIN_TOKEN` + CC board).
+- **Tests:** R2 worker test covers store+list; all offline gates pass.
+- Version rolled v22.0.1 → v22.0.2 in lockstep (10 markers).
+
+
+## [v22.0.1]  -  2026-08-07  -  fix(ci): close AF-RESEARCH-REACHES-RENDER Guard A gap + lockstep v22.0.1 version roll
+
+**Patch release on the `merge/apicur-train` train (PR #873).** Two CI blockers on PR #873
+(sync_check Guard A + G3) closed, plus the lockstep version roll they forced.
+
+### Changes
+1. **AF-RESEARCH-REACHES-RENDER Guard A probe (test_preflight.py):** added the negative-test
+   fixture to `emit_af_coverage()` — research map weaves an anchor into `slides_copy.md`
+   (weave gate passes) but `slides.json` copy[] drops it, so `_chk_research_reaches_render`
+   FAILS. This closes the declared-but-untested gap sync_check (Guard A) flagged. Verified
+   locally: `gate_integrity_check` DECLARED(100)==ENFORCED==TESTED(101), `sync_check`
+   IN SYNC (v44), `test_chk_research_reaches_render` PASS.
+2. **Version roll to v22.0.1 in lockstep (bump-version.sh):** the skill-version bump (G3)
+   forced the "all version markers agree" guard — all 10 markers rolled to v22.0.1
+   (`version`, `install.sh`, `23-ai-workforce-blueprint/skill-version.txt` + SKILL.md
+   frontmatter, `_index.json`, `README.md` x2, `update-skills.sh`,
+   `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, and the `06-ghl-install-pages`
+   skill in lockstep).
+
+
+## [v22.0.0]  -  2026-08-07  -  CAPSTONE: Presentation Department Gauntlet Loop + BAR-MET closure — the 10-fix E2E train lands on the v21.7.38 Loop completion (v21.7.38 -> v22.0.0)
+
+**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by the Kofi run into `main`. This capstone adds the **10 E2E-found defects** from the same Kofi live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
+
+All 10 version markers rolled `v21.7.38` -> **v22.0.0** in lockstep via `scripts/bump-version.sh` (plus the script-embedded browser-manager sub-markers and the two skill dirs those markers live in, `06-ghl-install-pages` and `23-ai-workforce-blueprint`, so CI guard G3 stays green). Annotated tag `v22.0.0` cut on this release commit.
+
+### The 10 E2E-found fixes (from the Kofi live run)
+
+1. **presenter_guide.py `_SLIDE_SPLIT_RE`:** accept both `## Slide N` and plain `SLIDE N` headings (the plain form was being missed).
+2. **presenter_guide.py byte floor:** scale the guide floor by deck size (was a fixed 51,200 bytes, which rejected a legitimate 20-slide guide).
+3. **phase_verifiers.py:** scale the P8.2-GUIDE floor by deck size to match the presenter-guide scaling.
+4. **speech_build_harness.py `load_slides`:** accept plain `SLIDE N` (was writing an empty stub when it did not match the strict heading).
+5. **speech_build_harness.py `REASONING_HEADROOM_TOKENS` 4096 -> 8192:** raise the headroom so GLM/minimax never trap on an empty-content budget.
+6. **run_signature_deck.py:** P4-RENDER attest-existing path + a genuine render-record write (no more fabricated render records).
+7. **build_deck.py `discover_speech_chunks`:** search `working/deliverables/` where the speech actually lands.
+8. **run_signature_deck.py:** the render record now carries real KIE task IDs (`AF-NOT-KIE-RENDERED` no longer false-fires).
+9. **ghl_media_push.py:** deck-PDF fallback when the pptx exceeds the GHL 25 MB cap.
+10. **prove-deck.py:** exclude the in-flight delivery phase from attestation checks (the circular-certification bug).
+
+Verified on the train: 33/33 phases attest, `bundle_complete.json` complete, `PROCESS-CERTIFICATE` `all_steps_pass`, `P9-DELIVER` exits 0.
+
+### What the previous release (v21.7.38) already closed
+
+The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by the Kofi E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
+
+
+## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
+
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+
+## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
+
+## [v21.7.36]  -  2026-08-05  -  fix(loops): grant write/edit in the CEO allowlist (the other half of the gate) and teach the fleet that a no-match exit 1 is a RESULT
+
+v21.7.35 retired the CEO production-tool **deny**. It was not enough. Two separate
+mechanisms were still producing the same 163-minute turns, and both are fixed here.
+
+**1. The allowlist was a second gate nobody removed.** An explicit per-agent
+`tools.allow` is a HARD allowlist in OpenClaw: a tool omitted from it is denied exactly
+as effectively as one named in a deny list. All four in-repo copies of the CEO/router
+allow list carried 17 tools and omitted `write` and `edit`. So after the deny was
+retired, `memoryFlush` still ordered a memory-file write on every compaction that the
+agent had no tool to perform — it re-read an empty file and retried, looping. `write`
+and `edit` are now granted in all four copies (17 → 19 tools), which are asserted
+byte-identical by `scripts/test-ceo-tool-gate.sh`:
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` `CEO_TOOL_ALLOW`
+- `scripts/apply-fleet-standards.sh` `_CEO_TOOL_ALLOW`
+- `scripts/apply-routing-fix.sh` `CEO_TOOL_ALLOW`
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_ALLOW_TOOLS` (also the source
+  `scripts/grant-ceo-consent.sh` reads, so that write-site is fixed transitively)
+
+Already-deployed boxes SELF-HEAL on the next `update-skills.sh` roll: the residual-deny
+sweep (update-skills.sh) clears any stale `write`/`edit` from `tools.deny` BEFORE the
+stampers run, and the stampers' heal path appends any missing allow entry, so the
+"deny wins" filter can no longer strip the new grants. No per-box touch is needed.
+
+The stale comments that justified the omission are corrected. They claimed "the
+intent-gate default-denies every other exec" — that gate was deleted on 2026-08-05, so
+the comment described a control that no longer exists and would mislead the next reader
+exactly as it misled this one.
+
+Guard `2b` in `scripts/test-ceo-tool-gate.sh` was rewritten. It was a blunt single-line
+scan that could not tell a deny array from an allow array, so it fired a FALSE FAILURE
+the moment `write` was legitimately added to `CEO_TOOL_ALLOW`. It now parses the named
+DENY and ALLOW blocks and asserts both halves — the retired deny stays retired AND
+write/edit stay granted — across all three stampers. Both directions are mutation-proven.
+
+**2. `Exec failed` on a legitimate no-match is what actually spun the loops.** New
+`EXEC_CHAIN_DISCIPLINE_V1` block, stamped into every box's `$WORKSPACE_DIR/AGENTS.md` by
+`scripts/apply-fleet-standards.sh` (which both `install.sh` and `update-skills.sh` call,
+so it reaches fresh boxes and existing boxes alike). The mechanism, read out of a live
+session trajectory: an agent batched 30-40 verification probes into ONE `&&`-joined
+command; one `ls` hit a genuinely missing file and returned exit 1; `&&` aborted the
+chain; the runtime surfaced a single atomic `Exec failed` naming no link; the agent could
+not isolate it and re-ran the whole chain — 425 times. **The absence the agent was sent
+to discover is what broke the tool it was discovering with.** The guidance is five rules
+plus a worked example: never join independent probes with `&&`; turn absence into OUTPUT
+(`ls -la "$P" 2>&1 || echo "ABSENT: $P"`); grep/ls/test exit 1 = NOT FOUND (a result),
+grep exit ≥2 = a real error, exit 127 = a shell abort and never a fact about the system;
+never re-run a "failed" compound command without isolating the failing link; cap a
+verification chain at 5 probes. AGENTS.md is the home rather than `universal-sops/`
+because the gateway injects AGENTS.md into the system prompt every turn, whereas a
+universal SOP is only read when an agent is told to go read it — and an agent mid-loop is
+never told anything.
+
+**3. Post-update restore-verify script committed** at
+`61-loop-protection-system/scripts/openclaw-loop-protection-restore.sh` (+ its secret-leak
+test at `61-loop-protection-system/tests/secret-leak-test.sh`). `openclaw update`
+reinstalls node_modules and silently reverts the dist patch that makes a runaway tool
+loop actually abort; this script detects every piece of the protection stack and, with
+`--apply`, restores what is safe to restore. Read-only by default, never restarts the
+gateway, atomic cmp-verified backups, and value-blind on the two secret-bearing files
+(no flag disables redaction; `ps eww` and `launchctl print` are never used). Its section
+9 independently detects the very allowlist shape fixed above. Hardened before commit:
+two predictable `/tmp/<name>.$$` staging paths — symlink-clobber targets whose contents
+are fed back into `openclaw config set` — now use `mktemp`.
+
+**Observed, not fixed — a confabulated self-critique.** While reporting on a failed
+audit the router told the owner it had "spawned 6 parallel sub-agent sessions flooding
+you with duplicates — exactly the No Sub-Agent Storms violation from SOUL.md." That did
+not happen: `sessions_spawn` fired 5 times across the whole day and zero times during
+either audit window, and no session-creation event exists in that window. The phrase "No
+Sub-Agent Storms" does not appear anywhere in this repo either. Recorded here as
+observed behavior; no guard is added for it in this release.
+
+## [v21.7.35]  -  2026-08-05  -  fix(ceo-gate): RETIRE the CEO write-deny gate fleet-wide, actively un-wire already-wired boxes, and restore write/edit to the generation departments
+
+Trevor's directive: *"I don't want to use the CEO gate anymore. I deleted the CEO gate
+because it was causing too many problems. I replaced it with a prompt injection."* The CEO
+production-tool deny denied `write` on the router while `memoryFlush` demanded a memory
+write, creating a self-blocking loop that ate Telegram messages for roughly two weeks. This
+release removes the gate rather than repairing it, and — critically — actively UN-WIRES boxes
+that are already carrying it, because removing an installer uninstalls nothing.
+
+### Removed — the gate itself
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_DENY_TOOLS` is now permanently EMPTY, and the
+  emptiness is an ASSERTED state: `scripts/test-ceo-tool-gate.sh` pins `EXPECT_DENY=""`, so
+  re-adding any production tool fails CI instead of silently re-creating the outage
+  (mutation-proved: planting `("write" "edit")` returns rc=1, reverting returns rc=0).
+- The `write/edit/apply_patch/browser/canvas/image/process` deny is gone from all three fleet
+  stampers (`build-workforce.py` `CEO_TOOL_DENY`, `apply-fleet-standards.sh`
+  `_CEO_TOOL_DENY`, `apply-routing-fix.sh` Layer 5), so no roll can resurrect it.
+- `apply-routing-fix.sh` Layer 5: the `ALREADY_GATED` early-exit — the "already gated, refresh
+  the hard allowlist" heal path — is DELETED, not repaired, along with its now-dead
+  `L5_RESULT` case arm. `verify-routing.sh` G7's `REQUIRED_DENY` assertion and `INTERIM_EXEC`
+  posture are likewise retired, mirroring how G8 was retired.
+- The GHL MCP deny (`byProvider` + name-globs) SURVIVES. It is a separate brake keeping the
+  router out of client CRM and was never part of the loop.
+
+### Fixed — two defects that made the original removal a no-op or a hazard
+- **`apply-routing-fix.sh` Layer 5 never executed on ANY box.** The upstream removal deleted
+  the string `"write"` from the already-gated predicate and left `and  in tools["deny"]:` — a
+  SyntaxError. Python compiles the whole heredoc before running any of it, so the entire Layer
+  was dead, and `bash -n` passed clean, which is why it survived review.
+- **`verify-routing.sh` G7's neutralization was dead code.** `G7_RESULT` was set and then
+  unconditionally overwritten one block later, so every `G7_REMOVED` arm was unreachable and
+  G7 still failed a correctly-rolled box.
+
+### Fixed — a NEW write-deny that the removal accidentally introduced
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: `"write"` and `"edit"` are RESTORED
+  to `GENERATION_TOOLS_ALLOW`. **This hunk GRANTS write; it is not gate machinery — read it as
+  the opposite.** That list governs `GENERATION_DEPT_IDS = {graphics, video, audio,
+  presentations}`, and the file's own comment records that an explicit per-agent `tools.allow`
+  is a HARD allowlist and that presentations "stalled headless with 'no permission'" without
+  write/edit. Leaving the removal in place would have created a brand-new write-deny on four
+  department agents — the exact bug this release exists to eliminate.
+
+### Added — un-wire, the priority deliverable
+`update-skills.sh` stages hooks with `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`, a copy that
+NEVER prunes, so deleting the hook files from the repo left already-wired boxes running the
+loop. Confirmed on the operator box: the gate is OFF there, yet `ceo-intent-gate.sh`,
+`lib-ceo-consent.sh` and `lib-ceo-tool-gate.sh` are all still on disk plus a `.bak-*` — dormant
+and re-armable by any future roll. Other boxes are UNVERIFIED. The roll now:
+- deletes stale `ceo-intent-gate.sh` / `lib-ceo-consent.sh` and their `.bak-*` siblings;
+- strips every `ceo-intent-gate.sh` entry from `hooks.PreToolUse` in BOTH
+  `~/.claude/settings.json` and `settings.local.json`, handling the flat and nested
+  matcher forms, dropping a matcher group only when it empties, never clobbering the array;
+- clears any RESIDUAL production deny left on a ROUTER agent or `agents.defaults` by a
+  pre-retirement roll (nothing else removes it — the stampers only ever ADD);
+- writes every config atomically (temp + fsync + `os.replace`) after a timestamped backup.
+Idempotent, strictly NON-FATAL, and a true no-op on a box already cleaned by hand.
+
+### Fixed — fleet-safety of the replacement plugin (`ceo-routing-doctrine`)
+- **Linux boxes could never load it.** `plugins.load.paths` was built as
+  `"/Users/%s/.openclaw/extensions" % USER` — macOS-only, so on Linux boxes ($HOME `/root` or
+  `/home/x`) the path did not exist and the doctrine never loaded, leaving neither gate nor
+  replacement. It also hardcoded an operator username into a client-neutral repo. Now
+  `os.path.expanduser`.
+- **It nested a copy on every roll.** `cp -r SRC DST` copies the directory INTO the destination
+  once it exists (run 2 produced `ceo-routing-doctrine/ceo-routing-doctrine/`). Now
+  `cp -R SRC/. DST/`, verified stable across 3+ runs; the `2>/dev/null || true` that hid real
+  copy failures is dropped.
+- **FLEET-ROLL BLOCKER — a roll silently disabled the doctrine on every box.**
+  `apply-fleet-standards.sh` filtered `openclaw plugins list --json` to `origin == "bundled"`
+  and then ASSIGNED that list over `plugins.allow`, a WHOLESALE REPLACEMENT. Measured on a live
+  box: **82 plugins — bundled=67, global=12, config=3**, and `ceo-routing-doctrine` is
+  `origin:"config"`, NOT `"bundled"`. So each roll dropped 15 currently-installed, currently-
+  loadable plugins from the allowlist, including the prompt-injection layer that REPLACED the
+  retired CEO gate. Because this stamper runs EARLIER in a roll (~6440) than the plugin
+  installer (~7281), the drop did not even self-repair within the same roll. Net effect per box:
+  allowlist stripped -> plugin installed -> plugin not allowed -> **never loads** -> the router
+  gets NEITHER the CEO gate NOR the routing doctrine, which is strictly worse than before the
+  gate was removed. This would have fired on the very next fleet roll.
+  Fixed as a **CLASS, not by name** — special-casing one id would leave the identical trap for
+  every future path-loaded or globally-installed plugin. `plugins.allow` is now the enumerated
+  bundled ids **UNION** the ids of all currently-present non-bundled plugins, so a roll still
+  ADDS newly-bundled plugins and still PRUNES genuinely-vanished ones, but never removes a
+  plugin that is installed and loadable right now. The fail-open posture is UNCHANGED (an empty
+  or untrustworthy enumeration still writes nothing and warns), and the misleading
+  "non-bundled/third-party plugins will no longer auto-load" log line now states the truth.
+  Proven against the real 82-plugin enumeration as a fixture: pre-fix the doctrine is ABSENT
+  from the computed allowlist, post-fix it is PRESENT along with all 12 `global` and all 3
+  `config` ids; a genuinely-bundled id still survives; a vanished id is still pruned (the fix is
+  not "allow everything"); the empty-enumeration path still leaves the config untouched; and
+  mutation-reverting the union drops the allowlist 82 -> 67 and the doctrine back out.
+- **A crash mid-write truncated `openclaw.json`.** Now an atomic write with a backup.
+
+### Fixed — bash 3.2 abort on the now-empty deny array
+`hooks/lib-ceo-tool-gate.sh` expanded the emptied array bare as `"${CEO_GATE_DENY_TOOLS[*]}"`.
+On macOS `/bin/bash` 3.2.57 an EMPTY array expanded that way under `set -u` is an UNBOUND
+VARIABLE and aborts the shell, and `scripts/grant-ceo-consent.sh` calls `ceo_gate_tools` under
+`set -euo pipefail` — so the consent script died outright on every macOS box. Proven with a
+paired control: /bin/bash 3.2.57 aborts, bash 5.3.12 returns rc=0. Guarded with `"${arr[*]:-}"`.
+
+### Fixed — dangling references the removal left behind
+- `scripts/grant-ceo-consent.sh` hard-ERRORed and exited 1 when the deleted
+  `lib-ceo-consent.sh` was absent, i.e. always — making it unrunnable fleet-wide. The single
+  symbol it consumed (`ceo_consent_file`) is inlined as a fallback with identical semantics.
+- `scripts/test-ceo-tool-gate.sh` iterated two DELETED paths, so `grep -q` returned rc=2 (an
+  ERROR, not "no match"), producing 8 phantom failures. Now asserts those files STAY deleted.
+- `tests/unit/test-u134.sh` was 9 PASS / 12 FAIL and in NO workflow, so it failed silently.
+  Rewritten to guard the inert contract of `u134-tool-allowlist-patch.sh` — it must never write
+  a `tools.deny` into a box config — with a mutation proof that the assertion can actually fail.
+- Pruned the deleted hook from `ceo-tools-root-schema-guard.yml` path filters; corrected
+  `docs/MC-ROUTE.md`, which claimed the intent-gate still enforces a command-level exec
+  restriction (nothing does now — the replacement carries no tool-deny).
+
+### Also
+- `update-skills.sh` gains the `_INSTALLER_FAILED` guard: a skill whose installer fails no
+  longer receives the `.wired` sentinel, so a hollow success is not recorded as a win.
+
+`hooks/lib-ceo-tool-gate.sh` is deliberately KEPT as an empty-deny shim, not deleted: it still
+supplies `CEO_GATE_ALLOW_TOOLS` (a GRANT list) and `CEO_GATE_MCP_PROVIDERS`, and
+`grant-ceo-consent.sh` sources it.
+
+**No fleet roll is performed by this release.** `fleet_rollout_enabled` stays `false`; the
+operator rolls, and not before a single pilot box has been hand-verified.
+
+## [v21.7.34]  -  2026-08-05  -  fix(skill58): draft-cleanup workflow Delete node verb DELETE -> POST /v1/episodes/{id}/delete
+
+The n8n `draft-cleanup` workflow's "Delete Episode" node used `DELETE /v1/episodes/{id}`,
+which Podbean answers with HTTP 403 (verified 2026-08-05 against the operator test channel).
+Podbean's documented delete endpoint is `POST /v1/episodes/{id}/delete`, requiring only
+`episode_publish` scope (the channel-scoped token already carries it) and returning HTTP 200
+`{"msg":"Delete episode success!"}`. Changed the node method to POST and appended `/delete`
+to the URL, preserving the `episode_id` and `access_token` interpolation. All 18 residual test
+drafts were deleted with this path (channel now empty). This merge is repo-only; deploying the
+fixed verb to the LIVE draft-cleanup workflow in n8n is a separate live step.
+
+### Merge notes
+
+Cherry-picked `bf1d1b22` (+2/-2, workflow file only) onto origin/main — clean, no conflict
+(file path unchanged). Version rolled v21.7.33 -> v21.7.34 across all 10 markers via
+bump-version.sh. Skill 58 0.1.38 -> 0.1.39 (SKILL.md frontmatter + skill-version.txt).
+CHANGELOG entry added. Annotated tag v21.7.34 pushed.
+
+## [v21.7.33]  -  2026-08-05  -  fix(skill58): proxy test-harness stub state-writer + deploy the capability-manifest gate (CC pinnedTag v6.0.82 -> v6.0.88)
+
+Two final-QC fixes for the podcast publish fix train, merged to main and verified green:
+
+### What changed
+
+- **Proxy test-harness fix (unit 1.1 / 1.5-1.8 follow-up).** `tests/test_podbean_publish_proxy.py`
+  now provisions a stub state-writer that answers `get --job-id` with a clean (non-waived)
+  job, and both transport helpers (`_run` / `_run_no_desc`) pass `--state-writer` to it. This
+  resolves the U2.4 waiver fail-closed gate (`assert_not_waived`) failing on un-provisioned
+  `--job-ids` — 13 proxy-suite failures on merged main. Test file only; product code
+  (`podbean_publish.sh`, the waiver gate, the ledger-resolution logic) untouched.
+  Suite result after: proxy 29/29, required-outputs 21, upload_media 43, gate selftest 21.
+- **CC pinnedTag bump (unit 3.4-3.6 deployment gap).** `cc-compat.json` `commandCenter.pinnedTag`
+  v6.0.82 -> v6.0.88, so fleet-refresh deploys the Command Center containing the capability-manifest
+  gate, GUARD 8, and the manual-dispatch mirror (the phantom-agent protection units 3.4-3.6 build).
+  Contract holds: v6.0.88 >= minVersion v4.73.0, maxVersion null. (`onboardingVersion` marker also
+  rolled by bump-version.sh.)
+
+### Merge notes
+
+Cherry-picked 48da3be9 (harness fix, +27/-3 test file only) and 12584719 (pinnedTag bump,
++2/-2) onto origin/main. All 10 version markers rolled v21.7.32 -> v21.7.33 via bump-version.sh
+(the readback train PR #863 landed v21.7.32 between this train's start and merge). Skill 58
+version 0.1.37 -> 0.1.38 (SKILL.md frontmatter + skill-version.txt) for the proxy test-harness
+change under `58-podcast-production-engine/`. CHANGELOG entry added. Tag v21.7.33 annotated.
+
+## [v21.7.32]  -  2026-08-05  -  fix(skill58): podbean readback field names + rollback status-flip + filesystem-v2 binary gate (F-01/F-02)
+
+Final QC of units 2.1-2.4 (n8n publish rail fail-closed) found the live rail
+PASS but the merged repo STALE: the two live-proven fixes for the podcast
+publish workflow lived only on branch `fix/podcast-readback-fieldnames`, not
+on origin/main. Merged here so the repo matches the live rail
+(`ZpaoEQrHYtDM49y0`, 70 nodes, ACTIVE).
+
+### What changed
+
+- **F-01 readback field names (7818dd02).** `Readback Verdict -- Assert Media +
+  Description` now asserts Podbean's real GET response fields — `media_url`
+  (audio) and `logo` (cover) — instead of the never-returned `media_key`/
+  `logo_key`. Pre-fix, every valid publish failed readback → HTTP 500 →
+  duplicate-on-retry. Includes a defensive episode unwrap
+  (`{episode:{...}}` and `{body:{episode:{...}}}` shapes) and an
+  `extractUrl()` normalizer for string-or-object logo values. Empty
+  `media_url`/`logo` still fail closed.
+- **F-02 rollback status-flip (7818dd02).** `Podbean -- Rollback Unpublish
+  Created Episode` is now `POST /v1/episodes/{id}` with form body
+  `access_token` + `status=draft`, `neverError:true` — no more DELETE (which
+  403s without `episode_delete` scope). A degenerate episode is pulled off the
+  live feed as a draft instead of a failed delete.
+- **filesystem-v2 binary-mode gate fix (34030aa7).** The three binary Code
+  nodes (`Validate Audio Substance -- Byte-Level MP3 Gate`, `Prepare Audio
+  Upload -- Package for Podbean S3`, `Prepare Image Upload -- Package for
+  Podbean S3`) now read via n8n's canonical
+  `await this.helpers.getBinaryDataBuffer(0, '<prop>')` instead of
+  `Buffer.from(binary.data,'base64')`. On this instance's `filesystem-v2`
+  binary mode the old read decoded the 9-byte marker `"filesystem-v2"`,
+  rejecting every valid MP3/JPEG. Live-proven: real contract-v2 publish →
+  HTTP 200 `{ok:true}` (readback passed on real `media_url`/`logo`), negative
+  empty-`image_url` → HTTP 422.
+- **verify-n8n-deploy.py active-preference (34030aa7).** The deploy drift
+  matcher now prefers the ACTIVE live workflow when several share a webhook
+  path (deploy cutover keeps superseded twins inactive). 2 new unit tests
+  (13 total pass).
+- **U041 meta restoration.** The re-export had stripped the `meta` version
+  marker, which the repo's own validator (`scripts/validate_n8n_workflow.py`)
+  and the `qc-podcast.sh` onb-10 gate require (all other config/n8n exports
+  carry it). Restored — node/connection/fix content unchanged (70 nodes, 42
+  connections).
+
+### Merge notes
+
+Cherry-picked 7818dd02 + 34030aa7 onto origin/main (9f993953) — clean, zero
+conflict surface (the branch base was an ancestor of main). All 10 version
+markers rolled v21.7.31 -> v21.7.32 (bump-version.sh). Skill 58 version 0.1.36
+-> 0.1.37 (SKILL.md frontmatter + skill-version.txt). CHANGELOG entry added.
+`verify-n8n-deploy.py` re-run from the merged tree: `podbean-publish.workflow.json`
+MATCH (nodes=70 connections=42 active=True webhooks=['podbean-publish']).
+
+## [v21.7.31]  -  2026-08-05  -  fix(skill58): capability manifest + dept-podcast runtime dir materialization (units 3.4-3.5)
+
+Unit 3.4-3.5 of the podcast publish fix train (onboarding half of the capability
+manifest), QC-passed (Fable QC-Fable.md VERDICT: PASS + Opus RE-REVIEW-Opus.md
+VERDICT: PASS, 2026-08-05) and merged to main. Adds the Skill 58 capability
+manifest and the dept-podcast runtime-dir materialization installer, matching
+the already-merged Command Center reader (`src/lib/capability-manifest.ts`) field
+contract exactly.
+
+### What changed
+
+- **Capability manifest (unit 3.4).** New
+  `58-podcast-production-engine/config/capability-manifest.json` (153 lines)
+  declaring `skill`, `activation`, `entrypoints`, `required_env`, `activation_layer_components`
+  and `dispatch_contract` — every field the merged CC reader consumes, with no
+  field-name mismatch (verified by automated field-walk). Declares
+  `audio-podcast-editor` in `forbidden_agent_ids`; no secret values (all env
+  labels are SET/SET_OR_NONE semantics with secrecy tags).
+- **Runtime dir materialization (unit 3.5).** `install-podcast-department.sh`
+  now materializes AGENTS.md/IDENTITY.md/SOUL.md/MEMORY.md/HEARTBEAT into
+  `~/.openclaw/agents/dept-podcast/` (workspace-scaffolded copy, symlink-resolve,
+  else lightweight stub) so the runtime dir is never empty. `--verify` asserts the
+  five per-agent files plus agents.list entry, storage tree, sqlite, and session
+  namespace, exiting EX_REFUSED (2) on any MISS. Never overwrites curated content
+  (guard fires before every write branch).
+
+### Merge notes
+
+Cherry-picked 28cc4f3a onto origin/main (f57556fe) — clean, zero conflict surface
+(the branch base was an ancestor). All 10 version markers rolled v21.7.30 ->
+v21.7.31 (bump-version.sh). Skill 58 version 0.1.35 -> 0.1.36 (SKILL.md frontmatter
++ skill-version.txt). CHANGELOG entry added. This is the 10th and final unit of the
+podcast fix train (9 campaign + manifest).
+
+## [v21.7.30]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
+
+The AI Workforce standard-first redesign (master plan 2026-08-04), merged from
+feat/aiwf-standard-first-2026-08-04 (fe21227a). Adds the standard prebuild lane
+(operator-triggered, pre-interviewComplete), the apply-diff build path, a
+provenanced decline-archival (never-delete) guarantee, and the STANDARD_READY
+prover verdict. Merged on top of the v21.7.29 podcast train (unit 1.2 step
+driver); all version markers rolled to v21.7.30.
+
+### What changed
+
+- **Standard prebuild lane (PHASE 2).** `scripts/prebuild-standard-workforce.sh`
+  + `.py` build the canonical floor EXCLUSIVELY from `templates/role-library/`
+  under an explicit provenanced OPERATOR consent record, before
+  `interviewComplete` — the ONE creation allowed under the No-Work-During-
+  Interview Gate's exemption 2. Writes no owner-facing deliverable and no
+  interview answer; defers ALL `agents.list` registration to interviewComplete.
+- **Apply-diff build (PHASE 3).** `build-workforce.py --apply-standard-edits`
+  takes the interview config and applies the standard-first diff: provenanced
+  declines are ARCHIVED to `.retired/` (never deleted), net-new custom
+  departments are built from the canonical library, kept prebuilt departments
+  stay built, and `agents.list` rows land for confirmed keeps.
+- **Anti-fabrication gates (PHASE 7).** exit 87 when `interviewComplete` is
+  absent and no genuine transcript/consent corroborates; exit 88 when a RECORDED
+  decline lacks provenance. The bare `interviewComplete` flag is never trusted —
+  `verify_interview_complete()` requires a genuine conversational transcript or a
+  valid owner-consent record.
+- **STANDARD_READY prover verdict (PHASE 4).** prove-zhe.py / verify-library-gate
+  recognize the standard-first build state and emit STANDARD_READY.
+- **Cron + link wiring (PHASES 5/8).** resume-workforce-build.sh and
+  interview-nudge-cron.sh are prebuilt-aware; send-interview-link.sh sends the
+  interview link at the beginning of the run; run-full-install ordering updated.
+- **Documentation.** SKILL.md, ZERO-HUMAN-EXPERIENCE.md, INSTRUCTIONS.md rewrite
+  the No-Work gate carve-out, the Phase 5.5 review-the-built-set inversion, and
+  the QC edit-mode exemption.
+
+### Merge notes
+
+The AIWF train initially collided with main's v21.7.29 podcast step-driver
+release (PR #859); merged onto it and rolled all version markers to v21.7.30.
+Both gates PASS on the merged state: test-artifact-coverage.sh 10/10,
+test-build-standard-first-roundtrip.sh 13/13.
+
+## [v21.7.29]  -  2026-08-05  -  fix(podcast): deterministic step driver — preset-gated step emission, produces_media gating (unit 1.2)
+
+Unit 1.2 of the podcast publish fix train, QC-passed (Opus RE-REVIEW-2, 2026-08-05) and merged to main. This is the final unit of the 9-unit podcast fix train.
+
+### What changed
+
+- **Deterministic step driver.** New podcast_step_driver.py emits the canonical per-step runbook commands for the 18-step podcast pipeline, preset-aware (interview / solo / episode_asset_pack / season_strategy).
+- **N1 preset-blindness resolved (fix 9e99d389).** Step emission is now gated on the preset's actual media flags: Step 10 (generating_art) gates on produces_media (covers asset-pack cover generation the writer's transition gate demands), Step 11 (producing_audio) gates on render_audio, Steps 14/15/16 gate on store_media / publish_podbean / link_back, Step 17 honors the preset's terminal action. Live-verified against a fresh SQLite DB for all four presets.
+- **QC fixes (c68d54dd).** guard-activation-health.py, SKILL.md, WIRING.md, SOP-PODCAST-07-ACTIVATION-RESCUE.md tightened; N1 fix is exactly 1 file (podcast_step_driver.py, +150/-6).
+
+### Merge notes
+
+Resolved a trivial universal-sops/_content-manifest.json generated_at timestamp conflict (deduplicated; manifest re-verified clean, 108 files all sha256 match). Deleted a stray local-only v21.7.29 tag (pointed at an unrelated aiwf-standard-first commit, never pushed to remote) that the release-integrity guard flagged. Step driver self-test PASS. Cherry-picked 829c9c15 + c68d54dd + 9e99d389.
+
+## [v21.7.28]  -  2026-08-04  -  fix(podcast): fail-closed hardening — empty-required store refusal, test-job complete bar, media-probe escape-hatch refusal (unit 1.5-1.8)
+
+Unit 1.5-1.8 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC fix-first) and merged to main.
+
+### What changed
+
+- **1.5 store_media refuses to run with an empty required asset set.** store_media raises MediaError before any network call when cover/mp3 are missing; a --required cover,mp3[,teaser] CLI flag (preset-driven) is added. A present-but-empty --required value (e.g. ",") is rejected as a usage error (exit 3) before touching credentials or the job file. Never exits 0 with an empty asset map.
+- **1.6 advance --force-waiver tightened.** A test job (_test payload) may not advance to complete under ANY flag combination (hoisted unconditional refusal); cumulative waivers >= 1 on a publish-required preset block a silent waive-to-complete unless PODBEAN_OPERATOR_WAIVE_TO_COMPLETE=1; the [reason: test-run] waiver is rejected unless the job is tagged test_run.
+- **1.7 ghl_credential_gate full mode checks KIE_API_KEY, FISH_AUDIO_API_KEY, and the client Fish Audio reference_id** (SET/NOT-SET + placeholder behavior probe). Missing any one stops setup fail-closed.
+- **1.8 media-probe escape hatch refused.** PODBEAN_SKIP_MEDIA_PROBE=1 in publish-proxy mode is refused unless PODBEAN_OPERATOR_FORCE=1 is also set; ffprobe absence is a hard fail in the proxy media probe (no HEAD-only degrade).
+
+### Merge notes
+
+Two cross-unit test-harness conflicts with units already on main were resolved: ghl_credential_gate selftest (unit 1.3's F1 two-store case now provides the media-provider creds unit 1.7 requires; 21/21 pass) and the proxy media-guard tests (added a stub state-writer so the U2.4 waiver gate sees a clean job; ProxyMediaGuardTest 6/6, upload_media 43/43, required_outputs 21/21). Cherry-picked c460c19d + fe571e06.
+
+## [v21.7.27]  -  2026-08-04  -  fix(podcast): n8n publish rail fails closed — byte-level media gates, entry-guard semantic reasons (unit 2.1-2.4)
+
+Unit 2.1-2.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC fix-first, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.1 Audio substance gate.** New Validate Audio Substance -- Byte-Level MP3 Gate node wired as the ONLY edge into Prepare Audio Upload: asserts byteSize >= 50KB from the base64-decoded binary, checks magic bytes (ID3 or MPEG frame sync), rejects text/html and text/plain mimeTypes. Fail-closed on error (no Podbean call).
+- **2.1 Image substance gate.** Prepare Image Upload extended: size cap > 2MB throws, real dimension parsing (PNG IHDR / JPEG SOF walk), enforces min 1500 / max 3000 / square 1:1 before any S3 upload.
+- **2.2 Entry guard.** Fail-closed entry guard wired; refusal returns 422.
+- **2.3 Readback verdict.** Assert Media + Description post-publish; FALSE -> Rollback + Mark Failed + 500.
+- **2.4 Waiver gate.** assert_not_waived called before payload build in BOTH proxy and broker/local modes.
+- **Entry-guard semantic reasons (QC fix 9261fc19).** The Respond -- Entry Guard Refused node now returns distinct reasons: description_too_short / title_equals_description / title_placeholder / description_placeholder, falling back to invalid_payload only for structural failures. Negative test 4.2.3 reproduced.
+
+### Verification
+
+Opus re-review: all six refusal scenarios reproduced, entry-guard returns distinct reason for 4.2.3, validator VALID (70 nodes/42 connections), node --check clean, no bypass routes into upload. Fable QC findings 2-4 remain open as Phase 4 verification items. Cherry-picked 5c52b5ef + 9261fc19.
+
+## [v21.7.26]  -  2026-08-04  -  fix(podcast): deterministic show-notes producer, description gate, kill the title fallback (unit 1.1)
+
+Unit 1.1 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Deterministic Show Notes producer step (12.5).** SKILL.md, PRD, SOP-PODCAST-01, and CHECKLIST now specify a deterministic 800-2500 char show-notes producer, content-tiered via model_router.py, no-em-dash/no-code-fence rules, persisted via podcast_state.py output --field episode_description.
+- **Description gate.** episode_description is now a required output on both transitions (publishing->enrolling publish_podbean, enrolling->complete produces_media) with MIN_EPISODE_DESCRIPTION_LEN >= 200 enforced in missing_required_outputs.
+- **Title fallback killed.** The silent description->title substitution is removed; a real (non-draft) publish now hard-refuses without a real description (PODBEAN_MIN_DESCRIPTION_LEN, default 200). The title stub survives only in draft/test/dry-run modes.
+- **Ledger-default resolution fixed (QC fix 12eb1506).** The description is now resolved from the Step 12.5 ledger BEFORE the hard refusal (shared section), mirroring AUDIO_URL/IMAGE_URL resolution — the F1 dead-code finding. Five new regression tests, mutation-proved.
+
+### Verification
+
+Opus re-review: F1 ledger-default dead code FIXED (live repro: ledger default succeeds, no-description hard-refuses, short description refuses, CLI-vs-ledger conflict dies), F2 no-test-covered FIXED (5 new tests), F3/F4 doc-only acceptable. 308 tests pass (13 files). Cherry-picked b6250ac8 + 12eb1506 with two test-file conflicts resolved (kept both --cover and --description args).
+
+## [v21.7.25]  -  2026-08-04  -  fix(podcast): engine GHL credential aliases now win over generic keys in every resolver (unit 1.3)
+
+Unit 1.3 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC-failure fix) and merged to main.
+
+### What changed
+
+- **Alias-major credential resolution (F1 fix).** ghl_credential_gate.py's _resolve now iterates aliases outer, stores inner — so PODCAST_ENGINE_GHL_PIT / PODCAST_ENGINE_GHL_LOCATION_ID found in ANY store (including a later ~/.openclaw/secrets/.env) win over a generic GOHIGHLEVEL_API_KEY in the live process env. This closes the exact Leanne-incident shape: a box with GOHIGHLEVEL_* set but PODCAST_ENGINE_GHL_* only in secrets/.env now resolves the engine tenant correctly. Selftest case 14 (two-store incident repro) passes; gate selftest 16/16.
+- **field_layer engine aliases (F2 fix).** caf/field_layer/constants.py prepends the engine PIT and LOCATION_ID aliases; resolver._resolve_one is alias-major, so the Step 14-17 write-back path resolves the engine tenant first. Three new resolver tests including the two-store shape. field_layer 10/10.
+- **Typo fixed (F3).** No stray CJxAT reference anywhere.
+
+### Scope
+
+7 files across 06-ghl-install-pages/ and 58-podcast-production-engine/scripts/caf/. All suites verified: ghl_credential_gate --selftest 16/16, field_layer resolver 10/10, upload_media 35/35.
+
+## [v21.7.24]  -  2026-08-04  -  fix(podcast): raise the Podbean cover floor to 1500 and the generation default to 2K (unit 1.4)
+
+Unit 1.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Cover floor raised 1400 -> 1500.** The Podbean cover image floor is now 1500x1500 (the sanctioned safe floor per the master plan). The workflow webhook entry-guard notes, the generate_cover.sh resize range (1500-3000), and SKILL.md STEP 10 all now say 1500. A 1400x1400 image is REJECTED (new negative test T5 proves the floor actually bites).
+- **Generation default raised to 2K.** Kie.ai GPT-image-2 now generates a 2048 square cover by default instead of 1024, so the final resized-to-spec image has headroom above the 1500 floor.
+- **Regression test made line-independent (QC fix 9d459e6a).** tests/unit/test_generate_cover_probe.sh previously extracted probe_downloaded_image() from generate_cover.sh with a hardcoded sed line range, which broke when the commit inserted lines near the top of the script. Now an awk extractor anchored on the function declaration prints through the first top-level closing brace -- line-shift resilient. Fixture raised to 1500, negative 1400 case added. 6/6 tests pass (was 5/5 pre-regression).
+
+### Scope
+
+16 files, all under 58-podcast-production-engine/ plus the repo-root regression test. No live n8n, CC, or client-box changes.
+
+## [v21.7.23]  -  2026-08-04  -  fix(podcast): re-export the n8n publish rail drifts (Standing Gate MULTIROW + Fleet Gate FIX-RESCUE-19), document legacy deactivation and stale pinData
+
+Unit 2.5-2.7 of the podcast publish fix train, QC-passed (Fable max review, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.5 legacy deactivation documented.** The ungated legacy workflow `COfgxe6HXRcWOleV` ("Podbean Channel IDs to Google Doc") is NOT part of the `config/n8n` set and must never be restored from it — it carries an independent Podbean publish chain that bypasses the roster check, entry guard, and media preflight. The DR-RUNBOOK now documents the operator-live deactivation requirement and the NEVER-PRINT disposition. Verified live 2026-08-04: `active: false` on main.blackceoautomations.com.
+- **2.6 DRIFT-1 — Standing Gate MULTIROW.** The `Standing Gate -- Determine Verdict` node now selects the roster row whose `podbean_channel_id` equals the payload `podcast_id` (channel-preferred), falling back to the first last-name row only when the payload carries no `podcast_id`. A DR restore can no longer pick the wrong row for a client with two shows.
+- **2.6 DRIFT-2 — Fleet Gate FIX-RESCUE-19.** The `Fleet Gate -- Resolve Identity + Verdict` node now carries the shared identity placeholder denylist (`'', 'tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba'`), whitespace collapse, and the `fleet_roster_rows` diagnostic. A placeholder identifier can no longer function as a real identity.
+- **2.7 stale pinData.** The repo export carries no pinData (stripped during sanitization). The LIVE workflow's pinned webhook payload predates the contract-v2 guard (missing `contract_version: "2"` and `idempotency_key`) and would be refused — documented as an operator-live re-pin action; no repo change needed.
+
+### Verification
+
+QC review (Fable, thinking max) verified independently on disk and against the live n8n API: all 58 functional nodes match live after dash-canonicalization, the 38-edge connection graph is identical, JSON parses cleanly, no pinData, no credential values, no real client names, only the two sanctioned files changed. Working tree clean; commit is the single change on the branch.
+
 ## [v21.7.22]  -  2026-08-04  -  fix(update-skills): an un-provisioned box, and a Command Center runtime-config data problem this box's operator must fix, no longer withhold the version stamp entirely
 
 Wave-2 fleet guardrail, proven live tonight: Step U6d of `update-skills.sh` runs `reconcile_command_center_runtime.py` to populate the Command Center's departments/branding config from this box's own ZHC provisioning artifacts. Two distinct FATAL messages, both correct in principle, blocked 2 boxes each fleet-wide, with no path forward: (a) `DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client ZHC artifact exists` — a box whose workforce interview never completed, i.e. legitimately un-provisioned; (b) `existing departments.json is non-empty but invalid; refusing to clobber operator/client data` — correct caution against overwriting real data, but a dead end once triggered. Both boxes had SKILL38 and the GHL MCP converge perfectly that night; only the stamp was withheld, over a gap unrelated to skills content.
@@ -1470,6 +3416,48 @@ non-Tier-2 box is affected by it.
   temp file, no unfiltered variable, nothing to leak under `set -x`), and the
   pre-existing `update-skills.sh` allowlist line number — stale since 2026-07-30
   — is re-derived.
+
+## [Unreleased]  -  2026-08-06  -  FIX-23 canonical-entry door reliability (Error 5/R5)
+
+### The sanctioned door now works under library-only drift, caps attempts, and
+ships a self-contained GHL module.
+
+FIX-23 (the highest-leverage fix from the Presentation Department Gauntlet): the
+canonical-entry door bricked on SOP-library maintenance debt (27 A5/A6 drift items),
+so the agent engineered around the sanctioned path with a custom driver. Four sub-units:
+
+### What changed
+
+- **(a) Drift classification.** `sync_check.py` now emits a `class` on every drift item
+  (`A5/A6` = library-only, `render_path` = everything else) and `--json` carries a
+  `drift_summary` with the render_path/library_only split. GATE 3 in
+  `presentation-canonical-entry.sh` proceeds (evented, `sync_drift_deferred`) when the
+  ONLY drift is A5/A6 library debt — it can never brick the render path — and still
+  FAILS CLOSED (`AF-CANONICAL-RENDER-BYPASS`, exit 7) on any render-path drift.
+- **(b) 3-attempt cap.** `presentation-canonical-entry.sh` now caps canonical-entry
+  invocations per run dir at 3; the 4th dies with an explicit
+  "Do NOT write a custom driver" message (no agent-engineered workaround loop).
+  `--plan` (read-only inspection) never consumes the budget.
+- **(c) Drift repaired.** The two orphan AF codes cited by `build_deck.py`
+  (`AF-FORGED-APPROVAL`, `AF-KIE-AUTH`) are registered in
+  `PIPELINE-MANIFEST.autofails` (manifest v38) and the `MIN_MANIFEST_VERSION` floor
+  moved to 38. `sync_check.py --json` reports 0 drift.
+- **(d) GHL co-location.** GATE 1b imports `ghl_media` with the render interpreter and
+  surfaces the real import error (a Skill-48 co-location gap is now diagnosable).
+  `ghl_media.py` resolves the canonical Skill-48 module from the co-located
+  `_skill48_ghl_media.py` copy FIRST (materializer-installed, always-current),
+  then the repo tree, then the installed skills tree. The materializer
+  (`create_role_workspaces.py`) co-locates the canonical Skill-48 module next to
+  `ghl_media.py` on every Presentations floor-fill so a deployed department is
+  self-contained.
+
+### QC evidence
+
+- `tests/test_fix23_door_reliability.py` (16 tests): A5/A6-only drift proceeds through
+  GATE 3 end-to-end; render-path drift fails closed; the 4th canonical-entry attempt
+  dies; `sync_check --json` reports 0 drift; `ghl_media` imports under the render
+  interpreter and resolves the co-located Skill-48 sibling.
+- Full `tests/` suite: 422 passed, 2 skipped.
 
 ## [Unreleased]  -  2026-08-03  -  Skill 58 v0.1.28: podcast activation layer landed, two-show fleet model, act-9 bash-3.2 compat
 

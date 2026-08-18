@@ -1,0 +1,131 @@
+name: fail-closed-doctrine-gate
+
+# N40 — FAIL-CLOSED DEPENDENCY: stop at 2, report once, never narrate the hunt.
+#
+# Guards three separable things, because any one of them alone is a false
+# all-clear:
+#   DOCTRINE     the rule is present and un-neutered in the canonical AGENTS.md,
+#                and the "Blockers — Research Before Giving Up" section still
+#                carries its N40 bound (that unbounded section CAUSED the incident)
+#   DELIVERY     apply-fleet-standards.sh actually injects the block, and both
+#                install.sh and update-skills.sh invoke it — a rule that reaches no
+#                box is decoration (cf. NATIVE_SKILL_INVOCATION_V1)
+#   ENFORCEMENT  the Skill 61 D6 detector RUNS and fires on the incident shape,
+#                while staying silent on a real 460-call healthy burst
+#
+# Every shipped file is parsed under `bash -n` first: the fleet's Macs run stock
+# /bin/bash 3.2.57 while dev boxes run Homebrew bash 5.x, and a bash-5-only
+# construct shipped a gate that failed to parse on every client box.
+
+on:
+  push:
+    paths:
+      - AGENTS.md
+      - scripts/qc-assert-fail-closed-doctrine.sh
+      - scripts/apply-fleet-standards.sh
+      - 61-loop-protection-system/scripts/loop_detectors.py
+      - 61-loop-protection-system/scripts/loop_watchdog.py
+      - 61-loop-protection-system/config/thresholds.json
+      - 61-loop-protection-system/config/signatures.json
+      - tests/unit/fail-closed-doctrine-gate.test.sh
+      - .github/workflows/fail-closed-doctrine-gate.yml
+  pull_request:
+    paths:
+      - AGENTS.md
+      - scripts/qc-assert-fail-closed-doctrine.sh
+      - scripts/apply-fleet-standards.sh
+      - 61-loop-protection-system/scripts/loop_detectors.py
+      - 61-loop-protection-system/scripts/loop_watchdog.py
+      - 61-loop-protection-system/config/thresholds.json
+      - 61-loop-protection-system/config/signatures.json
+      - tests/unit/fail-closed-doctrine-gate.test.sh
+      - .github/workflows/fail-closed-doctrine-gate.yml
+
+jobs:
+  fail-closed-doctrine:
+    name: N40 fail-closed doctrine + D6 enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check every shipped shell file
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          for f in scripts/qc-assert-fail-closed-doctrine.sh \
+                   scripts/apply-fleet-standards.sh \
+                   tests/unit/fail-closed-doctrine-gate.test.sh; do
+            if bash -n "$f"; then
+              echo "ok: $f"
+            else
+              echo "::error::$f failed bash -n"
+              rc=1
+            fi
+          done
+          exit $rc
+
+      - name: D6 detector self-test
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 61-loop-protection-system/scripts/loop_detectors.py --self-test
+
+      - name: The gate passes on the real repo doctrine
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash scripts/qc-assert-fail-closed-doctrine.sh
+
+      - name: Unit test (includes both mutation proofs)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/fail-closed-doctrine-gate.test.sh
+
+      # Belt and braces, independent of the test harness: build a doctrine with
+      # N40 stripped here and require a non-zero verdict from the shipped gate.
+      - name: A doctrine missing N40 must never exit 0
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY'
+          import io
+          s = io.open("AGENTS.md", encoding="utf-8").read()
+          low = s.lower()
+          i = low.find("<!-- fail_closed_dependency_v1 -->")
+          j = low.find("<!-- credential_check_v2 -->", i if i != -1 else 0)
+          assert i != -1 and j != -1, "fixture build failed: N40 markers not found"
+          io.open("/tmp/no-n40.md", "w", encoding="utf-8").write(s[:i] + s[j:])
+          PY
+          set +e
+          bash scripts/qc-assert-fail-closed-doctrine.sh /tmp/no-n40.md >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" != "1" ]; then
+            echo "::error::qc-assert-fail-closed-doctrine.sh exited $rc on a doctrine with N40 REMOVED (expected 1) — the gate is not firing"
+            exit 1
+          fi
+          echo "N40-stripped doctrine correctly exits 1"
+
+      # UNDETERMINED must never collapse into a pass. An absent instrument
+      # reading as "clean" is the exact false all-clear this family forbids.
+      - name: An absent doctrine must exit 3, not 0
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          bash scripts/qc-assert-fail-closed-doctrine.sh /tmp/definitely-not-here.md >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" != "3" ]; then
+            echo "::error::an ABSENT doctrine exited $rc (expected 3 UNDETERMINED)"
+            exit 1
+          fi
+          echo "absent doctrine correctly exits 3"

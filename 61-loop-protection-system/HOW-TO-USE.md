@@ -77,6 +77,44 @@ during the roll (the 30-min unacked-P1 escalation path depends on it).
 - To stop the world on a unit: `loop-companion.sh park <unit>`; to release it after
   you have fixed the boot cause: `loop-companion.sh unpark <unit>`.
 
+## The one you have to recognise by hand: a poisoned transcript
+
+**Symptom: the agent answers CORRECTLY but SLOWLY.** That is the whole tell, and it
+is counter-intuitive enough to be worth memorising:
+
+> **A broken agent gives wrong answers. A poisoned one gives right answers slowly.**
+
+If replies are wrong, garbled, or missing, look at config, the model, or the
+channel. If replies are *correct* but take minutes when they used to take seconds,
+suspect this instead. What is happening is that a run got stuck against the
+runtime's own "you already called that tool with identical arguments" guard and is
+burning minutes going nowhere - and while it does, it **holds the conversation
+lane**, so your messages queue behind it. The reply you eventually get is fine. It
+just had to wait for a doomed run to die first.
+
+**Emergency recovery, any time, no tooling required: start a fresh session with
+`/new`.** That is the fastest fix and it is always safe. The old transcript is kept.
+
+Why `/new` works: the transcript itself is the problem. A run that fills a session
+with hundreds of identical refusals leaves that wreckage in the history the model
+reads back as its own past, so every later turn on that session starts degraded -
+even after whatever triggered it is long gone. This is the one failure mode in this
+skill where fixing the *environment* does not help, because the fault is in the
+*context*.
+
+**What D5 does about it on an armed box:** it watches each transcript for those
+refusal bursts and, when one is confirmed, **archives the transcript so the next
+turn starts clean** - moved to a timestamped file beside it, never deleted, and
+reverted by moving it back. It will **not** roll a session that is still being
+written; a conversation in progress gets the alert and a prepared abort instead.
+
+**One caveat, stated plainly:** compaction checkpoint summaries can capture the
+loop verbatim, and those are re-injected when a session resumes, so they **survive**
+the transcript roll. D5 detects and reports them, but pruning them is a Tier-2
+prepared action (the live gateway rewrites the session store, so an in-place edit
+without a restart gets clobbered). If you see `SECOND CARRIER` in a finding, the
+roll alone has not fully cleared it.
+
 ## What it will never do
 
 - Call a model (it is deterministic Python; it cannot itself become a furnace).

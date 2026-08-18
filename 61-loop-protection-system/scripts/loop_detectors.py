@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 61 - LOOP PROTECTION SYSTEM :: loop_detectors.py
-# The loop-specific detectors D1-D4 and D7 (spec Section 3). These are the
+# The loop-specific detectors D1-D7 (spec Section 3). These are the
 # detectors absent from Skill 60's S1-S10 catalog; they are proposed for
-# registration as Skill 60 signals S11-S14+ (Open Decision T2) so the fleet
-# keeps ONE signal vocabulary. D5 (completion-rate) and D6 (outbound-send-rate)
-# are RESERVED names documented in loop_watchdog.py's collect_evidence()
-# docstring (fix design SS4) - deliberately not built here; D7 is a NEW,
-# unrelated detector (the 2026-08-04 cross-run resend incident) and does not
-# consume either reservation.
+# registration as Skill 60 signals S11-S17 (Open Decision T2) so the fleet
+# keeps ONE signal vocabulary.
 #
 #   D1  restart velocity          pm2 restarts / launchctl runs / docker RestartCount
 #   D2  token-burn rate           trajectory usage lines, paid vs local, idle-correlated
 #   D3  repeated-identical-signature  rolling hash over (err class + tool seq + target)
 #   D4  timer re-fire storm / wedge   cron over-fire, hung-but-alive, orphan :18789
+#   D5  self-blocking flush run / transcript poison  runtime tool-loop block records
+#       (structural, never prose), longest burst, trailing-window share, poisoned
+#       compaction checkpoints
+#   D6  futile retry burst (semantic, argument-blind)  fail-closed dependency
+#       refusals + failing-tool-call bursts inside a sliding window, never keyed
+#       on arguments
 #   D7  cross-run resend (provenance-stamped)  gateway-stamped inter-session
 #       delivery hash, counted across DISTINCT run ids inside a rolling window
 #
@@ -207,6 +209,215 @@ def d4_timer_refire(crons, wedge, thresholds):
 
 
 # --------------------------------------------------------------------------- #
+# D5 - self-blocking flush run / transcript poison
+# --------------------------------------------------------------------------- #
+def d5_transcript_poison(sessions, thresholds):
+    """D1-D4 all measure FLOW - events per tick. They answer "is a loop running
+    RIGHT NOW?" and go quiet the moment it pauses. D5 measures a STOCK: how much
+    of a transcript is ALREADY loop wreckage. That distinction is the whole point
+    of this detector. A flow detector reports all-clear on a paused loop while the
+    transcript stays poisoned and every future turn on it starts degraded, so the
+    fault outlives every fix aimed at the environment.
+
+    `sessions` = list of per-transcript measurements (pure data; the collector does
+    the reading):
+      {unit, path, bytes, tail_records, blocked_records, max_burst, trailing_ratio,
+       blocked_tools, checkpoint_rows, poisoned_checkpoints, idle_minutes}
+    A "block" is ONE runtime tool-loop refusal, matched STRUCTURALLY on
+    details.status=='blocked' + details.deniedReason=='tool-loop' (never on prose).
+
+    Two faces, in the order they matter:
+      IGNITION (primary)  max_burst - consecutive blocks inside one run. This is
+                          the early, high-precision signal: it fires seconds into a
+                          burst, long before the transcript is measurably poisoned.
+      AFTERMATH (secondary) trailing_ratio + poisoned_checkpoints - the stock that
+                          persists after the burst ends and that a roll must clear.
+
+    THE SILENCE RULE (what makes this a detector and not an alarm bell): a
+    transcript with ZERO blocks yields ZERO findings no matter how large it is.
+    Size NEVER fires on its own - it only annotates a finding and can raise a WARN
+    to P1. The control archive is 17,160,766 bytes (8x the flush re-arm floor) with
+    zero blocks and must stay perfectly silent."""
+    t = thresholds["d5_transcript_poison"]
+    out = []
+    for s in sessions:
+        blocked = int(s.get("blocked_records", 0) or 0)
+        if blocked <= 0:
+            continue  # THE SILENCE RULE - no loop evidence, no finding, any size
+        unit = s.get("unit") or "session:<unknown>"
+        burst = int(s.get("max_burst", 0) or 0)
+        ratio = float(s.get("trailing_ratio", 0.0) or 0.0)
+        cps = int(s.get("poisoned_checkpoints", 0) or 0)
+        size = int(s.get("bytes", 0) or 0)
+        window = int(t["window_records"])
+        rearm = size >= int(t["rearm_risk_bytes"])
+
+        reasons = []
+        severity = None
+        if burst >= t["p1_blocks_per_burst"]:
+            severity = P1
+            reasons.append("IGNITION: %d consecutive runtime tool-loop blocks in one "
+                           "burst (>= %d)" % (burst, t["p1_blocks_per_burst"]))
+        if ratio >= t["p1_trailing_ratio"]:
+            severity = P1
+            reasons.append("AFTERMATH: %.0f%% of the trailing %d records are blocks "
+                           "(>= %.0f%%)" % (ratio * 100, window,
+                                            float(t["p1_trailing_ratio"]) * 100))
+        if cps >= t["p1_poisoned_checkpoints"]:
+            severity = P1
+            reasons.append("SECOND CARRIER: %d compaction checkpoint summary(s) "
+                           "captured loop text verbatim - these are re-injected on "
+                           "resume and SURVIVE a transcript roll (needs LF-11)" % cps)
+        if severity is None:
+            if burst >= t["warn_blocks_per_burst"] or ratio >= t["warn_trailing_ratio"]:
+                severity = WARN
+                reasons.append("%d blocks, longest burst %d, trailing-%d share %.0f%%"
+                               % (blocked, burst, window, ratio * 100))
+            else:
+                continue
+        # Size is a MODIFIER, never a trigger: past the memoryFlush re-arm floor
+        # every compaction re-arms a forced flush, so a poisoned transcript that is
+        # ALSO oversized will keep re-igniting. That escalates a WARN; it never
+        # creates a finding on its own.
+        if rearm:
+            reasons.append("transcript %d bytes is past the flush re-arm floor (%d) - "
+                           "every compaction re-arms a forced flush"
+                           % (size, int(t["rearm_risk_bytes"])))
+            if severity == WARN:
+                severity = P1
+        tools = s.get("blocked_tools") or []
+        if tools:
+            reasons.append("blocked tool(s): %s" % ",".join(sorted(str(x) for x in tools)))
+        idle = s.get("idle_minutes")
+        if idle is not None:
+            reasons.append("transcript idle %.0fm (auto-roll needs >= %dm)"
+                           % (float(idle), int(t["roll_min_idle_minutes"])))
+        out.append(_finding("LP-A8", severity, unit, "; ".join(reasons), "D5",
+                            tier=1, evidence_path=s.get("path")))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# D6 - futile retry burst (SEMANTIC repetition; argument-blind)
+# --------------------------------------------------------------------------- #
+def d6_futile_retry_burst(bursts, thresholds, signatures=None):
+    """The blind spot every OTHER loop guard on this fleet shares: they all key on
+    the ARGUMENTS.
+
+      - The OpenClaw runtime's own identical-call guard keys on (toolName, argsHash).
+      - This repo's always-armed runaway patch keys on (toolName, argsHash,
+        resultHash) - STRICTER still, so it is blind in exactly the same way.
+      - D3 above hashes (outcome class + tool sequence + TARGET).
+
+    An agent that REWORDS a failing intent therefore defeats all three at once. The
+    incident this detector comes from: an agent hit a fail-closed API, then made
+    thirteen tool calls in forty-nine seconds - every one a differently-worded
+    attempt at the same intent. Every call carried distinct arguments, so every
+    args-keyed guard stayed silent and the run was only stopped by the human
+    watching it narrate the hunt.
+
+    D6 never looks at arguments. It asks the only question that survives rewording:
+    *is this tool being called over and over while producing no progress?*
+
+    `bursts` = list of per (transcript, tool) measurements, already reduced by the
+    collector to counts inside one sliding window (pure data, no content):
+      {unit, path, tool, calls, errors, failclosed, span_seconds}
+        calls       tool calls to THIS tool inside the window
+        errors      how many returned a tool-layer error/blocked result
+        failclosed  how many returned a FAIL-CLOSED DEPENDENCY marker
+                    (auth-class refusal: unauthorized / forbidden / invalid key /
+                    authentication failed) counted from the result payload
+    Only counts ever reach this function - never arguments, never result text.
+
+    TWO FACES, and the second is the one that matters:
+
+      FAILING BURST (secondary). Many calls to one tool in the window, most of them
+        failing at the TOOL layer. Sound, but it only sees failures the runtime
+        already labels as failures.
+
+      FAIL-CLOSED DEPENDENCY (primary). The call SUCCEEDS and the dependency
+        refuses inside the payload - `exec` running a curl that returns
+        {"error":"Unauthorized"} exits 0 and is recorded `status: completed`. The
+        tool layer sees nothing wrong at all, which is precisely why every existing
+        guard missed the incident. Retrying an auth-class refusal cannot succeed by
+        being reworded, so attempt number three is already a loop. This face is the
+        detector encoding of the doctrine rule: STOP AFTER <= 2 ATTEMPTS.
+
+    THE SILENCE RULE (inherited from D5, and load-bearing here): a burst with zero
+    errors AND zero fail-closed markers yields ZERO findings no matter how many
+    calls it contains. Volume alone is NEVER a loop. This is not caution - it is
+    measured: the real local corpus (998 transcripts, 12,465 tool results) contains
+    a perfectly healthy burst of 460 `exec` calls in 48.2 seconds with 2 errors.
+    Any count-only detector - the obvious design, and the one this deliberately
+    rejects - would fire on that and on ~100 other healthy bursts. Futility, not
+    volume, is the signal."""
+    t = thresholds["d6_futile_retry_burst"]
+    sig = signatures if signatures is not None else C.load_signatures()  # noqa: F841
+    out = []
+    for b in bursts:
+        calls = int(b.get("calls", 0) or 0)
+        errors = int(b.get("errors", 0) or 0)
+        failclosed = int(b.get("failclosed", 0) or 0)
+        # THE SILENCE RULE - no evidence of futility, no finding, at ANY volume.
+        if errors <= 0 and failclosed <= 0:
+            continue
+        tool = b.get("tool") or "<tool>"
+        unit = b.get("unit") or "session:<unknown>"
+        span = float(b.get("span_seconds", 0.0) or 0.0)
+        window = int(t["window_seconds"])
+        ratio = (float(errors) / calls) if calls else 0.0
+
+        reasons = []
+        severity = None
+
+        # ---- FAIL-CLOSED DEPENDENCY (primary) --------------------------------
+        if failclosed >= t["p1_failclosed_calls"]:
+            severity = P1
+            reasons.append(
+                "FAIL-CLOSED DEPENDENCY: %d calls to `%s` in %.0fs returned an "
+                "auth-class refusal (>= %d) - retrying a fail-closed dependency "
+                "cannot succeed by rewording the request"
+                % (failclosed, tool, span, t["p1_failclosed_calls"]))
+        elif failclosed >= t["warn_failclosed_calls"]:
+            severity = WARN
+            reasons.append(
+                "FAIL-CLOSED DEPENDENCY: %d calls to `%s` in %.0fs returned an "
+                "auth-class refusal - doctrine allows <= %d attempts before "
+                "stopping and reporting what is blocked"
+                % (failclosed, tool, span, t["doctrine_max_attempts"]))
+
+        # ---- FAILING BURST (secondary) ---------------------------------------
+        if calls >= t["p1_burst_calls"] and ratio >= t["p1_error_ratio"]:
+            severity = P1
+            reasons.append(
+                "FAILING BURST: %d/%d calls to `%s` failed inside a %ds window "
+                "(%.0f%% >= %.0f%%)"
+                % (errors, calls, tool, window, ratio * 100,
+                   float(t["p1_error_ratio"]) * 100))
+        elif (severity is None and calls >= t["min_burst_calls"]
+              and ratio >= t["warn_error_ratio"]):
+            severity = WARN
+            reasons.append(
+                "FAILING BURST: %d/%d calls to `%s` failed inside a %ds window "
+                "(%.0f%% >= %.0f%%)"
+                % (errors, calls, tool, window, ratio * 100,
+                   float(t["warn_error_ratio"]) * 100))
+
+        if severity is None:
+            continue
+
+        # Arguments are NEVER inspected, so say so in the finding: this is the one
+        # detector whose verdict survives an agent rewording its way around every
+        # args-keyed guard on the box.
+        reasons.append("argument-blind: %d distinct-argument calls would defeat "
+                       "every (toolName,argsHash) guard" % calls)
+        out.append(_finding("LP-A9", severity, unit, "; ".join(reasons), "D6",
+                            tier=2, evidence_path=b.get("path"),
+                            dedup_key="LP-A9|%s|%s" % (unit, tool)))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # D7 - cross-run resend (provenance-stamped)
 # --------------------------------------------------------------------------- #
 def d7_cross_run_resend(sends, thresholds):
@@ -224,7 +435,7 @@ def d7_cross_run_resend(sends, thresholds):
     each group's DISTINCT run ids (a row that repeats an already-counted run id
     - e.g. a slice re-read - counts once). >= p1_repeat DISTINCT run ids inside
     the window for the SAME source->target pair with the SAME normalized
-    payload is a confirmed cross-run resend loop (LP-A8, the 2026-08-04
+    payload is a confirmed cross-run resend loop (LP-A10, the 2026-08-04
     incident): a sessions_send call whose caller omitted timeoutSeconds falls
     back to a hardcoded 30000ms local wait; a busy target that does not reply
     inside that window is misread by the CALLER as a delivery failure and the
@@ -261,15 +472,15 @@ def d7_cross_run_resend(sends, thresholds):
             seen_runs[rid] = ts
             window_ts = [x for x in window_ts if (ts - x).total_seconds() <= window] + [ts]
             count = len(window_ts)
-            dedup_key = "LP-A8|%s|%s|%s" % (source, target, h)
+            dedup_key = "LP-A10|%s|%s|%s" % (source, target, h)
             if count >= p1_at and not emitted:
-                out.append(_finding("LP-A8", P1, source,
+                out.append(_finding("LP-A10", P1, source,
                            "identical cross-run resend x%d (%s->%s, sig %s) within %ds -> loop confirmed"
                            % (count, source, target, h, window), "D7", tier=1,
                            dedup_key=dedup_key))
                 emitted = True
             elif count == warn_at and not emitted:
-                out.append(_finding("LP-A8", WARN, source,
+                out.append(_finding("LP-A10", WARN, source,
                            "identical cross-run resend x%d (%s->%s, sig %s) within %ds"
                            % (count, source, target, h, window), "D7", tier=1,
                            dedup_key=dedup_key))
@@ -346,6 +557,105 @@ def self_test():
     assert not any(x["unit"] == "healthy" for x in f4)  # firing at its declared rate
     print("  D4 case: PASS (over-fire + wedge + orphan each P1; healthy cron silent)")
 
+    # D5: the STOCK detector. Values below are the MEASURED shape of one archived
+    # operator-box incident vs its healthy control, not invented numbers.
+    poisoned = [{"unit": "session:example-poisoned", "bytes": 4607807,
+                 "tail_records": 3393, "blocked_records": 1135, "max_burst": 275,
+                 "trailing_ratio": 0.50, "blocked_tools": ["read", "tool_call"],
+                 "checkpoint_rows": 16, "poisoned_checkpoints": 7,
+                 "idle_minutes": 240.0}]
+    f5 = d5_transcript_poison(poisoned, th)
+    assert len(f5) == 1 and f5[0]["severity"] == P1 and f5[0]["loop_class"] == "LP-A8"
+    assert "IGNITION" in f5[0]["detail"] and "SECOND CARRIER" in f5[0]["detail"]
+
+    # THE CONTROL, and the whole reason this is a detector: a transcript 3.7x LARGER
+    # than the poisoned one, 8x past the flush re-arm floor, with many checkpoints -
+    # but ZERO blocks. It must be perfectly silent. A detector that fires on
+    # everything is not a detector.
+    healthy = [{"unit": "session:example-healthy", "bytes": 17160766,
+                "tail_records": 8042, "blocked_records": 0, "max_burst": 0,
+                "trailing_ratio": 0.0, "blocked_tools": [],
+                "checkpoint_rows": 14, "poisoned_checkpoints": 0,
+                "idle_minutes": 99999.0}]
+    assert d5_transcript_poison(healthy, th) == []
+
+    # The smallest burst measured in the incident (8) still trips P1 - that is the
+    # threshold's whole job: catch 11/11 historical bursts, ~6.5% into the median
+    # one, instead of waiting for the transcript to be measurably poisoned.
+    smallest = [dict(poisoned[0], blocked_records=8, max_burst=8, trailing_ratio=0.04,
+                     poisoned_checkpoints=0, bytes=100000)]
+    f5c = d5_transcript_poison(smallest, th)
+    assert f5c and f5c[0]["severity"] == P1 and "IGNITION" in f5c[0]["detail"]
+
+    # A brief 3-block stutter on a SMALL transcript is a WARN, not a P1...
+    stutter = [dict(poisoned[0], blocked_records=3, max_burst=3, trailing_ratio=0.015,
+                    poisoned_checkpoints=0, bytes=100000)]
+    f5d = d5_transcript_poison(stutter, th)
+    assert f5d and f5d[0]["severity"] == WARN
+    # ...but the SAME stutter past the flush re-arm floor is a P1, because every
+    # compaction there re-arms a forced flush and it will keep re-igniting.
+    f5e = d5_transcript_poison([dict(stutter[0], bytes=3000000)], th)
+    assert f5e and f5e[0]["severity"] == P1 and "re-arm floor" in f5e[0]["detail"]
+
+    # A 1-2 block blip below the WARN floor stays silent (no noise on a healthy box).
+    assert d5_transcript_poison(
+        [dict(poisoned[0], blocked_records=2, max_burst=2, trailing_ratio=0.01,
+              poisoned_checkpoints=0, bytes=100000)], th) == []
+    print("  D5 case: PASS (poisoned=P1 ignition+carrier; 17MB clean control SILENT; "
+          "smallest-observed burst 8=P1; stutter=WARN, oversized stutter=P1; blip silent)")
+
+    # D6: SEMANTIC repetition. The incident shape - 13 tool calls in 49s, every
+    # one a differently-worded attempt at the same intent, against a fail-closed
+    # API. Every call carried DISTINCT arguments, so the runtime's
+    # (toolName,argsHash) guard and this repo's stricter
+    # (toolName,argsHash,resultHash) runaway patch both stayed silent all day.
+    incident = [{"unit": "session:example-incident", "tool": "exec", "calls": 13,
+                 "errors": 0, "failclosed": 6, "span_seconds": 49.0,
+                 "path": "/example/incident.jsonl"}]
+    f6 = d6_futile_retry_burst(incident, th)
+    assert len(f6) == 1 and f6[0]["severity"] == P1 and f6[0]["loop_class"] == "LP-A9"
+    assert "FAIL-CLOSED DEPENDENCY" in f6[0]["detail"]
+    # NOTE the errors=0 above: those 13 exec calls SUCCEEDED at the tool layer
+    # (a curl against a fail-closed API exits 0, recorded status=completed). Any
+    # detector keyed on tool-layer failure is blind to this entire class.
+
+    # THE CONTROL, and the reason this detector counts futility instead of volume:
+    # a REAL measured burst from the operator box's own corpus - 460 exec calls in
+    # 48.2 seconds, 35x the incident's call count - with no failures and no
+    # fail-closed refusals. It must be PERFECTLY SILENT. A count-only detector
+    # (the obvious design) fires here, and on ~100 more healthy bursts in the same
+    # corpus, which is precisely why count-only was rejected.
+    healthy_burst = [{"unit": "session:example-healthy", "tool": "exec", "calls": 460,
+                      "errors": 0, "failclosed": 0, "span_seconds": 48.2}]
+    assert d6_futile_retry_burst(healthy_burst, th) == []
+    # Even a big burst with a FEW incidental errors stays below the ratio floor.
+    assert d6_futile_retry_burst(
+        [dict(healthy_burst[0], errors=2)], th) == []
+
+    # The doctrine boundary: 2 attempts against a fail-closed dependency is
+    # allowed (that IS the rule), the 3rd is a WARN, the 5th a P1.
+    assert d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 2, "errors": 0, "failclosed": 2,
+          "span_seconds": 5.0}], th) == []
+    f6b = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 3, "errors": 0, "failclosed": 3,
+          "span_seconds": 8.0}], th)
+    assert f6b and f6b[0]["severity"] == WARN
+
+    # FAILING-BURST face: the measured 36-call/36-error read burst from the real
+    # corpus is a P1; the measured 24-call/18-error exec burst is a WARN.
+    f6c = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "read", "calls": 36, "errors": 36, "failclosed": 0,
+          "span_seconds": 60.0}], th)
+    assert f6c and f6c[0]["severity"] == P1 and "FAILING BURST" in f6c[0]["detail"]
+    f6d = d6_futile_retry_burst(
+        [{"unit": "s", "tool": "exec", "calls": 24, "errors": 18, "failclosed": 0,
+          "span_seconds": 59.4}], th)
+    assert f6d and f6d[0]["severity"] == WARN
+    print("  D6 case: PASS (13-call reworded hunt=P1 though every call SUCCEEDED; "
+          "real 460-call healthy burst SILENT; 2 attempts allowed, 3rd=WARN; "
+          "36/36 failing burst=P1)")
+
     # D7: 3 identical cross-run sends (DISTINCT run ids, same source->target->hash)
     # inside the window = P1 loop confirmed; 2 stays below P1 (WARN only); a
     # different hash never accumulates a group at all.
@@ -358,7 +668,7 @@ def self_test():
          "run_id": "r3", "ts": "2026-08-04T00:01:08Z"},
     ]
     f7 = d7_cross_run_resend(sends, th)
-    assert any(x["severity"] == P1 and x["loop_class"] == "LP-A8"
+    assert any(x["severity"] == P1 and x["loop_class"] == "LP-A10"
                and x["unit"] == "agent:orch:main" for x in f7)
     two = sends[:2]
     f7b = d7_cross_run_resend(two, th)

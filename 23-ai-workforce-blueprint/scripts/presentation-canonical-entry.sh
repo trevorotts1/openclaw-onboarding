@@ -21,8 +21,8 @@
 # This script closes that gap. It is the SINGLE governed entry point. Before it
 # hands off to the canonical orchestrator it runs three fail-closed gates:
 #
-#   1. DEPS CHECK      — the four runtime deps (soffice, pdftoppm, reportlab,
-#                        python-pptx) must be present, or the build refuses to
+#   1. DEPS CHECK      — the runtime deps (soffice, pdftoppm, reportlab,
+#                        python-pptx, pypdf) must be present, or the build refuses to
 #                        start (exit 6, PRESENTATION_DEPS_MISSING). Mirrors the
 #                        qc-completeness.sh dep gate so a deck cannot half-build.
 #   2. BYPASS-SCAN     — refuse if any HAND-ROLLED renderer/assembler exists in
@@ -118,6 +118,28 @@ if [ "$PLAN" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
     [ -n "$OUT" ] || die "--out is required to build a deck"
+fi
+
+# ---------------------------------------------------------------------------
+# FIX-23(b) — CANONICAL-ENTRY ATTEMPT CAP (loop-breaker; Error 4/5 residual).
+# The sanctioned door can legitimately fail transiently (a drifted stack, a
+# missing GHL sibling). What must NEVER happen is the door failing and the
+# agent "engineering around it" by writing a custom driver (the ungoverned
+# path, AF-CANONICAL-RENDER-BYPASS) — the exact Error-5 behavior this loop
+# exists to stop. Cap canonical-entry invocations per run dir at 3; the 4th
+# invocation dies with an explicit message naming the sanctioned recovery path
+# (open a maintenance ticket / apply the sync + GHL fix) instead of letting the
+# agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
+# dir must never consume its entry budget.
+# ---------------------------------------------------------------------------
+if [ "$PLAN" -eq 0 ]; then
+    _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
+    mkdir -p "$(dirname "$_ATTEMPT_FILE")"
+    _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
+    echo "$_ATTEMPTS" > "$_ATTEMPT_FILE"
+    if [ "$_ATTEMPTS" -gt 3 ]; then
+        die "canonical entry attempted $_ATTEMPTS times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry."
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -280,6 +302,23 @@ gate_fail() {
     exit "$exitcode"
 }
 
+# trace_fail — the intake-TRACE evidence gate has NO owner override (FIX-3).
+# The transcript is EVIDENCE that a real one-at-a-time conversation happened; a
+# gate you can waive is a gate a hand-written ledger can skip. Distinguishes the
+# trace gate from every waivable gate above.
+trace_fail() {
+    local code="$1" exitcode="$2"; shift 2
+    echo >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    echo "GATE FAILED [$code]: $*" >&2
+    echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
+    echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
+    echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
+    echo "  --next/--answer) so the driver writes the transcript itself." >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    exit "$exitcode"
+}
+
 # ===========================================================================
 # GATE 0 — INTAKE-LEDGER CHECK (fail-closed)
 # The intake interview (deck-intake-driver.py) must be complete before any
@@ -387,9 +426,69 @@ except Exception:
 check_intake_ledger "$RUN_DIR"
 
 # ===========================================================================
-# GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
+# GATE 0b — INTAKE-TRACE CHECK (FIX-3: intake must be a REAL conversation)
+# ---------------------------------------------------------------------------
+# The intake LEDGER (GATE 0 above) proves the interview was COMPLETED. It does
+# NOT prove the interview was CONDUCTED — a hand-written intake_ledger.json with
+# invented answers (ERROR 3 of the 2026-08-06 E2E audit: the agent deleted the
+# driver's ledger and hand-wrote it in python) satisfies GATE 0 with zero
+# conversation. The TRANSCRIPT is the evidence that a real one-at-a-time
+# conversation happened: deck-intake-driver.py --signature's turn-gate writes it
+# mechanically as a SIGNED DRIVER ENVELOPE.
+#
+# This gate requires working/interview/intake_transcript.json to exist AND be
+# non-trivial. It is NOT owner-skippable: the transcript is EVIDENCE, not a
+# gate you can waive (FIX-PLAN-OPUS Error 3 fix 1: "only the ledger may have an
+# owner waiver; the trace is evidence, not a gate you can waive"). A hand-written
+# intake_ledger.json with no transcript FAILS the build.
+#
+# Fail-closed: absent file, empty file, or a sub-200-byte placeholder all fail
+# with INTAKE-TRACE-MISSING. --plan (read-only inspection) is exempt exactly as
+# GATE 0 is. A signature-presentation intake (intake.json deck_type ==
+# signature_presentation) is additionally held to the signed driver-envelope
+# requirement by the engine's P-SP-INTAKE-TRACE preflight (AF-INTAKE-BATCH).
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx)"
+note "GATE 0b — INTAKE-TRACE CHECK (intake_transcript.json required; NO owner override)"
+check_intake_trace() {
+    local run_dir="$1"
+    [ -n "$run_dir" ] || return 0
+    [ "$PLAN" -eq 1 ] && return 0
+    _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
+    if [ ! -f "$_INT_TRACE" ]; then
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        local _trace_bytes
+        _trace_bytes="$(python3 -c "
+import json, sys
+p = '$run_dir/working/interview/intake_transcript.json'
+try:
+    with open(p, encoding='utf-8') as f:
+        raw = f.read()
+except OSError:
+    print('0'); sys.exit(0)
+print('%d' % len(raw.strip()))
+" 2>/dev/null)"
+        _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
+        if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+        fi
+    else
+        # python3 absent: size-only fallback.
+        local _sz
+        _sz="$(wc -c < "$_INT_TRACE" 2>/dev/null | tr -d ' ')"
+        [ -n "$_sz" ] && [ "$_sz" -ge 200 ] || trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_sz:-0} bytes — a real interview produces a multi-KB transcript. No owner override for the trace."
+    fi
+    note "  GATE 0b PASSED (intake transcript present and non-trivial)"
+    return 0
+}
+
+check_intake_trace "$RUN_DIR"
+
+# ===========================================================================
+# GATE 1 — DEPS CHECK (the runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
+# ===========================================================================
+note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
 # FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
 # function (`QC_SKIP_PRESENTATION_DEPS=1 -> return 0`) was a live process-skip
 # vector — any agent could export it, sail past GATE 1, burn the full Kie render
@@ -416,11 +515,28 @@ deps_check() {
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
             || missing+=("python(reportlab+python-pptx)")
+        # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
+        # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
+        # the AcroForm fields + /NeedAppearances survived before it may upload). It is
+        # NOT gated by the pdf_export/guide phase's own checks, so it must be gated
+        # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
+        # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
+        # deps).
+        python3 -c "import pypdf" >/dev/null 2>&1 \
+            || missing+=("python(pypdf)")
     else
         missing+=("python3")
     fi
+    # Feature L2-G (P9.6-WEBINAR-VIDEO): ffmpeg is a REAL runtime dep of the webinar
+    # phase (build_webinar_video.py -> webinar_ffmpeg.py renders the Ken Burns + xfade
+    # slideshow + muxes the audio). It is NOT gated by the audio phase's own check, so
+    # it must be gated here so a box without ffmpeg fails the dep gate BEFORE the
+    # webinar phase runs (owner-token skippable via PRESENTATION_DEPS_MISSING exactly
+    # like the other deps).
+    command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
+    command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
     if [ "${#missing[@]}" -gt 0 ]; then
-        # FIX-PRES-09(iv): event-shaped reassert. On a VPS the four deps do not
+        # FIX-PRES-09(iv): event-shaped reassert. On a VPS the runtime deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
         # cron, self-heal HERE on the GATE-1 failure path — run the idempotent
         # reassert script ONCE, then re-check, before failing the run.
@@ -436,7 +552,7 @@ deps_check() {
         echo "PRESENTATION_DEPS_MISSING: ${missing[*]}" >&2
         return 6
     fi
-    echo "  OK: all four runtime deps present"
+    echo "  OK: all runtime deps present"
     return 0
 }
 deps_check || {
@@ -451,27 +567,47 @@ deps_check || {
 }
 
 # ===========================================================================
-# GATE 1b — SKILL-48 GHL MODULE CO-LOCATION (FIX-PRES-03)
+# GATE 1b — SKILL-48 GHL MODULE CO-LOCATION (FIX-PRES-03 / FIX-23(d))
 # ghl_media.py re-exports Skill-48 helpers; delivery_gate.py requires the
 # resulting pptx_ghl_media_id. If the module is absent, a deck renders on PAID
 # Kie credits and then dies at delivery. Assert importability HERE, before any
 # render spend. Owner-token skippable (PRESENTATION_GHL_MODULE_MISSING).
+#
+# FIX-23(d) — import with the RENDER interpreter and surface the REAL import
+# error. The pre-fix check swallowed stderr, so a box where ghl_media.py was
+# present but its Skill-48 dependency was missing failed with a generic
+# "not importable" — the agent could not tell it was a co-location problem and
+# self-engineered around the door. Now:
+#   * the import runs under the SAME interpreter that will run the renderer
+#     (python3, with $SCRIPTS_DIR on PYTHONPATH — identical to build_deck),
+#   * the real import error is printed so a Skill-48 co-location gap is
+#     diagnosable ("canonical ghl_media.py not found ... install the
+#     Skill-48 sibling"),
+#   * ghl_media.py itself now also resolves the sibling from the OpenClaw
+#     skills tree (~/.openclaw/skills or /data/.openclaw/skills) and a
+#     co-located _skill48_ghl_media.py copy, so a materialized department
+#     works without a manual symlink.
 # ===========================================================================
 note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
 ghl_module_check() {
     command -v python3 >/dev/null 2>&1 || {
         echo "  (python3 absent; GHL module check skipped)"; return 0; }
-    if PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
-        python3 -c "import ghl_media" >/dev/null 2>&1; then
+    local _ghl_err
+    _ghl_err="$(PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 -c "import ghl_media" 2>&1)" && {
         echo "  OK: ghl_media importable from $SCRIPTS_DIR"
         return 0
-    fi
-    # Fall back to a resolved-path existence check (import can fail for a reason
-    # other than absence, e.g. a transitive dep) so the message is accurate.
+    }
+    # Import failed — show the REAL error (usually ghl_media's own
+    # FileNotFoundError naming the missing Skill-48 sibling).
+    echo "PRESENTATION_GHL_MODULE_MISSING: ghl_media import failed under the render interpreter:" >&2
+    printf '%s\n' "$_ghl_err" | sed 's/^/    import> /' >&2
     if [ -f "$SCRIPTS_DIR/ghl_media.py" ]; then
-        echo "PRESENTATION_GHL_MODULE_MISSING: ghl_media.py is present at $SCRIPTS_DIR but not importable (check its Skill-48 dependency co-location)." >&2
+        echo "    ghl_media.py is present at $SCRIPTS_DIR but not importable — its Skill-48 dependency co-location is missing." >&2
+        echo "    Fix: install the Skill-48 sibling (48-facebook-ad-generator) so its tools/ghl_media.py resolves," >&2
+        echo "    or run the materializer to co-locate _skill48_ghl_media.py next to this module." >&2
     else
-        echo "PRESENTATION_GHL_MODULE_MISSING: ghl_media.py not found at $SCRIPTS_DIR (Skill-48 co-location missing)." >&2
+        echo "    ghl_media.py not found at $SCRIPTS_DIR (Skill-48 co-location missing)." >&2
     fi
     return 8
 }
@@ -496,7 +632,8 @@ import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
 scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
 CANON = {"build_deck.py", "run_signature_deck.py", "build_teleprompter.py",
-         "kie_generate.py", "presentation-canonical-entry.sh"}
+         "kie_generate.py", "presentation-canonical-entry.sh",
+         "build_webinar_video.py", "workbook_builder.py"}
 
 # Slide canvas at the 16:9 2K deck dimensions: Image.new(...2048...1152...)
 re_canvas = re.compile(r"Image\.new\s*\([^)]*\b2048\b[^)]*\b1152\b", re.S)
@@ -575,15 +712,64 @@ note "GATE 3/3 — VERSION/HASH PIN (renderer lockstep + content hash)"
 version_hash_pin() {
     # (a) Lockstep: the Python renderer must not have drifted from the SOP/manifest
     #     stack. sync_check.py exits 0 in sync, 4 on drift.
+    #
+    # FIX-23(a) — DRIFT CLASSIFICATION (Error 5 root cause). GATE 3 used to lump
+    # every sync_check drift item into ONE fatal AF-CANONICAL-RENDER-BYPASS. That
+    # bricked the sanctioned door on library-only maintenance debt: the box's role
+    # roster (A5 undeclared roles / A6 owning_role -> missing .md) drifted and the
+    # agent could not render through the governed path, so it engineered around the
+    # door with a custom driver. Now:
+    #   * A5/A6 drift = SOP-library maintenance debt. It does NOT change render
+    #     correctness (phase order, produces_artifact, preflight wiring all live in
+    #     the render-path classes). GATE 3 PROCEEDS when the ONLY drift is A5/A6,
+    #     and writes a sync_drift_deferred CC event so the debt is surfaced, never
+    #     hidden (the drift is still reported in the log + event).
+    #   * Any OTHER drift class (A1-A4/A7/A8, B*, C*, D*, E*, V*) is render-path:
+    #     it means the actual renderer has drifted from the manifest/ruleset and
+    #     the door FAILS CLOSED exactly as before.
     if [ -f "$SCRIPTS_DIR/sync_check.py" ] && command -v python3 >/dev/null 2>&1; then
-        if python3 "$SCRIPTS_DIR/sync_check.py" >/tmp/_pce_sync.$$ 2>&1; then
+        if python3 "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
             echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
-        else
-            sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
             rm -f /tmp/_pce_sync.$$
-            return 4
+        else
+            # sync_check exited 4 (drift). Classify: only A5/A6 (library-only) -> proceed evented.
+            # NOTE: the temp path is passed via env var because the heredoc is
+            # QUOTED ('PY') and bash does not expand $$ inside it.
+            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" python3 - <<'PY'
+import json, os, sys
+try:
+    d = json.load(open(os.environ["_PCE_SYNC_TMP"]))
+except Exception:
+    sys.exit(1)  # unreadable/parse error -> treat as fatal (fail closed)
+drift = d.get("drift", [])
+# A5/A6 are library-only (role roster / owning_role mapping) — NON-blocking.
+# sync_check emits class "A5/A6" for library-only, "render_path" for everything
+# else. Block iff ANY item is NOT library-only.
+blocking = [x for x in drift if x.get("class") != "A5/A6"]
+if blocking:
+    sys.exit(1)  # real render-path drift -> the gate fails below
+sys.exit(0)      # library-only drift -> proceed, evented
+PY
+            then
+                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
+                echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
+                python3 - <<'PY' || true
+# write a CC event so the drift debt is surfaced, not hidden
+import json, os, urllib.request
+try:
+    from cc_board import cc_post
+    cc_post("/api/events", {"type": "sync_drift_deferred",
+       "message": "sync_check library-only drift (A5/A6) deferred on canonical render", "severity": "warn"})
+except Exception:
+    pass
+PY
+                rm -f /tmp/_pce_sync.$$
+            else
+                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
+                rm -f /tmp/_pce_sync.$$
+                return 4
+            fi
         fi
-        rm -f /tmp/_pce_sync.$$
     else
         echo "  (sync_check.py absent; lockstep check skipped)"
     fi

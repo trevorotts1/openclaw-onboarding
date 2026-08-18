@@ -44,7 +44,7 @@ from detect_platform import get_openclaw_paths
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
 
 
-NUDGE_CONFIG = [
+NUDGE_CONFIG_DEFAULT = [
     {
         "key": "nudge_24h",
         "hours_idle": 24,
@@ -74,6 +74,50 @@ NUDGE_CONFIG = [
         ),
     },
 ]
+
+# ── AI WORKFORCE STANDARD-FIRST (2026-08-04): review-prebuilt-company copy ──────
+# When WORKFORCE_NUDGE_COPY=review-prebuilt-company (set by interview-nudge-cron.sh
+# for standard-first boxes whose prebuild is done), these templates replace the
+# default "finish your interview" copy. The owner already has a pre-built company
+# — they are reviewing it, not answering setup questions from scratch.
+NUDGE_CONFIG_REVIEW = [
+    {
+        "key": "nudge_24h",
+        "hours_idle": 24,
+        "message_template": (
+            "Hey {name} 👋 — your AI workforce has been pre-built and is ready for review. "
+            "You're {progress}% through the review. Want to pick back up?\n\n"
+            "Open your company here: {link}\n\n"
+            "Everything is saved and ready when you are."
+        ),
+    },
+    {
+        "key": "nudge_72h",
+        "hours_idle": 72,
+        "message_template": (
+            "Hey {name} — still want to review your pre-built AI workforce? "
+            "You stopped at: {last_question}\n\n"
+            "Resume your review here: {link}"
+        ),
+    },
+    {
+        "key": "nudge_168h",
+        "hours_idle": 168,
+        "message_template": (
+            "Hey {name} — last check-in on your AI workforce review. "
+            "Your pre-built company is saved and I'm ready to pick up right where you left off. "
+            "When you're ready to continue, open it here: {link}\n\n"
+            "Just message me and we'll finish the review together."
+        ),
+    },
+]
+
+# ── Select active nudge config based on WORKFORCE_NUDGE_COPY env var ────────────
+_WNF_NUDGE_COPY = os.environ.get("WORKFORCE_NUDGE_COPY", "default")
+if _WNF_NUDGE_COPY == "review-prebuilt-company":
+    NUDGE_CONFIG = NUDGE_CONFIG_REVIEW
+else:
+    NUDGE_CONFIG = NUDGE_CONFIG_DEFAULT
 
 
 def parse_handoff(handoff_path: Path) -> dict:

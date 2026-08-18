@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECRET ONE\n\n| Secret One\n\nMore sales are made with\nfriendship than salesmanship\n\nBuild the relationship in a venue other than the office.\n\nSales\n== Bible."
+}

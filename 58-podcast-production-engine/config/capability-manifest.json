@@ -1,0 +1,153 @@
+{
+  "$schema_note": "Podcast Production Engine (Skill 58) CAPABILITY MANIFEST — the machine-readable contract the Command Center dispatch resolver reads BEFORE assigning a podcast task. A podcast task must never be dispatched to a box whose processor is not activated (the phantom-agent root cause: dispatch minted 'audio-podcast-editor' from thin air and the heartbeat woke a tool-less session). When this manifest is absent, OR activation is not complete, the Command Center MUST refuse the dispatch loudly and tell the operator to run SOP-PODCAST-07 (ACTIVATION RESCUE). This file names env labels and file paths only — never a secret value.",
+  "schema_version": "1.0.0",
+  "pinned_at": "2026-08-04",
+  "skill": {
+    "id": 58,
+    "slug": "podcast-production-engine",
+    "name": "Podcast Production Engine",
+    "install_path": ".openclaw/skills/58-podcast-production-engine",
+    "manifest_path": "config/capability-manifest.json"
+  },
+  "activation": {
+    "command_pair": [
+      "install-podcast-department.sh",
+      "register-podcast-hook.sh"
+    ],
+    "command_pair_exact": [
+      "install-podcast-department.sh --client-slug <slug>",
+      "register-podcast-hook.sh --client-slug <slug>"
+    ],
+    "rescue_sop": "SOP-PODCAST-07",
+    "rescue_sop_path": "universal-sops/podcast-craft/SOP-PODCAST-07-ACTIVATION-RESCUE.md",
+    "rescue_sop_message": "No podcast processor activated on this box — run SOP-PODCAST-07 (ACTIVATION RESCUE): install-podcast-department.sh then register-podcast-hook.sh, then confirm with guard-activation-health.py.",
+    "health_guard": "scripts/guard-activation-health.py --client <slug> --json"
+  },
+  "entrypoints": {
+    "intake_route_template": "scripts/webhook/route-template.json5",
+    "step_driver": "scripts/podcast_step_driver.py",
+    "state_writer": "scripts/podcast_state.py",
+    "intake_handler": "scripts/webhook/intake_handler.py",
+    "controller_id_template": "webhooks/podcast-intake-<client-slug>",
+    "session_key_template": "podcast:intake:<client-slug>",
+    "route_id_template": "podcast-intake-<client-slug>",
+    "endpoint_template": "POST /plugins/webhooks/podcast-intake-<client-slug>"
+  },
+  "required_env": {
+    "PODCAST_INTAKE_HOOK_SECRET": {
+      "semantics": "SET required — the route secret, referenced by env SecretRef, never a plaintext value. A real registration refuses when NOT SET (fail closed).",
+      "required": "SET",
+      "secrecy": "label only; value never printed"
+    },
+    "PODCAST_AGENT_ID": {
+      "semantics": "SET required — the podcast department agent id bound to hooks.allowedAgentIds (default dept-podcast, never main).",
+      "required": "SET",
+      "default": "dept-podcast",
+      "secrecy": "not a secret"
+    },
+    "PODCAST_CLIENT_SLUG": {
+      "semantics": "SET required for a per-client route — rides the session key podcast:intake:<client-slug>.",
+      "required": "SET",
+      "secrecy": "not a secret"
+    },
+    "KIE_API_KEY": {
+      "semantics": "SET required — cover image generation (Kie.ai, sanctioned provider). NOT SET fails the Step 0 credential gate.",
+      "required": "SET",
+      "secrecy": "label only; value never printed"
+    },
+    "FISH_AUDIO_API_KEY": {
+      "semantics": "SET required — episode audio synthesis (Fish Audio). NOT SET fails the Step 0 credential gate.",
+      "required": "SET",
+      "secrecy": "label only; value never printed"
+    },
+    "FISH_AUDIO_REFERENCE_ID": {
+      "semantics": "SET required — the client's OWN private voice model reference_id. NOT SET fails the Step 0 credential gate.",
+      "required": "SET",
+      "secrecy": "not a secret"
+    },
+    "PODCAST_ENGINE_GHL_PIT": {
+      "semantics": "SET required — the podcast engine's own Convert and Flow Private Integration Token (prefix pit-). MUST be checked before the generic GOHIGHLEVEL_API_KEY alias (first-hit-wins wrong-tenant 403).",
+      "required": "SET",
+      "secrecy": "label only; value never printed"
+    },
+    "PODCAST_ENGINE_GHL_LOCATION_ID": {
+      "semantics": "SET required — the podcast engine's Convert and Flow Location ID (CjxATjhv9Gt21qSqURIt). Must equal the webhook payload location_id.",
+      "required": "SET",
+      "secrecy": "not a secret"
+    },
+    "PODBEAN_PUBLISH_WEBHOOK_URL": {
+      "semantics": "SET in publish-proxy mode (fleet default) — the operator's n8n publish webhook URL. Not a secret. Both-or-neither with PODBEAN_PUBLISH_TOKEN.",
+      "required": "SET_OR_NONE",
+      "mode": "publish-proxy",
+      "secrecy": "not a secret"
+    },
+    "PODBEAN_PUBLISH_TOKEN": {
+      "semantics": "SET in publish-proxy mode (fleet default) — operator-owned header token authorizing the n8n trigger. NOT a Podbean credential. Both-or-neither with PODBEAN_PUBLISH_WEBHOOK_URL.",
+      "required": "SET_OR_NONE",
+      "mode": "publish-proxy",
+      "secrecy": "label only; value never printed"
+    },
+    "PODBEAN_PODCAST_ID": {
+      "semantics": "SET in publish-proxy mode (fleet default) — the client's Podbean Channel ID (the client's show under BlackCEO's host account). Never a secret.",
+      "required": "SET_OR_NONE",
+      "mode": "publish-proxy",
+      "secrecy": "not a secret"
+    },
+    "PODCAST_CLIENT_LAST_NAME": {
+      "semantics": "SET in publish-proxy mode (fleet default) — the roster identity tuple for the n8n good-standing gate.",
+      "required": "SET_OR_NONE",
+      "mode": "publish-proxy",
+      "secrecy": "not a secret"
+    },
+    "PODCAST_CLIENT_EMAIL": {
+      "semantics": "SET in publish-proxy mode (fleet default) — the roster identity tuple for the n8n good-standing gate.",
+      "required": "SET_OR_NONE",
+      "mode": "publish-proxy",
+      "secrecy": "not a secret"
+    }
+  },
+  "activation_layer_components": {
+    "department_agent": {
+      "id": "dept-podcast",
+      "runtime_dir": "~/.openclaw/agents/dept-podcast",
+      "required_files": [
+        "AGENTS.md",
+        "IDENTITY.md",
+        "SOUL.md",
+        "MEMORY.md",
+        "HEARTBEAT",
+        "agent/openclaw-agent.sqlite"
+      ],
+      "missing_message": "dept-podcast runtime dir missing (~/.openclaw/agents/dept-podcast/) — the dispatch resolver holds the task as routed_but_not_dispatched. Run install-podcast-department.sh to materialize it."
+    },
+    "intake_hook_route": {
+      "config_path": "openclaw.json > plugins.entries.webhooks.config.routes",
+      "route_id": "podcast-intake-<client-slug>",
+      "session_key": "podcast:intake:<client-slug>",
+      "missing_message": "intake route not registered — run register-podcast-hook.sh --client-slug <slug>."
+    },
+    "scheduler": {
+      "cron": "podcast-smoke-<client-slug> (one daily no-deliver job; the ONLY recurring podcast cron)",
+      "missing_message": "scheduler entry missing — recreate per SOP-PODCAST-04 Section 1."
+    },
+    "controller": {
+      "runbook": "scripts/podcast_step_driver.py next --job-id <id> (one bounded pass in the agent's own turn; no daemon)",
+      "missing_message": "step driver missing or not callable on the box — the processor cannot advance a flow. Run SOP-PODCAST-07."
+    }
+  },
+  "dispatch_contract": {
+    "refuse_without_activation": true,
+    "refuse_message": "run SOP-PODCAST-07",
+    "never_invent_agent_id": true,
+    "forbidden_agent_ids": [
+      "audio-podcast-editor"
+    ],
+    "hold_reason_no_runtime": "no_specialist_runtime",
+    "hold_reason_no_skill": "podcast_skill_not_resolvable",
+    "required_skill_match": {
+      "skill_id": 58,
+      "slug": "podcast-production-engine",
+      "message": "podcast task must resolve Skill 58 (podcast-production-engine) before dispatch; a skill-less podcast session is a phantom-agent risk."
+    }
+  }
+}

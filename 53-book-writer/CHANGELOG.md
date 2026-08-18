@@ -1,5 +1,23 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.2.1 — golden delivery example: Marcus Halloway 30-Day Challenge book
+
+- Ships `examples/golden-marcus-halloway/delivery/Marcus_Halloway-Book/30_Day_Challenge-Marcus_Halloway.md` —
+  a complete authored delivery example for the 30-Day Challenge stage.
+
+## 1.2.0 — BUG-3: the 22 non-tone authoring-stage prompt triplets now ship; the authoring layer is complete
+
+- The 22 non-tone prompt triplets referenced by `BOOK-WRITER-MANIFEST.json` `stages[]` — avatar
+  (`01`–`03`), titles/blurb/chapter-titles (`10`–`12`), outline/extract (`13`–`14`), the four chapter
+  batches (`15`–`18`), the two book rewrites (`19`–`20`), the 30-Day Challenge (`21`), cover prompt/image
+  (`22`–`23`), and the 4x3x3 extras (`41`–`45`) — are baked under `prompts/` alongside the five tone-core
+  stages (04–08). The full authoring layer now ships.
+- `SKILL.md` "Authoring layer" disclosure updated from "SHIPPED vs. PENDING" to reflect that every
+  authoring stage is driven by a pinned baked prompt triplet on disk.
+- `run_book_writer.py` fail-closed messages now reference the baked stage prompt (e.g. `prompts/<stage>`)
+  instead of the stale "authoring stage deferred to a scoped follow-up campaign" text. Fail-closed
+  behavior is unchanged.
+
 ## 1.1.6 — 2026-07-21 — T0-28: this skill can now ACKNOWLEDGE a routed intake
 
 ### Added

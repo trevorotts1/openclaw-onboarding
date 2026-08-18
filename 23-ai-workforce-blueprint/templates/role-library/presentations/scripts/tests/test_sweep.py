@@ -294,18 +294,26 @@ class TestNotARunDir:
     """Directories that are not valid engine run dirs are never ingested."""
 
     def test_no_state_json(self, tmp_path):
+        from presentation_job.state import EXIT_SWEEP_NO_RUNS
+
         root = tmp_path / "scan"
         root.mkdir()
         (root / "junk").mkdir()
         (root / "junk" / "notes.txt").write_text("not a run dir")
 
         rc, out = _run_sweep(root, scan_depth=2)
-        assert rc == 0
-        # No state.json found anywhere -> explicit NO state.json line
+        # Zero run dirs found is UNDETERMINED, not a pass -- G5.
+        assert rc == EXIT_SWEEP_NO_RUNS
+        assert rc != 0
+        # No state.json found anywhere -> explicit NO state.json line, marked
+        # unmistakably as not-a-pass.
         assert "NO state.json" in out
-        assert "scanned 0" in out.lower() or "NO state.json" in out
+        assert "UNDETERMINED" in out
+        assert "not a pass" in out.lower()
 
     def test_state_no_job_id(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
         root = tmp_path / "scan"
         root.mkdir()
         d = root / "bad"
@@ -313,10 +321,16 @@ class TestNotARunDir:
         (d / "state.json").write_text(json.dumps({"schema_version": 1, "job_id": "wrong_format"}))
 
         rc, out = _run_sweep(root)
-        assert rc == 0
+        # G5: the ONLY run dir found was rejected -- zero were ever classified,
+        # which is the same epistemic state as an empty scan. Must not be a pass.
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
         assert "not_a_run_dir" in out
+        assert "NOT a pass" in out
 
     def test_wrong_schema_version(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
         root = tmp_path / "scan"
         root.mkdir()
         d = root / "bad"
@@ -324,10 +338,15 @@ class TestNotARunDir:
         _write_state(d, _make_state(d, schema_version=99))
 
         rc, out = _run_sweep(root)
-        assert rc == 0
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
         assert "not_a_run_dir" in out
+        assert "SCHEMA VERSION MISMATCH" in out
+        assert "NOT a pass" in out
 
     def test_bad_json_state(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
         root = tmp_path / "scan"
         root.mkdir()
         d = root / "bad"
@@ -335,8 +354,10 @@ class TestNotARunDir:
         (d / "state.json").write_text("{not json")
 
         rc, out = _run_sweep(root)
-        assert rc == 0
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
         assert "not_a_run_dir" in out
+        assert "NOT a pass" in out
 
 
 class TestCardMissing:
@@ -460,6 +481,73 @@ class TestTooOld:
         assert "  too_old" not in out
 
 
+class TestTooOldNotCountedAsReconciled:
+    """G5 sub-finding: reaching 'too_old' means Guard A passed and a
+    deck_slug resolved, but _classify() returns BEFORE ever looking up a
+    task_id -- the sweep deliberately DECLINED to inspect the run dir for
+    card status, the same way not_a_run_dir means Guard A refused to look at
+    it at all. Counting a declined inspection as a reconciled one is the
+    exact false-comfort bug this branch exists to close, just in miniature:
+    it let a box carrying nothing but stale debris (too_old) look like it
+    had reconciled something, even when zero run dirs were ever actually
+    checked for card status."""
+
+    def test_too_old_excluded_from_reconciled_count(self, tmp_path):
+        root = tmp_path / "scan"
+        root.mkdir()
+        _write_state(
+            root / "old1",
+            _make_state(root / "old1", deck_slug="deck-old", created_hours_ago=100.0),
+        )
+
+        rc, out = _run_sweep(root, max_age_hours=72.0)
+        assert rc == 0
+        assert "too_old" in out
+        # The fix under test: a declined inspection must not inflate
+        # "reconciled" -- pre-fix this printed "reconciled 1".
+        assert "reconciled 0" in out
+
+    def test_all_live_work_invisible_scenario_is_no_longer_silent(self, tmp_path):
+        """The exact adversarial shape an adversarial re-attack proved: a box
+        carries a couple of stale-but-genuinely-valid old run dirs (too_old)
+        alongside several in-flight run dirs whose state.json was truncated
+        mid-write (not_a_run_dir, reason unreadable_or_missing -- NOT a
+        schema mismatch, so the old warning never fired for it either).
+
+        Pre-fix: too_old propped reconciled_count to a non-zero number, so
+        the ALL_REJECTED gate (reconciled_count == 0) never fired, and
+        because the rejection reason wasn't schema_mismatch, no WARNING
+        printed either. The result was a fully silent, fully green sweep
+        (rc == EXIT_OK, no WARNING anywhere in the output) while 100% of the
+        run dirs representing live, in-flight work were unreconciled.
+        """
+        root = tmp_path / "scan"
+        root.mkdir()
+        # Stale debris -- old, but genuinely valid, run dirs.
+        for i in range(2):
+            d = root / f"old{i}"
+            _write_state(
+                d, _make_state(d, deck_slug=f"deck-old-{i}", created_hours_ago=100.0)
+            )
+        # In-flight run dirs that crashed mid-write -- truncated state.json.
+        for i in range(3):
+            d = root / f"live{i}"
+            d.mkdir()
+            (d / "state.json").write_text(
+                '{"schema_version": 1, "job_id": "pj_live_' + str(i) + '_incomplete'
+            )
+
+        rc, out = _run_sweep(root, max_age_hours=72.0)
+        # Nothing was genuinely reconciled -- everything found was either
+        # declined (too_old) or rejected (not_a_run_dir).
+        assert "reconciled 0" in out
+        assert "not_a_run_dir: 3" in out
+        assert "too_old: 2" in out
+        # The fix under test: this must be loud, not a silent green pass --
+        # regardless of what the exit code policy question above resolves to.
+        assert "WARNING" in out
+
+
 class TestFinishedJobNotIngested:
     """A run dir with terminal 'DONE' and no card is not ingested."""
 
@@ -478,6 +566,8 @@ class TestNoSlugYieldsNotARunDir:
     """A run dir whose _deck_slug returns None is not_a_run_dir."""
 
     def test_no_slug_not_ingested(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
         root = tmp_path / "scan"
         root.mkdir()
         state = _make_state(root / "run1", deck_slug="")
@@ -485,13 +575,17 @@ class TestNoSlugYieldsNotARunDir:
         _write_state(root / "run1", state)
 
         rc, out = _run_sweep(root, apply=True)
-        assert rc == 0
+        # G5: the only run dir found was unresolvable -- zero classified, not a pass.
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
         assert "not_a_run_dir" in out
         ingest_calls = [r for r in _FAKE_RECORDS if r["fn"] == "ingest_deck_task"]
         assert len(ingest_calls) == 0
 
     def test_dir_name_not_used_as_slug(self, tmp_path):
         """The directory name must never be used as the slug."""
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
         root = tmp_path / "scan"
         root.mkdir()
         state = _make_state(root / "some-random-dir", deck_slug="")
@@ -499,7 +593,8 @@ class TestNoSlugYieldsNotARunDir:
         _write_state(root / "some-random-dir", state)
 
         rc, out = _run_sweep(root, apply=True)
-        assert rc == 0
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
         # The ingest should never be called with "some-random-dir" as slug
         ingest_calls = [r for r in _FAKE_RECORDS if r["fn"] == "ingest_deck_task"]
         assert len(ingest_calls) == 0
@@ -603,17 +698,274 @@ class TestBrokenRunDirContinues:
         assert "card_missing" in out
 
 
+class TestSweepFailurePropagatesExitCode:
+    """G5: 'FAIL-SOFT' means one bad run dir never ENDS the loop -- it does
+    not mean the sweep's own return code gets to lie about it. A run dir
+    whose ingest call raises is recorded as 'failure'; the sweep as a whole
+    must then return EXIT_SWEEP_HAD_FAILURES, not EXIT_OK."""
+
+    def test_ingest_exception_makes_sweep_fail(self, tmp_path, monkeypatch):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_HAD_FAILURES
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        _write_state(root / "boom", _make_state(root / "boom", deck_slug="deck-boom"))
+
+        def _boom(*a, **kw):
+            raise RuntimeError("simulated ingest failure")
+
+        # fake_ingest_deck_task is looked up as a module global at call time,
+        # so patching it here reaches the FakeMod.ingest_deck_task shim that
+        # _run_sweep installs as the sweep's cc_board.
+        monkeypatch.setattr(sys.modules[__name__], "fake_ingest_deck_task", _boom)
+
+        rc, out = _run_sweep(root, apply=True)
+        assert rc == EXIT_SWEEP_HAD_FAILURES
+        assert rc != EXIT_OK
+        assert "FAILED" in out
+        assert "not a pass" in out.lower()
+
+
+class TestAllRejectedIsNotAPass:
+    """G5 HARDEN: an adversarial re-attack proved that when every run dir a
+    sweep finds is rejected by Guard A (not_a_run_dir), the sweep printed a
+    reassuring 'scanned N ... not_a_run_dir: N' and still returned EXIT_OK --
+    worse than an empty scan, because 'scanned N' reads as having checked
+    something. Three vectors, all proven to force rc=0 before this fix:
+      1. STATE_SCHEMA_VERSION bumped -- every run dir fails the `!=` check.
+      2. truncated/corrupt state.json on every run dir.
+      3. unresolvable deck_slug on every run dir.
+    None of these may return EXIT_OK -- that part is settled, correct
+    behaviour and these tests assert it as such.
+
+    The DIFFERENT "some rejected, some fine" (mixed) case -- where at least
+    one run dir genuinely reconciles alongside rejections -- is deliberately
+    NOT covered by this class and is NOT asserted as correct anywhere in
+    this file. See TestMixedRejectionsKnownGap below, which documents that
+    case as an open, unresolved product gap instead."""
+
+    def test_schema_bump_rejects_everything_not_a_pass(self, tmp_path):
+        """Vector 1: a routine STATE_SCHEMA_VERSION bump makes EVERY run dir
+        on the box invalid. Must be caught AND clearly named as a schema
+        issue, not silently reported as a clean empty-ish sweep."""
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(5):
+            d = root / f"run{i}"
+            _write_state(d, _make_state(d, deck_slug=f"deck-{i}", schema_version=99))
+
+        rc, out = _run_sweep(root)
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
+        assert "scanned 5" in out
+        assert "not_a_run_dir: 5" in out
+        assert "reconciled 0" in out
+        # Unmistakable: names the schema mismatch specifically, not a generic shrug.
+        assert "SCHEMA VERSION MISMATCH" in out
+        assert "schema_version" in out.lower()
+        assert "NOT a pass" in out
+
+    def test_corrupt_json_rejects_everything_not_a_pass(self, tmp_path):
+        """Vector 2: truncated/corrupt state.json on every run dir (e.g. a
+        crash or disk-full mid-write)."""
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(5):
+            d = root / f"run{i}"
+            d.mkdir()
+            (d / "state.json").write_text('{"schema_version": 1, "job_id": "pj_x", truncat')
+
+        rc, out = _run_sweep(root)
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
+        assert "scanned 5" in out
+        assert "not_a_run_dir: 5" in out
+        assert "reconciled 0" in out
+        assert "NOT a pass" in out
+
+    def test_unresolvable_slug_rejects_everything_not_a_pass(self, tmp_path):
+        """Vector 3: every run dir resolves to no deck_slug."""
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_ALL_REJECTED
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(5):
+            d = root / f"run{i}"
+            state = _make_state(d, deck_slug="")
+            state["intake"] = {"deck_slug": "", "deck_title": "T"}
+            _write_state(d, state)
+
+        rc, out = _run_sweep(root)
+        assert rc == EXIT_SWEEP_ALL_REJECTED
+        assert rc != EXIT_OK
+        assert "scanned 5" in out
+        assert "not_a_run_dir: 5" in out
+        assert "reconciled 0" in out
+        assert "NOT a pass" in out
+
+    def test_failures_take_priority_over_all_rejected_wording(self, tmp_path):
+        """When a run dir raises AND the rest are all rejected, the sweep
+        must still report non-pass (already guaranteed by EXIT_SWEEP_HAD_FAILURES,
+        proven here to not regress into EXIT_OK now that the all-rejected
+        branch also exists)."""
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_HAD_FAILURES
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(3):
+            d = root / f"bad{i}"
+            _write_state(d, _make_state(d, deck_slug=f"deck-{i}", schema_version=99))
+        _write_state(root / "boom", _make_state(root / "boom", deck_slug="deck-boom"))
+
+        def _boom(*a, **kw):
+            raise RuntimeError("simulated ingest failure")
+
+        import sys as _sys
+        orig = _sys.modules[__name__].fake_ingest_deck_task
+        _sys.modules[__name__].fake_ingest_deck_task = _boom
+        try:
+            rc, out = _run_sweep(root, apply=True)
+        finally:
+            _sys.modules[__name__].fake_ingest_deck_task = orig
+
+        assert rc == EXIT_SWEEP_HAD_FAILURES
+        assert rc != EXIT_OK
+
+
+class TestMixedRejectionsKnownGap:
+    """KNOWN GAP -- this class documents PRESENT BEHAVIOUR, not a settled
+    correctness claim, and it must never be read as one.
+
+    When a scan is "mixed" -- some run dirs rejected by Guard A, but at
+    least one genuinely reconciled (the normal shape of any real fleet,
+    which always carries some debris) -- the sweep CURRENTLY returns
+    EXIT_OK no matter how large the rejected fraction is, up to and
+    including 4-of-5 (80%) rejected in the test below. Whether that is the
+    right call is an OPEN, UNRESOLVED product decision that belongs to the
+    operator (see the "OPEN POLICY QUESTION" comment on reconcile_sweep()
+    in presentation_job/sweep.py) -- it has never been decided, and this
+    test suite does not decide it either. All this test proves is: (a) the
+    exit code is EXIT_OK today, and (b) a loud WARNING now fires so the
+    rejection is at least visible, not silent.
+
+    Lineage, so the next engineer does not re-litigate this from zero: this
+    exact test was previously named test_mixed_rejects_and_one_good_still_passes
+    (asserted PASS with 4-of-5 rejected and never checked for any warning
+    at all -- an adversarial re-attack proved that was itself a live
+    bypass: a box carrying old debris plus in-flight run dirs with
+    truncated state.json printed a reassuring summary, emitted zero
+    warnings, and returned success while 100% of live work was invisible).
+    It was then renamed test_mixed_rejects_surfaces_loud_warning_even_though_it_passes,
+    which added the warning assertion but whose name still read as though
+    "it passes" were the settled, intended outcome -- a green test is not
+    proof an exit code is correct, and that name did not make the gap
+    plain. This is the third name. If it needs a fourth, the fix is to the
+    exit-code POLICY (an operator decision, made once, written down), not
+    to the test's wording again.
+
+    If/when an operator decides a mixed-rejection scan (or one above some
+    rejection-fraction threshold) should return non-zero, changing this
+    scenario's exit code is a DELIBERATE FIX closing a documented gap --
+    it is NOT a regression, and nobody should revert it to force EXIT_OK
+    back. Update this test's assertions (and its name) to match the new,
+    stricter policy when that decision is made -- do not leave it asserting
+    the old EXIT_OK behaviour as if the gap were still open once it is
+    closed."""
+
+    def test_mixed_rejects_KNOWN_GAP_exit_code_still_ok_pending_operator_decision(
+        self, tmp_path
+    ):
+        from presentation_job.state import EXIT_OK
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(4):
+            d = root / f"bad{i}"
+            d.mkdir()
+            # Truncated mid-write -- NOT a schema mismatch, so the old
+            # schema-mismatch-only warning never fired for this reason.
+            (d / "state.json").write_text('{"schema_version": 1, "job_id": "pj_trunc')
+        _write_state(root / "good", _make_state(root / "good", deck_slug="deck-good"))
+
+        rc, out = _run_sweep(root)
+        # PRESENT BEHAVIOUR, not a correctness claim -- see class docstring.
+        # A future policy decision may deliberately change this assertion
+        # to a non-zero exit code; that would be a fix, not a regression.
+        assert rc == EXIT_OK
+        assert "scanned 5" in out
+        assert "not_a_run_dir: 4" in out
+        assert "reconciled 1" in out
+        assert "card_missing" in out
+        # This part IS a real, settled requirement regardless of how the
+        # exit-code policy question resolves: any rejection must be loud,
+        # not just a schema-version-mismatch one, and not just a buried
+        # summary count.
+        assert "WARNING" in out
+        assert "4 of 5" in out
+
+
+class TestFinishedNoCardCountsAsReconciled:
+    """finished_no_card is a REAL classification (Guard A + slug already
+    passed) -- it must count toward 'reconciled' and must never be lumped
+    into not_a_run_dir, or a box where every job finished cleanly with no
+    card would wrongly trip the all-rejected gate on a perfectly healthy
+    sweep."""
+
+    def test_all_finished_no_card_is_still_a_pass(self, tmp_path):
+        from presentation_job.state import EXIT_OK
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        for i in range(5):
+            d = root / f"run{i}"
+            _write_state(d, _make_state(d, deck_slug=f"deck-{i}", terminal="DONE"))
+
+        rc, out = _run_sweep(root, apply=True)
+        assert rc == EXIT_OK
+        assert "scanned 5" in out
+        assert "reconciled 5" in out
+        assert "finished_no_card: 5" in out
+        assert "not_a_run_dir: 0" in out
+        ingest_calls = [r for r in _FAKE_RECORDS if r["fn"] == "ingest_deck_task"]
+        assert len(ingest_calls) == 0
+
+
 class TestEmptyScan:
-    """scanned == 0 prints the explicit NO state.json found line."""
+    """scanned == 0 is UNDETERMINED, not a pass (G5) -- it prints the explicit
+    NO state.json line AND returns a distinct non-EXIT_OK code so a caller
+    that only checks the return code cannot mistake "found nothing" for
+    "found N and all were fine"."""
 
     def test_empty_scan_says_no_state_json(self, tmp_path):
+        from presentation_job.state import EXIT_OK, EXIT_SWEEP_NO_RUNS
+
         root = tmp_path / "scan"
         root.mkdir()
         (root / "sub").mkdir()
 
         rc, out = _run_sweep(root)
-        assert rc == 0
+        assert rc == EXIT_SWEEP_NO_RUNS
+        assert rc != EXIT_OK
         assert "NO state.json" in out or "NO state.json found" in out
+        assert "UNDETERMINED" in out
+
+    def test_empty_scan_code_distinct_from_all_rejected_code(self, tmp_path):
+        """The two UNDETERMINED codes must stay distinguishable -- 'found
+        nothing' (10) and 'found some, rejected all of them' (12) are
+        reached through different paths and a caller may want to log them
+        differently even though both are non-pass."""
+        from presentation_job.state import EXIT_SWEEP_NO_RUNS, EXIT_SWEEP_ALL_REJECTED
+
+        assert EXIT_SWEEP_NO_RUNS != EXIT_SWEEP_ALL_REJECTED
+
+        root = tmp_path / "scan"
+        root.mkdir()
+        rc, _ = _run_sweep(root)
+        assert rc == EXIT_SWEEP_NO_RUNS
 
 
 class TestApplyWithoutReconcileBoard:

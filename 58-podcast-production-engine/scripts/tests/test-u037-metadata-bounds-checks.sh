@@ -50,7 +50,7 @@ pass "function is invoked in the publish flow"
 # ─── Extract the limit constants + the function under test ───────────────────
 TMP_LIB="$(mktemp)"
 trap 'rm -f "$TMP_LIB"' EXIT
-CONST_SRC="$(grep -E '^readonly PODBEAN_MAX_DESCRIPTION_LEN=|^readonly PODBEAN_MAX_TITLE_LEN=|^readonly PODBEAN_EPISODE_TYPES=' "$SCRIPT")"
+CONST_SRC="$(grep -E '^readonly PODBEAN_MAX_DESCRIPTION_LEN=|^readonly PODBEAN_MIN_DESCRIPTION_LEN=|^readonly PODBEAN_MAX_TITLE_LEN=|^readonly PODBEAN_EPISODE_TYPES=' "$SCRIPT")"
 FUNC_SRC="$(sed -n '/^validate_episode_metadata() {/,/^}/p' "$SCRIPT")"
 [ -n "$CONST_SRC" ] || fail "could not extract the PODBEAN_* limit constants"
 [ -n "$FUNC_SRC" ] || fail "could not extract validate_episode_metadata"
@@ -71,7 +71,7 @@ run_validate() {
 
 # ─── AC#2: over-length show notes -> pre-flight failure with a clear message ─
 rc=0
-out="$(PODBEAN_MAX_DESCRIPTION_LEN=10 run_validate "A Title" "this description is way over ten chars" "full")" || rc=$?
+out="$(PODBEAN_MAX_DESCRIPTION_LEN=10 run_validate "A Title" "this description is way over ten chars" "full" "1")" || rc=$?
 [ "$rc" -eq 1 ] || fail "AC#2: over-length show notes must fail (rc 1), got rc=$rc: $out"
 echo "$out" | grep -qi "pre-flight" || fail "AC#2: message must say 'pre-flight', got: $out"
 echo "$out" | grep -qi "show notes" || fail "AC#2: message must name 'show notes', got: $out"
@@ -80,7 +80,7 @@ pass "AC#2: over-length show notes -> pre-flight failure with a clear message"
 
 # ─── AC#3: invalid episode type -> pre-flight failure naming the allowed set ─
 rc=0
-out="$(run_validate "A Title" "short notes" "not-a-real-type")" || rc=$?
+out="$(run_validate "A Title" "short notes" "not-a-real-type" "1")" || rc=$?
 [ "$rc" -eq 1 ] || fail "AC#3: invalid episode type must fail (rc 1), got rc=$rc: $out"
 echo "$out" | grep -qi "episode type" || fail "AC#3: message must name 'episode type', got: $out"
 echo "$out" | grep -q "full" || fail "AC#3: message must list the allowed set (full/...), got: $out"
@@ -92,21 +92,23 @@ pass "AC#3: invalid episode type -> pre-flight failure naming the allowed set"
 pass "AC#4: failure messages are clear (pre-flight + specific problem)"
 
 # ─── Edge: valid metadata -> proceeds (rc 0, no message) ─────────────────────
+# A stub (short) description is only permitted when stub_ok=1 (draft/test/--status
+# draft verification runs). The default (stub_ok=0) enforces the minimum floor.
 rc=0
-out="$(run_validate "A Title" "short notes" "full")" || rc=$?
-[ "$rc" -eq 0 ] || fail "edge: valid metadata must proceed (rc 0), got rc=$rc: $out"
+out="$(run_validate "A Title" "short notes" "full" "1")" || rc=$?
+[ "$rc" -eq 0 ] || fail "edge: stub description with stub_ok=1 must proceed (rc 0), got rc=$rc: $out"
 [ -z "$out" ] || fail "edge: valid metadata must emit no message, got: $out"
-pass "edge: valid metadata -> proceeds (rc 0, no message)"
+pass "edge: stub description with stub_ok=1 -> proceeds (rc 0, no message)"
 
 # ─── Edge: show notes EXACTLY at the limit -> proceeds (boundary, not over) ──
 rc=0
-out="$(PODBEAN_MAX_DESCRIPTION_LEN=10 run_validate "A Title" "0123456789" "full")" || rc=$?
+out="$(PODBEAN_MAX_DESCRIPTION_LEN=10 run_validate "A Title" "0123456789" "full" "1")" || rc=$?
 [ "$rc" -eq 0 ] || fail "edge: show notes exactly at the limit must proceed (rc 0), got rc=$rc: $out"
 pass "edge: show notes exactly at the limit -> proceeds (boundary)"
 
 # ─── Edge: over-length title -> pre-flight failure (rc 1) ────────────────────
 rc=0
-out="$(PODBEAN_MAX_TITLE_LEN=5 run_validate "a much too long title" "short" "full")" || rc=$?
+out="$(PODBEAN_MAX_TITLE_LEN=5 run_validate "a much too long title" "short" "full" "1")" || rc=$?
 [ "$rc" -eq 1 ] || fail "edge: over-length title must fail (rc 1), got rc=$rc: $out"
 echo "$out" | grep -qi "title" || fail "edge: message must name 'title', got: $out"
 pass "edge: over-length title -> pre-flight failure (rc 1)"
@@ -114,10 +116,27 @@ pass "edge: over-length title -> pre-flight failure (rc 1)"
 # ─── Edge: every allowed episode type proceeds ───────────────────────────────
 for t in full trailer bonus; do
   rc=0
-  out="$(run_validate "A Title" "short" "$t")" || rc=$?
+  out="$(run_validate "A Title" "short" "$t" "1")" || rc=$?
   [ "$rc" -eq 0 ] || fail "edge: episode type '$t' must be allowed (rc 0), got rc=$rc: $out"
 done
 pass "edge: every allowed episode type (full/trailer/bonus) proceeds"
+
+# ─── U048: below-minimum description -> pre-flight failure (rc 1) ────────────
+# A real publish (stub_ok=0) must refuse a stub description shorter than
+# PODBEAN_MIN_DESCRIPTION_LEN (default 200 chars), so the title fallback can
+# never silently degrade an episode.
+rc=0
+out="$(run_validate "A Title" "one line" "full")" || rc=$?
+[ "$rc" -eq 1 ] || fail "U048: below-minimum description must fail (rc 1), got rc=$rc: $out"
+echo "$out" | grep -qi "pre-flight" || fail "U048: message must say 'pre-flight', got: $out"
+echo "$out" | grep -qi "minimum" || fail "U048: message must name the minimum, got: $out"
+pass "U048: below-minimum description -> pre-flight failure naming the minimum"
+
+# ─── U048: description at exactly the minimum -> proceeds (boundary) ─────────
+rc=0
+out="$(PODBEAN_MIN_DESCRIPTION_LEN=10 run_validate "A Title" "0123456789" "full")" || rc=$?
+[ "$rc" -eq 0 ] || fail "U048: description exactly at the minimum must proceed (rc 0), got rc=$rc: $out"
+pass "U048: description exactly at the minimum -> proceeds (boundary)"
 
 echo ""
 echo "All U037 tests passed."

@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
-description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries five loop-specific detectors D1-D4 + D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, cross-run resend) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.4.0
+description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries seven loop-specific detectors D1-D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, self-blocking-run / transcript poison, futile semantic retry burst, and cross-run resend) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
+version: 0.6.0
 ---
 
 # Loop Protection System (Skill 61)
@@ -72,33 +72,97 @@ escalated), and never client-facing.
 | Skill 59/60 four-scanner merge-gate family | `guard-no-anthropic-runtime.py`, `scan-no-secrets.sh`, `scan-no-client-identifiers.sh`, `scan-no-json-exports.sh`, same 0/1/2/3/4 exit contract and value-free doctrine. |
 | `scripts/skill-content-hash.sh` (repo root) | Auto-picks up `61-*` as a hashed skill dir; the update stamp gate covers Skill 61 with no extra wiring. |
 
-## The loop-specific detectors (D1-D4, D7; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
+## The seven loop-specific detectors (D1-D7; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
 
 These are absent from Skill 60's S1-S10 catalog; they are proposed for registration
-as Skill 60 signals S11-S14+ (Open Decision T2) so the fleet keeps ONE vocabulary.
-D5 (completion-rate) and D6 (outbound-send-rate) are RESERVED names for a future
-fix design (SS4) - deliberately not built here; D7 is a separate, already-landed
-detector and does not consume either reservation.
+as Skill 60 signals S11-S17 (Open Decision T2) so the fleet keeps ONE vocabulary.
 
 | # | Detector | Source (all local, deterministic, zero model calls) | Feeds |
 |---|---|---|---|
-| D1 | **Restart velocity** | `pm2 jlist` restarts / `launchctl` runs / `docker` RestartCount, delta per unit per tick (name/status/pid/restarts ONLY) | LP-B1..B4, the process breaker |
+| D1 | **Restart velocity** | `pm2 jlist` restarts / `launchctl` runs / `docker` RestartCount, delta per unit per tick, BASELINED per unit so first sight reads 0 (name/status/pid/restarts ONLY) | LP-B1..B4, the process breaker |
 | D2 | **Token-burn rate** | trajectory usage per window, paid vs local, correlated with initiated-session presence | LP-A2/A5/A6/A7 |
 | D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
 | D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
-| D7 | **Cross-run resend (provenance-stamped)** | the RECEIVING agent's session transcript `message.provenance` (kind=`inter_session`, sourceTool=`sessions_send`, sourceSessionKey) - hashed payload, counted across DISTINCT run ids inside a rolling 300s window, offset-tracked, cheap enough for a 60s cadence | LP-A8, the resend breaker |
+| D5 | **Self-blocking run / transcript poison** | bounded TAIL of each session transcript: runtime tool-loop block records (matched structurally on `details.status=blocked` + `deniedReason=tool-loop`, never on prose), longest block burst, trailing-window block share, and compaction summaries that captured loop text | LP-A8, the session breaker |
+| D6 | **Futile retry burst (SEMANTIC repetition, ARGUMENT-BLIND)** | same bounded tails: per (transcript, tool), the heaviest sliding 60s window of calls, with how many FAILED and how many carried a fail-closed auth-class refusal in the result payload (counted, then discarded) | LP-A9 |
+| D7 | **Cross-run resend (provenance-stamped)** | the RECEIVING agent's session transcript `message.provenance` (kind=`inter_session`, sourceTool=`sessions_send`, sourceSessionKey) - hashed payload, counted across DISTINCT run ids inside a rolling 300s window, offset-tracked, cheap enough for a 60s cadence | LP-A10, the resend breaker |
 
-## The six circuit breakers (spec 5.1; config/breakers.json)
+### D6 is argument-blind on purpose — every other guard on the box is not
+
+D1-D5 and the runtime's own guards all share one assumption: **a loop repeats itself
+exactly.** The runtime keys on `toolName` + `sha256(params)`; this repo's always-armed
+runaway guard keys on `toolName` + `argsHash` + `resultHash`, stricter and therefore
+blinder; D3 hashes outcome class + tool sequence + target. An agent that REWORDS a
+failing intent defeats all four at once without trying to — and OpenClaw exposes no
+per-turn tool-call ceiling to fall back on.
+
+D6 never reads arguments at all. It asks the one question that survives rewording:
+*is this tool producing no progress, over and over?* Its primary face counts
+**fail-closed refusals in the result payload**, because in this class **the tool calls
+SUCCEED** — an `exec` running a curl against a refusing API exits 0 and is recorded
+`status: completed`, so there is no error for an error-keyed detector to find.
+
+**Volume is never the signal.** The obvious design — count same-tool calls in a window —
+was measured against the operator box's real 998-transcript corpus and REJECTED: that
+corpus contains a healthy burst of 460 `exec` calls in 48.2 seconds, and ~100 file/tool
+pairs at or above the incident's own 13-calls-per-60s. A count-only detector would fire
+on roughly a quarter of healthy sessions. D6 requires evidence of FUTILITY, and on that
+same corpus yields 11 findings across 998 transcripts (1.1%) — one of them landing on an
+archived transcript already named for the loop it recorded.
+
+**D6 is a watchdog, not a brake.** It runs on the 15-minute tick and reports after the
+fact. The live fix is doctrine **N40** in the fleet's canonical `AGENTS.md`: against a
+fail-closed dependency, at most 2 attempts, then ONE message stating what is blocked and
+what is needed — and never a narrated hunt in front of a client.
+
+### D5 measures a STOCK, not a flow - that is the whole point
+
+D1-D4 all measure FLOW: events per tick. They answer *"is a loop running right
+now?"* and go silent the moment it pauses. D5 answers a different question:
+***how much of this transcript is ALREADY loop wreckage?*** That distinction is
+load-bearing. A loop can stop while its transcript stays full of its own refusals,
+and every later turn on that transcript starts degraded - so a flow detector hands
+back a false all-clear on a fault that is still doing damage. The incident this
+detector comes from survived three separate fixes aimed at the ENVIRONMENT while
+the fault sat in the CONTEXT.
+
+D5 has two faces, in the order they matter:
+
+- **IGNITION (primary, early).** Consecutive blocks inside one run. High-precision
+  and fires seconds in - long before the transcript is measurably poisoned, and
+  long before the run's hold on the conversation lane becomes user-visible.
+- **AFTERMATH (secondary).** The trailing-window block share plus compaction
+  summaries that captured the loop verbatim. This is the part that persists and
+  that a roll must clear. It is deliberately a TRAILING window and never a
+  cumulative ratio: a whole-file ratio lags by thousands of records and stays
+  quiet for hours after onset.
+
+Two properties are non-negotiable and are drilled as such:
+
+1. **Size never fires on its own.** Transcript size is a severity MODIFIER only.
+   The control archive used to prove this is larger than the poisoned one on every
+   axis and must stay perfectly silent.
+2. **A live transcript is never rolled.** The auto-fix refuses a transcript still
+   being written; a burning session gets the P1 and a prepared abort, never a file
+   pulled from under a running gateway.
+
+**The symptom signature to recognise by hand:** *an agent that answers CORRECTLY
+but SLOWLY.* A broken agent gives wrong answers; a poisoned one gives right answers
+slowly, because a doomed run is holding the lane while messages queue behind it.
+Emergency operator recovery is `/new` - start a fresh session.
+
+## The seven circuit breakers (spec 5.1; config/breakers.json)
 
 process (D1 restart velocity -> stop+park), turn (D2 paid burn -> heartbeat
 allowlist enforce + park cron, never touches the model), retry (D3 identical
 signature -> park resumable + escalate), cron (D4 re-fire -> disable, never delete),
-healer (the watchdog's OWN fixes -> stop fixing a target fixed >3x/24h or whose last
-fix failed verify), resend (D7 cross-run identical-payload resend -> abort the
-source session's in-flight run via the native `sessions.abort` RPC, no-op-safe when
-nothing is active, + park the source; NEVER pkill node, NEVER a gateway restart).
-Every ceiling is a SAFETY CAP under Skill 60 Signal S4: a raise without an operator
-stamp is a P1.
+**session (D5 transcript poison -> archive the transcript and roll, MOVE never
+delete, and never while it is live)**, healer (the watchdog's OWN fixes -> stop
+fixing a target fixed >3x/24h or whose last fix failed verify), resend (D7
+cross-run identical-payload resend -> abort the source session's in-flight run
+via the native `sessions.abort` RPC, no-op-safe when nothing is active, + park
+the source; NEVER pkill node, NEVER a gateway restart). Every ceiling is a
+SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is a P1.
 
 ## Three fix tiers (spec 6.2)
 
@@ -124,11 +188,26 @@ stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (fifteen drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (twenty-three drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
-revert (`unpark --finding <id>`) and asserts it unparks.
+revert (`unpark --finding <id>`) and asserts it unparks. Four more prove D5 in BOTH
+directions - **D-POISON** (a blocked-burst transcript is P1), **D-POISON-CLEAN** (a
+LARGER, busier, clean transcript stays silent even past the re-arm floor),
+**D-POISON-ROLL** (an armed tick archives it, moved not deleted) and **D-POISON-LIVE**
+(a transcript still being written is refused) - and all four are mutation-proven
+failable (see `tests/drills/D-POISON.md`).
+
+Four more hold the line on a REPRODUCED crash: the roll was not idempotent, so LF-10
+re-archived its own archive every tick until the filename passed 255 bytes and an
+uncaught `OSError` killed the whole tick. **D-POISON-REROLL** asserts ten armed ticks
+over one poisoned transcript yield exactly one finding and one roll; **-BOUND** that the
+constructed name is byte-bounded and deterministic; **-REFUSAL** that a filesystem
+error is a refusal, not a crash; **-TICK** that an exception escaping a kill card is
+contained and the finding behind it is still processed. **One bad unit never kills the
+tick** - a watchdog that dies quietly leaves a box that only looks watched (see
+`tests/drills/D-POISON-REROLL.md`).
 
 **What the operator commands actually do.** `park <unit>` / `unpark <unit>` and the
 emitted revert `unpark --finding <id>` (finding→unit resolved from the ledger) are

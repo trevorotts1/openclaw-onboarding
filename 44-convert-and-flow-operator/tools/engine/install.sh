@@ -19,7 +19,10 @@ echo "  source -> $SCRIPT_DIR"
 echo
 
 echo "-> checking python..."
-"$PY" -c "import sys; assert sys.version_info >= (3, 10), 'need python 3.10+'"
+# Matches setup.py's python_requires (>=3.9) — the shipped venv is stock-macOS
+# python3 (3.9.6); this used to demand 3.10+ and refused to install anywhere
+# that hadn't separately provisioned a newer interpreter.
+"$PY" -c "import sys; assert sys.version_info >= (3, 9), 'need python 3.9+'"
 
 if [ ! -d "$VENV_DIR" ]; then
   echo "-> creating venv..."

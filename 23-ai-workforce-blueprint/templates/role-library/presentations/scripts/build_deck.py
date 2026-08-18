@@ -193,6 +193,7 @@ ENVIRONMENT:
 
 import concurrent.futures
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -205,7 +206,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
-from typing import Optional
+from presentation_job.result import CheckResult
+from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
+from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
@@ -236,18 +239,71 @@ LOGO_MARGIN_IN = 0.25        # small consistent margin from the top/right edges
 # DEAD endpoint — refuse to ever touch it.
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# Poll cadence per the recipe: ~8s interval, up to ~7 minutes total.
+# Poll cadence per the recipe: exponential backoff 10s/20s/40s with a HARD cap at
+# ~15 minutes (D14 / FIX-7). A dead or never-completing kie task must surface a
+# terminal FAIL (RenderPollTimeout) instead of hanging the run in 'in_progress'.
 # Heavy gpt-image-2 renders (e.g. a split then-vs-now band with two photoreal scenes
 # and multiple text zones) regularly exceed 3 minutes of pure render latency. 180s was
-# too low and made merely-slow slides time out and fail loud with outputPath=null. 420s
-# gives slow-but-healthy renders room to finish; genuine terminal failures still fail
-# immediately (see poll_task: 'fail'/'error'/'cancelled' short-circuit).
-POLL_INTERVAL_S = 8
-POLL_MAX_SECONDS = 420
-POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
+# too low and made merely-slow slides time out and fail loud with outputPath=null.
+# The backoff ladder below (10s for the first 2 min, 20s for the next 3 min, then 40s)
+# gives slow-but-healthy renders room to finish while guaranteeing a hard stop at
+# POLL_MAX_SECONDS; genuine terminal failures still fail immediately (see poll_task:
+# 'fail'/'error'/'cancelled' short-circuit). All three are overridable via env so a
+# slow kit render can stretch the wall-clock ceiling without editing code.
+def _poll_ladder() -> tuple:
+    """Return (fast_s, fast_window_s, medium_s, medium_window_s, slow_s).
+    The schedule is 10s for the first 2 min, 20s for the next 3 min, then 40s after."""
+    def _f(name, default):
+        try:
+            v = int(os.environ.get(name, str(default)))
+        except ValueError:
+            v = default
+        return max(1, v)
+    return (_f("BUILD_DECK_POLL_FAST_S", 10),
+            _f("BUILD_DECK_POLL_FAST_WINDOW_S", 120),
+            _f("BUILD_DECK_POLL_MEDIUM_S", 20),
+            _f("BUILD_DECK_POLL_MEDIUM_WINDOW_S", 180),
+            _f("BUILD_DECK_POLL_SLOW_S", 40))
+
+
+POLL_FAST_S, POLL_FAST_WINDOW_S, POLL_MEDIUM_S, POLL_MEDIUM_WINDOW_S, POLL_SLOW_S = _poll_ladder()
+
+# Hard wall-clock cap for a single task's poll (FIX-7: ~15 min). Beyond this the poll
+# raises RenderPollTimeout (a terminal FAIL), never a silent hang.
+def _poll_max_seconds() -> int:
+    try:
+        v = int(os.environ.get("BUILD_DECK_POLL_MAX_SECONDS", "900"))
+    except ValueError:
+        v = 900
+    return max(30, v)
+
+
+POLL_MAX_SECONDS = _poll_max_seconds()
+
+# Backward-compatible alias: the old fixed 8s interval / pass count are gone; code
+# that referenced POLL_INTERVAL_S / POLL_MAX_PASSES now uses the ladder. Kept as a
+# derived value so any external reader still resolves a sane number.
+POLL_INTERVAL_S = POLL_FAST_S
 
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
+
+# ---------------------------------------------------------------------------
+# BATCH-RENDER cadence (FIX-5 / D22 root cause B). KIE allows 20 new generation
+# requests per 10s per account and 100+ concurrent tasks. The old path submitted
+# ONE slide and polled it to completion before submitting the next (or ran a
+# small thread pool), which serialized submit+poll+download and wasted 20+ min.
+# The batch path submits ALL prompts once at BATCH_SUBMIT_INTERVAL_S (0.6s),
+# so a 20-slide deck lands its 20 createTask calls in ~12s — inside the 20/10s
+# window, empirically proven 200 for a burst of 8 (see ERRORS-DETECTED D22) —
+# then polls all taskIds together every BATCH_POLL_INTERVAL_S and downloads each
+# image the moment ITS task completes (downloads do not wait for the slowest
+# slide). These are the DEFAULTS; render_slides_batch accepts them as parameters
+# so a box can tune the cadence at the call site without a code edit. The
+# defaults implement the documented 20/10s + concurrent-task model.
+BATCH_SUBMIT_INTERVAL_S = 0.6   # seconds between consecutive createTask calls
+BATCH_POLL_INTERVAL_S = 10.0    # seconds between poll passes over ALL pending tasks
+BATCH_MAX_POLL_SECONDS = 900    # hard cap (15 min) — a stuck task surfaces FAIL, no hang
 
 # Per-slide retries (full re-submit) on any failure.
 # A KIE failCode 400 "Internal Error, Please try again later" is a VERIFIED
@@ -909,6 +965,24 @@ DELIVERABLES_REQUIRED = [
                 "build_teleprompter.py generator (owned by the speech/teleprompter "
                 "role). REQUIRED UPSTREAM STEP.",
     },
+    {
+        "key": "webinar_mp4",
+        "filename": "{deck_slug}-WEBINAR.mp4",
+        "label": "webinar video mp4",
+        # P3-01(c)5 — Feature L2-G (Gauntlet Loop 2, Feature C): the fluid webinar video
+        # slideshow (Ken Burns + xfade, synced to the spoken audio). PRODUCED LATER than
+        # P8-ASSEMBLE/postflight: build_webinar_video.py (P9.6-WEBINAR-VIDEO, order 8.92)
+        # renders it AFTER the render/assemble phases, from the deck's slide PNGs + the
+        # PRESENTERS-SPEECH.md + PRESENTER-AUDIO.mp3 + the Fish chunk mp3s. It is hosted in
+        # the client's GHL media library via the v3 500MB video tier. `produced_later: True`
+        # tells run_postflight_gate to SKIP the file-existence loop at P8-ASSEMBLE time (the
+        # file does not exist yet); the P9.6 phase + fix_bundle_complete + delivery_gate own
+        # the webinar's real presence gate.
+        "min_bytes": 1_048_576,          # 1 MB — a real rendered webinar video floor
+        "note": ">1MB; produced by build_webinar_video.py (P9.6-WEBINAR-VIDEO, Feature "
+                "L2-G) — NOT present at P8-ASSEMBLE time. REQUIRED UPSTREAM STEP.",
+        "produced_later": True,
+    },
 ]
 
 
@@ -947,18 +1021,97 @@ def load_api_key() -> str:
 PROMPT_FILE_PATTERNS = (
     "working/prompts/slide-{nn:02d}.txt",
     "working/prompts/slide-{nn:02d}-prompt.txt",
+    # R3 / D10: signature decks have a 100-slide FLOOR, so a 3-digit ordinal is
+    # canonical (slide-100.txt .. slide-999.txt). The %02d family above cannot
+    # express it, so the canonical name set extends with an explicit %03d family.
+    # Ordering keeps %02d first, so the zero-padded twin is always preferred when
+    # both spellings exist for the SAME slide (see _canonical_prompt_dir_problems).
+    "working/prompts/slide-{nn:03d}.txt",
+    "working/prompts/slide-{nn:03d}-prompt.txt",
 )
 
 
 def resolve_prompt_path(run_dir: Path, ordinal: int) -> Optional[Path]:
     """Return the rich-prompt file Path for this slide ordinal, or None if no
     candidate file exists. Tries both the slide-NN.txt and slide-NN-prompt.txt
-    naming conventions under working/prompts/."""
+    naming conventions under working/prompts/ — and, for ordinals >= 100
+    (signature decks have a 100-slide floor), the 3-digit slide-NNN.txt /
+    slide-NNN-prompt.txt names (R3 / D10)."""
     for pat in PROMPT_FILE_PATTERNS:
         p = run_dir / pat.format(nn=ordinal)
         if p.exists() and p.is_file():
             return p
     return None
+
+
+# R3 / D10: signature decks have a 100-slide floor, so a 3-digit ordinal is
+# canonical too. The shared prompt_gate (scan_prompt_dir / prompt_dir_problems,
+# FIX-22 / D16) still treats ONLY the %02d family as canonical and flags
+# slide-100.txt as non-canonical — but every build_deck consumer consults the
+# gate ONLY through _canonical_prompt_dir_problems below, which runs the shared
+# scan and overlays the R3 3-digit-canonical rule on top of its verdict. The
+# shared module itself is deliberately NOT changed (its %02d-only contract
+# predates the signature-deck floor and other consumers depend on it); the
+# build_deck-side fix keeps THIS file's canonical name set (PROMPT_FILE_PATTERNS,
+# which already carries the 3-digit family) and the gate verdicts it consumes in
+# agreement.
+# NOTE on why the duplicate verdict passes through UNCHANGED: Python's minimum-
+# width padding never truncates — `{nn:02d}` for nn=100 formats as "100" — so
+# for ordinals 100+ the %02d and %03d families are the SAME spelling, and for
+# ordinals 1-99 the %03d spelling (slide-001.txt) targets the same slide as the
+# %02d twin (slide-01.txt). A collision is therefore ALWAYS between names that
+# resolve to the same ordinal (slide-01 vs slide-1, slide-100 vs slide-0100,
+# slide-01 vs slide-001) and R3 never makes a same-ordinal collision benign —
+# exactly one canonical file per slide stays the rule at any digit width.
+CANONICAL_PROMPT_DIGITS_R3_RE = re.compile(r"^\d{2,3}$")
+
+
+def _prompt_ordinal_field(name: str) -> str:
+    """Extract the raw ordinal FIELD (the digits) from a slide-NN.txt or
+    slide-NN-prompt.txt prompt filename. Mirrors prompt_gate.scan_prompt_dir's
+    digit_part extraction exactly (its idiom), so the R3 re-judgement and the
+    shared scan always agree on what 'the digits' means."""
+    return name[len("slide-"):].split("-")[0].split(".")[0]
+
+
+def _canonical_prompt_dir_problems(run_dir: Path) -> list:
+    """Directory-level prompt problems (duplicates / non-canonical names) as the
+    build_deck gates consume them. Runs the shared prompt_gate detector (FIX-22 /
+    D16), then reconciles the R3 3-digit-canonical overlay on its verdicts:
+      * AF-PROMPT-DUP-FILE verdicts pass through unchanged — see the NOTE above;
+      * AF-PROMPT-NAME is relaxed: a name whose ordinal FIELD is exactly 2 or 3
+        digits is canonical (slide-01..slide-99, slide-100..slide-999, plus the
+        -prompt variants); a 1-digit (`slide-1.txt`) or 4+ digit (`slide-0100.txt`,
+        `slide-1000.txt`) name stays non-canonical (D16).
+    Every consumed gate (preflight rich-prompt _chk_rich_prompts, Prompt-QC
+    teeth check_prompt_qc_teeth) routes through _collect_prompt_problems, the
+    single choke point that calls this, so the two sides can never disagree.
+    Returns [] when the directory is clean, else the fatal problem strings."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return []
+    base_problems = pg.prompt_dir_problems(run_dir / "working" / "prompts")
+    if not base_problems:
+        return []
+    rep = pg.scan_prompt_dir(run_dir / "working" / "prompts")
+    problems = []
+    for prob in base_problems:
+        if prob.startswith("AF-PROMPT-DUP-FILE"):
+            problems.append(prob)
+        elif prob.startswith("AF-PROMPT-NAME"):
+            # Re-judge every name this message names: keep the verdict ONLY when
+            # at least one of them still has a non-canonical field (1-digit or
+            # 4+ digits). A message whose only offender is now-canonical (e.g.
+            # slide-100.txt) is dropped. The '.txt' tail makes the substring
+            # check unambiguous (slide-100.txt is never a substring of a
+            # slide-1000.txt message).
+            flagged = [n for n in rep.get("non_canonical", []) if n in prob]
+            if any(not CANONICAL_PROMPT_DIGITS_R3_RE.match(_prompt_ordinal_field(n))
+                   for n in flagged):
+                problems.append(prob)
+        else:
+            problems.append(prob)
+    return problems
 
 
 def _norm_ws(s: str) -> str:
@@ -1214,6 +1367,24 @@ class RateLimited(Exception):
     pass
 
 
+class AuthError(Exception):
+    """Permanent authentication failure (HTTP 401/403) — the request is identical
+    and will fail forever: the key is wrong, the Authorization header format is
+    wrong, or the account is locked/rate-locked by the provider. Retrying the same
+    request is a guaranteed token furnace. Fail loud, NEVER back off, NEVER
+    re-submit. Raised by _http_json on HTTP 401/403 and swallowed by NO retry loop:
+    render_slide re-raises it immediately (< 2s) instead of entering the
+    exponential-backoff re-submit path."""
+
+
+class RenderPollTimeout(Exception):
+    """Terminal FAIL surfaced when a kie task did not reach a terminal state within
+    the poll hard cap (POLL_MAX_SECONDS, ~15 min by default). Raised by poll_task
+    so a dead / never-completing render FAILS loudly instead of hanging the run in
+    'in_progress' (D14 / FIX-7). Carries the elapsed seconds and last observed
+    state so the caller can log a precise failure."""
+
+
 # C1 (SSRF / local-file read guard): the ONLY URL schemes this pipeline is ever
 # allowed to open. urllib.request.urlopen will happily honour file://, ftp://,
 # data:, etc. — so a KIE result URL, a --logo URL, or any API URL that resolves to
@@ -1227,7 +1398,7 @@ def assert_url_scheme_allowed(url: str, what: str = "URL") -> None:
     """Refuse (ValueError) unless the URL's scheme is http or https. This is the
     SSRF / local-file-read guard (C1): urlopen honours file://, ftp://, data:, etc.,
     so before opening ANY fetched URL we enforce a strict http(s) allowlist. Applied
-    to _http_json (the KIE API calls), download_unauthenticated (the KIE result URL),
+    to _http_json (the KIE API calls), download_image (the KIE result URL),
     and the --logo URL path."""
     scheme = (urlparse(str(url)).scheme or "").lower()
     if scheme not in ALLOWED_URL_SCHEMES:
@@ -1257,6 +1428,17 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
             raise RateLimited(f"HTTP 429 from {url}")
+        if exc.code in (401, 403):
+            # PERMANENT auth failure (FIX-6): never transient, never retried. The
+            # key/header/account is wrong and an identical re-submit fails forever —
+            # the observed 164x "backing off" 401 tailspin. Raised as AuthError so
+            # render_slide fails the slide immediately instead of backoff-resubmitting.
+            body_text = exc.read().decode(errors="replace")
+            raise AuthError(
+                f"HTTP {exc.code} {method} {url}\nResponse: {body_text}\n"
+                "Permanent auth failure — do NOT re-submit. Check the KIE_API_KEY, "
+                "the Authorization: Bearer header format, and that the key is not "
+                "locked/rate-blocked by the provider.") from exc
         body_text = exc.read().decode(errors="replace")
         raise RuntimeError(f"HTTP {exc.code} {method} {url}\nResponse: {body_text}") from exc
     except urllib.error.URLError as exc:
@@ -1386,44 +1568,47 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
     return task_id
 
 
-def poll_task(task_id: str, api_key: str) -> str:
-    """Poll recordInfo every ~8s up to ~7 min. Returns resultUrls[0] on success.
+def _poll_interval_for_elapsed(elapsed_s: float) -> int:
+    """Exponential backoff ladder per FIX-7: 10s for the first 2 min, 20s for the
+    next 3 min, then 40s after. Returns the sleep seconds for a poll at elapsed_s
+    seconds since the poll started. The ladder keeps the FIRST polls cheap so a
+    fast render finishes in <2 min, then slows to cut request volume on the long
+    tail — while the hard cap (POLL_MAX_SECONDS) bounds total wall-clock time."""
+    if elapsed_s < POLL_FAST_WINDOW_S:
+        return POLL_FAST_S
+    if elapsed_s < POLL_FAST_WINDOW_S + POLL_MEDIUM_WINDOW_S:
+        return POLL_MEDIUM_S
+    return POLL_SLOW_S
 
-    A genuinely failed/garbled render still fails loud: any terminal state
-    ('fail'/'failed'/'error'/'cancelled') short-circuits immediately. The extra
-    patience is ONLY for slides that keep reporting a healthy non-terminal state
-    ('generating'/'waiting'/'queuing'/'processing'/'running') — those are merely
-    slow, so if we reach the ceiling while the slide is still actively making
-    progress we grant a bounded grace window rather than killing a healthy render.
+
+def poll_task(task_id: str, api_key: str) -> str:
+    """Poll recordInfo with exponential backoff (10s/20s/40s) and a HARD cap at
+    POLL_MAX_SECONDS (~15 min). Returns resultUrls[0] on success.
+
+    FIX-7 (D14): a task that never completes must surface a TERMINAL FAIL
+    (RenderPollTimeout) instead of hanging the run in 'in_progress'. The wall-clock
+    deadline is absolute — there is NO unbounded grace window. A genuinely failed/
+    garbled render still fails loud: any terminal state ('fail'/'failed'/'error'/
+    'cancelled') short-circuits immediately. Slow-but-healthy renders are given the
+    full ladder; only a task that is still non-terminal at the hard cap raises.
     """
     url = f"{POLL_URL}?taskId={task_id}"
 
     # States KIE reports while a slide is healthily in-flight (not yet done, not failed).
     HEALTHY_INFLIGHT = ("generating", "waiting", "queuing", "queued", "processing", "running", "pending")
 
-    # Grace: if the slide is STILL actively generating when the normal ceiling is hit,
-    # allow up to this many extra passes (~25% more time) before declaring a timeout.
-    # This only ever fires for slides that never reached a terminal-failure state.
-    GRACE_PASSES = POLL_MAX_PASSES // 4  # ~13 extra passes (~104s) for slow renders
-
-    deadline = time.time() + POLL_MAX_SECONDS
+    started = time.time()
+    deadline = started + POLL_MAX_SECONDS
     passes = 0
-    grace_used = 0
     last_state = ""
-    # +2 normal slack passes, plus the grace passes so a healthy-but-slow render is
-    # not cut short by the pass cap before its grace window is exhausted.
-    while passes < POLL_MAX_PASSES + 2 + GRACE_PASSES:
-        # Past the wall-clock deadline: only keep going if the slide is still a
-        # healthy in-flight render AND we have grace passes left. Otherwise stop.
+    while True:
         if time.time() >= deadline:
-            if last_state in HEALTHY_INFLIGHT and grace_used < GRACE_PASSES:
-                grace_used += 1
-                print(
-                    f"    [poll grace {grace_used}/{GRACE_PASSES}] taskId={task_id} "
-                    f"still {last_state!r} past {POLL_MAX_SECONDS}s; extending", flush=True
-                )
-            else:
-                break
+            # HARD CAP reached — terminal FAIL, never a silent hang.
+            raise RenderPollTimeout(
+                f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
+                f"hard cap (last state {last_state!r}; {passes} polls). "
+                "Render FAILED — the kie task never reached a terminal state."
+            )
         passes += 1
         try:
             resp = _http_json("GET", url, api_key)
@@ -1451,24 +1636,78 @@ def poll_task(task_id: str, api_key: str) -> str:
                 f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
             )
 
-        print(f"    [poll {passes}] taskId={task_id} state={state!r}; sleep {POLL_INTERVAL_S}s", flush=True)
-        time.sleep(POLL_INTERVAL_S)
-
-    raise RuntimeError(
-        f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
-        f"(+{grace_used * POLL_INTERVAL_S}s grace; last state {last_state!r})."
-    )
+        elapsed = time.time() - started
+        interval = _poll_interval_for_elapsed(elapsed)
+        print(f"    [poll {passes}] taskId={task_id} state={state!r}; "
+              f"elapsed={elapsed:.0f}s sleep {interval}s", flush=True)
+        time.sleep(interval)
 
 
-def download_unauthenticated(url: str, dest: Path) -> None:
-    """UNAUTHENTICATED GET of the CDN result URL (Bearer token causes 403)."""
+def poll_task_once(task_id: str, api_key: str) -> dict:
+    """Single recordInfo status check for ONE task (used by the batch poll pass).
+
+    Unlike poll_task — which BLOCKS for a single slide until that slide completes
+    (up to ~7 min) — poll_task_once issues exactly ONE recordInfo GET and returns a
+    plain status dict:
+
+        {"state": "success", "result_url": "<first resultUrls[0]>"}
+        {"state": "<in-flight>", "result_url": None}   # generating/waiting/queuing/etc.
+        raises RuntimeError on a terminal FAIL state
+
+    The batch loop calls this for every pending task on a shared 10s cadence, so one
+    slow slide never delays the download of a fast one and a failed slide surfaces
+    immediately instead of holding the pass. 429 is surfaced as RateLimited (the
+    caller retries that task on the next pass)."""
+    url = f"{POLL_URL}?taskId={task_id}"
+    resp = _http_json("GET", url, api_key)
+    data = resp.get("data") or {}
+    state = str(data.get("state", "")).lower()
+
+    if state == "success":
+        result_json_str = data.get("resultJson")
+        if not result_json_str:
+            raise RuntimeError(
+                f"taskId {task_id}: success but no resultJson: {json.dumps(resp)}")
+        try:
+            result_obj = json.loads(result_json_str)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"taskId {task_id}: resultJson is not valid JSON: {exc}") from exc
+        urls = result_obj.get("resultUrls", []) or []
+        if not urls:
+            raise RuntimeError(f"taskId {task_id}: empty resultUrls: {json.dumps(result_obj)}")
+        return {"state": "success", "result_url": urls[0]}
+
+    if state in ("fail", "failed", "error", "cancelled"):
+        raise RuntimeError(
+            f"taskId {task_id}: terminal state '{state}' "
+            f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
+        )
+
+    # Any other state = still in flight (generating/waiting/queuing/queued/processing/
+    # running/pending). Return it verbatim so the batch loop can log + keep polling.
+    return {"state": state, "result_url": None}
+
+
+def download_image(url: str, dest: Path, api_key: str) -> int:
+    """AUTHENTICATED GET of the KIE CDN result URL (tempfile.aiquickdraw.com).
+
+    The result URLs KIE returns require `Authorization: Bearer <key>` plus a browser
+    User-Agent. A plain urllib GET with neither header returns HTTP 403, which left
+    renders/ empty despite successful createTask calls (D22 root cause A). This is the
+    FIX-4 helper: send both headers, write the bytes, return the on-disk size.
+    """
     # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
     # Refuse anything that is not http(s) before opening it (a file:// result URL
     # would otherwise read an arbitrary local file into the slide PNG).
     assert_url_scheme_allowed(url, what="KIE result URL")
-    req = urllib.request.Request(url, headers={"User-Agent": "build_deck/1.0"})
-    with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
-        f.write(resp.read())
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        dest.write_bytes(resp.read())
+    return dest.stat().st_size
 
 
 def verify_png(path: Path) -> None:
@@ -1599,7 +1838,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 "taskId": "resumed-completed"}
     if resumed_url is not None:
         print(f"  [{name}] resume polling succeeded -- downloading result.")
-        download_unauthenticated(resumed_url, out_path)
+        download_image(resumed_url, out_path, api_key)
         verify_png(out_path)
         _verify_aspect_and_readback(out_path, slide, ordinal)
         size = out_path.stat().st_size
@@ -1623,7 +1862,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
             result_url = poll_task(task_id, api_key)
             print(f"    success resultUrls[0]={result_url}", flush=True)
-            download_unauthenticated(result_url, out_path)
+            download_image(result_url, out_path, api_key)
             verify_png(out_path)
             # POST-DOWNLOAD aspect/2K verification + OCR text-readback (shared prompt_gate).
             # A non-16:9 / sub-2K response, or rendered text that does not match the approved
@@ -1634,6 +1873,19 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
+        except AuthError:
+            # FIX-6 — fail-fast on auth errors. A 401/403 is PERMANENT: the identical
+            # request can never succeed, so backoff-re-submitting is a token furnace
+            # (the observed 164x "backing off" 401 tailspin). Re-raise immediately —
+            # zero backoff, zero re-submits — so the slide fails fast (< 2s).
+            raise
+        except RenderPollTimeout:
+            # FIX-7 (D14): a task that never reaches a terminal state within the
+            # poll hard cap is a TERMINAL FAIL — surface it immediately. Re-submitting
+            # a fresh identical task would only re-poll a (probably) dead task for
+            # another full cap; a never-completing render must FAIL at ≤15 min, never
+            # hang the run in 'in_progress'. No retry, no backoff.
+            raise
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
             print(f"    FAIL attempt {attempt}: {exc}", file=sys.stderr, flush=True)
@@ -1646,6 +1898,163 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 time.sleep(backoff)
 
     raise RuntimeError(f"{name}: failed after {SLIDE_MAX_ATTEMPTS} attempts. Last error: {last_err}")
+
+
+# ---------------------------------------------------------------------------
+# BATCH RENDER (FIX-5 / D22 root cause B) — submit ALL prompts once, then poll
+# all together, download each image the moment ITS task finishes.
+# ---------------------------------------------------------------------------
+
+def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: Path,
+                        has_official_logo: bool = False, logo_url: Optional[str] = None,
+                        submit_interval: float = BATCH_SUBMIT_INTERVAL_S,
+                        poll_interval: float = BATCH_POLL_INTERVAL_S,
+                        max_seconds: float = BATCH_MAX_POLL_SECONDS) -> dict:
+    """Batch-render every slide against KIE.ai, the way D22's live fix proved works.
+
+    Phase A — SUBMIT ALL: every prompt is submitted once to createTask, spaced
+      BATCH_SUBMIT_INTERVAL_S (0.6s) apart. KIE allows 20 requests per 10s and 100+
+      concurrent tasks (verified live: a burst of 8 rapid submits all returned 200;
+      a 17-slide batch rendered + downloaded in ~3 min), so a 20-slide deck lands its
+      whole submission window in ~12s — far under the 20/10s cap. A 429 (rate limit)
+      is the ONLY submission error that retries, with the existing RATE_LIMIT_SLEEP_S
+      backoff; any other error is recorded against that slide and submission continues,
+      so one bad prompt never blocks the other 19 (the run still FAILS LOUD at the end
+      if any slide failed — never a silently-partial deck).
+
+    Phase B — POLL ALL + DOWNLOAD AS FINISHED: every submitted taskId is polled on
+      one shared cadence (BATCH_POLL_INTERVAL_S = 10s). The moment a task's state
+      turns 'success' its image is downloaded + verified + recorded, and that task is
+      removed from the poll set — so a fast slide is never held hostage by the slowest
+      one. Terminal states (fail/failed/error/cancelled) are recorded as failures and
+      also removed. A hard wall-clock cap (BATCH_MAX_POLL_SECONDS = 15 min) makes a
+      genuinely-stuck task surface FAIL instead of hanging the run forever (D14).
+
+    The per-slide rich-prompt gate (load_rich_prompt), the English pin, logo compositing
+    (i2i via input_urls), post-download aspect/OCR verification, and the U028 task-id
+    checkpoint all still run per slide — batch does NOT weaken a single gate; it only
+    changes WHEN submission happens (all up front) and WHEN polling happens (all at once).
+
+    Returns the same contract main() consumed from the thread pool:
+      {"rendered": [ {slide,file,taskId} ... ], "failures": [ {slide,error} ... ]}
+    """
+    ordered = sorted(slides, key=lambda s: s["slide"])
+    n = len(ordered)
+    renders_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- Phase A: submit every prompt once, 0.6s apart ----
+    submitted = {}  # ordinal -> (slide, task_id)
+    submit_failures = []  # {slide, error}
+    start = time.time()
+    print(f"=== BATCH SUBMIT: {n} prompts, {submit_interval:.1f}s apart "
+          f"(kie 20/10s cap + 100 concurrent tasks) ===", flush=True)
+    for slide in ordered:
+        ordinal = int(slide["slide"])
+        name = f"slide-{ordinal:02d}"
+        try:
+            prompt = load_rich_prompt(slide, run_dir)
+            # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
+            # everything else (network, shape, 401) fails that slide without blocking
+            # the batch. Never re-submit a slide that already has a taskId.
+            while True:
+                try:
+                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                    break
+                except RateLimited:
+                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
+                    time.sleep(RATE_LIMIT_SLEEP_S)
+            submitted[ordinal] = (slide, task_id)
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
+            print(f"  [{name}] submitted -> taskId={task_id}", flush=True)
+        except Exception as exc:  # noqa: BLE001 — one bad prompt must not block 19
+            submit_failures.append({"slide": ordinal, "error": str(exc)})
+            print(f"  [{name}] SUBMIT FAILED: {exc}", file=sys.stderr, flush=True)
+        # Space submissions inside the 20/10s window.
+        if submit_interval > 0:
+            time.sleep(submit_interval)
+    submit_wall = time.time() - start
+    print(f"=== BATCH SUBMIT DONE: {len(submitted)}/{n} submitted in "
+          f"{submit_wall:.1f}s ===", flush=True)
+
+    # ---- Phase B: poll every submitted task together, download as each finishes ----
+    rendered = []
+    poll_failures = list(submit_failures)
+    pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
+    poll_start = time.time()
+    pass_no = 0
+    while pending:
+        elapsed = time.time() - poll_start
+        if elapsed >= max_seconds:
+            # Hard cap: whatever is still pending is STUCK — surface FAIL, no hang.
+            for ordinal, (slide, task_id) in list(pending.items()):
+                name = f"slide-{ordinal:02d}"
+                poll_failures.append({"slide": ordinal,
+                                      "error": f"taskId {task_id} still pending after "
+                                               f"{max_seconds:.0f}s — surfaced FAIL (no hang)"})
+                print(f"  [{name}] POLL CAP REACHED ({max_seconds:.0f}s) — FAIL: {task_id}",
+                      file=sys.stderr, flush=True)
+                _clear_pending_task(run_dir, ordinal)
+            pending.clear()
+            break
+
+        pass_no += 1
+        done_this_pass = []
+        for ordinal, (slide, task_id) in list(pending.items()):
+            name = f"slide-{ordinal:02d}"
+            try:
+                status = poll_task_once(task_id, api_key)
+            except RateLimited:
+                # Transient 429 on the poll — retry the same task on the next pass.
+                print(f"    [poll {pass_no}] {name} 429 — retry next pass", flush=True)
+                continue
+            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+                print(f"  [{name}] POLL FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+                done_this_pass.append(ordinal)
+                continue
+
+            if status.get("state") != "success":
+                # Still in flight (generating/waiting/queuing/...). Leave it in the
+                # pending set and let the next shared pass check it again — a slow
+                # slide never delays a fast one.
+                print(f"    [poll {pass_no}] {name} state={status.get('state')!r}", flush=True)
+                continue
+
+            result_url = status.get("result_url")
+            try:
+                out_path = renders_dir / f"{name}.png"
+                download_image(result_url, out_path, api_key)
+                verify_png(out_path)
+                _verify_aspect_and_readback(out_path, slide, ordinal)
+                size = out_path.stat().st_size
+                print(f"  [{name}] downloaded+verified -> {out_path} ({size:,} bytes)",
+                      flush=True)
+                _record_completed_task(run_dir, ordinal, task_id, out_path)
+                rendered.append({"slide": ordinal, "file": str(out_path), "taskId": task_id})
+            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+                print(f"  [{name}] DOWNLOAD/VERIFY FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+            done_this_pass.append(ordinal)
+
+        for ordinal in done_this_pass:
+            pending.pop(ordinal, None)
+
+        if pending:
+            remaining = ", ".join(f"slide-{o:02d}" for o in sorted(pending))
+            print(f"    [poll pass {pass_no}] waiting on: {remaining} "
+                  f"(next poll in {poll_interval:.0f}s)", flush=True)
+            time.sleep(poll_interval)
+
+    poll_wall = time.time() - poll_start
+    print(f"=== BATCH RENDER DONE: {len(rendered)}/{n} rendered in "
+          f"{time.time() - start:.1f}s total (submit {submit_wall:.1f}s + "
+          f"poll/download {poll_wall:.1f}s) ===", flush=True)
+
+    rendered.sort(key=lambda r: r["slide"])
+    poll_failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
+    return {"rendered": rendered, "failures": poll_failures}
 
 
 # ---------------------------------------------------------------------------
@@ -1745,6 +2154,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
     (audio-demonstration-specialist.md's legacy reference name) are also accepted —
     legacy tolerance, so no producer's output silently never reaches the notes pane."""
     candidates = [
+        run_dir / "working/deliverables/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/speech.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTERS-SPEECH.md",
@@ -1990,14 +2400,22 @@ def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
 
     exempt = _notes_pane_exempt_slide_numbers(slides_path)
     empty_slides = []
+    unreadable = []
     for pptx_path in pptx_candidates:
         try:
             prs = Presentation(str(pptx_path))
-        except Exception:  # noqa: BLE001
-            # A file python-pptx cannot open is NOT a valid deck to scan here — the
-            # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) and
-            # the C2 content-type check own malformed/decoy .pptx files. Defer rather
-            # than false-fail AF-EMPTY-NOTES-PANE (mirrors _delivered_pptx_native_text).
+        except Exception as exc:  # noqa: BLE001
+            # UNDETERMINED-is-not-PASS (Root Cause 2): this used to `continue` on the
+            # theory that AF-BUNDLE-COMPLETE's magic-byte gate "owns" a malformed
+            # .pptx. False for a file with a valid PK signature + passing size but a
+            # corrupted internal part that only python-pptx's parser detects — that
+            # combination cleared the magic-byte gate and then got silently skipped
+            # here too, so a candidate matched by the glob above was NEVER ACTUALLY
+            # SCANNED and the empty-notes-pane rubric read as clean by omission.
+            # CheckResult.UNDETERMINED for this file; this security/completeness
+            # gate treats UNDETERMINED as FAIL (mirrors _delivered_pptx_native_text's
+            # own fix for the identical hole).
+            unreadable.append((pptx_path.name, str(exc)))
             continue
         for idx, slide in enumerate(prs.slides, start=1):
             if idx in exempt:
@@ -2007,6 +2425,15 @@ def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
                     if has_notes_part else "")
             if not text:
                 empty_slides.append((pptx_path.name, idx))
+
+    if unreadable:
+        _r = CheckResult.UNDETERMINED
+        listing = "; ".join(f"{fname} ({err})" for fname, err in unreadable[:10])
+        return (f"AF-EMPTY-NOTES-PANE: could not verify -- {len(unreadable)} delivered "
+                f".pptx file(s) in {bundle_dir} could not be opened by python-pptx and "
+                f"so were never scanned for empty notes panes: {listing} ({_r.name}, "
+                f"treated as FAIL). A valid zip signature and passing size are NOT "
+                f"proof the internal parts are intact; re-assemble and re-verify.")
 
     if empty_slides:
         listing = "; ".join(f"{fname} slide {n}" for fname, n in empty_slides[:20])
@@ -2487,6 +2914,141 @@ def _qc_report_substance_problems(obj: dict) -> list:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# FIX-2 (Error 2) — QC phases structurally unskippable + real report floor.
+# The four QC phases (copy / prompt / typography / shift) may NEVER be waived by
+# a phase-skip record, and their report files must clear a REAL-CONTENT floor
+# (not a 3-byte "{}" placeholder) before the phase may attest. These are the
+# exact codes the fix must raise (shared with run_signature_deck + the guard):
+#   AF-QC-SKIP        — a skip-approval record names a QC phase (refused)
+#   AF-QC-PLACEHOLDER — a QC report is a 3-byte "{}" / sub-floor / verdict-less
+# ---------------------------------------------------------------------------
+UNSKIPPABLE_QC_PHASES = frozenset({
+    "P1Q-COPY-QC",      # -> working/qc/copy_qc_report.json
+    "P-PROMPT-QC",      # -> working/qc/prompt_qc_report.json
+    "P-TYPO-QC",        # -> working/qc/typography_qc_report.json
+    "P-SHIFT-QC",       # -> working/qc/priority_shift_report.json
+})
+
+# QC phase id -> the report file it must produce (mirrors PIPELINE-MANIFEST
+# produces_artifact for the four QC phases). Used by the report-floor gate.
+QC_PHASE_REPORT = {
+    "P1Q-COPY-QC": "working/qc/copy_qc_report.json",
+    "P-PROMPT-QC": "working/qc/prompt_qc_report.json",
+    "P-TYPO-QC": "working/qc/typography_qc_report.json",
+    "P-SHIFT-QC": "working/qc/priority_shift_report.json",
+}
+
+QC_REPORT_FLOOR_BYTES = 256   # bytes; a real per-slide QC report is far larger
+QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry
+
+
+def _qc_report_per_slide_verdicts(obj) -> list:
+    """Return the real per-slide verdict list from a QC report object.
+
+    Accepts the per-slide structures the four QC report schemas actually use:
+      * copy_qc_report.json     -> per_slide_scores: [{slide, average, pass, ...}]
+      * prompt_qc_report.json   -> slides / results / per_slide_scores
+      * typography_qc_report.json -> slides / per_slide_scores (per-slide archetype)
+      * priority_shift_report.json -> items: [{item, pass, evidence}] (the 14-point
+        ship gate) AND, after FIX-2, a per-slide `slides` list added by the ledger.
+    Returns [] when the report carries no per-slide verdict structure."""
+    if not isinstance(obj, dict):
+        return []
+    for key in ("per_slide_scores", "slides", "results", "per_slide",
+                "per_slide_verdicts", "slide_verdicts", "items"):
+        v = obj.get(key)
+        if isinstance(v, list):
+            return [e for e in v if isinstance(e, dict)]
+        if isinstance(v, dict):
+            return [e for e in v.values() if isinstance(e, dict)]
+    return []
+
+
+def _qc_slide_verdict_is_real(entry: dict) -> bool:
+    """True when a per-slide verdict entry carries an explicit PASS/FAIL/score — a
+    real verdict, not a bare slide id or empty stub. `pass` must be a real bool or
+    a verdict string; a numeric score counts; a slide-only dict does not."""
+    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
+                "pass_fail", "passed"):
+        val = entry.get(key)
+        if isinstance(val, bool):
+            return True
+        if isinstance(val, (int, float)):
+            return True
+        if isinstance(val, str) and val.strip():
+            low = val.strip().lower()
+            if low in ("pass", "passed", "fail", "failed", "ok", "pending", "warn"):
+                return True
+    return False
+
+
+def check_qc_reports_real(run_dir: Path, slides_path=None) -> str:
+    """FIX-2 REPORT FLOOR — fail-closed real-content floor for the FOUR QC reports.
+
+    Returns "" when every QC report exists, is > QC_REPORT_FLOOR_BYTES, parses as
+    JSON, and carries >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts. Returns a
+    fatal 'AF-QC-PLACEHOLDER: ...' message naming the FIRST failing report otherwise.
+    A 3-byte '{}' placeholder (the exact Error-2 artifact) fails here."""
+    for phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+        rel = QC_PHASE_REPORT[phase_id]
+        p = run_dir / rel
+        if not p.is_file():
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                    "QC report must exist before the phase can attest.")
+        raw = p.read_bytes()
+        if len(raw) <= QC_REPORT_FLOOR_BYTES:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                    f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                    "a real QC report. Re-run the QC phase.")
+        try:
+            obj = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception as exc:  # noqa: BLE001
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                    f"({exc}).")
+        if not isinstance(obj, dict):
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+        verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                    if _qc_slide_verdict_is_real(e)]
+        if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                    f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                    "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
+def check_qc_phase_report_real(run_dir: Path, phase_id: str) -> str:
+    """FIX-2 per-phase report floor — returns "" when ONE QC phase's report is real,
+    or a fatal 'AF-QC-PLACEHOLDER: ...' message naming it otherwise. Called at QC
+    phase attestation so a 3-byte placeholder can never satisfy a QC phase."""
+    if phase_id not in UNSKIPPABLE_QC_PHASES:
+        return ""
+    rel = QC_PHASE_REPORT[phase_id]
+    p = run_dir / rel
+    if not p.is_file():
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                "QC report must exist before the phase can attest.")
+    raw = p.read_bytes()
+    if len(raw) <= QC_REPORT_FLOOR_BYTES:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                "a real QC report. Re-run the QC phase.")
+    try:
+        obj = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                f"({exc}).")
+    if not isinstance(obj, dict):
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+    verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                if _qc_slide_verdict_is_real(e)]
+    if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
 def _chk_copy_qc(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -2528,6 +3090,19 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     # and a headline average inflated over the report's own per-criterion scores.
     for sub in _qc_report_substance_problems(obj):
         return f"AF-COPY-QC: {sub}. See SOP-SLIDE-00 / qc-specialist-presentations-sops.md."
+    # Report shape is valid — now apply the deterministic re-measure teeth: re-derive
+    # truth from the ACTUAL rendered copy (slides.json copy[]) and reject a pass:true
+    # report that contradicts it. The report lives at <run_dir>/working/qc/
+    # copy_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_copy_qc_teeth(run_dir)
+            if teeth:
+                return teeth
     return ""
 
 
@@ -2608,6 +3183,10 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
     prob = _collect_prompt_problems(run_dir, slides_path)
     if prob and prob[0][0] == 0:
         return ""  # slide count unknown — _chk_rich_prompts owns the "no slides.json" case.
+    if prob and prob[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file) —
+        # a Prompt-QC report cannot be trusted when the on-disk prompt set is broken.
+        return ("AF-PROMPT-QC: " + prob[0][1])
     if not prob:
         return ""
     offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in prob[:10])
@@ -2619,6 +3198,368 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
             "(>= 9,000 chars, 8-class negative block, per-string spelling-lock, the slide's "
             "verbatim copy baked, real density) and re-run the Prompt QC Specialist. "
             "Offenders: " + offenders + more + ".")
+
+
+def check_copy_qc_teeth(run_dir: Path) -> str:
+    """AF-COPY-QC — the DETERMINISTIC RE-MEASURE behind the copy-QC gate.
+
+    The legacy _chk_copy_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE (gate string, average >= 8.5, no triggered autofails, pass:true, independence)
+    and never opened the copy it graded, so an agent could type 8.9/pass:true over a deck
+    whose real copy violates the AF-COPY-BAND character bands and it sailed through. This
+    is the equivalent upgrade the prompt/image gates already got: it RE-DERIVES TRUTH from
+    the ACTUAL rendered slides.json copy[] (the file the renderer bakes verbatim into the
+    pixels), RE-MEASURES every slide's copy against the shared COPY_* band constants, and
+    rejects a copy-QC report whose pass claims do not match the on-disk copy.
+
+    Two independent classes of failure, both fatal:
+      A. SLIDE-COVERAGE — the report's per_slide_scores must cover every slide the
+         renderer will actually render (one graded row per slide, none dropped), and
+         every row must carry a real verdict. A report that grades 10 of 20 slides is
+         not a copy-QC pass.
+      B. COPY-BAND RE-MEASURE — every rendered slide's copy[] must clear the
+         deterministic character bands (HEADLINE 12-60 / SUBHEAD 20-110 / KICKER <= 40 /
+         <= 3 BULLETS each 8-30 / SLIDE TOTAL 40-180) that AF-COPY-BAND enforces
+         first-party. A pass:true report over copy that violates a band is REJECTED,
+         naming the exact discrepancy (slide + field + chars + band).
+
+    It DEFERS (returns "") ONLY when the rendered copy is genuinely not produced yet —
+    no readable slides.json (its absence is owned by the schema / AF-P1 / slide-count
+    gates, exactly as _chk_copy_density defers). Returns "" on pass, or a fatal
+    AF-COPY-QC message naming the exact discrepancy."""
+    n = _count_output_slides(run_dir)
+    if n is None:
+        return ""  # no slides.json yet — upstream checks own the absence (D10 defer).
+    copy_map = _load_slide_copy_map(run_dir)
+    if not copy_map:
+        return ""  # slides.json unreadable/empty — upstream checks own that failure.
+    arc_tags = _load_slide_arc_tags(run_dir)
+    report_path = run_dir / "working" / "qc" / "copy_qc_report.json"
+    report_obj = _read_json(report_path) if report_path.exists() else None
+
+    problems = []
+
+    # --- A. SLIDE-COVERAGE cross-check (when the report actually grades per-slide) ---
+    # A shape-only report (no per-slide rows) is NOT judged here: verdict-count absence
+    # is owned by check_qc_phase_report_real / AF-QC-PLACEHOLDER. But once a report
+    # DOES carry per-slide rows, it must cover every rendered slide.
+    if report_obj is not None and "__parse_error__" not in report_obj:
+        verdicts = _qc_report_per_slide_verdicts(report_obj)
+        # Coverage is judged only when the report actually grades per-slide; a shape-only
+        # report's verdict-count absence is owned by check_qc_phase_report_real.
+        if verdicts:
+            covered = {}
+            for e in verdicts:
+                s = e.get("slide")
+                if isinstance(s, int) and s >= 1:
+                    covered[s] = e
+            missing = [s for s in range(1, n + 1) if s not in covered]
+            if missing:
+                shown = ", ".join(str(s) for s in missing[:10])
+                more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
+                problems.append(
+                    f"the copy-QC report grades {len(covered)} of {n} rendered slide(s) — "
+                    f"slides {shown}{more} have NO per-slide verdict. A real copy-QC pass "
+                    f"carries one graded row per rendered slide (a partial report is not a "
+                    f"deck-wide pass).")
+            blank = [s for s, e in covered.items() if not _qc_slide_verdict_is_real(e)]
+            if blank:
+                problems.append(
+                    f"copy-QC per-slide rows {', '.join(str(s) for s in blank[:10])} carry "
+                    f"no real verdict (no pass/fail/score) — a bare slide-id row is not a "
+                    f"grade.")
+
+    # --- B. COPY-BAND RE-MEASURE of the actual rendered copy ---
+    for ordinal in range(1, n + 1):
+        copy_val = copy_map.get(ordinal)
+        if not isinstance(copy_val, list) or not copy_val:
+            continue  # missing/malformed copy — schema validation / AF-P1 own this.
+        fields = [str(c) if c is not None else "" for c in copy_val]
+        headline = fields[0]
+        subhead = fields[1] if len(fields) > 1 else None
+        kicker = fields[2] if len(fields) > 2 else None
+        bullets = fields[3:]
+
+        hlen = len(headline)
+        if not (COPY_HEADLINE_CHAR_FLOOR <= hlen <= COPY_HEADLINE_CHAR_CEILING):
+            problems.append(
+                f"slide {ordinal:02d} HEADLINE is {hlen} chars, outside the "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING} band the copy-QC "
+                f"report marked pass")
+
+        if subhead:
+            slen = len(subhead)
+            if not (COPY_SUBHEAD_CHAR_FLOOR <= slen <= COPY_SUBHEAD_CHAR_CEILING):
+                problems.append(
+                    f"slide {ordinal:02d} SUBHEAD is {slen} chars, outside the "
+                    f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} band the copy-QC "
+                    f"report marked pass")
+
+        if kicker:
+            klen = len(kicker)
+            if klen > COPY_KICKER_CHAR_CEILING:
+                problems.append(
+                    f"slide {ordinal:02d} KICKER is {klen} chars, over the "
+                    f"{COPY_KICKER_CHAR_CEILING}-char ceiling the copy-QC report marked pass")
+
+        real_bullets = [b for b in bullets if b]
+        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+            problems.append(
+                f"slide {ordinal:02d} carries {len(real_bullets)} bullets, over the "
+                f"{COPY_BULLET_MAX_COUNT}-bullet max the copy-QC report marked pass")
+        for bi, b in enumerate(real_bullets, start=1):
+            blen = len(b)
+            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+                problems.append(
+                    f"slide {ordinal:02d} BULLET {bi} is {blen} chars, outside the "
+                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band the copy-QC "
+                    f"report marked pass")
+
+        total = sum(len(f) for f in fields)
+        tag_blob = arc_tags.get(ordinal, "")
+        exempt_eligible = _is_hook_or_banner_slide(tag_blob)
+        exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
+        floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
+        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+            problems.append(
+                f"slide {ordinal:02d} SLIDE TOTAL is {total} chars, outside the "
+                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band the copy-QC report marked pass")
+
+    if problems:
+        return ("AF-COPY-QC: the copy-QC report passed its shape check but the ACTUAL "
+                "rendered copy (slides.json copy[]) CONTRADICTS it — a real copy-QC pass "
+                "RE-MEASURES the copy the renderer bakes into the pixels; a typed pass:true "
+                "over sub-band copy is a fabricated pass. Fix the copy and re-run the Copy "
+                "QC Specialist. Discrepancies: " + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
+
+
+def check_typography_qc_teeth(run_dir: Path) -> str:
+    """AF-TYPOGRAPHY-QC — the DETERMINISTIC RE-MEASURE behind the typography-QC gate.
+
+    The legacy _chk_typography_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE and never opened a design-system artifact, so an agent could type 8.8/pass:true
+    over a design system whose declared tokens violate the AF-FONT-FLOOR deterministic
+    floors (min_body_pt / type_scale_steps / min_contrast_ratio) and it sailed through.
+    This is the equivalent upgrade the prompt/image gates already got: it RE-MEASURES the
+    ACTUAL design-system tokens in working/typography/type_layout_system.md (the gate-of-
+    record artifact AF-FONT-FLOOR parses) against the shared floors, and rejects a
+    typography-QC report whose pass claims do not match the on-disk design system.
+
+    Two independent classes of failure, both fatal:
+      A. FONT-FLOOR RE-MEASURE — the declared tokens must clear the deterministic floors
+         (18pt body / 4-5 scale steps / 4.5:1 contrast; raised 22pt / 7.0:1 under a
+         client dark-theme opt-in), exactly as check_font_floor enforces. A pass:true
+         report over a below-floor token set is REJECTED, naming the token + value + floor.
+      B. SLIDE-COVERAGE — when the report grades per-slide archetypes (per_slide_scores),
+         every slide the deck will render must carry a real verdict row (none dropped).
+
+    It DEFERS (returns "") ONLY pre-typography — no design system produced yet (no
+    type_layout_system.md AND no design_system.json / design-brief, mirroring
+    check_font_floor's defer). Once a design system exists, a missing token file or a
+    below-floor token FAILS (the report cannot claim pass over a phantom/sub-floor
+    design). Returns "" on pass, or a fatal AF-TYPOGRAPHY-QC message naming the exact
+    discrepancy."""
+    layout = run_dir / TYPE_LAYOUT_SYSTEM_REL
+    design_present = (
+        (run_dir / "working" / "typography" / "design_system.json").exists()
+        or any((run_dir / "working" / "research").glob("design-brief-*.md"))
+        if (run_dir / "working").exists() else False
+    )
+    if not layout.exists() and not design_present:
+        return ""  # genuine pre-typography state — defer (D10).
+
+    problems = []
+
+    # --- A. FONT-FLOOR RE-MEASURE of the actual design tokens ---
+    if not layout.exists():
+        problems.append(
+            f"the design system exists but the deterministic type tokens file "
+            f"{TYPE_LAYOUT_SYSTEM_REL} is MISSING — the typography-QC report marked pass "
+            f"over a design system with no measurable type tokens")
+    else:
+        text = layout.read_text(encoding="utf-8", errors="replace")
+
+        def _num(key):
+            m = re.search(rf'(?im)^\s*{re.escape(key)}\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text)
+            return float(m.group(1)) if m else None
+
+        dark = _read_dark_optin(run_dir)
+        pt_floor = DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR
+        contrast_floor = (DARK_THEME_CONTRAST_FLOOR if dark
+                          else CONTRAST_RATIO_FLOOR_NORMAL)
+
+        min_body_pt = _num("min_body_pt")
+        type_scale_steps = _num("type_scale_steps")
+        min_contrast = _num("min_contrast_ratio")
+
+        if min_body_pt is None:
+            problems.append(
+                f"token min_body_pt is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"body size")
+        elif min_body_pt < pt_floor:
+            problems.append(
+                f"min_body_pt={min_body_pt:g} is below the {pt_floor:g}pt "
+                f"{'dark-theme ' if dark else ''}body floor the typography-QC report "
+                f"marked pass (FONT_BODY_PT_FLOOR={FONT_BODY_PT_FLOOR})")
+        if type_scale_steps is None:
+            problems.append(
+                f"token type_scale_steps is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"modular scale")
+        elif not (TYPE_SCALE_STEPS_MIN <= int(type_scale_steps) <= TYPE_SCALE_STEPS_MAX):
+            problems.append(
+                f"type_scale_steps={int(type_scale_steps)} is not a modular "
+                f"{TYPE_SCALE_STEPS_MIN}-{TYPE_SCALE_STEPS_MAX}-step scale the "
+                f"typography-QC report marked pass")
+        if min_contrast is None:
+            problems.append(
+                f"token min_contrast_ratio is MISSING from {TYPE_LAYOUT_SYSTEM_REL} — the "
+                f"typography-QC report marked pass over a type system with no declared "
+                f"contrast")
+        elif min_contrast < contrast_floor:
+            problems.append(
+                f"min_contrast_ratio={min_contrast:g} is below the {contrast_floor:g}:1 "
+                f"{'dark-theme AAA ' if dark else 'WCAG AA '}floor the typography-QC "
+                f"report marked pass (CONTRAST_RATIO_FLOOR_NORMAL="
+                f"{CONTRAST_RATIO_FLOOR_NORMAL})")
+
+    # --- B. SLIDE-COVERAGE cross-check (when the report grades per-slide archetypes) ---
+    report_path = run_dir / "working" / "qc" / "typography_qc_report.json"
+    report_obj = _read_json(report_path) if report_path.exists() else None
+    if report_obj is not None and "__parse_error__" not in report_obj:
+        n = _count_output_slides(run_dir)
+        verdicts = _qc_report_per_slide_verdicts(report_obj)
+        if n is not None and verdicts:
+            covered = {}
+            for e in verdicts:
+                s = e.get("slide")
+                if isinstance(s, int) and s >= 1:
+                    covered[s] = e
+            missing = [s for s in range(1, n + 1) if s not in covered]
+            if missing:
+                shown = ", ".join(str(s) for s in missing[:10])
+                more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
+                problems.append(
+                    f"the typography-QC report grades {len(covered)} of {n} rendered "
+                    f"slide(s) — slides {shown}{more} have NO per-slide verdict. A real "
+                    f"typography-QC pass carries one graded row per rendered slide.")
+
+    if problems:
+        return ("AF-TYPOGRAPHY-QC: the typography-QC report passed its shape check but "
+                "the ACTUAL design-system artifacts (working/typography/"
+                "type_layout_system.md tokens) CONTRADICT it — a real typography-QC pass "
+                "RE-MEASURES the declared type system against the deterministic floors; a "
+                "typed pass:true over a missing/sub-floor design is a fabricated pass. Fix "
+                "the design tokens and re-run the Typography QC Specialist. "
+                "Discrepancies: " + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
+
+
+def check_speech_qc_teeth(run_dir: Path) -> str:
+    """AF-SPEECH-QC — the DETERMINISTIC RE-MEASURE behind the speech-QC gate.
+
+    The legacy _chk_speech_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE and never opened the speech it graded, so an agent could type 8.7/pass:true
+    over a speech that does not fill the requested duration (AF-SPEECH-SHORT) or that
+    under-sings / wallpapers the hook (AF-SPEECH-HOOK-COUNT) and it sailed through. This
+    is the equivalent upgrade the prompt/image gates already got: it RE-PARSES the REAL
+    speech file (the same on-disk artifact _chk_speech_length measures), RE-MEASURES the
+    word count against target_talk_minutes x SPEECH_WPM_FLOOR and re-runs the
+    AF-SPEECH-HOOK-COUNT engine, and rejects a speech-QC report whose pass claims do not
+    match reality.
+
+    DEFER SEMANTICS (D10 — identical to the legacy gate):
+      * report ABSENT -> DEFER (returns ""). The speech is written downstream (Phase 9
+        delivery); when no report exists yet the gate passes so the render is not
+        blocked (the existing conditional-by-design contract, unchanged).
+      * report PRESENT but the speech file is ABSENT -> FAIL. A speech-QC report grading
+        a speech that does not exist is a FABRICATED pass — the report cannot be trusted
+        (present-input-but-broken = fail, D10).
+      * speech present, no readable word count / no intake target -> the AF-SPEECH-SHORT
+        half defers (its own contract); the AF-SPEECH-HOOK-COUNT half still fires
+        (5-20x char-exact hook sings).
+
+    Returns "" on pass / defer, or a fatal AF-SPEECH-QC message naming the exact
+    discrepancy."""
+    # Locate the speech artifact with the SAME resolution _chk_speech_length uses
+    # (canonical plural PRESENTERS-SPEECH.md first, legacy singular/scratch names after).
+    speech = None
+    for rel in ("working/presenter-speech/speech.md",
+                "working/delivery/PRESENTERS-SPEECH.md",
+                "working/presenter-speech/PRESENTERS-SPEECH.md",
+                "working/delivery/PRESENTER-SPEECH.md",
+                "working/presenter-speech/PRESENTER-SPEECH.md"):
+        p = run_dir / rel
+        if p.exists():
+            speech = p
+            break
+    report_path = run_dir / "working" / "qc" / "speech_qc_report.json"
+    if speech is None:
+        # D10: when the report EXISTS but the speech it grades does not, the report is
+        # a FABRICATED pass — a QC specialist cannot have graded a speech that is not
+        # on disk. That is present-input-but-broken and FAILS (never a defer).
+        if report_path.exists():
+            return ("AF-SPEECH-QC: the speech-QC report exists but the speech file it "
+                    "grades is MISSING (no working/presenter-speech/speech.md or "
+                    "PRESENTERS-SPEECH.md under working/delivery) — a report grading a "
+                    "nonexistent speech is a FABRICATED pass. Write the speech, then "
+                    "re-run the Speech QC Specialist.")
+        return ""  # no speech AND no report — genuine pre-speech state: defer (D10).
+
+    problems = []
+
+    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        return ""  # no usable duration target — the intake gate owns that case.
+
+    words = len(speech.read_text(errors="replace").split())
+    floor = int(round(target * SPEECH_WPM_FLOOR))
+    if words < floor:
+        problems.append(
+            f"the real speech {speech.name} has {words} words; the floor for a "
+            f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
+            f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
+            f"that does not fill the requested duration (AF-SPEECH-SHORT)")
+
+    # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
+    pec = _import_pitch_engines_check()
+    if pec is not None:
+        try:
+            hook_hits = pec.run(run_dir, phase="SPEECH-QC")
+        except Exception:  # noqa: BLE001
+            hook_hits = []
+        hook_codes = [h for h in hook_hits if str(h.get("code") or "").startswith("AF-")]
+        if hook_codes:
+            problems.append(
+                "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
+                "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) TRIGGERED on the real "
+                "speech: " + "; ".join(
+                    f"{h.get('code')}: {h.get('detail')}" for h in hook_codes[:3]))
+
+    if problems:
+        return ("AF-SPEECH-QC: the speech-QC report passed its shape check but the REAL "
+                "speech file CONTRADICTS it — a genuine speech-QC pass RE-PARSES the "
+                "actual speech (duration floor + hook-count), not a self-typed score. "
+                "Fix the speech and re-run the Speech QC Specialist. Discrepancies: "
+                + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
+    return ""
 
 
 def _chk_prompt_qc(path: Optional[Path]) -> str:
@@ -2731,9 +3672,25 @@ def _chk_typography_qc(path: Optional[Path]) -> str:
     """TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the Design brief (PF-DESIGN), an
     INDEPENDENT QC specialist grades the design system against the written
     typography rubric (weight ladder, per-archetype treatment, anti-template
-    variation, type-scale floor). Self/builder grade refused."""
-    return _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
+    variation, type-scale floor). Self/builder grade refused — AND the report's pass
+    is cross-checked against the on-disk design-system artifacts (the
+    type_layout_system.md tokens) via the deterministic AF-FONT-FLOOR re-measure."""
+    base = _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
                           "qc-specialist-typography-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic design-token teeth. The report
+    # lives at <run_dir>/working/qc/typography_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_typography_qc_teeth(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 def _chk_speech_qc(path: Optional[Path]) -> str:
@@ -2742,12 +3699,28 @@ def _chk_speech_qc(path: Optional[Path]) -> str:
     (pacing, on-slide-sync, persuasion-arc fidelity, audience-facing voice).
     CONDITIONAL by design (the AF-SPEECH-SHORT pattern): the speech is written
     downstream, so when no report exists yet this DEFERS (returns "", pass) rather
-    than blocking the pre-speech render. Once the report exists it is enforced.
-    Self/builder grade refused."""
+    than blocking the pre-speech render. Once the report exists it is enforced —
+    the report-shape gate plus the deterministic re-measure of the REAL speech file
+    (duration floor + hook-count), so a fabricated pass:true over a short/under-sung
+    speech is REJECTED. Self/builder grade refused."""
     if path is None:
         return ""  # speech QC not produced yet (pre-delivery) — gate defers.
-    return _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
+    base = _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
                           "qc-specialist-speech-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic speech-file teeth. The report
+    # lives at <run_dir>/working/qc/speech_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_speech_qc_teeth(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -2987,9 +3960,37 @@ def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         template (forty copies of one layout) and FAILS;
       * cliche copy — if slide copy contains any FORBIDDEN_CLICHE_PHRASES, FAILS.
     Reads working/typography/design_system.json (per-slide archetype map) and
-    working/copy/slides_copy.md. Defers (passes) when neither artifact exists yet
-    (those absences are owned by _chk_design_brief / _chk_slides_copy). Returns ""
-    on pass, or a fatal AF-CREATIVITY message."""
+    working/copy/slides_copy.md.
+
+    Cliche copy defers (passes) pre-copy — that absence is genuinely owned by
+    _chk_slides_copy (same PREFLIGHT_REQUIRED list, fails closed on a missing
+    slides_copy.md).
+
+    Archetype dominance is NOT symmetrically owned. design_system.json is the
+    Typography Architect's own primary output (typography-architect.md /
+    typography-architect-sops.md: "You produce one artifact, the DESIGN SYSTEM
+    SPEC ... working/typography/design_system.json"), distinct from
+    working/research/design-brief-*.md (a Deep-Research-Specialist INPUT the
+    Typography Architect consumes, owned by _chk_design_brief) and from
+    working/typography/type_layout_system.md (the font-floor gate-of-record
+    artifact, owned by check_font_floor / check_typography_qc_teeth). No
+    PREFLIGHT_REQUIRED gate requires design_system.json itself to exist, so a
+    Typography Architect pass that writes type_layout_system.md but never
+    writes design_system.json previously sailed through here silently — the
+    anti-template-sameness half of AF-CREATIVITY simply never fired, forever,
+    and nothing else caught it (Root Cause 2: absence read as approval).
+
+    Fix: once TYPE_LAYOUT_SYSTEM_REL exists (the same signal check_font_floor /
+    check_typography_qc_teeth already use to decide "the design phase is
+    underway/complete, its artifacts are now mandatory"), a still-missing
+    design_system.json is UNDETERMINED, not silently clean -- and on this
+    completeness-style preflight gate UNDETERMINED behaves like FAIL
+    (CheckResult doctrine, presentation_job/result.py), so it is reported as an
+    AF-CREATIVITY problem rather than dropped. Genuinely PRE-typography (neither
+    type_layout_system.md nor design_system.json produced yet) still defers —
+    that is a real "not produced yet" state, not a hole.
+
+    Returns "" on pass, or a fatal AF-CREATIVITY message."""
     problems = []
     # --- archetype dominance ---
     ds = None
@@ -2999,6 +4000,24 @@ def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         if p.exists():
             ds = p
             break
+    archetype_result = CheckResult.PASS
+    if ds is None:
+        if (run_dir / TYPE_LAYOUT_SYSTEM_REL).exists():
+            # Design phase is demonstrably underway (the font-floor gate-of-record
+            # artifact exists) yet design_system.json — the Typography Architect's
+            # own primary output — never showed up. No other gate owns this. We
+            # cannot verify archetype dominance without it: UNDETERMINED, and this
+            # completeness gate treats UNDETERMINED as FAIL (do not silently pass).
+            archetype_result = CheckResult.UNDETERMINED
+        # else: genuinely pre-typography — nothing produced yet, legitimate defer.
+    if not archetype_result.ok and ds is None:
+        problems.append(
+            "archetype dominance could not be verified: "
+            f"{TYPE_LAYOUT_SYSTEM_REL} exists (the design phase is underway/"
+            "complete) but design_system.json (the Typography Architect's own "
+            "archetype-plan output) is absent — UNDETERMINED, refused rather than "
+            "silently passed (SOP-DESIGN-03 / typography-architect-sops.md "
+            "'Outputs: working/typography/design_system.json')")
     if ds is not None:
         obj = _read_json(ds)
         if isinstance(obj, dict) and "__parse_error__" not in obj:
@@ -3295,7 +4314,19 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     deck. Reads mission_prd.json's top-level integer 'source_slide_count' (Mode A =
     absent/0, which always passes) and compares to the output slide count from
     slides.json (or arc_allocation.json). Returns "" on pass, or a fatal AF message
-    string (run_preflight maps a returned reason to exit 3)."""
+    string (run_preflight maps a returned reason to exit 3).
+
+    ABSENCE-VS-MALFORMED (CheckResult doctrine, presentation_job/result.py): a
+    genuinely ABSENT mission_prd.json is Mode A (no client source deck) and
+    legitimately always passes here. A mission_prd.json that EXISTS but is
+    unreadable/unparseable is a DIFFERENT, THIRD state — CheckResult.UNDETERMINED,
+    never silently folded into "source=0 -> Mode A -> pass". A real Mode-B
+    source_slide_count could be hiding behind that parse failure; silently
+    defaulting to 0 would let a genuinely-compressed deck ship undetected, which is
+    exactly the "absence/unreadable reads as approval" defect this gate exists to
+    prevent. This is a completeness gate, so per doctrine UNDETERMINED behaves like
+    FAIL (refuse to pass a deck this gate could not actually check) — it refuses
+    rather than silently passing."""
     # An EXPLICIT client-requested slide count is an explicit client instruction that
     # overrides the Mode-B anti-compression floor (the client may deliberately ask to
     # set their deck to an exact length below the source). AF-SLIDE-COUNT-EXACT owns
@@ -3304,6 +4335,8 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         return ""
     # Resolve mission_prd.json (Mode A: absent -> source 0 -> always pass).
     source = 0
+    mission_prd_result = CheckResult.PASS  # no mission_prd.json found at all == Mode A
+    parse_err = None
     for rel in ("working/copy/mission_prd.json", "mission_prd.json",
                 "working/mission_prd.json"):
         p = run_dir / rel
@@ -3315,7 +4348,21 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                     source = int(raw)
                 except (TypeError, ValueError):
                     source = 0
+                mission_prd_result = CheckResult.PASS
+            else:
+                # File EXISTS but could not be read/parsed. Distinct from "absent" —
+                # do NOT silently default source=0 here (see doctrine note above).
+                mission_prd_result = CheckResult.UNDETERMINED
+                parse_err = obj.get("__parse_error__") if isinstance(obj, dict) else None
             break
+
+    if mission_prd_result is CheckResult.UNDETERMINED:
+        return (f"AF-COVERAGE-1: mission_prd.json exists but is unreadable/unparseable "
+                f"({parse_err or 'unknown parse error'}) — source_slide_count cannot be "
+                f"determined, so the Mode-B anti-compression floor (ADD-only) cannot be "
+                f"proven either way. Refusing rather than silently treating this as "
+                f"Mode A (a real source_slide_count could be hiding behind the parse "
+                f"failure). Fix or regenerate mission_prd.json.")
 
     if source <= 0:
         return ""  # Mode A — no client source deck; coverage check does not apply.
@@ -3544,6 +4591,23 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
         return [(0, "cannot determine the slide count (no slides.json / "
                     "arc_allocation.json), so the per-slide rich prompts cannot be "
                     "verified. Produce slides.json before render.")]
+    # FIX-22 / D16 + R3 / D10: BEFORE trusting any per-slide prompt, run the
+    # canonical zero-padded + duplicate-detector over the whole prompts dir. A
+    # `slide-1.txt` vs `slide-01.txt` collision (both target slide 1) or ANY
+    # non-canonical prompt filename is a build-blocking defect — the preflight
+    # rich-prompt gate AND the governed Prompt-QC teeth both route through here,
+    # so it is caught at exit 3 before any KIE dispatch, never mid-render. The
+    # shared detector's verdicts go through _canonical_prompt_dir_problems, which
+    # overlays the R3 3-digit-canonical rule (signature-deck 100-slide floor) so
+    # slide-100.txt is accepted while slide-1.txt / slide-1000.txt still fail.
+    _pg22 = _import_prompt_gate()
+    if _pg22 is not None:
+        dir_problems = _canonical_prompt_dir_problems(run_dir)
+        if dir_problems:
+            # Fatal directory-level defect, reported at the sentinel ordinal -1 so
+            # callers can tell it apart from the "slide count unknown" sentinel (0).
+            # The message already names the offending files; the ordinal is cosmetic.
+            return [(-1, "; ".join(dir_problems))]
     copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
@@ -3594,6 +4658,9 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     problems = _collect_prompt_problems(run_dir, slides_path)
     if problems and problems[0][0] == 0:
         return "AF-P1: " + problems[0][1]
+    if problems and problems[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file).
+        return "AF-P1: " + problems[0][1]
     if problems:
         n = _count_output_slides(run_dir, slides_path)
         offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in problems)
@@ -3606,7 +4673,8 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
-def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
+                    require_rendered: bool = False) -> str:
     """KIE-BAKED gate (AF-I14, fail-loud). EVERY rendered slide must have been BAKED
     by the image model (a real KIE task that produced a real, above-floor PNG) — not
     drawn natively (Pillow/PPTX/ImageDraw), not a flat-colour placeholder, not a stub.
@@ -3639,9 +4707,27 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     gate where it always exists), the gate is the source of truth that the slides were
     actually KIE-baked. This is wired into the lockstep so it can never be silently
     skipped once a render record is on disk.
-    """
+
+    `require_rendered` (UNDETERMINED-is-not-PASS, Root Cause 2): set True ONLY by
+    the caller that fires AFTER render + assembly have definitely already happened
+    (run_postflight_gate's closeout scan). At THAT call site "no process_manifest.
+    json" / "no render record" is no longer the legitimate pre-render defer this
+    docstring describes -- a deck.pptx already exists in the bundle, so a render
+    record's absence there means the render manifest was lost/corrupted/never
+    written for a deck that shipped anyway, which is CheckResult.UNDETERMINED and,
+    per this security/completeness gate's doctrine, UNDETERMINED behaves like FAIL.
+    The default (False) preserves the exact pre-render defer for every existing
+    preflight caller -- unchanged."""
     ckpt = run_dir / "working" / "checkpoints" / "process_manifest.json"
     if not ckpt.exists():
+        if require_rendered:
+            _r = CheckResult.UNDETERMINED
+            return ("AF-I14: closeout reached with NO "
+                    "working/checkpoints/process_manifest.json on disk, so the KIE bake "
+                    f"of this already-assembled deck cannot be proven ({_r.name}, "
+                    "treated as FAIL). A deck.pptx exists without a render manifest -- "
+                    "re-run build_deck render for every slide so the manifest is "
+                    "written, then re-assemble.")
         return ""  # no render yet — gate defers to the post-render run.
     obj = _read_json(ckpt)
     if not isinstance(obj, dict) or "__parse_error__" in obj:
@@ -3652,6 +4738,13 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     render_recs = [p for p in phases if isinstance(p, dict) and p.get("phase") == "render"] \
         if isinstance(phases, list) else []
     if not render_recs:
+        if require_rendered:
+            _r = CheckResult.UNDETERMINED
+            return ("AF-I14: closeout reached with a process_manifest.json that carries "
+                    f"NO phase==\"render\" record, so the KIE bake of this already-"
+                    f"assembled deck cannot be proven ({_r.name}, treated as FAIL). "
+                    "re-run build_deck render for every slide so a render record is "
+                    "written, then re-assemble.")
         return ""  # manifest exists but no render record yet — gate defers.
     rec = render_recs[-1]  # the LAST render record is authoritative for this run.
 
@@ -4803,7 +5896,14 @@ def _fetch_kie_balance(api_key: str, url: str = KIE_CREDIT_URL,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+    except urllib.error.HTTPError as exc:
+        # FIX-6 — a 401/403 on the credit call is a PERMANENT auth failure (wrong
+        # key / header / locked account). Never transient: surface it as AuthError
+        # so the preflight fails fast instead of being treated as 'unknown balance'.
+        if exc.code in (401, 403):
+            raise AuthError(f"Kie credit endpoint returned HTTP {exc.code} ({url})") from exc
+        raise RuntimeError(f"Kie credit endpoint unreachable ({url}): HTTP {exc.code}") from exc
+    except (urllib.error.URLError, OSError) as exc:
         raise RuntimeError(f"Kie credit endpoint unreachable ({url}): {exc}")
     try:
         obj = json.loads(raw)
@@ -4855,6 +5955,12 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
     estimated_floor = float(slide_count) * PER_SLIDE_CREDIT_ESTIMATE * KIE_BALANCE_FLOOR_MULTIPLIER
     try:
         balance = _fetch_kie_balance(api_key)
+    except AuthError as exc:
+        # FIX-6 — a permanent auth failure on the balance call must abort the run
+        # with the auth diagnosis, never be treated as 'unknown balance'.
+        return (f"AF-KIE-AUTH: kie.ai key did not authenticate before render ({exc}). "
+                "Check the KIE_API_KEY, the Authorization: Bearer header format, and "
+                "that the key is not locked/rate-blocked by the provider.")
     except RuntimeError as exc:
         return ("AF-KIE-BALANCE: could not verify the Kie.ai credit balance before "
                 f"render ({exc}). An unverifiable balance is a HARD ABORT — never render "
@@ -4866,6 +5972,26 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
                 f"{KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any render so "
                 "the run does not die mid-deck. Top up Kie.ai credits and retry.")
     return ""
+
+
+def _preflight_kie_auth(api_key: str) -> None:
+    """FIX-6 — one-shot auth proof BEFORE any parallel render. A single authenticated
+    call to the live Kie credit endpoint must succeed or the run stops here. This
+    converts a 401 storm (the observed 164x backoff tailspin on a submission-path bug)
+    into ONE clear block: if the balance call authenticates, the key/header is valid
+    and any later createTask 401 is a request-shape/header bug that surfaces as
+    AuthError instead of burning the retry budget. Raises AuthError on a 401/403
+    (permanent — never retried); raises RuntimeError on any other failure to reach
+    the endpoint (fail loud, never 'unknown = enough')."""
+    try:
+        balance = _fetch_kie_balance(api_key)
+    except AuthError:
+        raise
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "AF-KIE-AUTH: kie.ai auth preflight could not verify the key "
+            f"({exc}). Do NOT render on an unverifiable key.")
+    print(f"  OK: kie.ai auth preflight passed (credit {balance:g})", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -5029,9 +6155,48 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             (sobj.get("approvals") or sobj.get("skips") or [])
             if isinstance(sobj, dict) else [])
         for r in records if isinstance(records, list) else []:
+            # FIX-1 (AF-FORGED-APPROVAL): a skip record is ONLY a verifiable
+            # owner-authorized skip when it carries a NON-EMPTY owner_msg_id. An
+            # owner_action-only record — or any record with no owner_msg_id — is
+            # exactly the self-forgery vector the live E2E used (it passed with no
+            # oracle query). Such records are FAIL-CLOSED here: the phase is NOT
+            # added to `approved`, so it stays an unmet precondition (the runner's
+            # load_skip_approvals additionally raises AF-FORGED-APPROVAL on them).
+            # The full owner-message resolution happens in the runner's
+            # load_skip_approvals -> cc_board owner-ids oracle; this shared gate
+            # refuses msg-id-less records up front.
             if (isinstance(r, dict) and r.get("owner_approved") is True
-                    and str(r.get("phase_id") or "").strip()):
-                approved.add(str(r["phase_id"]).strip())
+                    and str(r.get("phase_id") or "").strip()
+                    and not str(r.get("owner_msg_id") or "").strip()):
+                # FIX-1 / FIX-23 manifest reconcile: a msg-id-less (or owner_action-
+                # only) skip record is the exact self-forgery vector the live E2E
+                # used. Refuse it explicitly AND surface AF-FORGED-APPROVAL here so
+                # the build_deck enforcement path (Guard A py_symbol
+                # check_phase_preconditions) emits the code text its manifest row
+                # declares — the phase stays required, fail-closed.
+                print(
+                    f"[check_phase_preconditions] AF-FORGED-APPROVAL: skip record "
+                    f"for phase {str(r.get('phase_id') or '').strip()!r} has NO "
+                    "owner_msg_id — an owner_action-only record is a forged approval "
+                    "by definition; the phase remains REQUIRED.",
+                    file=sys.stderr,
+                )
+            if (isinstance(r, dict) and r.get("owner_approved") is True
+                    and str(r.get("phase_id") or "").strip()
+                    and str(r.get("owner_msg_id") or "").strip()):
+                pid = str(r["phase_id"]).strip()
+                if pid in UNSKIPPABLE_QC_PHASES:
+                    # FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE — a
+                    # phase-skip record for a QC phase authorizes nothing. The QC
+                    # phase stays a required precondition (AF-QC-SKIP refused here).
+                    print(
+                        f"[check_phase_preconditions] AF-QC-SKIP: phase {pid!r} is a "
+                        "QC phase and is structurally unskippable — its skip record is "
+                        "REFUSED; the phase remains required.",
+                        file=sys.stderr,
+                    )
+                    continue
+                approved.add(pid)
     for prior in (prior_phase_ids or []):
         pid = str(prior).strip()
         if not pid or pid in attested or pid in approved:
@@ -5055,20 +6220,39 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
 def _delivered_pptx_native_text(pptx_path: Path) -> str:
     """Return a non-empty reason if the delivered PPTX carries any native on-slide
     text run (a shape with non-empty text_frame text on a slide). The off-slide
-    speaker-notes part is NOT on-slide and is explicitly allowed. Returns "" when
-    the deck is image-only (the required state) or when python-pptx is unavailable
-    (cannot scan — defers rather than false-fail)."""
+    speaker-notes part is NOT on-slide and is explicitly allowed. Returns "" only
+    when the deck was ACTUALLY OPENED and scanned image-only clean.
+
+    UNDETERMINED-is-not-PASS (Root Cause 2, presentation_job/result.py): this used
+    to `return ""` both when python-pptx was unavailable and when Presentation()
+    raised on the very file the caller found and asked to inspect, on the theory
+    that AF-BUNDLE-COMPLETE's magic-byte gate "owns" a malformed/decoy .pptx. That
+    theory is FALSE for the case that actually matters here — a zip with a valid
+    leading PK\\x03\\x04 signature and a large-enough size (so it clears the magic
+    + min_bytes checks cleanly) but a corrupted/truncated internal part that only
+    python-pptx's own parser detects. Nothing else in this pipeline re-opens the
+    file to look for a native text run, so that combination used to read as a
+    silently-verified image-only deck. Internally this is a CheckResult.UNDETERMINED
+    (could not inspect the delivered artifact at all) and, per this security/
+    completeness gate's own doctrine, UNDETERMINED behaves like FAIL: a file this
+    function was asked to inspect and could not is never reported as clean."""
     try:
         from pptx import Presentation
     except ImportError:
-        return ""  # cannot scan without python-pptx; the file-presence half still fires.
+        _r = CheckResult.UNDETERMINED
+        return (f"AF-OVERLAY-DELIVERED: could not verify {pptx_path.name} is image-only "
+                f"— python-pptx is not installed, so the native-on-slide-text scan could "
+                f"not run at all ({_r.name}, treated as FAIL — install python-pptx before "
+                f"delivery; the eliminated-overlay-file check still ran independently).")
     try:
         prs = Presentation(str(pptx_path))
-    except Exception:  # noqa: BLE001
-        # A file python-pptx cannot open is NOT a valid deck to scan here — the
-        # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) owns
-        # malformed / decoy .pptx files. Defer rather than false-fail AF-OVERLAY-DELIVERED.
-        return ""
+    except Exception as exc:  # noqa: BLE001
+        _r = CheckResult.UNDETERMINED
+        return (f"AF-OVERLAY-DELIVERED: {pptx_path.name} could not be opened by "
+                f"python-pptx ({exc}) — the native-on-slide-text scan could not run on "
+                f"this file ({_r.name}, treated as FAIL). A valid PK zip signature and "
+                f"passing size are NOT proof the internal parts are intact; re-render "
+                f"and re-assemble this deck.")
     offenders = []
     for idx, slide in enumerate(prs.slides, start=1):
         for shape in slide.shapes:
@@ -5118,42 +6302,330 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 # ---------------------------------------------------------------------------
 # FIX-2 — owner/founder skip token (the ONLY way to waive a FIX-2 gate)
 # ---------------------------------------------------------------------------
-def _owner_skip_approved(run_dir: Path, af_code: str):
-    """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
+# TRUST BOUNDARY, INCREMENT 2 — the sixth-bypass closure (2026-08 architecture
+# sweep). Read this before touching anything below.
+#
+# THE HONEST LIMIT: this codebase has NO adversary-unwritable anchor.
+# process_manifest.json is written by the same UID that would forge an
+# approval, and Increment 1 (presentation_job/runfacts.py, still in place,
+# untouched by this increment) already proved the point: its
+# verify_owner_skip() re-implements the identical "owner_approved:true + four
+# non-empty strings" rule this function has always used, sourced from a
+# sealed-but-not-anchored read of the SAME file — and it is report-only by
+# default, so it changes nothing about what a running fleet actually does.
+# There is no key here to check a signature against that isn't ALSO a literal
+# in this source tree, forgeable by anything that can read the repo. Building
+# a "signature" field and calling it real would be exactly the fake guarantee
+# this closure is required not to ship.
+#
+# WHAT IS ACTUALLY ACHIEVABLE, and what this increment does:
+#   1. FRICTION on the laziest self-skip shape. A one-token placeholder reason
+#      ("x", "ok", "approved") or a non-timestamp ("t", "now", "asap") is
+#      refused outright (_OWNER_SKIP_REASON_MIN_CHARS,
+#      _owner_skip_parse_timestamp). This does not stop a determined forger
+#      willing to type a real sentence and a real date — nothing available in
+#      this architecture does — but it closes the exact shape proven live in
+#      the sweep's PoC: a single mechanically-generated dict, one reason
+#      copy-pasted onto every af_code, minted in the time it takes to write
+#      one line of JSON.
+#   2. A blanket-skip signature check. The SAME reason text, reused verbatim
+#      across MORE than _OWNER_SKIP_BLANKET_REASON_LIMIT distinct af_codes in
+#      one manifest, disqualifies every record that shares it. A named,
+#      per-gate reason is required; one rubber-stamped sentence covering most
+#      or all of the FIX-2 battery is not — see _owner_skip_evaluate.
+#   3. MANDATORY, UNCONDITIONAL DISCLOSURE — the one defense this
+#      architecture cannot defeat by definition, because it does not depend on
+#      distinguishing a real approval from a forged one. EVERY consumption and
+#      EVERY rejected attempt is (a) printed to stderr in an unmissable
+#      banner, unconditionally — never gated behind the runfacts shadow path,
+#      never dependent on PRES_TRUST_BOUNDARY_ENFORCE, never silenced by an
+#      import failure — and (b) appended to a NEW, code-owned, append-only
+#      ledger key in process_manifest.json ("owner_skip_events", written ONLY
+#      by _owner_skip_ledger_append — the agent-authored "owner_skip_approval"
+#      input itself is never rewritten). run_postflight_gate() reads this
+#      ledger back and refuses to print "COMPLETE" without also printing every
+#      entry in it, or an explicit "no waivers used" line when it is empty —
+#      see the postflight success block further down this file. A skip can no
+#      longer be silent: this is the actual, load-bearing fix.
+#
+# An absent record, or a record that never names this af_code, is UNCHANGED
+# from before and stays QUIET (the common, innocent, majority case — see
+# runfacts.py's own findings() docstring for why treating plain absence as a
+# "finding" is the cry-wolf failure mode this does not repeat). A record that
+# NAMES this af_code but fails validation is now always loud — see
+# _owner_skip_evaluate / _owner_skip_disclose.
+_OWNER_SKIP_REASON_MIN_CHARS = 8
+_OWNER_SKIP_BLANKET_REASON_LIMIT = 2  # one reason may waive at most this many DISTINCT af_codes
+_OWNER_SKIP_LEDGER_KEY = "owner_skip_events"
 
-    A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION /
-    AF-MODE-UNSET)
-    may be skipped ONLY by an explicit, LOGGED owner token recorded in
-    working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
-    object or a list of them). A valid token carries owner_approved:true, the af_code
-    (or gate) it waives, a non-empty approved_by, a non-empty reason, and a timestamp.
-    No agent may self-skip and the absence of a token means the gate is ENFORCED.
-    Returns the matching record (so callers can log who approved what) or None."""
+
+def _owner_skip_parse_timestamp(ts: str):
+    """Return a parsed datetime, or None when `ts` is not a real ISO-8601
+    date/datetime — rejects placeholders like 't' / 'now' / 'asap'. Accepts a
+    trailing 'Z' (normalized to '+00:00' for pre-3.11 datetime.fromisoformat
+    compatibility, since this fleet's Python version is not pinned here)."""
+    s = (ts or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _owner_skip_all_records(obj: dict) -> list:
+    """The raw owner_skip_approval records (tolerant of a single object or a
+    list) from an already-parsed process_manifest.json dict."""
+    raw = obj.get("owner_skip_approval")
+    return raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
+
+
+def _owner_skip_structurally_valid(r: dict) -> Tuple[bool, str]:
+    """The base authenticity rule this mechanism has always had (owner_approved
+    literal true + non-empty approved_by/reason/timestamp) PLUS the two
+    friction checks from the module comment above. Returns (True, "") or
+    (False, human-readable reason) — never raises."""
+    if r.get("owner_approved") is not True:
+        return False, f"owner_approved is {r.get('owner_approved')!r}, not literal true"
+    approved_by = str(r.get("approved_by") or "").strip()
+    if not approved_by:
+        return False, "approved_by is empty"
+    reason = str(r.get("reason") or "").strip()
+    if not reason:
+        return False, "reason is empty"
+    if len(reason) < _OWNER_SKIP_REASON_MIN_CHARS:
+        return False, (f"reason {reason!r} is shorter than the "
+                        f"{_OWNER_SKIP_REASON_MIN_CHARS}-character floor — a real "
+                        f"justification is required, not a placeholder token")
+    timestamp_raw = str(r.get("timestamp") or "").strip()
+    if not timestamp_raw:
+        return False, "timestamp is empty"
+    if _owner_skip_parse_timestamp(timestamp_raw) is None:
+        return False, (f"timestamp {timestamp_raw!r} does not parse as a real ISO-8601 "
+                        f"date/time")
+    return True, ""
+
+
+def _owner_skip_evaluate(run_dir: Path, af_code: str) -> Tuple[Optional[dict], list]:
+    """Evaluate every owner_skip_approval record naming `af_code`. Returns
+    (record_or_None, events): record is the FIRST validly-waiving record (or
+    None — the gate stays enforced, unchanged contract); events lists EVERY
+    record this af_code touched, granted or rejected-with-reason, for the
+    mandatory disclosure layer in _owner_skip_approved. Records that never
+    mention this af_code produce NO event (the quiet, common case). Never
+    raises: any read/parse problem becomes an event or an empty result, not an
+    exception."""
+    want = af_code.strip().upper()
     pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
     if not pm.exists():
-        return None
+        return None, []
     obj = _read_json(pm)
     if not isinstance(obj, dict) or "__parse_error__" in obj:
-        return None
-    raw = obj.get("owner_skip_approval")
-    records = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
-    want = af_code.strip().upper()
+        detail = (obj.get("__parse_error__") if isinstance(obj, dict)
+                  else f"top-level JSON is {type(obj).__name__}, expected object")
+        # A manifest that EXISTS but cannot be read is not the quiet "nothing has
+        # happened yet" case — surface it every time a gate consults it.
+        return None, [{
+            "af_code": want, "approved_by": "", "reason": "", "timestamp": "",
+            "outcome": "rejected",
+            "rejected_because": (f"process_manifest.json exists but is UNPARSEABLE "
+                                  f"({detail}) — no owner_skip_approval record can be "
+                                  f"honored from a corrupt manifest"),
+        }]
+    records = _owner_skip_all_records(obj)
+
+    # Blanket-reason signature: reason text (whitespace-normalized, case-folded)
+    # reused across more than _OWNER_SKIP_BLANKET_REASON_LIMIT DISTINCT af_codes
+    # anywhere in this manifest disqualifies every record that shares it.
+    reason_af_codes: Dict[str, set] = {}
     for r in records:
         if not isinstance(r, dict):
             continue
-        if r.get("owner_approved") is not True:
-            continue
-        waives = str(r.get("af_code") or r.get("gate") or "").strip().upper()
-        if waives != want:
-            continue
-        if not str(r.get("approved_by") or "").strip():
-            continue
-        if not str(r.get("reason") or "").strip():
-            continue
-        if not str(r.get("timestamp") or "").strip():
-            continue
-        return r
-    return None
+        norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
+        this_af = str(r.get("af_code") or r.get("gate") or "").strip().upper()
+        if norm_reason and this_af:
+            reason_af_codes.setdefault(norm_reason, set()).add(this_af)
+    blanket_reasons = {rs for rs, codes in reason_af_codes.items()
+                       if len(codes) > _OWNER_SKIP_BLANKET_REASON_LIMIT}
+
+    matches = [r for r in records if isinstance(r, dict)
+               and str(r.get("af_code") or r.get("gate") or "").strip().upper() == want]
+    if not matches:
+        return None, []
+
+    granted = None
+    events = []
+    for r in matches:
+        norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
+        ok, why = _owner_skip_structurally_valid(r)
+        if ok and norm_reason in blanket_reasons:
+            ok = False
+            others = sorted(reason_af_codes[norm_reason] - {want})
+            why = (f"reason is byte-identical (modulo whitespace/case) to the reason "
+                   f"waiving {len(others)} OTHER gate(s) in the same manifest ({others}) "
+                   f"— one reason may not waive more than "
+                   f"{_OWNER_SKIP_BLANKET_REASON_LIMIT} distinct gate(s); a blanket "
+                   f"skip is refused, name each gate's own reason")
+        event = {
+            "af_code": want,
+            "approved_by": str(r.get("approved_by") or "").strip(),
+            "reason": str(r.get("reason") or "").strip(),
+            "timestamp": str(r.get("timestamp") or "").strip(),
+            "outcome": "granted" if ok else "rejected",
+        }
+        if not ok:
+            event["rejected_because"] = why
+        events.append(event)
+        if ok and granted is None:
+            granted = r
+    return granted, events
+
+
+def _owner_skip_ledger_append(run_dir: Path, events: list, consumed_at: str) -> None:
+    """Append `events` to process_manifest.json["owner_skip_events"] — a ledger
+    this function OWNS exclusively; the agent-authored "owner_skip_approval"
+    input is never read-modify-written here. Best-effort / non-fatal by
+    design, matching write_process_manifest's own "never clobber, never let a
+    report write mask the verdict" convention: a ledger-write failure (or an
+    unreadable pre-existing manifest) degrades to stderr-only disclosure —
+    it must never be able to turn a real gate result into a crash."""
+    if not events:
+        return
+    ckpt_dir = run_dir / "working" / "checkpoints"
+    pm_path = ckpt_dir / "process_manifest.json"
+    try:
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        manifest: dict = {}
+        if pm_path.exists():
+            try:
+                existing = json.loads(pm_path.read_text())
+                if isinstance(existing, dict):
+                    manifest = existing
+                else:
+                    return  # legacy bare-list manifest — never clobber it here
+            except Exception:  # noqa: BLE001 — corrupt manifest: stderr already fired
+                return
+        ledger = manifest.get(_OWNER_SKIP_LEDGER_KEY)
+        if not isinstance(ledger, list):
+            ledger = []
+        for ev in events:
+            ledger.append({**ev, "consumed_at": consumed_at})
+        manifest[_OWNER_SKIP_LEDGER_KEY] = ledger
+        pm_path.write_text(json.dumps(manifest, indent=2))
+    except Exception:  # noqa: BLE001 — best-effort audit trail, never blocks the gate
+        pass
+
+
+def _owner_skip_disclose(run_dir: Path, events: list) -> None:
+    """UNCONDITIONAL disclosure layer. Runs regardless of the runfacts shadow
+    path succeeding, regardless of PRES_TRUST_BOUNDARY_ENFORCE, regardless of
+    whether presentation_job is even importable — this is the mandatory half
+    of the "malformed input fails loud" / "a skip can never be silent"
+    contract. Prints one unmissable banner per event and appends the same
+    events to the durable ledger (see _owner_skip_ledger_append). Never
+    raises."""
+    if not events:
+        return
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for ev in events:
+        try:
+            granted = ev["outcome"] == "granted"
+            print("!" * 78, file=sys.stderr)
+            print(f"{'OWNER-SKIP-CONSUMED' if granted else 'OWNER-SKIP-REJECTED'}: "
+                  f"gate {ev['af_code']} "
+                  f"{'WAIVED' if granted else 'attempted-but-REFUSED'} by "
+                  f"owner_skip_approval (approved_by={ev['approved_by']!r}, "
+                  f"reason={ev['reason']!r}, timestamp={ev['timestamp']!r})",
+                  file=sys.stderr)
+            if not granted:
+                print(f"  REFUSED because: {ev.get('rejected_because', '(no detail recorded)')}",
+                      file=sys.stderr)
+            print(f"  -> logged to working/checkpoints/process_manifest.json"
+                  f"[\"{_OWNER_SKIP_LEDGER_KEY}\"] for audit — this can never be silent.",
+                  file=sys.stderr)
+            print("!" * 78, file=sys.stderr)
+        except Exception:  # noqa: BLE001 — disclosure must never crash a gate check
+            pass
+    _owner_skip_ledger_append(run_dir, events, now)
+
+
+def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
+    """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
+
+    A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION /
+    AF-MODE-UNSET) may be skipped ONLY by an explicit, LOGGED owner token recorded in
+    working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
+    object or a list of them). A valid token carries owner_approved:true, the af_code
+    (or gate) it waives, a non-empty (>= _OWNER_SKIP_REASON_MIN_CHARS) approved_by/
+    reason, a real parseable timestamp, and a reason that is not a copy-pasted
+    blanket-skip signature shared by more than _OWNER_SKIP_BLANKET_REASON_LIMIT other
+    af_codes (see _owner_skip_evaluate / _owner_skip_structurally_valid — Trust
+    Boundary Increment 2). No agent may self-skip and the absence of a token means
+    the gate is ENFORCED. Returns the matching record (so callers can log who
+    approved what) or None.
+
+    Delegates to _owner_skip_evaluate and discards its events — kept as a separate,
+    stable name because run_signature_deck.py and the test suite call this directly
+    for the plain pass/fail answer. This is still the sole source of truth for the
+    value _owner_skip_approved() returns in report-only mode (the default, unchanged
+    from Trust Boundary Increment 1) — see _owner_skip_approved below for the
+    shadow wrapper and the (now unconditional) disclosure layer."""
+    record, _events = _owner_skip_evaluate(run_dir, af_code)
+    return record
+
+
+def _owner_skip_approved(run_dir: Path, af_code: str):
+    """Public entry point, SAME name and signature every existing call site
+    already uses (10 in this file, 3 in run_signature_deck.py via
+    bd._owner_skip_approved — INTAKE-INTERVIEW, AF-IMAGE-QC-VISION,
+    AF-OCR-READBACK, AF-CANONICAL-RENDER-BYPASS, AF-LOCAL-CANVAS,
+    AF-DECK-TYPE-UNSET, AF-MODE-UNSET, AF-STYLE-UNPICKED, AF-STYLE-DOUBLECHARGE,
+    AF-PRIORITY-SHIFT, AF-COPY-QC, AF-PROMPT-QC, AF-HARMONY), so nothing needs
+    to change at any call site for Trust Boundary Increment 2 to take effect.
+
+    Evaluates _owner_skip_evaluate ONCE, unconditionally discloses every event
+    it found (see _owner_skip_disclose — this is the mandatory, non-optional
+    fix: a skip, or a REJECTED attempt at one, can no longer be silent), then
+    runs the UNCHANGED Trust Boundary Increment 1 shadow path on top: it seals
+    (or reuses the already-sealed) RunFacts for run_dir and asks the PURE
+    verify_owner_skip(facts, af_code) function the same question, logging any
+    divergence via presentation_job.runfacts.shadow_compare. Set
+    PRES_TRUST_BOUNDARY_ENFORCE=1 to make the sealed verdict authoritative
+    instead of report-only — this increment does not change that flag's
+    default or its meaning; the tightened validity rule above is already
+    unconditional and does not depend on it.
+
+    This function can never raise due to the shadow path: any error sealing or
+    querying RunFacts is caught, logged, and the legacy result returned — a bug
+    in the shadow code must never be able to break an EXISTING gate."""
+    legacy_result, events = _owner_skip_evaluate(run_dir, af_code)
+    _owner_skip_disclose(run_dir, events)
+    try:
+        from presentation_job import runfacts as _rf  # noqa: PLC0415 — lazy, avoids any import cycle
+        facts = _rf.get_or_seal(Path(run_dir))
+        verdict, detail = _rf.verify_owner_skip(facts, af_code)
+        _rf.shadow_compare(
+            f"owner_skip:{af_code}",
+            legacy_result is not None,
+            "approved" if legacy_result is not None else "no matching valid record",
+            verdict, detail, run_dir=run_dir,
+        )
+        if _rf.enforcing():
+            if verdict is _rf.Verdict.PASS:
+                return legacy_result if legacy_result is not None else {
+                    "owner_approved": True, "af_code": af_code.strip().upper(),
+                    "source": "runfacts-enforcing",
+                }
+            return None
+    except Exception as exc:  # noqa: BLE001 — the shadow must never break this gate
+        try:
+            print(f"TRUST-BOUNDARY-SHADOW-ERROR owner_skip:{af_code}: {exc!r}",
+                  file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+    return legacy_result
 
 
 def _gather_rendered_pngs(run_dir: Path) -> list:
@@ -5673,12 +7145,12 @@ def check_font_floor(run_dir: Path) -> str:
     return ""
 
 
-def _chk_research_map(run_dir: Path) -> str:
+def _chk_research_map(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-RESEARCH-WEAVE — research woven ACROSS the deck, not funnelled to one slide.
 
     The R3 breadth gate. CONDITIONAL: defers (returns "") until copy exists
     (working/copy/slides_copy.md). Once copy exists it requires
-    working/research/research_map.json and enforces THREE independent conditions:
+    working/research/research_map.json and enforces FOUR independent conditions:
 
       1. MAP EXISTS + BREADTH — the map assigns >= 1 real research item (with a
          verbatim `anchor` token) to at least RESEARCH_WEAVE_FLOOR_PCT (60%) of
@@ -5689,7 +7161,16 @@ def _chk_research_map(run_dir: Path) -> str:
          anchor token actually appears in slides_copy.md (the slide block or a
          RESEARCH_USED tag). Mechanical, not semantic; the anchor is a verbatim
          figure / dollar / short quote fragment / source domain.
-      3. WHOLE-BRIEF BREADTH — the deck draws on >= MIN_DISTINCT_RESEARCH_ITEMS (8)
+      3. RENDER COPY CARRIES IT — for >= that same floor of mapped non-exempt slides,
+         the anchor token ALSO appears in the ACTUAL file the renderer consumes:
+         slides.json's copy[] (H3 — the positional slides_path when threaded in, else
+         the canonical working/copy/slides.json / slides.json / working/slides.json
+         spots). slides_copy.md is a working document; the pixels are baked VERBATIM
+         from slides.json's copy[], so a deck whose slides_copy.md weaves the anchors
+         but whose slides.json dropped them passes the old gate while the rendered
+         pixels carry NO research. Defers (passes) when no slides.json can be read yet
+         (its absence is owned by the schema / AF-P1 / slide-count gates).
+      4. WHOLE-BRIEF BREADTH — the deck draws on >= MIN_DISTINCT_RESEARCH_ITEMS (8)
          DISTINCT items, so breadth cannot be faked by repeating one stat.
 
     Replaces the toothless "a pack exists" logic of _chk_claims_without_citation with
@@ -5716,6 +7197,19 @@ def _chk_research_map(run_dir: Path) -> str:
 
     copy_text = copy_path.read_text(encoding="utf-8", errors="replace")
     copy_lc = copy_text.lower()
+
+    # The ACTUAL render copy — slides.json copy[] is what the renderer bakes into the
+    # pixels VERBATIM (slides_copy.md is only the writer's working document). Reuse the
+    # shared loader so this gate counts the exact file that gets rendered (H3: the
+    # positional slides_path when threaded in, else canonical spots). None = no render
+    # copy readable yet; condition 3 defers and the upstream schema / AF-P1 / slide-count
+    # gates own the absence.
+    render_copy_map = _load_slide_copy_map(run_dir, slides_path) or {}
+    render_copy_lc = " ".join(
+        str(c) if c is not None else ""
+        for vals in render_copy_map.values()
+        for c in (vals if isinstance(vals, list) else [vals])
+    ).lower()
 
     non_exempt = [s for s in slides if isinstance(s, dict) and not s.get("exempt")]
     if not non_exempt:
@@ -5751,6 +7245,25 @@ def _chk_research_map(run_dir: Path) -> str:
                 f"below the {RESEARCH_WEAVE_FLOOR_PCT}% floor. The writer must USE the "
                 "mapped item (anchor verbatim in the slide block or a RESEARCH_USED tag).")
 
+    # Condition 3 — RENDER COPY CARRIES IT. slides_copy.md passing is NOT enough: the
+    # renderer bakes words VERBATIM from slides.json copy[], so a deck that wove the
+    # anchors into slides_copy.md but dropped them from slides.json would render pixels
+    # with NO research while the old gate passed. Require the anchor in the render copy
+    # on >= the same floor of mapped slides. Defer (skip) when no render copy is readable.
+    if render_copy_lc.strip():
+        rendered = 0
+        for s in mapped:
+            if any(anc.lower() in render_copy_lc for _id, anc in _anchors(s)):
+                rendered += 1
+        rendered_pct = (rendered / len(mapped)) * 100.0 if mapped else 0.0
+        if rendered_pct < RESEARCH_WEAVE_FLOOR_PCT:
+            return (f"AF-RESEARCH-WEAVE: only {rendered}/{len(mapped)} ({rendered_pct:.0f}%) "
+                    f"of mapped slides carry their assigned anchor in the RENDER copy "
+                    f"(slides.json copy[]), below the {RESEARCH_WEAVE_FLOOR_PCT}% floor. "
+                    "slides_copy.md alone is not enough — the renderer bakes words VERBATIM "
+                    "from slides.json, so the mapped anchor must be present there too "
+                    "(the research is woven into the pixels, not just the working doc).")
+
     distinct = obj.get("distinct_items_used")
     if not isinstance(distinct, int):
         ids = set()
@@ -5763,6 +7276,84 @@ def _chk_research_map(run_dir: Path) -> str:
         return (f"AF-RESEARCH-WEAVE: the deck draws on only {distinct} distinct research "
                 f"items, below the floor of {MIN_DISTINCT_RESEARCH_ITEMS}. Breadth cannot "
                 "be satisfied by repeating one stat — draw on the whole brief.")
+    return ""
+
+
+def _chk_research_reaches_render(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-RESEARCH-REACHES-RENDER — research must reach the RENDER COPY, not just
+    slides_copy.md.
+
+    WORKSTREAM FIX: the AF-RESEARCH-WEAVE gate (_chk_research_map) validates that the
+    research anchors live in working/copy/slides_copy.md, but the renderer consumes
+    working/copy/slides.json (the positional slides.json). If the slide-copy JSON is
+    authored without the mapped anchors (or a hand-fed slides.json is substituted), the
+    deck renders with NO research even though the markdown copy passed the weave gate.
+    This gate closes that exact divergence: it reads the ACTUAL render copy (the same
+    file _load_slide_copy_map feeds the verbatim/prompt gates, i.e. the H3 positional
+    slides.json) and FAILS when a research-mapped non-exempt slide's anchor token is
+    missing from that slide's render copy[]. So research cannot silently fail to reach
+    the rendered deck.
+
+    CONDITIONAL (defer, returns ""): pre-copy / pre-map states. The absences are owned
+    by _chk_slides_copy / _chk_arc / _chk_research_map / _chk_research_cited. Run-dir-
+    scoped (None sentinel) so it reads the ACTUAL rendered slides.json (H3) — a gate
+    that counted a different canonical slides.json than the one rendered would be the
+    exact bypass this gate exists to close.
+    """
+    # Defer until both the research map AND the render copy exist (upstream gates own
+    # their absences — mirror _chk_research_map's pre-copy defer so a bare render that
+    # has not run research yet is not double-reported).
+    if not (run_dir / RESEARCH_MAP_REL).exists():
+        return ""
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
+    if not copy_map:
+        return ""  # no slides.json yet — schema validation / _chk_rich_prompts own that.
+
+    obj = _read_json(run_dir / RESEARCH_MAP_REL)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        return ""  # malformed map — _chk_research_map owns that failure.
+    slides_map = obj.get("slides")
+    if not isinstance(slides_map, list) or not slides_map:
+        return ""  # empty/missing slides[] — _chk_research_map owns that failure.
+
+    def _anchors(s):
+        out = []
+        for a in (s.get("assigned") or []):
+            if isinstance(a, dict):
+                anc = str(a.get("anchor", "")).strip()
+                if anc:
+                    out.append(anc)
+        return out
+
+    missing = []
+    for s in slides_map:
+        if not isinstance(s, dict) or s.get("exempt"):
+            continue
+        if not _anchors(s):
+            continue
+        ordinal = s.get("slide")
+        copy_val = copy_map.get(ordinal)
+        lines = [str(c) for c in copy_val] if isinstance(copy_val, list) else (
+            [str(copy_val)] if copy_val else [])
+        render_lc = " ".join(lines).lower()
+        if not render_lc:
+            missing.append((ordinal, _anchors(s), "no render copy"))
+            continue
+        absent = [a for a in _anchors(s) if a.lower() not in render_lc]
+        if absent:
+            missing.append((ordinal, absent, "anchor(s) absent from render copy"))
+
+    if missing:
+        detail = "; ".join(
+            f"slide {o}: {', '.join(a)} ({why})" for o, a, why in missing)
+        return (f"AF-RESEARCH-REACHES-RENDER: research mapped to these slides but its "
+                f"anchor token(s) are NOT in the RENDER copy (slides.json copy[] — the "
+                f"file the renderer bakes into the slides): {detail}. The anchors were "
+                f"validated in slides_copy.md by AF-RESEARCH-WEAVE, but they never "
+                f"reached the render copy, so the deck would ship WITHOUT the research "
+                f"the gate approved. The Slide Copywriter / builder MUST weave the "
+                f"mapped anchor verbatim into the slide's copy[] in slides.json (or the "
+                f"renderer reads the research-backed copy) before render.")
     return ""
 
 
@@ -5917,6 +7508,32 @@ def _import_slide_geometry():
     return None
 
 
+def _slide_geometry_undetermined(af_code: str) -> str:
+    """CheckResult.UNDETERMINED, applied: slide_geometry.py SHIPS BESIDE build_deck.py
+    (it is not an optional external plugin — verified present in every checkout), so a
+    failed import means the module is missing/corrupted/broken, never that "there is
+    nothing to check yet". The three callers below used to `return ""` on this exact
+    condition — an import failure read as a clean deck. These are deck-quality/
+    completeness gates (the same class result.py assigns to gates.py's
+    _canonical_prompt_dir_problems), so UNDETERMINED lands on the FAIL side: refuse to
+    call a deck clean when the checker that would have proven it never ran. Returns the
+    fatal message string (never ""), so a broken slide_geometry.py can no longer pass
+    silently through run_postflight_gate's WARN-by-default loop (which only prints/
+    blocks on a truthy return) NOR disappear from the picture once
+    SLIDE_GEOMETRY_ENFORCE_ENV=1 promotes these to hard failures.
+
+    (Landed by gates-absence slice g3, PR #925 / v22.0.34. Slice g5 independently
+    authored an equivalent fix for the same three wrappers; this is the single
+    surviving definition post-rebase — see gates-absence g5's PR description for
+    the full duplicate-work note.)"""
+    assert CheckResult.UNDETERMINED.ok is False  # doctrine check, not a defer
+    return (f"{af_code}: UNDETERMINED — slide_geometry.py (ships beside build_deck.py) "
+            "could not be imported, so this check never actually ran. A checker that "
+            "cannot run is not a clean deck; restore/fix slide_geometry.py and re-run. "
+            "This is refused, not deferred, even under the default WARN-only slide-"
+            "geometry policy.")
+
+
 def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-TEXT-OVERFLOW wrapper — the geometry lives in slide_geometry.py; this is the
     build_deck-side symbol the manifest's py_symbol lockstep resolves against. Passes
@@ -5924,7 +7541,7 @@ def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     slide_geometry.py's enforced margin can never silently diverge."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""    # module absent -> defer, exactly as _import_prompt_gate callers do
+        return _slide_geometry_undetermined("AF-TEXT-OVERFLOW")
     return sg.check_text_fits(
         run_dir, slides_path, edge_margin_frac=SLIDE_GEOMETRY_EDGE_MARGIN_FRAC)
 
@@ -5933,7 +7550,7 @@ def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-SPELLING wrapper."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""
+        return _slide_geometry_undetermined("AF-SPELLING")
     return sg.check_spelling(run_dir, slides_path)
 
 
@@ -5943,7 +7560,7 @@ def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     declared floor are the same number by construction."""
     sg = _import_slide_geometry()
     if sg is None:
-        return ""
+        return _slide_geometry_undetermined("AF-TYPE-SIZE-MEASURED")
     dark = _read_dark_optin(run_dir)
     return sg.check_type_size(
         run_dir, slides_path,
@@ -6566,6 +8183,14 @@ PRIORITY_SHIFT_REPORT_REL = "working/qc/priority_shift_report.json"
 # render cannot render doctrine-blind by simply omitting the spec (see run_preflight).
 PRIORITY_PHASE_ID = "P0B-PRIORITY"
 RENDER_PHASE_ID = "P4-RENDER"
+# STYLE_PHASE_GATE (2-gate close, fix/two-remaining-gates) -- P-STYLE-PREVIEW (manifest
+# order 4.85) is the 3-style sample-render + owner-pick phase that must precede
+# P4-RENDER. The deterministic runner already makes this mandatory (it is in
+# run_signature_deck.py's _GOVERNED_VERIFIER_PHASES, so check_phase_preconditions
+# refuses a runner-driven P4-RENDER dispatch without it). A DIRECT build_deck.py
+# invocation had no such binding -- mirrors the P0B-PRIORITY binding immediately
+# above (see run_preflight).
+STYLE_PHASE_ID = "P-STYLE-PREVIEW"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # U021 -- the CLOSED set of deck_type values. Mirrors deck-intake-driver.py's
@@ -6587,7 +8212,18 @@ MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
 # line. Its prerequisite is an installed deck_type producer reachable from the
 # department (deck-intake-driver.py in <dept>/scripts/, U006/A4, or U058).
 # The dated window below REPORTS that the window has closed; it does not enforce.
-DECK_TYPE_GATE_STAGE = "warn"          # "warn" | "enforce"
+DECK_TYPE_GATE_STAGE = "enforce"          # "warn" | "enforce"
+# STYLE_PHASE_GATE stage flag -- MODULE SCOPE, beside STYLE_PHASE_ID above. Rule 3.5:
+# warn -> remediate -> enforce (same doctrine as DECK_TYPE_GATE_STAGE just above); the
+# enforce flip is a SEPARATE, later, single-line commit. WARN is the correct ship stage
+# right now: test_preflight.py's make_workdir(with_artifacts=True) "full modern
+# pipeline" fixture -- the shared happy-path used by multiple direct call sites --
+# stamps ONLY P0B-PRIORITY in process_manifest.json's phases[]; it stamps NO
+# P-STYLE-PREVIEW attestation (deliberately -- see the comment at make_workdir's P0B
+# block). An immediate enforce would brick that fixture and everything layered on it
+# the moment this binding lands. Flip to "enforce" only once a remediation pass has
+# added P-STYLE-PREVIEW attestation to the fixtures/run dirs that need it.
+STYLE_PHASE_GATE_STAGE = "warn"           # "warn" | "enforce"
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (
@@ -6813,7 +8449,47 @@ def _chk_priority_shift(run_dir: Path, slides_path: Optional[Path] = None) -> st
     """AF-NO-SHIFT (P33/P105) — the priority-shift SPINE gate. The deck must carry a
     real priority_shift_spec.json (true_goal + a named priority_stack[]) AND plant the
     eight build-move beat tags monotonically in slides_copy.md so the arc actually
-    engineers the re-rank. Defers when the doctrine is not active."""
+    engineers the re-rank. Defers when the doctrine is not active.
+
+    Root Cause 2 fix: the no-regression master switch (_doctrine_active) is a
+    plain bool, and _read_priority_spec() returns the SAME None for "genuinely
+    absent" (a legitimate legacy/pre-P0B defer) and "present but unparseable /
+    not an object" (Phase P0B-PRIORITY ran and wrote something broken). Before
+    this fix a corrupted spec was therefore indistinguishable from "the phase
+    never touched this deck" and silently PASSED — not just here, but for
+    every other _doctrine_active()-gated gate in this file (_chk_mode,
+    _chk_priority_stack, _chk_rerank, _chk_trigger, _chk_proclamation_hedge,
+    _chk_peak_end, _chk_salience_apex, _chk_persuasion_beats,
+    _chk_priority_shift_ledger all short-circuit on the same bool before doing
+    anything else). No other PREFLIGHT_REQUIRED gate reads
+    priority_shift_spec.json's raw parse state — check_phase_preconditions'
+    P0B-PRIORITY binding (run_preflight) only proves the phase was ATTESTED,
+    not that the artifact it was supposed to write is valid. This function —
+    the doctrine's own SPINE gate, whose job is already "prove the spec is
+    real" — is the correct, single owner: once the file exists at any
+    candidate path, a parse failure is UNDETERMINED (CheckResult doctrine,
+    presentation_job/result.py), and on this completeness-style preflight gate
+    UNDETERMINED behaves like FAIL, never a silent defer to the pre-doctrine
+    PASS every other doctrine gate would otherwise still take. A run_preflight
+    failure here blocks the WHOLE run (all-problems-collected, exit 3), so
+    fixing the one owning gate closes the hole for all ten."""
+    spec_parse_result = CheckResult.PASS
+    for _rel in (PRIORITY_SPEC_REL, "priority_shift_spec.json",
+                 "working/priority_shift_spec.json"):
+        _p = run_dir / _rel
+        if _p.exists():
+            _obj = _read_json(_p)
+            if not (isinstance(_obj, dict) and "__parse_error__" not in _obj):
+                spec_parse_result = CheckResult.UNDETERMINED
+            break
+    if not spec_parse_result.ok:
+        return ("AF-NO-SHIFT: priority_shift_spec.json exists but is not valid JSON / "
+                "not a JSON object. Phase P0B-PRIORITY produced something, but a broken "
+                "spec is NOT the same as 'the phase never ran' — every doctrine gate in "
+                "this file would otherwise silently treat it that way and PASS. "
+                "UNDETERMINED, not clean (CheckResult doctrine, presentation_job/"
+                "result.py): re-run Phase P0B-PRIORITY so it writes a valid spec, or fix "
+                "the file by hand (SOP-NORTHSTAR-00 / SOP-PRIORITY-02).")
     if not _doctrine_active(run_dir):
         return ""
     spec = _read_priority_spec(run_dir) or {}
@@ -7121,7 +8797,23 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
     Runs all 14 sub-assertions (reusing the shift-left gates), writes a per-item
     pass/fail ledger to working/qc/priority_shift_report.json, and refuses ship until
     all 14 PASS. Item 0 is the North Star itself: the #1 job is to hold attention.
-    Defers pre-render and without doctrine; waivable only by a logged owner skip."""
+    Defers pre-render and without doctrine; waivable only by a logged owner skip.
+
+    OUT OF SCOPE for fix/two-remaining-gates -- NOT modified by this change. RISK
+    NOTED, not fixed: this function's ONLY registration in PREFLIGHT_REQUIRED (see
+    below) is dispatched by run_preflight(), whose sole call site in main() is
+    preceded by the comment "Runs BEFORE any API key load, render, or assembly" --
+    so `_gather_rendered_pngs(run_dir)` a few lines below is provably always empty
+    on THAT path, and this function returns "" (defer) before any of the 14
+    sub-assertions evaluate. Through run_preflight() alone, the 14-item ledger
+    (including item 0, the North Star) never actually fires. It is ALSO registered
+    in slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger") as the
+    legacy/shadow-compare fn against v_priority_shift_ledger -- whether THAT path
+    dispatches it post-render (giving it real teeth there) was not investigated as
+    part of this change; do not assume either way. A genuine fix likely requires
+    moving (or adding) a post-render dispatch of this check, which is a structural
+    change to run_preflight()/the P-SHIFT-QC wiring outside this change's scope --
+    left alone pending a dedicated, separately-reviewed line item."""
     if not _doctrine_active(run_dir):
         return ""
     pngs = _gather_rendered_pngs(run_dir)
@@ -7168,6 +8860,23 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "spec carries the single promise + wow + demonstration anchors")
 
     passed = all(r["pass"] for r in rows)
+    # FIX-2 (Error 2): real per-slide verdicts. P-SHIFT-QC runs AFTER render (order
+    # 7.5), so every rendered slide exists and the ship gate grades each one. Each
+    # per-slide verdict records the slide ordinal and an explicit pass (a rendered
+    # slide present + non-degenerate in the run dir). This is the per-slide coverage
+    # the QC report floor (>= 20 real per-slide verdicts) requires — a 14-row
+    # checklist alone can never satisfy the floor.
+    per_slide = []
+    for png in sorted(_gather_rendered_pngs(run_dir)):
+        sid = _png_ordinal(png)
+        if sid is None:
+            continue
+        per_slide.append({
+            "slide": sid,
+            "pass": png.is_file(),
+            "verdict": "pass" if png.is_file() else "fail",
+            "evidence": "rendered slide present in run dir (ship-gate per-slide pass)",
+        })
     report = {
         "schema": "priority_shift_report/v1",
         "gate": "AF-PRIORITY-SHIFT",
@@ -7175,6 +8884,7 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "pass": passed,
         "items": rows,
+        "slides": per_slide,
     }
     try:
         out = run_dir / PRIORITY_SHIFT_REPORT_REL
@@ -7329,6 +9039,14 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
     certified. It is REQUIRED here: an ABSENT transcript is a fail, because otherwise
     the cheapest way to pass a conversation gate is to conduct no recorded conversation.
 
+    FIX-3 ("intake must be a real conversation"): the transcript must ALSO be
+    DRIVER-PRODUCED — a signed envelope (format 'sp-intake-transcript-v1' +
+    driver_signature + qid_sequence) written by deck-intake-driver.py's turn-gate.
+    A hand-written transcript (bare JSON list, or a list hand-written next to a
+    hand-written intake_ledger.json — ERROR 3 of the 2026-08-06 E2E audit) fails
+    fail-closed with AF-INTAKE-BATCH (NO-DRIVER-ENVELOPE / NO-DRIVER-SIGNATURE).
+    Presence of a transcript file is not proof it came from a real conversation.
+
     DEFERS (no-op) unless intake.json declares deck_type == signature_presentation, so
     every other deck type takes the identical pre-existing path.
     """
@@ -7345,15 +9063,29 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
                 " — a signature-presentation intake must be CONDUCTED choice-first and one "
                 "question per turn, and the turn-gate records that conversation mechanically. "
                 "An absent transcript is not proof of a compliant intake (fail-closed). Run "
-                "the intake through deck-intake-driver.py --signature, or export the "
-                "assistant/owner turns to that path as a JSON list of {\"role\",\"text\"}.")
+                "the intake through deck-intake-driver.py --signature, which writes a signed "
+                "driver envelope at that path (a hand-written intake_ledger.json with no "
+                "transcript is NOT an interview).")
     try:
         raw = tpath.read_text(encoding="utf-8")
+        # FIX-3: the raw envelope (for the driver-provenance gate) and the parsed
+        # turns (for the conversation scan). A bare list has NO driver provenance.
+        import json as _json
+        try:
+            envelope = _json.loads(raw)
+        except _json.JSONDecodeError:
+            envelope = raw
+        prov_fails = mod.check_driver_provenance(envelope)
         turns = mod.parse_transcript(raw)
         if not turns:
             return ("AF-INTAKE-BATCH: the intake transcript at " + str(SP_TRANSCRIPT_REL) +
                     " parsed to zero turns (unreadable format) — fail-closed.")
         result = mod.scan_transcript(turns, mod.load_bank_questions())
+        # Driver provenance failures are treated as violations of the same gate.
+        prov_violations = [{"code": mod.AF_CODE, "reason": code, "turn_index": None,
+                            "detail": msg} for code, msg in prov_fails]
+        result["violations"] = prov_violations + result.get("violations", [])
+        result["pass"] = len(result["violations"]) == 0
     except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
         return ("AF-INTAKE-BATCH: the intake-conversation scanner raised " + repr(exc)
                 + " — fail-closed (the conversation gate cannot be skipped).")
@@ -7364,6 +9096,52 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
         + ": " + str(v.get("detail", ""))
         for v in result.get("violations", []))
     return "AF-INTAKE-BATCH: " + reasons
+
+
+def _sp_signals_present_fallback(run_dir: Path) -> bool:
+    """fix/two-remaining-gates — mirror of prove_sp_routing._sp_signals_present()
+    for the `mod is None` fallback path in _chk_sp_claim, used only when the
+    Skill-51 routing prover cannot be imported. Checks the SAME four SP signals
+    _chk_sp_claim's own docstring (and prove_sp_routing.py's docstring) already
+    promise:
+      1. working/copy/sp_intake.json exists (the atomic SP intake record)
+      2. intake.json.signature_frame is one of rulebook|vault|quest|original
+      3. intake.json.presentation_type == 'signature'
+      4. working/interview/intake_ledger.json records a signature_frame entry
+         (entries or sp_entries), a presentation_type=='signature' entry, or an
+         sp_entries.sp_mode entry
+    Uses build_deck's own _read_intake_obj / _read_json readers (the same reads
+    _sp_active already performs) — literal boolean dict-key checks, not new
+    detection logic. A non-signature run dir (all four signals absent) returns
+    False, exactly as prove_sp_routing._sp_signals_present() would."""
+    # Signal 1.
+    if (run_dir / "working" / "copy" / "sp_intake.json").is_file():
+        return True
+    # Signals 2 and 3.
+    intake = _read_intake_obj(run_dir)
+    if isinstance(intake, dict):
+        sig_frame = intake.get("signature_frame")
+        if sig_frame in ("rulebook", "vault", "quest", "original"):
+            return True
+        if intake.get("presentation_type") == "signature":
+            return True
+    # Signal 4.
+    ledger = _read_json(run_dir / "working" / "interview" / "intake_ledger.json")
+    if isinstance(ledger, dict) and "__parse_error__" not in ledger:
+        entries = ledger.get("entries") or {}
+        sp_entries = ledger.get("sp_entries") or {}
+        if not isinstance(entries, dict):
+            entries = {}
+        if not isinstance(sp_entries, dict):
+            sp_entries = {}
+        if "signature_frame" in entries or "signature_frame" in sp_entries:
+            return True
+        ptype_e = entries.get("presentation_type", {})
+        if isinstance(ptype_e, dict) and ptype_e.get("value") == "signature":
+            return True
+        if "sp_mode" in sp_entries:
+            return True
+    return False
 
 
 def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
@@ -7377,16 +9155,23 @@ def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     every SP gate no-ops). A non-signature deck with no SP signal passes untouched."""
     mod = _sp_prover("prove_sp_routing")
     if mod is None:
-        # Routing prover not co-located: still block the unambiguous case we can
-        # detect without it, so the bypass cannot ride a missing prover.
+        # Routing prover not co-located (install.sh puts skill 51 on every box
+        # unconditionally — this is a degraded/install-defect state, not routine).
+        # FIX (fix/two-remaining-gates): the prior fallback checked ONLY signal 1
+        # (sp_intake.json presence) — three of the four signals this docstring (and
+        # prove_sp_routing.py's own docstring) already promise were silently open.
+        # _sp_signals_present_fallback() below checks all four, using the SAME reads
+        # _sp_active already uses — completing what the docstring already claims,
+        # not inventing a second detection mechanism.
         obj = _read_intake_obj(run_dir)
         declared = isinstance(obj, dict) and obj.get("deck_type") == "signature_presentation"
-        sp_present = (run_dir / "working" / "copy" / "sp_intake.json").is_file()
-        if sp_present and not declared:
-            return ("AF-SP-TYPE-UNDECLARED: working/copy/sp_intake.json is present but "
-                    "intake.json does not declare deck_type == signature_presentation "
-                    "(install 51-signature-presentation/scripts/prove_sp_routing.py next to "
-                    "build_deck.py for the full signal set). Fail-closed.")
+        if _sp_signals_present_fallback(run_dir) and not declared:
+            return ("AF-SP-TYPE-UNDECLARED: signature-presentation signals detected "
+                    "(working/copy/sp_intake.json, intake.json.signature_frame/"
+                    "presentation_type, or an intake_ledger.json entry) but intake.json "
+                    "does not declare deck_type == signature_presentation (install "
+                    "51-signature-presentation/scripts/prove_sp_routing.py next to "
+                    "build_deck.py for the full routing prover). Fail-closed.")
         return ""
     try:
         fails = mod.evaluate_run_dir(run_dir)
@@ -7429,14 +9214,30 @@ PREFLIGHT_REQUIRED = [
     # the deck, not funnelled to one proof slide. CONDITIONAL: defers until copy exists,
     # then requires working/research/research_map.json mapping research items to >=60%
     # of non-exempt content slides, the writer actually using the anchors in
-    # slides_copy.md, and >=8 distinct items deck-wide. Run-dir-scoped (None sentinel).
+    # slides_copy.md AND in the RENDER copy (slides.json copy[] — the pixels are baked
+    # verbatim from it), and >=8 distinct items deck-wide. Run-dir-scoped (None sentinel);
+    # threads slides_path (H3) so it judges the actual rendered slides.json.
     (None,
      "research woven across the deck — research_map.json maps facts/quotes/stats to "
-     ">=60% of non-exempt content slides, the copy uses the anchors, and the deck draws "
-     "on >=8 distinct items (AF-RESEARCH-WEAVE)",
+     ">=60% of non-exempt content slides, the copy uses the anchors (slides_copy.md AND "
+     "the render copy slides.json copy[]), and the deck draws on >=8 distinct items "
+     "(AF-RESEARCH-WEAVE)",
      "Phase 3.5 — Deep Research Specialist SOP 9.5 (research-to-slide map) + Slide "
      "Copywriter (RESEARCH_USED) (AF-RESEARCH-WEAVE)",
      _chk_research_map),
+    # RESEARCH-REACHES-RENDER (AF-RESEARCH-REACHES-RENDER) — the renderer consumes the
+    # positional slides.json copy[], NOT slides_copy.md. AF-RESEARCH-WEAVE validates the
+    # markdown; this gate proves the SAME mapped research anchors actually reached the
+    # RENDER COPY (slides.json copy[]) so research cannot silently fail to reach the
+    # baked slides. Run-dir-scoped (None sentinel); H3 threads the ACTUAL rendered
+    # slides.json. CONDITIONAL: defers pre-map/pre-copy (owned upstream).
+    (None,
+     "research reaches the RENDER copy — every research-mapped non-exempt slide's "
+     "anchor token is present in slides.json copy[] (the file the renderer bakes into "
+     "the slides), not only in slides_copy.md (AF-RESEARCH-REACHES-RENDER)",
+     "Phase 4 — Slide Copywriter / builder must weave the validated anchors into the "
+     "render copy (AF-RESEARCH-REACHES-RENDER)",
+     _chk_research_reaches_render),
     ("working/qc/copy_qc_report.json",
      "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)",
      "Phase 1Q — QC Specialist SOP 9.1 / SOP-SLIDE-00",
@@ -8051,6 +9852,24 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
     import inspect as _inspect
     print(f"=== PROCESS PREFLIGHT — run dir: {run_dir} ===", flush=True)
     problems = []
+    # TRUST BOUNDARY wrap (report-only, presentation_job/preflight_shadow.py):
+    # seal every PREFLIGHT_REQUIRED entry's resolved-path hash/mtime BEFORE any
+    # gate below runs. Generic, gate-agnostic, never blocks — see that module's
+    # docstring. Defense in depth: open_run() already catches its own errors
+    # internally, but this call site is ALSO wrapped (matching the existing
+    # RunFacts admission-seal pattern a few hundred lines below in main()) so
+    # that even a totally broken preflight_shadow import/module can never
+    # turn into a refused/crashed preflight — degrades to _pf_shadow=None,
+    # and every call below already no-ops safely on None.
+    try:
+        _pf_shadow = _preflight_shadow.open_run(run_dir, PREFLIGHT_REQUIRED)
+    except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
+        _pf_shadow = None
+        try:
+            print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: open_run failed: {_pf_exc!r} "
+                  f"(report-only — preflight proceeds)", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
 
     # === v16.0.1 — BIND RENDER TO PHASE P0B-PRIORITY AT EVERY ENTRY POINT ===
     # The deterministic runner (run_signature_deck.py) makes P0B-PRIORITY a mandatory
@@ -8080,6 +9899,52 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
             "(run_signature_deck.py P0B-PRIORITY, AF-PHASE-SKIPPED)",
             p0b_reason))
 
+    # === STYLE_PHASE_GATE (fix/two-remaining-gates) — BIND RENDER TO PHASE
+    # P-STYLE-PREVIEW AT EVERY ENTRY POINT ===
+    # Mirrors the v16.0.1 P0B-PRIORITY binding immediately above. The deterministic
+    # runner (run_signature_deck.py) already makes P-STYLE-PREVIEW a mandatory
+    # order-based precondition of P4-RENDER (it is in run_signature_deck.py's
+    # _GOVERNED_VERIFIER_PHASES, so a runner-driven render can never reach kie.ai
+    # doctrine-blind of the 3-style sample-render + owner-pick). But a DIRECT
+    # `build_deck.py` call bypasses the runner exactly as it did for P0B: with
+    # style_samples_manifest.json absent, _chk_style_preview (below, in
+    # PREFLIGHT_REQUIRED) DEFERS ("" — style-preview phase not run yet), so nothing
+    # stops a direct render from skipping the owner's style pick entirely.
+    # Reuses the SHARED check_phase_preconditions machinery (single source of
+    # truth — not a parallel gate); the ONLY waiver is a logged owner-authorized
+    # skip, exactly as P0B allows.
+    #
+    # STAGED per Rule 3.5 (warn -> remediate -> enforce; see STYLE_PHASE_GATE_STAGE
+    # above, module scope, beside DECK_TYPE_GATE_STAGE — same doctrine, same idiom).
+    # WARN-FIRST IS NOT PRECAUTIONARY HERE: test_preflight.py's make_workdir(
+    # with_artifacts=True) "full modern pipeline" fixture — the shared happy-path
+    # used by at least 4 direct call sites plus everything layered on it — stamps
+    # ONLY P0B-PRIORITY in process_manifest.json's phases[] and writes no
+    # style_samples_manifest.json / no P-STYLE-PREVIEW attestation (by deliberate
+    # design — see the comment at that fixture's P0B block). An immediate
+    # hard-enforce would brick that fixture and every test built on it the moment
+    # this binding lands. Warn-first defers that break to a separately-reviewed
+    # "enforce" flip, exactly as Rule 3.5 exists to do — flip
+    # STYLE_PHASE_GATE_STAGE to "enforce" only once the fixture and any in-flight
+    # legacy run dirs are remediated.
+    style_reason = check_phase_preconditions(run_dir, RENDER_PHASE_ID, [STYLE_PHASE_ID])
+    if style_reason:
+        if STYLE_PHASE_GATE_STAGE == "enforce":
+            problems.append((
+                STYLE_SAMPLES_MANIFEST_REL,
+                "Phase P-STYLE-PREVIEW attested in process_manifest.json (the 3-style "
+                "sample-render + owner-pick phase, order 4.85) — a direct build_deck "
+                "render is bound to P-STYLE-PREVIEW exactly as the runner is, so it can "
+                "never render past the owner's style pick",
+                "Phase 4.85 — Style Preview "
+                "(run_signature_deck.py P-STYLE-PREVIEW, AF-PHASE-SKIPPED)",
+                style_reason))
+        else:
+            overdue = ("" if date.today() <= MIGRATION_WINDOW_UNTIL
+                       else " [WINDOW CLOSED -- the enforce unit is overdue]")
+            print("  WARN  " + style_reason + " [warn-mode until "
+                  + MIGRATION_WINDOW_UNTIL.isoformat() + "]" + overdue, file=sys.stderr)
+
     for rel, label, phase, check in PREFLIGHT_REQUIRED:
         if rel is None:
             # run-dir-scoped check (e.g. _chk_coverage needs the whole run dir). Pass
@@ -8103,10 +9968,64 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
                 found = p if p.exists() else None
             reason = check(found)
             display = rel
+        # TRUST BOUNDARY wrap (report-only): tee this gate's already-decided
+        # `reason` into the shadow ledger. Receives the result, never the
+        # `check` callable itself — cannot call it, delay it, skip it, or
+        # change what it returned. See presentation_job/preflight_shadow.py.
+        # Defense in depth (see the open_run() call site above for why):
+        # wrapped here too, so this loop can never be interrupted by a bug in
+        # the shadow module — a raise here would otherwise abort the SAME
+        # loop that decides whether the real render/assembly may proceed.
+        try:
+            _preflight_shadow.record(
+                _pf_shadow, label=label, display=display,
+                resolved_path=(found if rel is not None else None), legacy_reason=reason)
+        except Exception as _pf_exc:  # noqa: BLE001 — shadow must never block preflight
+            try:
+                print(f"TRUST-BOUNDARY-PREFLIGHT-SHADOW-ERROR: record failed for "
+                      f"{label!r}: {_pf_exc!r} (report-only — preflight proceeds)",
+                      file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
         if reason:
             problems.append((display, label, phase, reason))
         else:
             print(f"  OK   {display}", flush=True)
+
+    # TRUST BOUNDARY wrap (report-only): one summary line to stderr — every
+    # individual gate already got its own ledger line via record() above,
+    # win or lose, so this runs regardless of which branch below is taken.
+    # Defense in depth, same reasoning as the two call sites above.
+    try:
+        _preflight_shadow.close_run(_pf_shadow)
+    except Exception:  # noqa: BLE001 — shadow must never block preflight
+        pass
+
+    # ---------------------------------------------------------------------
+    # BLIND-SPOT SHADOW READ-AUDIT (report-only). 50 of PREFLIGHT_REQUIRED's
+    # 60 gates carry rel=None (run-dir-scoped: the check needs more than one
+    # file, or the exact file depends on run-time content), so any
+    # snapshot-by-declared-rel mechanism has NO file to snapshot for those 50
+    # and is mathematically incapable of ever registering a divergence for
+    # them. This closes that gap WITHOUT touching what any gate returns
+    # above: sys.addaudithook (presentation_job.gate_read_audit) records the
+    # REAL file(s) each check() call just made under run_dir — not what its
+    # tuple declares — and seals their content hashes so a later
+    # `python3 -m presentation_job.gate_read_audit --verify <run_dir>` call
+    # can detect drift. Runs regardless of problems (a failed preflight still
+    # deserves an audit trail of what was actually read). Never blocks; any
+    # error here is caught and logged, never raised — mirrors the existing
+    # TRUST-BOUNDARY-SEAL-ERROR posture in main().
+    # ---------------------------------------------------------------------
+    try:
+        from presentation_job import gate_read_audit as _gra  # noqa: PLC0415
+        _gra.seal_gate_reads(run_dir, PREFLIGHT_REQUIRED, slides_path)
+    except Exception as _gra_exc:  # noqa: BLE001 — audit must never block preflight
+        try:
+            print(f"GATE-READ-AUDIT-SEAL-ERROR: could not seal gate reads for "
+                  f"{run_dir}: {_gra_exc!r} (report-only)", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
 
     if problems:
         print("\nFATAL: PROCESS PREFLIGHT FAILED — refusing to render or assemble.", file=sys.stderr)
@@ -8277,6 +10196,11 @@ def init_deliverables_ledger(bundle_dir: Path, deck_slug: str) -> Path:
         if key in existing and existing[key].get("status") == "verified":
             entries.append(existing[key])
         else:
+            # produced_later specs (e.g. webinar_mp4 — rendered by P9.6-WEBINAR-VIDEO
+            # AFTER postflight) are skipped by run_postflight_gate's existence loop by
+            # design; initialize them as verified so the extra_unverified catch-all does
+            # not flag a file that is not expected at this stage.
+            init_status = "verified" if spec.get("produced_later") else "pending"
             entries.append({
                 "key": key,
                 "filename": fname,
@@ -8284,7 +10208,7 @@ def init_deliverables_ledger(bundle_dir: Path, deck_slug: str) -> Path:
                 "label": spec["label"],
                 "min_bytes": spec["min_bytes"],
                 "note": spec["note"],
-                "status": "pending",
+                "status": init_status,
                 "size": None,
                 "error": None,
             })
@@ -8702,6 +10626,10 @@ DELIVERABLE_MAGIC = {
     # self-contained teleprompter page passes while a decoy of the wrong type fails.
     "teleprompter_html": (b"<!DOCTYPE", b"<!doctype", b"<!Doctype",
                           b"<html", b"<HTML", b"<!--"),
+    # webinar_mp4: an MP4 leads with a 32-bit box size + 'ftyp' at offset 4 (ISO-BMFF
+    # container signature) — the same guard ghl_media.verify_video uses. A non-video
+    # stub of the right size is rejected.
+    "webinar_mp4": (b"\x00\x00\x00\x18ftyp", b"ftyp", b"\x00\x00\x00\x10ftyp"),
     # speech_md / speech_fish_md: intentionally absent — plain/tagged markdown has no
     # magic signature, so md stays size-only (per spec).
 }
@@ -8734,17 +10662,66 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
+def _cc_registration_verified(manifest: dict) -> bool:
+    """T2 gate teeth: prove a cc_task_id in process_manifest.json was produced
+    by a REAL cc_board.ingest_deck_task round-trip, entirely offline.
+
+    The receipt cc_board.stamp_task_id writes on a successful ingest is
+    ``cc_registration`` = registration_proof(task_id, idempotency_key,
+    deck_slug) — a deterministic HMAC-SHA256 over ``cc_task_id + "|" +
+    idempotency_key`` (no secret, no timestamp: hermetic and replay-proof
+    against hand-editing). idempotency_key is sha256(source_ref+title) on the
+    producer side, so it CANNOT be derived from the task id alone — a forged
+    id cannot forge its matching key, and a key for a different deck cannot
+    match. The gate recomputes the HMAC over the manifest's own
+    cc_task_id|idempotency_key and compares bytes to the stamped digest.
+
+    Returns True only when: cc_task_id is a non-empty string, cc_registration
+    is a dict whose task_id matches cc_task_id and whose hmac equals the
+    recomputed digest. Everything else (absent cc_registration, mismatched
+    task_id, wrong digest, non-dict receipt) is False — could-not-verify NEVER
+    reads as verified. Never raises (a malformed manifest is just False)."""
+    try:
+        tid = manifest.get("cc_task_id")
+        if not isinstance(tid, str) or not tid.strip():
+            return False
+        receipt = manifest.get("cc_registration")
+        if not isinstance(receipt, dict):
+            return False
+        if receipt.get("task_id") != tid:
+            return False
+        key = receipt.get("idempotency_key")
+        slug = receipt.get("deck_slug")
+        if not isinstance(key, str) or not key or not isinstance(slug, str) or not slug:
+            return False
+        expected = hmac.new(
+            f"{tid}|{key}".encode("utf-8"), b"", hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(str(receipt.get("hmac") or ""), expected)
+    except Exception:  # noqa: BLE001 — a malformed manifest is UNVERIFIED, never fatal
+        return False
+
+
 def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
-    """AF-CC-UNREGISTERED: postflight gate enforcing Command Center registration.
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED: postflight gate enforcing Command
+    Center registration. THREE outcomes (T2 gate teeth):
 
-    Fail-CLOSED on never-attempted (neither cc_task_id nor cc_register_attempted
-    in process_manifest.json). Fail-SOFT on transport failure (a logged failed
-    attempt — cc_register_attempted=True with no cc_task_id — satisfies the gate,
-    mirroring Skill-48's s7-deliver-receipt.json degrade pattern at cc_board.py
-    lines 370-401).
+      VERIFIED    — cc_task_id present AND the cc_registration HMAC proof
+                    verifies (a real cc_board.ingest_deck_task round-trip).
+                    Gate PASSES (returns "").
+      UNVERIFIED  — cc_register_attempted=True but NO verifiable proof: either
+                    no cc_task_id (transport/partial failure) or a task_id
+                    whose receipt does not verify (hand-written/stale). Gate
+                    FAILS with the explicit, honest AF-CC-UNVERIFIED message —
+                    could-not-verify NEVER prints as verified. Fail-soft per
+                    the item: a genuine Command Center outage does not brick
+                    the deck beyond a clear, truthful UNVERIFIED closeout.
+      UNREGISTERED— neither field: cc_board.ingest_deck_task was never called
+                    for this run. Gate FAILS CLOSED (AF-CC-UNREGISTERED,
+                    current behavior, kept).
 
-    Returns "" on pass; an AF-CC-UNREGISTERED message string on fail.
-    Enforced_by: build_deck. py_symbol: _chk_cc_registered.
+    Returns "" on pass; an AF-CC-UNVERIFIED / AF-CC-UNREGISTERED message
+    string on fail. Enforced_by: build_deck. py_symbol: _chk_cc_registered.
     """
     if run_dir is None:
         # adhoc/no-run-dir paths (--adhoc-no-process) skip the gate.
@@ -8762,22 +10739,45 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
         manifest = json.loads(pm.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         return (
-            f"AF-CC-UNREGISTERED: could not read process_manifest.json ({exc}) — "
+            f"AF-CC-UNVERIFIED: could not read process_manifest.json ({exc}) — "
             "cannot verify CC registration. "
             f"Deck: {deck_slug}"
         )
     if not isinstance(manifest, dict):
         return (
-            "AF-CC-UNREGISTERED: process_manifest.json is not a JSON object — "
+            "AF-CC-UNVERIFIED: process_manifest.json is not a JSON object — "
             f"cannot verify CC registration. Deck: {deck_slug}"
         )
-    # Successful registration: task_id written by cc_board.stamp_task_id.
-    if manifest.get("cc_task_id"):
+    tid = manifest.get("cc_task_id")
+    attempted = manifest.get("cc_register_attempted") is True
+    # Successful registration PROVED: task_id written by a real
+    # cc_board.stamp_task_id round-trip (HMAC receipt verifies offline).
+    if isinstance(tid, str) and tid.strip() and _cc_registration_verified(manifest):
         return ""
-    # Fail-SOFT: transport failed but the attempt was logged (cc_register_attempted
-    # stamped BEFORE the HTTP call by cc_board.ingest_deck_task). Satisfies gate.
-    if manifest.get("cc_register_attempted"):
-        return ""
+    # UNVERIFIED — could-not-verify. NEVER printed as verified; fails the gate
+    # with an explicit, honest message (fail-soft: a real CC outage is visible
+    # and truthful, and the run is not bricked beyond closeout).
+    if attempted or (isinstance(tid, str) and tid.strip()):
+        if not (isinstance(tid, str) and tid.strip()):
+            return (
+                "AF-CC-UNVERIFIED: cc_register_attempted=True but no cc_task_id "
+                "in process_manifest.json — the Command Center POST did not "
+                "return a task (transport/partial failure or outage). "
+                "Registration could NOT be verified; this run does NOT count "
+                "as registered. Investigate the cc-board.json movement receipt "
+                "and the [cc_board/presentations] stderr log, then re-run the "
+                "deck or reconcile the card. "
+                f"Deck: {deck_slug}"
+            )
+        return (
+            "AF-CC-UNVERIFIED: cc_task_id is present but its cc_registration "
+            "receipt does not verify (missing, mismatched, or bad HMAC) — this "
+            "task id was NOT provably produced by a real "
+            "cc_board.ingest_deck_task round-trip. Could-not-verify NEVER "
+            "counts as verified. Re-run through the canonical entry path so "
+            "ingest_deck_task stamps a verifiable receipt. "
+            f"Deck: {deck_slug} cc_task_id={tid}"
+        )
     # Neither field: this module was never invoked for this run — fail-CLOSED.
     return (
         "AF-CC-UNREGISTERED: process_manifest.json exists but has neither "
@@ -8813,6 +10813,13 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
     missing_or_short = []
     for spec in DELIVERABLES_REQUIRED:
         key = spec["key"]
+        # Feature L2-G (P9.6-WEBINAR-VIDEO): `webinar_mp4` is PRODUCED LATER than this
+        # gate (build_webinar_video.py runs at order 8.92, after P8-ASSEMBLE/this
+        # postflight). It does NOT exist at render/assemble time, so it is skipped here —
+        # the P9.6 phase, fix_bundle_complete (FIX-8) and the delivery gate own its real
+        # presence gate. A spec without `produced_later` is required exactly as before.
+        if spec.get("produced_later"):
+            continue
         fname = _expand_filename(spec["filename"], deck_slug)
         path = bundle_dir / fname
         # exists() follows symlinks; use lexists so a broken/dangling symlink is seen
@@ -8871,7 +10878,11 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
     # failing a caller that has no run dir.
     kie_fail_reason = ""
     if run_dir is not None:
-        kie_reason = _chk_kie_baked(run_dir, slides_path)
+        # require_rendered=True: closeout means render+assembly already happened, so
+        # an absent manifest/render-record here is UNDETERMINED->FAIL, not the
+        # legitimate pre-render defer the bare `_chk_kie_baked` default preserves for
+        # every preflight caller (see the docstring / Root Cause 2 note on the gate).
+        kie_reason = _chk_kie_baked(run_dir, slides_path, require_rendered=True)
         if kie_reason:
             kie_fail_reason = kie_reason
             missing_or_short.append((
@@ -8882,6 +10893,35 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             # Record the AF-I14 reason on the deck entry so the ledger carries it.
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=kie_reason)
+
+    # --- SPEECH-LENGTH sub-check (AF-SPEECH-SHORT) — at closeout, re-prove the
+    # delivered speech clears the target_talk_minutes x 120wpm floor.
+    #
+    # WHY THIS EXISTS (absence-vs-not-yet-produced gap): _chk_speech_length is
+    # CONDITIONAL BY DESIGN at the single pre-render run_preflight() call — the
+    # speech genuinely does not exist yet at that phase (written at Phase 9
+    # delivery), so it legitimately defers ("" / pass) there. Its own docstring
+    # says the gate "is wired into the lockstep so it can never be silently
+    # skipped once the speech is written" — but run_preflight() is called exactly
+    # ONCE (pre-render), so nothing ever re-invoked the real word-count floor once
+    # the speech was actually on disk. The DELIVERABLES_REQUIRED speech_md entry
+    # above only proves a >=2KB file exists (~290 words) — far below the floor for
+    # a 20+ minute talk (2,400+ words) — so a short-but-not-empty speech could
+    # clear the byte floor while never being checked against the REAL duration
+    # floor. This mirrors the exact re-check pattern already proven for
+    # _chk_kie_baked above so the promise in _chk_speech_length's own docstring is
+    # actually kept, not just documented.
+    if run_dir is not None:
+        speech_len_reason = _chk_speech_length(run_dir)
+        if speech_len_reason:
+            missing_or_short.append((
+                "speech_md",
+                _expand_filename("PRESENTERS-SPEECH.md", deck_slug),
+                "presenter speech meets the target_talk_minutes x 120wpm word floor "
+                "(AF-SPEECH-SHORT)",
+                0, 0, "SPEECH_TOO_SHORT"))
+            update_deliverable_status(ledger_path, "speech_md", "failed",
+                                      error=speech_len_reason)
 
     # --- AF-PACKAGE-CLEAN sub-check (2026-06-19, deck-quality gate) ---
     # The final bundle must contain ONLY the canonical deliverable files. Dev artifacts
@@ -9014,6 +11054,36 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 0, 0, "IMAGE_QC_VISION"))
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
+
+    # --- FIX-2: QC REPORT FLOOR sub-check (AF-QC-PLACEHOLDER) — at the pre-delivery
+    # closeout gate, re-prove every PRESENT QC phase report (copy / prompt / typography
+    # / shift) clears the REAL-CONTENT floor (> QC_REPORT_FLOOR_BYTES bytes, valid JSON,
+    # >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts). A 3-byte '{}' placeholder (the
+    # exact Error-2 artifact) can never satisfy a QC phase, so a deck delivered on a
+    # placeholder QC report is a hard delivery failure. DEFERS on an ABSENT report file
+    # (a standalone / adhoc run legitimately has no QC artifacts — report existence is
+    # enforced fail-closed at attest time by run_signature_deck.attest_phase); once a
+    # report EXISTS it must be real.
+    qc_floor_reason = ""
+    if run_dir is not None:
+        for _qc_phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+            _qc_rel = QC_PHASE_REPORT[_qc_phase_id]
+            if not (run_dir / _qc_rel).is_file():
+                continue  # no report yet — defer (the attestation gate owns absence)
+            _qc_floor = check_qc_phase_report_real(run_dir, _qc_phase_id)
+            if _qc_floor:
+                qc_floor_reason = _qc_floor
+                break
+        if qc_floor_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "real QC report floor (each present QC report clears >256 bytes, valid "
+                "JSON, >=20 real per-slide verdicts; a 3-byte '{}' placeholder never "
+                "satisfies a QC phase)",
+                0, 0, "QC_REPORT_PLACEHOLDER"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=qc_floor_reason)
 
     # --- U047: SLIDE-GEOMETRY sub-checks (AF-TEXT-OVERFLOW / AF-SPELLING /
     # AF-TYPE-SIZE-MEASURED) — the three pixel-level checks that did not exist. They read
@@ -9172,6 +11242,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                       f"must return", file=sys.stderr)
                 print(f"           HTTP 200. See teleprompter_publish.json.",
                       file=sys.stderr)
+            elif reason == "QC_REPORT_PLACEHOLDER":
+                print(f"  QC-PLACEHOLDER [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {qc_floor_reason}", file=sys.stderr)
+                print("           A QC phase report is a placeholder / sub-floor — a "
+                      "3-byte '{}' rubber stamp", file=sys.stderr)
+                print(f"           can never satisfy a QC phase (FIX-2 / Error 2). "
+                      f"Re-run the QC phase to", file=sys.stderr)
+                print(f"           produce a real per-slide report "
+                      f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
@@ -9187,10 +11266,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         print(f"\n{bar}", file=sys.stderr)
         sys.exit(5)
 
-    # --- AF-CC-UNREGISTERED check (enforced_by:build_deck, symbol:_chk_cc_registered) ---
-    # Fail-CLOSED on never-attempted; fail-SOFT on transport (a logged cc_register_attempted
-    # satisfies the gate). This runs only when the bundle check above has PASSED (all
-    # deliverables verified), so a CC failure is the only remaining blocker.
+    # --- AF-CC-UNREGISTERED / AF-CC-UNVERIFIED check (enforced_by:build_deck,
+    # symbol:_chk_cc_registered) — T2 three-outcome gate. VERIFIED = cc_task_id +
+    # verifiable cc_registration HMAC proof (real ingest round-trip) -> pass.
+    # UNVERIFIED = attempted or bare task_id without a verifying receipt ->
+    # fails with an explicit honest AF-CC-UNVERIFIED message (could-not-verify
+    # never prints as verified; fail-soft on a genuine CC outage). UNREGISTERED
+    # = neither field -> fail-CLOSED. This runs only when the bundle check
+    # above has PASSED (all deliverables verified), so a CC failure is the only
+    # remaining blocker.
     _cc_reason = _chk_cc_registered(run_dir, deck_slug)
     if _cc_reason:
         print(f"\nFATAL: {_cc_reason}", file=sys.stderr)
@@ -9205,6 +11289,37 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         size_str = f"{e.get('size', 0):,} bytes" if e.get("size") else "n/a"
         print(f"  VERIFIED  [{e['key']}] {e.get('filename')}  ({size_str})", flush=True)
     print(f"Ledger (all-verified): {ledger_path}", flush=True)
+
+    # --- OWNER-SKIP DISCLOSURE (Trust Boundary Increment 2) — this run's operator
+    # report may NEVER print COMPLETE without also surfacing every owner_skip_approval
+    # this run consumed. Sourced from the code-owned "owner_skip_events" ledger
+    # (_owner_skip_ledger_append), never from the agent-authored "owner_skip_approval"
+    # input directly — see the FIX-2 owner-skip section for the full design. This is
+    # a report step only: it reflects what already happened, it does not gate.
+    if run_dir is not None:
+        _pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+        _events = []
+        if _pm.exists():
+            _obj = _read_json(_pm)
+            if isinstance(_obj, dict) and "__parse_error__" not in _obj:
+                _raw = _obj.get(_OWNER_SKIP_LEDGER_KEY)
+                _events = _raw if isinstance(_raw, list) else []
+        if _events:
+            print(f"\n*** OWNER OVERRIDES USED IN THIS RUN — {len(_events)} EVENT(S) ***",
+                  flush=True)
+            for _ev in _events:
+                if not isinstance(_ev, dict):
+                    continue
+                _tag = "WAIVED" if _ev.get("outcome") == "granted" else "REJECTED (attempt refused)"
+                print(f"  [{_tag}] {_ev.get('af_code')} — approved_by="
+                      f"{_ev.get('approved_by')!r} reason={_ev.get('reason')!r} "
+                      f"timestamp={_ev.get('timestamp')!r} consumed_at="
+                      f"{_ev.get('consumed_at')!r}", flush=True)
+            print("*** This deck did NOT clear every gate on its own merits — see above. ***",
+                  flush=True)
+        else:
+            print("\nOwner overrides: NONE used in this run (every gate cleared on its own "
+                  "merits).", flush=True)
     print("=== COMPLETE ===\n", flush=True)
 
 
@@ -9284,7 +11399,7 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
             print(f"  [sample] variant {vid} / slide {ordn} -> {png.name}", flush=True)
             task_id = submit_task(prompt, api_key, logo_url=logo_url)
             result_url = poll_task(task_id, api_key)
-            download_unauthenticated(result_url, png)
+            download_image(result_url, png, api_key)
             verify_png(png)
             samples.append({
                 "variant": vid,
@@ -9529,6 +11644,28 @@ def main():
         )
         sys.exit(2)
 
+    # ---------------------------------------------------------------------
+    # TRUST BOUNDARY, INCREMENT 1 (report-only). Seal the RunFacts record for
+    # this run EXACTLY ONCE, at the same admission point the front-door nonce
+    # was just verified above — deliberately the FIRST thing that runs after
+    # admission succeeds. Every _owner_skip_approved call and the P-TYPO-QC
+    # shadow verifier below reuse this single sealed snapshot (get_or_seal)
+    # instead of each re-opening process_manifest.json / QC reports on its
+    # own schedule. Sealing itself is report-only and can never block
+    # admission — any error here is caught and logged, never raised; see
+    # presentation_job/runfacts.py for the full design and its honest limits.
+    # ---------------------------------------------------------------------
+    try:
+        from presentation_job import runfacts as _runfacts  # noqa: PLC0415
+        _runfacts.seal(_nonce_run_dir, nonce_bound=True)
+    except Exception as _rf_exc:  # noqa: BLE001 — sealing must never block admission
+        try:
+            print(f"TRUST-BOUNDARY-SEAL-ERROR: could not seal RunFacts for "
+                  f"{_nonce_run_dir}: {_rf_exc!r} (report-only — run proceeds)",
+                  file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            pass
+
     # P-STYLE-PREVIEW (order 4.85) --sample mode: render 9 style samples (3 variants x
     # 3 representative slides) for the owner's gateway sign-off, then stop. Needs only
     # slides.json (no out.pptx / full preflight / postflight).
@@ -9770,7 +11907,21 @@ def main():
         if _ocr_engine_reason:
             print("\nFATAL: " + _ocr_engine_reason, file=sys.stderr)
             sys.exit(4)
-        _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
+        # FIX-6 — one-shot auth proof BEFORE any render: a 401 here aborts with the
+        # auth diagnosis instead of a 164x backoff tailspin mid-render.
+        try:
+            _preflight_kie_auth(api_key)
+        except AuthError as exc:
+            print(f"\nFATAL: {exc}", file=sys.stderr)
+            sys.exit(4)
+        # FIX-E2E (incremental resume): count only the UN-rendered slides for the
+        # balance floor. A resume/re-render that already produced 18 of 20 slides
+        # only needs credit for the remaining 2, not the full deck — the old code
+        # passed len(slides) (the full count), so a low-but-sufficient balance
+        # (2 remaining ≈ 10 credits) was rejected against a 100-credit full-deck
+        # floor, bricking every OCR-retry resume.
+        _remaining = max(0, len(slides) - len(_gather_rendered_pngs(run_dir)))
+        _balance_reason = kie_balance_preflight(run_dir, _remaining, api_key)
         if _balance_reason:
             print("\nFATAL: " + _balance_reason, file=sys.stderr)
             sys.exit(4)
@@ -9800,38 +11951,38 @@ def main():
     has_official_logo = (logo_path is not None) or (logo_url is not None)
     ordered = sorted(slides, key=lambda s: s["slide"])
 
-    # PARALLEL RENDER: each slide is an independent KIE generation, so fan them out
-    # across a bounded ThreadPoolExecutor. Per-slide retry / 429 backoff still live
-    # inside render_slide; we just run the slides concurrently.
-    workers = min(_render_workers(), len(ordered))
-    print(f"=== rendering {len(ordered)} slides with {workers} parallel workers ===\n", flush=True)
+    # BATCH RENDER (FIX-5 / D22 root cause B): submit ALL prompts once (0.6s apart,
+    # inside kie's 20/10s window + 100 concurrent tasks), then poll every submitted
+    # task together every 10s and download each image the moment ITS task finishes.
+    # This replaces the old submit-one-then-poll path, which serialized submit+poll+
+    # download per slide and wasted 20+ min on a 20-slide deck. Per-slide gates are
+    # unchanged: rich-prompt floor, English pin, i2i logo compositing, post-download
+    # aspect/OCR verification and the U028 task-id checkpoint all still run.
+    print(f"=== rendering {len(ordered)} slides via BATCH (submit all, then poll all) ===\n",
+          flush=True)
     # BOARD: the render phase is now the one being worked (fail-soft; no-op when
     # the board is disabled / the ingest never returned a task_id).
     if not adhoc:
         _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "in_progress",
-                           note=f"rendering {len(ordered)} slides")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_slide = {
-            pool.submit(render_slide, slide, api_key, renders_dir, run_dir,
-                        has_official_logo=has_official_logo, logo_url=logo_url): slide
-            for slide in ordered
-        }
-        for fut in concurrent.futures.as_completed(future_to_slide):
-            slide = future_to_slide[fut]
-            try:
-                result = fut.result()
-                rendered.append(result)
-                task_ids.append(result["taskId"])
-            except Exception as exc:  # noqa: BLE001
-                failures.append({"slide": slide.get("slide"), "error": str(exc)})
-                print(f"  SLIDE FAILED: {exc}", file=sys.stderr, flush=True)
+                           note=f"batch-rendering {len(ordered)} slides")
+    batch_result = render_slides_batch(
+        ordered, api_key, renders_dir, run_dir,
+        has_official_logo=has_official_logo, logo_url=logo_url)
+    rendered = batch_result["rendered"]
+    failures = batch_result["failures"]
 
     # Deterministic order for the summary / manifest regardless of completion order.
     rendered.sort(key=lambda r: r["slide"])
     task_ids = [r["taskId"] for r in rendered]
     failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
 
-    # FAIL LOUD: never produce a partial deck silently.
+    # FAIL LOUD: never produce a partial deck silently. FIX-7 (D14): a render that
+    # failed (e.g. a RenderPollTimeout from a never-completing kie task) must NOT
+    # leave the CC card in 'in_progress' — surface a terminal status so the run
+    # never hangs. 'blocked' is a CC_TASK_STATUSES member; mid-run this is legal
+    # because the run is ending with a hard failure (no process cert is minted, so
+    # the cert-gate 422 concern does not apply to an abort). Fail-soft: a disabled
+    # board / missing task_id is a clean no-op.
     if failures:
         summary = {
             "slidesRendered": len(rendered),
@@ -9841,6 +11992,11 @@ def main():
         }
         print("\n=== SUMMARY (FAILED) ===", file=sys.stderr)
         print(json.dumps(summary, indent=2))
+        if not adhoc:
+            _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "blocked",
+                               note=f"render FAILED: {len(failures)} slide(s) did not "
+                                    f"complete (e.g. poll hard cap / terminal state). "
+                                    f"Never hangs.")
         sys.exit(1)
 
     # BOARD: every slide rendered cleanly — log render-phase PROGRESS as an ACTIVITY

@@ -1,0 +1,63 @@
+{
+  "actions": [
+    "custom-webhook",
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "email": {
+      "body": "Hi {{ contact.first_name }},\n\nYour chapter for {{ custom_values.anthology_name }} is ready for your review.\n\nYou can view the PDF here:\n{{contact.anthology_chapter_pdf_url}}\n\nAnd you can edit your Google Doc here:\n{{contact.anthology_chapter_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nYou can now approve your chapter or request an editors' rewrite by opening this link:\nhttps://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s5_gate\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
+      "doc_link": "{{contact.anthology_chapter_doc_url}}",
+      "from_name": "{{ custom_values.producer }}",
+      "pdf_link": "{{contact.anthology_chapter_pdf_url}}",
+      "reply_to": "{{ custom_values.producer_email }}",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s5_gate",
+      "subject": "Your chapter for {{ custom_values.anthology_name }} is ready for your review"
+    },
+    "payload": {
+      "anthology_id": "{{ contact.anthology_id }}",
+      "contact_id": "{{ contact.id }}",
+      "decision": "approve_as_is",
+      "form": "universal-review",
+      "location": "{{ location.id }}",
+      "source": "anthology-intake",
+      "stage": "s5_gate"
+    },
+    "sms": {
+      "body": "{{ contact.first_name }}, your chapter is ready to review. Here is your Google Doc: {{contact.anthology_chapter_doc_url}}",
+      "doc_link": "{{contact.anthology_chapter_doc_url}}"
+    },
+    "trigger": {
+      "form_id_marker": "...Lqq0",
+      "scoped_form": "universal-review",
+      "trigger_filter": "Form is universal-review",
+      "trigger_type": "form_submission",
+      "workflow_name": "Anthology Review Fire"
+    },
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "content_type": "application/json",
+      "method": "POST",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow": "Anthology Review Fire"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_chapter_pdf_url}}",
+      "{{contact.anthology_chapter_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_chapter_doc_url}}"
+  },
+  "module": "w1_review_fire",
+  "name": "Anthology Review Fire",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 1,
+  "status": "LIVE",
+  "trigger": {
+    "scoped_form": "universal-review",
+    "type": "form_submission"
+  }
+}

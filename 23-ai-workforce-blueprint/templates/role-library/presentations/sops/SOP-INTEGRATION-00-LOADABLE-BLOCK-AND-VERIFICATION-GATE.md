@@ -3,7 +3,7 @@
 **Cluster:** North-Star Doctrine (the integration + ship layer)
 **Doctrine parent:** SOP-NORTHSTAR-00 (Attention Is the Product). This SOP is how the North Star becomes a *pre-output gate*, not a wish.
 **Owning roles at write time:** Director of Presentations (synthesis + wiring); QC-Specialist-Presentations (owns the composite gate at the new P-SHIFT-QC phase, 7.5)
-**Enforced at the gate by:** composite **`AF-PRIORITY-SHIFT`** (NEW — runner, Phase 7.5 P-SHIFT-QC). Runs all 14 sub-assertions, writes `working/qc/priority_shift_report.json` (one row per item + evidence), and refuses ship until all 14 PASS. Blocks like `AF-PHASE-SKIPPED`. **[AF code noted for Agent W3 — see §6.]**
+**Enforced at the gate by:** composite **`AF-PRIORITY-SHIFT`** (DOCTRINE-ONLY — specified at Phase 7.5 P-SHIFT-QC, not yet mechanically wired in build_deck.py or PIPELINE-MANIFEST.autofails). Runs all 14 sub-assertions, writes `working/qc/priority_shift_report.json` (one row per item + evidence), and refuses ship until all 14 PASS. Blocks like `AF-PHASE-SKIPPED`. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for registration status.
 **Status:** Doctrine SOP. Encodes Powerful-Presentation-Framework Part 11 (integration for AI) + Part 10.4/10.5 (construction + priority-shift checklists) + Appendix C (quote index), and edge cases 167e/k. This SOP carries the **canonical loadable block** verbatim (§3) and the **14-item gate** (§4). Faithful source: `Powerful_Presentation_Framework.md` §10.4–10.5, §11, §13, Appendix C.
 
 ---

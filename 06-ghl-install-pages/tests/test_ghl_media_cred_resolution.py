@@ -75,6 +75,14 @@ def fake_stores(tmp_path, monkeypatch):
 # ── LOCATION PIT — env-only resolution (search_stores=False) ──────────────────
 
 class TestPitEnvResolution:
+    def test_engine_alias_wins_when_present(self):
+        # The Podcast Engine's OWN PIT is checked FIRST over any generic
+        # GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+        FAKE_ENGINE_PIT = "pit-FAKE-engine-000000000000"
+        env = {"PODCAST_ENGINE_GHL_PIT": FAKE_ENGINE_PIT,
+               "GOHIGHLEVEL_API_KEY": FAKE_LOC_PIT}
+        assert m.resolve_location_pit(env, search_stores=False) == FAKE_ENGINE_PIT
+
     def test_preferred_alias_wins(self):
         env = {"GOHIGHLEVEL_API_KEY": FAKE_LOC_PIT, "GHL_API_KEY": FAKE_LEGACY_PIT}
         assert m.resolve_location_pit(env, search_stores=False) == FAKE_LOC_PIT
@@ -156,6 +164,13 @@ class TestPitStoreFallback:
 # ── LOCATION ID — env + store + allowlist ─────────────────────────────────────
 
 class TestLocationIdResolution:
+    def test_engine_alias_wins_when_present(self):
+        # The Podcast Engine's OWN location id is checked FIRST over generic ids.
+        FAKE_ENGINE_LOC = "LOCFAKEENGINE0000000001"
+        env = {"PODCAST_ENGINE_GHL_LOCATION_ID": FAKE_ENGINE_LOC,
+               "GOHIGHLEVEL_LOCATION_ID": FAKE_LOC_ID}
+        assert m.resolve_location_id(env, search_stores=False) == FAKE_ENGINE_LOC
+
     def test_preferred_alias_wins(self):
         env = {"GOHIGHLEVEL_LOCATION_ID": FAKE_LOC_ID, "GHL_LOCATION_ID": FAKE_LOC_ID_2}
         assert m.resolve_location_id(env, search_stores=False) == FAKE_LOC_ID
@@ -187,11 +202,15 @@ class TestAliasSetInvariants:
             assert agency not in m._PIT_ENV_NAMES, \
                 f"{agency} is agency-class and must NEVER be a LOCATION-PIT alias"
 
-    def test_preferred_pit_alias_is_gohighlevel_api_key(self):
-        assert m._PIT_ENV_NAMES[0] == "GOHIGHLEVEL_API_KEY"
+    def test_preferred_pit_alias_is_podcast_engine_pit(self):
+        # The Podcast Engine's own PIT is checked FIRST so the engine tenant
+        # always wins over a generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+        assert m._PIT_ENV_NAMES[0] == "PODCAST_ENGINE_GHL_PIT"
+        assert m._PIT_ENV_NAMES[1] == "GOHIGHLEVEL_API_KEY"
 
-    def test_preferred_location_alias_is_gohighlevel_location_id(self):
-        assert m._LOCATION_ENV_NAMES[0] == "GOHIGHLEVEL_LOCATION_ID"
+    def test_preferred_location_alias_is_podcast_engine_location_id(self):
+        assert m._LOCATION_ENV_NAMES[0] == "PODCAST_ENGINE_GHL_LOCATION_ID"
+        assert m._LOCATION_ENV_NAMES[1] == "GOHIGHLEVEL_LOCATION_ID"
 
     def test_secrets_env_is_first_store(self):
         assert m._GHL_ENV_STORES[0] == "~/.openclaw/secrets/.env"

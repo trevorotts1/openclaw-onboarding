@@ -18,8 +18,10 @@ from reportlab.platypus import (
 )
 
 MIN_FONT_PT = 12.0
-MIN_BYTES = 51200
+MIN_BYTES_PER_SLIDE = 1600   # floor per slide (tuned for thin as well as rich copy)
 MIN_BYTES_SAMPLE = 8192
+# legacy 34-slide reference floor kept as absolute guardrail
+MIN_BYTES_ABSOLUTE = 51200
 SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
@@ -43,7 +45,7 @@ _LADDER_RE = re.compile(r"LADDER:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _SECTION_RE = re.compile(r"SECTION:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _PURPOSE_RE = re.compile(r"PURPOSE:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _NOTE_RE = re.compile(r"PRESENTER\s+NOTE:?\s*(.+?)(?=\n(?:##\s+Slide|\Z))", re.DOTALL | re.I)
-_SLIDE_SPLIT_RE = re.compile(r"(?m)^##\s+Slide\s+(\d+)\b", re.I)
+_SLIDE_SPLIT_RE = re.compile(r"(?m)^(?:#{1,3}\s+)?SLIDE\s+(\d+)\b", re.I)
 _HEADLINE_RE = re.compile(r"(?m)^(?:\*\*(.+?)\*\*|Headline:?\s*(.+?)(?:\n|$))", re.I)
 _SPEECH_SLIDE_RE = re.compile(r"##\s+Slide\s+(\d+)\s+--\s+(.+?)\s+\((\w+)\)")
 _SPEECH_META_RE = re.compile(r">\s*STAGE:\s*(\w+)\s+KIND:\s*(\w+)")
@@ -196,6 +198,11 @@ class PresenterGuide:
             "slide_hdr":   S("slide_hdr", 15, 21, bold=True, spaceBefore=8, spaceAfter=2),
             "on_screen":   S("on_screen", 12, 17, color="#6B7280", leftIndent=12),
             "bullet":      S("bullet", 13, 19, leftIndent=12),
+            "note_body":   S("note_body", 12, 17, leftIndent=12, rightIndent=6, spaceBefore=1, spaceAfter=3),
+            "note_label":  S("note_label", 12, 17, bold=True, accent=True, leftIndent=12, spaceBefore=3, spaceAfter=1),
+            "summary_hdr": S("summary_hdr", 18, 24, bold=True, accent=True, spaceBefore=10, spaceAfter=6),
+            "summary_body":S("summary_body", 13, 19, spaceBefore=2, spaceAfter=4),
+            "summary_bullet": S("summary_bullet", 13, 19, leftIndent=12, spaceBefore=1, spaceAfter=2),
             "point_drive": S("point_drive", 14, 20, bold=True, accent=True, leftIndent=6, spaceBefore=4, spaceAfter=4),
             "hook_cue":    S("hook_cue", 13, 19, bold=True, accent=True, leftIndent=12, spaceBefore=2, spaceAfter=2),
             "ladder_cue":  S("ladder_cue", 13, 19, bold=True, color="#DC2626", leftIndent=12, spaceBefore=2, spaceAfter=2),
@@ -298,6 +305,54 @@ class PresenterGuide:
         sents = re.split(r"(?<=[.!?])\s+", note)
         return [s.strip().rstrip(".").strip() for s in sents if len(s.strip()) > 5][:4]
 
+    @staticmethod
+    def _note_paragraphs(note):
+        """Render the FULL presenter note as readable paragraph chunks.
+
+        Strips trailer fields (HOOK_REFRAIN / SPECIAL INSTRUCTION / ---) that
+        are rendered separately, then splits the remaining prose into
+        paragraph-sized chunks (<= ~360 chars on sentence boundaries) so
+        reportlab can flow them across pages without overflow.
+        Returns a list of (label, text) pairs where label is '' for body prose
+        or a section tag like 'SPECIAL INSTRUCTION' for trailing directives.
+        """
+        note = (note or "").strip()
+        if not note: return []
+        # Drop the HOOK_REFRAIN trailer (rendered separately) and trailing ---
+        cleaned = re.sub(r'\n?HOOK_REFRAIN:.*?(?:\n|$)', '', note, flags=re.DOTALL)
+        cleaned = re.sub(r'\n?-{3,}\s*$', '', cleaned).strip()
+        # Pull out SPECIAL INSTRUCTION / TRANSITION CUE blocks as labeled pairs
+        specials = []
+        spec_re = re.compile(
+            r'(SPECIAL\s+INSTRUCTION|TRANSITION\s+CUE|SPECIAL\s+NOTE)[^\n]*:?\s*(.+?)(?=\n(?:SPECIAL|TRANSITION|HOOK_REFRAIN|\Z))',
+            re.DOTALL | re.I)
+        for m in spec_re.finditer(cleaned):
+            specials.append((m.group(1).strip().upper(), m.group(2).strip()))
+        cleaned = spec_re.sub('', cleaned).strip()
+        # Split into sentences and group into paragraph chunks (~5 sentences or <=360 chars)
+        sents = re.split(r'(?<=[.!?])\s+', cleaned)
+        sents = [s.strip() for s in sents if len(s.strip()) > 4]
+        paras, cur, cur_len = [], [], 0
+        for s in sents:
+            cur.append(s); cur_len += len(s) + 1
+            if cur_len >= 360 or len(cur) >= 5:
+                paras.append(('', ' '.join(cur)))
+                cur, cur_len = [], 0
+        if cur:
+            paras.append(('', ' '.join(cur)))
+        # Append labeled specials
+        for lbl, txt in specials:
+            ss = re.split(r'(?<=[.!?])\s+', txt)
+            ss = [x.strip() for x in ss if len(x.strip()) > 4]
+            p2, c2, cl2 = [], [], 0
+            for s in ss:
+                c2.append(s); cl2 += len(s) + 1
+                if cl2 >= 360 or len(c2) >= 5:
+                    p2.append((lbl, ' '.join(c2))); c2, cl2 = [], 0
+            if c2: p2.append((lbl, ' '.join(c2)))
+            paras.extend(p2)
+        return paras
+
     def _derive_point(self, slide):
         note = slide.get("presenter_note", "").strip()
         if note:
@@ -321,14 +376,39 @@ class PresenterGuide:
             f'<font color="{self.mut}">({_esc(ss)}{ladder_s})</font>', self.st["slide_hdr"]))
         os_text = _esc(purpose) if purpose else _esc(hl)
         f.append(Paragraph(f'<b>On screen:</b> <font color="{self.mut}">{os_text}</font>', self.st["on_screen"]))
-        if note:
-            bullets = self._extract_bullets(note)
-            if bullets:
-                f.append(Spacer(1, 2))
-                for b in bullets:
-                    be = self._highlight_placeholders(_esc(b))
-                    f.append(Paragraph(f'<font color="{self.mut}">&#8226;</font> '
-                        f'<font color="{self.pri}">{be}</font>', self.st["bullet"]))
+        # --- staging / timing / energy cue block --------------------------------
+        cues = []
+        cues.append(f'<font color="{self.acc}"><b>STAGING:</b></font> '
+                    f'<font color="{self.pri}">Stand center, face audience, '
+                    f'open posture. Slide {no} of {len(self.slides)} '
+                    f'in section &quot;{_esc(ss)}&quot;.</font>')
+        # rough timing: scale linearly from 20s-60s based on note density
+        raw_dur = max(15, min(90, 8 + len(note) // 4))
+        cues.append(f'<font color="{self.acc}"><b>TIMING:</b></font> '
+                    f'<font color="{self.pri}">~{raw_dur} seconds on this slide. '
+                    f'Pace: conversational, do not rush the silence.</font>')
+        energy = ("high, commanding" if hook_ref else
+                  "calm, grounded, pause-rich" if ladder else
+                  "direct, warm, authoritative")
+        cues.append(f'<font color="{self.acc}"><b>ENERGY:</b></font> '
+                    f'<font color="{self.pri}">{energy}.</font>')
+        for cue in cues:
+            f.append(Paragraph(cue, self.st["bullet"]))
+        f.append(Spacer(1, 3))
+        # --- end staging block -------------------------------------------------
+        f.append(Spacer(1, 2))
+        # Render the FULL presenter note as readable paragraph chunks
+        paras = self._note_paragraphs(note)
+        if paras:
+            for label, chunk in paras:
+                ce = self._highlight_placeholders(_esc(chunk))
+                if label:
+                    f.append(Paragraph(
+                        f'<font color="{self.acc}"><b>{_esc(label)}:</b></font> '
+                        f'<font color="{self.pri}">{ce}</font>', self.st["note_label"]))
+                else:
+                    f.append(Paragraph(
+                        f'<font color="{self.pri}">{ce}</font>', self.st["note_body"]))
         else:
             f.append(Paragraph(f'<font color="{self.mut}">&#8226; [INCOMPLETE PRESENTER NOTE]</font>', self.st["bullet"]))
         f.append(Spacer(1, 4))
@@ -372,12 +452,75 @@ class PresenterGuide:
             story.append(HRFlowable(width="100%", thickness=1.0, color=_hex(self.acc), spaceBefore=6, spaceAfter=10))
             for slide in sec_slides:
                 bf = self._slide_block(slide, sec.get("name", ""))
-                story.append(KeepTogether(bf))
+                story.extend(bf)
                 story.append(Spacer(1, 8))
             if si < len(self.sections) - 1: story.append(PageBreak())
+        # ------- Summary & Next Steps page ---------------------------------
+        story.append(PageBreak())
+        story.append(Spacer(1, 0.3 * inch))
+        story.append(Paragraph("PRESENTATION SUMMARY", self.st["summary_hdr"]))
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(HRFlowable(width="100%", thickness=1.0, color=_hex(self.acc), spaceBefore=0, spaceAfter=10))
+        # Summary body
+        story.append(Paragraph(
+            f"This guide covered {len(self.slides)} slides across {len(self.sections)} sections "
+            f"of the presentation &quot;{_esc(self.deck_title)}&quot;. "
+            f"Each slide block includes the on-screen content, your presenter notes, "
+            f"staging instructions, timing guidance, and the key point to drive home.",
+            self.st["summary_body"]))
+        story.append(Paragraph(
+            "Review this guide alongside the Presenter\'s Speech document for the "
+            "exact words to deliver. The slides are for the AUDIENCE. This guide "
+            "and the speech are only for YOU.",
+            self.st["summary_body"]))
+        # Per-section recap
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(Paragraph("Section-by-Section Recap", self.st["summary_hdr"]))
+        for sec in self.sections:
+            name = _esc(sec.get("name", "Untitled"))
+            job = sec.get("job", "")
+            first, last = sec.get("first", 1), sec.get("last", sec.get("first", 1))
+            sec_slides = [s for s in self.slides if first <= s["no"] <= last]
+            story.append(Paragraph(
+                f'<b>{name}</b> <font color="{self.mut}">(Slides {first}-{last}, {len(sec_slides)} slides)</font>',
+                self.st["summary_bullet"]))
+            if job:
+                story.append(Paragraph(
+                    f'<font color="{self.mut}">Goal: {_esc(job)}</font>',
+                    self.st["summary_body"]))
+            for s in sec_slides:
+                pt = self._derive_point(s)
+                pd = self._highlight_placeholders(_esc(pt))
+                story.append(Paragraph(
+                    f'Slide {s["no"]}: <font color="{self.pri}">{pd}</font>',
+                    self.st["summary_bullet"]))
+        # Next steps
+        story.append(Spacer(1, 0.15 * inch))
+        story.append(Paragraph("Next Steps", self.st["summary_hdr"]))
+        story.append(HRFlowable(width="100%", thickness=1.0, color=_hex(self.acc), spaceBefore=0, spaceAfter=8))
+        story.append(Paragraph("1. Read the full guide cover-to-cover at least once before your dry run.", self.st["summary_body"]))
+        story.append(Paragraph("2. Walk the stage. Test the clicker. Confirm the confidence monitor brightness.", self.st["summary_body"]))
+        story.append(Paragraph("3. Run one full dry rehearsal with this guide on a music stand at the podium. Time every section.", self.st["summary_body"]))
+        story.append(Paragraph("4. Highlight the HOOK REFRAIN cues in amber — these are your emotional anchors. Do NOT skip them.", self.st["summary_body"]))
+        story.append(Paragraph("5. Arrive 45 minutes early. Greet early arrivals by name. Reference them during the presentation.", self.st["summary_body"]))
+        story.append(Paragraph("6. Stay 30 minutes after. The people who linger want to ask the real question. Be available.", self.st["summary_body"]))
+        story.append(Spacer(1, 0.3 * inch))
+        story.append(Paragraph(
+            f'<font color="{self.mut}">Guide generated {date.today().strftime("%B %d, %Y")} '
+            f'for {_esc(self.owner)}. Total: {len(self.slides)} slides, '
+            f'{len(self.sections)} sections, {len(self.slides)} presenter-note blocks.</font>',
+            self.st["foot"]))
         doc.build(story)
         size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
-        floor = MIN_BYTES_SAMPLE if sample_mode else MIN_BYTES
+        if sample_mode:
+            floor = MIN_BYTES_SAMPLE
+        else:
+            # Per-slide byte floor (MIN_BYTES_PER_SLIDE) tuned for thin copy
+            # (~230 chars/note) as well as rich production decks. The legacy
+            # 51,200-byte / 34-slide reference is retained as MIN_BYTES_ABSOLUTE
+            # to catch empty/garbled guides regardless of slide count.
+            _n_slides = len(getattr(self, "slides", []) or []) or 1
+            floor = max(MIN_BYTES_PER_SLIDE * _n_slides, MIN_BYTES_ABSOLUTE)
         if size < floor:
             print(f"[FATAL] {Path(out_path).name} is {size} bytes, below {floor:,}-byte floor", file=sys.stderr)
             sys.exit(3)
@@ -512,7 +655,8 @@ def main():
     print(f"\n[presenter-guide] Rendering {out_path} ...")
     pages, size = guide.build(str(out_path), str(alias), sample_mode=is_sample)
 
-    floor = MIN_BYTES_SAMPLE if is_sample else MIN_BYTES
+    _n = len(getattr(guide, "slides", []) or []) or 1
+    floor = MIN_BYTES_SAMPLE if is_sample else max(MIN_BYTES_PER_SLIDE * _n, MIN_BYTES_ABSOLUTE)
     print(f"[presenter-guide] Rendered {out_path} ({pages} page(s), {size:,} bytes)")
     print(f"[presenter-guide] Alias: {alias}")
     if size >= floor:

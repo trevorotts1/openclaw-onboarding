@@ -49,28 +49,38 @@ REWRITE2 = ("contact.anthology_chapter_rewrite2_doc_url",
 
 
 # ---------------------------------------------------------------------------
-# G11: field-map declares LARGE_TEXT everywhere; SINGLE_OPTIONS stays out.
+# G11: field-map declares LARGE_TEXT everywhere; the TWO picklists are SINGLE_OPTIONS.
 # ---------------------------------------------------------------------------
 def test_field_map_all_free_text_is_large_text():
     fm = json.loads(FIELD_MAP.read_text(encoding="utf-8"))
     inv = fm["provisioning"]["fields"]
-    # Integration: 19 base + 4 G10 rewrite (U10) + 5 U8 cover-style = 28 keys.
-    assert len(inv) == 28, "expected 28 provisioning keys, got %d" % len(inv)
-    assert fm["provisioning"]["total_keys"] == 28
+    # Integration: 19 base + 4 G10 rewrite (U10) + 5 U8 cover-style + 10 U15-absorbed = 38 keys.
+    assert len(inv) == 38, "expected 38 provisioning keys, got %d" % len(inv)
+    assert fm["provisioning"]["total_keys"] == 38
     for row in inv:
-        # G11: every free-text key is LARGE_TEXT. The one exception is the U8 cover
-        # choice, a SINGLE_OPTIONS picklist that legitimately lives in this inventory.
+        # G11: every free-text key is LARGE_TEXT. The two exceptions are the U8 cover
+        # choice and the U15-absorbed review decision, SINGLE_OPTIONS picklists that
+        # legitimately live in this inventory, each carrying its own options.
         if row["intended_key"] == "contact.anthology_cover_choice":
             assert row["data_type"] == "SINGLE_OPTIONS", \
                 "the cover choice must be SINGLE_OPTIONS, got %s" % row["data_type"]
+        elif row["intended_key"] == "contact.anthology_review_decision":
+            assert row["data_type"] == "SINGLE_OPTIONS", \
+                "the review decision must be SINGLE_OPTIONS, got %s" % row["data_type"]
         else:
             assert row["data_type"] == "LARGE_TEXT", \
                 "%s must be LARGE_TEXT (G11), got %s" % (row["intended_key"], row["data_type"])
-    # The universal-review DECISION field is SINGLE_OPTIONS and stays out of this map;
-    # the U8 cover-choice SINGLE_OPTIONS field IS provisioned here (has its picklist).
+    # U15 absorb: the review-decision field now LIVES in the map (its options are the
+    # gate_engine s5_gate actions, byte-exact), per Trevor's absorb call — nothing deleted.
     keys = {row["intended_key"] for row in inv}
-    assert "contact.anthology_review_decision" not in keys, \
-        "the review decision is SINGLE_OPTIONS and must not be in field-map"
+    assert "contact.anthology_review_decision" in keys, \
+        "the review decision must be in field-map (U15-absorbed)"
+    decision = next(row for row in inv if row["intended_key"] == "contact.anthology_review_decision")
+    assert decision["options"] == ["approve_as_is", "request_rewrite_with_notes"], \
+        "the decision options must be the gate_engine s5_gate actions"
+    cover = next(row for row in inv if row["intended_key"] == "contact.anthology_cover_choice")
+    assert cover["options"] == ["Signature", "Bold Editorial", "Fine Art", "Pure Type"], \
+        "the cover-choice options must be the four cover-style names"
 
 
 def test_field_map_inventory_matches_deliverable_contract():
@@ -84,8 +94,15 @@ def test_field_map_inventory_matches_deliverable_contract():
     contract.update((csf.get("sample_url_fields") or {}).values())
     if csf.get("choice_field"):
         contract.add(csf["choice_field"])
+    # U15-absorbed: the review-decision key and the 9 absorbed LARGE_TEXT keys.
+    rdf = fm.get("review_decision_field") or {}
+    if rdf.get("key"):
+        contract.add(rdf["key"])
+    for group in (fm.get("absorbed_fields") or {}).values():
+        if isinstance(group, dict):
+            contract.update(group.values())
     inv_keys = {row["intended_key"] for row in fm["provisioning"]["fields"]}
-    assert contract == inv_keys, "provisioning inventory drifted from deliverable/control/cover-style keys"
+    assert contract == inv_keys, "provisioning inventory drifted from deliverable/control/cover-style/review-decision/absorbed keys"
     # the four G10 rewrite keys are present and distinct from the base chapter pair
     assert set(REWRITE1) | set(REWRITE2) <= inv_keys
     assert not (set(BASE_CHAPTER) & (set(REWRITE1) | set(REWRITE2)))
@@ -215,14 +232,18 @@ def test_fresh_location_provisions_large_text():
         dev = _Sink()
         rc = registry.provision_fields(fake, p, "loc_fresh_TEST", out=dev)
         assert rc == registry.EX_OK, "fresh provision rc=%s" % rc
-        assert len(fake.fields) == 28, "fresh location should create 28 fields, got %d" % len(fake.fields)
+        assert len(fake.fields) == 38, "fresh location should create 38 fields, got %d" % len(fake.fields)
         types = {f["dataType"] for f in fake.fields.values()}
         assert types == {"LARGE_TEXT", "SINGLE_OPTIONS"}, \
             "fresh-location create must be LARGE_TEXT for free-text + SINGLE_OPTIONS for the cover choice, got %s" % types
-        # the map stamped every free-text row LARGE_TEXT (all but the cover choice)
+        # the map stamped every free-text row LARGE_TEXT (all but the two picklists)
         stamped = json.loads(p.read_text(encoding="utf-8"))
         assert all(r["data_type"] == "LARGE_TEXT" for r in stamped["provisioning"]["fields"]
-                   if r["intended_key"] != "contact.anthology_cover_choice")
+                   if r["intended_key"] not in ("contact.anthology_cover_choice",
+                                                "contact.anthology_review_decision"))
+        assert all(r["data_type"] == "SINGLE_OPTIONS" for r in stamped["provisioning"]["fields"]
+                   if r["intended_key"] in ("contact.anthology_cover_choice",
+                                            "contact.anthology_review_decision"))
 
 
 def test_existing_large_text_location_verifies_unchanged():

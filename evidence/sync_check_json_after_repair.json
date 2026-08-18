@@ -1,0 +1,23 @@
+{
+  "in_sync": true,
+  "manifest_version": 38,
+  "counts": {
+    "phases": 33,
+    "autofails": 166,
+    "roles": 34
+  },
+  "drift": [],
+  "drift_summary": {
+    "total": 0,
+    "render_path": 0,
+    "library_only": 0
+  },
+  "warnings": [
+    {
+      "check": "W1",
+      "item": "P-QC-AGGREGATE",
+      "detail": "phase P-QC-AGGREGATE declares no verifier. step (i) \u2014 declare executor and verifier on the phase in PIPELINE-MANIFEST.json (the step contract). ADVISORY until every phase carries both; then this class is promoted to fail-closed in a separate unit."
+    }
+  ],
+  "warn_count": 1
+}

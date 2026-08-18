@@ -22,14 +22,24 @@ This file tests the two pieces that fix adds:
 
 Flat file beside the code it tests, manages its own import path -- matching
 every sibling in this directory (test_gates.py, test_client_package.py, etc.).
+
+FIX-1 (AF-FORGED-APPROVAL): adhoc authorization is folded into the same
+authenticity oracle as phase-skip approvals. EVERY adhoc record must carry an
+owner_msg_id that RESOLVES to a real owner-authored message in Command Center
+task_activities. These CLI tests therefore seed a genuine owner_msg_id and run
+inside a tiny local CC owner-ids server (COMMAND_CENTER_URL pointed at it) so
+the oracle resolves over real HTTP -- the same hermetic pattern
+test_skip_approval_authenticity.py uses.
 """
 from __future__ import annotations
 
+import http.server
 import json
 import os
 import secrets
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -167,10 +177,65 @@ def _write_nonce(run_dir: Path) -> str:
     return nonce
 
 
+# The GENUINE owner message id the regression tests' adhoc record resolves to.
+# It is served by the local CC owner-ids oracle below (never a real id).
+GENUINE_OWNER_MSG_ID = "owner-msg-regression-0001"
+
+
+class _OwnerIdsHandler(http.server.BaseHTTPRequestHandler):
+    """Serves GET /api/tasks/{id}/messages/owner-ids with GENUINE_OWNER_MSG_ID so
+    the engine's authenticity oracle (FIX-1) resolves the adhoc record's
+    owner_msg_id over real HTTP."""
+
+    def do_GET(self):
+        if self.path.endswith("/messages/owner-ids"):
+            body = json.dumps([GENUINE_OWNER_MSG_ID]).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):
+        pass  # quiet
+
+
+class _LocalBoard:
+    """Context manager: start the owner-ids server on an ephemeral port, point
+    COMMAND_CENTER_URL at it, and restore the environment on exit."""
+
+    def __init__(self):
+        self._srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _OwnerIdsHandler)
+        self.port = self._srv.server_address[1]
+        self._thread = threading.Thread(target=self._srv.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self._saved = {k: os.environ.get(k) for k in ("COMMAND_CENTER_URL", "CC_API_TOKEN")}
+        self._thread.start()
+        os.environ["COMMAND_CENTER_URL"] = f"http://127.0.0.1:{self.port}"
+        os.environ["CC_API_TOKEN"] = "tok-test"
+        return self
+
+    def __exit__(self, *exc):
+        self._srv.shutdown()
+        self._srv.server_close()
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        return False
+
+
 def _run_cli(run_dir: Path, phase_id: str, slides_path: Path, out_path: Path):
     nonce = _write_nonce(run_dir)
     env = dict(os.environ)
     env["OC_DECK_ENTRY_NONCE"] = nonce
+    # COMMAND_CENTER_URL is set by the enclosing _LocalBoard context; a real value
+    # must be present or the authenticity oracle is UNDETERMINED (fail-closed).
     for k in ("PRESENTATION_OWNER_CHAT_ID", "OPENCLAW_OWNER_CHAT_ID", "OWNER_CHAT_ID",
               "OWNER_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID"):
         env.pop(k, None)
@@ -189,8 +254,16 @@ class TestNullExecutorRegressionCLI:
         (run_dir / "working" / "checkpoints").mkdir(parents=True)
         intake = {"slides": [{"no": 1}], "DECK_SLUG": "test", "pitch_included": False}
         (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+        # FIX-1 (AF-FORGED-APPROVAL): the adhoc record MUST carry an owner_msg_id
+        # that resolves to a real owner-authored message via the CC owner-ids oracle.
+        # The run's manifest names the CC task; the enclosing _LocalBoard serves
+        # GENUINE_OWNER_MSG_ID as that task's real owner-message id.
+        (run_dir / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({"cc_task_id": "task-executor-regression"}))
         adhoc = {"owner_approved": True, "approved_by": "pytest harness (not self-granted)",
-                 "reason": "regression test: executor: null phase must be unaffected"}
+                 "reason": "regression test: executor: null phase must be unaffected",
+                 "timestamp": "2026-08-06T12:00:00Z",
+                 "owner_msg_id": GENUINE_OWNER_MSG_ID}
         (run_dir / "working" / "checkpoints" / "adhoc_authorization.json").write_text(
             json.dumps(adhoc))
         slides = tmp_path / "slides.json"
@@ -206,7 +279,8 @@ class TestNullExecutorRegressionCLI:
             "this test requires a non-dispatchable (null/agent) executor phase in the "
             "real manifest. If kind is 'script', pick a different phase for this test.")
         run_dir, slides, out = self._setup(tmp_path)
-        proc = _run_cli(run_dir, "P0A-INTAKE", slides, out)
+        with _LocalBoard():
+            proc = _run_cli(run_dir, "P0A-INTAKE", slides, out)
         assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         assert "attested" in proc.stdout
         assert "DISPATCH" not in proc.stdout, (
@@ -228,7 +302,8 @@ class TestNullExecutorRegressionCLI:
         (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text(
             bt.SAMPLE_SPEECH_MD)
 
-        proc = _run_cli(run_dir, "P7-TELEPROMPTER", slides, out)
+        with _LocalBoard():
+            proc = _run_cli(run_dir, "P7-TELEPROMPTER", slides, out)
         assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         assert "DISPATCH P7-TELEPROMPTER" in proc.stdout
         assert "attested" in proc.stdout
@@ -239,7 +314,8 @@ class TestNullExecutorRegressionCLI:
         """P9.2-GHL-UPLOAD with no renders present fails for real (no images/
         deliverables to host) -- confirm NO attestation is written."""
         run_dir, slides, out = self._setup(tmp_path)
-        proc = _run_cli(run_dir, "P9.2-GHL-UPLOAD", slides, out)
+        with _LocalBoard():
+            proc = _run_cli(run_dir, "P9.2-GHL-UPLOAD", slides, out)
         assert proc.returncode == rsd.EXIT_EXECUTOR_FAILED
         assert "NOT attested" in proc.stderr
         pm = run_dir / "working" / "checkpoints" / "process_manifest.json"

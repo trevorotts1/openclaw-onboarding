@@ -4,6 +4,49 @@ Repo-side build formalizing Rescue Rangers as an **operator-only** department
 (Topic 4 of the Graphics/Furnace/Context/Rescue spec). No live n8n / VPS / client /
 GHL was touched — repo/branch only.
 
+## v1.2 — three-tier rescue order + access inventory (2026-08-10, repo-side)
+
+**The doctrine rewrite (kills the "page the Operator first" default):** every
+Rescue Rangers document now states the BINDING three-tier rescue order plainly:
+(1) **Instruct the client's agent (outcome b)** — the PRIMARY route for
+coaching/how-to classes and client-account actions (OAuth dashboard steps, billing
+top-up, owner confirmation); never a page; (2) **the rescue AI self-fixes
+infrastructure on a REACHABLE box using our access** — the operator's `~/.ssh/config`
+`rescue-*` alias for every fleet box (Mac-via-Cloudflare-tunnel, Hostinger VPS,
+Contabo) plus the provider env var NAMES from `~/.openclaw/secrets/.env`
+(Hostinger, Contabo, Cloudflare, GoHighLevel, OpenRouter, per-client
+`CF_ACCESS_<CLIENT>_SVC_*`) — referenced by NAME ONLY, values live in the secrets
+env, NEVER printed into a doc/ticket/transcript, credential existence checked
+BEFORE escalating; (3) **page the Operator ONLY after tiers 1-2 ran** — with what
+was tried and why — or on a one-way-door class (credential-ACTION / DNS / deletion /
+model sovereignty) that pages on the class alone.
+
+**Routing table (new):** credential-ACTION (rotate/regenerate/revoke) → Operator;
+client-account-action (OAuth dashboard, billing top-up, owner confirmation) →
+client-instruction, outcome (b); infrastructure failure on a reachable box →
+self-fix by the rescue AI; everything else → coach the client's agent first, then
+self-fix; box genuinely UNREACHABLE after the rescue AI's own SSH attempts →
+Operator, with the attempts and evidence.
+
+**Outcome contract made explicit everywhere:** every rescue ends as (a) solved,
+(b) here is what you should do, or (c) here is the answer — delivered by the
+client's own agent. Outcome (b) is a complete dispatch, never a silent drop; a
+ticket whose remedy is a client-account action closes as (b) without any page.
+
+**Files updated (10):** `director-of-rescue-rangers.md` (three-tier order in §3,
+decision-logic table rewrite, §6 access inventory, SOP 9.4/9.5 rewrite, KPIs),
+`diagnostician--rescue-rangers.md` (unreachable-box row now tries the `rescue-*`
+SSH alias first; §3/§6/SOP 9.5 tier order), `structured-fix-operator--rescue-rangers.md`
+(never-auto = pages on the class alone; client-account = outcome (b); self-fix via
+access; §4 table + SOPs), `ticket-clerk--rescue-rangers.md` (§6 + `blocked`
+vocabulary), `qc-postmortem-specialist--rescue-rangers.md` (§6 + outcome-contract
+audit), `how-to-use-this-department.md` (new §2 doctrine block, role table, §3
+step 4), `TOOLS.md` (access inventory section — names only), `sops/SOP-RR-01`
+(triage cap-check + SOP 9.4 rewrite), `sops/SOP-RR-03` (aging hand-off), and
+`sops/SOP-RR-04` (three-tier preamble + never-auto/client-account split). SOP-RR-02
+and SOP-RR-05 were reviewed and needed no doctrine change. Content manifest
+re-stamped via the canonical `hash-content-manifest.py` pipeline.
+
 ## v1.0 — department formalized (FIX 4-A … 4-F, repo-side)
 
 **Roles (5):** `director-of-rescue-rangers` (Dispatcher), `diagnostician--rescue-rangers`,

@@ -21,9 +21,11 @@ ledger row, a board card, and either an answer or a clear operator page.
    list tells you what NOT to repeat. INCOMPLETE tickets carry `missing_fields` —
    work them with degraded context; never drop them.
 2. **Cap check before anything else:** `python3 rescue_ledger.py count-today
-   --client <client> --cap 25` (exit 3 = at/over). At cap → do NOT loop: instruct
-   the client agent to ping the Operator (`5252140759`) directly, and page the
-   Operator. The cap is a furnace guard, not a courtesy.
+   --client <client> --cap 25` (exit 3 = at/over). At cap → do NOT loop: deliver
+   outcome (b) — instruct the client's agent to have its owner ping the Operator
+   (`5252140759`) directly — and page the Operator. The client-instruction IS the
+   outcome (b); it is delivered by the client's own agent and is a complete
+   dispatch, never a silent drop. The cap is a furnace guard, not a courtesy.
 
 **Failure mode:** ledger unreachable → treat as "cannot confirm cap," page the
 Operator rather than risk a furnace loop.
@@ -54,14 +56,27 @@ Operator rather than risk a furnace loop.
 
 ---
 
-### SOP 9.4 — Page the Operator (a first-class outcome)
+### SOP 9.4 — Page the Operator (a first-class outcome, LAST resort)
+
+**The three-tier order is BINDING.** (1) Instruct the client's agent (outcome b) —
+the PRIMARY route for coaching/how-to classes and client-account actions (OAuth
+dashboard steps, billing top-up, owner confirmation); never a page. (2) The rescue
+AI self-fixes reachable-box infrastructure using our access — the box's `rescue-*`
+SSH alias from the operator's `~/.ssh/config` plus the provider env var NAME from
+`~/.openclaw/secrets/.env` (names only, never a value; values live in the secrets
+env). Check the credential exists BEFORE escalating; a missing credential is itself
+a finding to report. (3) Page `5252140759` ONLY after tiers 1-2 ran and the ticket
+can document why neither worked, or on a one-way-door class that pages on the class
+alone.
 
 **Page `5252140759` when any of:** no-reply/timeout on a HIGH ticket; anything
-touching billing/credentials/DNS/model-sovereignty (never auto-fixed); a client at
-the daily cap still unresolved; a Diagnostician marks "cannot proceed without a
-one-way-door decision"; a P1 or a 3rd consecutive same-defect fail. Paging the human
-is success, not failure. One-way doors are the Operator's — never authorize an
-irreversible action.
+touching credential-ACTION (rotate/regenerate/revoke)/DNS/deletion/model-
+sovereignty (never auto-fixed — pages on the class alone); a client at the daily
+cap still unresolved; a Diagnostician marks "cannot proceed without a one-way-door
+decision"; a P1 or a 3rd consecutive same-defect fail; a box UNREACHABLE after the
+rescue AI's own SSH attempts. The page carries WHAT THE RESCUE AI ALREADY TRIED AND
+WHY IT FAILED. Paging the human is success, not failure. One-way doors are the
+Operator's — never authorize an irreversible action.
 
 ---
 

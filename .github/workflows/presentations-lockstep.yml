@@ -40,6 +40,8 @@ on:
       - "universal-sops/presentation-slide-craft/*.json"
       # Guard A — declared==enforced==tested gate-integrity check
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/gate_integrity_check.py"
+      # Guard B (purity) — the RunFacts-pure AST lint reads this source directly
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/runfacts.py"
       # Guard B — retired-doctrine residual lint + its pattern registry
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/retired-doctrine-patterns.json"
@@ -225,6 +227,27 @@ jobs:
           # Any match lacking a retirement context marker exits non-zero and blocks the merge.
           python3 "$GUARD_B"
           echo "doctrine_residual_check: Guard B PASSED — no retired doctrine present as a live instruction."
+
+      - name: gate_integrity_check.py --purity — Guard B (RunFacts-pure AST lint, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          GUARD_B_PURITY="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/gate_integrity_check.py"
+          if [ ! -f "$GUARD_B_PURITY" ]; then
+            echo "FATAL: gate_integrity_check.py not found at $GUARD_B_PURITY" >&2
+            exit 2
+          fi
+          # Guard B (purity, Trust Boundary Increment 1): AST-parses
+          # presentation_job/runfacts.py and asserts every function listed in
+          # PURITY_ASSERTED_FUNCTIONS (verify_owner_skip, verify_qc, and the
+          # composite verifiers migrated onto sealed RunFacts) contains no direct
+          # file/env I/O call. This is distinct from the doctrine_residual_check.py
+          # step above (also called "Guard B" in its own docstring) — two different
+          # checks share that label; this one is gate_integrity_check.py --purity.
+          # No || true, no continue-on-error: a purity violation fails this step
+          # and blocks the merge, same as every other gate in this job.
+          python3 "$GUARD_B_PURITY" --purity
+          echo "gate_integrity_check --purity: Guard B PASSED — RunFacts-pure gates confirmed by AST parse."
 
       - name: STANDARD-presenter-speech-layout.pdf present (H7 gate)
         shell: bash

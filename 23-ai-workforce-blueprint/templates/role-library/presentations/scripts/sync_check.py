@@ -35,6 +35,16 @@ DRIFT DIRECTIONS (both fail loud with the exact offending item + the fix verb):
       orphan `AF-...` string cited in build_deck.py, that the manifest does not
       declare. The code moved; the manifest did not.
 
+DRIFT CLASS (FIX-23(a)) — every drift item in the `--json` output carries a `class`
+  field so the canonical door (presentation-canonical-entry.sh GATE 3) can tell
+  SOP-LIBRARY maintenance debt from RENDER-PATH drift:
+    "A5/A6"       — library-only. Undeclared roles / owning_role -> missing .md.
+                    Does NOT change render correctness. GATE 3 PROCEEDS (evented),
+                    so library maintenance debt can never brick the sanctioned door.
+    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, V*). The actual
+                    renderer has drifted from the manifest/ruleset. GATE 3 FAILS
+                    CLOSED (AF-CANONICAL-RENDER-BYPASS / exit 7), exactly as before.
+
 EXIT CODES:
     0 — in sync.
     4 — drift (distinct from build_deck's 1/2/3 so a caller can tell lockstep
@@ -46,6 +56,11 @@ USAGE:
     python3 sync_check.py            # human report, exit 0 / 4
     python3 sync_check.py --json     # machine: {"in_sync":bool,"drift":[...]}
     python3 sync_check.py --explain  # also print which EXTENSION-SOP step was skipped
+    python3 sync_check.py --sops-only  # SOP-audit-only mode: phantom-symbol, stale-repo-path,
+                                        # and unresolved-registration checks over sops/*.md.
+                                        # Exit 0 clean, 4 on any finding (all findings are
+                                        # severity HIGH), 2 if it cannot run. Any --flag not
+                                        # listed here is a FATAL usage error, not a no-op.
 
 GATES IT RUNS AT (none optional — see SOP-SLIDE-06-EXTENSION-AND-SYNC):
     * QC GATE (Phase 1Q): the QC specialist's mechanical runner executes this
@@ -69,6 +84,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent                       # .../presentations/scripts
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
+# HARDEN G3: the E3 heartbeat_minutes ceiling is imported, not re-declared, from the SAME
+# module the runtime watchdog/reaper import it from (presentation_job/manifest.py) — one
+# definition of "sane" shared by the manifest check and the runtime consumers, so this
+# script (whose whole job is catching exactly this kind of two-numbers-silently-diverge
+# drift) can never itself become a second source that drifts from the engine it checks.
+# PHASE_BUDGET_MINUTES / DEFAULT_PHASE_BUDGET_MINUTES are imported alongside it for the
+# per-phase follow-up: the ceiling below is tightened to THIS phase's own budget, not just
+# the flat engine-wide 240 max (a 15-minute phase must not be able to declare
+# heartbeat_minutes:240 and pass).
+from presentation_job.manifest import (
+    MAX_HEARTBEAT_INTERVAL_MINUTES, PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES,
+)
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -201,6 +228,16 @@ def parse_build_deck():
 def _extract_deliverable_keys_ast(tree):
     """Walk the module-level AST to find DELIVERABLES_REQUIRED = [...] and
     extract the string values of every 'key' keyword in the list of dicts.
+
+    Mirrors the manifest-side D1/D2 filter: a deliverable dict carrying
+    `produced_later: True` (Feature L2-G — e.g. webinar_mp4 at P9.6-WEBINAR-VIDEO,
+    order 8.92) is produced AFTER build_deck's P8 assembly postflight gate and is
+    skipped by that gate, so it is intentionally NOT part of the D1/D2 lockstep set
+    on EITHER side. build_deck.py still declares it in DELIVERABLES_REQUIRED (with
+    produced_later: True) so the postflight skips it explicitly rather than treating
+    it as missing; sync_check therefore excludes it from the cross-checked key set
+    exactly as the manifest-side code does, so the two sides cannot drift.
+
     Returns a set of key strings, or None if the constant is not found."""
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -214,10 +251,15 @@ def _extract_deliverable_keys_ast(tree):
                 for elt in val.elts:
                     if not isinstance(elt, ast.Dict):
                         continue
+                    # Collect the key/value pairs once, then decide membership:
+                    # a produced_later:True entry is excluded from the lockstep set.
+                    kv = {}
                     for k, v in zip(elt.keys, elt.values):
-                        if (isinstance(k, ast.Constant) and k.value == "key"
-                                and isinstance(v, ast.Constant)):
-                            keys.add(v.value)
+                        if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
+                            kv[k.value] = v.value
+                    key = kv.get("key")
+                    if key and not kv.get("produced_later"):
+                        keys.add(key)
                 return keys if keys else None
     return None
 
@@ -312,7 +354,20 @@ _INFRA_DIRS = {"scripts", "sops", "memory", "working", ".openclaw"}
 # are declared in PIPELINE-MANIFEST.roles today; U009 removes them from the manifest in
 # THIS SAME COMMIT, and without this set that removal creates five new A5 items.
 _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
-                  "how-to-use-this-department"}
+                  "how-to-use-this-department",
+                  # Fleet-scaffolding docs that the fleet sync copies into every
+                  # department dir (NOT department roles). They must not count as
+                  # un-declared roles (A5) on a DEPLOYED layout — FIX-23c repaired
+                  # the repo (which has no such files) but the deployed dept dirs
+                  # carry them, so excluding here closes the 27-drift debt for the
+                  # fleet-deployed layouts too.
+                  "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER",
+                  # Fleet-deployed scaffolding seen on client boxes (verified during
+                  # the Loop-2 fleet roll): a fleet-generated ROSTER.md and a
+                  # governing-personas.md ship into deployed department dirs but are
+                  # not department roles. Exclude them so A5 does not false-DRIFT a
+                  # box that is fully on the current manifest (FIX-23c + roll fix).
+                  "ROSTER", "GOVERNING-PERSONAS"}
 
 
 def scan_roles_and_sops():
@@ -365,12 +420,13 @@ EXTENSION_STEP = {
     "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
     "E1": "step (i) — add a client_report block to the phase in PIPELINE-MANIFEST.json (manifest v21+ requirement)",
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
+    "E3": "step (i) — add a sane heartbeat_minutes value (a positive integer, no greater than MAX_HEARTBEAT_INTERVAL_MINUTES) to this phase in PIPELINE-MANIFEST.json (every phase requires one, not only long_running:true phases)",
 }
 
 # WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
 # `drift`, they never contribute to the exit code, and they never flip --json's
 # "in_sync". Letter W is chosen because A/B/C/D/E/V are all in use as drift classes
-# (A1-A8, B1-B2, C1, D1-D2, E1-E2 in EXTENSION_STEP, plus V1/V2/V3 emitted by
+# (A1-A8, B1-B2, C1, D1-D2, E1-E3 in EXTENSION_STEP, plus V1/V2/V3 emitted by
 # value_checks()). Reusing A7 — as an earlier draft proposed — would have attached
 # an exit-0 meaning to the live sop_refs integrity class at :587-596.
 WARN_STEP = {
@@ -417,7 +473,9 @@ def value_checks(manifest_text):
     drift = []
 
     def add(check, item, detail):
-        drift.append({"check": check, "item": item, "detail": detail})
+        # FIX-23(a) — V-class is render-path (the cited NUMBER must equal the code
+        # constant); fail closed. Same `class` contract as run_checks().
+        drift.append({"check": check, "item": item, "detail": detail, "class": "render_path"})
 
     bd_vals = _const_int_values(BUILD_DECK)
     floor = bd_vals.get("PROMPT_CHAR_FLOOR")
@@ -520,10 +578,20 @@ def warn_checks(manifest):
 
 
 def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
-    drift = []  # list of {check, item, detail}
+    drift = []  # list of {check, item, detail, class}
 
     def add(check, item, detail):
-        drift.append({"check": check, "item": item, "detail": detail})
+        # FIX-23(a) — every drift item carries a `class` so the canonical door
+        # (GATE 3) can tell SOP-LIBRARY maintenance debt from RENDER-PATH drift.
+        # A5 (undeclared roles) and A6 (owning_role -> missing .md) are library-only:
+        # they do not change render correctness and MUST NOT brick the render path.
+        # Every other class (A1-A4/A7/A8, B*, C*, D*, E*, V*) is render-path: the
+        # actual renderer has drifted from the manifest/ruleset and must fail closed.
+        if check in ("A5", "A6"):
+            cls = "A5/A6"  # library-only
+        else:
+            cls = "render_path"
+        drift.append({"check": check, "item": item, "detail": detail, "class": cls})
 
     phases = manifest["phases"]
     autofails = manifest["autofails"]
@@ -707,14 +775,79 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"for long phases (e.g. heartbeat_minutes:10). Add heartbeat_minutes "
                 f"to this phase in PIPELINE-MANIFEST.json.")
 
+    # E3: EVERY phase — not just long_running ones — must carry a heartbeat_minutes
+    # value, and it must be a sane value IN RANGE, not merely present and positive.
+    # WI-10 (CHANGELOG v22.0.5) deliberately put heartbeat_minutes on all 36 phases, not
+    # only the 3 marked long_running:true; E2 alone only re-derives that 3-phase subset
+    # and is presence-only for it, so stripping the field from the other 33 phases (a
+    # full revert of WI-10 everywhere except the long_running phases) produced ZERO drift
+    # items and sync_check kept exiting 0 — the anti-silence watchdog protection can
+    # evaporate from 33 of 36 phases with no alarm. E3's first cut (2026-08-13) closed
+    # that hole but only checked presence + hb > 0, with NO UPPER BOUND — an adversarial
+    # re-attack proved that is STRICTLY WORSE than the gap it closed: setting
+    # heartbeat_minutes=999999999 on the same 33 phases is present and positive, so it
+    # sailed through with zero drift, and the runtime then handed that value straight to
+    # the watchdog — a ~2,853-year stall threshold that reports a 12-hour-silent job
+    # HEALTHY (the deleted-field gap, by contrast, still tripped the budget-minutes
+    # fallback at runtime and was detected). E3 now asserts a RANGE — every phase,
+    # independent of long_running, naming every offending phase rather than passing on a
+    # single instance. MAX_HEARTBEAT_INTERVAL_MINUTES (imported above) is not an arbitrary
+    # constant: it is this engine's own PHASE_BUDGET_MINUTES maximum — the longest any
+    # phase is ever allowed to run — so it costs the legitimate path nothing (real values
+    # run 15-120) while rejecting a manifest that only LOOKS positive.
+    #
+    # PER-PHASE FOLLOW-UP: the flat 240-minute ceiling above is the slowest phase in the
+    # WHOLE engine, not a bound on any ONE phase. Applied globally it let a 15-minute
+    # phase (e.g. most of the 36) declare heartbeat_minutes:240 and still pass — a
+    # plausible in-manifest edit that blinds the stall detector for that phase alone
+    # while leaving E3 green. Each phase's ceiling is therefore tightened to
+    # min(MAX_HEARTBEAT_INTERVAL_MINUTES, that phase's own PHASE_BUDGET_MINUTES entry) —
+    # a phase may never declare a checkpoint cadence looser than its own total timeout.
+    for ph in phases:
+        hb = ph.get("heartbeat_minutes")
+        phase_budget = PHASE_BUDGET_MINUTES.get(ph["id"], DEFAULT_PHASE_BUDGET_MINUTES)
+        phase_ceiling = min(MAX_HEARTBEAT_INTERVAL_MINUTES, phase_budget)
+        if hb is None:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares no heartbeat_minutes. Manifest v45+ "
+                f"(WI-10) requires EVERY phase — not only long_running:true ones — "
+                f"to carry a heartbeat_minutes value so the watchdog always knows "
+                f"the client-report polling interval. Add heartbeat_minutes to this "
+                f"phase in PIPELINE-MANIFEST.json.")
+        elif not isinstance(hb, int) or isinstance(hb, bool) or hb <= 0:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares heartbeat_minutes={hb!r}, which is not a "
+                f"sane positive integer. heartbeat_minutes must be a whole number of "
+                f"minutes > 0 (the manifest's existing values run 15-120). Fix the "
+                f"value for this phase in PIPELINE-MANIFEST.json.")
+        elif hb > phase_ceiling:
+            add("E3", ph["id"],
+                f"phase {ph['id']} declares heartbeat_minutes={hb}, which exceeds the "
+                f"{phase_ceiling}-minute ceiling for THIS phase (min of the "
+                f"{MAX_HEARTBEAT_INTERVAL_MINUTES}-minute engine-wide HARDEN G3 cap and "
+                f"this phase's own {phase_budget}-minute PHASE_BUDGET_MINUTES entry). A "
+                f"value this large does not mean \"this phase checkpoints rarely\" — it "
+                f"is past the longest this phase is ever allowed to run, so it can only "
+                f"blind the watchdog for this phase specifically (e.g. a 15-minute phase "
+                f"declaring heartbeat_minutes:240 -> the stall detector never fires while "
+                f"that phase runs). The manifest's existing values run 15-120. Fix the "
+                f"value for this phase in PIPELINE-MANIFEST.json.")
+
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match
     # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
     # This is a bidirectional lockstep on the output artifact set so a deliverable
     # added to the manifest but missing from the gate (or vice versa) auto-fails.
+    # EXCEPTION (Feature L2-G): a deliverable marked `produced_later: true` is produced
+    # by a phase that runs AFTER build_deck's P8 assembly postflight (e.g. webinar_mp4
+    # at P9.6-WEBINAR-VIDEO, order 8.92). build_deck's postflight gate MUST NOT require
+    # it (that gate runs at assembly, before the later phase), so it is intentionally
+    # absent from build_deck.DELIVERABLES_REQUIRED and is NOT subject to D1. It is still
+    # wired into build_bundle_files / client_package_files and gated by
+    # fix_bundle_complete.py + delivery_gate.py, which run at closeout.
     manifest_deliverable_keys = set()
     for d in manifest.get("deliverables_required", []):
-        if isinstance(d, dict) and "key" in d:
+        if isinstance(d, dict) and "key" in d and not d.get("produced_later"):
             manifest_deliverable_keys.add(d["key"])
 
     bd_deliverable_keys = bd.get("deliverable_keys") or set()
@@ -788,7 +921,8 @@ def report_human(drift, warnings, manifest, explain):
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if e:
         print("\n(E) PHASE-STRUCTURE DRIFT — a manifest phase is missing a required "
-              "structural block (client_report, heartbeat_minutes on long_running):",
+              "structural block (client_report; heartbeat_minutes on long_running "
+              "phases E2 and heartbeat_minutes on EVERY phase E3):",
               file=sys.stderr)
         for d in e:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
@@ -804,10 +938,147 @@ def report_human(drift, warnings, manifest, explain):
     _print_warnings(warnings, manifest)
 
 
+# ---------------------------------------------------------------------------
+# --sops-only: THE SOP AUDIT  [QC-WI-11 adversarial finding, re-scored 2026-08-13]
+# ---------------------------------------------------------------------------
+# THE GAP THIS CLOSES
+# -------------------
+# WORK-ITEM-11's acceptance criterion (MASTER-SPEC-2026-08-09.md:419) was:
+#
+#   python3 scripts/sync_check.py --sops-only 2>&1 | grep -c "HIGH"
+#   # Must return 0.
+#
+# Two independent facts made that criterion unconditionally satisfiable:
+#   1. `--sops-only` was never a recognised flag (main() only ever read
+#      `--json` / `--explain` out of argv) — it was silently swallowed and the
+#      script ran its normal full check regardless of what was passed.
+#   2. The literal string "HIGH" appeared nowhere in sync_check.py's output —
+#      no check anywhere emits it — so `grep -c "HIGH"` returned 0 whether the
+#      tree was pristine, had every one of this unit's HIGH-severity fixes
+#      reverted, or could not even run (exit 2).
+#
+# This function makes `--sops-only` real and makes "HIGH" mean something:
+# three independently-verified-safe (zero false positives against the current,
+# correct SOP corpus — see commit message) mechanical checks, each targeting a
+# GENERAL CLASS of SOP defect, not a hardcoded filename or a replay of one
+# specific adversarial string:
+#
+#   phantom-symbol   — a SOP cites `build_deck.<name>` or `` `_chk_<name>` ``
+#                       that is not actually defined anywhere in build_deck.py
+#                       (the exact shape of the F10 regression: a symbol
+#                       renamed/typo'd in prose after the code moved).
+#   stale-repo-path  — a SOP cites a repo-root-relative path (a numbered
+#                       top-level dept dir, `universal-sops/`, or `docs/`) that
+#                       does not exist on disk (the F1 class: a directory
+#                       reference that drifted after a file moved).
+#   unresolved-reg   — a SOP still carries the literal "PENDING Agent W3"
+#                       registration-debt marker this department's own doctrine
+#                       uses to track a gate that is authored but not yet
+#                       mechanically wired (SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md).
+#                       Deliberately this EXACT phrase, not bare "PENDING" —
+#                       "PENDING" alone is a normal, frequent, legitimate
+#                       in-flight-deliverable placeholder elsewhere in this SOP
+#                       set (e.g. `[PRICE PENDING]`, `[PROOF PENDING]`) and
+#                       flagging it would fail closed on innocent SOP content.
+#
+# Every finding is reported at severity HIGH (this audit does not emit LOW —
+# add a class here only when it is a real, checked defect, never a style nit).
+# An UNRESOLVED input (SOPS_DIR missing, a SOP unreadable, build_deck.py
+# unparseable) is a FATAL exit(2) via the existing _fatal()/parse_build_deck()
+# paths above — this audit never treats "could not check" as "nothing found".
+def sop_audit(sops_dir, bd, repo_root):
+    findings = []
+    if not sops_dir.is_dir():
+        _fatal(f"--sops-only: sops dir not found: {sops_dir}")
+
+    symbol_re = re.compile(r'`build_deck\.([A-Za-z_][A-Za-z0-9_]*)`|`(_chk_[A-Za-z0-9_]+)`')
+    path_re = re.compile(r'`((?:\d\d-[a-z0-9-]+|universal-sops|docs)/[A-Za-z0-9_./-]*)`')
+    defined_names = bd["defined_names"]
+
+    for sop in sorted(sops_dir.glob("*.md")):
+        try:
+            lines = sop.read_text().splitlines()
+        except Exception as exc:  # noqa: BLE001
+            _fatal(f"--sops-only: cannot read {sop}: {exc}")
+        for lineno, line in enumerate(lines, 1):
+            for m in symbol_re.finditer(line):
+                sym = m.group(1) or m.group(2)
+                if sym == "py":  # `build_deck.py` — the file itself, not a symbol
+                    continue
+                if sym not in defined_names:
+                    findings.append({
+                        "severity": "HIGH", "class": "phantom-symbol",
+                        "sop": sop.name, "line": lineno,
+                        "detail": f"cites `{sym}` — not defined anywhere in {BUILD_DECK.name}. "
+                                  f"Either the symbol was renamed/removed in code and this SOP's "
+                                  f"prose was not updated, or the citation is a typo.",
+                    })
+            for m in path_re.finditer(line):
+                path_str = m.group(1)
+                if repo_root is None:
+                    continue  # no repo root resolvable (e.g. standalone deployed box) — not checkable here
+                if not (repo_root / path_str).exists():
+                    findings.append({
+                        "severity": "HIGH", "class": "stale-repo-path",
+                        "sop": sop.name, "line": lineno,
+                        "detail": f"cites repo path `{path_str}` which does not exist "
+                                  f"relative to the repo root ({repo_root}). The file/dir it "
+                                  f"once pointed to may have moved.",
+                    })
+            if "PENDING Agent W3" in line:
+                findings.append({
+                    "severity": "HIGH", "class": "unresolved-registration",
+                    "sop": sop.name, "line": lineno,
+                    "detail": "carries the \"PENDING Agent W3\" registration-debt marker. "
+                              "Per SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md, either wire the "
+                              "declared gate (add the _chk_ function + manifest entry) or mark "
+                              "it REGISTRATION STATUS: DOCTRINE-ONLY and remove this marker.",
+                })
+    return findings
+
+
+def report_sop_audit(findings):
+    if not findings:
+        print("=== sync_check --sops-only: SOP AUDIT ===")
+        print("Zero findings. SOP corpus clean on all three checks "
+              "(phantom-symbol, stale-repo-path, unresolved-registration).")
+        return
+    print("=== sync_check --sops-only: SOP AUDIT — FINDINGS ===", file=sys.stderr)
+    for f in findings:
+        print(f"  {f['severity']} [{f['class']}] {f['sop']}:{f['line']} {f['detail']}", file=sys.stderr)
+    print(f"\n{len(findings)} HIGH finding(s).", file=sys.stderr)
+
+
+# Every flag main() understands. An arg starting with `--` that is NOT in this
+# set is a FATAL usage error (exit 2), not a silent no-op — the WI-11 gap was
+# exactly a flag nobody recognised being swallowed instead of rejected.
+KNOWN_FLAGS = {"--json", "--explain", "--sops-only"}
+
+
 def main():
     argv = sys.argv[1:]
+    unknown = [a for a in argv if a.startswith("--") and a not in KNOWN_FLAGS]
+    if unknown:
+        print(f"FATAL (sync_check cannot run): unrecognized flag(s) {unknown} — "
+              f"known flags are {sorted(KNOWN_FLAGS)}. A flag nobody recognises must "
+              f"never be silently ignored.", file=sys.stderr)
+        sys.exit(2)
     as_json = "--json" in argv
     explain = "--explain" in argv
+    sops_only = "--sops-only" in argv
+
+    if sops_only:
+        bd = parse_build_deck()
+        findings = sop_audit(SOPS_DIR, bd, _REPO_ROOT)
+        if as_json:
+            print(json.dumps({
+                "in_sync": not findings,
+                "findings": findings,
+                "finding_count": len(findings),
+            }, indent=2))
+        else:
+            report_sop_audit(findings)
+        sys.exit(4 if findings else 0)
 
     manifest = load_manifest()
     bd = parse_build_deck()
@@ -825,6 +1096,10 @@ def main():
     warnings = warn_checks(manifest)
 
     if as_json:
+        # FIX-23(a) — expose the render-path vs library-only split so the canonical
+        # door's GATE 3 can classify without re-parsing every drift item itself.
+        render_path = [x for x in drift if x.get("class") != "A5/A6"]
+        library_only = [x for x in drift if x.get("class") == "A5/A6"]
         print(json.dumps({
             "in_sync": not drift,
             "manifest_version": manifest["manifest_version"],
@@ -832,6 +1107,11 @@ def main():
                        "autofails": len(manifest["autofails"]),
                        "roles": len(manifest["roles"])},
             "drift": drift,
+            "drift_summary": {
+                "total": len(drift),
+                "render_path": len(render_path),
+                "library_only": len(library_only),
+            },
             "warnings": warnings,
             "warn_count": len(warnings),
         }, indent=2))

@@ -1,4 +1,28 @@
 #!/usr/bin/env bash
+
+# ─── Durable jq resolution (2026-08-17) ──────────────────────────────────────
+# The OpenClaw container image does not ship jq, and a jq installed with the
+# distro package manager VANISHES on container recreate — the documented
+# failure that silently killed owner nudges (fix/jq-hard-dep) and, under
+# `set -euo pipefail`, aborts this script outright with rc 127.
+#
+# ~/.openclaw is a persistent bind mount on container boxes, so a static jq
+# kept at ~/.openclaw/bin/jq survives recreate. Prefer PATH's jq when present;
+# otherwise fall back to the persistent copy. Prepending a PATH entry cannot
+# change any filter's semantics, which is why this is done here rather than by
+# hand-translating ~80 jq expressions.
+if ! command -v jq >/dev/null 2>&1; then
+  for _oc_jq_dir in "${HOME:-/root}/.openclaw/bin" /data/.openclaw/bin; do
+    if [ -x "$_oc_jq_dir/jq" ]; then
+      PATH="$_oc_jq_dir:$PATH"
+      export PATH
+      break
+    fi
+  done
+  unset _oc_jq_dir
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
 # verify-library-gate.sh — v10.18.1 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME + CONTENT FLOOR)
 #
 # v10.18.1 (BUG 1 FIX): the gate no longer trusts the <!-- Filled from role-library -->
@@ -68,8 +92,11 @@
 #        6  = TRIO GATE FAIL — at least one dept is missing QC, research, or DA
 #        7  = BOUNDARY GATE FAIL — canonical dept(s) found in SOP authoring manifest
 #        9  = ZHE GATE FAIL — the full ZERO HUMAN EXPERIENCE did not land for an
-#             interview-completed box (blocks BY DEFAULT; ZHE_ENFORCE=0 escape hatch.
-#             zheStatus + plan W1.2; doctrine: ZERO-HUMAN-EXPERIENCE.md)
+#             interview-completed box, OR a standard-prebuilt box's STANDARD_READY
+#             subset is broken (blocks BY DEFAULT; ZHE_ENFORCE=0 escape hatch.
+#             zheStatus + plan W1.2; doctrine: ZERO-HUMAN-EXPERIENCE.md).
+#             zheStatus="standard-ready" is PASS-equivalent (no rc 9) for a box the
+#             standard prebuild landed cleanly on while the interview is incomplete.
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
 # closeoutStatus=pending. The resume cron (resume-workforce-build.sh) also calls
@@ -405,6 +432,16 @@ fi
 # reporting + platform-facts doctrine. A not-completed interview is EXEMPT (the
 # prover passes). Doctrine: 23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md.
 #
+# STANDARD_READY (standard-first redesign, master plan PHASE 4, 2026-08-04): a box
+# whose operator ran the standard prebuild (standardPrebuild.status == "done") while
+# the interview has NOT completed proves a THIRD verdict instead of the exemption:
+# the STANDARD_READY subset (floor on disk + chosen artifact + Command Center board
+# join; agent registration / personas / AGENTS.md deferred to interviewComplete).
+# This gate accepts that receipt as PASS-EQUIVALENT (zheStatus="standard-ready") —
+# the prebuild is a deliberate, consented state, not a failure. rc 9 stays reserved
+# for GENUINE failures: a complete box that misses the ZHE, or a prebuilt box whose
+# STANDARD_READY subset is broken (a corrupt prebuild must still fail loud).
+#
 # BLOCKING BY DEFAULT (Issue #6, v17.0.11): the RED-first precondition has landed
 # (apply-fleet-standards.sh stamps the persona/handoff/reporting/platform-facts
 # markers), so this gate now forces a hard exit (rc 9, above all other verdicts) by
@@ -424,14 +461,27 @@ elif [ ! -f "$ZHE_OC_ROOT/openclaw.json" ]; then
 else
   ZHE_OUT="$(python3 "$ZHE_PROVER" --local "$ZHE_OC_ROOT" 2>&1)"; ZHE_RC=$?
   if [ "$ZHE_RC" -eq 0 ]; then
-    ZHE_STATUS="done"
-    echo "[verify-library-gate] ZHE GATE PASS: $(printf '%s' "$ZHE_OUT" | grep -E 'OVERALL' | head -1)"
+    # Distinguish the STANDARD_READY verdict from the full-ZHE / exempt pass so the
+    # fleet aggregate can count it in its own column (never folded into "done").
+    if printf '%s' "$ZHE_OUT" | grep -q 'STANDARD_READY — standard prebuild done'; then
+      ZHE_STATUS="standard-ready"
+      echo "[verify-library-gate] ZHE GATE PASS (standard-ready): $(printf '%s' "$ZHE_OUT" | grep -E 'OVERALL' | head -1)"
+    else
+      ZHE_STATUS="done"
+      echo "[verify-library-gate] ZHE GATE PASS: $(printf '%s' "$ZHE_OUT" | grep -E 'OVERALL' | head -1)"
+    fi
   else
     ZHE_STATUS="failed"
-    echo "[verify-library-gate] ZHE GATE FAIL (rc=$ZHE_RC): the full Zero Human Experience did not land." >&2
+    if printf '%s' "$ZHE_OUT" | grep -q 'STANDARD_READY — standard prebuild done'; then
+      echo "[verify-library-gate] ZHE GATE FAIL (rc=$ZHE_RC): the STANDARD_READY subset is broken — the standard prebuild did not land cleanly." >&2
+      [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+      FAIL_REASON="${FAIL_REASON}zhe: standard-ready subset broken (prover rc=$ZHE_RC)"
+    else
+      echo "[verify-library-gate] ZHE GATE FAIL (rc=$ZHE_RC): the full Zero Human Experience did not land." >&2
+      [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+      FAIL_REASON="${FAIL_REASON}zhe: acceptance prover rc=$ZHE_RC"
+    fi
     printf '%s\n' "$ZHE_OUT" | grep -E '\[FAIL\]|OVERALL' | sed 's/^/  [zhe] /' >&2
-    [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
-    FAIL_REASON="${FAIL_REASON}zhe: acceptance prover rc=$ZHE_RC"
   fi
 fi
 

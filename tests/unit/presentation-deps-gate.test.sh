@@ -255,6 +255,15 @@ write_complete_ledger() {
     "grounded_content": {"validated": true, "answer": "the Momentum Method"}
   } }
 LEDGER
+    # FIX-3 (GATE 0b): the canonical entry requires the signed driver envelope
+    # working/interview/intake_transcript.json (>= 200 bytes, no owner override).
+    # These fixtures test GATE 2 (bypass-scan) / GATE 3 (pin), not the intake
+    # conversation, so write a non-trivial transcript so GATE 0b passes.
+    cat > "$1/working/interview/intake_transcript.json" <<'TRACE'
+{"format": "sp-intake-transcript-v1", "driver_signature": "fixture-signed",
+ "qid_sequence": ["interview_choice", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "frame_selection"],
+ "turns": [{"qid": "interview_choice", "answer": "quick"}, {"qid": "q1", "answer": "Make It Easy to Buy"}]}
+TRACE
 }
 
 # HERMETICITY FIX (presentation-deps-gate CI red-check root cause): every functional

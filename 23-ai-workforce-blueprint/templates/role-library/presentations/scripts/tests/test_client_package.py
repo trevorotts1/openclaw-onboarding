@@ -5,13 +5,14 @@ tests: there is no shared configuration file and no scripts/tests/ convention be
 this directory, so this file manages its own import path (matching every sibling in
 this directory, e.g. test_gates.py).
 
-Manifest location is resolved by WALKING UP from this file to the first ancestor
-directory that contains universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json
-— never a fixed ../../../../../ chain, which is only correct when run from the
-scripts directory and resolves outside the checkout entirely from anywhere else
-(e.g. the QC Q7 mutation-proof scratch tree). If no ancestor carries it, the affected
-tests FAIL with a message naming the locator — a skipped manifest test is a green
-suite that proved nothing.
+Manifest location is resolved the way the deployed tree carries it FIRST —
+scripts/../sops/PIPELINE-MANIFEST.json with MANIFEST-SOURCE.txt beside it
+(the department's installed layout) — falling back to the repo layout walk-up
+(ancestor containing universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json)
+when the tests run from a checkout. This mirrors manifest_source.resolve_manifest's
+installed-then-cluster tiering. If neither resolves, the affected tests FAIL with a
+message naming the locator — a skipped manifest test is a green suite that proved
+nothing.
 """
 from __future__ import annotations
 
@@ -27,15 +28,24 @@ sys.path.insert(0, str(SCRIPTS))
 
 import delivery_gate as dg  # noqa: E402
 
+# Deployed layout: scripts/../sops/PIPELINE-MANIFEST.json (+ MANIFEST-SOURCE.txt).
+_DEPLOYED_MANIFEST = SCRIPTS.parent / "sops" / "PIPELINE-MANIFEST.json"
+_DEPLOYED_SOURCE = SCRIPTS.parent / "sops" / "MANIFEST-SOURCE.txt"
+# Repo layout: ancestor containing universal-sops/presentation-slide-craft/...
 MANIFEST_REL = pathlib.Path("universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json")
 SOURCE_REL = pathlib.Path("universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt")
 
 
 def _find_manifest_root(start: pathlib.Path) -> pathlib.Path | None:
-    """Walk up from `start` to the first ancestor whose tree contains
-    universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json. Returns None if no
-    ancestor carries it. This is the ONLY manifest locator this file uses — no fixed
-    '../../../../../' chain anywhere below."""
+    """Return the directory that holds the manifest + MANIFEST-SOURCE pair.
+
+    Tier 1 (deployed): the sops/ dir beside the scripts dir. Tier 2 (repo
+    checkout): walk up from `start` to the first ancestor whose tree contains
+    universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json. Returns None
+    if neither resolves. This is the ONLY manifest locator this file uses — no
+    fixed '../../../../../' chain anywhere below."""
+    if _DEPLOYED_MANIFEST.is_file() and _DEPLOYED_SOURCE.is_file():
+        return _DEPLOYED_MANIFEST.parent
     cur = start.resolve()
     seen = set()
     while cur not in seen:
@@ -52,20 +62,35 @@ def _require_manifest_root() -> pathlib.Path:
     root = _find_manifest_root(pathlib.Path(__file__).parent)
     if root is None:
         pytest.fail(
-            "no ancestor of this test file contains "
-            f"{MANIFEST_REL} — _find_manifest_root (this file's own locator) could not "
-            "resolve the manifest. This is a FAIL, never a skip: a skipped manifest "
+            "manifest could not be resolved: looked in the deployed sops/ dir "
+            f"({_DEPLOYED_MANIFEST}) and for an ancestor of this test file containing "
+            f"{MANIFEST_REL}. This is a FAIL, never a skip: a skipped manifest "
             "test is a green suite that proved nothing.")
     return root
 
 
+def _manifest_rel_from_root(root: pathlib.Path) -> pathlib.Path:
+    """The manifest path RELATIVE to the located root — deployed roots carry it
+    directly (sops/PIPELINE-MANIFEST.json), repo roots carry it under
+    universal-sops/presentation-slide-craft/."""
+    if (root / "PIPELINE-MANIFEST.json").is_file():
+        return pathlib.Path("PIPELINE-MANIFEST.json")
+    return MANIFEST_REL
+
+
+def _source_rel_from_root(root: pathlib.Path) -> pathlib.Path:
+    if (root / "MANIFEST-SOURCE.txt").is_file():
+        return pathlib.Path("MANIFEST-SOURCE.txt")
+    return SOURCE_REL
+
+
 def _load_manifest() -> dict:
     root = _require_manifest_root()
-    return json.loads((root / MANIFEST_REL).read_text())
+    return json.loads((root / _manifest_rel_from_root(root)).read_text())
 
 
 def _manifest_path() -> pathlib.Path:
-    return _require_manifest_root() / MANIFEST_REL
+    return _require_manifest_root() / _manifest_rel_from_root(root=_require_manifest_root())
 
 
 # ---------------------------------------------------------------------------
@@ -110,20 +135,26 @@ def test_six_file_package_passes():
 
 
 # ---------------------------------------------------------------------------
-# 4 — stage 1 (shipped): missing teleprompter warns but passes. stage 3 (toggled):
-# missing teleprompter fails and names the key. Same package dir, same code path,
-# only CLIENT_PACKAGE_WARN_ONLY changes.
+# 4 — the teleprompter is REQUIRED (stage 3 landed). The three-stage rollout in
+# delivery_gate.py reached stage 3 (CLIENT_PACKAGE_WARN_ONLY = frozenset(), the
+# same commit that added the webinar as the seventh key): a missing
+# teleprompter_html — or any other required key — now REJECTS the delivery like
+# every other file. Tests asserting the old stage-1 warn-but-pass behaviour
+# (missing teleprompter printed a warning and still returned "") are the
+# pre-stage-3 contract and would now assert fail-open behaviour that is gone.
 # ---------------------------------------------------------------------------
-def test_stage1_missing_teleprompter_warns_but_passes(capsys):
+def test_stage3_missing_teleprompter_fails_on_live_tree():
+    """Live tree contract: CLIENT_PACKAGE_WARN_ONLY is empty (stage 3), so a
+    package missing the teleprompter FAILS and names the key."""
     six = _six_names()
     five = [n for n in six if n != "presenter-teleprompter.html"]
-    assert "teleprompter_html" in dg.CLIENT_PACKAGE_WARN_ONLY
+    assert dg.CLIENT_PACKAGE_WARN_ONLY == frozenset(), (
+        "stage 3 has landed: CLIENT_PACKAGE_WARN_ONLY must be empty for the "
+        "teleprompter (and the webinar) to be hard-required")
     result = dg.check_af_dh1(_mk_pkg(five))
-    assert result == "", f"stage 1 must still PASS on a missing warn-only key, got {result!r}"
-    out = capsys.readouterr().out
-    assert "teleprompter_html" in out, (
-        "stage 1 must record the warning (printed) even though it does not fail — "
-        f"captured stdout was: {out!r}")
+    assert result != "", "a missing teleprompter must FAIL the client package gate"
+    assert "teleprompter_html" in result, (
+        f"the failure reason must name the missing key, got {result!r}")
 
 
 def test_stage3_missing_teleprompter_fails_when_warn_only_cleared(monkeypatch):
@@ -168,16 +199,16 @@ def test_extra_file_fails_with_six_item_whitelist_message():
     pkg = _mk_pkg(six + ["notes-draft.md"])
     result = dg.check_af_dh1(pkg)
     assert result != ""
-    assert "six-item" in result, f"expected the six-item whitelist count in the message, got {result!r}"
+    assert "seven-item" in result, f"expected the seven-item whitelist count in the message, got {result!r}"
 
 
 # ---------------------------------------------------------------------------
 # 7 — client_package_files has 6 entries and every one appears in deliverables_required.
 # ---------------------------------------------------------------------------
-def test_manifest_client_package_files_has_six_entries_all_in_deliverables_required():
+def test_manifest_client_package_files_has_seven_entries_all_in_deliverables_required():
     man = _load_manifest()
     cpf = man["client_package_files"]
-    assert len(cpf) == 6, f"expected 6 client_package_files, got {len(cpf)}: {cpf}"
+    assert len(cpf) == 7, f"expected 7 client_package_files, got {len(cpf)}: {cpf}"
     req_keys = {e["key"] for e in man["deliverables_required"]}
     missing = [k for k in cpf if k not in req_keys]
     assert not missing, f"client_package_files keys absent from deliverables_required: {missing}"
@@ -257,8 +288,8 @@ def test_manifest_agrees_with_post_handoff_box_copy():
 def test_manifest_source_stamp_matches_actual_hash():
     import hashlib
     root = _require_manifest_root()
-    manifest_path = root / MANIFEST_REL
-    source_path = root / SOURCE_REL
+    manifest_path = root / _manifest_rel_from_root(root)
+    source_path = root / _source_rel_from_root(root)
     assert source_path.is_file(), f"{source_path} does not exist"
     want = ""
     for line in source_path.read_text().splitlines():
@@ -305,6 +336,35 @@ def test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below():
 
 
 # ---------------------------------------------------------------------------
+# 12b — the WAVE-2 DRIFT guard. Test 12 reads MIN_MANIFEST_VERSION and the
+# manifest, but both sides derive from the same source, so a manifest bump with
+# no MIN bump is invisible to it. This test independently locates the REPO
+# manifest (the walk-up, never the deployed-layout fallback) and pins
+# MIN_MANIFEST_VERSION to its manifest_version — the floor must move WITH the
+# manifest, or the U019 floor is broken and _assert_manifest_current rejects a
+# bumped manifest on a live tree.
+# ---------------------------------------------------------------------------
+def test_min_manifest_version_matches_repo_manifest_file():
+    from presentation_job.manifest import MIN_MANIFEST_VERSION
+    cur = pathlib.Path(__file__).resolve().parent
+    repo_manifest = None
+    while cur != cur.parent:
+        candidate = cur / MANIFEST_REL
+        if candidate.is_file():
+            repo_manifest = candidate
+            break
+        cur = cur.parent
+    assert repo_manifest is not None, (
+        f"repo manifest could not be located by walking up from {__file__} looking "
+        f"for {MANIFEST_REL}")
+    obj = json.loads(repo_manifest.read_text())
+    assert MIN_MANIFEST_VERSION == obj["manifest_version"], (
+        f"MIN_MANIFEST_VERSION ({MIN_MANIFEST_VERSION}) must equal the repo manifest's "
+        f"manifest_version ({obj['manifest_version']}) — a manifest bump with no MIN "
+        "bump is a broken U019 floor (wave-2 drift class)")
+
+
+# ---------------------------------------------------------------------------
 # 13 — _mk_full_run(teleprompter=False) still produces the CASE K
 # AF-BUNDLE-COMPLETE rejection (the negative fixture this change is most likely to
 # silently invert).
@@ -324,9 +384,12 @@ def test_mk_full_run_teleprompter_false_still_trips_case_k():
 # [:-1] would silently drop the wrong file).
 # ---------------------------------------------------------------------------
 def test_no_audio_fixture_excludes_audio_by_name_not_position():
-    assert dg.CLIENT_PACKAGE[-1] == "presenter-teleprompter.html", (
-        "this test's premise (the last element is the teleprompter, not the audio "
-        "file) no longer holds — a positional slice would drop the wrong file")
+    # Feature L2-G adds webinar_mp4 as the LAST client-package element (demo-deck-WEBINAR.mp4).
+    # The test's real premise is: audio_mp3 is NOT last, so a positional slice that drops
+    # the last element never drops the audio file. The audio is 5th; the last is the webinar.
+    assert dg.CLIENT_PACKAGE[-1] == "demo-deck-WEBINAR.mp4", (
+        "this test's premise (the last element is the webinar, not the audio file) no "
+        "longer holds — a positional slice would drop the wrong file")
     no_audio = [f for f in dg.CLIENT_PACKAGE if f != "PRESENTER-AUDIO.mp3"]
     assert "PRESENTER-AUDIO.mp3" not in no_audio
     assert "presenter-teleprompter.html" in no_audio

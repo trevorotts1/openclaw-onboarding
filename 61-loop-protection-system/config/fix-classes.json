@@ -51,7 +51,25 @@
       "proof": "applied twice (operator box, Box C). STARTS as Tier 2 on client boxes; graduates to Tier 1 per box AFTER the operator stamps it once (Open Decision T4)."
     },
     {
-      "id": "LF-9", "loop_class": "LP-A8", "tier": 1,
+      "id": "LF-9", "loop_class": "LP-A8-abort", "tier": 2,
+      "title": "abort the self-blocking run to free the conversation lane",
+      "reversible_in": "nothing to revert - aborting a doomed run starts no new state",
+      "proof": "NOT AUTO. As of OpenClaw 2026.7.1-2 no supported run-abort CLI was found (`openclaw sessions` offers cleanup/compact/export-trajectory/list only), so this class PREPARES the operator action and never executes one. The harm it addresses is measured: a blocked run holds the conversation lane for its whole life (observed bursts up to 275 blocks) while the user's messages queue behind it, and the runtime - not the model - ended 7 of 10 observed bursts by aborting. The model does not talk its own way out."
+    },
+    {
+      "id": "LF-10", "loop_class": "LP-A8", "tier": 1,
+      "title": "archive the poisoned session transcript and roll to a fresh one (move, never delete)",
+      "reversible_in": "move the archived transcript back to its original path",
+      "proof": "config-FREE and blast-radius-of-one: it moves ONE session transcript aside so the next turn starts clean, touching no client config, no model, and no credential. Guarded by a live-session check (refuses a transcript still being written) so it can never yank a file from under a running gateway. The same move was performed by hand on the operator box during the incident and is the reason a fresh session answered normally."
+    },
+    {
+      "id": "LF-11", "loop_class": "LP-A8-checkpoints", "tier": 2,
+      "title": "prune compaction checkpoint summaries that captured loop text verbatim",
+      "reversible_in": "restore the snapshotted session store",
+      "proof": "NOT AUTO, deliberately. Poisoned checkpoints are re-injected on resume and SURVIVE a transcript roll (measured: 7 of 16 summaries poisoned), so LF-10 alone does not clear them - but the LIVE gateway rewrites the session store, so an in-place edit without a restart is clobbered. This class prepares the exact prune + its revert for the maintenance path; it is never applied by the unattended tick."
+    },
+    {
+      "id": "LF-12", "loop_class": "LP-A10", "tier": 1,
       "title": "abort the resending session via the native sessions.abort RPC (no-op-safe when nothing is active) + park the source unit",
       "reversible_in": "unpark the source unit; sessions.abort has nothing to undo - a no-active-run call is already a documented safe no-op (ok=true, abortedRunId=null, status='no-active-run')",
       "proof": "the 2026-08-04 incident: sessions_send's hardcoded 30000ms fallback timeout (no timeoutSeconds passed) was misread as delivery failure and resent byte-identical as a brand-new top-level run 6-8x ~34s apart, past 154,000 input tokens with zero brake; config-free (touches no client config, only the one named session), so it applies for real in-tick like LF-6 - never pkill node, never a gateway restart"

@@ -1,0 +1,78 @@
+{
+  "actions": [
+    "custom-webhook",
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "custom-webhook"
+    ],
+    "contract": "anthology-engine-w2-title-fire-template",
+    "note": "offline template only \u2014 a REAL location write must ride the house clients (CAF_BROWSER_UA on every request \u2014 CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live",
+    "release": {
+      "actions": [
+        "send-email",
+        "send-sms"
+      ],
+      "email": {
+        "body": "Hi {{ contact.first_name }},\n\nYour title for {{ custom_values.anthology_name }} is ready.\n\nYou can view the PDF here:\n{{contact.anthology_titles_pdf_url}}\n\nAnd you can edit your Google Doc here:\n{{contact.anthology_titles_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
+        "doc_link": "{{contact.anthology_titles_doc_url}}",
+        "from_name": "{{ custom_values.producer }}",
+        "pdf_link": "{{contact.anthology_titles_pdf_url}}",
+        "reply_to": "{{ custom_values.producer_email }}",
+        "stage_form_link": "https://link.msgsndr.com/widget/form/UgiiSoZsA4vyqOVfO5fi?anthology_id={{ contact.anthology_active_id }}&stage=s3_gate",
+        "subject": "Your title for {{ custom_values.anthology_name }} is ready"
+      },
+      "sms": {
+        "body": "{{ contact.first_name }}, your title is ready to review. Here is your Google Doc: {{contact.anthology_titles_doc_url}}",
+        "doc_link": "{{contact.anthology_titles_doc_url}}"
+      },
+      "trigger_tag": "anthology-release-titles",
+      "workflow": "Anthology Release: Titles"
+    },
+    "schema_version": 1,
+    "trigger": {
+      "active_when": {
+        "equals": [
+          "UgiiSoZsA4vyqOVfO5fi"
+        ],
+        "field": "form.id"
+      },
+      "form_slug": "title-select",
+      "scope_note": "the Title Fire fires ONLY when the submission is the title-select form (the U02 scope law); every other form is out of scope for this workflow",
+      "type": "form_submission"
+    },
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "body": {
+        "anthology_id": "{{ contact.anthology_active_id }}",
+        "stage": "s3_gate",
+        "subtitle": "{{ contact.subtitle }}",
+        "title": "{{ contact.title }}"
+      },
+      "content_type": "application/json",
+      "method": "POST",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow_name": "Anthology Title Fire"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_titles_pdf_url}}",
+      "{{contact.anthology_titles_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_titles_doc_url}}"
+  },
+  "module": "w2_title_fire",
+  "name": "Anthology Title Fire",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 2,
+  "status": "LIVE",
+  "trigger": {
+    "scoped_form": "title-select",
+    "type": "form_submission"
+  }
+}

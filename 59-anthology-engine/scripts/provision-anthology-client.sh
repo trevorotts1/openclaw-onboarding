@@ -20,8 +20,9 @@
 #      are BlackCEO-owned/shared by design and are excluded from the commingle check.
 #   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 10
 #      Doc/PDF pairs incl. the 2 chapter-rewrite-preservation pairs + 3 control
-#      fields + 5 U8 cover-style fields = 28 keys, all LARGE_TEXT except the
-#      SINGLE_OPTIONS cover choice); a MISSING field STOPS setup
+#      fields + 5 U8 cover-style fields + 10 U15-absorbed live fields = 38
+#      keys, all LARGE_TEXT except the TWO SINGLE_OPTIONS choice fields);
+#      a MISSING field STOPS setup
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
@@ -53,23 +54,34 @@
 #      gateway config (hooks.mappings + hooks.token) via `openclaw config`,
 #      idempotently (dedup by mapping id; sibling /hooks routes preserved) and
 #      VERIFIED by reading it back — a merge that does not take is a real error.
-#   7.5 ANTHOLOGY SNAPSHOT (push/import + verify + custom-value fill + version stamp).
-#      The Convert and Flow snapshot is CUT ONCE from the operator's OWN template
-#      location, then provisioned per client by ONE of two branches (Trevor 2026-07-10):
-#      SAME-AGENCY (DAD7 sub-account) = AUTOMATED push via the n8n Snapshot Provisioner
-#      webhook; CROSS-AGENCY (client owns their own agency) = share link / MANUAL import
-#      (Settings -> Snapshots -> Import/Load) — a cross-agency API push stays REJECTED.
-#      Then this step (anthology_snapshot.py) VERIFIES the import/push
-#      landed (the standard pipeline exists BY NAME with all 9 stages + all 28 custom
-#      fields exist BY KEY; a missing pipeline STOPs AF-AE-SNAPSHOT-PIPELINE-MISSING),
-#      FILLS the four per-client location custom VALUES the snapshot ships as REPLACE-ME
-#      placeholders (anthology_webhook_url from --public-hostname + the intake route,
-#      anthology_hook_secret resolved BY LABEL from ANTHOLOGY_INTAKE_HOOK_SECRET and
-#      NEVER printed, producer, producer_email) — IDEMPOTENTLY (GET-check then
-#      create-only-missing / update-in-place) — and STAMPS the snapshot-version marker
-#      $STATE_DIR/snapshot-version.json. Runs AFTER step 7 so the intake route + secret
-#      exist; an unresolved secret leaves that ONE placeholder unfilled with a note
-#      (HELD under --require-live), never a false green. See references/anthology-snapshot-guide.md.
+#   7.5 ANTHOLOGY SNAPSHOT (import + verify + custom-value fill + fieldKey re-verify +
+#      version stamp). MASTER-SPEC U16 (the second NEVER-done deliverable): the client-box
+#      snapshot-import process. The SNAPSHOT IMPORT step runs provision_snapshot_import.py
+#      (NEW-2, same-agency branch) — idempotent GET-check-by-name (an already-imported
+#      location is VERIFIED, never re-pushed), then PUT /locations/{id}
+#      {companyId, snapshot:{id, override:true}} with the agency PIT (locations.write
+#      scope), a bounded snapshot-status poll, a resolved field-map (38 keys BY KEY) and
+#      provision_report.json. The snapshot fixture is loaded from $ANTHOLOGY_SNAPSHOT_FIXTURE
+#      or the repo fixture fixtures/snapshot/anthology-engine-v1.0.0.json (MASTER-SPEC
+#      U15/U17); when absent, the import verifies an already-imported location and STOPS
+#      fail-closed AF-AE-SNAPIMPORT-NO-FIXTURE when a push would be required — never a
+#      blind push, never a silent skip. Tenancy branches (Trevor 2026-07-10): SAME-AGENCY
+#      (DAD7 sub-account) = this automated import; CROSS-AGENCY (client owns their own
+#      agency) = share link / MANUAL import (Settings -> Snapshots -> Import/Load) — a
+#      cross-agency API push stays REJECTED. Then this step VERIFIES the import/push
+#      landed (anthology_snapshot.py verify-imported: the standard pipeline exists BY NAME
+#      with all 9 stages + all 28 custom fields exist BY KEY; a missing pipeline STOPs
+#      AF-AE-SNAPSHOT-PIPELINE-MISSING), FILLS the four per-client location custom VALUES
+#      the snapshot ships as REPLACE-ME placeholders (anthology_webhook_url from
+#      --public-hostname + the intake route, anthology_hook_secret resolved BY LABEL from
+#      ANTHOLOGY_INTAKE_HOOK_SECRET and NEVER printed, producer, producer_email) —
+#      IDEMPOTENTLY (GET-check then create-only-missing / update-in-place) — RE-VERIFIES
+#      every fieldKey (anthology_registry.py verify-fields: the resolved field-map must
+#      carry all 38 keys byte-exact; any unresolved-or-mismatched key exits 5), and STAMPS
+#      the snapshot-version marker $STATE_DIR/snapshot-version.json. Runs AFTER step 7 so
+#      the intake route + secret exist; an unresolved secret leaves that ONE placeholder
+#      unfilled with a note (HELD under --require-live), never a false green. See
+#      references/anthology-snapshot-guide.md.
 #   8  register EXACTLY the ONE daily tick in the cron inventory — no heartbeat,
 #      ever (guard-cron-inventory.py proves it). The tick runs the smoke test
 #      (funded-reachability probe + hold-queue aging) AND the board-mirror reconcile
@@ -114,6 +126,10 @@
 #   --public-hostname HOST     the box's public hostname used to build the snapshot
 #                              `anthology_webhook_url` custom value
 #                              (https://HOST/hooks/anthology-intake); never a secret.
+#   --snapshot-fixture PATH    the versioned snapshot fixture JSON for step 7.5's import
+#                              (provision_snapshot_import.py; default: the env label
+#                              ANTHOLOGY_SNAPSHOT_FIXTURE or the repo fixture
+#                              fixtures/snapshot/anthology-engine-v1.0.0.json).
 #   --location-id ID           override the Convert and Flow Location id.
 #   --department-slug SLUG     Command Center department slug (default anthology).
 #   --daily-tick-schedule CRON cron schedule for the one daily tick (default 0 8 * * *).
@@ -151,11 +167,13 @@ EX_OK=0; EX_ERR=1; EX_STOP=2; EX_HELD=3; EX_VIOLATION=4; EX_MISMATCH=5
 # --------------------------------------------------------------------------
 MODE="live"                # live | plan | dryrun | selftest
 REQUIRE_LIVE=0
+INSTALL_MODE=0             # deferred-credential install: gate reports missing labels but does not STOP install
 JSONOUT=0
 PRODUCER_NAME=""
 PRODUCER_ID=""
 PRODUCER_EMAIL=""
 PUBLIC_HOSTNAME=""
+SNAPSHOT_FIXTURE=""
 LOCATION_ID_OVERRIDE=""
 DEPT_SLUG="anthology"
 DEPT_NAME="Anthology"
@@ -167,7 +185,7 @@ SKIP_SMOKE=0
 STATE_DIR_OVERRIDE=""
 
 usage() {
-    sed -n '2,86p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'
+    sed -n '2,147p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -178,10 +196,12 @@ while [ $# -gt 0 ]; do
         --self-test)            MODE="selftest"; shift ;;
         --wire-department)      MODE="wiredept"; shift ;;
         --require-live)         REQUIRE_LIVE=1; shift ;;
+        --install-mode)         INSTALL_MODE=1; shift ;;
         --producer)             PRODUCER_NAME="${2:-}"; shift 2 ;;
         --producer-id)          PRODUCER_ID="${2:-}"; shift 2 ;;
         --producer-email)       PRODUCER_EMAIL="${2:-}"; shift 2 ;;
         --public-hostname)      PUBLIC_HOSTNAME="${2:-}"; shift 2 ;;
+        --snapshot-fixture)     SNAPSHOT_FIXTURE="${2:-}"; shift 2 ;;
         --location-id)          LOCATION_ID_OVERRIDE="${2:-}"; shift 2 ;;
         --department-slug)      DEPT_SLUG="${2:-}"; shift 2 ;;
         --department-name)      DEPT_NAME="${2:-}"; shift 2 ;;
@@ -472,11 +492,24 @@ step1_credentials() {
     fi
     printf '%s\n' "$out" >&2
     set_crc "$rc"
+    if [ "$rc" = "2" ] && [ "$INSTALL_MODE" = "1" ]; then
+        # Deferred-credential install (Trevor GO 2026-08-14): a box missing the
+        # PER-CLIENT delivery levers is still INSTALLED — the skill ships, the
+        # gate outcome is recorded for the use-time readiness check, and the
+        # drive/snapshot steps stay gated. A missing PIT/location (the Convert
+        # and Flow pair) is NOT deferred — nothing can install without it.
+        if echo "$out" | grep -qiE "(google_sa_key_file|google_impersonate_user|google_drive_root_folder)"; then
+            mkdir -p "$STATE_DIR"
+            echo "$EX_HELD" | tee "$STATE_DIR/credentials-pending" >/dev/null
+            note "  (install-mode) delivery levers missing — recorded, install CONTINUES (drive + snapshot stay gated)"
+            echo "$EX_OK"; return
+        fi
+    fi
     echo "$(normalize_rc "$rc")"; return
 }
 
 step2_fields() {
-    note "STEP 2/10 — create-or-verify the 28 Section 6 custom fields (10 Doc/PDF pairs incl. 2 G10 rewrite pairs + 3 control + 5 U8 cover-style; 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice)"
+    note "STEP 2/10 — create-or-verify the 38 contract custom fields (10 Doc/PDF pairs incl. 2 G10 rewrite pairs + 3 control + 5 U8 cover-style + 10 U15-absorbed live fields; 36 LARGE_TEXT + 2 SINGLE_OPTIONS cover choice + review decision)"
     local n; n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-fields $(dry_flag) \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     echo "$n"
@@ -502,6 +535,18 @@ step3_pipeline() {
     # in the UI, or bind a pre-existing pipeline with `bind --pipeline-id`.
     n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-pipeline \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
+    # Deferred-credential install (Trevor GO 2026-08-14): the standard pipeline is
+    # a UI-only object whose canonical source is the SNAPSHOT IMPORT (step 7.5,
+    # itself credential-gated). In install-mode, an absent pipeline is DEFERRED
+    # (recorded) instead of STOPPING the install — the pipeline lands when the
+    # snapshot import runs after the client's levers are wired. Fail-closed
+    # semantics unchanged outside install-mode.
+    if [ "$n" != "$EX_OK" ] && [ "$INSTALL_MODE" = "1" ]; then
+        mkdir -p "$STATE_DIR"
+        echo "$EX_HELD" | tee "$STATE_DIR/pipeline-pending" >/dev/null
+        note "  (install-mode) pipeline absent — recorded pipeline-pending, install CONTINUES (bind when snapshot import runs)"
+        echo "$EX_OK"; return
+    fi
     echo "$n"
 }
 
@@ -934,69 +979,102 @@ report_intake_hook_state() {
 }
 
 # --------------------------------------------------------------------------
-# STEP 7.5 — ANTHOLOGY SNAPSHOT. Two provisioning branches (Trevor's 2026-07-10
+# STEP 7.5 — ANTHOLOGY SNAPSHOT (MASTER-SPEC U16, the client-box snapshot-import
+# process; depends on U15's fixture). Two provisioning branches (Trevor's 2026-07-10
 # order, which SUPERSEDES the old "agency->subaccount auto-push is REJECTED" blanket):
 #   - SAME-AGENCY (the client's Convert and Flow location is a sub-account under
-#     BlackCEO's agency, companyId DAD7): AUTOMATED push via the n8n Snapshot
-#     Provisioner webhook (STEP 7.5a below) — best-effort + NON-BLOCKING.
+#     BlackCEO's agency, companyId DAD7): AUTOMATED import, driven HERE directly by
+#     provision_snapshot_import.py (NEW-2) — idempotent GET-check-by-name, snapshot
+#     PUT with override, bounded snapshot-status poll, resolved field-map + report.
 #   - CROSS-AGENCY (the client owns their OWN Convert and Flow agency): share link /
 #     MANUAL import (the OLD doctrine, unchanged) — a cross-agency API push into a
 #     location the operator does not own under its agency remains impossible/REJECTED.
 # Either branch, the box-side VERIFY below (anthology_snapshot.py verify-imported, run
 # with the client's OWN PIT) stays the genuine-completion gate; then FILL the four
-# per-client custom VALUES and STAMP the snapshot-version marker. Runs AFTER step 7 so
-# the intake route + hook secret already exist. The hook-secret Authorization custom
-# value is resolved BY LABEL and NEVER printed.
+# per-client custom VALUES (BY LABEL, never printed), RE-VERIFY every fieldKey
+# (anthology_registry.py verify-fields, MASTER-SPEC U16 step 3), and STAMP the
+# snapshot-version marker. Runs AFTER step 7 so the intake route + hook secret already
+# exist. The hook-secret Authorization custom value is resolved BY LABEL and NEVER
+# printed. Fail-closed: a missing snapshot fixture STOPS (AF-AE-SNAPIMPORT-NO-FIXTURE)
+# whenever a push would be required; an already-imported location is a verified no-op.
 # --------------------------------------------------------------------------
+resolve_snapshot_fixture() {
+    # The versioned snapshot fixture for provision_snapshot_import.py. Explicit arg
+    # wins, then the env label, then the repo fixture (U15/U17). Echoes the resolved
+    # path, or an empty string when nothing is configured / present yet.
+    local f="${SNAPSHOT_FIXTURE:-${ANTHOLOGY_SNAPSHOT_FIXTURE:-}}"
+    if [ -n "$f" ]; then
+        if [ ! -f "$f" ]; then
+            note "  snapshot fixture configured but NOT FOUND: $f (an import that must push will STOP AF-AE-SNAPIMPORT-NO-FIXTURE)"
+            printf '%s\n' "$f"
+            return
+        fi
+        printf '%s\n' "$f"; return
+    fi
+    local repo_fixture="$SKILL_DIR/fixtures/snapshot/anthology-engine-v1.0.0.json"
+    if [ -f "$repo_fixture" ]; then
+        printf '%s\n' "$repo_fixture"; return
+    fi
+    note "  repo snapshot fixture not present yet (U15/U17 pending): $repo_fixture — already-imported locations still verify; an import that must push will STOP AF-AE-SNAPIMPORT-NO-FIXTURE"
+    printf '%s\n' ""
+}
+
 step_snapshot() {
-    note "STEP 7.5/10 — Anthology snapshot: request automated push (same-agency) or manual import (cross-agency), then verify + fill custom values + stamp version"
+    note "STEP 7.5/10 — Anthology snapshot: import (same-agency, provision_snapshot_import.py) or manual import (cross-agency), verify landed, fill custom values, re-verify every fieldKey, stamp version"
     local snap="$SCRIPTS/anthology_snapshot.py"
-    if [ ! -f "$snap" ]; then
-        note "  anthology_snapshot.py not present yet — HELD"
+    local imp="$SCRIPTS/provision_snapshot_import.py"
+    local reg="$SCRIPTS/anthology_registry.py"
+    if [ ! -f "$snap" ] || [ ! -f "$imp" ]; then
+        note "  anthology_snapshot.py / provision_snapshot_import.py not present yet (U16 NEW-2 pending) — HELD"
         set_crc 127; echo "$EX_HELD"; return
     fi
+    local fixture; fixture="$(resolve_snapshot_fixture)"
 
-    # 7.5a — AUTOMATED PUSH (same-agency). Fire the n8n Snapshot Provisioner webhook via
-    #   the shared helper. Best-effort + NON-BLOCKING: the verify gate below is the real
-    #   completion check. The helper resolves PROVISION_SNAPSHOT_WEBHOOK_URL +
-    #   PROVISION_SNAPSHOT_TOKEN BY LABEL (never printed); if unconfigured/unreachable it
-    #   prints the manual-import fallback so onboarding is never worse than the manual path.
-    local fire="$SKILLS_ROOT/shared-utils/fire-provision-snapshot.sh"
-    local loc_id="${LOCATION_ID_OVERRIDE:-${CONVERT_AND_FLOW_LOCATION_ID:-}}"
-    local cslug="${PROVISION_CLIENT_SLUG:-${PUBLIC_HOSTNAME%%.*}}"; [ -n "$cslug" ] || cslug="$DEPT_SLUG"
-    if [ "$MODE" != "dryrun" ] && [ -f "$fire" ] && [ -n "$loc_id" ]; then
-        mkdir -p /tmp/anthology-provision 2>/dev/null || true
-        bash "$fire" \
-            --engine anthology \
-            --location-id "$loc_id" \
-            --client-slug "$cslug" \
-            --client-name "${PRODUCER_NAME:-}" \
-            --client-email "${PRODUCER_EMAIL:-}" \
-            --tenancy same_agency \
-            --requested-by "provision-anthology-client.sh" \
-            --ledger-file "/tmp/anthology-provision/${cslug}.json" || true
-    elif [ "$MODE" != "dryrun" ]; then
-        note "  automated push skipped (fire helper missing or location id unresolved) — use MANUAL import (7.5b)"
+    # 7.5a — SNAPSHOT IMPORT (MASTER-SPEC U16 step 1): provision_snapshot_import.py
+    #   import loads the snapshot fixture and idempotently creates-or-verifies the
+    #   pipeline / forms / fields / custom-values / workflows in the client's OWN
+    #   Convert and Flow sub-account (GET-check-by-name: an already-imported location
+    #   is VERIFIED, never re-pushed; a fresh import PUTs {companyId, snapshot:
+    #   {id, override:true}} with the agency PIT, polls snapshot-status to completed,
+    #   resolves the field-map BY KEY, and writes provision_report.json). Fail-closed:
+    #   no fixture + a location that must be pushed -> STOP; push refused -> STOP/HELD
+    #   per class; status never completed -> HELD; read-back mismatch -> exit 5,
+    #   NOTHING stamped.
+    local -a iargs=(import)
+    if [ -n "$fixture" ]; then
+        iargs+=(--snapshot "$fixture")
+    else
+        # No fixture available: the module's own GET-check decides — already imported
+        # is a verified no-op (exit 0); an import that must push STOPS fail-closed.
+        note "  (import) no snapshot fixture to push; relying on the GET-check-by-name idempotency law (already-imported -> verified no-op)"
     fi
+    [ -n "$LOCATION_ID_OVERRIDE" ] && iargs+=(--location-id "$LOCATION_ID_OVERRIDE")
+    [ "$MODE" = "dryrun" ] && iargs+=(--dry-run)
+    local n; n="$(run_collab py "$imp" "${iargs[@]}")"
+    if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
 
-    # 7.5b — MANUAL IMPORT fallback (cross-agency client-owned account, or the automated
-    #   push above could not fire). The verify below still gates genuine completion.
-    note "  OPERATOR (fallback): if the automated push did not fire, or this client owns their OWN"
-    note "           Convert and Flow agency (cross-agency), IMPORT the Anthology snapshot into the"
-    note "           client's location (Settings -> Snapshots -> Import/Load). Guide: references/anthology-snapshot-guide.md"
+    # 7.5b — MANUAL IMPORT fallback (cross-agency client-owned account, or the
+    #   automated import above could not push). The verify below still gates genuine
+    #   completion.
+    note "  OPERATOR (fallback): if this client owns their OWN Convert and Flow agency"
+    note "           (cross-agency), IMPORT the Anthology snapshot into the client's location"
+    note "           (Settings -> Snapshots -> Import/Load). Guide: references/anthology-snapshot-guide.md"
     if [ "$MODE" = "dryrun" ]; then
-        local n; n="$(run_collab py "$snap" plan)"
+        n="$(run_collab py "$snap" plan)"
         echo "$n"; return
     fi
     # 1) VERIFY the import landed: the UI/snapshot-only pipeline exists BY NAME with
-    #    all 9 stages + all 28 contract custom fields exist BY KEY (read-only).
-    local n; n="$(run_collab py "$snap" verify-imported \
+    #    all 9 stages + all 38 contract custom fields exist BY KEY (read-only, the
+    #    client's OWN PIT).
+    n="$(run_collab py "$snap" verify-imported \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
-    # 2) FILL the four per-client custom VALUES, idempotently (GET-check + create-or-
-    #    update). Never inline a secret; the hook-secret is resolved BY LABEL inside
-    #    anthology_snapshot.py and is NEVER printed. Under --require-live an unresolved
-    #    secret HOLDs (the Authorization-header custom value stays a placeholder).
+    # 2) FILL the four per-client custom VALUES (MASTER-SPEC U16 step 2), idempotently
+    #    (GET-check + create-or-update): anthology_webhook_url from --public-hostname +
+    #    the intake route, anthology_hook_secret resolved BY LABEL inside
+    #    anthology_snapshot.py and NEVER printed, producer, producer_email. Under
+    #    --require-live an unresolved secret HOLDs (the Authorization-header custom
+    #    value stays a placeholder).
     local -a fargs=(provision-custom-values)
     [ -n "$LOCATION_ID_OVERRIDE" ] && fargs+=(--location-id "$LOCATION_ID_OVERRIDE")
     [ -n "$PRODUCER_NAME" ]        && fargs+=(--producer "$PRODUCER_NAME")
@@ -1005,7 +1083,14 @@ step_snapshot() {
     [ "$REQUIRE_LIVE" = "1" ]      && fargs+=(--require-live)
     n="$(run_collab py "$snap" "${fargs[@]}")"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
-    # 3) STAMP the snapshot-version marker so the box records which snapshot it was
+    # 3) VERIFICATION (MASTER-SPEC U16 step 3): anthology_registry.py verify-fields
+    #    re-verifies EVERY fieldKey — the field-map.json the import resolved from the
+    #    live read-back must carry all 38 intended keys with a byte-exact field_key and
+    #    a field_id; any unresolved-or-mismatched key exits 5 (AF-AE-FIELD-KEY-MISMATCH
+    #    family). READ-ONLY.
+    n="$(run_collab py "$reg" verify-fields)"
+    if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
+    # 4) STAMP the snapshot-version marker so the box records which snapshot it was
     #    provisioned from.
     n="$(run_collab py "$snap" stamp-version ${STATE_DIR_OVERRIDE:+--state-dir "$STATE_DIR_OVERRIDE"})"
     echo "$n"
@@ -1356,7 +1441,7 @@ STEP_LABELS=(
     "5/10 — Drive producer root"
     "6/10 — ledger + mirror bootstrap"
     "7/10 — webhook route + secret"
-    "7.5 — Anthology snapshot (import verify + custom-value fill + version stamp)"
+    "7.5 — Anthology snapshot (provision_snapshot_import.py import + verify landed + custom-value fill + verify-fields re-verify + version stamp)"
     "8/10 — one daily tick"
     "9/10 — verify-webhook T1..T9"
     "10/10 — smoke test"
@@ -1371,7 +1456,7 @@ STEP_AF=(
     "Drive root unreachable -> exit 2; API unreachable -> HELD 3"
     "ledger bootstrap error"
     "secret gen / route materialization error; gateway deferral (HELD 3 only under --require-live)"
-    "AF-AE-SNAPSHOT-PIPELINE-MISSING (snapshot pipeline absent on the live location -> exit 2; import the snapshot) / AF-AE-SNAPSHOT-FIELD-MISSING (a contract field absent -> exit 2); AF-AE-SNAPSHOT-CV-SCOPE (customValues scope denied -> exit 2); a stage-name gap -> 5; API unreachable -> HELD 3; hook-secret label NOT SET leaves the Authorization custom value unfilled (HELD 3 only under --require-live)"
+    "AF-AE-SNAPIMPORT-NO-FIXTURE (snapshot fixture absent/drifted -> exit 2; a push that must happen STOPS) / AF-AE-SNAPIMPORT-PIPELINE-MISSING + AF-AE-SNAPSHOT-PIPELINE-MISSING (pipeline absent on the live location -> exit 2; import the snapshot) / AF-AE-SNAPIMPORT-PUSH-REFUSED (scope/validation -> 2, edge/transport -> HELD 3) / AF-AE-SNAPIMPORT-STATUS-STALLED (never completed -> HELD 3) / AF-AE-SNAPIMPORT-READBACK-MISMATCH + verify-fields unresolved-or-mismatched key -> exit 5, NOTHING stamped; AF-AE-SNAPSHOT-CV-SCOPE (customValues scope denied -> exit 2); API unreachable -> HELD 3; hook-secret label NOT SET leaves the Authorization custom value unfilled (HELD 3 only under --require-live)"
     "cron inventory write error; no live backend under --require-live -> HELD 3"
     "verify-webhook failing test id -> exit 4; battery held under --require-live -> 3"
     "provider unreachable or unfunded -> exit 4 (alert path)"
@@ -1386,7 +1471,7 @@ STEP_REMEDIATION=(
     "Confirm this client's per-client BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER) is reachable via the BlackCEO service account (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
     "Ensure the state dir secrets subdir is writable (0600); export any generated secret into the client env store"
-    "IMPORT the Anthology snapshot (references/anthology-snapshot-guide.md) into THIS client's OWN Convert and Flow location (Settings -> Snapshots -> Import/Load) so the pipeline + 28 fields + the 4 REPLACE-ME custom values + the tag->notification workflow exist; grant the client PIT the customValues + opportunities scopes; export ANTHOLOGY_INTAKE_HOOK_SECRET into the client env store so the Authorization-header custom value can be filled; re-run"
+    "Provide the versioned snapshot fixture (fixtures/snapshot/anthology-engine-v1.0.0.json or --snapshot-fixture; cut with snapshot_cut.py per U15) so provision_snapshot_import.py can push it, or IMPORT the Anthology snapshot (references/anthology-snapshot-guide.md) into THIS client's OWN Convert and Flow location (Settings -> Snapshots -> Import/Load) so the pipeline + 38 fields + the 4 REPLACE-ME custom values + the tag->notification workflow exist; grant the agency PIT locations.write scope for the same-agency push and the client PIT the customValues + opportunities scopes; export ANTHOLOGY_INTAKE_HOOK_SECRET into the client env store so the Authorization-header custom value can be filled; re-run"
     "Provide a live cron backend (openclaw cron) or accept the declarative inventory; re-run"
     "Register the gateway route and secret; then re-run verify-webhook-t1-t9.sh (the live battery runs on the canary)"
     "Fund the client's OWN provider accounts (Ollama Cloud / OpenRouter / Gemini / Minimax / Kie.ai); re-run the smoke test"
@@ -1452,7 +1537,7 @@ print_plan() {
     cat >&2 <<PLAN
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
   1/10  credential gate            caf_credential_gate.py --require-delivery (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint; PLUS the per-client Google delivery levers SA-key + impersonate + Shared-Drive root gated for presence)
-  2/10  custom fields              anthology_registry.py provision-fields (28 keys: LARGE_TEXT + 1 SINGLE_OPTIONS cover choice; missing -> STOP; key mismatch -> exit 5)
+  2/10  custom fields              anthology_registry.py provision-fields (38 keys: 36 LARGE_TEXT + 2 SINGLE_OPTIONS cover choice + review decision; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked
@@ -1460,7 +1545,7 @@ print_plan() {
   5/10  Drive producer root        drive-tree-provision.py verify-root (per-client Shared-Drive root from GOOGLE_DRIVE_ROOT_FOLDER) + provision --producer; never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
-  7.5   Anthology snapshot         step_snapshot: request AUTOMATED push (same-agency, DAD7 sub-account, via the n8n Snapshot Provisioner webhook) OR fall back to MANUAL import (cross-agency, client owns their own GHL agency); then anthology_snapshot.py verifies the push/import landed (pipeline BY NAME + 9 stages + 28 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fills the 4 REPLACE-ME location custom values idempotently (webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + stamps snapshot-version.json. Cross-agency agency->subaccount push stays REJECTED (impossible across an agency boundary); same-agency push is AUTHORIZED and automated (Trevor 2026-07-10, see config/anthology-snapshot-contract.json authorized_mechanisms)
+  7.5   Anthology snapshot         step_snapshot: SNAPSHOT IMPORT via provision_snapshot_import.py (MASTER-SPEC U16 step 1: loads the versioned fixture, idempotent GET-check-by-name — an already-imported location is verified, never re-pushed — then PUT snapshot.override with the agency PIT for a same-agency sub-account, bounded snapshot-status poll, resolved field-map + provision_report.json; missing fixture + push required -> STOP AF-AE-SNAPIMPORT-NO-FIXTURE). MANUAL import remains the cross-agency fallback (client owns their own GHL agency). Then anthology_snapshot.py verifies the push/import landed (pipeline BY NAME + 9 stages + 38 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fills the 4 REPLACE-ME location custom values idempotently (U16 step 2: webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + RE-VERIFIES every fieldKey (U16 step 3: anthology_registry.py verify-fields, all 38 keys byte-exact; exit 5 on any unresolved/mismatch) + stamps snapshot-version.json. Cross-agency agency->subaccount push stays REJECTED (impossible across an agency boundary); same-agency push is AUTHORIZED and automated (Trevor 2026-07-10, see config/anthology-snapshot-contract.json authorized_mechanisms)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver; the tick probes funded-reachability, ages the hold queue, AND reconciles the board mirror (mc_board.py reconcile) so a missed card recovers daily
   9/10  verify-webhook T1..T9      verify-webhook-t1-t9.sh (structure now; live battery observed on the W5.3 canary)
   10/10 smoke test                 anthology-smoke-test.py run --max-spend-cents 1 (balance endpoints only)
@@ -1914,6 +1999,62 @@ PY
     n="$(ANTHOLOGY_OC_ROOT="$wtmp2/.openclaw" wire_department_runtime 2>/dev/null)"
     [ "$n" = "$EX_HELD" ] || { echo "  FAIL wire CC-absent: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
 
+    # ---- unit 16: snapshot IMPORT + fieldKey RE-VERIFY (MASTER-SPEC U16) ----
+    # Proves step_snapshot now runs provision_snapshot_import.py (NEW-2) BEFORE the
+    # verify/fill/stamp tail, plus the verify-fields re-verification gate. Hermetic
+    # stub collaborators record invocation order + exit codes; no network, no live
+    # Convert and Flow. Force-observes: import STOP (exit 2) halts the step; import
+    # HELD (exit 3) halts; import OK proceeds through verify-imported -> custom
+    # values -> verify-fields; verify-fields mismatch (exit 5) halts and nothing is
+    # stamped.
+    SCRIPTS="$stub_scripts"; MODE="live"
+    local snap_log="$tmp/snap-calls.log"; : > "$snap_log"
+    # Stub anthology_snapshot.py: exit per the subcommand, record into the shared log.
+    printf '#!/usr/bin/env python3\nimport sys\nprint("snapshot-%%s" %% sys.argv[1], file=open("%s", "a"))\n' "$snap_log" > "$stub_scripts/anthology_snapshot.py"
+    printf 'import sys\nrc = 0\nif len(sys.argv) > 1 and sys.argv[1] == "verify-imported": rc = 0\nif len(sys.argv) > 1 and sys.argv[1] == "provision-custom-values": rc = 0\nif len(sys.argv) > 1 and sys.argv[1] == "stamp-version": rc = 0\nsys.exit(rc)\n' >> "$stub_scripts/anthology_snapshot.py"
+    # Stub provision_snapshot_import.py: exit 0 / 2 / 3 per a marker env, record into
+    # the SAME shared log so the true interleaved call order is provable.
+    printf '#!/usr/bin/env python3\nimport sys, os\nprint("import-%%s" %% sys.argv[1], file=open("%s", "a"))\n' "$snap_log" > "$stub_scripts/provision_snapshot_import.py"
+    printf 'rc = int(os.environ.get("STUB_IMPORT_RC", "0"))\nsys.exit(rc)\n' >> "$stub_scripts/provision_snapshot_import.py"
+    # Stub anthology_registry.py: verify-fields exit per marker; every other cmd 0.
+    printf '#!/usr/bin/env python3\nimport sys, os\nprint("registry-%%s" %% sys.argv[1], file=open("%s", "a"))\n' "$snap_log" > "$stub_scripts/anthology_registry.py"
+    printf 'rc = 0\nif len(sys.argv) > 1 and sys.argv[1] == "verify-fields": rc = int(os.environ.get("STUB_VERIFYFIELDS_RC", "0"))\nsys.exit(rc)\n' >> "$stub_scripts/anthology_registry.py"
+    # Empty snapshot fixture config so the import runs WITHOUT --snapshot (the
+    # GET-check-by-name idempotency path).
+    local _svf="${ANTHOLOGY_SNAPSHOT_FIXTURE:-}"; unset ANTHOLOGY_SNAPSHOT_FIXTURE
+    SNAPSHOT_FIXTURE=""
+    # (a) import OK -> the whole tail runs in order: import, verify-imported,
+    #     provision-custom-values, verify-fields, stamp-version. All OK.
+    : > "$snap_log"
+    n="$(step_snapshot 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL u16 snapshot OK: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    local calls; calls="$(tr '\n' ' ' < "$snap_log")"
+    case "$calls" in
+        *"import-import"*"snapshot-verify-imported"*"snapshot-provision-custom-values"*"registry-verify-fields"*"snapshot-stamp-version"*)
+            : ;;
+        *) echo "  FAIL u16 call order: got '$calls'" >&2; fails=$((fails+1)) ;;
+    esac
+    # (b) import STOP (exit 2) halts the step BEFORE verify/fill/stamp.
+    : > "$snap_log"
+    n="$(STUB_IMPORT_RC=2 step_snapshot 2>/dev/null)"
+    [ "$n" = "$EX_STOP" ] || { echo "  FAIL u16 import STOP: expected $EX_STOP got $n" >&2; fails=$((fails+1)); }
+    if grep -q "snapshot-verify-imported\|snapshot-stamp-version" "$snap_log"; then
+        echo "  FAIL u16 import STOP still ran the tail" >&2; fails=$((fails+1))
+    fi
+    # (c) import HELD (exit 3) halts the step.
+    : > "$snap_log"
+    n="$(STUB_IMPORT_RC=3 step_snapshot 2>/dev/null)"
+    [ "$n" = "$EX_HELD" ] || { echo "  FAIL u16 import HELD: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
+    # (d) verify-fields mismatch (exit 5) halts the step BEFORE stamp-version.
+    : > "$snap_log"
+    n="$(STUB_VERIFYFIELDS_RC=5 step_snapshot 2>/dev/null)"
+    [ "$n" = "$EX_MISMATCH" ] || { echo "  FAIL u16 verify-fields mismatch: expected $EX_MISMATCH got $n" >&2; fails=$((fails+1)); }
+    if grep -q "snapshot-stamp-version" "$snap_log"; then
+        echo "  FAIL u16 verify-fields mismatch still stamped the version" >&2; fails=$((fails+1))
+    fi
+    [ -n "$_svf" ] && export ANTHOLOGY_SNAPSHOT_FIXTURE="$_svf"
+    SCRIPTS="$save_scripts"
+
     # ---- unit 15: step9 CANARY confirm-SET gates the intake hook secret ----
     # Under --require-live, step9 must CONFIRM ANTHOLOGY_INTAKE_HOOK_SECRET is resolvable
     # before the live T1..T9 battery — else the gateway cannot authenticate the intake
@@ -1949,7 +2090,7 @@ PY
     fi
 
     if [ "$fails" -eq 0 ]; then
-        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure, step9 canary confirm-SET of ANTHOLOGY_INTAKE_HOOK_SECRET: unset->HELD / set->OK)" >&2
+        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure, step9 canary confirm-SET of ANTHOLOGY_INTAKE_HOOK_SECRET: unset->HELD / set->OK, U16 snapshot import+verify-fields: import-first call order / import STOP+HELD halt / verify-fields mismatch halts before stamp)" >&2
         return "$EX_OK"
     fi
     echo "[$PROG] SELF-TEST FAIL — $fails check(s) failed" >&2

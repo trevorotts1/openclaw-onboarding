@@ -1,0 +1,58 @@
+name: cron-template-delivery-guard
+
+# Fails the build if any shipped cron template breaks the ONE-DELIVERY-PATH rule:
+#   - a prompt that names a literal topic/chat target inline (the model then
+#     builds the address itself and invents invalid targets), or
+#   - a client-facing deliverable with no delivery path at all, or
+#   - a cron registered WITH delivery whose prompt ALSO self-sends.
+#
+# Live-box origin: two daily client deliverables were generated in full and then
+# silently lost, both runs reporting `succeeded`.
+
+on:
+  push:
+    paths:
+      - cron-prompt.txt
+      - direct-to-agent-install.md
+      - install.sh
+      - update-skills.sh
+      - lib-onboarding-resume-cron.sh
+      - "**/*.cron.json"
+      - "**/*prompt*.txt"
+      - scripts/check-cron-template-delivery.py
+      - scripts/ensure-pipeline-crons.sh
+      - tests/unit/cron-template-delivery.test.sh
+      - .github/workflows/cron-template-delivery-guard.yml
+  pull_request:
+    paths:
+      - cron-prompt.txt
+      - direct-to-agent-install.md
+      - install.sh
+      - update-skills.sh
+      - lib-onboarding-resume-cron.sh
+      - "**/*.cron.json"
+      - "**/*prompt*.txt"
+      - scripts/check-cron-template-delivery.py
+      - scripts/ensure-pipeline-crons.sh
+      - tests/unit/cron-template-delivery.test.sh
+      - .github/workflows/cron-template-delivery-guard.yml
+
+jobs:
+  cron-template-delivery-guard:
+    name: Cron template delivery-path guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The test's REAL_MUTATION check reads origin/main:direct-to-agent-install.md
+          # to prove the gate catches the genuine pre-fix bytes. Needs real history.
+          fetch-depth: 0
+
+      - name: Run the gate directly against the tree
+        run: python3 scripts/check-cron-template-delivery.py --root .
+
+      - name: Run cron-template-delivery tests (incl. mutation proofs)
+        run: |
+          chmod +x tests/unit/cron-template-delivery.test.sh
+          bash tests/unit/cron-template-delivery.test.sh

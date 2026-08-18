@@ -183,13 +183,13 @@ def preflight_validate():
         with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
             ollama_models = [m["name"] for m in json.loads(r.read()).get("models", [])]
         checks.append(("ollama_reachable", True, f"{len(ollama_models)} models"))
-        for variant in ["deepseek-v4-pro:cloud", "deepseek-v4-flash:cloud",
+        for variant in ["deepseek-v4-pro:cloud", "deepseek-v4-flash:0731-cloud",
                         "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
             found = any(variant in m for m in ollama_models)
             checks.append((f"ollama_cloud_{variant}", found, "found" if found else "MISSING"))
     except Exception as e:
         checks.append(("ollama_reachable", False, str(e)))
-        for v in ["deepseek-v4-pro:cloud", "deepseek-v4-flash:cloud",
+        for v in ["deepseek-v4-pro:cloud", "deepseek-v4-flash:0731-cloud",
                   "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
             checks.append((f"ollama_cloud_{v}", False, "ollama unreachable"))
 

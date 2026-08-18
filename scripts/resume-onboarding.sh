@@ -12,16 +12,23 @@
 #
 # BOUNDED (not perpetual): this cron exits cleanly on EITHER:
 #   (a) VERIFICATION GATE passes (every skill qc-passed, or interview-pending park)
-#   (b) MAX_RUNS_BEFORE_ESCALATE fires reached — escalate to operator + self-delete.
-# It does NOT slow-retry indefinitely. After the hard cap the cron removes itself
+#   (b) MAX_RUNS_BEFORE_ESCALATE fires reached — escalate to operator + self-DISABLE.
+# It does NOT slow-retry indefinitely. After the hard cap the cron DISABLES itself
 # and the operator must investigate and re-run update-skills.sh if needed.
+#
+# SELF-DISABLE, NOT SELF-DELETE: a deleted cron is invisible to every guard that
+# would otherwise refuse to re-arm it, so the next installer run re-created it
+# ENABLED with a fresh run budget — measured on a box as several generations in
+# one day under new UUIDs, and run counters in the hundreds against a cap of 5.
+# A disabled job stays in `openclaw cron list --all`, so the guards keep seeing
+# it. Every listing in this file therefore uses --all. See self_remove_cron().
 #
 # INTERVIEW_PENDING is a LEGITIMATE park, not terminal "done": a skill waiting on
 # owner input is re-pinged to the OWNER on backoff (so the owner is reminded),
 # and counts toward gate-success only when explicitly parked.
 #
 # Idempotent. Safe every */30. 10-min lockfile. Escalates to operator + Rescue
-# Rangers at the run cap, then self-deletes (HARD STOP — no perpetual loop).
+# Rangers at the run cap, then self-disables (HARD STOP — no perpetual loop).
 #
 # ── NUDGE LIFECYCLE (built on top of PR #181 gates) ──────────────────────────
 # State file: $WS/.onboarding-nudge-state  (plain key=value, no model read)
@@ -81,7 +88,7 @@ LOCK_FILE="$WS/.onboarding-resume.lock"
 LOG_FILE="$WS/.onboarding-resume.log"
 RUN_COUNT_FILE="$WS/.onboarding-resume-runs.count"
 SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with watchdog
-MAX_RUNS_BEFORE_ESCALATE=5    # 2.5h at */30 — escalate + HARD SELF-DELETE (no perpetual loop)
+MAX_RUNS_BEFORE_ESCALATE=5    # run #5 is the LAST fire (cap test is >=) — 2h at */30, then escalate + HARD SELF-DISABLE
 
 # ── nudge lifecycle state file (plain key=value, NO model read) ──────────────
 NUDGE_STATE_FILE="$WS/.onboarding-nudge-state"
@@ -205,13 +212,37 @@ resolve_operator_chat_id() {
   printf '%s' "$v"
 }
 
-# ── find + self-remove this cron by name (only on REAL gate-pass) ────────────
+# ── find + self-DISABLE this cron by name ────────────────────────────────────
+# `openclaw cron list` HIDES DISABLED JOBS (`--all` defaults to false). Without
+# --all this guard could not see a cron it had itself just disabled, nor one an
+# operator disabled deliberately — so it reported "could not resolve UUID" and
+# left the job armed. Same defect class as the one already fixed at
+# lib-onboarding-resume-cron.sh's idempotency guard; both listings must use --all.
+# The bare-`cron list` retry below is a compatibility fallback only: on a CLI
+# build that rejects the flag, --all yields nothing, and falling back to the
+# unfiltered listing is strictly better than returning empty.
 find_self_cron_uuid() {
   command -v openclaw >/dev/null 2>&1 || { echo ""; return 0; }
-  openclaw cron list 2>/dev/null \
+  local _uuid=""
+  _uuid="$(openclaw cron list --all 2>/dev/null \
     | awk '/onboarding-resume/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
-    | head -1
+    | head -1)"
+  if [[ -z "$_uuid" ]]; then
+    _uuid="$(openclaw cron list 2>/dev/null \
+      | awk '/onboarding-resume/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
+      | head -1)"
+  fi
+  printf '%s' "$_uuid"
 }
+# DISABLE the cron — never `cron rm`. A DELETED cron is invisible to every later
+# guard: this script's own find_self_cron_uuid() can never see it again, and
+# install_onboarding_resume_cron()'s idempotency guard sees "no onboarding-resume
+# cron" and re-creates it ENABLED on the next roll. That is the regeneration loop
+# measured on a box — cap reached -> cron rm -> re-created enabled by the next
+# installer run -> fires again, several generations in a single day under fresh
+# UUIDs, with the run counter reset to zero each time. A DISABLED job still
+# appears in `cron list --all`, so both guards keep seeing it and neither re-arms
+# it; an operator re-enables deliberately with `openclaw cron enable <uuid>`.
 self_remove_cron() {
   local reason="$1" uuid
   uuid="$(find_self_cron_uuid)"
@@ -219,12 +250,19 @@ self_remove_cron() {
     log "self_remove_cron($reason): could not resolve onboarding-resume UUID — leaving cron in place"
     return 0
   fi
-  log "self_remove_cron($reason): removing cron $uuid"
-  if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
-    log "self_remove_cron($reason): removed $uuid"
-    rm -f "$RUN_COUNT_FILE" 2>/dev/null || true
+  log "self_remove_cron($reason): disabling cron $uuid"
+  if openclaw cron disable "$uuid" 2>>"$LOG_FILE"; then
+    log "self_remove_cron($reason): disabled $uuid (still visible to \`cron list --all\`; re-arm with \`openclaw cron enable $uuid\`)"
+    # Reset the run counter ONLY on a clean gate-pass. On the hard cap the count
+    # is the forensic record of how far the box got, and wiping it handed any
+    # re-armed cron a fresh full run budget — one of the mechanics behind the
+    # observed multi-generation regeneration. Preserve it.
+    case "$reason" in
+      gate-passed) rm -f "$RUN_COUNT_FILE" 2>/dev/null || true ;;
+      *) log "self_remove_cron($reason): preserving $RUN_COUNT_FILE as escalation evidence" ;;
+    esac
   else
-    log "self_remove_cron($reason): openclaw cron rm $uuid FAILED"
+    log "self_remove_cron($reason): openclaw cron disable $uuid FAILED"
   fi
 }
 
@@ -369,7 +407,10 @@ _run_count=0
 _run_count=$((_run_count + 1))
 echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
 
-if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
+# OFF-BY-ONE: this was `> MAX_RUNS_BEFORE_ESCALATE`, which fires on run 6 for a
+# declared cap of 5 — the box always got one more model-calling fire than the
+# documented budget. `>=` makes run number N == cap the LAST run, as documented.
+if (( _run_count >= MAX_RUNS_BEFORE_ESCALATE )); then
   # Hard cap reached: escalate to operator + Rescue Rangers, then SELF-DELETE.
   # No perpetual slow-retry. The operator must investigate and re-run update-skills.sh.
   log "BOUNDED: run #$_run_count exceeds cap ${MAX_RUNS_BEFORE_ESCALATE} — escalating + self-deleting cron."
@@ -384,6 +425,11 @@ if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
       '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
     curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
   fi
+  # resumeEscalated is now CONSUMED by lib-onboarding-resume-cron.sh's second
+  # guard (install_onboarding_resume_cron -> _onboarding_resume_already_escalated):
+  # when true, that installer refuses to re-arm this cron until an operator
+  # deliberately clears it. Do NOT remove or rename this key without updating
+  # that consumer.
   if command -v jq >/dev/null 2>&1; then
     _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
   fi

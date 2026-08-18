@@ -124,16 +124,23 @@ live on the production workflow above.
 There are two live n8n workflows that can each call the real Podbean publish API
 against BlackCEO's shared Podbean account:
 
-- **`TkL0rn2SH3q32SeB`**  --  **"create podcast episode from openclaw"**
-  (`POST /webhook/podbean-publish`), described above. **This is the single
-  canonical publish path.** As of tag `v20.0.43` (GK-05/U67) its live graph
-  carries an idempotency ledger (lookup → in-flight → completed/failed/refused,
-  with an idempotent-replay short-circuit before any Podbean call), a
-  standing-gate identity check (roster lookup by email, refuses and notifies
-  before any publish work begins), and a media preflight (`HEAD` on both the
-  audio and image URLs, refuses before the OAuth/upload/publish chain runs).
-  This is the ONLY path the Skill 58 engine's Step 15 (and this repo's
-  `podbean_publish.sh` broker-mode client, above) is ever wired to call.
+- **`ZpaoEQrHYtDM49y0`**  --  **"Podcast: Publish Episode (Skill 58) — FAIL-CLOSED v70 FIXED readback"**
+  (`POST /webhook/podbean-publish`), the current ACTIVE publish workflow.
+  **This is the single canonical publish path.** It supersedes `TkL0rn2SH3q32SeB`
+  (59 nodes, now INACTIVE rollback artifact) and `vuhpiTRVw66HsX3T` (70 nodes,
+  readback-bug deploy, now INACTIVE). Its live graph carries an idempotency
+  ledger (lookup → in-flight → completed/failed/refused, with an
+  idempotent-replay short-circuit before any Podbean call), a standing-gate
+  identity check (roster lookup by email, refuses and notifies before any
+  publish work begins), a media preflight (`HEAD` on both the audio and image
+  URLs), byte-level audio/image substance gates, a post-publish readback that
+  asserts `media_url` + `logo` + description floor, and a rollback that flips a
+  failed episode to draft via `POST /v1/episodes/{id}` (`status=draft`) — the
+  DELETE verb 403s on the operator token. All three fixes (readback field
+  names, rollback status-flip, filesystem-v2 binary-mode gate read) were
+  live-proven 2026-08-05. This is the ONLY path the Skill 58 engine's Step 15
+  (and this repo's `podbean_publish.sh` broker-mode client, above) is ever
+  wired to call.
 - **`COfgxe6HXRcWOleV`**  --  **"Podbean Channel IDs to Google Doc."** This
   workflow's stated purpose (per its name and the Google-Doc/Google-Sheets
   export nodes in its graph) is unrelated to episode publishing, but it also

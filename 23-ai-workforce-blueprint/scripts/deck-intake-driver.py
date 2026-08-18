@@ -476,6 +476,58 @@ def merge_intake_json(run_dir: pathlib.Path, updates: dict) -> pathlib.Path:
     return p
 
 
+# ---------------------------------------------------------------------------
+# requester identity -- fix/deck-type-routing-bypass follow-up.
+#
+# b01d2a09 diagnosed the gap in these exact words: "the dispatcher knows it
+# but never writes it down." Two dispatchers (mc-route.sh's REQUESTER_CHAT_ID
+# / REQUESTER_CHANNEL and whatever exports PRESENTATION_REQUESTER_CHAT_ID /
+# ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID before invoking
+# this driver) already know the requester at dispatch time, and cc_board.py's
+# resolve_requester() already reads that SAME set of env keys -- but only for
+# CC-board task registration, a different purpose than the engine's own hard
+# gate (presentation_job.py --new dies with no requester.chat_id; see
+# presentation_job/__main__.py cmd_new). Neither dispatcher ever persisted the
+# value into working/copy/intake.json, the ONE file resolve_intake.py (and
+# therefore the engine) actually reads. This driver is where intake.json is
+# actually produced, so --complete is the correct place to make the stamp
+# durable: whichever env var the calling dispatcher exported is read once,
+# here, and merged into intake.json -- never overwriting a value already on
+# disk (an upstream writer or a re-run always wins over the environment).
+#
+# _REQUESTER_ENV_KEYS mirrors cc_board.py's own constant of the same name
+# byte-for-byte -- one vocabulary, read in two places for two purposes.
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
+
+
+def _resolve_requester_from_env(existing_intake: dict) -> dict:
+    """Return {requester_chat_id, requester_channel} updates to merge into
+    working/copy/intake.json, sourced from the environment the dispatcher
+    already sets (see _REQUESTER_ENV_KEYS above). Returns {} -- never a
+    fabricated value -- when intake.json already has a requester_chat_id
+    (do not clobber) or when none of the env keys are set (a genuinely
+    operator-initiated / requester-less run). The engine's own hard gate on
+    an empty requester.chat_id is left to fire exactly as designed in that
+    second case -- this function only closes the "dispatcher knew it but
+    nobody wrote it down" gap, never the case where nobody knew it at all.
+    """
+    if str(existing_intake.get("requester_chat_id") or "").strip():
+        return {}
+    chat_id = ""
+    for key in _REQUESTER_ENV_KEYS:
+        val = str(os.environ.get(key) or "").strip()
+        if val:
+            chat_id = val
+            break
+    if not chat_id:
+        return {}
+    channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+    return {"requester_chat_id": chat_id, "requester_channel": channel}
+
 
 def _build_waiver_records(qdata: dict, ledger: dict) -> list:
     """U026 — assemble the CLIENT CONSENT records from the intake ledger.
@@ -526,7 +578,7 @@ def _build_waiver_records(qdata: dict, ledger: dict) -> list:
         })
     return out
 
-def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str) -> None:
+def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str, qdata: Optional[dict] = None) -> None:
     """After presentation_type or signature_source is recorded, (re)compute the
     derived legacy fields and merge them into working/copy/intake.json. No-op
     (and never raises) if presentation_type has not been validated yet or
@@ -545,14 +597,14 @@ def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str)
 
     # U026: waiver-question answers always trigger a consent-record write.
     if qid in _WAIVER_IDS:
-        waivers = _build_waiver_records(qdata, ledger)
+        waivers = _build_waiver_records(qdata or {}, ledger)
         merge_intake_json(run_dir, {"waivers": waivers})
         # Still do the type-picker derivation if presentation_type is validated
         # (belt-and-suspenders — ensures the waiver write and the derived fields
         # both land when an answer is recorded).
         entries = ledger.get("entries", {})
         if entries.get("presentation_type", {}).get("validated"):
-            _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+            _apply_type_picker_derivation(run_dir, ledger, "presentation_type", qdata)
         return
 
     entries = ledger.get("entries", {})
@@ -772,7 +824,7 @@ def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
                 entries[qid]["validated"] = True
                 entries[qid]["validated_at"] = _now()
                 auto_skip_all_conditionals(qdata, ledger)
-                _apply_type_picker_derivation(run_dir, ledger, qid)
+                _apply_type_picker_derivation(run_dir, ledger, qid, qdata)
             else:
                 # File exists but content is invalid: re-ask same question
                 entries.setdefault(qid, {})
@@ -853,7 +905,7 @@ def cmd_answer(run_dir: pathlib.Path, qdata: dict, ledger: dict, qid: str, text:
             # Mark as asked if it wasn't already (direct --answer without --next)
             entries[qid]["asked_at"] = _now()
         auto_skip_all_conditionals(qdata, ledger)
-        _apply_type_picker_derivation(run_dir, ledger, qid)
+        _apply_type_picker_derivation(run_dir, ledger, qid, qdata)
         save_ledger(run_dir, ledger)
         print(json.dumps({
             "status": "accepted",
@@ -934,13 +986,27 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     # that wrote ledger entries directly instead of going through --answer/
     # --next, e.g. test fixtures or a resumed/edited ledger).
     if entries.get("presentation_type", {}).get("validated"):
-        _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+        _apply_type_picker_derivation(run_dir, ledger, "presentation_type", qdata)
 
     # U026: the CLIENT CONSENT record. NOT fail-soft — a lost waiver is a gate the
     # client legitimately declined that nobody can pass without an agent forging a
     # permission slip. A write failure must fail --complete loudly.
     waivers = _build_waiver_records(qdata, ledger)
     merge_intake_json(run_dir, {"waivers": waivers})
+
+    # fix/deck-type-routing-bypass follow-up: stamp the requester identity
+    # (env -> intake.json) so the engine's resolve_intake.py has something to
+    # read besides an empty ledger. See _resolve_requester_from_env() above.
+    try:
+        intake_p = run_dir / INTAKE_JSON_REL
+        existing_for_requester = {}
+        if intake_p.exists():
+            existing_for_requester = json.loads(intake_p.read_text(encoding="utf-8"))
+        requester_updates = _resolve_requester_from_env(existing_for_requester)
+        if requester_updates:
+            merge_intake_json(run_dir, requester_updates)
+    except (OSError, json.JSONDecodeError):
+        pass
 
     # GK-23/D18: non-signature deck intake gets the SAME turn-ledger provenance
     # stamp as the signature path (deck-intake-questions.json order enforcement
@@ -1352,6 +1418,33 @@ def find_sp_prover() -> Optional[pathlib.Path]:
     return None
 
 
+def find_sp_transcript_checker() -> Optional[pathlib.Path]:
+    """Locate intake_trace_check.py (the AF-INTAKE-BATCH conversation + FIX-3
+    driver-provenance scanner). None if absent."""
+    for root in _sp_skill_roots():
+        cand = root / "scripts" / "intake_trace_check.py"
+        if cand.exists():
+            return cand
+    return None
+
+
+def _load_sp_transcript_checker():
+    """Import intake_trace_check.py by resolved path (mirrors build_deck.py's
+    _sp_prover and this file's _run_sp_prover). Returns the module, or None when
+    it cannot be located/imported."""
+    import importlib.util
+    cand = find_sp_transcript_checker()
+    if cand is None:
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("intake_trace_check", cand)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    except Exception:  # noqa: BLE001 — a broken import must not crash intake
+        return None
+
+
 def _sp_block_msg_id() -> str:
     """A single opaque id proving the atomic intake-record commit."""
     return "rec_sp_" + datetime.datetime.now().strftime("%Y%m%dT%H%M%S%f")
@@ -1360,19 +1453,43 @@ def _sp_block_msg_id() -> str:
 SP_TRANSCRIPT_REL = pathlib.Path("working") / "interview" / "intake_transcript.json"
 
 
-def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text) -> None:
+def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text, qid: Optional[str] = None) -> None:
     """Mechanically append ONE turn to the signature intake transcript
     (working/interview/intake_transcript.json) — the input the QC/Healer
     AF-INTAKE-BATCH scanner (51-signature-presentation/scripts/intake_trace_check.py)
-    reads post-hoc. Because the driver's turn-gate asks exactly ONE bank question
-    per --next and records ONE answer per --answer, this machine-authored
-    transcript is a faithful one-question-per-turn record: scanning it is expected
-    to PASS. It is ADVISORY provenance only — this out-of-band transcript does
-    not itself gate the build; the gating enforcer is the required preflight
-    P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16.
+    reads post-hoc, AND the input the FIX-3 driver-provenance gate verifies.
+
+    FIX-3 ("intake must be a real conversation"): this transcript is now a
+    SIGNED DRIVER ENVELOPE — the ONLY way to prove the intake conversation was
+    really CONDUCTED one question at a time rather than fabricated alongside a
+    hand-written intake_ledger.json (ERROR 3 of the 2026-08-06 E2E audit). Each
+    recorded turn carries the bank question id it was surfaced under (`qid`),
+    and the envelope carries the strictly-ordered, non-duplicated
+    `qid_sequence` plus an HMAC `driver_signature` over that sequence + the
+    turns. A hand-written transcript (bare list, no envelope, no signature)
+    FAILS intake_trace_check.py with AF-INTAKE-BATCH (NO-DRIVER-ENVELOPE /
+    NO-DRIVER-SIGNATURE) and the canonical door GATE 0 refuses it with NO
+    owner override. The driver's own turn-gate writes this — it cannot be
+    produced by hand without reproducing the entire ordered walk.
+
+    The envelope shape and signature MUST stay byte-identical with
+    51-signature-presentation/scripts/intake_trace_check.py's
+    build_driver_envelope() / _canonical_transcript_payload(). This function
+    is the driver-side producer; the checker owns the canonical shape.
+
     Fail-soft: a transcript write must never break intake."""
     if run_dir is None:
         return
+    _checker = _load_sp_transcript_checker()
+    if _checker is not None:
+        # Co-located checker available: write the CANONICAL signed envelope
+        # (identical to build_driver_envelope) so the provenance gate passes.
+        _transcript_write_signed(run_dir, role, text, qid, _checker)
+        return
+    # Prover not co-located: write a minimal best-effort envelope so the intake
+    # is not bricked by a missing co-located skill, but still carry the qid
+    # fields the scanner can parse. The engine gate (which resolves the prover)
+    # stays the hard enforcer.
     try:
         tpath = run_dir / SP_TRANSCRIPT_REL
         tpath.parent.mkdir(parents=True, exist_ok=True)
@@ -1380,14 +1497,66 @@ def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text) -> N
         if tpath.exists():
             try:
                 loaded = json.loads(tpath.read_text(encoding="utf-8"))
-                if isinstance(loaded, list):
-                    turns = loaded
+                if isinstance(loaded, dict) and isinstance(loaded.get("turns"), list):
+                    turns = loaded["turns"]
             except (json.JSONDecodeError, OSError):
                 turns = []
-        turns.append({"role": role, "text": str(text)})
-        tpath.write_text(json.dumps(turns, indent=2, ensure_ascii=False), encoding="utf-8")
+        turns.append({"role": role, "text": str(text),
+                      "qid": qid or ""})
+        tpath.write_text(json.dumps({
+            "format": "sp-intake-transcript-v1",
+            "driver": "deck-intake-driver.py",
+            "qid_sequence": _transcript_qid_sequence(turns),
+            "turns": turns,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass  # fail-soft: never break the intake on a transcript write
+
+
+def _transcript_write_signed(run_dir, role, text, qid, checker) -> None:
+    """Append one turn to the transcript and re-sign the envelope using the
+    co-located checker's canonical constants + signature function."""
+    try:
+        tpath = run_dir / SP_TRANSCRIPT_REL
+        tpath.parent.mkdir(parents=True, exist_ok=True)
+        turns = []
+        if tpath.exists():
+            try:
+                loaded = json.loads(tpath.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict) and isinstance(loaded.get("turns"), list):
+                    turns = loaded["turns"]
+            except (json.JSONDecodeError, OSError):
+                turns = []
+        turns.append({"role": role, "text": str(text), "qid": qid or ""})
+        qid_seq = _transcript_qid_sequence(turns)
+        payload = {
+            "format": getattr(checker, "DRIVER_FORMAT", "sp-intake-transcript-v1"),
+            "driver": getattr(checker, "DRIVER_NAME", "deck-intake-driver.py"),
+            "qid_sequence": qid_seq,
+            "turns": turns,
+            "driver_signature": checker._sign_transcript(qid_seq, turns),
+        }
+        tpath.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass  # fail-soft: never break the intake on a transcript write
+
+
+def _transcript_qid_sequence(turns) -> list:
+    """The strictly-ordered, non-duplicated list of question ids, in first-surfaced
+    order, derived from the recorded turns' `qid` stamps. Only assistant-turn qids
+    are counted (the question is surfaced once per --next; the owner answer rides
+    the same qid)."""
+    seen = []
+    seen_set = set()
+    for t in turns:
+        if not isinstance(t, dict):
+            continue
+        role = str(t.get("role") or "").strip().lower()
+        qid = str(t.get("qid") or "").strip()
+        if role == "assistant" and qid and qid not in seen_set:
+            seen_set.add(qid)
+            seen.append(qid)
+    return seen
 
 
 def build_signature_block(spec: dict, block_msg_id: str) -> dict:
@@ -1588,11 +1757,11 @@ def cmd_sp_answer(run_dir: pathlib.Path, spec: dict, ledger: dict, qid: str, tex
     write_answer_file(run_dir, qid, text, SP_ANSWERS_REL)
     # Mechanically log this one-at-a-time turn (the question as an assistant turn,
     # the client's reply as an owner turn) to the intake transcript the QC/Healer
-    # AF-INTAKE-BATCH scanner reads. ADVISORY provenance only — this out-of-band
-    # transcript does not itself gate the build; the gating enforcer is the required
-    # preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16.
-    _sp_append_transcript(run_dir, "assistant", question.get("prompt") or qid)
-    _sp_append_transcript(run_dir, "owner", text)
+    # AF-INTAKE-BATCH scanner reads — now a SIGNED DRIVER ENVELOPE (FIX-3): each
+    # turn carries the qid it was surfaced under so a hand-written transcript is
+    # distinguishable from a driver-conducted one-at-a-time conversation.
+    _sp_append_transcript(run_dir, "assistant", question.get("prompt") or qid, qid=qid)
+    _sp_append_transcript(run_dir, "owner", text, qid=qid)
     entries[qid]["answer"] = stored
     entries[qid]["validated"] = True
     entries[qid]["validated_at"] = _now()
@@ -1936,9 +2105,11 @@ def signature_selftest() -> bool:
         print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
         return ok
 
-    def _assemble_and_prove(record: dict) -> Tuple[int, str]:
+    def _assemble_and_prove(record: dict, provenance: Optional[dict] = None) -> Tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
             intake = assemble_sp_intake(record, "blk_sig_selftest")
+            if provenance is not None:
+                intake["turn_ledger_provenance"] = provenance
             p = pathlib.Path(td) / "sp_intake.json"
             p.write_text(json.dumps(intake), encoding="utf-8")
             return _run_sp_prover(p)
@@ -1955,7 +2126,21 @@ def signature_selftest() -> bool:
         "offer_token_ledger": ["The Signature Intensive"],
     }
 
-    rc, out = _assemble_and_prove(valid)
+    # GK-23/D18: since GRACE_WINDOW_UNTIL (2026-08-15) closed, a must-PASS record
+    # needs a genuine turn_ledger_provenance stamp too. Build it with this file's
+    # OWN build_turn_ledger_provenance() -- the exact function the real turn-gate
+    # (cmd_sp_next/_sp_finalize) calls -- from synthetic but real ledger-shaped
+    # entries (one ascending turn per required question), so Test 2 proves the
+    # driver's real provenance builder clears the prover, not a hand-rolled blob.
+    valid_entries = {
+        qid: {"validated": True, "turn": i + 1,
+              "asked_at": f"2026-07-15T12:{i:02d}:00", "validated_at": f"2026-07-15T12:{i:02d}:30"}
+        for i, qid in enumerate(SP_REQUIRED_QUESTIONS)
+    }
+    valid_provenance = build_turn_ledger_provenance(
+        valid_entries, list(SP_REQUIRED_QUESTIONS), "signature_presentation", "blk_sig_selftest")
+
+    rc, out = _assemble_and_prove(valid, valid_provenance)
     step2 = rc == 0
     ok = ok and step2
     print(f"[sig-selftest] Test 2 {'PASS' if step2 else 'FAIL'}: VALID record -> prover exit {rc} (want 0)")

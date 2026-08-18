@@ -63,41 +63,113 @@ fi
 # (phase/question-number/asked-by/phases-complete) that this script owns.
 DEFERRED_SPOOL="$STATE_DIR/.interview-state-deferred.jsonl"
 
+# ── NO-JQ CONTRACT (D1 fix) ───────────────────────────────────────────────────
+# This script used to shell out to `jq` for every state read and every state
+# write. `jq` is NOT part of the OpenClaw container image and has vanished from
+# boxes on container recreate. Under the `set -euo pipefail` at the top of this
+# file, an absent jq is not a soft degradation: the shell aborts with rc 127
+# BEFORE the write lands. Two client-visible failures came out of that single
+# dependency:
+#   (a) every per-question progress stamp died, so interviewProgress.
+#       lastQuestionNumber froze at its last pre-breakage value while the client
+#       kept answering — the "frozen counter" bug class; and
+#   (b) `--complete` died AFTER the evidence gate had already passed, so an
+#       interview that genuinely satisfied QC still never got interviewComplete.
+# python3 is already a HARD dependency of this script (the deferred spool, the
+# phases parser, and lib-interview-rate-limit.sh all require it and all run
+# BEFORE any jq call), so replacing jq with python3 REMOVES a dependency rather
+# than adding one — there is no box where this can work less well than jq did.
+# The emitted JSON shape is unchanged.
+
+# Read one dotted key path out of a JSON state file without jq. Mirrors
+# `jq -r '<path> // <default>'`, including jq's `//` semantics where BOTH null
+# and false count as absent. Never fatal: an unreadable/corrupt file yields the
+# default, exactly as the `2>/dev/null || echo <default>` idiom it replaces did.
+state_read() {
+  local _file="$1" _path="$2" _default="${3:-}"
+  python3 - "$_file" "$_path" "$_default" <<'PYREAD' 2>/dev/null || printf '%s' "$_default"
+import json, sys
+
+state_path, dotted, default = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(state_path) as fh:
+        cur = json.load(fh)
+except Exception:
+    print(default, end="")
+    raise SystemExit(0)
+
+for part in dotted.split("."):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        cur = None
+        break
+
+# jq's `//` operator treats null AND false as absent.
+if cur is None or cur is False:
+    print(default, end="")
+elif cur is True:
+    print("true", end="")
+elif isinstance(cur, str):
+    print(cur, end="")
+else:
+    print(json.dumps(cur), end="")
+PYREAD
+}
+
 # Apply one stamp to $STATE. Shared by the live (non --complete) path and by
 # drain_deferred_stamps() replay, so the write shape can never drift between
-# "answer this question live" and "replay a queued one" (byte-identical jq).
+# "answer this question live" and "replay a queued one" (one shared writer).
 apply_interview_stamp() {
   local _state="$1" _phase="$2" _qnum="$3" _asked_by="$4" _phases_complete="$5"
-  local _now _tmp
+  local _now
   _now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  _tmp="$_state.tmp.$$.$RANDOM"
 
-  local -a _jq_args=()
-  local _jq_filter='if .interviewProgress == null then .interviewProgress = {} else . end'
+  # Field-for-field equivalent of the jq filter this replaced: only non-empty
+  # arguments are written, --question-number stays a JSON NUMBER (the old
+  # --argjson), --phases-complete is still split on commas into an array, and
+  # lastQuestionAt is always stamped. Written tmp-then-rename so a crash mid
+  # write can never leave a truncated state file.
+  python3 - "$_state" "$_phase" "$_qnum" "$_asked_by" "$_phases_complete" "$_now" <<'PYSTAMP'
+import json, os, sys, tempfile
 
-  if [ -n "$_phase" ]; then
-    _jq_args+=(--arg phase "$_phase")
-    _jq_filter+=' | .interviewProgress.lastQuestionPhase = $phase'
-  fi
-  if [ -n "$_qnum" ]; then
-    _jq_args+=(--argjson qnum "$_qnum")
-    _jq_filter+=' | .interviewProgress.lastQuestionNumber = $qnum'
-  fi
-  if [ -n "$_asked_by" ]; then
-    _jq_args+=(--arg by "$_asked_by")
-    _jq_filter+=' | .interviewProgress.lastQuestionAskedBy = $by'
-  fi
-  if [ -n "$_phases_complete" ]; then
-    local _phases_json
-    _phases_json=$(echo "$_phases_complete" | python3 -c "import sys, json; print(json.dumps([p.strip() for p in sys.stdin.read().split(',') if p.strip()]))")
-    _jq_args+=(--argjson phases "$_phases_json")
-    _jq_filter+=' | .interviewProgress.phasesComplete = $phases'
-  fi
-  _jq_args+=(--arg now "$_now")
-  _jq_filter+=' | .interviewProgress.lastQuestionAt = $now'
+state_path, phase, qnum, asked_by, phases_complete, now = sys.argv[1:7]
 
-  jq "${_jq_args[@]}" "$_jq_filter" "$_state" > "$_tmp"
-  mv -f "$_tmp" "$_state"
+with open(state_path) as fh:
+    data = json.load(fh)
+
+if data.get("interviewProgress") is None:
+    data["interviewProgress"] = {}
+progress = data["interviewProgress"]
+
+if phase:
+    progress["lastQuestionPhase"] = phase
+if qnum:
+    # jq --argjson: the value is parsed as JSON, so a non-numeric argument is a
+    # hard error here exactly as it was before.
+    progress["lastQuestionNumber"] = json.loads(qnum)
+if asked_by:
+    progress["lastQuestionAskedBy"] = asked_by
+if phases_complete:
+    progress["phasesComplete"] = [
+        p.strip() for p in phases_complete.split(",") if p.strip()
+    ]
+progress["lastQuestionAt"] = now
+
+target_dir = os.path.dirname(os.path.abspath(state_path)) or "."
+fd, tmp = tempfile.mkstemp(dir=target_dir, prefix=".wbs-", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, state_path)
+except Exception:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+    raise
+PYSTAMP
 }
 
 # Replay every queued stamp this workspace's rate-limit budget currently has
@@ -226,7 +298,17 @@ fi
 RL_SESSION="$(interview_rate_limit_session_key "${SESSION_ID:-}" "${ASKED_BY:-}")"
 if [ "$COMPLETE" = true ]; then
   RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-60}"
-  INTERVIEW_RATE_LIMIT_MAX=3
+  # 3 -> 6 (D6, rate-limit amplifier). A --complete attempt consumes budget even
+  # when the EVIDENCE GATE below REFUSES it (exit 87), and a refusal is exactly
+  # the case a client retries. With a ceiling of 3, an owner whose completion was
+  # refused three times -- for a reason they cannot see and did not cause, e.g.
+  # the missing-jq abort or the mandatory-field gate -- was then locked out of
+  # completing for a full hour EVEN AFTER the underlying fault was repaired,
+  # turning a recoverable refusal into an hour of "nothing happens". 6 keeps a
+  # meaningful bound on a runaway/scripted caller (this is still far below the
+  # 60/hour ordinary-submission budget) while leaving room for a real owner to
+  # retry after a fix. Still env-overridable per box.
+  INTERVIEW_RATE_LIMIT_MAX=6
   if ! check_interview_rate_limit "complete:${RL_SESSION}"; then
     INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
     echo "This --complete call is NOT queued for replay (completion intentionally" >&2
@@ -293,37 +375,18 @@ fi
 
 if [ "$COMPLETE" = true ]; then
   # --complete keeps its ORIGINAL combined atomic write (progress stamp +
-  # completion/gate fields in ONE jq call) verbatim -- this branch is
-  # deliberately NOT routed through apply_interview_stamp()/the deferred
-  # spool (see the rate-limit check above: a --complete trip is reported but
-  # not queued, since replaying it later would fire the QC gate / build-kick
-  # out of band).
+  # completion/gate fields in ONE write) -- this branch is deliberately NOT
+  # routed through apply_interview_stamp()/the deferred spool (see the
+  # rate-limit check above: a --complete trip is reported but not queued, since
+  # replaying it later would fire the QC gate / build-kick out of band).
+  #
+  # De-jq'd (D1, see the NO-JQ CONTRACT near the top of this file). This one was
+  # the worst of the jq call sites: it runs AFTER the evidence gate has already
+  # passed, so on a box without jq the interview satisfied QC and STILL never got
+  # interviewComplete -- rc 127, no write, no error the client could act on. The
+  # field-by-field semantics below are identical to the jq filter they replace,
+  # including "seed only when null/absent" for the four gate fields.
   NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  TMP="$STATE.tmp.$$"
-
-  JQ_ARGS=()
-  # Ensure interviewProgress exists as an object
-  JQ_FILTER='if .interviewProgress == null then .interviewProgress = {} else . end'
-
-  if [ -n "$PHASE" ]; then
-    JQ_ARGS+=(--arg phase "$PHASE")
-    JQ_FILTER+=' | .interviewProgress.lastQuestionPhase = $phase'
-  fi
-  if [ -n "$QNUM" ]; then
-    JQ_ARGS+=(--argjson qnum "$QNUM")
-    JQ_FILTER+=' | .interviewProgress.lastQuestionNumber = $qnum'
-  fi
-  if [ -n "$ASKED_BY" ]; then
-    JQ_ARGS+=(--arg by "$ASKED_BY")
-    JQ_FILTER+=' | .interviewProgress.lastQuestionAskedBy = $by'
-  fi
-  if [ -n "$PHASES_COMPLETE" ]; then
-    PHASES_JSON=$(echo "$PHASES_COMPLETE" | python3 -c "import sys, json; print(json.dumps([p.strip() for p in sys.stdin.read().split(',') if p.strip()]))")
-    JQ_ARGS+=(--argjson phases "$PHASES_JSON")
-    JQ_FILTER+=' | .interviewProgress.phasesComplete = $phases'
-  fi
-  JQ_ARGS+=(--arg now "$NOW")
-  JQ_FILTER+=' | .interviewProgress.lastQuestionAt = $now'
 
   # interviewQc is deliberately NOT (re-)seeded to "pending" here: the EVIDENCE
   # GATE above already ran qc-interview-completion.py --write-state and wrote the
@@ -332,7 +395,7 @@ if [ "$COMPLETE" = true ]; then
   # "pending" here would silently clobber that fresh, authoritative verdict back
   # to an unresolved state — exactly the bug that let interviewQc.status sit at
   # "pending" forever while interviewComplete was already true.
-  JQ_FILTER+=' | .interviewComplete = true | .interviewCompletedAt = $now'
+  #
   # PRD-3.3 R3.1 (auto-closeout): finishing the interview must DETERMINISTICALLY
   # advance the chain instead of waiting on a separate agent hand-write of the
   # build-state. Seed the library + closeout gate fields to "pending" the moment
@@ -343,14 +406,59 @@ if [ "$COMPLETE" = true ]; then
   # a fake department list would be a lie. We DO ensure departments[] exists as an
   # array sentinel so the resume cron and watchdog parse it cleanly, and we record
   # buildKickRequestedAt so the kick below is idempotent and auditable.
-  JQ_FILTER+=' | if .departments == null then .departments = [] else . end'
-  JQ_FILTER+=' | if (.roleLibraryStatus == null) then .roleLibraryStatus = "pending" else . end'
-  JQ_FILTER+=' | if (.sopLibraryStatus == null) then .sopLibraryStatus = "pending" else . end'
-  JQ_FILTER+=' | if (.closeoutStatus == null) then .closeoutStatus = "pending" else . end'
-  JQ_FILTER+=' | .buildKickRequestedAt = $now'
+  python3 - "$STATE" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE" "$NOW" <<'PYCOMPLETE'
+import json, os, sys, tempfile
 
-  jq "${JQ_ARGS[@]}" "$JQ_FILTER" "$STATE" > "$TMP"
-  mv -f "$TMP" "$STATE"
+state_path, phase, qnum, asked_by, phases_complete, now = sys.argv[1:7]
+
+with open(state_path) as fh:
+    data = json.load(fh)
+
+if data.get("interviewProgress") is None:
+    data["interviewProgress"] = {}
+progress = data["interviewProgress"]
+
+if phase:
+    progress["lastQuestionPhase"] = phase
+if qnum:
+    progress["lastQuestionNumber"] = json.loads(qnum)
+if asked_by:
+    progress["lastQuestionAskedBy"] = asked_by
+if phases_complete:
+    progress["phasesComplete"] = [
+        p.strip() for p in phases_complete.split(",") if p.strip()
+    ]
+progress["lastQuestionAt"] = now
+
+data["interviewComplete"] = True
+data["interviewCompletedAt"] = now
+
+# Seed-only-when-absent, matching `if .X == null then .X = <v> else . end`.
+if data.get("departments") is None:
+    data["departments"] = []
+if data.get("roleLibraryStatus") is None:
+    data["roleLibraryStatus"] = "pending"
+if data.get("sopLibraryStatus") is None:
+    data["sopLibraryStatus"] = "pending"
+if data.get("closeoutStatus") is None:
+    data["closeoutStatus"] = "pending"
+
+data["buildKickRequestedAt"] = now
+
+target_dir = os.path.dirname(os.path.abspath(state_path)) or "."
+fd, tmp = tempfile.mkstemp(dir=target_dir, prefix=".wbs-", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, state_path)
+except Exception:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+    raise
+PYCOMPLETE
 else
   # Ordinary per-question stamp: the same write apply_interview_stamp() also
   # uses to replay a deferred entry, so the two paths can never drift.
@@ -411,16 +519,22 @@ fi
 #          overlap marker resume-workforce-build.sh stamps on every dispatch
 #          (.workforce-build-resume.inflight), which is the real "a turn is running"
 #          signal and TTL-expires so a dead turn still recovers.
+#  - Message content branches on buildType (PHASE 7, standard-first): a
+#    standard-first box was PREBUILT before the interview, so it receives the
+#    APPLY-THE-DIFF message (deprovision confirmed declines, materialize
+#    customs, add declared verticals, personalize kept depts, register agents
+#    for confirmed-kept depts). Every other box (legacy lane: buildType absent)
+#    receives the ORIGINAL build-from-scratch message byte-identical.
 #  - Best-effort, never fatal: if openclaw CLI is absent, the resume cron (every 15m)
 #    is the recovery net and will dispatch the same self-ping on its next fire.
 if [ "$COMPLETE" = true ]; then
-  qc_for_kick=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
+  qc_for_kick=$(state_read "$STATE" "interviewQc.status" "pending")
   qc_kick_eligible=false
   case "$qc_for_kick" in pass|needs-review) qc_kick_eligible=true ;; esac
 
   kick_blocked_reason=""
-  build_done_for_kick=$(jq -r '.buildCompletedAt // empty' "$STATE" 2>/dev/null || true)
-  closeout_for_kick=$(jq -r '.closeoutStatus // empty' "$STATE" 2>/dev/null || true)
+  build_done_for_kick=$(state_read "$STATE" "buildCompletedAt" "")
+  closeout_for_kick=$(state_read "$STATE" "closeoutStatus" "")
   if [ -n "$build_done_for_kick" ] && [ "$build_done_for_kick" != "null" ]; then
     case "$closeout_for_kick" in
       done|sent)
@@ -470,8 +584,18 @@ if [ "$COMPLETE" = true ]; then
       # inbound agent turn, so it could never actually start a build. We fail SAFE
       # -- skip the kick and let the resume cron drive -- rather than fall through
       # to the client.
-      KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
-      KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      KICK_AGENT=$(state_read "$STATE" "agentName" "the master orchestrator")
+      # STANDARD-FIRST BRANCH (PHASE 7): a box with buildType=standard-first was
+      # PREBUILT before the interview (prebuild-standard-workforce.sh), so the
+      # interview EDITED the built set and the build-kick must APPLY THE DIFF -
+      # never rebuild from scratch. Legacy boxes (absent buildType or any other
+      # value) keep the ORIGINAL message byte-identical (rollback property 1).
+      KICK_BUILD_TYPE=$(state_read "$STATE" "buildType" "")
+      if [ "$KICK_BUILD_TYPE" = "standard-first" ]; then
+        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). This is a STANDARD-FIRST box: the canonical department floor was PREBUILT before the interview began (standardPrebuild), so do NOT build from scratch - APPLY THE DIFF the interview recorded, per the Skill 23 Post-Interview Handoff Protocol. Run the apply-standard-edits build (build-workforce.py --apply-standard-edits): (1) deprovision the CONFIRMED declines (scripts/retire-confirmed-decline.sh - archive to .retired/, NEVER delete, provenanced declines only), (2) materialize the custom departments the owner ADDED, (3) add the declared industry verticals, and (4) personalize the KEPT departments (no-clobber on owner-edited content) - then register the agents.list rows for every confirmed-kept department (the deferred Moment 3.5). Silence = KEEP: a department with no recorded decision stays exactly as prebuilt. If parts of the diff are ALREADY applied from a prior or partial run, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      else
+        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      fi
       if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
         echo "INFO: no operator escalation chat configured - build-kick send SKIPPED rather than routed to the client (resume cron drives the build within 15m). Configure env.vars.OPERATOR_ESCALATION_CHAT_ID via scripts/configure-operator-telegram.sh to receive these." >&2
       elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
@@ -493,7 +617,7 @@ fi
 if [ -n "$INDUSTRY_PACK_BLOB" ] && [ -f "$INDUSTRY_PACK_BLOB" ]; then
   RECORDER_PATH="$(dirname "$0")/record-industry-pack.sh"
   if [ -f "$RECORDER_PATH" ]; then
-    existing_slug=$(jq -r '.industryPack.slug // empty' "$STATE" 2>/dev/null || true)
+    existing_slug=$(state_read "$STATE" "industryPack.slug" "")
     if [ -z "$existing_slug" ]; then
       bash "$RECORDER_PATH" --blob-file "$INDUSTRY_PACK_BLOB" --state "$STATE" \
         && echo "record-industry-pack ran from update-interview-state.sh" \

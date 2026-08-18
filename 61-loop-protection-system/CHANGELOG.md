@@ -3,12 +3,28 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
-## [0.4.0] - 2026-08-04
+## [0.6.0] - 2026-08-18
 
-New loop class **LP-A8: agent-to-agent cross-run resend loop**, closing a real
-incident verified live on a client box the same day. Repo-only change (this
+New loop class **LP-A10: agent-to-agent cross-run resend loop**, closing a real
+incident verified live on a client box on 2026-08-04. Repo-only change (this
 skill's rollout gate stays HELD, `config/rollout.json` unchanged); no box is
 armed, activated, or touched by this release.
+
+**Merge-forward note.** This work was written and reviewed on 2026-08-04
+against `LP-A8` / `LF-9`, the first free ids at the time. `main` moved 448
+commits in the two weeks this sat as a PR, and the very next day (0.4.0,
+2026-08-05, below) independently claimed **both** those ids for an unrelated
+class — D5's self-blocking flush-run / transcript-poison detector. That is a
+genuinely different fault (a run wedged against the runtime's own identical-
+call guard, filling its OWN transcript with refusals) from this one (an
+orchestrator misreading a cross-agent delivery timeout and resending as a
+brand-new top-level run) — same `F15` taxonomy family, different mechanism,
+different detector, different remediation. Reconciled by renumbering this
+release's ids forward to the next free slots, `LP-A10` / `LF-12` (family A
+already reached `LP-A9` and fix classes `LF-11` by the time of this merge) —
+every reference below, in code, config, docs, and tests, reflects the
+renumbered ids; nothing else about the design, thresholds, or mechanism
+changed.
 
 **The incident.** An orchestrator agent routed work to a department agent via
 `sessions_send`, then waited. `sessions_send` falls back to a HARDCODED 30000ms
@@ -61,9 +77,10 @@ Added:
   each group's DISTINCT run ids; `>= 3` inside the window is loop-confirmed P1,
   `== 2` is WARN-only, and a genuine multi-message handoff (distinct payload
   hashes per send) never accumulates a group at all - conservative by default.
-  D5 (completion-rate) and D6 (outbound-send-rate) remain the RESERVED,
-  unbuilt names documented in `collect_evidence()`'s docstring (fix design
-  SS4); D7 is unrelated and does not consume either reservation.
+  D5 and D6 landed independently on `main` on 2026-08-05 (self-blocking
+  flush-run / transcript poison, and semantic retry burst - see the
+  merge-forward note above); D7 is unrelated to both and does not consume
+  either detector number.
   **Field shape CONFIRMED against a live OpenClaw 2026.7.1-2 box** (real
   captured row, not a guess): top-level row `{type, id, parentId, timestamp,
   message}`; `message: {role, content, timestamp, provenance}`;
@@ -93,7 +110,7 @@ Added:
   frame; unlike D3 (whose structural fields carry no client content), the
   hash boundary sits at the collector here so the raw text never crosses into
   a detector, a finding, the ledger, or any log line anywhere in this skill.
-- **LF-9 - abort + park** (`loop_killcards.py :: lf9_abort_cross_run_resend`,
+- **LF-12 - abort + park** (`loop_killcards.py :: lf12_abort_cross_run_resend`,
   Tier 1, config-free like LF-6, so it applies for real in-tick on an armed
   box). Calls the native `sessions.abort` RPC on the resending SOURCE
   session's in-flight run via **`openclaw gateway call sessions.abort
@@ -112,25 +129,28 @@ Added:
   (`_rpc_signals_success_or_noop`) treats `status:"no-active-run"` as a
   SUCCESSFUL no-op independent of whether `ok` is also present - never a
   failed fix, never a retry trigger; only the healer breaker (>3 fixes on the
-  same target/24h, or any verify failure) governs whether LF-9 fires again. A
+  same target/24h, or any verify failure) governs whether LF-12 fires again. A
   600s action cooldown (the incident's own proven-safe spacing) is enforced
   via the ledger's EXISTING digest/dedup primitive (the same one the alert
   path uses) - a second call inside the window is REFUSED, never re-applied.
   `run_fix()`'s `fix <finding-id>` operator path gained a matching `fc ==
-  "LF-9"` branch (mirrors the LF-6 branch exactly).
+  "LF-12"` branch (mirrors the LF-6 branch exactly).
 - **`resend` breaker** (`config/breakers.json`, `loop_breaker.py ::
   resend_breaker_trips`) - the independent ceiling-copy predicate every other
   breaker carries (the S4 cap-raise-without-stamp pattern).
 - **`config/thresholds.json :: d7_cross_run_resend`** - `window_seconds: 300`,
   `warn_repeat: 2`, `p1_repeat: 3`, `action_cooldown_seconds: 600` - the
   proven-safe values from the live incident.
-- **`config/signatures.json` / `docs/LOOP-CLASS-CATALOG.md`**: `LP-A8`
+- **`config/signatures.json` / `docs/LOOP-CLASS-CATALOG.md`**: `LP-A10`
   registered (family A, `F15` - the taxonomy's next LP-introduced extension
-  after `F14`=LP-A1, per SKILL.md's "F14+" rule), detector `D7`, tier default 1.
+  after `F14`=LP-A1, per SKILL.md's "F14+" rule - `LP-A8`/`LP-A9` having since
+  been claimed by D5/D6, see the merge-forward note above), detector `D7`,
+  tier default 1.
 - **Tests**: `tests/fixtures/cross-run-resend.sends.json` (3 groups: a 3-send
   true positive, a 2-send below-threshold pair, and a 3-message legitimate
   fan-out with distinct payloads) + `tests/drills/D-RESEND.md`, wired into
-  `verify.sh` step 3 (now fifteen drills) and into `loop_detectors.py` /
+  `verify.sh` step 3 (now twenty-three drills, alongside D5/D6's own nine
+  landed 2026-08-05) and into `loop_detectors.py` /
   `loop_watchdog.py` / `loop_killcards.py` / `loop_breaker.py`'s own
   `--self-test`s.
 
@@ -141,9 +161,9 @@ just plausible):
 1. **Still open, unchanged.** D7 rides the EXISTING 15-minute tick, not a
    dedicated 60s pulse-lane cron. It is built cheap enough to run at 60s
    (offset cursors, recent-mtime file filtering, no gateway-log tail) but no
-   new cron/pulse-lane infrastructure ships in this repo-only PR - that is a
-   separate, larger change, or belongs to whatever eventually enables the
-   D5/D6 pulse lane already reserved above.
+   new cron/pulse-lane infrastructure ships in this release - that remains a
+   separate, larger change. D5/D6 (landed 2026-08-05) also ride the same
+   15-minute tick, not a dedicated pulse lane.
 2. **RESOLVED - confirmed correct, not merely plausible.** The provenance /
    payload field shape (`message.provenance`, `message.content`,
    `role:"user"`, optional `sourceChannel`) was independently verified
@@ -174,6 +194,276 @@ just plausible):
    whole key as `agentId` (never a crash), and the RPC call itself remains
    best-effort - an unreachable/wrong response still parks the source (the
    park, not the RPC, is what actually breaks the loop).
+
+## [0.5.0] - 2026-08-05
+
+**The post-update restore-verify script lands in the skill.**
+
+`openclaw update` reinstalls node_modules and silently reverts the dist patch that makes
+a runaway tool loop actually abort; it can also regenerate the gateway service-env file.
+Until now the only record of how to put that protection back was a scratch file. Two new
+files:
+
+- `scripts/openclaw-loop-protection-restore.sh` — detects all nine pieces of the
+  protection stack (dist runaway-abort patch, the Telegram spooled-handler turn timeout,
+  memory-flush journaling and its byte-exact prompt hints, the six loop-detection
+  thresholds plus any per-agent override that would silently beat them, the daily
+  memory-stub guard and its cron registration, the `ceo-routing-doctrine` plugin, and
+  that the retired CEO intent-gate has not resurrected). Read-only by default; `--apply`
+  repairs only what is safe to repair. Exit 0 clean / 3 drift / 4 hard fail / 2 usage.
+  It NEVER restarts the gateway — it says a restart is needed and stops.
+  Fail-loud by design: if a dist anchor is neither found nor already-applied it reports
+  `UPSTREAM_CHANGED` and refuses to patch rather than guessing.
+  Section 9 also flags the failure shape that caused the two-week outage from the other
+  direction — a `tools.allow` list that OMITS `write` — and deliberately does not
+  auto-fix it, because an agent's tool grants are the operator's call.
+- `tests/secret-leak-test.sh` — builds a fake HOME whose secret-bearing files are stuffed
+  with unique tracer strings, stubs the `openclaw` CLI so every config read returns
+  tracer-laden output, runs the restore script in BOTH modes, and asserts no tracer
+  reaches stdout, stderr, or any written file. Carries its own 4/4 instrument control so a
+  pass cannot be a silently-broken test. The one sanctioned exception is the mode-600
+  backup of the secrets file itself, which is asserted to be a faithful copy.
+
+Hardening applied before commit: two predictable `/tmp/<name>.$$` staging paths were
+replaced with `mktemp`. A PID-named path in a world-writable directory is a
+symlink-clobber target, and one of those values is fed straight back into
+`openclaw config set`.
+
+Portability: every path derives from `$HOME` or the resolved `openclaw` binary. No
+hostnames, client names, chat IDs, tokens, or machine-specific absolute paths — clean
+under all three repo scanners (client-identifiers, secrets, json-exports), each run
+with its own `--self-test` control.
+
+## [0.4.0] - 2026-08-05
+
+**D5 - the first detector in this skill that measures a STOCK instead of a flow.**
+D1-D4 all count events per tick: they answer "is a loop running right now?" and go
+quiet the moment it pauses. That leaves a real gap, and an operator-box incident
+walked straight through it - a run wedged against the runtime's own identical-call
+guard filled a session transcript with ~1,100 of its own refusals, and because the
+model reads that transcript back as its own history, every later turn on it stayed
+degraded after the run was long dead. Three fixes aimed at the ENVIRONMENT were
+deployed during that incident and none ended it, because the fault was in the
+CONTEXT. D3 hashes the new-bytes-since-last-tick slice, so once the loop paused D3
+reported all-clear on a transcript that was still ~72% wreckage.
+
+**ARMED on the operator box; fleet rollout still HELD** (`config/rollout.json`
+`fleet_rollout_enabled` stays `false`, awaiting a separate explicit operator GO).
+
+### A correction to this entry's own premise, recorded on purpose
+
+D5 was first specified against the theory that accumulated transcript poison was
+the PRIMARY cause of that incident. **That theory was refuted before this shipped**
+and the detector was redesigned rather than quietly re-labelled. The counterexamples
+were decisive: the first burst ignited from a context measured at 0% loop text, and
+the fully-poisoned session still answered a normal question correctly in seconds.
+Poison was neither necessary nor sufficient. The apparent "clean experiment" behind
+the original theory was confounded - the fast reply came from a brand-new session
+created seconds after the old one died, so the variable that actually moved was
+conversation-lane occupancy, not transcript cleanliness.
+
+So D5 ships with IGNITION (a blocked-call burst) as the primary, early, high-
+precision face, and poison ratio DEMOTED to a secondary aftermath signal. The
+aftermath face is still worth having - it is what persists and what a roll must
+clear - but a detector built on it alone fires late, after the damage.
+
+### Added
+
+- **`d5_transcript_poison()`** in `loop_detectors.py` + **`collect_sessions()`** in
+  `loop_watchdog.py`, wired into `run_detectors`/`collect_evidence` exactly like
+  D1-D4. New loop class **LP-A8** (F15), new **session** circuit breaker, new fix
+  classes **LF-9/LF-10/LF-11**.
+- The block signature is **STRUCTURAL, never prose**: `details.status == "blocked"`
+  and `details.deniedReason == "tool-loop"` on a `toolResult` record. It is
+  therefore language- and wording-drift-independent, and no message content enters
+  a finding (counts, enum values and tool NAMES only). The blocked tool name is
+  recorded but never assumed - both `read` and `tool_call` appeared in the measured
+  incident, so nothing hard-codes a single tool.
+- **Second carrier detection.** Compaction checkpoint summaries can capture the
+  loop verbatim; those are re-injected on resume and **survive a transcript roll**,
+  which is why rolling the file alone is not a complete fix. D5 counts them and
+  says so in the finding (`SECOND CARRIER`). Measured: 7 of 16 checkpoint summaries
+  poisoned in the incident file, 0 of 14 in a healthy control archive.
+- **LF-10 auto-roll**: archives a confirmed-poisoned transcript to a timestamped
+  name beside it so the next turn starts clean. **MOVE, never delete**; the
+  one-line revert moves it back. Guarded by a **live-transcript refusal** - the
+  unattended tick can clear yesterday's wreckage but can never roll a conversation
+  in progress.
+- **Four failable drills** (`D-POISON`, `D-POISON-CLEAN`, `D-POISON-ROLL`,
+  `D-POISON-LIVE`) over two new synthetic fixtures, plus `tests/drills/D-POISON.md`.
+- **Four more failable drills for the re-roll crash below** (`D-POISON-REROLL`,
+  `-BOUND`, `-REFUSAL`, `-TICK`) plus `tests/drills/D-POISON-REROLL.md`, which
+  records the tick-by-tick measurement of the crash. Fixtures are synthetic; the
+  240-byte session name is generated in the drill.
+- **`loop_watchdog.py tick --dry-run`** - forces `armed=false` regardless of ledger
+  state, for any caller that must be certain it mutates nothing outside our own
+  ledger. `--no-send` was never that flag: it suppresses delivery, not application.
+
+### Fixed
+
+- **LF-10 re-archived its own archive every tick until the filename killed the
+  scheduled job. Reproduced before it was fixed, then re-run to prove it gone.**
+  `collect_sessions()` globbed every `*.jsonl` under `agents/*/sessions/` except
+  trajectories - and an LF-10 archive is a `*.jsonl` in that same directory,
+  carrying the same poisoned bytes, with the original mtime preserved by
+  `shutil.move`. So the archive re-measured as poisoned AND idle on the next tick,
+  D5 raised a fresh P1, and LF-10 archived the archive, appending another
+  `.loop-archive-<stamp>` to the name every tick: 26 bytes, 56, 86 ... 236, and on
+  the 8th roll `OSError: [Errno 63] File name too long` - **uncaught**, out of
+  `tick()`. Two things made that worse than a wasted tick. The healer self-breaker
+  could not catch it, because it counts fixes per *unit* and D5's unit is derived
+  from the FILENAME, which changed on every roll; and an uncaught `OSError` in a
+  scheduled job is not one lost finding but a watchdog that dies every run while the
+  box still looks watched. A loop-protection system had built itself a loop. Three
+  independent stops now:
+  1. `_session_files()` **skips any transcript carrying `ARCHIVE_MARKER`** - an
+     archive is finished work and leaves D5's scope permanently. This is the root
+     cause; the marker is a module constant in `loop_killcards.py` so the producer
+     and the consumer cannot drift apart.
+  2. `lf10_archive_and_roll_session()` **refuses a path that is already an archive**,
+     and builds its name through `bounded_archive_name()`, which holds the component
+     to 255 BYTES (not characters) by truncating the stem and appending a short
+     sha256 of the full stem - unique, and deterministic, so a re-run is idempotent
+     instead of piling up near-duplicates. A name that already fits is untouched.
+  3. `tick()` gives **every finding its own failure boundary**: an exception out of
+     the plan/apply/escalate path is counted in the new `errors` field, written to
+     stderr, and the tick CONTINUES to the next finding. `lf10` additionally
+     converts an `OSError` from the move into a plain refusal, leaving the
+     transcript exactly as found.
+
+  It crashed on both interpreters, which matters because a cron `PATH=/usr/bin:/bin`
+  resolves the system one: 3.9.6 raises inside the `Path.exists()` pre-flight check,
+  3.14.5 survives that and raises in `shutil.move`. Both the fix and the whole
+  battery are now proven on **both** (`verify.sh` exit 0 under each).
+
+- **`install.sh` passed a flag that does not exist, so cron registration could never
+  succeed - and the failure was invisible.** It called `openclaw cron add --schedule
+  "*/15 * * * *"`. Checked against the live binary (OpenClaw 2026.7.1-2, `cron add
+  --help` exit 0, 50 option lines): there is **no `--schedule`** - the schedule is
+  `--cron` / `--every` / `--at`, or a positional. `--name`, `--command`,
+  `--no-deliver` and `--command-cwd` all exist and were confirmed present on the same
+  read. So the command exited non-zero every time, and because the whole invocation
+  was `>/dev/null 2>&1` the operator saw only `WARN: cron add failed (register
+  manually)` with no reason. Now it uses `--cron`, and on the FAILURE path it prints
+  the real stderr plus a copy-pasteable manual command. **A diagnostic that discards
+  the diagnosis is worse than no diagnostic.**
+- **`install.sh`'s "leaves the box in DRY_RUN observe-only" guarantee was false on an
+  already-armed box, and its self-test could not catch that.** The post-install tick
+  ran `loop_watchdog.py tick --no-send`, and `--no-send` suppresses *delivery* only -
+  `armed` still came from the ledger. On a box whose ledger already says
+  `armed=true` (which survives a re-install) that line was a **fully armed tick over
+  that box's real sessions**, while printing the word DRY_RUN. Three changes:
+  a new **`--dry-run` flag on the watchdog CLI** that pins `armed=false` whatever the
+  ledger says; `install.sh` uses it, and says so when it detects an armed ledger; and
+  the header now claims only what is true - install never *changes* `armed`, it
+  cannot promise the box *is* in DRY_RUN.
+  The self-test gap is the instructive part: it asserted `armed == False` against a
+  **fresh sandbox ledger**, where that is trivially true, so it passed while the
+  guarantee was false. It now also installs over a **deliberately armed** sandbox
+  **baited with a poisoned transcript aged past the auto-roll floor** - something an
+  armed tick would really archive. An empty sandbox could not have caught this
+  either: an armed tick with nothing to fix applies nothing however it is invoked, so
+  the first version of this assertion was vacuous, and was only found to be vacuous
+  by mutation-testing it. Verified failable: dropping `--dry-run` now fails the
+  install self-test, and therefore the aggregate gate.
+
+- **`collect_units()` reported a unit's LIFETIME restart count as its per-tick
+  delta.** pm2's `restart_time` is cumulative, so the first tick on any real box
+  read a long-lived unit's entire history as one storm - a false D1 P1 for every
+  unit that had ever restarted, and on an armed box a false park. Restart counts
+  are now baselined per unit in ledger meta: first sight is always delta 0, and a
+  counter that goes backwards re-baselines instead of spiking. Found while
+  assessing whether arming this box was safe; it was not, and this is why. Covered
+  by a new self-test case.
+
+### Proven
+
+- **Offline (drills, in `verify.sh`, exit 0):** 22 drills, all four merge-gate
+  scanners clean, on **both** Python 3.9.6 (`/usr/bin/python3`, what a cron
+  `PATH=/usr/bin:/bin` resolves) and 3.14.5 (homebrew). Each scanner's own
+  `--self-test` control was run first and detected its planted violation (a scanner
+  that passes everything is not a scanner).
+- **Failability, mutation-tested rather than assumed:** raising the D5 thresholds
+  out of reach fails all four D5 drills; removing BOTH the silence rule and the
+  size guard fails `D-POISON-CLEAN`. Honestly noted in `D-POISON.md`: removing
+  either guard *alone* is masked by the other, so no single mutation catches it -
+  the two are redundant by design.
+- **The re-roll drills were proven in both directions.** Run against the pre-fix
+  scripts they reproduce the production fault and fail the battery (exit 4, `Errno
+  63` on the 8th roll) while the pre-fix self-tests still pass - i.e. the old
+  battery was blind to it. Four one-at-a-time mutations of the fixed tree each kill
+  their own drill and no other: restoring the collector's blind spot fails
+  `D-POISON-REROLL`; weakening `NAME_MAX_BYTES` 255 -> 10000 fails
+  `-BOUND`; removing the `OSError` catch fails `-REFUSAL`; removing `tick()`'s
+  per-finding boundary fails `-TICK`. The drills assert 255 as a LITERAL, never by
+  reading `NAME_MAX_BYTES`, because a test that takes its ceiling from the code
+  under test cannot catch that ceiling being weakened. `D-POISON-REROLL` asserts the
+  FINDING count as well as the roll count - with the archive back in scope the kill
+  card's own guard still refuses the second roll, so `applied` alone would have
+  hidden the defect.
+- **Live, read-only, on the operator box** (detector only - `tick()` was never
+  called, so LF-10 could not run and no real file was moved):
+  - TRUE POSITIVE - the archived incident transcript (4,607,807 bytes) yields
+    exactly one P1 `LP-A8`: 275-block ignition burst, 50% trailing-200 share,
+    7 poisoned checkpoints.
+  - TRUE NEGATIVE (hard control) - a **larger** healthy archive from the same box
+    and same agent (17,160,766 bytes, 3.7x the poisoned one, 8x past the flush
+    re-arm floor): **0 findings**.
+  - TRUE NEGATIVE (breadth) - all 69 live session transcripts for that agent:
+    **0 findings**. One carried a single block, correctly below the WARN floor of
+    3 and correctly silent.
+
+### NOT verified (stated plainly)
+
+- **LF-9 (abort the run) has never been executed and cannot be.** No supported
+  run-abort CLI was found in OpenClaw 2026.7.1-2 (`openclaw sessions` offers
+  `cleanup`/`compact`/`export-trajectory`/`list` only). It ships **Tier 2,
+  prepare-only**. Aborting is believed to be the highest-value remediation - it is
+  what frees the conversation lane, and the runtime rather than the model ended
+  most observed bursts - but this skill does not do it today.
+- **LF-11 (prune poisoned checkpoints) is prepare-only and was never executed.**
+  The live gateway rewrites the session store, so an in-place edit without a
+  restart is clobbered.
+- **LF-10 has never fired on a real poisoned transcript in production.** It is
+  proven on fixtures and by the armed-tick drill; the archived incident transcript
+  was rolled by hand before this work began.
+- **The re-roll crash was reproduced in a scratch tree, never observed in
+  production, and the fix is proven on fixtures only.** No live transcript was
+  touched to prove either. The reason it could not have bitten yet is that nothing
+  schedules this skill's tick: the operator box carries the ledger
+  (`~/.openclaw/loop-protection/loop.db`, `armed=true`) but no installed scripts
+  (`~/.openclaw/scripts/loop-protection` does not exist), and no scheduler entry.
+  Sources checked for a scheduler: the user crontab (`crontab -l` rc=0, 40 lines, no
+  match for `loop-companion`/`loop_watchdog`/`loop-protection`) and
+  `~/Library/LaunchAgents` (36 plists). **NOT checked:** the root crontab,
+  `/Library/Launch{Agents,Daemons}`, OpenClaw's own cron engine, or any other box.
+  One decoy is worth naming: `~/Library/LaunchAgents/ai.openclaw.loop-watchdog.plist`
+  fires a file also called `loop_watchdog.py` every 60s, but it is an unrelated
+  cross-run resend-loop breaker at a different path with zero Skill-61 markers in it.
+  It is easy to mistake for this skill's tick; it is not.
+- **The registered cron would run code out of a live git checkout - KNOWN, not fixed
+  here.** `install.sh` builds the cron command from `SELF_DIR`, i.e. wherever the
+  engine was installed from. Run out of the repo working tree, the scheduled job
+  executes whatever that checkout currently has on disk, so **a `git checkout` of
+  another branch silently changes the code the watchdog runs** - and a `git bisect`
+  or a mid-rebase state could point it at a half-written tree. `--command-cwd` is now
+  passed so at least the working directory is explicit, but that pins the CWD, **not
+  the code**. Deliberately NOT fixed in this commit: the clean fix is to install the
+  engine to a stable path outside any checkout (e.g. `~/.openclaw/scripts/
+  loop-protection/`, matching how the unrelated `ai.openclaw.loop-watchdog` launchd
+  job is deployed) and register the cron against THAT copy, which is an install-layout
+  change and belongs with the registration task, not with a crash fix. **Register from
+  a stable copy, not from a branch.**
+- **`--cron "*/15 * * * *"` has not been executed against a live gateway.** The flag
+  was verified to EXIST (`cron add --help`, exit 0); no `cron add` was run, no job was
+  registered, and no cron output was observed - registration is a separate, currently
+  blocked task. What is proven is that the old flag could not work and the new one is
+  accepted by the parser's help contract on this version.
+- The thresholds are derived from **ONE** incident on **ONE** box against that
+  box's own healthy corpus. They are measured, not invented, and the derivation is
+  recorded in `config/thresholds.json`, but a second incident could move them.
+- **No claim is made about which config change prevents recurrence.** Config
+  remediation was owned by other work and is not part of this skill.
 
 ## [0.3.2] - 2026-07-16
 

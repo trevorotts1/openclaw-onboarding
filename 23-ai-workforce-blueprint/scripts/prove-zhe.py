@@ -23,6 +23,27 @@ EXEMPTION (spec §1 + §3 edge case): a box that has NOT completed the interview
 obligation. It is EXEMPT — the prover records exempt=true, skips the four checks, and passes
 (exit 0). Only interview-completed boxes are held to the full ZHE.
 
+STANDARD_READY (standard-first prebuild, 2026-08-04): the standard-first redesign introduces a
+THIRD state between EXEMPT and PROVEN — a box whose operator ran the standard prebuild: the
+full canonical floor is provisioned from the role library ON DISK, the chosen-departments
+artifact is written, and the Command Center board is seeded, while the interview is NOT yet
+complete and the agents are deliberately NOT registered yet (lazy registration: agents.list
+rows land only at interviewComplete for confirmed-kept departments). Such a box must neither
+be EXEMPT (that would blind the fleet signal — a broken prebuild would prove nothing) nor
+held to the full five-check ZHE (it would fail every check it intentionally defers). So when
+.workforce-build-state.json carries standardPrebuild.status == "done" AND interviewComplete
+is NOT true, the prover runs the STANDARD_READY subset instead of the exemption:
+  (sr-a) the department floor is present ON DISK — department_floor.evaluate_floor(),
+         never the build-state JSON;
+  (sr-b) the chosen-departments artifact is present and non-empty;
+  (sr-c) the Command Center board join holds — prove-board-join.py
+         (chosen == provisioned == displayed).
+The full-ZHE checks it deliberately SKIPS: agents-registered (lazy rows), personas-canonical
+index, AGENTS.md doctrine stamping, and provisioning-receipt equality (all land at the
+apply-diff build on interviewComplete). Receipt: standard_ready=true, overall_pass per subset,
+exit 0 on pass, 1 on subset failure. A box that is standardPrebuilt AND interviewComplete
+falls through to the FULL ZHE (the apply-diff build has run; the full sequence applies).
+
   ====================================================================================
   INTEGRATION POINTS (where this file gets wired in at integration time)
   ------------------------------------------------------------------------------------
@@ -82,7 +103,18 @@ expected-set) to a telegram-built one, with NO genuine-build shortcuts:
                                        shortcut (exit 0 iff all expectations hold).
                                        This is the entrypoint the CI wiring calls.
 
+STANDARD_READY fixture modes (verification gate for the third verdict):
+  prove-zhe.py --standard-ready-selftest   NON-VACUOUS meta-gate: materialize three hermetic
+                                           fixtures (bare box => EXEMPT; prebuilt box =>
+                                           STANDARD_READY pass; prebuilt box with a broken
+                                           prebuild => STANDARD_READY fail, exit 1) and assert
+                                           each verdict lands. Exit 0 iff all expectations hold.
+  prove-zhe.py --write-standard-ready-fixtures DIR
+                                           write the same fixture shapes under DIR (for
+                                           downstream gates that want a fixture to prove).
+
 Receipt: receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
+  standard-prebuilt boxes additionally carry {standard_ready: true, verdict: "standard-ready"}
 Exit code: 0 iff overall_pass (or exempt) is true, else 1; 2 on bad invocation.
 """
 import json, os, sys, datetime, subprocess, shlex, re, base64
@@ -91,7 +123,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(HERE, "box-registry.json")
 RECEIPTS_DIR = os.path.join(HERE, "receipts")
 
-PROVER_VERSION = "1.0"
+PROVER_VERSION = "1.1"
 
 # ZHE_SEQUENCE_V1 — the canonical, versioned constant naming the Zero Human
 # Experience sequence this prover holds an interview-completed box to (spec §1
@@ -104,6 +136,26 @@ ZHE_SEQUENCE_V1 = (
     "personas_canonical",                # step 5: full derived persona roster + section-tagged index
     "command_center_board",              # step 6: Command Center board + Kanban ready
     "agents_md_doctrine",                # step 7: AGENTS.md routing/persona/handoff/reporting/platform-facts
+)
+
+# STANDARD_READY_SEQUENCE_V1 — the check subset the prover runs for a STANDARD-PREBUILT
+# box whose interview has NOT completed (standard-first redesign, 2026-08-04; master plan
+# Section 5.2 + PHASE 4). The standard prebuild (prebuild-standard-workforce.sh) provisions
+# the full canonical floor from the role library + writes the chosen-departments artifact +
+# seeds the Command Center board — but it deliberately DEFERS agent registration (lazy
+# rows in agents.list at interviewComplete), persona indexing, AGENTS.md doctrine stamping,
+# and the full provisioning receipt. So a prebuilt box proves exactly what it claims:
+#   (sr-a) floor_depts_on_disk        — the floor is provisioned ON DISK (department_floor
+#                                       .evaluate_floor(); never the build-state JSON)
+#   (sr-b) chosen_artifact_present    — <company>/departments.json exists and is non-empty
+#   (sr-c) command_center_board_join  — prove-board-join.py: chosen == provisioned == displayed
+# SKIPPED (by design, until interviewComplete): agents-registered, personas-canonical,
+# AGENTS.md doctrine, provisioning-receipt equality. A box that is standardPrebuilt AND
+# interviewComplete runs the FULL ZHE_SEQUENCE_V1 instead (the apply-diff build has run).
+STANDARD_READY_SEQUENCE_V1 = (
+    "floor_depts_on_disk",
+    "chosen_artifact_present",
+    "command_center_board_join",
 )
 
 # --- ZHE canonical expectations (spec §1 + persona system facts) --------------
@@ -220,6 +272,45 @@ def _load_decline():
     except Exception:
         _decline = None
     return _decline
+
+
+# Shared sibling-module loaders for the STANDARD_READY subset (both live in this same
+# scripts/ dir; hyphenated filenames -> importlib). Defensive: None on failure, and the
+# checks that need them FAIL CLOSED — a missing checker can never silently green a gate.
+_floor_module = None
+_board_join_module = None
+
+
+def _load_floor_module():
+    global _floor_module
+    if _floor_module is not None:
+        return _floor_module
+    try:
+        import importlib.util
+        path = os.path.join(HERE, "department-floor.py")
+        spec = importlib.util.spec_from_file_location("department_floor_zhe", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _floor_module = mod
+    except Exception:
+        _floor_module = None
+    return _floor_module
+
+
+def _load_board_join_module():
+    global _board_join_module
+    if _board_join_module is not None:
+        return _board_join_module
+    try:
+        import importlib.util
+        path = os.path.join(HERE, "prove-board-join.py")
+        spec = importlib.util.spec_from_file_location("prove_board_join_zhe", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _board_join_module = mod
+    except Exception:
+        _board_join_module = None
+    return _board_join_module
 
 
 # ---------------------------------------------------------------------------
@@ -865,6 +956,265 @@ def check_provisioning_receipt(fs, oc_root, ws, dept_slugs):
 
 
 # ---------------------------------------------------------------------------
+# STANDARD_READY subset (standard-first prebuild, master plan PHASE 4 / Section 5.2)
+# ---------------------------------------------------------------------------
+# A standard-prebuilt box (standardPrebuild.status == "done", interview NOT complete)
+# proves THREE things — and NOTHING ELSE:
+#   (a) floor_depts_on_disk       — department_floor.evaluate_floor() against the REAL
+#       directories; the build-state JSON is never trusted as proof of floor compliance.
+#   (b) chosen_artifact_present   — <company>/departments.json exists and lists at least
+#       one department.
+#   (c) command_center_board_join — prove-board-join.py's three-layer join
+#       (chosen == provisioned == displayed).
+# The full-ZHE checks the box deliberately defers to interviewComplete are SKIPPED and
+# recorded as skipped (not pass, not fail): agents-registered, personas-canonical,
+# AGENTS.md doctrine, provisioning-receipt equality.
+
+def _resolve_company_dirs(fs, ws, oc_root):
+    """Resolve (company_dir, departments_dir) for the standard-ready subset.
+
+    A LocalFS root is walked DIRECTLY (the fixture/test layout the phase-4 verification
+    gate pins). A remote box is probed with the same shell probes the rest of the prover
+    uses (RemoteFS). Candidates, first hit wins:
+      1. <ws>/zero-human-company/<company>/     (legacy ZHC layout)
+      2. <ws>/workspaces/command-center/        (CC-workspace layout: departments/ +
+                                                 departments.json at its root)
+      3. <oc_root>/workspaces/command-center/
+      4. <ws>/departments/                      (workspace-root company dir)
+    Returns (None, None) when nothing resolves — the subset then fails closed.
+    """
+    def _isdir(p):
+        return fs.isdir(p)
+
+    def _isfile(p):
+        return fs.isfile(p)
+
+    zhc = os.path.join(ws, "zero-human-company")
+    if _isdir(zhc):
+        for name in fs.listdir(zhc):
+            if name.startswith("."):
+                continue
+            dd = os.path.join(zhc, name, "departments")
+            if _isdir(dd):
+                return os.path.join(zhc, name), dd
+    for cand in (
+        os.path.join(ws, "workspaces", "command-center"),
+        os.path.join(oc_root, "workspaces", "command-center"),
+    ):
+        if _isdir(os.path.join(cand, "departments")):
+            return cand, os.path.join(cand, "departments")
+    if _isdir(os.path.join(ws, "departments")):
+        return ws, os.path.join(ws, "departments")
+    return None, None
+
+
+def check_standard_ready_floor(fs, oc_root, ws, departments_dir=None, build_state=None):
+    """(sr-a) the canonical floor is present ON DISK. Reuses
+    department_floor.evaluate_floor() — the build-state JSON is NEVER trusted as proof
+    of floor compliance. For a LOCAL root the departments dir this run resolved for the
+    artifact/board checks is passed straight through (hermetic — the fixture tree is the
+    tree being proven); for a remote box evaluate_floor() resolves the departments dir
+    via its own resolver (the same one verify-zhc-standard.sh consumes)."""
+    floor = _load_floor_module()
+    if floor is None:
+        return {
+            "pass": False,
+            "detail": "department-floor.py could not be loaded — cannot prove the floor "
+                      "on disk (fail-closed)",
+        }
+    try:
+        if departments_dir is not None:
+            verdict = floor.evaluate_floor(
+                departments_dir=floor.Path(departments_dir),
+                build_state=build_state if isinstance(build_state, dict) else None,
+            )
+        else:
+            verdict = floor.evaluate_floor()
+    except Exception as e:  # noqa: BLE001
+        return {"pass": False, "detail": f"evaluate_floor raised: {e} (fail-closed)"}
+    ok = bool(verdict.get("floor_met")) and verdict.get("rc") == 0
+    return {
+        "pass": ok,
+        "expected_floor_count": verdict.get("expected_floor_count"),
+        "on_disk_count": verdict.get("on_disk_count"),
+        "missing_mandatory": verdict.get("missing_mandatory"),
+        "missing_universal_primary": verdict.get("missing_universal_primary"),
+        "departments_dir": str(verdict.get("departments_dir") or ""),
+        "detail": (
+            f"floor met on disk ({verdict.get('on_disk_count')} present of "
+            f"{verdict.get('expected_floor_count')} expected)" if ok
+            else f"floor NOT met on disk: {verdict.get('reason', 'unknown')}"
+        ),
+    }
+
+
+def check_standard_ready_chosen_artifact(fs, company_dir, departments_dir):
+    """(sr-b) the chosen-departments artifact is present and non-empty."""
+    if not company_dir:
+        return {
+            "pass": False, "artifact_present": False,
+            "detail": "no company dir resolved — cannot locate departments.json",
+        }
+    artifact = os.path.join(company_dir, "departments.json")
+    txt = fs.read_text(artifact)
+    if txt is None:
+        return {
+            "pass": False, "artifact_present": False, "artifact_path": artifact,
+            "detail": "departments.json absent — the prebuild did not write the chosen artifact",
+        }
+    try:
+        data = json.loads(txt)
+    except ValueError:
+        return {
+            "pass": False, "artifact_present": True, "artifact_path": artifact,
+            "detail": "departments.json is unparseable",
+        }
+    slugs = []
+    if isinstance(data, list):
+        for entry in data:
+            if isinstance(entry, dict):
+                s = entry.get("slug") or entry.get("id")
+            elif isinstance(entry, str):
+                s = entry
+            else:
+                s = None
+            if s:
+                slugs.append(s)
+    ok = len(slugs) > 0
+    return {
+        "pass": ok,
+        "artifact_present": True,
+        "artifact_path": artifact,
+        "chosen_count": len(slugs),
+        "detail": (
+            f"chosen artifact present ({len(slugs)} departments)" if ok
+            else "departments.json present but lists no departments"
+        ),
+    }
+
+
+def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_dir):
+    """(sr-c) the three-layer join holds: chosen == provisioned == displayed.
+
+    Delegates to prove-board-join.py's own functions (read_chosen_for_company /
+    read_provisioned / read_displayed / join) so the STANDARD_READY subset and the
+    standalone C-series gate can never diverge. When the box carries no Command Center
+    DB at all the check FAILS CLOSED — a standard prebuild promises a seeded board
+    (prebuild step 7), so a missing board is a broken prebuild, not a skip."""
+    bj = _load_board_join_module()
+    if bj is None:
+        return {
+            "pass": False,
+            "detail": "prove-board-join.py could not be loaded — cannot prove the board "
+                      "join (fail-closed)",
+        }
+    if not company_dir or not departments_dir:
+        return {
+            "pass": False,
+            "detail": "no company/departments dir resolved — cannot run the board join",
+        }
+    # Locate the CC db with the SAME candidate list check (c) uses, plus the board-join
+    # module's own resolver as a last resort.
+    db_path = None
+    for cand in (
+        os.path.join(oc_root, "workspaces", "command-center", "mission-control.db"),
+        os.path.join(oc_root, "workspace", "mission-control.db"),
+        os.path.join(oc_root, "data", "mission-control.db"),
+    ):
+        if fs.isfile(cand):
+            db_path = cand
+            break
+    if db_path is None:
+        try:
+            db_path = str(bj.resolve_db() or "") or None
+        except Exception:  # noqa: BLE001
+            db_path = None
+    if not db_path or not fs.isfile(db_path):
+        return {
+            "pass": False, "db_found": False,
+            "detail": "mission-control.db not found — the prebuild promised a seeded "
+                      "Command Center board and none exists",
+        }
+
+    # Import the floor module through the board-join module's own loader so the join
+    # key normalizer (canonical_slug_for) is the exact one the standalone gate uses.
+    try:
+        df = bj._load_floor()
+    except Exception as e:  # noqa: BLE001
+        return {"pass": False, "db_found": True, "db_path": db_path,
+                "detail": f"board-join floor loader failed: {e}"}
+    try:
+        canonical_dept_slug = bj._load_canonical_slug()
+    except Exception as e:  # noqa: BLE001
+        return {"pass": False, "db_found": True, "db_path": db_path,
+                "detail": f"board-join slug normalizer failed: {e}"}
+
+    try:
+        displayed_rows, _archived_rows, company_ids, _archive_col = bj.read_displayed(db_path)
+    except LookupError as e:
+        return {
+            "pass": False, "db_found": True, "db_path": db_path,
+            "detail": f"workspaces table absent in {db_path}: {e}",
+        }
+    except Exception as e:  # sqlite3.Error / OSError
+        return {
+            "pass": False, "db_found": True, "db_path": db_path,
+            "detail": f"mission-control.db unreadable: {e}",
+        }
+
+    build_state = {}
+    state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
+    if state_txt:
+        try:
+            build_state = json.loads(state_txt) or {}
+        except ValueError:
+            build_state = {}
+    chosen, chosen_source = bj.read_chosen_for_company(company_dir, build_state)
+    if not chosen:
+        return {
+            "pass": False, "db_found": True, "db_path": db_path,
+            "detail": "no durable chosen-departments list for this company dir "
+                      "(departments.json absent/empty and no scoped build-state record)",
+        }
+
+    # Company scoping — same fail-safe asymmetry as the standalone gate.
+    company_slug = bj.resolve_company_slug(company_dir, company_ids)
+    if company_slug is not None:
+        _board_ids = {str(c) for c in (company_ids or ())}
+        key_early = bj.make_keyer(df, canonical_dept_slug)
+        if company_slug not in _board_ids:
+            _resolved = bj.resolve_scope_by_content(
+                displayed_rows, {key_early(c) for c in chosen}, key_early)
+            if _resolved is not None:
+                company_slug = _resolved
+        displayed_rows = [r for r in displayed_rows if r[2] == company_slug]
+    if not displayed_rows:
+        return {
+            "pass": False, "db_found": True, "db_path": db_path,
+            "detail": "the workspaces table has no rows for this company — the board "
+                      "was never seeded",
+        }
+
+    provisioned = bj.read_provisioned(departments_dir, df)
+    key = bj.make_keyer(df, canonical_dept_slug)
+    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key)
+    ok = verdict.get("rc") == bj.RC_OK
+    return {
+        "pass": ok,
+        "db_found": True,
+        "db_path": db_path,
+        "company_slug": company_slug,
+        "chosen_source": chosen_source,
+        "counts": verdict.get("counts"),
+        "drift_classes": verdict.get("drift_classes"),
+        "detail": (
+            "board join holds: chosen == provisioned == displayed" if ok
+            else "board join DRIFT: " + ", ".join(verdict.get("drift_classes") or ["unknown"])
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # WEB↔TELEGRAM build parity (WG-6): a web /interview-built client must clear the
 # SAME gates AND land an EQUAL provisioning receipt as a telegram-built one, with
 # NO genuine-build shortcuts. These add the two dimensions the five base gates do
@@ -1124,17 +1474,59 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
     ws = workspace_root(fs, oc_root, cfg)
     receipt["workspace"] = ws
 
-    # ----- EXEMPTION: interview not completed => no ZHE obligation -----
+    # ----- EXEMPTION / STANDARD_READY: interview not completed -----
     state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
     interview_complete = False
+    state = {}
     if state_txt:
         try:
-            interview_complete = bool(json.loads(state_txt).get("interviewComplete"))
+            state = json.loads(state_txt) or {}
         except ValueError:
-            interview_complete = False
+            state = {}
+    interview_complete = bool(state.get("interviewComplete"))
     receipt["interview_complete"] = interview_complete
 
     if not interview_complete:
+        # STANDARD_READY third state (master plan PHASE 4): the standard prebuild has
+        # completed (standardPrebuild.status == "done") but the interview has NOT. The
+        # box is NEITHER exempt (that would blind the fleet signal) NOR held to the
+        # full five-check ZHE (it deliberately defers agent registration / persona
+        # indexing / AGENTS.md stamping / the provisioning receipt to the apply-diff
+        # build at interviewComplete). Prove the prebuild subset instead.
+        prebuild = state.get("standardPrebuild")
+        standard_prebuilt = (isinstance(prebuild, dict)
+                             and prebuild.get("status") == "done")
+        if standard_prebuilt:
+            receipt["standard_ready"] = True
+            receipt["zhe_sequence"] = "STANDARD_READY_SEQUENCE_V1"
+            receipt["zhe_sequence_steps"] = list(STANDARD_READY_SEQUENCE_V1)
+            receipt["skipped_checks"] = [
+                "floor_depts_registered_as_agents",  # agents.list rows deferred (lazy)
+                "personas_canonical",                # indexed at interviewComplete
+                "agents_md_doctrine",                # stamped at interviewComplete
+                "provisioning_receipt_equality",     # written by the apply-diff build
+            ]
+            company_dir, departments_dir = _resolve_company_dirs(fs, ws, oc_root)
+            # Hermetic for local roots: prove the SAME tree the artifact/board checks
+            # use. Remote boxes resolve via evaluate_floor's own resolver.
+            floor_dd = departments_dir if isinstance(fs, LocalFS) else None
+            receipt["checks"]["floor_depts_on_disk"] = check_standard_ready_floor(
+                fs, oc_root, ws, departments_dir=floor_dd, build_state=state)
+            receipt["checks"]["chosen_artifact_present"] = (
+                check_standard_ready_chosen_artifact(fs, company_dir, departments_dir))
+            receipt["checks"]["command_center_board_join"] = (
+                check_standard_ready_board_join(
+                    fs, oc_root, ws, company_dir, departments_dir))
+            subset_ok = all(c["pass"] for c in receipt["checks"].values())
+            receipt["overall_pass"] = bool(subset_ok)
+            receipt["verdict"] = "standard-ready" if subset_ok else "standard-ready-failed"
+            receipt["detail"] = (
+                "STANDARD_READY: prebuild proven (floor on disk + chosen artifact + "
+                "board join); registration/routing checks deferred to interviewComplete"
+                if subset_ok
+                else "STANDARD_READY FAILED: the standard prebuild is broken — see the "
+                     "failing subset check(s) above")
+            return receipt
         receipt["exempt"] = True
         receipt["overall_pass"] = True
         receipt["detail"] = ("interview NOT completed — box EXEMPT from ZHE "
@@ -1165,6 +1557,7 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
 def print_summary(r):
     print(f"=== ZHE PROOF: {r['box']} ({r.get('client', '')}) ===")
     print(f"reachable={r['reachable']}  interview_complete={r['interview_complete']}  "
+          f"standard_ready={r.get('standard_ready', False)}  "
           f"oc_root={r['oc_root'] or '(none)'}")
     if not r["reachable"]:
         print("UNREACHABLE — cannot prove ZHE.")
@@ -1173,6 +1566,14 @@ def print_summary(r):
     if r["exempt"]:
         print("EXEMPT — interview not completed; box carries no ZHE obligation.")
         print("OVERALL: PASS (exempt)")
+        return
+    if r.get("standard_ready"):
+        print("STANDARD_READY — standard prebuild done, interview NOT complete.")
+        for name in r.get("skipped_checks", []):
+            print(f"  [SKIP] {name}: deferred to interviewComplete (lazy registration)")
+        for name, c in r["checks"].items():
+            print(f"  [{'PASS' if c['pass'] else 'FAIL'}] {name}: {c.get('detail', '')}")
+        print(f"OVERALL: {'PASS (standard-ready)' if r['overall_pass'] else 'FAIL (standard-ready subset broken)'}")
         return
     for name, c in r["checks"].items():
         print(f"  [{'PASS' if c['pass'] else 'FAIL'}] {name}: {c.get('detail', '')}")
@@ -1262,11 +1663,199 @@ def web_parity_selftest():
     return 0 if all_ok else 1
 
 
+# ---------------------------------------------------------------------------
+# STANDARD_READY fixture modes (master plan PHASE 4 verification gate).
+# Hermetic: builds throwaway OpenClaw-root fixtures under a temp dir, proves
+# each verdict lands, and cleans up. Touches no real ~/.openclaw, no client
+# box, no network. The fixture receipt shape is pinned here — downstream
+# consumers (verify-library-gate.sh, verify-zhc-standard.sh, the fleet
+# aggregate) key off receipt["standard_ready"] / receipt["verdict"].
+# ---------------------------------------------------------------------------
+
+def _fixture_build_state(variant, now_iso):
+    """Build-state for each fixture variant."""
+    if variant == "bare":
+        # Interview not complete, NO prebuild record -> EXEMPT.
+        return {"interviewComplete": False}
+    if variant == "prebuilt":
+        # Prebuild done, interview not complete -> STANDARD_READY (pass).
+        return {
+            "buildType": "standard-first",
+            "interviewComplete": False,
+            "standardPrebuild": {
+                "status": "done",
+                "standardReadyAt": now_iso,
+                "floorVersion": "fixture",
+                "agentRegistration": "deferred",
+                "source": "prove-zhe fixture",
+            },
+        }
+    if variant == "prebuilt-broken":
+        # Prebuild claims done but the disk tree is BELOW the floor (and no CC board
+        # was seeded) -> the STANDARD_READY subset genuinely FAILS (non-vacuous).
+        return {
+            "buildType": "standard-first",
+            "interviewComplete": False,
+            "standardPrebuild": {
+                "status": "done",
+                "standardReadyAt": now_iso,
+                "agentRegistration": "deferred",
+            },
+        }
+    raise ValueError(f"unknown fixture variant {variant!r}")
+
+
+def _fixture_company(company_dir, variant):
+    """Materialize a company dir: departments.json + a departments/ tree that
+    satisfies the on-disk floor. The floor is read LIVE from the naming map via
+    department-floor.py's own loaders — never hardcoded."""
+    os.makedirs(company_dir, exist_ok=True)
+    floor = _load_floor_module()
+    if floor is None:
+        raise RuntimeError("department-floor.py unavailable; cannot build fixture")
+    nm = floor.load_naming_map()
+    floor_ids = floor.mandatory_ids(nm) + floor.universal_primary_vertical_departments(nm)
+    # The broken variant omits several floor depts from disk (and gets no CC
+    # board) so the STANDARD_READY subset genuinely FAILS (non-vacuous selftest).
+    omit = set(floor_ids[:5]) if variant == "prebuilt-broken" else set()
+    depts_dir = os.path.join(company_dir, "departments")
+    os.makedirs(depts_dir, exist_ok=True)
+    built = []
+    for cid in floor_ids:
+        if cid in omit:
+            continue
+        os.makedirs(os.path.join(depts_dir, cid), exist_ok=True)
+        built.append(cid)
+    artifact = [
+        {"slug": cid, "workspacePath": f"departments/{cid}"} for cid in built
+    ]
+    with open(os.path.join(company_dir, "departments.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(artifact, f, indent=2, ensure_ascii=False)
+    return built
+
+
+def _fixture_oc_root(base, variant):
+    """One OpenClaw root fixture. Returns the root path."""
+    root = os.path.join(base, variant)
+    ws = os.path.join(root, "workspace")
+    os.makedirs(ws, exist_ok=True)
+    with open(os.path.join(root, "openclaw.json"), "w", encoding="utf-8") as f:
+        json.dump({"agents": {"defaults": {"workspace": ws}, "list": []}}, f)
+    state = _fixture_build_state(variant, utc_now_iso())
+    with open(os.path.join(ws, ".workforce-build-state.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+    company_dir = os.path.join(ws, "zero-human-company", "fixture-co")
+    _fixture_company(company_dir, variant)
+    if variant == "prebuilt":
+        # Seed the Command Center board so the join holds. The CC db lives where
+        # check_command_center / check_standard_ready_board_join look first.
+        import sqlite3
+        cc_dir = os.path.join(root, "workspaces", "command-center")
+        os.makedirs(cc_dir, exist_ok=True)
+        db_path = os.path.join(cc_dir, "mission-control.db")
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("CREATE TABLE workspaces (slug TEXT, name TEXT, company_id TEXT)")
+            floor = _load_floor_module()
+            nm = floor.load_naming_map()
+            for cid in floor.mandatory_ids(nm) + floor.universal_primary_vertical_departments(nm):
+                conn.execute(
+                    "INSERT INTO workspaces (slug, name, company_id) VALUES (?,?,?)",
+                    (cid, cid.replace("-", " ").title(), "fixture-co"))
+            conn.commit()
+        finally:
+            conn.close()
+    return root
+
+
+def write_standard_ready_fixtures(outdir):
+    """Write all three fixture OpenClaw roots under `outdir`. Returns a dict
+    variant -> root path (so a caller can `prove-zhe.py --local <root>` them)."""
+    outdir = os.path.abspath(os.path.expanduser(outdir))
+    os.makedirs(outdir, exist_ok=True)
+    return {v: _fixture_oc_root(outdir, v)
+            for v in ("bare", "prebuilt", "prebuilt-broken")}
+
+
+def standard_ready_selftest():
+    """NON-VACUOUS meta-gate for the STANDARD_READY verdict. Materializes the
+    three fixtures into a private temp dir and asserts each produces its verdict:
+      bare             -> EXEMPT (exit 0)
+      prebuilt         -> STANDARD_READY pass (exit 0)
+      prebuilt-broken  -> STANDARD_READY fail (exit 1)
+    Exit 0 iff all three expectations hold."""
+    import tempfile, shutil
+    tmp = tempfile.mkdtemp(prefix="zhe-standard-ready-")
+    results = []
+    all_ok = True
+    try:
+        fixtures = write_standard_ready_fixtures(tmp)
+        expectations = {
+            "bare": {"exempt": True, "standard_ready": False, "exit": 0},
+            "prebuilt": {"exempt": False, "standard_ready": True,
+                         "overall_pass": True, "exit": 0},
+            "prebuilt-broken": {"exempt": False, "standard_ready": True,
+                                "overall_pass": False, "exit": 1},
+        }
+        for variant, root in fixtures.items():
+            exp = expectations[variant]
+            fs = LocalFS(root)
+            receipt = prove(variant.upper(), "standard-ready-fixture", fs,
+                            local_root=root)
+            code = 0 if receipt["overall_pass"] else 1
+            ok = True
+            for key, want in exp.items():
+                if key == "exit":
+                    got = code
+                elif isinstance(want, bool):
+                    # absent boolean fields read as False (exempt/standard_ready are
+                    # only present on receipts that actually carry that verdict).
+                    got = bool(receipt.get(key, False))
+                else:
+                    got = receipt.get(key)
+                if got != want:
+                    ok = False
+            results.append((variant, ok, receipt, code, exp))
+            all_ok = all_ok and ok
+        print("=== STANDARD_READY SELF-TEST MATRIX ===")
+        for variant, ok, receipt, code, exp in results:
+            print(f"  [{'OK' if ok else 'XX'}] {variant:<18} "
+                  f"exempt={receipt.get('exempt')} "
+                  f"standard_ready={receipt.get('standard_ready', False)} "
+                  f"overall_pass={receipt.get('overall_pass')} exit={code} "
+                  f"(expected {exp})")
+            if not ok:
+                for name, c in (receipt.get("checks") or {}).items():
+                    print(f"        [{ 'PASS' if c.get('pass') else 'FAIL'}] {name}: "
+                          f"{c.get('detail', '')}")
+        print(f"SELF-TEST: {'PASS (all three verdicts land)' if all_ok else 'FAIL'}")
+        return 0 if all_ok else 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main(argv):
     args = argv[1:]
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
         sys.exit(2)
+
+    # ----- STANDARD_READY fixture modes (self-contained; no box-registry) -----
+    if "--standard-ready-selftest" in args:
+        sys.exit(standard_ready_selftest())
+    if "--write-standard-ready-fixtures" in args:
+        i = args.index("--write-standard-ready-fixtures")
+        try:
+            outdir = args[i + 1]
+            del args[i:i + 2]
+        except IndexError:
+            die("--write-standard-ready-fixtures requires a directory")
+        paths = write_standard_ready_fixtures(outdir)
+        for variant, path in sorted(paths.items()):
+            print(f"{variant}: {path}")
+        sys.exit(0)
 
     # ----- WEB↔TELEGRAM parity modes (self-contained; no box-registry) -----
     if "--web-parity-selftest" in args:

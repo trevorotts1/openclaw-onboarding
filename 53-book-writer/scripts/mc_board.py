@@ -74,21 +74,29 @@ PUBLIC API
   card_open(run_dir, *, slug, title, department, persona="", source="",
             description="", priority="medium", env=None)         -> task_id str | None
   card_advance(run_dir, task_id=None, *, phase_id, status, note="",
-               deliverable_url="", env=None)                     -> bool
+               deliverable_url="", blocked_reason="approval",
+               blocked_on_human="operator", ask="", env=None)     -> bool
   begin_run(run_dir, *, slug, title, department, persona="", source="",
             description="", env=None)                             -> task_id str | None  (never raises)
   complete_run(run_dir, task_id=None, *, phase_id="deliver", note="",
                status="review", deliverable_url="", env=None)    -> bool                (never raises)
-  block_run(run_dir, task_id=None, *, phase_id="", note="", env=None)
-                                                                  -> bool                (never raises)
+  block_run(run_dir, task_id=None, *, phase_id="", note="",
+            blocked_reason="approval", blocked_on_human="operator", ask="",
+            env=None)                                             -> bool                (never raises)
 
-THE BLOCKED STATE (FIX-XC-06)
+THE BLOCKED STATE (FIX-XC-06 / BUG-31)
   Before this helper, a gate failure left a card stranded at `in_progress` forever
   — an invisible failure. `block_run` moves the card to the fail-soft `blocked`
   status (reachable from ANY state in one hop) with the failing phase + AF code as
   the note, so a failed run is VISIBLE on the board. `blocked` is never `done`: a
   fixed re-run may re-open it (blocked -> in_progress) and the independent QC
   scorer still owns the ONLY path to `done` (review -> done).
+
+  CC-COMPAT (BUG-31): the CC PATCH /api/tasks/[id] route 400s a move to `blocked`
+  unless the payload carries blocked_reason + blocked_on_human + ask. `_move_once`
+  appends all three on a blocked move (defaults: blocked_reason="approval",
+  blocked_on_human="operator", ask derived from the failing phase + AF note) so the
+  card lands on the Blocked column instead of stranding at `in_progress`.
 """
 
 from __future__ import annotations
@@ -550,15 +558,38 @@ def _current_status(tid: str, cfg: dict) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # ADVANCE — move the card to (phase_id, status), walking the legal path.
 # ---------------------------------------------------------------------------
+def _default_block_ask(phase_id: str, note: str) -> str:
+    """One-line human action the CC 'ask' field must state when a run is blocked.
+    The note carries the failing phase + AF code (FIX-XC-06); surface it so the
+    operator on the Blocked column sees exactly what failed and what to review."""
+    detail = (note or "").strip()
+    if detail:
+        return f"Operator review required: {detail}"
+    if phase_id:
+        return f"Operator review required: gate failed at {phase_id}"
+    return "Operator review required: a fail-closed gate blocked this run"
+
+
 def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
-               note: str = "", deliverable_url: str = "") -> bool:
+               note: str = "", deliverable_url: str = "",
+               blocked_reason: str = "approval", blocked_on_human: str = "operator",
+               ask: str = "") -> bool:
     """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
-    Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS."""
+    Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS.
+
+    CC-COMPAT (BUG-31): when the target is ``blocked``, the CC PATCH
+    /api/tasks/[id] route REQUIRES blocked_reason + blocked_on_human + ask (and the
+    card would otherwise be stranded at the previous status behind a 400). The three
+    fields are appended only for a blocked move so no other status write changes."""
     payload: dict = {"phase_id": phase_id, "status": status}
     if note:
         payload["note"] = note
     if deliverable_url:
         payload["deliverable_url"] = deliverable_url
+    if status == "blocked":
+        payload["blocked_reason"] = (blocked_reason or "approval").strip() or "approval"
+        payload["blocked_on_human"] = (blocked_on_human or "operator").strip() or "operator"
+        payload["ask"] = (ask or _default_block_ask(phase_id, note)).strip()
     url = f"{cfg['base_url']}{cfg['status_tmpl'].format(id=tid)}"
     try:
         st, body = _request(cfg["status_method"], url, payload, cfg)
@@ -580,6 +611,9 @@ def card_advance(
     status: str,
     note: str = "",
     deliverable_url: str = "",
+    blocked_reason: str = "approval",
+    blocked_on_human: str = "operator",
+    ask: str = "",
     env: Optional[dict] = None,
     receipt_subdir=None,
 ) -> bool:
@@ -616,7 +650,8 @@ def card_advance(
     if current is None:
         # Card status unknown (board unreachable / card missing): attempt a single
         # direct move and let the server reject an illegal jump (fail-soft).
-        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url)
+        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url,
+                          blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask)
     if current == target:
         _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
         return True
@@ -631,6 +666,7 @@ def card_advance(
             tid, phase_id, step, cfg,
             note=note if last else f"auto-step toward {target}",
             deliverable_url=deliverable_url if last else "",
+            blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask,
         )
         if not ok:
             break
@@ -707,7 +743,9 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
 
 
 def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
-              note: str = "", env: Optional[dict] = None, receipt_subdir=None) -> bool:
+              note: str = "", blocked_reason: str = "approval",
+              blocked_on_human: str = "operator", ask: str = "",
+              env: Optional[dict] = None, receipt_subdir=None) -> bool:
     """Move the run's card to the fail-soft dead-end `blocked` status when a gate
     FAILS, so a blocked run is VISIBLE on the board instead of stranding forever at
     `in_progress` (FIX-XC-06: gate failures used to leave invisible, permanently-
@@ -729,7 +767,8 @@ def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
             detail = "run BLOCKED (a gate failed)"
         return card_advance(run_dir, task_id, phase_id=phase_id or "blocked",
                             status="blocked", note=detail, env=env,
-                            receipt_subdir=receipt_subdir)
+                            blocked_reason=blocked_reason, blocked_on_human=blocked_on_human,
+                            ask=ask, receipt_subdir=receipt_subdir)
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False

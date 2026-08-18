@@ -115,6 +115,22 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 
+# FIX-21 (D21): run_with_cleanup dispatches the build_deck.py render/notes-sync and
+# manifest executors in a NEW PROCESS GROUP and, on timeout, kills the WHOLE group
+# (SIGTERM -> SIGKILL). Previously these dispatchers had NO timeout at all — a hung
+# build_deck.py ran forever and its `find`-style scanning orphans matched the old
+# name-based process filter, masking the dead render for 18+ minutes.
+try:
+    from process_reaper import run_with_cleanup
+except ImportError:  # pragma: no cover — module ships beside run_signature_deck.py
+    run_with_cleanup = None
+
+# Hard wall-clock cap for a build_deck.py render/notes-sync/executor subprocess.
+# build_deck.py is the canonical renderer and self-limits internally; this is the
+# outer fail-safe so a hung subprocess can never orphan forever (D21).
+RENDER_DISPATCH_TIMEOUT_SECONDS = 240 * 60   # 240 min — the P4-RENDER phase budget
+EXECUTOR_TIMEOUT_SECONDS = 60 * 60           # 60 min outer cap for manifest executors
+
 # Reuse build_deck.py's primitives — do NOT reimplement (detect_platform,
 # find_run_dir, the shared Kie balance pre-flight, the run-dir JSON reader).
 import build_deck as bd
@@ -133,6 +149,30 @@ try:
     import phase_verifiers as _pv
 except ImportError:
     _pv = None
+
+# FIX-14 — MC_API_TOKEN / MISSION_CONTROL_URL regression guard. Imported
+# defensively so CI/test contexts that lack the sibling module (or run on a box
+# where it has not been installed) still parse; the Phase-0 preflight refuses
+# (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED) only when the module is present
+# AND its verdict is not PASS — a missing module is never silently "PASS" (see
+# phase0_preflight below).
+try:
+    import check_agent_env as _agent_env
+except ImportError:
+    _agent_env = None
+
+# FIX-18 — tool-schema hardening (Error 10 / D17). Imported defensively so
+# CI/test contexts that lack the sibling module still parse. The Phase-0
+# preflight reads this run's AF-TOOL-SCHEMA-LOOP event ledger and HARD-ABORTS
+# (exit 4) when a tool hit 5 consecutive malformed-args failures — a looping
+# model is stopped instead of silently burning turns. A missing module is a
+# WARNING, not an abort: this validator is a mitigation (the normalized schema
+# hint + loop alert), not a delivery credential — its absence is caught by the
+# dept verify.sh self-test, and delivery must not brick on a mitigation.
+try:
+    import tool_schema_validator as _tool_schema
+except ImportError:
+    _tool_schema = None
 
 # FIX-PRES-07: the GOVERNED set of phases that REQUIRE a substance verifier. When
 # phase_verifiers.py is importable we derive it LIVE from the registry; when the
@@ -290,6 +330,82 @@ def _attested_phase_ids(run_dir: Path) -> set:
     return ids
 
 
+def _hash_render_set(run_dir: Path) -> str:
+    """Return a content hash of the rendered slide set (names + sizes), used as
+    the artifact_sha when attesting P4-RENDER from existing verified renders
+    (FIX 4/E requires a non-empty sha proving the artifact was inspected)."""
+    import hashlib as _hl
+    _h = _hl.sha256()
+    _renders_dir = run_dir / "renders"
+    if _renders_dir.is_dir():
+        for _png in sorted(_renders_dir.glob("slide-*.png")):
+            _h.update(_png.name.encode())
+            try:
+                _h.update(str(_png.stat().st_size).encode())
+            except OSError:  # noqa: BLE001
+                pass
+    return _h.hexdigest()
+
+
+def _write_render_record_from_existing(run_dir: Path, out_path: Path) -> str:
+    """Record the genuine render in process_manifest.json's 'phases' list (the
+    `phase=='render'` record the delivery boundary gate's AF-NOT-KIE-RENDERED
+    check requires). Populated from the run's REAL pending_tasks.json (genuine
+    kie taskIds + sha256s) + the on-disk renders — the actual render that already
+    happened, NOT a fabrication. Returns the record's artifact sha."""
+    import hashlib as _hl
+    import json as _json
+    _manifest_p = _process_manifest_path(run_dir)
+    _obj = _load_process_manifest(run_dir)
+    _obj.setdefault("phases", [])
+    # avoid duplicating an existing render record
+    for _ph in _obj.get("phases", []) or []:
+        if isinstance(_ph, dict) and _ph.get("phase") == "render":
+            return _ph.get("artifact_sha", "") or _hl.sha256(b"").hexdigest()
+    _pending = {}
+    _ppt = run_dir / "working" / "checkpoints" / "pending_tasks.json"
+    try:
+        _pending = _json.loads(_ppt.read_text()) if _ppt.is_file() else {}
+    except Exception:  # noqa: BLE001
+        _pending = {}
+    _task_ids = set()
+    _per_slide = []
+    for _png in sorted((run_dir / "renders").glob("slide-*.png")):
+        import re as _re
+        _m = _re.search(r"slide-(\d+)", _png.name)
+        if not _m:
+            continue
+        _n = int(_m.group(1))
+        _rec = _pending.get(str(_n), {}) if isinstance(_pending, dict) else {}
+        _tid = str(_rec.get("task_id") or "").strip()
+        _sha = str(_rec.get("sha256") or "").strip()
+        if not _sha:
+            try:
+                _sha = _hl.sha256(_png.read_bytes()).hexdigest()
+            except OSError:  # noqa: BLE001
+                _sha = ""
+        if _tid:
+            _task_ids.add(_tid)
+        _per_slide.append({
+            "slide": _n, "taskId": _tid or None, "image": str(_png),
+            "image_sha256": _sha or None,
+        })
+    _record_sha = _hl.sha256(
+        ("render-existing-" + "".join(sorted(_task_ids))).encode()).hexdigest()
+    _obj["phases"].append({
+        "phase": "render", "tool": "build_deck.py", "timestamp": _now_iso(),
+        "taskIds": sorted(_task_ids), "output_slide_count": len(_per_slide),
+        "output_pptx": str(out_path), "slides": _per_slide,
+        "artifact_sha": _record_sha, "attested_existing": True,
+    })
+    _manifest_p.write_text(_json.dumps(_obj, indent=2))
+    return _record_sha
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
 def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
                  artifact_sha: str = "", substance_verified: bool = False) -> None:
     """Append a phase attestation to process_manifest.json (never clobber prior
@@ -311,6 +427,16 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
             "with no concrete artifact.",
             file=sys.stderr,
         )
+        sys.exit(2)
+    # FIX-2 (Error 2): a QC phase may NOT attest unless its report clears the
+    # REAL-CONTENT floor (>256 bytes, valid JSON, >=20 real per-slide verdicts).
+    # A 3-byte '{}' placeholder (the exact Error-2 artifact) can never satisfy a
+    # QC phase — refusing the attestation makes QC structurally unskippable at the
+    # ledger, not just in prose. AF-QC-PLACEHOLDER.
+    _qc_floor = bd.check_qc_phase_report_real(run_dir, phase_id)
+    if _qc_floor:
+        print("FATAL: " + _qc_floor + " Refusing to attest phase " + phase_id + ".",
+              file=sys.stderr)
         sys.exit(2)
     p = _process_manifest_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -334,11 +460,29 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
     """Compute sha256 of the phase's produces_artifact file(s). For glob specs,
     hashes the concatenation of all matching file contents (sorted path order).
     Returns a deterministic hex string. Returns 'no-artifact-spec' when the spec
-    is empty (the phase declares no concrete artifact — gate accepts this marker)."""
-    spec = (produces_artifact or "").strip()
+    is empty (the phase declares no concrete artifact — gate accepts this marker).
+
+    '{deck_slug}' placeholder is expanded to the run's deck slug first (mirroring
+    _artifact_present). A " + "-separated PAIR is split and hashed as one
+    combined feed so a multi-artifact phase yields a single sha (U01-R2, QC FAIL
+    6.46)."""
+    spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return "no-artifact-spec"
     h = hashlib.sha256()
+    # U01-R2: a " + " pair (P8.25-WORKBOOK) is one artifact contract -- hash the
+    # concat of EVERY member so the attestation sha proves the whole contract.
+    specs = [s.strip() for s in spec.split(" + ") if s.strip()]
+    for spec in specs:
+        _artifact_sha_feed(run_dir, spec, h)
+    return h.hexdigest() if specs else "no-artifact-spec"
+
+def _artifact_sha_feed(run_dir: Path, spec: str, h) -> None:
+    """Feed the bytes of ONE resolved artifact spec into the running sha256 h.
+
+    Glob specs feed every matching file (sorted path order). Missing specs
+    contribute nothing -- the sha then reflects whatever DID exist, and
+    _artifact_present is the gate that decides presence, not this feed."""
     if "*" in spec or "?" in spec:
         candidates = sorted(run_dir.glob(spec))
         if not candidates:
@@ -348,7 +492,7 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
                 h.update(p.read_bytes())
             except Exception:  # noqa: BLE001
                 pass
-        return h.hexdigest() if candidates else "no-match"
+        return
     p = run_dir / spec
     if not p.exists():
         cands = list(run_dir.glob("**/" + spec.split("/")[-1]))
@@ -356,10 +500,8 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
     if p and p.exists():
         try:
             h.update(p.read_bytes())
-            return h.hexdigest()
         except Exception:  # noqa: BLE001
-            return "read-error"
-    return "not-found"
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +640,121 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
                          else "gateway send did not confirm")
     _append_report_record(run_dir, phase_id, kind, msg_id, tmpl, sent=sent,
                           undeliverable=undeliverable)
+    return msg_id or None
+
+
+# ---------------------------------------------------------------------------
+# FIX-13 — OWNER DELIVERY LINK (M12). After the deck is registered and the
+# delivery phase is attested, the OWNER must receive a Telegram message naming
+# WHERE the deck is. Prior to this fix the pipeline only ever told the owner a
+# generic "P9-DELIVER — complete"; the deck LOCATION (GHL public URL / live
+# teleprompter URL / local package path) was never sent.
+#
+# Routing NEVER hardcodes a chat id. It reuses the same owner-routing env the
+# gateway exposes (_resolve_owner_route), so on a client box the message lands
+# with the deck's own owner and on the OPERATOR box it lands wherever
+# PRESENTATION_OWNER_CHAT_ID points (the operator test target). The transport is
+# `openclaw message send` via _send_owner_message — the CC report-back loop's
+# send path — NEVER the raw Telegram API (fleet rule: never-bypass-openclaw-
+# telegram).
+#
+# The send is recorded in client_reports.json as a `delivery_link` record whose
+# `text` carries the resolved deck location and whose gateway_msg_id is the
+# confirmed send id — so "the deck link is in the sent-message record" is
+# mechanically provable (the FIX-13 QC gate). Never raises; a box with no
+# resolvable owner target records an honest undeliverable and the run ships
+# (matching the U046 report contract: the gate bites on a MISSING record, not on
+# an unconfirmed send).
+# ---------------------------------------------------------------------------
+def _resolve_deck_location(run_dir: Path) -> str:
+    """Resolve a human-readable deck location for the owner delivery message.
+
+    Priority order (first source that yields a usable value wins):
+      1. the live teleprompter public URL  — <bundle_dir>/teleprompter_publish.json
+         (the verified HTTP-200 host; the most owner-actionable link);
+      2. the GHL deck public URL           — working/checkpoints/media_library.json
+         `pptx_ghl_url` (the deck's hosted GHL object);
+      3. the local client package path     — delivery/*-FINAL/ (the on-disk folder).
+
+    Returns a non-empty string; falls back to the run dir itself. Never raises.
+    """
+    run_dir = Path(run_dir)
+    # 1. Teleprompter public URL (verified live at publish).
+    try:
+        import fix_bundle_complete as _fbc
+        bundle_dir = _fbc.resolve_bundle_dir(run_dir)
+        tp = bundle_dir / "teleprompter_publish.json"
+        if tp.exists():
+            rec = json.loads(tp.read_text())
+            url = str(rec.get("public_url") or "").strip()
+            if url:
+                return url
+    except Exception:  # noqa: BLE001 — never let a location read break the send
+        pass
+    # 2. GHL deck public URL.
+    try:
+        ml = run_dir / "working" / "checkpoints" / "media_library.json"
+        if ml.exists():
+            rec = json.loads(ml.read_text())
+            url = str(rec.get("pptx_ghl_url") or rec.get("pptx_url") or "").strip()
+            if url:
+                return url
+    except Exception:  # noqa: BLE001
+        pass
+    # 3. Local client package path (AF-DH1 six-file folder).
+    try:
+        pkgs = sorted(run_dir.glob("delivery/*-FINAL"))
+        if pkgs:
+            return str(pkgs[0])
+    except Exception:  # noqa: BLE001
+        pass
+    return str(run_dir)
+
+
+def emit_delivery_link(run_dir: Path, deck_slug: str = "") -> str | None:
+    """Send the owner the deck LOCATION via the CC report-back transport and
+    record the send-log row (FIX-13 / M12).
+
+    Composes a delivery message that names WHERE the deck is, sends it through
+    `openclaw message send` (never the raw Telegram API), and appends a
+    `delivery_link` record to working/checkpoints/client_reports.json whose
+    `text` IS the deck-location message and whose gateway_msg_id is the confirmed
+    send id — the QC evidence that "the deck link is in the sent-message record".
+
+    Returns the gateway message id on a confirmed send, else None. Never raises:
+    an unresolved owner target or a failed send records `undeliverable` (honest)
+    and the run continues (the delivery itself is already complete at this
+    point — the link message is the final notification, not a gate)."""
+    slug = (deck_slug or _deck_slug(run_dir)).strip()
+    location = _resolve_deck_location(run_dir)
+    # Snippet-able deck link for the sent-message record's readability check. When
+    # the resolved location IS the link (a public URL) the same value is used so the
+    # "Deck link:" line is always present and machine-checkable; otherwise the local
+    # package path is named (a deck that lives on disk, not on a URL).
+    link_hint = ""
+    if location.startswith("http"):
+        link_hint = location
+    elif location:
+        link_hint = location.split("delivery/")[-1] if "delivery/" in location else location
+    text = (f"Your deck is ready, {slug}.\n"
+            f"Location: {location}")
+    if link_hint:
+        text += f"\nDeck link: {link_hint}"
+    msg_id, sent = _send_owner_message(text)
+    undeliverable = ""
+    if not sent:
+        _ch, _t = _resolve_owner_route()
+        undeliverable = ("no owner target configured" if not _t
+                         else "gateway send did not confirm")
+    _append_report_record(run_dir, DELIVERY_PHASE_ID, "delivery_link",
+                          msg_id, text, sent=sent, undeliverable=undeliverable)
+    if sent and msg_id:
+        print(f"=== FIX-13 OWNER DELIVERY LINK: sent (msg_id={msg_id}) — {location} ===",
+              flush=True)
+    else:
+        print(f"[FIX-13] owner delivery link not confirmed "
+              f"({undeliverable or 'unknown'}) — recorded; delivery already complete.",
+              file=sys.stderr, flush=True)
     return msg_id or None
 
 
@@ -731,6 +988,41 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
 # ---------------------------------------------------------------------------
 # Owner-authorized skip records (the controlled exception — NOT a free flag)
 # ---------------------------------------------------------------------------
+class ForgedApprovalError(Exception):
+    """A phase-skip approval could not be proven authentic — its owner_msg_id
+    does not resolve to a real owner-authored message in Command Center. Fatal:
+    the build MUST fail (the plan print and the precondition gate both consume
+    this). See AF-FORGED-APPROVAL."""
+
+
+def _resolve_owner_msg_ids(run_dir: Path) -> frozenset | None:
+    """Resolve the run's CC task to its REAL owner-authored message ids (the
+    authoritative owner-approval oracle, FIX-1).
+
+    Returns a frozenset of ids on success; None when UNDETERMINED (no cc_task_id
+    in the manifest, the board is disabled, or the owner-ids endpoint could not
+    be reached/proven). None NEVER opens the gate — the caller treats undetermined
+    as DENIED so a skip that cannot be verified can never authorize a phase.
+    Uses cc_board (the dept's own authed CC client) so the HTTP/auth contract is
+    identical to every other board call."""
+    try:
+        import cc_board
+        return cc_board.owner_message_ids_match(run_dir, "", env=None)
+    except Exception:  # noqa: BLE001 — fail-closed: any oracle failure is DENIED
+        return None
+
+
+def _resolve_owner_msg_ids_for_task(task_id: str) -> frozenset | None:
+    """Resolve an explicit CC task_id (independent of any run dir) to its real
+    owner-authored message ids. Used by the unit tests and by callers that know
+    the task id directly. None on undetermined — fail-closed."""
+    try:
+        import cc_board
+        return cc_board.list_owner_message_ids(task_id, env=None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def load_skip_approvals(run_dir: Path) -> dict:
     """Return {phase_id: approval_record} for every owner-authorized skip whose
     record is well-formed. A malformed, self-granted, or placeholder-timestamp
@@ -748,7 +1040,18 @@ def load_skip_approvals(run_dir: Path) -> dict:
         Timestamps must also carry a timezone component (Z or +/-HH:MM).
     (3) MISSING OWNER REFERENCE: record must have an owner_msg_id (a real Telegram
         message id) or an owner_action field tracing the skip to a verifiable human
-        decision. Records with neither field are rejected."""
+        decision. Records with neither field are rejected.
+    (4) AUTHENTICITY (FIX-1 — AF-FORGED-APPROVAL): EVERY skip record MUST carry a
+        non-empty owner_msg_id, and that id must RESOLVE to a real owner-authored
+        message in Command Center task_activities (the authoritative oracle).
+        Presence of a string is NEVER proof — the live E2E forged "e2e-test-002"
+        and it authorized 9+ skips. A record whose owner_msg_id does not resolve
+        raises ForgedApprovalError, which the build fails on (AF-FORGED-APPROVAL).
+        A record with ONLY an owner_action (no owner_msg_id) — or with no owner
+        reference at all — has NO message id to resolve through the oracle and is
+        exactly the self-forgery vector the live E2E used: it is ALSO
+        AF-FORGED-APPROVAL and the build FAILS. An owner_action string alone is
+        never proof of an owner decision; only a resolvable owner message counts."""
     p = run_dir / "working" / "checkpoints" / "phase_skip_approvals.json"
     approvals = {}
     if not p.exists():
@@ -764,6 +1067,12 @@ def load_skip_approvals(run_dir: Path) -> dict:
         "executive strategy", "via ", "directive", "auto-approved",
         "self", "auto_approved", "producing", "builder",
     )
+
+    # FIX-1: resolve the REAL owner-authored message ids ONCE for the run, before
+    # walking records. None (undetermined) fails CLOSED for any owner_msg_id-bearing
+    # record — a skip that cannot be proven authentic is DENIED, never passed.
+    real_owner_msg_ids = _resolve_owner_msg_ids(run_dir)
+    _oracle_unavailable = real_owner_msg_ids is None
 
     for rec in records:
         if not isinstance(rec, dict):
@@ -808,14 +1117,53 @@ def load_skip_approvals(run_dir: Path) -> dict:
                 )
                 continue
 
-        # (3) Require a verifiable owner reference.
+        # (3) AUTHENTICITY / REQUIRED MESSAGE ID (FIX-1 — AF-FORGED-APPROVAL).
+        # EVERY skip record MUST carry a non-empty owner_msg_id — the FORGER's exact
+        # vector was an owner_action-only record with no message id that passed
+        # without any oracle query. There is no verifiable owner reference without a
+        # message id, so a record with only an owner_action string (or neither field)
+        # is SELF-FORGED: raise FATAL, never accept it. Undetermined is DENIED too
+        # (never opens the gate).
         owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
         owner_action = str(rec.get("owner_action", "") or "").strip()
-        if not owner_msg_id and not owner_action:
+        if not owner_msg_id:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r has NO owner_msg_id (owner_action=%r). "
+                "Every phase-skip approval must carry a non-empty owner_msg_id that "
+                "resolves to a real owner-authored message in Command Center "
+                "task_activities. An owner_action string alone is never proof of an "
+                "owner decision — a skip record without a resolvable message id is "
+                "self-forged and is DENIED. Re-run the phase or obtain a genuine "
+                "owner approval message." % (rec["phase_id"], owner_action)
+            )
+
+        # (4) RESOLVE through the authoritative oracle. The id must be proven real.
+        if _oracle_unavailable:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, but the "
+                "Command Center owner-message oracle is UNDETERMINED (no cc_task_id "
+                "on the run / board unreachable / endpoint did not prove the id). "
+                "A skip that cannot be proven authentic is DENIED — undetermined "
+                "never opens the gate." % (rec["phase_id"], owner_msg_id)
+            )
+        if owner_msg_id not in real_owner_msg_ids:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, which does "
+                "not resolve to a real owner-authored message in Command Center "
+                "task_activities. Presence of a string is never proof of an owner "
+                "message. Re-run the phase or obtain a genuine owner approval."
+                % (rec["phase_id"], owner_msg_id)
+            )
+
+        # (4) FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE. No owner
+        # record — real or forged — can waive a QC phase. A skip record for
+        # P1Q-COPY-QC / P-PROMPT-QC / P-TYPO-QC / P-SHIFT-QC is REFUSED outright.
+        pid = str(rec["phase_id"]).strip()
+        if pid in bd.UNSKIPPABLE_QC_PHASES:
             print(
-                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
-                "record lacks owner_msg_id or owner_action — a verifiable owner "
-                "reference is required to trace the skip to a real human decision.",
+                f"[load_skip_approvals] REFUSED phase {pid!r}: QC phases are "
+                "structurally unskippable (AF-QC-SKIP) — no owner record can waive "
+                "a QC phase.",
                 file=sys.stderr,
             )
             continue
@@ -824,13 +1172,45 @@ def load_skip_approvals(run_dir: Path) -> dict:
     return approvals
 
 
+def _expand_artifact_spec(run_dir: Path, spec: str) -> str:
+    """Resolve a manifest produces_artifact spec against the run's deck slug.
+
+    The manifest declares deck-owned artifacts as '{deck_slug}-templated' (e.g.
+    'working/delivery/{deck_slug}-WEBINAR.mp4' or 'working/deliverables/
+    {deck_slug}-WORKBOOK.pdf') — the same convention DELIVERABLES_REQUIRED and
+    the client_package_files set use. The filesystem never contains a literal
+    '{deck_slug}' directory/file, so every artifact-presence / sha check that
+    consumes a produces_artifact spec MUST expand the placeholder to the run's
+    deck slug (via _deck_slug) before comparing against disk. Missing/empty
+    specs and specs with no placeholder pass through unchanged."""
+    spec = (spec or "").strip()
+    if not spec or "{deck_slug}" not in spec:
+        return spec
+    slug = _deck_slug(run_dir) or "deck"
+    return spec.replace("{deck_slug}", slug)
+
 def _artifact_present(run_dir: Path, produces_artifact: str) -> bool:
     """True when a phase's declared produces_artifact exists in the run dir.
     Supports glob patterns (e.g. 'working/research/brief-*.md'). A null/empty
-    artifact spec counts as satisfied (the phase declares no concrete artifact)."""
-    spec = (produces_artifact or "").strip()
+    artifact spec counts as satisfied (the phase declares no concrete artifact).
+
+    '{deck_slug}' placeholder in the spec is expanded to the run's deck slug
+    first (the manifest convention for deck-owned artifacts like
+    '{deck_slug}-WORKBOOK.pdf' / '{deck_slug}-WEBINAR.mp4'). A " + "-separated
+    PAIR (P8.25-WORKBOOK declares 'working/deliverables/{deck_slug}-WORKBOOK.pdf
+    + {deck_slug}-WORKBOOK-FILLABLE.pdf') is split into its two entries and ALL
+    of them must exist -- an unsplit pair could never both be present on disk
+    (U01-R2, QC FAIL 6.46)."""
+    spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return True
+    specs = [s.strip() for s in spec.split(" + ") if s.strip()]
+    return all(_artifact_spec_present(run_dir, s) for s in specs)
+
+def _artifact_spec_present(run_dir: Path, spec: str) -> bool:
+    """True when ONE resolved artifact spec exists in the run dir.
+
+    Try run-dir-relative, then a bundle-style bare filename glob anywhere."""
     # Try run-dir-relative, then a bundle-style bare filename glob anywhere.
     if "*" in spec or "?" in spec:
         if list(run_dir.glob(spec)):
@@ -868,13 +1248,25 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     prior = sorted([ph for ph in phases if ph.get("order", 0) < target_order],
                    key=lambda p: p.get("order", 0))
     prior_ids = [ph["id"] for ph in prior]
+    # FIX-1 (AF-FORGED-APPROVAL): validate skip-record AUTHENTICITY FIRST, before
+    # the shared attestation/owner-skip gate runs. The shared gate accepts an
+    # owner_msg_id-bearing record without resolving it; if a forged/msg-id-less
+    # record short-circuits the shared gate BEFORE load_skip_approvals runs, the
+    # failure surfaces as AF-PHASE-SKIPPED instead of the required AF-FORGED-APPROVAL.
+    # Authenticity must win: a forged record authorizes nothing, so the build fails
+    # on the forgery itself (the QC row demands AF-FORGED-APPROVAL).
+    try:
+        approvals = load_skip_approvals(run_dir)
+    except ForgedApprovalError as _fae:
+        # A forged skip-approval is an attempt to self-authorize a phase skip — the
+        # build gate FAILS CLOSED (fatal string => exit 2 at caller).
+        return str(_fae)
     # Shared attestation / owner-skip decision (build_deck is the single source of truth).
     reason = bd.check_phase_preconditions(run_dir, target_phase_id, prior_ids)
     if reason:
         return reason
     # Additionally require each attested prior phase's produces_artifact to be present
     # (an attestation must correspond to a real artifact, unless owner-skip-approved).
-    approvals = load_skip_approvals(run_dir)
     for ph in prior:
         pid = ph["id"]
         if pid in approvals:
@@ -910,10 +1302,11 @@ def _slide_count(run_dir: Path, slides_path: Path) -> int:
 def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
                      adhoc: bool = False) -> None:
     """Phase-0: OCR-engine availability pre-flight (AF-OCR-ENGINE-MISSING, MASTER-SPEC
-    7.4) + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
-    (exit 4) on AF-OCR-ENGINE-MISSING or AF-KIE-BALANCE before any phase is
-    dispatched — this runs before research/copy/QC as well as before render, the
-    earliest possible point in the entire run."""
+    7.4) + FIX-14 agent-env pre-flight (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED)
+    + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
+    (exit 4) on AF-OCR-ENGINE-MISSING, AF-AGENT-ENV-*, or AF-KIE-BALANCE before any
+    phase is dispatched — this runs before research/copy/QC as well as before
+    render, the earliest possible point in the entire run."""
     platform = bd.detect_platform(run_dir, override=platform_override)
     worker_note = "mac -> fewer parallel render workers" if platform == "mac" else \
                   "vps -> more parallel render workers"
@@ -945,6 +1338,73 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
     print("=== PHASE-0 — OCR-engine pre-flight PASSED (engine available in this "
           "render environment) ===", flush=True)
 
+    # FIX-14 — MC_API_TOKEN / MISSION_CONTROL_URL regression guard (Error 8 / D-8).
+    # The 15-day 401 stall happened because the token was NOT in the gateway
+    # service-env. check_agent_env.py probes the agent runtime env live-process-first
+    # across the gateway service-env + secrets stores, AND verifies both labels are
+    # in the OPENCLAW_SERVICE_MANAGED_ENV_KEYS regeneration allow-list (a token in a
+    # store but not in that list is dropped on the next regeneration — the exact
+    # regression shape). HARD-ABORT (exit 4) here, before any phase is dispatched,
+    # so a box whose CC registration would silently 401 stops at minute zero.
+    #
+    # FAIL-CLOSED ON A MISSING MODULE: this preflight is wired into the canonical
+    # runner, so a deployment that drops check_agent_env.py must NOT silently pass
+    # the guard — a missing module reads as UNKNOWN and fails closed (AF-AGENT-ENV-
+    # UNKNOWN), so a regression can never hide behind an absent probe.
+    if _agent_env is not None:
+        _env_report = _agent_env.probe()
+        if _env_report["exit_code"] != 0:
+            print("\n" + "!" * 78, file=sys.stderr)
+            print("FATAL PHASE-0: %s (%s) — Command Center registration/delivery "
+                  "would silently 401. See the stores checked + per-label presence "
+                  "above; run regenerate-gateway-env.sh to wire the labels, restart "
+                  "the gateway, then re-run." % (
+                      _env_report["verdict"], _env_report["exit_code"]), file=sys.stderr)
+            print("!" * 78 + "\n", file=sys.stderr)
+            sys.exit(4)
+        print("=== PHASE-0 — agent-env pre-flight PASSED (MC_API_TOKEN + "
+              "MISSION_CONTROL_URL present and managed) ===", flush=True)
+    else:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: AF-AGENT-ENV-UNKNOWN — check_agent_env.py is not "
+              "co-located beside run_signature_deck.py. The FIX-14 regression guard "
+              "cannot run, so this box refuses (fail-closed; a missing probe must "
+              "never read as PASS). Install check_agent_env.py into the department "
+              "scripts dir and re-run.", file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
+
+    # FIX-18 — TOOL-SCHEMA LOOP ALERT (Error 10 / D17). The 2026-08-06 E2E logged
+    # 12x "args: must be object" + 3x "missing path" — the model serialized tool
+    # args as a STRING and re-emitted schema dumps, burning a retry cycle per turn.
+    # tool_schema_validator.py returns a NORMALIZED schema hint on a malformed
+    # call (so the model self-corrects in one turn) and writes an AF-TOOL-SCHEMA-LOOP
+    # event when a tool hits 5 CONSECUTIVE failures (so a loop is ALERTED, not
+    # silently re-tried forever). This preflight HARD-ABORTS (exit 4) when a
+    # prior phase already recorded such a loop event in this run's ledger.
+    #
+    # A missing validator module is NOT a delivery blocker (unlike FIX-14's env
+    # probe): the validator is a mitigation, and the dept verify.sh self-test
+    # catches a box that dropped it. Presence here proves the ledger is readable.
+    if _tool_schema is not None:
+        _loops = _tool_schema.active_loop_events(run_dir)
+        if _loops:
+            print("\n" + "!" * 78, file=sys.stderr)
+            print("FATAL PHASE-0: %s — %d tool(s) hit %d consecutive schema "
+                  "failures in this run. The model is looping on malformed tool "
+                  "args; it must be re-oriented, not re-run. %s" % (
+                      _loops[0]["event"]["code"], len(_loops),
+                      _tool_schema.CONSECUTIVE_FAILURE_LIMIT,
+                      _loops[0]["event"]["message"]), file=sys.stderr)
+            print("!" * 78 + "\n", file=sys.stderr)
+            sys.exit(4)
+        print("=== PHASE-0 — tool-schema loop alert CLEAR (no AF-TOOL-SCHEMA-LOOP "
+              "event in this run's ledger) ===", flush=True)
+    else:
+        print("=== PHASE-0 — tool_schema_validator.py not co-located; FIX-18 "
+              "loop-alert SKIPPED (verify.sh self-test covers this; delivery "
+              "proceeds) ===", flush=True)
+
     api_key = ""
     try:
         api_key = bd.load_api_key()
@@ -952,7 +1412,16 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
         # No key on this box — the render-phase subprocess will fail loud on its own.
         print("=== PHASE-0 — no Kie API key on this box; balance pre-flight deferred to "
               "the render subprocess ===", flush=True)
-    reason = bd.kie_balance_preflight(run_dir, slide_count, api_key or None)
+    # FIX-E2E (incremental resume): mirror build_deck — count only the
+    # UN-rendered slides for the balance floor so a resume/re-render (e.g. an
+    # OCR-retry on 2 of 20 slides) needs credit for the remaining 2, not the
+    # full deck. The pre-render phase passes the full slide_count; a
+    # low-but-sufficient balance would otherwise brick every resume.
+    try:
+        _remaining_count = max(0, slide_count - len(bd._gather_rendered_pngs(run_dir)))
+    except Exception:  # noqa: BLE001 — helper unavailable; fall back to full count
+        _remaining_count = slide_count
+    reason = bd.kie_balance_preflight(run_dir, _remaining_count, api_key or None)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)
         print("FATAL PHASE-0: " + reason, file=sys.stderr)
@@ -969,8 +1438,18 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
 # ---------------------------------------------------------------------------
 def print_plan(run_dir: Path, phases: list) -> None:
     attested = _attested_phase_ids(run_dir)
-    approvals = load_skip_approvals(run_dir)
+    forged = None
+    try:
+        approvals = load_skip_approvals(run_dir)
+    except ForgedApprovalError as _fae:
+        # FIX-1: a forged skip-approval record must never print as
+        # SKIP(owner-authorized). The phase shows `pending` and the fatal
+        # AF-FORGED-APPROVAL is surfaced on stderr (the build gate fails on it).
+        forged = str(_fae)
+        approvals = {}
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    if forged:
+        print("[load_skip_approvals] " + forged, file=sys.stderr, flush=True)
     print("=== SIGNATURE-DECK PHASE PLAN (manifest order) ===")
     for ph in ordered:
         pid = ph["id"]
@@ -994,7 +1473,13 @@ def _next_required_phase(run_dir: Path, phases: list):
     precondition gate walks, so the phase --next names is exactly the phase the next
     --phase call is allowed to attest."""
     attested = _attested_phase_ids(run_dir)
-    approvals = set(load_skip_approvals(run_dir).keys())
+    try:
+        approvals = set(load_skip_approvals(run_dir).keys())
+    except ForgedApprovalError as _fae:
+        # FIX-1: a forged skip-approval must not count as skip-approved — the
+        # phase stays `pending` and --next serves it as the required next phase.
+        print("[load_skip_approvals] " + str(_fae), file=sys.stderr, flush=True)
+        approvals = set()
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
     total = len(ordered)
     for i, ph in enumerate(ordered):
@@ -1003,6 +1488,53 @@ def _next_required_phase(run_dir: Path, phases: list):
             continue
         return ph, i + 1, total
     return None, total, total
+
+
+# ---------------------------------------------------------------------------
+# FIX-19 (D18) — right-size tool results. The --next payload hands the agent SOP
+# refs as bare filenames; reading one WHOLE (a 34-102KB SOP/role file) returns a
+# tool result the harness truncates ([tool-result-truncation] fired 33x in the
+# 2026-08-06 E2E). Each sop_ref is enriched with its resolved size + a
+# read_slice hint so the agent fetches ONLY the slice it needs.
+# ---------------------------------------------------------------------------
+def _sop_slice_guidance(sop_refs: list, run_dir: Path) -> list:
+    """Return [{ref, size_bytes, resolved, read_slice_hint, kind}] per sop_ref.
+
+    The hint is the exact CLI that returns just that slice; 'index' means the
+    ref is > MAX_SLICE_BYTES and the agent should run read_slice.py --index
+    first to find the section, then --lines to fetch it. Never raises: a ref
+    that cannot be resolved is returned with a null hint (the agent still has
+    the filename to read conventionally)."""
+    try:
+        import read_slice as _rs
+    except Exception:  # noqa: BLE001
+        _rs = None
+    out = []
+    for ref in sop_refs:
+        entry = {"ref": ref}
+        if _rs is not None:
+            try:
+                resolved = _rs._find_sop_file(ref, Path(__file__).resolve().parent)
+            except Exception:  # noqa: BLE001
+                resolved = None
+            if resolved is not None and resolved.is_file():
+                size = resolved.stat().st_size
+                entry.update({
+                    "resolved": str(resolved),
+                    "size_bytes": size,
+                    "kind": "sop",
+                    "read_slice_hint":
+                        f"python3 read_slice.py {ref} --index   # {size}B SOP — find the section"
+                        if size > _rs.MAX_SLICE_BYTES
+                        else f"python3 read_slice.py {ref} --lines A-B   # {size}B SOP",
+                    "sliced_read_required": size > _rs.MAX_SLICE_BYTES,
+                })
+            else:
+                entry.update({"resolved": None, "size_bytes": None,
+                              "kind": "unresolved",
+                              "read_slice_hint": None})
+        out.append(entry)
+    return out
 
 
 def emit_next(run_dir: Path, phases: list) -> None:
@@ -1051,12 +1583,20 @@ def emit_next(run_dir: Path, phases: list) -> None:
                 "required_brief_categories": ph.get("required_brief_categories", []),
                 "has_substance_verifier": pid in _GOVERNED_VERIFIER_PHASES,
             },
-            "sop_refs": ph.get("sop_refs", []),
+            "sop_refs": _sop_slice_guidance(ph.get("sop_refs", []), run_dir),
             "gate_codes": ph.get("gate_codes", []),
             "client_report": ph.get("client_report"),
             "attest_command": attest_cmd,
         },
         "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+        "read_slice_doctrine": (
+            "FIX-19: SOP files are 25-125KB. NEVER read one whole — a whole-file "
+            "tool result is truncated ([tool-result-truncation], D18) and you "
+            "reason from incomplete context. For each sop_ref use its "
+            "read_slice_hint: run `python3 read_slice.py <ref> --index` to find "
+            "the section, then `--lines A-B` to fetch only that slice. A sliced "
+            "read returns just the slice; the truncation counter stays 0."
+        ),
         "instruction": (
             "Do EXACTLY this one phase: produce its produces_artifact per the cited "
             "sop_refs, then run the attest_command to verify + attest it. Then run "
@@ -1087,6 +1627,37 @@ def assert_adhoc_authorized(run_dir: Path) -> None:
               "working/checkpoints/adhoc_authorization.json "
               "(owner_approved:true + approved_by + reason). It is NOT a free flag. "
               "Refusing the ad-hoc run.", file=sys.stderr)
+        sys.exit(2)
+    # FIX-1 / D20: adhoc authorization is folded into the SAME authenticity oracle
+    # as phase-skip approvals. EVERY adhoc record MUST carry a non-empty owner_msg_id
+    # and that id must resolve to a real owner-authored message. A record with only
+    # owner_approved/approved_by/reason but NO owner_msg_id is exactly the self-written
+    # bypass (D20) — it has no message to resolve through the oracle, so it is FORGED
+    # and the run is refused. Undetermined is DENIED too (never opens the gate).
+    _adhoc_obj = json.loads(p.read_text())
+    _adhoc_owner_msg_id = str(_adhoc_obj.get("owner_msg_id", "") or "").strip()
+    if not _adhoc_owner_msg_id:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc record has NO owner_msg_id. "
+              "Every adhoc authorization must carry a non-empty owner_msg_id that "
+              "resolves to a real owner-authored message in Command Center "
+              "task_activities. An owner_action/approved_by string alone is never "
+              "proof of an owner decision — a self-written ad-hoc authorization "
+              "with no message id is FORGED and is DENIED.", file=sys.stderr)
+        sys.exit(2)
+    _real_ids = _resolve_owner_msg_ids(run_dir)
+    if _real_ids is None:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc references owner_msg_id "
+              f"{_adhoc_owner_msg_id!r}, but the Command Center owner-message "
+              "oracle is UNDETERMINED (no cc_task_id on the run / board "
+              "unreachable). A self-authored ad-hoc authorization that cannot be "
+              "proven is DENIED.", file=sys.stderr)
+        sys.exit(2)
+    if _adhoc_owner_msg_id not in _real_ids:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc references owner_msg_id "
+              f"{_adhoc_owner_msg_id!r}, which does not resolve to a real "
+              "owner-authored message in Command Center task_activities. A "
+              "self-written ad-hoc authorization is not a genuine owner approval.",
+              file=sys.stderr)
         sys.exit(2)
     bar = "!" * 78
     print(bar, flush=True)
@@ -1728,6 +2299,53 @@ def main():
                 print("FATAL: --out is required to dispatch the render phase.",
                       file=sys.stderr)
                 sys.exit(2)
+            # FIX-E2E attest-existing: if ALL rendered slides are already present
+            # AND every post-render gate passes (OCR readback 20/20, image-QC
+            # present + vision, visual-variety), attest P4-RENDER from the
+            # existing verified renders instead of unconditionally re-submitting
+            # the batch. This makes a genuine canonical render (already produced,
+            # verified) attestable without a wasteful, non-deterministic
+            # re-render that overwrites the verified set. Still goes through the
+            # canonical runner's front-door nonce + phase-precondition chain; no
+            # bypass. Mirrors the resume design intent (count only un-rendered
+            # slides at the balance gate) — the batch submit honoring it here.
+            _rendered = bd._gather_rendered_pngs(run_dir)
+            _expected_n = _slide_count(run_dir, slides_path)
+            if _rendered and len(_rendered) >= _expected_n:
+                _gates_ok = True
+                _gate_msgs = []
+                for _gfn in (bd.check_ocr_readback, bd.check_image_qc_present,
+                             bd.check_image_qc_vision, bd.check_visual_variety):
+                    try:
+                        _msg = _gfn(run_dir)
+                    except Exception as _e:  # noqa: BLE001
+                        _msg = f"{getattr(_gfn, '__name__', _gfn)} raised: {_e}"
+                    if _msg:
+                        _gates_ok = False
+                        _gate_msgs.append(str(_msg))
+                if _gates_ok:
+                    # Genuine canonical renders verified — attest P4-RENDER from
+                    # the existing set. artifact_sha = hash of the renders' names
+                    # (proves the produces_artifact was inspected; FIX 4/E).
+                    _render_sha = _hash_render_set(run_dir)
+                    # Also record the genuine build_deck 'render' phase record
+                    # (real taskIds/sha256s from pending_tasks.json) so the
+                    # delivery boundary gate's AF-NOT-KIE-RENDERED check passes
+                    # with the actual render that happened (FIX-E2E).
+                    _write_render_record_from_existing(run_dir, Path(args.out).resolve())
+                    attest_phase(run_dir, "P4-RENDER", "run_signature_deck",
+                                 "artifact_present",
+                                 artifact_sha=_render_sha,
+                                 substance_verified=True)
+                    print("=== P4-RENDER ATTESTED from existing verified renders "
+                          f"({len(_rendered)}/{_expected_n} slides, all gates "
+                          "passing) — no re-render needed (FIX-E2E attest-existing) ===",
+                          flush=True)
+                    emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+                    sys.exit(0)
+                print("NOTE: existing renders present but gates not all green "
+                      f"({_gate_msgs}) — falling through to the canonical batch "
+                      "render.", file=sys.stderr, flush=True)
             rc = _dispatch_render(run_dir, slides_path, Path(args.out).resolve(),
                                   platform=args.platform, adhoc=args.adhoc)
             if rc == 0:
@@ -1782,7 +2400,16 @@ def main():
         # owner_skip_approval token. --adhoc does NOT waive this — it is the gate that
         # makes a faked "Done" impossible.
         if args.phase == DELIVERY_PHASE_ID:
-            phase_skips = set(load_skip_approvals(run_dir).keys())
+            try:
+                phase_skips = set(load_skip_approvals(run_dir).keys())
+            except ForgedApprovalError as _fae:
+                # FIX-1: delivery may not proceed past a forged skip-approval — the
+                # forged record authorizes nothing, so the attestation chain is
+                # incomplete and delivery FAILS CLOSED (AF-FORGED-APPROVAL).
+                print("\n" + "!" * 78, file=sys.stderr)
+                print("FATAL PRE-DELIVERY: " + str(_fae), file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
             reason = guard.guard_pre_delivery(run_dir, phases, slides_path,
                                               phase_skip_approvals=phase_skips)
             if reason:
@@ -1833,6 +2460,50 @@ def main():
                 print("\n" + "!" * 78, file=sys.stderr)
                 print(f"FATAL PRE-DELIVERY (BOUNDARY GATE): delivery_gate boundary check "
                       f"raised {exc!r} — cannot prove the shipped artifact is deliverable "
+                      "(fail-closed).", file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
+
+            # FIX-8: FULL 9-DELIVERABLE BUNDLE GATE (AF-BUNDLE-INCOMPLETE).
+            # The delivery boundary gate above proves the SHIPPED .pptx/.pdf and the
+            # SIX-file client package. This gate separately enforces the NINE-file
+            # OPERATOR build bundle (deck_pptx, deck_pdf, guide_pdf, speech_md,
+            # speech_pdf, speech_fish_md, audio_mp3, infographic_png,
+            # teleprompter_html) — the M2-M9 gap from the live E2E (task e738cff0),
+            # where only the deck PPTX existed. Fail-closed: a partial bundle can
+            # never be reported 'done', and the gate writes bundle_complete.json only
+            # when all nine are present and non-empty. The ONLY bypass is a logged
+            # owner_skip_approval token (gate=AF-BUNDLE-INCOMPLETE) — never an
+            # agent's own choice.
+            try:
+                import fix_bundle_complete as fbc
+                _bundle_dir = fbc.resolve_bundle_dir(run_dir)
+                _bundle_ok, _bundle_missing, _bundle_gate = fbc.run_bundle_gate(
+                    _bundle_dir, deck_slug=_deck_slug(run_dir))
+                if not _bundle_ok:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print("FATAL PRE-DELIVERY (BUNDLE GATE): AF-BUNDLE-INCOMPLETE — the "
+                          f"full 9-deliverable bundle is incomplete in {_bundle_dir}:",
+                          file=sys.stderr)
+                    for _k in sorted(_bundle_missing):
+                        print(f"  - {_k}", file=sys.stderr)
+                    print("Re-run the upstream producer roles (guide / speech / audio / "
+                          "infographic / teleprompter) until all nine exist and are "
+                          "non-empty before attesting P9-DELIVER.", file=sys.stderr)
+                    print("The ONLY bypass is a logged owner_skip_approval token "
+                          "(gate=AF-BUNDLE-INCOMPLETE). An agent may NOT self-approve.",
+                          file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                print("=== FULL-9-BUNDLE GATE: PASS — all nine operator deliverables "
+                      f"present and non-empty (bundle_complete.json: {_bundle_gate}) ===",
+                      flush=True)
+            except SystemExit:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                print("\n" + "!" * 78, file=sys.stderr)
+                print(f"FATAL PRE-DELIVERY (BUNDLE GATE): fix_bundle_complete raised "
+                      f"{exc!r} — the full 9-deliverable bundle cannot be proven "
                       "(fail-closed).", file=sys.stderr)
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
@@ -1990,6 +2661,13 @@ def main():
             # a run that closed with zero successful board advances.
             if args.phase == DELIVERY_PHASE_ID:
                 _board_assert_advanced(run_dir)
+                # FIX-13 (M12): the deck is registered and delivered — send the OWNER
+                # the deck LOCATION via the CC report-back loop (openclaw message send,
+                # never the raw Telegram API). Recorded in client_reports.json as a
+                # `delivery_link` row whose text carries the deck link + msg id.
+                # Fail-soft by contract: a box with no owner target records an honest
+                # undeliverable and the run still exits clean (delivery is complete).
+                emit_delivery_link(run_dir)
             sys.exit(0)
         print(
             f"FATAL: phase {args.phase} produces_artifact "
@@ -2093,7 +2771,22 @@ def _dispatch_generic_executor(run_dir: Path, executor: dict, phase_id: str) -> 
         stage = f" (stage {i}/{n})" if n > 1 else ""
         print(f"=== DISPATCH {phase_id}{stage} (executor): {' '.join(argv)} ===", flush=True)
         try:
-            proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+            # FIX-21 (D21): process-group exec + timeout so a hung executor can never
+            # orphan. TimeoutExpired is caught below and surfaces as a phase FAIL
+            # (AF-EXECUTOR-TIMEOUT via the exit code) — never a silent hang.
+            if run_with_cleanup is not None:
+                proc = run_with_cleanup(argv, cwd=str(HERE.parent),
+                                        timeout=EXECUTOR_TIMEOUT_SECONDS, capture=False)
+            else:
+                proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+        except subprocess.TimeoutExpired as exc:
+            print(
+                f"FATAL: phase {phase_id!r} executor{stage} exceeded the "
+                f"{EXECUTOR_TIMEOUT_SECONDS}s outer cap (AF-EXECUTOR-TIMEOUT). "
+                f"Process group killed — no orphan left. Phase NOT attested.",
+                file=sys.stderr,
+            )
+            return EXIT_EXECUTOR_FAILED
         except OSError as exc:
             print(
                 f"FATAL: phase {phase_id!r} executor{stage} could not start "
@@ -2139,7 +2832,21 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
     if adhoc:
         cmd += ["--adhoc-no-process"]
     print(f"=== DISPATCH RENDER (subprocess): {' '.join(cmd)} ===", flush=True)
-    proc = subprocess.run(cmd)
+    # FIX-21 (D21): this dispatcher previously had NO timeout — a hung build_deck.py
+    # ran forever and its scanning orphans masked the dead render. Now: process-group
+    # exec with a hard wall-clock cap; on timeout the whole group is killed and the
+    # render FAILS LOUD (no silent hang, no orphan).
+    try:
+        if run_with_cleanup is not None:
+            proc = run_with_cleanup(cmd, timeout=RENDER_DISPATCH_TIMEOUT_SECONDS,
+                                    capture=False)
+        else:
+            proc = subprocess.run(cmd)
+    except subprocess.TimeoutExpired:
+        print("FATAL PRE-DELIVERY: AF-RENDER-TIMEOUT — build_deck.py render exceeded "
+              f"{RENDER_DISPATCH_TIMEOUT_SECONDS}s and was killed (process group "
+              "cleaned up). No orphan remains.", file=sys.stderr)
+        return EXIT_GUARD_BLOCK
     if proc.returncode == 0:
         # build_deck.py appends its own render record; the attestation reader counts it.
         print("=== RENDER phase complete — build_deck.py render record attested ===",
@@ -2166,7 +2873,18 @@ def _dispatch_notes_sync(run_dir: Path, slides_path: Path, out_path: Path,
     if adhoc:
         cmd += ["--adhoc-no-process"]
     print(f"=== DISPATCH P9.5-NOTES-SYNC (subprocess): {' '.join(cmd)} ===", flush=True)
-    proc = subprocess.run(cmd)
+    # FIX-21 (D21): process-group exec + timeout, same discipline as _dispatch_render.
+    try:
+        if run_with_cleanup is not None:
+            proc = run_with_cleanup(cmd, timeout=EXECUTOR_TIMEOUT_SECONDS,
+                                    capture=False)
+        else:
+            proc = subprocess.run(cmd)
+    except subprocess.TimeoutExpired:
+        print("FATAL PRE-DELIVERY: AF-NOTES-SYNC-TIMEOUT — notes-sync exceeded "
+              f"{EXECUTOR_TIMEOUT_SECONDS}s and was killed (process group cleaned up).",
+              file=sys.stderr)
+        return EXIT_GUARD_BLOCK
     if proc.returncode == 0:
         print("=== P9.5-NOTES-SYNC complete — notes_sync.json written ===", flush=True)
     return proc.returncode

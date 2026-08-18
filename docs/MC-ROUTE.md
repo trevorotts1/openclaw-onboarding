@@ -62,30 +62,36 @@ clears the G7 INTERIM classification.
 
 `exec` is **retained, not removed**, and this is deliberate: OpenClaw's
 config-layer `exec` policy is `{security, ask}` and **cannot command-allowlist**,
-so it cannot allow the sanctioned helpers while denying arbitrary shell. That
-command-level "only the sanctioned helpers" restriction is enforced by the
-PreToolUse **intent-gate** (`hooks/ceo-intent-gate.sh`), which default-**denies**
-every non-routing exec. Fully dropping `exec` at the config layer would deny the
-CEO the `route-presentation.sh` helper that REFLEX V2 STEP 1 mandates (a
-documented flow), because a config-layer deny is restrict-only and cannot be
-un-denied by the hook. So exec stays as the channel for the two anchored
-sanctioned helpers only; it is retired outright once the reflex migrates
+so it cannot allow the sanctioned helpers while denying arbitrary shell.
+
+> **UPDATE 2026-08-05 — there is currently NO command-level exec restriction.**
+> That restriction used to be enforced by the PreToolUse **intent-gate**
+> (`hooks/ceo-intent-gate.sh`), which default-**denied** every non-routing exec.
+> Per Trevor, that hook has been **deleted from the repo and unwired fleet-wide**
+> — it was the source of the write-deny/`memoryFlush` loop that ate two weeks of
+> Telegram messages. Nothing replaced it at the command level: the CEO Routing
+> Doctrine plugin that replaced the gate is a **prompt-injection** layer
+> (`before_prompt_build`) with **no tool-deny** at all. So `exec` on the router is
+> today restricted only by the `{security, ask}` config policy. Treat any claim
+> below that the intent-gate enforces something as historical.
+
+Fully dropping `exec` at the config layer would still deny the CEO the
+`route-presentation.sh` helper that REFLEX V2 STEP 1 mandates (a documented
+flow), because a config-layer deny is restrict-only. So exec stays as the channel
+for the sanctioned helpers; it is retired outright once the reflex migrates
 `route-presentation.sh` onto `mc-route__route_task`.
 
 ## Follow-ups for other owners (out of this fix's lane)
 
 These land the fix fleet-wide; each is one edit in another owner's file:
 
-1. **Intent-gate carve-out** (`hooks/ceo-intent-gate.sh`, gate owner): add an
-   ANCHORED `mc-route.sh` allow beside the existing `route-presentation.sh` one
-   (ceo-intent-gate.sh:224). Suggested, mirroring that line exactly:
-   ```
-   if printf '%s' "$_CMD" | grep -qE '^[[:space:]]*((bash|sh)[[:space:]]+)?[~/][^[:space:]]*/\.openclaw/scripts/mc-route\.sh([[:space:]]|$)'; then
-     exit 0
-   fi
-   ```
-   Anchored to the command's start (optionally through a leading `bash`/`sh`), so
-   a look-alike mentioned mid-command does NOT match (no substring bypass).
+1. ~~**Intent-gate carve-out** (`hooks/ceo-intent-gate.sh`, gate owner): add an
+   ANCHORED `mc-route.sh` allow beside the existing `route-presentation.sh` one.~~
+   **NO LONGER APPLICABLE (2026-08-05).** `hooks/ceo-intent-gate.sh` was deleted
+   from the repo and unwired fleet-wide (see the UPDATE box above), so there is no
+   allowlist to carve out and no gate to add it to. `mc-route.sh` needs no
+   exec carve-out: with the hook gone, nothing denies it at the command level.
+   Do not re-create the hook to add a carve-out — that reintroduces the loop.
 2. **Config write-sites re-sync** (`23-ai-workforce-blueprint/scripts/build-workforce.py`,
    `scripts/apply-routing-fix.sh`, `scripts/apply-fleet-standards.sh` — their
    owners): add `mc-route__route_task` to each inline CEO allow list (the sites

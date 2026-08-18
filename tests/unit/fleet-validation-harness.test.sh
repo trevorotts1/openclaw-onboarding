@@ -41,9 +41,11 @@ BOXES="$WORK/boxes.json"
 EXPECT="$WORK/expectations.json"
 FIXTURE_OK="$WORK/fixture-all-green.json"
 FIXTURE_BROKEN="$WORK/fixture-one-broken.json"
+FIXTURE_LANDMINE="$WORK/fixture-landmine.json"
 
 # ── fixtures: 20 boxes; box-07 is the deliberately-broken one ────────────────
-BOXES="$BOXES" EXPECT="$EXPECT" FIXTURE_OK="$FIXTURE_OK" FIXTURE_BROKEN="$FIXTURE_BROKEN" python3 - <<'PY'
+BOXES="$BOXES" EXPECT="$EXPECT" FIXTURE_OK="$FIXTURE_OK" FIXTURE_BROKEN="$FIXTURE_BROKEN" \
+FIXTURE_LANDMINE="$FIXTURE_LANDMINE" python3 - <<'PY'
 import json, os
 
 names = [f"box-{i:02d}" for i in range(1, 21)]
@@ -57,6 +59,11 @@ json.dump({
     "repo_version": VER,
     "repo_sha": SHA,
     "openclaw_min_version": "2026.5.22",
+    # What the FLEET RECORD claims this wave runs. The config_schema check
+    # compares the MEASURED `openclaw --version` against this; a mismatch is a
+    # FAIL against the record. The record for the box that went dark was two
+    # minor versions stale, so version is measured, never trusted.
+    "openclaw_recorded_version": "2026.5.22",
     "run_retries_max": 3,
     "writeback_url": "http://127.0.0.1:4000/api/tasks/ingest",
 }, open(os.environ["EXPECT"], "w"))
@@ -72,6 +79,8 @@ def healthy():
         "openclaw_version": {"rc": 0, "stdout": "2026.5.22"},
         "run_retries": {"rc": 0, "stdout": "3"},
         "repo_stamp": {"rc": 0, "stdout": f"{VER}\n{SHA}"},
+        # No legacy `agents.list`, and the gateway plist keeps a real stderr log.
+        "config_schema": {"rc": 0, "stdout": "CLEAN\nstderr=/Users/svc/Library/Logs/openclaw/gateway.err.log"},
     }
 
 ok = {"boxes": {n: {"probes": healthy()} for n in names}}
@@ -84,6 +93,17 @@ broken["boxes"]["box-07"]["probes"]["token_store"] = {
     "stdout": json.dumps({"verdict": "GENUINELY-ABSENT", "where_found": [], "live_env_checked": True}),
 }
 json.dump(broken, open(os.environ["FIXTURE_BROKEN"], "w"))
+
+# ── F fixture: the LANDMINE wave ─────────────────────────────────────────────
+# box-03 still carries the legacy `agents.list` key AND its LaunchAgent throws
+# stderr away (the exact pair that kept a real box dark for days).
+# box-11 is schema-clean but MEASURES a version two minors above what the fleet
+# record claims — the record-drift half of the same check.
+landmine = {"boxes": {n: {"probes": healthy()} for n in names}}
+landmine["boxes"]["box-03"]["probes"]["config_schema"] = {
+    "rc": 0, "stdout": "LEGACY\nstderr=/dev/null"}
+landmine["boxes"]["box-11"]["probes"]["openclaw_version"] = {"rc": 0, "stdout": "2026.7.2"}
+json.dump(landmine, open(os.environ["FIXTURE_LANDMINE"], "w"))
 PY
 
 echo "=============================================================="
@@ -173,6 +193,55 @@ PY
 )"
 [ "$NO_SECRET" = "0" ] && pass "no secret-shaped value anywhere in the ledger" \
                        || fail "a secret-shaped value reached the ledger ($NO_SECRET file(s))"
+
+echo
+echo "=============================================================="
+echo "F. the LANDMINE wave: legacy \`agents.list\` + a stale fleet RECORD"
+echo "=============================================================="
+# box-03 carries the legacy `agents.list` key (fatal on the 2026.7.2-beta line:
+# the gateway exits 78 every ~11s until the crash-loop breaker latches channels
+# OFF and the box goes dark) AND its LaunchAgent discards stderr, which is why
+# that crash was invisible for ten days.
+# box-11 is schema-clean but MEASURES a version the fleet record does not claim.
+# Both must FAIL. A sweep that calls either of these green is the bug.
+OUT_LM="$(bash "$VALIDATE" --sweep-id "${SWEEP}-lm" --boxes-file "$BOXES" --expectations "$EXPECT" \
+            --backend sim --sim-fixture "$FIXTURE_LANDMINE" 2>&1)"
+RC_LM=$?
+echo "$OUT_LM" | sed 's/^/    | /'
+LM_DIR="/tmp/${SWEEP}-lm"
+
+[ "$RC_LM" = "2" ] && pass "landmine wave exits 2 (NOT green)" \
+                   || fail "landmine wave exited $RC_LM (want 2)"
+echo "$OUT_LM" | grep -q "box-03" && pass "names the box carrying the legacy schema" \
+                                  || fail "did not name box-03"
+echo "$OUT_LM" | grep -qi "agents.list" && pass "states the ROOT CAUSE (legacy agents.list key)" \
+                                        || fail "did not name the agents.list key"
+echo "$OUT_LM" | grep -qi "doctor --fix" && pass "states the REMEDY (openclaw doctor --fix)" \
+                                         || fail "did not state the remedy"
+echo "$OUT_LM" | grep -qi "discards stderr" && pass "flags that the box's LaunchAgent discards stderr (the reason it stayed invisible)" \
+                                            || fail "did not flag the /dev/null stderr sink"
+echo "$OUT_LM" | grep -q "box-11" && pass "names the box whose MEASURED version differs from the record" \
+                                 || fail "did not name box-11"
+echo "$OUT_LM" | grep -qi "RECORD DRIFT" && pass "calls the version mismatch RECORD DRIFT (the record is wrong, not the box)" \
+                                         || fail "did not report record drift"
+
+S_03="$(python3 -c "import json;print(json.load(open('$LM_DIR/box-03.json'))['checks']['config_schema']['status'])" 2>/dev/null)"
+[ "$S_03" = "FAIL" ] && pass "box-03 config_schema check = FAIL" || fail "box-03 config_schema = $S_03"
+S_11="$(python3 -c "import json;print(json.load(open('$LM_DIR/box-11.json'))['checks']['config_schema']['status'])" 2>/dev/null)"
+[ "$S_11" = "FAIL" ] && pass "box-11 config_schema check = FAIL (record drift)" || fail "box-11 config_schema = $S_11"
+
+# CONTROL: the other 18 boxes, identical except for the injected fault, stay
+# green. Without this, "the wave failed" would be evidence of a broken check.
+LM_GREEN=0
+for i in $(seq -w 1 20); do
+    [ "$i" = "03" ] && continue
+    [ "$i" = "11" ] && continue
+    S="$(python3 -c "import json;print(json.load(open('$LM_DIR/box-$i.json'))['status'])" 2>/dev/null)"
+    [ "$S" = "PASS" ] && LM_GREEN=$((LM_GREEN+1))
+done
+[ "$LM_GREEN" = "18" ] && pass "CONTROL: the other 18 boxes are still PASS — the check discriminates, it does not just fail everything" \
+                       || fail "CONTROL FAILED: expected 18 green boxes, got $LM_GREEN (the new check may be failing indiscriminately)"
+rm -rf "$LM_DIR"
 
 echo
 echo "=============================================================="

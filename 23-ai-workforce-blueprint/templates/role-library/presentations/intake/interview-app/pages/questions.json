@@ -1,0 +1,184 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "deck-intake-mini",
+  "version": "1.0.0",
+  "question_set": "standard",
+  "source": "deck-intake-questions.json (v1.3.0, curated)",
+  "description": "Curated 13-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.3.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 13. Progress label is 'Question N of 13'. presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it.",
+  "questions": [
+    {
+      "id": "presentation_type",
+      "section": "deck-intake",
+      "order": 0,
+      "prompt": "What kind of presentation do you need?",
+      "help": "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length. Pick the one that fits.",
+      "kind": "text",
+      "storeOn": "pre_presentation_capture.PRESENTATION_TYPE",
+      "allowed_values": ["from_scratch", "content_personal", "content_general", "signature"],
+      "value_labels": {
+        "from_scratch": "From scratch — we brainstorm your topic and build a brand-new presentation",
+        "content_personal": "From something I already have, made for ONE specific person",
+        "content_general": "From something I already have, made for a room or wider audience",
+        "signature": "The full Signature Presentation — a longer, multi-part keynote (100+ slides)"
+      },
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "offer_name",
+      "section": "deck-intake",
+      "order": 1,
+      "prompt": "What are you SELLING at the end — the exact name of the product or offer?",
+      "help": "The OFFER sold at the end of the presentation — never invented.",
+      "kind": "text",
+      "storeOn": "deck_brief.OFFER_NAME",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "transformation_promise",
+      "section": "deck-intake",
+      "order": 2,
+      "prompt": "What's the before-and-after this offer delivers — who are they before, and who are they after?",
+      "help": "The transformation promise drives the whole arc. Example: 'stuck and overwhelmed' to 'clear, confident, and closing'.",
+      "kind": "text",
+      "storeOn": "deck_brief.TRANSFORMATION_PROMISE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "audience",
+      "section": "deck-intake",
+      "order": 3,
+      "prompt": "Who is this presentation for? Tell us about your audience — the pain point that brought them here.",
+      "help": "Industry, income level, and the specific pain that brought them. This seeds the audience-engine.",
+      "kind": "text",
+      "storeOn": "deck_brief.AUDIENCE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "cta_action",
+      "section": "deck-intake",
+      "order": 4,
+      "prompt": "What is the exact call-to-action — the specific verb and next step you want them to take?",
+      "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide.",
+      "kind": "text",
+      "storeOn": "deck_brief.CTA_ACTION",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "brand_primary",
+      "section": "deck-intake",
+      "order": 5,
+      "prompt": "Do you have a logo or brand colors you want on the slides?",
+      "help": "If no logo is on file, provide one here or we build without one and stay on-brand to the presentation system.",
+      "kind": "logo",
+      "storeOn": "deck_brief.BRAND_PRIMARY",
+      "logo_on_slides": "deck_brief.LOGO_ON_SLIDES",
+      "required": false,
+      "block_gate": false,
+      "default": ""
+    },
+    {
+      "id": "image_links",
+      "section": "deck-intake",
+      "order": 6,
+      "prompt": "Paste any image links you want used in the deck. (Optional — add up to 5.)",
+      "help": "Product photos, headshots, brand imagery. We source images through the approved image pipeline; links here are used as grounded references.",
+      "kind": "image_links",
+      "storeOn": "deck_brief.IMAGE_LINKS",
+      "required": false,
+      "block_gate": false,
+      "default": []
+    },
+    {
+      "id": "tone",
+      "section": "deck-intake",
+      "order": 7,
+      "prompt": "Pick a tone — Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium. You can also blend two.",
+      "help": "One of the seven named styles, or a blend of two.",
+      "kind": "text",
+      "storeOn": "deck_brief.TONE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "final_price",
+      "section": "deck-intake",
+      "order": 8,
+      "prompt": "What is the final price of the offer?",
+      "help": "The OFFER price only — what a buyer pays at the end. Set 0 only if this is a free-only close.",
+      "kind": "text",
+      "storeOn": "deck_brief.FINAL_PRICE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "speech_speed_preference",
+      "section": "deck-intake",
+      "order": 9,
+      "prompt": "At what pace should we record the audio narration?",
+      "help": "default = our recommended setting (1.25), medium = 1.3, fast = 1.33.",
+      "kind": "text",
+      "allowed_values": ["default", "medium", "fast"],
+      "value_labels": {
+        "default": "Default pace (recommended)",
+        "medium": "Medium pace",
+        "fast": "Fast pace"
+      },
+      "default": "default",
+      "storeOn": "intake.json",
+      "key": "speech_speed_preference",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "want_sales_checkout",
+      "section": "deck-intake-upsell",
+      "order": 10,
+      "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation?",
+      "help": "Default YES. A 'no' records a client waiver — you keep the deck and optionally a VSL page.",
+      "kind": "text",
+      "allowed_values": ["yes", "no"],
+      "value_labels": {
+        "yes": "Yes, build the sales page and checkout page",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "pre_presentation_capture.WANT_SALES_CHECKOUT",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "want_vsl_page",
+      "section": "deck-intake-upsell",
+      "order": 11,
+      "prompt": "Would you like a VSL page — a video sales letter page — to go along with this?",
+      "help": "Default NO — a VSL page needs the video to exist first. Say yes only if a hosted video is in scope.",
+      "kind": "text",
+      "allowed_values": ["yes", "no"],
+      "value_labels": {
+        "yes": "Yes, build the VSL page",
+        "no": "No thank you"
+      },
+      "default": "no",
+      "storeOn": "pre_presentation_capture.WANT_VSL_PAGE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "client_notes",
+      "section": "deck-intake",
+      "order": 12,
+      "prompt": "Anything else important we should know before we start?",
+      "help": "Extras: target slide count, deadline, proof assets, or anything else. Optional.",
+      "kind": "text",
+      "storeOn": "deck_brief.CLIENT_NOTES",
+      "required": false,
+      "block_gate": false,
+      "default": ""
+    }
+  ]
+}

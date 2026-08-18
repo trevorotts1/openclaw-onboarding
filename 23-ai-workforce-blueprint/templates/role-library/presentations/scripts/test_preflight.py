@@ -23,11 +23,14 @@ Plus unit assertions on the build_deck.py check functions directly (no subproces
 Run:  python3 test_preflight.py
 Exit: 0 = all assertions passed; 1 = a case failed.
 """
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import unittest.mock as _mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +40,62 @@ BUILD = HERE / "build_deck.py"
 sys.path.insert(0, str(HERE))
 import build_deck  # noqa: E402
 import delivery_gate  # noqa: E402  (R9-F9 mechanical last-mile gate)
+
+
+# ---------------------------------------------------------------------------
+# FIX-1 oracle mock — patch cc_board's HTTP layer so the owner-ids endpoint
+# returns a scripted set of REAL owner-authored message ids. Undetermined (no
+# patch) fails CLOSED in the engine; a patched set is the positive control.
+# ---------------------------------------------------------------------------
+def _patch_owner_ids_oracle(real_ids):
+    """Return an active mock.patch on cc_board's urlopen whose GET
+    /api/tasks/*/messages/owner-ids returns `real_ids` (HTTP 200). Anything
+    else raises — the engine should only ever make this one oracle call.
+
+    Also pins cc_board.board_config so the oracle is REACHABLE regardless of the
+    host environment (no COMMAND_CENTER_URL / MISSION_CONTROL_URL in the env means
+    board_config returns None and the oracle is UNDETERMINED -> fail-closed)."""
+    import cc_board  # noqa: E402
+
+    class _FakeResp:
+        def __init__(self, payload):
+            self._b = json.dumps(payload).encode()
+
+        def read(self):
+            return self._b
+
+        def getcode(self):
+            return 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_open(req, timeout=None):
+        if req.full_url.endswith("/messages/owner-ids"):
+            return _FakeResp(sorted(real_ids))
+        raise AssertionError(f"unexpected oracle URL {req.full_url!r}")
+
+    patches = [
+        _mock.patch.object(cc_board.urllib.request, "urlopen", _fake_open),
+        _mock.patch.object(cc_board, "board_config", return_value={
+            "base_url": "https://cc.example.test",
+            "token": "tok-test",
+            "secret": "",
+            "timeout": 8,
+        }),
+    ]
+    for p in patches:
+        p.start()
+
+    class _Both:
+        def stop(self):
+            for p in patches:
+                p.stop()
+
+    return _Both()
 
 SLIDES = [
     {"slide": 1, "scene": "A sunlit modern office, editorial photography.",
@@ -302,6 +361,16 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     _talk_minutes = 30
     _floor_slides = int(__import__("math").ceil(_talk_minutes * 1.3))  # 39
     if with_artifacts:
+        # WORKSTREAM FIX (AF-RESEARCH-REACHES-RENDER): the research anchors that the
+        # weave gate validates in slides_copy.md MUST also reach the RENDER COPY
+        # (slides.json copy[]) — the file build_deck.py bakes into the slides. The
+        # research map below assigns anchor "stat-01".."stat-10" to slides 2..11; those
+        # anchors are woven into the copy[] here (as body copy) so the renderer's
+        # preflight (_chk_research_reaches_render) sees the validated research reach the
+        # deck, exactly as a compliant builder must. Without this the deck renders with
+        # NO research even though the markdown gate passed — the divergence this gate
+        # exists to close.
+        _anchors = {i + 1: f"stat-{i:02d}" for i in range(1, 11)}
         deck_slides = [
             {"slide": i,
              "scene": f"Editorial office scene {i}, documentary photography.",
@@ -309,7 +378,11 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
              # 12 chars (exactly the 12-char floor); the subhead is sized to clear
              # the 20-110 char subhead band and keep the 40-180 char slide-total
              # band in range for every i in this fixture's range.
-             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]}
+             # Research-woven slides (2..11) carry their mapped anchor as a short body
+             # line so AF-RESEARCH-REACHES-RENDER sees the validated research reach the
+             # render copy.
+             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]
+                     + ([f"stat-{i-1:02d}"] if i in _anchors else [])}
             for i in range(1, _floor_slides + 1)
         ]
         (root / "slides.json").write_text(json.dumps(deck_slides))
@@ -321,6 +394,13 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # R3 AF-DECK-TYPE-UNSET: a full-artifacts run dir must declare a deck type
+        # (webinar|signature_presentation) — derive_legacy_fields() writes it from the
+        # ONE presentation_type answer, and every preflight refuses an unset deck_type.
+        _deck_type = Path(root / "working" / "copy" / "intake.json")
+        _intake = json.loads(_deck_type.read_text())
+        _intake["deck_type"] = "webinar"
+        _deck_type.write_text(json.dumps(_intake))
         # v16.0.1 — a NON-adhoc render is now bound to Phase P0B-PRIORITY at EVERY entry
         # point (build_deck.run_preflight reuses check_phase_preconditions to refuse unless
         # P0B-PRIORITY is attested in process_manifest.json). A full modern pipeline run
@@ -517,14 +597,29 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         # subhead copy block so the verbatim-words-baked check (AF-P-VERBATIM)
         # passes for every slide when the CLI threads slides.json into _collect_prompt_problems.
         if rich_prompts:
+            _anchor_for = {i + 1: f"stat-{i:02d}" for i in range(1, 11)}
             for i in range(1, _floor_slides + 1):
                 if short_prompt:
                     text = "short prompt"
                 else:
+                    # WORKSTREAM FIX: the research anchor must ALSO be baked verbatim
+                    # into the rich prompt (AF-P-VERBATIM requires every slide's exact
+                    # copy[] string to appear in the prompt body). Slides 2..11 carry
+                    # their mapped anchor in copy[]; the prompt quotes it too so the
+                    # research actually renders INTO the baked slide.
+                    anchor_block = ""
+                    if i in _anchor_for:
+                        anchor_block = (
+                            f"\nSUPPORTING LINE VERBATIM SLIDE {i}: The slide carries a "
+                            f"research line that reads exactly: '{_anchor_for[i]}'. Render "
+                            f"this exact string letter-for-letter with zero modification, "
+                            f"spelled correctly.\n"
+                        )
                     copy_block = (
                         f"\nHEADLINE VERBATIM SLIDE {i}: The slide subhead reads exactly: "
                         f"'Converting beat {i} into repeatable revenue'. Render this exact "
                         f"string letter-for-letter with zero modification, spelled correctly.\n"
+                        + anchor_block
                     )
                     text = RICH_PROMPT + copy_block
                 (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
@@ -620,6 +715,20 @@ def test_chk_coverage():
     reason = build_deck._chk_coverage(rd)
     if reason:
         fails.append(f"COVERAGE: source absent (Mode A) should PASS but got: {reason!r}")
+
+    # mission_prd.json PRESENT but malformed/unparseable (absence-vs-malformed hole,
+    # CheckResult.UNDETERMINED doctrine) => must FAIL/refuse, NEVER silently collapse
+    # to Mode A's source=0 default. A genuinely-absent file is a legitimate Mode A
+    # pass (tested above); a present-but-corrupt file is a DIFFERENT, THIRD state
+    # that could be hiding a real Mode-B source_slide_count, so it must refuse.
+    rd = _coverage_run_dir(None, 3)
+    (rd / "working" / "copy" / "mission_prd.json").write_text("{not valid json!!!")
+    reason = build_deck._chk_coverage(rd)
+    if not reason:
+        fails.append("COVERAGE: malformed mission_prd.json should FAIL/UNDETERMINED "
+                     "(not silently collapse to Mode A) but passed")
+    elif "AF-COVERAGE-1" not in reason or "unreadable" not in reason.lower():
+        fails.append(f"COVERAGE: malformed-mission_prd fail message malformed: {reason!r}")
 
     print(f"COVERAGE (anti-compression) -> {'PASS' if not fails else 'FAIL'}")
     return fails
@@ -1057,6 +1166,7 @@ _VALID_MAGIC_FOR_TEST = {
     "speech_md":         b"# speech\n",          # no magic required; arbitrary text
     "speech_fish_md":    b"# fish-tagged\n",     # no magic required; arbitrary text
     "teleprompter_html": b"<!DOCTYPE html>\n",   # HTML magic (teleprompter app)
+    "webinar_mp4":       b"\x00\x00\x00\x18ftypmp42",  # MP4 ftyp box magic (webinar video)
 }
 
 
@@ -1066,6 +1176,62 @@ def _valid_bytes_for(key: str, total: int) -> bytes:
     head = _VALID_MAGIC_FOR_TEST.get(key, b"")
     pad = max(0, total - len(head))
     return head + (b"\x00" * pad)
+
+
+def _real_pptx_bytes(min_bytes: int) -> bytes:
+    """Build a GENUINELY openable .pptx (via python-pptx, not magic-byte padding) that
+    clears `min_bytes`, has NO native on-slide text (image-only, per Decision 5C), and
+    a non-empty speaker-notes pane on every slide (per the notes-injection doctrine).
+
+    WHY THIS EXISTS (gates-absence slice g5, PR follow-up): g5's own fix makes
+    _chk_notes_pane / _delivered_pptx_native_text return CheckResult.UNDETERMINED (FAIL
+    on this completeness gate) when the delivered .pptx exists but python-pptx cannot
+    actually open it — closing a real hole where a corrupted-but-magic-byte-valid file
+    silently passed as clean. The postflight test fixtures (_postflight_bundle_dir)
+    previously wrote magic-byte-only padding for deck_pptx via _valid_bytes_for, which
+    was NEVER a real openable pptx -- it only ever cleared the C2 magic-byte/size gate,
+    a fact g5's fix now correctly surfaces. This helper restores the "all artifacts
+    present" test scenarios to their true intent (a genuinely complete, valid bundle)
+    without touching g5's production fix at all. Uses incompressible random-noise
+    images (not a solid fill) so the real byte count clears the 1MB floor honestly,
+    the same way a real gpt-image-2 render would."""
+    import random as _random
+    from pptx import Presentation
+    from pptx.util import Inches
+    from PIL import Image
+
+    rnd = _random.Random(20260817)  # deterministic, not a source of flakiness
+
+    def _noise_png(w: int, h: int) -> bytes:
+        im = Image.new("RGB", (w, h))
+        im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
+                    for _ in range(w * h)])
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", compress_level=1)
+        return buf.getvalue()
+
+    prs = Presentation()
+    blank_layout = prs.slide_layouts[6]  # blank layout: no text placeholders at all
+    slide_count = 0
+    buf = io.BytesIO()
+    while True:
+        slide = prs.slides.add_slide(blank_layout)
+        slide_count += 1
+        slide.shapes.add_picture(io.BytesIO(_noise_png(900, 700)), 0, 0,
+                                  width=Inches(10), height=Inches(7.5))
+        slide.notes_slide.notes_text_frame.text = (
+            f"Speaker notes for slide {slide_count} -- injected from the "
+            "QC-passed presenter speech, never empty.")
+        buf.seek(0)
+        buf.truncate(0)
+        prs.save(buf)
+        if buf.tell() >= min_bytes or slide_count >= 6:
+            break
+    data = buf.getvalue()
+    assert len(data) >= min_bytes, (
+        f"_real_pptx_bytes could not clear {min_bytes} bytes in {slide_count} slides "
+        f"(got {len(data)}) -- raise the per-slide image size, not the slide cap.")
+    return data
 
 
 def _write_publish_ledger(bundle_dir: Path, status="published",
@@ -1109,8 +1275,15 @@ def _postflight_bundle_dir(present_keys: set, with_publish: bool = True) -> tupl
         fname = build_deck._expand_filename(spec["filename"], deck_slug)
         fpath = bundle_dir / fname
         if key in present_keys:
-            # Write a real-magic file that exceeds the threshold by a comfortable margin.
-            fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
+            if key == "deck_pptx":
+                # GENUINELY openable (python-pptx), image-only, notes-populated --
+                # magic-byte padding alone no longer represents "a real delivered
+                # deck" now that _chk_notes_pane / _delivered_pptx_native_text
+                # (gates-absence g5) fail-closed on a file they cannot actually open.
+                fpath.write_bytes(_real_pptx_bytes(spec["min_bytes"]))
+            else:
+                # Write a real-magic file that exceeds the threshold by a comfortable margin.
+                fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
     if with_publish and "teleprompter_html" in present_keys:
         _write_publish_ledger(bundle_dir)
     return bundle_dir, ledger_path, deck_slug
@@ -1211,10 +1384,11 @@ def test_postflight_gate():
             f"got {build_deck.BUNDLE_DIR_DEFAULT!r}")
     print(f"POSTFLIGHT-G (Downloads def) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-G' in f] else 'FAIL'}")
 
-    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 9 required keys ---
+    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 10 required keys ---
+    # (Loop-2 added the 10th: webinar_mp4 — the Webinar Creator video deliverable.)
     required_keys = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_md",
                      "speech_pdf", "speech_fish_md", "audio_mp3", "infographic_png",
-                     "teleprompter_html"}
+                     "teleprompter_html", "webinar_mp4"}
     actual_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
     if actual_keys != required_keys:
         fails.append(
@@ -1262,6 +1436,110 @@ def test_postflight_gate():
     print(f"POSTFLIGHT-I (byte-floor doctrine reconcile) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I' in f] else 'FAIL'}")
 
     print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_postflight_speech_length_reverify():
+    """SPEECH-LENGTH closeout re-check (AF-SPEECH-SHORT) — absence-vs-not-yet-produced
+    gap fix: the DELIVERABLES_REQUIRED speech_md entry only proves a >=2KB
+    PRESENTERS-SPEECH.md exists in the bundle (~290 words) — far below the real
+    target_talk_minutes x 120wpm floor for a long talk. _chk_speech_length is
+    CONDITIONAL BY DESIGN at the single pre-render run_preflight() call (the speech
+    genuinely does not exist yet there, so it legitimately defers), but nothing
+    previously re-verified the real word-count floor once the speech was actually
+    written — a short-but-not-empty speech could clear the generic byte floor
+    forever uncaught. run_postflight_gate() now re-invokes _chk_speech_length(run_dir)
+    at closeout, mirroring the pre-existing _chk_kie_baked re-check pattern.
+
+      (a) run_dir with a 30-min target + a speech well UNDER the 3,600-word floor,
+          with a bundle speech_md that still clears the generic byte floor -> exit 5.
+      (b) run_dir with a 30-min target + a speech AT the floor -> PASSES.
+      (c) run_dir=None (bare gate-only invocation) -> the sub-check is skipped,
+          matching the existing kie_baked/brand/visual-variety contract (never fails
+          a caller that has no run dir).
+
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    def _speech_run_dir_for_postflight(words: int) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="deck_postflight_speech_test_"))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"interview_confirmed": True, "presentation_mode": "general",
+             "audience_mode": "STANDARD", "target_talk_minutes": 30}))
+        (root / "working" / "presenter-speech").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "presenter-speech" / "speech.md").write_text(
+            " ".join(["word"] * words))
+        # Satisfy the UNRELATED closeout sub-checks (_chk_cc_registered AND, since
+        # gates-absence g5, _chk_kie_baked(require_rendered=True)) so this fixture
+        # isolates the speech-length re-check specifically — once run_dir is
+        # threaded into run_postflight_gate, EVERY run-dir-scoped closeout sub-check
+        # fires, not just the one under test.
+        (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        # A real-shaped KIE render record (same fixture pattern test_chk_kie_baked
+        # already uses): one baked slide, real taskId, a PNG above
+        # PLACEHOLDER_MIN_BYTES, a unique sha256. slides_path is never threaded
+        # into this call (run_postflight_gate's own kie_baked invocation omits it
+        # too), so _count_output_slides() returns None and the slide-count
+        # cross-check is skipped — only "is there a real render record" matters here.
+        png_path = root / "kie-baked-1.png"
+        png_body = b"\x89PNG\r\n\x1a\n" + (b"\x00" * (build_deck.PLACEHOLDER_MIN_BYTES + 1024))
+        png_path.write_bytes(png_body)
+        import hashlib as _hashlib
+        (root / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({
+                "phase_attestations": [],
+                "cc_task_id": "task-pf-speech-test",
+                "cc_register_attempted": True,
+                "cc_registration": _cc_registration_receipt(
+                    "task-pf-speech-test", "sha256-deck-key", "test-deck"),
+                "phases": [{
+                    "phase": "render",
+                    "output_slide_count": 1,
+                    "slides": [{
+                        "slide": 1,
+                        "taskId": "kie-task-pf-speech-1",
+                        "image": str(png_path),
+                        "image_sha256": _hashlib.sha256(png_body).hexdigest(),
+                    }],
+                }],
+            }))
+        return root
+
+    # (a) speech well under the 30min x 120wpm = 3,600-word floor -> exit 5.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(500)  # far under 3,600
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+        fails.append("PF-SPEECH-A: 500-word speech (30min target) should exit 5 "
+                     "(SPEECH_TOO_SHORT) but gate passed -- the closeout re-check "
+                     "did not fire")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"PF-SPEECH-A: expected exit 5, got {exc.code}")
+    print(f"PF-SPEECH-A (short speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-A' in f] else 'FAIL'}")
+
+    # (b) speech at the floor -> PASSES.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    run_dir = _speech_run_dir_for_postflight(3600)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug, run_dir=run_dir)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-B: 3,600-word speech (30min target, at floor) should "
+                     f"PASS, got sys.exit({exc.code})")
+    print(f"PF-SPEECH-B (floor speech)   -> {'PASS' if not [f for f in fails if 'PF-SPEECH-B' in f] else 'FAIL'}")
+
+    # (c) no run_dir threaded -> sub-check skipped, matches existing kie_baked contract.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"PF-SPEECH-C: no run_dir threaded should not fail on speech-length "
+                     f"(sub-check skipped), got sys.exit({exc.code})")
+    print(f"PF-SPEECH-C (no run_dir)     -> {'PASS' if not [f for f in fails if 'PF-SPEECH-C' in f] else 'FAIL'}")
+
+    print(f"PF-SPEECH (closeout re-verify)-> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -2612,13 +2890,19 @@ def test_check_phase_preconditions():
     if build_deck.check_phase_preconditions(root, "P4-RENDER", ["P3-ARC"]):
         fails.append("PHASE-SKIP: attested prior should PASS but failed")
     # Owner-authorized skip of a NOT-attested phase => precondition satisfied.
+    # FIX-1 (AF-FORGED-APPROVAL): a skip is a verifiable owner-authorized skip ONLY
+    # when it carries a NON-EMPTY owner_msg_id. The full message resolution goes
+    # through the runner's cc_board owner-ids oracle (covered by the authenticity
+    # test); the shared gate here refuses msg-id-less records up front. The record
+    # below carries an owner_msg_id so it is a well-formed FIX-1 skip that PASSES.
     root2 = _g4_run_dir("deck_g4_phaseskip2_")
     ck2 = root2 / "working" / "checkpoints"
     ck2.mkdir(parents=True, exist_ok=True)
     (ck2 / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
                         "approved_by": "owner", "reason": "no pitch in this deck",
-                        "timestamp": "2026-06-20T00:00:00Z"}]}))
+                        "timestamp": "2026-06-20T00:00:00Z",
+                        "owner_msg_id": "owner-msg-p3-arc"}]}))
     if build_deck.check_phase_preconditions(root2, "P4-RENDER", ["P3-ARC"]):
         fails.append("PHASE-SKIP: owner-authorized skip should PASS but failed")
     print(f"PHASE-PRECONDITIONS (3C)     -> {'PASS' if not fails else 'FAIL'}")
@@ -2676,6 +2960,121 @@ def test_runner_attestation_seen_by_preconditions():
     return fails
 
 
+def _style_attested_workdir() -> Path:
+    """Gate 1 (fix/two-remaining-gates) — the SAME 'full modern pipeline' fixture
+    make_workdir(with_artifacts=True) builds, but with P-STYLE-PREVIEW ALSO
+    attested in process_manifest.json's phases[] (alongside the P0B-PRIORITY
+    attestation make_workdir already writes). Proves the POSITIVE case: once the
+    style-preview phase really is attested, the STYLE_PHASE_GATE binding passes in
+    BOTH warn and enforce stage."""
+    root = make_workdir(with_artifacts=True)
+    pm_path = root / "working" / "checkpoints" / "process_manifest.json"
+    pm = json.loads(pm_path.read_text())
+    pm["phases"].append({"phase_id": "P-STYLE-PREVIEW",
+                         "role": "style-preview", "status": "artifact_present"})
+    pm_path.write_text(json.dumps(pm))
+    return root
+
+
+def test_style_phase_gate() -> list:
+    """Gate 1 close (fix/two-remaining-gates): run_preflight()'s STYLE_PHASE_GATE
+    binding (mirrors the v16.0.1 P0B-PRIORITY binding) closes the hole where a
+    DIRECT build_deck.py invocation could render past the owner's 3-style-preview
+    pick with zero enforcement (the runner already makes P-STYLE-PREVIEW mandatory
+    for P4-RENDER; only the direct-call path lacked the binding). Staged per Rule
+    3.5 (STYLE_PHASE_GATE_STAGE, default 'warn'). Proves BOTH directions plus the
+    owner-skip waiver, calling run_preflight() directly (no subprocess):
+      (a) WARN stage, P-STYLE-PREVIEW NOT attested (the make_workdir(with_artifacts=
+          True) shared fixture — used by CASE2 and everything layered on it) ->
+          run_preflight() completes WITHOUT sys.exit(3); stderr carries a WARN line
+          naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW. THIS is the one that matters
+          most: a legitimate run that reaches the gate before the style-preview
+          artifact exists still proceeds, unbricked, at the shipped default stage.
+      (b) ENFORCE stage (monkeypatched), SAME unattested fixture -> run_preflight()
+          NOW sys.exit(3), naming AF-PHASE-SKIPPED / P-STYLE-PREVIEW in the refusal
+          — proving the genuinely-missing artifact is caught once enforce ships, and
+          the block does not read as approval (exit 3, explicit reason, not a
+          silent pass).
+      (c) P-STYLE-PREVIEW attested (a runner-attested / real pipeline run) -> PASSES
+          in BOTH stages (no sys.exit(3) either way).
+      (d) an owner-authorized STYLE_PHASE_ID skip record (owner_msg_id present,
+          the SAME shape check_phase_preconditions already accepts) -> passes in
+          ENFORCE stage too, on the otherwise-unattested fixture."""
+    fails = []
+    orig_stage = build_deck.STYLE_PHASE_GATE_STAGE
+    try:
+        # (a) WARN stage (the shipped default) — must NOT brick the shared fixture.
+        build_deck.STYLE_PHASE_GATE_STAGE = "warn"
+        root = make_workdir(with_artifacts=True)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                build_deck.run_preflight(root)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-A: warn-stage should NOT exit, got sys.exit({exc.code})")
+        stderr_text = err.getvalue()
+        if "AF-PHASE-SKIPPED" not in stderr_text or "P-STYLE-PREVIEW" not in stderr_text:
+            fails.append("STYLE-GATE-A: expected a WARN line naming AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW on stderr, got: {stderr_text!r}")
+        if "WARN" not in stderr_text:
+            fails.append(f"STYLE-GATE-A: expected a WARN-prefixed line, got: {stderr_text!r}")
+
+        # (b) ENFORCE stage, same unattested fixture -> must sys.exit(3).
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root2 = make_workdir(with_artifacts=True)
+        out2, err2 = io.StringIO(), io.StringIO()
+        exited = False
+        try:
+            with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(err2):
+                build_deck.run_preflight(root2)
+        except SystemExit as exc:
+            exited = True
+            if exc.code != 3:
+                fails.append(f"STYLE-GATE-B: enforce-stage should exit 3, got {exc.code}")
+        if not exited:
+            fails.append("STYLE-GATE-B: enforce-stage should sys.exit(3) on an unattested "
+                         "style-preview phase but run_preflight() returned normally")
+        combined2 = out2.getvalue() + err2.getvalue()
+        if "AF-PHASE-SKIPPED" not in combined2 or "P-STYLE-PREVIEW" not in combined2:
+            fails.append("STYLE-GATE-B: expected the refusal to name AF-PHASE-SKIPPED / "
+                         f"P-STYLE-PREVIEW, got: {combined2!r}")
+
+        # (c) P-STYLE-PREVIEW attested -> passes in BOTH stages.
+        for stage in ("warn", "enforce"):
+            build_deck.STYLE_PHASE_GATE_STAGE = stage
+            root3 = _style_attested_workdir()
+            out3, err3 = io.StringIO(), io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out3), contextlib.redirect_stderr(err3):
+                    build_deck.run_preflight(root3)
+            except SystemExit as exc:
+                fails.append(f"STYLE-GATE-C ({stage}): style-attested fixture should PASS, "
+                             f"got sys.exit({exc.code})")
+
+        # (d) owner-authorized skip of STYLE_PHASE_ID -> passes in ENFORCE stage too.
+        build_deck.STYLE_PHASE_GATE_STAGE = "enforce"
+        root4 = make_workdir(with_artifacts=True)
+        ckpt4 = root4 / "working" / "checkpoints"
+        ckpt4.mkdir(parents=True, exist_ok=True)
+        (ckpt4 / "phase_skip_approvals.json").write_text(json.dumps(
+            {"approvals": [{"phase_id": "P-STYLE-PREVIEW", "owner_approved": True,
+                            "approved_by": "owner", "reason": "test waiver",
+                            "timestamp": "2026-06-20T00:00:00Z",
+                            "owner_msg_id": "owner-msg-style-preview"}]}))
+        out4, err4 = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out4), contextlib.redirect_stderr(err4):
+                build_deck.run_preflight(root4)
+        except SystemExit as exc:
+            fails.append(f"STYLE-GATE-D: owner-authorized skip should PASS in enforce "
+                         f"stage, got sys.exit({exc.code})")
+    finally:
+        build_deck.STYLE_PHASE_GATE_STAGE = orig_stage
+
+    print(f"STYLE-PHASE-GATE (Gate 1)    -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_runner_next_turn_gate():
     """FOUNDATION (--next phase turn-gate). The runner — not prose — is the agent's
     interface to what is next. Proves, directly against emit_next's phase selector:
@@ -2712,11 +3111,23 @@ def test_runner_next_turn_gate():
                      f"step 2, got {ph2 and ph2['id']!r} step {k2}")
 
     # (c) an owner-authorized skip of the second phase => it is treated as satisfied.
+    #     FIX-1 (AF-FORGED-APPROVAL): the skip is authentic ONLY when owner_msg_id
+    #     resolves to a real owner message. Seed the CC owner-ids oracle so "42" is
+    #     a GENUINE owner message id (the positive control); a forged id must fail
+    #     closed (covered by test_forged_owner_msg_id_* below).
+    _pm_path = rd / "working" / "checkpoints" / "process_manifest.json"
+    _pm_obj = json.loads(_pm_path.read_text()) if _pm_path.exists() else {}
+    _pm_obj["cc_task_id"] = "task-oracle-seeded"  # merge — keep the attestation from (b)
+    _pm_path.write_text(json.dumps(_pm_obj))
     (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": second_id, "owner_approved": True,
                         "approved_by": "owner", "reason": "not applicable to this deck",
                         "timestamp": "2026-07-10T12:00:00Z", "owner_msg_id": "42"}]}))
-    ph3, _, _ = rsd._next_required_phase(rd, phases)
+    _oracle = _patch_owner_ids_oracle({"42"})
+    try:
+        ph3, _, _ = rsd._next_required_phase(rd, phases)
+    finally:
+        _oracle.stop()
     if ph3 is not None and ph3["id"] == second_id:
         fails.append(f"NEXT-GATE (c): an owner-authorized skip of {second_id!r} should be treated "
                      f"as satisfied, but --next still served it")
@@ -2743,8 +3154,12 @@ def test_runner_next_turn_gate():
         fails.append(f"NEXT-GATE (e): all-complete emit_next should report all_phases_complete/None, "
                      f"got status={done_payload.get('status')!r}")
     buf2 = io.StringIO()
-    with contextlib.redirect_stdout(buf2):
-        rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    _oracle2 = _patch_owner_ids_oracle({"42"})  # authentic skip (positive control)
+    try:
+        with contextlib.redirect_stdout(buf2):
+            rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    finally:
+        _oracle2.stop()
     served = json.loads(buf2.getvalue()).get("next_phase") or {}
     cmd = served.get("attest_command", "")
     if not served.get("id") or f"--phase {served.get('id')}" not in cmd:
@@ -3156,24 +3571,59 @@ def _sp_provers():
 # A COMPLIANT intake conversation: choice-first opener, then exactly one bank question
 # per assistant turn. This is the shape deck-intake-driver.py's turn-gate records, and it
 # is what P-SP-INTAKE-TRACE (A10 / T0-12) proves. A signature run dir gets it by default
-# so every other SP fixture stays green against the new gate.
+# so every other SP fixture stays green against the new gate. FIX-3: each turn carries the
+# bank question id it was surfaced under (the driver stamps `qid` per turn), so the
+# signed-envelope provenance gate accepts it.
 _SP_CLEAN_TRANSCRIPT = [
-    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
-    {"role": "owner", "text": "quick"},
-    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
-    {"role": "owner", "text": "The Signature Talk"},
-    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?"},
-    {"role": "owner", "text": "the overlooked mid-career expert"},
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?",
+     "qid": "interview_choice"},
+    {"role": "owner", "text": "quick", "qid": "interview_choice"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+    {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?", "qid": "q3"},
+    {"role": "owner", "text": "the overlooked mid-career expert", "qid": "q3"},
 ]
 # The documented anti-pattern: three bank questions dumped in ONE assistant turn, with no
-# quick-vs-in-depth choice offered first.
+# quick-vs-in-depth choice offered first. Still a signed envelope so the failure surfaced
+# is the CONVERSATION batch (BATCH-IN-TURN), not the provenance.
 _SP_BATCHED_TRANSCRIPT = [
     {"role": "assistant", "text": (
         "What is the title of your Signature Presentation? "
         "Any specific pain points to address in the avatar section? "
-        "What product(s) will you offer at the end?")},
-    {"role": "owner", "text": "give me whatever you have got and I will get moving"},
+        "What product(s) will you offer at the end?"),
+     "qid": "q1"},
+    {"role": "owner", "text": "give me whatever you have got and I will get moving", "qid": "q1"},
 ]
+
+
+def _sp_qid_sequence(turns):
+    """Derive the monotonic qid sequence from the assistant turns' qid stamps,
+    mirroring deck-intake-driver._transcript_qid_sequence (first-surfaced order,
+    no duplicates)."""
+    seen = []
+    seen_set = set()
+    for t in turns:
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("role") or "").strip().lower() != "assistant":
+            continue
+        qid = str(t.get("qid") or "").strip()
+        if qid and qid not in seen_set:
+            seen_set.add(qid)
+            seen.append(qid)
+    return seen
+
+
+def _sp_signed_envelope(turns):
+    """FIX-3: wrap a turn list in the signed driver envelope the turn-gate writes.
+    Falls back to a bare list when the checker module is not resolvable (so the
+    conversation-rule fixtures still work in isolation); the engine's provenance
+    gate requires the envelope, and the checker's own module-level provenance
+    tests cover the bare-list rejection."""
+    itc = build_deck._sp_prover("intake_trace_check")
+    if itc is not None and hasattr(itc, "build_driver_envelope"):
+        return itc.build_driver_envelope(_sp_qid_sequence(turns), turns)
+    return turns
 
 
 def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript="clean"):
@@ -3181,8 +3631,11 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     signature=True (else omitted, so the _chk_sp_* wrappers DEFER).
 
     transcript: "clean" (default) writes the compliant one-question-per-turn intake
-    transcript at working/interview/intake_transcript.json; "batched" writes the batched
-    anti-pattern; None writes no transcript at all (the OMISSION case)."""
+    transcript at working/interview/intake_transcript.json (as a SIGNED DRIVER
+    ENVELOPE — FIX-3); "batched" writes the batched anti-pattern (signed envelope,
+    so the conversation-rule failure is the BATCH, not the provenance); "bare"
+    writes a hand-written BARE LIST (the fabricated shape FIX-3 rejects);
+    None writes no transcript at all (the OMISSION case)."""
     rd = Path(tempfile.mkdtemp(prefix="deck_sp_test_"))
     (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
     intake = {"deck_type": "signature_presentation"} if signature else {"interview_confirmed": True}
@@ -3192,9 +3645,18 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     if sp_structure is not None:
         (rd / "working" / "copy" / "sp_structure.json").write_text(json.dumps(sp_structure))
     if transcript is not None:
-        turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
-        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
-        (rd / "working" / "interview" / "intake_transcript.json").write_text(json.dumps(turns))
+        if transcript == "bare":
+            # FABRICATED shape (FIX-3): a hand-written bare JSON list — no driver
+            # envelope, no signature. Written RAW so the provenance gate rejects it.
+            turns = _SP_CLEAN_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(turns))
+        else:
+            turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(_sp_signed_envelope(turns)))
     return rd
 
 
@@ -3260,6 +3722,13 @@ def _sp_adversarial_cases(spi, sps, spn):
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="batched")))
     cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript=None)))
+    # FIX-3 — FABRICATION: a hand-written BARE LIST transcript (no driver envelope,
+    # no signature) next to a complete hand-written intake_ledger.json. This is the
+    # exact shape ERROR 3 of the 2026-08-06 E2E audit produced. It must FAIL with
+    # AF-INTAKE-BATCH even though its content is conversationally compliant —
+    # a bare list is not proof of a real one-at-a-time conversation.
+    cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
+                  _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="bare")))
     return cases
 
 
@@ -3277,8 +3746,16 @@ def test_sp_wrappers():
         print("SP wrappers -> FAIL (provers not importable)")
         return fails
 
-    # (a) GOLDEN signature deck — all three wrappers PASS ("").
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), sp_structure=sps._valid_fixture())
+    # (a) GOLDEN signature deck — all three wrappers PASS (""). GK-23/D18: the bare
+    # fixture (no turn_ledger_provenance) is only grandfathered through
+    # prove_sp_intake.GRACE_WINDOW_UNTIL (2026-08-15); a genuine post-window PASS
+    # fixture must carry the real driver-paced provenance stamp — the SAME helper
+    # the prover module's own self-test uses for its "GK-23-fixtureA-driver-paced"
+    # must-PASS case, built to mirror exactly what deck-intake-driver.py's
+    # build_turn_ledger_provenance() writes (per-question turn id +
+    # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
+    # test_slice1_gates.py's genuine SP-intake fixture.
+    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(), sp_structure=sps._valid_fixture())
     for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
                  "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(gold)
@@ -3302,6 +3779,98 @@ def test_sp_wrappers():
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
     print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def _sp_claim_fallback_run_dir(*, intake_extra=None, sp_intake_present=False,
+                               ledger=None) -> Path:
+    """fix/two-remaining-gates (Gate 2) — a bare run dir for exercising
+    _chk_sp_claim's `mod is None` fallback directly, independent of the real
+    prove_sp_routing.py signal set. intake_extra merges into intake.json (deck_type
+    omitted unless the caller supplies it); sp_intake_present writes an EMPTY
+    working/copy/sp_intake.json (signal 1); ledger writes
+    working/interview/intake_ledger.json verbatim (signal 4)."""
+    rd = Path(tempfile.mkdtemp(prefix="deck_sp_claim_fallback_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    intake = dict(intake_extra or {})
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    if sp_intake_present:
+        (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps({}))
+    if ledger is not None:
+        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+        (rd / "working" / "interview" / "intake_ledger.json").write_text(json.dumps(ledger))
+    return rd
+
+
+def test_sp_claim_mod_none_fallback() -> list:
+    """Gate 2 close (fix/two-remaining-gates): _chk_sp_claim's `mod is None` fallback
+    (prove_sp_routing.py not co-located) formerly checked ONLY signal 1
+    (sp_intake.json presence) — signals 2-4 that the docstring already promises
+    (signature_frame, presentation_type=='signature', intake_ledger.json entries)
+    were silently open. Forces mod is None via _SP_PROVER_CACHE and proves:
+      (a) signal 2 (intake.json.signature_frame set) + deck_type unset -> NOW fails
+          AF-SP-TYPE-UNDECLARED (previously silently passed -- the closed hole);
+      (b) signal 3 (intake.json.presentation_type=='signature') + deck_type unset
+          -> same;
+      (c) signal 4a (intake_ledger.json entries.signature_frame) + deck_type unset
+          -> same;
+      (d) signal 4b (intake_ledger.json sp_entries.sp_mode) + deck_type unset
+          -> same;
+      (e) REGRESSION GUARD: a plain non-signature deck (NO signals at all) with
+          mod is None still returns "" -- the common non-SP-deck-on-a-degraded-box
+          path stays unblocked;
+      (f) REGRESSION GUARD: signals present but deck_type IS declared
+          signature_presentation -> "" (the claim is made, nothing to block)."""
+    fails = []
+    orig_cache = dict(build_deck._SP_PROVER_CACHE)
+    try:
+        build_deck._SP_PROVER_CACHE["prove_sp_routing"] = None
+
+        # (a) signature_frame set, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"signature_frame": "vault"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-A (signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (b) presentation_type=='signature', deck_type unset.
+        rd = _sp_claim_fallback_run_dir(intake_extra={"presentation_type": "signature"})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-B (presentation_type): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (c) ledger entries.signature_frame, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"entries": {"signature_frame": {"value": "rulebook"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-C (ledger signature_frame): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (d) ledger sp_entries.sp_mode, deck_type unset.
+        rd = _sp_claim_fallback_run_dir(
+            ledger={"sp_entries": {"sp_mode": {"value": "QUICK"}}})
+        r = build_deck._chk_sp_claim(rd)
+        if "AF-SP-TYPE-UNDECLARED" not in _af_codes_in(r):
+            fails.append(f"FALLBACK-D (ledger sp_mode): expected AF-SP-TYPE-UNDECLARED, got {r!r}")
+
+        # (e) REGRESSION GUARD -- no signals at all, mod is None -> must stay "".
+        rd = _sp_claim_fallback_run_dir(intake_extra={"interview_confirmed": True})
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-E (no signals): expected '', got {r!r}")
+
+        # (f) REGRESSION GUARD -- signals present AND deck_type declared -> "".
+        rd = _sp_claim_fallback_run_dir(
+            intake_extra={"signature_frame": "vault",
+                         "deck_type": "signature_presentation"},
+            sp_intake_present=True)
+        r = build_deck._chk_sp_claim(rd)
+        if r != "":
+            fails.append(f"FALLBACK-F (declared): expected '', got {r!r}")
+    finally:
+        build_deck._SP_PROVER_CACHE.clear()
+        build_deck._SP_PROVER_CACHE.update(orig_cache)
+
+    print(f"SP-CLAIM mod-is-None fallback (Gate 2) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -3385,6 +3954,21 @@ def emit_af_coverage():
         record("AF-P1", str(exc))
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
+
+    # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
+    # a prompts dir holding a 1-digit name (slide-1.txt — non-canonical even under
+    # the R3 2/3-digit overlay), a 4-digit name (slide-0100.txt), AND a zero-pad
+    # collision (slide-01.txt vs slide-1.txt) FAILS the shared choke point with
+    # both codes. This closes the AF-QC-INDEPENDENCE-class no-op for the two
+    # autofails U02-SYNCFIX registered (AF-PROMPT-NAME, AF-PROMPT-DUP-FILE).
+    _pp_root = Path(tempfile.mkdtemp(prefix="deck_prompt_dir_problems_"))
+    (_pp_root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (_pp_root / "working" / "prompts" / "slide-1.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-01.txt").write_text("x")
+    (_pp_root / "working" / "prompts" / "slide-0100.txt").write_text("x")
+    for _prob in build_deck._canonical_prompt_dir_problems(_pp_root):
+        record("AF-PROMPT-NAME", _prob)
+        record("AF-PROMPT-DUP-FILE", _prob)
 
     # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
     over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
@@ -3596,6 +4180,37 @@ def emit_af_coverage():
     # below-floor balance so the gate fires deterministically with no network.
     record("AF-KIE-BALANCE", _kie_balance_probe())
 
+    # AF-KIE-AUTH (FIX-6/FIX-23 manifest reconcile) — a PERMANENT auth failure on the
+    # balance call (AuthError, the 401 storm class) surfaces AF-KIE-AUTH from
+    # kie_balance_preflight, never 'unknown balance'. Monkeypatch _fetch_kie_balance
+    # to raise AuthError so the gate fires deterministically with no network.
+    _auth_orig = build_deck._fetch_kie_balance
+    try:
+        def _auth_fail(*a, **k):
+            raise build_deck.AuthError("401 Unauthorized — permanent auth failure")
+        build_deck._fetch_kie_balance = _auth_fail
+        record("AF-KIE-AUTH", build_deck.kie_balance_preflight(
+            _g4_run_dir("deck_g4_kieauth_"), 20, "stub-key"))
+    finally:
+        build_deck._fetch_kie_balance = _auth_orig
+
+    # AF-FORGED-APPROVAL (FIX-1/FIX-23 manifest reconcile) — an owner_action-only skip
+    # record (NO owner_msg_id) is the exact self-forgery vector the live E2E used; the
+    # shared gate check_phase_preconditions REFUSES it and surfaces AF-FORGED-APPROVAL,
+    # keeping the phase REQUIRED (fail-closed). Write a forged skip record and drive
+    # the gate; capture stderr so the record() self-check sees the code text.
+    _forged_root = _g4_run_dir("deck_g4_forged_")
+    _forged_ck = _forged_root / "working" / "checkpoints"
+    _forged_ck.mkdir(parents=True, exist_ok=True)
+    (_forged_ck / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
+                        "approved_by": "owner", "reason": "self-forged, no message id",
+                        "timestamp": "2026-06-20T00:00:00Z"}]}))  # NO owner_msg_id
+    _forged_buf = io.StringIO()
+    with contextlib.redirect_stderr(_forged_buf):
+        build_deck.check_phase_preconditions(_forged_root, "P4-RENDER", ["P3-ARC"])
+    record("AF-FORGED-APPROVAL", _forged_buf.getvalue())
+
     # AF-OVERLAY-DELIVERED (5C) — a present pptx_text_overlays.json (the eliminated
     # native-overlay path) FAILS _chk_no_overlay.
     record("AF-OVERLAY-DELIVERED",
@@ -3638,6 +4253,24 @@ def emit_af_coverage():
         "distinct_items_used": 0}))
     record("AF-RESEARCH-WEAVE", build_deck._chk_research_map(rw_root))
 
+    # AF-RESEARCH-REACHES-RENDER — research is woven into slides_copy.md (weave gate
+    # passes) but the RENDER copy (working/copy/slides.json copy[]) drops the mapped
+    # anchor -> _chk_research_reaches_render FAILS so research cannot silently miss
+    # the baked deck even though slides_copy.md looked fine.
+    rr_root = Path(tempfile.mkdtemp(prefix="deck_render_probe_"))
+    (rr_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rr_root / "working" / "research").mkdir(parents=True, exist_ok=True)
+    (rr_root / "working" / "copy" / "slides_copy.md").write_text("## Slide 1\nHEADLINE: x\n")
+    (rr_root / "working" / "research" / "research_map.json").write_text(json.dumps({
+        "deck_slug": "demo",
+        "slides": [{"slide": 1, "section": "Teaching", "assigned": [
+            {"item_id": "C-01", "anchor": "STAT $1.2M"}]}],
+        "distinct_items_used": 1}))
+    (rr_root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": 1, "scene": "x", "copy": ["Headline", "No research here"]}]))
+    record("AF-RESEARCH-REACHES-RENDER",
+           build_deck._chk_research_reaches_render(rr_root))
+
     # ---- FIX-2 / FIX-9 shared-contract gate probes (AF-CANONICAL-RENDER-BYPASS,
     #      AF-LOCAL-CANVAS, AF-IMAGE-QC-VISION) ----
 
@@ -3672,6 +4305,57 @@ def emit_af_coverage():
          "note": "all slides look good", "triggered_autofails": []}))
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
+
+    # ---- FIX-2 (Error 2) NEW-GATE negative-test coverage (AF-QC-PLACEHOLDER +
+    #      AF-QC-SKIP). These two gates are declared enforced_by:build_deck in
+    #      PIPELINE-MANIFEST.json, so Guard A requires a deliberately-failing fixture
+    #      that REALLY trips each one (hardcoded labels never register — the guard
+    #      records a code only when it appears in a genuinely-failing path). ----
+
+    # AF-QC-PLACEHOLDER — a 3-byte "{}" QC report (the exact Error-2 artifact)
+    # driven through build_deck.check_qc_phase_report_real (the symbol declared in
+    # PIPELINE-MANIFEST.json, now wired into the run_postflight_gate pre-delivery
+    # enforcement path). The gate returns a fatal AF-QC-PLACEHOLDER reason.
+    _qcph_root = Path(tempfile.mkdtemp(prefix="deck_qcph_probe_"))
+    (_qcph_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    # 3-byte "{}" placeholder for the copy-QC report — sub-floor by every measure.
+    (_qcph_root / "working" / "qc" / "copy_qc_report.json").write_text("{}")
+    record("AF-QC-PLACEHOLDER",
+           build_deck.check_qc_phase_report_real(_qcph_root, "P1Q-COPY-QC"))
+
+    # AF-QC-SKIP — a logged owner-authorized phase-skip record naming a QC phase
+    # (P-PROMPT-QC) is REFUSED by build_deck.check_phase_preconditions: the QC phase
+    # stays a required precondition. AF-QC-SKIP is surfaced on stderr by the refusal
+    # path (the function still returns AF-PHASE-SKIPPED), so we capture stderr and
+    # record the code from the refusal line. Mirror the _emit_af_bundle_probe pattern.
+    import io as _io
+    import contextlib as _contextlib
+    _qcsk_root = Path(tempfile.mkdtemp(prefix="deck_qcsk_probe_"))
+    (_qcsk_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_qcsk_root / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(
+        json.dumps({"approvals": [{
+            "phase_id": "P-PROMPT-QC",
+            "owner_approved": True,
+            "approved_by": "Trevor BlackCEO",
+            "reason": "owner authorized this QC phase skip",
+            "timestamp": "2026-08-06T14:30:00Z",
+            "owner_msg_id": "real-owner-msg-001",
+            "owner_action": "approved_skip",
+        }]}))
+    _qcsk_buf = _io.StringIO()
+    try:
+        with _contextlib.redirect_stderr(_qcsk_buf):
+            build_deck.check_phase_preconditions(_qcsk_root, "P4-RENDER",
+                                                 ["P-PROMPT-QC"])
+    except Exception as _exc:  # noqa: BLE001
+        _qcsk_buf.write(str(_exc))
+    _qcsk_text = _qcsk_buf.getvalue()
+    record("AF-QC-SKIP", _qcsk_text)
+    # The refusal path must ALSO return AF-PHASE-SKIPPED naming the QC phase (belt and
+    # braces) so a silent pass can never record AF-QC-SKIP from a non-failing fixture.
+    _qcsk_reason = build_deck.check_phase_preconditions(
+        _qcsk_root, "P4-RENDER", ["P-PROMPT-QC"])
+    record("AF-PHASE-SKIPPED", _qcsk_reason or "")
 
     # AF-OCR-READBACK (U027) — a rendered PNG whose sidecar carries checked:false
     # (the OCR engine never ran against that render) FAILS check_ocr_readback; this
@@ -4034,6 +4718,16 @@ def emit_af_coverage():
         json.dumps({"phase_attestations": []}))
     _cc_reason = build_deck._chk_cc_registered(_cc_root, "probe-deck")
     record("AF-CC-UNREGISTERED", _cc_reason)
+
+    # AF-CC-UNVERIFIED — probe (T2 gate teeth): cc_register_attempted=True with NO
+    # cc_task_id (transport/partial failure — could-not-verify must fail the gate
+    # with an honest message, never read as verified).
+    _ccu_root = Path(_tf_cc.mkdtemp(prefix="deck_coverage_cc_unverified_probe_"))
+    (_ccu_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_ccu_root / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
+    _ccu_reason = build_deck._chk_cc_registered(_ccu_root, "probe-deck")
+    record("AF-CC-UNVERIFIED", _ccu_reason)
 
     # Skill 51 — AF-SP-* Signature-Presentation gates. One deliberately-failing signature
     # fixture per code trips its build_deck._chk_sp_* wrapper (Guard-A negative coverage).
@@ -4500,7 +5194,7 @@ def test_chk_research_map() -> list:
     """
     failures = []
 
-    def _root(copy_text=None, mapping=None):
+    def _root(copy_text=None, mapping=None, render_slides=None):
         root = Path(tempfile.mkdtemp(prefix="rw_"))
         (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (root / "working" / "research").mkdir(parents=True, exist_ok=True)
@@ -4509,6 +5203,9 @@ def test_chk_research_map() -> list:
         if mapping is not None:
             (root / "working" / "research" / "research_map.json").write_text(
                 json.dumps(mapping))
+        if render_slides is not None:
+            (root / "working" / "copy" / "slides.json").write_text(
+                json.dumps(render_slides))
         return root
 
     # pre-copy -> DEFER
@@ -4544,7 +5241,124 @@ def test_chk_research_map() -> list:
     r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=full_map))
     if r != "":
         failures.append(f"RW-F: fully-woven map must PASS, got {r!r}")
+
+    # LOOP2B-1 (AF-RESEARCH-WEAVE condition 3) — the RENDER COPY (slides.json copy[])
+    # must carry the mapped anchors, not just slides_copy.md. slides_copy.md is the
+    # writer's working document; the renderer bakes slides.json copy[] VERBATIM, so a
+    # deck that wove the anchors into slides_copy.md but dropped them from slides.json
+    # would render pixels with NO research while the old gate passed.
+    def _render_slides(anchors_present=True):
+        # Mirror the research map: 10 non-exempt content slides (2..11), each assigned
+        # anchor "{40+i}%" (same as full_map). When anchors_present, weave the anchor
+        # into that slide's copy[]; otherwise leave the copy research-free.
+        out = []
+        for i in range(1, 12):
+            copy = [f"Headline {i}", f"Subhead {i}"]
+            if anchors_present and 2 <= i <= 11:
+                copy.append(f"{40 + i}%")
+            out.append({"slide": i, "scene": f"scene {i}", "copy": copy})
+        return out
+
+    # slides_copy.md weaves every anchor, but slides.json copy[] dropped them -> FAIL
+    # on the render copy (condition 3), even though the old slides_copy.md check passes.
+    r = build_deck._chk_research_map(_root(
+        copy_text=copy_all, mapping=full_map,
+        render_slides=_render_slides(anchors_present=False)))
+    if "AF-RESEARCH-WEAVE" not in r or "RENDER copy" not in r:
+        failures.append(
+            f"RW-G: anchors absent from RENDER copy must FAIL, got {r!r}")
+    # slides_copy.md AND slides.json copy[] both carry the anchors -> PASS
+    r = build_deck._chk_research_map(_root(
+        copy_text=copy_all, mapping=full_map,
+        render_slides=_render_slides(anchors_present=True)))
+    if r != "":
+        failures.append(
+            f"RW-H: anchors present in RENDER copy must PASS, got {r!r}")
+    # no slides.json readable yet -> condition 3 DEFERS (still passes); the absence is
+    # owned upstream by the schema / AF-P1 / slide-count gates.
+    r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=full_map))
+    if r != "":
+        failures.append(
+            f"RW-I: no render copy yet must DEFER (pass), got {r!r}")
+
     print(f"RESEARCH-WEAVE (Fix #7)      -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_chk_research_reaches_render() -> list:
+    """LOOP2B-1 (AF-RESEARCH-REACHES-RENDER): the STRICT per-slide gate on the RENDER
+    COPY. The weave gate's condition 3 enforces a 60% DECK-LEVEL floor on the render
+    copy; this gate is the harder guarantee the workstream asked for — FAILS if ANY
+    research-mapped non-exempt slide's anchor token is absent from its slide's render
+    copy[] (slides.json), so research cannot silently fail to reach the baked pixels
+    even on a single mapped slide.
+    - no research map -> DEFER (upstream owns that).
+    - map + no slides.json -> DEFER.
+    - map + slide copy[] missing the anchor -> FAIL (AF-RESEARCH-REACHES-RENDER).
+    - anchor present in the RENDER copy -> PASS.
+    - exempt slide missing the anchor -> PASS (excluded, mirrors the weave gate).
+    - multi-slide partial -> FAIL naming only the offending slide.
+    """
+    failures = []
+
+    def _root(mapping=None, slides=None):
+        root = Path(tempfile.mkdtemp(prefix="rrr_"))
+        (root / "working" / "copy").mkdir(parents=True)
+        (root / "working" / "research").mkdir(parents=True)
+        if mapping is not None:
+            (root / "working" / "research" / "research_map.json").write_text(
+                json.dumps(mapping))
+        sp = None
+        if slides is not None:
+            sp = root / "slides.json"
+            sp.write_text(json.dumps(slides))
+        return root, sp
+
+    mapping = {"slides": [
+        {"slide": 1, "assigned": [{"item_id": "C-01", "anchor": "35%"}]}],
+        "distinct_items_used": 1}
+
+    # no map -> DEFER
+    r, sp = _root()
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-A: no map must DEFER")
+    # map + no slides.json -> DEFER
+    r, sp = _root(mapping=mapping)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-B: map without slides.json must DEFER")
+    # map + slide copy[] missing the anchor -> FAIL
+    sl_no = [{"slide": 1, "scene": "x", "copy": ["Headline", "No research here"]}]
+    r, sp = _root(mapping=mapping, slides=sl_no)
+    res = build_deck._chk_research_reaches_render(r, sp)
+    if "AF-RESEARCH-REACHES-RENDER" not in res:
+        failures.append(f"RRR-C: anchor-absent render copy must FAIL, got {res!r}")
+    # anchor present in render copy -> PASS
+    sl_yes = [{"slide": 1, "scene": "x", "copy": ["Headline", "35% faster growth"]}]
+    r, sp = _root(mapping=mapping, slides=sl_yes)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-D: anchor-in-render-copy must PASS")
+    # exempt slide -> PASS
+    mapping_ex = {"slides": [
+        {"slide": 1, "exempt": "hook", "assigned": [
+            {"item_id": "C-01", "anchor": "35%"}]}], "distinct_items_used": 1}
+    sl_hook = [{"slide": 1, "scene": "x", "copy": ["Hook only"]}]
+    r, sp = _root(mapping=mapping_ex, slides=sl_hook)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-E: exempt slide must PASS")
+    # multi-slide partial -> FAIL naming only slide 2
+    mapping_m = {"slides": [
+        {"slide": 1, "assigned": [{"item_id": "C-01", "anchor": "41%"}]},
+        {"slide": 2, "assigned": [{"item_id": "C-02", "anchor": "42%"}]}],
+        "distinct_items_used": 2}
+    sl_m = [{"slide": 1, "scene": "x", "copy": ["41% growth"]},
+            {"slide": 2, "scene": "x", "copy": ["No anchor"]}]
+    r, sp = _root(mapping=mapping_m, slides=sl_m)
+    res = build_deck._chk_research_reaches_render(r, sp)
+    if "AF-RESEARCH-REACHES-RENDER" not in res or "slide 2" not in res:
+        failures.append(f"RRR-F: partial weave must FAIL naming slide 2, got {res!r}")
+    if "slide 1" in res:
+        failures.append("RRR-F2: slide 1 wove its anchor and must NOT be named")
+    print(f"RESEARCH-REACHES-RENDER      -> {'PASS' if not failures else 'FAIL'}")
     return failures
 
 
@@ -4665,6 +5479,8 @@ def main():
     failures += test_chk_font_floor()
     # Fix #7 — research woven across the deck (breadth gate).
     failures += test_chk_research_map()
+    # LOOP2B-1 — research must ALSO reach the RENDER copy (strict per-slide gate).
+    failures += test_chk_research_reaches_render()
     # Fix #11 — pitch-engine + intelligence-engine checks actually bite.
     failures += test_engine_checks()
 
@@ -4722,8 +5538,15 @@ def main():
     # proves the gate exits 5 when any deliverable is missing/under-threshold and
     # does NOT exit when all are present; proves guide_pdf + infographic_png are
     # hard-required (never silently skipped); proves ~/Downloads is the default
-    # destination; proves DELIVERABLES_REQUIRED has exactly the 9 required keys.
+    # destination; proves DELIVERABLES_REQUIRED has exactly the 10 required keys.
     failures += test_postflight_gate()
+
+    # Unit test — SPEECH-LENGTH closeout re-check (absence-vs-not-yet-produced gap
+    # fix): proves a short speech that clears only the generic byte floor now exit-5s
+    # at closeout (mirrors the pre-existing _chk_kie_baked re-check pattern), a
+    # floor-clearing speech still passes, and a bare gate-only call (no run_dir)
+    # is unaffected.
+    failures += test_postflight_speech_length_reverify()
 
     # Unit test — TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE):
     # proves a full bundle with no/unverified teleprompter_publish.json fails (exit 5),
@@ -4801,6 +5624,12 @@ def main():
     # advances on attestation, honors owner-authorized skips, and never picks out-of-order.
     failures += test_runner_next_turn_gate()
 
+    # Gate 1 close (fix/two-remaining-gates) — STYLE_PHASE_GATE binds run_preflight() to
+    # P-STYLE-PREVIEW at every DIRECT entry point, staged warn->enforce (Rule 3.5): warn
+    # stage never bricks the shared with_artifacts=True fixture; enforce stage refuses an
+    # unattested style-preview phase; an attested/waived phase passes in both stages.
+    failures += test_style_phase_gate()
+
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
 
@@ -4823,6 +5652,14 @@ def main():
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
     failures += test_sp_wrappers()
+
+    # Gate 2 close (fix/two-remaining-gates) — _chk_sp_claim's `mod is None` fallback
+    # (prove_sp_routing.py not co-located) now checks all four SP signals the docstring
+    # already promises, not just sp_intake.json presence: signature_frame, presentation_
+    # type=='signature', and two intake_ledger.json shapes all now trip AF-SP-TYPE-
+    # UNDECLARED; a plain non-signature deck (no signals) and a declared deck both still
+    # pass "" (regression guards).
+    failures += test_sp_claim_mod_none_fallback()
 
     # U027 -- check_ocr_readback (AF-OCR-READBACK): no renders defers; missing
     # sidecars/checked:false/matched:false/malformed-JSON/partial-missing all FAIL;
@@ -5549,24 +6386,69 @@ def test_deck_type_u021() -> list:
     return fails
 
 
-def test_chk_cc_registered() -> list:
-    """AF-CC-UNREGISTERED negative test (Fix 5a):
-    Verifies that build_deck._chk_cc_registered enforces the CC registration gate.
+def _cc_registration_receipt(cc_task_id: str, idempotency_key: str, deck_slug: str) -> dict:
+    """Build a cc_registration receipt exactly as cc_board.registration_proof
+    does (deterministic HMAC over cc_task_id|idempotency_key) so the gate test
+    fixtures can mint a VERIFIED receipt without importing cc_board."""
+    import hashlib as _hl, hmac as _hm
+    canonical = f"{cc_task_id}|{idempotency_key}"
+    digest = _hm.new(canonical.encode("utf-8"), b"", _hl.sha256).hexdigest()
+    return {
+        "task_id": cc_task_id,
+        "idempotency_key": idempotency_key,
+        "deck_slug": deck_slug,
+        "hmac": digest,
+    }
 
-    Cases:
-      (A) process_manifest.json with NEITHER cc_task_id NOR cc_register_attempted
-          -> FAIL (fail-closed: never-attempted is a hard fail).
-      (B) process_manifest.json with cc_register_attempted=True but no cc_task_id
-          -> PASS (fail-soft: transport failure satisfies the gate).
-      (C) process_manifest.json with cc_task_id set (successful registration)
-          -> PASS.
+
+def test_chk_cc_registered() -> list:
+    """AF-CC-UNREGISTERED / AF-CC-UNVERIFIED gate test (Fix 5a + T2 gate teeth):
+    Verifies that build_deck._chk_cc_registered enforces the CC registration
+    gate with THREE outcomes:
+
+      (A) NEITHER cc_task_id NOR cc_register_attempted -> FAIL
+          AF-CC-UNREGISTERED (fail-closed: never-attempted is a hard fail).
+      (B) cc_register_attempted=True but NO cc_task_id -> FAIL
+          AF-CC-UNVERIFIED (transport/partial failure; could-not-verify must
+          NOT read as verified — bare attempted is NOT a pass).
+      (C) cc_task_id + VERIFYING cc_registration HMAC receipt (a real
+          cc_board.ingest_deck_task round-trip) -> PASS ("").
+      (F) cc_task_id present but cc_registration receipt MISSING (hand-written
+          or stale id, no proof) -> FAIL AF-CC-UNVERIFIED (never verified).
+      (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged)
+          -> FAIL AF-CC-UNVERIFIED.
       (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
-      (E) process_manifest.json absent entirely
-          -> FAIL (fail-closed: manifest missing at closeout).
+      (E) process_manifest.json absent entirely -> FAIL (fail-closed: manifest
+          missing at closeout).
 
     Returns a list of failure strings ([] = all passed).
     """
     fails = []
+
+    def _assert_fail(label: str, result, code: str):
+        if not result or code not in result:
+            fails.append(
+                f"{label}: expected a FAIL carrying {code}, got: {result!r}"
+            )
+        # Could-not-verify must be UNREADABLE as verified: the failure text
+        # must not claim the run VERIFIED/registered as a pass (a bare
+        # "registered" claim would read as verified). "not verified" /
+        # "could not be verified" / "does not count as registered" are honest
+        # negations and fine; the assertion targets affirmative claims.
+        _upper = result.upper()
+        # Strip the AF code names themselves ("AF-CC-UNVERIFIED" / "AF-CC-
+        # UNREGISTERED" legitimately contain VERIFIED/REGISTERED) plus honest
+        # negations, then require NO affirmative verified/registered claim.
+        for _tok in ("AF-CC-UNVERIFIED", "AF-CC-UNREGISTERED",
+                     "UNVERIFIED", "UNREGISTERED",
+                     "NOT BE VERIFIED", "NOT COUNT AS REGISTERED",
+                     "NEVER COUNTS AS VERIFIED", "NOT PROVABLY PRODUCED"):
+            _upper = _upper.replace(_tok, "")
+        if "VERIFIED" in _upper or "REGISTERED" in _upper:
+            fails.append(
+                f"{label}: failure text must not read as verified/registered, "
+                f"got: {result!r}"
+            )
 
     # (A) Neither cc_task_id nor cc_register_attempted -> FAIL (fail-closed).
     rd_a = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_a_"))
@@ -5574,39 +6456,42 @@ def test_chk_cc_registered() -> list:
     (rd_a / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": []}))
     r_a = build_deck._chk_cc_registered(rd_a, "test-deck")
-    if not r_a or "AF-CC-UNREGISTERED" not in r_a:
-        fails.append(
-            f"CC-REG-A: no cc_task_id and no cc_register_attempted must FAIL "
-            f"AF-CC-UNREGISTERED, got: {r_a!r}"
-        )
+    _assert_fail("CC-REG-A", r_a, "AF-CC-UNREGISTERED")
     print(f"CC-REG-A (never-attempted fail-closed) -> "
           f"{'PASS' if 'CC-REG-A' not in str(fails) else 'FAIL'}")
 
-    # (B) cc_register_attempted=True but no cc_task_id -> PASS (fail-soft).
+    # (B) cc_register_attempted=True but NO cc_task_id -> FAIL AF-CC-UNVERIFIED.
+    # T2: bare attempted without a task id must NOT satisfy the gate, and must
+    # never print as verified.
     rd_b = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_b_"))
     (rd_b / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_b / "working" / "checkpoints" / "process_manifest.json").write_text(
         json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
     r_b = build_deck._chk_cc_registered(rd_b, "test-deck")
-    if r_b:
-        fails.append(
-            f"CC-REG-B: cc_register_attempted=True must PASS (fail-soft), got: {r_b!r}"
-        )
-    print(f"CC-REG-B (transport-fail soft-pass)    -> "
+    _assert_fail("CC-REG-B", r_b, "AF-CC-UNVERIFIED")
+    if "cc_register_attempted" not in (r_b or ""):
+        fails.append("CC-REG-B: UNVERIFIED message must say the attempt was logged "
+                     f"(cc_register_attempted), got: {r_b!r}")
+    print(f"CC-REG-B (attempted-no-id UNVERIFIED)  -> "
           f"{'PASS' if 'CC-REG-B' not in str(fails) else 'FAIL'}")
 
-    # (C) cc_task_id set (successful registration) -> PASS.
+    # (C) cc_task_id + VERIFYING cc_registration receipt -> PASS (real round-trip).
     rd_c = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_c_"))
     (rd_c / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     (rd_c / "working" / "checkpoints" / "process_manifest.json").write_text(
-        json.dumps({"phase_attestations": [], "cc_task_id": "task-abc-123",
-                    "cc_register_attempted": True}))
+        json.dumps({
+            "phase_attestations": [],
+            "cc_task_id": "task-abc-123",
+            "cc_register_attempted": True,
+            "cc_registration": _cc_registration_receipt(
+                "task-abc-123", "sha256-deck-key", "test-deck"),
+        }))
     r_c = build_deck._chk_cc_registered(rd_c, "test-deck")
     if r_c:
         fails.append(
-            f"CC-REG-C: cc_task_id set must PASS (successful registration), got: {r_c!r}"
+            f"CC-REG-C: cc_task_id + verifying receipt must PASS, got: {r_c!r}"
         )
-    print(f"CC-REG-C (successful-reg pass)         -> "
+    print(f"CC-REG-C (verified receipt pass)       -> "
           f"{'PASS' if 'CC-REG-C' not in str(fails) else 'FAIL'}")
 
     # (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
@@ -5623,13 +6508,39 @@ def test_chk_cc_registered() -> list:
     (rd_e / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     # No process_manifest.json written.
     r_e = build_deck._chk_cc_registered(rd_e, "test-deck")
-    if not r_e or "AF-CC-UNREGISTERED" not in r_e:
-        fails.append(
-            f"CC-REG-E: absent process_manifest.json must FAIL AF-CC-UNREGISTERED, "
-            f"got: {r_e!r}"
-        )
+    _assert_fail("CC-REG-E", r_e, "AF-CC-UNREGISTERED")
     print(f"CC-REG-E (manifest-absent fail-closed) -> "
           f"{'PASS' if 'CC-REG-E' not in str(fails) else 'FAIL'}")
+
+    # (F) cc_task_id WITHOUT a cc_registration receipt (bare id, no proof —
+    # hand-written or stale) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_f = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_f_"))
+    (rd_f / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_f / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True}))
+    r_f = build_deck._chk_cc_registered(rd_f, "test-deck")
+    _assert_fail("CC-REG-F", r_f, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-F (bare id no receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-F' not in str(fails) else 'FAIL'}")
+
+    # (G) cc_task_id + receipt whose hmac does NOT verify (tampered/forged
+    # proof) -> FAIL AF-CC-UNVERIFIED, never verified.
+    rd_g = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_g_"))
+    (rd_g / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    _bad_receipt = _cc_registration_receipt(
+        "task-abc-123", "sha256-deck-key", "test-deck")
+    _bad_receipt["hmac"] = "0" * 64  # forged digest
+    (rd_g / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [],
+                    "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True,
+                    "cc_registration": _bad_receipt}))
+    r_g = build_deck._chk_cc_registered(rd_g, "test-deck")
+    _assert_fail("CC-REG-G", r_g, "AF-CC-UNVERIFIED")
+    print(f"CC-REG-G (tampered receipt UNVERIFIED) -> "
+          f"{'PASS' if 'CC-REG-G' not in str(fails) else 'FAIL'}")
 
     print(f"CC-REGISTERED (gate tests)   -> {'PASS' if not fails else 'FAIL'}")
     return fails

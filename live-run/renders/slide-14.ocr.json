@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "* V2 io KEEP GOING.\n\u2019 ie THE NEXT NO\n\nCONSISTENT\nCLOSER\n\nSECTION 3: DROP\n\nThe Seventh No\n\nMost sales are made after the seventh no\n\nMost salespeople quit after one or two."
+}

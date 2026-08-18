@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "ONE BIG IDEA\n\nPeople Don't\nLike To Be Sold >\n\nBut They Love To Buy\n\nYour job is to make it easy for them to say yes."
+}

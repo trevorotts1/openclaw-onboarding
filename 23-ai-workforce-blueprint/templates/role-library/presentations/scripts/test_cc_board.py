@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import io
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cc_board  # noqa: E402
+
+# Pristine snapshots taken at module import time (pytest collects all modules
+# before any test runs, so these are the REAL cc_board functions — never a
+# cross-file monkeypatch). test_u030_status_repoint.py leaks a patched
+# cc_board._request / board_config after its run; this suite restores from
+# these so a REAL HMAC-signed round-trip always hits this suite's recorder.
+_PRISTINE_REQUEST = cc_board._request
+_PRISTINE_BOARD_CONFIG = cc_board.board_config
 
 # The 10 authoritative Command Center TaskStatus values (UpdateTaskSchema in the CC
 # repo src/lib/validation.ts). The fake server below rejects a PATCH status outside
@@ -120,6 +129,10 @@ class _Recorder:
             raise urllib.error.HTTPError(
                 req.full_url, status, "err", {}, io.BytesIO(json.dumps(payload).encode()))
         return _FakeResp(status, payload)
+
+
+def _rmtree_quiet(path):
+    shutil.rmtree(path, ignore_errors=True)
 
 
 ENV = {
@@ -463,6 +476,9 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertNotIn("status", body)
             self.assertIn("P4-RENDER", body["message"])
             self.assertIn("12 slides rendered", body["message"])
+            # U060 stepper: the phase reducer reads task_activities.metadata.phase_id,
+            # NEVER the message text — the phase must ride in structured metadata.
+            self.assertEqual(body["metadata"], {"phase_id": "P4-RENDER"})
             self.assertTrue(cc_board.assert_min_one_advance(rd))
 
 
@@ -494,6 +510,203 @@ class StampTest(unittest.TestCase):
     def test_stamp_empty_id_is_noop(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertFalse(cc_board.stamp_task_id(Path(d), ""))
+
+
+class DeliverableTest(unittest.TestCase):
+    """Hermetic tests for register_deliverable — the FIX-12 registration bridge
+    (ported from Skill-06 cc_board.py). Covers the POST /api/tasks/{id}/deliverables
+    contract, auth parity, and the fail-soft discipline (never raises; a non-2xx,
+    transport error, empty id/url, or disabled board yields False, never an
+    exception, so a deck build is never blocked by registration)."""
+
+    def setUp(self):
+        self.rec = _Recorder()
+        self._orig = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = self.rec
+
+    def tearDown(self):
+        cc_board.urllib.request.urlopen = self._orig
+
+    def _verify_signature(self, request):
+        body = request["body"].encode("utf-8")
+        expected = hmac.new(b"shh-secret", body, hashlib.sha256).hexdigest()
+        self.assertEqual(request["headers"]["x-webhook-signature"], expected)
+
+    def test_register_deliverable_contract_and_auth(self):
+        # POST /api/tasks/{id}/deliverables with the CreateDeliverableSchema shape:
+        # deliverable_type='url' + non-empty title + path (artifact URL), meta
+        # folded into description. Auth parity: Bearer + HMAC signature on the
+        # exact raw body.
+        self.rec.queue(201, {
+            "id": "deliv-1", "task_id": "task-xyz",
+            "deliverable_type": "url", "title": "My Deck",
+            "path": "https://s3.test/decks/my-deck.pptx",
+            "description": "{}",
+        })
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx",
+            meta={"title": "My Deck", "type": "deck_pptx"}, env=ENV)
+        self.assertTrue(ok)
+        req = self.rec.requests[-1]
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["url"],
+                         "https://cc.example.test/api/tasks/task-xyz/deliverables")
+        self.assertEqual(req["headers"]["authorization"], "Bearer tok-abc")
+        self.assertEqual(req["headers"]["content-type"], "application/json")
+        self._verify_signature(req)
+        body = json.loads(req["body"])
+        self.assertEqual(body["deliverable_type"], "url")
+        self.assertEqual(body["title"], "My Deck")
+        self.assertEqual(body["path"], "https://s3.test/decks/my-deck.pptx")
+        # meta is NOT a top-level key (the schema rejects it) — it rides in description.
+        self.assertNotIn("meta", body)
+        self.assertIn("deck_pptx", body["description"])
+
+    def test_register_deliverable_title_falls_back_to_artifact_url(self):
+        self.rec.queue(201, {"id": "d2"})
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertTrue(ok)
+        body = json.loads(self.rec.requests[-1]["body"])
+        self.assertEqual(body["title"], "Artifact URL")
+        self.assertEqual(body["deliverable_type"], "url")
+
+    def test_register_deliverable_non_2xx_is_fail_soft(self):
+        # The fake layer raises HTTPError for status >= 400; register_deliverable
+        # must catch it and return False (never raise).
+        self.rec.queue(404, {"error": "deliverables endpoint not found"})
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertFalse(ok)
+
+    def test_register_deliverable_transport_error_is_fail_soft(self):
+        self.rec.queue_raise(urllib.error.URLError("conn refused"))
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertFalse(ok)
+
+    def test_register_deliverable_disabled_board_is_fail_soft(self):
+        # No COMMAND_CENTER_URL / MISSION_CONTROL_URL => board disabled => False, no raise.
+        self.assertFalse(cc_board.register_deliverable("task-xyz", "https://x.test/deck.pptx", env={}))
+
+    def test_register_deliverable_empty_task_id_or_url_is_fail_soft(self):
+        self.assertFalse(cc_board.register_deliverable("", "https://x.test/deck.pptx", env=ENV))
+        self.assertFalse(cc_board.register_deliverable("task-xyz", "   ", env=ENV))
+
+
+class RegistrationGateRoundTripTest(unittest.TestCase):
+    """T2 gate teeth: a REAL HMAC-signed cc_board.ingest_deck_task round-trip
+    stamps an offline-verifiable cc_registration receipt, and
+    build_deck._chk_cc_registered accepts it as VERIFIED (""); a bare
+    cc_register_attempted (no task id) must NOT read as verified; neither
+    field fails closed. No live network — the fake recorder intercepts every
+    HTTP call exactly as the other suites do."""
+
+    def setUp(self):
+        self.rec = _Recorder()
+        # Install THIS suite's seams unconditionally (restoring any cross-file
+        # pollution FIRST), so a REAL HMAC-signed round-trip always hits this
+        # suite's own recorder.
+        cc_board._request = _PRISTINE_REQUEST
+        cc_board.board_config = _PRISTINE_BOARD_CONFIG
+        self._orig_urlopen = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = self.rec
+        self._chk = None
+        self._cc_verified = None
+        try:
+            import build_deck
+            self._chk = build_deck._chk_cc_registered
+            self._cc_verified = build_deck._cc_registration_verified
+        except ImportError:
+            pass
+
+    def tearDown(self):
+        cc_board.urllib.request.urlopen = self._orig_urlopen
+
+    def _round_trip_run_dir(self):
+        """Run dir whose manifest was produced by a REAL ingest_deck_task call
+        (fake server answers 201 with a task_id). Caller owns cleanup."""
+        d = tempfile.mkdtemp(prefix="deck_cc_roundtrip_")
+        self.addCleanup(_rmtree_quiet, d)
+        rd = Path(d)
+        self.rec.queue(201, {"ok": True, "task_id": "task-roundtrip-9",
+                             "deduped": False})
+        task_id = cc_board.ingest_deck_task(
+            rd, "deck-rt", "Round Trip Deck", "desc", env=ENV)
+        self.assertEqual(task_id, "task-roundtrip-9")
+        return rd
+
+    def test_real_round_trip_stamps_verifiable_receipt(self):
+        if self._chk is None:
+            self.skipTest("build_deck not importable in this environment")
+        rd = self._round_trip_run_dir()
+        pm = json.loads(
+            (rd / "working" / "checkpoints" / "process_manifest.json").read_text())
+        self.assertEqual(pm["cc_task_id"], "task-roundtrip-9")
+        self.assertTrue(pm["cc_register_attempted"])
+        receipt = pm.get("cc_registration")
+        self.assertIsInstance(receipt, dict)
+        self.assertEqual(receipt["task_id"], "task-roundtrip-9")
+        # The receipt's idempotency_key is sha256(source_ref + title) — the
+        # deterministic ingest key, NOT derivable from the task id alone.
+        import hashlib
+        expected_key = hashlib.sha256(
+            b"deck-rtRound Trip Deck").hexdigest()
+        self.assertEqual(receipt["idempotency_key"], expected_key)
+        # The HMAC digest verifies against the recomputed canonical string.
+        canonical = f"{pm['cc_task_id']}|{receipt['idempotency_key']}"
+        expected_hmac = hmac.new(
+            canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
+        self.assertEqual(receipt["hmac"], expected_hmac)
+        # Gate: VERIFIED -> passes ("").
+        self.assertEqual(self._chk(rd, "deck-rt"), "")
+
+    def test_gate_verifies_receipt_offline(self):
+        # The gate's own HMAC recompute (no cc_board import needed by the gate)
+        # agrees with the receipt minted by the real round-trip.
+        if self._cc_verified is None:
+            self.skipTest("build_deck not importable in this environment")
+        rd = self._round_trip_run_dir()
+        pm = json.loads(
+            (rd / "working" / "checkpoints" / "process_manifest.json").read_text())
+        self.assertTrue(self._cc_verified(pm))
+        # Tamper the digest -> NOT verified.
+        pm2 = json.loads(json.dumps(pm))
+        pm2["cc_registration"] = dict(pm2["cc_registration"])
+        pm2["cc_registration"]["hmac"] = "0" * 64
+        self.assertFalse(self._cc_verified(pm2))
+
+    def test_bare_attempted_never_reads_as_verified(self):
+        if self._chk is None:
+            self.skipTest("build_deck not importable in this environment")
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            ckp = rd / "working" / "checkpoints"
+            ckp.mkdir(parents=True)
+            (ckp / "process_manifest.json").write_text(json.dumps(
+                {"cc_register_attempted": True}))  # no cc_task_id, no receipt
+            reason = self._chk(rd, "deck-x")
+            self.assertTrue(reason)
+            self.assertIn("AF-CC-UNVERIFIED", reason)
+            # could-not-verify must be UNREADABLE as verified: the failure text
+            # must not claim verification.
+            self.assertNotIn("VERIFIED", reason.replace("UNVERIFIED", ""))
+            # An honest message names the logged attempt.
+            self.assertIn("cc_register_attempted", reason)
+
+    def test_neither_field_fails_closed(self):
+        if self._chk is None:
+            self.skipTest("build_deck not importable in this environment")
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            ckp = rd / "working" / "checkpoints"
+            ckp.mkdir(parents=True)
+            (ckp / "process_manifest.json").write_text(json.dumps(
+                {"phase_attestations": []}))
+            reason = self._chk(rd, "deck-x")
+            self.assertTrue(reason)
+            self.assertIn("AF-CC-UNREGISTERED", reason)
+            self.assertNotIn("VERIFIED", reason.replace("UNVERIFIED", ""))
 
 
 if __name__ == "__main__":

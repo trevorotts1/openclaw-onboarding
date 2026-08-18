@@ -235,9 +235,10 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
 
    **Message 6 — Command Center URL + GHL media links (sendMessage):**
    ```
-   🎛️ Your BlackCEO Command Center:
+   🎛️ Your BlackCEO Command Center is live and ready for you:
    {{COMMAND_CENTER_URL}}
 
+   You've had this link since day one — now it's your tailored company.
    This is where you'll talk to your CEO (me), watch tasks move across
    the Kanban board, and check in on every department. Open it in your
    browser and bookmark it.

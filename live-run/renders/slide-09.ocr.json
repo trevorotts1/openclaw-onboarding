@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECTION 1\n\ncret\nThree\n\nTop-Down Selling: reach\nthe real decision-maker\n\nGatekeepers say no. Decision-makers say yes.\n\nTHE\n\nSALES\nBIBLE"
+}

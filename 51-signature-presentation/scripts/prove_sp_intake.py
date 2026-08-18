@@ -559,7 +559,10 @@ def self_test():
               % ("PASS" if good else "MISS", name, exit_code, codes, expect_code))
 
     print("== self-test: VALID fixtures (must PASS / exit 0) ==")
-    check_pass("runtime-record", _valid_runtime_fixture())
+    # GK-23/D18: the bare record has been ungrandfathered since GRACE_WINDOW_UNTIL
+    # (2026-08-15) — a genuine must-PASS runtime record needs the driver-paced
+    # turn_ledger_provenance stamp, same as every other "must PASS" fixture below.
+    check_pass("runtime-record", _valid_runtime_fixture_paced())
     check_pass("spec-contract", _valid_spec_fixture())
 
     print("== self-test: VIOLATION fixtures (must FAIL / exit nonzero) ==")
@@ -578,7 +581,8 @@ def self_test():
     # 2) one_question_per_turn is NO LONGER a violation — it describes the
     #    (correct) conversation, not the record. A record that carries it True
     #    but is committed atomically must PASS: the record-only gate ignores it.
-    f = _valid_runtime_fixture(); f["one_question_per_turn"] = True
+    #    GK-23/D18: must-PASS, so it needs the driver-paced provenance stamp too.
+    f = _valid_runtime_fixture_paced(); f["one_question_per_turn"] = True
     check_pass("per-turn-ignored", f)
 
     # 3) split record — more than one atomic record-commit id

@@ -8,6 +8,16 @@
 fix budget, always with a recorded one-line revert. Credentials, DNS, deletion, and
 model sovereignty are **never** auto-applied.
 
+**THREE-TIER ORDER (BINDING, from SOP-RR-01):** (1) instruct the client's agent
+(outcome b) — the PRIMARY route for client-account actions (OAuth dashboard steps,
+billing top-up, owner confirmation); never a page; (2) the rescue AI self-fixes
+infrastructure on a REACHABLE box using our access — the box's `rescue-*` SSH alias
+from the operator's `~/.ssh/config` plus the provider env var NAME from
+`~/.openclaw/secrets/.env` (names only, never a value; values live in the secrets
+env; confirm SET, never echo); (3) page the Operator ONLY after tiers 1-2 ran and
+can document why neither worked, or on a never-auto class that pages on the class
+alone.
+
 ---
 
 ## 9. Standard Operating Procedures
@@ -16,8 +26,12 @@ model sovereignty are **never** auto-applied.
 
 **Steps:** Require a confirmed root cause + named class from the Diagnostician, a
 tier + budget from the Dispatcher, and confirmation the class is NOT in the never-auto
-set. Missing any → back to the Dispatcher. You do not improvise a destructive command
-from memory; only sanctioned `remediate.sh` fix cards + the maintenance path.
+set. Missing any → back to the Dispatcher. Confirm the box is REACHABLE via its own
+`rescue-*` SSH alias (login shell: `ssh <alias> 'bash -lc "…"'`) and the provider
+env var NAME is SET in `~/.openclaw/secrets/.env` (confirm SET, never echo a value)
+before proceeding — a missing credential is a finding to report, not a page. You do
+not improvise a destructive command from memory; only sanctioned `remediate.sh` fix
+cards + the maintenance path.
 
 ---
 
@@ -61,9 +75,12 @@ partial change using the recorded one-line revert (never leave a box half-fixed 
 either verified or reverted). Report with evidence to the Dispatcher, who routes to
 QC/Postmortem.
 
-**Never-auto set (prepare + page, never apply):** rotating/writing any credential;
-changing DNS or Cloudflare records; deleting data or files; swapping/substituting a
-client's model or provider. The Operator owns every one-way door.
+**Never-auto set (prepare + page, never apply — pages on the class alone):**
+rotating/writing any credential; changing DNS or Cloudflare records; deleting data
+or files; swapping/substituting a client's model or provider. The Operator owns
+every one-way door. **Client-account actions** (OAuth dashboard steps, billing
+top-up, owner confirmation) are NOT in this set and NOT a page — they are outcome
+(b) to the client's agent, and a ticket closes as (b) without any fix card.
 
 **Outputs:** A verified, reversible fix (or a clean revert + escalation).
 **Hand to:** Ticket Clerk (record), QC/Postmortem (on P1 / 3-strike).

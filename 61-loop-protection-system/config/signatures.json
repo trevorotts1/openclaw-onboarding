@@ -15,6 +15,9 @@
     {"id": "LP-A5", "family": "A", "f_taxonomy": "F9-adjacent", "name": "provider 429 / failover retry storm", "detector": "D3", "tier_default": 2},
     {"id": "LP-A6", "family": "A", "f_taxonomy": "F3", "name": "context-bloat zero-tool-call loop", "detector": "D2", "tier_default": 1},
     {"id": "LP-A7", "family": "A", "f_taxonomy": "F2", "name": "memory dreaming / re-embedding storm", "detector": "D2", "tier_default": 2},
+    {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "self-blocking flush run / transcript poison", "detector": "D5", "tier_default": 1},
+    {"id": "LP-A9", "family": "A", "f_taxonomy": "F16", "name": "semantic retry loop / reworded-intent hunt against a fail-closed dependency", "detector": "D6", "tier_default": 2},
+    {"id": "LP-A10", "family": "A", "f_taxonomy": "F15", "name": "agent-to-agent cross-run resend loop", "detector": "D7", "tier_default": 1},
     {"id": "LP-B1", "family": "B", "f_taxonomy": "F5", "name": "supervisor boot-crash restart storm", "detector": "D1", "tier_default": 1},
     {"id": "LP-B2", "family": "B", "f_taxonomy": "F4", "name": "watchdog kill-spawn loop", "detector": "D1", "tier_default": 1},
     {"id": "LP-B3", "family": "B", "f_taxonomy": "F5-adjacent", "name": "gateway deferral deadlock / orphan handoff", "detector": "D4", "tier_default": 1},
@@ -24,9 +27,39 @@
     {"id": "LP-C2", "family": "C", "f_taxonomy": "F10", "name": "announce-mode cron spam", "detector": "D4", "tier_default": 2},
     {"id": "LP-D1", "family": "D", "f_taxonomy": "F10", "name": "empty-prompt no-op cron", "detector": "D4", "tier_default": 3},
     {"id": "LP-D2", "family": "D", "f_taxonomy": "F3", "name": "stale-gate false-fail loop", "detector": "D3", "tier_default": 2},
-    {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1},
-    {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "agent-to-agent cross-run resend loop", "detector": "D7", "tier_default": 1}
+    {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1}
   ],
+  "tool_loop_block": {
+    "record_type": "message",
+    "role": "toolResult",
+    "details_status": "blocked",
+    "details_denied_reason": "tool-loop",
+    "note": "The D5 ignition signature is STRUCTURAL, never prose. The OpenClaw runtime's own identical-call guard emits a session record {type:message, message:{role:toolResult, isError:true, toolName:<tool>, details:{status:'blocked', deniedReason:'tool-loop', reason:<text>}}}. D5 matches on the two ENUM fields above and never on `reason` - so it is language-independent, wording-drift-proof, and carries no message content into a finding. The blocked tool NAME is recorded (counts only); its arguments and the reason prose never are. Confirmed by structural parse of one archived operator-box incident transcript: 1,135 such records, blocked tool names {read, tool_call} - so D5 must NOT hard-code a single tool name.",
+    "checkpoint_carrier": {
+      "record_type": "compaction",
+      "field": "summary",
+      "note": "SECOND CARRIER. Compaction checkpoint summaries can capture the loop transcript VERBATIM; they are re-injected on resume and SURVIVE a session-file roll, so archiving the transcript alone does not clear the poison. Measured: 7 of 16 checkpoint summaries carried the block signature (163 hits) in the incident file vs 0 of 14 in a larger healthy control archive. Detecting this carrier requires a text count over the summary field, so the block sentence is pinned as DATA here rather than compiled into code."
+    },
+    "checkpoint_text_marker": "Session execution blocked to prevent runaway loops",
+    "flush_run_marker": "Continue the OpenClaw runtime event.",
+    "flush_run_note": "The runtime-event prompt that opens a memory-flush run. Measured 9 occurrences (role=user) in the incident transcript, matching the observed burst count - a flush run is the usual ignition context. Recorded as CONTEXT data only; D5 does not require it to fire, because the structural block signature above is sufficient and higher-precision."
+  },
+  "fail_closed_markers": {
+    "detector": "D6",
+    "match": "case-insensitive substring over the tool RESULT payload text",
+    "markers": [
+      "unauthorized",
+      "forbidden",
+      "invalid_api_key",
+      "invalid api key",
+      "authentication failed",
+      "not authenticated",
+      "missing credentials"
+    ],
+    "note": "The D6 fail-closed signature is pinned as DATA here, exactly like the D5 checkpoint_text_marker, because detecting it requires a text COUNT over the tool-result payload rather than a structural enum match. ONLY THE COUNT ever reaches a finding - the matched text, the surrounding payload, the tool arguments, and any value are never stored, printed, or reproduced. This is the face that catches the incident class the structural signatures cannot: a tool call that SUCCEEDS while the dependency behind it refuses. `exec` running a curl against a fail-closed API exits 0 and is recorded status=completed, so details.status/isError are both clean and every error-keyed detector stays silent. Retrying an auth-class refusal cannot succeed by rewording the request, which is what makes >2 attempts a loop rather than persistence.",
+    "deliberately_excluded": ["401", "403"],
+    "deliberately_excluded_note": "Bare HTTP status numbers are NOT markers. Measured on the operator box's real 998-transcript corpus: including them raises the >=3-in-window pair count from 13 to 37 (2.8x) because '401'/'403' collide with ordinary numeric output - line numbers, byte counts, ports, hashes. The narrow word-shaped marker set is the shippable one; the broad set is recorded here only so a future contributor does not 'improve' the detector by adding them back."
+  },
   "secret_shapes": {
     "detector": "scan-no-secrets.sh",
     "class_pin": "provider_sk|caf_pit|google_api|aws_akid|slack_token|github_pat|private_key|jwt|bearer_literal",

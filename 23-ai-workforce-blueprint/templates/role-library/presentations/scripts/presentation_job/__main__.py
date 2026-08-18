@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ from .state import (
     StateStore, RunLock, utcnow, sha256_text, _read_json,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
+    EXIT_GATE_BLOCKED,
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
@@ -19,6 +21,7 @@ from .board import BoardMirror
 from .sweep import reconcile_sweep
 from . import diagnose
 from . import persona
+from .vocab import CANONICAL_PRESENTATION_TYPES
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
                         "reports only unless --apply is given")
     m.add_argument("--sweep-undeliverable", action="store_true",
                    help="retry every queued undeliverable message for --run-dir, oldest first")
+    m.add_argument("--workingset", nargs="?", const="__all__", default=None, metavar="PHASE",
+                   help="FIX-20: measure one phase's working-set token count (or all phases) and "
+                        "report fit against the context-window cap. Exit 0 if every measured phase "
+                        "fits one window, exit 3 (EXIT_GATE_BLOCKED) if any exceeds it.")
+    m.add_argument("--capacity", action="store_true",
+                   help="WORK-ITEM-12: run the 9Router capacity probe and print the report; "
+                        "exit 0. Read-only measurement, never simulated.")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -77,7 +87,12 @@ def cmd_new(args, scripts_dir: Path) -> int:
     intake = intake or {}
 
     ptype = intake.get("presentation_type")
-    legal = ("from_scratch", "content_personal", "content_general", "signature")
+    # Single-sourced with the entry script, the poll, and the launcher --
+    # see vocab.py. This tuple must never be hand-copied again; two
+    # independently maintained "legal" sets is the exact shape of the
+    # deck-type-routing-bypass bug (a value present in both a caller's own
+    # set and the engine's real set skips the caller's alias remap).
+    legal = CANONICAL_PRESENTATION_TYPES
     if ptype not in legal:
         die(EXIT_USAGE,
             f"intake.presentation_type is {ptype!r}; must be one of {legal}.\n"
@@ -146,24 +161,69 @@ def cmd_status(args) -> int:
     for k, g in (st.get("gates") or {}).items():
         print(f"gate {k:<14} {g.get('state')}"
               + (f"  — {g.get('reason')}" if g.get("reason") else ""))
-    if st.get("undeliverable"):
-        print(f"UNDELIVERABLE messages: {len(st['undeliverable'])} "
+    # notify_target — the SPEC-mandated status line for WORK-ITEM-08/15 verification
+    notify_cmd = os.environ.get("PRESENTATION_NOTIFY_CMD", "")
+    if notify_cmd:
+        print(f"notify_target = \"owner\"")
+        print(f"notify_cmd    = {notify_cmd}")
+        req = st.get("requester") or {}
+        if req.get("chat_id"):
+            print(f"requester_chat_id = {req['chat_id']}")
+        sent = st.get("sent") or {}
+        for k in ("ack", "done"):
+            if k in sent:
+                rec = sent[k]
+                print(f"sent.{k:4}: {rec.get('count',0)} messages, "
+                      f"last at {rec.get('last_at','?')}")
+        progress_count = (sent.get("progress") or {}).get("count", 0)
+        blocked_count = (sent.get("blocked") or {}).get("count", 0)
+        print(f"sent.progress: {progress_count} messages")
+        print(f"sent.blocked:  {blocked_count} messages")
+    else:
+        print("notify_target = \"none\" (PRESENTATION_NOTIFY_CMD unset — notifications disabled)")
+    undelivered = st.get("undeliverable")
+    if undelivered:
+        print(f"UNDELIVERABLE messages: {len(undelivered)} "
               "(the requester was NOT told — see F2)")
     return EXIT_OK
 
 
+# RCA #7: dispatch()/dispatch3() collapse "definitely permanent" and "maybe
+# transient" into the same False/UNDETERMINED result -- dispatch3()'s own
+# docstring says a failure "could mean a transient network blip just as
+# easily as a permanent rejection." There is no structural signal in this
+# codebase that tells the two apart on a single attempt (Reporter.to_requester
+# treats FAIL and UNDETERMINED identically too). Consecutive failed sweeps is
+# therefore the only available proxy: it survives any single blip (each sweep
+# run is a separate, time-spaced retry opportunity) while still bounding the
+# damage a permanently-bad chat id can do. 5 gives a stale/deleted chat id
+# five independent chances to prove itself transient before it is quarantined.
+MAX_DELIVERY_ATTEMPTS = 5
+
+
 def cmd_sweep_undeliverable(args) -> int:
-    """Retry every queued undeliverable message, oldest first. Takes the run lock."""
+    """Retry every queued undeliverable message, oldest first. Takes the run lock.
+
+    A message that still fails after MAX_DELIVERY_ATTEMPTS tries is moved to
+    state["dead_letter"] instead of being re-queued forever (RCA #7) -- it is
+    quarantined, not silently dropped: the record stays in state.json with the
+    reason and timestamp, and a DEAD-LETTERED line is printed so an operator
+    scanning sweep output (or state["dead_letter"] via --status/--json) can
+    find it. A message that succeeds on any attempt before the cap is
+    delivered normally regardless of its attempt count.
+    """
     run_dir = args.run_dir.expanduser().resolve()
     with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
         undeliverable = state.get("undeliverable", [])
         if not undeliverable:
-            print("0 queued, 0 delivered, 0 still undeliverable")
+            print("0 queued, 0 delivered, 0 still undeliverable, 0 dead-lettered")
             return EXIT_OK
         delivered = 0
+        dead_lettered = 0
         remaining = []
+        dead_letter = state.setdefault("dead_letter", [])
         for msg in undeliverable:
             chat_id = msg.get("chat_id", "")
             kind = msg.get("kind", "")
@@ -185,6 +245,19 @@ def cmd_sweep_undeliverable(args) -> int:
                 rec["count"] = rec.get("count", 0) + 1
                 rec["first_at"] = rec["first_at"] or utcnow()
                 rec["last_at"] = utcnow()
+            elif attempts >= MAX_DELIVERY_ATTEMPTS:
+                msg["attempts"] = attempts
+                msg["last_attempt_at"] = utcnow()
+                msg["dead_lettered_at"] = utcnow()
+                msg["dead_letter_reason"] = (
+                    f"undeliverable after {attempts} attempts "
+                    f"(cap {MAX_DELIVERY_ATTEMPTS}); chat_id={chat_id!r} kind={kind!r}"
+                )
+                dead_letter.append(msg)
+                dead_lettered += 1
+                print(f"DEAD-LETTERED: {kind!r} to chat_id={chat_id!r} after "
+                      f"{attempts} attempts (cap {MAX_DELIVERY_ATTEMPTS}) -- "
+                      "quarantined in state['dead_letter'], will not be retried again")
             else:
                 msg["attempts"] = attempts
                 msg["last_attempt_at"] = utcnow()
@@ -193,8 +266,65 @@ def cmd_sweep_undeliverable(args) -> int:
         still = len(remaining)
         state["undeliverable"] = remaining
         store.save(state)
-        print(f"{total} queued, {delivered} delivered, {still} still undeliverable")
-        return EXIT_OK if still == 0 else 1
+        print(f"{total} queued, {delivered} delivered, {still} still undeliverable, "
+              f"{dead_lettered} dead-lettered")
+        return EXIT_OK if still == 0 and dead_lettered == 0 else 1
+
+
+def cmd_capacity(args) -> int:
+    """WORK-ITEM-12: run the 9Router capacity probe and print the report.
+
+    Read-only measurement of the harness settings and the local process table.
+    Never simulated. Prints the probe report to stdout; the machine-greppable
+    JSON block ships inside it (probe_mode / dispatchable / available)."""
+    from . import capacity
+    result = capacity.probe()
+    print(capacity.format_report(result), flush=True)
+    return EXIT_OK
+
+
+def cmd_workingset(args, scripts_dir: Path) -> int:
+    """FIX-20 gate: measure phase working sets against the context-window cap.
+
+    With no phase argument, measures every manifest phase. Prints one JSON
+    report per phase. Exit 0 when every measured phase fits one context
+    window; exit EXIT_GATE_BLOCKED (3) when any phase's estimated token count
+    exceeds the cap. Reading a run dir; never mutates state."""
+    from .workingset import measure_all, measure_workingset, list_checkpoints
+    run_dir = args.run_dir.expanduser().resolve()
+    manifest = None
+    store = StateStore(run_dir)
+    state = {}
+    if store.exists():
+        state = store.load()
+        mp = state.get("manifest_path")
+        if mp and Path(mp).is_file():
+            manifest = Manifest(Path(mp))
+
+    results = []
+    if args.workingset == "__all__":
+        results = measure_all(run_dir, manifest)
+    else:
+        results = [measure_workingset(run_dir, args.workingset, manifest)]
+
+    checkpoints = list_checkpoints(run_dir)
+    overview = {
+        "mode": "all" if args.workingset == "__all__" else args.workingset,
+        "run_dir": str(run_dir),
+        "phases_measured": len(results),
+        "context_window_cap": results[0]["context_window_cap"] if results else None,
+        "phases_fit": sum(1 for r in results if r["fits"]),
+        "phases_over": sum(1 for r in results if not r["fits"]),
+        "disk_checkpoints": checkpoints,
+        "measurements": results,
+    }
+    print(json.dumps(overview, indent=2))
+    for r in results:
+        if not r["fits"]:
+            print(f"AF-WORKINGSET-OVER: phase {r['phase_id']} estimated "
+                  f"{r['estimated_tokens']} tokens, cap {r['context_window_cap']} "
+                  f"({r['tokens_pct_of_cap'] * 100:.1f}% of window)", file=sys.stderr)
+    return EXIT_OK if all(r["fits"] for r in results) else EXIT_GATE_BLOCKED
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -235,12 +365,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.apply and not args.reconcile_board:
         die(EXIT_USAGE, "--apply is only meaningful with --reconcile-board")
 
+    # --capacity needs no run-dir: it is a read-only probe of the harness.
+    if args.capacity:
+        return cmd_capacity(args)
+
     if not args.run_dir:
         die(EXIT_USAGE, "--run-dir is required")
     run_dir = args.run_dir.expanduser().resolve()
 
     if args.new:
         return cmd_new(args, scripts_dir)
+    if args.capacity:
+        return cmd_capacity(args)
+    if args.workingset is not None:
+        return cmd_workingset(args, scripts_dir)
     if args.status:
         return cmd_status(args)
     if args.sweep_undeliverable:

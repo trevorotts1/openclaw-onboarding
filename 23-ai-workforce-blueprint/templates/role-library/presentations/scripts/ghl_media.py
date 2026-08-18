@@ -25,6 +25,13 @@ the Skill-48 Facebook-ad generator already proved against a live GoHighLevel loc
         -> {fileId, url, http} ; url is the PUBLIC storage.googleapis.com/msgsndr/...
            GCS object URL (login-free). FAIL-LOUD on non-2xx / missing fileId/url.
 
+    list_media(location_id, pit, *, media_type="file", ...)
+        -> READ-ONLY GET services.leadconnectorhq.com/medias/files?locationId=...
+           Authorization: Bearer <LOCATION PIT> ; Version: 2021-07-28.
+           The verification twin of upload_media: proves a just-uploaded deck is
+           genuinely in the GHL media library by listing and matching on name/fileId.
+           Plain GET, never mutates — safe for operator-account QC list-backs.
+
     resolve_location_pit() / resolve_location_id()  — read the canonical env names
         (GOHIGHLEVEL_API_KEY then GHL_API_KEY ; GOHIGHLEVEL_LOCATION_ID then
         GHL_LOCATION_ID). For a CLIENT deck these resolve the CLIENT's LOCATION PIT —
@@ -57,20 +64,58 @@ from pathlib import Path
 
 def _find_canonical_ghl_media() -> Path:
     """Locate the verified-working tools/ghl_media.py shipped by the Skill-48
-    Facebook-ad generator. Walks up from this file to the repo root (the dir that
-    contains 48-facebook-ad-generator) so it resolves in the repo AND on a deployed
-    client box where the sibling skill dirs are present. Raises if not found
-    (fail loud rather than silently fork the proven REST calls)."""
+    Facebook-ad generator. Resolves in every layout the Presentations dept can
+    run from. PRIORITY (FIX-23(d) — the GHL co-location fix):
+
+      1. Co-located _skill48_ghl_media.py next to THIS module — the materializer
+         (create_role_workspaces.py) copies the CANONICAL repo module here on
+         every floor-fill, so this is the AUTHORITATIVE, always-current copy for
+         a deployed department. A deployed box must never silently fall back to
+         a stale installed Skill-48 sibling (measured: the installed
+         ~/.openclaw/skills/48-facebook-ad-generator/tools/ghl_media.py was a
+         22KB pre-list_media version while the repo's verified-working module is
+         25KB — a stale sibling would silently fork the media contract).
+      2. Repo tree:       walking up from this file to the repo root (the dir
+                           that contains 48-facebook-ad-generator).
+      3. Skills tree:     the OpenClaw skills dir where Skill-48 actually lands
+                           on a box (~/.openclaw/skills or /data/.openclaw/skills
+                           on a VPS, i.e. OC_SKILLS_DIR) — used only when no
+                           co-located copy and no repo sibling exist.
+
+    Raises if not found (fail loud rather than silently fork the proven REST
+    calls). GATE 1b asserts this import under the render interpreter BEFORE any
+    render spend."""
     here = Path(__file__).resolve()
+    # 1. Self-contained co-located copy (materializer-installed sibling) — FIRST,
+    #    so a deployed department always loads the canonical, always-current module.
+    local = here.parent / "_skill48_ghl_media.py"
+    if local.is_file():
+        return local
+    # 2. Repo tree: walk up for a sibling 48-facebook-ad-generator dir.
     for parent in here.parents:
         cand = parent / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
         if cand.is_file():
             return cand
+    # 3. Deployed box: the OpenClaw skills tree (Skill-48 installs here) — last
+    #    resort, because the installed copy can lag the repo's canonical module.
+    for skills_root in (
+        Path(os.environ.get("OPENCLAW_SKILLS_DIR", "")),
+        Path.home() / ".openclaw" / "skills",
+        Path("/data/.openclaw/skills"),
+    ):
+        if not skills_root or not skills_root.is_dir():
+            continue
+        cand = skills_root / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+        if cand.is_file():
+            return cand
     raise FileNotFoundError(
-        "canonical ghl_media.py not found — expected "
-        "<repo>/48-facebook-ad-generator/tools/ghl_media.py (the verified-working "
-        "GHL media folder-create + upload module the Presentations dept SHARES). "
-        "The dept must never fork these REST calls; ship the sibling skill dir."
+        "canonical ghl_media.py not found — expected a co-located "
+        "_skill48_ghl_media.py next to this module, "
+        "<repo>/48-facebook-ad-generator/tools/ghl_media.py, or "
+        "<skills>/48-facebook-ad-generator/tools/ghl_media.py (the verified-working "
+        "GHL media folder-create + upload module the Presentations dept SHARES). The "
+        "dept must never fork these REST calls; install the Skill-48 sibling "
+        "(48-facebook-ad-generator) or run the materializer to co-locate it."
     )
 
 
@@ -85,13 +130,18 @@ _spec.loader.exec_module(_canon)  # type: ignore[union-attr]
 # DECK-artifact gate (the lowest GHL upload chokepoint). Every other symbol, and the
 # actual REST upload underneath the wrapper, is the canonical, verified-working code.
 create_media_folder = _canon.create_media_folder
+list_media = _canon.list_media
 resolve_location_pit = _canon.resolve_location_pit
 resolve_location_id = _canon.resolve_location_id
 verify_png = _canon.verify_png
 GHL_SERVICES_ORIGIN = _canon.GHL_SERVICES_ORIGIN
 GHL_MEDIA_UPLOAD_PATH = _canon.GHL_MEDIA_UPLOAD_PATH
 GHL_MEDIA_FOLDER_PATH = _canon.GHL_MEDIA_FOLDER_PATH
+GHL_MEDIA_LIST_PATH = _canon.GHL_MEDIA_LIST_PATH
 GHL_MEDIA_VERSION = _canon.GHL_MEDIA_VERSION
+GHL_MEDIA_VERSION_V3 = _canon.GHL_MEDIA_VERSION_V3
+GHL_VIDEO_MAX_BYTES = _canon.GHL_VIDEO_MAX_BYTES
+GHL_VIDEO_MIME = _canon.GHL_VIDEO_MIME
 
 CANONICAL_SOURCE = str(_CANON_PATH)
 
@@ -167,16 +217,148 @@ def upload_media(png_path, location_id, name, pit, *, hosted=False, parent_id=No
                                parent_id=parent_id, timeout=timeout, opener=opener,
                                require_png=require_png)
 
+
+# ===========================================================================
+# v3 VIDEO upload — the 500MB tier, SMALL-PROBE-GATED (v17). NOT a fork.
+# ===========================================================================
+# GHL media offers TWO tiers: the regular "2021-07-28" tier caps files at 25MB, and
+# the v3 tier grants 500MB for VIDEO. The tier is selected per-request by the
+# ``Version`` header — ``v3`` (with the multipart file part declared
+# ``Content-Type: video/mp4``) for the video tier, ``2021-07-28`` for regular media.
+# The REST call underneath is the SAME verified-working canonical
+# ``POST /medias/upload-file`` (same multipart encoder, same bounded retry, same
+# Cloudflare-1010 Browser-UA) — only the ``Version`` header and the file part's
+# declared content type differ. So a 500MB video can be hosted WITHOUT forking the
+# proven upload path, and a video that slips past the 25MB regular-tier cap is not
+# silently 413'd: it uses the tier that allows it.
+#
+# SMALL-PROBE GATE: before the real (potentially huge) upload, ``verify_video`` runs
+# a cheap local probe of the artifact — it must (1) exist, (2) be non-empty, (3) be
+# within the 500MB v3 ceiling, and (4) start with an MP4 ftyp box (the ISO-BMFF
+# container signature). A non-MP4 or oversized file is refused BEFORE any network
+# spend — the same fail-closed posture as ``verify_png`` for the image tier. The
+# probe is deliberately local (no network): it cannot leak a credential and it fails
+# instantly on a stub, not after a multi-hundred-MB transfer.
+_MP4_FTYP_MAGIC = b"ftyp"
+
+
+def verify_video(path) -> bool:
+    """SMALL-PROBE: True iff ``path`` is a plausible v3-uploadable MP4 video.
+
+    Cheap, LOCAL, no-network pre-flight used before the real v3 video upload. Returns
+    False for a missing / empty / over-500MB file, or a file whose first box is not the
+    ISO-BMFF ``ftyp`` container signature (bytes 4:8 of the MP4 header) — i.e. not an
+    MP4 at all. Mirrors ``verify_png`` (the image-tier guard) so a stub or a
+    wrong-tier artifact is refused before any network spend."""
+    p = Path(str(path))
+    if not p.is_file():
+        return False
+    size = p.stat().st_size
+    if size <= 0:
+        return False
+    if size > GHL_VIDEO_MAX_BYTES:
+        return False
+    with open(p, "rb") as f:
+        head = f.read(8)
+    return len(head) == 8 and head[4:8] == _MP4_FTYP_MAGIC
+
+
+def upload_video(video_path, location_id, name, pit, *, parent_id=None, timeout=900,
+                 opener=None, require_video=True):
+    """Host a VIDEO (up to 500MB) to the GHL media library via the v3 tier.
+
+    The v3 video tier is selected by sending ``Version: v3`` (instead of the regular
+    tier's ``Version: 2021-07-28``) and declaring the multipart file part as
+    ``Content-Type: video/mp4``. The REST call is otherwise the IDENTICAL
+    verified-working canonical ``upload_media`` — same ``POST /medias/upload-file``
+    endpoint, same multipart encoder, same bounded retry, same Browser-UA — so this
+    wrapper never forks the proven upload path, it only chooses the tier that allows
+    the file size.
+
+    SMALL-PROBE: ``verify_video`` runs BEFORE any network call (fail-closed): the file
+    must exist, be non-empty, be <= 500MB, and carry an MP4 ``ftyp`` box. A missing /
+    oversized / non-MP4 file raises ``ValueError`` with zero bytes sent. Set
+    ``require_video=False`` to lift the MP4-magic check for a proven non-MP4 video
+    container (the file must still exist and be within the 500MB ceiling).
+
+    Args:
+        video_path: Local MP4 video to upload (validated by the small probe).
+        location_id: The GHL sub-account location id (client's own).
+        name: Human-friendly media-library name.
+        pit: The LOCATION Private Integration Token (Bearer).
+        parent_id: Optional FOLDER id (``parentId``) — videos land in the media root
+            when omitted.
+        timeout: HTTP timeout seconds (default 900 — video uploads are large).
+        opener: Optional callable ``(Request, timeout) -> response-like`` for tests
+            (mock the HTTP). Default = ``urllib.request.urlopen`` (real call).
+        require_video: When True (DEFAULT), the file MUST pass the MP4 small probe
+            before the real upload. When False, only existence + the 500MB ceiling are
+            checked (for a caller that has already proven a non-MP4 video container).
+
+    Returns:
+        ``{fileId, url, name, local_path, http, tier, content_type}`` — ``url`` is the
+        public GCS URL; ``tier`` is ``"v3"`` and ``content_type`` is ``video/mp4``.
+
+    Raises:
+        ValueError: missing args, a non-MP4 file when ``require_video``, a file over
+            the 500MB ceiling, or a non-existent file when ``require_video=False``.
+        RuntimeError: non-2xx HTTP, or a 2xx response missing ``fileId``/``url``
+            (never fabricates a CDN URL).
+    """
+    if not video_path or not str(video_path).strip():
+        raise ValueError("video_path is required and must be non-empty")
+    _canon._require(location_id, "location_id")
+    _canon._require(name, "name")
+    _canon._require(pit, "pit")
+    if require_video:
+        if not verify_video(video_path):
+            raise ValueError(
+                f"refusing to upload {video_path!r}: small probe failed — file must "
+                f"exist, be non-empty, be <= {GHL_VIDEO_MAX_BYTES} bytes (500MB v3 "
+                "video ceiling), and start with an MP4 ftyp box. Nothing was sent."
+            )
+    elif not os.path.isfile(video_path):
+        raise ValueError(
+            f"refusing to upload {video_path!r}: file does not exist (require_video=False "
+            "lifts the MP4-magic check, not the existence or size-ceiling checks)"
+        )
+    size = os.path.getsize(video_path)
+    if size > GHL_VIDEO_MAX_BYTES:
+        raise ValueError(
+            f"refusing to upload {video_path!r}: {size} bytes exceeds the {GHL_VIDEO_MAX_BYTES}"
+            "-byte (500MB) v3 video ceiling — the regular 25MB tier would 413, and the "
+            "v3 tier still cannot take a file this large."
+        )
+
+    # Same canonical REST call, video tier: Version: v3 + video/mp4 file part.
+    res = _canon.upload_media(video_path, location_id, name, pit, hosted=False,
+                              parent_id=parent_id, timeout=timeout, opener=opener,
+                              require_png=False, file_content_type=GHL_VIDEO_MIME,
+                              version=GHL_MEDIA_VERSION_V3)
+    # Tag the v3 tier + declared content type so a caller (or a QC list-back) can prove
+    # WHICH tier hosted the file without re-inspecting the wire.
+    res["tier"] = GHL_MEDIA_VERSION_V3
+    res["content_type"] = GHL_VIDEO_MIME
+    return res
+
+
 __all__ = [
     "create_media_folder",
     "upload_media",
+    "upload_video",
+    "list_media",
     "resolve_location_pit",
     "resolve_location_id",
     "verify_png",
+    "verify_video",
     "GHL_SERVICES_ORIGIN",
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
+    "GHL_MEDIA_LIST_PATH",
     "GHL_MEDIA_VERSION",
+    "GHL_MEDIA_VERSION_V3",
+    "GHL_VIDEO_MAX_BYTES",
+    "GHL_VIDEO_MIME",
     "CANONICAL_SOURCE",
 ]
 
@@ -187,4 +369,7 @@ if __name__ == "__main__":  # tiny self-describe (no network)
           f"(Version: {GHL_MEDIA_VERSION}, Bearer LOCATION PIT)")
     print(f"  upload:        POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_UPLOAD_PATH} "
           f"(Version: {GHL_MEDIA_VERSION}, multipart, optional parentId)")
+    print(f"  upload_video:  POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_UPLOAD_PATH} "
+          f"(Version: {GHL_MEDIA_VERSION_V3}, Content-Type: {GHL_VIDEO_MIME}, "
+          f"small-probe gated, up to {GHL_VIDEO_MAX_BYTES} bytes)")
     _ = os.environ  # keys are read lazily by resolve_* at call time

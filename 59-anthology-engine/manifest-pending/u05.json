@@ -1,0 +1,175 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U05-ASSEMBLY-INCOMPLETE",
+      "exit": 2,
+      "meaning": "the U05 check-module set named in the assembly roster is not fully present, or a module violates the one-entry-point self_test contract \u2014 a check family is never silently skipped (dispatcher STOP)"
+    },
+    {
+      "code": "AF-AE-SCOPED-SUBJECT-MISSING",
+      "exit": 5,
+      "meaning": "the scoped listing does not carry the golden subject under its golden composite key \u2014 the one-subject read lost its subject (golden_scoped payload gate)"
+    },
+    {
+      "code": "AF-AE-SCOPED-FOREIGN-ROW",
+      "exit": 5,
+      "meaning": "the scoped listing carries a row that is NOT the golden subject \u2014 a foreign subject leaked into the one-subject read (golden_scoped payload gate)"
+    },
+    {
+      "code": "AF-AE-SCOPED-ROW-COUNT",
+      "exit": 5,
+      "meaning": "the scoped listing carries a row count other than exactly one \u2014 the one-subject read is no longer one (golden_scoped payload gate)"
+    },
+    {
+      "code": "AF-AE-ATTACKUNSCOPED-*",
+      "exit": 4,
+      "meaning": "an attack tripped the empty-filter attack fixture's OFFLINE self-test (enforced violation) \u2014 the empty-filter attack passed a gate, or a drifted authority was not caught HERE first"
+    },
+    {
+      "code": "AF-AE-ATTACKWRONGFORM-*",
+      "exit": 4,
+      "meaning": "an attack tripped the wrong-form attack fixture's OFFLINE self-test (enforced violation) \u2014 the wrong-form attack passed a gate, or a drifted authority was not caught HERE first"
+    },
+    {
+      "code": "AF-AE-NEGATIVE-INTAKE-FIRE",
+      "exit": 5,
+      "meaning": "the negative verifier certified does-not-fire for a submission that IDENTIFIES as the universal author-intake form with an agreeing stage token \u2014 the Intake Fire trigger WOULD fire; the negative claim is FALSE"
+    },
+    {
+      "code": "AF-AE-TRIGGER-SCOPE-VALIDATION",
+      "exit": 2,
+      "meaning": "the internal rail REFUSED the trigger-scope PUT \u2014 a data-contract problem to resolve in the Convert and Flow UI; the filter was NOT corrected (scope_applier STOP; not yet stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-PIT-SCOPE",
+      "exit": 2,
+      "meaning": "a genuine location-scope denial signature on the live read \u2014 STOP, never mislabeled as an edge block (workflow_reader; already stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of the dispatcher or a family battery (enforced violation \u2014 the house code, shared with the U02 / U03 / U04 families)"
+    }
+  ],
+  "authored_by": "U05",
+  "check_modules": [
+    "scope_checker",
+    "golden_scoped",
+    "attack_unscoped",
+    "attack_wrong_form",
+    "workflow_reader",
+    "house_rules",
+    "negative_verifier",
+    "scope_applier",
+    "trigger_reader",
+    "example_usage",
+    "docs_u05"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u05-intake-fire-scope",
+  "exit_codes": {
+    "0": "verified success \u2014 the filter is byte-exact and the live surface agrees with its source of truth (also plan / dry-run / self-test / a certified does-not-fire negative)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 label NOT SET / non-pit- value / usage / the U05 check-module assembly incomplete (AF-AE-U05-ASSEMBLY-INCOMPLETE) / a contract that cannot be read / an empty or malformed scope policy / a module STOP-family refusal (incl. AF-AE-PIT-SCOPE)",
+    "3": "HELD \u2014 Convert and Flow unreachable / Cloudflare edge block (CF error 1010) / the internal rail unavailable (UNDETERMINED, never a verdict)",
+    "4": "self-test FAILED (AF-AE-TEMPLATE-ATTACK / AF-AE-GOLDENSCOPED-* / AF-AE-ATTACKUNSCOPED-* / AF-AE-ATTACKWRONGFORM-* / AF-AE-NEGATIVE-ATTACK family, enforced violation) \u2014 a tamper never masquerades as exit 1",
+    "5": "mismatch / fail-closed default \u2014 an empty or byte-drifted filter, a wrong form on the filter, a submission that FIRES Intake Fire or is INDETERMINATE, no 'Anthology Intake Fire' row, a pinned id absent from the listing, a foreign subject row, a fixture payload that drifted, or a DEFERRED live read without --allow-deferred"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the ONE live read (workflow_reader) is rail-gated (Firebase refresh token BY LABEL preferred, PIT fallback) and HELD (exit 3) when the rail is unreachable \u2014 never a fabricated pass; the applier (scope_applier.py) is the ONLY write surface and REFUSES without its own --execute \u2014 this assembler never writes."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "check_intake_fire_scope.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u05_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the check-module dispatcher CLI (plan / self-test / live verify)"
+    },
+    {
+      "name": "scope_checker.py",
+      "role": "the pipeline-rule scope gate (filter == 'Form is universal-intake' byte-exact; empty / wildcard / drifted filters are OUT of scope, never a pass)"
+    },
+    {
+      "name": "golden_scoped.py",
+      "role": "the golden SCOPED-READ fixture (the canonical single-subject payload keyed by the one non-empty anthology_id filter; KEYING LAW read once from anthology_state.participant_key) + its fail-closed payload gate"
+    },
+    {
+      "name": "attack_unscoped.py",
+      "role": "the U05 ATTACK: the empty-anthology-filter read that MUST FAIL every unscoped-read gate (the golden one-anthology scoped control PASSES)"
+    },
+    {
+      "name": "attack_wrong_form.py",
+      "role": "the U05 ATTACK: the wrong form on the intake filter that MUST FAIL every byte-exact scope gate (the golden control PASSES)"
+    },
+    {
+      "name": "workflow_reader.py",
+      "role": "the ONE live workflow read \u2014 find 'Anthology Intake Fire' by the name law / pin on the internal-rail listing, report its ONE id (rail-gated; the ONE credential surface)"
+    },
+    {
+      "name": "house_rules.py",
+      "role": "the ONE canonical house-law constant surface (browser UA / version header ported byte-for-byte from the registry; the AF autofail table mirrored from ENGINE-MANIFEST.json)"
+    },
+    {
+      "name": "negative_verifier.py",
+      "role": "the NEGATIVE VERIFIER \u2014 certify, fail-closed, that a submission (the universal-review decision form) does NOT fire the Intake Fire trigger (the scope law read once from u02_modules.scope_check)"
+    },
+    {
+      "name": "scope_applier.py",
+      "role": "the ONLY write surface \u2014 the trigger-scope PUT via the internal rail, REFUSED without its own --execute (the dispatcher NEVER invokes it and NEVER writes)"
+    },
+    {
+      "name": "trigger_reader.py",
+      "role": "the OFFLINE reader of the n8n Drive-broker trigger filter set (the webhook gate + the Authorize & Dispatch filter law + the action allowlist pinned to drive_adapter.BROKER_REQUIRED_ACTIONS)"
+    },
+    {
+      "name": "example_usage.py",
+      "role": "the fail-closed WORKED EXAMPLE of the U05 dispatch (front-door read + scoped law + both attacks + the negative mirror)"
+    },
+    {
+      "name": "test_scope_checker.py",
+      "role": "the independent pytest battery over the scope gate (provenance only)"
+    },
+    {
+      "name": "test_negative_verifier.py",
+      "role": "the independent pytest battery over the negative verifier (provenance only)"
+    },
+    {
+      "name": "test_scope_applier.py",
+      "role": "the independent pytest battery over the write gate of the scope applier (provenance only)"
+    },
+    {
+      "name": "docs_u05.py",
+      "role": "the U05 tooling README/catalog data + drift gate (the module inventory as DATA)"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "scoped_read",
+      "item": 1,
+      "title": "Scoped-read law \u2014 every read scoped to ONE subject"
+    },
+    {
+      "id": "intake_fire_workflow",
+      "item": 2,
+      "title": "Intake Fire workflow readable (name law + pin law)"
+    },
+    {
+      "id": "pipeline_rule_scope",
+      "item": 3,
+      "title": "Pipeline-rule scope \u2014 filter is 'Form is universal-intake'"
+    },
+    {
+      "id": "attack_boundary",
+      "item": 4,
+      "title": "Attack boundary \u2014 the FAIL paths are proven to FAIL"
+    }
+  ]
+}

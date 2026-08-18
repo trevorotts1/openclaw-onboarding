@@ -211,7 +211,17 @@ class TestSafetyGateRefusesForeignLocation(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0,
                             "Foreign-location write must be refused (non-zero exit)")
         mock_req.assert_not_called()
-        self.assertIn("SAFETY GATE", result.output + (result.stderr or ""))
+        # click <8.2 (the newest release that still supports Python 3.9)
+        # defaults CliRunner to mix_stderr=True, where stdout/stderr are
+        # already combined in .output and .stderr raises ValueError; click
+        # >=8.2 always keeps .stderr separate and readable. Tolerate both so
+        # this assertion works under whichever click version the running
+        # interpreter resolves.
+        try:
+            stderr_text = result.stderr
+        except ValueError:
+            stderr_text = ""
+        self.assertIn("SAFETY GATE", result.output + stderr_text)
 
 
 class TestSafetyGateRefusesUnapproved(unittest.TestCase):

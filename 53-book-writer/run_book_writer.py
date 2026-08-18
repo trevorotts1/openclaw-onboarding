@@ -212,8 +212,8 @@ def check_avatar(bk: Book):
     p = bk.artifacts / "01-avatar.md"
     if not p.is_file():
         return False, ("missing run/artifacts/01-avatar.md — FAIL-CLOSED: the book cannot "
-                       "complete without the authored avatar dossier (authoring stage deferred "
-                       "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "complete without the authored avatar dossier (authored by the baked "
+                       "stage prompt; see prompts/01-avatar-questions-1-30)"), {}
     return True, "avatar dossier present", {}
 
 
@@ -244,8 +244,8 @@ def check_outline(bk: Book, approvals: dict):
     stories = bk.rd / "stories.json"
     if not outline.is_file():
         return False, ("missing run/artifacts/13-outline.md — FAIL-CLOSED: the book cannot "
-                       "complete without the authored outline (authoring stage deferred to a "
-                       "scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "complete without the authored outline (authored by the baked "
+                       "stage prompt; see prompts/13-create-outline)"), {}
     if not stories.is_file():
         return False, "missing run/stories.json", {}
     if not _gate_ok(approvals, "GATE-2-outline"):
@@ -267,8 +267,8 @@ def check_chapters(bk: Book):
     files = bk.chapter_files()
     if not files:
         return False, ("no run/chapters/ch*.md — FAIL-CLOSED: the book cannot complete without "
-                       "authored chapters (authoring stage deferred to a scoped follow-up "
-                       "campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "authored chapters (authored by the baked chapter-batch stage prompts; "
+                       "see prompts/15-write-chapters-b1 … 18-write-chapters-b4)"), {}
     chap_texts = {}
     for i, p in enumerate(files, 1):
         chap_texts[i] = p.read_text(encoding="utf-8")
@@ -312,9 +312,25 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
     ch = bk.artifacts / "21-30day-challenge.md"
     if not ch.is_file():
         return False, ("missing run/artifacts/21-30day-challenge.md — FAIL-CLOSED: the book "
-                       "cannot complete without the authored 30-Day Challenge (authoring stage "
-                       "deferred to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "cannot complete without the authored 30-Day Challenge (authored by the "
+                       "baked stage prompt; see prompts/21-30day-challenge)"), {}
     res_ch = p_chal.evaluate(ch.read_text(encoding="utf-8"))
+    # cover prompt (manifest stage 22-cover-prompt, P6-PACKAGE, floor title_lock)
+    cover = bk.artifacts / "22-cover-prompt.md"
+    if not cover.is_file():
+        return False, ("missing run/artifacts/22-cover-prompt.md — FAIL-CLOSED: the book "
+                       "cannot complete without the authored cover prompt (P6-PACKAGE stage "
+                       "22-cover-prompt declares floor title_lock; author it and re-run)"), {}
+    # BUG-5 FAIL-CLOSED: the blurb, suggested titles, and chapter titles are REQUIRED
+    # P6-PACKAGE deliverables — the certificate must never claim all_phases_pass
+    # without them. Mirrors the hard requirement on 21-30day-challenge.md above.
+    for rel in ("10-suggested-titles.md", "11-blurb.md", "12-chapter-titles.md"):
+        req = bk.artifacts / rel
+        if not req.is_file():
+            return False, ("missing run/artifacts/%s — FAIL-CLOSED: the book cannot "
+                           "complete without the authored %s (authoring stage deferred "
+                           "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. "
+                           "PENDING')" % (rel, rel)), {}
     # title-lock across required artifacts
     title, subtitle = bk.title_subtitle()
     targets = {}
@@ -354,36 +370,92 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
         else:
             gates_ok = False
             gate_msgs.append("GATE-4-approval-r2 receipt missing/malformed (revision round 2 ran)")
-    ok = res_ch.passed and res_tl.passed and res_ph.passed and res_anon.passed and gates_ok
-    msg = "challenge %s | title-lock %s | placeholder %s | anon %s | revision-gates %s" % (
+    # BUG-20: a certified 4x3x3 bundle MUST actually contain the offer-book extras
+    # (30 titles / outcomes / KP doc / deck data / deck outline). The 4x3x3 prover in
+    # P7-QC validates the SOURCE artifacts under run/433/; here we fail-closed unless
+    # every one of the five labeled extras is PRESENT in the assembled bundle.
+    bundle_433_ok = True
+    bundle_433_msg = "none required"
+    if bk.mode() == "4x3x3":
+        expected = ["30_Titles-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "Transformational_Outcomes-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "KP_Document-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "433_Deck_Data.json", "433_Deck_Outline.md"]
+        missing = [name for name in expected if not (staging_dir / name).is_file()]
+        bundle_433_ok = not missing
+        bundle_433_msg = ("4x3x3 bundle extras present" if bundle_433_ok
+                          else "4x3x3 bundle MISSING extras: %s" % ", ".join(missing))
+    ok = res_ch.passed and res_tl.passed and res_ph.passed and res_anon.passed and gates_ok and bundle_433_ok
+    msg = "challenge %s | title-lock %s | placeholder %s | anon %s | revision-gates %s | 433-bundle %s" % (
         _phase_result(res_ch)[1], _phase_result(res_tl)[1], _phase_result(res_ph)[1],
-        _phase_result(res_anon)[1], ("; ".join(gate_msgs) if gate_msgs else "none required"))
+        _phase_result(res_anon)[1], ("; ".join(gate_msgs) if gate_msgs else "none required"),
+        bundle_433_msg)
     return ok, msg, {"challenge_sections": c.count_day_sections(ch.read_text(encoding="utf-8")),
                      "title_lock_ok": res_tl.passed}
 
 
+def _write_qc_report(bk: Book, report: dict):
+    """Persist the P7-QC report artifact (manifest produces_artifact
+    run/qc/book_qc_report.json) FAIL-SOFT: a write error is logged to stderr and
+    swallowed — the QC verdict is decided by the checkers, never by our ability to
+    persist the report, so a write problem can never fail the run."""
+    try:
+        out = bk.rd / "qc" / "book_qc_report.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    except OSError as exc:
+        print("P7-QC report write skipped (fail-soft): %s" % exc, file=sys.stderr)
+
+
 def check_qc(bk: Book):
+    report = {
+        "artifact": "run/qc/book_qc_report.json",
+        "schema": "book-writer-qc-report-v1",
+        "mode": bk.mode(),
+        "no_anthropic": {"passed": False, "violations": [], "notes": []},
+        "433": None,
+        "measured": {},
+        "qc_passed": False,
+        "message": "",
+    }
     ledger = bk.rd / "RUN-LEDGER.json"
     # FAIL-CLOSED: a missing RUN-LEDGER (or one that records ZERO model ids) means
     # the no-Anthropic / client-provider provenance was never established — the QC
     # gate cannot pass on an absent ledger. And the credential scan runs against the
     # LIVE process env by NAME only (masked), never a disabled env={}.
     if not ledger.is_file():
-        return False, ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
-                       "provenance (client's OWN providers, never Anthropic) is unproven "
-                       "(fail-closed; the ledger must record each stage's resolved model id)"), {}
+        msg = ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
+               "provenance (client's OWN providers, never Anthropic) is unproven "
+               "(fail-closed; the ledger must record each stage's resolved model id)")
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
     try:
         ledger_obj = json.loads(ledger.read_text(encoding="utf-8"))
     except ValueError as exc:
-        return False, "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc, {}
-    if _ledger_model_id_count(ledger_obj) == 0:
-        return False, ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
-                       "client-provider provenance is empty (fail-closed; a real run records "
-                       "each stage's resolved model id)"), {}
+        msg = "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
+    report["measured"]["model_id_count"] = _ledger_model_id_count(ledger_obj)
+    if report["measured"]["model_id_count"] == 0:
+        msg = ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
+               "client-provider provenance is empty (fail-closed; a real run records "
+               "each stage's resolved model id)")
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
     res_anth = p_anth.evaluate(ledger_obj, env=dict(os.environ))
     ok = res_anth.passed
     msg = "no-anthropic %s" % _phase_result(res_anth)[1]
+    report["no_anthropic"]["passed"] = ok
+    report["no_anthropic"]["violations"] = [{"code": cd, "message": m} for cd, m in res_anth.violations]
+    report["no_anthropic"]["notes"] = res_anth.notes
     if bk.mode() == "4x3x3":
+        report["433"] = {"passed": False, "violations": [], "notes": [], "measured": {}}
         titles = bk.d433 / "41-30-titles.md"
         outcomes = bk.d433 / "42-outcomes.md"
         deck = bk.d433 / "433_Deck_Data.json"
@@ -393,9 +465,31 @@ def check_qc(bk: Book):
                                      json.loads(deck.read_text(encoding="utf-8")))
             ok = ok and res_433.passed
             msg += " | 4x3x3 %s" % _phase_result(res_433)[1]
+            report["433"]["passed"] = res_433.passed
+            report["433"]["violations"] = [{"code": cd, "message": m} for cd, m in res_433.violations]
+            report["433"]["notes"] = res_433.notes
+            report["433"]["measured"]["program_titles"] = c.count_list_items(
+                titles.read_text(encoding="utf-8"))
+            report["433"]["measured"]["transformational_outcomes"] = c.count_list_items(
+                outcomes.read_text(encoding="utf-8"))
+            # chapters mapped across the deck's phase map (report-only, fail-soft)
+            try:
+                deck_obj = json.loads(deck.read_text(encoding="utf-8"))
+                phases = deck_obj.get("phases") if isinstance(deck_obj, dict) else None
+                if isinstance(phases, list):
+                    report["433"]["measured"]["chapters_mapped"] = sum(
+                        len(ph.get("chapters", [])) for ph in phases if isinstance(ph, dict))
+            except (ValueError, AttributeError) as exc:
+                print("P7-QC deck measured value skipped (fail-soft): %s" % exc, file=sys.stderr)
         else:
             ok = False
             msg += " | 4x3x3 artifacts missing"
+            report["433"]["violations"].append(
+                {"code": "AF-BK-433-MAP",
+                 "message": "4x3x3 artifacts missing (41-30-titles.md / 42-outcomes.md / 433_Deck_Data.json)"})
+    report["qc_passed"] = ok
+    report["message"] = msg
+    _write_qc_report(bk, report)
     return ok, msg, {}
 
 
@@ -422,45 +516,76 @@ def assemble_delivery(bk: Book, out: Path) -> Path:
 
     copy("01-avatar.md", "Avatar_Document-%s_%s.md" % (first, last))
     copy("08-blended-tone.md", "Tone_Communication_Style_Analysis-%s_%s.md" % (first, last))
-    copy("10-suggested-titles.md", "Suggested_Titles-%s_%s.md" % (first, last))
     copy("APPROVED-TITLE.txt", "APPROVED-TITLE.txt")
     copy("13-outline.md", "APPROVED-OUTLINE.md")
     copy("21-30day-challenge.md", "30_Day_Challenge-%s_%s.md" % (first, last))
     copy("22-cover-prompt.md", "Book_Cover_Prompt.md")
-    # blurb + chapter titles combined
-    blurb = bk.artifacts / "11-blurb.md"
-    ctitles = bk.artifacts / "12-chapter-titles.md"
+    # BUG-5 FAIL-CLOSED: the blurb, suggested titles, and chapter titles are REQUIRED
+    # P6-PACKAGE deliverables. A bundle silently missing any of them must never be
+    # assembled (check_package enforces the same presence check; this raises so the
+    # staging bundle can never carry a certificate-free partial delivery either).
+    for rel in ("10-suggested-titles.md", "11-blurb.md", "12-chapter-titles.md"):
+        req = bk.artifacts / rel
+        if not req.is_file():
+            raise FileNotFoundError(
+                "missing run/artifacts/%s — FAIL-CLOSED: required deliverable absent; "
+                "refusing to assemble the delivery bundle" % rel)
+    copy("10-suggested-titles.md", "Suggested_Titles-%s_%s.md" % (first, last))
+    # blurb + chapter titles combined (both guaranteed present above)
     combo = []
-    if blurb.is_file():
-        combo.append(blurb.read_text(encoding="utf-8"))
-    if ctitles.is_file():
-        combo.append("\n\n" + ctitles.read_text(encoding="utf-8"))
-    if combo:
-        (out / ("Book_Blurb_and_Chapter_Titles-%s_%s.md" % (first, last))).write_text(
-            "".join(combo), encoding="utf-8")
+    combo.append((bk.artifacts / "11-blurb.md").read_text(encoding="utf-8"))
+    combo.append("\n\n" + (bk.artifacts / "12-chapter-titles.md").read_text(encoding="utf-8"))
+    (out / ("Book_Blurb_and_Chapter_Titles-%s_%s.md" % (first, last))).write_text(
+        "".join(combo), encoding="utf-8")
     # chapters + manuscript
     for p in bk.chapter_files():
         (out / "chapters" / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
     stem = (title or "Book").replace(" ", "_")
     (out / ("%s-Manuscript.md" % stem)).write_text(bk.manuscript_text(title, subtitle), encoding="utf-8")
+    # BUG-20: a 4x3x3 run ships its offer-book extras (the Skill 51 handoff
+    # payload under run/433/) into the labeled bundle. Without this, a certified
+    # 4x3x3 book carries ZERO of its 30 titles / outcomes / KP doc / deck data /
+    # deck outline. full-mode behavior is unchanged.
+    if bk.mode() == "4x3x3":
+        def _copy433(src_rel, dst_name):
+            src = bk.d433 / src_rel
+            if src.is_file():
+                (out / dst_name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+        _copy433("41-30-titles.md", "30_Titles-%s_%s.md" % (first, last))
+        _copy433("42-outcomes.md", "Transformational_Outcomes-%s_%s.md" % (first, last))
+        _copy433("43-kp-document.md", "KP_Document-%s_%s.md" % (first, last))
+        _copy433("433_Deck_Data.json", "433_Deck_Data.json")
+        _copy433("433_Deck_Outline.md", "433_Deck_Outline.md")
     return out
 
 
 def write_index_and_manifest(bk: Book, delivery: Path, measured: dict):
-    files = []
-    for p in sorted(delivery.rglob("*")):
-        if p.is_file():
-            sha = hashlib.sha256(p.read_bytes()).hexdigest()
-            files.append({"file": str(p.relative_to(delivery)), "sha256": sha})
-    manifest = {"skill": "book-writer", "author": "%s %s" % bk.author(),
-                "measured": measured, "files": files}
-    (delivery / "MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    # 00-INDEX.md is written FIRST: its content depends only on the file NAME list
+    # (not any sha), so once it is on disk its sha256 is final and can be recorded
+    # in MANIFEST.json below. Writing it before hashing avoids the chicken-and-egg
+    # where the recorded sha would describe the PRE-index 00-INDEX.md while the
+    # on-disk file lists MANIFEST.json/itself (the BUG-22 sha-mismatch trap).
+    names = sorted(p.relative_to(delivery).as_posix()
+                   for p in delivery.rglob("*") if p.is_file())
     idx = ["# Book Writer — deliverable index", "",
            "Everything below is a LOCAL labeled deliverable (no n8n / Airtable / Google / Gmail /",
            "Slack / GHL). See PROCESS-CERTIFICATE.json for the signed provenance.", ""]
-    for f in files:
-        idx.append("- `%s`" % f["file"])
+    for rel in names:
+        idx.append("- `%s`" % rel)
     (delivery / "00-INDEX.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
+    # MANIFEST.json cannot carry its own sha256 (self-referential — the file content
+    # would change as soon as the hash is written). List it with a null sha so it still
+    # appears in the INDEX / file list, and the verifier checks existence only for this
+    # entry. Every other file (00-INDEX.md now finalized, certs, content) gets a real sha.
+    files = []
+    for rel in names:
+        sha = None if rel == "MANIFEST.json" else hashlib.sha256(
+            (delivery / rel).read_bytes()).hexdigest()
+        files.append({"file": rel, "sha256": sha})
+    manifest = {"skill": "book-writer", "author": "%s %s" % bk.author(),
+                "measured": measured, "files": files}
+    (delivery / "MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def write_certificate(bk: Book, delivery: Path, steps, measured):
@@ -559,12 +684,19 @@ def verify_bundle_against_manifest(bundle: Path):
     for entry in files:
         rel = entry.get("file")
         want = entry.get("sha256")
-        if not rel or not want:
+        if not rel:
             problems.append("malformed MANIFEST entry: %r" % entry)
             continue
         fp = bundle / rel
         if not fp.is_file():
             problems.append("MANIFEST lists %s but it is absent from the bundle" % rel)
+            continue
+        if want is None:
+            # MANIFEST.json is self-referential (a file cannot contain its own sha256),
+            # so it carries sha256=null and is checked existence-only.
+            continue
+        if not want:
+            problems.append("malformed MANIFEST entry: %r" % entry)
             continue
         got = hashlib.sha256(fp.read_bytes()).hexdigest()
         if got != want:
@@ -643,7 +775,18 @@ def run(bk: Book) -> int:
     # P8-DELIVER, after P0->P7 all pass.
     staging = bk.run_dir / "staging" / bundle_name(bk)
     delivery = bk.run_dir / "delivery" / bundle_name(bk)
-    assemble_delivery(bk, staging)
+    try:
+        assemble_delivery(bk, staging)
+    except FileNotFoundError as exc:
+        # BUG-5 fail-closed: a required deliverable (blurb / suggested titles /
+        # chapter titles) is absent — never assemble a partial bundle.
+        _LAST_BLOCK.clear()
+        _LAST_BLOCK.update({"phase_id": "P6-PACKAGE", "note": str(exc)})
+        print("=== PHASE P6-PACKAGE === [FAIL] %s" % exc)
+        print("BLOCKED at P6-PACKAGE (fail-closed). Author the missing deliverable and re-run.",
+              file=sys.stderr)
+        _quarantine(bk, staging)
+        return EXIT_GATE
     approvals = load_gate_receipts(bk.run_dir)
     measured = {}
     steps = []
@@ -697,6 +840,30 @@ def run(bk: Book) -> int:
                         shutil.copy2(src, Path(dl) / cf)
                     except OSError:
                         pass
+    # BUG-22: the first write_index_and_manifest (before P8-DELIVER) ran BEFORE the
+    # certs were minted, so the delivered MANIFEST under-listed the bundle (00-INDEX.md,
+    # MANIFEST.json, PROCESS-CERTIFICATE.{json,md} were missing). Re-generate INDEX +
+    # MANIFEST over the COMPLETE delivery bundle now that every file exists, refresh the
+    # ~/Downloads mirror, and re-verify BOTH against the final MANIFEST so the delivered
+    # manifest lists exactly what is on disk (certs + INDEX included).
+    write_index_and_manifest(bk, delivery, measured)
+    dl = measured.get("downloads_bundle")
+    if dl:
+        for refresh in ("MANIFEST.json", "00-INDEX.md"):
+            src = delivery / refresh
+            if src.is_file():
+                try:
+                    shutil.copy2(src, Path(dl) / refresh)
+                except OSError:
+                    pass
+        ok_del, prob_del = verify_bundle_against_manifest(delivery)
+        ok_dl, prob_dl = verify_bundle_against_manifest(Path(dl))
+        if not (ok_del and ok_dl):
+            print("BUG-22 FINAL MANIFEST RE-VERIFY FAILED: delivery=%s dl=%s"
+                  % (prob_del, prob_dl), file=sys.stderr)
+            _quarantine(bk, staging)
+            shutil.rmtree(delivery, ignore_errors=True)
+            return EXIT_GATE
     shutil.rmtree(staging.parent, ignore_errors=True)  # staging is transient
     print("ALL PHASES PASSED (P0->P8).")
     return EXIT_PASS

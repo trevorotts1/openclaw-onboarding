@@ -3,7 +3,7 @@
 **Cluster:** North-Star Doctrine (Step Zero of every job)
 **Doctrine parent:** SOP-NORTHSTAR-00 (Attention Is the Product). The mode never changes the true goal — it only changes the starting point and the gathering method.
 **Owning roles at write time:** Director of Presentations (records the mode decision at intake, SOP 9.3); Attention-Content-Strategist (consumes it at P0B-PRIORITY); Content-to-Presentation-Architect (owns the two content modes, SOP 9.1 / 9.4B)
-**Enforced at the gate by:** `AF-MODE-UNSET` (NEW — build_deck preflight, Phase 0.1). A deck whose `intake.creation_mode` is unset, or is a content mode without `extracted_substance`, cannot reach the arc. **[AF code noted for Agent W3 — see §7.]**
+**Enforced at the gate by:** `AF-MODE-UNSET` (DOCTRINE-ONLY -- declared here, not yet mechanically wired in build_deck.py). A deck whose `intake.creation_mode` is unset, or is a content mode without `extracted_substance`, cannot reach the arc. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for registration status.
 **Status:** Doctrine SOP. Encodes Powerful-Presentation-Framework Part 1, Part 7.1–7.3, Appendix B, and edge cases 167b/c. Faithful source: `Powerful_Presentation_Framework.md` §1, §7, §13, Appendix B.
 
 ---

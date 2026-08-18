@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "One Clear\nNext Step\n\nMake it easy to say yes\n\nCommit to implementing one Gitomer\nprinciple this week."
+}

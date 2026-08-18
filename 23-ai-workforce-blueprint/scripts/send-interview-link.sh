@@ -35,6 +35,38 @@
 #     .workforce-build-state.json + interview-handoff.md and writes ONLY its
 #     own non-canonical ledger line. It never touches build-state, the
 #     transcript, or the handoff.
+#   • SHARED-DASHBOARD SAFETY (Janet incident 2026-08-13 — BINDING). A link is
+#     only emitted when the dashboard host that serves it ANSWERS for THIS
+#     company. The shared Command Center deployment serves every client
+#     hostname (<client>.zerohumanworkforce.com -> the operator's CC), and a
+#     hostname-blind interview endpoint previously answered a fresh client with
+#     the OPERATOR's completed interview, so the client's /interview page
+#     immediately redirected itself to the dashboard (flash-then-jump). Rules:
+#       (a) If the link points at a SHARED dashboard host (a *.zerohumanworkforce.com
+#           host that does NOT run this box's own CC — see the CHECK_SHARED_HOST
+#           function below), the script VERIFIES the host answers interview
+#           state for THIS company (gate-status query) and that the state says
+#           the interview is NOT complete. On mismatch: FAIL and send the
+#           Telegram-native reply-here invite instead — NEVER a broken link.
+#       (b) If the link points at THIS box's own CC (localhost/127.0.0.1 or a
+#           box-owned hostname), no check is needed: the box's own state file
+#           was already read above, and the box's CC reads the same file.
+#       (c) Failures in the CHECK are treated as "cannot verify" -> FAIL to
+#           the Telegram invite (never send an unverifiable web link). A
+#           deliberately-breakable verification (curl to a health endpoint)
+#           does NOT count as verification of interview state.
+#   • STANDARD-FIRST DAY-ONE LINK. Under the standard-first onboarding lane
+#     (build-state buildType == "standard-first"), the operator runs this
+#     script on DAY ONE — after the locked Command Center shell + tunnel are
+#     deployed (run-full-install.sh BLOCK A) and the standard foundation is
+#     prebuilt (prebuild-standard-workforce.sh, STANDARD_READY) — so the owner
+#     receives the interview link before answering a single question. The
+#     message wording is chosen from build-state (legacy vs standard-first);
+#     NOTHING else changes here: the exit codes, START vs RESUME mode, the
+#     30-minute anti-spam guard, and the refuse-on-complete behavior all stay
+#     byte-identical across both lanes, and the link destination stays
+#     <dashboard>/interview. Legacy boxes (buildType absent or "legacy") get
+#     today's wording unchanged.
 #
 # Usage:
 #   bash scripts/send-interview-link.sh              # resolve + send
@@ -49,6 +81,13 @@
 #                            reply-here invitation is sent instead.
 #   OPENCLAW_OWNER_CHAT_ID   (optional) explicit owner chat pin (resolver S0;
 #                            operator ids still rejected).
+#   INTERVIEW_GATE_URL       (optional) the base URL whose /api/interview/
+#                            gate-status answers interview-completion for this
+#                            company. Defaults to the dashboard host derived
+#                            from OPENCLAW_DASHBOARD_URL. For the shared
+#                            operator Command Center the default works
+#                            directly; an operator may point it at any
+#                            tenant-correct host.
 #   OPENCLAW_WORKSPACE_ROOT  (optional) workspace override (tests).
 #   CLIENT_FIRST_NAME        (optional, default "there").
 #   FORCE=1                  (optional) bypass the 30-minute re-send guard.
@@ -58,6 +97,9 @@
 #   3 interview already complete  4 no owner chat resolvable
 #   5 openclaw CLI missing        6 gateway send failed
 #   7 re-send guard (use FORCE=1)
+#   lane=standard-first in the DRY-RUN banner / SENT line marks the
+#   standard-first wording; it is informational only (the exit codes are
+#   identical in both lanes).
 #
 # set -euo pipefail; bash -n clean; OS-aware (uname) not required — pure
 # POSIX-y bash + python3 for JSON reads (same pattern as resolve-owner-chat.sh).
@@ -70,7 +112,7 @@ DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '1,66p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,78p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -97,12 +139,21 @@ except Exception:
     s = {}
 complete = "1" if (s.get("interviewComplete") is True or s.get("buildCompletedAt")) else "0"
 slug = str(s.get("companySlug") or s.get("interviewSessionId") or "").strip()
-print(f"{complete}|{slug}")
+# buildType: absent or "legacy" -> legacy lane (today's wording, byte-identical);
+# "standard-first" -> standard-first lane (day-one-link wording).
+standard = "1" if s.get("buildType") == "standard-first" else "0"
+print(f"{complete}|{slug}|{standard}")
 PYEOF
 }
 STATE_OUT="$(read_state)"
 IS_COMPLETE="${STATE_OUT%%|*}"
-SLUG="${STATE_OUT#*|}"
+STATE_REST="${STATE_OUT#*|}"
+SLUG="${STATE_REST%%|*}"
+STANDARD_FIRST="${STATE_REST##*|}"
+LANE="legacy"
+if [ "$STANDARD_FIRST" = "1" ]; then
+  LANE="standard-first"
+fi
 
 if [ "$IS_COMPLETE" = "1" ]; then
   echo "[send-interview-link] REFUSED: the interview is already complete — nothing to invite the owner to." >&2
@@ -116,6 +167,14 @@ if [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; then
 fi
 
 # ── Build the message (jargon-free; the link is the only instruction) ─────────
+# Wording is lane-selected from build-state buildType:
+#   legacy lane (buildType absent or "legacy")  -> today's wording, unchanged.
+#   standard-first lane (buildType == "standard-first") -> day-one framing:
+#   the owner's company already has its standard foundation, and the
+#   interview tailors it (master plan section 3.2: "your company's standard
+#   foundation is already set up — this conversation tailors it to you").
+# The RESUME variants are lane-neutral (the interview is underway either way,
+# so the "continue where you left off" wording is identical in both lanes).
 FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
 DASH="${OPENCLAW_DASHBOARD_URL:-}"
 DASH="${DASH%/}"
@@ -128,6 +187,65 @@ if [ -n "$DASH" ]; then
   fi
 fi
 
+# ── Shared-dashboard safety (Janet incident 2026-08-13; doctrine above) ───────
+# Only the *shared* dashboard host needs the interview-state check: a host
+# that serves THIS box's own CC reads this same state file (already read
+# above), while the shared operator CC is hostname-blind to this company
+# unless its /api/interview/gate-status is tenant-scoped. So:
+#   * localhost / 127.0.0.1 dashboards  -> no check (box-own CC).
+#   * any other dashboard host          -> gate-status must answer
+#     interviewComplete:false for this company, else FAIL to the
+#     Telegram-native invite (never send an unverifiable web link).
+# D7 FIX: this compared the caller's argument against the bare strings
+# "localhost"/"127.0.0.1", but its ONE caller passes "$DASH" — a full URL such
+# as `http://localhost:3000` or `https://<client>.zerohumanworkforce.com`. A URL
+# never equals a bare hostname, so the box-own-CC branch was UNREACHABLE: even a
+# genuine localhost dashboard was classified "shared", which sent the script
+# down the gate-status curl path. When that probe cannot verify (no route to a
+# local-only CC from that context, non-JSON body, any non-"0" answer), the
+# script blanks $LINK and falls back to the Telegram-native invite — so a box
+# with a perfectly good local dashboard stopped handing its owner the web link
+# at all. Parse the hostname properly instead of string-matching the URL.
+CHECK_SHARED_HOST() {
+  python3 - "$1" <<'PYEOF'
+import sys
+from urllib.parse import urlparse
+
+raw = (sys.argv[1] or "").strip()
+# A bare "host:port" has no scheme; "//" makes urlparse read it as authority
+# rather than a path, so both "localhost:3000" and "http://localhost:3000" work.
+parsed = urlparse(raw if "://" in raw else "//" + raw, scheme="https")
+host = (parsed.hostname or "").lower()
+
+# ::1 is the IPv6 spelling of 127.0.0.1 — the same box-own CC, so it belongs in
+# the same branch rather than being misfiled as a shared host.
+if host in ("localhost", "127.0.0.1", "::1"):
+    sys.exit(0)  # box-own CC: state read above is authoritative
+# Shared/unknown host: the caller verifies gate-status externally.
+sys.exit(1)
+PYEOF
+}
+
+if [ -n "$LINK" ] && ! CHECK_SHARED_HOST "$DASH"; then
+  GATE_BASE="${INTERVIEW_GATE_URL:-$DASH}"
+  GATE_URL="$GATE_BASE/api/interview/gate-status"
+  GATE_JSON="$(curl -sS -m 10 "$GATE_URL" 2>/dev/null || true)"
+  GATE_COMPLETE="$(printf '%s' "$GATE_JSON" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print("1" if d.get("interviewComplete") is True else "0")
+except Exception:
+    print("unknown")
+' 2>/dev/null || echo unknown)"
+  if [ "$GATE_COMPLETE" = "0" ]; then
+    : # verified: the dashboard host answers incomplete for this company
+  else
+    echo "[send-interview-link] WARNING: dashboard host $DASH did not verify an incomplete interview for this company (gate-status=${GATE_COMPLETE:-unknown}) — sending the Telegram-native invite instead of an unverifiable web link." >&2
+    LINK=""
+  fi
+fi
+
 TMP_MSG="$(mktemp)"
 trap 'rm -f "$TMP_MSG"' EXIT
 if [ -n "$LINK" ] && [ "$MODE" = "resume" ]; then
@@ -135,6 +253,12 @@ if [ -n "$LINK" ] && [ "$MODE" = "resume" ]; then
 Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Continue here: $LINK
 
 It works great on your phone, and you can pause again anytime.
+EOF
+elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
+  cat > "$TMP_MSG" <<EOF
+Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. When you're ready, start here: $LINK
+
+It works great on your phone. Every answer is saved as you go, so you can pause anytime and pick up right where you left off.
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -145,6 +269,10 @@ EOF
 elif [ "$MODE" = "resume" ]; then
   cat > "$TMP_MSG" <<EOF
 Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Whenever you're ready, just reply here and we'll continue from your next question.
+EOF
+elif [ "$LANE" = "standard-first" ]; then
+  cat > "$TMP_MSG" <<EOF
+Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. Whenever you're ready, just reply "ready" here and we'll begin. Every answer is saved as you go, so you can pause anytime.
 EOF
 else
   cat > "$TMP_MSG" <<EOF
@@ -189,7 +317,7 @@ fi
 MASKED="…${CHAT_ID: -4}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "[send-interview-link] DRY-RUN mode=$MODE chat=$MASKED"
+  echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
   echo "----- message -----"
   cat "$TMP_MSG"
   echo "-------------------"
@@ -206,8 +334,9 @@ if ! openclaw message send --channel telegram --target "$CHAT_ID" --file "$TMP_M
   exit 6
 fi
 
-# ── Audit ledger (non-canonical; epoch|mode|link-or-chat-invite) ──────────────
+# ── Audit ledger (non-canonical; epoch|mode|lane|link-or-chat-invite) ─────────
+# The guard above reads ONLY field 1 (epoch); the lane field is informational.
 mkdir -p "$(dirname "$LEDGER_FILE")"
-printf '%s|%s|%s\n' "$(date +%s)" "$MODE" "${LINK:-telegram-chat-invite}" >> "$LEDGER_FILE"
+printf '%s|%s|%s|%s\n' "$(date +%s)" "$MODE" "$LANE" "${LINK:-telegram-chat-invite}" >> "$LEDGER_FILE"
 
-echo "[send-interview-link] SENT mode=$MODE chat=$MASKED link=${LINK:-telegram-chat-invite}"
+echo "[send-interview-link] SENT lane=$LANE mode=$MODE chat=$MASKED link=${LINK:-telegram-chat-invite}"

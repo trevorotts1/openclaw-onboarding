@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
-# tests/unit/test-u134.sh -- U134 Fleet Tool Allowlist config-patch propagation.
+# tests/unit/test-u134.sh -- u134-tool-allowlist-patch.sh INERT-CONTRACT guard.
+#
+# REWRITTEN 2026-08-05. This test used to assert that the patch script APPLIED
+# the CEO production-tool deny (browser/write/edit/... in tools.deny) to a box's
+# openclaw.json. That gate was retired per Trevor because denying `write` while
+# memoryFlush demanded a memory write created a self-blocking loop that ate
+# Telegram messages for two weeks. scripts/u134-tool-allowlist-patch.sh is now a
+# deliberately INERT 10-line no-op, so the old assertions tested behavior that had
+# been removed on purpose: the test sat at 9 PASS / 12 FAIL. It is referenced by
+# NO GitHub workflow (verified: `git grep test-u134 -- .github/` returns no
+# matches), so it was failing silently and nobody would have noticed.
+#
+# What this now guards is the INVERSE, which is the thing that actually matters:
+# the script must STAY inert. If someone re-teaches it to write a production deny
+# into a box config, the two-week outage comes back — and section D below fails.
+#
+# Exit 0 = GREEN. Exit 1 = RED.
 set -euo pipefail
 
 PASS=0; FAIL=0; ERRORS=()
@@ -8,12 +24,8 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); ERRORS+=("$1"); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PATCH="$REPO_ROOT/scripts/u134-tool-allowlist-patch.sh"
-US="$REPO_ROOT/update-skills.sh"
-LIB="$REPO_ROOT/hooks/lib-ceo-tool-gate.sh"
 
-# Create a mock 'openclaw' that always validates successfully, to prevent the
-# u134 patch script from reverting its changes when it runs on a minimal mock
-# config that the real openclaw CLI considers invalid.
+# Mock `openclaw` so nothing reaches a real gateway or a real config.
 MOCK_OC_DIR="$(mktemp -d)"
 trap 'rm -rf "$MOCK_OC_DIR"' EXIT
 cat > "$MOCK_OC_DIR/openclaw" <<'MOCK'
@@ -23,159 +35,124 @@ exec /usr/bin/false
 MOCK
 chmod +x "$MOCK_OC_DIR/openclaw"
 
-# Helper: run the patch with PATH pointing at our mock openclaw first
+# NEVER run against a real HOME — every invocation gets a throwaway one.
 run_patch() {
   local home_dir="$1"
-  PATH="$MOCK_OC_DIR:$PATH" HOME="$home_dir" bash "$PATCH" >/dev/null 2>&1 || true
+  PATH="$MOCK_OC_DIR:$PATH" HOME="$home_dir" bash "$PATCH" 2>&1 || true
+}
+
+_mk_box() {
+  local d; d="$(mktemp -d)"; mkdir -p "$d/.openclaw"
+  printf '%s\n' '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/ws"}]}}' \
+    > "$d/.openclaw/openclaw.json"
+  printf '%s' "$d"
 }
 
 echo ""
-echo "=== U134 -- Fleet Tool Allowlist config-patch propagation ==="
+echo "=== U134 -- u134-tool-allowlist-patch.sh inert-contract guard ==="
 
 # ---------------------------------------------------------------------------
 # (A) Existence + syntax
 # ---------------------------------------------------------------------------
 echo ""; echo "--- (A) Existence + syntax ---"
-
 [ -f "$PATCH" ] && ok "(A1) u134-tool-allowlist-patch.sh exists" || fail "(A1) NOT FOUND"
-bash -n "$PATCH" 2>&1 && ok "(A2) u134-tool-allowlist-patch.sh bash -n passes" || fail "(A2) bash -n FAILS"
-[ -f "$LIB" ] && ok "(A3) lib-ceo-tool-gate.sh exists" || fail "(A3) lib NOT FOUND"
-bash -n "$LIB" 2>&1 && ok "(A3b) lib-ceo-tool-gate.sh bash -n passes" || fail "(A3b) bash -n FAILS"
+bash -n "$PATCH" 2>/dev/null && ok "(A2) bash -n clean" || fail "(A2) syntax error"
 
 # ---------------------------------------------------------------------------
-# (B) Wired into update-skills.sh
+# (B) Inert contract: exits 0 and self-reports the SKIP
 # ---------------------------------------------------------------------------
-echo ""; echo "--- (B) Wired into update-skills.sh ---"
-
-grep -q 'u134-tool-allowlist-patch.sh' "$US" && ok "(B1) u134-tool-allowlist-patch.sh referenced in update-skills.sh" || fail "(B1) NOT referenced"
-grep -q 'U134' "$US" && ok "(B2) U134 label present in update-skills.sh" || fail "(B2) U134 label missing"
-bash -n "$US" 2>&1 && ok "(B3) update-skills.sh bash -n passes" || fail "(B3) bash -n FAILS"
+echo ""; echo "--- (B) Inert contract ---"
+TD_B="$(_mk_box)"
+B_OUT="$(run_patch "$TD_B")"
+B_RC=0
+PATH="$MOCK_OC_DIR:$PATH" HOME="$TD_B" bash "$PATCH" >/dev/null 2>&1 || B_RC=$?
+[ "$B_RC" -eq 0 ] && ok "(B1) exits 0" || fail "(B1) exit code $B_RC (must be 0)"
+printf '%s' "$B_OUT" | grep -q 'CANONICAL_SKIP' \
+  && ok "(B2) reports STATUS: tool-allowlist=CANONICAL_SKIP" \
+  || fail "(B2) did not report CANONICAL_SKIP — out=[$B_OUT]"
 
 # ---------------------------------------------------------------------------
-# (C) Main behavior: applies deny, allow, and byProvider to a fresh config
+# (C) It has NO callers left (so a future edit cannot silently reach the fleet)
 # ---------------------------------------------------------------------------
-echo ""; echo "--- (C) Main behavior ---"
+echo ""; echo "--- (C) No live call sites ---"
+if grep -q 'u134-tool-allowlist-patch' "$REPO_ROOT/install.sh" "$REPO_ROOT/update-skills.sh" 2>/dev/null; then
+  fail "(C1) still wired into install.sh/update-skills.sh — an inert script should not be invoked, and a NON-inert one must never reach a box"
+else
+  ok "(C1) not invoked from install.sh or update-skills.sh"
+fi
 
-TD_C=$(mktemp -d)
-trap 'rm -rf "$TD_C"' EXIT
-mkdir -p "$TD_C/.openclaw"
-echo '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/cws"}]}}' > "$TD_C/.openclaw/openclaw.json"
+# ---------------------------------------------------------------------------
+# (D) THE REGRESSION GUARD — it must not touch a box config at all.
+#     This is what catches a re-introduced production deny.
+# ---------------------------------------------------------------------------
+echo ""; echo "--- (D) Does not mutate a box config ---"
+TD_D="$(_mk_box)"
+CFG="$TD_D/.openclaw/openclaw.json"
+BEFORE="$(shasum -a 256 "$CFG" | awk '{print $1}')"
+run_patch "$TD_D" >/dev/null
+AFTER="$(shasum -a 256 "$CFG" | awk '{print $1}')"
+[ "$BEFORE" = "$AFTER" ] \
+  && ok "(D1) openclaw.json byte-identical after run (sha256 unchanged)" \
+  || fail "(D1) MUTATED the box config — the CEO deny may have been re-introduced"
 
-run_patch "$TD_C"
-
-C_OUT="$(HOME="$TD_C" python3 -c "
-import json; c = json.load(open('$TD_C/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-t = ag.get('tools', {}); al = t.get('allow', []); de = t.get('deny', []); bp = t.get('byProvider', {})
-print('AL=%d DE=%d BP=%d READ=%s BRW=%s GHL=%s' % (
-    len(al), len(de), len(bp), 'read' in al, 'browser' in de, 'ghl-community-mcp' in bp
-))
+D_DENY="$(python3 -c "
+import json
+c=json.load(open('$CFG'))
+ag=next((a for a in c['agents']['list'] if a.get('id')=='main'),{})
+t=ag.get('tools') or {}
+print(','.join(sorted(t.get('deny') or [])) or 'NONE')
 ")"
-echo "$C_OUT" | grep -qE 'AL=1[2-9]' && ok "(C1) allow count >= 12: $C_OUT" || fail "(C1) allow count wrong: $C_OUT"
-echo "$C_OUT" | grep -qE 'DE=[7-9]' && ok "(C2) deny count >= 7: $C_OUT" || fail "(C2) deny count wrong: $C_OUT"
-echo "$C_OUT" | grep -qE 'BP=2' && ok "(C3) MCP byProvider has 2 entries: $C_OUT" || fail "(C3) MCP count wrong: $C_OUT"
-echo "$C_OUT" | grep -q 'READ=True' && ok "(C4) 'read' in allow list" || fail "(C4) 'read' NOT in allow: $C_OUT"
-echo "$C_OUT" | grep -q 'BRW=True' && ok "(C5) 'browser' in deny list" || fail "(C5) 'browser' NOT in deny: $C_OUT"
-echo "$C_OUT" | grep -q 'GHL=True' && ok "(C6) ghl-community-mcp in byProvider" || fail "(C6) ghl-community-mcp NOT in byProvider: $C_OUT"
+[ "$D_DENY" = "NONE" ] \
+  && ok "(D2) no tools.deny written on the router agent" \
+  || fail "(D2) tools.deny was written: [$D_DENY] — the retired production deny is back"
+
+# Re-run: still inert, still no config churn.
+run_patch "$TD_D" >/dev/null
+AFTER2="$(shasum -a 256 "$CFG" | awk '{print $1}')"
+[ "$BEFORE" = "$AFTER2" ] \
+  && ok "(D3) idempotent — second run also leaves the config byte-identical" \
+  || fail "(D3) second run mutated the config"
 
 # ---------------------------------------------------------------------------
-# (D) No-op idempotency: re-run on already-canonical config
+# (E) MUTATION PROOF — prove (D) can actually FAIL, so a green D means something.
+#     Plant a script that DOES write the retired deny and confirm D's probes
+#     reject it. Without this, (D) could be passing for the wrong reason.
 # ---------------------------------------------------------------------------
-echo ""; echo "--- (D) No-op idempotency ---"
+echo ""; echo "--- (E) Mutation proof ---"
+TD_E="$(_mk_box)"
+CFG_E="$TD_E/.openclaw/openclaw.json"
+BAD="$TD_E/u134-mutated.sh"
+cat > "$BAD" <<'BADEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+python3 - "$HOME/.openclaw/openclaw.json" <<'PY'
+import json,sys
+p=sys.argv[1]
+c=json.load(open(p))
+ag=next(a for a in c["agents"]["list"] if a.get("id")=="main")
+ag.setdefault("tools",{})["deny"]=["browser","write","edit"]
+json.dump(c,open(p,"w"),indent=2)
+PY
+BADEOF
+chmod +x "$BAD"
+E_BEFORE="$(shasum -a 256 "$CFG_E" | awk '{print $1}')"
+PATH="$MOCK_OC_DIR:$PATH" HOME="$TD_E" bash "$BAD" >/dev/null 2>&1 || true
+E_AFTER="$(shasum -a 256 "$CFG_E" | awk '{print $1}')"
+[ "$E_BEFORE" != "$E_AFTER" ] \
+  && ok "(E1) mutation proof: a deny-writing variant DOES change the sha256, so (D1) is a real assertion" \
+  || fail "(E1) mutation proof FAILED — (D1) cannot detect a config write, so its PASS is meaningless"
 
-run_patch "$TD_C"
-D_OUT="$(HOME="$TD_C" python3 -c "
-import json; c = json.load(open('$TD_C/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-t = ag.get('tools', {}); al = t.get('allow', []); de = t.get('deny', []); bp = t.get('byProvider', {})
-print('AL=%d DE=%d BP=%d READ=%s BRW=%s' % (
-    len(al), len(de), len(bp), 'read' in al, 'browser' in de
-))
+E_DENY="$(python3 -c "
+import json
+c=json.load(open('$CFG_E'))
+ag=next(a for a in c['agents']['list'] if a.get('id')=='main')
+print(','.join(sorted((ag.get('tools') or {}).get('deny') or [])) or 'NONE')
 ")"
-echo "$D_OUT" | grep -qE 'AL=1[2-9]' && ok "(D1) no-op re-run preserves allow count: $D_OUT" || fail "(D1) allow count changed: $D_OUT"
-echo "$D_OUT" | grep -qE 'DE=[7-9]' && ok "(D2) no-op re-run preserves deny count: $D_OUT" || fail "(D2) deny count changed: $D_OUT"
-echo "$D_OUT" | grep -q 'BRW=True' && ok "(D3) no-op re-run 'browser' still denied" || fail "(D3) 'browser' missing: $D_OUT"
+[ "$E_DENY" != "NONE" ] \
+  && ok "(E2) mutation proof: the deny-writing variant is caught by (D2)'s probe [$E_DENY]" \
+  || fail "(E2) mutation proof FAILED — (D2)'s probe cannot see a written deny"
 
-# ---------------------------------------------------------------------------
-# (E) Local-only tools preserved (custom entries in allow/deny)
-# ---------------------------------------------------------------------------
-echo ""; echo "--- (E) Local-only preserved ---"
-
-TD_E=$(mktemp -d); mkdir -p "$TD_E/.openclaw"
-echo '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/ews","tools":{"allow":["read","message","local-custom","local-probe"],"deny":["local-deny"]}}]}}' > "$TD_E/.openclaw/openclaw.json"
-
-run_patch "$TD_E"
-
-E_OUT="$(HOME="$TD_E" python3 -c "
-import json; c = json.load(open('$TD_E/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-t = ag.get('tools', {}); al = t.get('allow', []); de = t.get('deny', [])
-print('%s %s %s %s' % ('local-custom' in al, 'local-probe' in al, 'local-deny' in de, 'read' in al))
-")"
-echo "$E_OUT" | grep -q 'True True True True' && ok "(E1) local tools preserved" || fail "(E1) local tools LOST: $E_OUT"
-
-# ---------------------------------------------------------------------------
-# (F) PA / non-router agent is skipped (no tools block added)
-# ---------------------------------------------------------------------------
-echo ""; echo "--- (F) Non-router (PA) skip ---"
-
-TD_F=$(mktemp -d); mkdir -p "$TD_F/.openclaw"
-echo '{"agents":{"list":[{"id":"personal-assistant","default":true,"name":"Assistant","is_master":false,"workspace":"/tmp/fws"}]}}' > "$TD_F/.openclaw/openclaw.json"
-
-run_patch "$TD_F"
-
-F_OUT="$(HOME="$TD_F" python3 -c "
-import json; c = json.load(open('$TD_F/.openclaw/openclaw.json'))
-ag = next((a for a in c['agents']['list'] if a.get('default') is True), None)
-t = ag.get('tools', {}) if ag else {}
-print('tools_block' if t.get('deny') or t.get('allow') else 'PA_SKIP')
-")"
-echo "$F_OUT" | grep -q 'PA_SKIP' && ok "(F1) PA agent skipped (no tools block added)" || fail "(F1) PA agent got tools: $F_OUT"
-
-# ---------------------------------------------------------------------------
-# (G) Mutation proof
-# ---------------------------------------------------------------------------
-echo ""; echo "--- (G) Mutation proof ---"
-
-TD_G=$(mktemp -d); mkdir -p "$TD_G/.openclaw"
-echo '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/gws"}]}}' > "$TD_G/.openclaw/openclaw.json"
-run_patch "$TD_G"
-
-# G1: unmutated — 'browser' should be in deny
-G1="$(HOME="$TD_G" python3 -c "
-import json; c = json.load(open('$TD_G/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-print('browser' in ag.get('tools', {}).get('deny', []))
-")"
-[ "$G1" = "True" ] && ok "(G1) unmutated GREEN: browser in deny" || fail "(G1) browser NOT in deny"
-
-# G2: mutate the source-of-truth in the lib (remove "browser" from deny list)
-# We create a temp modified lib file and modify the patch to source it.
-MUT_LIB="$TD_G/lib-ceo-tool-gate-mutated.sh"
-sed 's/"browser"/"browser_mutated_broken"/g' "$LIB" > "$MUT_LIB"
-MUT_PATCH="$TD_G/u134-mutated.sh"
-sed "s|hooks/lib-ceo-tool-gate.sh|$MUT_LIB|g" "$PATCH" > "$MUT_PATCH"
-chmod +x "$MUT_PATCH"
-rm -f "$TD_G/.openclaw/openclaw.json"
-echo '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/gws"}]}}' > "$TD_G/.openclaw/openclaw.json"
-PATH="$MOCK_OC_DIR:$PATH" HOME="$TD_G" bash "$MUT_PATCH" >/dev/null 2>&1 || true
-G2="$(HOME="$TD_G" python3 -c "
-import json; c = json.load(open('$TD_G/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-print('browser' in ag.get('tools', {}).get('deny', []))
-")"
-[ "$G2" = "False" ] && ok "(G2) mutated RED (browser missing from deny after mutation)" || fail "(G2) browser STILL in deny — mutation undetected"
-
-# G3: reverted — run patch with original lib, browser should be back
-rm -f "$TD_G/.openclaw/openclaw.json"
-echo '{"agents":{"list":[{"id":"main","default":true,"name":"CEO","is_master":true,"workspace":"/tmp/gws"}]}}' > "$TD_G/.openclaw/openclaw.json"
-run_patch "$TD_G"
-G3="$(HOME="$TD_G" python3 -c "
-import json; c = json.load(open('$TD_G/.openclaw/openclaw.json'))
-ag = next(a for a in c['agents']['list'] if a.get('id') == 'main')
-print('browser' in ag.get('tools', {}).get('deny', []))
-")"
-[ "$G3" = "True" ] && ok "(G3) reverted GREEN (browser back in deny)" || fail "(G3) browser STILL missing"
+rm -rf "$TD_B" "$TD_D" "$TD_E"
 
 # ---------------------------------------------------------------------------
 # Summary

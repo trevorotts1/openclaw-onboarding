@@ -157,6 +157,21 @@ def _slide_number(path_str: str):
     return int(m.group(1)) if m else None
 
 
+def _deck_pdf(uploaded):
+    """The DECK PDF (named *-FINAL.pdf, kind "pdf") among the uploads — the client-facing
+    deck as hosted when the assembled PPTX exceeds GHL's 25MB media-upload cap (HTTP 413,
+    Defect #9). Deliberately NARROW (matches the -FINAL suffix the delivery gate / ghl_media
+    chokepoint use for the deck) so the presenter guide / speech PDFs
+    (PRESENTER-GUIDE.pdf / PRESENTERS-SPEECH.pdf) are never mistaken for the deck."""
+    for e in uploaded:
+        if not isinstance(e, dict) or e.get("kind") != "pdf":
+            continue
+        nm = str(e.get("ghl_remote_name") or e.get("name") or "").lower()
+        if nm.endswith("-final.pdf"):
+            return e
+    return None
+
+
 def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None,
                     extra_files: list | None = None, opener=None) -> dict:
     """Create the per-deck folder and upload the approved images (+ extra files).
@@ -237,9 +252,23 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
         "ghl_slide_upload_count": len(slides),
     }
     if pptx:
+        # The canonical path: the final assembled PPTX is in the GHL media library.
         out["pptx_ghl_media_id"] = pptx["ghl_media_id"]
         out["pptx_ghl_url"] = pptx["ghl_url"]
         out["pptx_ghl_remote_name"] = pptx["ghl_remote_name"]
+    else:
+        # Defect #9: GHL caps media uploads at 25MB (HTTP 413) and a 20-slide deck PPTX
+        # (~52MB) CANNOT be hosted. When no pptx upload exists but the DECK PDF
+        # (*-FINAL.pdf, kind "pdf") WAS uploaded, record the deck PDF as the hosted deck
+        # deliverable so the closeout/verifier ledger still passes — and mark the deck as
+        # hosted-as-PDF so downstream readers know the pptx is intentionally absent (it
+        # exceeds the 25MB cap), never lost.
+        deck_pdf = _deck_pdf(uploaded)
+        if deck_pdf is not None:
+            out["pptx_ghl_media_id"] = deck_pdf["ghl_media_id"]
+            out["pptx_ghl_url"] = deck_pdf["ghl_url"]
+            out["pptx_ghl_remote_name"] = deck_pdf["ghl_remote_name"]
+            out["deck_upload_kind"] = "pdf"
 
     ledger.update(out)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
@@ -390,8 +419,9 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
 
 def main():
     ap = argparse.ArgumentParser(description="Host a deck's images + deliverables in GHL, "
-                                             "or run the GHL-upload closeout gate.")
-    ap.add_argument("--run-dir", required=True)
+                                             "run the GHL-upload closeout gate, or LIST "
+                                             "the media library read-only.")
+    ap.add_argument("--run-dir", default=None)
     ap.add_argument("--deck-slug", default=None)
     ap.add_argument("--images", nargs="*", default=None)
     ap.add_argument("--extra", nargs="*", default=None,
@@ -400,7 +430,43 @@ def main():
                     help="run the HARD closeout gate (no upload, exit 1 on fail).")
     ap.add_argument("--expected-slides", type=int, default=None,
                     help="optional per-slide coverage count for the gate.")
+    ap.add_argument("--list", action="store_true",
+                    help="READ-ONLY list of the GHL media library (GET /medias/files; "
+                         "never mutates). No --run-dir needed. Optional --list-name "
+                         "filters by name.")
+    ap.add_argument("--list-name", default=None,
+                    help="with --list, only show entries whose name contains this string.")
+    ap.add_argument("--list-type", default="file", choices=["file", "folder"],
+                    help="with --list, list files (default) or folders.")
+    ap.add_argument("--list-limit", type=int, default=200,
+                    help="with --list, max entries to fetch (default 200).")
     args = ap.parse_args()
+
+    if args.list:
+        # READ-ONLY LIST-BACK — never mutates the media library.
+        try:
+            pit = ghl_media.resolve_location_pit()
+            loc = ghl_media.resolve_location_id()
+        except Exception as exc:  # noqa: BLE001
+            print(f"GHL MEDIA LIST: FAIL (credential resolution: {exc})", file=sys.stderr)
+            return 2
+        try:
+            listing = ghl_media.list_media(loc, pit, media_type=args.list_type,
+                                           limit=args.list_limit)
+        except Exception as exc:  # noqa: BLE001
+            print(f"GHL MEDIA LIST: FAIL ({exc})", file=sys.stderr)
+            return 2
+        entries = listing.get("data") or []
+        if args.list_name:
+            needle = str(args.list_name).lower()
+            entries = [e for e in entries if isinstance(e, dict)
+                       and needle in str(e.get("name") or "").lower()]
+        print(json.dumps({"http": listing.get("http"), "count": len(entries),
+                          "data": entries}, indent=2))
+        return 0
+
+    if not args.run_dir:
+        ap.error("--run-dir is required (or use --list / --gate)")
     rd = Path(args.run_dir).resolve()
 
     if args.gate:
@@ -708,16 +774,96 @@ def _selftest() -> int:
         if res is not None and res.get("fileId") != "file_x":
             fails.append(f"S image-unaffected: expected a clean upload, got {res!r}")
 
+    # === DEFECT #9 — GHL 25MB media cap (HTTP 413) + DECK-PDF fallback ===
+    # T — a governed run whose deck is hosted ONLY as the *-FINAL.pdf (the pptx exceeds
+    # the 25MB cap) must record the deck PDF as the deck deliverable: pptx_ghl_media_id /
+    # pptx_ghl_url / pptx_ghl_remote_name come from the deck-PDF upload and
+    # deck_upload_kind == "pdf" notes the deck is hosted as PDF.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        pkg = base / "delivery" / "demo-deck-FINAL"
+        pkg.mkdir(parents=True, exist_ok=True)
+        deck_pdf = pkg / "demo-deck-FINAL.pdf"
+        deck_pdf.write_bytes(b"%PDF-1.7\n" + b"\x00" * 128)  # real %PDF header (image-only: no fonts/text ops)
+        for nm in ("demo-deck-FINAL.pptx", "PRESENTER-GUIDE.pdf", "PRESENTERS-SPEECH.pdf",
+                   "PRESENTER-AUDIO.mp3"):
+            (pkg / nm).write_bytes(b"x" * 1024)
+        (base / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (base / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps(
+            {"phases": [{"phase": "render", "output_slide_count": 1,
+                         "slides": [{"slide": 1, "taskId": "kie-aaa"}]}]}))
+        (base / "working" / "checkpoints" / "delivery_plan.json").write_text(json.dumps(
+            {"destinations": [{"type": "ghl", "status": "uploaded"},
+                              {"type": "mac_downloads",
+                               "verify_anchor": str(pkg / "demo-deck-FINAL.pptx")}]}))
+        (base / "working" / "teleprompter").mkdir(parents=True, exist_ok=True)
+        (base / "working" / "teleprompter" / "teleprompter.html").write_text("<html></html>")
+        (pkg / "presenter-teleprompter.html").write_text("<html></html>")
+        saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+        _os.environ["GHL_API_KEY"] = "pit-fixture"
+        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        out = None
+        try:
+            out = push_deck_media(base, [], extra_files=[str(deck_pdf)], opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"T deck-pdf-allow: push_deck_media(deck PDF only) raised {exc!r} "
+                         "(a 25MB-capped deck must still host via its deck PDF)")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        if out is not None:
+            if not str(out.get("pptx_ghl_media_id") or "").strip():
+                fails.append(f"T deck-pdf-allow: expected pptx_ghl_media_id from the deck "
+                             f"PDF, got {out!r}")
+            if out.get("deck_upload_kind") != "pdf":
+                fails.append(f"T deck-pdf-allow: expected deck_upload_kind == 'pdf', "
+                             f"got {out!r}")
+
+    # U — a DECK PDF present alongside an actual PPTX must NOT be mislabeled: the pptx is
+    # still the deck deliverable and deck_upload_kind stays absent (pptx path wins).
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck_pptx = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        delivery_gate._write_render_manifest(base, ["kie-aaa"])
+        deck_pdf = base / "delivery" / "demo-deck-FINAL" / "demo-deck-FINAL.pdf"
+        deck_pdf.write_bytes(b"%PDF-1.7\n" + b"\x00" * 128)  # real %PDF header (image-only)
+        saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+        _os.environ["GHL_API_KEY"] = "pit-fixture"
+        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        out = None
+        try:
+            out = push_deck_media(base, [], extra_files=[str(deck_pptx), str(deck_pdf)],
+                                  opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"U pptx-wins: push_deck_media(pptx + deck pdf) raised {exc!r}")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        if out is not None:
+            if out.get("deck_upload_kind") is not None:
+                fails.append(f"U pptx-wins: deck_upload_kind must stay absent when a pptx "
+                             f"IS uploaded, got {out!r}")
+            if str(out.get("pptx_ghl_media_id") or "") != "file_x":
+                fails.append(f"U pptx-wins: expected pptx_ghl_media_id from the PPTX "
+                             f"upload, got {out!r}")
+
     if fails:
         print("ghl_media_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("ghl_media_push gate selftest -> PASS (19 cases: complete/empty/no-pptx/"
+    print("ghl_media_push gate selftest -> PASS (21 cases: complete/empty/no-pptx/"
           "no-slides/null-folder/agent-skip/owner-skip/false-token/incomplete/coverage + "
           "transport-boundary: clean-allow/overlay-abort/no-run-dir-abort/non-deck-allow/"
           "push-aborts-pre-network + chokepoint: direct-overlay-BLOCKED/direct-no-run-dir-"
-          "BLOCKED/governed-push-ALLOWED/image-unaffected)")
+          "BLOCKED/governed-push-ALLOWED/image-unaffected + deck-pdf-fallback-ALLOWED/"
+          "pptx-wins-over-deck-pdf)")
     return 0
 
 

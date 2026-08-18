@@ -116,6 +116,18 @@ def _canonical_utc(release_date: str) -> str:
 _HERE = Path(__file__).resolve()
 _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 
+# A real show-notes description meeting the Step 12.5 floor (>= 200 chars).
+# Proxy publish mode now requires a real description (U048), so transport and
+# media-guard tests supply a valid one by default; tests that specifically probe
+# the missing/short-description refusals override it.
+VALID_DESCRIPTION = (
+    "In this episode we explore how conviction becomes a competitive edge. "
+    "Our guest shares the decisions, the false starts, and the one turning "
+    "point that reshaped everything. We unpack the framework, the research "
+    "behind it, and the practical first step you can take this week. "
+    "A full conversation with real takeaways for leaders who build. " * 2
+)
+
 # Fixture-only literal. Never a real credential; exists so the mock can assert
 # the header the script sends matches what it was configured with, and so a
 # redaction test can prove this literal never reaches stdout/stderr verbatim.
@@ -248,6 +260,23 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.audio = os.path.join(self.tmp, "episode.mp3")
         with open(self.audio, "wb") as f:
             f.write(b"not-real-audio-bytes")
+        # U2.4 (2026-08-04): provision a stub state-writer that answers
+        # `get --job-id` with a CLEAN job (no --force-waiver marker), so the
+        # waiver gate (assert_not_waived) sees resolvable, non-waived state
+        # instead of failing closed on "no job data". Mirrors the established
+        # ProxyMediaGuardTest._run_media pattern. Tests that probe the waiver
+        # gate itself provision a waived job explicitly.
+        self.state_writer = os.path.join(self.tmp, "podcast_state.py")
+        with open(self.state_writer, "w") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] == 'get':\n"
+                "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                "else:\n"
+                "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+            )
+        os.chmod(self.state_writer, 0o755)
 
     # ---------------------------------------------------------- helpers ----
     def _run(self, args, env_extra=None, timeout=20):
@@ -258,18 +287,50 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.tmp,
-            "PODBEAN_SKIP_MEDIA_PROBE": "1",  # crs: transport tests skip probe
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",   # crs: transport tests skip probe
+            # The transport tests skip the probe; per master-plan 1.8 the skip
+            # requires the operator force flag even in the test harness.
+            "PODBEAN_OPERATOR_FORCE": "1",
         }
         if env_extra:
             env.update(env_extra)
         proc = subprocess.run(
-            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode"] + args,
+            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode",
+             "--description", VALID_DESCRIPTION,
+             "--state-writer", self.state_writer] + args,
             env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         return proc
+
+    def _run_no_desc(self, args, env_extra=None, timeout=20):
+        # Identical to _run but does NOT force --description, so the 1.1.5
+        # ledger-default resolution and the no-description-anywhere hard
+        # refusal can be exercised (a test that passes --description would
+        # never reach either path).
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self.tmp,
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",   # crs: transport tests skip probe
+            # The transport tests skip the probe; per master-plan 1.8 the skip
+            # requires the operator force flag even in the test harness (the
+            # ledger-default success tests reach the media-probe gate once the
+            # U2.4 waiver gate resolves a clean job).
+            "PODBEAN_OPERATOR_FORCE": "1",
+        }
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            ["bash", str(_SCRIPT), "--audio", self.audio,
+             "--title", "Test Episode",
+             "--state-writer", self.state_writer] + args,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
 
     def _proxy_env(self, **extra):
         env = {
@@ -291,6 +352,21 @@ class PodbeanPublishProxyTest(unittest.TestCase):
             "scheduled": scheduled,
             "idempotent_replay": idempotent,
         }
+
+    def _write_ledger(self, episode_description, state="enrolling",
+                      permalink=None):
+        """Write a job ledger JSON fixture (pre-U035: no _checksum, which
+        verify_ledger_checksum accepts) and return its path. NO permalink by
+        default so the idempotency early-exit is never triggered."""
+        record = {"state": state}
+        if episode_description is not None:
+            record["episode_description"] = episode_description
+        if permalink is not None:
+            record["podbean_permalink"] = permalink
+        path = os.path.join(self.tmp, "ledger.json")
+        with open(path, "w") as f:
+            json.dump(record, f)
+        return path
 
     # --------------------------------------------------- precedence -------
     def test_proxy_wins_over_broker_and_local_when_all_three_are_configured(self):
@@ -387,7 +463,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         proc = self._run(
             ["--audio-url", "https://media.example.test/a.mp3",
              "--image-url", "https://media.example.test/i.jpg",
-             "--description", "Show notes for the full-contract test.",
+             "--description", VALID_DESCRIPTION,
              "--release-date", "2026-08-01T10:00:00",
              "--speaker", "Dana",
              "--job-id", "pd-full-contract"],
@@ -405,7 +481,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(req["title"], "Test Episode Inspired by Dana",
                           "title must carry the 'Inspired by <speaker>' transform, "
                           "not just the raw --title flag")
-        self.assertEqual(req["description"], "Show notes for the full-contract test.")
+        self.assertEqual(req["description"], VALID_DESCRIPTION)
         self.assertEqual(req["audio_url"], "https://media.example.test/a.mp3")
         self.assertEqual(req["image_url"], "https://media.example.test/i.jpg")
         # publish_date is the canonical ISO-8601 UTC normalization of
@@ -644,6 +720,110 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(result["status"], "test-skipped")
         self.assertEqual(len(self.mock.requests), 0)
 
+    # --------------------------------------- 1.1.5 ledger-default --------
+    # Every OTHER proxy test supplies --description explicitly, so none of them
+    # reaches the ledger-description default path. These two regression tests
+    # exercise exactly the broken ordering Finding 1 described: a real proxy
+    # publish with a ledger holding a valid >200-char episode_description and
+    # NO --description must SUCCEED using the ledger value (the behavior every
+    # doc promises), and a proxy publish with NO description ANYWHERE (no flag,
+    # no ledger value) must still hard-refuse.
+
+    def test_proxy_ledger_default_description_succeeds_and_uses_ledger_value(self):
+        """A real proxy publish with a ledger holding a valid >200-char
+        episode_description and NO --description must SUCCEED and send the
+        ledger value in the v2 payload (1.1.5 default resolution). This is the
+        regression for the ordering bug that died at '--description is required'
+        before ever reading the ledger."""
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(VALID_DESCRIPTION)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-ledger-default",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertEqual(proc.returncode, 0,
+                         f"ledger-default proxy publish must succeed; stderr: {proc.stderr}")
+        result = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["status"], "published")
+        hits = self.mock.hits("/webhook/podbean-publish")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["body"]["description"], VALID_DESCRIPTION,
+                         "the payload description must be the ledger episode_description, "
+                         "resolved by default when --description is absent")
+
+    def test_proxy_ledger_default_description_resolves_even_when_over_200_chars(self):
+        """The ledger-default value is NOT truncated or re-derived: a ledger
+        description at the Step 12.5 band (674 chars here) passes through
+        intact and satisfies the min-length floor."""
+        long_desc = VALID_DESCRIPTION + " " + VALID_DESCRIPTION  # > 400 chars
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(long_desc)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-ledger-long",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        req = self.mock.hits("/webhook/podbean-publish")[0]["body"]
+        self.assertEqual(req["description"], long_desc)
+
+    def test_proxy_no_description_anywhere_is_still_a_hard_refusal(self):
+        """The no-description-anywhere path (no --description, no ledger) must
+        still die with the refusal before any publish call. The ledger-default
+        fix must NOT have weakened the fail-closed default."""
+        ledger = self._write_ledger(None)  # ledger with NO episode_description
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-no-desc-anywhere",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("--description is required", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
+                          "a publish must never fire when no description exists anywhere")
+
+    def test_proxy_short_description_is_still_a_min_length_refusal(self):
+        """A short --description (below the 200-char floor) with no ledger value
+        must still be refused by validate_episode_metadata before any publish."""
+        ledger = self._write_ledger(None)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-short-desc",
+             "--ledger", ledger,
+             "--description", "one line"],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("minimum", proc.stderr.lower())
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_proxy_cli_vs_ledger_description_conflict_still_dies(self):
+        """1.1.5's conflict half must survive the reorder: when BOTH the CLI
+        flag and the ledger supply a description and they DIFFER, refuse before
+        any publish call."""
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(VALID_DESCRIPTION)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-desc-conflict",
+             "--ledger", ledger,
+             "--description", VALID_DESCRIPTION + " DIFFERENT"],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("DESCRIPTION conflict", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
+                          "a conflicting description must never reach the publish call")
+
 
 # ---- png helpers (stdlib only, no PIL) ----
 def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
@@ -694,8 +874,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         # 1x1 PNG (too small).
         self.tiny_png_data = _make_png(1, 1)
 
-        # 1400x1400 PNG (meets minimum).
-        self.ok_png_data = _make_png(1400, 1400)
+        # 1500x1500 PNG (meets the current Podbean minimum).
+        self.ok_png_data = _make_png(1500, 1500)
 
     def _register_files(self, files_dict):
         self.mock.server.files.update(files_dict)  # type: ignore[attr-defined]
@@ -719,12 +899,30 @@ class ProxyMediaGuardTest(unittest.TestCase):
             "HOME": self.tmp,
         }
         env.update(self._proxy_env_media(**extra_env))
+        # A stub state-writer so the U2.4 waiver gate (assert_not_waived) sees a
+        # CLEAN job (no --force-waiver marker) instead of failing closed on a
+        # non-existent job. These media-probe tests exercise the probe path, not
+        # the waiver gate; the real podcast_state.py would refuse "no job data".
+        stub_writer = os.path.join(self.tmp, "podcast_state.py")
+        if not os.path.exists(stub_writer):
+            with open(stub_writer, "w") as f:
+                f.write(
+                    "#!/usr/bin/env python3\n"
+                    "import json, sys\n"
+                    "if sys.argv[1] == 'get':\n"
+                    "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                    "else:\n"
+                    "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+                )
+            os.chmod(stub_writer, 0o755)
         return subprocess.run(
             ["bash", str(_SCRIPT),
              "--audio-url", audio_url,
              "--image-url", image_url,
              "--title", "Media Probe Test",
-             "--job-id", job_id],
+             "--description", VALID_DESCRIPTION,
+             "--job-id", job_id,
+             "--state-writer", stub_writer],
             env=env,
             capture_output=True,
             text=True,
@@ -767,7 +965,7 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
     def test_probe_passes_valid_media(self):
-        """A 30s MP3 and 1400x1400 PNG must pass the probe and reach publish."""
+        """A 30s MP3 and 1500x1500 PNG must pass the probe and reach publish."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-probe/",
@@ -790,7 +988,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
 
     def test_probe_escape_hatch_skips_validation(self):
-        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish."""
+        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish
+        ONLY with the operator force flag (master-plan 1.8)."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-skip/",
@@ -807,11 +1006,99 @@ class ProxyMediaGuardTest(unittest.TestCase):
             audio_url=self.mock.base_url + "/media/short.mp3",
             image_url=self.mock.base_url + "/media/tiny.png",
             PODBEAN_SKIP_MEDIA_PROBE="1",
+            PODBEAN_OPERATOR_FORCE="1",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = json.loads(proc.stdout.strip().splitlines()[-1])
         self.assertEqual(result["status"], "published")
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
+
+    def test_probe_escape_hatch_refused_without_operator_force(self):
+        """PODBEAN_SKIP_MEDIA_PROBE=1 without PODBEAN_OPERATOR_FORCE=1 refuses
+        to run in publish-proxy mode (fail-closed, master-plan 1.8)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-skip/",
+            "episode_id": "ep-2",
+            "episode_number": 2,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/short.mp3",
+            image_url=self.mock.base_url + "/media/tiny.png",
+            PODBEAN_SKIP_MEDIA_PROBE="1",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("PODBEAN_OPERATOR_FORCE", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_probe_ffprobe_absence_is_a_hard_fail(self):
+        """ffprobe ABSENCE in publish-proxy mode is a HARD FAIL: the script must
+        die with the exact 'ffprobe required for media-probe' message and never
+        reach the publish endpoint (master-plan 1.8; no HEAD-only degrade)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-nofprobe/",
+            "episode_id": "ep-3",
+            "episode_number": 3,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        self._register_files({
+            "/media/ok.mp3": open(self.ok_mp3, "rb").read(),
+            "/media/ok.png": self.ok_png_data,
+        })
+
+        # Build a PATH that has every tool the script needs BEFORE the probe
+        # (curl, python3, mktemp, date, grep, cut, rm, wc, tr, printf, bash, ...)
+        # but NO ffprobe. Symlink the real system binaries so the script's normal
+        # command path is exercised right up to the ffprobe gate.
+        shim = os.path.join(self.tmp, "no-ffprobe-bin")
+        os.makedirs(shim)
+        for tool in ("bash", "curl", "python3", "mktemp", "date", "grep", "cut",
+                     "rm", "wc", "tr", "printf", "sed", "awk", "sort", "uniq",
+                     "head", "cat", "mkdir", "touch", "basename", "dirname"):
+            real = shutil.which(tool)
+            if real:
+                os.symlink(real, os.path.join(shim, tool))
+
+        env = self._proxy_env_media()
+        env["PATH"] = shim
+        env["HOME"] = self.tmp
+        # Stub state-writer so the U2.4 waiver gate sees a clean (non-waived)
+        # job and does not fail closed before the ffprobe gate. Also provide a
+        # real description (U048) so the description-required check does not
+        # intercept first.
+        stub_writer = os.path.join(self.tmp, "podcast_state.py")
+        with open(stub_writer, "w") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] == 'get':\n"
+                "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                "else:\n"
+                "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+            )
+        os.chmod(stub_writer, 0o755)
+        proc = subprocess.run(
+            ["bash", str(_SCRIPT),
+             "--audio-url", self.mock.base_url + "/media/ok.mp3",
+             "--image-url", self.mock.base_url + "/media/ok.png",
+             "--title", "Media Probe No-ffprobe",
+             "--description", VALID_DESCRIPTION,
+             "--job-id", "pd-no-ffprobe",
+             "--state-writer", stub_writer],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("ffprobe required for media-probe", proc.stderr)
+        self.assertIn("ffprobe not available", proc.stderr)
+        # Fail closed: never reaches the publish webhook.
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
 
 if __name__ == "__main__":

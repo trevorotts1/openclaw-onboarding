@@ -42,8 +42,14 @@ from pathlib import Path
 import pytest
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent  # .../presentations/scripts
-_DEPT_ROOT = _SCRIPTS_DIR.parents[3]  # .../23-ai-workforce-blueprint
-ENTRY = _DEPT_ROOT / "scripts" / "presentation-canonical-entry.sh"
+# The canonical entry script ships inside the deployed scripts dir itself
+# (scripts/presentation-canonical-entry.sh — the R2/R3 nonce-route fix moved it
+# there so the manifest's phase executors can reference it by relative path).
+# The old repo-checkout path (.../23-ai-workforce-blueprint/scripts/...) remains
+# the fallback for tests run from a checkout.
+_ENTRY_DEPLOYED = _SCRIPTS_DIR / "presentation-canonical-entry.sh"
+_ENTRY_REPO = _SCRIPTS_DIR.parents[3] / "scripts" / "presentation-canonical-entry.sh"
+ENTRY = _ENTRY_DEPLOYED if _ENTRY_DEPLOYED.is_file() else _ENTRY_REPO
 
 
 def _read_entry() -> str:

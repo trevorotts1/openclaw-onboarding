@@ -22,6 +22,31 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
+<!-- EXEC_CHAIN_DISCIPLINE_V1 -->
+## Exec Chain Discipline — a negative result is DATA, not a failure (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `EXEC_CHAIN_DISCIPLINE_V1`. Idempotent — re-stamped on every install/update.
+
+This is the rule that stops verification loops. Real incident (2026-08-05): an agent ran one 40-probe chain **425 times**. A single `ls` hit a genuinely missing file, returned exit 1, `&&` aborted the chain, and the runtime reported one atomic `Exec failed` with no indication of which link failed — so the only recovery left was to re-run the whole chain. The absence the agent was sent to discover is what broke the tool it was discovering with.
+
+1. **Never join independent probes with `&&`.** `&&` means "abort if this is non-zero", which is wrong for a probe whose job is to report either outcome. Use `;` between independent probes, or send them as separate calls.
+2. **Turn absence into OUTPUT, never into exit status.** The highest-value habit on this page:
+   - `ls -la "$P" 2>&1 || echo "ABSENT: $P"`
+   - `grep -n "$PAT" "$F" || echo "NO MATCH: $PAT"`
+   A probe written this way reports its own negative, so the chain cannot fail.
+3. **Read exit codes correctly.** `grep`/`ls`/`test` exit 1 = NOT FOUND — a RESULT, not an error. `grep` exit >=2 = a REAL error (file missing or unreadable). Exit 127 = the shell could not resolve the command or its interpreter — a fact about your command line, never a fact about the system you are probing.
+4. **Never re-run a compound command that "failed."** Isolate which link failed first. Re-running an identical chain IS the loop: same input, same output, duplicate-call guard trips, turn burned.
+5. **Cap a verification chain at 5 probes.** Small enough that each output line maps to its probe by eye, so an unexpected result is attributable without a re-run.
+
+Worked example — the same audit, written so it cannot false-fail:
+
+```bash
+echo "=== CHECK 1: route-presentation.sh ==="; ls -la "$P1" 2>&1 || echo "ABSENT: $P1"
+echo "=== CHECK 2: onboarding-state.sh ===";   ls -la "$P2" 2>&1 || echo "ABSENT: $P2"
+```
+
+Every probe reports. Nothing aborts. `Exec failed` never fires, so there is nothing to retry.
+
 <!-- WE_MOVE_IN_SILENCE_V1 -->
 ## ⛔ WE MOVE IN SILENCE — updates & maintenance are SILENT (non-negotiable)
 
@@ -254,6 +279,8 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N38 | **AF-REPO-CONSISTENCY — a department / role / SOP / persona may NEVER ship inconsistent across the SIX sources of truth.** The Skill 23 blueprint carries six independent lists that must agree: **FLOOR** (`department-naming-map.json` `.mandatory` + the 6 universal-primary verticals — 6 not 7 since naming-map v2.6.1 reclassified `listings` to real-estate-only; on-disk floor = 30 [24 mandatory + 6 universal-primary, includes the never-declinable master-orchestrator]; the interview-declinable buildable floor `qc-assert-repo-consistency.py`'s own gate checks is 29 [23 + 6]), **ROSTERS** (`suggested-roles/*.md`), **ROLE LIBRARY** (`templates/role-library/_index.json`), **SOP SOURCE** (role-library copy path / Skill-42 PA library), **PERSONA DOMAINS** (`build-workforce.py` `dept_to_domains` x2 + `create_role_workspaces.py` `DEPT_DOMAIN_HINTS`), and **NO ORPHANS**. Six departments once shipped UNBUILDABLE because nothing cross-checked floor vs rosters; missing persona-domain keys silently routed 11 floor depts to the generic `['leadership']` pool. For EVERY floor dept: its roster must parse, every roster role must resolve a library/SOP template, the dept must dry-run-instantiate cleanly, every role must have a real SOP source, and the dept must have a NON-fallback persona-domain mapping in ALL THREE persona maps. When you ADD or RENAME a department/role/SOP/persona you MUST update floor + roster + library + SOP source + persona maps together (see `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md`). **PERSONA-SET COUNT TRIAD (7th assertion):** beyond persona-DOMAIN mappings, adding a coaching/leadership persona must keep the COUNT triad in lockstep — `blueprint dirs (22-…/personas/*) == persona-categories.json keys == INDEX-MANIFEST.persona_count == INDEX-MANIFEST.canonical_persona_count` — else a persona ships matchable-but-vector-less (in the SET, no embeddings) or the manifest is bumped with no blueprint. The propagation checklist (blueprint + SET + incremental index + manifest + re-wire) is `23-ai-workforce-blueprint/ADDING-PERSONAS.md`. | This file (N38 section) + `FLEET-STANDARDS.md §7` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` + `23-ai-workforce-blueprint/ADDING-PERSONAS.md` + `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (single source of truth; uses the SAME `parse_roster`/`library_lookup`/`evaluate_floor`/`is_canonical_dept` functions the build uses, plus the `_persona_set_triad_failures` count assertion) | `scripts/qc-system-integrity.sh` CHECK X.12 (rc=5 hard-fail) + build-start preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted repo) + CI `.github/workflows/qc-static.yml` (runs the gate + `23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`) + CI `.github/workflows/persona-set-asset-consistency-guard.yml` (PR-boundary triad guard) |
 
 | N39 | **NATIVE SKILL INVOCATION — skills are native department capabilities, not user-only features.** A specialist reaches for the OWNING skill from a client's plain-language intent; the client never has to name it or type its slash command. The ONE binding is `23-ai-workforce-blueprint/skill-department-map.json` (skill↔dept↔specialist↔intent↔craft-SOP); the doctrine is `universal-sops/native-skill-invocation.md`; the runtime handoff is the Command-Center ContextPack `matched_skills` (Layer A). Skill selection is **dept-scoped** (only the task's department's skills are offered — a marketing task never sees the video pipeline) and **fail-closed on paid calls** (Rule-Zero USD announce + budget cap still apply). Durable knowledge lives in each owning role's `how-to.md` §8 "Skills You Operate" block (Layer B); the front-door reflex `SKILL_INTENT_ROUTING_REFLEX_V1` routes intent→owning department (Layer C, injected by `apply-fleet-standards.sh`, alongside the strict presentation REFLEX 0). Pointer, not paste — full detail lives in the SOP + map, never a playbook dump here. | `<!-- NATIVE_SKILL_INVOCATION_V1 -->` marker (below) + `23-ai-workforce-blueprint/skill-department-map.json` + `universal-sops/native-skill-invocation.md` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` Scenario E | **MAP-CONSISTENCY** dimension of `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (structure + Layer-B blocks + Layer-C reflex coverage) + CONTENT-HASH gate (role skill-blocks re-stamped) + `scripts/check-skill-department-map.py` (standalone orphan check) + CI `.github/workflows/qc-static.yml` |
+
+| N40 | **FAIL-CLOSED DEPENDENCY — stop at 2 attempts, report once, never narrate the hunt.** A dependency that answers `unauthorized` / `forbidden` / `invalid api key` / `authentication failed` / `not authenticated` / `missing credentials` is refusing on PURPOSE — a permission answer, not a capability answer, and the same answer however the request is worded. **At most 2 attempts**, then STOP. **Rewording is not a new approach**: different arguments against the same fail-closed dependency are the same attempt repeated. Emit **exactly ONE** message — what is blocked, what is needed, who can supply it — and **NEVER narrate a discovery hunt to the client**. This is the fail-closed exception that the "Blockers — Research Before Giving Up" section (try 5-10 methods) previously lacked; that section governs CAPABILITY failures only and is now explicitly bounded by this rule. Root cause: an agent on a client box made **13 tool calls in 49 seconds**, each a reworded attempt at one intent, while OBEYING the unbounded 5-10-methods rule; the client cancelled it and typed "stop looping." No detector fired because every loop guard on the fleet keys on the ARGUMENTS (runtime: `toolName`+`sha256(params)`; runaway guard: +`resultHash`; D3: +target), and OpenClaw exposes **no per-turn tool-call ceiling** to fall back on. Escalate per N36, never grind. | This file (N40 section) + `<!-- FAIL_CLOSED_DEPENDENCY_V1 -->` marker | `scripts/qc-assert-fail-closed-doctrine.sh` (doctrine present + Blockers bound intact) + `tests/unit/fail-closed-doctrine-gate.test.sh` + `.github/workflows/fail-closed-doctrine-gate.yml` + Skill 61 detector **D6 / LP-A9** (`61-loop-protection-system/scripts/loop_detectors.py`, argument-blind, after-the-fact) |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -607,7 +634,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 | `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
 | `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted (your client's chat) |
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
+- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Reference the env var, never a hardcoded URL.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
 - The rescue agent will reply with a solution delivered back into the Rescue Rangers group; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
@@ -766,10 +793,18 @@ Build proactively, but NOTHING goes external without approval.
 
 ### Blockers — Research Before Giving Up
 
+> ⛔ **BOUNDED BY N40.** This section governs **capability** failures — a tool you have
+> not yet found the right invocation for. It does **NOT** govern **permission** failures.
+> The moment a dependency returns a fail-closed refusal (unauthorized / forbidden /
+> invalid key / authentication failed / missing credentials), the "5-10 methods" rule
+> below **STOPS APPLYING** and N40 takes over: at most 2 attempts, then ONE message.
+> No number of methods can satisfy a credential you do not have. Read N40 before
+> applying anything in this section to a failing external dependency.
+
 When something doesn't work:
 1. Try a different approach immediately
 2. Then another. And another.
-3. Try at least 5-10 methods before asking for help
+3. Try at least 5-10 methods before asking for help — **capability failures only; see N40**
 4. Use every tool: CLI, browser, web search, spawning agents
 5. Get creative — combine tools in new ways
 
@@ -786,6 +821,75 @@ After every mistake or learned lesson:
 3. Update AGENTS.md, TOOLS.md, or relevant file immediately
 
 Don't wait for permission to improve. If you learned something, write it down now.
+
+---
+
+<!-- FAIL_CLOSED_DEPENDENCY_V1 -->
+## 🔴 N40 — FAIL-CLOSED DEPENDENCY: STOP AT 2, REPORT ONCE, NEVER NARRATE THE HUNT
+
+> Idempotency marker: `FAIL_CLOSED_DEPENDENCY_V1`. `apply-fleet-standards.sh` injects this on
+> existing boxes. Do NOT add it again if the marker is already present.
+
+**A fail-closed dependency is one that refuses you on purpose.** It answers
+`unauthorized`, `forbidden`, `invalid api key`, `authentication failed`, `not authenticated`,
+or `missing credentials`. It is a **permission** answer, not a capability answer, and it is
+the SAME answer no matter how the request is worded.
+
+### The rule
+
+1. **STOP AFTER AT MOST 2 ATTEMPTS.** The first attempt establishes the failure. The second
+   confirms it is not transient. There is no third.
+2. **REWORDING IS NOT A NEW APPROACH.** Different arguments against the same fail-closed
+   dependency are the SAME attempt, not a new one. Searching for a different endpoint, a
+   different path to the same credential, or a different phrasing of the same call is one
+   attempt repeated — never progress.
+3. **EMIT EXACTLY ONE MESSAGE**, and only when you stop. It states three things and nothing
+   else: **what is blocked**, **what is needed to unblock it**, and **who can supply it.**
+4. **NEVER NARRATE A DISCOVERY HUNT TO THE CLIENT.** No running commentary, no "let me try…",
+   no per-attempt status. A client must never watch an agent search. They see one message
+   describing a blocked state, or they see nothing at all. This is We Move In Silence applied
+   to failure.
+5. **A FAIL-CLOSED REFUSAL IS A REPORTABLE STATE, NOT A PROBLEM TO SOLVE.** You cannot earn a
+   credential you were not given. Escalate per N36 (structured handback) or Rescue Rangers;
+   do not grind.
+
+### Why this rule exists (and why "just try harder" caused it)
+
+An agent on a client box hit a fail-closed API, then made **thirteen tool calls in
+forty-nine seconds**, every one a differently-worded attempt at the same intent. The client
+cancelled it by hand and separately typed **"stop looping."**
+
+**The agent was obeying doctrine.** The Blockers section above told it to "try at least 5-10
+methods before asking for help," and that instruction had no fail-closed exception. This rule
+is that exception. Persistence against a capability gap is a virtue; persistence against a
+permission gap is a loop with better manners.
+
+### Why no detector caught it
+
+Every automated loop guard on this fleet keys on the ARGUMENTS, so an agent that rewords
+defeats all of them simultaneously:
+
+| Guard | Keys on | Why it stayed silent |
+|---|---|---|
+| OpenClaw runtime identical-call guard | `toolName` + `sha256(params)` | all 13 argument sets differed |
+| Always-armed runaway guard | `toolName` + `argsHash` + `resultHash` | stricter still — needs identical results too |
+| Skill 61 detector D3 | outcome class + tool sequence + target | the target differed every time |
+
+**There is no per-turn tool-call ceiling to fall back on** — OpenClaw exposes no `maxSteps`,
+`maxToolCalls`, or `toolCallLimit` key (verified against the generated config schema;
+`runRetries` is a *retry* ceiling, not a call ceiling). And the runtime's critical verdict
+**blocks the single tool call** rather than ending the turn, so a rewording agent simply makes
+a different call.
+
+Skill 61 detector **D6 / LP-A9** is the machine half of this rule and is deliberately
+argument-blind, but it is a WATCHDOG — it reports after the fact, on a 15-minute tick. **This
+doctrine is the only thing that stops the loop while it is happening.** Do not rely on the
+detector to save a client from a hunt.
+
+| Enforced by | What it proves |
+|---|---|
+| `scripts/qc-assert-fail-closed-doctrine.sh` | this rule is present and un-neutered in the canonical `AGENTS.md`, and the Blockers section still carries its N40 bound |
+| `61-loop-protection-system` D6 / LP-A9 | an argument-blind detector fires on the incident shape after the fact |
 
 ---
 

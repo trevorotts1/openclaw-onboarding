@@ -1,0 +1,59 @@
+{
+  "actions": [
+    "send-email",
+    "send-sms"
+  ],
+  "contract": "anthology-engine-u10-u13-workflows",
+  "data": {
+    "actions": [
+      "send-email",
+      "send-sms"
+    ],
+    "email": {
+      "body": "Dear {{ contact.first_name }},\n\nYour revised chapter is ready. Our editors have completed their revision, and we would love your review.\n\nView the revised chapter PDF here:\n{{ contact.anthology_chapter_rewrite1_pdf_url }}\n{{ contact.anthology_chapter_rewrite2_pdf_url }}\n\nEdit the revised chapter in the Google Doc here:\n{{ contact.anthology_chapter_rewrite1_doc_url }}\n{{ contact.anthology_chapter_rewrite2_doc_url }}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nYou have used {{ contact.anthology_rewrite_count }} of 2 rewrites.\n\nIf you would like to approve or request further changes, open the review form here:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s6\n\nWarm regards,\nThe Editors",
+      "from_name_merge": "{{ custom_values.producer }}",
+      "link_fields": [
+        "{{contact.anthology_chapter_rewrite1_pdf_url}}",
+        "{{contact.anthology_chapter_rewrite1_doc_url}}",
+        "{{contact.anthology_chapter_rewrite2_pdf_url}}",
+        "{{contact.anthology_chapter_rewrite2_doc_url}}"
+      ],
+      "sign_off": "The Editors",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s6",
+      "subject": "Your revised chapter is ready to review"
+    },
+    "gate_cursor": "s6_rewrite",
+    "note": "offline template only \u2014 a REAL location write must ride the house clients (CAF_BROWSER_UA on every request \u2014 CF 1010 law); the workflow is built in the template location via the Skill 44 caf build rail and PUBLISHED (one toggle per workflow) before it fires live",
+    "producer_gate": "s6_producer",
+    "sms": {
+      "body": "Your revised chapter is ready to review here: {{contact.anthology_chapter_rewrite1_doc_url}}",
+      "shape": "link-only short message (one warm sentence plus ONE link)"
+    },
+    "stage": "s6",
+    "trigger_tag": "anthology-release-rewrite",
+    "webhook": {
+      "authorization_header_merge": "{{ custom_values.anthology_hook_secret }}",
+      "url_merge": "{{ custom_values.anthology_webhook_url }}"
+    },
+    "workflow_name": "Anthology Release: Rewrite"
+  },
+  "links": {
+    "email_links": [
+      "{{contact.anthology_chapter_rewrite1_pdf_url}}",
+      "{{contact.anthology_chapter_rewrite1_doc_url}}",
+      "{{contact.anthology_chapter_rewrite2_pdf_url}}",
+      "{{contact.anthology_chapter_rewrite2_doc_url}}"
+    ],
+    "sms_link": "{{contact.anthology_chapter_rewrite1_doc_url}}"
+  },
+  "module": "w8_release_rewrite",
+  "name": "Anthology Release: Rewrite",
+  "note": "OFFLINE template document for the Skill 44 caf build rail against the client's OWN Convert and Flow account (template folder 'Anthology Engine'): template copy + merge tags + trigger seat only - never an n8n/GHL workflow JSON export, never a real URL, never a real token; published (one toggle per workflow) before it fires live",
+  "schema_version": 1,
+  "seat": 7,
+  "status": "WIRED-AHEAD",
+  "trigger": {
+    "tag": "anthology-release-rewrite",
+    "type": "contact_tag"
+  }
+}

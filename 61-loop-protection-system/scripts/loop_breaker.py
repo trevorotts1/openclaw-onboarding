@@ -64,7 +64,7 @@ def cron_breaker_trips(actual_per_day, declared_per_day, breakers):
 def resend_breaker_trips(distinct_run_count, breakers):
     """True when the resend breaker should trip: >= N DISTINCT run ids carrying
     the SAME normalized cross-run payload for the SAME (source,target) pair
-    inside the rolling window (LP-A8, the 2026-08-04 cross-run resend
+    inside the rolling window (LP-A10, the 2026-08-04 cross-run resend
     incident). Mirrors D7's own p1_repeat threshold from thresholds.json as an
     INDEPENDENT ceiling copy in breakers.json - the same S4 cap-raise-without-
     stamp pattern every other breaker predicate here follows."""

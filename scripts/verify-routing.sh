@@ -9,13 +9,12 @@
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
-#   G7  CEO/main agent tool-gate: production tools (write/edit/apply_patch/
-#       browser/canvas/image/process) denied + GHL MCP denied by provider.
-#       FAIL-WARN (not clean) while 'exec' is still allowed as the interim
-#       ingest-routing path; --strict-exec hard-fails that interim state. When an
-#       owner-consent sidecar is present the gate is intentionally lifted (INFO).
-#   G8  CEO PreToolUse intent-gate hook is wired (Claude-Code boxes) AND the
-#       owner-consent sidecar path is NOT inside any agent-writable workspace.
+#   G7  CEO/main agent tools policy. The production-tool deny (write/edit/
+#       apply_patch/browser/canvas/image/process) was RETIRED 2026-08-05 per
+#       Trevor and is no longer asserted. Still enforced: per-agent tools schema
+#       validity (no sessions/agentToAgent keys) + GHL MCP deny-by-provider.
+#   G8  CEO PreToolUse intent-gate hook is INTENTIONALLY UNWIRED (2026-08-05 per
+#       Trevor) — permanent INFO/PASS; the unwired state is the correct state.
 #       (block-and-redirect enforcement — goal doc Option 1). On pure OpenClaw
 #       boxes with no Claude Code settings.json this gate is INFO/skip, since the
 #       OpenClaw runtime brake is the Layer-1 hard tool-deny, not a hook.
@@ -35,7 +34,10 @@
 # Usage:
 #   bash verify-routing.sh                 # static gates G1–G8
 #   bash verify-routing.sh --quiet         # exit code only (no printed output)
-#   bash verify-routing.sh --strict-exec   # hard-fail G7 while exec is still allowed
+#   bash verify-routing.sh --strict-exec   # RETIRED 2026-08-05: accepted but now a
+#                                          # no-op (its only consumer, the G7
+#                                          # INTERIM_EXEC arm, was removed with the
+#                                          # production-tool deny gate)
 #   bash verify-routing.sh --probe         # also run runtime probes G9/G10/G11
 #                                          # (PROBE_BASE_URL overrides CC base URL)
 #
@@ -45,6 +47,10 @@
 set -euo pipefail
 
 QUIET=0
+# STRICT_EXEC is RETIRED (2026-08-05). Still parsed so existing invocations and
+# runbooks that pass --strict-exec do not look broken, but nothing reads it now:
+# its only consumer was the G7 INTERIM_EXEC arm, removed with the production-tool
+# deny gate. Kept assigned so `set -u` is safe if a future arm wants it back.
 STRICT_EXEC=0
 PROBE=0
 for _arg in "$@"; do
@@ -386,22 +392,30 @@ PYEOF
   esac
 fi
 
-# ─── G7: CEO tool-gate present (GOAL-5 Item 1 — Layer-1 structural brake) ─────
-# The hard structural brake: the CEO/orchestrator agent must DENY every
-# production tool so skills:[] (G4) is not the only thing stopping in-house work.
-# Asserts, on the resolved CEO agent in openclaw.json:
-#   - tools.deny ⊇ {write, edit, apply_patch, browser, canvas, image, process}
-#   - tools.byProvider["ghl-community-mcp"].deny == ["*"]  (GHL MCP denied)
-#   - exec is NOT in tools.allow  → clean PASS
-#     exec IS in tools.allow      → FAIL-WARN (interim routing hole; not clean)
-#                                   unless a route-task MCP tool is allowed.
-# The CEO agent is resolved as id==main → default:true → known CEO ids.
+# ─── G7: CEO agent tools policy (production-tool deny RETIRED 2026-08-05) ─────
+# RETIRED 2026-08-05 per Trevor: the CEO gate (production-tool deny on the
+# orchestrator) was removed from box + repo because it denied `write` while
+# memoryFlush demanded a memory write — creating loops and eating Telegram
+# messages. The production-tool deny assertion is GONE from this gate; it is
+# never a failure path again. Mirrors how G8 was retired below.
 #
-# NOTE: this gate intentionally PASSES on a CONSENTED box (owner carve-out
-# active: ceo-consent.json present AND the gate lifted) — re-gating that box
-# would fight the owner. If the consent sidecar is present, G7 reports INFO and
-# does not fail (the QC state-gate covers a consented box at completion time).
-_info "G7: checking CEO tool-gate (production tools denied on the orchestrator)"
+# TWO checks in G7 SURVIVE the retirement and are still enforced here, because
+# neither has anything to do with the write-deny loop:
+#   1. PER-AGENT SCHEMA CORRUPTION — sessions/agentToAgent on a per-agent tools
+#      block are schema-invalid (AgentEntry.tools is additionalProperties:false)
+#      and make `openclaw config validate` FAIL → reload skipped → cron engine
+#      down. Hard-fail, and hard-fail even under an owner-consent carve-out.
+#   2. GHL MCP DENY-BY-PROVIDER — a separate brake from the production deny;
+#      byProvider["ghl-community-mcp"].deny==["*"] or the name-glob fallback.
+#
+# Deliberately NO LONGER checked: tools.deny ⊇ {write, edit, apply_patch,
+# browser, canvas, image, process} (the retired gate), and `exec` in tools.allow
+# (exec is now a normal member of CEO_TOOL_ALLOW — the routing path — so the old
+# INTERIM_EXEC fail-warn would fire on every correctly-configured box).
+#
+# The CEO agent is resolved as default:true → id=="main" → known CEO ids.
+_info "G7: CEO production-tool deny RETIRED (Trevor 2026-08-05) — not enforced; still checking per-agent tools schema validity + GHL MCP deny-by-provider."
+_pass "G7: CEO production-tool deny intentionally absent (retired fleet-wide per Trevor 2026-08-05) — no longer a requirement"
 
 # Honor an active owner-consent carve-out: if consent is granted, the lifted
 # gate is EXPECTED, not a failure.
@@ -418,7 +432,9 @@ G7_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
 from pathlib import Path
 
-REQUIRED_DENY = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+# NOTE: the REQUIRED_DENY production-tool set was REMOVED 2026-08-05 (gate
+# retired per Trevor — it caused the write-deny/memoryFlush loop). Do not
+# reintroduce it here; see the G7 header comment above.
 # Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
 CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
 ROUTER_IDS = set(CEO_IDS) | {"dept-executive-office"}
@@ -483,10 +499,9 @@ try:
     if _bad_peragent:
         print(f"PERAGENT_INVALID_KEYS:{cid}:{','.join(_bad_peragent)}"); sys.exit(0)
 
+    # `deny` is still read, but ONLY to support the GHL MCP name-glob fallback
+    # below. The production-tool deny assertion is retired (see header).
     deny = set(tools.get("deny") or [])
-    missing = REQUIRED_DENY - deny
-    if missing:
-        print(f"DENY_INCOMPLETE:{cid}:{','.join(sorted(missing))}"); sys.exit(0)
 
     # GHL MCP denied? accept byProvider form OR the name-glob fallback.
     bp = tools.get("byProvider") or {}
@@ -498,11 +513,10 @@ try:
     if not (ghl_bp or ghl_glob):
         print(f"GHL_NOT_DENIED:{cid}"); sys.exit(0)
 
-    allow = set(tools.get("allow") or [])
-    has_route_tool = any(t.endswith("__route_task") or t == "route_task" for t in allow)
-    if "exec" in allow and not has_route_tool:
-        # Interim posture: exec is the routing path but also a production hole.
-        print(f"INTERIM_EXEC:{cid}"); sys.exit(0)
+    # RETIRED 2026-08-05: the old INTERIM_EXEC fail-warn fired when `exec` was in
+    # tools.allow without a route-task MCP tool. `exec` is now a normal, intended
+    # member of CEO_TOOL_ALLOW (it IS the routing path), so that warn would fire
+    # on every correctly-configured box. Removed with the production-deny gate.
 
     print(f"PASS:{cid}")
 except Exception as e:
@@ -513,7 +527,7 @@ PYEOF
 # If an owner-consent carve-out is active, a lifted gate is expected → INFO only.
 if [ -n "$_CEO_CONSENT_FILE" ] && [ -f "$_CEO_CONSENT_FILE" ]; then
   case "$G7_RESULT" in
-    PASS:*)          _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) [consent sidecar also present]" ;;
+    PASS:*)          _pass "G7: CEO agent tools policy OK (id=${G7_RESULT#PASS:}) — per-agent schema clean, GHL MCP denied [consent sidecar also present]" ;;
     PA_DEFAULT_OK:*) _pass "G7: default agent (id=${G7_RESULT#PA_DEFAULT_OK:}) is a PERSONAL-ASSISTANT/non-router — CEO tool-gate N/A; PA-default topology is valid (v13.2.2)" ;;
     PERAGENT_INVALID_KEYS:*)
       _G7_PK="${G7_RESULT#PERAGENT_INVALID_KEYS:}"
@@ -525,36 +539,17 @@ if [ -n "$_CEO_CONSENT_FILE" ] && [ -f "$_CEO_CONSENT_FILE" ]; then
 else
   case "$G7_RESULT" in
     PASS:*)
-      _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) — production tools + GHL MCP denied, exec not exposed"
+      _pass "G7: CEO agent tools policy OK (id=${G7_RESULT#PASS:}) — per-agent tools schema clean, GHL MCP denied (production-tool deny retired 2026-08-05)"
       ;;
     PA_DEFAULT_OK:*)
       _pass "G7: default agent (id=${G7_RESULT#PA_DEFAULT_OK:}) is a PERSONAL-ASSISTANT/non-router — CEO tool-gate N/A; PA-default topology is valid (v13.2.2 PA-freeze guard)"
-      ;;
-    INTERIM_EXEC:*)
-      # FAIL-WARN (visible, NOT a silent pass): the production denies ARE in
-      # place (the main brake holds), but exec is still allowed as the routing
-      # path — a residual hole until the route-task MCP tool ships. We do NOT
-      # mark the box "clean" (no PASS line) yet we do NOT block closeout fleet-
-      # wide on a state that is currently universal. Pass --strict-exec to make
-      # this a hard FAILURE once route-task is expected on the box.
-      if [ "${STRICT_EXEC:-0}" = "1" ]; then
-        _fail "G7: CEO tool-gate INTERIM (id=${G7_RESULT#INTERIM_EXEC:}) — production tools denied BUT 'exec' still in allow (routing hole). --strict-exec set: ship the route-task MCP tool + remove exec from CEO_TOOL_ALLOW."
-        FAILURES=$((FAILURES + 1))
-      else
-        printf '[verify-routing] WARN  G7: CEO tool-gate INTERIM (id=%s) — production tools + GHL MCP denied (brake holds), but '\''exec'\'' is still allowed as the ingest-routing path. NOT marked clean. Replace exec with the route-task MCP tool to clear; run with --strict-exec to hard-fail.\n' "${G7_RESULT#INTERIM_EXEC:}" >&2
-      fi
-      ;;
-    DENY_INCOMPLETE:*)
-      _G7_REST="${G7_RESULT#DENY_INCOMPLETE:}"
-      _fail "G7: CEO tool-gate INCOMPLETE (id=${_G7_REST%%:*}) — missing denies: ${_G7_REST#*:}; run apply-routing-fix.sh (Layer 5)"
-      FAILURES=$((FAILURES + 1))
       ;;
     GHL_NOT_DENIED:*)
       _fail "G7: CEO tool-gate (id=${G7_RESULT#GHL_NOT_DENIED:}) does NOT deny GHL MCP — add byProvider['ghl-community-mcp'].deny=['*']; run apply-routing-fix.sh (Layer 5)"
       FAILURES=$((FAILURES + 1))
       ;;
     NO_TOOLS:*)
-      _fail "G7: CEO agent (id=${G7_RESULT#NO_TOOLS:}) has NO tools policy — production tools wide open; run apply-routing-fix.sh (Layer 5)"
+      _fail "G7: CEO agent (id=${G7_RESULT#NO_TOOLS:}) has NO tools policy at all — so GHL MCP is NOT denied either; run apply-routing-fix.sh (Layer 5)"
       FAILURES=$((FAILURES + 1))
       ;;
     PERAGENT_INVALID_KEYS:*)
@@ -656,131 +651,13 @@ case "$G7B_RESULT" in
     FAILURES=$((FAILURES + 1)) ;;
 esac
 
-# ─── G8: CEO PreToolUse intent-gate wired + consent sidecar path safe ────────
-# Block-and-redirect enforcement (goal doc Option 1). Two parts:
-#   8a. Claude-Code box: settings.json hooks.PreToolUse contains an entry whose
-#       command is .../ceo-intent-gate.sh. (On a pure OpenClaw box with no
-#       settings.json, 8a is INFO/skip — the OpenClaw runtime brake is the
-#       Layer-1 hard tool-deny, not a hook.)
-#   8b. Consent-path safety: the resolved owner-consent sidecar must live OUTSIDE
-#       the agent workspace (so the CEO agent cannot author its own consent).
-_info "G8: checking CEO intent-gate hook + consent-path safety"
-
-# v13.2.2 PA-FREEZE GUARD: is this box's default agent a PERSONAL-ASSISTANT
-# (non-router)? On such a box the CEO PreToolUse intent-gate intentionally does
-# NOT apply — G8a must NOT force-wire the unscoped hook (that hook would fire on
-# the PA and freeze it). We compute this once and treat an unwired hook on a
-# PA-default box as a PASS, not a FATAL.
-_IS_PA_DEFAULT_BOX=$(python3 - "$OC_CONFIG" <<'PYEOF'
-import json, sys
-from pathlib import Path
-ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
-    "main", "ceo", "dept-ceo",
-    "master-orchestrator", "dept-master-orchestrator",
-    "dept-executive-office",
-}
-def _is_router(ag):
-    if not isinstance(ag, dict):
-        return False
-    if ag.get("is_master") is True:
-        return True
-    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
-        return True
-    return ag.get("id") in ROUTER_IDS
-try:
-    cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents = cfg.get("agents", {}).get("list", []) or []
-    default_agent = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
-    if default_agent is None:
-        default_agent = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
-    # PA-default box iff a default agent exists, it is NOT a router, AND there is
-    # no separate router agent on the box either.
-    if (default_agent is not None
-            and not _is_router(default_agent)
-            and not any(_is_router(a) for a in agents)):
-        print("1")
-    else:
-        print("0")
-except Exception:
-    print("0")
-PYEOF
-) || _IS_PA_DEFAULT_BOX="0"
-
-# 8a — locate a Claude Code settings.json (project then user level).
-CC_SETTINGS=""
-for _cand in \
-  "${CLAUDE_SETTINGS_FILE:-}" \
-  "$HOME/.claude/settings.json" \
-  "/data/.claude/settings.json"; do
-  [ -n "$_cand" ] || continue
-  if [ -f "$_cand" ]; then CC_SETTINGS="$_cand"; break; fi
-done
-
-if [ -z "$CC_SETTINGS" ]; then
-  _info "G8a: no Claude Code settings.json found — OpenClaw box; PreToolUse hook N/A (Layer-1 tool-deny is the brake here). Skipping 8a."
-else
-  G8A=$(SETTINGS_PATH="$CC_SETTINGS" python3 - <<'PYEOF'
-import json, os, sys
-try:
-    cfg = json.load(open(os.environ["SETTINGS_PATH"]))
-    pre = (cfg.get("hooks", {}) or {}).get("PreToolUse", []) or []
-    found = False
-    for entry in pre:
-        if not isinstance(entry, dict):
-            continue
-        for h in entry.get("hooks", []) or []:
-            cmd = h.get("command", "") if isinstance(h, dict) else ""
-            if "ceo-intent-gate.sh" in cmd:
-                found = True
-    print("PASS" if found else "MISSING")
-except Exception as e:
-    print(f"ERROR:{e}")
-PYEOF
-) || G8A="ERROR:python3_failed"
-  case "$G8A" in
-    PASS) _pass "G8a: ceo-intent-gate.sh wired in $CC_SETTINGS hooks.PreToolUse" ;;
-    MISSING)
-      if [ "$_IS_PA_DEFAULT_BOX" = "1" ]; then
-        # v13.2.2 PA-FREEZE GUARD: the default agent is a personal assistant and
-        # there is no router on this box. The CEO PreToolUse intent-gate must NOT
-        # be force-wired here — wiring an unscoped deny hook would freeze the PA.
-        # An absent hook on a PA-default box is the CORRECT state → PASS.
-        _pass "G8a: PA-default box (no router agent) — CEO PreToolUse intent-gate intentionally NOT wired (the hook's own agent-scope guard also no-ops on a PA). Correct state (v13.2.2 PA-freeze guard)."
-      else
-        _fail "G8a: PreToolUse intent-gate NOT wired in $CC_SETTINGS — run install-ceo-intent-gate.sh"
-        FAILURES=$((FAILURES + 1))
-      fi
-      ;;
-    ERROR:*)
-      _fail "G8a: could not read $CC_SETTINGS: ${G8A#ERROR:}"
-      FAILURES=$((FAILURES + 1)) ;;
-  esac
-fi
-
-# 8b — consent sidecar path must be OUTSIDE the agent workspace.
-CONSENT_LIB=""
-for _cand in \
-  "$ONBOARDING_DIR/hooks/lib-ceo-consent.sh" \
-  "$OC_ROOT/hooks/lib-ceo-consent.sh"; do
-  [ -f "$_cand" ] && CONSENT_LIB="$_cand" && break
-done
-if [ -z "$CONSENT_LIB" ]; then
-  _fail "G8b: lib-ceo-consent.sh not found — consent reader missing; run install-ceo-intent-gate.sh"
-  FAILURES=$((FAILURES + 1))
-else
-  # shellcheck source=/dev/null
-  . "$CONSENT_LIB"
-  CONSENT_PATH="$(ceo_consent_file)"
-  # Resolve both to real-ish absolute paths for the containment test.
-  _WS_ABS="$WS_REALPATH"
-  case "$CONSENT_PATH" in
-    "$_WS_ABS"/*|"$WORKSPACE_DIR"/*)
-      _fail "G8b: consent sidecar ($CONSENT_PATH) is INSIDE the agent workspace ($_WS_ABS) — the CEO agent could author its own consent. UNSAFE."
-      FAILURES=$((FAILURES + 1)) ;;
-    *)
-      _pass "G8b: consent sidecar ($CONSENT_PATH) is outside the agent workspace — agent cannot self-consent" ;;
-  esac
-fi
+# ─── G8: CEO PreToolUse intent-gate — INTENTIONALLY UNWIRED (2026-08-05) ──────
+# Per Trevor's directive, the ceo-intent-gate PreToolUse hook has been removed
+# from all boxes and the repo. It was creating loops (memoryFlush recursion via
+# the hook's own Bash execution). This gate is now a permanent INFO/PASS — the
+# unwired state is the CORRECT and INTENTIONAL state.
+_info "G8: CEO PreToolUse intent-gate INTENTIONALLY UNWIRED (Trevor 2026-08-05) — this is the correct state."
+_pass "G8: ceo-intent-gate hook NOT wired (intentionally unwired fleet-wide per Trevor 2026-08-05) — no longer a requirement"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # RUNTIME OBEDIENCE PROBES (G9/G10/G11) — only with --probe (need a live CC)

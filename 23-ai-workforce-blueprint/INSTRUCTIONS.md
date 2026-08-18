@@ -48,7 +48,12 @@ Until `interviewComplete: true` has been written to `.workforce-build-state.json
 - NO department / role / step-by-step-instruction / file / folder creation. No materializing team members. No openclaw.json edits for the build.
 - NO building of anything the owner would "open" or "see" as a finished work product.
 
-The ONLY permitted in-interview side-action is **silent capability lookup** (researching whether a tool the owner mentioned has an API/integration, or researching a best-practice answer when the owner says "I don't know") that produces NO owner-facing deliverable and is used only to ask a sharper question or propose an answer for the owner to confirm. The moment you catch yourself starting to build or present something before the interview is complete, STOP, because that is the gate firing. Work begins only AFTER `interviewComplete: true`, in the Post-Interview Handoff Protocol.
+**Exemptions — EXACTLY TWO permitted actions before `interviewComplete: true`, and nothing else:**
+
+1. **Silent capability lookup** (researching whether a tool the owner mentioned has an API/integration, or researching a best-practice answer when the owner says "I don't know") that produces NO owner-facing deliverable and is used only to ask a sharper question or propose an answer for the owner to confirm.
+2. **The operator-triggered standard prebuild from the canonical library** (`scripts/prebuild-standard-workforce.sh`, standard-first boxes only) is the ONLY creation permitted before `interviewComplete`: it materializes the canonical department floor EXCLUSIVELY from `templates/role-library/` via the shipped materializers — never from another client's tree (NO CO-MINGLING) — and it writes NO owner-facing deliverable and NO interview answer. It requires an explicit, provenanced OPERATOR consent record (the operator is the consenting party pre-interview; the owner consents to EDITS later, at `interviewComplete`), refuses when `interviewComplete` is already true, and defers ALL `agents.list` registration to `interviewComplete` (files prebuilt, agent rows only for confirmed keeps). It is run by the OPERATOR at onboarding — never by the interview agent mid-conversation, never by a cron, never on a legacy box (absent `buildType`).
+
+Every other prohibition stays ABSOLUTE. The moment you catch yourself starting to build or present something before the interview is complete, STOP, because that is the gate firing. For a legacy box (no `buildType` in build-state), the gate applies exactly as written with ONLY exemption 1 — there is no prebuild on the legacy lane. For a standard-first box, work on the owner's CUSTOMIZATIONS begins only AFTER `interviewComplete: true`, in the Post-Interview Handoff Protocol (the apply-diff build).
 
 ---
 
@@ -378,6 +383,8 @@ The final output is still the canonical floor AI workforce (run `scripts/list-ca
 
 These arcs are framed as a conversation, not a checklist. **Every arc's purpose is to gather what is needed to BUILD that department for the owner, never to survey their current process for its own sake.** The frame is always "so I can build your [department]," and where you need to know how things work today, you ask it as input to the build ("here is what I'll build unless you tell me different"), not as a process audit. Bundle related departments naturally. Drill-down protocol still applies. The agent does NOT perform or offer any work during these arcs (No-Work-During-Interview Gate).
 
+**Standard-first framing (PHASE 7).** On a `buildType == "standard-first"` box the department floor is ALREADY built, so each arc's frame shifts from creation to tuning: instead of "so I can BUILD your [department]," it becomes "your [department] is already built — tell me what it should focus on." The substance gathered is the same (responsibilities, tools, targets, what to emphasize); the difference is that the answers PERSONALIZE the prebuilt department at apply time instead of creating it. The Healer-dependency question (SKILL.md Question Philosophy) stays exactly as-is — it seeds content, not existence. The deep-dive drill-down runs only for departments the owner keeps and cares about.
+
 **Department arcs to cover** (let conversation flow between them):
 
 - **D-1 (Marketing + Comms + Social + Paid Ads):** *"So I can build your marketing team right, where do you want people discovering your business 12 months from now, and how are they finding you today?"*
@@ -403,6 +410,11 @@ These arcs are framed as a conversation, not a checklist. **Every arc's purpose 
 ---
 
 ### Phase 5.5  -  Canonical Departments Reconciliation (BINDING  -  added v10.15.0 / Mac v10.14.0)
+
+**Which lane runs which steps (standard-first redesign, PHASE 7).** This phase has two lanes, chosen by `buildType` in `.workforce-build-state.json`:
+
+- **LEGACY lane** (`buildType` absent — every box that started onboarding before the standard-first cutover, plus every mid-interview box): Steps 1-6 EXACTLY as written below — compute COVERED / MISSING_MANDATORY / CUSTOM_KEEPS, show the canonical list, and pitch every missing department one by one. Byte-identical to before the redesign.
+- **STANDARD-FIRST lane** (`buildType == "standard-first"`): the canonical floor was ALREADY prebuilt before the interview began (`scripts/prebuild-standard-workforce.sh`, No-Work-During-Interview Gate exemption 2), so there IS no MISSING_MANDATORY — all floor departments are on disk, in the chosen artifact, and on the board. Steps 1-3 are replaced by the **Phase 5.5 (standard-first lane) — Review the Built Set** subsection below; Steps 3.5-3.9, 4 (hard rules), 5 (chunking), and 6 (library pointer) apply to BOTH lanes with the edits noted in that subsection.
 
 **Why this exists.** Phase 4 conversational arcs (D-1..D-13) bundle the canonical mandatory departments into themes. When an owner answers in terms of their *current* business language (e.g. *"I do bookkeeping, tax, government contracts, and compliance"*), the agent can lock in those phrases as the dept names and ship a workforce that diverges from the canonical set. An early reference build is the reference case: 9 departments shipped (Executive Office, Accounting, Tax, HR, Risk & Compliance, Operations, Gov Contracting, Marketing, Sales), missing many mandatory departments (Web Dev, App Dev, Graphics, Video, Audio, Research, Communications, CRM, OpenClaw Maintenance, Customer Support, Social Media, Paid Advertisement, Billing & Finance, Legal - run `scripts/list-canonical-departments.py` for the full current list). Clients have blind spots - they don't know they need Video Production, Graphics, CRM, or OpenClaw Maintenance until someone shows them the canonical list and asks.
 
@@ -480,7 +492,7 @@ bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh \
 
 The confirmed decline is written in the SAME provenanced object form the enforcer honors, plus `lossWarning` + `lossWarningAck:true` audit fields recording that the owner was shown, and accepted, the loss. A NO for a NON-floor department (a keyword-matched industry extra or a custom dept) needs no `--confirm-loss` — declining it costs no guaranteed floor functionality. NEVER pass `--confirm-loss` on the owner's behalf without actually reading them the warning first.
 
-The helper writes the provenanced OBJECT form the enforcer accepts into `[ZHC]/[slug]/.workforce-build-state.json` under `canonicalReconciliation.decisions` (idempotent - re-running a dept overwrites its object). The full block:
+The helper writes the provenanced OBJECT form the enforcer accepts into the WORKSPACE build-state - `/data/.openclaw/workspace/.workforce-build-state.json` on VPS, `~/.openclaw/workspace/.workforce-build-state.json` on Mac - under `canonicalReconciliation.decisions` (idempotent - re-running a dept overwrites its object). Pass `--state <path>` to target a different file. **This is NOT `[ZHC]/[slug]/.workforce-build-state.json`**, which is what this doc used to say: `record-dept-decision.sh` resolves the same workspace path `update-interview-state.sh` does and never looks under the zero-human-company tree, so anyone following the old wording was inspecting a file the recorder never writes and concluding, wrongly, that the owner's department decisions had been lost. The full block:
 
 ```json
 "canonicalReconciliation": {
@@ -509,6 +521,31 @@ The helper writes the provenanced OBJECT form the enforcer accepts into `[ZHC]/[
 ```
 
 The `decisions` map now also carries opt-out for the universal-primary vertical departments (recorded via the same helper, e.g. `record-dept-decision.sh --dept scheduling-dispatch --decision no --source owner-interview --by <ownerId> --session <sessionId>`), not only the mandatory canonical depts. `mergeDecisions`, `customRoles`, and `customSops` are written by Steps 3.5-3.8 below.
+
+#### Phase 5.5 (standard-first lane)  -  Review the Built Set (BINDING - replaces Steps 1-3 when `buildType == "standard-first"`)
+
+**Why this inverts.** In standard-first onboarding the canonical floor ALREADY exists on disk — it was materialized by `scripts/prebuild-standard-workforce.sh` (No-Work-During-Interview Gate exemption 2) before the interview began. The blind-spot problem this phase exists to solve (the reference case that shipped 9 departments and missed 14 mandatory ones) is already solved by construction: a blind spot can no longer DELETE a department — only a provenanced, loss-warning-acknowledged, owner-confirmed decline can. So instead of computing a gap and pitching missing departments one by one, this lane walks the owner through the BUILT set and edits it.
+
+**Step 1 (standard-first) - Read the built set.** Load `standardPrebuild.prebuiltDepartments` from `.workforce-build-state.json` and the chosen artifact (`[ZHC]/[slug]/departments.json`). Run `scripts/list-canonical-departments.py` to confirm the live floor. Do NOT recompute COVERED/MISSING — there IS no MISSING_MANDATORY on this lane: every floor department is on disk, in the chosen artifact, and on the board.
+
+**Step 2 (standard-first) - Show the review board.** Send ONE message that presents the built set (use the live count and `floor_label` from `scripts/list-canonical-departments.py` — never a hardcoded number):
+
+> *"Your company's standard foundation is already built - here are all [N] departments. Let's walk through them together. For each one you can: KEEP it as-is (the default - no action needed), TUNE it (tell me what it should focus on), or REMOVE it (I'll show you exactly what you lose, and you confirm). And if you need a department that isn't here, tell me and we'll add it."*
+>
+> *[for each prebuilt dept: emoji DisplayName  -  one_liner]*
+>
+> *"Where do you want to start?"*
+
+Wait for the owner's reply before continuing. The Drill-Down Detection Protocol still applies, but deep-dives run ONLY for departments the owner keeps and cares about — not all of them. This is deliberate: the review shortens the interview, and the QC gate's edit-mode exemption (see `scripts/qc-interview-completion.py`) accounts for it.
+
+**Step 3 (standard-first) - Record decisions.** For each department the owner engages with:
+
+- **KEEP (default, implicit).** Silence = keep. A department with NO recorded decision stays exactly as prebuilt. Record NOTHING for keeps — the apply-diff build treats absence of a decision as keep.
+- **TUNE (content).** The frame changes from creation to tuning: *"your [X] department is already built — tell me what it should focus on."* Capture the focus content as normal phase answers (the apply-diff build personalizes the prebuilt SOUL/HEARTBEAT/how-to content from it, no-clobber on owner-edited content). No decision record needed.
+- **REMOVE (confirmed decline).** Removing a floor department IS a decline — the OPT-OUT WARNING rule below applies VERBATIM: read the owner the department's `loss_warning` (via `scripts/department-loss-warning.py`) in your own words, get an explicit confirmation, then record with `--decision no --confirm-loss` through `scripts/record-dept-decision.sh` (the same provenanced object form, plus the `lossWarning`/`lossWarningAck` audit fields). Bare declines are rejected by the enforcer; at apply time the retire path (`scripts/retire-confirmed-decline.sh`) ARCHIVES the department to `.retired/` — it NEVER deletes (APFS snapshot doctrine). NEVER pass `--confirm-loss` on the owner's behalf without actually reading them the warning first.
+- **ADD (custom / net-new).** A department the owner wants that is NOT in the built set goes through Step 3.9's net-new guard FIRST (`net-new-department.py --check-only` — exit 2 means it duplicates a canonical dept, route there instead), then is recorded as a custom keep and materialized at apply time.
+
+**Everything else in this phase is unchanged for BOTH lanes:** Step 3.5 (semantic merge of named customs), Step 3.6 (opt-out for universal-primary verticals AND customs), Step 3.7 (per-dept custom roles), Step 3.8 (per-dept custom SOPs), Step 3.9 (net-new department discovery), Step 5 (Telegram-friendly chunking), Step 6 (library pointer). Step 4 hard rules 1-2 apply verbatim. Hard rule 3 becomes: do NOT advance to Phase 6 with any REMOVE still un-decided, any ADD un-recorded, or any Step 3.5 overlap still PENDING — KEEPs need no record. Hard rule 4 becomes: the final set = prebuilt floor MINUS confirmed declines PLUS customs and declared vertical additions; a REMOVE is archived at apply time, an ADD is materialized at apply time, a KEEP is personalized.
 
 #### Step 3.5  -  Semantic merge decision (Capability 2)
 
@@ -577,6 +614,8 @@ Canonical and floor departments resolve their roles/SOPs by COPY + token-persona
 
 **Purpose:** Before advancing to Phase 6 final review, show the operator the COMPUTED output of the full four-stage department assignment pipeline so they can predict exactly which departments will be enabled BEFORE the build runs. This is NOT a re-run of Phase 5.5 reconciliation -- it is a structured preview of the pipeline result derived from the recorded decisions.
 
+**Standard-first lane (PHASE 7):** when `buildType == "standard-first"`, the preview becomes a DIFF preview — it shows exactly what the apply-diff build at `interviewComplete` WILL CHANGE relative to the prebuilt set: KEEPs are implicit (listed only as a count, since nothing changes for them), REMOVEs are explicit (each confirmed decline, archived not deleted at apply time), and ADDs are explicit (each custom / net-new / vertical addition, materialized at apply time). Use the standard-first preview template below instead of the legacy one. The hard rules apply with the same edit as Phase 5.5 Step 4 rule 3: MISSING is replaced by "un-decided REMOVE/ADD."
+
 **When to run:** Immediately after every canonical/vertical/custom decision is recorded in `.workforce-build-state.json` and BEFORE any "Build my company" confirmation. Never skip this -- it catches mistakes before they become built departments.
 
 #### 1. Canonical Floor Report (Stage 1)
@@ -632,9 +671,35 @@ FINAL SET: [N] departments
 Ready to finalize? (YES / ADJUST)
 ```
 
+**Standard-first DIFF preview template (used when `buildType == "standard-first"`):**
+
+```
+=== STANDARD-FIRST DIFF PREVIEW ===
+(what the build at interviewComplete will CHANGE vs the prebuilt set)
+
+PREBUILT FLOOR: [N] departments (status: prebuilt, on disk + board)
+
+KEEPS (implicit - nothing changes, personalized only): [N]
+  (listed by count - walk any of them again on request)
+
+TUNES (content focus recorded, personalized at apply time): [N]
+  [list each with the recorded focus in one line]
+
+REMOVES - confirmed declines, archived to .retired/ (NEVER deleted): [N]
+  [list each with its loss_warning acknowledged]
+
+ADDS - materialized at apply time: [N]
+  [list each custom / net-new / vertical addition with decision provenance]
+
+FINAL SET AFTER APPLY: [N] departments
+  Prebuilt kept: [N] | Removed: [N] | Added: [N]
+
+Ready to finalize? (YES / ADJUST)
+```
+
 #### 6. Hard rules
 
-1. **MISSING_MANDATORY is a BLOCKER.** Do not advance to Phase 6 with any canonical department still MISSING.
+1. **MISSING_MANDATORY is a BLOCKER.** Do not advance to Phase 6 with any canonical department still MISSING. *(Standard-first lane: there is no MISSING by construction; the equivalent blocker is an un-decided REMOVE or an un-recorded ADD.)*
 2. **PENDING merges are BLOCKERS.** Every `mergeDecisions` entry with value `PENDING` must be decided before finalizing.
 3. **The owner MUST confirm.** Acknowledge receipt of the preview. No silent advancement.
 4. **The preview is read from recorded state, not from memory.** Re-read `.workforce-build-state.json` to produce it -- do not reconstruct from conversation memory.
@@ -781,7 +846,9 @@ Owner sees real-time progress at `/onboarding/building` in the Command Center. T
 
 Before responding to the owner with "build my company" confirmation, the master orchestrator MUST:
 
-1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewComplete: true`, `interviewCompletedAt`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`. **Also seed `roleLibraryStatus: "pending"` and `sopLibraryStatus: "pending"`** (v10.15.8) so the library gate (Moment 3.6) is enforced from the outset - the resume cron treats unset/non-`done` as not-yet-done.
+1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`. **Also seed `roleLibraryStatus: "pending"` and `sopLibraryStatus: "pending"`** (v10.15.8) so the library gate (Moment 3.6) is enforced from the outset - the resume cron treats unset/non-`done` as not-yet-done.
+
+   > ⛔ **NEVER hand-write `interviewComplete` or `interviewCompletedAt`.** They are no longer yours to write, and this step used to order exactly that. `update-interview-state.sh --complete` (step below) is the ONE chokepoint that writes them, and it writes them only AFTER `qc-interview-completion.py` returns PASS or NEEDS-REVIEW. Hand-writing the flag walks straight around that evidence gate, and the failure it produces is silent and terminal: the box ends up with `interviewComplete: true` alongside `interviewQc.status: fail`, which every build lane refuses — while the nudge cron, which self-removes the moment `interviewComplete` flips true, has already torn itself down. Nothing nudges the owner, nothing builds, and nothing reports why. If `--complete` REFUSES with exit 87, that is the system telling you the answers do not yet support completion: read the reasons it wrote into `.interviewQc`, fix those, and re-run it. Do not write the flag yourself to move past it.
 
    **Then call the interview-complete hook (added v10.15.1 / v10.14.1):**
 
@@ -792,13 +859,13 @@ Before responding to the owner with "build my company" confirmation, the master 
    bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh --complete
    ```
 
-   This sets `interviewComplete: true` and stamps `interviewCompletedAt`. It is idempotent: safe to re-run.
+   This is what sets `interviewComplete: true` and stamps `interviewCompletedAt` - evidence-gated, and the only sanctioned writer of either field. It is idempotent: safe to re-run.
 
-   **STATE-DRIVEN (v12.4.x auto-closeout - binding):** `update-interview-state.sh --complete` is no longer just a flag setter. On `--complete` it ALSO: (a) auto-runs the interview QC gate (`qc-interview-completion.py`), (b) seeds the build/closeout gate fields (`departments` array sentinel, `roleLibraryStatus: "pending"`, `sopLibraryStatus: "pending"`, `closeoutStatus: "pending"`), and (c) when QC passes, fires ONE internal `[WORKFORCE-RESUME]` build-kick self-ping so the build starts immediately. This means finishing the interview deterministically advances the chain even if your session ends right after - you do NOT have to remember a second hand-write to start the build, and you no longer have to hand-write `buildCompletedAt` later (a script does that - see "When ALL departments are done" below). The hand-writes in this protocol are still correct to perform inline (faster), but they are a redundancy now, not the sole guarantee.
+   **STATE-DRIVEN (v12.4.x auto-closeout - binding):** `update-interview-state.sh --complete` is no longer just a flag setter. On `--complete` it ALSO: (a) auto-runs the interview QC gate (`qc-interview-completion.py`), (b) seeds the build/closeout gate fields (`departments` array sentinel, `roleLibraryStatus: "pending"`, `sopLibraryStatus: "pending"`, `closeoutStatus: "pending"`), and (c) when QC is build-eligible (`pass` OR `needs-review`), fires ONE internal `[WORKFORCE-RESUME]` build-kick self-ping so the build starts immediately. This means finishing the interview deterministically advances the chain even if your session ends right after - you do NOT have to remember a second hand-write to start the build, and you no longer have to hand-write `buildCompletedAt` later (a script does that - see "When ALL departments are done" below). The identity/context hand-writes in step 1 are still correct to perform inline (faster), and they are a redundancy now rather than the sole guarantee - but `interviewComplete` / `interviewCompletedAt` are the explicit exception: those two are NEVER hand-written, because the evidence gate is the only thing entitled to write them (see the warning in step 1).
 
-2. Verify the resume cron job is registered: `openclaw cron list | grep workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`. (If the CLI was unavailable when `--complete` ran, this cron is the recovery net - it will fire the same build-kick on its next cycle, and it also recovers a finished-but-unflagged interview by running QC and, on pass, setting `interviewComplete` itself.)
+2. Verify the resume cron job is registered: `openclaw cron list | grep workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`. (If the CLI was unavailable when `--complete` ran, this cron is the recovery net - it will fire the same build-kick on its next cycle, and it also recovers a finished-but-unflagged interview by running QC and, when the verdict is build-eligible (`pass` OR `needs-review`), promoting it through the same evidence-gated `--complete` writer.)
 
-3. ONLY THEN start Stage 1 of Generation Orchestration.
+3. ONLY THEN start Stage 1 of Generation Orchestration. **(Standard-first lane, PHASE 7:** when `buildType == "standard-first"`, "start the build" means the APPLY-DIFF build — `build-workforce.py --apply-standard-edits` — NOT a from-scratch Generation Orchestration run. The floor was prebuilt before the interview, so the apply-diff build applies the interview's diff: deprovision the confirmed declines (`scripts/retire-confirmed-decline.sh` — archive to `.retired/`, never delete, provenanced declines only), materialize the customs/net-new departments the owner ADDED, add the declared industry verticals, and personalize the KEPT departments (no-clobber on owner-edited content). Its FIRST step is Moment 3.5 agent registration for every confirmed-kept department. Everything after apply — Moments 3.6 (library gate), 3.7 (SOP-Writer), 3.8 (comms automation), 3.9 (wiring gate), Moment 4 (closeout) — runs unchanged, because the prebuilt library content already satisfies the library gate by construction.)
 
 ### Moment 2 - Before starting EACH department (Stage 3)
 
@@ -822,6 +889,8 @@ This is non-negotiable. The state file is the contract between Skill 23 and the 
 A department's `status: "done"` is **NOT sufficient on its own**. The dept is only TRULY done when an entry exists in `openclaw.json`'s `agents.list[]` with `id = "dept-<slug>"`. Until that entry exists, the OpenClaw runtime, gateway, and dashboard see exactly **zero** real department agents - only the default `main` agent. Skill 23's role-definition markdown files are NOT runtime agents on their own; they need to be registered.
 
 **The master orchestrator MUST, immediately after writing `status: "done"` on the dept:**
+
+**(Standard-first lane, PHASE 7:** the prebuild (`prebuild-standard-workforce.sh`) deliberately defers ALL `agents.list` registration — the prebuilt files exist but NO `dept-<slug>` row is registered, and the runtime stays quiet until the owner finishes. On a standard-first box this moment therefore runs ONCE, as the apply-diff build's FIRST step at `interviewComplete`: register the `dept-<slug>` row for EVERY confirmed-kept department (the whole confirmed-keep set in one idempotent pass, then verify parity). Departments with no recorded decision are confirmed-kept by definition — silence = keep. A confirmed-declined department is archived by `retire-confirmed-decline.sh`, never registered. The contract below is unchanged: a department is only TRULY done when its `agents.list[]` entry exists.)
 
 ```bash
 # On Mac:
@@ -1116,9 +1185,9 @@ After the owner completes the interview (all phases done, `--complete` flag set)
 4. **If exit 3 (HARD FAIL):** The gate output lists every failing dimension with evidence. Fix the root cause (re-interview the flagged area, correct jargon, populate missing fields) before retrying.
 
 5. **Gate criteria (all four must pass):**
-   - Question count: 25–35 answered questions in the transcript
+   - Question count: 25–35 answered questions in the transcript. **Edit-mode exemption (standard-first, PHASE 7):** on a `buildType == "standard-first"` box whose `standardPrebuild.status == "done"` (or a recorded edit mode), the interview reviewed the prebuilt set, so a substantive edit-mode transcript is EXEMPT from the 25-35 floor — gated by its own anti-fabrication substance floor (`edit_mode_substance_ok`), exactly like the legacy exemption. The exemption lifts ONLY the count floor: the >36 ceiling, jargon, mandatory-field, decline-provenance, and no-fabrication checks still apply in full, and it never applies to a legacy box (absent `buildType`).
    - Zero forbidden-jargon hits in AI-authored transcript text (loaded from `interview/forbidden-jargon.json`)
-   - Every mandatory data field populated (branding `required:true` fields + structural: companyName, industry, ownerChat, agentName, at least one department)
+   - Every mandatory data field populated (branding `required:true` fields + structural: companyName, industry, ownerChat, agentName, at least one department — a prebuilt department with `status: "prebuilt"` counts as locked)
    - Nudge cadence verified wired: `interview-nudge-cron.sh` exists + `install.sh` registers it + NUDGE_CONFIG has 24/72/168h entries
 
 6. The `closeoutStatus` MUST NOT advance past `"pending"` until `interviewQc.status == "pass"`. This is the cross-skill seam between PRD-2.15 (interview experience) and PRD-2.8 (closeout state machine). The Skill 37 closeout owns wiring the gate check in `run-closeout.sh`.

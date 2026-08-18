@@ -67,12 +67,17 @@ FEATURES (the teleprompter, all client-side, vanilla JS, zero dependencies)
   * MANUAL: no engine motion — the presenter drives with the wheel, arrow keys,
     the slide rail, or a presenter clicker (Space/PageDown = next slide). The
     always-available floor; every other mode falls back here or to AUTO.
-  * AUTO (the previous "Traditional" fixed-speed mode, unchanged): a
-    requestAnimationFrame fixed-speed engine with a SUB-PIXEL accumulator
-    (carries the fractional remainder so it stays smooth even at the slow
-    floor), a dt CLAMP (a stalled / GC / tab-refocus frame can never produce a
-    jump), and a curved 18..240 px/s speed range so the slow end is
-    readably-slow-but-visibly-moving.
+  * AUTO (the previous "Traditional" fixed-speed mode, upgraded with
+    READING-TRACKING): a requestAnimationFrame fixed-speed engine with a
+    SUB-PIXEL accumulator (carries the fractional remainder so it stays smooth
+    even at the slow floor), a dt CLAMP (a stalled / GC / tab-refocus frame can
+    never produce a jump), and a curved 18..240 px/s speed range so the slow end
+    is readably-slow-but-visibly-moving. NEW: the scroll position drives the
+    two-tier highlight (highlightFromScroll), so the sentence/word crossing the
+    reading zone is accented `.cur` and everything scrolled past dims/strikes as
+    `.spoken` — AUTO now shows exactly what the presenter is reading. An optional
+    ASSIST toggle reuses the SpeechRecognition aligner to drive the highlight from
+    the presenter's actual voice while the scroll stays at the fixed AUTO pace.
   * VOICE (voice-tracking; the previous "Spoken" mode, hardened): the Web
     Speech API (SpeechRecognition || webkitSpeechRecognition; continuous +
     interim results) listens to the mic and a fuzzy token sequence-aligner
@@ -683,6 +688,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <input id="speed" type="range" min="0" max="100" value="35">
       <button id="spdUp">+</button>
     </div>
+    <div class="ctl" id="assistCtl" hidden>
+      <button id="assistBtn" title="Listen to your voice and follow your reading in Auto mode">Assist</button>
+    </div>
     <div class="ctl" id="sensCtl" hidden>Sensitivity
       <input id="sens" type="range" min="0" max="100" value="50"
         title="Left = strict word-for-word tracking; right = loose, paraphrase-friendly tracking">
@@ -871,6 +879,8 @@ let slideStart = performance.now();   // when the current slide became current
 //       | "voice" (voice-tracking). Legacy "traditional"/"spoken" migrate on boot.
 let MODE = "auto";
 let voiceTargetTop = 0;    // VOICE: scroll target the RAF tween chases (set by the aligner)
+let assistOn = false;      // AUTO speech-assist: listen AND drive the highlight from speech
+const AUTO_READ_ZONE = 0.26;   // reading line in AUTO (matches the #guide anchor at 26%)
 const stage = document.getElementById("stage");
 const scrollEl = document.getElementById("scroll");
 
@@ -1057,6 +1067,12 @@ function loop(ts){
     scrollAccum += speedPxPerSec()*dt;
     const whole = Math.trunc(scrollAccum);
     if(whole !== 0){ stage.scrollTop += whole; scrollAccum -= whole; }
+    // READING-TRACKING: drive the existing two-tier highlight from the scroll
+    // position. The token whose top crosses the AUTO_READ_ZONE line becomes
+    // .cur (accent highlight) and everything above it dims/strikes as .spoken —
+    // so AUTO now shows exactly what the presenter is reading, instead of a
+    // bare fixed-speed timer with no visual tracking state.
+    if(!assistOn) highlightFromScroll();
   }
   // MANUAL: no engine motion (the RAF is not armed in manual mode).
   detectCurrentFromScroll();
@@ -1175,11 +1191,13 @@ function alignSpoken(text, commit){
     if(target > cursor){ cursor = target; }     // forward only; never run backward off garbage
     interimEnd = cursor;
     renderHighlight();
-    anchorToToken(Math.max(0, cursor-1));
+    // In VOICE the scroll follows the anchor; in AUTO speech-assist the fixed-speed
+    // scroll owns motion and we only repaint the highlight (no voiceTargetTop write).
+    if(!(MODE==="auto" && assistOn)) anchorToToken(Math.max(0, cursor-1));
   } else {
     interimEnd = Math.max(cursor, target);
     renderHighlight();
-    anchorToToken(Math.max(0, interimEnd-1));
+    if(!(MODE==="auto" && assistOn)) anchorToToken(Math.max(0, interimEnd-1));
   }
 }
 
@@ -1197,6 +1215,28 @@ function renderHighlight(){
     sp.classList.toggle("cur", ti >= cursor && ti <= interimEnd);
   });
 }
+// AUTO reading-tracking: map the CURRENT scroll position to a token index and
+// repaint the two-tier highlight. `line` is the reading-zone line (~26% down the
+// viewport, matching the #guide anchor). The last token whose top is above the
+// line is "current" (.cur); every token before it is committed/spoken (.spoken).
+// Reuses the EXACT same tokSpans()/cursor/interimEnd/renderHighlight() machinery
+// as the VOICE aligner — so AUTO and VOICE share one highlight renderer.
+function highlightFromScroll(){
+  const line = stage.scrollTop + stage.clientHeight*AUTO_READ_ZONE;
+  const spans = tokSpans();
+  let ti = 0;
+  for(let i=0;i<spans.length;i++){
+    if(!spans[i].dataset.ti) continue;
+    if(spans[i].offsetTop <= line) ti = +spans[i].dataset.ti;
+    else break;
+  }
+  if(ti !== cursor){ cursor = ti; interimEnd = ti; renderHighlight(); }
+  // keep slide tracking + countdown honest when the scroll crosses into a new slide
+  const tok = TOKENS[Math.min(ti, TOKENS.length-1)];
+  if(tok && tok.slide !== current){ current=tok.slide; slideStart=performance.now(); updateActive(); }
+  updatePos();
+}
+
 // Set the voice-derived scroll target so the current token sits in the upper-third
 // reading zone; the RAF tween (tweenTowardVoiceTarget) eases scrollTop toward it.
 function anchorToToken(ti){
@@ -1345,6 +1385,11 @@ function setMode(mode, silent){
   document.getElementById("speedCtl").hidden = (mode==="voice");
   document.getElementById("sensCtl").hidden = (mode!=="voice");
   document.getElementById("playBtn").hidden = (mode==="manual");
+  // Assist (AUTO speech-assist) is visible only where SpeechRecognition exists
+  // and only in AUTO; it is a light companion to the fixed-speed scroll, never a
+  // replacement for VOICE mode.
+  document.getElementById("assistCtl").hidden = !(mode==="auto" && SPEECH_SUPPORTED);
+  if(mode!=="auto" && assistOn) assistOn=false;
   resetScrollClock();
   if(mode==="voice"){
     // Seed the aligner at the CURRENT slide (voice can start mid-deck), and
@@ -1358,9 +1403,30 @@ function setMode(mode, silent){
     startRecognition();
     setPlaying(true);   // RAF runs as the smoothing tween toward the voice target
   } else {
-    stopRecognition();
-    document.getElementById("micChip").classList.remove("show");
+    // AUTO/MANUAL: stop recognition UNLESS Assist is listening on the AUTO mode.
+    if(!assistOn) stopRecognition();
+    if(!assistOn) document.getElementById("micChip").classList.remove("show");
     setPlaying(false);
+  }
+}
+
+// ---- AUTO speech-assist (Assist button): listen to the presenter's voice and
+// drive the reading-tracking highlight from SPEECH instead of from scroll position,
+// while the scroll itself stays at the fixed-speed AUTO pace. The presenter reads
+// at their own pace; the highlighted word always follows their actual reading, and
+// the scroll continues at the set speed as a guide.
+function setAssist(on){
+  assistOn = on && SPEECH_SUPPORTED;
+  localStorage.setItem("ptp.assist", assistOn ? "1" : "0");
+  document.getElementById("assistBtn").classList.toggle("on", assistOn);
+  document.getElementById("micChip").classList.toggle("show", assistOn);
+  if(assistOn){
+    // reuse the VOICE recognizer machinery but do NOT auto-scroll to speech:
+    // the fixed-speed AUTO loop owns the scroll; assist only moves the highlight.
+    cursor = 0; interimEnd = 0; _tokSpans = null; renderHighlight();
+    startRecognition();
+  } else {
+    stopRecognition();
   }
 }
 
@@ -1398,6 +1464,7 @@ function applyTheme(){
 document.getElementById("modeManualBtn").onclick=()=>setMode("manual");
 document.getElementById("modeAutoBtn").onclick=()=>setMode("auto");
 document.getElementById("modeVoiceBtn").onclick=()=>setMode("voice");
+document.getElementById("assistBtn").onclick=()=>setAssist(!assistOn);
 document.getElementById("sens").oninput=e=>{ localStorage.setItem(SENS_KEY, e.target.value); };
 document.getElementById("vmirrorBtn").onclick=()=>{ localStorage.setItem(VMIRROR_KEY, localStorage.getItem(VMIRROR_KEY)==="1"?"0":"1"); applyVmirror(); };
 document.getElementById("guideBtn").onclick=()=>{ localStorage.setItem(GUIDE_KEY, localStorage.getItem(GUIDE_KEY)==="1"?"0":"1"); applyGuide(); };
@@ -1479,6 +1546,10 @@ function ingest(md){
   const savedMode = migrateMode(localStorage.getItem(MODE_KEY));
   if(savedMode==="voice" && SPEECH_SUPPORTED) setMode("voice");
   else setMode(savedMode || "auto", true);
+  // Restore AUTO speech-assist (the presenter's Assist choice persists too).
+  if(MODE==="auto" && localStorage.getItem("ptp.assist")==="1") setAssist(true);
+  // First AUTO paint: the reading-tracking highlight should be live immediately.
+  if(MODE==="auto" && !assistOn) highlightFromScroll();
   setInterval(()=>{ if(!playing) tickCountdown(); }, 250);
 })();
 </script>

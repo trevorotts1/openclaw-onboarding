@@ -12,9 +12,11 @@ NON-NEGOTIABLE DESIGN RULES (mirrored verbatim from Skill-48)
     error, a timeout, or any other failure is CAUGHT, LOGGED to stderr, and the
     deck build CONTINUES. Boarding the run is a convenience, never a gate. The
     ONLY thing that actually fails a deck job for "not on the board" is the
-    offline _chk_cc_registered() check (AF-CC-UNREGISTERED) in build_deck.py —
-    and that check is satisfied by a LOGGED ATTEMPT even when transport failed
-    (fail-soft on transport; fail-CLOSED only on never-attempted). So every
+    offline _chk_cc_registered() check (AF-CC-UNREGISTERED / AF-CC-UNVERIFIED)
+    in build_deck.py — VERIFIED only with a cc_task_id + a verifying
+    cc_registration HMAC receipt (stamped by a real round-trip); a LOGGED
+    ATTEMPT with no proof is UNVERIFIED (fails with an honest message, never
+    read as verified); never-attempted is UNREGISTERED (fail-closed). So every
     public function here returns a value (task_id / bool) and NEVER raises.
 
   * AUTH PARITY with the CC endpoint:
@@ -54,12 +56,14 @@ REQUEST CONTRACT (matched to the live /api/tasks/ingest endpoint):
     (the minted PROCESS-CERTIFICATE sha); the word "delivered" belongs in the note.
 
   ACTIVITY POST {base}/api/tasks/{task_id}/activities   (mid-run phase PROGRESS)
-    body:  {activity_type:"updated", message}
+    body:  {activity_type:"updated", message, metadata:{phase_id}}
     return: 201 -> {activity}
     Mid-run phase boundaries (P4-RENDER complete, P8-ASSEMBLE complete) are logged
     as ACTIVITIES, never as task-level status changes: a mid-run status='done'
     422s the presentations cert done-gate (no PROCESS-CERTIFICATE exists yet) and
-    would wrongly close a non-presentation card.
+    would wrongly close a non-presentation card. The phase id rides in BOTH the
+    message text (human-readable) and metadata.phase_id (machine-readable — the
+    U060 stepper reducer reads it there, not from the message).
 
 MOVEMENT RECEIPT — every advance ATTEMPT (status change or activity post) plus its
 HTTP status / body is appended to working/checkpoints/cc-board.json (mirroring the
@@ -68,15 +72,28 @@ Recording is fail-soft; it never raises and never blocks the deck build.
 
 The task_id AND cc_register_attempted=True are written into
 ``working/checkpoints/process_manifest.json`` so the offline AF-CC-UNREGISTERED
-check in build_deck._chk_cc_registered passes whether or not the live POST
-succeeded:
-  - PASS  when cc_task_id is set (successful registration).
-  - PASS  when cc_register_attempted is True (transport failed, attempt logged).
-  - FAIL  when neither field exists (this module was never called for this run).
+check in build_deck._chk_cc_registered can judge the run:
+  - VERIFIED  when cc_task_id is set AND the cc_registration proof (an HMAC
+    over cc_task_id|idempotency_key, stamped only by a real ingest round-trip)
+    verifies — real evidence of registration.
+  - UNVERIFIED when cc_register_attempted is True but there is NO cc_task_id or
+    the proof does not verify (transport/partial failure, or a hand-written
+    id). The gate FAILS with an explicit honest AF-CC-UNVERIFIED message —
+    could-not-verify NEVER prints as verified.
+  - UNREGISTERED when neither field exists (this module was never called).
 
 PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
       -> task_id str | None
+  ingest_child_task(run_dir, parent_task_id, phase_id, title, description,
+      priority="normal") -> task_id str | None
+      # Option B: one child card per phase, nested under parent_task_id.
+      # Idempotency key sha256(parent_task_id + ':' + phase_id). Call site
+      # (BoardMirror.child_report in presentation_job/board.py) checks
+      # read_child_task_id()/state FIRST so a phase reporting progress twice
+      # never reaches this function twice.
+  read_child_task_id(run_dir, phase_id) -> task_id str | None
+  stamp_child_task_id(run_dir, phase_id, task_id) -> bool
   patch_phase(run_dir, task_id, phase_id, status, note="") -> bool
       # task-level STATUS change. The producer's TERMINAL close is status='review'
       # (never a self-closed 'done'); on 'review'/'done' it auto-attaches the cert
@@ -86,10 +103,19 @@ PUBLIC API
                 scores=None) -> bool
       # mid-run phase PROGRESS via the /activities endpoint (NOT a status change);
       # optional per-gate `scores` fold into the message + a structured scores key.
+      # Always carries metadata.phase_id — the field the U060 stepper reducer reads
+      # (a phase id only in the message text never advances the stepper).
   post_qc_activities(run_dir, task_id) -> int
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
-  stamp_task_id(run_dir, task_id) -> bool
+  stamp_task_id(run_dir, task_id, idempotency_key="", deck_slug="") -> bool
+      # merge cc_task_id (and, when the ingest idempotency_key is supplied, the
+      # offline-verifiable cc_registration proof) into process_manifest.json.
+  register_deliverable(task_id, url, meta=None, *, env=None) -> bool
+      # POST /api/tasks/{task_id}/deliverables — the FIX-12 registration bridge
+      # (ported from Skill-06 cc_board.py). FAIL-SOFT: never raises; a False
+      # return never blocks the deck build. The task can leave in_progress only
+      # once task_deliverables holds a row (POST 2xx -> row created).
   count_successful_advances(run_dir) -> int
   assert_min_one_advance(run_dir) -> bool
 """
@@ -103,6 +129,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -110,6 +137,50 @@ from typing import Optional
 _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "presentations"
 _PERSONA = "Director of Presentations"
+
+# WORK-ITEM-02 engine dispatch: the single callback that wires the presentation
+# engine into the CC ingest completion path. Called after a CC task card is
+# successfully created (or re-fetched via idempotency). Best-effort, fail-soft
+# -- a failed engine launch never blocks the deck build or the board registration.
+def _dispatch_engine_if_idle(run_dir) -> None:
+    """If the engine is not running for this run_dir, launch it as a background
+    subprocess via presentation_job --run. Fail-soft: never raises."""
+    import subprocess as _subprocess
+    run_path = Path(run_dir) if not isinstance(run_dir, Path) else run_dir
+    state_json = run_path / "state.json"
+    if not state_json.is_file():
+        return  # no state.json -- engine was never created (not an error)
+    try:
+        st = json.loads(state_json.read_text(encoding="utf-8"))
+        terminal = st.get("terminal")
+    except (json.JSONDecodeError, OSError):
+        return
+    # Do not re-launch a job that is already done/blocked, or one whose engine
+    # PID is already alive.
+    if terminal in ("DONE", "BLOCKED"):
+        return
+    pid = st.get("engine_pid")
+    if isinstance(pid, int) and pid > 0:
+        try:
+            os.kill(pid, 0)
+            return  # already running
+        except OSError:
+            pass  # dead PID -- safe to re-launch
+
+    # Resolve the engine entry point from this module's location.
+    here = Path(__file__).resolve().parent  # scripts/
+    engine = here / "presentation_job.py"
+    if not engine.is_file():
+        return
+    try:
+        _subprocess.Popen(
+            [sys.executable or "python3", str(engine), "--run", "--run-dir", str(run_path)],
+            shell=False, cwd=str(here),
+            start_new_session=True, close_fds=True,
+        )
+        _log(f"engine dispatched for {run_path}")
+    except (OSError, _subprocess.SubprocessError) as exc:
+        _log(f"engine dispatch failed for {run_path}: {exc}")
 
 # U030 (audit E1): the statuses whose PATCH payload carries proof the narrower
 # status endpoint cannot accept. POST /api/tasks/{id}/status validates against
@@ -508,8 +579,10 @@ def ingest_deck_task(
     """Ingest (or idempotently re-fetch) a deck task on the CC board.
 
     Always stamps cc_register_attempted=True in process_manifest.json BEFORE
-    the HTTP call so a transport crash or URL-absent no-op is treated as
-    fail-soft (not never-attempted) by build_deck._chk_cc_registered.
+    the HTTP call so a transport crash or URL-absent no-op is distinguished
+    from never-attempted by build_deck._chk_cc_registered (a failed attempt is
+    UNVERIFIED, never the UNREGISTERED fail-closed, and never read as
+    verified).
 
     Returns the task_id string on success, else None. FAIL-SOFT — a None
     return never blocks the deck build; the offline gate is satisfied by the
@@ -573,12 +646,155 @@ def ingest_deck_task(
             f"task {'deduped (reused)' if deduped else 'created'}: "
             f"task_id={task_id} deck_slug={deck_slug}"
         )
-        stamp_task_id(run_dir, task_id)
+        # T2 gate teeth: the receipt carries the offline-verifiable proof
+        # (registration_proof HMAC over cc_task_id|idempotency_key) so
+        # build_deck._chk_cc_registered can prove this id came from a REAL
+        # round-trip, not a hand-written manifest.
+        stamp_task_id(run_dir, task_id, idempotency_key=idempotency_key,
+                      deck_slug=deck_slug)
+
+        # WORK-ITEM-02: after CC card creation, dispatch the engine if it is
+        # not already running. This closes the "CC ingest callback stops short"
+        # gap: the intake completes, the CC card is created, and the engine
+        # starts walking every manifest phase mechanically -- instead of sitting
+        # dead at "Being Prepared" forever.
+        _dispatch_engine_if_idle(run_dir)
+
         return task_id
 
     _log(
         f"ingest POST non-OK (HTTP {status}): {body}; "
         "run continues ungrouped. cc_register_attempted=True already logged."
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# CHILD CARDS (Option B) — one task card per phase, nested under the deck's
+# parent task via the `parent_task_id` field on the SAME /api/tasks/ingest
+# endpoint ingest_deck_task uses above. Field name and idempotency-key
+# derivation (sha256(parent_task_id + ':' + stage)) match the established
+# parent/child convention already live in master-orchestrator-dept/SOP-07
+# (Full-Funnel epic + staged child cards) -- this is the second producer to
+# mint children under that same contract, not a new one.
+#
+# The phase_id -> child_task_id mapping is persisted into
+# process_manifest.json's cc_child_task_ids map the same way the single
+# parent task_id is persisted via stamp_task_id/cc_task_id, so a resumed run
+# recovers each phase's card instead of re-minting it. BoardMirror.child_report
+# (board.py) is the idempotent caller: it checks this mapping (plus its
+# state.json mirror) BEFORE ever invoking ingest_child_task, so a phase
+# reporting progress twice never reaches this function twice.
+# ---------------------------------------------------------------------------
+_CHILD_MANIFEST_KEY = "cc_child_task_ids"
+
+
+def read_child_task_id(run_dir, phase_id: str) -> Optional[str]:
+    """process_manifest.json half of the phase_id -> child_task_id dual
+    recovery (the state.json half is BoardMirror's ["board"]["children"] map,
+    read by the caller directly -- mirrors task_id_anywhere's two-source
+    check for the parent). Returns None on any absent/unreadable manifest or
+    missing entry. Never raises."""
+    children = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    if isinstance(children, dict):
+        val = children.get(phase_id)
+        if val:
+            return str(val)
+    return None
+
+
+def stamp_child_task_id(run_dir, phase_id: str, task_id: str) -> bool:
+    """Merge {phase_id: task_id} into process_manifest.json's cc_child_task_ids
+    map without disturbing any other phase already recorded there or any other
+    manifest field. Atomic replace (via _merge_manifest). Returns True on
+    success. Never raises."""
+    if not task_id or not phase_id or run_dir is None:
+        return False
+    existing = _read_manifest(run_dir).get(_CHILD_MANIFEST_KEY)
+    children = dict(existing) if isinstance(existing, dict) else {}
+    children[phase_id] = task_id
+    ok = _merge_manifest(run_dir, {_CHILD_MANIFEST_KEY: children})
+    if not ok:
+        _log(f"stamp_child_task_id failed for phase={phase_id} task_id={task_id}.")
+    return ok
+
+
+def ingest_child_task(
+    run_dir,
+    parent_task_id: str,
+    phase_id: str,
+    title: str,
+    description: str,
+    priority: str = "normal",
+    env: Optional[dict] = None,
+) -> Optional[str]:
+    """Ingest (or idempotently re-fetch) a per-phase CHILD task card, nested
+    under `parent_task_id` via the `parent_task_id` field on the ingest
+    payload.
+
+    Idempotency key is sha256(parent_task_id + ':' + phase_id) -- deterministic
+    per (deck, phase), so a retried POST for the same phase re-fetches the
+    same server-side row instead of minting a duplicate. That server-side
+    guard is the SECOND line of defense; the FIRST is the caller
+    (BoardMirror.child_report) checking read_child_task_id()/state and never
+    calling this function at all once a child_task_id is already known.
+
+    Returns the child task_id string on success, else None. FAIL-SOFT — same
+    contract as ingest_deck_task: never raises, and a None return never
+    blocks the deck build. No parent_task_id => nothing to nest under => a
+    clean no-op (there is no cc_register_attempted-style hard gate on a child
+    card the way there is on the parent)."""
+    if run_dir is None or not parent_task_id or not phase_id:
+        return None
+
+    cfg = board_config(env)
+    if cfg is None:
+        _log(
+            "COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — CC board disabled "
+            f"(no-op); child card for phase {phase_id} not created."
+        )
+        return None
+
+    source_ref = f"{parent_task_id}:{phase_id}"
+    idempotency_key = hashlib.sha256(source_ref.encode("utf-8")).hexdigest()
+
+    payload: dict = {
+        "title": title,
+        "description": description,
+        "priority": priority,
+        "source": "build_deck_phase",
+        "source_ref": source_ref,
+        "department_slug": _DEPARTMENT_SLUG,
+        "persona": _PERSONA,
+        "external_session_id": source_ref,
+        "parent_task_id": parent_task_id,
+        "stage": phase_id,
+        "idempotency_key": idempotency_key,
+    }
+
+    url = f"{cfg['base_url']}/api/tasks/ingest"
+    try:
+        status, body = _request("POST", url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"child ingest POST failed for phase {phase_id} "
+            f"({type(exc).__name__}: {exc}); run continues without a child card."
+        )
+        return None
+
+    if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
+        task_id = str(body["task_id"])
+        deduped = body.get("deduped", False)
+        _log(
+            f"child task {'deduped (reused)' if deduped else 'created'} for "
+            f"phase {phase_id}: task_id={task_id} parent_task_id={parent_task_id}"
+        )
+        stamp_child_task_id(run_dir, phase_id, task_id)
+        return task_id
+
+    _log(
+        f"child ingest POST non-OK for phase {phase_id} (HTTP {status}): {body}; "
+        "run continues without a child card."
     )
     return None
 
@@ -747,8 +963,12 @@ def post_activity(
 
     Body matches the CC CreateActivitySchema: activity_type in
     {spawned,updated,completed,file_created,status_changed} + a non-empty message
-    (the phase id is embedded in the message). Every attempt is recorded to the
-    movement receipt. FAIL-SOFT: returns False (never raises)."""
+    (the phase id is embedded in the message for human readers) + structured
+    ``metadata = {"phase_id": phase_id}``. The metadata field is what the U060 phase
+    reducer (computePhaseProgress / phaseIdOf in src/lib/presentation-phases.ts)
+    reads to advance the stepper — the phase id in the message text is NOT seen by
+    the reducer. Every attempt is recorded to the movement receipt. FAIL-SOFT:
+    returns False (never raises)."""
     endpoint = "POST /api/tasks/{id}/activities"
     cfg = board_config(env)
     if cfg is None:
@@ -768,7 +988,16 @@ def post_activity(
         return False
 
     message = (f"[{phase_id}] {note}".strip() if note else f"[{phase_id}]")
-    payload: dict = {"activity_type": activity_type, "message": message}
+    payload: dict = {
+        "activity_type": activity_type,
+        "message": message,
+        # Structured phase id for the U060 phase reducer
+        # (computePhaseProgress / phaseIdOf in src/lib/presentation-phases.ts reads
+        # task_activities.metadata.phase_id). The phase MUST ride in metadata, not
+        # just the message text — the reducer ignores message content entirely, so a
+        # phase id only in the message never advances the stepper.
+        "metadata": {"phase_id": phase_id},
+    }
     # OPTIONAL structured QC scores on a per-gate QC activity: fold a compact score
     # tail into the (always-accepted) message AND attach the structured `scores` key
     # for a lenient CC. A strict server that 422s the unknown key gets a one-shot
@@ -782,10 +1011,11 @@ def post_activity(
     url = f"{cfg['base_url']}/api/tasks/{task_id}/activities"
     try:
         st, body = _request("POST", url, payload, cfg)
-        if st in (400, 422) and "scores" in payload:
-            _log(f"post_activity {phase_id} HTTP {st} with scores present — retrying "
-                 "once without the structured enrichment key.")
-            core = {k: v for k, v in payload.items() if k != "scores"}
+        if st in (400, 422) and ("scores" in payload or "metadata" in payload):
+            _log(f"post_activity {phase_id} HTTP {st} with structured enrichment "
+                 "present — retrying once without the structured keys "
+                 "(scores/metadata); the phase id still rides in the message.")
+            core = {k: v for k, v in payload.items() if k not in ("scores", "metadata")}
             st, body = _request("POST", url, core, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"post_activity {phase_id} failed ({type(exc).__name__}: {exc}).")
@@ -859,15 +1089,222 @@ def _read_certificate_sha(run_dir) -> Optional[str]:
 # AF-CC-UNREGISTERED check passes (degrade-to-ungrouped is logged, not
 # silent). Mirrors Skill-48's stamp_campaign_id pattern at cc_board.py:370-401.
 # ---------------------------------------------------------------------------
-def stamp_task_id(run_dir, task_id: str) -> bool:
+def registration_proof(task_id: str, idempotency_key: str, deck_slug: str) -> Optional[dict]:
+    """Build the offline VERIFIABLE registration receipt the T2 gate
+    (build_deck._chk_cc_registered) can prove WITHOUT any live Command Center
+    call: a deterministic HMAC-SHA256 over ``cc_task_id + "|" + idempotency_key``.
+
+    WHY HMAC: ``cc_task_id`` alone is forgeable — any hand-edited manifest can
+    carry an arbitrary string. ``idempotency_key`` is sha256(source_ref+title),
+    so it is NOT derivable from the task id and CANNOT be forged by someone who
+    only saw the id (a card created for a different deck carries a different
+    key). The gate recomputes the HMAC over the exact same canonical string and
+    compares bytes — a manifest whose cc_task_id was stamped by a REAL
+    cc_board.ingest_deck_task round-trip passes; a hand-written or stale
+    manifest fails as UNVERIFIED (never as verified).
+
+    Deterministic (no timestamp, no secret) so the offline gate is hermetic:
+    same inputs -> same digest, forever, with zero env or network dependency.
+    None when any input is empty (a malformed receipt is unverifiable)."""
+    tid = (task_id or "").strip()
+    key = (idempotency_key or "").strip()
+    slug = (deck_slug or "").strip()
+    if not tid or not key or not slug:
+        return None
+    canonical = f"{tid}|{key}"
+    digest = hmac.new(canonical.encode("utf-8"), b"", hashlib.sha256).hexdigest()
+    return {
+        "task_id": tid,
+        "idempotency_key": key,
+        "deck_slug": slug,
+        "hmac": digest,
+    }
+
+
+def stamp_task_id(run_dir, task_id: str, idempotency_key: str = "",
+                  deck_slug: str = "") -> bool:
     """Merge cc_task_id into process_manifest.json without disturbing other
-    fields. Atomic replace. Returns True on success. Never raises."""
+    fields. Atomic replace. Returns True on success. Never raises.
+
+    When idempotency_key is supplied (the ingest round-trip path), ALSO stamps
+    ``cc_registration`` — the offline-verifiable proof object (registration_proof)
+    — so build_deck._chk_cc_registered can distinguish a REAL registration
+    round-trip (VERIFIED) from a bare task_id with no proof (UNVERIFIED). The
+    plain cc_task_id merge remains for backward compatibility: callers that
+    only have an id (e.g. a runner re-stamping a recovered id) still write the
+    id without a proof, and the gate treats that as UNVERIFIED, never as
+    verified."""
     if not task_id or run_dir is None:
         return False
-    ok = _merge_manifest(run_dir, {"cc_task_id": task_id})
+    updates: dict = {"cc_task_id": task_id}
+    proof = registration_proof(task_id, idempotency_key, deck_slug)
+    if proof is not None:
+        updates["cc_registration"] = proof
+    ok = _merge_manifest(run_dir, updates)
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
+
+
+# ---------------------------------------------------------------------------
+# DELIVERABLE REGISTRATION — POST /api/tasks/{id}/deliverables (FIX-12).
+#
+# The producer-side registration bridge (ported from Skill-06's
+# register_deliverable at 06-ghl-install-pages/tools/cc_board.py). M11 in
+# ERRORS-DETECTED: the dept cc_board.py had NO register_deliverable, so a
+# completed deck was never registered and its task could never leave
+# in_progress. POST a 2xx -> the CC server inserts a task_deliverables row ->
+# the task is registerable and may advance. The CC route validates against
+# CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+# non-empty title; optional path/description) — it does NOT accept a bare
+# `url` or `meta` key, so the payload carries deliverable_type='url' +
+# title + path (the artifact URL), with meta folded into `description`.
+# FAIL-SOFT: never raises; a False return (board disabled, missing id/url,
+# transport error, non-2xx) never blocks the deck build.
+# ---------------------------------------------------------------------------
+def register_deliverable(
+    task_id: str,
+    url: str,
+    meta: Optional[dict] = None,
+    *,
+    env: Optional[dict] = None,
+) -> bool:
+    """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
+
+    Auth: both headers (Bearer + HMAC) per this module's AUTH PARITY rules —
+    the same signed _request() every other advance uses. If the /deliverables
+    endpoint is absent (404) the call fail-softs and the build continues
+    unregistered (the deck's task_id is still on disk via stamp_task_id).
+
+    FAIL-SOFT: never raises; a False return never blocks the build.
+
+    Args:
+        task_id: CC task UUID returned by ingest_deck_task (or read from the
+                 process_manifest cc_task_id).
+        url:     The built artifact URL (e.g. the deck/guide location) to
+                 register on the card.
+        meta:    Optional metadata dict (e.g. {"type": "deck_pptx",
+                 "title": "My Deck", "slug": "deck-1"}). A title found here
+                 becomes the deliverable title; the rest rides in description.
+        env:     Override os.environ (for testing).
+
+    Returns:
+        True on 2xx, False on any failure (including 404 if endpoint absent).
+    """
+    cfg = board_config(env)
+    if cfg is None:
+        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled; "
+             "deliverable not registered.")
+        return False
+
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("register_deliverable skipped — empty task_id.")
+        return False
+
+    artifact_url = (url or "").strip()
+    if not artifact_url:
+        _log("register_deliverable skipped — empty url.")
+        return False
+
+    # The CC server's POST /api/tasks/{id}/deliverables validates against the
+    # CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+    # a non-empty title, optional path/description) — it does NOT accept a
+    # bare `url` or `meta` key, so the old {"url": ..., "meta": ...} shape 400s.
+    title = "Artifact URL"
+    if meta and isinstance(meta, dict):
+        for _key in ("title", "slug", "type"):
+            _val = meta.get(_key)
+            if _val:
+                title = str(_val)
+                break
+
+    payload: dict = {
+        "deliverable_type": "url",
+        "title": title,
+        "path": artifact_url,
+    }
+    if meta and isinstance(meta, dict):
+        # Fold the metadata into `description` (JSON) so nothing is lost — the
+        # schema has no `meta` field to carry it.
+        payload["description"] = json.dumps(meta, separators=(",", ":"))
+
+    endpoint = f"{cfg['base_url']}/api/tasks/{tid}/deliverables"
+    try:
+        http_status, body = _request("POST", endpoint, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"POST {endpoint} failed ({type(exc).__name__}: {exc}); "
+            "deliverable not registered; build continues."
+        )
+        return False
+
+    if 200 <= http_status < 300:
+        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
+             f"http={http_status}.")
+        return True
+
+    _log(
+        f"POST /deliverables non-2xx (HTTP {http_status}) for task {tid}: "
+        f"{body}; build continues. If 404, confirm /deliverables endpoint in "
+        "blackceo-command-center."
+    )
+    return False
+
+
+# ---------------------------------------------------------------------------
+# OWNER-MESSAGE ORACLE — the authoritative owner-approval check (FIX-1).
+#
+# A phase-skip approval is authentic ONLY when its owner_msg_id resolves to a
+# REAL owner-authored message row in the Command Center task_activities table.
+# Presence of a string in phase_skip_approvals.json is NEVER proof — the live
+# E2E forged "e2e-test-002". This client is the fail-closed oracle: when the
+# owner-ids endpoint is unreachable or the task is unknown, the check returns
+# None (UNDETERMINED), which the caller treats as DENIED — undetermined never
+# opens the gate. See the CC route GET /api/tasks/[id]/messages/owner-ids.
+# ---------------------------------------------------------------------------
+def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Resolve `task_id` to the set of REAL owner-authored message ids in CC
+    task_activities. Returns a frozenset of ids on success; None when the board
+    is disabled, the endpoint errors, or the result cannot be proven (the caller
+    must fail CLOSED on None — a skip that cannot be verified is DENIED)."""
+    if not task_id or not str(task_id).strip():
+        return None
+    cfg = board_config(env)
+    if cfg is None:
+        return None
+    tid = urllib.parse.quote(str(task_id).strip(), safe="")
+    url = f"{cfg['base_url']}/api/tasks/{tid}/messages/owner-ids"
+    try:
+        status, parsed = _request("GET", url, {}, cfg)
+    except Exception:  # noqa: BLE001 — fail-closed: a transport error is DENIED
+        _log(f"owner-message oracle {url} raised; owner approval treated as DENIED.")
+        return None
+    if status != 200 or not isinstance(parsed, list):
+        _log(f"owner-message oracle {url} returned HTTP {status} — owner approval "
+             "treated as DENIED (undetermined never opens the gate).")
+        return None
+    ids = set()
+    for item in parsed:
+        if isinstance(item, str) and item.strip():
+            ids.add(item.strip())
+        elif isinstance(item, dict):
+            v = item.get("id")
+            if isinstance(v, str) and v.strip():
+                ids.add(v.strip())
+    return frozenset(ids)
+
+
+def owner_message_ids_match(run_dir, task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Compatibility helper: resolve the CC task id from the run's
+    process_manifest.json (cc_task_id) and return its real owner-message ids.
+    None when the run has no cc_task_id or the oracle cannot resolve — fail-closed.
+    Delegates to list_owner_message_ids so there is ONE oracle implementation."""
+    if run_dir is not None:
+        tid = _read_manifest(run_dir).get("cc_task_id")
+        if tid:
+            return list_owner_message_ids(str(tid), env=env)
+    return None
 
 
 # ---------------------------------------------------------------------------

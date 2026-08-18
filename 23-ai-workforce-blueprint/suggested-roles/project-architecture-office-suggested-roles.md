@@ -49,7 +49,7 @@
 
 | Tier | Models | When |
 |------|--------|------|
-| 1 (default) | `ollama/deepseek-v4-pro:cloud` (orchestrator/QC/code-editor), `ollama/deepseek-v4-flash:cloud` (research/monitor), `ollama/kimi-k2.6:cloud` (long-context QC) | Always first |
+| 1 (default) | `ollama/deepseek-v4-pro:cloud` (orchestrator/QC/code-editor), `ollama/deepseek-v4-flash:0731-cloud` (research/monitor), `ollama/kimi-k2.6:cloud` (long-context QC) | Always first |
 | 2 (failover) | `openrouter/deepseek/deepseek-v3.2`, `openrouter/moonshotai/kimi-k2.6`, `openrouter/z-ai/glm-5`, `openrouter/qwen/qwen3.5-plus-02-15` | Ollama Cloud down/over-capacity |
 | 3 (last resort) | Per-token frontier models | ONLY with owner approval |
 

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.7.22"
+ONBOARDING_VERSION="v22.0.41"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -824,6 +824,19 @@ for n in candidates:
 #
 # Apostrophe-free body required by macOS bash 3.2 quoted-heredoc-in-$() parser
 # (see v10.13.6 changelog). Uses "do not" / "is not" / "I will" verbatim.
+#
+# R1 (2026-08-11): a single apostrophe reintroduced in step 6b's text ("the
+# box's own role-library") violated this rule and broke `bash -n` under stock
+# /bin/bash 3.2.57 -- not AT this line, but as a cascading misparse that only
+# surfaced as an "unexpected token" error hundreds of lines further down
+# (bisected empirically: fixing this one line alone moved the reported error
+# from line ~985 to ~5242; a second, independent stray apostrophe at the
+# "so we don't leave {} noise" comment in the browser-heal python heredoc
+# further down this file was the other half -- fixing BOTH together is what
+# makes the whole file parse clean under bash 3.2). Comment-text-only fix,
+# zero behaviour change: "the box's own role-library" -> "the local
+# role-library". If you must express a possessive in this block, rephrase
+# around it -- do not add an apostrophe back.
 build_kickoff_paste_block() {
     # Legacy shim — kept for back-compat. Returns ONLY the paste block (between
     # scissor lines). New code should call build_kickoff_telegram_message which
@@ -858,7 +871,7 @@ Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10,
 
 PHASE 3 — Verify:
 6. Run ~/.openclaw/scripts/qc-system-integrity.sh — must exit 0.
-6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh "$(hostname)" --apply — its Step 2b floor-fill (scripts/floor-fill-driver.py, fed by scripts/make-gap-from-staleness.py) idempotently MATERIALIZES any missing canonical floor roles/SOPs (e.g. the v16 per-dept devils-advocate / healer and the video/graphics/presentations expansions) from the box's own role-library. This is a skip-existing, no-clobber completeness backstop: on a fresh fully-built floor it is a no-op, but it guarantees BOTH the install path and the update path end with a complete floor. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
+6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh "$(hostname)" --apply — its Step 2b floor-fill (scripts/floor-fill-driver.py, fed by scripts/make-gap-from-staleness.py) idempotently MATERIALIZES any missing canonical floor roles/SOPs (e.g. the v16 per-dept devils-advocate / healer and the video/graphics/presentations expansions) from the local role-library. This is a skip-existing, no-clobber completeness backstop: on a fresh fully-built floor it is a no-op, but it guarantees BOTH the install path and the update path end with a complete floor. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
 7. Message __OWNER_NAME__: All skills installed. Ready for the 30-question business interview? About 35 min of your focused time — your answers shape your entire AI team. Reply yes when ready.
 Wait for confirmation before proceeding.
 
@@ -1280,7 +1293,7 @@ PYEOF
     # secret — it is a public, outbound-reachable webhook — but it IS seeded into
     # the agent's env so the escalation command can reference $RESCUE_RANGERS_WEBHOOK_URL
     # rather than a hardcoded URL. Overridable via the operator env var of the same name.
-    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rescue-rangers"
+    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rr-v2-intake"
     local RR_WEBHOOK="${RESCUE_RANGERS_WEBHOOK_URL:-$RR_WEBHOOK_DEFAULT}"
     _shared_write_env "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
@@ -3114,7 +3127,7 @@ sub['maxChildrenPerAgent'] = 20
 sub['maxSpawnDepth']       = 4
 # maxConcurrent: CAPACITY-AWARE (WS-8 dual-key fix, 2026-08-01).
 #
-# WAS: `max(100, prev) if prev >= 50 else 100` — a hard-overwrite to 100 on
+# WAS: max(100, prev) if prev >= 50 else 100 — a hard-overwrite to 100 on
 # EVERY box. This is the "100 everywhere" bug WS-8 exists to kill: a base 8GB
 # Mac mini and a 64GB VPS both got 100, and worse, the old rule could only ever
 # RAISE the number, so every install/re-install CLOBBERED a value that
@@ -3830,7 +3843,7 @@ fi
 # to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
 # can resolve them on EVERY box, and so the registered crons survive a temp-clone
 # cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
-for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh; do
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh guard-toolsearch-directory.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
@@ -3913,7 +3926,7 @@ browser = d.get("browser")
 if isinstance(browser, dict) and "agentBrowser" in browser:
     del browser["agentBrowser"]
     changed.append("browser.agentBrowser")
-    # Drop an emptied browser object too, so we don't leave {} noise.
+    # Drop an emptied browser object too, so we do not leave {} noise.
     if not browser:
         d.pop("browser", None)
 
@@ -4069,8 +4082,13 @@ fi
 # Skill 23 (AI Workforce Blueprint) includes a presentation pipeline that needs:
 #   • reportlab       — presenter-guide PDF renderer (presenters_speech_pdf.py)
 #   • python-pptx     — PPTX deck assembly (build_deck.py)
+#   • pypdf           — workbook PDF read-back verification (Feature L2-D, P8.25-WORKBOOK,
+#                       workbook_builder.py reads the assembled PDF back with pypdf to prove
+#                       the AcroForm fields + /NeedAppearances survived before upload)
 #   • poppler/pdftoppm — PDF→PNG page extraction for Phase-6 QC
 #   • LibreOffice/soffice — PPTX→PDF export (PPTX Assembly Specialist, SOP 9.2)
+#   • ffmpeg + ffprobe — webinar video render + size probe (Feature L2-G,
+#     P9.6-WEBINAR-VIDEO, build_webinar_video.py → webinar_ffmpeg.py)
 #
 # Platform branches:
 #   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
@@ -4078,13 +4096,13 @@ fi
 #   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
 #          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
 #          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
-#          brew on these images). Python deps (reportlab, python-pptx) via pip
+#          brew on these images). Python deps (reportlab, python-pptx, pypdf) via pip
 #          --break-system-packages into the SAME python3 that build_deck.py runs.
 #          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
-#          (only the /data bind-mount persists). We therefore RE-ASSERT all four
-#          deps EVENT-shaped on the GATE-1 deps-missing path
+#          (only the /data bind-mount persists). We therefore RE-ASSERT all deps
+#          EVENT-shaped on the GATE-1 deps-missing path
 #          (presentation-canonical-entry.sh) plus a DAILY backstop via the OpenClaw
 #          scheduler (`openclaw cron create`, "0 4 * * *"; FIX-PRES-09(iv) retired
 #          the old */15 furnace), which is the same durable recurring-task
@@ -4095,12 +4113,13 @@ fi
 #          that approach was removed.
 #
 # The Capacity & Reliability Engineer (capacity-reliability-engineer.md §11) verifies
-# all four at Phase-0.5. The qc-completeness.sh gate (install step 6b) hard-fails
-# (command -v soffice / command -v pdftoppm / python3 -c "import reportlab, pptx")
-# if any dep is missing at the time the operator declares install complete.
+# all deps at Phase-0.5. The qc-completeness.sh gate (install step 6b) hard-fails
+# (command -v soffice / command -v pdftoppm / python3 -c "import reportlab, pptx, pypdf" /
+# command -v ffmpeg / command -v ffprobe) if any dep is missing at the time the
+# operator declares install complete.
 # ────────────────────────────────────────────────────────────────────────────
 
-step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, poppler, LibreOffice)"
+step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, pypdf, poppler, LibreOffice, ffmpeg)"
 
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
@@ -4119,14 +4138,18 @@ if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     mkdir -p /data/.openclaw/scripts /data/.openclaw/logs
     cat > "$_VPS_REASSERT_SCRIPT" << 'REASSERT_EOF'
 #!/usr/bin/env bash
-# reassert-presentation-deps.sh — (re)installs the four presentation-pipeline deps
+# reassert-presentation-deps.sh — (re)installs the presentation-pipeline deps
 # on a VPS container. The upstream Docker image is external and cannot be edited
-# from this repo, so apt packages (libreoffice-impress, poppler-utils) and pip
-# deps (reportlab, python-pptx) do NOT survive `docker compose up --force-recreate`
-# (only the /data bind-mount persists). This script is invoked once by install.sh
-# Step 6.5 AND re-fired on a schedule by the OpenClaw scheduler cron
-# "reassert-presentation-deps" so the deps are re-installed per container start.
-# Idempotent — safe to re-run. Installed by install.sh Step 6.5. DO NOT EDIT.
+# from this repo, so apt packages (libreoffice-impress, poppler-utils, ffmpeg) and
+# pip deps (reportlab, python-pptx, pypdf) do NOT survive `docker compose up
+# --force-recreate` (only the /data bind-mount persists). This script is invoked
+# once by install.sh Step 6.5 AND re-fired on a schedule by the OpenClaw scheduler
+# cron "reassert-presentation-deps" so the deps are re-installed per container
+# start. Idempotent — safe to re-run. Installed by install.sh Step 6.5. DO NOT EDIT.
+# Feature L2-G (P9.6-WEBINAR-VIDEO) adds ffmpeg + ffprobe — the webinar phase renders
+# the Ken Burns + xfade video with ffmpeg (GATE-1 dep in presentation-canonical-entry.sh).
+# Feature L2-D (P8.25-WORKBOOK) adds pypdf — workbook_builder.py reads the assembled
+# PDF back with pypdf (also a GATE-1 dep in presentation-canonical-entry.sh).
 set -uo pipefail
 LOG=/data/.openclaw/logs/reassert-presentation-deps.log
 mkdir -p "$(dirname "$LOG")"
@@ -4137,20 +4160,21 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 APT_GET="/usr/bin/apt-get"
 PY3="$(command -v python3 || echo /usr/bin/python3)"
 
-# --- System packages: libreoffice-impress (provides soffice) + poppler-utils (pdftoppm)
+# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg.
 if [ -x "$APT_GET" ]; then
-    if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1; then
-        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils" >> "$LOG"
+    if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1 \
+       || ! command -v ffmpeg >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg" >> "$LOG"
         ( "$APT_GET" update -y && \
           DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
-              libreoffice-impress poppler-utils ) >> "$LOG" 2>&1 \
+              libreoffice-impress poppler-utils ffmpeg ) >> "$LOG" 2>&1 \
             && echo "[$(ts)] apt packages OK" >> "$LOG" \
             || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
     else
-        echo "[$(ts)] soffice + pdftoppm already present — apt install skipped" >> "$LOG"
+        echo "[$(ts)] soffice + pdftoppm + ffmpeg already present — apt install skipped" >> "$LOG"
     fi
 else
-    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm" >> "$LOG"
+    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
 fi
 
 # --- Python deps into the SAME interpreter build_deck.py runs.
@@ -4160,18 +4184,24 @@ fi
 "$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
     && echo "[$(ts)] python-pptx OK" >> "$LOG" \
     || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
+"$PY3" -m pip install --break-system-packages --quiet pypdf >> "$LOG" 2>&1 \
+    && echo "[$(ts)] pypdf OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: pypdf install failed (workbook PDF read-back)" >> "$LOG"
 
 # --- Verify (same checks qc-completeness.sh hard-fails on).
 command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
 command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
 "$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
+"$PY3" -c "import pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify pypdf OK" >> "$LOG" || echo "[$(ts)] WARN: pypdf import failed (workbook PDF read-back)" >> "$LOG"
+command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
+command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
 
 echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
 REASSERT_EOF
     chmod +x "$_VPS_REASSERT_SCRIPT"
 
-    # Run the reassert script ONCE now to install all four deps for this container.
-    note "VPS: installing all four presentation deps via $_VPS_REASSERT_SCRIPT ..."
+    # Run the reassert script ONCE now to install all presentation deps for this container.
+    note "VPS: installing all presentation deps via $_VPS_REASSERT_SCRIPT ..."
     bash "$_VPS_REASSERT_SCRIPT" >> "$LOG_FILE" 2>&1 || true
 
     # Report per-dep result (read the verifier-equivalent checks directly).
@@ -4187,6 +4217,15 @@ REASSERT_EOF
     "$_PY3" -c "import pptx" >/dev/null 2>&1 \
         && success "python-pptx importable in $_PY3" \
         || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
+    "$_PY3" -c "import pypdf" >/dev/null 2>&1 \
+        && success "pypdf importable in $_PY3" \
+        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: $_PY3 -m pip install --break-system-packages pypdf"
+    command -v ffmpeg >/dev/null 2>&1 \
+        && success "ffmpeg on PATH (webinar video render, P9.6)" \
+        || warn "ffmpeg NOT on PATH after install — the webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: $_APT_GET install -y ffmpeg"
+    command -v ffprobe >/dev/null 2>&1 \
+        && success "ffprobe on PATH (webinar video probe, P9.6)" \
+        || warn "ffprobe NOT on PATH after install — the webinar size gate cannot probe. Manual fix: $_APT_GET install -y ffmpeg (provides ffprobe)"
 
     # ── VPS DURABILITY via the OpenClaw scheduler ────────────────────────────
     # The container has NO cron daemon and the gateway is PID 1, so a system
@@ -4230,7 +4269,7 @@ REASSERT_EOF
         if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
-        local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
+        local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx, pypdf, ffmpeg) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
         # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
         # daemon, so there is no @reboot hook to fire on container start.
         # FIX-PRES-09(iv): the old "*/15 * * * *" cadence was a furnace — ~96
@@ -4261,6 +4300,7 @@ else
     # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
     _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
     _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
+    _install_py_pkg_mac "pypdf"       "pypdf"      "pypdf (workbook PDF read-back verification, P8.25-WORKBOOK)"
 
     # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
     if command -v pdftoppm >/dev/null 2>&1; then
@@ -4314,6 +4354,21 @@ else
     else
         warn "Homebrew not found — cannot install LibreOffice. PPTX-to-PDF export will fail."
         warn "Operator fix: install Homebrew (https://brew.sh), then: brew install --cask libreoffice"
+    fi
+
+    # ffmpeg (webinar video render, Feature L2-G P9.6-WEBINAR-VIDEO): Homebrew formula.
+    # The webinar phase renders the Ken Burns + xfade slideshow with ffmpeg and probes
+    # with ffprobe (both the size gate and the timing track depend on them). Mirrors
+    # the GATE-1 dep check in presentation-canonical-entry.sh + qc-completeness.sh.
+    if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+        success "ffmpeg + ffprobe already on PATH (webinar video render)"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing ffmpeg (webinar video render) via Homebrew formula..."
+        brew install ffmpeg 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "ffmpeg installed (provides ffprobe too)" \
+            || warn "brew install ffmpeg failed — the webinar video (P9.6) cannot render. Manual fix: brew install ffmpeg"
+    else
+        warn "Homebrew not found — cannot install ffmpeg. The webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: brew install ffmpeg"
     fi
 fi
 
@@ -8641,25 +8696,13 @@ fi
 echo ""
 
 # ----------------------------------------------------------
-# CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
-# apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
-# route-presentation.sh helper, but that reflex is only ENFORCED at runtime by the
-# PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a raw
-# `python3 build_deck.py` on the router/CEO and redirects it to route. The hook +
-# its installer shipped but were never invoked, so the brake stayed OFF on every
-# box. Wire it here on the fresh-install path (mirror of update-skills.sh), right
-# after the routing fix so the reflex/helper and openclaw.json topology exist.
-# The installer is idempotent (self-skips when already wired), self-skips on
-# PA-default boxes, runs as the box owner (never root), and is non-fatal
-# (a wiring error is a warning — install continues, mirroring apply-routing-fix.sh).
+# CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+# CEO PreToolUse intent-gate -- wiring DISABLED. The CEO tool-deny gate has been removed;
+# the intent-gate hook installer is preserved for review but NOT invoked on install.
 # ----------------------------------------------------------
-note "Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
-if [ -f "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" ]; then
-    bash "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" || warn "install-ceo-intent-gate.sh reported errors (install continues — re-run scripts/install-ceo-intent-gate.sh)"
-    success "CEO intent-gate wired (or already wired / PA-box skip)"
-else
-    warn "install-ceo-intent-gate.sh not found at $ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
-fi
+note "CEO tool deny gate removed 2026-08-05 -- intent-gate wiring skipped (see openclaw-telegram-master-plan.md)"
+success "CEO gate removal: intent-gate install skipped (Trevor review pending)"
+echo ""
 echo ""
 
 # ----------------------------------------------------------
@@ -8677,10 +8720,101 @@ if [ -f "$ONBOARDING_DIR/scripts/verify-routing.sh" ]; then
         success "verify-routing: all static gates PASS"
     else
         warn "verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
-        warn "Install continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+        warn "Install continues; re-run apply-routing-fix.sh, then 'bash scripts/verify-routing.sh' to see which gate. (CEO tool deny gate removed 2026-08-05.)"
     fi
 else
     warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
+fi
+
+# ----------------------------------------------------------
+# CEO Routing Doctrine pre-injection plugin (2026-08-05, Trevor).
+# Replaces the removed CEO gate with a before_prompt_build prompt-injection
+# layer: injects "route, don't self-execute" + the human-override carve-out
+# every turn, with NO tool-deny (so no write-denial loop). Installs the
+# extension to ~/.openclaw/extensions/ and enables it in openclaw.json with
+# enabled:true ONLY. Idempotent.
+#
+# FLEET-KILL DEFECT FIX (2026-08-06): this block used to ALSO write
+# plugins.entries.ceo-routing-doctrine.hooks = {allowPromptInjection:true}.
+# `hooks` on a plugins.entries.<id> is additionalProperties:false and does
+# NOT accept `allowPromptInjection` on OpenClaw <=2026.6.11 (the extension's
+# own dist/index.js comment claims that gate only as of 2026.7.1-2, a schema
+# version not yet uniformly on the fleet) -- writing it made
+# `openclaw config validate` FAIL with "hooks: Invalid input". Config
+# validation is FATAL at gateway startup: the gateway never starts, the cron
+# scheduler never initializes, next_run_at_ms freezes in the past forever,
+# and NO cron on the box ever fires again -- silently, because the
+# ALREADY-RUNNING gateway is unaffected until the box's NEXT restart/reboot.
+# DO NOT re-add this key here without first confirming (via
+# `openclaw config validate` against the box's actual installed gateway
+# version) that the target schema accepts
+# plugins.entries.<id>.hooks.allowPromptInjection.
+# ----------------------------------------------------------
+note "Installing CEO Routing Doctrine pre-injection plugin..."
+_RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
+_RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
+if [ -d "$_RD_SRC" ]; then
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    # KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO update-skills.sh.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+        warn "FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+        python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    cfg.setdefault("plugins", {}).setdefault("entries", {})
+    cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
+        "enabled": True,
+    }
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+        success "CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
+else
+    warn "ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
 fi
 echo ""
 

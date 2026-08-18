@@ -18,6 +18,13 @@ Usage:
     skin.print_goodbye()
 """
 
+# PEP 604 unions (`str | None`) below are evaluated at function-definition
+# time on Python 3.9 and raise TypeError without this. setup.py declares
+# python_requires=">=3.9"; every other module in the package already had
+# this import and this one did not, so that claim was false until now —
+# verified on a real 3.9.6 venv, this module was the sole import failure.
+from __future__ import annotations
+
 import os
 import sys
 

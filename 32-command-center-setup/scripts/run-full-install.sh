@@ -382,14 +382,51 @@ cc_reconcile_pm2_names() {
   done
 }
 
-# cc_pm2_start_canonical — start the board under the canonical name. An explicit
-# --name guarantees the canonical regardless of the cloned CC checkout's
-# ecosystem.config.cjs (an older pinned CC tag may still name the app
-# differently until the CC version is rolled fleet-wide). CC_PORT is pinned so
-# cc-start.sh (npm start -> bash scripts/cc-start.sh) strips any ambient PORT and
-# binds :4000. Returns the launcher's exit status.
+# cc_pm2_start_canonical — start the board under the canonical name THROUGH the
+# canonical launch path (ecosystem.config.cjs), never `pm2 start npm -- start`.
+#
+# PORT-FIX-1 (port-4000 permanent fix): the legacy launch path
+#   CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start
+# bypassed ecosystem.config.cjs entirely — so it carried NONE of that config's
+# guarantees (CC_PORT-only pin, env-bleed strip, circuit-breaker, canonical app
+# name). It relied on npm start -> scripts/cc-start.sh for the port guard and
+# named the app explicitly, but the pm2 dump stored THAT ad-hoc shape, and a
+# `pm2 resurrect` (or an installer/dump that read ambient PORT) could relaunch
+# off :4000. Every relaunch now goes through `pm2 start ecosystem.config.cjs` —
+# the ONE config that reads only CC_PORT, pins 4000, uses the canonical app name
+# blackceo-command-center, and carries the circuit-breaker.
+#
+# DB-PARITY (DATA-08): ecosystem.config.cjs resolves its DATABASE_PATH from the
+# `DATABASE_PATH` env var at require-time, falling back to
+# <INSTALL_DIR>/../data/mission-control.db. On boxes whose real DB lives
+# elsewhere (e.g. the operator Mac: /Users/<you>/command-center/data/... while
+# the checkout is .../command-center/app), that fallback would open a DECOY DB.
+# So we forward the box's OWN DATABASE_PATH (from the .env.local that
+# cc_write_env_local already provisioned) into the start environment, and the
+# ecosystem passes it through verbatim. CC_INSTALL_DIR pins the cwd so the
+# config's `cwd:` and relative `scripts/cc-start.sh` args resolve to THIS checkout.
+# Returns the launcher's exit status.
 cc_pm2_start_canonical() {
-  ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+  # PREFERRED: launch through the canonical ecosystem.config.cjs. The committed
+  # CC repo always ships it, so every box on the current CC tag takes this path.
+  # FALLBACK: if the checkout predates it (the installer's own tier-3 comment at
+  # CC_REQUIRED_MARKERS says ecosystem.config.cjs is NOT a hard marker), fall
+  # back to the legacy `pm2 start npm --name ... -- start` — which still routes
+  # through npm start -> scripts/cc-start.sh, so the env-bleed strip + port pin
+  # still apply; only the ecosystem circuit-breaker is absent on such a box.
+  local cc_db=""
+  if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
+    cc_db="$(sed -nE 's/^DATABASE_PATH=(.*)$/\1/p' "$DASHBOARD_DIR/.env.local" 2>/dev/null | head -1)"
+  fi
+  if [[ -f "$DASHBOARD_DIR/ecosystem.config.cjs" ]]; then
+    ( cd "$DASHBOARD_DIR" \
+        && CC_PORT="$DASHBOARD_PORT" \
+           DATABASE_PATH="${cc_db:-}" \
+           CC_INSTALL_DIR="$DASHBOARD_DIR" \
+           pm2 start "$DASHBOARD_DIR/ecosystem.config.cjs" >>"$LOG_FILE" 2>&1 )
+  else
+    ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+  fi
 }
 
 # ======================================================================
@@ -1243,6 +1280,33 @@ fi
 #   browsable. lock_assert (below) FAILS CLOSED in full-install mode when that lock
 #   signal is absent, rather than start a shell the middleware cannot lock. Only the
 #   REAL-workforce materialization in BLOCK B stays gated on interviewComplete.
+#
+# STANDARD-FIRST ONBOARDING (buildType == "standard-first"): this BLOCK A is
+# what makes the DAY-ONE interview link possible. Standard-first sequence
+# (operator runbook; see also the send-interview-link.sh header in
+# 23-ai-workforce-blueprint/scripts/):
+#   1. onboard the box
+#   2. run-full-install.sh deploys the LOCKED CC shell + tunnel (this BLOCK A;
+#      the installer ordering already supports shell-first — no code change
+#      needed here for standard-first, only this documented ordering)
+#   3. prebuild-standard-workforce.sh (EXPLICIT OPERATOR CONSENT) materializes
+#      the standard canonical-floor department foundation from
+#      templates/role-library/ (NEVER from another client's tree —
+#      no-co-mingling is binding) and records build-state
+#      standardPrebuild.status = "done". The floor count is read live from the
+#      canonical naming map — never hardcoded here.
+#   4. prove-zhe STANDARD_READY pass
+#   5. OPENCLAW_DASHBOARD_URL confirmed in the box env
+#   6. bash send-interview-link.sh -> the owner receives the interview link on
+#      DAY ONE, before answering a single question
+#   Under standard-first the lock invariant above is UNCHANGED: the shell still
+#   302s every non-/interview, non-/onboarding request to /interview until
+#   interviewComplete (the Command Center middleware additionally exempts a
+#   read-only /preview surface under the ratified Option L1 amendment; the lock
+#   itself is never loosened). The standard-first prebuild is an
+#   operator-triggered, library-sourced materialization — it is NOT the BLOCK B
+#   real-workforce seeding, which stays gated on interviewComplete below. Do
+#   not reorder, loosen, or "unlock" anything in this block for standard-first.
 
 # ----------------------------------------------------------------------
 # PHASE 1 — Prerequisites (pm2 + openclaw doctor --fix)
@@ -1504,6 +1568,12 @@ fi
 # and provisioning must NOT invent one. A future reader: the interview-only CC view
 # in front of an empty board pre-closeout is the intended experience, NOT a bug —
 # do not remove this gate or "unlock" the shell to make the board show early.
+# STANDARD-FIRST NOTE (buildType == "standard-first"): the day-one interview
+# link is delivered THROUGH this lock, never around it — the locked shell is
+# exactly what the link opens, and the read-only company preview is an
+# additive Command Center middleware exemption (Option L1), not a loosening of
+# this gate. Everything this gate protects below (REAL-workforce seeding) is
+# still gated on interviewComplete in both lanes.
 #
 # --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
 # db:push) and must keep working for provisioned boxes whose flag predates this gate.
@@ -1578,6 +1648,15 @@ fi
 # real content. Building any of it pre-interview would produce the DEFAULT floor
 # under company 'default' - a false deliverable - which is exactly why it stays
 # behind the gate while the shell (BLOCK A) does not.
+# STANDARD-FIRST NOTE (buildType == "standard-first"): this block's gating is
+# UNCHANGED. The standard-first prebuild is a SEPARATE operator-triggered
+# pipeline (23-ai-workforce-blueprint/scripts/prebuild-standard-workforce.sh,
+# explicit operator consent, sourced EXCLUSIVELY from templates/role-library/);
+# it is NOT this installer's BLOCK B seeding and it never runs from here. At
+# interviewComplete the standard-first lane applies the owner's diff (deprovision
+# confirmed declines, materialize custom additions, personalize the kept
+# departments) — again NOT via this block. Do not route any pre-interview
+# materialization through this installer.
 
 # ----------------------------------------------------------------------
 # PHASE 3 — Workspace department folders

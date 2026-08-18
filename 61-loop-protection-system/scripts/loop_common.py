@@ -120,7 +120,7 @@ _INTER_SESSION_PREAMBLE_RE = re.compile(r"^\s*\[[^\]\n]{0,200}\]\s*\n?")
 
 def normalize_inter_session_payload(text) -> str:
     """Best-effort normalization of an inbound inter-session message body before
-    hashing (D7 / LP-A8): strip a leading bracketed envelope/preamble line if
+    hashing (D7 / LP-A10): strip a leading bracketed envelope/preamble line if
     present, then collapse every whitespace run to a single space. The caller
     hashes the RETURN value immediately and discards it - the normalized text is
     never stored, printed, or placed in a ledger row or finding detail (a session

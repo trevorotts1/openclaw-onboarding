@@ -11,11 +11,12 @@
 # WHAT THIS FILE PROVES (hermetic: temp dirs, synthetic images via ffmpeg, no
 # network, no real Kie API):
 #
-#   T1  a valid 1400x1400 JPEG passes the probe (return 0)
+#   T1  a valid 1500x1500 JPEG passes the probe (return 0)
 #   T2  an HTML file (wrong format) fails the probe (return non-zero)
 #   T3  an undersized 100x100 JPEG fails the probe (return non-zero)
 #   T4  MUTATION PROOF: mutate the dimension check to accept any size, verify
 #       T3 turns RED (probe passes when it should fail), revert, verify GREEN
+#   T5  a 1400x1400 JPEG (below the 1500 floor) FAILS the probe (return non-zero)
 #
 # Run: bash tests/unit/test_generate_cover_probe.sh
 
@@ -33,7 +34,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 # Source the script to get probe_downloaded_image and its dependencies.
 # We need to stub out the parts that would fail without a full environment.
-COVER_MIN_SIDE=1400
+COVER_MIN_SIDE=1500
 COVER_MAX_SIDE=3000
 COVER_MAX_BYTES=524288
 
@@ -41,24 +42,33 @@ log()  { :; }  # silence log output during tests
 err()  { echo "[ERR] $*" >&2; }
 int_from() { awk '{printf "%d", $1}' <<<"${1:-0}"; }
 
-# Extract probe_downloaded_image from the script (lines 164-200).
+# Extract probe_downloaded_image() from the script. This is LINE-INDEPENDENT:
+# it anchors on the function name and reads to its first top-level closing
+# brace, so it survives insertions/deletions that shift line numbers.
 # We eval it in this shell so it has access to our stubs.
-eval "$(sed -n '164,200p' "$SCRIPT")"
+extract_probe() {
+  awk '
+    /^probe_downloaded_image\(\)[[:space:]]*\{/ { flag=1 }
+    flag { print }
+    flag && /^}[[:space:]]*$/ { exit }
+  ' "$1"
+}
+eval "$(extract_probe "$SCRIPT")"
 
 echo "=== cover-gen probe tests (U033) ==="
 
 # ---------------------------------------------------------------------------
-# T1 — valid 1400x1400 JPEG passes the probe
+# T1 — valid 1500x1500 JPEG passes the probe
 # ---------------------------------------------------------------------------
-VALID_JPEG="$TMP/valid_1400x1400.jpg"
-ffmpeg -y -v error -f lavfi -i "color=c=red:s=1400x1400:d=1" -frames:v 1 "$VALID_JPEG" 2>/dev/null
+VALID_JPEG="$TMP/valid_1500x1500.jpg"
+ffmpeg -y -v error -f lavfi -i "color=c=red:s=1500x1500:d=1" -frames:v 1 "$VALID_JPEG" 2>/dev/null
 if [[ ! -f "$VALID_JPEG" ]]; then
-  bad "T1: could not create valid 1400x1400 JPEG fixture"
+  bad "T1: could not create valid 1500x1500 JPEG fixture"
 else
   if probe_downloaded_image "$VALID_JPEG"; then
-    ok "T1: valid 1400x1400 JPEG passes the probe (return 0)"
+    ok "T1: valid 1500x1500 JPEG passes the probe (return 0)"
   else
-    bad "T1: valid 1400x1400 JPEG FAILED the probe (should pass)"
+    bad "T1: valid 1500x1500 JPEG FAILED the probe (should pass)"
   fi
 fi
 
@@ -105,7 +115,7 @@ MUTATED_SCRIPT="$TMP/generate_cover_mutated.sh"
 sed 's/"\$w" -lt "\$COVER_MIN_SIDE" || "\$h" -lt "\$COVER_MIN_SIDE"/"\$w" -lt "0" || "\$h" -lt "0"/' "$SCRIPT" > "$MUTATED_SCRIPT"
 
 # Re-extract the mutated probe function.
-eval "$(sed -n '164,200p' "$MUTATED_SCRIPT")"
+eval "$(extract_probe "$MUTATED_SCRIPT")"
 
 if probe_downloaded_image "$UNDERSIZED_JPEG"; then
   ok "T4 RED: with mutated dimension check, undersized JPEG passes (mutation detected)"
@@ -114,12 +124,27 @@ else
 fi
 
 # Revert: re-extract the original probe function.
-eval "$(sed -n '164,200p' "$SCRIPT")"
+eval "$(extract_probe "$SCRIPT")"
 
 if probe_downloaded_image "$UNDERSIZED_JPEG"; then
   bad "T4 GREEN: after revert, undersized JPEG still passes (revert failed)"
 else
   ok "T4 GREEN: after revert, undersized JPEG fails again (mutation proof complete)"
+fi
+
+# ---------------------------------------------------------------------------
+# T5 — 1400x1400 JPEG (below the 1500 floor) FAILS the probe
+# ---------------------------------------------------------------------------
+OLD_FLOOR_JPEG="$TMP/old_floor_1400x1400.jpg"
+ffmpeg -y -v error -f lavfi -i "color=c=green:s=1400x1400:d=1" -frames:v 1 "$OLD_FLOOR_JPEG" 2>/dev/null
+if [[ ! -f "$OLD_FLOOR_JPEG" ]]; then
+  bad "T5: could not create 1400x1400 JPEG fixture"
+else
+  if probe_downloaded_image "$OLD_FLOOR_JPEG"; then
+    bad "T5: 1400x1400 JPEG PASSED the probe (should fail — below the 1500 floor)"
+  else
+    ok "T5: 1400x1400 JPEG fails the probe (return non-zero — below the 1500 floor rejected)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
