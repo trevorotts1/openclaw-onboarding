@@ -367,7 +367,14 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # governing-personas.md ship into deployed department dirs but are
                   # not department roles. Exclude them so A5 does not false-DRIFT a
                   # box that is fully on the current manifest (FIX-23c + roll fix).
-                  "ROSTER", "GOVERNING-PERSONAS"}
+                  # NOTE: governing-personas.md is written lowercase-with-dashes by
+                  # create_role_workspaces.py (dept_path / "governing-personas.md");
+                  # p.stem on that file is "governing-personas", not
+                  # "GOVERNING-PERSONAS". The prior uppercase entry never matched
+                  # the real on-disk file, so this exclusion was dead code and every
+                  # deployed dept with governing-personas.md still false-DRIFTed on
+                  # A5. Fixed to the actual stem case.
+                  "ROSTER", "governing-personas"}
 
 
 def scan_roles_and_sops():

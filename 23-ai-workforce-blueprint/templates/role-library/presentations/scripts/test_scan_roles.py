@@ -238,7 +238,24 @@ def _check_module_constants_exist():
     elif not isinstance(sync_check._NON_ROLE_DOCS, set):
         fails.append(f"CONST: _NON_ROLE_DOCS is {type(sync_check._NON_ROLE_DOCS).__name__}, expected set")
     else:
-        expected_docs = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS", "how-to-use-this-department"}
+        # Exact-match by design, not a subset/superset check: this set is a
+        # manifest, not a floor. Every entry must be the literal p.stem of a
+        # real fleet-scaffolding file the deployed department carries (see
+        # sync_check.py's per-entry comments for provenance), and every
+        # addition/removal in production must consciously update this
+        # expectation in the SAME commit. A subset assertion would have let
+        # the 2026-08-07 GOVERNING-PERSONAS case-mismatch bug (constant said
+        # "GOVERNING-PERSONAS", the real on-disk file is "governing-personas.md"
+        # -> p.stem "governing-personas", so the exclusion never matched)
+        # ship silently forever. This set is EXPECTED TO GROW as departments
+        # gain new fleet-synced scaffolding doc types — when it does, update
+        # this literal alongside the sync_check.py change, with the same
+        # evidence (grep the actual writer, confirm the exact on-disk stem).
+        expected_docs = {
+            "BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS", "how-to-use-this-department",
+            "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER",
+            "ROSTER", "governing-personas",
+        }
         if sync_check._NON_ROLE_DOCS != expected_docs:
             fails.append(f"CONST: _NON_ROLE_DOCS is {sync_check._NON_ROLE_DOCS}, expected {expected_docs}")
     return fails
