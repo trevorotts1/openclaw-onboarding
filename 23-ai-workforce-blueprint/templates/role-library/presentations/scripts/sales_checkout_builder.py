@@ -11,8 +11,20 @@ the run's own intake.json, exactly like workbook_builder.py resolves brand/clien
 
 THE GATE — WANT_SALES_CHECKOUT (upsell-questions.json v1.0.0, U026 waiver mechanic)
 -------------------------------------------------------------------------------------
-Read from working/copy/intake.json's `pre_presentation_capture.WANT_SALES_CHECKOUT`
-(intake_writer.py's ID_TO_FIELD/PRE_CAPTURE_FIELDS mapping — the SAME field the app writes).
+TWO INTAKE PATHS WRITE THIS FLAG TO TWO DIFFERENT SHAPES, and this gate reads BOTH:
+  1. NESTED (preferred): working/copy/intake.json's
+     `pre_presentation_capture.WANT_SALES_CHECKOUT` — the documented contract
+     (intake_writer.py's ID_TO_FIELD/PRE_CAPTURE_FIELDS mapping), written by the hosted
+     interview-app bridge path.
+  2. FLAT (fallback): working/copy/intake.json's top-level `WANT_SALES_CHECKOUT` — written
+     by deck-intake-driver.py, THE sanctioned chat intake conversation. Its cmd_complete()
+     merges every ledger entry straight onto the intake dict (`intake[store_key] = val`)
+     with no `pre_presentation_capture` wrapper at all, because upsell-questions.json's own
+     `storeOn` for these two questions is the bare field name, not a dotted path.
+The same order applies to the waiver-reason field, SALES_CHECKOUT_DECLINED_REASON. NESTED
+is preferred only when it carries a real (non-blank) value; a present-but-blank nested value
+still falls through to FLAT. This widens WHERE the value is read from — it changes nothing
+about what counts as an answer (see resolve_sales_checkout_gate()/_resolve_capture_field()).
 Per upsell-questions.json's `waiver_field_mapping.sales_checkout` (toggle=want_sales_checkout,
 reason=sales_checkout_declined_reason): a "no" is a CLIENT WAIVER and REQUIRES the client's
 own verbatim declined-reason (`SALES_CHECKOUT_DECLINED_REASON`) — "it is never inferred from
@@ -289,9 +301,44 @@ def resolve_client_name(run_dir: Path, intake: dict) -> str:
 # ---------------------------------------------------------------------------
 # THE GATE — resolve_sales_checkout_gate()
 # ---------------------------------------------------------------------------
+def _resolve_capture_field(intake: dict, pre: dict, field: str) -> Any:
+    """Resolve one pre_presentation_capture field from whichever of the two live
+    intake shapes actually carries it.
+
+    Prefers the NESTED `pre_presentation_capture.<field>` shape (the documented
+    contract; the hosted interview-app bridge / intake_writer.py writes this).
+    Falls through to the FLAT top-level `intake[<field>]` shape when the nested
+    value is absent or blank -- deck-intake-driver.py (THE sanctioned chat intake
+    path) writes every upsell answer flat, with no pre_presentation_capture
+    wrapper at all (its cmd_complete(): `intake[store_key] = val`), because
+    upsell-questions.json's own `storeOn` for WANT_SALES_CHECKOUT and
+    SALES_CHECKOUT_DECLINED_REASON is the bare field name.
+
+    A present-but-blank NESTED value is treated the same as absent and still
+    falls through to FLAT -- this only widens WHERE a real answer is read from;
+    it never changes what counts as an answer. Silence is still never consent:
+    if BOTH shapes are absent/blank this returns None/blank exactly as before,
+    and the caller's existing absent/blank handling (DEFER) is unchanged."""
+    raw = pre.get(field)
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if raw is not None and str(raw).strip():
+        return raw
+    flat = intake.get(field)
+    if isinstance(flat, dict):
+        flat = flat.get("value")
+    return flat
+
+
 def resolve_sales_checkout_gate(intake: dict) -> Dict[str, Any]:
     """Resolve WANT_SALES_CHECKOUT against upsell-questions.json's waiver_field_mapping
     (U026). Returns {"decision": "defer"|"build"|"waived"|"fail_closed", "detail": str, ...}.
+
+    Reads BOTH live intake shapes via _resolve_capture_field(): the NESTED
+    `pre_presentation_capture.WANT_SALES_CHECKOUT` (documented contract, app-bridge
+    path) preferred, falling back to the FLAT top-level `WANT_SALES_CHECKOUT`
+    (deck-intake-driver.py, the sanctioned chat intake path -- see module docstring).
+    The SAME resolution order applies to SALES_CHECKOUT_DECLINED_REASON.
 
     Never conflates "absent" with "declined" -- silence is NOT consent (upsell-
     questions.json's own words, verbatim). A "no" ALWAYS requires a real, non-empty
@@ -301,9 +348,7 @@ def resolve_sales_checkout_gate(intake: dict) -> Dict[str, Any]:
     pre = intake.get("pre_presentation_capture")
     pre = pre if isinstance(pre, dict) else {}
 
-    raw = pre.get(WANT_FIELD)
-    if isinstance(raw, dict):
-        raw = raw.get("value")
+    raw = _resolve_capture_field(intake, pre, WANT_FIELD)
     if raw is None or not str(raw).strip():
         return {
             "decision": "defer",
@@ -331,9 +376,7 @@ def resolve_sales_checkout_gate(intake: dict) -> Dict[str, Any]:
         }
 
     # norm == "no": a decline REQUIRES the client's own verbatim reason.
-    reason_raw = pre.get(REASON_FIELD)
-    if isinstance(reason_raw, dict):
-        reason_raw = reason_raw.get("value")
+    reason_raw = _resolve_capture_field(intake, pre, REASON_FIELD)
     reason = str(reason_raw or "").strip()
     if len(reason) < MIN_WAIVER_QUOTE_CHARS:
         return {
@@ -1178,6 +1221,45 @@ def _selftest() -> int:
     if g["decision"] != "fail_closed" or AF_VALUE_UNRECOGNIZED not in g["detail"]:
         fails.append(f"gate(maybe) expected fail_closed/{AF_VALUE_UNRECOGNIZED}, got {g}")
 
+    # 1b) THE GATE — FLAT top-level shape (deck-intake-driver.py, the sanctioned
+    #     chat intake path -- no pre_presentation_capture wrapper at all). Reproduces
+    #     the live Wave E defect: a driver-produced intake.json that would previously
+    #     be silently DEFERRED must now resolve exactly like the nested shape does.
+    def _gate_flat(flat: dict) -> dict:
+        return resolve_sales_checkout_gate(dict(flat))
+
+    g = _gate_flat({})
+    if g["decision"] != "defer":
+        fails.append(f"gate(flat absent, no pre_presentation_capture key at all) expected defer, got {g['decision']}")
+    g = _gate_flat({"WANT_SALES_CHECKOUT": "yes"})
+    if g["decision"] != "build":
+        fails.append(f"gate(flat yes) expected build, got {g['decision']}")
+    g = _gate_flat({"WANT_SALES_CHECKOUT": "no"})
+    if g["decision"] != "fail_closed" or AF_WAIVER_MISSING not in g["detail"]:
+        fails.append(f"gate(flat no, no reason) expected fail_closed/{AF_WAIVER_MISSING}, got {g}")
+    g = _gate_flat({"WANT_SALES_CHECKOUT": "no",
+                    "SALES_CHECKOUT_DECLINED_REASON": "We already have a checkout page we like."})
+    if g["decision"] != "waived" or g.get("quote") != "We already have a checkout page we like.":
+        fails.append(f"gate(flat no, real reason) expected waived with quote preserved, got {g}")
+
+    # 1c) NESTED takes priority over FLAT when both are present (documented contract wins).
+    g = resolve_sales_checkout_gate({"pre_presentation_capture": {"WANT_SALES_CHECKOUT": "yes"},
+                                     "WANT_SALES_CHECKOUT": "no"})
+    if g["decision"] != "build":
+        fails.append(f"gate(nested=yes, flat=no) expected NESTED to win (build), got {g['decision']}")
+    # a BLANK nested value must still fall through to a real flat value, not stop there.
+    g = resolve_sales_checkout_gate({"pre_presentation_capture": {"WANT_SALES_CHECKOUT": ""},
+                                     "WANT_SALES_CHECKOUT": "yes"})
+    if g["decision"] != "build":
+        fails.append(f"gate(nested=blank, flat=yes) expected fallthrough to FLAT (build), got {g['decision']}")
+
+    # 1d) THE DECISIVE PROOF — the actual live Wave E intake.json shape (flat
+    #     WANT_SALES_CHECKOUT='yes', no pre_presentation_capture key at all) must
+    #     resolve to build, not defer.
+    g = resolve_sales_checkout_gate({"WANT_SALES_CHECKOUT": "yes", "OFFER_NAME": "x"})
+    if g["decision"] != "build":
+        fails.append(f"gate(live-shape fixture: flat yes, no pre_presentation_capture) expected build, got {g}")
+
     # 2) COPY — deterministic, content present.
     brief = {
         "OFFER_NAME": "The Momentum Method",
@@ -1365,7 +1447,9 @@ def _selftest() -> int:
             print("  -", f)
         return 1
     print("sales_checkout_builder selftest -> PASS "
-          "(gate: defer/build/waived/fail_closed x2 + case-insensitive; copy content; "
+          "(gate: defer/build/waived/fail_closed x2 + case-insensitive, BOTH nested and "
+          "FLAT (deck-intake-driver.py) shapes, nested-wins-over-flat, blank-nested-falls-"
+          "through-to-flat, live Wave E flat-shape fixture -> build; copy content; "
           "prompt band + content-gate pass/zero-content-refuse/wireframe-refuse; HTML "
           "content + ghl_rest_canvas.html_fragment/images-as-media-links/new_page_blob/"
           "funnel_create/step_create/page_autosave (all offline, no session); receipt "
