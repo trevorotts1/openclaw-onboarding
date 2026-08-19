@@ -59,7 +59,7 @@ from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v22.0.50"
+BROWSER_MANAGER_PY_VERSION = "v22.0.51"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
