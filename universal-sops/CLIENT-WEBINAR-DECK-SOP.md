@@ -36,7 +36,13 @@
 > image render + bare-deck assembler ONLY. It produces NO research, NO copy QC, NO presenter
 > guide, NO presenter speech, NO presenter audio, NO PDF export, NO infographic PNG, and NO GHL
 > upload. **Finishing "at a `.pptx`" is a forbidden shortcut.** A deck is DELIVERED only when
-> the FULL experience exists: the **SIX-FILE deliverable bundle** —
+> the FULL experience exists. **There is no "six-file bundle"** — that language is retired.
+> The real, code-enforced story has three labelled counts (full authoritative table + code
+> citations: `DEPARTMENT-COUNTS-CANONICAL.md`):
+>
+> - **10 — the enforced operator BUILD bundle**
+>   (`presentation_job/deliverables.py` `DELIVERABLE_AUDIT_SPEC`; mirrored in
+>   `PIPELINE-MANIFEST.json` `build_bundle_files`):
 >
 > | File | Minimum size | Produced by |
 > |---|---|---|
@@ -44,10 +50,25 @@
 > | `[Deck-Title]-FINAL.pdf` | > 50 KB | PPTX Assembly Specialist (PDF export) |
 > | `PRESENTER-GUIDE.pdf` | > 50 KB | Presenters Guide Specialist |
 > | `PRESENTERS-SPEECH.md` | > 2 KB | Presenters Speech Writer |
-> | `PRESENTERS-SPEECH.pdf` | > 20 KB | Presenters Speech Writer (PDF render) |
+> | `PRESENTERS-SPEECH.pdf` | > 3,000 bytes | Presenters Speech Writer (PDF render) |
+> | `PRESENTERS-SPEECH-FISH-TAGGED.md` | > 2 KB | Presenters Speech Writer / Fish Audio Expression Specialist |
 > | `PRESENTER-AUDIO.mp3` | > 500 KB | Audio Demonstration Specialist |
+> | `infographic.png` | > 100 KB | slide-image-creator (produces) + pptx-assembly-specialist (PNG export) |
+> | `presenter-teleprompter.html` | > 20 KB | build_teleprompter.py (teleprompter role) |
+> | `[Deck-Title]-WEBINAR.mp4` | > 1 MB | build_webinar_video.py (P9.6-WEBINAR-VIDEO) |
 >
-> **PLUS** `infographic.png` (> 100 KB — produced by infographic-checklist role).
+> - **7 — the CLIENT PACKAGE folder** (`delivery/[DECK_SLUG]-FINAL/`; `delivery_gate.py`
+>   `check_af_dh1` / `CLIENT_PACKAGE`, all seven now HARD-required — `CLIENT_PACKAGE_WARN_ONLY`
+>   is empty): the deck pptx, deck pdf, guide pdf, speech pdf, audio mp3, teleprompter html, and
+>   webinar mp4 — the 10 above MINUS `PRESENTERS-SPEECH.md`, `PRESENTERS-SPEECH-FISH-TAGGED.md`,
+>   and `infographic.png` (build-side inputs/working products, never loose client files).
+> - **12 — what actually SHIPS every run**: the 10 build-bundle files PLUS the two workbook
+>   PDFs from `P8.25-WORKBOOK` (`[Deck-Title]-WORKBOOK.pdf` and
+>   `[Deck-Title]-WORKBOOK-FILLABLE.pdf`) — always produced and always uploaded to the client's
+>   GHL, even though neither `deliverables_required` nor `client_package_files` lists them today.
+>
+> (15 = 12 + the three client-elected upsells — sales page, checkout page, VSL page — see
+> `DEPARTMENT-COUNTS-CANONICAL.md`.)
 >
 > **DEFAULT OUTPUT DESTINATION: `~/Downloads/<client-slug>-<deck-slug>/`.**
 > `build_deck.py` defaults all bundle files to `~/Downloads/<client-slug>-<deck-slug>/` — never
@@ -368,14 +389,14 @@ exists at `outputPath` before reporting.
 > ```
 > [ ] D.1  PRESENTER-GUIDE.pdf present in bundle dir (Presenters Guide Specialist) — >50KB; CANNOT be silently skipped
 > [ ] D.2  PRESENTERS-SPEECH.md present (Presenters Speech Writer) — >2KB source
-> [ ] D.3  PRESENTERS-SPEECH.pdf present (Presenters Speech Writer) — >20KB PDF render
+> [ ] D.3  PRESENTERS-SPEECH.pdf present (Presenters Speech Writer) — >3,000 bytes PDF render
 > [ ] D.4  PRESENTER-AUDIO.mp3 present (Audio Demonstration Specialist) — Fish Audio S2, >500KB
 > [ ] D.5  [Deck-Title]-FINAL.pdf present (PPTX Assembly Specialist PDF export) — >50KB
-> [ ] D.6  infographic.png present in bundle dir (infographic-checklist role) — >100KB; CANNOT be silently skipped
-> [ ] D.7  deliverables.json in bundle dir shows ALL 7 entries as "status": "verified"
+> [ ] D.6  infographic.png present in bundle dir (slide-image-creator + pptx-assembly-specialist) — >100KB; CANNOT be silently skipped
+> [ ] D.7  deliverables.json in bundle dir shows ALL 10 entries as "status": "verified" (DELIVERABLE_AUDIT_SPEC)
 > [ ] D.8  build_deck.py postflight completeness gate (AF-BUNDLE-COMPLETE) passed — exit 0, "=== COMPLETE ===" printed
 > [ ] D.9  Bundle dir is ~/Downloads/<client-slug>-<deck-slug>/ (or --out override confirmed)
-> [ ] D.10 Six-file bundle + AF-DH1 hygiene sweep passed (Delivery Concierge SOP 9.0)
+> [ ] D.10 Ten-file build bundle + seven-file client package + AF-DH1 hygiene sweep passed (Delivery Concierge SOP 9.0)
 > [ ] D.11 GHL media upload done + recorded (pptx_ghl_media_id) + ground-truth verified (Delivery Concierge SOP 9.2/9.4)
 > [ ] D.12 AF-BUNDLE-COMPLETE + AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all pass before "Done"
 > ```
@@ -405,28 +426,37 @@ is a rendered deck, not a delivered presentation.
 
 ### POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE)
 
-`build_deck.py` enforces the six-file bundle via the POSTFLIGHT COMPLETENESS GATE
+`build_deck.py` enforces the ten-file BUILD bundle via the POSTFLIGHT COMPLETENESS GATE
 (AF-BUNDLE-COMPLETE), which runs automatically at the end of every `build_deck.py` execution.
 The gate reads `deliverables.json` — written incrementally to the bundle dir throughout the
 run — and hard-fails with **exit 5** if any artifact is absent or below its size threshold.
 `PRESENTER-GUIDE.pdf` and `infographic.png` **can never be silently skipped** — their absence
-always triggers exit 5. The script prints `=== COMPLETE ===` and exits 0 ONLY when all seven
-entries in `deliverables.json` are `"status": "verified"`. A run that exits 5 may NOT be
-reported as "done" or "complete."
+always triggers exit 5. The script prints `=== COMPLETE ===` and exits 0 ONLY when all TEN
+entries in `deliverables.json` are `"status": "verified"` (`DELIVERABLE_AUDIT_SPEC` in
+`presentation_job/deliverables.py`). A run that exits 5 may NOT be reported as "done" or
+"complete." Full authoritative table (10 build / 7 client-package / 12 shipped / 15 with
+upsells): `DEPARTMENT-COUNTS-CANONICAL.md`.
 
-**The SIX-FILE required bundle** (`~/Downloads/<client-slug>-<deck-slug>/` by default):
+**The TEN-FILE required BUILD bundle** (`~/Downloads/<client-slug>-<deck-slug>/` by default):
 - `[Deck-Title]-FINAL.pptx` — > 1 MB — assembled deck (this script)
 - `[Deck-Title]-FINAL.pdf` — > 50 KB — PDF export (PPTX Assembly Specialist)
 - `PRESENTER-GUIDE.pdf` — > 50 KB — Presenters Guide Specialist **(HARD REQUIRED)**
 - `PRESENTERS-SPEECH.md` — > 2 KB — Presenters Speech Writer
-- `PRESENTERS-SPEECH.pdf` — > 20 KB — Presenters Speech Writer (PDF render)
+- `PRESENTERS-SPEECH.pdf` — > 3,000 bytes — Presenters Speech Writer (PDF render)
+- `PRESENTERS-SPEECH-FISH-TAGGED.md` — > 2 KB — Presenters Speech Writer / Fish Audio Expression Specialist
 - `PRESENTER-AUDIO.mp3` — > 500 KB — Audio Demonstration Specialist
+- `presenter-teleprompter.html` — > 20 KB — build_teleprompter.py (teleprompter role)
+- `[Deck-Title]-WEBINAR.mp4` — > 1 MB — build_webinar_video.py (P9.6-WEBINAR-VIDEO)
 
-**PLUS** `infographic.png` (> 100 KB — infographic-checklist role) **(HARD REQUIRED)**
+**PLUS** `infographic.png` (> 100 KB — produced by slide-image-creator, PNG export by
+pptx-assembly-specialist) **(HARD REQUIRED)**
 
 `build_deck.py` does NOT produce PRESENTER-GUIDE.pdf, PRESENTERS-SPEECH.md/.pdf,
-PRESENTER-AUDIO.mp3, or infographic.png — these are REQUIRED UPSTREAM STEPS. The gate
-enforces that ALL of them exist before a run can complete successfully.
+PRESENTERS-SPEECH-FISH-TAGGED.md, PRESENTER-AUDIO.mp3, presenter-teleprompter.html,
+`[Deck-Title]-WEBINAR.mp4`, or infographic.png — these are REQUIRED UPSTREAM STEPS. The gate
+enforces that ALL of them exist before a run can complete successfully. (Two more artifacts
+always ship but are NOT in this ten-file gate — the workbook regular + fillable PDFs from
+`P8.25-WORKBOOK`; see `DEPARTMENT-COUNTS-CANONICAL.md` for the 12-shipped story.)
 
 ### DELIVERY INTERLOCK (AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE)
 
@@ -435,10 +465,11 @@ passes, the closeout DELIVERY INTERLOCK must also pass before review->Done:
 
 - **AF-DELIVER** — the presenter artifacts exist and are non-empty (PRESENTER-GUIDE.pdf,
   PRESENTERS-SPEECH.pdf, PRESENTER-AUDIO.mp3 > 500KB). See `SOP-PITCH-05-DELIVERABLE-BUNDLE.md`.
-- **AF-DH1** — the client package `delivery/[DECK_SLUG]-FINAL/` contains EXACTLY the six
-  allowed files and NO dev artifacts. Run by the Delivery Concierge at SOP 9.0.
-- **AF-DELIVERY-COMPLETE** — the consolidating Done-gate: (1) the six-file bundle is complete
-  and `deliverables.json` all-verified, (2) the infographic.png is present and verified, and
+- **AF-DH1** — the client package `delivery/[DECK_SLUG]-FINAL/` contains EXACTLY the seven
+  allowed files (`delivery_gate.py` `check_af_dh1` / `CLIENT_PACKAGE`) and NO dev artifacts.
+  Run by the Delivery Concierge at SOP 9.0.
+- **AF-DELIVERY-COMPLETE** — the consolidating Done-gate: (1) the ten-file build bundle is
+  complete and `deliverables.json` all-verified, (2) the infographic.png is present and verified, and
   (3) the GHL media upload is recorded (`pptx_ghl_media_id`) and ground-truth verified. See
   `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`.
 

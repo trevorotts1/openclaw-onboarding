@@ -34,7 +34,7 @@ Reach for this department when you want any of the following:
 - Creates and owns the STYLE BLOCK (800-1,500 characters).
 - Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
 - The front door for one specific request.
-- Owns Phase 6+ multi-destination deck delivery.
+- Owns P9-DELIVER multi-destination deck delivery.
 - First-Time-User Onboarding specialist for the Presentations department at BlackCEO.
 
 If you are not sure whether a request belongs here, ask anyway. The department
@@ -76,7 +76,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Brand Steward** | Creates and owns the STYLE BLOCK (800-1,500 characters). |
 | **Capacity Reliability Engineer** | Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has. |
 | **Content To Presentation Architect** | The front door for one specific request. |
-| **Delivery Concierge** | Owns Phase 6+ multi-destination deck delivery. |
+| **Delivery Concierge** | Owns P9-DELIVER multi-destination deck delivery. |
 | **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells. |
 | **Fish Audio / Expression Specialist** | Makes the audio demonstration of the Presenter's Speech sound like a real. |
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
@@ -86,10 +86,10 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Presenter Coach** | Owns the live-presentation preparation layer. |
 | **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per. |
 | **Presenters Speech Writer** | Writes the FULL word-for-word "here is what you say" script keyed to each slide. |
-| **Slide Copywriter** | Writes every word on every slide (Phase 1). |
-| **Slide Image Creator** | Writes one 15-element image prompt per slide (Phase 2). |
-| **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (Phase 4). |
-| **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
+| **Slide Copywriter** | Writes every word on every slide (P4-COPY). |
+| **Slide Image Creator** | Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). |
+| **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER, slide-image-creator, unreconciled). |
+| **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
@@ -120,8 +120,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Delivery Concierge**
 
-- *What it is for:* Owns Phase 6+ multi-destination deck delivery.
-- *Example request:* "Have the Delivery Concierge take this on: Owns Phase 6+ multi-destination deck delivery."
+- *What it is for:* Owns P9-DELIVER multi-destination deck delivery.
+- *Example request:* "Have the Delivery Concierge take this on: Owns P9-DELIVER multi-destination deck delivery."
 
 **First Time Onboarding Presentations**
 
@@ -170,23 +170,23 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Slide Copywriter**
 
-- *What it is for:* Writes every word on every slide (Phase 1).
-- *Example request:* "Have the Slide Copywriter take this on: Writes every word on every slide (Phase 1)."
+- *What it is for:* Writes every word on every slide (P4-COPY).
+- *Example request:* "Have the Slide Copywriter take this on: Writes every word on every slide (P4-COPY)."
 
 **Slide Image Creator**
 
-- *What it is for:* Writes one 15-element image prompt per slide (Phase 2).
-- *Example request:* "Have the Slide Image Creator take this on: Writes one 15-element image prompt per slide (Phase 2)."
+- *What it is for:* Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER).
+- *Example request:* "Have the Slide Image Creator take this on: Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER)."
 
 **Slide Submitter**
 
-- *What it is for:* Submits all prompts to Kie.ai GPT Image 2 (Phase 4).
-- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT Image 2 (Phase 4)."
+- *What it is for:* Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER, slide-image-creator, unreconciled).
+- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER."
 
 **Typography Architect**
 
-- *What it is for:* Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json.
-- *Example request:* "Have the Typography Architect take this on: Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK."
+- *What it is for:* Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json.
+- *Example request:* "Have the Typography Architect take this on: Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director."
 
 **Prompt Author**
 

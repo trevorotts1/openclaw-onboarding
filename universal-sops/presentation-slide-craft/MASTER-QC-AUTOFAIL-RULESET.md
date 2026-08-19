@@ -308,6 +308,10 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-TEXT-OVERFLOW | 5/6/Postflight | DECK | a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box — measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions | build_deck._chk_text_fits -> slide_geometry.check_text_fits. Defers when renders absent or OCR engine unavailable. |
 | AF-SPELLING | 5/6/Postflight | DECK | a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list — measured over OCR output from the baked PNG, never over the prompt | build_deck._chk_spelling -> slide_geometry.check_spelling. Defers when renders absent or OCR engine unavailable. |
 | AF-TYPE-SIZE-MEASURED | 5/6/Postflight | DECK | the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) — measured, not read off the design brief | build_deck._chk_type_size -> slide_geometry.check_type_size. Defers when renders absent or OCR engine unavailable. |
+| AF-U-SALES-BUILD | 8.75 | DECK | the upsell sales page (P-U-SALES-BUILD) was elected (pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes') but working/sales-checkout/html/sales.html is absent/empty, or working/sales-checkout/build_receipt.json carries no real preview_urls/funnel_id (placeholder or fabricated receipt) | sales_checkout_builder.verify_push_receipt (P-U-SALES-BUILD executor, corrected 2026-08-19 after C2's script landed with no --mode flag: one invocation builds both pages): asserts sales.html exists and the shared build_receipt.json is a real, non-placeholder GHL push receipt. DEFERS (exit 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'; a logged 'no' waiver (SALES_CHECKOUT_DECLINED_REASON, verbatim, non-empty) gates the phase OUT entirely — silence is never consent. |
+| AF-U-CHECKOUT-BUILD | 8.76 | DECK | the upsell checkout page (P-U-CHECKOUT-BUILD) was elected (same flag as AF-U-SALES-BUILD) but working/sales-checkout/html/checkout.html is absent/empty, or the shared build_receipt.json fails verify_push_receipt | sales_checkout_builder.verify_push_receipt (P-U-CHECKOUT-BUILD executor; re-invokes the SAME script as P-U-SALES-BUILD with --skip-design, which per its own docstring spends no kie.ai money, purely to give the checkout page its own tracked gate). DEFERS (exit 0) unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'; same waiver gate as AF-U-SALES-BUILD (one flag covers both pages). |
+| AF-U-FORM-CHECKOUT | 8.77 | DECK | STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py, independently corroborated by SALES-CHECKOUT-BUILDER-SOP.md's own audit): the checkout page's payment/lead-capture form has NO dedicated implementation yet anywhere in the department — this code currently fires on the SAME placeholder-receipt condition as AF-U-CHECKOUT-BUILD and does not yet independently prove a form/payment field was wired | sales_checkout_builder.verify_push_receipt (P-U-FORM-CHECKOUT executor, interim placeholder: re-invokes the same script with --skip-design, no kie.ai spend). DEFERS (exit 0) unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'. MUST be re-scoped to a real form/payment-field check once a follow-up unit implements SALES-CHECKOUT-BUILDER-SOP.md §4 "THE CHECKOUT FORM". |
+| AF-U-VSL-BUILD | 8.93 | DECK | the upsell VSL page (P-U-VSL-BUILD) was elected (pre_presentation_capture.WANT_VSL_PAGE == 'yes') but working/vsl/html/vsl.html is absent/empty, verify_video_dependency() cannot resolve the P9.6-produced working/delivery/{deck_slug}-WEBINAR.mp4 (AF-VSL-NO-VIDEO in the executor's own exit-code contract), or working/vsl/build_receipt.json fails verify_push_receipt | vsl_builder.verify_video_dependency + vsl_builder.verify_push_receipt (P-U-VSL-BUILD executor): resolves the REAL P9.6 webinar video path via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE (never a literal string), fails closed if absent, and asserts vsl.html + a real, non-placeholder GHL push receipt. Order 8.93, strictly after P9.6-WEBINAR-VIDEO (8.92). DEFERS (exit 0) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'; a logged 'no' waiver (VSL_PAGE_DECLINED_REASON, verbatim, non-empty) gates the phase OUT entirely. |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
@@ -329,10 +333,10 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 | `AF-F14` | Deck-quality / template-uniformity | Phase 6 | DECK | more than 2 structurally identical section-divider slides OR dividers+recap slides exceed ~20% of slide count |
 | `AF-C10` | Deck-quality / no-transcript | Phase 1Q copy QC | slide | verbatim / near-verbatim spoken-transcript line used as slide copy |
 | `AF-C11` | Deck-quality / persuasion-arc | Phase 1Q | DECK | missing one or more required arc beats (hook / stakes / promise / proof) OR no explicit CTA |
-| `AF-DH1` | Deliverable hygiene | Closeout / pre-delivery | package (DECK) | dev artifacts in the client package / file not in the allowed six-file set / presenter guide or speech as .md instead of .pdf |
+| `AF-DH1` | Deliverable hygiene | Closeout / pre-delivery | package (DECK) | dev artifacts in the client package / file not in the allowed seven-file set / presenter guide or speech as .md instead of .pdf |
 | `AF-RESEARCH-GATE` | Research mandate | Phase 1Q | DECK | Research Brief absent / `research_complete: false` / missing required categories A, C, D, F, G, H, I, K, or L (J condensed-OK) / fact-validation ledger absent when slide-bound figures exist |
 | `AF-RESEARCH-UNCITED` | Research citation enforcement | Phase -0.5/1Q | DECK | Research pack contains fewer than 8 distinct http(s) URLs (MIN_CITED_SOURCES), OR slide copy contains factual/statistical claim markers (%, $, 'research', 'study', 'studies show', 'statistics', 'data shows') with zero cited URLs in the research pack; self-asserted research_complete:true is not proof of research — real citations are required |
-| `AF-DELIVERY-COMPLETE` | Delivery interlock (DONE gate) | Closeout / review->Done | package (DECK) | the FULL presentation experience was shortcut: the six-file bundle is incomplete / the infographic checklist slide is absent from the deck / the GHL media-upload record is missing. A deck is NOT a delivered presentation until ALL THREE are true. This is the consolidating interlock that fires AFTER AF-DELIVER + AF-DH1 and blocks "Done." |
+| `AF-DELIVERY-COMPLETE` | Delivery interlock (DONE gate) | Closeout / review->Done | package (DECK) | the FULL presentation experience was shortcut: the seven-file bundle is incomplete / the infographic checklist slide is absent from the deck / the GHL media-upload record is missing. A deck is NOT a delivered presentation until ALL THREE are true. This is the consolidating interlock that fires AFTER AF-DELIVER + AF-DH1 and blocks "Done." |
 
 ---
 
@@ -434,9 +438,9 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 ### AF-DH1 -- Deliverable Hygiene (package-level, pre-delivery closeout)
 
-**Doctrine:** The client-deliverable package must contain EXACTLY the six allowed files and NOTHING ELSE. Any dev artifact, script, log, manifest, QC report, or markdown-format presenter guide reaching the client package is a hygiene failure. AF-DH1 is a file-system enumeration executed mechanically by the Delivery Concierge at SOP 9.0 (Package Assembly and Hygiene Sweep) before any upload. This gate is complementary to AF-DELIVER (which checks the three required artifacts EXIST and are non-empty); AF-DH1 checks the package contains ONLY the allowed set and NO dev artifacts. The sixth file (presenter-teleprompter.html) was ratified as a client-package member by D02 (2026-07-26); it is warn-only at rollout stage 1 and hard-required at stage 3 (see `delivery_gate.CLIENT_PACKAGE_WARN_ONLY`).
+**Doctrine:** The client-deliverable package must contain EXACTLY the seven allowed files and NOTHING ELSE. Any dev artifact, script, log, manifest, QC report, or markdown-format presenter guide reaching the client package is a hygiene failure. AF-DH1 is a file-system enumeration executed mechanically by the Delivery Concierge at SOP 9.0 (Package Assembly and Hygiene Sweep) before any upload. This gate is complementary to AF-DELIVER (which checks the three required artifacts EXIST and are non-empty); AF-DH1 checks the package contains ONLY the allowed set and NO dev artifacts. The sixth file (presenter-teleprompter.html) was ratified as a client-package member by D02 (2026-07-26); the seventh file ({deck_slug}-WEBINAR.mp4) was added by Feature L2-G (P9.6-WEBINAR-VIDEO). Both are hard-required today (stage 3): the shipped constant is `delivery_gate.CLIENT_PACKAGE_WARN_ONLY = frozenset()` (an empty set) — nothing is warn-only, and a missing teleprompter or webinar file rejects delivery exactly like every other required file.
 
-**THE SIX ALLOWED FILES:**
+**THE SEVEN ALLOWED FILES:**
 ```
 [DECK_SLUG]-FINAL/
   [Deck-Title]-FINAL.pptx          # assembled deck
@@ -445,6 +449,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
   PRESENTERS-SPEECH.pdf             # rendered from working/deliverables/PRESENTERS-SPEECH.md
   PRESENTER-AUDIO.mp3              # Fish Audio S2 render
   presenter-teleprompter.html       # teleprompter HTML (D02, ratified 2026-07-26)
+  [DECK_SLUG]-WEBINAR.mp4           # webinar video reference copy (Feature L2-G, P9.6-WEBINAR-VIDEO)
 ```
 
 **Blocklist (any match = auto-fail):**
@@ -453,13 +458,13 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 - Directories present in the package: `working/`, `prompts/`, `images/`, `renders/`, `qc/`, `scripts/`, `checkpoints/`
 - Any presenter guide or speech as `.md` (must be `.pdf`)
 
-**Whitelist (primary check):** Every file in the package must match one of the six allowed names. The whitelist is the primary gate; the blocklist is belt-and-suspenders.
+**Whitelist (primary check):** Every file in the package must match one of the seven allowed names. The whitelist is the primary gate; the blocklist is belt-and-suspenders.
 
-**Producing-role requirement (Delivery Concierge):** SOP 9.0 (Package Assembly and Hygiene Sweep) creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the six allowed files into it, runs AF-DH1, and only then proceeds to SOP 9.1.
+**Producing-role requirement (Delivery Concierge):** SOP 9.0 (Package Assembly and Hygiene Sweep) creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the seven allowed files into it, runs AF-DH1, and only then proceeds to SOP 9.1.
 
 **Producing-role requirement (PPTX Assembly Specialist):** The assembly script writes the PPTX to `output/[DECK_SLUG].pptx` and ALL intermediates under `working/`. The assembly script at `working/scripts/assemble_pptx.py` must NEVER hard-code the client delivery folder (such as `BUNDLE_DIR = ~/Downloads/<DECK>`) as the working directory or the output path. Dev artifacts do not appear in `output/` or `delivery/` under any circumstance.
 
-**Failure message:** `AF-DH1: DELIVERY BLOCKED -- package hygiene fail. {details: specific file or directory that triggered the fail}. The client package must contain exactly the six allowed files. Remove all dev artifacts before delivery.`
+**Failure message:** `AF-DH1: DELIVERY BLOCKED -- package hygiene fail. {details: specific file or directory that triggered the fail}. The client package must contain exactly the seven allowed files. Remove all dev artifacts before delivery.`
 
 ---
 
@@ -469,34 +474,35 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 **THE THREE CONDITIONS (all must be TRUE; any false = block "Done"):**
 
-1. **SIX-FILE BUNDLE COMPLETE.** The clean package `delivery/[DECK_SLUG]-FINAL/` exists and contains EXACTLY these six files, each present and non-empty:
+1. **SEVEN-FILE BUNDLE COMPLETE.** The clean package `delivery/[DECK_SLUG]-FINAL/` exists and contains EXACTLY these seven files, each present and non-empty:
    ```
    [Deck-Title]-FINAL.pptx          # assembled deck (the build_deck.py output, post-processed)
    [Deck-Title]-FINAL.pdf           # portable-document export of the deck
    PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md (PDF, never .md)
    PRESENTERS-SPEECH.pdf             # rendered from working/deliverables/PRESENTERS-SPEECH.md (PDF, never .md)
-   PRESENTER-AUDIO.mp3              # Fish Audio S2 full voiced reading (>=100KB; never the stub silence file)
-   presenter-teleprompter.html       # teleprompter HTML (D02, ratified 2026-07-26; warn-only at rollout stage 1)
+   PRESENTER-AUDIO.mp3              # Fish Audio S2 full voiced reading (>=500KB; never the stub silence file)
+   presenter-teleprompter.html       # teleprompter HTML (D02, ratified 2026-07-26; hard-required, stage 3)
+   [DECK_SLUG]-WEBINAR.mp4           # webinar video reference copy (Feature L2-G, P9.6-WEBINAR-VIDEO; hard-required, stage 3)
    ```
-   This re-asserts AF-DELIVER (the three presenter artifacts EXIST) and AF-DH1 (ONLY the six exist) as the bundle precondition of "Done."
+   This re-asserts AF-DELIVER (the three presenter artifacts EXIST) and AF-DH1 (ONLY the seven exist) as the bundle precondition of "Done."
 
 2. **INFOGRAPHIC CHECKLIST SLIDE IN THE DECK.** The assembled deck contains the infographic checklist slide (the at-a-glance "what you received / what to do next" visual recap). A deck whose `.pptx` ships without the infographic checklist slide is an incomplete experience and fails this gate. Detection: assert the infographic checklist slide is present in the assembled deck (slide-spec tag / `slides_copy.md` arc tag for the infographic recap beat, cross-checked against the rendered deck).
 
 3. **GHL MEDIA-UPLOAD RECORDED.** `working/checkpoints/media_library.json` carries a live GHL media-upload record for the final deck: `pptx_ghl_media_id` (non-null), `ghl_folder_id`, and `pptx_ghl_remote_name`, and `delivery_plan.json` shows the GHL destination at `"status": "verified"` (a live GHL API confirmation per Delivery Concierge SOP 9.4 -- a self-report is not sufficient). A deck with no GHL media-upload record is NOT done.
 
 **Producing-role requirements:**
-- **Director of Presentations:** owns the DELIVERY INTERLOCK. The Director MUST run the Director/Delivery flow end-to-end -- the Presenters Guide Specialist (guide PDF), the Presenters Speech Writer (speech PDF), the Audio Demonstration Specialist (PRESENTER-AUDIO.mp3), the PPTX Assembly Specialist (deck PDF export + infographic checklist slide), and the Media Librarian / Delivery Concierge (GHL upload + six-file package). The Director may NOT mark a task Done, register a final deliverable, or notify the client off a bare `build_deck.py` `.pptx`.
+- **Director of Presentations:** owns the DELIVERY INTERLOCK. The Director MUST run the Director/Delivery flow end-to-end -- the Presenters Guide Specialist (guide PDF), the Presenters Speech Writer (speech PDF), the Audio Demonstration Specialist (PRESENTER-AUDIO.mp3), the PPTX Assembly Specialist (deck PDF export + infographic checklist slide), and the Media Librarian / Delivery Concierge (GHL upload + seven-file package). The Director may NOT mark a task Done, register a final deliverable, or notify the client off a bare `build_deck.py` `.pptx`.
 - **Delivery Concierge:** SOP 9.0 (AF-DH1 hygiene) -> 9.2 (GHL upload) -> 9.4 (ground-truth verification) must complete; the GHL `pptx_ghl_media_id` and the verified status are the inputs this gate reads.
 - **PPTX Assembly Specialist:** the deck must include the infographic checklist slide and a non-empty PDF export must exist before this gate can pass.
 
 **Detection (closeout, mechanical):**
-1. `delivery/[DECK_SLUG]-FINAL/` exists and the six whitelisted files are each present and non-empty (PRESENTER-AUDIO.mp3 >=100KB). [Condition 1]
+1. `delivery/[DECK_SLUG]-FINAL/` exists and the seven whitelisted files are each present and non-empty (PRESENTER-AUDIO.mp3 >=500KB). [Condition 1]
 2. The infographic checklist slide is present in the assembled deck. [Condition 2]
 3. `media_library.json.pptx_ghl_media_id` is non-null AND `delivery_plan.json` GHL destination `"status": "verified"`. [Condition 3]
 
 **Failure message:** `AF-DELIVERY-COMPLETE: DONE BLOCKED -- the full presentation experience is incomplete. {details: which of the three conditions failed -- missing bundle file(s) / infographic checklist slide absent from deck / GHL media-upload record missing or unverified}. A rendered .pptx is NOT a delivered presentation. Run the Director/Delivery flow (guide + speech + audio + PDF + infographic + GHL upload) before "Done." build_deck.py is only the Phase-4 renderer.`
 
-**Command Center mirror:** This interlock is enforced independently by the Command Center QC scorer as **AF-DELIVERY-COMPLETE** (the extension of the existing AF-PIPELINE-COMPLETE gate). The CC scorer blocks review->Done when the six deliverable files, the infographic checklist slide, or the GHL media-upload record are absent. See `qc-scorer.ts` and the repo-update spec.
+**Command Center mirror:** This interlock is enforced independently by the Command Center QC scorer as **AF-DELIVERY-COMPLETE** (the extension of the existing AF-PIPELINE-COMPLETE gate). The CC scorer blocks review->Done when the seven deliverable files, the infographic checklist slide, or the GHL media-upload record are absent. See `qc-scorer.ts` and the repo-update spec.
 
 ---
 

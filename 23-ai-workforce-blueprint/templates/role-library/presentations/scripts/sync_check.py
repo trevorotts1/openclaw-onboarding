@@ -374,7 +374,14 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # the real on-disk file, so this exclusion was dead code and every
                   # deployed dept with governing-personas.md still false-DRIFTed on
                   # A5. Fixed to the actual stem case.
-                  "ROSTER", "governing-personas"}
+                  "ROSTER", "governing-personas",
+                  # DEPARTMENT-COUNTS-CANONICAL.md is a canonical reference page for
+                  # this department's deliverable/step counts (single source of truth
+                  # that other docs link to) — department scaffolding, not a role. It
+                  # ships flat at the department root like the other _NON_ROLE_DOCS
+                  # entries above, so without this exclusion A5 false-flags it as an
+                  # undeclared role (Unit A10, RUN 2).
+                  "DEPARTMENT-COUNTS-CANONICAL"}
 
 
 def scan_roles_and_sops():

@@ -255,6 +255,7 @@ def _check_module_constants_exist():
             "BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS", "how-to-use-this-department",
             "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER",
             "ROSTER", "governing-personas",
+            "DEPARTMENT-COUNTS-CANONICAL",
         }
         if sync_check._NON_ROLE_DOCS != expected_docs:
             fails.append(f"CONST: _NON_ROLE_DOCS is {sync_check._NON_ROLE_DOCS}, expected {expected_docs}")

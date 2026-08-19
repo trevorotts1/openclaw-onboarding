@@ -268,6 +268,110 @@ BUNDLE_COMPLETE_FILENAME = "bundle_complete.json"
 # PIPELINE-MANIFEST.autofails so sync_check's C1 registry check resolves it.
 AF_BUNDLE_INCOMPLETE = "AF-BUNDLE-INCOMPLETE"
 
+# ---------------------------------------------------------------------------
+# ARTIFACTS PRODUCED AND PHASE-GATED, BUT DELIBERATELY OUTSIDE THIS 10-ITEM
+# CANONICAL BUNDLE (B1, 2026-08-19 — see CONTROL/FABLE-TRUTH.md §2 and
+# CONTROL/MASTER-WORK-ORDER-20260818.md Wave B, unit B1).
+#
+# The B1 work order gave two options for the two workbook PDFs (and, by the
+# same reasoning, PRESENTER-AUDIO-WEBINAR.mp3): (1) fold them into
+# DELIVERABLE_AUDIT_SPEC as a documented 12, or (2) — if that breaks the
+# 10-file bundle gate — leave DELIVERABLE_AUDIT_SPEC at 10 and record HERE,
+# with code references, why each artifact is gated separately.
+#
+# EVIDENCE FOR (2), gathered 2026-08-19 by reading every consumer + test below:
+#   * REQUIRED_KEYS (derived from DELIVERABLE_AUDIT_SPEC above) is asserted
+#     byte-for-byte equal to PIPELINE-MANIFEST.json's `build_bundle_files`
+#     (10 keys, manifest_version 50, universal-sops/presentation-slide-craft/
+#     PIPELINE-MANIFEST.json) by FOUR independent hard-pinned checks:
+#       - tests/test_deliverables_single_source.py::test_canonical_spec_has_ten_unique_keys
+#         (asserts len(DELIVERABLE_AUDIT_SPEC) == 10 and DELIVERABLE_COUNT == 10)
+#       - tests/test_deliverables_single_source.py::test_canonical_spec_matches_pipeline_manifest
+#         (asserts sorted(manifest.build_bundle_files) == sorted(REQUIRED_KEYS))
+#       - tests/test_fix8_bundle_complete.py::test_full_bundle_passes_and_writes_gate
+#         (asserts bundle_complete.json's deliverable_count == len(REQUIRED_KEYS) == 10)
+#       - tests/test_fix8_bundle_complete.py::test_manifest_lockstep
+#         (same manifest<->REQUIRED_KEYS equality)
+#     PLUS fix_bundle_complete.py's own `_selftest()` CASE E (manifest cross-check,
+#     fix_bundle_complete.py lines ~206-227).
+#   * PIPELINE-MANIFEST.json is hash-registered in three registries (the manifest
+#     file itself, MANIFEST-SOURCE.txt, and universal-sops/_content-manifest.json)
+#     and may only be changed via the full scripts/bump-version.sh +
+#     scripts/version-markers.json lockstep — out of scope for this unit; only
+#     the orchestrator runs that lockstep.
+#   * Therefore: adding these keys to DELIVERABLE_AUDIT_SPEC WITHOUT the manifest
+#     lockstep would immediately break all four tests above plus the selftest.
+#     Option (2) is the correct, non-breaking choice until the lockstep runs.
+#     (This B1 unit prepared, but did NOT apply, the manifest patch that would
+#     be needed to promote these to Option (1) — see the B1 unit report.)
+#
+# THE TWO WORKBOOK PDFs — {deck_slug}-WORKBOOK.pdf, {deck_slug}-WORKBOOK-FILLABLE.pdf
+#   Producing phase:   P8.25-WORKBOOK (PIPELINE-MANIFEST.json, order 8.25)
+#   Producing script:  scripts/workbook_builder.py (+ scripts/workbook_mapper.py),
+#                       invoked via `presentation-canonical-entry.sh --resume`
+#                       per the manifest's executor.cmd for P8.25-WORKBOOK.
+#   Gate codes:         AF-WORKBOOK-PROMPT-NO-CONTENT, AF-WORKBOOK-EMPTY,
+#                       AF-WORKBOOK-BOTH (workbook_builder.py's own dual-PDF
+#                       verify path — a stricter, dedicated gate than this
+#                       bundle's generic non-empty check).
+#   SOP:                sops/WORKBOOK-BUILDER-SOP.md §0 ("TWO PDFs ship,
+#                       always") and §2/§8 (both PDFs uploaded to the client's
+#                       GHL media library).
+#   Why gated separately: an always-shipped client deliverable with its own
+#   dedicated, stricter dual-PDF gate (AF-WORKBOOK-BOTH) — folding it into
+#   this generic bundle spec would duplicate, not strengthen, that gate, and
+#   (per the evidence above) would desync REQUIRED_KEYS from the manifest's
+#   build_bundle_files without the version lockstep.
+#
+# PRESENTER-AUDIO-WEBINAR.mp3 — the webinarized/host-framed speech audio
+#   Producing phase:   P9-SPEECH-WEBINAR-INTRO (PIPELINE-MANIFEST.json, order 8.54)
+#   Producing script:  scripts/synthesize_full_speech.py --webinar-intro-outro
+#                       (manifest executor.cmd for P9-SPEECH-WEBINAR-INTRO)
+#   Gate code:          AF-WEBINAR-INTRO
+#   SOP:                sops/WEBINAR-BUILDER-SOP.md §1 (consumed as an input
+#                       to P9.6-WEBINAR-VIDEO) and
+#                       sops/audio-demonstration-specialist-sops.md SOP 9.2.
+#   Why gated separately: a REQUIRED INTERMEDIATE, not a standalone client
+#   handoff — it feeds P9.6-WEBINAR-VIDEO's `{deck_slug}-WEBINAR.mp4`, which
+#   IS the canonical `webinar_mp4` key already in DELIVERABLE_AUDIT_SPEC above.
+#   The rendered webinar mp4 is the client-facing artifact; the intro-framed
+#   audio that fed it is not separately delivered, so it does not belong in a
+#   *client deliverable* whitelist — but it IS produced and phase-gated (never
+#   silently dropped), which is the fact this note exists to make discoverable.
+#
+# Pinned by tests/test_deliverables_gated_separately.py — that test fails if
+# this constant, DELIVERABLE_COUNT, or REQUIRED_KEYS drifts from what B1 left
+# them at.
+# ---------------------------------------------------------------------------
+DELIVERABLES_GATED_SEPARATELY = {
+    "workbook_pdf": {
+        "filenames": ["{deck_slug}-WORKBOOK.pdf", "{deck_slug}-WORKBOOK-FILLABLE.pdf"],
+        "producing_phase": "P8.25-WORKBOOK",
+        "producing_script": "scripts/workbook_builder.py",
+        "gate_codes": ["AF-WORKBOOK-PROMPT-NO-CONTENT", "AF-WORKBOOK-EMPTY", "AF-WORKBOOK-BOTH"],
+        "sop": "sops/WORKBOOK-BUILDER-SOP.md §0, §2, §8",
+        "reason": (
+            "always-ship client deliverable with its own dual-PDF gate "
+            "(AF-WORKBOOK-BOTH); not folded into the 10-item bundle without "
+            "the manifest version lockstep (see note above)"
+        ),
+    },
+    "presenter_audio_webinar_mp3": {
+        "filenames": ["PRESENTER-AUDIO-WEBINAR.mp3"],
+        "producing_phase": "P9-SPEECH-WEBINAR-INTRO",
+        "producing_script": "scripts/synthesize_full_speech.py --webinar-intro-outro",
+        "gate_codes": ["AF-WEBINAR-INTRO"],
+        "sop": (
+            "sops/WEBINAR-BUILDER-SOP.md §1, "
+            "sops/audio-demonstration-specialist-sops.md SOP 9.2"
+        ),
+        "reason": (
+            "required intermediate feeding P9.6-WEBINAR-VIDEO's webinar_mp4 "
+            "(the actual client deliverable); not itself a separate client handoff"
+        ),
+    },
+}
+
 
 def _expand_filename(template: str, deck_slug: str) -> str:
     """Expand a {deck_slug}-templated filename for a specific deck_slug."""

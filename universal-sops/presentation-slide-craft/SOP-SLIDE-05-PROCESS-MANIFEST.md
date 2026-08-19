@@ -57,11 +57,11 @@ Each phase, as it finishes, APPENDS exactly one object to `phases[]`:
 ```
 
 Field rules:
-- **phase** (string): the exact `phases[].id` string from `PIPELINE-MANIFEST.json` (e.g. `P-0.5-RESEARCH`, `P4-COPY`, `P1Q-COPY-QC`, `P8-ASSEMBLE`, `P9-DELIVER`) — never a short code. This is the same id `run_signature_deck.py` writes into `phase_attestations[]` (Section 7 below); Section 4's finalization list carries the current full 36-id registry. Using the manifest's own id, and only that id, is what makes SOP-SLIDE-06's "same phase ids" claim true instead of aspirational.
+- **phase** (string): the exact `phases[].id` string from `PIPELINE-MANIFEST.json` (e.g. `P-0.5-RESEARCH`, `P4-COPY`, `P1Q-COPY-QC`, `P8-ASSEMBLE`, `P9-DELIVER`) — never a short code. This is the same id `run_signature_deck.py` writes into `phase_attestations[]` (Section 7 below); Section 4's finalization list carries the current full 40-id registry. Using the manifest's own id, and only that id, is what makes SOP-SLIDE-06's "same phase ids" claim true instead of aspirational.
 - **role** (string): the owning role that ran the phase (spell it out, no acronyms).
 - **artifact_path** (string): the primary artifact this phase produced, relative to the run dir (e.g. `working/copy/slides_copy.md`, `working/renders/`, the assembled `.pptx`). For the render/assembly phases this points at the canonical `scripts/build_deck.py` invocation and its outputs.
 - **ran** (bool): true only if the phase actually executed. A phase that was skipped either has no entry or `ran: false` (both fail the corresponding gate).
-- **qc_score** (number): the phase's QC score where a QC gate applies (Phase 1Q, 3, 5, 6); use `null` for non-QC phases.
+- **qc_score** (number): the phase's QC score where a QC gate applies (`P1Q-COPY-QC`, `P-TYPO-QC`, `P-PROMPT-QC`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P-SPEECH-QC`); use `null` for non-QC phases.
 - **qc_pass** (bool): whether the phase's gate passed (>= 8.5 and no auto-fail). `null` where no gate applies.
 - **gate_codes_checked** (array of string): the exact auto-fail codes this phase evaluated. The render phases MUST include the render gate codes (AF-I*, AF-PLACEHOLDER, AF-HOOK render codes) so AF-IMAGE-QC-VISION can confirm the vision read happened.
 - **timestamp** (string, ISO-8601 UTC): when the entry was appended.
@@ -75,10 +75,10 @@ These are the assertions the MASTER-QC-AUTOFAIL-RULESET Section 2.5/2.6 gates ma
 | Gate | Reads | Fails when |
 |---|---|---|
 | AF-COVERAGE-1 | `source_slide_count`, assembled page count | `final_slide_count < source_slide_count` (Mode B add-only; Mode A `source==0` always passes) |
-| AF-RENDERER | the Phase-4/6 entry: `role == build_deck`, `ran == true`, not adhoc | no canonical-renderer entry, or `build_deck.py` ran with `--adhoc-no-process` on a real deliverable |
+| AF-RENDERER | the P4-RENDER + P8-ASSEMBLE entries: `role == build_deck`, `ran == true`, not adhoc | no canonical-renderer entry, or `build_deck.py` ran with `--adhoc-no-process` on a real deliverable |
 | AF-MODEL-SOVEREIGNTY | the Phase-4 generation entry's model id vs `model_manifest` | a non-manifest model id recorded |
-| AF-IMAGE-QC-VISION | the Phase-5 image-QC entry: `ran == true` + render `gate_codes_checked` | no Phase-5 image-QC entry, or it did not record a multimodal vision read of every rendered slide |
-| AF-CONVERTER-PARITY | the assembly-phase page count vs count of Phase-5-passed `slide-NN.png` | assembled PPTX page count != QC-passed render count |
+| AF-IMAGE-QC-VISION | the P-IMAGE-QC image-QC entry: `ran == true` + render `gate_codes_checked` | no P-IMAGE-QC image-QC entry, or it did not record a multimodal vision read of every rendered slide |
+| AF-CONVERTER-PARITY | the assembly-phase page count vs count of P-IMAGE-QC-passed `slide-NN.png` | assembled PPTX page count != QC-passed render count |
 
 There is no `render_manifest.json`, no `render_deck.py`, and no `vision_qc_log.json` in this system. Every renderer/coverage assertion reads `working/checkpoints/process_manifest.json` and only it.
 
@@ -87,7 +87,7 @@ There is no `render_manifest.json`, no `render_deck.py`, and no `vision_qc_log.j
 ## 4. FINALIZATION (closeout)
 
 At closeout (after `P-QC-AGGREGATE`'s final deck QC passes), the Director:
-1. Confirms every phase this run actually dispatched has an entry with `ran: true` — every `phases[].id` in `PIPELINE-MANIFEST.json` MINUS any that correctly DEFERRED per its own preflight (`P-CONVERTER` off the content-first path; `P-SP-INTAKE` / `P-SP-INTAKE-TRACE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE` on a non-signature deck; `P-SPEECH-QC` when no speech was produced). The current full registry (v50, 36 phases, in `order`): `P-CONVERTER`, `P-0.5-RESEARCH`, `P0A-INTAKE`, `P-SP-CLAIM`, `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P0B-PRIORITY`, `P3-ARC`, `P-3.5-RESEARCH-MAP`, `P4-COPY`, `P-SP-STRUCTURE`, `P-SP-P3-HYGIENE`, `P1Q-COPY-QC`, `PF-DESIGN`, `P-TYPO-QC`, `P4-PROMPT`, `P-PROMPT-QC`, `P-STYLE-PREVIEW`, `P4-RENDER`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P8-ASSEMBLE`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.25-WORKBOOK`, `P9-SPEECH`, `P8.4-FISH-TAG`, `P9-SPEECH-WEBINAR-INTRO`, `P9.1-SPEECH-PDF`, `P-SPEECH-QC`, `P-QC-AGGREGATE`, `P9.5-NOTES-SYNC`, `P9.2-GHL-UPLOAD`, `P9.6-WEBINAR-VIDEO`, `P7-TELEPROMPTER`, `P9-DELIVER`. Kept in lockstep with the manifest by GATE 4 of `scripts/ci/presentations-drift-gates.sh` (fails CI if this list and the manifest diverge).
+1. Confirms every phase this run actually dispatched has an entry with `ran: true` — every `phases[].id` in `PIPELINE-MANIFEST.json` MINUS any that correctly DEFERRED per its own preflight (`P-CONVERTER` off the content-first path; `P-SP-INTAKE` / `P-SP-INTAKE-TRACE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE` on a non-signature deck; `P-SPEECH-QC` when no speech was produced; `P-U-SALES-BUILD` / `P-U-CHECKOUT-BUILD` / `P-U-FORM-CHECKOUT` when the client declines the sales/checkout upsell; `P-U-VSL-BUILD` when the client declines the VSL upsell). The current full registry (v51, 40 phases, in `order`): `P-CONVERTER`, `P-0.5-RESEARCH`, `P0A-INTAKE`, `P-SP-CLAIM`, `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P0B-PRIORITY`, `P3-ARC`, `P-3.5-RESEARCH-MAP`, `P4-COPY`, `P-SP-STRUCTURE`, `P-SP-P3-HYGIENE`, `P1Q-COPY-QC`, `PF-DESIGN`, `P-TYPO-QC`, `P4-PROMPT`, `P-PROMPT-QC`, `P-STYLE-PREVIEW`, `P4-RENDER`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P8-ASSEMBLE`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.25-WORKBOOK`, `P9-SPEECH`, `P8.4-FISH-TAG`, `P9-SPEECH-WEBINAR-INTRO`, `P9.1-SPEECH-PDF`, `P-SPEECH-QC`, `P-QC-AGGREGATE`, `P9.5-NOTES-SYNC`, `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT`, `P9.2-GHL-UPLOAD`, `P9.6-WEBINAR-VIDEO`, `P-U-VSL-BUILD`, `P7-TELEPROMPTER`, `P9-DELIVER`. Kept in lockstep with the manifest by GATE 4 of `scripts/ci/presentations-drift-gates.sh` (fails CI if this list and the manifest diverge).
 2. Confirms every QC phase (`P1Q-COPY-QC`, `P-TYPO-QC`, `P-PROMPT-QC`, `P-IMAGE-QC`, `P-SHIFT-QC`, and `P-SPEECH-QC` when a speech was produced) has `qc_pass: true`, and that `P-QC-AGGREGATE`'s combined score reflects all of them.
 3. Confirms the render/assembly entries (`P4-RENDER`, `P8-ASSEMBLE`) name the canonical `scripts/build_deck.py` and a manifest-compliant model.
 4. Sets `finalized: true` and `finalized_at` to the closeout timestamp.

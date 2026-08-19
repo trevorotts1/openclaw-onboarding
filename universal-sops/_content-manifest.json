@@ -1,16 +1,16 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-19T00:34:33Z",
+  "generated_at": "2026-08-19T15:28:06Z",
   "file_count": 112,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "ab426f2c7ba20b8083605fd1b94dc154981d9b97a94388240ea4e4c805604dfb",
-      "bytes": 29028
+      "sha256": "8fb26b6e3c559685d17ec9f88ceede75d8423c8236c44bbc93d47c07fd8837ef",
+      "bytes": 31629
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
-      "sha256": "47844e7724b1258103127ad091431db471ac35b310bcb888ee153e6aaa924141",
-      "bytes": 13052
+      "sha256": "ae0ea539946e23a2a0fd774d06b4e892521211e194954c412d2d14a5ff4679a6",
+      "bytes": 13752
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
@@ -297,12 +297,12 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "5274749b6c3ac439fa2550472311ba673f09a46bb68e2cf9878e54a889223ad1",
-      "bytes": 116723
+      "sha256": "e51710c9f7114033f1582ff098c3631c8146bcff09cc84d0d780a1aa49be4c6c",
+      "bytes": 120524
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "8a35040966191251818bc19a744b1f65e8bd81456088092fe8d77aef5e0a3beb",
-      "bytes": 153445
+      "sha256": "d5ec1b35066b1357f3b64fd724f264078f288d164fa6a833b3b75ef5460b0db0",
+      "bytes": 163401
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -333,8 +333,8 @@
       "bytes": 11397
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "0cf22e68daf6632b62d7a1e666a6dad9e526f0e613f3c21cc5b0a586d11515ae",
-      "bytes": 13317
+      "sha256": "573b1bc72d2dd622ae0ffbf3acc5ad3988b274f2a615155fe87aa07e6eda2846",
+      "bytes": 13660
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",

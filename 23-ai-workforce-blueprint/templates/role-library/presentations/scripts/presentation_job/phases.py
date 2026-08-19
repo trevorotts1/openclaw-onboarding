@@ -36,6 +36,70 @@ except ImportError:  # pragma: no cover — module ships beside presentation_job
 class PhaseExecutorContractError(RuntimeError):
     """U069: a phase's executor.cmd is not a parseable argument vector."""
 
+
+# ---------------------------------------------------------------------------
+# B2b (fix/engine-client-report-unformatted -- MASTER-WORK-ORDER-20260818 Wave
+# B, unit B2b). This engine (presentation_job.py) is the path
+# presentation-canonical-entry.sh actually dispatches to production -- it
+# prefers ENGINE_ENTRY (this package) over the legacy run_signature_deck.py
+# runner and only falls back to the runner when the engine component is
+# absent from the box, which it is not on the live box. B2 fixed
+# run_signature_deck.py's client-facing step count/messages, but that runner
+# is not the code path production dispatches through, so B2's fix never
+# reached a client.
+#
+# The defect here was worse than the one B2 fixed: run_phase() (below) read
+# phase.client_report["start_template"] / ["done_template"] straight off the
+# manifest -- "Step {k} of {N} -- {name} -- starting{eta}" -- and handed that
+# STRING, UNFORMATTED, to self.report.to_requester(). A client received the
+# literal text "Step {k} of {N} -- ... -- starting{eta}", braces and all,
+# never a real step number. Verified: PIPELINE-MANIFEST.json v50 declares
+# this exact template on all 36 phases, and no call to .format()/format_map()
+# existed anywhere in this file before this fix.
+#
+# _client_deck_shape / _client_visible_phases / _client_phase_index below
+# mirror run_signature_deck.py's B2 fix of the SAME name 1:1: SAME phase-id
+# sets (_SP_ONLY_PHASE_IDS, _CONVERTER_ONLY_PHASE_IDS -- P-SP-CLAIM is the
+# router and is NEVER filtered), SAME fail-safe direction (an unknown
+# deck-shape signal WIDENS the visible/N count to the full 36-phase
+# superset, never narrows it to a guessed smaller number). Unlike B2 (which
+# discards the manifest's own client_report templates and hardcodes its own
+# message string in emit_client_report()), _render_client_report_msg below
+# ACTUALLY formats the manifest-declared template -- client_report is a real
+# per-phase manifest field this engine is supposed to honor, not dead
+# configuration to route around, and Phase.name (manifest.py) now parses the
+# {name} token's source so it can be substituted too, not just {k}/{N}.
+#
+# None of this touches self.manifest.phases, the phase walk/dispatch loop,
+# the DAG, declared_plan.json, or the 36-phase attestation/certificate chain
+# -- display-only, exactly like B2's constraint on the runner side.
+_SP_ONLY_PHASE_IDS = frozenset({
+    "P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
+})
+_CONVERTER_ONLY_PHASE_IDS = frozenset({"P-CONVERTER"})
+# Wave C unit C1 (manifest_version 51) -- the upsell branch. Same fail-safe shape as the
+# two sets above: filtered out ONLY when the electing intake flag is POSITIVELY known to be
+# something other than "yes"; an absent/unknown flag WIDENS the visible count, never narrows
+# it. P-U-FORM-CHECKOUT rides the same WANT_SALES_CHECKOUT flag as P-U-SALES-BUILD /
+# P-U-CHECKOUT-BUILD -- intake/upsell-questions.json has one combined yes/no for the pair.
+_SALES_CHECKOUT_ONLY_PHASE_IDS = frozenset({
+    "P-U-SALES-BUILD", "P-U-CHECKOUT-BUILD", "P-U-FORM-CHECKOUT",
+})
+_VSL_ONLY_PHASE_IDS = frozenset({"P-U-VSL-BUILD"})
+
+
+class _SafeFormatDict(dict):
+    """str.format_map() helper: a {token} in a manifest-authored client_report
+    template that this dict does not recognize resolves to "" instead of
+    raising KeyError (which would abort phase reporting entirely) or leaving
+    the literal '{token}' in the client-facing message (the exact defect this
+    fix exists to close). Only {k}/{N}/{name}/{eta} are ever populated today;
+    this is forward defense for a future manifest edit that adds a new token
+    to the template without a matching code change."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
 # ---------------------------------------------------------------------------
 # The engine.
 # ---------------------------------------------------------------------------
@@ -143,6 +207,123 @@ class Engine:
         val = obj.get("creation_mode")
         return val if isinstance(val, str) and val else None
 
+    # -- B2b: CLIENT-FACING deck-shape + step-count/message rendering -------
+    def _client_deck_shape(self) -> Dict[str, Any]:
+        """Best-effort read of intake.json's deck-shape signals for
+        CLIENT-FACING messages/counts ONLY (mirrors
+        run_signature_deck._client_deck_shape 1:1). `*_known` is False
+        whenever this run's intake.json does not yet declare that signal;
+        callers MUST treat known=False as "do not filter on this signal" --
+        never guess (same fail-safe rule as _deck_creation_mode above)."""
+        p = self.run_dir / "working" / "copy" / "intake.json"
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            obj = {}
+        if not isinstance(obj, dict):
+            obj = {}
+        deck_type = str(obj.get("deck_type") or "").strip()
+        creation_mode = str(obj.get("creation_mode") or "").strip()
+        pre_capture = obj.get("pre_presentation_capture")
+        if not isinstance(pre_capture, dict):
+            pre_capture = {}
+        sales_checkout = str(pre_capture.get("WANT_SALES_CHECKOUT") or "").strip().lower()
+        vsl_page = str(pre_capture.get("WANT_VSL_PAGE") or "").strip().lower()
+        return {
+            "deck_type_known": bool(deck_type),
+            "is_signature": deck_type == "signature_presentation",
+            "creation_mode_known": bool(creation_mode),
+            "is_content_first": creation_mode in self._CONTENT_FIRST_CREATION_MODES,
+            "sales_checkout_known": bool(sales_checkout),
+            "wants_sales_checkout": sales_checkout == "yes",
+            "vsl_known": bool(vsl_page),
+            "wants_vsl": vsl_page == "yes",
+        }
+
+    def _client_visible_phases(self, phases: List[Phase]) -> List[Phase]:
+        """The subset of `phases` (kept in manifest `order`) a CLIENT should
+        be told about for THIS run's deck shape -- filters out only the
+        phases that do no real work on this deck (defer-unless-applicable,
+        per FABLE-TRUTH SS1 / MASTER-WORK-ORDER B2/B2b). Returns the full
+        input unchanged whenever a signal is not yet knowable (fail-safe).
+
+        Does NOT change `phases` itself, the attestation chain, the DAG, or
+        anything the phase walk/dispatch loop iterates -- this is
+        display-only, consumed solely by the ack message and
+        _render_client_report_msg's per-phase {k}/{N}."""
+        shape = self._client_deck_shape()
+        ordered = sorted(phases, key=lambda p: p.order)
+        visible = []
+        for ph in ordered:
+            if ph.id in _CONVERTER_ONLY_PHASE_IDS:
+                if shape["creation_mode_known"] and not shape["is_content_first"]:
+                    continue  # positively known non-content-first deck: no-ops
+            elif ph.id in _SP_ONLY_PHASE_IDS:
+                if shape["deck_type_known"] and not shape["is_signature"]:
+                    continue  # positively known non-signature deck: no-ops
+            elif ph.id in _SALES_CHECKOUT_ONLY_PHASE_IDS:
+                if shape["sales_checkout_known"] and not shape["wants_sales_checkout"]:
+                    continue  # positively known decline: no-ops
+            elif ph.id in _VSL_ONLY_PHASE_IDS:
+                if shape["vsl_known"] and not shape["wants_vsl"]:
+                    continue  # positively known decline: no-ops
+            visible.append(ph)
+        return visible
+
+    def _client_phase_index(self, phase_id: str,
+                            phases: List[Phase]) -> Tuple[Optional[int], int]:
+        """CLIENT-FACING (k, N) for phase_id against THIS deck's filtered
+        client-visible phase list. k is None when phase_id is being
+        walked/attested (the 36-phase enforcement never skips it) but is NOT
+        one of the N steps this deck's client was told to expect -- e.g.
+        P-CONVERTER dispatched on a non-content-conversion deck, or an
+        SP-only phase on a non-signature deck. N is always the filtered
+        count (len(_client_visible_phases(...)))."""
+        visible = self._client_visible_phases(phases)
+        for i, ph in enumerate(visible):
+            if ph.id == phase_id:
+                return i + 1, len(visible)
+        return None, len(visible)
+
+    def _render_client_report_msg(self, phase: Phase, kind: str) -> str:
+        """Render phase.client_report's start/done template for the client,
+        substituting {k}/{N}/{name}/{eta} for real -- NEVER hands a manifest
+        template to the client with its braces unformatted (see the B2b
+        block above PhaseExecutorContractError). kind in {"start", "done"}.
+
+        Fails safe in three independent ways:
+          1. deck shape unknown  -> _client_visible_phases widens N to the
+             full 36-phase superset instead of asserting a smaller number.
+          2. phase_id not one of this deck's visible steps (k is None) ->
+             honest "not part of the N-step plan" wording, never a
+             fabricated step number (same branch run_signature_deck.py's
+             emit_client_report uses for the identical case).
+          3. a malformed manifest template (stray brace) -> caught and
+             replaced with the plain default message, never raised, never
+             leaked partially-formatted.
+        """
+        tmpl_key = "start_template" if kind == "start" else "done_template"
+        default = (f"Starting {phase.id} ({phase.owning_role})" if kind == "start"
+                   else f"{phase.id} complete")
+        tmpl = phase.client_report.get(tmpl_key) or default
+        if "{" not in tmpl:
+            return tmpl  # nothing to substitute (default string, or a static template)
+        k, n = self._client_phase_index(phase.id, self.manifest.phases)
+        if k is None:
+            return (f"{phase.id} — not part of the {n}-step plan for this deck type "
+                    f"(internal housekeeping phase, no client-visible step number) — "
+                    f"{'starting' if kind == 'start' else 'complete'}")
+        eta_val = phase.client_report.get("eta_minutes") or phase.client_report.get("eta")
+        eta_str = f" (ETA ~{eta_val} min)" if (kind == "start" and eta_val) else ""
+        fields = _SafeFormatDict(k=k, N=n, name=(phase.name or phase.id), eta=eta_str)
+        try:
+            return tmpl.format_map(fields)
+        except (ValueError, IndexError):
+            # Malformed template syntax (e.g. a stray unmatched '{' or '}') --
+            # never let a bad template string reach the client verbatim, and
+            # never crash phase reporting over it.
+            return default
+
     def _route_around_converter_phase(self, phase: Phase, creation_mode: str) -> None:
         """Record a converter_path phase as not applicable to this deck, WITHOUT
         running its executor or its substance verifier, and WITHOUT disguising
@@ -218,8 +399,7 @@ class Engine:
         self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
         self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
 
-        start_msg = (phase.client_report.get("start_template") or
-                     f"Starting {phase.id} ({phase.owning_role})")
+        start_msg = self._render_client_report_msg(phase, "start")
         self.report.to_requester("progress", start_msg)
 
         try:
@@ -309,7 +489,7 @@ class Engine:
                              artifacts=sorted(shas.keys()),
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
                              owner_skip_approval=verifier_skipped)
-            done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
+            done_msg = self._render_client_report_msg(phase, "done")
             self.report.to_requester("progress", done_msg)
             if self.board:
                 self.board.phase_progress(phase.id, done_msg)
@@ -571,7 +751,15 @@ class Engine:
                 phases = keep
 
         if not self.state.get("sent", {}).get("ack"):
-            n = len(phases)
+            # B2b: use the SAME client-visible filtering the per-phase
+            # {k}/{N} messages use (_client_visible_phases), so the ack's
+            # step count is never a different number than what the
+            # individual "Step k of N" messages report later in this same
+            # run. `phases` here already excludes any P-CONVERTER routed
+            # around above; _client_visible_phases additionally excludes the
+            # four SP-only phases when deck_type is positively known
+            # non-signature -- fails safe to the full count otherwise.
+            n = len(self._client_visible_phases(phases))
             self.report.to_requester(
                 "ack",
                 f"Got it. Building your presentation in {n} steps. "

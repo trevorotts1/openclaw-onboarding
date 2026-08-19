@@ -57,8 +57,17 @@ runner (`run_signature_deck.py`) serves that order one step at a time (see §3).
 render is invoked deterministically: `build_deck.py` reads the pre-authored rich prompts
 **verbatim** (it does **not** compose prompts and has **no** image tool of its own),
 renders every image on kie.ai (`gpt-image-2-text-to-image` / `-image-to-image`, 16:9, 2K —
-all pinned inside the script), verifies each PNG, assembles the full-bleed `.pptx`, and
-runs the postflight completeness gate + delivery interlock over the seven-file bundle.
+all pinned inside the script), verifies each PNG, assembles the full-bleed `.pptx`, and then
+runs two distinct gates over two distinct bundles — not a contradiction, but two different
+audiences for two different file sets:
+- The **postflight completeness gate** enforces the **ten-file operator build bundle**
+  (`DELIVERABLE_AUDIT_SPEC`, `DELIVERABLE_COUNT = 10` in `presentation_job/deliverables.py`;
+  mirrored in the manifest's `build_bundle_files`; run mechanically by
+  `fix_bundle_complete.py`) — everything the pipeline produces internally.
+- The **delivery interlock** enforces the **seven-file client package** at
+  `delivery/[DECK_SLUG]-FINAL/` (`delivery_gate.check_af_dh1`, all seven now hard-required —
+  `CLIENT_PACKAGE_WARN_ONLY = frozenset()`; mirrored in the manifest's
+  `client_package_files`) — the narrower subset actually handed to the client.
 
 ### THE HANDSHAKE BETWEEN THE LAYERS (the point that was lost)
 - Layer A **authors** the rich prompt files and the copy; Layer B **consumes** them

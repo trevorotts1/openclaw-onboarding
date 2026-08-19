@@ -1,5 +1,5 @@
 {
-  "manifest_version": 50,
+  "manifest_version": 51,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1291,6 +1291,106 @@
       },
       "executor": {
         "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
+    },
+    {
+      "id": "P-U-SALES-BUILD",
+      "order": 8.75,
+      "name": "Upsell Sales Page Build (copy -> kie design -> HTML -> GHL funnel push)",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/sales-checkout/html/sales.html",
+      "gate_codes": [
+        "AF-U-SALES-BUILD"
+      ],
+      "preflight": null,
+      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie gpt-image-2 design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
+    },
+    {
+      "id": "P-U-CHECKOUT-BUILD",
+      "order": 8.76,
+      "name": "Upsell Checkout Page Build (copy -> kie design -> HTML -> GHL funnel push)",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/sales-checkout/html/checkout.html",
+      "gate_codes": [
+        "AF-U-CHECKOUT-BUILD"
+      ],
+      "preflight": null,
+      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-SALES-BUILD -- intake/upsell-questions.json want_sales_checkout covers BOTH pages with one client answer). sales_checkout_builder.py has NO --mode flag and NO separate checkout-only entry point: P-U-SALES-BUILD's single invocation already writes checkout.html alongside sales.html. This phase re-invokes the SAME script with --skip-design (documented: 'reuse already-downloaded hero renders ... without a fresh kie.ai run -- copy + HTML + plan + receipt-check only', so it never re-spends kie.ai money) purely to give the checkout page its own tracked gate/AF code and step-count entry, per the P-U-CHECKOUT-* id family intake/upsell-questions.json promises. DEFERS identically to P-U-SALES-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-SALES-BUILD (order 8.75).",
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
+    },
+    {
+      "id": "P-U-FORM-CHECKOUT",
+      "order": 8.77,
+      "name": "Upsell Checkout Page -- Payment/Lead Capture Form Wiring",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/sales-checkout/build_receipt.json",
+      "gate_codes": [
+        "AF-U-FORM-CHECKOUT"
+      ],
+      "preflight": null,
+      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py by both C1 and, independently, C5's SOP audit): P-U-FORM-CHECKOUT has NO dedicated implementation anywhere yet -- upsell-questions.json names it as its own id family distinct from P-U-CHECKOUT-*, but no script wires the checkout page's payment/lead-capture FORM fields as a separate build step; there is no working/upsell/checkout_form.json and no design note beyond SALES-CHECKOUT-BUILDER-SOP.md SS4's proposal. This phase currently re-invokes sales_checkout_builder.py with --skip-design (no kie.ai spend) as an interim placeholder that re-verifies the SAME build_receipt.json P-U-SALES-BUILD produced, so the phase/gate/step-count entry the intake app already promised the client exists and is DEFERS-correct -- it does not yet independently prove a payment/lead form was wired. A follow-up unit must implement the real form/payment-field wiring (see SALES-CHECKOUT-BUILDER-SOP.md SS4 'THE CHECKOUT FORM') and update this phase's executor + AF-U-FORM-CHECKOUT check accordingly. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76).",
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
+    },
+    {
+      "id": "P-U-VSL-BUILD",
+      "order": 8.93,
+      "name": "Upsell VSL Page Build (video sales letter -> kie design -> HTML -> GHL funnel push; depends on P9.6 webinar video)",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/vsl/html/vsl.html",
+      "gate_codes": [
+        "AF-U-VSL-BUILD"
+      ],
+      "preflight": null,
+      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_vsl_page, default NO -- a VSL page requires the video to exist). DEFERS (resolve_vsl_gate exits 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'. A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.VSL_PAGE_DECLINED_REASON, verbatim, non-empty) and gates the phase OUT entirely. VIDEO DEPENDENCY: order 8.93 is deliberately AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/vsl_builder.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20
@@ -3151,6 +3251,46 @@
       "enforced_by": "launcher",
       "py_symbol": null,
       "check_script": "scripts/presentation_job/capacity.py::probe"
+    },
+    {
+      "code": "AF-U-SALES-BUILD",
+      "stage": "8.75",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the upsell sales page (P-U-SALES-BUILD) was elected (pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes') but working/sales-checkout/html/sales.html is absent/empty, or working/sales-checkout/build_receipt.json carries no real preview_urls/funnel_id (placeholder or fabricated receipt).",
+      "enforced_by": "sales_checkout_builder",
+      "py_symbol": null,
+      "check_script": "scripts/sales_checkout_builder.py::verify_push_receipt"
+    },
+    {
+      "code": "AF-U-CHECKOUT-BUILD",
+      "stage": "8.76",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the upsell checkout page (P-U-CHECKOUT-BUILD) was elected (same flag as AF-U-SALES-BUILD) but working/sales-checkout/html/checkout.html is absent/empty, or the shared build_receipt.json fails verify_push_receipt (no real preview_urls/funnel_id).",
+      "enforced_by": "sales_checkout_builder",
+      "py_symbol": null,
+      "check_script": "scripts/sales_checkout_builder.py::verify_push_receipt"
+    },
+    {
+      "code": "AF-U-FORM-CHECKOUT",
+      "stage": "8.77",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the checkout page's payment/lead-capture form (P-U-FORM-CHECKOUT) has no dedicated implementation as of 2026-08-19 (confirmed by full-file search of sales_checkout_builder.py -- see the phase's routing_note); this code currently fires on the SAME placeholder-receipt condition as AF-U-CHECKOUT-BUILD and MUST be re-scoped to the real form/payment field check once a follow-up unit implements SALES-CHECKOUT-BUILDER-SOP.md SS4.",
+      "enforced_by": "sales_checkout_builder",
+      "py_symbol": null,
+      "check_script": "scripts/sales_checkout_builder.py::verify_push_receipt"
+    },
+    {
+      "code": "AF-U-VSL-BUILD",
+      "stage": "8.93",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the upsell VSL page (P-U-VSL-BUILD) was elected (pre_presentation_capture.WANT_VSL_PAGE == 'yes') but working/vsl/html/vsl.html is absent/empty, verify_video_dependency() cannot resolve the P9.6-produced working/delivery/{deck_slug}-WEBINAR.mp4 (AF-VSL-NO-VIDEO in the executor's own exit-code contract), or working/vsl/build_receipt.json fails verify_push_receipt (no real preview_urls/funnel_id).",
+      "enforced_by": "vsl_builder",
+      "py_symbol": null,
+      "check_script": "scripts/vsl_builder.py::verify_video_dependency,verify_push_receipt"
     }
   ],
   "roles": [

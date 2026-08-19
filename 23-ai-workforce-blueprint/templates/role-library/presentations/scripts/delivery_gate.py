@@ -2,13 +2,13 @@
 """
 delivery_gate.py — MECHANICAL last-mile delivery enforcer (R9-F9 fix).
 
-Until now the client-facing last mile (AF-DH1 six-file whitelist, the GHL upload
+Until now the client-facing last mile (AF-DH1 seven-file whitelist, the GHL upload
 record, and the SOP 9.4 ground-truth destination check) was DOCTRINE-ONLY: the codes
 AF-DELIVER / AF-DH1 / AF-DELIVERY-COMPLETE are enforced_by "closeout_gate" with a
 null py_symbol, and gate_integrity_check.py (Guard A) exempts non-build_deck codes.
 So the only mechanical bundle gate was build_deck.py's AF-BUNDLE-COMPLETE over the
-NINE-file operator build bundle in ~/Downloads — the actual client package
-(delivery/[DECK_SLUG]-FINAL/, the SIX whitelisted files) had no coded enforcer and
+TEN-file operator build bundle in ~/Downloads — the actual client package
+(delivery/[DECK_SLUG]-FINAL/, the SEVEN whitelisted files) had no coded enforcer and
 relied on the Concierge agent obeying the SOPs. This script closes that gap.
 
 It mechanically enforces, over a run dir:
@@ -570,7 +570,7 @@ def _lead_af_code(reason):
 def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
     """Require the full deliverable set before delivery: the seven-file client package
     (deck pptx + deck pdf + presenter guide + presenter speech + audio + teleprompter + webinar,
-    via AF-DH1 — teleprompter_html is warn-only at stage 1, see
+    via AF-DH1 — all seven are hard-required, see
     CLIENT_PACKAGE_WARN_ONLY), the GoHighLevel upload record + destination ground-truth
     (via delivery_gate), AND the teleprompter deliverable somewhere in the run dir
     (this glob, independent of AF-DH1). A bare run dir at the delivery boundary that
@@ -579,7 +579,7 @@ def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
 
     verify_destinations=False is the PRE-TRANSPORT subset (used when the boundary gate
     runs INSIDE a transport — ghl_media_push.py / the SOP copy step — BEFORE the upload):
-    the AF-DH1 six-file package (the teleprompter is now one of the six) is still
+    the AF-DH1 seven-file package (all seven are hard-required) is still
     required, but the SOP-9.4
     destination ground-truth (the GHL upload record / mac anchor) is skipped, because
     that upload is exactly what the transport is ABOUT to perform — verifying it
@@ -648,8 +648,8 @@ def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations:
     with verify_destinations=False from a TRANSPORT (ghl_media_push.py before it uploads
     a deck, or the SOP copy/send step) so the gate runs BEFORE the deck leaves the box:
     every artifact-intrinsic gate (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED /
-    AF-NO-RUN-DIR) plus the AF-DH1 six-file package (the teleprompter is now one of the
-    six) are enforced, while
+    AF-NO-RUN-DIR) plus the AF-DH1 seven-file package (all seven are hard-required)
+    are enforced, while
     the SOP-9.4 destination ground-truth (the very upload the transport is about to do)
     is deferred — so a hand-built / overlay / no-run-dir deck is REJECTED at the
     transport without the chicken-and-egg of demanding the upload record before the
@@ -1111,7 +1111,7 @@ def main() -> int:
                     help="PRE-TRANSPORT mode for --artifact: run the boundary gate BEFORE a "
                     "deck leaves the box (the SOP copy/upload step). Enforces artifact "
                     "provenance (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED / AF-NO-RUN-DIR) "
-                    "+ the AF-DH1 six-file package (the teleprompter is now one of the six), "
+                    "+ the AF-DH1 seven-file package (all seven are hard-required), "
                     "but DEFERS the SOP-9.4 "
                     "destination ground-truth (the upload this transport is about to do). "
                     "Use this in delivery-concierge-sops.md before any cp/upload/send; the "

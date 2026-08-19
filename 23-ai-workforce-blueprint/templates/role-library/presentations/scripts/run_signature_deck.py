@@ -620,9 +620,21 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
     and the gate warns (PRESENTATION_REPORT_CONFIRM_ENFORCE=1 to make it fatal).
 
     NEVER calls the Telegram API directly — uses ``openclaw message send``
-    exclusively (fleet memory: never-bypass-openclaw-telegram)."""
+    exclusively (fleet memory: never-bypass-openclaw-telegram).
+
+    B2 (2026-08-19): k/N here are CLIENT-FACING (see _client_phase_index) — the
+    filtered, deck-shape-honest step position/count, not the raw manifest total.
+    A phase can still be walked/attested (the 36-phase enforcement never skips
+    it) while not being one of the client's N steps — e.g. P-CONVERTER on a
+    non-content-conversion deck, or a signature-only phase on a non-signature
+    deck. That case is k=None with N still an int, and gets its own honest
+    wording instead of either a wrong step number or silent omission."""
     if k is not None and N is not None:
         tmpl = (f"Step {k} of {N} — {phase_id} — "
+                f"{'starting' if kind == 'start' else 'complete'}")
+    elif N is not None:
+        tmpl = (f"{phase_id} — not part of the {N}-step plan for this deck type "
+                f"(internal housekeeping phase, no client-visible step number) — "
                 f"{'starting' if kind == 'start' else 'complete'}")
     else:
         tmpl = f"{phase_id} — {'starting' if kind == 'start' else 'complete'}"
@@ -778,20 +790,158 @@ def _deck_slug(run_dir: Path) -> str:
     return run_dir.name
 
 
+# ---------------------------------------------------------------------------
+# B2 (2026-08-19) — CLIENT-FACING STEP COUNT (MASTER-WORK-ORDER-20260818 B2,
+# FABLE-TRUTH.md SS1). 36 is the enforced, machine-walked phase count and stays
+# EXACTLY that everywhere it is an enforcement surface: `phases` (the raw
+# manifest list every caller in this file still walks/dispatches/attests
+# unfiltered), declared_plan.json's own `steps`/`total` fields (prove-deck.py's
+# AF-PROCESS-INTEGRITY certificate cross-checks that list 1:1 against the
+# attestation chain — shrinking it would stop PROVING those phases ran, not
+# just stop mentioning them), phase_verifiers.py's registry, and
+# execution_plan.py's DAG. NONE of that is touched below.
+#
+# What WAS dishonest: telling a standard-deck CLIENT "Step 5 of 36" (and the
+# up-front "I'll follow these 36 steps") when 5 of those 36 phases do no real
+# work on their deck — P-CONVERTER (content-conversion decks only) and the
+# four signature-only phases P-SP-INTAKE / P-SP-INTAKE-TRACE / P-SP-STRUCTURE /
+# P-SP-P3-HYGIENE (signature decks only). P-SP-CLAIM is the routing gate and
+# runs for real on EVERY deck — it is never filtered here.
+#
+# The two deck-shape signals — creation_mode (from_scratch | content_personal |
+# content_general, build_deck.CREATION_MODES / build_deck._chk_mode) and
+# deck_type (== "signature_presentation", build_deck._sp_active) — are read
+# from the SAME intake.json the substance checkers (_chk_converter_no_invent,
+# _chk_sp_intake/_structure/_no_pitch/_intake_trace) and
+# presentation_job/phases.py's Engine._deck_creation_mode already read via
+# bd._read_intake_obj. This reuses that read; it is not a new detection path.
+#
+# FAIL-SAFE (per MASTER-WORK-ORDER B2): intake.json is written by the
+# pre-manifest intake conversation (deck-intake-driver.py) before
+# run_signature_deck.py is ever invoked, so by the time declare_plan() fires
+# (the runner's first phase dispatch) these fields are normally already on
+# disk. But if intake.json is absent/unreadable, or a field is unset, this
+# defers to the SAFE direction PER SIGNAL: an unknown creation_mode never
+# filters out P-CONVERTER, and an unknown deck_type never filters out the four
+# SP-only phases. Unknown information can only WIDEN the client-facing count
+# toward the honest 36-step superset, never shrink it below what might
+# actually run.
+# ---------------------------------------------------------------------------
+_CONTENT_FIRST_CREATION_MODES = ("content_personal", "content_general")
+_SP_ONLY_PHASE_IDS = frozenset({
+    "P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
+})
+_CONVERTER_ONLY_PHASE_IDS = frozenset({"P-CONVERTER"})
+# Wave C unit C1 (manifest_version 51) -- mirrors presentation_job/phases.py 1:1 (same
+# fail-safe direction: filtered out ONLY when the electing intake flag is POSITIVELY known
+# to be something other than "yes"). P-U-FORM-CHECKOUT rides the same WANT_SALES_CHECKOUT
+# flag as P-U-SALES-BUILD / P-U-CHECKOUT-BUILD -- one combined yes/no for the pair.
+_SALES_CHECKOUT_ONLY_PHASE_IDS = frozenset({
+    "P-U-SALES-BUILD", "P-U-CHECKOUT-BUILD", "P-U-FORM-CHECKOUT",
+})
+_VSL_ONLY_PHASE_IDS = frozenset({"P-U-VSL-BUILD"})
+
+
+def _client_deck_shape(run_dir: Path) -> dict:
+    """Best-effort read of intake.json's deck-shape signals for the
+    CLIENT-FACING step count only. Reuses bd._read_intake_obj (the same read
+    build_deck._sp_active / _chk_mode / _chk_converter_no_invent already use).
+    `*_known` is False whenever this run's intake.json does not yet declare
+    that signal; callers MUST treat known=False as "do not filter on this
+    signal" (see the module-level fail-safe note above) — never guess."""
+    obj = bd._read_intake_obj(run_dir)
+    if not isinstance(obj, dict):
+        obj = {}
+    deck_type = str(obj.get("deck_type") or "").strip()
+    creation_mode = str(obj.get("creation_mode") or "").strip()
+    pre_capture = obj.get("pre_presentation_capture")
+    if not isinstance(pre_capture, dict):
+        pre_capture = {}
+    sales_checkout = str(pre_capture.get("WANT_SALES_CHECKOUT") or "").strip().lower()
+    vsl_page = str(pre_capture.get("WANT_VSL_PAGE") or "").strip().lower()
+    return {
+        "deck_type_known": bool(deck_type),
+        "is_signature": deck_type == "signature_presentation",
+        "creation_mode_known": bool(creation_mode),
+        "is_content_first": creation_mode in _CONTENT_FIRST_CREATION_MODES,
+        "sales_checkout_known": bool(sales_checkout),
+        "wants_sales_checkout": sales_checkout == "yes",
+        "vsl_known": bool(vsl_page),
+        "wants_vsl": vsl_page == "yes",
+    }
+
+
+def _client_visible_phases(run_dir: Path, phases: list) -> list:
+    """The subset of `phases` (still in manifest `order`) a CLIENT should be
+    told about for THIS run's deck shape — filters out only the phases that do
+    no real work on this deck (defer-unless-applicable, per FABLE-TRUTH SS1 /
+    MASTER-WORK-ORDER B2). Returns the full 36 unchanged whenever a signal is
+    not yet knowable (fail-safe, see above).
+
+    Does NOT change `phases` itself, the attestation chain, precondition
+    checks, declared_plan.json's `steps`, or anything the runner's walk/DAG
+    touches — this is display-only, consumed solely by declare_plan()'s
+    outbound message and _client_phase_index()'s k/N for emit_client_report()."""
+    shape = _client_deck_shape(run_dir)
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    visible = []
+    for ph in ordered:
+        pid = ph["id"]
+        if pid in _CONVERTER_ONLY_PHASE_IDS:
+            if shape["creation_mode_known"] and not shape["is_content_first"]:
+                continue  # positively known non-content-first deck: no-ops
+        elif pid in _SP_ONLY_PHASE_IDS:
+            if shape["deck_type_known"] and not shape["is_signature"]:
+                continue  # positively known non-signature deck: no-ops
+        elif pid in _SALES_CHECKOUT_ONLY_PHASE_IDS:
+            if shape["sales_checkout_known"] and not shape["wants_sales_checkout"]:
+                continue  # positively known decline: no-ops
+        elif pid in _VSL_ONLY_PHASE_IDS:
+            if shape["vsl_known"] and not shape["wants_vsl"]:
+                continue  # positively known decline: no-ops
+        visible.append(ph)
+    return visible
+
+
+def _client_phase_index(run_dir: Path, phase_id: str, phases: list) -> tuple:
+    """CLIENT-FACING twin of _phase_index: (k, N) against THIS deck's filtered
+    client-visible phase list rather than the raw manifest list. k is None
+    when phase_id is being walked/attested (per the unchanged 36-phase
+    enforcement) but is NOT one of the N steps this deck's client was told to
+    expect — e.g. P-CONVERTER dispatched on a non-content-conversion deck. N is
+    always the filtered count (len(_client_visible_phases(...)))."""
+    visible = _client_visible_phases(run_dir, phases)
+    for i, ph in enumerate(visible):
+        if ph["id"] == phase_id:
+            return i + 1, len(visible)
+    return None, len(visible)
+
+
 def _declared_plan_path(run_dir: Path) -> Path:
     return run_dir / "working" / "checkpoints" / "declared_plan.json"
 
 
 def declare_plan(run_dir: Path, phases: list) -> None:
     """Write working/checkpoints/declared_plan.json (the step contract) and emit
-    ONE client message listing all N steps. IDEMPOTENT — skips if the file already
+    ONE client message listing the steps. IDEMPOTENT — skips if the file already
     exists so re-runs of any phase never double-send the step list.
 
-    The declared_plan.json is the contract that prove-deck.py checks against
-    (FIX 2a / AF-PROCESS-INTEGRITY). Records step_declaration_msg_id in both the
-    plan file and process_manifest.json. Wraps the openclaw message send in
-    try/except so a send failure never aborts the run — the plan file is still
-    written (the gate will note 'no step_declaration_msg_id')."""
+    The declared_plan.json `steps`/`total` fields are the contract that
+    prove-deck.py checks against (FIX 2a / AF-PROCESS-INTEGRITY) — that check
+    cross-references EVERY one of the 36 declared steps against the
+    attestation chain, so those fields stay the full, unfiltered 36 here,
+    UNCHANGED (B2 must not weaken that certificate). Records
+    step_declaration_msg_id in both the plan file and process_manifest.json.
+    Wraps the openclaw message send in try/except so a send failure never
+    aborts the run — the plan file is still written (the gate will note 'no
+    step_declaration_msg_id').
+
+    B2 (2026-08-19): the OUTBOUND CLIENT MESSAGE (`text` below) and the new
+    `client_facing_total`/`client_facing_step_ids` record use
+    _client_visible_phases — the deck-filtered, honest count (31 standard / 35
+    signature / 32 content-conversion) — instead of the raw 36. See the
+    CLIENT-FACING STEP COUNT block above _declared_plan_path for the full
+    rationale and the fail-safe rule."""
     plan_path = _declared_plan_path(run_dir)
     if plan_path.exists():
         return  # idempotent — already declared on a prior phase run
@@ -808,10 +958,17 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         for ph in ordered
     ]
 
-    step_lines = "  ".join(f"{i + 1}) {s['name']}" for i, s in enumerate(steps))
+    # CLIENT-FACING (display only — `steps`/`total` above stay the full 36 for
+    # prove-deck.py). Filters to what will actually run for THIS deck's shape;
+    # fails safe to the full superset when a deck-shape signal isn't knowable
+    # yet (see _client_visible_phases).
+    client_visible = _client_visible_phases(run_dir, phases)
+    client_step_lines = "  ".join(
+        f"{i + 1}) {ph.get('name', ph['id'])}" for i, ph in enumerate(client_visible)
+    )
     text = (
-        f"Starting {slug}. I'll follow these {len(steps)} steps and report "
-        f"after each: {step_lines}"
+        f"Starting {slug}. I'll follow these {len(client_visible)} steps and report "
+        f"after each: {client_step_lines}"
     )
 
     msg_id, _sent = _send_owner_message(text)
@@ -822,6 +979,8 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         "declared_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "steps": steps,
         "total": len(steps),
+        "client_facing_total": len(client_visible),
+        "client_facing_step_ids": [ph["id"] for ph in client_visible],
         "step_declaration_msg_id": msg_id,
     }, indent=2))
 
@@ -833,8 +992,9 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         obj["step_declaration_msg_id"] = msg_id
         pm_path.write_text(json.dumps(obj, indent=2))
 
-    print(f"=== DECLARE-PLAN: step contract written ({len(steps)} steps, "
-          f"msg_id={msg_id!r}) ===", flush=True)
+    print(f"=== DECLARE-PLAN: step contract written ({len(steps)} steps enforced, "
+          f"{len(client_visible)} told to the client, msg_id={msg_id!r}) ===",
+          flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -2263,7 +2423,11 @@ def main():
 
         # FIX 4b: emit AF-PHASE-REPORT-START so the next phase's precondition gate
         # can confirm this phase was properly started (AF-PHASE-REPORT-MISSING check).
-        _k, _N = _phase_index(args.phase, phases)
+        # B2: CLIENT-FACING k/N (_client_phase_index) — filtered to this deck's
+        # shape — NOT _phase_index's raw 1-of-36 position. The precondition gate
+        # this comment refers to keys off phase_id in client_reports.json, never
+        # off the k/N text, so filtering k/N here changes nothing it checks.
+        _k, _N = _client_phase_index(run_dir, args.phase, phases)
         emit_client_report(run_dir, args.phase, "start", k=_k, N=_N)
 
         # --- SHIFT-LEFT QC SEND-BACK LOOPS (v15.0.0) ---

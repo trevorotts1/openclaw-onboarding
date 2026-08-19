@@ -1,0 +1,17 @@
+{
+  "name": "presentation-intake-worker-deployed-r2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker (single-worker, static-assets + R2-backed) for the Presentation department intake app. This is the exact source of the deployed production worker, landed into git per the 2026-08-18 D2 reconciliation (see README.md).",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "r2:create": "wrangler r2 bucket create presentation-intake",
+    "test": "node --test ../test/test_worker.mjs"
+  },
+  "dependencies": {
+    "wrangler": "^4.120.0"
+  }
+}

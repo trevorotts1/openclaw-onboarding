@@ -435,3 +435,37 @@ missing records.
 
 ---
 
+### SOP 9.9 -- Upsell Pages: Sales / Checkout / VSL (pointer)
+
+**When to run:** `P-U-SALES-BUILD` (order 8.75), `P-U-CHECKOUT-BUILD` (order 8.76),
+`P-U-FORM-CHECKOUT` (order 8.77), and `P-U-VSL-BUILD` (order 8.93) all declare
+`owning_role: media-librarian-ghl-updater` and `sop_refs: ["media-librarian-ghl-updater-sops.md"]`
+in `PIPELINE-MANIFEST.json` (manifest_version 51) -- this entry is that reference resolving to real
+content, not a dead pointer.
+
+**Full procedure lives in two standalone builder SOPs, same directory:**
+- `SALES-CHECKOUT-BUILDER-SOP.md` -- `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT`
+  (the waiver mechanic, the copy -> Kie.ai design -> HTML -> GHL funnel push pipeline, the checkout
+  form's cross-department form-craft option).
+- `VSL-BUILDER-SOP.md` -- `P-U-VSL-BUILD` (the same pipeline shape, the hard video dependency on
+  `P9.6-WEBINAR-VIDEO`, the ~3-8-minute viewer gate).
+
+**Why these four don't get their own full numbered SOP block here:** they are a genuinely separate
+build (a different deliverable class -- funnel pages, not deck/workbook/webinar assets) with their
+own waiver mechanic, their own executor scripts (`sales_checkout_builder.py`, `vsl_builder.py`), and
+their own push mechanism (`06-ghl-install-pages/tools/ghl_rest_canvas.py`, not this role's usual
+`ghl_media.py`/`ghl_media_push.py` bare-REST media path -- see `SALES-CHECKOUT-BUILDER-SOP.md` §3.4
+for why that distinction matters operationally). Folding that into this file's SOP-9.x numbering would
+bury a distinct capability inside the media-library/upload procedure it isn't part of. The manifest's
+`owning_role` assignment to this role stands because this role is the department's only other
+GHL-push-terminating deliverable owner (`P9.6-WEBINAR-VIDEO`, SOP 9.6 above) -- the same precedent the
+two builder SOPs cite for that choice.
+
+**Status as of this entry (2026-08-19):** the four phases above ARE in `PIPELINE-MANIFEST.json`
+(manifest_version 51) and `scripts/sales_checkout_builder.py` exists on disk. `scripts/vsl_builder.py`
+does not yet exist; no `phase_verifiers.py` entries or `AF-U-*` autofail-registry rows exist yet for
+any of the four. See each builder SOP's own STATUS section for the full, itemized LIVE/PENDING
+breakdown -- do not treat this pointer entry as confirming more than that.
+
+---
+

@@ -94,6 +94,23 @@ try:
 except ImportError:
     _pec = None  # type: ignore[assignment]
 
+# Wave C (C4): the upsell-branch builders. Both live beside this module in
+# scripts/ (never a hardcoded operator path), each expose the SAME
+# gate-resolution function their own main() uses (resolve_sales_checkout_gate /
+# resolve_vsl_gate) plus a receipt/dependency verifier -- delegated-to-source,
+# exactly the _bd_fn("_chk_sp_*") pattern the Signature-Presentation verifiers
+# below already use, so this file's gate decision can never drift from the
+# executor's own.
+try:
+    import sales_checkout_builder as _scb
+except ImportError:
+    _scb = None  # type: ignore[assignment]
+
+try:
+    import vsl_builder as _vb
+except ImportError:
+    _vb = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Internal filesystem helpers
 # ---------------------------------------------------------------------------
@@ -287,6 +304,28 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
             return False, r
         return True, ["NOTE: engine checkers not importable — copy verifier degraded (pass)"]
 
+    # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): both
+    # intelligence_engines_check.check_copy and pitch_engines_check.check_copy
+    # DEFER (add zero problems, return immediately) when working/copy/
+    # slides_copy.md does not exist yet -- correct for their OTHER caller (a
+    # full-pipeline preflight sweep that runs every check regardless of
+    # current phase, where "not produced yet" is expected and not a
+    # violation). But THIS function is the gating substance verifier for
+    # P4-COPY itself -- the phase whose entire job is to produce that file --
+    # and for P1Q-COPY-QC, which re-checks it. With no artifact at all, both
+    # engines silently added nothing to `problems`, `reasons` stayed empty
+    # (no "NOTE" either, since neither raised), so `hard=[]` and this
+    # function returned ok=True with ZERO real content ever produced --
+    # verified confirmed live: phase_verifiers.verify('P4-COPY', run_dir)
+    # returned (True, []) against a run_dir with no slides_copy.md at all.
+    # The engines' own "defer" behavior is untouched (still correct for their
+    # other caller); this only adds the existence+floor precondition this
+    # gating path never actually had, using the exact same floor check
+    # already used one branch up when the engines are unavailable entirely.
+    exists_ok, exists_reason = _check_text_nonempty(run_dir, "working/copy/slides_copy.md", 50)
+    if not exists_ok:
+        return False, exists_reason
+
     working = run_dir / "working"
 
     if _iec is not None and hasattr(_iec, "check_copy"):
@@ -353,6 +392,52 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
     if not _checker_pass(verdict):
         return False, [f"AF-PROMPT-FLOOR: {verdict}"]
     return True, []
+
+
+# ---------------------------------------------------------------------------
+# ROOT-CAUSE FIX (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
+# P1Q-COPY-QC and P-PROMPT-QC were previously wired to _verify_copy / _verify_prompt
+# (the SAME functions that verify P4-COPY / P4-PROMPT) -- meaning the "independent
+# QC" phase's real gate never opened working/qc/copy_qc_report.json or
+# working/qc/prompt_qc_report.json at all; it silently re-checked the UPSTREAM
+# artifact those earlier phases already verified. A QC report with the wrong gate
+# string, no average/pass/qc_independence fields, or an honest pass:false (as
+# happened live: P-PROMPT-QC's real report recorded average=1.0, pass=false, two
+# triggered autofails, because the reviewer never received the prompt files'
+# content -- see the gather_upstream_context fix in dispatcher.py) was marked
+# state.json done=true / verifier_ok=true regardless -- a genuine rubber-stamp,
+# exactly the class of bug this department's own QC-report gates exist to refuse.
+# This wires each QC phase to build_deck's REAL report-shape+teeth gate
+# (_chk_copy_qc / _chk_prompt_qc -- both already require gate string, average>=8.5,
+# zero triggered_autofails, pass:true, independent-reviewer provenance, AND
+# deterministically re-measure the underlying artifact) via the report FILE it
+# actually produces, never the upstream artifact a sibling phase already checked.
+# ---------------------------------------------------------------------------
+def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callable:
+    """Build a verifier for an independent QC-report phase: open
+    <run_dir>/<report_rel>, hand its path to the real build_deck report-shape+teeth
+    gate named `bd_fn_name` (e.g. "_chk_copy_qc"), and translate its "" == pass /
+    non-empty-string == fail convention into the (ok, reasons) shape every other
+    verifier here returns. Degrades to a bare-existence check (never a silent
+    pass) when build_deck is unavailable, matching this module's existing
+    degraded-mode pattern elsewhere."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        report_path = run_dir / report_rel
+        fn = _bd_fn(bd_fn_name)
+        if fn is None:
+            if not report_path.is_file():
+                return False, [f"{af_code}: file absent — {report_rel}"]
+            reasons = [f"NOTE: build_deck.{bd_fn_name} unavailable — degraded to a bare "
+                       f"existence check (pass)"]
+            return True, reasons
+        try:
+            result = fn(report_path if report_path.is_file() else None)
+        except Exception as exc:  # noqa: BLE001
+            return False, [f"{af_code}: {bd_fn_name} raised {exc!r}"]
+        if result:
+            return False, [str(result)]
+        return True, []
+    return _v
 
 
 def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -1667,6 +1752,223 @@ except Exception:  # noqa: BLE001 — registry absence degrades to legacy at cal
     pass
 
 
+# ---------------------------------------------------------------------------
+# Wave C (C4) — Upsell branch (sales / checkout / VSL page build) substance
+# verifiers. All four share the SAME two-flag waiver mechanic
+# (upsell-questions.json v1.0.0, U026): the executor's own gate function
+# (resolve_sales_checkout_gate / resolve_vsl_gate) is delegated to here so the
+# verifier can never disagree with the phase that ran. Four gate outcomes:
+#   defer      -- flag absent/blank -- PASS (never treated as a decline;
+#                 nothing to do this run, mirrors _verify_sp_* deferring for a
+#                 non-signature deck)
+#   waived     -- "no" + a real client quote -- PASS (legitimately gated out)
+#   fail_closed-- a self-authored "no" (missing reason) or an unrecognized
+#                 flag value -- FAIL (the executor itself refuses to build;
+#                 the verifier must not paper over that with a pass)
+#   build      -- flag == "yes" -- FAIL-HARD unless the phase's own
+#                 produces_artifact (per PIPELINE-MANIFEST.json) is present,
+#                 real, and carries THIS run's own content marker. A missing/
+#                 empty/decoy artifact is a hard FAIL, never a silent pass —
+#                 this is the exact vacuous-pass defect B3 fixed for P4-COPY.
+# ---------------------------------------------------------------------------
+
+def _verify_upsell_sales_build(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-SALES-BUILD: sales_checkout_builder.py's sales-page half (order 8.75).
+
+    produces_artifact (manifest): working/sales-checkout/html/sales.html."""
+    if _scb is None:
+        return False, ["AF-U-SALES-BUILD: sales_checkout_builder module unavailable "
+                       "-- cannot resolve the WANT_SALES_CHECKOUT gate; fail-closed, "
+                       "not a pass"]
+
+    intake = _scb.load_intake(run_dir)
+    gate = _scb.resolve_sales_checkout_gate(intake)
+    decision = gate.get("decision")
+
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: P-U-SALES-BUILD {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"AF-U-SALES-BUILD: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"AF-U-SALES-BUILD: unrecognized gate decision {decision!r}"]
+
+    html_path = run_dir / "working" / "sales-checkout" / "html" / "sales.html"
+    if not html_path.is_file():
+        return False, ["AF-U-SALES-BUILD: working/sales-checkout/html/sales.html not "
+                       "found -- WANT_SALES_CHECKOUT=yes but the sales page was never "
+                       "built"]
+    try:
+        text = html_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # noqa: BLE001
+        return False, [f"AF-U-SALES-BUILD: sales.html unreadable: {exc!r}"]
+    stripped_len = len(text.strip())
+    if stripped_len < 200:
+        return False, [f"AF-U-SALES-BUILD: sales.html is only {stripped_len} chars -- "
+                       "too small to be a real assembled page"]
+    if "ZHC-SALES-CHECKOUT-BUILDER" not in text or "page_role=sales" not in text:
+        return False, ["AF-U-SALES-BUILD: sales.html is missing the "
+                       "ZHC-SALES-CHECKOUT-BUILDER page_role=sales marker -- a "
+                       "renamed/decoy file is not this run's assembled sales page"]
+    if "<h1" not in text.lower():
+        return False, ["AF-U-SALES-BUILD: sales.html has no <h1> headline element -- "
+                       "not a real assembled page"]
+    return True, []
+
+
+def _verify_upsell_checkout_build(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-CHECKOUT-BUILD: sales_checkout_builder.py's checkout-page half (order
+    8.76; SAME script/gate as P-U-SALES-BUILD, re-invoked with --skip-design).
+
+    produces_artifact (manifest): working/sales-checkout/html/checkout.html."""
+    if _scb is None:
+        return False, ["AF-U-CHECKOUT-BUILD: sales_checkout_builder module "
+                       "unavailable -- cannot resolve the WANT_SALES_CHECKOUT gate; "
+                       "fail-closed, not a pass"]
+
+    intake = _scb.load_intake(run_dir)
+    gate = _scb.resolve_sales_checkout_gate(intake)
+    decision = gate.get("decision")
+
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: P-U-CHECKOUT-BUILD {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"AF-U-CHECKOUT-BUILD: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"AF-U-CHECKOUT-BUILD: unrecognized gate decision {decision!r}"]
+
+    html_path = run_dir / "working" / "sales-checkout" / "html" / "checkout.html"
+    if not html_path.is_file():
+        return False, ["AF-U-CHECKOUT-BUILD: working/sales-checkout/html/checkout.html "
+                       "not found -- WANT_SALES_CHECKOUT=yes but the checkout page was "
+                       "never built"]
+    try:
+        text = html_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # noqa: BLE001
+        return False, [f"AF-U-CHECKOUT-BUILD: checkout.html unreadable: {exc!r}"]
+    stripped_len = len(text.strip())
+    if stripped_len < 200:
+        return False, [f"AF-U-CHECKOUT-BUILD: checkout.html is only {stripped_len} "
+                       "chars -- too small to be a real assembled page"]
+    if "ZHC-SALES-CHECKOUT-BUILDER" not in text or "page_role=checkout" not in text:
+        return False, ["AF-U-CHECKOUT-BUILD: checkout.html is missing the "
+                       "ZHC-SALES-CHECKOUT-BUILDER page_role=checkout marker -- a "
+                       "renamed/decoy file is not this run's assembled checkout page"]
+    if "<h1" not in text.lower():
+        return False, ["AF-U-CHECKOUT-BUILD: checkout.html has no <h1> headline "
+                       "element -- not a real assembled page"]
+    return True, []
+
+
+def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-FORM-CHECKOUT (order 8.77): per PIPELINE-MANIFEST.json's own
+    routing_note this phase has no dedicated payment/lead-capture-form
+    implementation yet -- it re-invokes sales_checkout_builder.py --skip-design
+    as an interim placeholder that re-verifies the SAME build_receipt.json
+    P-U-SALES-BUILD produces, so its own gate/AF-code/step-count entry is
+    honest rather than silently absent.
+
+    produces_artifact (manifest): working/sales-checkout/build_receipt.json.
+    Same WANT_SALES_CHECKOUT gate as the other two upsell phases. When
+    elected, delegates straight to sales_checkout_builder.verify_push_receipt()
+    (the SAME function the executor's own main() calls) -- absent or
+    fabricated (no real preview_urls / no funnel_id) is a hard FAIL: the
+    executor's exit code treats "not yet pushed" as non-fatal (it re-runs
+    until the delegated agent-browser session lands the receipt), but this
+    verifier is the PRIMARY substance gate for the phase's own
+    produces_artifact and must not rubber-stamp an artifact that was never
+    written."""
+    if _scb is None:
+        return False, ["AF-U-FORM-CHECKOUT: sales_checkout_builder module "
+                       "unavailable -- cannot resolve the WANT_SALES_CHECKOUT gate; "
+                       "fail-closed, not a pass"]
+
+    intake = _scb.load_intake(run_dir)
+    gate = _scb.resolve_sales_checkout_gate(intake)
+    decision = gate.get("decision")
+
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: P-U-FORM-CHECKOUT {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"AF-U-FORM-CHECKOUT: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"AF-U-FORM-CHECKOUT: unrecognized gate decision {decision!r}"]
+
+    try:
+        status, detail, _data = _scb.verify_push_receipt(run_dir)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-CHECKOUT: verify_push_receipt raised {exc!r}"]
+    if status is True:
+        return True, []
+    # status is False (present-but-fabricated) OR None (build_receipt.json
+    # absent) -- either way the phase's own produces_artifact is not a real,
+    # verified receipt yet. FAIL-HARD (mirrors this module's own
+    # file-not-found doctrine): the vacuous-pass this unit must not
+    # reintroduce is exactly "the phase said done and nothing was checked".
+    return False, [f"AF-U-FORM-CHECKOUT: {detail}"]
+
+
+def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-VSL-BUILD (order 8.93): vsl_builder.py's video-sales-letter page,
+    gated on WANT_VSL_PAGE (default NO) and HARD-gated on the P9.6 webinar
+    video artifact existing first (deliberately after P9.6 at order 8.92).
+
+    produces_artifact (manifest): working/vsl/html/vsl.html."""
+    if _vb is None:
+        return False, ["AF-U-VSL-BUILD: vsl_builder module unavailable -- cannot "
+                       "resolve the WANT_VSL_PAGE gate; fail-closed, not a pass"]
+
+    intake = _vb.load_intake(run_dir)
+    gate = _vb.resolve_vsl_gate(intake)
+    decision = gate.get("decision")
+
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: P-U-VSL-BUILD {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"AF-U-VSL-BUILD: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"AF-U-VSL-BUILD: unrecognized gate decision {decision!r}"]
+
+    try:
+        deck_slug = _vb.resolve_deck_slug(run_dir)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-VSL-BUILD: could not resolve deck_slug: {exc!r}"]
+
+    # THE HARD VIDEO DEPENDENCY -- delegates to vsl_builder's own
+    # verify_video_dependency() (never a locally re-derived path), which
+    # resolves the P9.6 artifact via build_webinar_video.WEBINAR_FILENAME_TEMPLATE
+    # and raises VslBuildError (AF-VSL-NO-VIDEO) when it is absent or fails the
+    # local MP4 probe. Order 8.93 is deliberately after P9.6 at 8.92 -- this
+    # phase must never pass without the video.
+    try:
+        _vb.verify_video_dependency(run_dir, deck_slug)
+    except _vb.VslBuildError as exc:
+        return False, [f"AF-VSL-NO-VIDEO: {exc}"]
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-VSL-BUILD: video dependency check raised {exc!r}"]
+
+    html_path = run_dir / "working" / "vsl" / "html" / "vsl.html"
+    if not html_path.is_file():
+        return False, ["AF-U-VSL-BUILD: working/vsl/html/vsl.html not found -- "
+                       "WANT_VSL_PAGE=yes and the P9.6 video exists, but the VSL page "
+                       "was never built"]
+    try:
+        text = html_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # noqa: BLE001
+        return False, [f"AF-U-VSL-BUILD: vsl.html unreadable: {exc!r}"]
+    stripped_len = len(text.strip())
+    if stripped_len < 200:
+        return False, [f"AF-U-VSL-BUILD: vsl.html is only {stripped_len} chars -- too "
+                       "small to be a real assembled page"]
+    if "ZHC-VSL-BUILDER" not in text or f"deck_slug={deck_slug}" not in text:
+        return False, ["AF-U-VSL-BUILD: vsl.html is missing this run's own "
+                       "ZHC-VSL-BUILDER deck_slug marker -- a renamed/decoy file is "
+                       "not this run's assembled VSL page"]
+    if "<video" not in text.lower():
+        return False, ["AF-U-VSL-BUILD: vsl.html has no <video> element -- a video "
+                       "sales letter page with no embedded video is not real"]
+    return True, []
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -1682,8 +1984,12 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
     # Phase 4     Slide Copy
     "P4-COPY":            _verify_copy,
-    # Phase 4.2   Copy QC — uses the same engine as P4-COPY
-    "P1Q-COPY-QC":        _verify_copy,
+    # Phase 4.2   Copy QC — INDEPENDENT report gate (root-cause fix, iteration 3:
+    # this used to be _verify_copy, the SAME upstream-artifact check P4-COPY
+    # already ran, which never opened copy_qc_report.json at all — see the
+    # _verify_qc_report docstring above for the live rubber-stamp this caused).
+    "P1Q-COPY-QC":        _verify_qc_report(
+        "working/qc/copy_qc_report.json", "_chk_copy_qc", "AF-COPY-QC"),
     # Phase 4.5   Typography / Design Brief
     "PF-DESIGN":          _verify_text_artifact("working/research/design-brief-*.md", 50),
     # Phase 4.6   Typography QC
@@ -1692,8 +1998,14 @@ PHASE_VERIFIERS: dict[str, Callable] = {
         "typography", _verify_json_artifact("working/qc/typography_qc_report.json")),
     # Phase 4.7   Prompt Authoring
     "P4-PROMPT":          _verify_prompt,
-    # Phase 4.8   Prompt QC
-    "P-PROMPT-QC":        _verify_prompt,
+    # Phase 4.8   Prompt QC — INDEPENDENT report gate (root-cause fix, iteration
+    # 3: this used to be _verify_prompt, the SAME upstream-artifact re-measure
+    # P4-PROMPT already ran, which never opened prompt_qc_report.json at all —
+    # see the _verify_qc_report docstring above for the live rubber-stamp this
+    # caused: a report honestly recording average=1.0/pass=false still flipped
+    # state.json done=true).
+    "P-PROMPT-QC":        _verify_qc_report(
+        "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC"),
     # Phase 4.85  Style Preview
     "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
     # Phase 4.9   Deterministic Render
@@ -1784,6 +2096,11 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # --- U012 SP registry gaps ---
     "P-SP-CLAIM":         _verify_sp_claim,
     "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,
+    # --- Wave C (C4): upsell branch (sales / checkout / VSL), manifest v51 ---
+    "P-U-SALES-BUILD":    _verify_upsell_sales_build,
+    "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
+    "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
+    "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
 }
 
 

@@ -71,6 +71,13 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     # existing qc_generator_guard.py sweep, write one JSON file); no agent authoring,
     # no render, no network call.
     "P-QC-AGGREGATE": 10,
+    # Upsell branch (Wave C unit C1, manifest_version 51) -- copy + kie.ai page design +
+    # HTML + ghl_rest_canvas.py funnel/step push per phase; conditional, DEFERS in seconds
+    # when the client did not elect the branch, so these budgets bound the ELECTED path only.
+    "P-U-SALES-BUILD": 30,
+    "P-U-CHECKOUT-BUILD": 30,
+    "P-U-FORM-CHECKOUT": 20,       # form/payment-field wiring only, no new page design
+    "P-U-VSL-BUILD": 30,           # video-adjacent (references P9.6's mp4); no video encode of its own
 }
 
 # ---------------------------------------------------------------------------
@@ -146,6 +153,14 @@ class Phase:
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
+    # B2b (fix/engine-client-report-unformatted, MASTER-WORK-ORDER-20260818 Wave B):
+    # the manifest's own client_report templates ("Step {k} of {N} -- {name} --
+    # starting{eta}") reference a per-phase {name} the manifest already declares
+    # at the top level of every phase entry -- but until this fix nothing parsed
+    # it, so there was no way to substitute {name} even once {k}/{N} were fixed.
+    # Falls back to the phase id below (Manifest._parse_phases) when a phase
+    # entry omits "name", so this is never empty.
+    name: str = ""
     # fix/run-slides: the manifest already declares "converter_path": true +
     # a routing_note ("Content-first path only") on P-CONVERTER, but until this
     # fix NOTHING parsed either field — Manifest._parse_phases silently dropped
@@ -265,6 +280,7 @@ class Manifest:
                 id=p["id"],
                 order=float(p.get("order", 0)),
                 owning_role=p.get("owning_role") or "",
+                name=p.get("name") or p["id"],
                 # P8.25-WORKBOOK fix: the canonical manifest declares produces_artifact with a
                 # literal "{deck_slug}" token (and the " + " separator between the two workbook
                 # PDFs). Both must be normalized at phase-definition time: split " + " into the
@@ -479,11 +495,18 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # deliverables.py / build_deck.py's already-reconciled floors (3000 / 20000).
 # Content-only edit to two existing entries, same class of change as WI-10
 # (44 -> 45, heartbeat_minutes-only); MIN follows the manifest in the same commit.
-MIN_MANIFEST_VERSION = 50  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 50 -> 51: MASTER-WORK-ORDER-20260818 Wave C, unit C1 -- added the four upsell-branch
+# phases intake/upsell-questions.json already promised (P-U-SALES-BUILD, P-U-CHECKOUT-BUILD,
+# P-U-FORM-CHECKOUT, P-U-VSL-BUILD) + their AF-U-* autofails. Conditional executors gated on
+# pre_presentation_capture.WANT_SALES_CHECKOUT / WANT_VSL_PAGE (DEFER when unset, mirroring
+# the P-CONVERTER / P-SP-* pattern); P-U-VSL-BUILD ordered 8.93, strictly after
+# P9.6-WEBINAR-VIDEO (8.92), on which it depends. Phase count 36 -> 40. MIN follows to 51
+# in the same commit per U019 step 8.
+MIN_MANIFEST_VERSION = 51  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
-MIN_MANIFEST_PHASES = 36
+MIN_MANIFEST_PHASES = 40
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""
