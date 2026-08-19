@@ -6,8 +6,10 @@ how-to-use-this-department.md, CLIENT-WEBINAR-DECK-SOP.md, MASTER-QC-AUTOFAIL-RU
 PRESENTATION-MASTER-DOCTRINE.md, delivery_gate.py's docstring, etc.) must **LINK HERE** rather than
 restate any of the numbers below. If a number ever needs to change, it changes in exactly one place.
 
-Every claim below was verified against the code in this worktree on 2026-08-19 (Unit A10, RUN 2),
-not copied from prose. Where a proving command is shown, it was actually run against the files in
+Every claim below was verified against the code in this worktree on 2026-08-19 (**Unit COUNTS-R2,
+RUN 2** — Wave C landed manifest_version 51 / 40 phases since RUN 1's draft of this document), not
+copied from prose, and not copied from `CONTROL/MASTER-WORK-ORDER-20260818.md` or
+`CONTROL/FABLE-TRUTH.md`. Where a proving command is shown, it was actually run against the files in
 this worktree — `DEPT` = `23-ai-workforce-blueprint/templates/role-library/presentations` (this
 department's root), `SOPS` = `universal-sops`, both relative to the repo root.
 
@@ -22,26 +24,33 @@ completely unrelated to the deliverable-FILE counts below. Don't conflate the tw
 
 | Count | What it means | Status |
 |---|---|---|
-| **10** | Enforced operator build bundle (files the engine gates as complete) | Enforced today |
-| **7** | Client package folder `delivery/[DECK_SLUG]-FINAL/` | Enforced today (all 7 hard-required) |
-| **12** | What actually ships every run (10 + 2 workbook PDFs) | Ships today, but not in any deliverable list |
-| **15** | 12 + 3 client-elected upsells (sales, checkout, VSL pages) | Asked today; **not buildable today** (Wave C) |
-| **36** | Declared and machine-enforced phase count | Enforced today |
-| **31 / 35 / 32** | Phases that actually execute — standard / signature / content-conversion deck | Enforced today |
-| **~48** | Honest end-to-end mechanical step count (36 phases + ~12 outside-manifest gates) | Descriptive, not a manifest number |
+| **10** | Enforced operator build bundle (files the engine gates as complete) | Enforced today — unchanged by Wave C |
+| **7** | Client package folder `delivery/[DECK_SLUG]-FINAL/` | Enforced today (all 7 hard-required) — unchanged by Wave C |
+| **12** | What actually ships every run (10 + 2 workbook PDFs) | Ships today, but not in any deliverable list — unchanged by Wave C |
+| **15** | 12 + 3 client-elected upsells (sales, checkout, VSL pages) | Asked today; **buildable as of Wave C, one named gap** (`P-U-FORM-CHECKOUT`'s real form-wiring is a placeholder) — see §1.15 |
+| **40** | Declared and machine-enforced phase count | **Changed by Wave C: 36 -> 40** (manifest_version 50 -> 51) |
+| **31 / 34 / 35** (standard) | Executed phases on a standard deck, by upsell election (both declined / sales+checkout only / both elected) | New in RUN 2 — see the full matrix in §2 |
+| **35 / 38 / 39** (signature) | Same, on a signature deck | New in RUN 2 — see §2 |
+| **32 / 35 / 36** (content-conversion) | Same, on a content-conversion deck | New in RUN 2 — see §2 |
+| **~48** | Honest end-to-end mechanical step count (40 phases + ~12 outside-manifest gates) | Descriptive, not a manifest number — the "~12 gates" arithmetic is unchanged; the base phase count under it moved 36 -> 40 |
+
+**RUN 1 -> RUN 2, what actually changed:** only the step-count side (§2) and the "15" deliverable
+status (§1.15). The 10/7/12 deliverable counts (§1) are byte-for-byte unchanged — `deliverables.py`,
+`delivery_gate.py`, and the manifest's `build_bundle_files`/`client_package_files` arrays were not
+touched by Wave C, and this run re-verified that directly (see §1 for the re-run proof).
 
 ---
 
 ## 1. DELIVERABLE COUNTS
 
-### 10 — the enforced operator build bundle
+### 1.10 — the enforced operator build bundle
 
 **Source of truth:** `DEPT/scripts/presentation_job/deliverables.py`, constant `DELIVERABLE_AUDIT_SPEC`
 (the file's own docstring calls it "THE single source of truth for the deliverable whitelist" — every
 other consumer imports from here, no other file may hardcode a deliverable list). Derived constant
 `DELIVERABLE_COUNT = len(DELIVERABLE_AUDIT_SPEC)`.
 
-Verified by executing the module directly in this worktree:
+Re-verified in RUN 2 by executing the module directly in this worktree (unchanged from RUN 1):
 
 ```
 DELIVERABLE_COUNT = 10
@@ -50,12 +59,12 @@ KEYS = ['deck_pptx', 'deck_pdf', 'guide_pdf', 'speech_md', 'speech_pdf', 'speech
 ```
 
 The manifest's `build_bundle_files` array (`SOPS/presentation-slide-craft/PIPELINE-MANIFEST.json`,
-top-level key) is **byte-identical** to those 10 keys, in the same order — confirmed by reading the
-JSON directly. The postflight gate `DEPT/scripts/fix_bundle_complete.py` imports
-`DELIVERABLE_AUDIT_SPEC` / `DELIVERABLE_COUNT` straight from `deliverables.py` (`from
-presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC, ..., DELIVERABLE_COUNT`) and self-tests
-`rec.get("deliverable_count") != len(DELIVERABLE_AUDIT_SPEC)` — the gate cannot drift from the spec
-because it never carries its own copy of the number.
+top-level key, manifest_version 51) is still **byte-identical** to those 10 keys, in the same order —
+re-confirmed by reading the JSON directly in this run: `len(build_bundle_files) == 10`, same 10 keys.
+Wave C's 4 new phases did not touch this array. `scripts/ci/presentations-drift-gates.sh` GATE 3
+(deliverable whitelist parity) re-ran clean in this session: all 4 consumers
+(`fix_bundle_complete.py`, `presentation_job/curate.py`, `phase_verifiers.py`, `self_audit.py`) match
+canon exactly, same 10 keys.
 
 The ten real filenames (from `filename_template` in the spec, `{deck_slug}` = the run's deck slug):
 
@@ -72,26 +81,23 @@ The ten real filenames (from `filename_template` in the spec, `{deck_slug}` = th
 | 9 | teleprompter_html | `presenter-teleprompter.html` |
 | 10 | webinar_mp4 | `{deck_slug}-WEBINAR.mp4` |
 
-### 7 — the client package folder `delivery/[DECK_SLUG]-FINAL/`
+### 1.7 — the client package folder `delivery/[DECK_SLUG]-FINAL/`
 
 **Source of truth:** `DEPT/scripts/delivery_gate.py`, function `check_af_dh1()` (line 218), gated by
-`CLIENT_PACKAGE_WARN_ONLY` (line 193). Verified directly:
+`CLIENT_PACKAGE_WARN_ONLY` (line 193). Re-verified directly in this run, same line numbers as RUN 1
+(delivery_gate.py was not touched by Wave C):
 
 ```python
 CLIENT_PACKAGE_WARN_ONLY = frozenset()   # stage 3 — nothing is warn-only; all 7 are HARD-required
 ```
 
-The code comment immediately above the `CLIENT_PACKAGE` constant declaration (lines 782–784 — not the
-call site; `check_af_dh1` is actually invoked at line 738) reads: "webinar video as a SEVENTH
-client-package file. Named CLIENT_PACKAGE, not SIX, so a [reader sees the true count]." The manifest's
-`client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`) confirms the same 7 keys:
+The manifest's `client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`, manifest_version
+51) confirms the same 7 keys, unchanged by Wave C:
 
 ```
 client_package_files = [deck_pptx, deck_pdf, guide_pdf, speech_pdf, audio_mp3,
                          teleprompter_html, webinar_mp4]
 ```
-
-The 7 filenames (same naming convention as the 10 above):
 
 | # | key | filename |
 |---|---|---|
@@ -106,265 +112,274 @@ The 7 filenames (same naming convention as the 10 above):
 Note the 7 is a **subset** of the 10 minus three internal/raw-format artifacts that don't go to the
 client folder: `speech_md` (raw markdown — the client gets the PDF), `speech_fish_md` (Fish-Audio
 tagging markup — internal to the TTS pipeline), and `infographic_png` (delivered via GHL media upload,
-not the package folder).
+not the package folder). None of the four new upsell phases produce a `build_bundle_files` or
+`client_package_files` entry — the sales/checkout/VSL pages ship to the client's GHL funnel, not the
+package folder (see §1.15).
 
-### 12 — what actually ships every run
+### 1.12 — what actually ships every run
 
 **The 10 above, PLUS the two workbook PDFs from phase `P8.25-WORKBOOK`:**
-`{deck_slug}-WORKBOOK.pdf` and `{deck_slug}-WORKBOOK-FILLABLE.pdf`.
+`{deck_slug}-WORKBOOK.pdf` and `{deck_slug}-WORKBOOK-FILLABLE.pdf`. Unchanged by Wave C — re-verified
+`P8.25-WORKBOOK` is still present in the manifest at order 8.25 with the same three gate codes
+(`AF-WORKBOOK-PROMPT-NO-CONTENT`, `AF-WORKBOOK-EMPTY`, `AF-WORKBOOK-BOTH`).
 
-Proof: `DEPT/scripts/workbook_builder.py` builds both — "2a. REGULAR PDF
-(`{deck_slug}-WORKBOOK.pdf`) — every page image, NO AcroForm fields" and "2b. FILLABLE PDF
-(`{deck_slug}-WORKBOOK-FILLABLE.pdf`) — the SAME pages, then the [form fields layered in]" — and
-verifies both landed distinctly (`AF-WORKBOOK-BOTH`, docstring: "the dual-PDF workbook contract").
-The manifest phase entry:
+`WORKBOOK-BUILDER-SOP.md` (`DEPT/sops/WORKBOOK-BUILDER-SOP.md`, §0) states verbatim: **"TWO PDFs
+ship, always."** These two are still in **neither** the 10 nor the 7 — `deliverables.py`'s own module
+docstring still says the workbook "is NOT part of the canonical bundle (the workbook is a separate
+P8.25-WORKBOOK deliverable with its own gate)." That is the current, correct, intentional state.
 
-```
-id: "P8.25-WORKBOOK"
-order: 8.25
-produces_artifact: "working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf"
-gate_codes: ["AF-WORKBOOK-PROMPT-NO-CONTENT", "AF-WORKBOOK-EMPTY", "AF-WORKBOOK-BOTH"]
-```
+**Also still produced and phase-gated, handed to no one, on no deliverable list:**
+`PRESENTER-AUDIO-WEBINAR.mp3` (`P9-SPEECH-WEBINAR-INTRO`, order 8.54) — feeds `P9.6-WEBINAR-VIDEO`,
+never leaves the run directory as a standalone artifact. Unchanged by Wave C.
 
-`WORKBOOK-BUILDER-SOP.md` (`DEPT/sops/WORKBOOK-BUILDER-SOP.md`, line 21) states verbatim: **"TWO PDFs
-ship, always."**
+### 1.15 — 12 + the three client-elected upsells (RUN 2: status materially changed)
 
-**These two are in NEITHER the 10 nor the 7 today.** `deliverables.py`'s own module docstring says so
-explicitly, describing a historical drift bug where `phase_verifiers.py` once carried a stray
-`"workbook_pdf"` key: *"NOT part of the canonical bundle (the workbook is a separate P8.25-WORKBOOK
-deliverable with its own gate)."* That is the current, correct, intentional state — the workbook is
-gated by its own three `AF-WORKBOOK-*` codes at `P8.25-WORKBOOK`, independent of the 10-file
-`fix_bundle_complete.py` gate and the 7-file `check_af_dh1` gate. It always ships (both PDFs, every
-run, uploaded to the client's GHL per `WORKBOOK-BUILDER-SOP.md` §2/§8); it just isn't counted in
-either enforced list. That is why "12" is the honest "what ships" number, distinct from "10" (what the
-build-bundle gate enforces) and "7" (what the client-package gate enforces).
+**The 12 above, PLUS the three upsell pages** defined in `DEPT/intake/upsell-questions.json` (v1.0.0):
+sales page + checkout page (one combined `want_sales_checkout` flag, **default YES**) and the VSL page
+(`want_vsl_page`, **default NO**, opt-in only, requires the webinar video to exist first). Same waiver
+mechanic as RUN 1 documented: a "no" requires the client's own verbatim reason
+(`SALES_CHECKOUT_DECLINED_REASON` / `VSL_PAGE_DECLINED_REASON`), never inferred from silence.
 
-**Also produced and phase-gated, handed to no one, on no deliverable list:**
-`PRESENTER-AUDIO-WEBINAR.mp3` — the webinarized speech audio (welcome + Q&A + crescendo-close framing)
-produced by phase `P9-SPEECH-WEBINAR-INTRO` (manifest order 8.54, `produces_artifact:
-"working/delivery/PRESENTER-AUDIO-WEBINAR.mp3"`, gate `AF-WEBINAR-INTRO`). It is a required
-intermediate — it feeds `P9.6-WEBINAR-VIDEO` — verified consumed by `_verify_webinarized_speech()`
-(def `DEPT/scripts/phase_verifiers.py:1491`, artifact path referenced at lines 1496/1514/1517 of the
-same function; NOT `_verify_webinar_video()` at line 1432, which is the separate verifier for the
-`{deck_slug}-WEBINAR.mp4` artifact) and referenced in `DEPT/sops/WEBINAR-BUILDER-SOP.md:45` and
-`DEPT/sops/audio-demonstration-specialist-sops.md:120`. It is not in the 10, not in the 7, and not in
-the "12 shipped" count above — it never leaves the run directory as a standalone artifact; it exists
-only to be assembled into `{deck_slug}-WEBINAR.mp4` (deliverable #10/#7 above).
-
-### 15 — 12 + the three client-elected upsells
-
-**The 12 above, PLUS the three upsell pages** defined in
-`DEPT/intake/upsell-questions.json` (v1.0.0) and mirrored at orders 7.6/7.61/7.7/7.71 in
-`DEPT/intake/deck-intake-questions.json` (repo copy verified: version `1.5.0`, 55 questions, all four
-upsell-order questions present):
-
-- **Sales page** (`want_sales_checkout`) — **default YES**. Help text: "The sales page + checkout page
-  is a standard upsell deliverable and one of the engine's fail-closed gates." A "no" requires the
-  client's own verbatim reason (`sales_checkout_declined_reason`) recorded as a waiver — never inferred
-  from silence, never assistant-authored.
-- **Checkout page** — bundled with the sales page under the same `want_sales_checkout` flag.
-- **VSL page** (`want_vsl_page`) — **default NO**, opt-in only (a VSL page requires a video to exist
-  first). Same waiver mechanic on decline (`vsl_page_declined_reason`).
-
-**Current status, stated honestly:** the question is **asked live** by the deployed interview app
-(`DEPT/intake/interview-app/`, worker `src/lib.js` + `payload/build_questions_payload.py` load
-`upsell-questions.json`) — the answer is captured and stored
-(`pre_presentation_capture.WANT_SALES_CHECKOUT` / `WANT_VSL_PAGE` in `working/copy/intake.json`).
-
-**It does not build today.** Verified directly against this worktree's manifest:
+**RUN 1 said this does not build at all. That is now stale. Verified directly against this worktree,
+2026-08-19:**
 
 ```
-P-U phase ids found in PIPELINE-MANIFEST.json: []   (0 of 36 phases)
+P-U phase ids found in PIPELINE-MANIFEST.json (manifest_version 51): 4 of 40 phases
+  P-U-SALES-BUILD    order 8.75   executor: scripts/sales_checkout_builder.py --run-dir {run_dir}
+  P-U-CHECKOUT-BUILD order 8.76   executor: scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design
+  P-U-FORM-CHECKOUT  order 8.77   executor: scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design
+  P-U-VSL-BUILD      order 8.93   executor: scripts/vsl_builder.py --run-dir {run_dir}
 ```
 
-No `P-U-SALES-*`, `P-U-CHECKOUT-*`, `P-U-FORM-CHECKOUT`, or `P-U-VSL-*` phase exists in
-`PIPELINE-MANIFEST.json`, `phase_verifiers.py`'s `PHASE_VERIFIERS` registry, or any script in
-`DEPT/scripts/`. The build path for these three upsells is **under construction in Wave C** of the
-current work order (`CONTROL/MASTER-WORK-ORDER-20260818.md` §"WAVE C — BUILD THE UPSELL BRANCH") — do
-not claim, in any document, that these three build today. A client who answers "yes" today gets a
-recorded flag and nothing else, until Wave C lands.
+**What is LANDED (independently confirmed in this worktree, not taken on any document's word):**
+- **Manifest phases** — all 4 ids present, correctly ordered (`P-U-VSL-BUILD` at 8.93, strictly after
+  `P9.6-WEBINAR-VIDEO` at 8.92, as its video dependency requires).
+- **Executors on disk** — `DEPT/scripts/sales_checkout_builder.py` (68,868 bytes) and
+  `DEPT/scripts/vsl_builder.py` (87,748 bytes) both exist and both parse: `python3 -c "import ...")`
+  succeeds for both under GATE 1's import-smoke style check. Both scripts' real argparse contract
+  (read directly from source, `def main()`): `--run-dir`, `--skip-design`, `--no-push`, `--selftest` —
+  **no `--mode` flag on either script.** This matters: `SALES-CHECKOUT-BUILDER-SOP.md` (as of this
+  writing) still describes a `--mode sales|checkout|form-checkout` contract that does not match the
+  landed script — the manifest's own `routing_note` on `P-U-SALES-BUILD` already documents the
+  correction ("no --mode flag exists — corrected 2026-08-19 after C2's script landed"). **This
+  document defers to the code, not the SOP, per this unit's brief** — flagged here as a live,
+  unresolved doc/SOP inconsistency for whichever unit owns those two SOPs next, not fixed by this unit
+  (out of this unit's file scope).
+- **Client step count** — `run_signature_deck._client_visible_phases()` and
+  `presentation_job/phases.py`'s `Engine._client_visible_phases()` both already carry
+  `_SALES_CHECKOUT_ONLY_PHASE_IDS` / `_VSL_ONLY_PHASE_IDS` filter sets (same fail-safe-widens rule as
+  the pre-existing `P-CONVERTER`/`P-SP-*` sets) — a client's `declare_plan()` count already reflects
+  the upsell election the moment `intake.json` records it. See §2 for the full matrix.
+- **Autofail registry** — `AF-U-SALES-BUILD`, `AF-U-CHECKOUT-BUILD`, `AF-U-FORM-CHECKOUT`,
+  `AF-U-VSL-BUILD` are all present in `PIPELINE-MANIFEST.json`'s `autofails[]` array with
+  `in_ruleset: true`, and `SOPS/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md` already carries
+  matching rows for all four (checked directly, lines ~311-314 in this worktree).
+- **SOPs** — `DEPT/sops/SALES-CHECKOUT-BUILDER-SOP.md` and `DEPT/sops/VSL-BUILDER-SOP.md` both exist
+  and both self-report "PARTIALLY LANDED, mid-build" (their own status sections, re-read in this run) —
+  treat their prose as a draft in progress, not a finished contract; the manifest and the executor
+  source are the ground truth this document defers to.
+
+**Verifier registration — landed DURING this unit's own session (timeline matters here, stated
+honestly).** Earlier in this run, `phase_verifiers.py` had ZERO substance-verifier registrations for
+the 4 new ids (`PHASE_VERIFIERS` held 36 of 40, and the department's two "enforced count" tests failed
+naming exactly these 4 ids missing) — that was the live state this unit's brief anticipated,
+attributed to concurrent Unit C4. **Unit C4 landed that work while this unit was still writing this
+document** (confirmed: `phase_verifiers.py`'s mtime moved to 11:09, its size grew ~13KB, and this unit
+never opened that file for writing — see the hard constraint below). Re-checked immediately before
+publishing this revision:
+
+```
+total manifest ids: 40 / total registered in PHASE_VERIFIERS: 40 / missing: []
+```
+
+Both previously-failing tests (`test_client_step_count.py` and `test_engine_client_report.py`,
+`TestEnforcedCountUnchanged::test_verifier_registry_covers_all_36`) now PASS. **As of this document's
+last-verified timestamp, the verifier gap is CLOSED — do not describe it as pending in any document
+dated after this one; re-check `phase_verifiers.py` before repeating that claim, the same caution RUN
+1 gave about the engine-path claim.**
+
+**What is confirmed NOT landed (checked live in this worktree, not assumed):**
+- **`P-U-FORM-CHECKOUT` has no real implementation** — both the manifest's own `routing_note` and the
+  `AF-U-FORM-CHECKOUT` autofail trigger text say so explicitly: it currently re-verifies the SAME
+  `build_receipt.json` `P-U-SALES-BUILD` produces (an interim placeholder), not an independent
+  payment/lead-capture form check. `SALES-CHECKOUT-BUILDER-SOP.md` §4 "THE CHECKOUT FORM" proposes
+  the real wiring as a follow-up unit's work, not yet done. This is a real, still-open gap regardless
+  of the verifier landing above — a verifier can only check that the placeholder receipt exists, it
+  cannot verify a form that was never built.
+
+**Bottom line, stated once:** the upsell branch went from **0% wired** (RUN 1: no phases, no
+executors, no verifiers, no autofail rows) to **manifest + executors + autofail registry + verifiers
+ALL LANDED, with exactly one named gap remaining: `P-U-FORM-CHECKOUT`'s real form/payment wiring is
+still an interim placeholder** (tracked, unassigned follow-up — not the same thing as "the phase
+doesn't run," it runs and passes its current, narrower gate). Do not describe the branch as either
+"fully buildable" or "0% wired" in any document — both are now false; describe it as
+landed-with-one-named-gap, per this section.
 
 ---
 
 ## 2. STEP COUNTS
 
-### 36 — declared and machine-enforced phase count
+### 2.40 — declared and machine-enforced phase count (RUN 2: was 36, now 40)
 
 **Source of truth:** `SOPS/presentation-slide-craft/PIPELINE-MANIFEST.json`, `manifest_version` and the
 `phases[]` array. Verified by loading the JSON and counting mechanically in this worktree:
 
 ```
-manifest_version: 50
-len(phases): 36
+manifest_version: 51   (was 50 at RUN 1 — Wave C unit C1 landed this bump; this unit did NOT touch it)
+len(phases): 40         (was 36 at RUN 1 — +4: P-U-SALES-BUILD, P-U-CHECKOUT-BUILD,
+                          P-U-FORM-CHECKOUT, P-U-VSL-BUILD)
 ```
 
-All 36 phase ids, **sorted mechanically by the true `order` field** (parsed directly from
-`PIPELINE-MANIFEST.json` with `sorted(phases, key=lambda p: p["order"])` in this worktree — not
-hand-ordered). A prior draft of this table was captioned "manifest order" but was not actually sorted
-that way: it grouped the 5 signature-only phases at positions 32-36 and swapped `P-CONVERTER` /
-`P-0.5-RESEARCH`. The `order` value is included below so the sort is self-evidencing:
+All 40 phase ids, sorted mechanically by the true `order` field
+(`sorted(phases, key=lambda p: p["order"])`, executed directly against the live manifest in this
+worktree, not hand-ordered):
 
 | # | order | id | # | order | id |
 |---|---|---|---|---|---|
-| 1 | -1 | P-CONVERTER | 19 | 4.9 | P4-RENDER |
-| 2 | -0.5 | P-0.5-RESEARCH | 20 | 4.95 | P-IMAGE-QC |
-| 3 | 0.1 | P0A-INTAKE | 21 | 7.5 | P-SHIFT-QC |
-| 4 | 0.14 | P-SP-CLAIM | 22 | 8 | P8-ASSEMBLE |
-| 5 | 0.15 | P-SP-INTAKE | 23 | 8.1 | P8.1-PDF-EXPORT |
-| 6 | 0.16 | P-SP-INTAKE-TRACE | 24 | 8.2 | P8.2-GUIDE |
-| 7 | 0.2 | P0B-PRIORITY | 25 | 8.25 | P8.25-WORKBOOK |
-| 8 | 3 | P3-ARC | 26 | 8.5 | P9-SPEECH |
-| 9 | 3.5 | P-3.5-RESEARCH-MAP | 27 | 8.52 | P8.4-FISH-TAG |
-| 10 | 4 | P4-COPY | 28 | 8.54 | P9-SPEECH-WEBINAR-INTRO |
-| 11 | 4.1 | P-SP-STRUCTURE | 29 | 8.55 | P9.1-SPEECH-PDF |
-| 12 | 4.15 | P-SP-P3-HYGIENE | 30 | 8.6 | P-SPEECH-QC |
-| 13 | 4.2 | P1Q-COPY-QC | 31 | 8.65 | P-QC-AGGREGATE |
-| 14 | 4.5 | PF-DESIGN | 32 | 8.7 | P9.5-NOTES-SYNC |
-| 15 | 4.6 | P-TYPO-QC | 33 | 8.9 | P9.2-GHL-UPLOAD |
-| 16 | 4.7 | P4-PROMPT | 34 | 8.92 | P9.6-WEBINAR-VIDEO |
-| 17 | 4.8 | P-PROMPT-QC | 35 | 8.95 | P7-TELEPROMPTER |
-| 18 | 4.85 | P-STYLE-PREVIEW | 36 | 9 | P9-DELIVER |
+| 1 | -1 | P-CONVERTER | 21 | 7.5 | P-SHIFT-QC |
+| 2 | -0.5 | P-0.5-RESEARCH | 22 | 8 | P8-ASSEMBLE |
+| 3 | 0.1 | P0A-INTAKE | 23 | 8.1 | P8.1-PDF-EXPORT |
+| 4 | 0.14 | P-SP-CLAIM | 24 | 8.2 | P8.2-GUIDE |
+| 5 | 0.15 | P-SP-INTAKE | 25 | 8.25 | P8.25-WORKBOOK |
+| 6 | 0.16 | P-SP-INTAKE-TRACE | 26 | 8.5 | P9-SPEECH |
+| 7 | 0.2 | P0B-PRIORITY | 27 | 8.52 | P8.4-FISH-TAG |
+| 8 | 3 | P3-ARC | 28 | 8.54 | P9-SPEECH-WEBINAR-INTRO |
+| 9 | 3.5 | P-3.5-RESEARCH-MAP | 29 | 8.55 | P9.1-SPEECH-PDF |
+| 10 | 4 | P4-COPY | 30 | 8.6 | P-SPEECH-QC |
+| 11 | 4.1 | P-SP-STRUCTURE | 31 | 8.65 | P-QC-AGGREGATE |
+| 12 | 4.15 | P-SP-P3-HYGIENE | 32 | 8.7 | P9.5-NOTES-SYNC |
+| 13 | 4.2 | P1Q-COPY-QC | 33 | **8.75** | **P-U-SALES-BUILD** |
+| 14 | 4.5 | PF-DESIGN | 34 | **8.76** | **P-U-CHECKOUT-BUILD** |
+| 15 | 4.6 | P-TYPO-QC | 35 | **8.77** | **P-U-FORM-CHECKOUT** |
+| 16 | 4.7 | P4-PROMPT | 36 | 8.9 | P9.2-GHL-UPLOAD |
+| 17 | 4.8 | P-PROMPT-QC | 37 | 8.92 | P9.6-WEBINAR-VIDEO |
+| 18 | 4.85 | P-STYLE-PREVIEW | 38 | **8.93** | **P-U-VSL-BUILD** |
+| 19 | 4.9 | P4-RENDER | 39 | 8.95 | P7-TELEPROMPTER |
+| 20 | 4.95 | P-IMAGE-QC | 40 | 9 | P9-DELIVER |
 
-Note the 5 signature-only phases sit at their true positions — `P-SP-CLAIM`/`P-SP-INTAKE`/
-`P-SP-INTAKE-TRACE` at 4-6 (order 0.14/0.15/0.16) and `P-SP-STRUCTURE`/`P-SP-P3-HYGIENE` at 11-12
-(order 4.1/4.15) — not grouped at the end. The id **set** was already correct in the prior draft;
-only the ordering and the missing `order` column are fixed here.
+(New ids **bolded**. All 36 pre-existing ids kept their exact prior `order` value — Wave C only
+inserted, it never renumbered.)
 
-`DEPT/scripts/run_signature_deck.py`'s `declare_plan()` (def line 901) sorts **all 36** by `order`
-(`sorted(phases, key=lambda p: p.get("order", 0))`, line 927) to build the `steps`/`total` fields of
-`declared_plan.json` — this stays the full, unfiltered 36 deliberately, because `prove-deck.py`
-cross-references every one of the 36 declared steps against the attestation chain (FIX 2a /
-AF-PROCESS-INTEGRITY) and B2 must not weaken that certificate. See the "31" section below for what the
-CLIENT actually gets told, which is a different, now-fixed number.
-`DEPT/scripts/presentation_job/execution_plan.py` builds its Kahn-algorithm DAG (`topological_sort`)
-from the same unfiltered 36-node manifest. `DEPT/scripts/phase_verifiers.py`'s `PHASE_VERIFIERS`
-registry was checked programmatically against the manifest's 36 ids in this worktree:
+`DEPT/scripts/run_signature_deck.py`'s `declare_plan()` still sorts **all 40** by `order` to build the
+unfiltered `steps`/`total` fields of `declared_plan.json` (the attestation-chain contract, per B2, is
+unchanged in shape — only the count moved). `DEPT/scripts/phase_verifiers.py`'s `PHASE_VERIFIERS`
+registry was checked programmatically against the manifest's 40 ids in this worktree:
 
 ```
-total manifest ids: 36
-total registered in PHASE_VERIFIERS: 36
+total manifest ids: 40
+total registered in PHASE_VERIFIERS: 40
 missing from PHASE_VERIFIERS: []
 ```
 
-Every one of the 36 has a substance verifier; `verify()` fails closed ("no verifier registered ... —
-pass" is treated as a FAIL, per its own docstring) for anything that somehow isn't registered.
+**This was the one enforcement surface that had not caught up to 40 earlier in this same session —
+Unit C4 landed the 4 missing registrations while this document was being written; re-checked
+immediately before publishing (see §1.15 for the full timeline).** Every enforcement surface checked
+in this run (the DAG builder, the runner's raw `_phase_index`, the engine's raw walk, and now
+`phase_verifiers.py`) operates over the full 40.
 
-### 31 — executes on a standard from-scratch deck (35 signature, 32 content-conversion)
+### 2.31–40 — executed count now depends on BOTH deck type AND upsell election (RUN 2: new axis)
 
-**The 5 conditional phases**, each verified by reading its actual gating logic in
-`DEPT/scripts/build_deck.py`:
+**RUN 1's "31/35/32" answer is still correct as far as it goes — it is the count when BOTH upsells
+are declined or unknown.** It is no longer the complete answer, because Wave C added two more
+independent yes/no signals (`sales_checkout_known`/`wants_sales_checkout`,
+`vsl_known`/`wants_vsl`) to the same fail-safe-widens filter that already handled deck type. The
+conditional-phase families, each verified by reading the actual gating logic in
+`DEPT/scripts/presentation_job/phases.py` (lines 76-88) and `DEPT/scripts/run_signature_deck.py`
+(lines 831-842, mirrored 1:1):
 
-1. **`P-CONVERTER`** (order -1) — content-conversion path only. Its own preflight checker
-   `_chk_converter_no_invent()` (line 8695) defers (`return ""`) whenever no `source_brief.md` is
-   present — i.e., it is inert on any deck not built via the content-to-presentation-architect path.
-   The manifest entry's own `routing_note` says: *"Content-first path only."*
-2. **`P-SP-INTAKE`** — its checker `_chk_sp_intake()` (line 9020): *"DEFERS unless
-   signature_presentation"* — literally, `if not _sp_active(run_dir): return ""`.
-3. **`P-SP-INTAKE-TRACE`** — `_chk_sp_intake_trace()` docstring: *"DEFERS (no-op) unless intake.json
-   declares deck_type == signature_presentation, so every other deck type takes the identical
-   pre-existing path."*
-4. **`P-SP-STRUCTURE`** — `_chk_sp_structure()` (line 9027): same `_sp_active()` defer.
-5. **`P-SP-P3-HYGIENE`** — `_chk_sp_no_pitch()` (line 9034): same `_sp_active()` defer.
-
-**`P-SP-CLAIM` is NOT in this list** — verified via its own docstring at
-`_chk_sp_claim()` (line 9164): *"the routing/claim gate. Runs for EVERY deck (does NOT defer, unlike
-the three gates above)."* It fails closed (`AF-SP-TYPE-UNDECLARED`) only if signature signals are
-detected but undeclared; on a clean standard deck with no signature signals it passes through, but it
-always **executes** (the check runs), unlike the 5 that no-op entirely. This is why it's excluded from
-the "5 that don't execute" count.
-
-Arithmetic, all verified against the same 36-id list above:
-- **Standard from-scratch deck:** 36 − (`P-CONVERTER` + 4 SP-only) = **31**.
-- **Signature deck:** 36 − `P-CONVERTER` only (the 4 SP-only phases now apply) = **35**.
-- **Content-conversion standard deck:** 36 − (4 SP-only) only (`P-CONVERTER` now applies) = **32**.
-
-**Fixed in `run_signature_deck.py` (B2, 2026-08-19) — client is now told the honest, deck-shaped count.**
-`_client_visible_phases()` (def `DEPT/scripts/run_signature_deck.py:857`) filters the 36 down to the
-phases that will actually do work for THIS run's deck shape (fails safe to the full 36 whenever a
-deck-shape signal isn't yet knowable). `declare_plan()` calls it at line 942 and the outbound client
-message at line 947 now reads *"Starting {slug}. I'll follow these {len(client_visible)} steps..."* —
-31 on a standard from-scratch deck, 35 on signature, 32 on content-conversion, per the arithmetic
-above. `declared_plan.json` also now carries `client_facing_total` / `client_facing_step_ids`
-alongside the unchanged full-36 `steps`/`total` (lines 954-961). This is pinned by
-`DEPT/scripts/tests/test_client_step_count.py` (`test_client_facing_fields_match_deck_type`,
-`test_signature_deck_message_says_35`, `test_content_conversion_deck_message_says_32`, and others in
-that file) — all passing in this worktree (see VERIFICATION METHOD below).
-
-**Production-path caveat — checked and now closed, NOT open.** `presentation-canonical-entry.sh`
-prefers the newer engine over this runner: it dispatches through `presentation_job.py`
-(`ENGINE_ENTRY="$SCRIPTS_DIR/presentation_job.py"`, line 877) whenever that file is present (line 913),
-and falls back to `run_signature_deck.py` only when the engine component is missing from the box (the
-`engine_fail` path, lines 868-873, 885-890) — verified by reading `presentation-canonical-entry.sh`
-directly in this worktree. `presentation_job/__main__.py:17` imports `Engine` from `.phases` and
-instantiates it at line 397 — `phases.py`'s `Engine` class IS the code the engine entrypoint runs.
-
-At the time this document was first drafted, `DEPT/scripts/presentation_job/phases.py` had no
-equivalent of `_client_visible_phases()`. **That has since changed inside this same worktree**, under
-a distinct, already-landed fix labelled "B2b" in its own code comments (`phases.py` lines 41-75; see
-`phases.py.bak-B2b-20260819` for the pre-fix version, confirming this is a real, in-worktree change,
-not a hypothetical): `Engine._client_deck_shape()` (def line 202), `Engine._client_visible_phases()`
-(def line 225) and `Engine._client_phase_index()` (def line 249) mirror `run_signature_deck.py`'s B2
-fix 1:1 — same `_SP_ONLY_PHASE_IDS` / `_CONVERTER_ONLY_PHASE_IDS` sets (lines 76-79), same fail-safe
-direction (unknown deck-shape signal widens to the full 36, never guesses smaller). The engine's ack
-message (`n = len(self._client_visible_phases(phases))`, line 738, sent via
-`self.report.to_requester(...)`, lines 739-742) and its per-phase `{k}/{N}` messages
-(`Engine._render_client_report_msg()`, def line 264, called from `run_phase()` at lines 378 and 468)
-both use this filtered count. Per the code comment (lines 51-58), B2b's original defect was actually
-**worse** than the one B2 fixed: before B2b, `run_phase()` handed the manifest's raw
-`"Step {k} of {N} — {name} — starting{eta}"` template straight to the client UNFORMATTED — braces and
-all — never a real number.
-
-This is pinned by `DEPT/scripts/tests/test_engine_client_report.py` — **28 tests, all passing** in
-this worktree (`python3 -m pytest tests/test_engine_client_report.py -q` → `28 passed`, reproduced
-during this verification pass). **Conclusion:** as of 2026-08-19 in this worktree, BOTH the runner
-(`run_signature_deck.py`, B2) and the production engine (`presentation_job/phases.py`, B2b) tell the
-client the honest, deck-shaped step count — there is no known gap between them. Anyone re-reading an
-older draft of this document, or `MASTER-WORK-ORDER-20260818.md`'s Wave B2 note, should treat "engine
-path not yet fixed" as **stale** — re-check `phases.py` git status before repeating that claim.
-
-### ~48 — honest end-to-end, including the ~12 scripted gates outside `phases[]`
-
-The 36 manifest phases are wrapped by real, code-enforced steps that are **not phase entries** in
-`PIPELINE-MANIFEST.json` — each confirmed present in this worktree:
-
-| # | Step | Where |
+| Family | ids | Filtered OUT when |
 |---|---|---|
-| 1 | The intake interview itself (turn-gated conversation) | `DEPT/scripts/deck-intake-driver.py` |
-| 2 | Intake poll → engine launch | `DEPT/scripts/presentation-intake-poll.sh` (confirmed present, executable) |
-| 3 | Intake ingest → Command Center kanban card | `intake_bridge.py` → `cc_board.ingest_deck_task()` (confirmed at `DEPT/scripts/cc_board.py`; referenced from `DEPT/intake/interview-app/bridge/intake_bridge.py`) |
-| 4 | GATE 0 — intake ledger check | `DEPT/scripts/presentation-canonical-entry.sh` (confirmed: `note "GATE 0 — INTAKE-LEDGER CHECK"`) |
-| 5 | GATE 0b — intake conversation trace | same file (confirmed: `note "GATE 0b — INTAKE-TRACE CHECK..."`) |
-| 6 | GATE 1 — deps check | same file (confirmed: `note "GATE 1/3 — DEPS CHECK..."`) |
-| 7 | GATE 1b — Skill-48 GHL module co-location | same file (confirmed: `note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION..."`) |
-| 8 | GATE 2 — bypass-scan | same file (confirmed: `note "GATE 2/3 — BYPASS-SCAN..."`) |
-| 9 | GATE 3 — version/hash pin | same file (confirmed: `note "GATE 3/3 — VERSION/HASH PIN..."`) |
-| 10 | Phase-0 preflight: OCR-engine availability | `DEPT/scripts/build_deck.py` (confirmed: `AF-OCR-ENGINE-MISSING`, ~line 5998) |
-| 11 | Phase-0 preflight: platform detection | `DEPT/scripts/build_deck.py`, `detect_platform()` (confirmed, line 10329) |
-| 12 | Phase-0 preflight: Kie.ai balance | `DEPT/scripts/build_deck.py` (confirmed: `AF-KIE-BALANCE`, ~line 5939) |
-| — | Postflight bundle gate | `DEPT/scripts/fix_bundle_complete.py` (confirmed present) |
-| — | Delivery interlock | `DEPT/scripts/delivery_gate.py` (confirmed present, `check_af_dh1`) |
-| — | Process certificate | `DEPT/scripts/prove-deck.py` (confirmed present) |
+| Content-conversion | `P-CONVERTER` (1) | `creation_mode` known AND not content-first |
+| Signature-only | `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P-SP-STRUCTURE`, `P-SP-P3-HYGIENE` (4) | `deck_type` known AND not `signature_presentation` |
+| Sales/checkout upsell (Wave C) | `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT` (3) | `WANT_SALES_CHECKOUT` known AND != "yes" |
+| VSL upsell (Wave C) | `P-U-VSL-BUILD` (1) | `WANT_VSL_PAGE` known AND != "yes" |
 
-**Arithmetic:** 36 (manifest phases) + ~12 (the scripted gates/steps above, several of which — GATE 0
-through GATE 3, the 3 phase-0 preflights, the bundle gate, delivery interlock, and certificate — are
-individually countable at 12; the interview and poll/ingest steps push the honest total slightly past
-that) ≈ **~48**. This is stated as **"~48" deliberately, not as a precise count** — some of these
-(e.g. the intake interview) are conversational, not single mechanical checkpoints, so a false-precision
-number would misstate what's being counted. Do not present this as an exact figure anywhere.
+`P-SP-CLAIM` is still never filtered (runs on every deck as the router). An unknown/absent signal
+**always widens**, never narrows — the same fail-safe direction on all four families.
+
+**Mechanical derivation actually run in this worktree** (both a standalone re-implementation of the
+filter against the raw manifest, AND, independently, the real `run_signature_deck._client_visible_phases()`
+called against real `intake.json` fixtures — both methods agree exactly):
+
+```
+                          both        sales/checkout      both
+                          declined    YES, VSL NO          YES
+standard-from-scratch  ->   31            34                35
+signature              ->   35            38                39
+content-conversion     ->   32            35                36
+```
+
+(A fourth cell, sales/checkout NO + VSL YES, is arithmetically valid — standard 32, signature 36,
+content-conversion 33 — but has no realistic client path since VSL requires the webinar video and is
+opt-in-only; included in the executed derivation script, omitted from the table above as not a
+real-world case.)
+
+**Unknown-flag / not-yet-asked cases (both the deck-shape signal AND the upsell signals unknown) —
+these are the numbers `test_client_step_count.py` pins directly, re-run in this session, all passing:**
+
+```
+standard-from-scratch, upsell flags unset -> 35   (test_standard_from_scratch_is_31: comment notes
+                                                     "31 + 4 upsell phases, flags unset -> unknown widens")
+signature, upsell flags unset             -> 39   (test_signature_is_35, same widening note)
+content-conversion, upsell flags unset    -> 36   (test_content_conversion_is_32, same widening note)
+fully unknown deck (no intake.json)       -> 40   (test_unknown_intake_fails_safe_to_full_36)
+```
+
+**Read this carefully — it is the single most confusing part of this document, so it gets its own
+paragraph.** "31 phases execute on a standard deck" (Quick Reference, RUN 1's number) was always
+implicitly "...when neither upsell applies." That is still true and still the right number for a
+declined-upsells standard deck. But a REAL client run's client-facing count depends on what they
+actually elected — a standard deck whose client said yes to sales+checkout (the default) sees **34**,
+not 31, and `declare_plan()`'s outbound message will correctly say "I'll follow these 34 steps," not
+31. Any document that states a bare "31" without naming the upsell-election assumption behind it is
+now incomplete. **Do not pick one number as "the" standard-deck count — state the election it assumes,
+or link here.**
+
+**Fixed in `run_signature_deck.py` (B2, pre-existing) and `presentation_job/phases.py` (B2b,
+pre-existing) — BOTH already extended by Wave C unit C1** to filter on the two new upsell signals with
+the identical fail-safe shape as the pre-existing two families (verified by reading
+`_SALES_CHECKOUT_ONLY_PHASE_IDS` / `_VSL_ONLY_PHASE_IDS` in both files — see line refs above). This is
+pinned by `DEPT/scripts/tests/test_client_step_count.py` and
+`DEPT/scripts/tests/test_engine_client_report.py`, both re-run in this session (see §3).
+
+### 2.~48 — honest end-to-end, including the ~12 scripted gates outside `phases[]`
+
+**Unchanged arithmetic shape, new base.** The ~12 scripted gates/steps outside `phases[]` (the intake
+interview, poll/ingest, 6 entry gates in `presentation-canonical-entry.sh`, 3 phase-0 preflights, the
+postflight bundle gate, delivery interlock, and process certificate) were not touched by Wave C — none
+of them read `phases[]`'s length directly, they are independent scripted checkpoints. Re-verified
+present in this worktree (same files/symbols as RUN 1: `deck-intake-driver.py`,
+`presentation-intake-poll.sh`, `presentation-canonical-entry.sh`'s GATE 0/0b/1/1b/2/3,
+`build_deck.py`'s `AF-OCR-ENGINE-MISSING`/`detect_platform`/`AF-KIE-BALANCE`, `fix_bundle_complete.py`,
+`delivery_gate.py`, `prove-deck.py`).
+
+**Arithmetic:** 40 (manifest phases, was 36) + ~12 (the scripted gates above) ≈ **~52**, not ~48 — the
+honest end-to-end count moved by the same +4 that moved the enforced phase count, because the ~12
+outside-manifest gates wrap the WHOLE phase list, not a fixed subset of it. Stated as **"~52"
+deliberately, not as a precise count**, for the same reason RUN 1 stated "~48" imprecisely: the intake
+interview is conversational, not a single mechanical checkpoint. **RUN 1's "~48" is now stale — update
+any document that still says "~48" to "~52," or better, link here instead of restating either number.**
 
 ---
 
 ## 3. VERIFICATION METHOD
 
-Every number in this document was checked directly against the code in this worktree on 2026-08-19,
-not taken on the authority of `CONTROL/FABLE-TRUTH.md` or any other prose document. Method used per
-number: load the JSON/Python source, execute or grep the actual defining symbol, and (for the 36/10/7
-counts) run a mechanical count in Python rather than eyeballing a list.
+Every number in this document was checked directly against the code in this worktree on 2026-08-19
+(Unit COUNTS-R2, RUN 2), not taken on the authority of `CONTROL/FABLE-TRUTH.md`,
+`CONTROL/MASTER-WORK-ORDER-20260818.md`, or any prose document — including this unit's own dispatch
+brief, which explicitly instructed "whatever the code says is the truth." Method used per number: load
+the JSON/Python source, execute or grep the actual defining symbol, and, for every executed-count cell
+in §2's matrix, cross-check TWO independent computations (a standalone re-implementation of the filter
+logic against the raw manifest, AND a direct call into the real `run_signature_deck._client_visible_phases()`
+against real `intake.json` fixtures) rather than trusting either alone.
 
-**Disagreement with FABLE-TRUTH.md: none found.** Every number in this document (10, 7, 12, 15, 36, 31,
-35, 32, ~48) matches `CONTROL/FABLE-TRUTH.md` §1 and §2 exactly, and matches
-`CONTROL/MASTER-WORK-ORDER-20260818.md`'s "THE THREE ANSWERS" section exactly. Where this document goes
-further than FABLE-TRUTH is only in showing the executed verification (exact line numbers, executed
-Python output, mechanical set-difference checks) rather than asserting the numbers.
+**Where this document disagrees with `CONTROL/MASTER-WORK-ORDER-20260818.md` / `FABLE-TRUTH.md`:**
+those documents predate Wave C and describe the pre-Wave-C world (36 phases, upsell branch 0% wired) —
+not a disagreement, a timeline difference. Where this document disagrees with the RUN 2 dispatch
+brief's own prose: **none found** — the brief's instruction to "derive mechanically, don't copy numbers
+from the brief" was followed, and the derived numbers (40 phases; 31/34/35 standard, 35/38/39
+signature, 32/35/36 content-conversion by upsell election; landed-with-two-gaps upsell branch status)
+match what the brief anticipated in shape, though the brief did not itself state the full election
+matrix — that matrix is this document's own contribution, not copied from anywhere.
 
-*Last verified: 2026-08-19, Unit A10 RUN 2.*
+*Last verified: 2026-08-19, Unit COUNTS-R2, RUN 2.*
