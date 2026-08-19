@@ -177,11 +177,21 @@ def _resolve_commit_ids(intake):
 
 
 def _resolve_mode(intake):
+    """Resolve the RECORD's atomic-commit-mode signal (consumed ONLY by the
+    AF-SP-8Q-SPLIT check below). This is deliberately NOT the interview DEPTH
+    signal (QUICK/IN-DEPTH) that a live record also carries under the bare
+    top-level `mode` key -- see deck-intake-driver.py's _sig_finalize comment:
+    "mode" stays the interview DEPTH (read by prove_sp_routing.py's
+    P-SP-CLAIM gate); "delivery.mode" is the SEPARATE record-commit-mode
+    signal this gate actually means ("the assembled RECORD's atomic-commit
+    mode, NOT a batch of questions"). Prefer delivery.mode; fall back to the
+    bare top-level `mode` ONLY when delivery.mode is absent -- back-compat for
+    an older intake shape that carried just the one (pre-namespacing) field."""
+    delivery = intake.get("delivery")
+    if isinstance(delivery, dict) and "mode" in delivery:
+        return delivery.get("mode")
     if "mode" in intake:
         return intake.get("mode")
-    delivery = intake.get("delivery")
-    if isinstance(delivery, dict):
-        return delivery.get("mode")
     return None
 
 
@@ -588,6 +598,53 @@ def self_test():
     # 3) split record — more than one atomic record-commit id
     f = _valid_runtime_fixture(); f["record_commit_ids"] = ["rec_a", "rec_b"]
     check_fail("split-multi-commit", f, AF_SPLIT)
+
+    # ---- E3-20260819: _resolve_mode must read the COMMIT signal (delivery.mode),
+    # never the interview DEPTH signal (bare top-level `mode`) that a live record
+    # ALSO carries under the same namesake key. Regression cover for the live-box
+    # defect: a real signature intake carries top-level mode="IN-DEPTH" (interview
+    # depth, read by prove_sp_routing.py's P-SP-CLAIM gate) PLUS delivery.mode=
+    # "one_block" (this gate's actual atomic-commit signal) -- see
+    # deck-intake-driver.py's _sig_finalize comment for the namespacing intent.
+    print("== self-test: E3-20260819 mode-resolver DEPTH-vs-COMMIT namespacing ==")
+
+    # 3c) the REAL live shape: top-level mode is the DEPTH value ("IN-DEPTH"),
+    # delivery.mode is the COMMIT value ("one_block") -- must PASS (this is
+    # exactly the regression fixture that was wrongly AUTOFAILing on the live box).
+    f = _valid_runtime_fixture_paced()
+    f["mode"] = "IN-DEPTH"
+    f["delivery"] = {"mode": "one_block", "record_committed_atomically": True,
+                      "asked_all_at_once": True}
+    check_pass("mode-depth-vs-commit-namespaced", f)
+
+    # 3d) a genuinely batched/non-atomic intake (delivery.mode != "one_block")
+    # must still FAIL -- the fix corrects WHICH FIELD is read, never whether the
+    # gate can fail. Top-level `mode` is deliberately left as a DEPTH-looking
+    # value ("IN-DEPTH") to prove delivery.mode -- not the depth field -- is what
+    # decides the outcome.
+    f = _valid_runtime_fixture_paced()
+    f["mode"] = "IN-DEPTH"
+    f["delivery"] = {"mode": "batched", "record_committed_atomically": True,
+                      "asked_all_at_once": True}
+    check_fail("mode-delivery-batched-still-fails", f, AF_SPLIT)
+
+    # 3e) back-compat: an OLDER intake shape with only a bare top-level
+    # mode="one_block" and NO delivery object at all must still PASS --
+    # _resolve_mode falls back to the top-level field only when delivery.mode
+    # is absent.
+    f = _valid_runtime_fixture_paced()
+    f["mode"] = "one_block"
+    assert "delivery" not in f
+    check_pass("mode-top-level-only-backcompat", f)
+
+    # 3f) neither top-level `mode` nor `delivery.mode` present at all -- the
+    # mode check contributes nothing (mode resolves to None) and the fixture's
+    # other atomic-commit fields (record_committed_atomically, record_commit_ids)
+    # alone decide the outcome, exactly as before this fix (no field to read ==
+    # no opinion from this specific check).
+    f = _valid_runtime_fixture_paced()
+    assert "mode" not in f and "delivery" not in f
+    check_pass("mode-absent-entirely-unaffected", f)
 
     # 4) missing q7 (the OFFER question)
     f = _valid_runtime_fixture(); del f["answers"]["q7"]
