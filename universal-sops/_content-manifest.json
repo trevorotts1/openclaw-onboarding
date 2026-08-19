@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-18T18:21:33Z",
+  "generated_at": "2026-08-19T00:34:33Z",
   "file_count": 112,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -333,12 +333,12 @@
       "bytes": 11397
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "f73b0dc1b88262d9f102a0aa60c90636e0b0ce5f6d5a967fde6ec6ae7873eab2",
-      "bytes": 11688
+      "sha256": "0cf22e68daf6632b62d7a1e666a6dad9e526f0e613f3c21cc5b0a586d11515ae",
+      "bytes": 13317
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
-      "sha256": "4281eadf8a79415cd266a63261d4eb810d8cfa5bf33a1fda69e76bf1b9ee0589",
-      "bytes": 7573
+      "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",
+      "bytes": 8128
     },
     "presentation-slide-craft/SOP-SLIDE-07-PRICE-LADDER-RECONCILIATION.md": {
       "sha256": "f44f538ea51ec1a58b58ba302bad3b47d32f01b3e8e5129853ddd3a2edd86448",

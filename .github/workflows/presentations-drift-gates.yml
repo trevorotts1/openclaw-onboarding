@@ -14,7 +14,7 @@ name: presentations-drift-gates
 #   manifest_source.py's sync_check and bricking presentation-canonical-entry.sh
 #   GATE 3 -- with no CI job noticing because nothing recomputed the hash.
 #
-# scripts/ci/presentations-drift-gates.sh runs three gates and exits non-zero
+# scripts/ci/presentations-drift-gates.sh runs four gates and exits non-zero
 # on any real failure, naming which gate failed and why:
 #   GATE 1 - import smoke (presentation_job.phases) -- catches the Problem-1 class.
 #   GATE 2 - manifest lockstep, BOTH registries: PIPELINE-MANIFEST.json <->
@@ -30,6 +30,11 @@ name: presentations-drift-gates
 #            (The pre-U05 version of this gate always printed
 #            GATE3_SKIP_WITH_REASON and exited 0 -- a no-op wearing a GATE 3
 #            label. That skip path is gone.)
+#   GATE 4 - phase-doc lockstep: 00-START-HERE.md and SOP-SLIDE-05-PROCESS-MANIFEST.md
+#            must each name (backtick-quoted) every current `phases[].id` in
+#            PIPELINE-MANIFEST.json. Added after both docs were found describing an
+#            obsolete 21-step / 12-phase scheme that matched none of the (then) 36
+#            live phases, unnoticed for months because nothing checked it.
 #
 # This job's path filter deliberately covers the exact files each gate reads,
 # since none of those files are in presentations-lockstep.yml's trigger list
@@ -58,6 +63,10 @@ on:
       - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
       - "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt"
       - "universal-sops/_content-manifest.json"
+      # GATE 4 targets -- the manifest (already listed above) plus the two docs
+      # whose phase-id lists must stay a superset of PIPELINE-MANIFEST.json phases[]
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md"
+      - "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md"
       # This workflow file
       - ".github/workflows/presentations-drift-gates.yml"
 
@@ -74,7 +83,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 (exit 0 required)
+      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 / GATE 4 (exit 0 required)
         shell: bash
         run: |
           set -euo pipefail
