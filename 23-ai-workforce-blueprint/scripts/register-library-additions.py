@@ -90,6 +90,15 @@ _INFRA_STEMS = frozenset({
     "how-to-use-this-department", "00-START-HERE", "IDENTITY", "SOUL", "TOOLS",
     "USER", "AGENTS", "MEMORY", "HEARTBEAT", "BUILDER-PROMPT", "README",
     "governing-personas", "00-INDEX", "CHANGELOG-RESCUE-DEPT", "RELAY-BRAIN-PATCH",
+    # DEPARTMENT-COUNTS-CANONICAL: the canonical reference page for a
+    # department's deliverable/step counts (single source of truth other docs
+    # link to) — department scaffolding, not a role. sync_check.py's own
+    # _NON_ROLE_DOCS already excludes it for the same reason; this entry
+    # closes the mirror gap so this script's discovery/--check never
+    # re-registers it as a role (it was mistakenly auto-registered before
+    # this stem was recognized as infra — see the INFRA-STEM ROLE assertion
+    # in check() below, which caught the stale entry).
+    "DEPARTMENT-COUNTS-CANONICAL",
 })
 # Dept-folder names under role-library/ that are NOT departments (staging / meta).
 # Mirrors create_role_workspaces._ROSTER_SKIP_FOLDERS + the leading-underscore rule.
