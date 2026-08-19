@@ -251,7 +251,7 @@ this SOP records the design reasoning so that choice is made deliberately, not b
 
 ## 5. RULES
 
-- **Kie.ai is the image provider. No alternative, ever, no exceptions, no canary passes.** Same rule
+- **Kie.ai is the image provider. No alternative, ever, no exceptions, no partial-verification passes.** Same rule
   as every other image-producing phase in this department.
 - **No client names, funnel ids, or branding in this repo.** Loop 2C's real pages are the proof this
   flow works; they stay out of the fleet-wide repo per the no-client-names rule. A build run's working

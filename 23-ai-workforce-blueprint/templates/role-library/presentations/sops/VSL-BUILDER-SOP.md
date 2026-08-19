@@ -133,7 +133,7 @@ phases, mirroring `WORKBOOK-BUILDER-SOP.md`'s single-phase/multi-internal-step p
    (`intake.json`, `price_ladder.json` for price -- never authored fresh) plus the deck's own hook/
    proof/story arc so the VSL reads as a continuation of the presentation, not a separate pitch.
 2. **DESIGN (Kie.ai, gpt-image-2 or the client's routed Agnes tier -- no alternative provider, ever,
-   no canary passes).** Same **9,000-18,000 stripped-char** rich-prompt band as the sales/checkout
+   no partial-verification passes).** Same **9,000-18,000 stripped-char** rich-prompt band as the sales/checkout
    pages (`SALES-CHECKOUT-BUILDER-SOP.md` §3 step 2) -- not Loop 2C's looser 5,000-19,000 research
    band. Brand palette + logo from `intake.json`, logo I2I only.
 3. **HTML** that mirrors the design, with the video embed (the `webinar_mp4` GHL url from §2) and the
@@ -170,7 +170,7 @@ PUBLISHED PAGE's own behavior, not the build pipeline's gating.
 
 ## 5. RULES
 
-- **Kie.ai is the image provider. No alternative, ever, no exceptions, no canary passes.**
+- **Kie.ai is the image provider. No alternative, ever, no exceptions, no partial-verification passes.**
 - **No client names, funnel ids, or branding in this repo.** Loop 2C's real VSL page is the proof
   this flow works; it stays out of the fleet-wide repo per the no-client-names rule.
 - **Never print a credential value.** Same discipline as `SALES-CHECKOUT-BUILDER-SOP.md` §5.
