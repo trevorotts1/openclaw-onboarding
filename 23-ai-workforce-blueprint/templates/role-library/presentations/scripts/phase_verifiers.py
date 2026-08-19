@@ -287,6 +287,28 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
             return False, r
         return True, ["NOTE: engine checkers not importable — copy verifier degraded (pass)"]
 
+    # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): both
+    # intelligence_engines_check.check_copy and pitch_engines_check.check_copy
+    # DEFER (add zero problems, return immediately) when working/copy/
+    # slides_copy.md does not exist yet -- correct for their OTHER caller (a
+    # full-pipeline preflight sweep that runs every check regardless of
+    # current phase, where "not produced yet" is expected and not a
+    # violation). But THIS function is the gating substance verifier for
+    # P4-COPY itself -- the phase whose entire job is to produce that file --
+    # and for P1Q-COPY-QC, which re-checks it. With no artifact at all, both
+    # engines silently added nothing to `problems`, `reasons` stayed empty
+    # (no "NOTE" either, since neither raised), so `hard=[]` and this
+    # function returned ok=True with ZERO real content ever produced --
+    # verified confirmed live: phase_verifiers.verify('P4-COPY', run_dir)
+    # returned (True, []) against a run_dir with no slides_copy.md at all.
+    # The engines' own "defer" behavior is untouched (still correct for their
+    # other caller); this only adds the existence+floor precondition this
+    # gating path never actually had, using the exact same floor check
+    # already used one branch up when the engines are unavailable entirely.
+    exists_ok, exists_reason = _check_text_nonempty(run_dir, "working/copy/slides_copy.md", 50)
+    if not exists_ok:
+        return False, exists_reason
+
     working = run_dir / "working"
 
     if _iec is not None and hasattr(_iec, "check_copy"):
@@ -353,6 +375,52 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
     if not _checker_pass(verdict):
         return False, [f"AF-PROMPT-FLOOR: {verdict}"]
     return True, []
+
+
+# ---------------------------------------------------------------------------
+# ROOT-CAUSE FIX (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
+# P1Q-COPY-QC and P-PROMPT-QC were previously wired to _verify_copy / _verify_prompt
+# (the SAME functions that verify P4-COPY / P4-PROMPT) -- meaning the "independent
+# QC" phase's real gate never opened working/qc/copy_qc_report.json or
+# working/qc/prompt_qc_report.json at all; it silently re-checked the UPSTREAM
+# artifact those earlier phases already verified. A QC report with the wrong gate
+# string, no average/pass/qc_independence fields, or an honest pass:false (as
+# happened live: P-PROMPT-QC's real report recorded average=1.0, pass=false, two
+# triggered autofails, because the reviewer never received the prompt files'
+# content -- see the gather_upstream_context fix in dispatcher.py) was marked
+# state.json done=true / verifier_ok=true regardless -- a genuine rubber-stamp,
+# exactly the class of bug this department's own QC-report gates exist to refuse.
+# This wires each QC phase to build_deck's REAL report-shape+teeth gate
+# (_chk_copy_qc / _chk_prompt_qc -- both already require gate string, average>=8.5,
+# zero triggered_autofails, pass:true, independent-reviewer provenance, AND
+# deterministically re-measure the underlying artifact) via the report FILE it
+# actually produces, never the upstream artifact a sibling phase already checked.
+# ---------------------------------------------------------------------------
+def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callable:
+    """Build a verifier for an independent QC-report phase: open
+    <run_dir>/<report_rel>, hand its path to the real build_deck report-shape+teeth
+    gate named `bd_fn_name` (e.g. "_chk_copy_qc"), and translate its "" == pass /
+    non-empty-string == fail convention into the (ok, reasons) shape every other
+    verifier here returns. Degrades to a bare-existence check (never a silent
+    pass) when build_deck is unavailable, matching this module's existing
+    degraded-mode pattern elsewhere."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        report_path = run_dir / report_rel
+        fn = _bd_fn(bd_fn_name)
+        if fn is None:
+            if not report_path.is_file():
+                return False, [f"{af_code}: file absent — {report_rel}"]
+            reasons = [f"NOTE: build_deck.{bd_fn_name} unavailable — degraded to a bare "
+                       f"existence check (pass)"]
+            return True, reasons
+        try:
+            result = fn(report_path if report_path.is_file() else None)
+        except Exception as exc:  # noqa: BLE001
+            return False, [f"{af_code}: {bd_fn_name} raised {exc!r}"]
+        if result:
+            return False, [str(result)]
+        return True, []
+    return _v
 
 
 def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -1682,8 +1750,12 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
     # Phase 4     Slide Copy
     "P4-COPY":            _verify_copy,
-    # Phase 4.2   Copy QC — uses the same engine as P4-COPY
-    "P1Q-COPY-QC":        _verify_copy,
+    # Phase 4.2   Copy QC — INDEPENDENT report gate (root-cause fix, iteration 3:
+    # this used to be _verify_copy, the SAME upstream-artifact check P4-COPY
+    # already ran, which never opened copy_qc_report.json at all — see the
+    # _verify_qc_report docstring above for the live rubber-stamp this caused).
+    "P1Q-COPY-QC":        _verify_qc_report(
+        "working/qc/copy_qc_report.json", "_chk_copy_qc", "AF-COPY-QC"),
     # Phase 4.5   Typography / Design Brief
     "PF-DESIGN":          _verify_text_artifact("working/research/design-brief-*.md", 50),
     # Phase 4.6   Typography QC
@@ -1692,8 +1764,14 @@ PHASE_VERIFIERS: dict[str, Callable] = {
         "typography", _verify_json_artifact("working/qc/typography_qc_report.json")),
     # Phase 4.7   Prompt Authoring
     "P4-PROMPT":          _verify_prompt,
-    # Phase 4.8   Prompt QC
-    "P-PROMPT-QC":        _verify_prompt,
+    # Phase 4.8   Prompt QC — INDEPENDENT report gate (root-cause fix, iteration
+    # 3: this used to be _verify_prompt, the SAME upstream-artifact re-measure
+    # P4-PROMPT already ran, which never opened prompt_qc_report.json at all —
+    # see the _verify_qc_report docstring above for the live rubber-stamp this
+    # caused: a report honestly recording average=1.0/pass=false still flipped
+    # state.json done=true).
+    "P-PROMPT-QC":        _verify_qc_report(
+        "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC"),
     # Phase 4.85  Style Preview
     "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
     # Phase 4.9   Deterministic Render

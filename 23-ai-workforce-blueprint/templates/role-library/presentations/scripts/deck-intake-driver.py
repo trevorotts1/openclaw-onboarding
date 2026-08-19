@@ -605,6 +605,67 @@ def _run_sp_claim_gate(run_dir: Path,
 SP_EIGHT_QUESTIONS_SPEC: Optional[Dict[str, Any]] = None
 
 
+def _import_skill51_module(mod_name: str):
+    """Lazily import a Skill-51 module (prove_sp_intake / intake_trace_check) by
+    file, same candidate-path search _run_prove_sp_intake already uses below.
+    Returns the module or None. Used so the driver signs turn-ledger/transcript
+    provenance with the EXACT SAME canonicalization + key the prover verifies
+    with -- never a hand-rolled reimplementation that could silently drift."""
+    from importlib import util as importlib_util
+    cands = [
+        SCRIPTS_DIR / (mod_name + ".py"),
+        SCRIPTS_DIR.parent / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
+        SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
+        Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
+    ]
+    for cand in cands:
+        if cand.is_file():
+            try:
+                spec = importlib_util.spec_from_file_location(mod_name, cand)
+                mod = importlib_util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                continue
+    return None
+
+
+# FIX-3-COMPLETION (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): FIX-3's
+# own comment in intake_trace_check.py names two producer-side functions this
+# driver was documented to carry -- _transcript_sign_payload() (driver_signature
+# over {"qid_sequence":...,"turns":...}) and a matching turn_ledger_provenance
+# builder for prove_sp_intake.py's AF-SP-INTAKE-UNPACED gate -- but neither was
+# ever implemented here. Every signature intake this driver ever finalized
+# therefore produced a bare-list transcript with no driver envelope and an
+# sp_intake.json with no turn_ledger_provenance: P-SP-INTAKE-TRACE and (post
+# 2026-08-15 grace window) P-SP-INTAKE could never pass for ANY signature deck
+# run through the sanctioned tool. _sig_answer/_sig_finalize below now build
+# both real, using the provers' own signing functions (never a local
+# reimplementation) so the signature is byte-identical to what gets verified.
+
+_SP_BANK_PROMPTS_CACHE: Optional[Dict[str, str]] = None
+
+
+def _sp_bank_prompt(qid: str) -> str:
+    """The exact prompt text shown for `qid` -- q1..q8 from the bank spec,
+    sp_mode/signature_frame from the same literal strings _sig_next/
+    _emit_frame_question already show the owner. Must stay byte-identical to
+    those so intake_trace_check.py's verbatim-bank-prompt match resolves the
+    turn to exactly one question id."""
+    global _SP_BANK_PROMPTS_CACHE
+    if _SP_BANK_PROMPTS_CACHE is None:
+        spec = _load_sp_spec()
+        _SP_BANK_PROMPTS_CACHE = {sq["id"]: sq.get("prompt", "") for sq in spec.get("questions", [])}
+        _SP_BANK_PROMPTS_CACHE["sp_mode"] = (
+            "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
+            "4-phase signature talk (100+ slides, 8 Questions, frame "
+            "selection).")
+        _SP_BANK_PROMPTS_CACHE["signature_frame"] = (
+            "Choose a Signature frame: The Rulebook / The Vault / "
+            "The Quest / The Original.")
+    return _SP_BANK_PROMPTS_CACHE.get(qid, qid)
+
+
 def _load_sp_spec() -> Dict[str, Any]:
     """Lazily load the SACRED 8 Questions spec."""
     global SP_EIGHT_QUESTIONS_SPEC
@@ -761,20 +822,33 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
                                        f"Must be one of: {allowed}"}))
             return 1
 
+    asked_at = datetime.now(timezone.utc).isoformat()
     sp_entries[qid] = {"value": text.strip(), "validated": True,
                        "source": "deck-intake-driver --signature",
-                       "answered_at": datetime.now(timezone.utc).isoformat()}
+                       "answered_at": asked_at}
     ledger["sp_entries"] = sp_entries
     ledger["status"] = "in_progress"
-    ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
+    ledger["updated_at"] = asked_at
+
+    # FIX-3-COMPLETION: the driver's own turn-gate stamp (per-question turn id +
+    # asked_at/validated_at), one entry per question actually surfaced through
+    # THIS turn gate -- required for prove_sp_intake.py's AF-SP-INTAKE-UNPACED
+    # (turn_ledger_provenance) and never faked by hand (see module docstring
+    # above _sp_bank_prompt).
+    turn_log = ledger.setdefault("sp_turn_log", [])
+    turn_log.append({"question_id": qid, "turn": len(turn_log) + 1,
+                     "asked_at": asked_at,
+                     "validated_at": datetime.now(timezone.utc).isoformat()})
     write_intake_ledger(run_dir, ledger)
 
-    # Append to transcript
+    # Append BOTH the assistant's exact bank-prompt turn and the owner's answer
+    # turn -- a real one-question-per-turn conversation has both sides, and
+    # intake_trace_check.py's verbatim-prompt match needs the assistant turn's
+    # text to be byte-identical to the bank prompt to resolve to exactly one
+    # question id (never a multi-question-per-turn false positive).
     transcript = read_intake_transcript(run_dir)
-    transcript.append({"turn": len(transcript) + 1,
-                       "signature_question": qid,
-                       "answer": text.strip(),
-                       "ts": datetime.now(timezone.utc).isoformat()})
+    transcript.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
+    transcript.append({"role": "owner", "text": text.strip(), "qid": qid})
     write_intake_transcript(run_dir, transcript)
 
     return _sig_next(run_dir)
@@ -783,26 +857,61 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
 def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
                   sp_entries: Dict[str, Any]) -> int:
     """Assemble the ONE atomic record, write sp_intake.json, run prove_sp_intake."""
-    # Build the atomic record
+    mode_value = (sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH")
+                 if isinstance(sp_entries.get("sp_mode"), dict)
+                 else sp_entries.get("sp_mode", "IN-DEPTH"))
+    frame_value = (sp_entries.get("signature_frame", {}).get("value")
+                  if isinstance(sp_entries.get("signature_frame"), dict)
+                  else sp_entries.get("signature_frame"))
+    commit_id = "rec_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+
+    # Build the atomic record. "mode" stays the interview DEPTH (QUICK/IN-DEPTH)
+    # -- prove_sp_routing.py's P-SP-CLAIM gate (one phase earlier) requires it.
+    # "delivery.mode" is the SEPARATE record-commit-mode signal prove_sp_intake.py's
+    # AF-SP-8Q-SPLIT actually means ("the assembled RECORD's atomic-commit mode, NOT
+    # a batch of questions" -- its own docstring); FIX-3-COMPLETION above namespaces
+    # it so the two never collide on one key (see prove_sp_intake._resolve_mode).
     record = {
+        "deck_type": "signature_presentation",
         "committed_at": datetime.now(timezone.utc).isoformat(),
         "record_committed_atomically": True,
+        "record_commit_ids": commit_id,
         "one_block": True,
-        "mode": sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH")
-            if isinstance(sp_entries.get("sp_mode"), dict)
-            else sp_entries.get("sp_mode", "IN-DEPTH"),
-        "signature_frame": sp_entries.get("signature_frame", {}).get("value")
-            if isinstance(sp_entries.get("signature_frame"), dict)
-            else sp_entries.get("signature_frame"),
+        "mode": mode_value,
+        "delivery": {"mode": "one_block", "record_committed_atomically": True,
+                    "asked_all_at_once": True},
+        "signature_frame": frame_value,
     }
 
-    # Add the 8 Questions (if IN-DEPTH)
+    # Add the 8 Questions -- both the RUNTIME "answers" shape prove_sp_intake.py's
+    # evaluate() actually reads (_missing_questions/_evaluate_turn_pacing) and the
+    # flat top-level keys older/other readers in this codebase use. Same values,
+    # never re-typed.
     spec = _load_sp_spec()
+    answers: Dict[str, str] = {}
     for sq in spec.get("questions", []):
         sqid = sq["id"]
         entry = sp_entries.get(sqid, {})
         val = entry.get("value") if isinstance(entry, dict) else entry
+        answers[sqid] = val or ""
         record[sqid] = val or ""
+    record["answers"] = answers
+    q7_offer = answers.get("q7") or ""
+    record["offer_token_ledger"] = [q7_offer] if q7_offer else []
+
+    # FIX-3-COMPLETION: turn_ledger_provenance -- one entry per REQUIRED question
+    # (q1..q8) from the turn-gate's own log (ledger["sp_turn_log"], written by
+    # _sig_answer as each turn actually happened), signed with prove_sp_intake.py's
+    # OWN _sign_turn_ledger so the signature the prover recomputes matches exactly.
+    turn_log = ledger.get("sp_turn_log", [])
+    req_ids = [sq["id"] for sq in spec.get("questions", [])]
+    ledger_turns = [{"question_id": t["question_id"], "turn": t["turn"],
+                     "asked_at": t.get("asked_at"), "validated_at": t.get("validated_at")}
+                    for t in turn_log if t.get("question_id") in req_ids]
+    prove_sp_intake_mod = _import_skill51_module("prove_sp_intake")
+    if ledger_turns and prove_sp_intake_mod is not None:
+        sig = prove_sp_intake_mod._sign_turn_ledger(ledger_turns, record["deck_type"], commit_id)
+        record["turn_ledger_provenance"] = {"turns": ledger_turns, "signature": sig}
 
     # Write sp_intake.json atomically
     sp_dest = run_dir / "working" / "copy"
@@ -812,6 +921,29 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     with open(sp_tmp, "w", encoding="utf-8") as fh:
         json.dump(record, fh, indent=2, default=str)
     os.replace(sp_tmp, sp_path)
+
+    # FIX-3-COMPLETION: wrap the working bare-list transcript (written turn by
+    # turn by _sig_answer) into the signed driver envelope
+    # P-SP-INTAKE-TRACE / intake_trace_check.check_driver_provenance() requires
+    # -- {"format": "sp-intake-transcript-v1", "qid_sequence": [...], "turns":
+    # [...], "driver_signature": ...}. Built with intake_trace_check.py's OWN
+    # build_driver_envelope() so the signature matches what it recomputes.
+    intake_trace_check_mod = _import_skill51_module("intake_trace_check")
+    raw_turns = read_intake_transcript(run_dir)
+    if intake_trace_check_mod is not None and raw_turns:
+        seen = set()
+        qid_sequence = []
+        for t in raw_turns:
+            q = t.get("qid")
+            if q and q not in seen:
+                seen.add(q)
+                qid_sequence.append(q)
+        envelope = intake_trace_check_mod.build_driver_envelope(qid_sequence, raw_turns)
+        env_path = run_dir / "working" / "interview" / "intake_transcript.json"
+        env_tmp = env_path.with_suffix(".json.tmp")
+        with open(env_tmp, "w", encoding="utf-8") as fh:
+            json.dump(envelope, fh, indent=2, default=str)
+        os.replace(env_tmp, env_path)
 
     # Ensure deck_type is signature_presentation
     intake = read_intake_json(run_dir)
@@ -952,7 +1084,15 @@ def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
                     "prove_sp_intake", cand)
                 mod = importlib_util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-                fails = mod.evaluate(sp_intake)
+                # FIX-3-COMPLETION: this was passing the Path object itself, not
+                # its parsed contents -- evaluate() always saw "not a JSON
+                # object" (AF-SP-TYPE-MISMATCH) regardless of what the record
+                # actually contained. Advisory-only (never blocked intake
+                # completion either way -- build_deck.py's preflight is the
+                # real enforcement) but worth reading correctly.
+                with open(sp_intake, "r", encoding="utf-8") as _fh:
+                    sp_intake_obj = json.load(_fh)
+                fails = mod.evaluate(sp_intake_obj)
                 return fails if fails else []
             except Exception as exc:
                 return [("AF-SP-8Q-MISSING",
