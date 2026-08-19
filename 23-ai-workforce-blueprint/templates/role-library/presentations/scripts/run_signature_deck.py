@@ -832,6 +832,14 @@ _SP_ONLY_PHASE_IDS = frozenset({
     "P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
 })
 _CONVERTER_ONLY_PHASE_IDS = frozenset({"P-CONVERTER"})
+# Wave C unit C1 (manifest_version 51) -- mirrors presentation_job/phases.py 1:1 (same
+# fail-safe direction: filtered out ONLY when the electing intake flag is POSITIVELY known
+# to be something other than "yes"). P-U-FORM-CHECKOUT rides the same WANT_SALES_CHECKOUT
+# flag as P-U-SALES-BUILD / P-U-CHECKOUT-BUILD -- one combined yes/no for the pair.
+_SALES_CHECKOUT_ONLY_PHASE_IDS = frozenset({
+    "P-U-SALES-BUILD", "P-U-CHECKOUT-BUILD", "P-U-FORM-CHECKOUT",
+})
+_VSL_ONLY_PHASE_IDS = frozenset({"P-U-VSL-BUILD"})
 
 
 def _client_deck_shape(run_dir: Path) -> dict:
@@ -846,11 +854,20 @@ def _client_deck_shape(run_dir: Path) -> dict:
         obj = {}
     deck_type = str(obj.get("deck_type") or "").strip()
     creation_mode = str(obj.get("creation_mode") or "").strip()
+    pre_capture = obj.get("pre_presentation_capture")
+    if not isinstance(pre_capture, dict):
+        pre_capture = {}
+    sales_checkout = str(pre_capture.get("WANT_SALES_CHECKOUT") or "").strip().lower()
+    vsl_page = str(pre_capture.get("WANT_VSL_PAGE") or "").strip().lower()
     return {
         "deck_type_known": bool(deck_type),
         "is_signature": deck_type == "signature_presentation",
         "creation_mode_known": bool(creation_mode),
         "is_content_first": creation_mode in _CONTENT_FIRST_CREATION_MODES,
+        "sales_checkout_known": bool(sales_checkout),
+        "wants_sales_checkout": sales_checkout == "yes",
+        "vsl_known": bool(vsl_page),
+        "wants_vsl": vsl_page == "yes",
     }
 
 
@@ -876,6 +893,12 @@ def _client_visible_phases(run_dir: Path, phases: list) -> list:
         elif pid in _SP_ONLY_PHASE_IDS:
             if shape["deck_type_known"] and not shape["is_signature"]:
                 continue  # positively known non-signature deck: no-ops
+        elif pid in _SALES_CHECKOUT_ONLY_PHASE_IDS:
+            if shape["sales_checkout_known"] and not shape["wants_sales_checkout"]:
+                continue  # positively known decline: no-ops
+        elif pid in _VSL_ONLY_PHASE_IDS:
+            if shape["vsl_known"] and not shape["wants_vsl"]:
+                continue  # positively known decline: no-ops
         visible.append(ph)
     return visible
 

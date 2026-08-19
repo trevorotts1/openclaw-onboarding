@@ -8,6 +8,11 @@ Ground truth this file pins (FABLE-TRUTH SS1 / MASTER-WORK-ORDER B2):
     registry, execution_plan.py's DAG).
   * 31 phases do real work on a standard from-scratch deck (5 conditional
     pass-throughs: P-CONVERTER + the four P-SP-* signature-only phases).
+    Wave C unit C1 (manifest_version 51) added 4 more conditional
+    pass-throughs (P-U-SALES-BUILD/P-U-CHECKOUT-BUILD/P-U-FORM-CHECKOUT/
+    P-U-VSL-BUILD, gated on the upsell intake flags) -- none of these
+    fixtures set those flags, so all four stay client-visible (fail-safe:
+    unknown widens), making the real counts below 35/39/36/40.
   * 35 on a signature deck (only P-CONVERTER is conditional there).
   * 32 on a content-conversion deck (only the four P-SP-* phases are
     conditional there).
@@ -67,7 +72,7 @@ _SP_ONLY = ("P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIE
 class TestEnforcedCountUnchanged:
     def test_manifest_has_36_phases(self):
         phases = _manifest_phases()
-        assert len(phases) == 36
+        assert len(phases) == 40  # 36 + Wave C unit C1's 4 upsell phases (manifest_version 51)
 
     def test_client_visible_phases_never_mutates_input(self, tmp_path):
         phases = _manifest_phases()
@@ -83,7 +88,7 @@ class TestEnforcedCountUnchanged:
         enforcement walk changed, only the NEW client-facing twin filters."""
         phases = _manifest_phases()
         k, n = rsd._phase_index("P-CONVERTER", phases)
-        assert n == 36
+        assert n == 40
         assert k == 1  # P-CONVERTER is order -1, the lowest-order phase
 
     def test_verifier_registry_covers_all_36(self):
@@ -104,7 +109,7 @@ class TestClientVisibleCounts:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 31
+        assert len(visible) == 35  # 31 + 4 upsell phases (flags unset -> unknown widens)
         ids = {p["id"] for p in visible}
         assert "P-CONVERTER" not in ids
         for pid in _SP_ONLY:
@@ -114,7 +119,7 @@ class TestClientVisibleCounts:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, deck_type="signature_presentation", creation_mode="from_scratch")
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 35
+        assert len(visible) == 39  # 35 + 4 upsell phases (flags unset -> unknown widens)
         ids = {p["id"] for p in visible}
         assert "P-CONVERTER" not in ids
         for pid in _SP_ONLY:
@@ -124,7 +129,7 @@ class TestClientVisibleCounts:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="content_personal")
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 32
+        assert len(visible) == 36  # 32 + 4 upsell phases (flags unset -> unknown widens)
         ids = {p["id"] for p in visible}
         assert "P-CONVERTER" in ids
         for pid in _SP_ONLY:
@@ -136,7 +141,7 @@ class TestClientVisibleCounts:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="content_general")
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 32
+        assert len(visible) == 36  # 32 + 4 upsell phases (flags unset -> unknown widens)
 
     def test_unknown_intake_fails_safe_to_full_36(self, tmp_path):
         """No intake.json at all -- both signals unknown -- must NEVER shrink
@@ -144,13 +149,13 @@ class TestClientVisibleCounts:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, no_intake=True)
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 36
+        assert len(visible) == 40
 
     def test_empty_intake_object_fails_safe_to_full_36(self, tmp_path):
         phases = _manifest_phases()
         rd = _run_dir(tmp_path)  # writes {} -- both fields absent
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 36
+        assert len(visible) == 40
 
     def test_deck_type_known_but_creation_mode_unknown_only_filters_sp(self, tmp_path):
         """Partial knowledge filters ONLY the signal that is actually known --
@@ -187,7 +192,7 @@ class TestClientVisibleCounts:
         (rd / "working" / "copy").mkdir(parents=True)
         (rd / "working" / "copy" / "intake.json").write_text("{not valid json")
         visible = rsd._client_visible_phases(rd, phases)
-        assert len(visible) == 36
+        assert len(visible) == 40
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +204,7 @@ class TestClientPhaseIndexConsistency:
         phases = _manifest_phases()
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = rsd._client_phase_index(rd, "P-0.5-RESEARCH", phases)
-        assert n == 31
+        assert n == 35
         assert k is not None and 1 <= k <= n
 
     def test_deferred_phase_gets_k_none_but_real_n(self, tmp_path):
@@ -207,7 +212,7 @@ class TestClientPhaseIndexConsistency:
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = rsd._client_phase_index(rd, "P-CONVERTER", phases)
         assert k is None
-        assert n == 31  # N is still the honest client-facing total, never None
+        assert n == 35  # N is still the honest client-facing total, never None
 
     def test_every_visible_phase_has_a_unique_k_covering_1_to_n_exactly(self, tmp_path):
         """The hard consistency proof: k for every client-visible phase, taken
@@ -215,9 +220,9 @@ class TestClientPhaseIndexConsistency:
         three named deck types."""
         phases = _manifest_phases()
         for deck_type, creation_mode, expected_n in (
-            ("webinar", "from_scratch", 31),
-            ("signature_presentation", "from_scratch", 35),
-            ("webinar", "content_personal", 32),
+            ("webinar", "from_scratch", 35),
+            ("signature_presentation", "from_scratch", 39),
+            ("webinar", "content_personal", 36),
         ):
             rd = tmp_path / f"consist-{deck_type}-{creation_mode}"
             rd.mkdir()
@@ -241,7 +246,7 @@ class TestClientPhaseIndexConsistency:
         rd = _run_dir(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = rsd._client_phase_index(rd, "P-DOES-NOT-EXIST", phases)
         assert k is None
-        assert n == 31
+        assert n == 35
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +301,8 @@ class TestDeclarePlan:
 
     def test_enforcement_fields_stay_full_36(self, tmp_path, monkeypatch):
         plan, _sent = self._declare(tmp_path, monkeypatch, "webinar", "from_scratch")
-        assert plan["total"] == 36
-        assert len(plan["steps"]) == 36
+        assert plan["total"] == 40
+        assert len(plan["steps"]) == 40
         ids = {s["id"] for s in plan["steps"]}
         assert "P-CONVERTER" in ids
         for pid in _SP_ONLY:
@@ -305,20 +310,20 @@ class TestDeclarePlan:
 
     def test_client_facing_fields_match_deck_type(self, tmp_path, monkeypatch):
         plan, sent = self._declare(tmp_path, monkeypatch, "webinar", "from_scratch")
-        assert plan["client_facing_total"] == 31
-        assert len(plan["client_facing_step_ids"]) == 31
+        assert plan["client_facing_total"] == 35
+        assert len(plan["client_facing_step_ids"]) == 35
         assert "P-CONVERTER" not in plan["client_facing_step_ids"]
-        assert "I'll follow these 31 steps" in sent[0]
+        assert "I'll follow these 35 steps" in sent[0]
 
     def test_signature_deck_message_says_35(self, tmp_path, monkeypatch):
         plan, sent = self._declare(tmp_path, monkeypatch, "signature_presentation", "from_scratch")
-        assert plan["client_facing_total"] == 35
-        assert "I'll follow these 35 steps" in sent[0]
+        assert plan["client_facing_total"] == 39
+        assert "I'll follow these 39 steps" in sent[0]
 
     def test_content_conversion_deck_message_says_32(self, tmp_path, monkeypatch):
         plan, sent = self._declare(tmp_path, monkeypatch, "webinar", "content_personal")
-        assert plan["client_facing_total"] == 32
-        assert "I'll follow these 32 steps" in sent[0]
+        assert plan["client_facing_total"] == 36
+        assert "I'll follow these 36 steps" in sent[0]
 
     def test_unknown_deck_shape_message_says_36_not_a_wrong_smaller_number(self, tmp_path, monkeypatch):
         phases = _manifest_phases()
@@ -328,9 +333,9 @@ class TestDeclarePlan:
                             lambda text: (sent.append(text), ("mid-1", True))[1])
         rsd.declare_plan(rd, phases)
         plan = json.loads((rd / "working" / "checkpoints" / "declared_plan.json").read_text())
-        assert plan["client_facing_total"] == 36
-        assert plan["total"] == 36
-        assert "I'll follow these 36 steps" in sent[0]
+        assert plan["client_facing_total"] == 40
+        assert plan["total"] == 40
+        assert "I'll follow these 40 steps" in sent[0]
 
     def test_idempotent_second_call_does_not_resend(self, tmp_path, monkeypatch):
         phases = _manifest_phases()

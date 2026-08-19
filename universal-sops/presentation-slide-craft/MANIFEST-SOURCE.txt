@@ -1,3 +1,3 @@
-content_sha256=8a35040966191251818bc19a744b1f65e8bd81456088092fe8d77aef5e0a3beb
-generated=2026-08-18T14:30:19Z
-source=PIPELINE-MANIFEST.json (v50, P-QC-AGGREGATE verifier declaration + min_bytes split-brain reconciliation; content_sha256 restamped against the merged content)
+content_sha256=d5ec1b35066b1357f3b64fd724f264078f288d164fa6a833b3b75ef5460b0db0
+generated=2026-08-19T11:26:19Z
+source=PIPELINE-MANIFEST.json (v51, Wave-C unit C1: added the 4 upsell-branch phases P-U-SALES-BUILD/P-U-CHECKOUT-BUILD/P-U-FORM-CHECKOUT/P-U-VSL-BUILD promised by intake/upsell-questions.json (want_sales_checkout/want_vsl_page), gated conditional executors, VSL ordered after P9.6-WEBINAR-VIDEO; executor cmds + produces_artifact paths corrected against C2/C3's actual landed scripts (no --mode flag exists; real paths are working/sales-checkout/* and working/vsl/*); content_sha256 restamped against the merged content)

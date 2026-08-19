@@ -47,8 +47,13 @@ from typing import Dict, List, Optional, Tuple
 # deliverables.py / build_deck.py's already-reconciled floors (3000 / 20000).
 # Content-only edit to two existing entries, same class of change as WI-10
 # (44 -> 45); MIN follows the manifest in the same commit.
-MIN_MANIFEST_VERSION = 50
-MIN_MANIFEST_PHASES = 36
+# 50 -> 51: MASTER-WORK-ORDER-20260818 Wave C, unit C1 -- added the four upsell-branch
+# phases (P-U-SALES-BUILD, P-U-CHECKOUT-BUILD, P-U-FORM-CHECKOUT, P-U-VSL-BUILD) +
+# their AF-U-* autofails, promised by intake/upsell-questions.json. Phase count 36 -> 40.
+# Mirrors the MIN_MANIFEST_VERSION bump in presentation_job/manifest.py (bumped together,
+# per that module's own comment) so this standalone assert tool never carries a stale floor.
+MIN_MANIFEST_VERSION = 51
+MIN_MANIFEST_PHASES = 40
 MIN_AF_SP_CODES = 16
 
 
