@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # scripts/ci/presentations-drift-gates.sh
 #
-# Three CI drift gates for the presentation pipeline, added after two landmines
-# each passed a green 93-check CI on the fix/pres-wave1-rollblockers branch:
+# Four CI drift gates for the presentation pipeline. The first three were added
+# after two landmines each passed a green 93-check CI on the fix/pres-wave1-rollblockers
+# branch; the fourth was added after 00-START-HERE.md and SOP-SLIDE-05-PROCESS-MANIFEST.md
+# were found describing an obsolete 21-step / 12-phase scheme months after the manifest
+# had grown to 36 phases, while SOP-SLIDE-06 asserted (falsely, and unchecked) that the
+# docs used "the SAME phase ids" as the manifest:
 #
 #   Problem 1 (fix_bundle_complete class): the canonical DELIVERABLE_AUDIT_SPEC
 #   symbol went missing / import-broken in fix_bundle_complete.py, which left
@@ -38,6 +42,13 @@
 #                                       (The pre-U05 version of this gate always printed
 #                                       GATE3_SKIP_WITH_REASON and exited 0 -- a no-op
 #                                       wearing a GATE 3 label. That skip path is gone.)
+# GATE 4 (phase-doc lockstep)       -- reads `phases[].id` straight out of
+#                                       PIPELINE-MANIFEST.json and fails, naming the
+#                                       exact missing id(s), if 00-START-HERE.md or
+#                                       SOP-SLIDE-05-PROCESS-MANIFEST.md stops naming
+#                                       (backtick-quoted) every current phase. The
+#                                       precise guard SOP-SLIDE-06 §6 now points to as
+#                                       what makes its "same phase ids" claim true.
 #
 # Exit code: 0 only if every gate that CAN fail today did not fail.
 # Prints which gate failed (and why) on any non-zero exit.
@@ -322,10 +333,76 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "== GATE 4: phase-doc lockstep (00-START-HERE.md + SOP-SLIDE-05-PROCESS-MANIFEST.md <-> PIPELINE-MANIFEST.json phases[]) =="
+# Added after the 00-START-HERE.md / SOP-SLIDE-05 phase lists were found describing an
+# obsolete 21-step / 12-phase scheme (ids A, B, 1, 1Q, 1A, 1.5, 2, 3, 4, 5, 6, POST-6) that
+# matched NONE of the current 36 phases -- while SOP-SLIDE-06 asserted the docs used "the
+# SAME phase ids" as the manifest, so nothing ever caught the drift. This gate reads the
+# canonical id list straight from the manifest and fails, naming exactly which id is
+# missing from which doc, the moment a phase is added/renamed in PIPELINE-MANIFEST.json
+# without the doc being updated to name it (backtick-quoted, e.g. `` `P4-COPY` ``).
+if [ ! -f "$MANIFEST" ]; then
+  echo "GATE 4 FAILED: manifest not found at $MANIFEST" >&2
+  FAILED=1
+else
+  GATE4_RC=0
+  GATE4_OUT="$(MANIFEST_PATH="$MANIFEST" python3 - <<'PYEOF' 2>&1
+import json
+import os
+import pathlib
+import sys
+
+repo_root = pathlib.Path(".")
+manifest_path = pathlib.Path(os.environ["MANIFEST_PATH"])
+docs = [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md",
+    "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md",
+]
+
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+ids = [p["id"] for p in manifest["phases"]]
+if not ids:
+    print("GATE4_FAIL: PIPELINE-MANIFEST.json phases[] is empty -- canon itself is broken.")
+    sys.exit(2)
+
+failures = []
+for doc_rel in docs:
+    doc_path = repo_root / doc_rel
+    if not doc_path.exists():
+        failures.append(f"{doc_rel}: FILE NOT FOUND")
+        continue
+    text = doc_path.read_text(encoding="utf-8")
+    missing = [pid for pid in ids if f"`{pid}`" not in text]
+    if missing:
+        failures.append(f"{doc_rel}: missing {len(missing)} of {len(ids)} phase id(s): {missing}")
+    else:
+        print(f"GATE4_DOC_OK: {doc_rel} names all {len(ids)} manifest phase ids.")
+
+if failures:
+    print("GATE4_FAIL: a doc's phase-id list has drifted from PIPELINE-MANIFEST.json phases[] "
+          "(missing id = doc describes fewer phases than the manifest actually runs):")
+    for f in failures:
+        print(f"  - {f}")
+    sys.exit(1)
+
+print(f"GATE4_PASS: both docs name all {len(ids)} current manifest phase ids.")
+sys.exit(0)
+PYEOF
+)" || GATE4_RC=$?
+
+  echo "$GATE4_OUT"
+  if [ "$GATE4_RC" -ne 0 ]; then
+    echo "GATE 4 FAILED: see GATE4_FAIL above -- update the named doc's phase list to name the missing id(s)." >&2
+    FAILED=1
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep)."
 exit 0

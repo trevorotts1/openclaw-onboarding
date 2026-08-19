@@ -119,6 +119,11 @@ missing.
 - `PIPELINE-MANIFEST.json` — the single source of truth this SOP maintains.
 - `MASTER-QC-AUTOFAIL-RULESET.md` — Section 5 is the canonical AF registry (`AF-SYNC` lives here too).
 - `SOP-SLIDE-05-PROCESS-MANIFEST.md` — the per-run attestation (`process_manifest.json`) uses
-  the SAME phase ids / gate codes as this manifest, so a run can be checked against the stack
-  it claims to follow.
+  the SAME phase ids (the literal `phases[].id` strings, e.g. `P4-COPY`, `P8-ASSEMBLE`) and gate
+  codes as this manifest, per SOP-SLIDE-05 §2's field rule — so a run can be checked against the
+  stack it claims to follow. This was FALSE for months (SOP-SLIDE-05 and 00-START-HERE.md both
+  described an obsolete short-code scheme — `A`, `B`, `1`, `1Q`, `1A`, `1.5`, `2`... — that
+  matched no `phases[].id` in this manifest); it is corrected as of the 2026-08 phase-doc
+  rewrite and now held there by GATE 4 of `scripts/ci/presentations-drift-gates.sh`, which fails
+  CI the moment either doc's phase-id list stops being a superset of this manifest's `phases[]`.
 - `scripts/build_deck.py`, `scripts/sync_check.py`, `scripts/test_preflight.py`.

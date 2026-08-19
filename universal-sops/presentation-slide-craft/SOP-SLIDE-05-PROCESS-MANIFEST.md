@@ -18,7 +18,7 @@ This is build doctrine. NONE of its content is ever printed on a slide.
 
 ## 1. THE FILE
 
-`working/checkpoints/process_manifest.json` — one JSON object per run, created at Phase A and appended to through closeout. It lives in the run's `working/checkpoints/` subtree (the same `working/` tree `build_deck.py` walks up to for its process preflight). It is the single per-run attestation that the full SOP stack ran.
+`working/checkpoints/process_manifest.json` — one JSON object per run, created at `P0A-INTAKE` and appended to through closeout. It lives in the run's `working/checkpoints/` subtree (the same `working/` tree `build_deck.py` walks up to for its process preflight). It is the single per-run attestation that the full SOP stack ran.
 
 Top-level shape:
 
@@ -45,7 +45,7 @@ Each phase, as it finishes, APPENDS exactly one object to `phases[]`:
 
 ```json
 {
-  "phase": "1Q",
+  "phase": "P1Q-COPY-QC",
   "role": "QC Specialist - Presentations",
   "artifact_path": "working/qc/copy_qc_report.json",
   "ran": true,
@@ -57,7 +57,7 @@ Each phase, as it finishes, APPENDS exactly one object to `phases[]`:
 ```
 
 Field rules:
-- **phase** (string): the pipeline-map phase id (`A`, `B`, `1`, `1Q`, `1A`, `1.5`, `2`, `3`, `4`, `5`, `6`, `POST-6`).
+- **phase** (string): the exact `phases[].id` string from `PIPELINE-MANIFEST.json` (e.g. `P-0.5-RESEARCH`, `P4-COPY`, `P1Q-COPY-QC`, `P8-ASSEMBLE`, `P9-DELIVER`) — never a short code. This is the same id `run_signature_deck.py` writes into `phase_attestations[]` (Section 7 below); Section 4's finalization list carries the current full 36-id registry. Using the manifest's own id, and only that id, is what makes SOP-SLIDE-06's "same phase ids" claim true instead of aspirational.
 - **role** (string): the owning role that ran the phase (spell it out, no acronyms).
 - **artifact_path** (string): the primary artifact this phase produced, relative to the run dir (e.g. `working/copy/slides_copy.md`, `working/renders/`, the assembled `.pptx`). For the render/assembly phases this points at the canonical `scripts/build_deck.py` invocation and its outputs.
 - **ran** (bool): true only if the phase actually executed. A phase that was skipped either has no entry or `ran: false` (both fail the corresponding gate).
@@ -86,10 +86,10 @@ There is no `render_manifest.json`, no `render_deck.py`, and no `vision_qc_log.j
 
 ## 4. FINALIZATION (closeout)
 
-At closeout (after Phase 6 final deck QC passes), the Director:
-1. Confirms every required phase (`A`, `B`, `1`, `1Q`, `1A`, `1.5`, `2`, `3`, `4`, `5`, `6`) has an entry with `ran: true`.
-2. Confirms every QC phase (`1Q`, `3`, `5`, `6`) has `qc_pass: true`.
-3. Confirms the render/assembly entries name the canonical `scripts/build_deck.py` and a manifest-compliant model.
+At closeout (after `P-QC-AGGREGATE`'s final deck QC passes), the Director:
+1. Confirms every phase this run actually dispatched has an entry with `ran: true` — every `phases[].id` in `PIPELINE-MANIFEST.json` MINUS any that correctly DEFERRED per its own preflight (`P-CONVERTER` off the content-first path; `P-SP-INTAKE` / `P-SP-INTAKE-TRACE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE` on a non-signature deck; `P-SPEECH-QC` when no speech was produced). The current full registry (v50, 36 phases, in `order`): `P-CONVERTER`, `P-0.5-RESEARCH`, `P0A-INTAKE`, `P-SP-CLAIM`, `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P0B-PRIORITY`, `P3-ARC`, `P-3.5-RESEARCH-MAP`, `P4-COPY`, `P-SP-STRUCTURE`, `P-SP-P3-HYGIENE`, `P1Q-COPY-QC`, `PF-DESIGN`, `P-TYPO-QC`, `P4-PROMPT`, `P-PROMPT-QC`, `P-STYLE-PREVIEW`, `P4-RENDER`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P8-ASSEMBLE`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.25-WORKBOOK`, `P9-SPEECH`, `P8.4-FISH-TAG`, `P9-SPEECH-WEBINAR-INTRO`, `P9.1-SPEECH-PDF`, `P-SPEECH-QC`, `P-QC-AGGREGATE`, `P9.5-NOTES-SYNC`, `P9.2-GHL-UPLOAD`, `P9.6-WEBINAR-VIDEO`, `P7-TELEPROMPTER`, `P9-DELIVER`. Kept in lockstep with the manifest by GATE 4 of `scripts/ci/presentations-drift-gates.sh` (fails CI if this list and the manifest diverge).
+2. Confirms every QC phase (`P1Q-COPY-QC`, `P-TYPO-QC`, `P-PROMPT-QC`, `P-IMAGE-QC`, `P-SHIFT-QC`, and `P-SPEECH-QC` when a speech was produced) has `qc_pass: true`, and that `P-QC-AGGREGATE`'s combined score reflects all of them.
+3. Confirms the render/assembly entries (`P4-RENDER`, `P8-ASSEMBLE`) name the canonical `scripts/build_deck.py` and a manifest-compliant model.
 4. Sets `finalized: true` and `finalized_at` to the closeout timestamp.
 
 A deck whose `process_manifest.json` is not finalized, or is missing any required phase entry, is NOT final regardless of how the rendered slides look. The manifest is the single per-run attestation that the full SOP stack ran.
@@ -98,7 +98,7 @@ A deck whose `process_manifest.json` is not finalized, or is missing any require
 
 ## 5. ESCALATION / REPAIR PATH
 
-1. A missing or `ran: false` phase entry at Phase 6: the QC Specialist fails the DECK with the matching auto-fail code and routes the missing phase back to its owning role to actually run it (not to backfill the manifest).
+1. A missing or `ran: false` phase entry at `P-QC-AGGREGATE`: the QC Specialist fails the DECK with the matching auto-fail code and routes the missing phase back to its owning role to actually run it (not to backfill the manifest).
 2. A renderer entry naming anything other than `scripts/build_deck.py` (AF-RENDERER): re-render and re-assemble through the canonical renderer; the manifest entry is rewritten by `build_deck.py` itself, never hand-edited to pass.
 3. A non-manifest model id (AF-MODEL-SOVEREIGNTY): halt; per the master SOP a model outage means PAUSE and escalate, never substitute. The Director escalates to the operator.
 4. Hand-editing the manifest to fake a `ran: true` entry is a process-integrity violation (the manifest must reflect what actually executed); on detection, escalate to the Director and re-run the phase.

@@ -1,3 +1,57 @@
+## [v22.0.50] -- 2026-08-18 -- fix(presentations): phase-list truth rewrite (00-START-HERE.md + SOP-SLIDE-05/06) + GATE 4 CI guard against manifest phase-id drift
+
+Batch merge of `fix/docs-phases` onto v22.0.49. Verified correct and complete
+before merge -- read in full (not grepped) against `PIPELINE-MANIFEST.json`
+v50 (36 phases) and cross-checked programmatically: 0 missing/extra phase
+ids, 0 order mismatches, 0 owning-role mismatches on the 36-entry doc
+sequence.
+
+A second assigned fix (AF-DH1: six-vs-seven client-package rule in
+`MASTER-QC-AUTOFAIL-RULESET.md`) has NO branch on origin -- the dispatched
+agent's claim of ENOSPC-blocked work could not be contradicted by any check,
+and the underlying doc defect it was meant to fix is still open on main.
+Nothing exists to merge for AF-DH1; it is NOT part of this release and needs
+re-dispatch.
+
+### fix/docs-phases -- 00-START-HERE.md + SOP-SLIDE-05/06 named a stale, wrong phase list; nothing enforced it
+
+`23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md`
+and `universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md`
+described the presentations pipeline's phase sequence in prose, but that
+prose had drifted from `PIPELINE-MANIFEST.json` (the actual source of truth,
+v50, 36 phases) with no CI check ever comparing the two. SOP-SLIDE-06 even
+asserted SOP-SLIDE-05 used "the SAME phase ids" as the manifest -- an
+assertion that had been false for months.
+
+CHANGED:
+  - `00-START-HERE.md`: "Pipeline Sequence" section rewritten to name all 36
+    current manifest phase ids in the manifest's own `order`-sorted
+    sequence, with owning-role and conditional-routing prose (P-CONVERTER
+    content-first-only, the four P-SP-* phases that defer unless
+    `deck_type==signature_presentation`, P-SP-CLAIM running for every deck,
+    P-SPEECH-QC deferring absent a speech QC report) matching the manifest's
+    own `routing_note`/`preflight.label` fields verbatim.
+  - `SOP-SLIDE-05-PROCESS-MANIFEST.md`: phase-id field rule rewritten to
+    require the literal `phases[].id` string; closeout finalization list and
+    QC/render/assembly references updated to the 36 real ids.
+  - `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`: added an honest note that the old
+    "SAME phase ids as SOP-SLIDE-05" claim was false for months and is now
+    enforced mechanically.
+  - `scripts/ci/presentations-drift-gates.sh` /
+    `.github/workflows/presentations-drift-gates.yml`: new **GATE 4** --
+    fails CI if either doc stops naming all 36 current manifest phase ids.
+    Proved live: a deliberate single-id removal from a scratch copy of
+    00-START-HERE.md made GATE 4 fail with the exact missing id named; the
+    unmodified branch passes all 4 gates (import smoke, manifest lockstep
+    x2, whitelist parity, phase-doc lockstep).
+  - `PIPELINE-MANIFEST.json` itself was NOT touched -- the manifest remains
+    the source of truth; the docs were made to conform to it, not the
+    reverse.
+  - `universal-sops/_content-manifest.json` sha256 entries for the two
+    edited SOP files restamped via `scripts/hash-universal-sops-manifest.py`
+    so the manifest/MANIFEST-SOURCE.txt/_content-manifest.json hash lockstep
+    stays clean (112 files, all sha256 match).
+
 ## [v22.0.49] -- 2026-08-18 -- fix(presentations): P-CONVERTER routing/verifier for from_scratch decks + refresh-dept-scripts.py .md/.template coverage gap
 
 Batch merge of `fix/run-slides` + `fix/run-refresh` onto v22.0.48. Both fixes
