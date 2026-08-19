@@ -24,8 +24,14 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   image tool of its own, and does **not** turn a bare `scene`/`copy` pair into a prompt.
   It submits each rich prompt to `gpt-image-2-text-to-image` / `-image-to-image` (16:9,
   2K, the mandatory English/Latin-only pin appended), polls, downloads, verifies every
-  PNG, assembles the full-bleed `.pptx`, and runs the postflight completeness gate +
-  delivery interlock over the full ten-file bundle.
+  PNG, assembles the full-bleed `.pptx`, and then runs **two distinct gates over two
+  distinct bundles**: the **postflight completeness gate** enforces the **ten-file
+  operator build bundle** (`DELIVERABLE_COUNT = 10` in `presentation_job/deliverables.py`,
+  run by `fix_bundle_complete.py`) — everything the pipeline produces internally; the
+  **delivery interlock** enforces the **seven-file client package**
+  (`delivery_gate.check_af_dh1`, all seven hard-required —
+  `CLIENT_PACKAGE_WARN_ONLY = frozenset()`) — the narrower subset actually handed to the
+  client.
 
 **The retired claim that "the script composes the KIE prompt mechanically from scene +
 copy" is FALSE for the current engine and is a banned residual pattern.** If you ever
