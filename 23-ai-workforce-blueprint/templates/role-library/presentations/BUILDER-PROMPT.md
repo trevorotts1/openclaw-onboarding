@@ -25,7 +25,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   It submits each rich prompt to `gpt-image-2-text-to-image` / `-image-to-image` (16:9,
   2K, the mandatory English/Latin-only pin appended), polls, downloads, verifies every
   PNG, assembles the full-bleed `.pptx`, and runs the postflight completeness gate +
-  delivery interlock over the full nine-file bundle.
+  delivery interlock over the full ten-file bundle.
 
 **The retired claim that "the script composes the KIE prompt mechanically from scene +
 copy" is FALSE for the current engine and is a banned residual pattern.** If you ever
