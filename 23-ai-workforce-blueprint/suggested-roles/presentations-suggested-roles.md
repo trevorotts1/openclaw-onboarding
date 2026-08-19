@@ -37,7 +37,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 1. Slide Copywriter
 **Slug:** slide-copywriter
-**What it does:** Writes every word on every slide (Phase 1): headlines (max 9 words), subheads (max 18 words), body bullets (max 3), and presenter notes. Places the canonical hook on the 3 to 4 DEDICATED pure-typography hook slides named by the Hook Strategist and nowhere else. Enforces no-em-dash and no-fabrication rules. Produces slides_copy.md for the Phase 1Q QC gate and the owner approval gate.
+**What it does:** Writes every word on every slide (P4-COPY): headlines (max 9 words), subheads (max 18 words), body bullets (max 3), and presenter notes. Places the canonical hook on the 3 to 4 DEDICATED pure-typography hook slides named by the Hook Strategist and nowhere else. Enforces no-em-dash and no-fabrication rules. Produces slides_copy.md for the Phase 1Q QC gate and the owner approval gate.
 **Core SOPs to build:**
 - 01-Write-the-Slides-Words-First-One-Big-Idea.md
 - 02-Hook-Authoring-and-Refrain-Placement.md
@@ -82,7 +82,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 6. Slide Submitter
 **Slug:** slide-submitter
-**What it does:** Submits all prompts to Kie.ai GPT Image 2 (Phase 4). Uses model gpt-image-2-image-to-image (with refs) or gpt-image-2-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. MUST call the canonical render module, not a per-deck renderer. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
+**What it does:** Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER, slide-image-creator, unreconciled). Uses model gpt-image-2-image-to-image (with refs) or gpt-image-2-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. MUST call the canonical render module, not a per-deck renderer. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
 **Core SOPs to build:**
 - 01-Model-Manifest-and-Variant-Selection.md
 - 02-KIE-Submit-and-Rate-Cap-20-requests-10-seconds.md
@@ -110,7 +110,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 9. Slide Image Creator
 **Slug:** slide-image-creator
-**What it does:** Writes one 15-element image prompt per slide (Phase 2). Targets 5,000-7,500 characters per prompt (range: 1,500-15,000). Applies the STYLE BLOCK from the Brand Steward. Front-loads critical content. Handles price-drop strikethroughs and hook text overlays. Consumes type_layout_system.md from the Typography Architect so the deck rotates layouts instead of stamping one frame. Produces working/prompts/slide-NN-prompt.txt files.
+**What it does:** Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). Targets 5,000-7,500 characters per prompt (range: 1,500-15,000). Applies the STYLE BLOCK from the Brand Steward. Front-loads critical content. Handles price-drop strikethroughs and hook text overlays. Consumes type_layout_system.md from the Typography Architect so the deck rotates layouts instead of stamping one frame. Produces working/prompts/slide-NN-prompt.txt files.
 **Core SOPs to build:**
 - 01-Per-Slide-Prompt-Authoring-15-Element-Spec.md
 - 02-Thirds-Grid-and-Composition.md
@@ -138,7 +138,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 12. Delivery Concierge
 **Slug:** delivery-concierge
-**What it does:** Owns Phase 6+ multi-destination deck delivery. Resolves all delivery destinations from the Director's intake, uploads to each (GHL, Google Drive, local Mac Downloads), sends verified delivery notifications via openclaw message send, runs ground-truth verification (file hash + size), and writes a delivery_complete ledger entry. Every other producing role routes its deliverables through this role for verified last-mile (never self-report).
+**What it does:** Owns P9-DELIVER multi-destination deck delivery. Resolves all delivery destinations from the Director's intake, uploads to each (GHL, Google Drive, local Mac Downloads), sends verified delivery notifications via openclaw message send, runs ground-truth verification (file hash + size), and writes a delivery_complete ledger entry. Every other producing role routes its deliverables through this role for verified last-mile (never self-report).
 **Core SOPs to build:**
 - 01-Destination-Resolution.md
 - 02-Multi-Destination-Upload.md
@@ -194,7 +194,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 17. Typography Architect
 **Slug:** typography-architect
-**What it does:** Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json, and BEFORE the Slide Image Creator writes any prompt. Designs one distinct TYPE-LAYOUT SYSTEM CARD per slide archetype (hook / divider / teach-one-big-idea / jaw-drop standalone / data / wall-of-wins / offer-component-card / CTA): image position, word-placement zone, type treatment, and a do/never list. Replaces the single hard-coded canonical hierarchy stack so the deck rotates layouts instead of stamping one frame. Hook slides are type-driven (no image OR at most 15% opacity background). Enforces image-position rotation (no more than 2 consecutive slides same position) and type-family rotation (no more than 3 consecutive). Outputs working/typography/type_layout_system.md, the required input to the Slide Image Creator.
+**What it does:** Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json, and BEFORE the Slide Image Creator writes any prompt. Designs one distinct TYPE-LAYOUT SYSTEM CARD per slide archetype (hook / divider / teach-one-big-idea / jaw-drop standalone / data / wall-of-wins / offer-component-card / CTA): image position, word-placement zone, type treatment, and a do/never list. Replaces the single hard-coded canonical hierarchy stack so the deck rotates layouts instead of stamping one frame. Hook slides are type-driven (no image OR at most 15% opacity background). Enforces image-position rotation (no more than 2 consecutive slides same position) and type-family rotation (no more than 3 consecutive). Outputs working/typography/type_layout_system.md, the required input to the Slide Image Creator.
 **Core SOPs to build:**
 - 01-Type-Layout-System-Authoring.md
 - 02-Hook-Slide-Typography-Spec.md
