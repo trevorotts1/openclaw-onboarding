@@ -146,6 +146,14 @@ class Phase:
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
+    # B2b (fix/engine-client-report-unformatted, MASTER-WORK-ORDER-20260818 Wave B):
+    # the manifest's own client_report templates ("Step {k} of {N} -- {name} --
+    # starting{eta}") reference a per-phase {name} the manifest already declares
+    # at the top level of every phase entry -- but until this fix nothing parsed
+    # it, so there was no way to substitute {name} even once {k}/{N} were fixed.
+    # Falls back to the phase id below (Manifest._parse_phases) when a phase
+    # entry omits "name", so this is never empty.
+    name: str = ""
     # fix/run-slides: the manifest already declares "converter_path": true +
     # a routing_note ("Content-first path only") on P-CONVERTER, but until this
     # fix NOTHING parsed either field — Manifest._parse_phases silently dropped
@@ -265,6 +273,7 @@ class Manifest:
                 id=p["id"],
                 order=float(p.get("order", 0)),
                 owning_role=p.get("owning_role") or "",
+                name=p.get("name") or p["id"],
                 # P8.25-WORKBOOK fix: the canonical manifest declares produces_artifact with a
                 # literal "{deck_slug}" token (and the " + " separator between the two workbook
                 # PDFs). Both must be normalized at phase-definition time: split " + " into the
