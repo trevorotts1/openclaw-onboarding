@@ -109,3 +109,37 @@ See the `intake-miniapp` DEPLOY.md (same Worker + D1 + Pages pattern). Fill the
 `<PLACEHOLDER>` tokens in `worker/wrangler.toml` at deploy time. Suggested host:
 `presentation-interview.<FLEET_DOMAIN>`. Secrets: `INTAKE_ADMIN_TOKEN`,
 `COMMAND_CENTER_URL`, `CC_DEPT_START_TOKEN`.
+
+## D2/D3 reconciliation — canonical status (added 2026-08-19)
+
+**This directory (`intake/interview-app/`) is the evidence-based canonical
+intake app, not `../../intake-miniapp/`.** Per Wave D / Units D2+D3 of
+`CONTROL/MASTER-WORK-ORDER-20260818.md`, quoting the evidence:
+
+1. **The bridge script actually running in production** (the Downloads working
+   copy's `app/intake_bridge.py`) is a 19-line diff from this directory's
+   `bridge/intake_bridge.py`, versus a 413-line diff from
+   `../../intake-miniapp/bridge/intake_bridge.py` — i.e. it descends from
+   *this* app, not the mini-app.
+2. **This app's own working-copy pointer** (line 11 above) already names
+   `Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/app` as its deployed
+   copy — a first-party claim the mini-app's README does not make about itself
+   against the same working copy.
+3. **The repo's own wiring references this app**, not the mini-app:
+   `DEPARTMENT-COUNTS-CANONICAL.md` cites `DEPT/intake/interview-app/` as "the
+   deployed interview app" and names `intake/interview-app/bridge/intake_bridge.py`
+   as the module `cc_board.ingest_deck_task()` is reached through.
+
+`../../intake-miniapp/README.md`'s self-description as "the primary intake
+surface" predates this evidence and is now marked deprecated there, pointing
+back here — see that file. It is **not deleted**; some of its files (the
+session-API contract with `confirm_code`, and `pages/skip-defer.js`) are
+exactly what production actually runs — see `deployed-r2/README.md` below.
+
+**`deployed-r2/`** (new, landed 2026-08-19): the actual R2-backed single-worker
+source that is live today, since D1 was never provisionable. It is a hybrid —
+session-API shape from `intake-miniapp`, `/api/intake` + `/api/dept-start` from
+this app's `worker/`, plus new static-asset + R2 plumbing neither app had. Full
+file-by-file provenance and the removal recommendation for the mini-app are in
+`deployed-r2/README.md`. **Nothing in this repo was deployed as part of this
+landing — direction is deployed → git only.**
