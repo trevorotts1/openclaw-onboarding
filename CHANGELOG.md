@@ -1,3 +1,65 @@
+## [v22.0.51] -- 2026-08-19 -- feat(presentations): reconcile every deliverable/phase count to the code + build the sales/checkout/VSL upsell branch
+
+Merge of `fix/pres-dept-truth-20260818` (PR #941, 29 commits) onto v22.0.50.
+Closes the gaps found by a full read-through audit of the department
+(`CONTROL/FABLE-TRUTH.md`): every conclusion was reached by reading the named
+file end to end on BOTH the repo and the live box, not by grepping.
+
+### The docs stopped contradicting the code
+
+Six documents taught 6, 7, 9 or 10 deliverables and two dead phase-schemes,
+and one asserted outright that two disagreeing schemes used the same phase
+ids. `CLIENT-WEBINAR-DECK-SOP.md`, `MASTER-QC-AUTOFAIL-RULESET.md` (AF-DH1
+"SIX ALLOWED FILES" against code that hard-enforces seven),
+`BUILDER-PROMPT.md`, `PRESENTATION-MASTER-DOCTRINE.md`,
+`how-to-use-this-department.md` and `delivery_gate.py`'s own docstring are
+now reconciled to what the code actually enforces: a TEN-file operator build
+bundle and a SEVEN-file client package, which are two different gates.
+`DEPARTMENT-COUNTS-CANONICAL.md` is new and is the single page carrying every
+count with the code path that proves it; other docs link to it rather than
+restating numbers, which is how they drifted apart in the first place.
+
+### The code tells the truth
+
+- Both workbook PDFs and `PRESENTER-AUDIO-WEBINAR.mp3` are recorded as
+  separately-gated deliverables. They shipped on every run and to the client's
+  GHL while appearing in no deliverable list anywhere.
+- The client-facing step count is honest: a standard-deck client is no longer
+  told "Step 5 of 36" for phases that no-op for their deck type (31 standard /
+  35 signature / 32 content-conversion), while `declared_plan.json` keeps all
+  phases for AF-PROCESS-INTEGRITY.
+- Fixed a live client-facing defect found while doing the above: the manifest's
+  `{k}`/`{N}`/`{name}` client-report templates were being sent to clients
+  UNFORMATTED on all 36 phases.
+- Live-ahead scripts merged into git; the repo's own intake driver had been
+  calling a script git did not carry.
+
+### The upsell branch exists now
+
+The hosted interview app has been asking clients for a sales page and a
+checkout page -- defaulted to YES, with a waiver mechanic where silence is not
+consent -- since deployment, and the pipeline had no way to build either. The
+answer was written to intake and then ignored forever.
+
+Adds `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT` and
+`P-U-VSL-BUILD` to `PIPELINE-MANIFEST.json` (v50 -> v51, 36 -> 40 phases) with
+AF codes, the three-registry restamp and client-count filters. The builders
+template the flow proven by hand on 2026-08-07, gated on the intake flag and
+failing closed; the VSL builder additionally fails closed unless the P9.6
+webinar video artifact exists and verifies. Substance verifiers cover all 40
+phases (each proven non-vacuous against missing, empty and decoy artifacts)
+with 34 new tests.
+
+### CI caught what local gates did not
+
+Local green was not CI green -- twice. Six follow-up commits fixed gates that
+only the full check set caught, including two real defects: the new canonical
+doc had been registered as a ROLE, making `_index.json` claim 35 presentations
+roles against a roster of 34; and a doc fix had been applied to a GENERATED
+file (`how-to-use-this-department.md`) which the generator silently reverts --
+that fix had to move to its source and be regenerated, or it would have
+vanished on the next run with no trace of why.
+
 ## [v22.0.50] -- 2026-08-18 -- fix(presentations): phase-list truth rewrite (00-START-HERE.md + SOP-SLIDE-05/06) + GATE 4 CI guard against manifest phase-id drift
 
 Batch merge of `fix/docs-phases` onto v22.0.49. Verified correct and complete
