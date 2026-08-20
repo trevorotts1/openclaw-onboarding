@@ -676,10 +676,11 @@ HARD RULE — the negative-result contract applies to every client-facing claim:
 You can prove the escalation path works from inside your own box, headless, with no client involvement:
 
 ```bash
-# 1. Public URL reachability — expect a 302 redirect to Cloudflare Access login
-#    (or a 200 from the Access login page). Anything else = investigate BEFORE escalating.
+# 1. Public URL reachability — note: a GET to the webhook often returns 404 or a 302
+#    to Cloudflare Access login (the n8n webhook accepts POST only). Either answer
+#    proves the box can reach the public URL; the __AUTHTEST__ POST below is the
+#    decisive end-to-end test. Never read a 404 as "the channel is down".
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true
-curl -s -L "$RESCUE_RANGERS_WEBHOOK_URL" | head -c 200; echo
 
 # 2. Full auth proof — __AUTHTEST__ body. Correct secret + canonical URL returns
 #    {"accepted":true,"ticketId":null,"status":"test_suppressed"} = end-to-end works,

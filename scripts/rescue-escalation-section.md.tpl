@@ -113,7 +113,7 @@ HARD RULE — never tell a client "I don't have your credentials" before reading
 SELF-VERIFY before asking the client for anything (headless):
 
 ```bash
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true   # expect 302 -> CF Access login
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true   # 404 or 302 is NORMAL (webhook is POST-only)
 _RR_SECRET_ARGS=()
 [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
 curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
