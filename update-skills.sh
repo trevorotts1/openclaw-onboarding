@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v22.0.55"
+ONBOARDING_VERSION="v22.0.56"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v22.0.55 - safe_json_edit
+# v22.0.56 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5325,6 +5325,7 @@ PYEOF
   _U6B_PERSONA_FAIL=0            # persona-index CONTENT wiring (sentinel != pinned release_tag, triad-divergent library, or helper did not run)
   _D2_REFRESH_STATUS="ok"       # in-scope role/SOP CONTENT refresh (refresh-stale-roles.py rc 3 -- new library content that SHOULD have re-applied to an EXISTING artifact did not)
   _D2_DEPTSCRIPTS_STATUS="ok"   # UNCONDITIONAL dept scripts/ mirror (refresh-dept-scripts.py rc 3 -- a materialized department's canonical scripts/ file missing/diverged from the library AFTER the copy step; runs every roll, independent of any gap map -- fixes delivery causes 2/3)
+  _D2_DEPTINTAKE_STATUS="ok"    # UNCONDITIONAL dept intake/ mirror (refresh-dept-intake.py rc 3 -- FAULT-11/F20: a materialized department's intake/ tree (question banks + interview-app source) missing/diverged from the library AFTER the copy step; runs every roll, independent of any gap map)
   _SHAREDCORE_STATUS="ok"       # shared-core-file wiring step (link_shared_core_files)
   # WORKFORCE-provisioning latches (v20.0.10: DECOUPLED from the content stamp --
   # they describe "is the client's workforce fully built", NOT "is the skills
@@ -7185,6 +7186,41 @@ else:
   fi
 
   # ----------------------------------------------------------
+  # FAULT-11 / F20: UNCONDITIONAL DEPARTMENT-INTAKE MIRROR.
+  # refresh-dept-scripts.py immediately above mirrors scripts/ only -- its own
+  # docstring names intake/ as explicitly OUT OF SCOPE ("a separate, undesigned
+  # gap"). Proven live 2026-08-20: a materialized Presentations department's
+  # intake/deck-intake-questions.json was stuck at v1.5.0/55 questions while the
+  # role-library shipped v1.6.0/57 (FAULT-11's two anti-fabrication questions),
+  # because NO writer in this repo ever copies intake/ onto a materialized
+  # department -- not scaffold_department (no intake/ branch), not
+  # detect-stale-artifacts.py (its manifest only tracks role/dept/sop/persona
+  # kinds, never intake), not U001/U006 (both write into sops/ and scripts/
+  # only). refresh-dept-intake.py closes that gap the same way
+  # refresh-dept-scripts.py closed the scripts/ one: unconditional every roll,
+  # no gap-map dependency, verdict re-derived from the filesystem AFTER the
+  # copy step. Its ownership policy has a THIRD bucket beyond mirror/additive
+  # -- see the script's own docstring "PROVENANCE-GATED BANK REFRESH" -- so the
+  # two named question-bank JSON files (deck-intake-questions.json,
+  # upsell-questions.json) are refreshed (backed up first) rather than left
+  # additive-forever, while a genuine post-delivery client edit is preserved,
+  # never silently clobbered.
+  # ----------------------------------------------------------
+  DEPT_INTAKE_REFRESH="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/refresh-dept-intake.py"
+  if [ -f "$DEPT_INTAKE_REFRESH" ] && command -v python3 >/dev/null 2>&1; then
+    echo ""
+    echo "  Mirroring department intake/ trees (unconditional, every roll)..."
+    if python3 "$DEPT_INTAKE_REFRESH" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE"; then
+      :
+    else
+      echo "  refresh-dept-intake.py: completed with warnings (see $LOG_FILE)"
+      _D2_DEPTINTAKE_STATUS="fail"
+    fi
+  else
+    echo "  (refresh-dept-intake.py not found or python3 unavailable -- skipping dept intake/ mirror; older bundle)"
+  fi
+
+  # ----------------------------------------------------------
   # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
   # checks role docs against the departments/ tree. If that directory is absent
   # while .workforce-build-state.json says interviewComplete=true, the drain has
@@ -7466,6 +7502,14 @@ if isinstance(n, int) and n > 0:
   #     was missing or hash-diverged from the role library AFTER this run's own
   #     copy step -- an incomplete/sabotaged mirror. (A department not yet
   #     materialized on this box is a benign skip and never lands here.)
+  #   - _D2_DEPTINTAKE_STATUS: refresh-dept-intake.py rc 3 (FAULT-11/F20) -- a
+  #     MATERIALIZED department's intake/ tree (question-bank JSON or
+  #     interview-app source) was missing or hash-diverged from the role
+  #     library AFTER this run's own copy step, OR a bank-file backup/copy
+  #     itself failed. A preserved local override is NOT a failure by design
+  #     (see the script's own PROVENANCE-GATED BANK REFRESH policy) and never
+  #     lands here. (A department not yet materialized on this box is a benign
+  #     skip and never lands here either.)
   #   - _U6C_SOPLIB_FAIL: SOP V2 library CONTENT population (U6c) -- the ingester
   #     is missing, failed, or ran and left the `sops` table below the manifest's
   #     canonical population. A box whose SOP database is a demo fixture must
@@ -7499,6 +7543,9 @@ if isinstance(n, int) and n > 0:
   fi
   if [ "${_D2_DEPTSCRIPTS_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - department scripts/ mirror (FIX-DELIVERY-02, refresh-dept-scripts.py rc 3): a materialized department's canonical scripts/ file did not verify after the copy step — see $LOG_FILE\n"
+  fi
+  if [ "${_D2_DEPTINTAKE_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - department intake/ mirror (FAULT-11/F20, refresh-dept-intake.py rc 3): a materialized department's intake/ tree did not verify after the copy step — see $LOG_FILE\n"
   fi
   if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
