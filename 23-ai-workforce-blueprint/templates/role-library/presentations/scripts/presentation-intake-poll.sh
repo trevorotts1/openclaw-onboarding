@@ -18,6 +18,21 @@
 
 set -uo pipefail
 
+# F03: cron/launchd runs this with a minimal PATH (observed on this box:
+# /usr/bin:/bin:/usr/sbin:/sbin has no /opt/homebrew/bin). Every bare
+# `python3` call below would still resolve under that minimal PATH -- macOS
+# ships a stub at /usr/bin/python3 -- but SILENTLY to a different
+# interpreter (Apple's bundled Python) than the one this codebase is
+# developed against at /opt/homebrew/bin/python3 on Apple Silicon (or
+# /usr/local/bin on Intel). That is the same class of defect as a command
+# that flat-out fails to resolve: a cron run behaves differently from an
+# interactive run with nothing in the log to explain why. Prepend the known
+# homebrew locations so both environments resolve the same interpreter;
+# nothing is removed from whatever PATH cron/launchd already supplies (or
+# the /usr/bin:/bin:/usr/sbin:/sbin fallback if PATH is unset, which set -u
+# would otherwise reject).
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+
 PROG="presentation-intake-poll.sh"
 # Resolve SCRIPTS_DIR relative to this script, via the canonical OC workspace
 _resolve_scripts_dir() {
@@ -121,8 +136,23 @@ except Exception:
 
         # state.json exists but engine is not running -- this is a parked/resume
         # candidate. Launch with --resume.
+        #
+        # F03: launcher.py is a member of the presentation_job PACKAGE and
+        # imports its siblings with a relative import (`from .vocab import
+        # ...`). Invoking it BY FILE PATH (`python3 "$LAUNCHER"`) makes
+        # Python treat it as a top-level script with no parent package, so
+        # that import dies instantly with "attempted relative import with
+        # no known parent package" -- proven on this box: `python3
+        # presentation_job/launcher.py --check --run-dir <run>` ImportErrors
+        # while `python3 -m presentation_job.launcher --check --run-dir
+        # <run>` (run from SCRIPTS_DIR) does not. Every --resume dispatch
+        # through the old file-path form died the same way, silently, so a
+        # parked job could never actually resume. Run it as a module instead
+        # -- `-m` requires the package's PARENT directory (SCRIPTS_DIR) to be
+        # the working directory, so cd there in a subshell (parens) rather
+        # than changing this script's own cwd.
         log "resuming parked job: $run_dir"
-        python3 "$LAUNCHER" --resume --run-dir "$run_dir" 2>&1 | while IFS= read -r line; do
+        ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ) 2>&1 | while IFS= read -r line; do
             log "  $line"
         done
         NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
