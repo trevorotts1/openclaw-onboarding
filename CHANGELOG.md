@@ -1,4 +1,4 @@
-## [v22.0.59] -- 2026-08-20 -- fix(presentations): AF-C8 archetype carve-out for value-stack slides (operator ruling)
+## [v22.0.60] -- 2026-08-20 -- fix(presentations): AF-C8 archetype carve-out for value-stack slides (operator ruling)
 
 - Reconciles a contradiction between two live rules. slide-copywriter doctrine permits "bullet slides <= 5
   bullets at 7 words each" and "value-stack slides <= 6 line items at 7 words per name" -- up to 62 on-slide
@@ -24,6 +24,24 @@
   dispatcher.resolve_role_prompt_path(), whose candidate list is <role>/how-to.md -> numbered -> flat
   <role>.md. MASTER-QC-AUTOFAIL-RULESET.md is NOT a candidate, so this ruling does not by itself reach the
   grader's prompt. Extending it to the grader's own rubric file is a separate operator decision.
+
+## [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
+
+- Podcast production engine (Skill 58) end-to-end audit fixes: intake bridge recovery, inbound secret
+  wiring, and Command Center kanban board connection. The engine's scripts gained the bridge path
+  (podcast_state.py +128, intake_handler.py +120), provision/revoke symmetry (provision-podcast-client.sh,
+  revoke-podcast-client.sh), and the hook registrar now mirrors the live gateway-native wake path
+  (register-podcast-hook.sh +19). WIRING.md updated to the shipped design.
+- Docs-language guard: retired term removed from the podcast runbook
+  (SOP-PODCAST-01-ENGINE-RUNBOOK.md) — three occurrences reworded to the sanctioned replacement
+  vocabulary. Universal-sops content manifest regenerated (hash f5d1b7fd).
+- Skill 58 version 0.1.42 -> 0.1.43 (skill-version.txt + SKILL.md frontmatter, lockstep).
+- cc-compat.json: pinnedTag v6.0.88 -> v6.0.91 (the latest Command Center release; carries the
+  podcast capability-manifest gates the Skill 58 activation hardening depends on). minVersion v4.73.0
+  unchanged; schema contract holds.
+- Leanne Dolce's live Command Center verified against migration 122 (seed_podcast_editor_skills_and_qc_judge,
+  applied 2026-08-09): podcast-editor / podcast-producer / podcast-host / Director of Podcast rows all
+  seeded, agent_skills populated. No client-box mutation required.
 
 ## [v22.0.58] -- 2026-08-20 -- fix(presentations): the slide-copy author was never told the density ceiling it is graded on
 
