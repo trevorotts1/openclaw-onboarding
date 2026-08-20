@@ -1,10 +1,10 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake-mini",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "question_set": "standard",
-  "source": "deck-intake-questions.json (v1.3.0, curated)",
-  "description": "Curated 13-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.3.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 13. Progress label is 'Question N of 13'. presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it.",
+  "source": "deck-intake-questions.json (v1.6.0, curated)",
+  "description": "Curated 15-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.6.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 15. Progress label is 'Question N of 15'. presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it. FIX-PITCH-ANTI-FAB (v1.1.0): added named_methodology (order 1.5) and time_to_result (order 2.5) -- unconditional, required questions the bank added at v1.6.0 so pitch_engines_check.py's AF-NO-BRANDED-METHOD / AF-NO-TIME-TO-RESULT anti-fabrication gates, which read intake.json's root named_methodology/time_to_result directly, no longer auto-fail every deck built through this app for lack of a capture question. intake_writer.py's _promote_anti_fabrication_fields() lands both at intake.json's TRUE ROOT regardless of which storeOn section they arrive through.",
   "questions": [
     {
       "id": "presentation_type",
@@ -36,6 +36,17 @@
       "block_gate": true
     },
     {
+      "id": "named_methodology",
+      "section": "deck-intake",
+      "order": 1.5,
+      "prompt": "Do you have a named methodology, framework, or system you deliver this through — what is it called, in your own words?",
+      "help": "The BRANDED METHOD name — client-supplied only, never invented for you. If you don't have a named method, say so plainly (e.g. 'no formal name, we just do X') rather than inventing one — an honest 'no' is still a real answer.",
+      "kind": "text",
+      "storeOn": "deck_brief.NAMED_METHODOLOGY",
+      "required": true,
+      "block_gate": true
+    },
+    {
       "id": "transformation_promise",
       "section": "deck-intake",
       "order": 2,
@@ -43,6 +54,17 @@
       "help": "The transformation promise drives the whole arc. Example: 'stuck and overwhelmed' to 'clear, confident, and closing'.",
       "kind": "text",
       "storeOn": "deck_brief.TRANSFORMATION_PROMISE",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "time_to_result",
+      "section": "deck-intake",
+      "order": 2.5,
+      "prompt": "How long does it typically take a client to see this result once they start — the real, honest timeframe?",
+      "help": "State the true delivery timeframe in your own words (e.g. '8 weeks', 'about 3 sessions', or 'it varies, typically N weeks') — never a faster number to sound more impressive.",
+      "kind": "text",
+      "storeOn": "deck_brief.TIME_TO_RESULT",
       "required": true,
       "block_gate": true
     },

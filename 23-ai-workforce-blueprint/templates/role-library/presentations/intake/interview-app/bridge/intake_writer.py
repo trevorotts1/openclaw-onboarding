@@ -217,6 +217,52 @@ def map_section(section: str) -> str:
     }.get(section, "deck_brief")
 
 
+# FIX-PITCH-ANTI-FAB: fields that MUST land as TRUE ROOT keys on intake.json
+# (never nested under deck_brief/pre_presentation_capture/answers) because
+# scripts/pitch_engines_check.py's chk_branded_method / chk_time_to_result
+# read them with a bare `intake.get("named_methodology")` /
+# `intake.get("time_to_result")` at the file's top level -- deliberately, so
+# a copywriter can never invent a method name or delivery timeline, only the
+# client's own answer can supply them. pitch_engines_check.py is a verifier
+# this unit may not edit to add a nested-shape fallback (unlike
+# sales_checkout_builder.py / vsl_builder.py, which test_upsell_intake_shape.py
+# pins as reading BOTH the driver's flat shape and this bridge's nested
+# shape) -- so the flat ROOT shape must be guaranteed on the write side
+# instead. deck-intake-driver.py's cmd_complete() already produces this shape
+# natively for the chat path (entries[qid] aliasing); this promotion is the
+# equivalent guarantee for the app path.
+ANTI_FABRICATION_ROOT_FIELDS = ("named_methodology", "time_to_result")
+
+
+def _promote_anti_fabrication_fields(intake: dict) -> dict:
+    """Ensure named_methodology/time_to_result land as TRUE ROOT keys, in place.
+
+    Runs on every path into write_intake_file() -- the flat-answers assembly
+    (which files the value under deck_brief.<UPPER> via field_for()'s
+    qid.upper() fallback) AND the frontend-shaped passthrough (which has no
+    "root" bucket at all in its client-side buildIntakePayload() and would
+    otherwise strand the answer inside deck_brief.<UPPER> or the raw
+    answers{} map, where pitch_engines_check.py's bare intake.get(...) read
+    can never see it). Never invents a value -- only relocates one the client
+    actually supplied, checked in this order: already at root, then
+    deck_brief.<UPPER>, then answers.<qid>. A question the client was never
+    asked (or left unanswered) is correctly left absent -- the gate should
+    fail closed on that, not be papered over here.
+    """
+    answers = intake.get("answers") or {}
+    brief = intake.get("deck_brief") or {}
+    for qid in ANTI_FABRICATION_ROOT_FIELDS:
+        if intake.get(qid):
+            continue
+        val = brief.get(qid.upper())
+        if not val:
+            raw = answers.get(qid)
+            val = raw.get("value") if isinstance(raw, dict) else raw
+        if val:
+            intake[qid] = val
+    return intake
+
+
 def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     """Turn the app's answer map into the dept-format intake record.
 
@@ -285,8 +331,13 @@ def write_intake_file(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     for every caller, not just assemble_intake()'s output: intake_bridge.py's
     cmd_ingest() calls this directly with a raw Worker payload. See
     _require_grounded_deck_type().
+
+    Also runs _promote_anti_fabrication_fields() (FIX-PITCH-ANTI-FAB) for the
+    same reason -- so named_methodology/time_to_result land at intake.json's
+    TRUE ROOT no matter which caller built `intake`.
     """
     _require_grounded_deck_type(intake)
+    _promote_anti_fabrication_fields(intake)
     out = run_dir / "working" / "copy" / "intake.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
