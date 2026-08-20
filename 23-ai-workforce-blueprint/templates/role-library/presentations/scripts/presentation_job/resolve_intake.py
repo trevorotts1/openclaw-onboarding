@@ -35,6 +35,15 @@ EXIT CODES
      neither canonical nor a known alias (see vocab.py). Nothing is written
      to --out. The caller MUST treat this as a loud, blocking failure --
      never fall back to a legacy runner and report success.
+  4  AF-REQUESTER-MISSING -- no requester_chat_id could be resolved from
+     either working/copy/intake.json or the ledger's own top-level fields.
+     Nothing is written to --out. FAULT-04 fix: this used to emit an intake
+     with `requester: {"chat_id": "", ...}` -- a known-invalid artifact that
+     presentation_job.py --new was guaranteed to reject one step later (fix
+     F1's own hard-fail). Failing here, loudly, at the point the field is
+     actually missing, replaces that guaranteed-downstream-rejection with a
+     message that names the missing field and where it should have come
+     from -- never a silent handoff of an artifact the next gate will bounce.
 """
 from __future__ import annotations
 
@@ -54,6 +63,31 @@ if __package__ in (None, ""):
     )
 else:
     from .vocab import normalize_presentation_type, UnknownPresentationType
+
+
+class MissingRequester(RuntimeError):
+    """Raised by resolve() when no source (working/copy/intake.json,
+    the ledger's own top-level fields) carries a non-empty requester chat id.
+
+    FAULT-04 fix: this replaces the old silent behaviour of emitting
+    `requester: {"chat_id": "", ...}` -- an artifact presentation_job.py
+    --new was guaranteed to hard-fail on one step later (fix F1). Callers
+    MUST treat this as a loud, blocking failure, exactly like
+    UnknownPresentationType -- never catch it to fabricate a chat_id or to
+    write an intake anyway. See main()'s EXIT CODES doc (exit 4)."""
+
+
+# The four upsell fields intake/upsell-questions.json's storeTarget maps
+# under pre_presentation_capture (WANT_SALES_CHECKOUT / its declined-reason
+# waiver, WANT_VSL_PAGE / its declined-reason waiver). Each entry is
+# (canonical pre_presentation_capture field name, the question's own `id` in
+# upsell-questions.json -- the ledger entries[] key the real driver writes).
+_UPSELL_FIELDS = (
+    ("WANT_SALES_CHECKOUT", "want_sales_checkout"),
+    ("SALES_CHECKOUT_DECLINED_REASON", "sales_checkout_declined_reason"),
+    ("WANT_VSL_PAGE", "want_vsl_page"),
+    ("VSL_PAGE_DECLINED_REASON", "vsl_page_declined_reason"),
+)
 
 
 def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
@@ -105,6 +139,56 @@ def _read_json_dict(path: Path) -> dict:
         return loaded if isinstance(loaded, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
+    """FAULT-05 fix -- resolve the client's upsell answers (sales+checkout
+    page, VSL page, and their verbatim declined-reason waivers) into the
+    canonical pre_presentation_capture.* shape, tolerating every real shape
+    they can be found in, and NEVER fabricating a value (in particular,
+    never defaulting WANT_SALES_CHECKOUT to its schema "yes" here -- that
+    default belongs to the interview layer that asks the question; this
+    function only ever carries forward an answer that was actually
+    captured somewhere on disk).
+
+    Checked, most-authoritative first (mirrors the client/chat_id precedent
+    a few lines below: working/copy/intake.json is "per-deck and durable" --
+    upstream steps can stamp it after the interview -- so it outranks the
+    raw ledger):
+      1. working/copy/intake.json's NESTED `pre_presentation_capture.<field>`
+         -- the documented contract (intake_writer.py / the app-bridge path).
+      2. working/copy/intake.json's FLAT top-level `<field>` -- the real
+         chat-driver shape (deck-intake-driver.py's cmd_complete() writes
+         upsell answers flat, with no pre_presentation_capture wrapper at
+         all -- verified against the live Wave E intake.json).
+      3. The ledger's own entries[], via _entry_raw_value(), tried under
+         both the question's own lowercase `id` (what every real driver
+         copy actually uses as the entries[] key) and the UPPERCASE
+         storeOn field name (some ledgers -- verified against the live
+         Wave E ledger -- carry both keys pointing at the identical value;
+         tolerated, never required).
+
+    Returns only the fields that actually resolved to a non-empty value --
+    an unanswered/unasked question is simply absent, never stamped with an
+    empty string or a guessed default. A "no" answer's declined-reason
+    value is returned completely unmodified (no .strip()/.lower()) so it
+    survives verbatim, exactly as the client typed it -- silence is never
+    consent, and neither is this function's own rewording.
+    """
+    nested = intake_copy.get("pre_presentation_capture")
+    if not isinstance(nested, dict):
+        nested = {}
+
+    capture: dict = {}
+    for field, qid in _UPSELL_FIELDS:
+        val = nested.get(field)
+        if not val:
+            val = intake_copy.get(field)
+        if not val:
+            val = _entry_raw_value(entries, qid) or _entry_raw_value(entries, field)
+        if val:
+            capture[field] = val
+    return capture
 
 
 def resolve(ledger_path: Path, source: str) -> dict:
@@ -167,11 +251,20 @@ def resolve(ledger_path: Path, source: str) -> dict:
     # first, matching the established precedent, with the ledger's flat
     # top-level kept only as a legacy/hand-authored fallback.
     #
-    # A run with genuinely nothing stamped anywhere (verified: a completely
-    # untouched real driver run, no upstream step involved) still resolves to
-    # an empty chat_id here -- and MUST. This function never fabricates one;
-    # presentation_job.py --new's own hard-fail on missing requester.chat_id
-    # is the correct outcome for that case, not a bug this fix papers over.
+    # FAULT-04 fix (orchestrator-verified against the live Wave E run): a run
+    # with genuinely nothing stamped anywhere (verified: a completely
+    # untouched real driver run, no upstream step involved) used to resolve
+    # to an empty chat_id here and hand that forward as if it were a valid
+    # artifact. It is NOT one: presentation_job.py --new hard-fails a job
+    # with no requester.chat_id (fix F1 -- a deck with nobody to report to
+    # must not start), so every such intake was GUARANTEED to be rejected by
+    # the very next step, having already told its own caller "resolved ...
+    # -> $OUT" as if it had succeeded. This function still never fabricates
+    # a chat_id -- that has not changed -- but it now refuses to hand
+    # forward the empty-string case at all: see the raise below. A resolve
+    # that cannot find a real requester now fails HERE, loudly, naming
+    # exactly what is missing and where it should come from, instead of
+    # silently deferring that same failure one step downstream.
     intake_copy_path = ledger_path.parent.parent / "copy" / "intake.json"
     intake_copy = _read_json_dict(intake_copy_path)
 
@@ -185,6 +278,22 @@ def resolve(ledger_path: Path, source: str) -> dict:
         or ledger.get("requester_chat_id") or ledger.get("chat_id") or ""
     )
     channel = str(intake_copy.get("requester_channel") or "")
+
+    if not chat_id:
+        raise MissingRequester(
+            "no resolvable requester.chat_id for this run. Checked "
+            f"'requester_chat_id' in {intake_copy_path} (per-deck and "
+            "durable -- the field an upstream dispatch step such as CC "
+            "board ingest, a Telegram/box trigger, or run_signature_deck.py "
+            "is expected to stamp there) and the ledger's own top-level "
+            f"'requester_chat_id'/'chat_id' fields in {ledger_path}; none "
+            "carried a value. presentation_job.py --new hard-fails a job "
+            "with no requester (fix F1) -- a deck with nobody to report "
+            "progress or completion to must not start. This resolver will "
+            "never invent a chat_id: stamp one into "
+            f"{intake_copy_path}'s requester_chat_id (+ requester_channel) "
+            "at the source that owns this run, then re-run resolve_intake.py."
+        )
 
     requester = {"chat_id": chat_id, "client_name": client}
     if channel:
@@ -227,6 +336,24 @@ def resolve(ledger_path: Path, source: str) -> dict:
             or ledger.get("signature_source")
             or "from_scratch"
         )
+
+    # FAULT-05 fix: carry the client's upsell answers (sales+checkout page --
+    # DEFAULT YES at the interview layer -- and VSL page, plus their
+    # verbatim declined-reason waivers) forward into the resolved engine
+    # intake. Before this fix the resolved intake carried only 6 keys and
+    # these answers -- captured for real in either the ledger or
+    # working/copy/intake.json -- never survived this step in ANY shape.
+    # Emitted in the documented NESTED shape (pre_presentation_capture.*);
+    # downstream readers that check pre_presentation_capture first (the
+    # sales_checkout_builder.py / vsl_builder.py gates, and this same
+    # nested-only shape presentation_job's own frozen state.json["intake"]
+    # snapshot can be a fallback source for) get it directly. Omitted
+    # entirely -- never emitted as an empty object -- when nothing resolved,
+    # matching this file's own never-fabricate rule for every other field.
+    capture = _resolve_upsell_capture(entries, intake_copy)
+    if capture:
+        intake["pre_presentation_capture"] = capture
+
     return intake
 
 
@@ -245,6 +372,9 @@ def main(argv=None) -> int:
     except UnknownPresentationType as exc:
         print(f"AF-DECK-TYPE-UNKNOWN: {exc}", file=sys.stderr)
         return 3
+    except MissingRequester as exc:
+        print(f"AF-REQUESTER-MISSING: {exc}", file=sys.stderr)
+        return 4
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     tmp = args.out.with_suffix(args.out.suffix + ".tmp")
