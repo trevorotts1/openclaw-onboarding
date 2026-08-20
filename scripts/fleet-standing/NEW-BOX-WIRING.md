@@ -277,6 +277,35 @@ Run from the **operator** box. Never run a live escalation test from a client bo
 | `verdict: blocked` | `good_standing=false` — that is correct behaviour, not a wiring fault | — |
 | a post appeared in the ops group | the test marker was missing or misspelled | re-read §6.1 |
 
+**MANDATORY — return-leg smoke test BEFORE allowlist (added 2026-08-20, F1).**
+An allowlist entry without a PASSED return-leg smoke test is NOT "wired": the
+receiver's FIX-RESCUE-09 gate (`rescue-receiver.mjs`, `returnVerify.isReturnDeliveryAllowed`)
+BLOCKS every SSH return for a VPS box absent from `rescue-return-verify.json`, and the
+coaching answer silently falls back to the ops group instead of the client chat. This exact
+failure class was observed on a Contabo box in 2026-08: allowlisted on 08-13, zero answer
+deliveries for 7 days, 12+ `RETURN gate BLOCKED` events before the gap was found.
+
+The order is load-bearing: add the box to the receiver allowlist, THEN run the
+loopback smoke test, THEN consider the wiring done:
+
+```
+ssh <sshHost> docker exec <container> sh -lc 'echo RETURN-LEG-SMOKE-OK'
+```
+
+PASS = command exits 0 with that exact marker. Record it with:
+
+```
+bash ~/clawd/fleet-heartbeat/scripts/rr-reconcile.sh --smoke-test <slug>
+```
+
+which writes the `verified:true` entry into
+`~/clawd/fleet-heartbeat/state/rescue-return-verify.json`. A box that cannot pass the smoke
+test stays ALLOWLISTED BUT UNVERIFIED: the gate keeps it safe (no SSH, answers fall back to
+the ops group) but the wiring is INCOMPLETE and must be tracked, not forgotten. A run of
+`rr-reconcile.sh --check` (nightly + after every wiring) reports
+`RETURN-ALLOWLISTED-UNVERIFIED` for exactly that state, so it can never sit silent for days
+again.
+
 Then re-run `fleet-coverage-gate.py --reconcile --check-contabo` and report its `PASS` line
 as the evidence. Never report a box "wired" on the strength of a successful SSH or a green
 coverage gate alone.

@@ -598,6 +598,8 @@ After these events, **ALWAYS** run: `python3 ~/.openclaw/scripts/gemini-indexer.
 
 **HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
 
+**No other path reaches Rescue Rangers.** A Telegram DM that a HUMAN client sends to YOU (the agent bot) is a message to YOU, not to Rescue Rangers — you are the one who must escalate it. Telegram DMs sent to `@Rescue_Rangers_Bot` itself are never read by anyone: that bot is outbound-only. Posting into the Rescue Rangers Telegram group is also NOT an escalation — only the webhook POST mints a ticket, enters the coaching queue, and produces a delivered answer. When a client says "use your rescue rangers" or "send this to your rescue team", that instruction is aimed at YOU: POST the webhook yourself with the client's problem in `problem`, their name in `person`, and their chat id in `returnTo`, then tell the client you did it. Never answer "I don't have a rescue rangers tool or team" — you are a member box of it; your escalation tool is the webhook POST below, and the env vars for it are seeded on this box.
+
 **The escalation payload MUST carry all nine fields** — partial payloads are rejected:
 
 ```bash
@@ -637,7 +639,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 - `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Reference the env var, never a hardcoded URL.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
-- The rescue agent will reply with a solution delivered back into the Rescue Rangers group; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
+- The rescue agent will reply with a solution delivered to the chat you put in `returnTo` (your client's chat) — the delivery is done by the Rescue Rangers receiver, not by you; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 
 Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
 

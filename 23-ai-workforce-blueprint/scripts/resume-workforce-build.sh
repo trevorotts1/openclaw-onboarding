@@ -510,7 +510,7 @@ if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )
     if command -v openclaw >/dev/null 2>&1; then
       _already_esc=$(jq -r '.stuckParkEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)
       if [[ "$_already_esc" != "true" ]]; then
-        _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+        _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rr-v2-intake}"
         if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
           _rr_msg="workforce-build-resume on $(hostname) made ZERO progress for ${_stuck} consecutive fires. Build PARKED + cron DISABLED (v14.1.5 hard stuck-cap). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE. OpenClaw: $(openclaw --version 2>/dev/null | head -1)"
           _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')
@@ -1159,7 +1159,7 @@ if (( attempts >= max_attempts )); then
         -m "⚠️ Workforce build slow: ${pending_count} pending, ${stale_building_count} stale after ${attempts} resume attempts.${_lib_note} Now in slow-retry (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
     fi
     # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram).
-    _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+    _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rr-v2-intake}"
     if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
       _rr_msg="workforce build on $(hostname) past ${attempts} resume attempts without completing.${_lib_note} Now slow-retrying (Rule 8 never-stop). Run scripts/verify-zhc-standard.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
       _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
@@ -1222,7 +1222,7 @@ if (( _total_pings >= MAX_TOTAL_RESUME_PINGS )); then
   if command -v openclaw >/dev/null 2>&1; then
     _pc_esc=$(jq -r '.pingCeilingEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)
     if [[ "$_pc_esc" != "true" ]]; then
-      _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+      _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rr-v2-intake}"
       if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
         _rr_msg="workforce-build-resume on $(hostname) hit the ABSOLUTE ping ceiling: ${_total_pings} total resume self-pings (cap ${MAX_TOTAL_RESUME_PINGS}). Build PARKED + cron DISABLED (v14.x). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE."
         _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')

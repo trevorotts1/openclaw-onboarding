@@ -556,10 +556,13 @@ fi
 _start_ts=$(date +%s 2>/dev/null || echo 0)
 
 # Run the agent turn with a timeout. The reply text is extracted from the JSON
-# stdout. --timeout 540 mirrors the live receiver's wall. The token is NOT in
+# stdout. --timeout 600 keeps the box-side wall BELOW the RR-07 receiver's 600s
+# claim lease (a 540s wall left a 60s gap in which the lease could expire and
+# re-deliver the SAME instruction to a second claim — double-delivery hazard,
+# seen as "already closed" dedup losses on late answers). The token is NOT in
 # this command line and is NOT exported to this child. The exit code is captured
 # with NO `|| true` (that would mask a non-zero rc and lie about delivery).
-AGENT_OUT=$("$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 540 2>/dev/null)
+AGENT_OUT=$("$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>/dev/null)
 AGENT_RC=$?
 
 _end_ts=$(date +%s 2>/dev/null || echo 0)
