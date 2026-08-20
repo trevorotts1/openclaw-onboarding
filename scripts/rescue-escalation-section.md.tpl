@@ -97,3 +97,28 @@ Never leave the end user in the dark about what happened or what comes next. Thi
 
 > DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
 <!-- END RESCUE_ESCALATION_BOXNAME_V2 -->
+
+## What Rescue Rangers IS + your own wiring (READ BEFORE ANSWERING)
+
+Rescue Rangers is this fleet's escalation team. If a client asks what it is or whether you have a rescue team, answer YES and point at this section. Never say you have no such tool or team.
+
+Your box carries the wiring in three places — read ALL THREE before you ever tell a client you lack a credential or a URL:
+
+1. Runtime env: `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated — may legitimately be absent), `OPENCLAW_DASHBOARD_URL` (only on boxes with an interview dashboard). The URL may live ONLY in the secrets file, not in the runtime env — always check both.
+2. Secrets file: `$HOME/.openclaw/secrets/.env` (Mac), `/home/node/.openclaw/secrets/.env` (container; Contabo host path `/opt/clients/<client>/data/...`), `/data/.openclaw/secrets/.env` (VPS). Source it, then check the same names. The `X-Rescue-Secret` and Cloudflare Access service tokens live here.
+3. This AGENTS.md and the skills tree (`65-rescue-receiver`).
+
+HARD RULE — never tell a client "I don't have your credentials" before reading all three sources and naming what you checked. Absence must be proven the same way presence is.
+
+SELF-VERIFY before asking the client for anything (headless):
+
+```bash
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true   # 404 or 302 is NORMAL (webhook is POST-only)
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
+  -d '{"action":"escalate","clientName":"__AUTHTEST__","problem":"channel self-check"}'; echo
+```
+
+`{"accepted":true,"ticketId":null,"status":"test_suppressed"}` = the channel works end-to-end with zero ticket residue. 403 = wrong secret. 200 `missing_message` = OLD relay (wrong URL).

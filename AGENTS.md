@@ -657,6 +657,46 @@ Once a rescue agent helps you, you MUST cooperate with the resolution protocol s
 
 ---
 
+### What Rescue Rangers IS (answer the client directly)
+
+Rescue Rangers is this fleet's escalation team: operators who fix client boxes and answer stuck questions. When a client asks "what is Rescue Rangers" or "do you have a rescue team", the answer is YES — you are a member box of it, and you escalate to it over the webhook described in this section. Never say you have no such tool or team. If a client asks for credentials "you" supposedly hold, your first move is to READ YOUR OWN ENVIRONMENT, not to deny having them.
+
+### Your environment IS your knowledge source — read it before answering "I don't have that"
+
+Your own box carries the Rescue Rangers wiring in three places. Check all three before you ever tell a client you lack a credential, a URL, a chat ID, or a tool:
+
+1. **Runtime environment variables** (`env` or `printenv | grep -i rescue`): `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated — may legitimately be absent), `OPENCLAW_DASHBOARD_URL` (only on boxes with an interview dashboard). The URL may live ONLY in the secrets file, not in the runtime env — always check both.
+2. **The secrets env file**: `$HOME/.openclaw/secrets/.env` on Mac; `/home/node/.openclaw/secrets/.env` inside a container (Contabo hosts it at `/opt/clients/<client>/data/...`); `/data/.openclaw/secrets/.env` on a VPS. Source it (`set -a; . <path>; set +a`) and check the same names. The `X-Rescue-Secret` and Cloudflare Access service tokens live here.
+3. **This AGENTS.md file and your skills tree** (`ls ~/.openclaw/skills/` or `/data/.openclaw/skills/`): skill `65-rescue-receiver` (box-side pull client) may be present.
+
+HARD RULE — the negative-result contract applies to every client-facing claim: you may NEVER tell a client "I don't have your logins / API keys / credentials" until you have read all three sources above and can name them ("not in env, not in `~/.openclaw/secrets/.env`, not in openclaw.json") and can state what you DID check. Absence must be proven the same way presence is. A client asking for credentials you can see in your own secrets file is a knowledge failure on your side — fix it by reading, not by denying.
+
+### Verify the channel YOURSELF before asking the client for anything
+
+You can prove the escalation path works from inside your own box, headless, with no client involvement:
+
+```bash
+# 1. Public URL reachability — note: a GET to the webhook often returns 404 or a 302
+#    to Cloudflare Access login (the n8n webhook accepts POST only). Either answer
+#    proves the box can reach the public URL; the __AUTHTEST__ POST below is the
+#    decisive end-to-end test. Never read a 404 as "the channel is down".
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true
+
+# 2. Full auth proof — __AUTHTEST__ body. Correct secret + canonical URL returns
+#    {"accepted":true,"ticketId":null,"status":"test_suppressed"} = end-to-end works,
+#    zero ticket residue. 403 = wrong secret. 200 missing_message = OLD relay, wrong URL.
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
+  -d '{"action":"escalate","clientName":"__AUTHTEST__","problem":"channel self-check"}'; echo
+```
+
+Run step 2 BEFORE you tell a client the rescue path "should" work — you can show the result instead of guessing. If the secret is missing, report THAT specific gap (name the variable and the file you checked) instead of claiming the whole system is absent.
+
+---
+
 ## 🔴 n8n Anthology Drive Broker — standing rules (learned from the July 2026 outage)
 
 Per the TYP storage rule below: the full runbook lives at
