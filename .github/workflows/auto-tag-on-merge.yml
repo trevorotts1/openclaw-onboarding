@@ -1,0 +1,53 @@
+name: Auto-tag on merge to main
+
+# Cuts + pushes the annotated release tag the INSTANT a version bump lands on
+# main -- no agent has to remember to run scripts/push-version-tag.sh by hand.
+#
+# This closes the D3 / Section 4(b) / Section 7-item-3 finding in the
+# 2026-08-20 delay audit (CONTROL/DELAY-DIAGNOSIS-FABLE.md): G1b
+# (version-consistency.yml) fails on EVERY open PR whenever main carries an
+# untagged release, because G1b walks main's ENTIRE release history, not any
+# one PR's diff. That happened 7 separate times 2026-08-18 -> 2026-08-20. Six
+# version tags were cut by hand in ~21h, each requiring a standalone
+# CHANGELOG-entry-then-tag PR; PR #944 sat 14.4h open->merged for exactly that
+# reason and blocked two real fixes (#945, #946) behind it.
+#
+# See scripts/auto-tag-if-version-changed.sh for the testable logic this
+# workflow runs (a thin wrapper: it duplicates G1's own "did /version change"
+# comparison, then delegates the actual tag push to scripts/push-version-tag.sh,
+# which already has the hardened SHA-resolution + ancestry-proof logic that
+# prevents orphaned tags). See CONTRIBUTING.md "Release Ceremony Batching" for
+# the full rule this automates.
+#
+# Security note: this workflow triggers on push to main ONLY (never
+# pull_request, never a fork), consumes only repo file content + git metadata
+# (no untrusted PR title/body/commit-message event fields), and its one write
+# action is fully delegated to push-version-tag.sh, which independently
+# refuses to publish any tag whose target is not an ancestor of origin/main
+# and refuses to move an already-published tag. So even a malicious /version
+# edit cannot make this workflow push a tag pointing off of main, and it can
+# never overwrite a tag that already exists at a different commit.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-tag-on-merge
+  cancel-in-progress: false
+
+jobs:
+  auto-tag:
+    name: Cut the annotated tag if /version changed on this push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cut + push the tag if /version changed (delegates to push-version-tag.sh)
+        run: bash scripts/auto-tag-if-version-changed.sh --remote origin
