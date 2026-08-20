@@ -40,7 +40,8 @@ if str(_HERE) not in sys.path:
 from loop_ledger import openclaw_root  # noqa: E402
 
 WEBHOOK_ENV = "RESCUE_RANGERS_WEBHOOK_URL"
-DEFAULT_WEBHOOK = "https://main.blackceoautomations.com/webhook/rescue-rangers"
+SECRET_ENV = "RESCUE_RANGERS_WEBHOOK_SECRET"
+DEFAULT_WEBHOOK = "https://main.blackceoautomations.com/webhook/rr-v2-intake"
 
 
 def escalations_dir() -> Path:
@@ -80,10 +81,20 @@ def build_payload(box, loop_class, finding, evidence_path, proposed_fix,
 
 def _urllib_transport(url, payload_bytes, timeout=10):
     """Production transport: POST JSON to the n8n webhook. Only used when the caller
-    does not inject a transport (so it NEVER runs in the offline self-test/verify)."""
+    does not inject a transport (so it NEVER runs in the offline self-test/verify).
+
+    F1 2026-08-20: the live intake (RR-01 /webhook/rr-v2-intake) enforces auth —
+    a POST without X-Rescue-Secret answers 403 before the body is parsed. The
+    header is added from the box's OWN env var (never a literal, never logged);
+    an unset secret keeps the header off so behavior matches the old soft-auth
+    relay for boxes that were never seeded."""
     import urllib.request
+    headers = {"Content-Type": "application/json"}
+    secret = os.environ.get(SECRET_ENV, "").strip()
+    if secret:
+        headers["X-Rescue-Secret"] = secret
     req = urllib.request.Request(url, data=payload_bytes,
-                                 headers={"Content-Type": "application/json"},
+                                 headers=headers,
                                  method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
         return 200 <= getattr(resp, "status", 200) < 300
