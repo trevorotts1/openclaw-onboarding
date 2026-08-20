@@ -1,3 +1,23 @@
+## [v22.0.61] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
+
+- Systemic, not another single-rule patch. On one live run SEVEN distinct autofail codes fired across three
+  phases, each discovered only after a full paid re-author: AF-SP-P3-PITCH / AF-SP-PRICE-IN-TEACH
+  (P-SP-P3-HYGIENE), AF-C8 (P1Q-COPY-QC), and AF-NO-FELT-STAKES / AF-NO-RECAP / AF-NO-VILLAIN /
+  AF-NARRATIVE-HARMONY (P4-COPY). With ~181 codes in the department, serial discovery cannot converge.
+- New `presentation_job/contract_introspect.py` derives, by static AST read of the code that actually judges
+  the artifact, every autofail code reachable on a phase's verification path plus each code's requirement
+  text taken from the checker's own message -- never re-typed, so it cannot drift. Scope rule, stated in the
+  module: a code is in scope iff it is judged against the file the phase writes. 47 of 181 for P4-COPY.
+- ARTIFACT_CONTRACTS["P4-COPY"] is now composed at import from that derivation (10,975 -> 22,585 chars) and
+  names all 17 codes that judge it, including Trevor's value-stack carve-out read verbatim from doctrine.
+- `tests/test_contract_completeness.py` FAILS when a rule exists in the verifier path but is absent from the
+  contract prose -- proven by injecting a brand-new synthetic autofail code into a checker and watching it go
+  RED naming the probe, then GREEN on removal. It will catch the 178th code someone adds later.
+- AUDIT (reported, not fixed here): 21 of 23 agent-authored phases are judged by codes their contracts never
+  name -- 110 codes judged, 93 unnamed. Worst: P1Q-COPY-QC 25 judged / 0 named, P4-RENDER 9/0,
+  P-SP-STRUCTURE 9 judged / 1 named.
+- No verifier, gate, or autofail was weakened. Teaching and derivation only.
+
 ## [v22.0.60] -- 2026-08-20 -- fix(presentations): AF-C8 archetype carve-out for value-stack slides (operator ruling)
 
 - Reconciles a contradiction between two live rules. slide-copywriter doctrine permits "bullet slides <= 5
