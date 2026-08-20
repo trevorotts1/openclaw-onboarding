@@ -1,3 +1,16 @@
+## [v22.0.62]  -  2026-08-20  -  fix: bound openclaw doctor --fix (timeout 45) in cron heal paths; jq PATH bootstrap in ZHC closeout scripts (Janet)
+
+- `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh` (line ~544), `scripts/resume-onboarding.sh`
+  (line ~311), `scripts/watchdog-onboarding-loop.sh` (line ~251): the heal step is now
+  `timeout 45 openclaw doctor --fix`. On Janet's box an unbounded `doctor --fix` hung ~133s and the
+  cron runner killed the fire, freezing the cron queue; 45s is ample for a real heal, and the existing
+  `|| true` semantics are unchanged.
+- `37-zhc-closeout/scripts/resume-closeout-cron.sh` (~line 48), `wire-n8n-closeout.sh` (~line 24),
+  `run-closeout.sh` (~line 49): durable jq PATH resolution mirroring 23-ai-workforce-blueprint — a
+  static jq at `~/.openclaw/bin/jq` (or `/data/.openclaw/bin/jq`) is prepended to PATH when `command -v jq`
+  fails. Cron shells lack the PATH entry that reaches the persistent copy, so every closeout fire
+  aborted "jq not found" on boxes whose jq lives only there (Janet's closeout cron was dead).
+
 ## [v22.0.61]  -  2026-08-20  -  fix: loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake (escalation lane dead without it)
 
 ## [unversioned] -- 2026-08-20 -- fix(loop-protection): loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake + X-Rescue-Secret auth header (PR #960)
