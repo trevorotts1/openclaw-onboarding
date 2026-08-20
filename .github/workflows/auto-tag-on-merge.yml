@@ -49,5 +49,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set git identity for the tag step
+        run: |
+          git config user.name "Trevor Otts"
+          git config user.email "trevor@blackceo.com"
+
       - name: Cut + push the tag if /version changed (delegates to push-version-tag.sh)
         run: bash scripts/auto-tag-if-version-changed.sh --remote origin
