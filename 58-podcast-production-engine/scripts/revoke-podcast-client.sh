@@ -338,8 +338,7 @@ rotate_secret() {
 }
 
 if [ "$EDGE_ONLY" = "1" ]; then
-  ledger_step "5-webhook-disable"  "PENDING" "edge-only: unregister the podcast hook (--client-slug) and rotate PODCAST_INTAKE_HOOK_TOKEN on the box (as the node user), apply config per gateway restart doctrine, then verify the gateway is UP"
-  ledger_step "5b-scheduler-stop"  "PENDING" "edge-only: stop + unregister the podcast scheduler for ${SLUG} on the box (install-podcast-scheduler.sh --remove --client-slug ${SLUG}), then verify with a fresh cron inventory"
+  ledger_step "5-webhook-disable"  "PENDING" "edge-only: unregister the podcast hook (--client-slug) and rotate PODCAST_INTAKE_HOOK_SECRET plus PODCAST_INTAKE_INBOUND_SECRET on the box (as the node user), apply config per gateway restart doctrine, then verify the gateway is UP"
   ledger_step "6-dashboard-stop"   "PENDING" "edge-only: rotate PODCAST_DASHBOARD_TOKEN and stop/deregister the loopback dashboard service on the box"
   ledger_step "7-smoke-cron-stop"  "PENDING" "edge-only: openclaw cron rm the podcast-smoke-${SLUG} job on the box (verify with cron list)"
   ledger_step "8-drain-queue"      "PENDING" "edge-only: close the client's credit-out queue jobs as offboarded and notify the operator with the dropped job ids"
@@ -359,47 +358,15 @@ else
   else
     ledger_step "5-webhook-disable" "PENDING" "hook-removal helper/openclaw not present here; remove the podcast mapping on the box (node user), apply config per gateway restart doctrine, and confirm the gateway is UP"
   fi
+  rotate_secret "PODCAST_INTAKE_HOOK_SECRET"
+  rotate_secret "PODCAST_INTAKE_INBOUND_SECRET"
   rotate_secret "PODCAST_INTAKE_HOOK_TOKEN"
 
-  # STEP 5b: stop + unregister the client's podcast scheduler (activation
-  # teardown, part 2; symmetric to provision STEP 8c). Resolve the exact
-  # installer used at provision time: the ledger audit fact records what was
-  # actually installed, so it wins; env override next; then the contract
-  # default.
-  SCHED_INSTALLER=""
-  if [ -f "$PLEDGER" ]; then
-    SCHED_INSTALLER="$(jq -r '.facts.scheduler_installer // empty' "$PLEDGER" 2>/dev/null)"
-  fi
-  [ -n "$SCHED_INSTALLER" ] || SCHED_INSTALLER="${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
-  if [ ! -x "$SCRIPT_DIR/$SCHED_INSTALLER" ]; then
-    # Installer absent in this build (activation layer not landed here). Fallback:
-    # the scheduler may live as an openclaw cron entry named
-    # podcast-scheduler-<slug>; stop it through the cron CLI idempotently.
-    if command -v openclaw >/dev/null 2>&1; then
-      SCID="$(runas openclaw cron list 2>/dev/null | grep -i "podcast-scheduler-${SLUG}" | grep -oE '[0-9a-f-]{8,}' | head -n1)"
-      if [ -n "$SCID" ]; then
-        if runas openclaw cron rm "$SCID" >/dev/null 2>&1; then
-          ledger_step "5b-scheduler-stop" "OK" "stopped + unregistered scheduler cron $SCID"
-        else
-          ledger_step "5b-scheduler-stop" "PENDING" "cron rm failed for podcast-scheduler-${SLUG}; stop it on the box"
-        fi
-      else
-        ledger_step "5b-scheduler-stop" "OK" "no scheduler registered for $SLUG (already gone)"
-      fi
-    else
-      ledger_step "5b-scheduler-stop" "PENDING" "$SCHED_INSTALLER and the openclaw CLI are not present here; stop + unregister the podcast scheduler for $SLUG on the box, then verify it with a fresh cron inventory"
-    fi
-  else
-    if runas "$SCRIPT_DIR/$SCHED_INSTALLER" --remove --client-slug "$SLUG" >/dev/null 2>&1; then
-      if runas "$SCRIPT_DIR/$SCHED_INSTALLER" --check --client-slug "$SLUG" >/dev/null 2>&1; then
-        ledger_step "5b-scheduler-stop" "WARN" "scheduler installer --remove ran but --check still reports the scheduler active for $SLUG"
-      else
-        ledger_step "5b-scheduler-stop" "OK" "stopped + unregistered scheduler for $SLUG (verified stopped by --check)"
-      fi
-    else
-      ledger_step "5b-scheduler-stop" "PENDING" "scheduler installer returned nonzero; stop + unregister the podcast scheduler for $SLUG on the box, then verify with a fresh cron inventory"
-    fi
-  fi
+  # NO-DAEMON DOCTRINE: there is no scheduler to stop (no install-podcast-scheduler.sh
+  # exists in the engine; the department agent advances TaskFlows in its own turn
+  # via podcast_step_driver.py). Teardown of advancement is nothing: with the route
+  # unregistered and the secrets rotated, no new flows can land and the bound
+  # session has no queue to poll.
 
   # STEP 6: invalidate the dashboard token and stop the dashboard service
   rotate_secret "PODCAST_DASHBOARD_TOKEN"

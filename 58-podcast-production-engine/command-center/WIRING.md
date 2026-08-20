@@ -299,41 +299,54 @@ FAIL-SOFT posture:
 Producer binding (roll-4, closes deferred H8)
 ---------------------------------------------
 
-The producer side is bound, not merely offered. scripts/podcast_step_driver.py
-(the deterministic step driver, invoked by the controllerId runbook in the
-podcast agent's OWN tool-bearing turn) drives the episode run and IS the
-caller of this board caller: each step the driver emits advances the job
-through podcast_state.py, and the same turn mirrors that advance to the board.
-There is no podcast_controller.py: the step driver is a TOOL the agent calls,
-not a resident daemon (SKILL.md NO-DAEMON DESIGN). Every fleet box whose
-podcast processor is activated (install-podcast-department.sh during
-provisioning, removed by revoke-podcast-client.sh on revocation) runs the
-same step driver, so episode runs are kanban-visible fleet-wide, not only on
-the box where the board happens to be configured. The run drives the three
-subcommands in this order:
+The producer side is bound, not merely offered. scripts/podcast_state.py
+(the SOLE state writer) IS the caller of this board caller: every job the
+writer creates or transitions mirrors the same create/transition onto the
+board, so the card rides in lockstep with the real state machine by
+construction. The binding lives in the writer, not in the runbook: whether a
+job is driven by the intake bridge (webhook/intake_handler.py), the
+deterministic step driver (scripts/podcast_step_driver.py, invoked by the
+controllerId runbook in the podcast agent's OWN tool-bearing turn), or a
+manual operator command, the card lifecycle is identical with zero caller
+wiring. There is no podcast_controller.py: the step driver is a TOOL the
+agent calls, not a resident daemon (SKILL.md NO-DAEMON DESIGN). Every fleet
+box whose podcast processor is activated (install-podcast-department.sh
+during provisioning, removed by revoke-podcast-client.sh on revocation) runs
+the same writer, so episode runs are kanban-visible fleet-wide, not only on
+the box where the board happens to be configured. The writer drives the
+three subcommands in this order:
 
-  1. run-begin at intake. The accepted submission (one job, one card; the
+  1. run-begin at create. The accepted submission (one job, one card; the
      job-id is the state writer's job id) lands a card in the Podcast
-     workspace before the first pipeline step executes.
-  2. patch-phase per pipeline step. Each podcast_state.py advance maps to
+     workspace before the first pipeline step executes. The episode title
+     does not exist at create time (podcast_jobs.episode_title is produced
+     later in the pipeline), so the card lands with a "Title pending"
+     placeholder; the real title rides the dashboard, not the board.
+     run-begin is idempotent, and the writer mirrors it on the duplicate
+     paths too, so a card missed while the board was down heals on the next
+     submission.
+  2. patch-phase per state transition. Each podcast_state.py advance maps to
      one patch-phase call: the phase slug is the new status (received ...
      complete, see the phase-to-lane mapping above for the suggested CC
      status of each), so the card rides the lane in lockstep with the nine
-     forward segments of the dashboard meter.
-  3. close at the terminal edge. A finished run calls close --status done
-     with the Podbean episode permalink so the completion-evidence gate
-     (T0-01) passes; a stopped run calls close --status blocked with the
-     full blocked triad (reason, blocked-on-human, ask) so the blocked
-     column gate accepts the card.
+     forward segments of the dashboard meter. An advance to 'complete'
+     closes the card done (with the Podbean permalink when recorded); a
+     resume from the credit-out queue patches the card back to the resume
+     stage.
+  3. close blocked on the terminal-off-path edges. hold, fail, and
+     aged-out all close the card with --status blocked and the full blocked
+     triad (reason, blocked-on-human, ask) so the blocked column gate
+     accepts the card.
 
-This sequencing is TRANSITION-AWARE, consistent with rem-2: the caller
+This sequencing is TRANSITION-AWARE, consistent with rem-2: cc_board.py
 reads the card's current status before a done close and PATCHes status
 'review' first when needed, so the done PATCH always lands on a legal
 state-machine edge (done is reachable only from review or testing). The
-deliverable registration stays before the done PATCH. The step driver never
-bypasses podcast_state.py; it reads the job status from the state writer
-and mirrors it onto the board, so the board can never lead or lag the real
-state machine.
+deliverable registration stays before the done PATCH. The board mirror
+never bypasses podcast_state.py: it fires after the writer's COMMIT and
+reads the job row the writer just persisted, so the board can never lead
+the real state machine. The mirror is FAIL-SOFT: absent CC_BASE_URL makes
+cc_board.py no-op, and any board failure is logged with the run unaffected.
 
 Show name on the card (T8 status note)
 --------------------------------------
@@ -342,11 +355,10 @@ T8 (fix/podcast-audit-t8-board-show-label, "T8 board caller carries the show
 name") adds an optional --show-name flag to run-begin so the card title
 becomes "Episode: <title> - <show> (<client>)" and personal vs interview
 episodes for the same client stay distinguishable on the Podcast lane under
-the two-show fleet model. As of this writing T8 is NOT on origin/main, so
-the flag does not exist in the merged tree yet; the step driver resolves the
-show name from the matched roster row and passes --show-name only when the
-flag is present (backward compatible: absent flag, legacy title). When T8
-lands, the step driver picks the flag up with no further change. The plain
-hyphen in the title is intentional; never an em dash.
+the two-show fleet model. The flag exists on origin/main; the writer's
+board mirror resolves the show name from the job row (podcast_jobs.show_name,
+set at create from the intake payload) and always passes --show-name when the
+row carries it. The plain hyphen in the title is intentional; never an em
+dash.
 
 END OF WIRING NOTE
