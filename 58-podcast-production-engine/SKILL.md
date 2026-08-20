@@ -253,7 +253,7 @@ files make up the activation layer, in dependency order:
 |---|---|---|
 | `register-podcast-hook.sh` | Installs the per-client intake route and binds it to the podcast session | `scripts/webhook/route-template.json5` (the live-verified route schema) |
 | `install-podcast-department.sh` | Installs and binds the podcast department agent (director-of-podcast) that owns the bound session | wiring.json `department` and `session_binding` blocks |
-| `webhook/intake_handler.py` | The deterministic first step of the controllerId runbook: maps, tenant-checks, dedup-claims, persists the payload, then advances the flow into Step 1 (or closes it for duplicate / needs_input / test) | `scripts/webhook/route-template.json5` controllerId runbook plus `scripts/webhook/flow_client.py` |
+| `webhook/intake_handler.py` | The deterministic first step of the controllerId runbook: maps, tenant-checks, dedup-claims, persists the payload to the intake ledger, BRIDGES it into the SQLite job roster via `podcast_state.py create --job-key` (accepted AND test paths; idempotent; a failed bridge never fails the fast-ACK — it parks the flow, raises the sqlite_bridge_failed operator alert, and writes a repair instruction into the ledger note), then advances the flow into Step 1 (or closes it for duplicate / needs_input / test) | `scripts/webhook/route-template.json5` controllerId runbook plus `scripts/webhook/flow_client.py` |
 
 1. register-podcast-hook.sh, INTAKE ROUTE PLUS SESSION BINDING. Installs the
    per-client Webhooks plugin route into the gateway config
@@ -282,8 +282,15 @@ files make up the activation layer, in dependency order:
 3. webhook/intake_handler.py, THE DETERMINISTIC FIRST STEP. The controllerId
    runbook's first step: ONE Bash call, no language model, no Model Context
    Protocol. It maps the payload, tenant-checks it, dedup-claims it through the
-   intake ledger, persists it, and then either advances the flow into Step 1 or
-   closes it (duplicate / needs_input / test / wrong-tenant delivery). In the
+   intake ledger, persists it, BRIDGES it into the SQLite job roster
+   (podcast_state.py create --job-key <k>; the bridge is what the command
+   center dashboard and the kanban board read, so a job that never bridges is
+   invisible to both), and then either advances the flow into Step 1 or
+   closes it (duplicate / needs_input / test / wrong-tenant delivery).
+   BRIDGE REPAIR: if the ACK shows bridge=error, the job exists only in the
+   file ledger. Repair with `podcast_state.py create --job-key <job_key>
+   --payload-file <ledger payload>` (idempotent; the ledger note carries the
+   exact command). In the
    primary in-flow path the plugin has already created the flow and the handler
    is its first deterministic step, so the department agent's own turn simply
    continues the runbook from there; in the degraded trigger-flow path the
@@ -484,7 +491,7 @@ STEP 14, STORE MEDIA. status `publishing`. Tier 3 REST upload of the MP3, cover,
 into the client's Convert and Flow media library folders (podcast, podcast images, podcast
 episodes; create-once, reuse-forever, case-insensitive matching); HEAD-verify every returned
 public URL. Runtime never depends on folder creation succeeding mid-episode; it only looks up
-folders that setup ensured. OUTPUT CONTRACT: every URL `upload_media.py` returns must be
+folders that setup ensured. OUTPUT CONTRACT: every URL `scripts/caf/media_upload/upload_media.py` returns must be
 persisted to the job ledger via `podcast_state.py output --field mp3_media_url` and
 `podcast_state.py output --field cover_image_url`. These fields are the sole handoff into
 Step 15.
@@ -502,7 +509,7 @@ shared header token straight to the operator's n8n `/webhook/podbean-publish`, w
 good-standing plus identity gate, mints the channel-scoped Podbean token server-side, and
 returns the permalink synchronously in the same response; no client-box Podbean call and no
 client-box OAuth mint. The publish step resolves its audio and image URLs from the job ledger
-(mp3_media_url / cover_image_url columns) recorded by Step 14's upload_media.py via
+(mp3_media_url / cover_image_url columns) recorded by Step 14's scripts/caf/media_upload/upload_media.py via
 podcast_state.py; the --audio-url / --image-url CLI flags are the step's own provenance assertion
 and must match the ledger when both are present. Precedence is proxy first; the n8n Podbean credential broker
 (config/n8n/podbean-broker.workflow.json, which mints a short-lived access token SCOPED to the
