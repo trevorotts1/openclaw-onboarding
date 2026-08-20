@@ -1,3 +1,23 @@
+## [v22.0.55] -- 2026-08-20 -- fix(presentations): nine department-autonomy faults fixed at source
+
+Found by the live Wave E deck run; each fix ships a test that fails without it. One bump for the whole batch (v22.0.55; v22.0.54 was taken by the rr-knowledge merge).
+
+- FAULT-07 dispatcher auto-spawn was documented but never built -- every agent-authored phase waited forever.
+  Now spawns a run-scoped dispatcher CONCURRENTLY with the phase walk, lock-guarded, terminated on every exit.
+- FAULT-16/09 an agent phase stamped its work order and its verifier_block in the SAME SECOND, so the verifier
+  judged output requested one second earlier. A deck sat blocked 9.5h; resume_history hit 181 spin cycles.
+- FAULT-18 P-STYLE-PREVIEW declared executor {kind: agent}; a text LLM was asked to render 9 Kie images and
+  correctly refused 224 times while build_deck.run_style_preview_samples() was never called.
+- FAULT-03 the 5-minute cron poller invoked launcher.py by file path; its relative import killed every dispatch.
+- FAULT-04/05 resolve_intake emitted requester.chat_id='' and dropped WANT_SALES_CHECKOUT / WANT_VSL_PAGE.
+- FAULT-11 the interview never asked for named_methodology or time_to_result, which two pitch gates read
+  directly -- so both gates fired on every deck, forever, unclearable by any re-authoring.
+- FAULT-13b the P-SP-STRUCTURE contract hardcoded one incident's numbers (25 slides, floors 3/3/9/10).
+- FAULT-14 undeliverable client events were queued with no event emitted (174, later 549 of 2001).
+- FAULT-15 banked artifacts had no validity predicate and were rebuilt every resume (10 of 40).
+
+No verifier was weakened. tests/ 969 passed, top-level test_*.py 273 passed, 0 failures.
+
 ## [v22.0.54] -- 2026-08-20 -- fix(rr-knowledge): fleet-wide Rescue Rangers knowledge + skill 65
 
 Merge of `fix/rr-knowledge-fleet-20260820` (PR #947) onto v22.0.53. Closes the

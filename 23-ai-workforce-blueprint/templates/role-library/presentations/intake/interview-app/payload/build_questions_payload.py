@@ -29,13 +29,18 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "allowed_values", "value_labels", "default",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key")
 
-# The curated core set the Presentation Interview app asks (13 <= cap 20).
+# The curated core set the Presentation Interview app asks (15 <= cap 20).
 # Every id must exist in deck-intake-questions.json, upsell-questions.json, or
 # APP_ONLY_QUESTIONS below.
 DEFAULT_CURATED = [
     "presentation_type",          # type-picker (order 0) -- MUST be first, see selftest guard
     "offer_name",                 # company/offer
+    "named_methodology",          # branded method name (order 17.5) -- FIX-PITCH-ANTI-FAB,
+                                   # feeds pitch_engines_check.chk_branded_method; unconditional
+                                   # (no ask_if), so it must stay curated in QUICK mode too
     "transformation_promise",     # transformation promise
+    "time_to_result",             # time-to-result (order 33.5) -- FIX-PITCH-ANTI-FAB, feeds
+                                   # pitch_engines_check.chk_time_to_result; same reasoning
     "audience",                   # audience
     "cta_action",                 # CTA
     "brand_primary",              # logo check

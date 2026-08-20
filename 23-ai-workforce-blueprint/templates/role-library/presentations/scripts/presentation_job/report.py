@@ -147,6 +147,32 @@ class Reporter:
             # exit / could not start): never discard. Queue for the sweeper
             # (--sweep-undeliverable / cmd_sweep_undeliverable) and do NOT stamp
             # the dedupe timer -- see above.
+            #
+            # FAULT-14 fix (2026-08-20): this branch used to ONLY append to the
+            # undeliverable list -- no self.event() call, unlike the "no
+            # chat_id" early-return above it, which DOES call self.event(
+            # "report.undeliverable", ...). That silently violated this very
+            # package's own transport doctrine (result.py: "message / alert
+            # transport -> UNDETERMINED behaves like 'not yet delivered': keep
+            # retrying, never discard" and "health / status report ->
+            # UNDETERMINED is reported AS UNDETERMINED, out loud, never
+            # silently folded"). A live run accumulated 174, then 549, of
+            # these with ZERO real-time signal -- nothing printed, nothing in
+            # state["events"] -- discoverable only by a human manually
+            # inspecting state["undeliverable"] or via diagnose.describe_park()
+            # (itself only invoked on --resume, i.e. only AFTER the job has
+            # already parked). Logging it here, through the SAME self.event()
+            # path every other report kind already uses, makes it print
+            # immediately (event() flushes to stdout) and land in
+            # state["events"] so it is counted, timestamped, and greppable the
+            # moment it happens -- loud, not silently tallied. This does not
+            # change delivery/retry semantics: the undeliverable queue entry
+            # below is unchanged, still the sweeper's only input.
+            self.event("report.undeliverable",
+                       f"{kind} message to requester FAILED delivery "
+                       f"(outcome={result.value}) -- queued for retry via "
+                       f"--sweep-undeliverable",
+                       requester=True, outcome=result.value)
             self.state.setdefault("undeliverable", []).append(
                 {"at": utcnow(), "kind": kind, "message": message,
                  "chat_id": chat_id, "attempts": 1, "outcome": result.value})

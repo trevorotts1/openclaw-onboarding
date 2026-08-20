@@ -1,3 +1,3 @@
-content_sha256=d5ec1b35066b1357f3b64fd724f264078f288d164fa6a833b3b75ef5460b0db0
-generated=2026-08-19T11:26:19Z
-source=PIPELINE-MANIFEST.json (v51, Wave-C unit C1: added the 4 upsell-branch phases P-U-SALES-BUILD/P-U-CHECKOUT-BUILD/P-U-FORM-CHECKOUT/P-U-VSL-BUILD promised by intake/upsell-questions.json (want_sales_checkout/want_vsl_page), gated conditional executors, VSL ordered after P9.6-WEBINAR-VIDEO; executor cmds + produces_artifact paths corrected against C2/C3's actual landed scripts (no --mode flag exists; real paths are working/sales-checkout/* and working/vsl/*); content_sha256 restamped against the merged content)
+content_sha256=991516d8e11f2c5d08acf4e52a0744ef5b11817216c1e329b07335653775a0ad
+generated=2026-08-20T00:00:00Z
+source=PIPELINE-MANIFEST.json (v51, unchanged version, F18 fix/dept-autonomy-faults-20260820: P-STYLE-PREVIEW's executor changed from {"kind":"agent"} to {"kind":"script","cmd":"python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --sample --run-dir {run_dir}"} — this phase renders 9 real kie.ai style samples via the pre-existing build_deck.run_style_preview_samples() (never wired to any executor before), so the dispatcher's agent path stopped spinning declines against it; no phase added/removed/renamed, phase count stays 40, AF codes unchanged, content_sha256 restamped against the merged content)

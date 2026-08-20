@@ -262,10 +262,18 @@
         prompt: "What are you selling at the end — the exact name of your product or offer?",
         help: "The offer sold at the end of the presentation — never invented.",
         label: "Offer name", placeholder: "e.g. The Momentum Method", required: true, storeOn: "deck_brief.OFFER_NAME" },
+      { id: "named_methodology", order: 1.5, kind: "text",
+        prompt: "Do you have a named methodology, framework, or system you deliver this through — what is it called, in your own words?",
+        help: "The branded method name — client-supplied only, never invented for you. If you don&rsquo;t have a named method, say so plainly (e.g. &lsquo;no formal name, we just do X&rsquo;) rather than inventing one — an honest &lsquo;no&rsquo; is still a real answer.",
+        label: "Named methodology", placeholder: "e.g. The Three-Move Pipeline System, or 'no formal name'", required: true, storeOn: "deck_brief.NAMED_METHODOLOGY" },
       { id: "transformation_promise", order: 2, kind: "text",
         prompt: "What&rsquo;s the before-and-after this offer delivers — who are they before, and who are they after?",
         help: "The transformation promise drives the whole arc.",
         label: "Transformation promise", placeholder: "e.g. stuck and overwhelmed → clear, confident, closing", required: true, storeOn: "deck_brief.TRANSFORMATION_PROMISE" },
+      { id: "time_to_result", order: 2.5, kind: "text",
+        prompt: "How long does it typically take a client to see this result once they start — the real, honest timeframe?",
+        help: "State the true delivery timeframe in your own words (e.g. &lsquo;8 weeks&rsquo;, &lsquo;about 3 sessions&rsquo;, or &lsquo;it varies, typically N weeks&rsquo;) — never a faster number to sound more impressive.",
+        label: "Time to result", placeholder: "e.g. 8 weeks to final, a shift in 2", required: true, storeOn: "deck_brief.TIME_TO_RESULT" },
       { id: "audience", order: 3, kind: "text",
         prompt: "Who is this presentation for?",
         help: "Industry, income level, and the pain point that brought them here. This seeds the audience-engine.",
@@ -315,7 +323,7 @@
     ];
 
     var MAX_QUESTIONS = 20;
-    var TOTAL = QUESTIONS.length; /* 13 curated questions -> "Question N of 13" */
+    var TOTAL = QUESTIONS.length; /* 15 curated questions -> "Question N of 15" */
     var answers = {};             /* qid -> { raw, value, storeOn, kind, label } */
 
     var stage = document.getElementById("stage");

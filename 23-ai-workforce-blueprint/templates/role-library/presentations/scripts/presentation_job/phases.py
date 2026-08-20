@@ -604,26 +604,127 @@ class Engine:
 
         return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
 
+    # -- FAULT-16 / FAULT-09 helpers -----------------------------------------
+    def _phase_glob_patterns(self, phase: Phase) -> List[str]:
+        """The subset of phase.resolve_artifact_patterns() that are GLOBS
+        (contain *, ?, or [) -- i.e. a pattern that can match MORE THAN ONE
+        file (P4-PROMPT's working/prompts/slide-*.txt: 25 independently-
+        graded files for a 25-slide deck). An exact/single-file pattern's
+        presence already IS its completeness (there is no "partial" way for
+        one named file to exist) -- this list is empty for those, which is
+        exactly what keeps this fix a no-op for the vast majority of phases."""
+        return [rel for rel in phase.resolve_artifact_patterns(self.run_dir)
+                if any(c in rel for c in "*?[")]
+
+    def _glob_progress_marker(self, patterns: List[str]) -> float:
+        """Latest mtime across every file currently matching any pattern in
+        `patterns` (0.0 when none match yet). A cheap, mechanism-only proxy
+        for "has anything changed here since I looked" -- a brand-new file
+        raises it (one more slide written), and so does dispatcher.py's own
+        in-place rewrite of an existing failing file (_dispatch_prompt_phase:
+        `os.replace(tmp_path, target)`, same name, later mtime) -- both count
+        as real forward progress. This never inspects content; deciding
+        whether the content is actually GOOD stays phase_verifiers.verify()'s
+        job, unchanged."""
+        latest = 0.0
+        for rel in patterns:
+            for m in self.run_dir.glob(rel):
+                try:
+                    latest = max(latest, m.stat().st_mtime)
+                except OSError:
+                    continue
+        return latest
+
     def _run_agent_phase(self, phase: Phase) -> int:
         """
         Emit a work order, then poll for the artifact until the phase budget expires.
         This is a stall detector, not an executor — see the module docstring. The gain over today
         is that a missing artifact BLOCKS AND ANNOUNCES instead of being silently skipped.
+
+        FAULT-16 / FAULT-09 (2026-08-20, orchestrator-verified from the live event
+        log): two related coordination defects lived here.
+
+        (a) The poll loop's ONLY completion signal was _artifacts_present() -- bare
+        glob-match existence. For a phase whose produces_artifact is a glob covering
+        MANY independently-graded files, "the pattern matches >=1 file" is true the
+        instant a SINGLE stale file from an earlier, blocked attempt is still sitting
+        on disk -- which it always is on re-entry. That let the FIRST poll (before
+        any sleep, in the SAME SECOND the work order below was written) declare the
+        phase done and fall straight into run_phase()'s substance verifier, which of
+        course failed against admittedly partial output. terminal then flipped to
+        BLOCKED, and the dispatcher process that would have written the rest refused
+        to run at all once it saw that ("run terminal is set -- exiting") -- a real
+        deck sat blocked 9.5 hours with 14 of 25 slide prompts never written,
+        re-verifying the SAME partial artifact on every --resume instead of waiting
+        for the rest of it (FAULT-09: a ~2-second re-block, state.json.resume_history
+        growing past 180 entries with zero forward progress between any of them).
+        Other agent phases (P1Q-COPY-QC, "Still waiting ... About 9 minutes before I
+        flag it") never hit this because their produces_artifact is a single exact
+        path, where presence really does equal completeness -- only a multi-file glob
+        can be PARTIALLY, misleadingly "present."
+
+        (b) This method also unconditionally overwrote the work order file on every
+        call, including on --resume -- even when a dispatcher process still held a
+        live claim on this exact phase (working/work-orders/<phase>.claim). One
+        component silently reissuing work another was already mid-flight on is the
+        "two components, no coordination" half of FAULT-09.
+
+        FIX: (a) for a GLOB pattern only, the loop requires genuine forward progress
+        (a matching file with a newer mtime than THIS dispatch's own entry baseline)
+        before trusting presence -- so a stale re-entry snapshot can never satisfy it
+        by itself. The loop then runs its IDENTICAL pre-existing wait/announce/
+        checkpoint cadence (same budget, same "About N minutes before I flag it"
+        mechanism P1Q-COPY-QC already uses correctly) until real progress appears or
+        the budget genuinely expires -- re-entry with partial output takes the exact
+        same waiting path as a fresh dispatch, never an invented new one. An exact/
+        single-file pattern is untouched: presence alone still exits immediately,
+        byte-for-byte the pre-fix behaviour. (b) a live claim, or a work order that
+        is simply still outstanding and not yet stale, is reused rather than
+        clobbered -- the engine stops racing the dispatcher for the same phase.
+
+        Neither change touches WHETHER phase_verifiers.verify() can fail -- only
+        WHEN it is ever reached.
         """
-        order = {
-            "phase": phase.id, "owning_role": phase.owning_role,
-            "produces_artifact": phase.produces_artifact,
-            "verifier": phase.verifier,
-            "budget_minutes": phase.budget_minutes,
-            "issued_at": utcnow(),
-        }
         wo = self.run_dir / "working" / "work-orders"
         wo.mkdir(parents=True, exist_ok=True)
-        (wo / f"{phase.id}.json").write_text(json.dumps(order, indent=2), encoding="utf-8")
-        self.report.event("phase.work_order",
-                          f"{phase.id} is agent-authored. Work order written to "
-                          f"working/work-orders/{phase.id}.json. Waiting for "
-                          f"{', '.join(phase.produces_artifact)}.")
+        wo_path = wo / f"{phase.id}.json"
+        claim_path = wo / f"{phase.id}.claim"  # dispatcher.py's own claim-file convention
+
+        glob_patterns = self._phase_glob_patterns(phase)
+        # FAULT-16: snapshot what already exists BEFORE (re)issuing this work
+        # order -- the re-entry baseline. Computed only for glob patterns;
+        # see _phase_glob_patterns' docstring for why an exact path skips this.
+        baseline_progress = self._glob_progress_marker(glob_patterns) if glob_patterns else 0.0
+
+        # FAULT-09b: never clobber a work order a dispatcher is actively
+        # holding, or one that is simply still outstanding and not obviously
+        # abandoned. "Stale" mirrors a fresh dispatch's own patience: no sign
+        # of life for more than 2x this phase's OWN budget is presumed
+        # abandoned (crashed worker), not slow, and is still safe to reissue.
+        stale_after = max(120.0, phase.budget_minutes * 60 * 2)
+        now_ts = time.time()
+        claim_live = claim_path.is_file() and (now_ts - claim_path.stat().st_mtime) < stale_after
+        wo_live = wo_path.is_file() and (now_ts - wo_path.stat().st_mtime) < stale_after
+        if claim_live or wo_live:
+            self.report.event(
+                "phase.work_order_reused",
+                f"{phase.id}: {'a dispatcher holds a live claim on' if claim_live else 'a work order is already outstanding for'} "
+                f"working/work-orders/{phase.id}.json — waiting on it instead of "
+                "reissuing a new one (FAULT-09: two components must not act on one "
+                "phase with no coordination).")
+        else:
+            order = {
+                "phase": phase.id, "owning_role": phase.owning_role,
+                "produces_artifact": phase.produces_artifact,
+                "verifier": phase.verifier,
+                "budget_minutes": phase.budget_minutes,
+                "issued_at": utcnow(),
+            }
+            wo_path.write_text(json.dumps(order, indent=2), encoding="utf-8")
+            self.report.event("phase.work_order",
+                              f"{phase.id} is agent-authored. Work order written to "
+                              f"working/work-orders/{phase.id}.json. Waiting for "
+                              f"{', '.join(phase.produces_artifact)}.")
         if self.dry_run:
             return EXIT_OK
 
@@ -634,6 +735,12 @@ class Engine:
         started_at = time.time()
         while time.time() < deadline:
             ok, _ = self._artifacts_present(phase)
+            if ok and glob_patterns:
+                # FAULT-16: bare presence is not completion for a multi-file
+                # glob -- require something NEWER than this dispatch's own
+                # baseline (a new file, or an existing one rewritten) before
+                # trusting it and handing off to the real substance verifier.
+                ok = self._glob_progress_marker(glob_patterns) > baseline_progress
             if ok:
                 return EXIT_OK
             now = time.time()
