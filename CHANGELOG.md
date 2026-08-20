@@ -1,3 +1,12 @@
+## [v22.0.53] -- 2026-08-20 -- fix(dispatcher): P4-COPY must teach ARC TAGS, not prose phrases
+
+Merge of `fix/p4-copy-arc-tag-contract-20260819` (PR #946) onto v22.0.52. The
+P4-COPY output contract taught ARC tags by prose phrase; the AF-SP-8Q-SPLIT
+resolver read the atomic-COMMIT signal instead of the interview-DEPTH signal.
+Output contract fixed to teach the tags themselves, the upstream budget cut,
+and the contract placed last in the built prompt. G3-gated skill-51 bump
+1.1.4 -> 1.1.5.
+
 ## [v22.0.52] -- 2026-08-19 -- fix(presentations): upsell intake flag shape -- the sales/checkout/VSL branch would never have fired
 
 Merge of `fix/upsell-intake-shape-20260819` (PR #943) onto v22.0.51. Caught
