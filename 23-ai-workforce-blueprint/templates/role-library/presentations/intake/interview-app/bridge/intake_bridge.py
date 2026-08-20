@@ -43,22 +43,56 @@ except ImportError:
     intake_writer = None
 
 
-def _load_cc_board() -> object | None:
-    """Locate cc_board.py (the Command Center ingest helper) if available."""
+def _load_by_file(mod_name: str, file_name: str) -> object | None:
+    """Locate a sanctioned scripts/ sibling module (cc_board.py,
+    operator_requester.py, ...) by file path across the candidate roots this
+    bridge can run from -- a checkout, a deployed box, or PRESENTATIONS_SCRIPTS
+    override. Same technique for every such module so all of them resolve the
+    SAME box/checkout, never a mix."""
     for root in (
         pathlib.Path(os.environ.get("PRESENTATIONS_SCRIPTS", "")) if os.environ.get("PRESENTATIONS_SCRIPTS") else HERE.parent,
         HERE.parent.parent / "scripts",
         pathlib.Path.home() / ".openclaw" / "workspace" / "departments" / "Presentations" / "scripts",
     ):
-        cand = root / "cc_board.py"
+        cand = root / file_name
         if cand.is_file():
             import importlib.util as _u
-            spec = _u.spec_from_file_location("cc_board", cand)
+            spec = _u.spec_from_file_location(mod_name, cand)
             if spec and spec.loader:
                 mod = _u.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 return mod
     return None
+
+
+def _load_cc_board() -> object | None:
+    """Locate cc_board.py (the Command Center ingest helper) if available."""
+    return _load_by_file("cc_board", "cc_board.py")
+
+
+def _load_operator_requester() -> object | None:
+    """Locate operator_requester.py (FIX F19's sanctioned OPERATOR chat-id
+    fallback) if available. Returns None -- never raises -- when the module
+    is not reachable from any candidate root; callers treat that exactly
+    like 'nothing configured' (see resolve_operator_chat_id()'s own
+    never-fabricate contract)."""
+    return _load_by_file("operator_requester", "operator_requester.py")
+
+
+# FIX F19: mirrors cc_board.py's _REQUESTER_ENV_KEYS / deck-intake-driver.py's
+# _REQUESTER_ENV_KEYS byte-for-byte. Before this fix, this bridge was the ONLY
+# intake path reading a DIFFERENT env var name (PRESENTER_CHAT_ID) for the
+# identical purpose -- an app-submitted session and a CLI/dispatcher-driven
+# session silently disagreed on where the requester lives, the exact
+# divergent-intake-path disease behind FAULT-02/05/11. The canonical keys are
+# now checked FIRST so both paths agree; PRESENTER_CHAT_ID is kept as a
+# back-compat alias (see cmd_ingest() below) so an existing deployment's env
+# export keeps working.
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
 
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -100,28 +134,69 @@ def _fetch_intake(args) -> dict:
     return resp
 
 
+def stamp_requester(intake: dict, env: dict | None = None,
+                    load_operator_requester=_load_operator_requester) -> dict:
+    """Stamp requester_chat_id/requester_channel onto `intake` IN PLACE from a
+    legitimate source, and return it (for easy call-site chaining). Never
+    overwrites a value the app itself already supplied. Extracted to its own
+    function (FIX F19) so this resolution order is unit-testable without
+    driving the network-calling parts of cmd_ingest().
+
+    Order (see operator_requester.py's docstring for the full rationale):
+      1. the canonical chat-surface env vars every other intake path already
+         reads (_REQUESTER_ENV_KEYS above -- the real client's identity, when
+         a dispatcher exported it) -- this is the RIGHT source for a real
+         client order and always wins when present;
+      2. PRESENTER_CHAT_ID, kept ONLY as a back-compat alias for an existing
+         deployment's env export (this bridge used to read ONLY this name --
+         see the fix/deck-type-routing-bypass follow-up this replaces);
+      3. the sanctioned OPERATOR fallback (operator_requester.py) for a
+         genuinely operator-run app session that has neither -- never a
+         client identity, never invented.
+    `load_operator_requester` is injectable for tests (default: the real
+    file-path loader above).
+    """
+    src_env = env if env is not None else os.environ
+    if str(intake.get("requester_chat_id") or "").strip():
+        return intake
+    chat_id = ""
+    channel = ""
+    for key in _REQUESTER_ENV_KEYS:
+        val = str(src_env.get(key) or "").strip()
+        if val:
+            chat_id = val
+            break
+    if not chat_id:
+        chat_id = str(src_env.get("PRESENTER_CHAT_ID") or "").strip()
+    if chat_id:
+        channel = (
+            str(src_env.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip()
+            or str(src_env.get("PRESENTER_CHANNEL") or "").strip()
+            or "telegram"
+        )
+    else:
+        op_mod = load_operator_requester()
+        if op_mod is not None and hasattr(op_mod, "resolve_operator_chat_id"):
+            chat_id, channel = op_mod.resolve_operator_chat_id()
+    if chat_id:
+        intake["requester_chat_id"] = chat_id
+        intake["requester_channel"] = channel or "telegram"
+    return intake
+
+
 def cmd_ingest(args) -> int:
     intake_payload = _fetch_intake(args)
     intake = intake_payload.get("intake") or intake_payload
     intake.setdefault("intake_session_id", args.session_id)
 
-    # fix/deck-type-routing-bypass follow-up: this bridge already has
-    # PRESENTER_CHAT_ID in hand (it is read a few lines below, but only to
-    # pass to cc.ingest_deck_task() for CC-board registration -- a different
-    # purpose than the engine's own hard gate on requester.chat_id; see
-    # presentation_job/resolve_intake.py and __main__.py cmd_new). It was
-    # never stamped into the record intake_writer.write_intake_file() below
-    # persists as working/copy/intake.json -- the ONE file the engine's
-    # resolve_intake.py reads -- so an app-submitted deck's engine job could
-    # never report to the client who submitted it. Stamp it into `intake`
-    # itself, here, BEFORE the write, so it lands in the run-dir record.
-    # Never overwrites a value the app itself already supplied.
-    if not str(intake.get("requester_chat_id") or "").strip():
-        _presenter_chat_id = os.environ.get("PRESENTER_CHAT_ID", "").strip()
-        if _presenter_chat_id:
-            intake["requester_chat_id"] = _presenter_chat_id
-            intake["requester_channel"] = \
-                os.environ.get("PRESENTER_CHANNEL", "").strip() or "telegram"
+    # fix/deck-type-routing-bypass follow-up, extended by FIX F19: this
+    # bridge needs a requester_chat_id stamped into `intake` itself, here,
+    # BEFORE intake_writer.write_intake_file() below persists it as
+    # working/copy/intake.json -- the ONE file the engine's
+    # resolve_intake.py reads -- or an app-submitted deck's engine job could
+    # never report to the client who submitted it. See stamp_requester()'s
+    # own docstring for the full resolution order.
+    stamp_requester(intake)
 
     # 1) Write the run-dir record (dept-format intake.json + completed ledger
     #    + the GATE 0b conversation transcript).
@@ -144,13 +219,17 @@ def cmd_ingest(args) -> int:
         brief = intake.get("deck_brief") or {}
         title = brief.get("OFFER_NAME") or intake.get("intake_session_id") or args.session_id
         desc = f"Intake captured by the Presentation Interview app ({args.session_id}).\n" + json.dumps(intake.get("deck_brief") or intake.get("answers") or {}, indent=2)
+        # FIX F19: use the value already resolved onto `intake` above (canonical
+        # env vars -> PRESENTER_CHAT_ID back-compat -> operator fallback) instead
+        # of re-reading raw PRESENTER_CHAT_ID -- so CC-board registration and the
+        # engine's own working/copy/intake.json never disagree on the requester.
         task_id = cc.ingest_deck_task(
             run_dir,
             deck_slug=args.session_id,
             title=f"Deck — {title}",
             description=desc,
             priority="medium",
-            requester_chat_id=os.environ.get("PRESENTER_CHAT_ID", ""),
+            requester_chat_id=intake.get("requester_chat_id", ""),
         )
         if task_id:
             print(json.dumps({"status": "dept_started", "session_id": args.session_id, "task_id": task_id}))

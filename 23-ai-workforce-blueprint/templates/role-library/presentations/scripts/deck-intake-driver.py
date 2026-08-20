@@ -244,16 +244,43 @@ _REQUESTER_ENV_KEYS = (
 )
 
 
+def _resolve_operator_fallback() -> Tuple[str, str]:
+    """Lazily import operator_requester.py (same directory as this driver)
+    and call its resolve_operator_chat_id(). Returns ("", "") -- never
+    raises -- if the module cannot be imported, so a missing/broken OPTIONAL
+    module degrades to 'no operator fallback available', never a crash of
+    --complete/--record. See operator_requester.py's own docstring for the
+    full FIX F19 rationale."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from operator_requester import resolve_operator_chat_id  # type: ignore
+        return resolve_operator_chat_id()
+    except Exception:
+        return ("", "")
+
+
 def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, str]:
     """Return {requester_chat_id, requester_channel} updates to merge into
-    working/copy/intake.json, sourced from the environment the dispatcher
-    already sets (see _REQUESTER_ENV_KEYS above). Returns {} -- never a
-    fabricated value -- when intake already has a requester_chat_id (do not
-    clobber) or when none of the env keys are set (a genuinely
-    operator-initiated / requester-less run). The engine's own hard gate on
-    an empty requester.chat_id is left to fire exactly as designed in that
-    second case -- this function only closes the "dispatcher knew it but
-    nobody wrote it down" gap, never the case where nobody knew it at all.
+    working/copy/intake.json. Returns {} -- never a fabricated value -- when
+    intake already has a requester_chat_id (do not clobber).
+
+    Order:
+      1. the environment the dispatcher already sets (_REQUESTER_ENV_KEYS
+         above) -- the real client's chat-surface identity, when a
+         dispatcher exported it. This is the RIGHT source for a genuine
+         client order and always wins when present.
+      2. FIX F19: the sanctioned OPERATOR fallback (operator_requester.py),
+         read by NAME from ~/.openclaw/openclaw.json's env.vars -- never a
+         client identity, never invented. Closes the case the env-var path
+         above never covered: a genuinely operator-initiated run where no
+         dispatcher ever had a client chat id to export. Before this fix
+         that case resolved to {} forever, and presentation_job.py --new's
+         own F1 hard-fail then caught every such run with nobody able to
+         start a deck unattended.
+    Only when BOTH resolve nothing does this return {} and leave the
+    engine's F1 gate to fire exactly as designed -- this function never
+    bypasses that gate, it only ever adds a legitimate source.
     """
     if str(existing_intake.get("requester_chat_id") or "").strip():
         return {}
@@ -263,10 +290,14 @@ def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, st
         if val:
             chat_id = val
             break
-    if not chat_id:
-        return {}
-    channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
-    return {"requester_chat_id": chat_id, "requester_channel": channel}
+    if chat_id:
+        channel = str(os.environ.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+        return {"requester_chat_id": chat_id, "requester_channel": channel}
+
+    op_chat_id, op_channel = _resolve_operator_fallback()
+    if op_chat_id:
+        return {"requester_chat_id": op_chat_id, "requester_channel": op_channel}
+    return {}
 
 
 def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
@@ -950,6 +981,11 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     intake["deck_type"] = "signature_presentation"
     intake["presentation_type"] = "signature"
     intake["signature_frame"] = record.get("signature_frame")
+    # FIX F19: this is a finalize path (same as cmd_complete's) -- stamp the
+    # requester here too, or a signature-mode deck driven straight to
+    # --record never picks up either the chat-surface env vars or the
+    # operator fallback. See _resolve_requester_from_env()'s own docstring.
+    intake.update(_resolve_requester_from_env(intake))
     write_intake_json(run_dir, intake)
 
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
@@ -1014,6 +1050,12 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     intake["deck_type"] = "signature_presentation"
     intake["presentation_type"] = "signature"
     intake["signature_frame"] = record.get("signature_frame")
+    # FIX F19: this is a finalize path (same as cmd_complete's) -- stamp the
+    # requester here too, or a mini-app-driven signature record (this
+    # function exists specifically for "tooling that already ran the
+    # turn-gate through another surface") never picks one up. See
+    # _resolve_requester_from_env()'s own docstring.
+    intake.update(_resolve_requester_from_env(intake))
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)
