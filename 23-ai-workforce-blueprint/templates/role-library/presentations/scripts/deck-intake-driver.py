@@ -324,9 +324,57 @@ def write_intake_ledger(run_dir: Path, ledger: Dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
-def read_intake_transcript(run_dir: Path) -> List[Dict[str, Any]]:
-    """Read working/interview/intake_transcript.json. Returns empty list if absent."""
-    path = run_dir / "working" / "interview" / "intake_transcript.json"
+def write_intake_transcript(run_dir: Path,
+                            envelope: Any) -> None:
+    """Write working/interview/intake_transcript.json atomically.
+
+    FAULT-21 fix (2026-08-20): this is now ONLY ever called with the full,
+    freshly-signed driver envelope produced by _finalize_transcript_envelope()
+    -- never with a read-then-append of whatever was already on disk. The old
+    read-append-write pattern (read_intake_transcript() -- list-only, silently
+    returned [] for a dict -- then write back over the same path) is exactly
+    how a signed envelope got silently replaced by a 2-entry bare list live:
+    the append saw a dict, treated it as "no prior transcript", and clobbered
+    it. See read_intake_transcript_raw()/write_intake_transcript_raw() below
+    for where turns are actually appended now (a SEPARATE file the signed
+    envelope is never read-modified from)."""
+    dest = run_dir / "working" / "interview"
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / "intake_transcript.json"
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(envelope, fh, indent=2, default=str)
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# FAULT-21 fix (2026-08-20): the driver's OWN append-only turn log.
+#
+# Root cause of the live incident: cmd_answer / _sig_answer both did a
+# read-append-write directly against working/interview/intake_transcript.json
+# -- the SAME path the signed envelope ({"format": "sp-intake-transcript-v1",
+# ..., "driver_signature": ...}) lives at once an intake (or a signature
+# intake) has been finalized. The read side (the old read_intake_transcript())
+# only understood a bare list -- `obj if isinstance(obj, list) else []` -- so
+# once the file held a signed dict envelope, the very next --answer silently
+# saw "no prior transcript", appended its 1-2 new turns to an empty list, and
+# wrote that 2-entry bare list straight over the signed envelope. No error, no
+# warning, no backup -- driver_signature and qid_sequence just vanished, and
+# P-SP-INTAKE-TRACE correctly (but confusingly, after the fact) fail-closed.
+#
+# The fix: turns are appended ONLY here, to a file the signed envelope NEVER
+# lives at. The envelope at intake_transcript.json is always a full,
+# from-scratch regeneration from this log (_finalize_transcript_envelope(),
+# below) -- never a read-modify-write of the envelope file itself. That
+# structurally removes the hazard rather than papering over it with an
+# isinstance() check at each call site.
+# ---------------------------------------------------------------------------
+def read_intake_transcript_raw(run_dir: Path) -> List[Dict[str, Any]]:
+    """Read working/interview/intake_transcript_raw.json -- the append-only
+    turn log ({"role", "text", "qid"} records) cmd_answer/_sig_answer append
+    to. Returns [] if absent/unreadable (same tolerant-degrade posture as
+    every other reader in this file)."""
+    path = run_dir / "working" / "interview" / "intake_transcript_raw.json"
     if not path.is_file():
         return []
     try:
@@ -337,15 +385,17 @@ def read_intake_transcript(run_dir: Path) -> List[Dict[str, Any]]:
         return []
 
 
-def write_intake_transcript(run_dir: Path,
-                            transcript: List[Dict[str, Any]]) -> None:
-    """Write working/interview/intake_transcript.json atomically."""
+def write_intake_transcript_raw(run_dir: Path,
+                                turns: List[Dict[str, Any]]) -> None:
+    """Write working/interview/intake_transcript_raw.json atomically. This
+    file is ALWAYS a bare list -- it is never the signed envelope, so there is
+    no dict-vs-list ambiguity for a caller to mishandle."""
     dest = run_dir / "working" / "interview"
     dest.mkdir(parents=True, exist_ok=True)
-    path = dest / "intake_transcript.json"
+    path = dest / "intake_transcript_raw.json"
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(transcript, fh, indent=2, default=str)
+        json.dump(turns, fh, indent=2, default=str)
     os.replace(tmp, path)
 
 
@@ -439,6 +489,13 @@ def cmd_answer(args) -> int:
 
     # Record the answer
     ledger = read_intake_ledger(run_dir)
+    # FAULT-21 fix: capture completion state BEFORE this answer touches the
+    # ledger. A --complete that already ran (status=="complete"/complete==True)
+    # means a signed driver envelope may already exist at
+    # working/interview/intake_transcript.json -- if so, this answer's turn
+    # must be APPENDED and the envelope RE-SIGNED after it is recorded below,
+    # never silently left stale or (the old bug) clobbered.
+    already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     entries = ledger.get("entries", {})
     store_on = qdef.get("storeOn", qid)
     entries[store_on] = {"value": text.strip(), "validated": True,
@@ -484,13 +541,36 @@ def cmd_answer(args) -> int:
     ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
     write_intake_ledger(run_dir, ledger)
 
-    # Append to transcript
-    transcript = read_intake_transcript(run_dir)
-    transcript.append({"turn": len(transcript) + 1,
-                       "question_id": qid,
-                       "answer": text.strip(),
-                       "ts": datetime.now(timezone.utc).isoformat()})
-    write_intake_transcript(run_dir, transcript)
+    # FAULT-21 fix: append to the RAW turn log (never the signed envelope file
+    # directly -- see write_intake_transcript()'s docstring above). Two turns
+    # per answer (assistant prompt + owner answer), the SAME {"role","text",
+    # "qid"} shape _sig_answer already used, so cmd_complete's envelope
+    # builder and the signature pass's share one signer with no format drift
+    # between STANDARD and SIGNATURE mode.
+    raw_turns = read_intake_transcript_raw(run_dir)
+    raw_turns.append({"role": "assistant", "text": qdef.get("prompt", qid), "qid": qid})
+    raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
+    write_intake_transcript_raw(run_dir, raw_turns)
+
+    # FAULT-21 fix: this answer arrived AFTER --complete already ran. A
+    # signed envelope may already exist -- re-sign it now so it grows to
+    # include this turn instead of going stale (or, under the old bug, being
+    # silently destroyed). Never silent: stderr NOTICE + a JSON field below.
+    extra: Dict[str, Any] = {}
+    if already_complete:
+        envelope, warning = _finalize_transcript_envelope(run_dir)
+        extra["post_completion_append"] = True
+        extra["envelope_resigned"] = envelope is not None
+        print("  NOTICE  [POST-COMPLETION-APPEND] this answer was recorded "
+              "after --complete already ran (intake_ledger.json status== "
+              "complete). The signed driver envelope at working/interview/"
+              "intake_transcript.json was RE-SIGNED to include this new turn "
+              "-- provenance was preserved and extended, never overwritten. "
+              "Re-run --complete if intake.json / the SP claim gate also need "
+              "to reflect this answer.", file=sys.stderr)
+        if warning:
+            extra["envelope_warning"] = warning
+            print(f"  WARN  {warning}", file=sys.stderr)
 
     # Return next question (or complete signal)
     answers = {k: (v.get("value") if isinstance(v, dict) else v)
@@ -498,16 +578,19 @@ def cmd_answer(args) -> int:
                if not k.startswith("_")}
     next_q = _first_unanswered(questions, answers)
     if next_q is None:
-        print(json.dumps({"status": "complete",
-                          "message": "All questions answered. Run --complete "
-                                     "to finalize."}))
+        payload = {"status": "complete",
+                  "message": "All questions answered. Run --complete "
+                             "to finalize."}
+        payload.update(extra)
+        print(json.dumps(payload))
         return 0
 
-    return _emit_question(next_q, answers)
+    return _emit_question(next_q, answers, extra=extra)
 
 
 def _emit_question(qdef: Dict[str, Any],
-                   answers: Dict[str, Any]) -> int:
+                   answers: Dict[str, Any],
+                   extra: Optional[Dict[str, Any]] = None) -> int:
     """Print one question as JSON to stdout."""
     prompt = qdef.get("prompt", "")
     help_text = qdef.get("help", "")
@@ -534,6 +617,8 @@ def _emit_question(qdef: Dict[str, Any],
             output["value_labels"] = value_labels
     if default is not None:
         output["default"] = default
+    if extra:
+        output.update(extra)
 
     print(json.dumps(output, indent=2))
     return 0
@@ -591,6 +676,28 @@ def cmd_complete(args) -> int:
         datetime.now(timezone.utc).isoformat()
     write_intake_json(run_dir, intake)
 
+    # FAULT-22 fix (2026-08-20): build the signed driver-envelope transcript
+    # on EVERY completion path -- not only via the separate 8-Sacred-
+    # Questions signature pass's _sig_finalize(). Before this fix, --complete
+    # never called a signer at all: it only merged answers into intake.json
+    # and flipped ledger flags, so a signature deck driven the obvious way
+    # (--next / --answer / --complete, never the separate --signature pass)
+    # produced a bare-list transcript with no driver envelope, and
+    # P-SP-INTAKE-TRACE could never pass for it. This calls the SAME shared
+    # signer _sig_finalize() now also calls (_finalize_transcript_envelope --
+    # itself built on intake_trace_check.build_driver_envelope(), never a
+    # local reimplementation), so the two completion paths can never drift.
+    # Built for every deck_type, not just signature_presentation, so the
+    # transcript's provenance is always true regardless of which gate happens
+    # to check it today. Fail-soft (mirrors _sig_finalize's own posture): a
+    # missing intake_trace_check.py or an empty turn log degrades to a loud
+    # stderr WARN, never a blocked completion -- P-SP-INTAKE-TRACE itself
+    # already defers for every non-signature deck_type and fails closed at
+    # BUILD time (not here) for a signature deck with no real transcript.
+    envelope, envelope_warning = _finalize_transcript_envelope(run_dir)
+    if envelope_warning:
+        print(f"  WARN  {envelope_warning}", file=sys.stderr)
+
     # Mark ledger complete
     ledger["status"] = "complete"
     ledger["complete"] = True
@@ -603,6 +710,7 @@ def cmd_complete(args) -> int:
         "creation_mode": intake.get("creation_mode"),
         "presentation_type": intake.get("presentation_type"),
         "intake_path": str(run_dir / "working" / "copy" / "intake.json"),
+        "intake_transcript_signed": envelope is not None,
     }
     print(json.dumps(result, indent=2))
     return 0
@@ -641,14 +749,23 @@ def _import_skill51_module(mod_name: str):
     file, same candidate-path search _run_prove_sp_intake already uses below.
     Returns the module or None. Used so the driver signs turn-ledger/transcript
     provenance with the EXACT SAME canonicalization + key the prover verifies
-    with -- never a hand-rolled reimplementation that could silently drift."""
+    with -- never a hand-rolled reimplementation that could silently drift.
+
+    FAULT-22 follow-up (2026-08-20): candidate list widened to walk every
+    ancestor of SCRIPTS_DIR (mirrors build_deck.py's _sp_prover(), which was
+    already more robust than this) -- a plain repo/worktree checkout
+    (23-ai-workforce-blueprint/ and 51-signature-presentation/ as SIBLING
+    top-level dirs) sits more than 2 levels apart from this file and the old
+    fixed-depth candidates never resolved it, silently falling through to
+    "module not found" outside a materialized/installed layout."""
     from importlib import util as importlib_util
-    cands = [
-        SCRIPTS_DIR / (mod_name + ".py"),
-        SCRIPTS_DIR.parent / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
-        SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
-        Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "scripts" / (mod_name + ".py"),
-    ]
+    cands = [SCRIPTS_DIR / (mod_name + ".py")]
+    cands += [anc / "51-signature-presentation" / "scripts" / (mod_name + ".py")
+              for anc in SCRIPTS_DIR.parents]
+    cands += [anc / "skills" / "51-signature-presentation" / "scripts" / (mod_name + ".py")
+              for anc in SCRIPTS_DIR.parents]
+    for _base in ("/data/.openclaw/skills", str(Path.home() / ".openclaw" / "skills")):
+        cands.append(Path(_base) / "51-signature-presentation" / "scripts" / (mod_name + ".py"))
     for cand in cands:
         if cand.is_file():
             try:
@@ -659,6 +776,74 @@ def _import_skill51_module(mod_name: str):
             except Exception:
                 continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# FAULT-22 fix (2026-08-20): the ONE shared signer both cmd_complete() and
+# _sig_finalize() call. Previously ONLY _sig_finalize() -- reachable exclusively
+# through the SEPARATE --signature --sig-next/--sig-answer 8-Sacred-Questions
+# pass -- ever built the signed driver envelope; a standard --complete (the
+# obvious path: --next / --answer / --complete) never did, so P-SP-INTAKE-TRACE
+# could never pass for a signature deck completed that way. Extracting the
+# logic here (rather than duplicating a second signer in cmd_complete) means
+# the two completion paths use byte-identical signing and can never drift.
+# ---------------------------------------------------------------------------
+def _transcript_qid_sequence(turns: List[Dict[str, Any]]) -> List[str]:
+    """Strictly-ordered, non-duplicated qid sequence from the raw turn log's
+    first-surfaced order -- the SAME dedup _sig_finalize always did inline
+    (FIX-3-COMPLETION), now the ONE place both completion paths derive it so
+    they can never disagree on the shape intake_trace_check.
+    check_driver_provenance() requires."""
+    seen: set = set()
+    seq: List[str] = []
+    for t in turns:
+        q = t.get("qid") if isinstance(t, dict) else None
+        if q and q not in seen:
+            seen.add(q)
+            seq.append(q)
+    return seq
+
+
+def _build_signed_transcript_envelope(
+        raw_turns: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Sign `raw_turns` into a driver envelope using intake_trace_check.py's
+    OWN build_driver_envelope() -- never a local reimplementation -- so the
+    signature this driver writes is byte-identical to what the checker
+    recomputes. Returns (envelope, None) on success, or (None, warning) when
+    there is nothing to sign (empty raw_turns -- an intake with no recorded
+    Q&A has nothing to attest to) or the signing module cannot be found
+    (fail-soft, matching _sig_finalize's pre-existing posture: a missing
+    skill-51 install degrades to a loud warning, never a crash of --complete
+    /--answer)."""
+    if not raw_turns:
+        return None, None
+    mod = _import_skill51_module("intake_trace_check")
+    if mod is None:
+        return None, (
+            "51-signature-presentation/scripts/intake_trace_check.py could not "
+            "be located -- no signed driver envelope was built for this "
+            "intake. P-SP-INTAKE-TRACE will fail-closed with AF-INTAKE-BATCH "
+            "at build time for a signature_presentation deck until skill 51 "
+            "is installed next to deck-intake-driver.py.")
+    qid_sequence = _transcript_qid_sequence(raw_turns)
+    envelope = mod.build_driver_envelope(qid_sequence, raw_turns)
+    return envelope, None
+
+
+def _finalize_transcript_envelope(
+        run_dir: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Read the append-only raw turn log, sign it, and write the ONE
+    canonical envelope to working/interview/intake_transcript.json --
+    ALWAYS a full regeneration from the raw log via write_intake_transcript(),
+    NEVER a read-modify-write of the envelope file itself (that read-modify-
+    write against the same path was FAULT-21's root cause). Returns
+    (envelope_or_None, warning_or_None); the envelope is written to disk only
+    when one was actually built (raw_turns non-empty and the signer resolved)."""
+    raw_turns = read_intake_transcript_raw(run_dir)
+    envelope, warning = _build_signed_transcript_envelope(raw_turns)
+    if envelope is not None:
+        write_intake_transcript(run_dir, envelope)
+    return envelope, warning
 
 
 # FIX-3-COMPLETION (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): FIX-3's
@@ -843,6 +1028,14 @@ def _emit_frame_question() -> int:
 def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
     """Record one signature answer and return the next question."""
     ledger = read_intake_ledger(run_dir)
+    # FAULT-21 sibling fix: capture completion state BEFORE this call flips
+    # ledger["status"] back to "in_progress" below. _sig_finalize() (reached
+    # via the normal walk once every required question is present again) will
+    # rebuild the envelope from scratch anyway, but a caller answering one
+    # NEW post-completion bank question and stopping there (never reaching
+    # finalize again in this call) must not leave the signed envelope stale
+    # -- re-sign it immediately, same guarantee cmd_answer now gives.
+    already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     sp_entries = ledger.get("sp_entries", {})
 
     # Validate frame selection
@@ -877,10 +1070,25 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
     # intake_trace_check.py's verbatim-prompt match needs the assistant turn's
     # text to be byte-identical to the bank prompt to resolve to exactly one
     # question id (never a multi-question-per-turn false positive).
-    transcript = read_intake_transcript(run_dir)
-    transcript.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
-    transcript.append({"role": "owner", "text": text.strip(), "qid": qid})
-    write_intake_transcript(run_dir, transcript)
+    #
+    # FAULT-21 sibling fix: this now appends to the RAW turn log, never the
+    # signed envelope file itself -- same hazard, same fix as cmd_answer's
+    # (see write_intake_transcript()'s docstring).
+    raw_turns = read_intake_transcript_raw(run_dir)
+    raw_turns.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
+    raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
+    write_intake_transcript_raw(run_dir, raw_turns)
+
+    if already_complete:
+        _envelope, _warning = _finalize_transcript_envelope(run_dir)
+        print("  NOTICE  [POST-COMPLETION-APPEND] this signature answer was "
+              "recorded after the signature intake already completed. The "
+              "signed driver envelope at working/interview/"
+              "intake_transcript.json was RE-SIGNED to include this new turn "
+              "-- provenance was preserved and extended, never overwritten.",
+              file=sys.stderr)
+        if _warning:
+            print(f"  WARN  {_warning}", file=sys.stderr)
 
     return _sig_next(run_dir)
 
@@ -953,28 +1161,18 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
         json.dump(record, fh, indent=2, default=str)
     os.replace(sp_tmp, sp_path)
 
-    # FIX-3-COMPLETION: wrap the working bare-list transcript (written turn by
-    # turn by _sig_answer) into the signed driver envelope
-    # P-SP-INTAKE-TRACE / intake_trace_check.check_driver_provenance() requires
-    # -- {"format": "sp-intake-transcript-v1", "qid_sequence": [...], "turns":
-    # [...], "driver_signature": ...}. Built with intake_trace_check.py's OWN
-    # build_driver_envelope() so the signature matches what it recomputes.
-    intake_trace_check_mod = _import_skill51_module("intake_trace_check")
-    raw_turns = read_intake_transcript(run_dir)
-    if intake_trace_check_mod is not None and raw_turns:
-        seen = set()
-        qid_sequence = []
-        for t in raw_turns:
-            q = t.get("qid")
-            if q and q not in seen:
-                seen.add(q)
-                qid_sequence.append(q)
-        envelope = intake_trace_check_mod.build_driver_envelope(qid_sequence, raw_turns)
-        env_path = run_dir / "working" / "interview" / "intake_transcript.json"
-        env_tmp = env_path.with_suffix(".json.tmp")
-        with open(env_tmp, "w", encoding="utf-8") as fh:
-            json.dump(envelope, fh, indent=2, default=str)
-        os.replace(env_tmp, env_path)
+    # FIX-3-COMPLETION / FAULT-22 shared-signer refactor (2026-08-20): wrap the
+    # raw turn log (appended turn-by-turn by _sig_answer into the SEPARATE
+    # intake_transcript_raw.json -- see FAULT-21) into the signed driver
+    # envelope P-SP-INTAKE-TRACE / intake_trace_check.check_driver_provenance()
+    # requires -- {"format": "sp-intake-transcript-v1", "qid_sequence": [...],
+    # "turns": [...], "driver_signature": ...}. This now calls the SAME shared
+    # signer cmd_complete() calls (_finalize_transcript_envelope --
+    # intake_trace_check.py's OWN build_driver_envelope(), never a local
+    # reimplementation) so the two completion paths can never drift.
+    _envelope, _envelope_warning = _finalize_transcript_envelope(run_dir)
+    if _envelope_warning:
+        print(f"  WARN  {_envelope_warning}", file=sys.stderr)
 
     # Ensure deck_type is signature_presentation
     intake = read_intake_json(run_dir)
