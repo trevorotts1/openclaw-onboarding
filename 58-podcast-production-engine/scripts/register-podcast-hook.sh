@@ -370,6 +370,8 @@ sync_gateway_service_env() {
     log "    export ${INBOUND_SECRET_LABEL}=<the inbound HMAC secret (intake handler verifies the X-Podcast-Intake-Signature header against it)>"
     log "    export PODCAST_CLIENT_LOCATION_ID=<the client Convert and Flow Location ID>"
     log "    export PODCAST_INTAKE_ROUTE_ID=${ROUTE_ID}"
+    log "    export PODCAST_INTAKE_CONTROLLER_ID=${CONTROLLER_ID}"
+    log "    export PODCAST_INTAKE_SESSION_KEY=${SESSION_KEY}"
     log "  Without them, SecretRef resolution fails and the route returns 'unauthorized' on every POST."
     return 0
   fi
@@ -384,6 +386,19 @@ sync_gateway_service_env() {
     log "  PODCAST_INTAKE_ROUTE_ID already present in $env_file; not overwritten"
   else
     PODCAST_INTAKE_ROUTE_ID="$ROUTE_ID" inject_label_into_service_env "PODCAST_INTAKE_ROUTE_ID" "$env_file"
+  fi
+  # The flow controller identity and session key are deterministic (never
+  # secrets): inject the same values the route was just registered under so
+  # the intake handler's in-flow path resolves them from the gateway env.
+  if env_file_has_label "$env_file" "PODCAST_INTAKE_CONTROLLER_ID"; then
+    log "  PODCAST_INTAKE_CONTROLLER_ID already present in $env_file; not overwritten"
+  else
+    PODCAST_INTAKE_CONTROLLER_ID="$CONTROLLER_ID" inject_label_into_service_env "PODCAST_INTAKE_CONTROLLER_ID" "$env_file"
+  fi
+  if env_file_has_label "$env_file" "PODCAST_INTAKE_SESSION_KEY"; then
+    log "  PODCAST_INTAKE_SESSION_KEY already present in $env_file; not overwritten"
+  else
+    PODCAST_INTAKE_SESSION_KEY="$SESSION_KEY" inject_label_into_service_env "PODCAST_INTAKE_SESSION_KEY" "$env_file"
   fi
   return 0
 }
