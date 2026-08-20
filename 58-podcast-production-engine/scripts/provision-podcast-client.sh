@@ -29,7 +29,8 @@
 #   activation sequence from the activation layer (Workflow 1, same merge batch):
 #     1. install-podcast-department.sh                        (department install)
 #     2. register-podcast-hook.sh --client-slug <slug>        (inbound hook mapping)
-#     3. install-podcast-scheduler.sh --client-slug <slug>    (scheduler install)
+#   No scheduler install exists (no-daemon doctrine: the department agent advances
+#   TaskFlows in its own turn via podcast_step_driver.py).
 #   Every step is GATED three ways: presence (fail closed, naming the missing
 #   piece), run rc (fail closed), and a --check read-back (fail closed unless the
 #   helper reports its piece ACTIVE). Any failure aborts the provision with the
@@ -597,6 +598,8 @@ ensure_secret() {
     ledger_step "secret:${key}" "PENDING" "box not writable here (edge-only); generate on the box as the node user"
   fi
 }
+ensure_secret "PODCAST_INTAKE_HOOK_SECRET"
+ensure_secret "PODCAST_INTAKE_INBOUND_SECRET"
 ensure_secret "PODCAST_INTAKE_HOOK_TOKEN"
 ensure_secret "PODCAST_DASHBOARD_TOKEN"
 
@@ -790,6 +793,9 @@ delegate() {
 # <slug>), which is GATED and FAIL-CLOSED: the fleet guarantee is provision =>
 # processor active, so a missing or failing hook registration must abort the
 # provision, not record PENDING.
+# NOTE: the two delegates below stay SOFT by design: their helpers live in a
+# sibling slice, so absence degrades to PENDING (never aborts), matching the
+# delegate() contract above.
 delegate "dashboard-svc"    "deploy-podcast-dashboard.sh"    "$SLUG" "$DASH_PORT"
 delegate "convertflow-card" "write-podcast-cf-field.sh"      "$SLUG" "https://${DASH_HOST}"
 
@@ -862,7 +868,8 @@ provision_fb_ads
 # Sequence (activation layer, Workflow 1, same merge batch):
 #   8a. install-podcast-department.sh                       (department install)
 #   8b. register-podcast-hook.sh --client-slug <slug>       (inbound hook mapping)
-#   8c. install-podcast-scheduler.sh --client-slug <slug>   (scheduler install)
+#   (No 8c: no scheduler exists. No-daemon doctrine — the department agent
+#   advances TaskFlows in its own turn via podcast_step_driver.py.)
 #
 # Every step is GATED three ways and FAILS CLOSED:
 #   1. presence   - a missing helper aborts with a message naming the missing piece
@@ -908,11 +915,13 @@ if [ "$SKIP_ACTIVATION" = "1" ]; then
 else
   activation_step "activation:department" 22 "the podcast department installer" "install-podcast-department.sh"
   activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" --client-slug "$SLUG"
-  activation_step "activation:scheduler"   24 "the scheduler installer"          "${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}" --client-slug "$SLUG"
+  # NO-DAEMON DOCTRINE: there is no scheduler installer and no activation step for
+  # one. The department agent advances TaskFlows in its own turn via
+  # podcast_step_driver.py; the former scheduler is dead by design
+  # (guard-activation-health.py DAEMON_NAME_NEEDLES flags any resurrection).
   if [ "$DRY_RUN" != "1" ]; then
     ledger_fact "activation" "active"
-    # Audit hook: revoke and the fleet audit resolve the exact installer used.
-    ledger_fact "scheduler_installer" "${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
+    ledger_fact "advancement" "own-turn"
   fi
 fi
 
@@ -945,7 +954,7 @@ gate_hook() {
   local tok=""
   if runas test -f "$SECRETS_ENV_FILE" 2>/dev/null; then
     # shellcheck disable=SC2016  # single quotes intentional: sourced only inside the inner shell; the token is never interpolated into the command string
-    tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_TOKEN:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
+    tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
   fi
   if [ -z "$tok" ]; then
     ledger_step "gate:signed-hook" "PENDING" "intake token not available here; run once the hook mapping and token are wired on the box"
@@ -953,7 +962,7 @@ gate_hook() {
   fi
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-    -X POST "https://${HOOKS_HOST}/hooks/${INTAKE_MAPPING}" \
+    -X POST "https://${HOOKS_HOST}/plugins/webhooks/${INTAKE_MAPPING}" \
     -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json" \
     --data '{"_test":true,"source":"provision-gate"}' 2>/dev/null || echo "000")"
   unset tok
