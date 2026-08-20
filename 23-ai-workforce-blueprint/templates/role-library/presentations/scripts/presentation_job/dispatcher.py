@@ -314,66 +314,155 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "has a real intake.json from the completed interview (see upstream context below) "
         "-- if so, re-emit it verbatim/enriched rather than inventing a new one."
     ),
-    # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P4-COPY had no
+    # ROOT CAUSE #1 (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P4-COPY had no
     # entry here (fell back to GENERIC_CONTRACT) and, even with the exact verifier
     # failure reasons fed back on retry, repeatedly missed the SAME mechanical writing-
     # engine tags across 5 real attempts -- a generic "write good copy" instruction
     # never told the model these are literal, positionally-checked TAG lines, not just
-    # a vibe. Extracted verbatim from the real checkers (intelligence_engines_check.py /
-    # pitch_engines_check.py) so the model gets the SAME literal spec the verifier grades
-    # against, never a guess.
+    # a vibe. A first fix extracted the beat VOCABULARY verbatim from the real checkers
+    # but described it as PROSE PHRASES to write ("villain, antagonist, the enemy, ...").
+    # ROOT CAUSE #2 (live run pres-wave-e-zhc-1787175621, 2026-08-19): that fix was
+    # itself WRONG about the mechanism. intelligence_engines_check.check_copy really
+    # does scan prose substrings (VILLAIN_TOKENS / HERO_TOKENS / FELT_FRAME_TOKENS / a
+    # `LADDER: <value>` field line) -- but pitch_engines_check.py's four beat checks
+    # (chk_villain, chk_felt_stakes, chk_branded_method, chk_time_to_result) do NOT read
+    # prose at all: pitch_engines_check._arc_tags_in_order() recognises ONLY the literal
+    # marker syntax `<!-- ARC: TAG -->` or `[ARC:TAG]` via
+    # `re.finditer(r'(?:<!--\s*ARC:\s*([^>]+?)\s*-->|\[ARC:\s*([^\]]+?)\s*\])', ...)`.
+    # A deck with the exact prose phrases this contract previously taught, and ZERO ARC
+    # markers, reproducibly fails AF-NO-VILLAIN / AF-NO-FELT-STAKES / AF-NO-BRANDED-
+    # METHOD / AF-NO-TIME-TO-RESULT even though intelligence_engines_check passes clean
+    # -- verified by running both real checkers against that live run's slides_copy.md
+    # by hand (pitch_engines_check: 4 fails; intelligence_engines_check: 0). BOTH
+    # checkers read this SAME file, by TWO DIFFERENT mechanisms -- so every beat below
+    # now carries BOTH halves: the prose/field text intelligence_engines_check scans,
+    # AND its own literal `<!-- ARC: TAG -->` marker for pitch_engines_check. Do not
+    # "fix" this again by teaching only one half.
     "P4-COPY": (
-        "OUTPUT CONTRACT (mechanically enforced by intelligence_engines_check.check_copy "
-        "+ pitch_engines_check -- these are LITERAL, POSITIONALLY-CHECKED requirements, "
-        "not stylistic suggestions):\n"
+        "OUTPUT CONTRACT -- TWO SEPARATE CHECKERS both grade this ONE file, by TWO "
+        "DIFFERENT mechanisms, and BOTH must show zero problems:\n"
+        "  (a) intelligence_engines_check.check_copy scans PROSE SUBSTRINGS and a "
+        "`LADDER: <value>` metadata field line.\n"
+        "  (b) pitch_engines_check.check_copy scans ONLY literal marker syntax: "
+        "`<!-- ARC: TAGNAME -->` (preferred) or `[ARC:TAGNAME]` -- it does NOT read "
+        "prose. A sentence containing the word 'villain' with no `<!-- ARC: VILLAIN "
+        "-->` marker on that block is INVISIBLE to pitch_engines_check and WILL fail "
+        "AF-NO-VILLAIN even though it reads as correct writing.\n"
+        "Every beat below therefore needs BOTH halves, on the SAME slide block: the "
+        "descriptive prose/field AND its own literal ARC marker. Multiple tags may "
+        "share one marker, space- or comma-separated: `<!-- ARC: PROMISE HERO -->`. "
+        "This is LITERAL and POSITIONALLY-CHECKED, not a vibe.\n"
         "1. File path: working/copy/slides_copy.md. Format: each slide is its own block "
         "starting with a line containing ONLY `SLIDE <n>` (e.g. `SLIDE 1` on its own "
         "line, exactly that many spaces, no markdown '##', no colon), in slide order, "
-        "1 through the deck's real slide count.\n"
-        "2. HOOK: the canonical hook line from intake.json (see upstream context) must "
+        "1 through the deck's real slide count. ARC markers sit on their own line "
+        "anywhere inside the block they belong to.\n"
+        "2. MASTER ARC ORDER (governs every beat below -- pitch_engines_check's "
+        "per-beat ordering checks AND intelligence_engines_check's AF-NARRATIVE-HARMONY "
+        "both fail if any pair here lands out of order): HOOK (recurs throughout) -> "
+        "VILLAIN -> FELT_STAKES -> PROMISE -> PRICE beats (ANCHOR/DROP1/DROP2/DROP3/"
+        "FINAL, in that rung order) -> RECAP. Each beat's FIRST occurrence must land in "
+        "this relative slide order; only beats that are actually present are checked.\n"
+        "3. HOOK: the canonical hook line from intake.json (see upstream context) must "
         "recur VERBATIM on 3-4 dedicated slide blocks (never fewer than 3, never more "
-        "than 4), and never twice within one block.\n"
-        "3. VILLAIN beat: at least one slide block must contain one of these phrases "
-        "naming the antagonist (the broken system / old way / what's stopping them), "
-        "and it must appear on an EARLIER slide number than any 'hero/solution' beat "
-        "(see PROMISE below): villain, antagonist, the enemy, the real enemy, the thing "
-        "stopping, what's holding you back, the obstacle, the lie, the trap, the broken "
-        "system, the old way is the villain.\n"
-        "4. FELT_STAKES beat: at least one slide block, appearing BEFORE any price/ladder "
-        "beat (see PRICE below), must contain a concrete number (e.g. a dollar figure, a "
-        "day/week count) paired with one of these loss-frame phrases: mornings left, days "
-        "left, years left, left with, never get, running out, you will lose, cost you, "
-        "every day you wait, before it's too late, while you wait. (Or literally include "
-        "the tag text FELT_STAKES on that block.)\n"
-        "5. PROMISE beat (the hero/solution turn): at least one slide block must contain "
-        "one of: hero, the solution, the breakthrough, the way out, the answer, the "
-        "promise, the new way, you become, the transformation, the path forward -- and it "
-        "must appear on a LATER slide than the VILLAIN beat.\n"
-        "6. PRICE / ladder beat (only if intake.json's pitch_included is not false): "
-        "somewhere in the deck, either state a real `$` price figure, OR (if using the "
-        "priced-ladder structure from arc_allocation.json) put a literal metadata line "
-        "`LADDER: ANCHOR` / `LADDER: BUILDUP` / `LADDER: DROP1` / `LADDER: DROP2` / "
-        "`LADDER: DROP3` / `LADDER: FINAL` (exact token, on its own line) on the "
-        "corresponding slide block. The PRICE beat must land on a LATER slide than "
-        "PROMISE.\n"
-        "7. RECAP beat: AFTER the price/ladder beat (a later slide number), include a "
-        "block containing one of: recap, to recap, re-pitch, repitch, here's everything, "
-        "everything you get, everything you're getting, in summary, let's recap, quick "
-        "recap, value stack, stack recap -- restating the value stack and the price.\n"
-        "8. NAMED_METHOD beat: intake.json's named_methodology field (see upstream "
-        "context) names this deck's real methodology -- put a literal metadata line "
-        "`NAMED_METHOD: <the exact name from intake.json>` on the slide block that "
-        "introduces it. Do NOT invent a different or additional method name; use ONLY "
-        "the name intake.json already declares.\n"
-        "9. EXPECTATION beat: intake.json's time_to_result field (see upstream context) "
-        "states the real timeframe -- put a literal metadata line `EXPECTATION: <that "
-        "same timeframe>` on the slide block that sets the expectation, and mention that "
-        "SAME duration in the surrounding prose (a day/week/month/session unit word must "
-        "appear within ~600 characters of the tag). Do NOT invent a different timeframe; "
-        "use ONLY intake.json's stated time_to_result.\n"
-        "10. Arc order overall must hold end-to-end: HOOK -> VILLAIN -> FELT_STAKES -> "
-        "PROMISE -> PRICE -> RECAP (each beat's FIRST occurrence must be in this relative "
-        "slide-number order; only beats that are present are checked)."
+        "than 4), and never twice within one block. On EACH of those 3-4 hook-carrying "
+        "blocks ALSO add the field line `HOOK_REFRAIN: yes` (own line, exact token) -- "
+        "P4-PROMPT's own contract reads this field to know which slides may legally "
+        "bake the hook into the rendered image; without it, P4-PROMPT is told to bake "
+        "the hook nowhere at all.\n"
+        "4. VILLAIN beat: on ONE slide block, write prose naming the antagonist using "
+        "one of: villain, antagonist, the enemy, the real enemy, the thing stopping, "
+        "what's holding you back, the obstacle, the lie, the trap, the broken system, "
+        "the old way is the villain -- AND add the literal marker "
+        "`<!-- ARC: VILLAIN -->` on that same block. This must be the FIRST slide "
+        "(lowest slide number) that carries either the VILLAIN prose/marker or the "
+        "PROMISE prose/marker (point 6) -- villain always precedes promise/hero.\n"
+        "5. FELT_STAKES beat: on ONE slide block, BEFORE any price/ladder beat (point "
+        "7), write prose pairing a concrete number (a real figure, never filler) with "
+        "one of: mornings left, days left, years left, running out, before it's too "
+        "late, every day you wait, you will lose, cost you, while you wait, never get "
+        "-- AND put the literal marker `<!-- ARC: FELT_STAKES -->` as the FIRST line of "
+        "that block's body, so the number and the loss-frame phrase both land within "
+        "the ~600 characters immediately AFTER the marker (pitch_engines_check scans a "
+        "fixed window starting at the marker's position, not the whole block -- placing "
+        "the marker late in the block can push your own qualifying text outside the "
+        "window even though it is in the same block).\n"
+        "6. PROMISE beat (the hero/solution turn): on ONE slide block, write prose "
+        "using one of: hero, the solution, the breakthrough, the way out, the answer, "
+        "the promise, the new way, you become, the transformation, the path forward -- "
+        "AND add the literal marker `<!-- ARC: PROMISE HERO -->` on that same block "
+        "(both tokens in one marker -- HERO lets pitch_engines_check's villain-ordering "
+        "check see this beat explicitly rather than relying on it being skipped). This "
+        "slide must be LATER than the VILLAIN slide and EARLIER than every price/ladder "
+        "slide (point 7).\n"
+        "7. PRICE / ladder beats (only if intake.json's pitch_included is not false): "
+        "for every rung of the price ladder that actually appears (ANCHOR, then "
+        "BUILDUP if used, then DROP1, DROP2, DROP3 as real pricing drops occur, then "
+        "FINAL), put BOTH the existing field line `LADDER: ANCHOR` / `LADDER: BUILDUP` "
+        "/ `LADDER: DROP1` / `LADDER: DROP2` / `LADDER: DROP3` / `LADDER: FINAL` (exact "
+        "token, own line -- read by intelligence_engines_check) AND a literal ARC "
+        "marker carrying that SAME token on that SAME block, e.g. "
+        "`<!-- ARC: ANCHOR -->` on the ANCHOR block, `<!-- ARC: DROP1 -->` on the DROP1 "
+        "block, `<!-- ARC: FINAL -->` on the FINAL block (BUILDUP needs no ARC marker; "
+        "pitch_engines_check never reads that token). If this deck is NOT using the "
+        "priced-ladder structure, a bare `$` price figure anywhere satisfies "
+        "intelligence_engines_check's price-beat detector on its own, but "
+        "pitch_engines_check's promise-before-price check specifically keys off these "
+        "ARC markers -- add at least one, typically `<!-- ARC: FINAL -->` on the single "
+        "price-reveal slide, even for a flat-price deck, so that check can see the beat "
+        "at all. Every price/ladder slide must be LATER than the PROMISE slide.\n"
+        "8. Cadence loop between price rungs (AF-CADENCE -- NOTE: this specific check "
+        "currently DEFERS pipeline-wide because no phase yet writes "
+        "working/copy/price_ladder.json; write it correctly anyway so the deck already "
+        "complies the day that phase is wired, but do not lose sleep chasing it today). "
+        "Between EACH adjacent PAIR of DROP/FINAL-type markers you tagged in point 7 "
+        "(DROP1<->DROP2, DROP2<->DROP3, DROP3<->FINAL -- the check does NOT treat "
+        "ANCHOR as a rung boundary), place, somewhere in that span and in this relative "
+        "order, a `<!-- ARC: VALUE_ADD -->` beat (restate what they get), a re-used "
+        "`<!-- ARC: PROMISE -->` beat (reaffirm the transformation), a "
+        "`<!-- ARC: REPITCH_MINI -->` beat (a short re-pitch line), and a "
+        "`<!-- ARC: COST_OF_INACTION -->` beat (what not acting now costs them) -- in "
+        "that order.\n"
+        "9. COST_OF_INACTION also needs at least one standalone beat outside the "
+        "cadence loop (AF-NO-COST-OF-INACTION also currently defers for the same "
+        "price_ladder.json reason as point 8 -- write it anyway): add "
+        "`<!-- ARC: COST_OF_INACTION -->` somewhere in the deck (the point-8 occurrence "
+        "satisfies this too) stating, in prose, the real cost of not acting.\n"
+        "10. NAMED_METHOD beat -- READ intake.json's named_methodology field FIRST "
+        "(see upstream context). If it has a real, already-declared value: quote it "
+        "verbatim in the prose on the slide that introduces it AND add "
+        "`<!-- ARC: NAMED_METHOD -->` on that same block. If intake.json's "
+        "named_methodology is empty or absent: do NOT add the marker and do NOT invent "
+        "a method name to fill it -- pitch_engines_check treats a tagged method beat "
+        "with no intake/owner backing (AF-METHOD-FABRICATED) as a WORSE fail than "
+        "having no method beat at all (AF-NO-BRANDED-METHOD); silent fabrication is "
+        "explicitly banned by that checker's own doctrine and neither path this "
+        "contract controls can make that specific check pass without a real value in "
+        "intake.json. Instead add the line `<!-- QC-NOTE: AF-NO-BRANDED-METHOD -- "
+        "intake.json has no named_methodology; needs a real branded-method name with "
+        "owner approval upstream of this copy phase -->` so the QC specialist sees the "
+        "real, upstream cause instead of a vague copy fail.\n"
+        "11. EXPECTATION beat -- READ intake.json's time_to_result field FIRST (see "
+        "upstream context). If it has a real value: put `<!-- ARC: EXPECTATION -->` on "
+        "the slide that sets the expectation, followed within that block by prose "
+        "stating that SAME duration with a day/week/month/session/hour/minute unit "
+        "word within ~600 characters of the marker (e.g. '8 weeks to your first real "
+        "result'). Never invent a different timeframe than intake.json states. If "
+        "intake.json's time_to_result is empty or absent: pitch_engines_check checks "
+        "`intake.time_to_result` directly and this specific sub-check is MECHANICALLY "
+        "UNSATISFIABLE from copy content alone no matter what is written here -- still "
+        "add an honest `<!-- ARC: EXPECTATION -->` beat with a real duration if one is "
+        "independently stated elsewhere in intake.json (e.g. a stated program length), "
+        "but also add `<!-- QC-NOTE: AF-NO-TIME-TO-RESULT -- intake.json has no "
+        "time_to_result field; the fix belongs upstream of this copy phase -->` so the "
+        "gap is visible rather than silently eaten.\n"
+        "12. RECAP beat: AFTER the LAST price/ladder beat (a later slide number), "
+        "include a block containing one of: recap, to recap, re-pitch, repitch, "
+        "here's everything, everything you get, everything you're getting, in summary, "
+        "let's recap, quick recap, value stack, stack recap -- restating the value "
+        "stack and the price. No ARC marker needed here; pitch_engines_check has no "
+        "RECAP check (only intelligence_engines_check's AF-NO-RECAP reads this, from "
+        "prose alone)."
     ),
     "P-SP-CLAIM": (
         "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json recording that "
@@ -817,12 +906,68 @@ _UPSTREAM_CANDIDATES = [
     "working/copy/slides_copy.md",
 ]
 
+# ---------------------------------------------------------------------------
+# P4-COPY-SPECIFIC upstream budget/candidate override (root-cause fix,
+# 2026-08-19, live run pres-wave-e-zhc-1787175621): the generic path above
+# (all ~10 candidates, up to 150_000 chars, plus every research brief) was
+# measured live at ~127K chars of upstream context alone for this run --
+# combined with the ~50K-char role-SOP + persona + contract overhead, the
+# TOTAL prompt handed to DeepSeek for P4-COPY was 185,008 chars, with the
+# literal, positionally-checked OUTPUT CONTRACT (the <!-- ARC: TAG --> marker
+# spec) sitting early in that prompt and then buried under the bulk of it.
+# DeepSeek returned well-formed 25-slide copy, attempt after attempt, with
+# ZERO ARC markers -- and on one attempt, an outright empty completion
+# (thinking MAX exhausting the whole 64,000-token output budget). Read
+# ARTIFACT_CONTRACTS["P4-COPY"] closely: every beat it grades is sourced from
+# EXACTLY four things -- intake.json (canonical hook, named_methodology,
+# time_to_result, pitch_included), arc_allocation.json (which arc-section
+# each slide belongs to -- the beat ORDER contract point 2 hard-requires),
+# priority_shift_spec.json (the strategic priority stack/build sequence that
+# governs pacing), and sp_intake.json (signature-presentation framing). The
+# research brief and research_map.json (grounded facts/quotes/stats, and
+# which slide each maps to) round that out -- handled via the same
+# research-directory glob below, now widened to also read research_map.json
+# (previously never read by ANY phase -- a plain omission, not a design
+# choice: only brief-*.md was ever globbed). NOT needed: the raw turn-by-turn
+# interview transcript/ledger (already fully distilled into intake.json for
+# every field this contract reads), sp_claims.json/sp_structure.json/
+# mission_prd.json (later-phase artifacts, normally still absent this early
+# anyway), and -- deliberately excluded -- P4-COPY's OWN prior-attempt
+# slides_copy.md (the exact file this call is about to overwrite; including
+# a previous WRONG attempt as "upstream context" is a self-anchoring risk,
+# not a genuine input -- the prior_reasons block already tells the model
+# precisely what the real verifier rejected, which is the actionable part of
+# a bad prior attempt, not the prose itself).
+#
+# 100_000 chars is not an arbitrary round number: measured against this run's
+# real files, intake.json (7,603B) + arc_allocation.json (18,266B) +
+# priority_shift_spec.json (10,031B) + sp_intake.json (3,711B) +
+# research_map.json (23,765B) + the research brief (30,138B) sum to 93,514
+# chars -- everything P4-COPY's contract actually cites, in full, with zero
+# truncation, and ~6.5K of headroom to spare. That is a real, load-bearing
+# cut from the previous ~127K/150K (roughly a third smaller), applied ONLY to
+# P4-COPY -- every other phase keeps the original candidate list and the
+# original 150_000-char budget, unchanged, exactly as before this fix.
+# ---------------------------------------------------------------------------
+_P4_COPY_UPSTREAM_CANDIDATES = [
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json",
+    "working/copy/priority_shift_spec.json",
+    "working/copy/sp_intake.json",
+]
+_P4_COPY_UPSTREAM_MAX_CHARS = 100_000
+
 
 def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
                             phase_id: Optional[str] = None) -> str:
+    candidates = _UPSTREAM_CANDIDATES
+    effective_max_chars = max_chars
+    if phase_id == "P4-COPY":
+        candidates = _P4_COPY_UPSTREAM_CANDIDATES
+        effective_max_chars = min(max_chars, _P4_COPY_UPSTREAM_MAX_CHARS)
     parts: List[str] = []
     total = 0
-    for rel in _UPSTREAM_CANDIDATES:
+    for rel in candidates:
         p = run_dir / rel
         if not p.is_file():
             continue
@@ -830,23 +975,35 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
             txt = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        if total + len(txt) > max_chars:
-            txt = txt[: max(0, max_chars - total)]
+        if total + len(txt) > effective_max_chars:
+            txt = txt[: max(0, effective_max_chars - total)]
         parts.append(f"### {rel}\n```\n{txt}\n```")
         total += len(txt)
-        if total >= max_chars:
+        if total >= effective_max_chars:
             break
-    for rel in sorted((run_dir / "working" / "research").glob("brief-*.md")) \
-            if (run_dir / "working" / "research").is_dir() else []:
-        if total >= max_chars:
+    # Research materials -- research_map.json (facts/quotes mapped to specific
+    # slide numbers -- the highest-signal single research artifact for a copy
+    # phase) FIRST, then every brief-*.md in name order. research_map.json was
+    # never read by any phase before this fix (see the P4-COPY override
+    # comment above); widening this shared loop benefits every phase that
+    # already reads the research directory, not just P4-COPY.
+    research_dir = run_dir / "working" / "research"
+    research_files: List[Path] = []
+    if research_dir.is_dir():
+        rm_path = research_dir / "research_map.json"
+        if rm_path.is_file():
+            research_files.append(rm_path)
+        research_files.extend(sorted(research_dir.glob("brief-*.md")))
+    for rel in research_files:
+        if total >= effective_max_chars:
             break
         try:
             txt = rel.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         relname = str(rel.relative_to(run_dir))
-        if total + len(txt) > max_chars:
-            txt = txt[: max(0, max_chars - total)]
+        if total + len(txt) > effective_max_chars:
+            txt = txt[: max(0, effective_max_chars - total)]
         parts.append(f"### {relname}\n```\n{txt}\n```")
         total += len(txt)
     # ROOT-CAUSE FIX (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18,
@@ -886,8 +1043,23 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
 
 # ---------------------------------------------------------------------------
 # Prompt composition (spec S5.3, in order): how-to.md/SOUL.md, persona bundle
-# (if governed), upstream context, the work order itself, and (retry>1) the
-# prior attempt's verbatim verifier failure reasons.
+# (if governed), upstream context, the work order itself, prior-attempt
+# verifier feedback, and -- LAST, immediately before generation -- a verbatim
+# restatement of the OUTPUT CONTRACT.
+#
+# RECENCY FIX (root cause, live run pres-wave-e-zhc-1787175621, 2026-08-19):
+# the literal, positionally-checked OUTPUT CONTRACT used to be placed right
+# after the work order, then get buried under up to ~127K chars of upstream
+# context that followed it (measured live: total prompt 185,008 chars, with
+# "ARC:" appearing 19 times in the contract text itself but ZERO times in
+# DeepSeek's completions, attempt after attempt -- one attempt returned an
+# outright empty completion). Wiring was fine and the instruction reached the
+# model; it just wasn't the LAST thing the model read before generating.
+# Recency dominates instruction-following far more than mere presence, so the
+# contract is now restated, VERBATIM, as the final substantial block in the
+# user prompt -- immediately before the one-line "write it now" trigger --
+# with an EARLIER, lighter-weight contract mention removed (see below) so
+# this fix does not also grow the very prompt size problem it exists to fix.
 # ---------------------------------------------------------------------------
 def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir: Path,
                     order: Dict[str, Any], attempt: int,
@@ -915,9 +1087,11 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         )
     system_prompt = "\n\n".join(system_parts)
 
+    # NOTE: the OUTPUT CONTRACT is deliberately NOT included here anymore --
+    # only ONE copy of it exists in the prompt now, placed at the very end
+    # (below), where recency makes it far more likely to survive generation.
     user_parts = [
         f"=== WORK ORDER ===\n{json.dumps(order, indent=2)}",
-        f"=== {contract}",
         f"=== UPSTREAM ARTIFACTS ALREADY PRODUCED FOR THIS RUN ===\n{upstream}",
     ]
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): this was gated
@@ -940,6 +1114,16 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
             "reasons, verbatim from the verifier -- do not guess, do not change unrelated "
             "content ===\n" + "\n".join(f"- {r}" for r in prior_reasons)
         )
+    # THE LAST substantial thing the model reads before generating -- an
+    # unmissable, verbatim restatement of the exact same contract text (see
+    # module comment above compose_prompt for why this replaces the earlier,
+    # buried placement rather than merely duplicating it).
+    user_parts.append(
+        "=== OUTPUT CONTRACT -- OBEY EXACTLY, THIS OVERRIDES ANYTHING ABOVE ===\n"
+        + contract +
+        "\n=== END OUTPUT CONTRACT -- everything above is the ONE, FINAL, LITERAL spec "
+        "for the file you are about to write. Re-read it now before writing. ==="
+    )
     user_parts.append(
         "Write the complete, final content of the target artifact file now. If the target "
         "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
