@@ -906,12 +906,68 @@ _UPSTREAM_CANDIDATES = [
     "working/copy/slides_copy.md",
 ]
 
+# ---------------------------------------------------------------------------
+# P4-COPY-SPECIFIC upstream budget/candidate override (root-cause fix,
+# 2026-08-19, live run pres-wave-e-zhc-1787175621): the generic path above
+# (all ~10 candidates, up to 150_000 chars, plus every research brief) was
+# measured live at ~127K chars of upstream context alone for this run --
+# combined with the ~50K-char role-SOP + persona + contract overhead, the
+# TOTAL prompt handed to DeepSeek for P4-COPY was 185,008 chars, with the
+# literal, positionally-checked OUTPUT CONTRACT (the <!-- ARC: TAG --> marker
+# spec) sitting early in that prompt and then buried under the bulk of it.
+# DeepSeek returned well-formed 25-slide copy, attempt after attempt, with
+# ZERO ARC markers -- and on one attempt, an outright empty completion
+# (thinking MAX exhausting the whole 64,000-token output budget). Read
+# ARTIFACT_CONTRACTS["P4-COPY"] closely: every beat it grades is sourced from
+# EXACTLY four things -- intake.json (canonical hook, named_methodology,
+# time_to_result, pitch_included), arc_allocation.json (which arc-section
+# each slide belongs to -- the beat ORDER contract point 2 hard-requires),
+# priority_shift_spec.json (the strategic priority stack/build sequence that
+# governs pacing), and sp_intake.json (signature-presentation framing). The
+# research brief and research_map.json (grounded facts/quotes/stats, and
+# which slide each maps to) round that out -- handled via the same
+# research-directory glob below, now widened to also read research_map.json
+# (previously never read by ANY phase -- a plain omission, not a design
+# choice: only brief-*.md was ever globbed). NOT needed: the raw turn-by-turn
+# interview transcript/ledger (already fully distilled into intake.json for
+# every field this contract reads), sp_claims.json/sp_structure.json/
+# mission_prd.json (later-phase artifacts, normally still absent this early
+# anyway), and -- deliberately excluded -- P4-COPY's OWN prior-attempt
+# slides_copy.md (the exact file this call is about to overwrite; including
+# a previous WRONG attempt as "upstream context" is a self-anchoring risk,
+# not a genuine input -- the prior_reasons block already tells the model
+# precisely what the real verifier rejected, which is the actionable part of
+# a bad prior attempt, not the prose itself).
+#
+# 100_000 chars is not an arbitrary round number: measured against this run's
+# real files, intake.json (7,603B) + arc_allocation.json (18,266B) +
+# priority_shift_spec.json (10,031B) + sp_intake.json (3,711B) +
+# research_map.json (23,765B) + the research brief (30,138B) sum to 93,514
+# chars -- everything P4-COPY's contract actually cites, in full, with zero
+# truncation, and ~6.5K of headroom to spare. That is a real, load-bearing
+# cut from the previous ~127K/150K (roughly a third smaller), applied ONLY to
+# P4-COPY -- every other phase keeps the original candidate list and the
+# original 150_000-char budget, unchanged, exactly as before this fix.
+# ---------------------------------------------------------------------------
+_P4_COPY_UPSTREAM_CANDIDATES = [
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json",
+    "working/copy/priority_shift_spec.json",
+    "working/copy/sp_intake.json",
+]
+_P4_COPY_UPSTREAM_MAX_CHARS = 100_000
+
 
 def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
                             phase_id: Optional[str] = None) -> str:
+    candidates = _UPSTREAM_CANDIDATES
+    effective_max_chars = max_chars
+    if phase_id == "P4-COPY":
+        candidates = _P4_COPY_UPSTREAM_CANDIDATES
+        effective_max_chars = min(max_chars, _P4_COPY_UPSTREAM_MAX_CHARS)
     parts: List[str] = []
     total = 0
-    for rel in _UPSTREAM_CANDIDATES:
+    for rel in candidates:
         p = run_dir / rel
         if not p.is_file():
             continue
@@ -919,23 +975,35 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
             txt = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        if total + len(txt) > max_chars:
-            txt = txt[: max(0, max_chars - total)]
+        if total + len(txt) > effective_max_chars:
+            txt = txt[: max(0, effective_max_chars - total)]
         parts.append(f"### {rel}\n```\n{txt}\n```")
         total += len(txt)
-        if total >= max_chars:
+        if total >= effective_max_chars:
             break
-    for rel in sorted((run_dir / "working" / "research").glob("brief-*.md")) \
-            if (run_dir / "working" / "research").is_dir() else []:
-        if total >= max_chars:
+    # Research materials -- research_map.json (facts/quotes mapped to specific
+    # slide numbers -- the highest-signal single research artifact for a copy
+    # phase) FIRST, then every brief-*.md in name order. research_map.json was
+    # never read by any phase before this fix (see the P4-COPY override
+    # comment above); widening this shared loop benefits every phase that
+    # already reads the research directory, not just P4-COPY.
+    research_dir = run_dir / "working" / "research"
+    research_files: List[Path] = []
+    if research_dir.is_dir():
+        rm_path = research_dir / "research_map.json"
+        if rm_path.is_file():
+            research_files.append(rm_path)
+        research_files.extend(sorted(research_dir.glob("brief-*.md")))
+    for rel in research_files:
+        if total >= effective_max_chars:
             break
         try:
             txt = rel.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         relname = str(rel.relative_to(run_dir))
-        if total + len(txt) > max_chars:
-            txt = txt[: max(0, max_chars - total)]
+        if total + len(txt) > effective_max_chars:
+            txt = txt[: max(0, effective_max_chars - total)]
         parts.append(f"### {relname}\n```\n{txt}\n```")
         total += len(txt)
     # ROOT-CAUSE FIX (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18,
@@ -975,8 +1043,23 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
 
 # ---------------------------------------------------------------------------
 # Prompt composition (spec S5.3, in order): how-to.md/SOUL.md, persona bundle
-# (if governed), upstream context, the work order itself, and (retry>1) the
-# prior attempt's verbatim verifier failure reasons.
+# (if governed), upstream context, the work order itself, prior-attempt
+# verifier feedback, and -- LAST, immediately before generation -- a verbatim
+# restatement of the OUTPUT CONTRACT.
+#
+# RECENCY FIX (root cause, live run pres-wave-e-zhc-1787175621, 2026-08-19):
+# the literal, positionally-checked OUTPUT CONTRACT used to be placed right
+# after the work order, then get buried under up to ~127K chars of upstream
+# context that followed it (measured live: total prompt 185,008 chars, with
+# "ARC:" appearing 19 times in the contract text itself but ZERO times in
+# DeepSeek's completions, attempt after attempt -- one attempt returned an
+# outright empty completion). Wiring was fine and the instruction reached the
+# model; it just wasn't the LAST thing the model read before generating.
+# Recency dominates instruction-following far more than mere presence, so the
+# contract is now restated, VERBATIM, as the final substantial block in the
+# user prompt -- immediately before the one-line "write it now" trigger --
+# with an EARLIER, lighter-weight contract mention removed (see below) so
+# this fix does not also grow the very prompt size problem it exists to fix.
 # ---------------------------------------------------------------------------
 def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir: Path,
                     order: Dict[str, Any], attempt: int,
@@ -1004,9 +1087,11 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         )
     system_prompt = "\n\n".join(system_parts)
 
+    # NOTE: the OUTPUT CONTRACT is deliberately NOT included here anymore --
+    # only ONE copy of it exists in the prompt now, placed at the very end
+    # (below), where recency makes it far more likely to survive generation.
     user_parts = [
         f"=== WORK ORDER ===\n{json.dumps(order, indent=2)}",
-        f"=== {contract}",
         f"=== UPSTREAM ARTIFACTS ALREADY PRODUCED FOR THIS RUN ===\n{upstream}",
     ]
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): this was gated
@@ -1029,6 +1114,16 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
             "reasons, verbatim from the verifier -- do not guess, do not change unrelated "
             "content ===\n" + "\n".join(f"- {r}" for r in prior_reasons)
         )
+    # THE LAST substantial thing the model reads before generating -- an
+    # unmissable, verbatim restatement of the exact same contract text (see
+    # module comment above compose_prompt for why this replaces the earlier,
+    # buried placement rather than merely duplicating it).
+    user_parts.append(
+        "=== OUTPUT CONTRACT -- OBEY EXACTLY, THIS OVERRIDES ANYTHING ABOVE ===\n"
+        + contract +
+        "\n=== END OUTPUT CONTRACT -- everything above is the ONE, FINAL, LITERAL spec "
+        "for the file you are about to write. Re-read it now before writing. ==="
+    )
     user_parts.append(
         "Write the complete, final content of the target artifact file now. If the target "
         "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
