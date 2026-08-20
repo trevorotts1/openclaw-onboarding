@@ -165,7 +165,17 @@ def validate_artifact(run_dir: Path, rel_path: str, manifest: Any,
                 if not ok:
                     return False, why
                 if recorded_sha is not None:
-                    import hashlib
+                    # F15: hashlib is already imported at module level (top of
+                    # this file). A local `import hashlib` here previously made
+                    # `hashlib` a LOCAL name for the entire validate_artifact()
+                    # function body (Python scoping: any assignment/import to a
+                    # name anywhere in a function makes it local throughout),
+                    # which raised UnboundLocalError the moment another branch
+                    # of this same function referenced module-level `hashlib`
+                    # without first passing through this exact line. Removing
+                    # the redundant local import restores the module-level
+                    # binding for the whole function; behaviour here is
+                    # unchanged (hashlib.sha256 resolves exactly as before).
                     actual = hashlib.sha256(path.read_bytes()).hexdigest()
                     if actual != recorded_sha:
                         return False, (f"{rel_path} sha256 mismatch: "
@@ -179,4 +189,45 @@ def validate_artifact(run_dir: Path, rel_path: str, manifest: Any,
     ext = Path(rel_path).suffix.lower()
     if ext == ".json" and (rel_path.startswith("working/qc/") or rel_path == "working/copy/intake.json"):
         return validate_json(path, min_bytes=2)
+
+    # F15: most phases bank an INTERMEDIATE working-set artifact (a research
+    # brief, an intake transcript, an arc/structure spec, ...) that is none
+    # of the above -- not a slide render, not a registered client
+    # deliverable, not a slide prompt .txt, not a working/qc|copy/intake.json
+    # file. Before this branch, every one of those fell through to the
+    # catch-all refusal below UNCONDITIONALLY, even when the file was
+    # present, untouched, and byte-identical to what was banked at phase
+    # completion. Live evidence (state.json, run pres-wave-e-zhc-1787175621):
+    # every banked_invalid entry across 10 "done" phases carried the exact
+    # string "no validity predicate ... refusing to reuse it", and the
+    # flagged file's on-disk sha256 matched the recorded sha256 exactly
+    # (e.g. working/research/brief-generated.md -> f52f25f5...). That is a
+    # coverage gap in this predicate table, not evidence of corruption.
+    #
+    # The fix extends coverage rather than removing the gate: a sha256 was
+    # already recorded for this artifact at bank time (phases.py always
+    # populates ps["sha256"] alongside ps["artifacts"]), so when one is
+    # supplied here this branch verifies the file exists, is non-empty, AND
+    # its actual sha256 matches the recorded one byte-for-byte -- a missing
+    # or corrupted file still fails, exactly as before. Only when NO
+    # recorded_sha is supplied (an artifact banked with no hash at all, or a
+    # caller -- like the existing mystery.bin test -- that never had one to
+    # begin with) does this fall through to the unconditional refusal, so a
+    # genuinely unclassifiable/unverifiable artifact still refuses to reuse.
+    if recorded_sha is not None:
+        if not path.is_file():
+            return False, f"{path} does not exist or is not a file"
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            return False, f"{path} unreadable: {exc}"
+        if not data:
+            return False, f"{path} is empty (0 bytes)"
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != recorded_sha:
+            return False, (f"{rel_path} sha256 mismatch: "
+                           f"recorded {recorded_sha[:12]}..., actual {actual[:12]}...")
+        return True, (f"{path} ok (sha256 match, {len(data)} bytes -- "
+                      "no per-type predicate, verified by recorded hash)")
+
     return False, f"no validity predicate for {rel_path} -- refusing to reuse it"
