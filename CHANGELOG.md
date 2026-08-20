@@ -11,15 +11,6 @@
   Same bug fixed in _sig_answer; the interview-app bridge now refuses to clobber a signed envelope.
   No verifier weakened. +21 tests.
 
-## [v22.0.56] -- 2026-08-20 -- fix(presentations): requester stamping + the roll now delivers the department intake bank
-
-- FAULT-19: nothing stamped a requester, so no deck could start unattended -- the engine hard-fails --new
-  without requester.chat_id. Three gaps: env vars nothing exported, a third env-var name in the bridge, and
-  two signature finalize paths that never called the resolver. Now resolves chat-surface -> bridge payload ->
-  a sanctioned operator fallback read by name from config. No legitimate source still fails loudly.
-- FAULT-20: update-skills.sh had ZERO references to intake/ -- the roll never synced the department question
-  bank, so bank fixes were stranded in the skill template. This is why an earlier wave had to hand-copy it.
-  Now mirrored on every roll, preserving client-local overrides.
 ## [v22.0.56] -- 2026-08-20 -- fix(presentations): a deck could never start unattended, and intake fixes never reached production
 
 Two delivery gaps found while launching the first live signature deck on the
