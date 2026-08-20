@@ -50,7 +50,7 @@
   release cut directly on `main` with no PR) is unaffected -- this change only concerns
   fix PRs.
 
-# [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
+## [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
 
 - Podcast production engine (Skill 58) end-to-end audit fixes: intake bridge recovery, inbound secret
   wiring, and Command Center kanban board connection. The engine's scripts gained the bridge path
