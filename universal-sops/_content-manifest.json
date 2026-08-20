@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-20T20:24:40Z",
+  "generated_at": "2026-08-20T20:38:54Z",
   "file_count": 112,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
