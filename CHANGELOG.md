@@ -1,3 +1,30 @@
+## [v22.0.59] -- 2026-08-20 -- fix(presentations): AF-C8 archetype carve-out for value-stack slides (operator ruling)
+
+- Reconciles a contradiction between two live rules. slide-copywriter doctrine permits "bullet slides <= 5
+  bullets at 7 words each" and "value-stack slides <= 6 line items at 7 words per name" -- up to 62 on-slide
+  words once a 9-word headline and an 18-word sub are added -- while AF-C8 capped the SAME slide at 30. A
+  fully SOP-compliant value-stack slide was mechanically guaranteed to fail QC. Observed live: run
+  pres-wave-e-v3-1787240658 blocked on "AF-C8 density ceiling exceeded on slide 20 (34 words vs 30 max;
+  offer-stack component list)" and slide 25 (37 vs 30).
+- Operator ruling (Trevor, 2026-08-20) -- the carve-out, not a shrunken offer stack:
+      DEFAULT slides ............ 30 words max   (UNCHANGED)
+      ARCHETYPE CARVE-OUT -- value-stack / offer-stack slides:
+        headline ......... <= 9 words
+        sub-copy ......... <= 18 words
+        line items ....... <= 6 items x <= 7 words
+        ceiling .......... 62 words
+  Chosen specifically to keep the offer stack intact. The default 30-word cap on ordinary teaching slides is
+  untouched, and the carve-out applies ONLY to the value-stack / offer-stack archetype.
+- Documented in identical wording in all three doctrine homes so they cannot drift apart again:
+  slide-copywriter.md, sops/slide-copywriter-sops.md, and MASTER-QC-AUTOFAIL-RULESET.md. A test asserts the
+  block is byte-identical across all three.
+- +13 tests, 11 of them RED against the pre-ruling text. Both mandated cases covered: a compliant 6-item
+  value-stack slide PASSES, and an ordinary teaching slide at 62 words STILL FAILS.
+- KNOWN GAP, reported not silently patched: the QC agent that grades AF-C8 loads its rubric via
+  dispatcher.resolve_role_prompt_path(), whose candidate list is <role>/how-to.md -> numbered -> flat
+  <role>.md. MASTER-QC-AUTOFAIL-RULESET.md is NOT a candidate, so this ruling does not by itself reach the
+  grader's prompt. Extending it to the grader's own rubric file is a separate operator decision.
+
 ## [v22.0.58] -- 2026-08-20 -- fix(presentations): the slide-copy author was never told the density ceiling it is graded on
 
 - Root cause (live run pres-wave-e-v3-1787240658, blocked 2026-08-20T14:27): P1Q-COPY-QC failed the deck with

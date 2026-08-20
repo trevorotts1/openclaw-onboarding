@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-20T13:18:37Z",
+  "generated_at": "2026-08-20T20:23:09Z",
   "file_count": 112,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -297,8 +297,8 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "e51710c9f7114033f1582ff098c3631c8146bcff09cc84d0d780a1aa49be4c6c",
-      "bytes": 120524
+      "sha256": "43f13a6d8a72a7062c377e430fc897f34f7c0139d4c79238bf7daff711a433c7",
+      "bytes": 121328
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
       "sha256": "991516d8e11f2c5d08acf4e52a0744ef5b11817216c1e329b07335653775a0ad",
