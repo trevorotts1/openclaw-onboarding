@@ -1,3 +1,26 @@
+## [v22.0.57] -- 2026-08-20 -- fix(presentations): the intake driver could silently destroy its own signed provenance
+
+- FAULT-22 (root cause): cmd_complete() never built the signed transcript envelope -- only _sig_finalize(), at
+  the end of the SEPARATE 8-Sacred-Questions pass, did. The driver's own comment conceded P-SP-INTAKE-TRACE
+  "could never pass for ANY signature deck run through the sanctioned tool" without that second leg.
+- FAULT-21 (symptom): cmd_answer's read-append-write was not dict-safe -- once the transcript was a signed
+  dict, --answer silently replaced it with a bare list. Observed live: a 57-turn signed envelope became a
+  2-entry 356-byte list, signature and qid_sequence gone, no warning.
+- Fix: cmd_complete signs on every completion path via the SAME shared signer; turns append to an append-only
+  raw log and the envelope is regenerated from it; post-completion answers append and RE-SIGN, never silently.
+  Same bug fixed in _sig_answer; the interview-app bridge now refuses to clobber a signed envelope.
+  No verifier weakened. +21 tests.
+
+## [v22.0.56] -- 2026-08-20 -- fix(presentations): requester stamping + the roll now delivers the department intake bank
+
+- FAULT-19: nothing stamped a requester, so no deck could start unattended -- the engine hard-fails --new
+  without requester.chat_id. Three gaps: env vars nothing exported, a third env-var name in the bridge, and
+  two signature finalize paths that never called the resolver. Now resolves chat-surface -> bridge payload ->
+  a sanctioned operator fallback read by name from config. No legitimate source still fails loudly.
+- FAULT-20: update-skills.sh had ZERO references to intake/ -- the roll never synced the department question
+  bank, so bank fixes were stranded in the skill template. This is why an earlier wave had to hand-copy it.
+  Now mirrored on every roll, preserving client-local overrides.
+
 ## [v22.0.55] -- 2026-08-20 -- fix(presentations): nine department-autonomy faults fixed at source
 
 Found by the live Wave E deck run; each fix ships a test that fails without it. One bump for the whole batch (v22.0.55; v22.0.54 was taken by the rr-knowledge merge).
