@@ -1,3 +1,25 @@
+## [v22.0.58] -- 2026-08-20 -- fix(presentations): the slide-copy author was never told the density ceiling it is graded on
+
+- Root cause (live run pres-wave-e-v3-1787240658, blocked 2026-08-20T14:27): P1Q-COPY-QC failed the deck with
+  "AF-C8 density ceiling exceeded on slide 20 (34 words vs 30 max; offer-stack component list)" and the same
+  on slide 25 (37 vs 30). AF-C8 -- the 30-word TOTAL on-slide ceiling -- is long-standing live doctrine in
+  qc-specialist-presentations, but ARTIFACT_CONTRACTS["P4-COPY"], the contract the copywriter is actually
+  handed, never mentioned it. Measured on the pre-fix contract (8,803 chars): "AF-C8" 0 hits, "density" 0,
+  "ceiling" 0, "SUBHEAD" 0, "SUPPORTING" 0. The author was graded on a rule it was never shown.
+- Why it could not self-correct: P4-COPY's own preflight (_chk_copy_density) enforces a CHARACTER band, so
+  the copy passed its own gate and banked as done. The word-ceiling failure only surfaced two phases later at
+  QC, and the dispatcher's prior_reasons re-author loop reads the phase's OWN verifier -- so the AF-C8 finding
+  never reached the author. A blocked run, no feedback path.
+- Fix: the P4-COPY contract now states the ceiling mechanically -- 30 total words per slide summed across
+  HEADLINE + SUBHEAD + every SUPPORTING line, PRESENTER NOTE excluded as spoken narration -- names AF-C8 and
+  P1Q-COPY-QC as the grader, and instructs that a stack too big for 30 on-slide words puts its components in
+  the presenter note and carries the tally on the slide. Teaching text only: no gate, threshold, or verifier
+  changed. +10 tests (8 of them RED against the pre-fix contract).
+- KNOWN CONFLICT, NOT CHANGED HERE (operator decision): slide-copywriter doctrine permits "bullet slides <= 5
+  bullets at 7 words each" and "value-stack slides <= 6 line items at 7 words per name" -- up to 62 on-slide
+  words once a 9-word headline and 18-word sub are added -- while AF-C8 caps the same slide at 30. The two
+  rules are mutually exclusive for the value-stack archetype. This release does not pick a winner.
+
 ## [v22.0.57] -- 2026-08-20 -- fix(presentations): the intake driver could silently destroy its own signed provenance
 
 - FAULT-22 (root cause): cmd_complete() never built the signed transcript envelope -- only _sig_finalize(), at
