@@ -308,7 +308,10 @@ if [[ "$_interview_complete_pre" != "true" ]]; then
 fi
 
 # ── heal config before any gateway interaction ──────────────────────────────
-openclaw doctor --fix >/dev/null 2>&1 || true
+# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
+# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
+# real heal; a timeout still leaves the previous `|| true` semantics.
+timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
 
 # ── FURNACE GATE: check interview state before any model call ────────────────
 # If the interview hasn't started yet (Skill 23 is still pending/not reached),
