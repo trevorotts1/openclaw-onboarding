@@ -1,3 +1,25 @@
+## [v22.0.52] -- 2026-08-19 -- fix(presentations): upsell intake flag shape -- the sales/checkout/VSL branch would never have fired
+
+Merge of `fix/upsell-intake-shape-20260819` (PR #943) onto v22.0.51. Caught
+during the post-roll pre-flight of the first live signature deck run, BEFORE
+any image spend.
+
+v22.0.51 shipped the four `P-U-*` upsell phases and their two builders. They
+would never have run. The chat intake driver writes the upsell answer FLAT at
+the top level of `intake.json`, while both builders read it only from the
+nested `pre_presentation_capture.*` object, and `resolve_intake.py` does not
+normalize between the two shapes. Every gate would therefore have resolved to
+`decision=skip` on a client who answered YES -- the exact failure the feature
+was built to end, reintroduced one layer down: the answer recorded, and
+silently ignored.
+
+Fixed at the source (`resolve_intake.py` normalizes both shapes) rather than by
+teaching each builder a second shape, with 29 tests pinning it. Verified
+against the real live intake file: both gates now resolve `decision=build`.
+
+Rolls skill-version with the repo version, as the G3 gate requires -- the same
+gate class that caught the v22.0.51 release.
+
 ## [v22.0.51] -- 2026-08-19 -- feat(presentations): reconcile every deliverable/phase count to the code + build the sales/checkout/VSL upsell branch
 
 Merge of `fix/pres-dept-truth-20260818` (PR #941, 29 commits) onto v22.0.50.
