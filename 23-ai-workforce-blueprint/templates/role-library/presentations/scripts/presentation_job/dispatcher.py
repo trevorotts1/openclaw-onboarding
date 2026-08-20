@@ -469,98 +469,22 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "this deck's presentation_type/deck_type has been explicitly claimed as a signature "
         "presentation (deck_type: 'signature_presentation'), matching intake.json."
     ),
-    # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 2): same
-    # class of defect as P4-COPY above -- P-SP-STRUCTURE had no contract entry (fell
-    # back to GENERIC_CONTRACT), and the role's own how-to.md never mentions
-    # sp_structure.json, the "slides" array, or the SACRED 4-phase contract at all (it
-    # cites an OLDER, DIFFERENT 17-row CLIENT-WEBINAR-DECK-SOP allocation instead --
-    # stale/inconsistent role docs, a separate defect logged in LIVE-DECK-RUN-FAULTS.md,
-    # out of scope to rewrite here). The model's first real attempt produced a rich but
-    # entirely self-invented schema (top-level "slide_map" instead of "slides", no
-    # phase/label_slide/tags/hook_package fields) that the real prover
-    # (51-signature-presentation/scripts/prove_sp_structure.py, loaded dynamically by
-    # build_deck._chk_sp_structure) could not read at all -- AF-SP-PHASE-ORDER: no
-    # non-empty 'slides' array. Extracted this contract VERBATIM from that prover's
-    # verify() plus the sacred ledger it loads
-    # (51-signature-presentation/structure/sp_structure.json) so the model gets the
-    # SAME literal schema the verifier grades against. The client-exact override values
-    # below (25 slides, scaled floors 3/3/9/10) are NOT invented -- they are read
-    # verbatim from THIS run's own working/copy/intake.json, which already carries
-    # `"SLIDE_COUNT": "Exactly 25 slides, no more, no less"` from the real interview
-    # (see upstream context) -- exactly the client-exact-override the ledger's own
-    # slide_floor.client_exact_override clause exists for.
-    "P-SP-STRUCTURE": (
-        "OUTPUT CONTRACT (mechanically enforced by build_deck._chk_sp_structure -> "
-        "prove_sp_structure.verify() -- LITERAL, POSITIONALLY-CHECKED requirements, not "
-        "stylistic suggestions). File path: working/copy/sp_structure.json (a single JSON "
-        "object). This deck's slides_copy.md ALREADY exists (see upstream context) -- your "
-        "job here is to CLASSIFY and RE-LEDGER those same already-approved slides into "
-        "this exact required shape, not to invent new content:\n"
-        "1. Top-level key `slides`: a JSON array, one entry per slide, in slide order. "
-        "Each entry is an object with these fields:\n"
-        "   - `slide`: integer, 1-based, unique, contiguous from 1 to the deck's real "
-        "slide count (this run: exactly 25 -- see point 6).\n"
-        "   - `phase`: one of exactly these four lowercase strings: `avatar`, `story`, "
-        "`teaching`, `pitch`. Every slide up to a phase boundary gets that phase; phases "
-        "must be CONTIGUOUS blocks in this EXACT order starting at slide 1 (all `avatar` "
-        "slides first, then all `story`, then all `teaching`, then all `pitch` -- never "
-        "interleaved).\n"
-        "   - `label_slide`: boolean. Exactly one slide in EACH of the four phases must "
-        "have `label_slide: true` (the slide that names that phase's purpose); all others "
-        "in that phase are `false`.\n"
-        "   - `suggested_image`: a non-empty string (copy the slide's own visual/PEOPLE "
-        "description from slides_copy.md, or write a short scene seed) -- never empty or "
-        "whitespace-only.\n"
-        "   - `tags`: a JSON array (may be `[]`, but the KEY must always be present -- a "
-        "missing `tags` key on ANY slide is itself a hard fail). Use this array to carry "
-        "the markers in points 4/5/7 below.\n"
-        "2. Phase order and floors for THIS 25-slide deck (scaled from the sacred "
-        "defaults 11/13/36/40 by this run's client-exact override, 25/100 = 0.25x, "
-        "rounded): `avatar` >= 3 slides, `story` >= 3 slides, `teaching` >= 9 slides, "
-        "`pitch` >= 10 slides. These four floors already SUM to exactly 25 -- with a "
-        "25-slide deck there is no slack, so the counts must be EXACTLY 3 / 3 / 9 / 10 in "
-        "that phase order (e.g. avatar=slides 1-3, story=slides 4-6, teaching=slides "
-        "7-15, pitch=slides 16-25 -- adjust boundaries to fit where the REAL content in "
-        "slides_copy.md naturally divides, but keep the four counts exactly 3/3/9/10).\n"
-        "3. Top-level keys `client_overrode_slide_floor: true` and "
-        "`client_exact_slide_count: 25` (exactly these two fields, these exact values) -- "
-        "this is the real, already-declared client-exact override (sourced verbatim from "
-        "this run's intake.json `SLIDE_COUNT` field, see upstream context); it is what "
-        "legitimately waives the sacred >=100-slide default floor for this deck. Do not "
-        "omit these two fields or the deck will hard-fail AF-SP-SLIDE-FLOOR.\n"
-        "4. `avatar`, `story`, and `pitch` phases (NOT `teaching`) must each have at "
-        "least one slide whose `tags` array includes a tag that normalizes to `NEEIT` "
-        "(e.g. write the tag as `N.E.E.I.T.` or `NEEIT`) AND at least one slide (same or "
-        "different) whose `tags` includes a tag that normalizes to `QUADRANT`, "
-        "`4QUADRANT`, or `FOURQUADRANT` (e.g. write `4-Quadrant`).\n"
-        "5. Across the WHOLE deck (any slides, any phases), the tags collectively must "
-        "include at least one tag each normalizing to `MOVEMENT`, `MESSAGE`, and "
-        "`METHODOLOGY` (e.g. write `Movement`, `Message`, `Methodology` as separate tags "
-        "on any 1-3 slides).\n"
-        "6. Exactly this deck has `client_exact_slide_count: 25` (point 3) so the total "
-        "`slides` array length must be EXACTLY 25 -- not more, not fewer.\n"
-        "7. `teaching` phase (3-7 distinct steps required): EITHER add a top-level "
-        "`teaching_steps` field (an integer 3-7, or an array of 3-7 step labels), OR tag "
-        "each teaching-phase step slide with a tag that normalizes to `STEP1`, `STEP2`, "
-        "... `STEP7` (e.g. write `Step 1`, `TEACHING STEP 2`) -- 3 to 7 DISTINCT step "
-        "numbers total, no fewer than 3, no more than 7.\n"
-        "8. 1 to 2 slides total (never 0, never more than 2) must carry a tag that "
-        "normalizes to `CASESTUDY` (e.g. write `CASE_STUDY`) -- omit entirely if this "
-        "deck's real content has no case-study beat, but then explicitly add the tag "
-        "`CASE_STUDY` to the strongest proof/wall-of-wins slide so the floor of 1 is met.\n"
-        "9. Top-level key `hook_package`: an object with `central_hook` (a non-empty "
-        "string -- use the canonical hook line VERBATIM from intake.json/slides_copy.md, "
-        "see upstream context) and `section_hooks` (an array of EXACTLY 4 non-empty "
-        "strings, one per phase, each DISTINCT from `central_hook` and from each other -- "
-        "use the real hook-variant lines already written in slides_copy.md's HOOK VARIANT "
-        "fields where available, never re-use the central hook verbatim as a section "
-        "hook).\n"
-        "10. You may keep any additional descriptive top-level fields your own analysis "
-        "produces (title, narrative_summary, sections, etc.) -- they are not read by the "
-        "verifier and do no harm -- but `slides`, `client_overrode_slide_floor`, "
-        "`client_exact_slide_count`, and `hook_package` in the EXACT shapes above are the "
-        "ones that are mechanically graded and MUST be correct."
-    ),
+    # NOTE: P-SP-STRUCTURE has no static entry here (mirrors the P-SP-INTAKE
+    # no-entry comment below) -- unlike every other phase, its contract is NOT
+    # run-invariant: points 2/3/6 (the per-phase slide floors, the client-exact
+    # override fields, and the total slide count) depend on THIS run's own
+    # client-exact slide count, which changes deck to deck. A first fix here
+    # (2026-08-18) hardcoded one live run's own numbers (25 slides, scaled
+    # floors 3/3/9/10) directly into this shared table -- a defect a later
+    # audit unit found and fixed (2026-08-20): every OTHER run, including the
+    # common case of NO client-exact override at all (which must get the
+    # sacred >=100-slide floor, unscaled), was being handed that same
+    # "write exactly 25, floors 3/3/9/10" instruction verbatim, regardless of
+    # its own real slide count. compose_prompt() now special-cases phase_id ==
+    # "P-SP-STRUCTURE" and calls _sp_structure_contract(run_dir) instead of
+    # this dict, which derives the text fresh per run -- see that function and
+    # _sp_read_client_exact_count / _sp_scaled_floor immediately below
+    # GENERIC_CONTRACT for the full derivation and its sourcing.
     # PROACTIVE (found while investigating fault #9, live run
     # pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3): phase_verifiers.verify()
     # for these three QC-report phases does NOT itself read the report file (it
@@ -725,6 +649,297 @@ GENERIC_CONTRACT = (
     "never '[TODO]'). If the target is Markdown/text, it must be real prose long enough "
     "to be substantive (not a one-line stub)."
 )
+
+
+# ---------------------------------------------------------------------------
+# P-SP-STRUCTURE's contract, derived PER RUN (fix for the defect described in
+# the "NOTE: P-SP-STRUCTURE has no static entry" comment above, inside
+# ARTIFACT_CONTRACTS). Only points 2/3/6 of the contract text are run-
+# dependent (the per-phase slide floors, the client-exact override fields,
+# and the total slide count) -- every other point (1, 4, 5, 7, 8, 9, 10) is
+# genuinely identical for every signature deck and is reproduced VERBATIM
+# from the original hand-written text below.
+#
+# The SACRED per-phase floors and the SACRED default slide-count floor are
+# read verbatim from 51-signature-presentation/structure/sp_structure.json's
+# own `phases[].min_slides` / `slide_floor.default_minimum` -- per that
+# ledger's own description ("Derived verbatim from MASTERDOC Prime
+# Directives; never floored or reinterpreted"), these four numbers and the
+# phase order are genuine constants across EVERY signature deck, unlike the
+# scaled/derived numbers that were wrongly frozen to one run below. Mirroring
+# them here (rather than reading the ledger file at runtime) matches
+# prove_sp_structure.py's own pattern of shipping this same sacred JSON as
+# its default-structure fallback; a future change to that ledger's four
+# min_slides values would need a matching update here, exactly as it would
+# need one in the ledger-reading prover itself.
+_SP_SACRED_PHASE_ORDER: Tuple[str, ...] = ("avatar", "story", "teaching", "pitch")
+_SP_SACRED_PHASE_FLOORS: Dict[str, int] = {
+    "avatar": 11, "story": 13, "teaching": 36, "pitch": 40,
+}
+_SP_SACRED_DEFAULT_MIN = 100
+
+
+def _sp_scaled_floor(min_slides: int, exact: int, default_min: int = _SP_SACRED_DEFAULT_MIN) -> int:
+    """EXACT clone of prove_sp_structure.verify()'s CHECK D scaling arithmetic
+    (51-signature-presentation/scripts/prove_sp_structure.py):
+        _sp_scale = exact / default_min                     # only when exact > 0
+        floor = max(1, int(round(min_slides * _sp_scale)))
+    Kept byte-identical -- same float division, same round()/int() calls, same
+    operand order -- so this module's STATED floor and the prover's COMPUTED
+    floor can never disagree for the same (min_slides, exact) input.
+    """
+    scale = exact / default_min
+    return max(1, int(round(min_slides * scale)))
+
+
+def _sp_read_client_exact_count(run_dir: Path) -> Tuple[Optional[int], str]:
+    """Read the client's declared exact slide count for THIS run -- never a
+    hardcoded number baked into a shared contract (that was the defect this
+    replaces). Returns (count_or_None, source_description).
+
+    Priority 1: working/copy/sp_intake.json's OWN `client_overrode_slide_floor`
+    / `client_exact_slide_count` fields. These are not a guess at a key name --
+    they are the EXACT two field names
+    51-signature-presentation/structure/sp_structure.json's own
+    `slide_floor.client_exact_override` block declares (`flag`/`count_field`),
+    sourced from `working/copy/sp_intake.json` per that same ledger entry's own
+    `source` key, and written there by the Signature Presentation Architect
+    during intake per signature-presentation-architect.md SOP 9.1 step 7 ("Log
+    a client-exact slide count now... write `client_overrode_slide_floor: true`
+    + `client_exact_slide_count: <N>` into `sp_intake.json`"). This IS how the
+    rest of the pipeline sources the override -- already normalized to a clean
+    bool + positive int, zero free-text parsing required, and it is produced
+    by P-SP-INTAKE, the phase that always runs immediately before
+    P-SP-STRUCTURE (see phases.py's _SP_ONLY_PHASE_IDS ordering), so it is
+    reliably present by the time this contract is composed.
+
+    Priority 2 (fallback -- sp_intake.json missing, unreadable, or simply
+    didn't log an override): the raw client answer at working/copy/intake.json
+    `deck_brief.SLIDE_COUNT` -- the REAL key, confirmed against
+    intake/deck-intake-questions.json's slide_count question
+    (`"storeOn": "SLIDE_COUNT"`, section `deck-intake` -> mapped to the
+    `deck_brief` object) and intake/interview-app/bridge/intake_writer.py's
+    `ID_TO_FIELD["slide_count"] = "SLIDE_COUNT"` mapping. This is FREE TEXT
+    ("Exactly 25 slides, no more, no less", "40", "no preference, let the
+    duration math decide", or the key absent entirely when unasked/unanswered)
+    -- the first standalone positive integer found in it is treated as the
+    client's exact count; no digits found means the client did not state one.
+    Top-level `intake.json["SLIDE_COUNT"]` / `intake.json["slide_count"]` are
+    also checked as defensive aliases in case an older/alternate intake shape
+    ever wrote it un-nested.
+
+    Returns (None, "...") when no client-exact count is available anywhere --
+    the common case, where the sacred >=100 floor governs, unscaled.
+    """
+    sp_intake_path = run_dir / "working" / "copy" / "sp_intake.json"
+    if sp_intake_path.is_file():
+        try:
+            sp_intake = json.loads(sp_intake_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            sp_intake = None
+        if isinstance(sp_intake, dict) and sp_intake.get("client_overrode_slide_floor") is True:
+            exact = sp_intake.get("client_exact_slide_count")
+            if isinstance(exact, bool):
+                exact = None  # bool is an int subclass -- reject True/False as a count
+            if isinstance(exact, int) and exact > 0:
+                return exact, (
+                    "working/copy/sp_intake.json's own client_overrode_slide_floor=true / "
+                    f"client_exact_slide_count={exact} (logged by the Signature Presentation "
+                    "Architect during intake, SOP 9.1 step 7)"
+                )
+
+    intake_path = run_dir / "working" / "copy" / "intake.json"
+    if intake_path.is_file():
+        try:
+            intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            intake = None
+        if isinstance(intake, dict):
+            deck_brief = intake.get("deck_brief")
+            raw = None
+            if isinstance(deck_brief, dict) and deck_brief.get("SLIDE_COUNT") not in (None, ""):
+                raw = deck_brief.get("SLIDE_COUNT")
+            elif intake.get("SLIDE_COUNT") not in (None, ""):
+                raw = intake.get("SLIDE_COUNT")
+            elif intake.get("slide_count") not in (None, ""):
+                raw = intake.get("slide_count")
+            if isinstance(raw, bool):
+                raw = None
+            if isinstance(raw, int) and raw > 0:
+                return raw, f"working/copy/intake.json deck_brief.SLIDE_COUNT (raw integer {raw})"
+            if isinstance(raw, str):
+                m = re.search(r"\d+", raw)
+                if m and int(m.group(0)) > 0:
+                    n = int(m.group(0))
+                    return n, (
+                        f"working/copy/intake.json deck_brief.SLIDE_COUNT (free-text client "
+                        f"answer {raw!r}, first number extracted: {n})"
+                    )
+
+    return None, (
+        "no client-exact count found in working/copy/sp_intake.json's "
+        "client_overrode_slide_floor/client_exact_slide_count fields nor in "
+        "working/copy/intake.json's deck_brief.SLIDE_COUNT"
+    )
+
+
+def _sp_structure_contract(run_dir: Path) -> str:
+    """Build the P-SP-STRUCTURE OUTPUT CONTRACT text FRESH for this run (see
+    the "NOTE: P-SP-STRUCTURE has no static entry" comment in ARTIFACT_
+    CONTRACTS above). Points 1/4/5/7/8/9/10 are run-invariant schema rules,
+    unchanged from the original hand-written contract; only points 2/3/6 are
+    computed here from _sp_read_client_exact_count() / _sp_scaled_floor()."""
+    exact, source = _sp_read_client_exact_count(run_dir)
+    order = _SP_SACRED_PHASE_ORDER
+
+    if exact is not None:
+        floors = {p: _sp_scaled_floor(_SP_SACRED_PHASE_FLOORS[p], exact) for p in order}
+        floor_sum = sum(floors.values())
+        floor_list = " / ".join(str(floors[p]) for p in order)
+        floor_clause = ", ".join(f"`{p}` >= {floors[p]} slides" for p in order)
+        scale_disp = f"{exact / _SP_SACRED_DEFAULT_MIN:g}"
+        sacred_list = "/".join(str(_SP_SACRED_PHASE_FLOORS[p]) for p in order)
+
+        if floor_sum == exact:
+            point2 = (
+                f"2. Phase order and floors for THIS {exact}-slide deck (scaled from the "
+                f"sacred defaults {sacred_list} by this run's client-exact override, "
+                f"{exact}/{_SP_SACRED_DEFAULT_MIN} = {scale_disp}x, rounded): {floor_clause}. "
+                f"These four floors already SUM to exactly {exact} -- with a {exact}-slide "
+                f"deck there is no slack, so the counts must be EXACTLY {floor_list} in that "
+                "phase order (adjust boundaries to fit where the REAL content in "
+                f"slides_copy.md naturally divides, but keep the four counts exactly "
+                f"{floor_list}).\n"
+            )
+        elif floor_sum < exact:
+            slack = exact - floor_sum
+            point2 = (
+                f"2. Phase order and floors for THIS {exact}-slide deck (scaled from the "
+                f"sacred defaults {sacred_list} by this run's client-exact override, "
+                f"{exact}/{_SP_SACRED_DEFAULT_MIN} = {scale_disp}x, rounded): {floor_clause}. "
+                f"These four floors SUM to {floor_sum}, leaving {slack} slide(s) of slack "
+                f"under the {exact}-slide total -- each number above is a MINIMUM, not an "
+                "exact count; distribute the slack among phases however the REAL content in "
+                f"slides_copy.md naturally divides, but the total `slides` array length must "
+                f"still be EXACTLY {exact} (point 6) and no phase may fall under its own "
+                "floor.\n"
+            )
+        else:  # floor_sum > exact -- the client-exact count is smaller than the sacred
+            # per-phase floors can satisfy even after the max(1, ...) clamp. Genuinely
+            # infeasible math (an upstream intake/QC problem, not something this contract
+            # can resolve) -- state the true floors and the true total honestly rather
+            # than silently hiding the conflict or fabricating numbers that "work".
+            point2 = (
+                f"2. Phase order and floors for THIS {exact}-slide deck (scaled from the "
+                f"sacred defaults {sacred_list} by this run's client-exact override, "
+                f"{exact}/{_SP_SACRED_DEFAULT_MIN} = {scale_disp}x, rounded, each floor "
+                f"clamped to a minimum of 1 slide): {floor_clause}. NOTE: these floors SUM "
+                f"to {floor_sum}, which is MORE than the client-exact total of {exact} -- "
+                "this combination cannot be fully satisfied (some phase will necessarily "
+                "land under its own floor). Get as close to every floor as truly possible, "
+                f"keep the total EXACTLY {exact} (point 6) and the phase order/contiguity "
+                "correct, and add a short top-level `structure_conflict_note` string "
+                "describing the conflict (this field is not read by the verifier but "
+                "flags the real upstream problem for the QC specialist -- never silently "
+                "paper over it).\n"
+            )
+
+        point3 = (
+            "3. Top-level keys `client_overrode_slide_floor: true` and "
+            f"`client_exact_slide_count: {exact}` (exactly these two fields, these exact "
+            f"values) -- this is the real, already-declared client-exact override (sourced "
+            f"from {source}); it is what legitimately waives the sacred "
+            f">={_SP_SACRED_DEFAULT_MIN}-slide default floor for this deck. Do not omit "
+            "these two fields or the deck will hard-fail AF-SP-SLIDE-FLOOR.\n"
+        )
+        point6 = (
+            f"6. This deck has `client_exact_slide_count: {exact}` (point 3) so the total "
+            f"`slides` array length must be EXACTLY {exact} -- not more, not fewer.\n"
+        )
+        slide_count_clause = f"this run: exactly {exact} -- see point 6"
+    else:
+        sacred_list = "/".join(str(_SP_SACRED_PHASE_FLOORS[p]) for p in order)
+        floor_clause = ", ".join(
+            f"`{p}` >= {_SP_SACRED_PHASE_FLOORS[p]} slides" for p in order
+        )
+        point2 = (
+            f"2. Phase order and floors (the SACRED, un-scaled defaults, {sacred_list} -- "
+            f"no client-exact override is logged for this run, see point 3): {floor_clause}, "
+            "contiguous in that order starting at slide 1.\n"
+        )
+        point3 = (
+            "3. Do NOT set `client_overrode_slide_floor: true` and do NOT add a "
+            f"`client_exact_slide_count` field -- {source}. Fabricating an override or an "
+            "exact count nobody declared is exactly the failure this contract exists to "
+            f"prevent; the sacred >={_SP_SACRED_DEFAULT_MIN}-slide floor (point 6) governs "
+            "unscaled for this deck.\n"
+        )
+        point6 = (
+            f"6. No client-exact override applies to this run (point 3), so the sacred "
+            f"default floor governs: total `slides` array length must be >= "
+            f"{_SP_SACRED_DEFAULT_MIN} -- there is no ceiling; expand phases proportionally "
+            "past their floors to reach it.\n"
+        )
+        slide_count_clause = f"this run: >= {_SP_SACRED_DEFAULT_MIN} -- see point 6"
+
+    return (
+        "OUTPUT CONTRACT (mechanically enforced by build_deck._chk_sp_structure -> "
+        "prove_sp_structure.verify() -- LITERAL, POSITIONALLY-CHECKED requirements, not "
+        "stylistic suggestions). File path: working/copy/sp_structure.json (a single JSON "
+        "object). This deck's slides_copy.md ALREADY exists (see upstream context) -- your "
+        "job here is to CLASSIFY and RE-LEDGER those same already-approved slides into "
+        "this exact required shape, not to invent new content:\n"
+        "1. Top-level key `slides`: a JSON array, one entry per slide, in slide order. "
+        "Each entry is an object with these fields:\n"
+        "   - `slide`: integer, 1-based, unique, contiguous from 1 to the deck's real "
+        f"slide count ({slide_count_clause}).\n"
+        "   - `phase`: one of exactly these four lowercase strings: `avatar`, `story`, "
+        "`teaching`, `pitch`. Every slide up to a phase boundary gets that phase; phases "
+        "must be CONTIGUOUS blocks in this EXACT order starting at slide 1 (all `avatar` "
+        "slides first, then all `story`, then all `teaching`, then all `pitch` -- never "
+        "interleaved).\n"
+        "   - `label_slide`: boolean. Exactly one slide in EACH of the four phases must "
+        "have `label_slide: true` (the slide that names that phase's purpose); all others "
+        "in that phase are `false`.\n"
+        "   - `suggested_image`: a non-empty string (copy the slide's own visual/PEOPLE "
+        "description from slides_copy.md, or write a short scene seed) -- never empty or "
+        "whitespace-only.\n"
+        "   - `tags`: a JSON array (may be `[]`, but the KEY must always be present -- a "
+        "missing `tags` key on ANY slide is itself a hard fail). Use this array to carry "
+        "the markers in points 4/5/7 below.\n"
+        + point2 + point3 +
+        "4. `avatar`, `story`, and `pitch` phases (NOT `teaching`) must each have at "
+        "least one slide whose `tags` array includes a tag that normalizes to `NEEIT` "
+        "(e.g. write the tag as `N.E.E.I.T.` or `NEEIT`) AND at least one slide (same or "
+        "different) whose `tags` includes a tag that normalizes to `QUADRANT`, "
+        "`4QUADRANT`, or `FOURQUADRANT` (e.g. write `4-Quadrant`).\n"
+        "5. Across the WHOLE deck (any slides, any phases), the tags collectively must "
+        "include at least one tag each normalizing to `MOVEMENT`, `MESSAGE`, and "
+        "`METHODOLOGY` (e.g. write `Movement`, `Message`, `Methodology` as separate tags "
+        "on any 1-3 slides).\n"
+        + point6 +
+        "7. `teaching` phase (3-7 distinct steps required): EITHER add a top-level "
+        "`teaching_steps` field (an integer 3-7, or an array of 3-7 step labels), OR tag "
+        "each teaching-phase step slide with a tag that normalizes to `STEP1`, `STEP2`, "
+        "... `STEP7` (e.g. write `Step 1`, `TEACHING STEP 2`) -- 3 to 7 DISTINCT step "
+        "numbers total, no fewer than 3, no more than 7.\n"
+        "8. 1 to 2 slides total (never 0, never more than 2) must carry a tag that "
+        "normalizes to `CASESTUDY` (e.g. write `CASE_STUDY`) -- omit entirely if this "
+        "deck's real content has no case-study beat, but then explicitly add the tag "
+        "`CASE_STUDY` to the strongest proof/wall-of-wins slide so the floor of 1 is met.\n"
+        "9. Top-level key `hook_package`: an object with `central_hook` (a non-empty "
+        "string -- use the canonical hook line VERBATIM from intake.json/slides_copy.md, "
+        "see upstream context) and `section_hooks` (an array of EXACTLY 4 non-empty "
+        "strings, one per phase, each DISTINCT from `central_hook` and from each other -- "
+        "use the real hook-variant lines already written in slides_copy.md's HOOK VARIANT "
+        "fields where available, never re-use the central hook verbatim as a section "
+        "hook).\n"
+        "10. You may keep any additional descriptive top-level fields your own analysis "
+        "produces (title, narrative_summary, sections, etc.) -- they are not read by the "
+        "verifier and do no harm -- but `slides`, `client_overrode_slide_floor`, "
+        "`client_exact_slide_count`, and `hook_package` in the EXACT shapes above are the "
+        "ones that are mechanically graded and MUST be correct."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1067,7 +1282,13 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     role_context = load_role_context(dept_root, owning_role)
     persona_bundle = read_persona_bundle(run_dir, phase_id)
     upstream = gather_upstream_context(run_dir, phase_id=phase_id)
-    contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
+    # P-SP-STRUCTURE's contract is derived PER RUN, not looked up statically --
+    # see _sp_structure_contract's docstring and the "NOTE: P-SP-STRUCTURE has
+    # no static entry" comment in ARTIFACT_CONTRACTS for why.
+    if phase_id == "P-SP-STRUCTURE":
+        contract = _sp_structure_contract(run_dir)
+    else:
+        contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
 
     system_parts = [
         f"You are the {owning_role} for the Presentations department, executing pipeline "
