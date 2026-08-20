@@ -155,8 +155,11 @@ layered; all three layers are per-client:
    (Authorization bearer or token-in-path per current OpenClaw docs; LIVE-VERIFY the exact
    current mechanism at the openclaw.ai documentation, the brief mandates this research).
    The token is generated per client at provision time, stored in the client's environment
-   stores (all three stores per fleet doctrine), and named for the skill, for example
-   PODCAST_INTAKE_HOOK_TOKEN. Never shared across clients or skills.
+   stores (all three stores per fleet doctrine), and named for the skill: the route secret
+   PODCAST_INTAKE_HOOK_SECRET (Webhooks plugin SecretRef; never a plaintext value in config)
+   plus the inbound HMAC secret PODCAST_INTAKE_INBOUND_SECRET (the intake handler verifies
+   the X-Podcast-Intake-Signature header against it; fail-closed when set). Never shared
+   across clients or skills.
 2. Cloudflare WAF custom rule on the hooks hostname (edge filter): allow only method POST
    to path prefix /hooks/, block everything else (no GET probing of the gateway). Optionally
    add Cloudflare rate limiting on the hostname. LIVE-VERIFY what the current plan tier
@@ -270,8 +273,8 @@ Step 5 - Disable and rotate the inbound webhook.
   On the client box (as the correct runtime user, never root):
   a. Remove the podcast intake mapping from the OpenClaw hooks configuration (openclaw.json
      hooks.mappings, or whatever the current OpenClaw docs specify; LIVE-VERIFY).
-  b. Rotate/delete PODCAST_INTAKE_HOOK_TOKEN in all environment stores on the box, so even
-     a resurrected route is dead.
+  b. Rotate/delete PODCAST_INTAKE_HOOK_SECRET + PODCAST_INTAKE_INBOUND_SECRET in all
+     environment stores on the box, so even a resurrected route is dead.
   c. Apply config per fleet gateway-restart doctrine (NEVER `openclaw gateway restart` over
      SSH on a Mac; use the MASTER-only kickstart or detached-run pattern; verify the gateway
      is back UP afterward; a revocation that downs a box that still runs other services is
@@ -350,7 +353,8 @@ and record the box-side steps as pending.
    <CF_ZONE_ID>.
 4. Create the Access app for the dashboard hostname, allow-list = client email(s) +
    <operator-email-alt> + <operator-email>.
-5. On-box: generate PODCAST_INTAKE_HOOK_TOKEN + PODCAST_DASHBOARD_TOKEN into the environment
+5. On-box: generate PODCAST_INTAKE_HOOK_SECRET + PODCAST_INTAKE_INBOUND_SECRET +
+   PODCAST_DASHBOARD_TOKEN into the environment
    stores (confirm SET); add the OpenClaw hook mapping (flat body, deliver:false, per current
    OpenClaw docs); deploy the dashboard service on 127.0.0.1:4010 with a watchdog appropriate
    to the box type; apply gateway config per restart doctrine.

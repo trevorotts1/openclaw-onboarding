@@ -56,6 +56,7 @@ import os
 import re
 import secrets
 import sqlite3
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -1074,6 +1075,10 @@ def cmd_create(conn, args):
             conn.execute("ROLLBACK")
             raise
         _emit(args, {"job_id": job_id, "status": "duplicate", "fingerprint": fingerprint})
+        # run-begin is idempotent; mirroring on the duplicate path heals a card
+        # missed while the board was down during the original create.
+        row = _load_job(conn, job_id)
+        _board_mirror_create(job_id, row["client_id"], row["show_name"])
         return
 
     job_id = new_job_id()
@@ -1128,12 +1133,15 @@ def cmd_create(conn, args):
         _append_event(conn, job_id, None, None, "duplicate submission (idempotent no-op)")
         _touch(conn, job_id)
         _emit(args, {"job_id": job_id, "status": "duplicate", "fingerprint": fingerprint})
+        row = _load_job(conn, job_id)
+        _board_mirror_create(job_id, row["client_id"], row["show_name"])
         return
     except Exception:
         conn.execute("ROLLBACK")
         raise
 
     _emit(args, {"job_id": job_id, "status": "received", "fingerprint": fingerprint})
+    _board_mirror_create(job_id, args.client_id, args.show_name)
 
 
 def cmd_advance(conn, args):
@@ -1273,6 +1281,7 @@ def cmd_advance(conn, args):
 
     _emit(args, {"job_id": args.job_id, "from": frm, "to": to_status,
                  "ledger_sync": ledger_sync})
+    _board_mirror_advance(row, to_status)
 
 
 def cmd_output(conn, args):
@@ -1349,6 +1358,7 @@ def cmd_hold(conn, args):
         raise
     _emit(args, {"job_id": args.job_id, "held": True, "resume_stage": frm,
                  "queue_deadline": iso(deadline)})
+    _board_mirror_advance(row, "queued_credit_out")
 
 
 def cmd_resume(conn, args):
@@ -1381,6 +1391,7 @@ def cmd_resume(conn, args):
         conn.execute("ROLLBACK")
         raise
     _emit(args, {"job_id": args.job_id, "resumed_to": target})
+    _board_mirror_advance(row, target)
 
 
 def cmd_fail(conn, args):
@@ -1412,6 +1423,7 @@ def cmd_fail(conn, args):
         conn.execute("ROLLBACK")
         raise
     _emit(args, {"job_id": args.job_id, "status": "failed", "failed_step": args.step})
+    _board_mirror_advance(row, "failed")
 
 
 def cmd_sweep_aged_out(conn, args):
@@ -1451,6 +1463,12 @@ def cmd_sweep_aged_out(conn, args):
             conn.execute("ROLLBACK")
             raise
         dropped.append(job_id)
+        reason, ask = BOARD_BLOCKED_REASONS["aged_out"]
+        _board_call(
+            ["close", "--job-id", job_id, "--status", "blocked",
+             "--reason", reason, "--blocked-on-human", "operator", "--note", ask],
+            f"close blocked {job_id}",
+        )
     # Founder notification is engine-side; emit a machine line the cron can act on.
     _emit(args, {"aged_out_count": len(dropped), "aged_out_jobs": dropped})
 
@@ -1693,6 +1711,116 @@ def cmd_resolve_media_key(conn, args):
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------- #
+# Kanban mirror (onb-20 producer binding). podcast_state.py is the SOLE state
+# writer, so it is the ONLY place the board mirror can be enforced: every
+# create/advance/hold/resume/fail path --  whether driven by the intake bridge,
+# the deterministic step driver, or a manual operator command --  lands the same
+# card lifecycle with zero caller wiring. The board is a CONVENIENCE, never a
+# gate: every call here is a fire-and-forget subprocess AFTER the COMMIT,
+# bounded by cc_board.py's own 5s timeout, and any failure is logged to stderr
+# with the run unaffected. CC_BASE_URL unset => cc_board.py itself no-ops.
+# Card lifecycle: create -> run-begin; forward advance -> patch-phase (to
+# 'complete' -> close --status done with the Podbean permalink when recorded);
+# hold / fail / aged-out -> close --status blocked; resume -> patch-phase back
+# to the resume stage.
+# --------------------------------------------------------------------------- #
+
+CC_BOARD_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cc_board.py")
+
+# Episode title does not exist at create time (podcast_jobs.episode_title is
+# nullable and produced later via `output`); cc_board has no title-update
+# surface, so the card lands with a placeholder and the real title rides the
+# dashboard, not the board.
+CC_BOARD_PLACEHOLDER_TITLE = "Title pending"
+
+# Board mirror for statuses that leave the nine-phase forward path. Every
+# failure reason is enumerated (the CC blocked-column gate rejects anything
+# else); the operator/agent reads the ask and acts in its own turn.
+BOARD_BLOCKED_REASONS = {
+    "hold": ("approval", "Podcast episode run held on credit-out - restore credits or resume the job"),
+    "fail": ("approval", "Podcast episode run failed - operator review needed"),
+    "aged_out": ("approval", "Podcast episode run aged out of the credit-out queue"),
+}
+
+
+def _board_call(cmd: list[str], ctx: str) -> None:
+    """Mirror a state transition onto the CC kanban board. FAIL-SOFT: never
+    raises, never returns a value the state machine depends on. Absent
+    CC_BASE_URL makes cc_board.py no-op on its own, but we skip the subprocess
+    entirely to keep every transition zero-cost on unconfigured boxes."""
+    if not os.environ.get("CC_BASE_URL"):
+        return
+    try:
+        proc = subprocess.run(
+            [sys.executable, CC_BOARD_SCRIPT] + cmd,
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+        )
+        if proc.stdout.strip():
+            sys.stderr.write(f"[cc_board] {proc.stdout.strip()}\n")
+        if proc.returncode != 0 or proc.stderr.strip():
+            sys.stderr.write(
+                f"[cc_board] {ctx} rc={proc.returncode}: "
+                f"{(proc.stderr or proc.stdout).strip()[:400]}\n"
+            )
+    except Exception as exc:  # noqa: BLE001 - the board can never break the run
+        sys.stderr.write(f"[cc_board] {ctx} call failed: {exc}\n")
+
+
+def _board_patch_phase(job_id: str, phase: str, lane_status: str,
+                       permalink: str | None = None) -> None:
+    cmd = ["patch-phase", "--job-id", job_id, "--phase", phase, "--status", lane_status]
+    if permalink:
+        cmd += ["--permalink", permalink]
+    _board_call(cmd, f"patch-phase {job_id} {phase}/{lane_status}")
+
+
+def _board_mirror_create(job_id: str, client_id: str, show_name: str) -> None:
+    _board_call(
+        [
+            "run-begin",
+            "--job-id", job_id,
+            "--client-label", client_id or "",
+            "--episode-title", CC_BOARD_PLACEHOLDER_TITLE,
+            "--show-name", show_name or "",
+            "--department", "podcast",
+        ],
+        f"run-begin {job_id}",
+    )
+
+
+def _board_mirror_advance(row, to_status: str) -> None:
+    job_id = row["job_id"]
+    if to_status == "complete":
+        _board_call(
+            ["close", "--job-id", job_id, "--status", "done",
+             "--permalink", row["podbean_permalink"] or ""] if row["podbean_permalink"]
+            else ["close", "--job-id", job_id, "--status", "done"],
+            f"close done {job_id}",
+        )
+        return
+    if to_status == "failed":
+        reason, ask = BOARD_BLOCKED_REASONS["fail"]
+        _board_call(
+            ["close", "--job-id", job_id, "--status", "blocked",
+             "--reason", reason, "--blocked-on-human", "operator", "--note", ask],
+            f"close blocked {job_id}",
+        )
+        return
+    if to_status == "queued_credit_out":
+        reason, ask = BOARD_BLOCKED_REASONS["hold"]
+        _board_call(
+            ["close", "--job-id", job_id, "--status", "blocked",
+             "--reason", reason, "--blocked-on-human", "owner", "--note", ask],
+            f"close blocked {job_id}",
+        )
+        return
+    _board_patch_phase(job_id, to_status,
+                       "review" if to_status == "in_qc" else "in_progress")
+
 
 def _emit(args, obj, force_json=False):
     if getattr(args, "json", False) or force_json:
