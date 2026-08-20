@@ -18,7 +18,7 @@
   P-SP-STRUCTURE 9 judged / 1 named.
 - No verifier, gate, or autofail was weakened. Teaching and derivation only.
 
-## [v22.0.60] -- 2026-08-20 -- fix(presentations): AF-C8 archetype carve-out for value-stack slides (operator ruling)
+### AF-C8 archetype carve-out for value-stack slides (operator ruling)
 
 - Reconciles a contradiction between two live rules. slide-copywriter doctrine permits "bullet slides <= 5
   bullets at 7 words each" and "value-stack slides <= 6 line items at 7 words per name" -- up to 62 on-slide
