@@ -1,3 +1,20 @@
+## [unversioned] -- 2026-08-20 -- fix(loop-protection): loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake + X-Rescue-Secret auth header (PR #960)
+
+- 61-loop-protection-system/scripts/loop_escalate.py: DEFAULT_WEBHOOK moved from the retired
+  relay `https://main.blackceoautomations.com/webhook/rescue-rangers` (false-pass trap: returns
+  200 "missing_message" even to a wrong secret) to the canonical
+  `https://main.blackceoautomations.com/webhook/rr-v2-intake` (workflow RR-01-intake, enforces
+  sha256 secret). `RESCUE_RANGERS_WEBHOOK_URL` env still wins; the constant is fallback-only.
+- The live transport now sends `X-Rescue-Secret` when `RESCUE_RANGERS_WEBHOOK_SECRET` is present;
+  rr-v2-intake returns 403 without it, so escalations without the header were silently dead
+  (landed in UNSENT-esc-*.json). Verified live from a box: POST with header -> 200
+  {"accepted":true,...}; without -> 403.
+- Installers 53/60/61 accept `--idempotent` as a no-op (update-skills.sh passes it to every
+  installer; strict arg parsers failed the roll with 'unknown arg' and withheld .wired sentinels).
+- scripts/fleet-standing/NEW-BOX-WIRING.md: rr-reconcile.sh path corrected from
+  ~/clawd/fleet-heartbeat/scripts/ to the real ~/blackceo-fleet-ops/fleet-heartbeat/scripts/.
+- skill-version.txt bumped 61-loop-protection-system 0.6.0->0.6.1, 53-book-writer 1.2.1->1.2.2,
+  60-zhc-early-warning-system 0.1.5->0.1.6 (G3 gate).
 ## [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
 
 - Podcast production engine (Skill 58) end-to-end audit fixes: intake bridge recovery, inbound secret
