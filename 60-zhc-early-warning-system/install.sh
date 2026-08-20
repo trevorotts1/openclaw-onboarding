@@ -29,6 +29,9 @@ while [ $# -gt 0 ]; do
         --box)  BOX="${2:-}"; shift 2 ;;
         --no-cron) NO_CRON=1; shift ;;
         --self-test) SELFTEST=1; shift ;;
+        # Accepted as a no-op: update-skills.sh passes this to every installer;
+        # installers that do not parse it must not fail the roll.
+        --idempotent) shift ;;
         -h|--help) echo "$TAG usage: install.sh [--role client|operator] [--box NAME] [--no-cron]"; exit $EX_OK ;;
         *) echo "$TAG unknown arg: $1" >&2; exit $EX_ERR ;;
     esac

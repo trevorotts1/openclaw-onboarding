@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# Accepted as a no-op: update-skills.sh passes this to every installer;
+# installers that do not parse it must not fail the roll.
+[ "${1:-}" = "--idempotent" ] && shift
+
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # A3 CONTENT-HASH FIX (v14.0.1): the OpenMontage clone (~56MB) MUST NOT live inside
 # the hashed skill dir (~/.openclaw/skills/47-movie-producer/). The onboarding
