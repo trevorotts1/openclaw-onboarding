@@ -1,3 +1,5 @@
+## [v22.0.61]  -  2026-08-20  -  fix: loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake (escalation lane dead without it)
+
 ## [unversioned] -- 2026-08-20 -- fix(loop-protection): loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake + X-Rescue-Secret auth header (PR #960)
 
 - 61-loop-protection-system/scripts/loop_escalate.py: DEFAULT_WEBHOOK moved from the retired
