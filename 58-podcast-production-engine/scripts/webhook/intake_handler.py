@@ -69,7 +69,6 @@ import argparse
 import hmac
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -95,17 +94,6 @@ ENV_MAX_FIELD_CHARS = "PODCAST_INTAKE_MAX_FIELD_CHARS"
 
 SIGNATURE_HEADER = "X-Podcast-Intake-Signature"
 SIGNATURE_PREFIX = "sha256="
-
-# State bridge (SKILL.md Section "Activation layer"): podcast_state.py is the
-# SOLE writer of the SQLite job roster that the step driver, the dashboard, and
-# the kanban all read. The webhook layer owns only the intake file ledger, so a
-# fresh accept must bridge into SQLite here -- deterministically, with the
-# payload file this layer already persisted, never from the raw body.
-STATE_BRIDGE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   "..", "podcast_state.py")
-STATE_BRIDGE_MODE_STYLE = ("personal_podcast_style", "interview_style_podcast",
-                           "counter_intuitive", "vulnerable", "provocative",
-                           "passionate")
 
 MAX_PAYLOAD_BYTES_DEFAULT = 512000
 MAX_FIELD_CHARS_DEFAULT = 20000
@@ -289,109 +277,6 @@ def _launch_pipeline(client, config, jk, base, verdict):
     verdict["advance"] = False
 
 
-def _bridge_and_record(jk, canonical, base, config, verdict, client):
-    """Run the SQLite bridge and fold the result into the verdict. On success
-    the flow can keep its pointer-based stateJson untouched (job_id rides in the
-    verdict and the ledger record); on failure the verdict and ledger carry the
-    job_id plus bridge_error so the runbook can repair deterministically."""
-    verdict["job_id"] = "bridge_error"
-    bridge_ok, job_id = _bridge_to_sqlite(jk, canonical, base, config)
-    if bridge_ok:
-        verdict["job_id"] = job_id
-        verdict["bridge"] = "ok"
-        try:
-            ledger.update_state(jk, None, base=base,
-                                note="bridged to SQLite job roster (job_id=%s)" % job_id)
-        except ledger.LedgerCorruption:
-            pass
-        return
-    verdict["bridge"] = "error"
-    verdict["bridge_error"] = job_id
-    verdict["operator_alert"] = emit_operator_alert(
-        "sqlite_bridge_failed", base, job=jk, detail=str(job_id))
-    try:
-        ledger.update_state(jk, None, base=base,
-                                note=("state bridge FAILED (job_id=bridge_error, error=%s); "
-                                      "repair with podcast_state.py create --job-key %s "
-                                      "--payload-file <ledger payload>") % (job_id, jk))
-    except ledger.LedgerCorruption:
-        pass
-    if client is not None and config.get("mode") == "in-flow" and config.get("flow_id"):
-        try:
-            res = client.set_waiting_idempotent(
-                config["flow_id"],
-                {"podcast_webhook_terminal": "bridge_error", "job_key": jk},
-                current_step="bridge_error",
-                extra_state={"bridge_error": str(job_id)})
-            verdict["flow_op"] = {"ok": res.get("ok"),
-                                  "applied_by": res.get("applied_by"),
-                                  "code": res.get("code")}
-        except FlowError:
-            pass
-
-
-def _bridge_to_sqlite(jk, canonical, base, config):
-    """Bridge a fresh accept from the intake file ledger into the SQLite job
-    roster via podcast_state.py create (the single writer). Deterministic, never
-    a model step. NEVER fails the fast-ACK: the ledger claim is the durable
-    record, and an operator alert plus the emitted job_id=bridge_error surface
-    every failure for a deterministic repair run (the runbook's own-turn
-    continuation then calls podcast_state.py create with the exact same flags).
-
-    Bridge preconditions (all verified): the canonical payload is the mapped
-    form the ledger already persisted as <job_key>.payload.json; create is
-    idempotent on the same job_key (SK2-14 fingerprints the SQLite dedup with
-    the webhook job_key, so the two idempotency layers can never disagree); the
-    webhook layer refuses payload-inline dispatches, so passing the persisted
-    payload path as --payload-file is the pointer-based contract; absent client
-    rows are active by default, so a fresh provision bridges without a roster
-    pre-step. Duplicate, needs_input, test, and quarantined verdicts never
-    reach here: their jobs must not appear on the kanban. test jobs DO bridge
-    (status received): the SOP canary proof requires a _test submission to
-    create the job and walk the pipeline, and podcast_state.py advance refuses
-    to ever complete a test job. job_id comes from create's own stdout; the
-    deterministic flags come from canonical fields plus the route-derived slug.
-
-    Returns (bridge_ok, job_id_or_error)."""
-    mode = str(canonical.get("mode", "")).strip()
-    style = str(canonical.get("style", "")).strip()
-    contact_id = str(canonical.get("contact_id", "")).strip()
-    location_id = str(canonical.get("location_id", "")).strip()
-    if not (mode and style and contact_id and location_id):
-        return False, "missing canonical create fields (mode/style/contact_id/location_id)"
-    if mode not in STATE_BRIDGE_MODE_STYLE or style not in STATE_BRIDGE_MODE_STYLE:
-        return False, "create field outside the writer enums (mode=%s style=%s)" % (mode, style)
-    route = config.get("route_id") or os.environ.get(ENV_ROUTE) or ""
-    if not route.startswith("podcast-intake-"):
-        return False, "route id missing or malformed (got %r)" % route
-    client_id = route[len("podcast-intake-"):].strip()
-    if not client_id:
-        return False, "empty client slug derived from route id"
-    payload_file = str(ledger.payload_path(jk, base))
-    if not os.path.isfile(payload_file):
-        return False, "ledger payload file missing (%s)" % payload_file
-    argv = [sys.executable or "python3", STATE_BRIDGE_SCRIPT, "create",
-            "--client-id", client_id, "--location-id", location_id,
-            "--contact-id", contact_id, "--mode", mode, "--style", style,
-            "--payload-file", payload_file, "--job-key", jk, "--json"]
-    if not os.path.isfile(STATE_BRIDGE_SCRIPT):
-        return False, "state writer absent (%s)" % STATE_BRIDGE_SCRIPT
-    try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, "create subprocess failed (%s)" % exc
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")
-        return False, ("create exited %d (%s)" % (proc.returncode, err[:400]))
-    try:
-        job_id = json.loads(proc.stdout.strip().splitlines()[-1]).get("job_id")
-    except (ValueError, AttributeError, IndexError):
-        job_id = None
-    if not job_id:
-        return False, "create returned no job_id"
-    return True, str(job_id)
-
-
 def handle(body, config, tables=None, client=None):
     """Run the full deterministic fast-ACK pipeline. Returns the ACK verdict."""
     tables = tables or mapper.load_tables()
@@ -482,7 +367,6 @@ def handle(body, config, tables=None, client=None):
     if initial_state == "test":
         verdict["status"] = "accepted"
         verdict["test"] = True
-        _bridge_and_record(jk, canonical, base, config, verdict, client)
         _short_circuit_flow(client, config,
                             {"podcast_webhook_terminal": "test", "job_key": jk},
                             base, verdict)
@@ -491,7 +375,6 @@ def handle(body, config, tables=None, client=None):
     verdict["status"] = "accepted"
     if decision == "retry":
         verdict["retry"] = True
-    _bridge_and_record(jk, canonical, base, config, verdict, client)
     _launch_pipeline(client, config, jk, base, verdict)
     return verdict
 
@@ -517,8 +400,7 @@ def _safe_verdict(verdict):
     labels only. The raw body and canonical answers never appear here."""
     keep = ("ack_http", "status", "job", "decision", "state", "delivery_count",
             "missing", "flow_id", "advance", "test", "retry", "quarantine",
-            "flow_op", "operator_alert", "overlimit_fields", "reason",
-            "job_id", "bridge", "bridge_error")
+            "flow_op", "operator_alert", "overlimit_fields", "reason")
     return {k: verdict[k] for k in keep if k in verdict}
 
 
