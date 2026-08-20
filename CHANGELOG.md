@@ -18,13 +18,6 @@ Found by the live Wave E deck run; each fix ships a test that fails without it. 
 
 No verifier was weakened. tests/ 969 passed, top-level test_*.py 273 passed, 0 failures.
 
-## [v22.0.53] -- 2026-08-20 -- fix(presentations): P4-COPY contract taught the wrong mechanism and was buried
-
-- pitch_engines_check reads only literal `<!-- ARC: TAG -->` markers, but the P4-COPY contract instructed the
-  model to write prose phrases, so the gate correctly rejected every attempt and the retry loop never converged.
-- The contract was also reaching the model inside a 185,008-character prompt. Restated verbatim as the last
-  block before generation and P4-COPY's upstream budget scoped to 100K (185,008 -> ~153,500 chars).
-- Verified on a real cold DeepSeek call: 24 ARC markers in correct order, both checkers clean.
 ## [v22.0.54] -- 2026-08-20 -- fix(rr-knowledge): fleet-wide Rescue Rangers knowledge + skill 65
 
 Merge of `fix/rr-knowledge-fleet-20260820` (PR #947) onto v22.0.53. Closes the
