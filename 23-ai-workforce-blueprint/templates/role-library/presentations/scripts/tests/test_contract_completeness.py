@@ -49,6 +49,7 @@ in this directory (test_af_c8_copy_contract.py, test_dispatcher_autospawn.py).
 """
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -75,24 +76,42 @@ SEVEN_LIVE_CODES_OUT_OF_SCOPE = (
     "AF-SP-PRICE-IN-TEACH",
 )
 
-# Codes that live in the two engine modules but are NOT reachable from the COPY
-# entry points -- image/prompt-QC (check_prompts, _check_hook_image) and
-# speech-QC (CHECKS["SPEECH-QC"]).  Pinned here so that a NEW code appearing
-# anywhere in either module is either in the contract or a deliberate,
-# reviewed addition to this list -- never an unnoticed third state.
+# Codes that appear as string literals in the two engine modules but are NOT
+# reachable from the COPY entry points: image/prompt-QC (check_prompts,
+# _check_hook_image), speech-QC (CHECKS["SPEECH-QC"]), and prose
+# cross-references in docstrings to code FAMILIES owned elsewhere.  Pinned here
+# so that a NEW code string appearing anywhere in either module is either in the
+# contract or a deliberate, reviewed addition to this list -- never an
+# unnoticed third state.
 ENGINE_CODES_OFF_THE_COPY_PATH = frozenset(
     {
+        # Prompt-QC / Image-QC halves (intelligence_engines_check.check_prompts,
+        # _check_hook_image) -- they judge working/prompts/*, not slides_copy.md.
+        "AF-FACE-MOOD",
         "AF-FACE-PROMPT-MISSING",
         "AF-HAIR-INAUTHENTIC",
         "AF-HOOK",
         "AF-HOOK-IMG-MISSING",
+        "AF-IMAGE-QC-VISION",
         "AF-LIGHT-PROMPT-MISSING",
-        "AF-SPEECH-HOOK-COUNT",
+        "AF-LIGHT-SKINTONE",
+        "AF-NO-VISION-QC",
+        "AF-WORLD-IMAGE-MISMATCH",
         "AF-WORLD-SCALE",
+        # Speech-QC only: pitch_engines_check.CHECKS["SPEECH-QC"].
+        "AF-SPEECH-HOOK-COUNT",
+        # Docstring references to code FAMILIES, not codes: "the AF-DEN / AF-HOOK
+        # / AF-OBI batteries". The numbered members ARE in the contract.
+        "AF-DEN",
+        "AF-OBI",
     }
 )
 
-_CODE_DICT_RE = re.compile(r"""['"]code['"]\s*:\s*['"](AF-[A-Z0-9-]+)['"]""")
+# Any AF code written as a string literal. Whole-module and independent of the
+# call-graph walk contract_introspect uses, so it also catches a code emitted
+# through a variable (`_CODE = "AF-X"` ... `{"code": _CODE}`) -- a shape the
+# AST dict-literal extractor cannot resolve and would silently drop.
+_CODE_TOKEN_RE = re.compile(r"\b(AF-[A-Z0-9]+(?:-[A-Z0-9]+)*)\b")
 
 
 def _contract() -> str:
@@ -268,11 +287,18 @@ class TestSevenLiveRunCodes:
 #    either in the contract or a reviewed off-path entry. No third state.
 # ---------------------------------------------------------------------------
 class TestEngineModuleSweep:
+    @staticmethod
+    def _literal_codes(mod: str) -> set:
+        found: set = set()
+        for node in ast.walk(ci.module_tree(mod)):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.update(_CODE_TOKEN_RE.findall(node.value))
+        return found
+
     @pytest.mark.parametrize("mod", ["intelligence_engines_check", "pitch_engines_check"])
     def test_no_unaccounted_code_in_the_engine_modules(self, mod):
-        src = ci.module_source(mod)
-        found = set(_CODE_DICT_RE.findall(src))
-        assert found, f"regex sweep found no codes in {mod} -- the sweep itself is broken"
+        found = self._literal_codes(mod)
+        assert found, f"literal sweep found no codes in {mod} -- the sweep itself is broken"
         text = _contract()
         unaccounted = sorted(
             c for c in found if not _mentions(c, text) and c not in ENGINE_CODES_OFF_THE_COPY_PATH

@@ -445,7 +445,13 @@ def verifier_entry_points(phase_id: str) -> List[Tuple[str, str]]:
             and isinstance(n.func.value, ast.Name)
             and n.func.value.id in aliases
         ):
-            pair = (aliases[n.func.value.id], n.func.attr)
+            target = aliases[n.func.value.id]
+            # Only department checker modules count. `json.loads(...)` inside a
+            # verifier is not a checker delegation, and treating it as one would
+            # send the walker looking for scripts/json.py.
+            if not (SCRIPTS_DIR / (target + ".py")).is_file():
+                continue
+            pair = (target, n.func.attr)
             if pair not in entries:
                 entries.append(pair)
     if not entries:
