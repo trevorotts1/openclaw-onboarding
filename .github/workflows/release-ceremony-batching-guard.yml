@@ -1,0 +1,53 @@
+name: Release ceremony batching guard
+
+# Rejects a PR whose ONLY changed files are CHANGELOG.md and/or the version
+# markers in scripts/version-markers.json -- i.e. a release-ceremony-only PR
+# carrying no code.
+#
+# This is the CI half of Recommendation R3 (2026-08-20 delay audit,
+# CONTROL/DELAY-DIAGNOSIS-FABLE.md Section 2 D3, Section 4(b), Section 7 item 3).
+# PRs #942, #944, #951 were exactly this shape -- each changed exactly one
+# file, CHANGELOG.md. #944 alone sat 14.4h open->merged and blocked two real
+# fixes (#945, #946) behind it in this repo's single-merge-writer
+# serialization, for a one-line CHANGELOG entry.
+#
+# See scripts/check-no-standalone-release-pr.py for the check logic and
+# scripts/bundle-release-in-branch.sh for how to comply: fold the version
+# bump + CHANGELOG entry into the PR that carries the fix. See
+# CONTRIBUTING.md "Release Ceremony Batching" for the full rule.
+#
+# Security note: consumes only repo file content and git diff metadata (no
+# untrusted PR title/body/commit-message event fields), so there is no
+# injection surface in the run: blocks. github.base_ref is a branch NAME
+# (not attacker-controlled free text) used only to build a git ref string
+# passed as a single argv element to a Python script -- no shell
+# interpolation of it occurs.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-no-standalone-release-pr:
+    name: No standalone CHANGELOG/version-only PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --quiet origin "$BASE_REF"
+
+      - name: Verify this PR is not release-ceremony-only
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 scripts/check-no-standalone-release-pr.py --base "origin/$BASE_REF" --head HEAD

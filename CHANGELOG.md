@@ -1,3 +1,4 @@
+D
 ## [unversioned] -- 2026-08-20 -- fix(loop-protection): loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake + X-Rescue-Secret auth header (PR #960)
 
 - 61-loop-protection-system/scripts/loop_escalate.py: DEFAULT_WEBHOOK moved from the retired
@@ -15,7 +16,40 @@
   ~/clawd/fleet-heartbeat/scripts/ to the real ~/blackceo-fleet-ops/fleet-heartbeat/scripts/.
 - skill-version.txt bumped 61-loop-protection-system 0.6.0->0.6.1, 53-book-writer 1.2.1->1.2.2,
   60-zhc-early-warning-system 0.1.5->0.1.6 (G3 gate).
-## [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
+
+## [v22.0.60] -- 2026-08-20 -- ops(release-ceremony): batch the release ceremony — bundle version bump + CHANGELOG in the fix PR, auto-tag on merge, CI-reject standalone release PRs (R3)
+
+- Root cause (2026-08-20 delay audit, `CONTROL/DELAY-DIAGNOSIS-FABLE.md` Section 2 D3,
+  Section 4(b), Section 7 item 3): six version tags were cut in ~21h (v22.0.51 -> v22.0.56),
+  each requiring a standalone CHANGELOG-entry-then-annotated-tag PR. PRs #942, #944, #951
+  each changed exactly one file, CHANGELOG.md, and nothing else. #944 alone sat 14.4h
+  open->merged and blocked two real fixes (#945, #946) behind it. Separately, main sitting
+  untagged blocked CI guard G1b on every open PR seven separate times 2026-08-18 -> 08-20.
+  main was found untagged at v22.0.58 while investigating this unit; that tag was cut live
+  during this work (see PR description) using the repo's own `scripts/push-version-tag.sh`.
+- New: `scripts/bundle-release-in-branch.sh vX.Y.Z "description"` -- run inside a fix
+  branch to fold the version bump + CHANGELOG entry into the SAME PR as the fix (wraps
+  `bump-version.sh` + the same CHANGELOG-prepend logic `release.sh` Step 3 uses; does not
+  commit/tag/push).
+- New: `.github/workflows/auto-tag-on-merge.yml` -- on every push to `main`, if `/version`
+  differs from the previous commit, cuts and pushes the annotated tag automatically via
+  `scripts/push-version-tag.sh` (thin wrapper: `scripts/auto-tag-if-version-changed.sh`).
+  No agent action required; makes "main went untagged" structurally impossible instead of
+  something a future agent has to remember.
+- New: `.github/workflows/release-ceremony-batching-guard.yml`
+  (`scripts/check-no-standalone-release-pr.py`) -- CI gate that rejects any PR whose entire
+  diff is CHANGELOG.md and/or a `scripts/version-markers.json` marker with no code
+  alongside it. Verified against real historical data: fails on PR #944's actual diff
+  (694b812e8^1..694b812e8^2, CHANGELOG.md only), passes on PR #948's actual diff
+  (82e2b2627^1..82e2b2627^2, 40 files).
+- Docs: `CONTRIBUTING.md` gains a "Release Ceremony Batching" section + AI-agent rule #11;
+  `AGENTS.md` gains a pure-append `N41` section (no existing content removed or
+  restructured) pointing back to `CONTRIBUTING.md` for the full procedure.
+- `scripts/release.sh` (bump + CHANGELOG + tag + push in one shot, for a deliberate
+  release cut directly on `main` with no PR) is unaffected -- this change only concerns
+  fix PRs.
+
+# [v22.0.59] -- 2026-08-20 -- fix(podcast-audit): bridge, secrets, and kanban board wiring (PR #950) + cc-compat pinnedTag v6.0.91 (PR #952)
 
 - Podcast production engine (Skill 58) end-to-end audit fixes: intake bridge recovery, inbound secret
   wiring, and Command Center kanban board connection. The engine's scripts gained the bridge path
