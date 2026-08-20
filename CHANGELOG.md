@@ -1,6 +1,6 @@
-## [v22.0.54] -- 2026-08-20 -- fix(presentations): nine department-autonomy faults fixed at source
+## [v22.0.55] -- 2026-08-20 -- fix(presentations): nine department-autonomy faults fixed at source
 
-Found by the live Wave E deck run; each fix ships a test that fails without it. One bump for the whole batch.
+Found by the live Wave E deck run; each fix ships a test that fails without it. One bump for the whole batch (v22.0.55; v22.0.54 was taken by the rr-knowledge merge).
 
 - FAULT-07 dispatcher auto-spawn was documented but never built -- every agent-authored phase waited forever.
   Now spawns a run-scoped dispatcher CONCURRENTLY with the phase walk, lock-guarded, terminated on every exit.
@@ -25,6 +25,27 @@ No verifier was weakened. tests/ 969 passed, top-level test_*.py 273 passed, 0 f
 - The contract was also reaching the model inside a 185,008-character prompt. Restated verbatim as the last
   block before generation and P4-COPY's upstream budget scoped to 100K (185,008 -> ~153,500 chars).
 - Verified on a real cold DeepSeek call: 24 ARC markers in correct order, both checkers clean.
+## [v22.0.54] -- 2026-08-20 -- fix(rr-knowledge): fleet-wide Rescue Rangers knowledge + skill 65
+
+Merge of `fix/rr-knowledge-fleet-20260820` (PR #947) onto v22.0.53. Closes the
+2026-08-20 incident where a client agent refused "use your rescue rangers"
+with "I don't have a rescue rangers tool": AGENTS.md now teaches WHAT RR is,
+that env/secrets ARE knowledge sources, headless self-verification
+(__AUTHTEST__ webhook probe), and the hard rule against client-facing
+credential-claims without proof. Adds skill 65-rescue-receiver (rescue-poll.sh
++ wire.sh) and extends the sweep-rescue-secret probe with KW/S65/CRON/ENR
+flags. GET-on-webhook (404/302 normal) and HELP_CHAT_ID deprecation included.
+Also publishes the missing v22.0.53 annotated tag + its CHANGELOG entry.
+Verified on 7 boxes.
+
+## [v22.0.53] -- 2026-08-20 -- fix(dispatcher): P4-COPY must teach ARC TAGS, not prose phrases
+
+Merge of `fix/p4-copy-arc-tag-contract-20260819` (PR #946) onto v22.0.52. The
+P4-COPY output contract taught ARC tags by prose phrase; the AF-SP-8Q-SPLIT
+resolver read the atomic-COMMIT signal instead of the interview-DEPTH signal.
+Output contract fixed to teach the tags themselves, the upstream budget cut,
+and the contract placed last in the built prompt. G3-gated skill-51 bump
+1.1.4 -> 1.1.5.
 
 ## [v22.0.52] -- 2026-08-19 -- fix(presentations): upsell intake flag shape -- the sales/checkout/VSL branch would never have fired
 

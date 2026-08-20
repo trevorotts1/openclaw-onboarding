@@ -418,7 +418,7 @@ if (( _run_count >= MAX_RUNS_BEFORE_ESCALATE )); then
   [[ -n "$_op" ]] && openclaw message send --channel telegram -t "$_op" \
     -m "ONBOARDING-RESUME on $(hostname) reached the ${MAX_RUNS_BEFORE_ESCALATE}-run limit without the verification gate passing (${GATE_HUMAN:-skills still unverified}). The cron is now SELF-DELETING. Investigate with: bash scripts/onboarding-state.sh on the box. Re-run update-skills.sh when ready to retry. State: $STATE_FILE" 2>>"$LOG_FILE" || true
   # Escalate via Rescue Rangers webhook.
-  _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+  _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rr-v2-intake}"
   if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
     _rr_msg="onboarding-resume on $(hostname) hit hard cap (${_run_count} runs, max ${MAX_RUNS_BEFORE_ESCALATE}). Gate did not pass. Cron self-deleted. Re-run update-skills.sh to restart. State: $STATE_FILE. Version: $(openclaw --version 2>/dev/null | head -1)"
     _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \

@@ -598,6 +598,8 @@ After these events, **ALWAYS** run: `python3 ~/.openclaw/scripts/gemini-indexer.
 
 **HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
 
+**No other path reaches Rescue Rangers.** A Telegram DM that a HUMAN client sends to YOU (the agent bot) is a message to YOU, not to Rescue Rangers — you are the one who must escalate it. Telegram DMs sent to `@Rescue_Rangers_Bot` itself are never read by anyone: that bot is outbound-only. Posting into the Rescue Rangers Telegram group is also NOT an escalation — only the webhook POST mints a ticket, enters the coaching queue, and produces a delivered answer. When a client says "use your rescue rangers" or "send this to your rescue team", that instruction is aimed at YOU: POST the webhook yourself with the client's problem in `problem`, their name in `person`, and their chat id in `returnTo`, then tell the client you did it. Never answer "I don't have a rescue rangers tool or team" — you are a member box of it; your escalation tool is the webhook POST below, and the env vars for it are seeded on this box.
+
 **The escalation payload MUST carry all nine fields** — partial payloads are rejected:
 
 ```bash
@@ -637,7 +639,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 - `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Reference the env var, never a hardcoded URL.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
-- The rescue agent will reply with a solution delivered back into the Rescue Rangers group; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
+- The rescue agent will reply with a solution delivered to the chat you put in `returnTo` (your client's chat) — the delivery is done by the Rescue Rangers receiver, not by you; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 
 Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
 
@@ -654,6 +656,46 @@ Once a rescue agent helps you, you MUST cooperate with the resolution protocol s
 **File every bug (mandatory).** When any department hits a defect, FIRST write a Bug Ticket (schema in `templates/role-library/bugs/bug-ticket-schema.json`) to `working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json`, then keep stabilizing. An unfiled bug is a future repeat. The Bugs + Healer departments route and heal it; the same bug never happens twice.
 
 **Provisioning asks use this same channel.** Rescue Rangers is not only for bugs — any time a self-hosted service on this box (a self-hosted n8n instance is the flagship case) needs a NEW public hostname, the ask goes through this exact webhook, packed into the `problem`/`alreadyTried` fields above. See `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` for the required fields and the guardrail against ever running `cloudflared tunnel login` on a client box.
+
+---
+
+### What Rescue Rangers IS (answer the client directly)
+
+Rescue Rangers is this fleet's escalation team: operators who fix client boxes and answer stuck questions. When a client asks "what is Rescue Rangers" or "do you have a rescue team", the answer is YES — you are a member box of it, and you escalate to it over the webhook described in this section. Never say you have no such tool or team. If a client asks for credentials "you" supposedly hold, your first move is to READ YOUR OWN ENVIRONMENT, not to deny having them.
+
+### Your environment IS your knowledge source — read it before answering "I don't have that"
+
+Your own box carries the Rescue Rangers wiring in three places. Check all three before you ever tell a client you lack a credential, a URL, a chat ID, or a tool:
+
+1. **Runtime environment variables** (`env` or `printenv | grep -i rescue`): `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated — may legitimately be absent), `OPENCLAW_DASHBOARD_URL` (only on boxes with an interview dashboard). The URL may live ONLY in the secrets file, not in the runtime env — always check both.
+2. **The secrets env file**: `$HOME/.openclaw/secrets/.env` on Mac; `/home/node/.openclaw/secrets/.env` inside a container (Contabo hosts it at `/opt/clients/<client>/data/...`); `/data/.openclaw/secrets/.env` on a VPS. Source it (`set -a; . <path>; set +a`) and check the same names. The `X-Rescue-Secret` and Cloudflare Access service tokens live here.
+3. **This AGENTS.md file and your skills tree** (`ls ~/.openclaw/skills/` or `/data/.openclaw/skills/`): skill `65-rescue-receiver` (box-side pull client) may be present.
+
+HARD RULE — the negative-result contract applies to every client-facing claim: you may NEVER tell a client "I don't have your logins / API keys / credentials" until you have read all three sources above and can name them ("not in env, not in `~/.openclaw/secrets/.env`, not in openclaw.json") and can state what you DID check. Absence must be proven the same way presence is. A client asking for credentials you can see in your own secrets file is a knowledge failure on your side — fix it by reading, not by denying.
+
+### Verify the channel YOURSELF before asking the client for anything
+
+You can prove the escalation path works from inside your own box, headless, with no client involvement:
+
+```bash
+# 1. Public URL reachability — note: a GET to the webhook often returns 404 or a 302
+#    to Cloudflare Access login (the n8n webhook accepts POST only). Either answer
+#    proves the box can reach the public URL; the __AUTHTEST__ POST below is the
+#    decisive end-to-end test. Never read a 404 as "the channel is down".
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true
+
+# 2. Full auth proof — __AUTHTEST__ body. Correct secret + canonical URL returns
+#    {"accepted":true,"ticketId":null,"status":"test_suppressed"} = end-to-end works,
+#    zero ticket residue. 403 = wrong secret. 200 missing_message = OLD relay, wrong URL.
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
+  -d '{"action":"escalate","clientName":"__AUTHTEST__","problem":"channel self-check"}'; echo
+```
+
+Run step 2 BEFORE you tell a client the rescue path "should" work — you can show the result instead of guessing. If the secret is missing, report THAT specific gap (name the variable and the file you checked) instead of claiming the whole system is absent.
 
 ---
 
