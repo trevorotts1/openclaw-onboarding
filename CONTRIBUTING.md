@@ -109,6 +109,53 @@ Every Sunday at 3 AM, the client's machine runs the REPO-ROOT `update-skills.sh`
 
 ---
 
+## Release Ceremony Batching (added 2026-08-20 — Recommendation R3, delay audit)
+
+**Never open a PR whose ONLY changes are CHANGELOG.md and/or a version marker.** The
+CHANGELOG entry and the version bump ride in the SAME PR as the fix they document —
+never a follow-up, standalone release PR.
+
+Why: on 2026-08-19/20, six version tags were cut in ~21 hours (v22.0.51 → v22.0.56),
+each demanding a CHANGELOG-entry-then-annotated-tag two-step done as its own PR. That
+produced three pure-CHANGELOG PRs (#942, #944, #951), each changing exactly one file,
+CHANGELOG.md, and nothing else. PR #944 alone sat 14.4 hours open→merged and blocked
+TWO real fixes (#945, #946) behind it in this repo's single-merge-writer serialization
+— for a one-line CHANGELOG entry. Separately, main sitting untagged blocked CI guard
+G1b on every open PR seven separate times in the same window, because G1b walks main's
+whole release history, not any one PR's diff — so the fix has to be structural, not a
+rule an agent has to remember. See `CONTROL/DELAY-DIAGNOSIS-FABLE.md` Section 2 D3,
+Section 4(b), Section 7 item 3 for the full measurement.
+
+**The mechanism (both halves are load-bearing — use both, do not improvise a third
+way):**
+
+1. **Bundle the bump into your fix branch.** Inside the branch that already carries
+   your fix, run:
+   ```
+   scripts/bundle-release-in-branch.sh vX.Y.Z "Short description for CHANGELOG"
+   ```
+   This rolls all 10 version markers (`scripts/bump-version.sh`) and prepends the
+   CHANGELOG entry, but does **not** commit, tag, or push — review with `git diff`,
+   fold it into your fix commit (or a second commit in the same PR — either is fine,
+   the constraint is "same PR"), then push as usual.
+2. **The tag is cut automatically on merge — do nothing further.**
+   `.github/workflows/auto-tag-on-merge.yml` runs on every push to `main` and, the
+   instant it sees `/version` differ from the previous commit, cuts and pushes the
+   annotated tag itself via `scripts/push-version-tag.sh`. No agent has to run it by
+   hand, so "someone forgot to tag it" can no longer happen.
+3. **CI enforces #1.** `.github/workflows/release-ceremony-batching-guard.yml`
+   (`scripts/check-no-standalone-release-pr.py`) fails any PR whose entire diff sits
+   inside {CHANGELOG.md} ∪ {the files in `scripts/version-markers.json`} — i.e. a PR
+   that carries zero code. If you hit this red, you opened exactly the kind of PR this
+   rule exists to stop; fold your CHANGELOG entry into the PR that carries the fix
+   instead of arguing with the gate.
+
+`scripts/release.sh` (bump + CHANGELOG + commit + tag + push in one shot) remains the
+right tool for a deliberate, no-PR release cut directly on `main` — it is unaffected by
+this rule, which only concerns fix PRs.
+
+---
+
 ## Rules for AI Agents Working on This Repo
 
 1. **Always work in isolated /tmp clones.** Never modify ~/clawd directly for repo work.
@@ -121,6 +168,11 @@ Every Sunday at 3 AM, the client's machine runs the REPO-ROOT `update-skills.sh`
 8. **Use the unified repo** (openclaw-onboarding) for all changes — platform-specific files live in platform/mac/ and platform/vps/ overlays within this single repo.
 9. **Master agent CAN trigger `openclaw gateway restart` autonomously when a config edit requires it.** Sub-agents CANNOT — they must return "restart needed" and let the master orchestrator decide. (Rule updated 2026-05-23 — was previously "never restart", lifted after restart safety improvements.)
 10. **Commit messages must be descriptive.** Not "update files" but "Add Skill 31 (Upgraded Memory System), fix Skill 23 options skip"
+11. **Never open a standalone CHANGELOG-only or version-bump-only PR.** See "Release
+    Ceremony Batching" above — bundle the bump into your fix PR with
+    `scripts/bundle-release-in-branch.sh`; the annotated tag is cut for you
+    automatically on merge. CI (`release-ceremony-batching-guard.yml`) will reject a
+    PR that violates this. (Rule added 2026-08-20 — Recommendation R3, delay audit.)
 
 ---
 

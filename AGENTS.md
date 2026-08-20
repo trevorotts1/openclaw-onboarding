@@ -1353,4 +1353,34 @@ genuine GHL response. Canonical paths, in order of preference:
 
 ---
 
+## 🔴 N41 — Release Ceremony Batching (openclaw-onboarding repo only, added 2026-08-20)
+
+**Never open a standalone CHANGELOG-only or version-bump-only PR against
+`openclaw-onboarding`.** The CHANGELOG entry and the version bump ride in the SAME PR
+as the fix they document.
+
+Why: on 2026-08-19/20, six version tags were cut in ~21h (v22.0.51 → v22.0.56), each
+demanding a CHANGELOG-entry-then-annotated-tag two-step done as its own PR. That
+produced three pure-CHANGELOG PRs (#942, #944, #951), each touching exactly one file,
+CHANGELOG.md. PR #944 alone sat 14.4h open→merged and blocked two real fixes (#945,
+#946) behind it. Separately, main sitting untagged blocked CI guard G1b on every open
+PR seven separate times in the same window. See `CONTROL/DELAY-DIAGNOSIS-FABLE.md`
+Section 2 D3, Section 4(b), Section 7 item 3.
+
+**What to do instead — full detail in `CONTRIBUTING.md` "Release Ceremony Batching":**
+1. Inside your fix branch: `scripts/bundle-release-in-branch.sh vX.Y.Z "description"`
+   — bundles the version bump + CHANGELOG entry into your own commit(s), same PR.
+2. Do nothing else. `.github/workflows/auto-tag-on-merge.yml` cuts and pushes the
+   annotated tag automatically the moment the merge lands on `main`
+   (`scripts/push-version-tag.sh` under the hood) — no agent action required.
+3. CI enforces #1: `release-ceremony-batching-guard.yml`
+   (`scripts/check-no-standalone-release-pr.py`) rejects any PR whose entire diff is
+   CHANGELOG.md and/or version markers with no code alongside it.
+
+`scripts/release.sh` (bump + CHANGELOG + tag, all in one shot) is still the right tool
+for a deliberate release cut directly on `main` with no PR involved — this rule only
+concerns fix PRs.
+
+---
+
 *Document version: 2026-07-19*
