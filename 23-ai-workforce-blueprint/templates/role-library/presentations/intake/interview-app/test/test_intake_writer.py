@@ -88,6 +88,51 @@ class TestIntakeWriter(unittest.TestCase):
             self.assertEqual(tr["turns"][0]["question_id"], "offer_name")
             self.assertEqual(tr["turns"][0]["answer"], "The Momentum Method")
 
+    def test_write_transcript_refuses_to_overwrite_a_signed_driver_envelope(self):
+        """FIX F21-SIBLING (2026-08-20): write_transcript() used to overwrite
+        working/interview/intake_transcript.json unconditionally -- no
+        read-first check at all. If a run dir already carries a SIGNED driver
+        envelope (deck-intake-driver.py's turn-gate provenance record,
+        format=='sp-intake-transcript-v1'), that is HIGHER-evidentiary-value
+        provenance than this bridge's own synthetic Q&A transcript, and
+        silently replacing it would be a real provenance loss. This proves
+        the guard: raises, writes nothing, leaves the signed envelope intact."""
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        intake = iw.assemble_intake(raw, run_id="R6")
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = pathlib.Path(tmp) / "runs" / "R6"
+            transcript_path = run_dir / "working" / "interview" / "intake_transcript.json"
+            transcript_path.parent.mkdir(parents=True, exist_ok=True)
+            signed_envelope = {
+                "format": "sp-intake-transcript-v1",
+                "driver": "deck-intake-driver.py",
+                "qid_sequence": ["q1"],
+                "turns": [{"role": "assistant", "text": "What is X?", "qid": "q1"},
+                         {"role": "owner", "text": "Y", "qid": "q1"}],
+                "driver_signature": "deadbeef",
+            }
+            transcript_path.write_text(json.dumps(signed_envelope), encoding="utf-8")
+
+            with self.assertRaises(iw.SignedEnvelopePresentError):
+                iw.write_transcript(run_dir, intake)
+
+            # Nothing was overwritten -- the signed envelope survives byte-for-byte.
+            reloaded = json.loads(transcript_path.read_text(encoding="utf-8"))
+            self.assertEqual(reloaded, signed_envelope)
+
+    def test_write_transcript_still_writes_normally_when_no_envelope_present(self):
+        """Negative control: the guard must not block the normal case (no
+        pre-existing transcript, or a pre-existing non-envelope transcript)."""
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        intake = iw.assemble_intake(raw, run_id="R7")
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = pathlib.Path(tmp) / "runs" / "R7"
+            tpath = iw.write_transcript(run_dir, intake)
+            self.assertTrue(tpath.exists())
+            # Re-writing over its OWN prior (non-envelope) output must still work.
+            tpath2 = iw.write_transcript(run_dir, intake)
+            self.assertTrue(tpath2.exists())
+
     def test_fails_closed_when_deck_type_unanswered(self):
         """PRES-DEPT-FIX-REVIEW-2026-08-17.md Part 6 #3: assemble_intake()
         must not fabricate deck_type when presentation_type was never

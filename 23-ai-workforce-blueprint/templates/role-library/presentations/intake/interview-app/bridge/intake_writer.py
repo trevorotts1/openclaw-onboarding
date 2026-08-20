@@ -380,6 +380,29 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     return ledger_path
 
 
+_DRIVER_ENVELOPE_FORMAT = "sp-intake-transcript-v1"
+
+
+class SignedEnvelopePresentError(RuntimeError):
+    """Raised by write_transcript() when working/interview/intake_transcript.json
+    already holds a SIGNED driver envelope (format == 'sp-intake-transcript-v1',
+    written by deck-intake-driver.py's turn-gate -- see intake_trace_check.py's
+    DRIVER PROVENANCE doctrine).
+
+    FIX F21-SIBLING (2026-08-20): this module's own write_transcript()
+    unconditionally overwrote intake_transcript.json with no read-first check
+    at all -- the same "blind write destroys signed provenance" hazard fixed
+    at its root in deck-intake-driver.py's cmd_answer/_sig_answer (FAULT-21).
+    A driver-produced signed envelope is HIGHER-evidentiary-value provenance
+    ("these turns really happened, in this order, through the driver") than
+    this bridge's own synthetic Q&A-pair transcript (this module's own
+    docstring: full routing through the driver's turn-gate "is the correct
+    long-term fix and is deliberately NOT implemented here"). Silently
+    replacing the former with the latter would be a real provenance loss, so
+    this fails loudly instead -- naming the file -- rather than guessing which
+    source should win."""
+
+
 def write_transcript(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     """Write working/interview/intake_transcript.json — the real conversation trace.
 
@@ -388,8 +411,22 @@ def write_transcript(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     intake must be a REAL conversation, not a fabricated block). We build it from
     the app's captured answers: each Q&A pair becomes a dialogue turn, so the
     trace is grounded in the client's actual responses.
+
+    FAIL CLOSED (FIX F21-SIBLING): refuses -- raises SignedEnvelopePresentError,
+    writes nothing -- when a SIGNED driver envelope already exists at the
+    destination path. See SignedEnvelopePresentError.__doc__.
     """
     out = run_dir / "working" / "interview" / "intake_transcript.json"
+    if out.is_file():
+        try:
+            existing = json.loads(out.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = None
+        if isinstance(existing, dict) and existing.get("format") == _DRIVER_ENVELOPE_FORMAT:
+            raise SignedEnvelopePresentError(
+                f"{out} already holds a signed driver envelope (format="
+                f"{_DRIVER_ENVELOPE_FORMAT!r}) -- refusing to overwrite it with "
+                "this bridge's own synthetic transcript. Writing nothing.")
     out.parent.mkdir(parents=True, exist_ok=True)
     answers = intake.get("answers") or {}
     brief = intake.get("deck_brief") or {}

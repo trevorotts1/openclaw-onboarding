@@ -1,3 +1,16 @@
+## [v22.0.57] -- 2026-08-20 -- fix(presentations): the intake driver could silently destroy its own signed provenance
+
+- FAULT-22 (root cause): cmd_complete() never built the signed transcript envelope -- only _sig_finalize(), at
+  the end of the SEPARATE 8-Sacred-Questions pass, did. The driver's own comment conceded P-SP-INTAKE-TRACE
+  "could never pass for ANY signature deck run through the sanctioned tool" without that second leg.
+- FAULT-21 (symptom): cmd_answer's read-append-write was not dict-safe -- once the transcript was a signed
+  dict, --answer silently replaced it with a bare list. Observed live: a 57-turn signed envelope became a
+  2-entry 356-byte list, signature and qid_sequence gone, no warning.
+- Fix: cmd_complete signs on every completion path via the SAME shared signer; turns append to an append-only
+  raw log and the envelope is regenerated from it; post-completion answers append and RE-SIGN, never silently.
+  Same bug fixed in _sig_answer; the interview-app bridge now refuses to clobber a signed envelope.
+  No verifier weakened. +21 tests.
+
 ## [v22.0.56] -- 2026-08-20 -- fix(presentations): a deck could never start unattended, and intake fixes never reached production
 
 Two delivery gaps found while launching the first live signature deck on the
