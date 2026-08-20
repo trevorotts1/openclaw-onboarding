@@ -20,6 +20,33 @@
 - FAULT-20: update-skills.sh had ZERO references to intake/ -- the roll never synced the department question
   bank, so bank fixes were stranded in the skill template. This is why an earlier wave had to hand-copy it.
   Now mirrored on every roll, preserving client-local overrides.
+## [v22.0.56] -- 2026-08-20 -- fix(presentations): a deck could never start unattended, and intake fixes never reached production
+
+Two delivery gaps found while launching the first live signature deck on the
+repaired pipeline. Both are the same disease as the rest of this series: a
+mechanism that was built correctly, with nothing wired to deliver it.
+
+### FAULT-19 -- nothing ever stamped a requester, so no deck could start unattended
+
+The engine hard-fails at `--new` without a `requester.chat_id` (fix F1 -- a job
+nobody hears about must not start), and that gate is right. But no writer in the
+repo ever stamped one. Verified across all four run directories on the operator
+box: three carried no requester at all, and the fourth only had one because it
+was hand-stamped after the fact to unblock this run. Combined with the poller
+faults already fixed in v22.0.55, the department could not dispatch a deck
+without a human intervening at exactly the right moment.
+
+### FAULT-20 -- the roll never synced a department's intake/ directory
+
+`refresh-dept-scripts.py` mirrors `scripts/` only; its own docstring names
+`intake/` as out of scope. No other writer covers it -- not `scaffold_department`,
+not `detect-stale-artifacts.py`, whose manifest tracks role/dept/sop/persona kinds
+and never intake. Proven live after the v22.0.55 roll: the materialized
+Presentations department's `deck-intake-questions.json` sat at v1.5.0 with 55
+questions while the role library shipped v1.6.0 with 57, including the two
+anti-fabrication questions. Every intake-bank fix ever written was stranded in
+the template. Adds `refresh-dept-intake.py` (unconditional, runs every roll,
+independent of any gap map) with tests.
 
 ## [v22.0.55] -- 2026-08-20 -- fix(presentations): nine department-autonomy faults fixed at source
 
