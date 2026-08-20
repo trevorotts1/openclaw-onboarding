@@ -156,7 +156,7 @@ else
   # only reached if the shared resolver file is somehow absent from this checkout.
   OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-${OPERATOR_HELP_CHAT_ID:-}}}"
 fi
-RESCUE_RANGERS_WEBHOOK_URL="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+RESCUE_RANGERS_WEBHOOK_URL="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rr-v2-intake}"
 
 # Flag: --from-nudge signals the nudge cron invoked us after its final pass
 FROM_NUDGE=0

@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v22.0.53.
+> **Version:** see `/version` - this repo at v22.0.54.
 >
 > **NOTE (v20.0.59) — Skill 6 U71 (GK-09): clear the WAF/edge 403 on `verify-imported` (CODE tier); LIVE snapshot chain run still owed to the operator.** Fixes the browser User-Agent `verify-imported` sends to `services.leadconnectorhq.com` — it was previously reusing an unrelated Kie-CDN UA constant with a malformed Chrome build string; now a dedicated `CAF_BROWSER_UA`, ported byte-for-byte from the proven-live Podcast gate. Adds a Firebase-JWT internal-rail fallback (same proven Podcast-gate pattern) gated on the CLIENT's own Firebase refresh token — never a shared operator token, per the binding 2026-07-14 per-client ruling on U69/U70/U71. Both scripts' offline self-tests now exercise the new fallback ladder end-to-end and pass. The LIVE tier — running `verify-imported` against the real template location and completing the cut → import → verify-imported → provision-custom-values chain for the first time — needs a live client/operator-owned GHL credential and is operator-gated, not run from an offline repo build; it gates GK-07 (U69) and GK-08 (U70). No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -126,14 +126,14 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v22.0.53** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v22.0.54** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **64 numbered skill folders (01–64)** — 59 active plus 5 archived (11, 13, 21, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **65 numbered skill folders (01–65)** — 60 active plus 5 archived (11, 13, 21, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -247,7 +247,9 @@ That file is the master instruction file. It contains:
 | 62-cinematic-web-funnel-engine | **Cinematic and Web Funnel Engine (v1.0.0)** — IN-PROGRESS on branch `skill62/cinematic-engine` (NOT yet merged to `main`; row added at build unit U22 for tree-vs-README count parity). A governed, client-facing web-development capability that builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels: AI-generated, scroll-controlled cinematic scene sequences on the client's own Kie.ai key (anchor image → image-to-video → real encoded boundary frames → scroll-position-to-`currentTime` binding), assembled into a production Next.js/TypeScript site, deployed to Vercel, with GoHighLevel/Convert and Flow forms/calendars/payments/workflows. Delegates protected copy methodologies (Signature Funnel / Sales-Page-Assets, Skills 49/56) rather than duplicating them; routes through the same shared STEP-0 funnel-engine selector registry as its THIRD registered engine. Owned by Web Development (primary role `funnel-builder-specialist`); supporting departments Marketing, Video, Graphics, CRM. |
 | 63-agnes-image | **Agnes Image 2.1 Flash (v1.0.1)** — the endpoint reference for the Agnes AI synchronous image model: text-to-image and image-to-image via one `POST https://apihub.agnes-ai.com/v1/images/generations` call (model `agnes-image-2.1-flash`) that returns the finished image in the SAME response (`data[0].url` or `data[0].b64_json`) — no task polling (the opposite of the KIE.ai / Skill 07 pattern and of the separate Agnes VIDEO endpoint). Documents the required `model`/`prompt`/`size` fields, the `1K`/`2K`/`3K`/`4K` size tiers crossed with aspect `ratio`, and the full ratio×tier output-dimension table (16:9 2K = 2624x1472), plus the two gotchas (`response_format` lives in `extra_body`, not the top level; image-to-image needs no `tags`). Rate limits are read per account tier with HTTP 429 as the live ceiling (never a hardcoded cap); uses the EXISTING fleet credential `AGNES_AI_API_KEY` (SET/NOT-SET only, value never printed). Currently $0/image. Installed in Wave 2 alongside the other independent API integrations. |
 | 64-agnes-video | **Agnes Video V2.0 (v1.0.1)** — the endpoint reference and asynchronous workflow for the Agnes AI video-generation model `agnes-video-v2.0` on the `apihub.agnes-ai.com` gateway. Covers text-to-video, image-to-video, and keyframe animation via the create-task / poll-result async pattern, the `num_frames` 8n+1 rule, resolution tiers, and reading the returned size/seconds/metadata as the source of truth. A REFERENCE (not a new-account installer): the fleet already carries the `AGNES_AI_API_KEY` credential (SET/NOT-SET only, value never printed). As Skill 30 (Fish Audio) is the operating manual for text-to-speech, this is for text-to-video. Installed in Wave 3 alongside the content + service tools. |
-**Total: 64 numbered skill folders** (01–64) — **59 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+
+| 65-rescue-receiver | **Rescue Receiver (v1.0.0)** — the fleet escalation plumbing: polls Rescue Rangers tickets from the n8n rr_outbox (rescue-poll.sh) and wires the receiver (wire.sh) so every box can pull and answer escalation tickets. Operator tooling, client-silent. Installed alongside the content + service tools. |
+**Total: 65 numbered skill folders** (01–65) — **60 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

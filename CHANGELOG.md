@@ -1,3 +1,25 @@
+## [v22.0.54] -- 2026-08-20 -- fix(rr-knowledge): fleet-wide Rescue Rangers knowledge + skill 65
+
+Merge of `fix/rr-knowledge-fleet-20260820` (PR #947) onto v22.0.53. Closes the
+2026-08-20 incident where a client agent refused "use your rescue rangers"
+with "I don't have a rescue rangers tool": AGENTS.md now teaches WHAT RR is,
+that env/secrets ARE knowledge sources, headless self-verification
+(__AUTHTEST__ webhook probe), and the hard rule against client-facing
+credential-claims without proof. Adds skill 65-rescue-receiver (rescue-poll.sh
++ wire.sh) and extends the sweep-rescue-secret probe with KW/S65/CRON/ENR
+flags. GET-on-webhook (404/302 normal) and HELP_CHAT_ID deprecation included.
+Also publishes the missing v22.0.53 annotated tag + its CHANGELOG entry.
+Verified on 7 boxes.
+
+## [v22.0.53] -- 2026-08-20 -- fix(dispatcher): P4-COPY must teach ARC TAGS, not prose phrases
+
+Merge of `fix/p4-copy-arc-tag-contract-20260819` (PR #946) onto v22.0.52. The
+P4-COPY output contract taught ARC tags by prose phrase; the AF-SP-8Q-SPLIT
+resolver read the atomic-COMMIT signal instead of the interview-DEPTH signal.
+Output contract fixed to teach the tags themselves, the upstream budget cut,
+and the contract placed last in the built prompt. G3-gated skill-51 bump
+1.1.4 -> 1.1.5.
+
 ## [v22.0.52] -- 2026-08-19 -- fix(presentations): upsell intake flag shape -- the sales/checkout/VSL branch would never have fired
 
 Merge of `fix/upsell-intake-shape-20260819` (PR #943) onto v22.0.51. Caught
