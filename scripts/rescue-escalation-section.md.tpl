@@ -104,7 +104,7 @@ Rescue Rangers is this fleet's escalation team. If a client asks what it is or w
 
 Your box carries the wiring in three places — read ALL THREE before you ever tell a client you lack a credential or a URL:
 
-1. Runtime env: `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID`, `OPENCLAW_DASHBOARD_URL` (`env | grep -i rescue`).
+1. Runtime env: `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated — may legitimately be absent), `OPENCLAW_DASHBOARD_URL` (only on boxes with an interview dashboard). The URL may live ONLY in the secrets file, not in the runtime env — always check both.
 2. Secrets file: `$HOME/.openclaw/secrets/.env` (Mac), `/home/node/.openclaw/secrets/.env` (container; Contabo host path `/opt/clients/<client>/data/...`), `/data/.openclaw/secrets/.env` (VPS). Source it, then check the same names. The `X-Rescue-Secret` and Cloudflare Access service tokens live here.
 3. This AGENTS.md and the skills tree (`65-rescue-receiver`).
 
