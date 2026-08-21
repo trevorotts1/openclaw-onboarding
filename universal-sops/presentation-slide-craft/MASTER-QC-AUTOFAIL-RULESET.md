@@ -27,6 +27,23 @@ Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide
 
 ---
 
+## AF-C8 ARCHETYPE CARVE-OUT — Value-Stack / Offer-Stack Slides
+
+AF-C8 (the per-slide total on-slide word ceiling) carries an explicit ARCHETYPE CARVE-OUT for value-stack / offer-stack slides. This is a reconciliation, not a loosening: the default ceiling on every ordinary slide is UNCHANGED. Only the value-stack / offer-stack archetype gets the carve-out below.
+
+```
+DEFAULT slides ............ 30 words max   (UNCHANGED)
+ARCHETYPE CARVE-OUT — value-stack / offer-stack slides:
+  headline ......... <= 9 words
+  sub-copy ......... <= 18 words
+  line items ....... <= 6 items x <= 7 words
+  ceiling .......... 62 words
+```
+
+Do not weaken the offer stack. Do not raise the default 30-word cap on ordinary teaching slides. The carve-out applies ONLY to the value-stack / offer-stack archetype.
+
+---
+
 ## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
 
 Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.

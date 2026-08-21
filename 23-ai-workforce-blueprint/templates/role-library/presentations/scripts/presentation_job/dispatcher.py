@@ -77,6 +77,7 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
 from presentation_job.manifest import Manifest, Phase, resolve_manifest  # noqa: E402
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
+from presentation_job import contract_introspect as _ci  # noqa: E402
 
 # Defensive import of build_deck (top-level scripts_dir module) -- mirrors
 # phase_verifiers.py's own `try: import build_deck as _bd` pattern exactly (same
@@ -496,7 +497,44 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "(exactly where both QC-failed live slides had ALREADY duplicated "
         "it) and leave the on-slide SUPPORTING field carrying only the "
         "running tally and the price -- the slide shows the number, the "
-        "presenter's voice carries the list."
+        "presenter's voice carries the list.\n"
+        "14. CODE MAP for points 3-12 (the mechanical index appended at the end of "
+        "this contract lists every code by name; these are the ones points 3-12 "
+        "already teach, named here so a verifier reason string maps straight back "
+        "to the point that fixes it): point 3's 3-4 dedicated hook beats are "
+        "AF-NO-HOOK-REFRAIN (fewer than 3) and AF-HOOK-1 (more than 4, the deck "
+        "veto), and repeating the hook twice inside ONE block is AF-HOOK-OVERSTAMP; "
+        "point 5 is AF-NO-FELT-STAKES; point 4 is AF-NO-VILLAIN; points 6+7's "
+        "promise-before-every-price-beat ordering is AF-PRICE-BEFORE-PROMISE; point "
+        "12 is AF-NO-RECAP; the whole point-2 arc is AF-NARRATIVE-HARMONY.\n"
+        "15. GUARANTEE (AF-GUARANTEE-GENERIC): if the deck carries a guarantee at "
+        "all, it must NOT reduce to a bare refund template. 'Money-back', "
+        "'30-day', 'refund', 'satisfaction guaranteed' and 'no-questions-asked', "
+        "standing alone, are mechanically detected as generic and auto-fail. Write "
+        "the guarantee as a felt, client-specific frame -- what SPECIFICALLY they "
+        "keep, get back, or never risk in THIS offer's own terms, sourced from the "
+        "upstream intake -- with the refund mechanics as a clause inside it, never "
+        "as the whole statement.\n"
+        "16. PER-FIELD CHARACTER BANDS (AF-COPY-BAND) and COMPARISON TABLES "
+        "(AF-OBI-6) -- both are declared gate codes for THIS phase. Every line you "
+        "write here is carried into the render copy and measured in CHARACTERS, not "
+        "words: HEADLINE 12-60 chars, SUBHEAD 20-110 chars when present, KICKER <=40 "
+        "chars when present, at most 3 bullets of 8-30 chars each, and 40-180 chars "
+        "for the slide total (12-180 for a hook or section-banner slide). Note the "
+        "FLOOR as well as the ceiling: a 6-character headline fails just as hard as "
+        "a 70-character one. This is a SEPARATE measure from AF-C8's 30-word total "
+        "(point 13) and both are enforced -- a slide must satisfy the character "
+        "bands AND the word ceiling. Any comparison / before-after / us-vs-them "
+        "table is capped at 2 ROWS (AF-OBI-6); a third row auto-fails.\n"
+        "17. RESEARCH MUST BE WOVEN, VERBATIM AND WIDELY (AF-RESEARCH-WEAVE, "
+        "AF-RESEARCH-REACHES-RENDER). research_map.json (supplied in the upstream "
+        "context) assigns real research items to specific slides. Reproduce each "
+        "mapped item's ANCHOR TOKEN verbatim in that slide's on-slide copy -- not "
+        "paraphrased, not moved to the PRESENTER NOTE, and never funnelled into one "
+        "'proof' slide: the weave gate requires research on at least 60% of "
+        "non-exempt content slides, and the render gate re-checks that the SAME "
+        "anchor survived into the rendered copy. A statistic that exists only in "
+        "your narration fails both gates."
     ),
     "P-SP-CLAIM": (
         "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json recording that "
@@ -675,6 +713,94 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     # to be driver_only (see DECLINE_PHASES above); this module honestly declines it
     # rather than guessing at a schema it cannot legitimately satisfy.
 }
+
+
+# ---------------------------------------------------------------------------
+# CONTRACT COMPLETENESS (the class fix, not the instance).
+#
+# THE DEFECT: every rule in the hand-written contract above had to be noticed
+# by a human and typed in. The rules that judge the artifact live somewhere
+# else entirely (phase_verifiers -> intelligence_engines_check /
+# pitch_engines_check, build_deck's _chk_* preflights, PIPELINE-MANIFEST's
+# gate_codes and 181-entry autofails registry). Nothing tied the two together,
+# so the author wrote BLIND against part of its own rule set and every missing
+# rule cost one full, PAID re-author to discover. Measured live on run
+# pres-wave-e-v3-1787240658 (2026-08-20): four serial P4-COPY blocks
+# (AF-NO-FELT-STAKES, AF-NO-RECAP, AF-NO-VILLAIN, AF-NARRATIVE-HARMONY) plus
+# AF-C8 at P1Q-COPY-QC -- each discovered only after the previous one was
+# fixed. Serial discovery across 181 codes cannot converge.
+#
+# THE FIX: derive the constraint set from the code that judges, at import
+# time, and append it. presentation_job/contract_introspect.py does the
+# derivation (and documents its scope rule); this block only wires the result
+# into the one string P4-COPY is dispatched with. The hand-written points
+# above are NOT replaced -- they teach the literal ARC-marker syntax and field
+# names that no failure message contains. The generated index is the FLOOR
+# (nothing reachable is ever unstated again); the prose is the ceiling.
+#
+# tests/test_contract_completeness.py fails RED when a rule exists on the
+# judging path but is absent from the contract -- including a rule added
+# later, which is the whole point.
+# ---------------------------------------------------------------------------
+CONSTRAINT_INDEX_MARKER = "=== MECHANICAL CONSTRAINT INDEX (auto-derived) ==="
+
+#: True when the P4-COPY contract carries a real, derived constraint index.
+#: False means the derivation failed and the model got the loud fallback
+#: notice instead of the rule list -- a state the drift test refuses to allow.
+P4_COPY_CONTRACT_DERIVED: bool = False
+
+#: Populated with the IntrospectionError text when derivation fails.
+P4_COPY_CONTRACT_DERIVATION_ERROR: Optional[str] = None
+
+
+def _compose_p4_copy_contract(base: str) -> str:
+    """Append the AF-C8 carve-out (read from doctrine) + the derived index.
+
+    Never raises. A derivation failure must not take the engine down mid-run,
+    but it must ALSO never degrade quietly into "there are no other rules":
+    the fallback text tells the model, in the prompt, that its rule list could
+    not be enumerated, and P4_COPY_CONTRACT_DERIVED goes False so the test
+    suite catches it on the next run."""
+    global P4_COPY_CONTRACT_DERIVED, P4_COPY_CONTRACT_DERIVATION_ERROR
+    try:
+        prose, carve_out = _ci.af_c8_doctrine()
+        index = _ci.render_constraint_index()
+    except Exception as exc:  # noqa: BLE001 -- fail LOUD-in-prompt, not silent
+        P4_COPY_CONTRACT_DERIVED = False
+        P4_COPY_CONTRACT_DERIVATION_ERROR = repr(exc)
+        return (
+            base
+            + "\n\n"
+            + CONSTRAINT_INDEX_MARKER
+            + "\n!! UNAVAILABLE -- presentation_job.contract_introspect could not read "
+            "the judging path for this artifact ("
+            + repr(exc)
+            + "). The complete list of autofail codes you are graded by CANNOT be "
+            "shown in this prompt. Do not read that as 'there are no other rules': "
+            "treat every rule in the department's MASTER-QC-AUTOFAIL-RULESET as live "
+            "and write to the strictest reading of the points above."
+        )
+    P4_COPY_CONTRACT_DERIVED = True
+    P4_COPY_CONTRACT_DERIVATION_ERROR = None
+    return (
+        base
+        + "\n18. AF-C8 ARCHETYPE CARVE-OUT -- value-stack / offer-stack slides. "
+        "Quoted verbatim from the department's MASTER-QC-AUTOFAIL-RULESET (read "
+        "from disk at engine start, so this contract can never state a ceiling the "
+        "ruling no longer holds). This does NOT relax point 13 for ordinary "
+        "slides:\n"
+        + prose
+        + "\n"
+        + carve_out
+        + "\n\n"
+        + CONSTRAINT_INDEX_MARKER
+        + "\n"
+        + index
+    )
+
+
+ARTIFACT_CONTRACTS["P4-COPY"] = _compose_p4_copy_contract(ARTIFACT_CONTRACTS["P4-COPY"])
+
 
 GENERIC_CONTRACT = (
     "OUTPUT CONTRACT: write the exact artifact file(s) named in the work order below at "
