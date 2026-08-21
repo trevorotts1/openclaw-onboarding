@@ -684,6 +684,17 @@ class Engine:
 
         Neither change touches WHETHER phase_verifiers.verify() can fail -- only
         WHEN it is ever reached.
+
+        FAULT-17 (2026-08-20, orchestrator-verified from the live
+        pres-wave-e-v3-1787240658 event log): the FAULT-16 mtime-growth guard
+        above answers "is this file faking completion" for a FRESH dispatch,
+        but on a RESUME where an earlier dispatch already finished the work,
+        the growth check can never fire -- the finished artifact's mtime is
+        already baked into THIS call's baseline, and nothing will ever
+        rewrite a file the dispatcher correctly considers already_satisfied.
+        See the inline comment at the marker check inside the poll loop below
+        for the full write-up and the fix (a gated, content-aware fallback to
+        the same phase_verifiers.verify() call run_phase() already makes).
         """
         wo = self.run_dir / "working" / "work-orders"
         wo.mkdir(parents=True, exist_ok=True)
@@ -705,6 +716,14 @@ class Engine:
         now_ts = time.time()
         claim_live = claim_path.is_file() and (now_ts - claim_path.stat().st_mtime) < stale_after
         wo_live = wo_path.is_file() and (now_ts - wo_path.stat().st_mtime) < stale_after
+        # FAULT-17 (2026-08-20, orchestrator-verified from the live
+        # pres-wave-e-v3-1787240658 event log -- see the poll loop below for
+        # the full root-cause writeup): remember, for the poll loop, whether
+        # THIS call is re-entering onto a work order it did not itself just
+        # issue. That is precisely the signature of a resume landing on
+        # already-finished work -- an orphaned baseline captured after the
+        # work was already done, which no future write can ever exceed.
+        resumed_onto_live_work = claim_live or wo_live
         if claim_live or wo_live:
             self.report.event(
                 "phase.work_order_reused",
@@ -741,6 +760,58 @@ class Engine:
                 # baseline (a new file, or an existing one rewritten) before
                 # trusting it and handing off to the real substance verifier.
                 ok = self._glob_progress_marker(glob_patterns) > baseline_progress
+                if not ok and resumed_onto_live_work:
+                    # FAULT-17 (2026-08-20, orchestrator-verified from the live
+                    # pres-wave-e-v3-1787240658 event log): PF-DESIGN's work
+                    # order was issued 17:30:46; working/research/
+                    # design-brief-generated.md (33,267 bytes, real content,
+                    # matching this phase's own glob) was written 17:34:17 by
+                    # dispatcher worker dispatcher-77615, which recorded
+                    # verifier_ok: true in PF-DESIGN.dispatcher-log.jsonl the
+                    # same second. The engine still blocked at 18:10:19 --
+                    # "produced nothing within 30 minutes" -- because a SECOND
+                    # engine call (this one) started its poll loop AFTER the
+                    # artifact already existed, so baseline_progress (captured
+                    # at this call's own entry, line ~697) already equalled
+                    # the finished file's mtime. Nothing was ever going to
+                    # rewrite it: dispatcher worker dispatcher-95703 spent the
+                    # entire wait logging "already_satisfied" every ~10s
+                    # (17:37:03 through 18:10:18) -- it could see the work was
+                    # done the whole time, but the mtime-growth check above
+                    # can only ever say "no NEW progress," never "already
+                    # complete." That is a true statement being asked the
+                    # wrong question: growth-since-MY-baseline is the right
+                    # signal for "is a stale/partial file faking completion"
+                    # (FAULT-16, unchanged above -- a fresh dispatch never
+                    # reaches this branch, see resumed_onto_live_work below),
+                    # but it is the wrong signal for "did an EARLIER dispatch
+                    # already finish this." For that question this file
+                    # already owns an honest, content-aware answer: the same
+                    # substance verifier run_phase() consults after this
+                    # method returns (phase_verifiers.verify() -- reused here
+                    # verbatim, not reinvented). Gated on
+                    # resumed_onto_live_work (this call reused a live claim or
+                    # a still-outstanding work order rather than issuing a
+                    # fresh one, lines ~706-714) so a genuinely FRESH dispatch
+                    # -- the original FAULT-16 scenario, where no other
+                    # component has touched this phase yet -- never takes
+                    # this path and still must wait for real mtime growth,
+                    # exactly as before this fix. A verifier PASS here means
+                    # the work is genuinely done: accept it now instead of
+                    # burning the rest of the budget re-polling a file no one
+                    # is ever going to touch again. A verifier FAIL (or the
+                    # module being unimportable) changes nothing -- falls
+                    # through to the identical wait/announce/checkpoint
+                    # cadence below, so a stale or genuinely bad pre-existing
+                    # file still cannot pass. FAULT-16's guard above this
+                    # comment is untouched, not weakened: it still gates
+                    # whether bare presence alone can ever satisfy the loop.
+                    try:
+                        import phase_verifiers
+                        verifier_ok, _fault17_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                        ok = bool(verifier_ok)
+                    except ImportError:
+                        ok = False
             if ok:
                 return EXIT_OK
             now = time.time()

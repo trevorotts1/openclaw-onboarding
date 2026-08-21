@@ -1,3 +1,28 @@
+## [v22.0.63] -- 2026-08-20 -- fix(presentations): the engine false-blocked a phase whose work was already finished
+
+- A live deck run sat dead for 4 hours on work that completed in 3 minutes. Run
+  pres-wave-e-v3-1787240658: PF-DESIGN's work order issued 17:30:46 (budget 30 min);
+  working/research/design-brief-generated.md was written 17:34:17 -- 33,267 bytes of real content,
+  matching the phase's own glob working/research/design-brief-*.md (manifest and work order agree).
+  The engine blocked at 18:10:19 with "agent-authored phase produced nothing within 30 minutes",
+  while PF-DESIGN.dispatcher-log.jsonl recorded "already_satisfied" at 18:09:58, 18:10:08 and 18:10:18.
+  Two components looking at one artifact and disagreeing; the dispatcher was right.
+- ROOT CAUSE, and it is FAULT-16's own fix misfiring: _run_agent_phase captures
+  baseline_progress = _glob_progress_marker(...) at the START of the call, then requires
+  marker > baseline before accepting the artifact. That is CORRECT for a fresh dispatch -- a
+  pre-existing file must not be mistaken for this dispatch's output. On a RESUME it deadlocks: the
+  finished artifact's mtime is already IN the baseline, and nothing will ever rewrite it because the
+  dispatcher correctly reports already_satisfied and refuses to redo finished work. So marker > baseline
+  is false forever, the loop spins the full budget, and the phase blocks over a complete artifact.
+- Fix: when the artifact is present but the marker has not advanced, consult the honest discriminator the
+  phase already owns -- phase_verifiers.verify(), the same substance verifier the engine and dispatcher
+  both use. Passes its verifier: the work is genuinely done, accept it. Fails: keep waiting, exactly as
+  before. FAULT-16's protection is intact and unweakened -- a stale or bad pre-existing file still cannot
+  pass, and there is a test that proves it still blocks.
+- +2 tests, both proven RED against the pre-fix engine: a finished, verifier-passing artifact older than
+  the baseline must NOT block; and a present-but-verifier-FAILING artifact with no mtime advance must
+  still block. All 6 pre-existing FAULT-16 regression tests pass unmodified.
+
 ## [v22.0.62]  -  2026-08-20  -  fix: bound openclaw doctor --fix (timeout 45) in cron heal paths; jq PATH bootstrap in ZHC closeout scripts (Janet)
 
 - `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh` (line ~544), `scripts/resume-onboarding.sh`
