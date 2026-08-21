@@ -1,3 +1,8 @@
+## [v22.0.67]  -  2026-08-21  -  fix(roll): wired-sentinel recheck gate + FALLBACK B supervisor assert
+
+- `update-skills.sh` CONTENT RECHECK could exit 0 on a content-current box without confirming the wiring loop ever ran, leaving boxes permanently UNWIRED (content synced, zero `.wired-<version>` sentinels) while reporting green. The recheck now counts every numbered skill dir the wiring loop would wire (same glob, same ARCHIVED skip) and falls through to the full pass — idempotent, fast-skips already-sentinel'd skills — when any sentinel is missing.
+- `scripts/ghl-mcp-assert-runtime.sh` FAILed boxes whose only supervisor is the FALLBACK B crash-only relaunch loop (no pm2/systemd available) — a false infrastructure verdict on an otherwise healthy box. The VPS no-pm2/no-systemd branch now accepts a running `.ghl-mcp-supervise.sh` only when the file carries the shipped policy: it invokes the launcher and breaks on clean exit 0 (the D3 shape stays FAIL).
+
 ## [v22.0.66]  -  2026-08-21  -  ops(release-ceremony): persistent local launchd backstop for the auto-tagger (scripts/local-release-tag-watchdog.sh) + AGENTS.md/CONTRIBUTING.md doc (R3 hardening)
 
 ## [v22.0.65]  -  2026-08-21  -  fix: 48 installer recovery-coverage chicken-egg (emit before Guard A); 47 OpenMontage detached-HEAD pull abort
