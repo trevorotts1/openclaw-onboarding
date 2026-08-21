@@ -1,3 +1,5 @@
+## [v22.0.66]  -  2026-08-21  -  ops(release-ceremony): persistent local launchd backstop for the auto-tagger (scripts/local-release-tag-watchdog.sh) + AGENTS.md/CONTRIBUTING.md doc (R3 hardening)
+
 ## [v22.0.65]  -  2026-08-21  -  fix: 48 installer recovery-coverage chicken-egg (emit before Guard A); 47 OpenMontage detached-HEAD pull abort
 
 - `48-facebook-ad-generator/install.sh` step 3: `ad_gate_integrity_check.py` (Guard A) FATALs

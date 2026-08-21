@@ -149,6 +149,16 @@ way):**
    that carries zero code. If you hit this red, you opened exactly the kind of PR this
    rule exists to stop; fold your CHANGELOG entry into the PR that carries the fix
    instead of arguing with the gate.
+4. **A local backstop watches independent of GitHub Actions.**
+   `scripts/local-release-tag-watchdog.sh` runs on a launchd LaunchAgent
+   (`com.blackceo.local-release-tag-watchdog`, polling every 5 minutes) and applies
+   the exact same rule directly against `origin/main`: if `/version` is untagged and
+   CHANGELOG.md documents it, it publishes the tag via `scripts/push-version-tag.sh`;
+   if CHANGELOG.md does not document it yet, it refuses and logs why — it never
+   invents a tag. This exists so a skipped or disabled CI run can never leave main
+   untagged with nothing watching, which is what happened seven times before this
+   rule existed. See the script's own header for the full design and why it is
+   deliberately duplicated outside the repo.
 
 `scripts/release.sh` (bump + CHANGELOG + commit + tag + push in one shot) remains the
 right tool for a deliberate, no-PR release cut directly on `main` — it is unaffected by
