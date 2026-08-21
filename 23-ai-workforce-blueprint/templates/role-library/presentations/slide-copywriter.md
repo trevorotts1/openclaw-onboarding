@@ -189,6 +189,20 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Maximum 3 text blocks per slide (headline + sub-copy + one supporting element such as a stat, label, or CTA chip). The supporting line stays short.
    - Bullet slides: maximum 5 bullets, 7 words per bullet. Bullets only when the idea is genuinely a list (stack components, "this is for you if", recap), never as a substitute for choosing the one big idea.
    - Value stack slides: maximum 6 line items, each `Name + $X value`, 7 words per name. Split across two slides if the stack runs longer.
+
+   **AF-C8 ARCHETYPE CARVE-OUT (value-stack / offer-stack slides).** AF-C8 (the per-slide total on-slide word ceiling) carries an explicit ARCHETYPE CARVE-OUT for value-stack / offer-stack slides. This is a reconciliation, not a loosening: the default ceiling on every ordinary slide is UNCHANGED. Only the value-stack / offer-stack archetype gets the carve-out below.
+
+   ```
+   DEFAULT slides ............ 30 words max   (UNCHANGED)
+   ARCHETYPE CARVE-OUT — value-stack / offer-stack slides:
+     headline ......... <= 9 words
+     sub-copy ......... <= 18 words
+     line items ....... <= 6 items x <= 7 words
+     ceiling .......... 62 words
+   ```
+
+   Do not weaken the offer stack. Do not raise the default 30-word cap on ordinary teaching slides. The carve-out applies ONLY to the value-stack / offer-stack archetype.
+
    - No em dashes anywhere in any field. Use a comma or parenthesis instead.
    - No fabricated proof: if a slide calls for a testimonial and none is in the proof inventory, write `[TESTIMONIAL PENDING -- client must supply]` as a placeholder. Never invent a quote or a number.
 4. For every slide in the Proof section (per arc_allocation.json), include PROOF USED field referencing a specific item from the proof inventory.

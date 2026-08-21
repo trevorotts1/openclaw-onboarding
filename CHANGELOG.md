@@ -1,3 +1,50 @@
+## [v22.0.64] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
+
+- Systemic, not another single-rule patch. On one live run SEVEN distinct autofail codes fired across three
+  phases, each discovered only after a full paid re-author: AF-SP-P3-PITCH / AF-SP-PRICE-IN-TEACH
+  (P-SP-P3-HYGIENE), AF-C8 (P1Q-COPY-QC), and AF-NO-FELT-STAKES / AF-NO-RECAP / AF-NO-VILLAIN /
+  AF-NARRATIVE-HARMONY (P4-COPY). With ~181 codes in the department, serial discovery cannot converge.
+- New `presentation_job/contract_introspect.py` derives, by static AST read of the code that actually judges
+  the artifact, every autofail code reachable on a phase's verification path plus each code's requirement
+  text taken from the checker's own message -- never re-typed, so it cannot drift. Scope rule, stated in the
+  module: a code is in scope iff it is judged against the file the phase writes. 47 of 181 for P4-COPY.
+- ARTIFACT_CONTRACTS["P4-COPY"] is now composed at import from that derivation (10,975 -> 22,585 chars) and
+  names all 17 codes that judge it, including Trevor's value-stack carve-out read verbatim from doctrine.
+- `tests/test_contract_completeness.py` FAILS when a rule exists in the verifier path but is absent from the
+  contract prose -- proven by injecting a brand-new synthetic autofail code into a checker and watching it go
+  RED naming the probe, then GREEN on removal. It will catch the 178th code someone adds later.
+- AUDIT (reported, not fixed here): 21 of 23 agent-authored phases are judged by codes their contracts never
+  name -- 110 codes judged, 93 unnamed. Worst: P1Q-COPY-QC 25 judged / 0 named, P4-RENDER 9/0,
+  P-SP-STRUCTURE 9 judged / 1 named.
+- No verifier, gate, or autofail was weakened. Teaching and derivation only.
+
+### AF-C8 archetype carve-out for value-stack slides (operator ruling)
+
+- Reconciles a contradiction between two live rules. slide-copywriter doctrine permits "bullet slides <= 5
+  bullets at 7 words each" and "value-stack slides <= 6 line items at 7 words per name" -- up to 62 on-slide
+  words once a 9-word headline and an 18-word sub are added -- while AF-C8 capped the SAME slide at 30. A
+  fully SOP-compliant value-stack slide was mechanically guaranteed to fail QC. Observed live: run
+  pres-wave-e-v3-1787240658 blocked on "AF-C8 density ceiling exceeded on slide 20 (34 words vs 30 max;
+  offer-stack component list)" and slide 25 (37 vs 30).
+- Operator ruling (Trevor, 2026-08-20) -- the carve-out, not a shrunken offer stack:
+      DEFAULT slides ............ 30 words max   (UNCHANGED)
+      ARCHETYPE CARVE-OUT -- value-stack / offer-stack slides:
+        headline ......... <= 9 words
+        sub-copy ......... <= 18 words
+        line items ....... <= 6 items x <= 7 words
+        ceiling .......... 62 words
+  Chosen specifically to keep the offer stack intact. The default 30-word cap on ordinary teaching slides is
+  untouched, and the carve-out applies ONLY to the value-stack / offer-stack archetype.
+- Documented in identical wording in all three doctrine homes so they cannot drift apart again:
+  slide-copywriter.md, sops/slide-copywriter-sops.md, and MASTER-QC-AUTOFAIL-RULESET.md. A test asserts the
+  block is byte-identical across all three.
+- +13 tests, 11 of them RED against the pre-ruling text. Both mandated cases covered: a compliant 6-item
+  value-stack slide PASSES, and an ordinary teaching slide at 62 words STILL FAILS.
+- KNOWN GAP, reported not silently patched: the QC agent that grades AF-C8 loads its rubric via
+  dispatcher.resolve_role_prompt_path(), whose candidate list is <role>/how-to.md -> numbered -> flat
+  <role>.md. MASTER-QC-AUTOFAIL-RULESET.md is NOT a candidate, so this ruling does not by itself reach the
+  grader's prompt. Extending it to the grader's own rubric file is a separate operator decision.
+
 ## [v22.0.63]  -  2026-08-20  -  fix(presentations): agent-authored glob phases must not false-block on a restart that inherits already-finished work
 
 - Root cause (Fable-diagnosed, run `pres-wave-e-v3-1787240658`, phase PF-DESIGN): `Engine._run_agent_phase`'s
@@ -62,7 +109,6 @@
   ~/clawd/fleet-heartbeat/scripts/ to the real ~/blackceo-fleet-ops/fleet-heartbeat/scripts/.
 - skill-version.txt bumped 61-loop-protection-system 0.6.0->0.6.1, 53-book-writer 1.2.1->1.2.2,
   60-zhc-early-warning-system 0.1.5->0.1.6 (G3 gate).
-
 ## [v22.0.60] -- 2026-08-20 -- ops(release-ceremony): batch the release ceremony — bundle version bump + CHANGELOG in the fix PR, auto-tag on merge, CI-reject standalone release PRs (R3)
 
 - Root cause (2026-08-20 delay audit, `CONTROL/DELAY-DIAGNOSIS-FABLE.md` Section 2 D3,
