@@ -132,6 +132,27 @@ jobs:
           echo "Version changed: $PREV_VER → $CURRENT_VER"
           echo "Checking for annotated tag $CURRENT_VER ..."
 
+          # v22.0.66: the release tag is published by auto-tag-on-merge.yml on
+          # this SAME push event, racing this check. Measured 2026-08-21:
+          # v22.0.65 G1 sampled 31s before the tag push landed and false-failed.
+          # Wait for the tag on origin (bounded 300s, fail-closed: a genuine
+          # absence still errors below).
+          if ! git ls-remote --exit-code origin "refs/tags/${CURRENT_VER}" >/dev/null 2>&1; then
+            echo "Tag ${CURRENT_VER} not on origin yet — polling for the auto-tag push (bounded 300s)..."
+            _G1_T0=$SECONDS
+            while ! git ls-remote --exit-code origin "refs/tags/${CURRENT_VER}" >/dev/null 2>&1; do
+              if [ $((SECONDS - _G1_T0)) -ge 300 ]; then
+                echo ""
+                echo "ERROR (G1): /version was bumped to $CURRENT_VER but no annotated"
+                echo "  git tag $CURRENT_VER appeared on origin within 300s."
+                exit 1
+              fi
+              sleep 5
+            done
+            git fetch --quiet origin "+refs/tags/${CURRENT_VER}:refs/tags/${CURRENT_VER}" 2>/dev/null || true
+            echo "Tag ${CURRENT_VER} published on origin after $((SECONDS - _G1_T0))s."
+          fi
+
           # git tag -l with --sort and deref only matches annotated tags when
           # we check the tag object type.  Use git for-each-ref to be exact.
           TAG_SHA=$(git for-each-ref --format='%(refname:short)' \
@@ -223,6 +244,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # v22.0.66: on PUSH, the newest release's tag is published by
+          # auto-tag-on-merge.yml racing this job (measured 2026-08-21:
+          # v22.0.65 G1b sampled 27s before the tag push landed and
+          # false-failed). Re-run the checker until it passes or 300s elapse,
+          # then let the final run stand on its own verdict. The wait is
+          # PUSH-only: PR runs walk origin/main's full history, where the same
+          # boundary cannot exist for the newest release (auto-tag fired on the
+          # last main push, not this PR's merge), so gating them is a real
+          # pass-through with zero spurious waits.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Waiting for auto-tag-on-merge to publish the tag (bounded 300s)..."
+            for _i in $(seq 1 60); do
+              if python3 scripts/check-released-versions-tagged.py \
+                  --ref refs/remotes/origin/main; then
+                exit 0
+              fi
+              sleep 5
+            done
+          fi
           python3 scripts/check-released-versions-tagged.py \
             --ref refs/remotes/origin/main
 
