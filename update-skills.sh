@@ -4660,6 +4660,23 @@ print(state + " " + str(len(headers)))
         _RECHECK_DRIFT="${_RECHECK_DRIFT} ${_rc_tree}"
       fi
     done
+    # WIRED-SENTINEL GATE (v22.0.67 fix): the wiring loop below is the ONLY
+    # code that writes .wired-<version> sentinels, so a content-current box
+    # can still be UNWIRED (content synced without a completed wiring pass).
+    # Exiting 0 here would skip the wiring loop forever. Count every numbered
+    # skill dir the wiring loop would wire; if ANY lacks its
+    # .wired-${ONBOARDING_VERSION} sentinel, force the full pass so the wiring
+    # loop runs (idempotent -- it fast-skips already-sentinel'd skills).
+    _MISSING_WIRED_SENTINELS=0
+    for _wskill_dir in "$SKILLS_DIR"/[0-9]*/; do
+      [ -d "$_wskill_dir" ] || continue
+      case "$(basename "$_wskill_dir")" in *ARCHIVED*) continue ;; esac
+      [ -f "$_wskill_dir/.wired-${ONBOARDING_VERSION}" ] || _MISSING_WIRED_SENTINELS=$((_MISSING_WIRED_SENTINELS + 1))
+    done
+    if [ "$_MISSING_WIRED_SENTINELS" -gt 0 ]; then
+      echo "  ! [CONTENT RECHECK] content current but ${_MISSING_WIRED_SENTINELS} sentinels missing — falling through to wiring"
+      _RECHECK_DRIFT="${_RECHECK_DRIFT} (wired-sentinels-incomplete:${_MISSING_WIRED_SENTINELS})"
+    fi
     if [ -z "$_RECHECK_DRIFT" ]; then
       # Skills content is current. But CONTENT currency and RUNTIME/DB
       # convergence are SEPARATE questions that must be answered BEFORE we
