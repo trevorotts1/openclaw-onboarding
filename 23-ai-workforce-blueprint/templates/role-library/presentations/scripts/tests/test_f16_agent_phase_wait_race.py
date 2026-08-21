@@ -134,7 +134,7 @@ def _write_slide(rd: Path, n: int, mtime: float) -> None:
 #    loop by itself -- the substance verifier must never even be reached
 #    without genuine forward progress.
 # ---------------------------------------------------------------------------
-def test_stale_partial_output_never_reaches_verifier_without_growth(tmp_path, monkeypatch):
+def test_stale_partial_output_waits_full_budget_never_blocks_early(tmp_path, monkeypatch):
     eng = _engine(tmp_path, dry_run=False)
     phase = _prompt_phase(eng)
     rd = Path(eng.run_dir)
@@ -148,13 +148,14 @@ def test_stale_partial_output_never_reaches_verifier_without_growth(tmp_path, mo
     rc = eng.run_phase(phase)
 
     assert rc == EXIT_GATE_BLOCKED, f"expected an honest budget-timeout block, got {rc}"
-    assert not verify_calls, (
-        "the substance verifier ran against a stale, non-progressing glob match -- "
-        "FAULT-16's same-breath judgement is back")
+    # FALSE-BLOCK fix: the verifier now legitimately runs in-loop as the
+    # presence/no-growth tiebreaker -- a FAIL there waits, it never blocks
+    # early, so its running is no longer a regression to guard against.
     assert clock.sleep_calls > 0, "the loop must genuinely wait, not exit on its first check"
     blocked = eng.state.get("blocked") or {}
-    assert "produced nothing" in (blocked.get("reason") or ""), (
-        "a no-progress timeout must use the honest generic budget-timeout reason, "
+    assert "exists but failed substance verification" in (blocked.get("reason") or ""), (
+        "a present-but-never-verifying artifact must block with the honest "
+        f"exists-but-failed reason, not the old blanket 'produced nothing' proxy, "
         f"got: {blocked.get('reason')!r}")
 
 
@@ -227,9 +228,10 @@ def test_growth_reaches_verifier_and_bad_artifact_still_fails(tmp_path, monkeypa
     rc = eng.run_phase(phase)
 
     assert verify_calls, "the verifier must run once real progress is observed"
-    assert verify_calls[0] >= 2, (
-        "verification must not happen on the very first check -- it must "
-        f"follow genuine waiting; observed sleep_calls={verify_calls[0]}")
+    # FALSE-BLOCK fix: the presence/no-growth tiebreaker may now call the
+    # verifier from the very first poll (it cannot block on its own -- a FAIL
+    # just keeps waiting), so early verify_calls entries are harmless and no
+    # longer prove a regression.
     assert rc == EXIT_GATE_BLOCKED, "a genuinely bad artifact must still fail -- the gate is intact"
     blocked = eng.state.get("blocked") or {}
     assert "AF-PROMPT-FLOOR" in (blocked.get("reason") or ""), (
@@ -323,3 +325,44 @@ def test_exact_path_artifact_still_exits_immediately(tmp_path, monkeypatch):
 
     assert rc == EXIT_OK
     assert clock.sleep_calls == 0, "an exact-path artifact must still exit on the first check"
+
+
+# ---------------------------------------------------------------------------
+# 7. FALSE-BLOCK (PF-DESIGN, run pres-wave-e-v3-1787240658, 2026-08-20): a
+#    complete, verify-passing artifact inherited across an engine restart
+#    (no mtime growth ever coming) must be accepted, not timed out as
+#    "produced nothing" -- and the companion gate-integrity proof that a
+#    truly absent artifact still blocks honestly without ever consulting the
+#    verifier.
+# ---------------------------------------------------------------------------
+def test_complete_inherited_artifact_inside_budget_does_not_block(tmp_path, monkeypatch):
+    """FALSE BLOCK (PF-DESIGN, run pres-wave-e-v3-1787240658, 2026-08-20):
+    the engine re-enters after a restart; the dispatcher already wrote a
+    COMPLETE, verify-passing artifact matching the glob (inside budget); no
+    file ever changes again. The phase must complete -- not burn the whole
+    budget and block with 'produced nothing'."""
+    eng = _engine(tmp_path, dry_run=False)
+    phase = _prompt_phase(eng)
+    rd = Path(eng.run_dir)
+    clock = _install_clock(monkeypatch)
+    _write_slide(rd, 1, clock.now - 400)  # predates entry -> swallowed by the baseline
+    monkeypatch.setattr(phase_verifiers, "verify", lambda *a, **k: (True, []))
+    rc = eng.run_phase(phase)
+    assert rc == EXIT_OK, "a verify-passing artifact already on disk must satisfy the phase"
+    assert eng._phase_state(phase.id).get("status") == "done"
+
+
+def test_truly_absent_artifact_still_blocks_produced_nothing(tmp_path, monkeypatch):
+    """Gate-integrity companion: NO artifact ever appears -> the verifier is
+    never consulted and the honest 'produced nothing' timeout still fires."""
+    eng = _engine(tmp_path, dry_run=False)
+    phase = _prompt_phase(eng)
+    clock = _install_clock(monkeypatch)
+    verify_calls = []
+    monkeypatch.setattr(phase_verifiers, "verify",
+                        lambda *a, **k: verify_calls.append(a) or (True, []))
+    rc = eng.run_phase(phase)
+    assert rc == EXIT_GATE_BLOCKED
+    assert not verify_calls, "no artifact on disk -> substance verifier must not be consulted"
+    assert "produced nothing" in ((eng.state.get("blocked") or {}).get("reason") or "")
+    assert clock.sleep_calls > 0

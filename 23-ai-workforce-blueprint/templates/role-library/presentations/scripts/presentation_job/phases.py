@@ -684,6 +684,27 @@ class Engine:
 
         Neither change touches WHETHER phase_verifiers.verify() can fail -- only
         WHEN it is ever reached.
+
+        FALSE-BLOCK (2026-08-20, Fable-diagnosed from the live run
+        pres-wave-e-v3-1787240658, phase PF-DESIGN): the FAULT-16 mtime-growth
+        guard above is itself an overcorrection. baseline_progress is captured
+        fresh at every ENTRY of this method (line ~697) -- so on an engine
+        restart that re-enters a phase AFTER a dispatcher has already finished
+        and verify-passed the artifact, the finished file's own mtime becomes
+        the baseline, the strict `>` can never become true again, and the loop
+        burns its entire budget declaring a COMPLETE phase to have "produced
+        nothing." The dispatcher, watching the same filesystem with
+        phase_verifiers.verify(), correctly logged already_satisfied the whole
+        time -- the two components never agreed because the poll loop had no
+        path to consult substance, only a filesystem proxy. FIX: when presence
+        is true but the mtime-growth check fails, that state is ambiguous (a
+        stale partial from an earlier blocked attempt, or a complete artifact
+        inherited across a restart) -- ask phase_verifiers.verify() itself as
+        the tiebreaker. PASS means genuinely done: accept it. FAIL changes
+        nothing: falls through to the identical wait/announce/checkpoint
+        cadence, so a stale or bad artifact still cannot block early and a
+        phase that truly produced nothing still times out honestly. See the
+        inline comment at the tiebreaker call below for the full mechanics.
         """
         wo = self.run_dir / "working" / "work-orders"
         wo.mkdir(parents=True, exist_ok=True)
@@ -733,14 +754,35 @@ class Engine:
         checkpoint_every = max(60, phase.heartbeat_interval_minutes * 60 // 4)
         last_cp = time.time()
         started_at = time.time()
+        last_present = False
+        last_verify_notes: List[str] = []
+        import phase_verifiers  # local-import idiom, same as run_phase (phases.py:461)
         while time.time() < deadline:
             ok, _ = self._artifacts_present(phase)
+            last_present = last_present or ok
             if ok and glob_patterns:
                 # FAULT-16: bare presence is not completion for a multi-file
-                # glob -- require something NEWER than this dispatch's own
-                # baseline (a new file, or an existing one rewritten) before
-                # trusting it and handing off to the real substance verifier.
-                ok = self._glob_progress_marker(glob_patterns) > baseline_progress
+                # glob -- something NEWER than this dispatch's own baseline
+                # (a new file, or an existing one rewritten) is still the
+                # cheap fast path that trusts presence outright.
+                if not (self._glob_progress_marker(glob_patterns) > baseline_progress):
+                    # FALSE-BLOCK fix (PF-DESIGN, run pres-wave-e-v3-1787240658,
+                    # 2026-08-20): presence with NO new mtime is ambiguous -- a
+                    # stale partial from an earlier blocked attempt (FAULT-16:
+                    # keep waiting) or a COMPLETE artifact inherited across an
+                    # engine restart (accept). Only the substance verifier can
+                    # tell them apart -- the same authority run_phase() applies
+                    # after this loop and the same check dispatcher.py's
+                    # already_satisfied pre-check uses (dispatcher.py:1953,1980),
+                    # so the two components now agree by construction. A FAIL
+                    # here NEVER blocks -- it keeps waiting exactly as before;
+                    # a phase that truly produced nothing still times out below.
+                    try:
+                        v_ok, v_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                    except Exception as exc:  # fail closed: treat as not-yet-complete
+                        v_ok, v_notes = False, [f"verifier error: {exc}"]
+                    last_verify_notes = list(v_notes or [])
+                    ok = v_ok
             if ok:
                 return EXIT_OK
             now = time.time()
@@ -757,6 +799,12 @@ class Engine:
                                  waiting_for=list(phase.produces_artifact),
                                  waited_seconds=int(now - started_at))
             time.sleep(15)
+        if last_present:
+            return self._block(
+                phase,
+                f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
+                f"substance verification for {phase.budget_minutes} minutes: "
+                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
         return self._block(
             phase,
             f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
