@@ -37,11 +37,17 @@ else
 fi
 
 # 3) Enforcement self-test (the install is only good if the gates bite).
+# v22.0.65 ordering fix: Guard A (ad_gate_integrity_check.py) FATALs when
+# working/recovery-coverage.json is absent, but that file is only emitted by
+# test_ad_recovery.py. A fresh sync (rm -rf wipes working/ first) could never
+# pass step 3 before step 4 (rc=2 on sonatta-camara + qxqt). Run the recovery
+# proof HERE, before Guard A, so the check always sees the emitted coverage.
 echo "--- enforcement self-test ---"
 python3 "${SKILL_DIR}/scripts/ad_sync_check.py" >/dev/null
 python3 "${SKILL_DIR}/scripts/test_ad_preflight.py" >/dev/null
+python3 "${SKILL_DIR}/scripts/test_ad_recovery.py" >/dev/null
 python3 "${SKILL_DIR}/scripts/ad_gate_integrity_check.py" >/dev/null
-echo "  [ok]   sync + negative-suite + Guard A all green"
+echo "  [ok]   sync + negative-suite + recovery proof + Guard A all green"
 
 # 4) Install QC.
 bash "${SKILL_DIR}/qc-facebook-ad-generator.sh"

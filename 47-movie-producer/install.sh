@@ -61,6 +61,12 @@ echo "--- Step 2: Clone OpenMontage ---"
 mkdir -p "$(dirname "$OPENMONTAGE_DIR")"
 if [ -d "$OPENMONTAGE_DIR/.git" ]; then
   yellow "OpenMontage already cloned at $OPENMONTAGE_DIR — pulling latest."
+  # v22.0.65: the previous pass ends this block on a DETACHED HEAD (pinned
+  # SHA), where `git pull --ff-only` aborts rc=1 (5/8 boxes in the
+  # 2026-08-20 partial-install sweep). Return to main first; the pinned-SHA
+  # checkout right after this re-pins deterministically either way.
+  git -C "$OPENMONTAGE_DIR" checkout --quiet main 2>/dev/null || \
+    git -C "$OPENMONTAGE_DIR" checkout --quiet master 2>/dev/null || true
   git -C "$OPENMONTAGE_DIR" pull --ff-only
 else
   git clone https://github.com/calesthio/OpenMontage.git "$OPENMONTAGE_DIR"

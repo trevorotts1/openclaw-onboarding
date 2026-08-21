@@ -1,3 +1,18 @@
+## [v22.0.65]  -  2026-08-21  -  fix: 48 installer recovery-coverage chicken-egg (emit before Guard A); 47 OpenMontage detached-HEAD pull abort
+
+- `48-facebook-ad-generator/install.sh` step 3: `ad_gate_integrity_check.py` (Guard A) FATALs
+  (rc=2) when `scripts/working/recovery-coverage.json` is absent, but that file is only emitted
+  by `test_ad_recovery.py` in step 4. A fresh sync (`rm -rf` wipes `working/` first) could never
+  pass step 3 — hit on rescue-sonatta-camara and openclaw-qxqt (rc=2, "recovery-coverage.json
+  not found"), worked around on 6 boxes by a direct install after a coverage seed. Step 3 now
+  runs `test_ad_recovery.py` before Guard A, so the coverage is always present; the step-4 QC
+  re-run is idempotent (exit 0).
+- `47-movie-producer/install.sh` Step 2: the OpenMontage clone ends every pass on a DETACHED
+  HEAD (pinned SHA `ce11f6a`), so the next pass's `git pull --ff-only` aborts rc=1 ("You are
+  not currently on a branch"). Hit on 5 of 8 boxes in the 2026-08-20 partial-install sweep.
+  The update path now checks out `main` (fallback `master`) before the pull; the pinned-SHA
+  checkout that follows re-pins deterministically either way.
+
 ## [v22.0.64] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
 
 - Systemic, not another single-rule patch. On one live run SEVEN distinct autofail codes fired across three
