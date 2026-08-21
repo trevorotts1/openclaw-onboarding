@@ -1,4 +1,4 @@
-## [v22.0.63] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
+## [v22.0.64] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
 
 - Systemic, not another single-rule patch. On one live run SEVEN distinct autofail codes fired across three
   phases, each discovered only after a full paid re-author: AF-SP-P3-PITCH / AF-SP-PRICE-IN-TEACH
@@ -44,6 +44,38 @@
   dispatcher.resolve_role_prompt_path(), whose candidate list is <role>/how-to.md -> numbered -> flat
   <role>.md. MASTER-QC-AUTOFAIL-RULESET.md is NOT a candidate, so this ruling does not by itself reach the
   grader's prompt. Extending it to the grader's own rubric file is a separate operator decision.
+
+## [v22.0.63]  -  2026-08-20  -  fix(presentations): agent-authored glob phases must not false-block on a restart that inherits already-finished work
+
+- Root cause (Fable-diagnosed, run `pres-wave-e-v3-1787240658`, phase PF-DESIGN): `Engine._run_agent_phase`'s
+  FAULT-16 mtime-growth guard (`presentation_job/phases.py`) snapshots a glob-mtime baseline at every ENTRY
+  of the poll loop and only trusts presence when a matching file is strictly NEWER than that baseline. On an
+  engine restart that re-enters a phase AFTER a dispatcher has already finished and verify-passed the
+  artifact, the finished file's own mtime is swallowed into the fresh baseline -- the strict `>` can never
+  become true again, so the loop burns its whole budget and blocks a COMPLETE phase as "produced nothing,"
+  while the dispatcher (which checks `verify() AND target.exists()`) correctly reported `already_satisfied`
+  the entire time. Two components disagreeing because the poll loop had no path to consult substance, only a
+  filesystem proxy -- the direct overcorrection of FAULT-16 itself (proxy said NOTHING when substance said
+  COMPLETE, the mirror image of FAULT-16's proxy-said-DONE-when-PARTIAL).
+- Fix: when presence is true but the mtime-growth check fails, that state is ambiguous (a stale partial from
+  an earlier blocked attempt, or a complete artifact inherited across a restart) -- ask
+  `phase_verifiers.verify()` itself as the tiebreaker, the same authority `run_phase()` and the dispatcher's
+  own `already_satisfied` pre-check already trust. PASS -> accept the phase as complete. FAIL -> changes
+  nothing, falls through to the identical wait/announce/checkpoint cadence, so a stale or bad artifact still
+  cannot block early and a phase that truly produced nothing still times out honestly. An exception from the
+  verifier fails closed (treated as not-yet-complete). `dispatcher.py` was already correct and is untouched.
+- Exposure: all 5 glob-pattern agent phases (P-0.5-RESEARCH, PF-DESIGN, P4-PROMPT, P4-RENDER, P8-ASSEMBLE);
+  exact-path agent phases were never exposed (`glob_patterns` empty short-circuits before the guard).
+- `tests/test_f16_agent_phase_wait_race.py`: +2 tests (`test_complete_inherited_artifact_inside_budget_does_not_block`
+  is the incident regression, RED before this fix / GREEN after; `test_truly_absent_artifact_still_blocks_produced_nothing`
+  is the companion gate-integrity proof that a truly-absent artifact still blocks honestly without ever
+  consulting the verifier). 2 existing tests updated to assert the invariant (no early block) rather than the
+  old proxy (verifier never runs) now that the verifier legitimately runs in-loop as the tiebreaker. All 8
+  pass; the untouched FAULT-09b clobber-guard and exact-path-immediate-exit tests are unaffected.
+- Unblocked the live run: applied this fix, then `--resume`'d `pres-wave-e-v3-1787240658` -- PF-DESIGN's
+  stale block cleared, the run advanced through P-TYPO-QC and into P4-PROMPT (which then legitimately
+  blocked there on real AF-PROMPT-FLOOR content-verifier findings, an unrelated and pre-existing gate,
+  unaffected by this change).
 
 ## [v22.0.62]  -  2026-08-20  -  fix: bound openclaw doctor --fix (timeout 45) in cron heal paths; jq PATH bootstrap in ZHC closeout scripts (Janet)
 
