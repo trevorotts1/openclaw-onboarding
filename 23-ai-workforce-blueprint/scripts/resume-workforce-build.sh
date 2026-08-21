@@ -540,8 +540,11 @@ else
 fi
 
 # ---- v10.14.20: heal config before any gateway interaction ----
+# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
+# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
+# real heal; a timeout still leaves the previous `|| true` semantics.
 if command -v openclaw >/dev/null 2>&1; then
-  openclaw doctor --fix >/dev/null 2>&1 || true
+  timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
 fi
 
 # ---- preconditions ----

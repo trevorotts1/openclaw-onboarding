@@ -1,4 +1,4 @@
-## [v22.0.61] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
+## [v22.0.63] -- 2026-08-20 -- fix(presentations): agent-authored phases must be told every rule they are judged by
 
 - Systemic, not another single-rule patch. On one live run SEVEN distinct autofail codes fired across three
   phases, each discovered only after a full paid re-author: AF-SP-P3-PITCH / AF-SP-PRICE-IN-TEACH
@@ -44,6 +44,39 @@
   dispatcher.resolve_role_prompt_path(), whose candidate list is <role>/how-to.md -> numbered -> flat
   <role>.md. MASTER-QC-AUTOFAIL-RULESET.md is NOT a candidate, so this ruling does not by itself reach the
   grader's prompt. Extending it to the grader's own rubric file is a separate operator decision.
+
+## [v22.0.62]  -  2026-08-20  -  fix: bound openclaw doctor --fix (timeout 45) in cron heal paths; jq PATH bootstrap in ZHC closeout scripts (Janet)
+
+- `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh` (line ~544), `scripts/resume-onboarding.sh`
+  (line ~311), `scripts/watchdog-onboarding-loop.sh` (line ~251): the heal step is now
+  `timeout 45 openclaw doctor --fix`. On Janet's box an unbounded `doctor --fix` hung ~133s and the
+  cron runner killed the fire, freezing the cron queue; 45s is ample for a real heal, and the existing
+  `|| true` semantics are unchanged.
+- `37-zhc-closeout/scripts/resume-closeout-cron.sh` (~line 48), `wire-n8n-closeout.sh` (~line 24),
+  `run-closeout.sh` (~line 49): durable jq PATH resolution mirroring 23-ai-workforce-blueprint — a
+  static jq at `~/.openclaw/bin/jq` (or `/data/.openclaw/bin/jq`) is prepended to PATH when `command -v jq`
+  fails. Cron shells lack the PATH entry that reaches the persistent copy, so every closeout fire
+  aborted "jq not found" on boxes whose jq lives only there (Janet's closeout cron was dead).
+
+## [v22.0.61]  -  2026-08-20  -  fix: loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake (escalation lane dead without it)
+
+## [unversioned] -- 2026-08-20 -- fix(loop-protection): loop_escalate DEFAULT_WEBHOOK old relay -> canonical rr-v2-intake + X-Rescue-Secret auth header (PR #960)
+
+- 61-loop-protection-system/scripts/loop_escalate.py: DEFAULT_WEBHOOK moved from the retired
+  relay `https://main.blackceoautomations.com/webhook/rescue-rangers` (false-pass trap: returns
+  200 "missing_message" even to a wrong secret) to the canonical
+  `https://main.blackceoautomations.com/webhook/rr-v2-intake` (workflow RR-01-intake, enforces
+  sha256 secret). `RESCUE_RANGERS_WEBHOOK_URL` env still wins; the constant is fallback-only.
+- The live transport now sends `X-Rescue-Secret` when `RESCUE_RANGERS_WEBHOOK_SECRET` is present;
+  rr-v2-intake returns 403 without it, so escalations without the header were silently dead
+  (landed in UNSENT-esc-*.json). Verified live from a box: POST with header -> 200
+  {"accepted":true,...}; without -> 403.
+- Installers 53/60/61 accept `--idempotent` as a no-op (update-skills.sh passes it to every
+  installer; strict arg parsers failed the roll with 'unknown arg' and withheld .wired sentinels).
+- scripts/fleet-standing/NEW-BOX-WIRING.md: rr-reconcile.sh path corrected from
+  ~/clawd/fleet-heartbeat/scripts/ to the real ~/blackceo-fleet-ops/fleet-heartbeat/scripts/.
+- skill-version.txt bumped 61-loop-protection-system 0.6.0->0.6.1, 53-book-writer 1.2.1->1.2.2,
+  60-zhc-early-warning-system 0.1.5->0.1.6 (G3 gate).
 ## [v22.0.60] -- 2026-08-20 -- ops(release-ceremony): batch the release ceremony — bundle version bump + CHANGELOG in the fix PR, auto-tag on merge, CI-reject standalone release PRs (R3)
 
 - Root cause (2026-08-20 delay audit, `CONTROL/DELAY-DIAGNOSIS-FABLE.md` Section 2 D3,

@@ -7,6 +7,10 @@
 # enforcement self-test so a broken install can never masquerade as a good one.
 set -euo pipefail
 
+# Accepted as a no-op: update-skills.sh passes this to every installer;
+# installers that do not parse it must not fail the roll.
+[ "${1:-}" = "--idempotent" ] && shift
+
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${SKILL_DIR}/.."
 echo "=== Installing Skill 48 — Facebook & Instagram Ad Generator ==="

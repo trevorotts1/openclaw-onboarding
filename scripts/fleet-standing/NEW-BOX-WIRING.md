@@ -295,7 +295,7 @@ ssh <sshHost> docker exec <container> sh -lc 'echo RETURN-LEG-SMOKE-OK'
 PASS = command exits 0 with that exact marker. Record it with:
 
 ```
-bash ~/clawd/fleet-heartbeat/scripts/rr-reconcile.sh --smoke-test <slug>
+bash ~/blackceo-fleet-ops/fleet-heartbeat/scripts/rr-reconcile.sh --smoke-test <slug>
 ```
 
 which writes the `verified:true` entry into
