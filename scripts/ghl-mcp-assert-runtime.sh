@@ -32,7 +32,9 @@
 #
 #   1  service definition present for this platform
 #      Mac  : ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist
-#      VPS  : pm2 app `ghl-community-mcp`, else /etc/systemd/system/ghl-mcp.service
+#      VPS  : pm2 app `ghl-community-mcp`, else /etc/systemd/system/ghl-mcp.service,
+#             else a LIVE FALLBACK B supervise loop AND a green /health (slim
+#             containers with neither pm2 nor systemd — PASS-with-warning)
 #   2  it launches the CRASH-ONLY LAUNCHER (.ghl-mcp-launch.sh), not node directly
 #   3  crash-only supervision:
 #      Mac  : KeepAlive is a DICT with SuccessfulExit=false — never <true/>
@@ -416,7 +418,35 @@ if [ "$PLATFORM" = "vps" ]; then
   fi
 
   if [ "$_HAVE_PM2" = "0" ] && [ "$_HAVE_SYSTEMD" = "0" ]; then
-    _fail "no live pm2 app 'ghl-community-mcp' and no $SYSTEMD_UNIT — the MCP dir exists but nothing supervises it. Run scripts/ghl-mcp-autostart.sh on this box."
+    # Neither pm2 nor systemd. Before FAILING, recognise the autostart script's
+    # own FALLBACK B supervisor: a live supervise loop PLUS a green /health.
+    # Slim containers have no pm2 and no systemd; the supervise loop is the
+    # legitimate supervisor there (proven live on beverly's box: healthy
+    # 127.0.0.1:8765, tools=43, 'bash /data/mcp-servers/ghl-community-mcp/
+    # .ghl-mcp-supervise.sh' running — yet this gate exited 1 and the v22.0.66
+    # update exited 2). Policy is checked, not just liveness — a hand-started
+    # restart-on-any-exit loop is the D3 endless-relaunch shape this gate exists
+    # to catch, so the script must ALSO carry the launcher invocation and the
+    # crash-only exit-0 break from the FALLBACK B template. Anything else stays
+    # FAIL.
+    _HAVE_SUPERVISOR=0
+    _SUP="$MCP_DIR/.ghl-mcp-supervise.sh"
+    if pgrep -f 'ghl-mcp-supervise\.sh' >/dev/null 2>&1 \
+       && [ -f "$_SUP" ] \
+       && grep -qF 'ghl-mcp-launch.sh' "$_SUP" 2>/dev/null \
+       && grep -qF '[ "$rc" = "0" ] && break' "$_SUP" 2>/dev/null; then
+      _HAVE_SUPERVISOR=1
+    fi
+    _HEALTH_GREEN=0
+    if command -v curl >/dev/null 2>&1 \
+       && curl -fsS --max-time 5 "http://127.0.0.1:${EXPECT_PORT}/health" >/dev/null 2>&1; then
+      _HEALTH_GREEN=1
+    fi
+    if [ "$_HAVE_SUPERVISOR" = "1" ] && [ "$_HEALTH_GREEN" = "1" ]; then
+      _warn "fallback supervise loop (no pm2/systemd on this box) — .ghl-mcp-supervise.sh is running with the crash-only policy and http://127.0.0.1:${EXPECT_PORT}/health is green, so the FALLBACK B supervisor from scripts/ghl-mcp-autostart.sh is the live supervisor."
+    else
+      _fail "no live pm2 app 'ghl-community-mcp' and no $SYSTEMD_UNIT (and no running FALLBACK B supervise loop with the crash-only policy and a green /health on :${EXPECT_PORT}) — the MCP dir exists but nothing supervises it. Run scripts/ghl-mcp-autostart.sh on this box."
+    fi
   fi
 
   # 11. periodic probe (cron) — and its target must EXIST
