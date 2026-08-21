@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v22.0.60"
+ONBOARDING_VERSION="v22.0.63"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -8441,6 +8441,14 @@ fire_install_kickoff_triplet() {
     local tg_fired="false" flag_fired="false"
     local tg_reason="" flag_reason=""
 
+    # v10.13.x: resolve owner name ONCE, unconditionally — the Terminal block
+    # below always prints it, and on an update/re-roll the fresh-install-only
+    # else-branch that used to own the assignment never runs, leaving the
+    # variable unbound under `set -u` and aborting the terminal fallback
+    # BEFORE the gateway restart fires (proven on Teresa Pelham's box).
+    local owner_name
+    owner_name=$(resolve_owner_name "$openclaw_json")
+
     if [ "${OPENCLAW_IS_FRESH_INSTALL:-0}" != "1" ]; then
         # WE MOVE IN SILENCE: update / re-roll of an already-onboarded box. NEVER
         # send the owner kickoff handshake — not via send_kickoff_telegram and not
@@ -8460,8 +8468,6 @@ fire_install_kickoff_triplet() {
         # this branch is unreachable on an update/re-roll because of the guard
         # above). Build the message text manually since send_kickoff_telegram
         # already failed.
-        local owner_name
-        owner_name=$(resolve_owner_name "$openclaw_json")
         local tg_msg
         tg_msg=$(build_kickoff_telegram_message "$owner_name")
         local tg_helper="$skills_dir/scripts/send-telegram.sh"

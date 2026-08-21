@@ -22,6 +22,26 @@
 
 set -u
 
+# ---- durable jq resolution (2026-08-20, mirrors 23-ai-workforce-blueprint) ----
+# The OpenClaw container image does not ship jq, and a jq installed with the
+# distro package manager VANISHES on container recreate. ~/.openclaw is a
+# persistent bind mount on container boxes, so a static jq kept at
+# ~/.openclaw/bin/jq survives recreate. Cron shells lack the PATH entry that
+# would reach it, so every closeout fire aborted "jq not found" on boxes whose
+# jq lives only there. Prefer PATH's jq when present; otherwise fall back to
+# the persistent copy. Prepending a PATH entry cannot change any filter's
+# semantics, which is why this is done here rather than per-call.
+if ! command -v jq >/dev/null 2>&1; then
+  for _oc_jq_dir in "${HOME:-/root}/.openclaw/bin" /data/.openclaw/bin; do
+    if [ -x "$_oc_jq_dir/jq" ]; then
+      PATH="$_oc_jq_dir:$PATH"
+      export PATH
+      break
+    fi
+  done
+  unset _oc_jq_dir
+fi
+
 # ---- platform detection ----
 if [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw

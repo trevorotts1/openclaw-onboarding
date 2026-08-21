@@ -248,7 +248,10 @@ if command -v lr_register >/dev/null 2>&1; then
 fi
 
 # ── heal OpenClaw config ──────────────────────────────────────────────────────
-openclaw doctor --fix >/dev/null 2>&1 || true
+# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
+# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
+# real heal; a timeout still leaves the previous `|| true` semantics.
+timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
 
 # ── find the next incomplete wave ─────────────────────────────────────────────
 NEXT_WAVE="$(oc_next_incomplete_wave 2>/dev/null)"
