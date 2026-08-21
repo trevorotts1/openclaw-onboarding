@@ -1,0 +1,23 @@
+{
+  "_comment": "DEGRADED-PATH FALLBACK ONLY. pr-rollup-check.py uses this ONLY when a live fetch of both the rulesets API and the classic branch-protection API fails for a real reason (network, permission, malformed response) on repo trevorotts1/openclaw-onboarding branch main. It is never the primary source and every run that uses it prints a loud DEGRADED banner. If branch protection ever changes, this file goes stale until someone re-runs the investigation below and updates it -- that staleness is the exact risk a live-first design exists to avoid, so treat any run that falls back to this file as suspect.",
+  "provenance": {
+    "fetched_at_utc": "2026-08-20T20:00:00Z",
+    "fetched_by": "pr-rollup-check.py investigation (H3 unit, DELAY-DIAGNOSIS-FABLE.md R4)",
+    "repo": "trevorotts1/openclaw-onboarding",
+    "branch": "main",
+    "source": "gh api repos/trevorotts1/openclaw-onboarding/rulesets/20330619",
+    "ruleset_id": 20330619,
+    "ruleset_name": "main-required-checks",
+    "ruleset_enforcement": "active"
+  },
+  "required_contexts": [
+    "ghl-mcp-pin-gate",
+    "GHL MCP supervision + install regression guard",
+    "QC static invariants",
+    "G1 — version file change requires a matching annotated tag (push to main)",
+    "G1b — every release on main must keep a truthful annotated tag",
+    "G2 — every v11+ annotated tag must have a CHANGELOG entry",
+    "G3 — skill content change requires skill-version.txt bump",
+    "Verify all version markers agree (scripts/bump-version.sh --check)"
+  ]
+}
