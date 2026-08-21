@@ -1377,6 +1377,14 @@ Section 2 D3, Section 4(b), Section 7 item 3.
    (`scripts/check-no-standalone-release-pr.py`) rejects any PR whose entire diff is
    CHANGELOG.md and/or version markers with no code alongside it.
 
+**Local backstop (added 2026-08-21):** step 2 above also runs independent of GitHub
+Actions. `scripts/local-release-tag-watchdog.sh` polls the SAME rule directly against
+`origin/main` (never a push-event delta) from a launchd LaunchAgent
+(`~/Library/LaunchAgents/com.blackceo.local-release-tag-watchdog.plist`) on Trevor's
+Mac, and publishes the tag via `scripts/push-version-tag.sh` if the CI workflow ever
+misses a push. It never invents a tag: if CHANGELOG.md doesn't document the version
+yet, it refuses and logs why. See that script's header for the full design.
+
 `scripts/release.sh` (bump + CHANGELOG + tag, all in one shot) is still the right tool
 for a deliberate release cut directly on `main` with no PR involved — this rule only
 concerns fix PRs.
