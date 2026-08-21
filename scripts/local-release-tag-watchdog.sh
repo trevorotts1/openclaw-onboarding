@@ -82,8 +82,12 @@ export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 
 GIT_BIN=/usr/bin/git
 BASH_BIN=/opt/homebrew/bin/bash
-REPO=/Users/blackceomacmini/openclaw-onboarding
-LOG=/Users/blackceomacmini/Library/Logs/openclaw/local-release-tag-watchdog.log
+# Fleet-wide privacy rule N0: this repo is a generic template and must never
+# carry a real operator/host path (the CRITICAL-1 guard hard-fails on one).
+# Defaults derive from $HOME; the launchd plist / cron job that runs the
+# OPERATIONAL copy passes the real paths via --repo/--log when they differ.
+REPO="${REPO:-$HOME/openclaw-onboarding}"
+LOG="${LOG:-$HOME/Library/Logs/openclaw/local-release-tag-watchdog.log}"
 LOCK=/tmp/local-release-tag-watchdog.lockdir
 REMOTE=origin
 SELFTEST=0
