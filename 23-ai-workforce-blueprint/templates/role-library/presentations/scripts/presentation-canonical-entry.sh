@@ -969,6 +969,10 @@ $_CREATE_OUT"
     export OC_DECK_ENTRY_NONCE
     export OC_DECK_CANONICAL_ENTRY=1
     export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
+    # F16 — U047 Rule 3.5 staging is OVER: canonical runs enforce the three
+    # pixel-level gates (AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED)
+    # by default; only an explicit PRESENTATION_SLIDE_GEOMETRY_ENFORCE=0 opts out.
+    export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
     trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
     note "run: ${_ENGINE_RUN_CMD[*]}"
@@ -1044,6 +1048,11 @@ export OC_DECK_CANONICAL_ENTRY=1
 # ungated. Never overrides an explicit caller override to something stricter; only
 # sets the default when unset.
 export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
+
+# F16 — U047 Rule 3.5 staging is OVER: canonical runs enforce the three
+# pixel-level gates (AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED)
+# by default; only an explicit PRESENTATION_SLIDE_GEOMETRY_ENFORCE=0 opts out.
+export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
 
 # Consume/rotate the nonce on ANY exit (normal or signal) so it can never be replayed.
 trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP

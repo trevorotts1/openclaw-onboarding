@@ -78,11 +78,30 @@ def _sp_signals_present(run_dir: Path) -> bool:
             return True
         # presentation_type declared as signature
         ptype_e = entries.get("presentation_type", {})
-        if isinstance(ptype_e, dict) and ptype_e.get("value") == "signature":
+        if isinstance(ptype_e, dict) and (
+                ptype_e.get("value") == "signature"
+                or ptype_e.get("normalized") == "signature"):
             return True
         # sp_mode set (QUICK or IN-DEPTH -- the signature choice-first question)
         if "sp_mode" in sp_entries:
             return True
+        # F24 — Signal 4 as documented: scan the ledger's free-text answer
+        # content for an explicit 'signature presentation' request. The docstring
+        # promises this signal, but only key/enum lookups existed before; a client
+        # who TYPED the request into a free-text answer carried SP intent that
+        # this gate never saw.
+        _SP_REQUEST_MARKERS = ("signature presentation",
+                               "signature_presentation",
+                               "signature-style presentation")
+        for rec in list(entries.values()) + list(sp_entries.values()):
+            if not isinstance(rec, dict):
+                continue
+            text_blob = " ".join(
+                str(v) for v in (rec.get("answer"), rec.get("normalized"),
+                                 rec.get("value"), rec.get("note")) if v is not None)
+            low = text_blob.lower()
+            if any(m in low for m in _SP_REQUEST_MARKERS):
+                return True
 
     return False
 

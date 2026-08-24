@@ -30,9 +30,13 @@ DESIGN RULES
     This check is in verify() itself — no verifier can bypass it.
   * All engine-checker imports are defensive (try/except ImportError) so CI/test
     contexts that lack sibling modules still parse without error.
-  * A genuinely unavailable checker records a NOTE reason but does NOT crash and does
-    NOT silently pass a real substance failure — it only degrades when the module is
-    missing.
+  * F03 — FAIL CLOSED on missing evidence: a checker that RAISES, or an engine
+    that is entirely unavailable, is a FAILED verifier in production, not a NOTE
+    pass. Degraded (NOTE) passes survive ONLY in an explicit test/CI context:
+    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI / OPENCLAW_TEST env markers, or
+    the `.test-context` run-dir marker (see _degraded_allowed — the same contract
+    as run_signature_deck._degraded_verifiers_allowed). A crashed measurer equals
+    no measurement; no measurement cannot equal pass.
   * NO network calls, NO side effects. Pure filesystem reads + engine checks.
   * FAIL-with-reason is mechanically enforced. After each verifier returns,
     verify() validates that every (False, reasons) tuple has non-empty reasons.
@@ -46,6 +50,7 @@ EXIT CODES (when run as __main__ with --selftest)
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -153,6 +158,26 @@ def _bd_fn(name: str):
     return getattr(_bd, name, None)
 
 
+def _degraded_allowed(run_dir) -> bool:
+    """F03: mirror of run_signature_deck._degraded_verifiers_allowed — a degraded
+    (skipped / filesystem-fallback) substance check is permitted ONLY in an explicit
+    test/CI context. Signals: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI /
+    OPENCLAW_TEST env markers, or the `.test-context` run-dir marker file. A real
+    production run has NONE of these signals, so an engine crash or whole-engine
+    unavailability inside a governed verifier FAILS CLOSED instead of silently
+    passing on weaker evidence."""
+    if os.environ.get("PRESENTATION_ALLOW_DEGRADED_VERIFIERS") == "1":
+        return True
+    if os.environ.get("CI") or os.environ.get("OPENCLAW_TEST"):
+        return True
+    try:
+        if (Path(run_dir) / "working" / "checkpoints" / ".test-context").exists():
+            return True
+    except Exception:  # noqa: BLE001 — a marker-read hiccup must not open the gate
+        pass
+    return False
+
+
 def _checker_pass(result) -> bool:
     """Normalise a checker result to bool.
 
@@ -253,6 +278,15 @@ def _verify_research(run_dir: Path) -> Tuple[bool, List[str]]:
         ok, r = _check_text_nonempty(run_dir, "working/research/brief-*.md", 100)
         if not ok:
             return False, r
+        if not _degraded_allowed(run_dir):
+            # F03: in production the cited-URL and claims-without-citation gates
+            # simply did not run — that is missing evidence, not a pass.
+            return False, [
+                "AF-RESEARCH-GATE: build_deck not importable — research engine checks "
+                "could not run. A filesystem-existence check alone cannot attest "
+                "P-0.5-RESEARCH in production (degraded pass allowed ONLY with an "
+                "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / "
+                "CI / OPENCLAW_TEST / .test-context run-dir marker)."]
         return True, ["NOTE: build_deck not importable — research engine checks degraded (pass)"]
 
     # FIX-E2E: _chk_research_brief / _chk_research_cited take a FILE path (they
@@ -302,6 +336,14 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         ok, r = _check_text_nonempty(run_dir, "working/copy/slides_copy.md", 50)
         if not ok:
             return False, r
+        if not _degraded_allowed(run_dir):
+            # F03: production — neither writing-engine nor pricing-engine copy QC ran.
+            return False, [
+                "AF-COPY: engine checkers not importable — copy verifier could not run "
+                "its substance checks. A filesystem-existence check alone cannot attest "
+                "P4-COPY in production (degraded pass allowed ONLY with an explicit "
+                "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
+                "OPENCLAW_TEST / .test-context run-dir marker)."]
         return True, ["NOTE: engine checkers not importable — copy verifier degraded (pass)"]
 
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): both
@@ -332,15 +374,26 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         try:
             _iec.check_copy(working, problems)
         except Exception as exc:  # noqa: BLE001
-            reasons.append(f"NOTE: intelligence_engines_check.check_copy raised {exc!r} — skipped")
+            # F03: a crashed engine is missing evidence. In production that FAILS;
+            # only an explicit test/CI context keeps it a NOTE-skip.
+            if _degraded_allowed(run_dir):
+                reasons.append(f"NOTE: intelligence_engines_check.check_copy raised {exc!r} — skipped")
+            else:
+                reasons.append(f"AF-COPY-ENGINE-CRASH: intelligence_engines_check.check_copy raised {exc!r} — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
-        reasons.append("NOTE: intelligence_engines_check.check_copy unavailable — skipped")
+        if _degraded_allowed(run_dir):
+            reasons.append("NOTE: intelligence_engines_check.check_copy unavailable — skipped")
+        else:
+            reasons.append("AF-COPY-ENGINE-MISSING: intelligence_engines_check.check_copy unavailable — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
 
     if _pec is not None and hasattr(_pec, "check_copy") and _pitch_included(run_dir):
         try:
             _pec.check_copy(working, problems)
         except Exception as exc:  # noqa: BLE001
-            reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+            if _degraded_allowed(run_dir):
+                reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+            else:
+                reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
         if _pec is None:
             reasons.append("NOTE: pitch_engines_check unavailable — skipped")
@@ -364,12 +417,28 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
         ok, r = _check_text_nonempty(run_dir, "working/prompts/slide-*.txt", 100)
         if not ok:
             return False, r
+        if not _degraded_allowed(run_dir):
+            # F03: the deterministic prompt measurer (length >=9k, harmony,
+            # excellence gates) never ran — missing evidence cannot attest.
+            return False, [
+                "AF-PROMPT-QC: build_deck.check_prompt_qc_deterministic unavailable — "
+                "the deterministic prompt measurer did not run. A filesystem-existence "
+                "check alone cannot attest P4-PROMPT/P-PROMPT-QC in production "
+                "(degraded pass allowed ONLY with an explicit test/CI marker: "
+                "PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST / "
+                ".test-context run-dir marker)."]
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable — prompt verifier degraded (pass)"]
 
     try:
         verdict = fn(run_dir)
     except Exception as exc:  # noqa: BLE001
-        return True, [f"NOTE: check_prompt_qc_deterministic raised {exc!r} — degraded (pass)"]
+        # F03 (was line 372): a crashing measurer is NOT a passing measurer. This
+        # degrade-to-PASS was the hole where every prompt-QC gate vanished whenever
+        # check_prompt_qc_deterministic itself blew up. Fail closed; test/CI only
+        # via the same markers the runner honors.
+        if _degraded_allowed(run_dir):
+            return True, [f"NOTE: check_prompt_qc_deterministic raised {exc!r} — degraded (pass)"]
+        return False, [f"AF-PROMPT-QC-CRASH: check_prompt_qc_deterministic raised {exc!r} — the deterministic prompt measurer crashed; failing closed (test/CI marker absent)"]
 
     if isinstance(verdict, dict):
         if verdict.get("pass"):
@@ -427,6 +496,15 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
         if fn is None:
             if not report_path.is_file():
                 return False, [f"{af_code}: file absent — {report_rel}"]
+            if not _degraded_allowed(run_dir):
+                # F03: the report-shape+teeth gate never ran; a file existing is
+                # not the same as the report being valid.
+                return False, [
+                    f"{af_code}: build_deck.{bd_fn_name} unavailable — the report "
+                    f"gate could not run. A bare-existence check cannot attest this "
+                    "phase in production (degraded pass allowed ONLY with an explicit "
+                    "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
+                    "OPENCLAW_TEST / .test-context run-dir marker)."]
             reasons = [f"NOTE: build_deck.{bd_fn_name} unavailable — degraded to a bare "
                        f"existence check (pass)"]
             return True, reasons
@@ -452,12 +530,26 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
                     return False, [f"AF-IMAGE-QC-VISION: {result}"]
                 return True, []
             except Exception as exc:  # noqa: BLE001
-                pass  # fall through to filesystem check below
+                # F03: the vision measurer crashed — falling through to a bare
+                # PNG-existence check in production would attest renders that no
+                # gate ever actually measured. Fail closed unless test/CI.
+                if not _degraded_allowed(run_dir):
+                    return False, [
+                        f"AF-IMAGE-QC-CRASH: canonical_render_guard image-QC raised "
+                        f"{exc!r} — the render image-QC did not run; failing closed "
+                        "(test/CI marker absent)"]
 
     # Filesystem fallback: at least one render PNG must exist.
     hits = list(run_dir.glob("renders/slide-*.png"))
     if not hits:
         return False, ["AF-IMAGE-QC-VISION: no render PNGs found at renders/slide-*.png"]
+    if not _degraded_allowed(run_dir):
+        return False, [
+            "AF-IMAGE-QC-MISSING: canonical_render_guard image-QC unavailable — the "
+            "render image-QC never ran. A PNG-existence check alone cannot attest "
+            "P4-RENDER/P-IMAGE-QC in production (degraded pass allowed ONLY with an "
+            "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
+            "OPENCLAW_TEST / .test-context run-dir marker)."]
     return True, ["NOTE: canonical_render_guard image-QC unavailable — filesystem-only check (pass)"]
 
 
@@ -520,6 +612,15 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
     biggest = max(hits, key=lambda p: p.stat().st_size)
     if biggest.stat().st_size < 1000:
         return False, [f"AF-HARMONY: {biggest.name} is suspiciously small ({biggest.stat().st_size} bytes)"]
+    if not _degraded_allowed(run_dir):
+        # F03: cross-slide cohesion was never measured; container sanity alone
+        # cannot attest assembly in production.
+        return False, [
+            "AF-HARMONY: build_deck.check_deck_harmony unavailable — deck-harmony "
+            "was never measured. A container-sanity check alone cannot attest "
+            "P8-ASSEMBLE in production (degraded pass allowed ONLY with an explicit "
+            "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
+            "OPENCLAW_TEST / .test-context run-dir marker)."]
     return True, ["NOTE: build_deck.check_deck_harmony unavailable — filesystem-only check (pass)"]
 
 
@@ -2127,6 +2228,7 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     if fn is None:
         return False, [f"no verifier registered for {phase_id!r} — pass"]
 
+
     # ---- ANTI-DRIFT CORE (WORK-ITEM-14c): SIMULATED rejection ----
     # Check BEFORE the per-phase verifier so a SIMULATED attestation cannot be
     # bypassed by a verifier that returns (True, []).
@@ -2166,7 +2268,10 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
 
         return bool(ok), list(reasons)
     except Exception as exc:  # noqa: BLE001
-        return False, [f"verifier for {phase_id!r} raised {exc!r} — degraded (pass)"]
+        # F03: this already failed closed (False) — the message just lied about it.
+        return False, [
+            f"AF-VERIFIER-CRASH: verifier for {phase_id!r} raised {exc!r} — the "
+            f"substance verifier crashed; failing closed"]
 
 
 # ---------------------------------------------------------------------------

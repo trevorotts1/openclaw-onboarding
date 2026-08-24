@@ -1,3 +1,23 @@
+## [v22.0.68]  -  2026-08-24  -  fix(presentations): enforcement sweep F01–F27 — QC made real, hangs bounded, cards un-stuck
+
+Cross-repo sweep with blackceo-command-center v6.0.92. Full ledger with backup paths,
+behavioral proofs, and Gemini 3.7 Flash adversarial QC verdicts (22/22 PASS):
+QUALITY-CONTROL/presentation-dept-fix-20260824/ (LEDGER.md, SPEC-presentations-enforcement.md).
+
+Root causes closed: steps skipped because nothing enforced the chain (48 qc_check codes had no
+runtime caller; attestation rows trusted blindly; verifier crashes degraded to PASS); timeouts
+(unbounded KIE 429 retries; timeout-less subprocess fallbacks; re-render re-billing; client fetch
+without timeout); kanban cards dying silently (deployed intake UI crashed every submission before
+a card existed; poison sessions crash-looped polls; soft-failed card creation marked processed);
+QC cosmetic (certs minted despite integrity gaps; 1-byte stubs passed FIX-8; rounding let 8.49996
+pass as 8.5; self-writable skip tokens waived terminal QC).
+
+Highlights: F02 qc_check wired fail-closed at delivery · F04 attestations require status=done +
+substance_verified · F05 sacred-structure hash pin enforced in verify.sh · F09 stale-sweep render
+exemption requires events within a 24h window strictly shorter than the 72h ceiling · F27 bundle
+gate enforces DELIVERABLE_AUDIT_SPEC min_bytes floors · F16 geometry/spelling hard-fail by default
+on canonical runs.
+
 ## [v22.0.67]  -  2026-08-21  -  fix(roll): wired-sentinel recheck gate + FALLBACK B supervisor assert
 
 - `update-skills.sh` CONTENT RECHECK could exit 0 on a content-current box without confirming the wiring loop ever ran, leaving boxes permanently UNWIRED (content synced, zero `.wired-<version>` sentinels) while reporting green. The recheck now counts every numbered skill dir the wiring loop would wire (same glob, same ARCHIVED skip) and falls through to the full pass — idempotent, fast-skips already-sentinel'd skills — when any sentinel is missing.

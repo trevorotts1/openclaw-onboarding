@@ -1137,6 +1137,37 @@ class Engine:
 
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
+
+        # F15 — fail closed on certificate integrity. _mint_process_certificate
+        # computes integrity_pass (no unentered phases, substance verified,
+        # monotonic timestamps, gates passed) but nothing read it before this
+        # fix: a cert minted with FAIL integrity still reached terminal DONE.
+        # The gate check runs AFTER evaluate_all() so the same gate failures
+        # that would fail here anyway are handled by the normal path; this
+        # guard catches integrity gaps the gate list alone does not cover
+        # (unentered phases, unverified substance, non-monotonic timestamps).
+        def _integrity_block(cert: dict) -> int:
+            reasons = cert.get('integrity_fail_reasons') or [
+                'AF-PROCESS-INTEGRITY: integrity_pass=False (no specific reasons recorded)']
+            lines = "\n".join(f"    - {r}" for r in reasons)
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": "CERT-INTEGRITY",
+                "reason": "PROCESS-CERTIFICATE integrity_pass=False",
+                "at": utcnow(),
+                "gates": [r.split(':', 1)[0] for r in reasons],
+            }
+            self.store.save(self.state)
+            self.report.to_requester(
+                "blocked",
+                f"Process integrity failed — deck cannot ship: {len(reasons)} integrity violation(s)")
+            print("\nCANNOT CLOSE -- process certificate integrity FAILED:", file=sys.stderr)
+            print(lines, file=sys.stderr)
+            print("\n  Every manifest phase must have run and been substance-verified.", file=sys.stderr)
+            print("\n  continue with:", file=sys.stderr)
+            print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
+
         try:
             waivers = load_waivers(self.run_dir)
             for w in waivers:
@@ -1174,7 +1205,9 @@ class Engine:
             if not failures:
                 # All failed gates passed on re-evaluation.
                 # WORK-ITEM-05: Mint certificate BEFORE terminal transition.
-                self._mint_process_certificate()
+                cert = self._mint_process_certificate()
+                if not cert.get('integrity_pass', False):
+                    return _integrity_block(cert)
                 # WORK-ITEM-13: assemble flat deliverables/ folder.
                 try:
                     _curate.curate(self.run_dir)
@@ -1239,7 +1272,9 @@ class Engine:
             print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         # WORK-ITEM-05: Mint certificate BEFORE terminal DONE transition.
-        self._mint_process_certificate()
+        cert = self._mint_process_certificate()
+        if not cert.get('integrity_pass', False):
+            return _integrity_block(cert)
         # WORK-ITEM-13: assemble flat deliverables/ folder.
         try:
             _curate.curate(self.run_dir)

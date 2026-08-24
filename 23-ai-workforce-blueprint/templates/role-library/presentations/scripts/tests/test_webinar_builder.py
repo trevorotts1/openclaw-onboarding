@@ -437,7 +437,8 @@ def test_bundle_without_webinar_mp4_fails_and_enumerates_it(tmp_path):
     for spec in fbc.REQUIRED_DELIVERABLES:
         if spec["key"] == "webinar_mp4":
             continue
-        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(b"x" * 2048)
+        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(
+            b"x" * max(int(next(d for d in fbc.DELIVERABLE_AUDIT_SPEC if d["key"] == spec["key"]).get("min_bytes", 1)), 1))
 
     missing = fbc.check_bundle_complete(base, deck_slug="deck")
     assert "webinar_mp4" in missing, (
@@ -452,7 +453,8 @@ def test_full_bundle_including_webinar_mp4_passes(tmp_path):
     base = tmp_path / "full"
     base.mkdir(parents=True)
     for spec in fbc.REQUIRED_DELIVERABLES:
-        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(b"x" * 2048)
+        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(
+            b"x" * max(int(next(d for d in fbc.DELIVERABLE_AUDIT_SPEC if d["key"] == spec["key"]).get("min_bytes", 1)), 1))
 
     ok, missing, gate = fbc.run_bundle_gate(base, deck_slug="deck")
     assert ok is True, f"full 10-deliverable bundle must pass; got missing={sorted(missing)}"
@@ -468,7 +470,8 @@ def test_zero_byte_webinar_mp4_counts_as_missing(tmp_path):
     base = tmp_path / "zero-webinar"
     base.mkdir(parents=True)
     for spec in fbc.REQUIRED_DELIVERABLES:
-        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(b"x" * 2048)
+        (base / fbc._expand_filename(spec["filename"], "deck")).write_bytes(
+            b"x" * max(int(next(d for d in fbc.DELIVERABLE_AUDIT_SPEC if d["key"] == spec["key"]).get("min_bytes", 1)), 1))
     (base / "deck-WEBINAR.mp4").write_bytes(b"")  # zero-byte -> NOT done
 
     missing = fbc.check_bundle_complete(base, deck_slug="deck")
@@ -480,7 +483,8 @@ def test_webinar_mp4_deck_slug_templating(tmp_path):
     base = tmp_path / "slug"
     base.mkdir(parents=True)
     for spec in fbc.REQUIRED_DELIVERABLES:
-        (base / fbc._expand_filename(spec["filename"], "acme-q1")).write_bytes(b"x" * 2048)
+        (base / fbc._expand_filename(spec["filename"], "acme-q1")).write_bytes(
+        b"x" * max(int(next(d for d in fbc.DELIVERABLE_AUDIT_SPEC if d["key"] == spec["key"]).get("min_bytes", 1)), 1))
     ok, missing, gate = fbc.run_bundle_gate(base, deck_slug="acme-q1")
     assert ok is True, f"slugged full bundle must pass; got missing={sorted(missing)}"
     rec = json.loads(gate.read_text())

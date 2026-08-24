@@ -103,12 +103,15 @@ _EMITTED_AF_CODES = (
 
 
 def check_bundle_complete(bundle_dir, deck_slug="deck") -> list:
-    """Return a list of missing-or-empty deliverable KEYS in bundle_dir.
-    [] means the full bundle is present and non-empty.
+    """Return a list of missing-or-undersized deliverable KEYS in bundle_dir.
+    [] means the full bundle is present at real substance.
     Never raises: an unreadable bundle_dir is reported as 'all missing'
-    (fail-closed). 'non-empty' means a REAL regular file with > 0 bytes —
-    a zero-byte placeholder or a symlink-to-nowhere is NOT done."""
+    (fail-closed). A REAL regular file must clear its DELIVERABLE_AUDIT_SPEC
+    min_bytes floor — F27: before this, only size==0 was rejected, so a
+    1-byte stub (e.g. audio_mp3 with a 512 KB floor) passed FIX-8 as "done".
+    A zero-byte placeholder or a symlink-to-nowhere is still NOT done."""
     bundle_dir = Path(bundle_dir)
+    min_bytes_by_key = {d["key"]: d.get("min_bytes", 1) for d in DELIVERABLE_AUDIT_SPEC}
     missing = []
     for spec in REQUIRED_DELIVERABLES:
         key = spec["key"]
@@ -124,7 +127,8 @@ def check_bundle_complete(bundle_dir, deck_slug="deck") -> list:
             missing.append(key)
             continue
         try:
-            if not path.is_file() or path.stat().st_size == 0:
+            size = path.stat().st_size
+            if not path.is_file() or size < max(1, int(min_bytes_by_key.get(key, 1))):
                 missing.append(key)
         except OSError:
             missing.append(key)
@@ -247,8 +251,10 @@ def _selftest() -> int:
     # CASE A — deck-only bundle (the live E2E failure) -> FAILS, missing 8.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        # A real non-empty deck pptx, nothing else.
-        (base / "deck-FINAL.pptx").write_bytes(b"x" * 1024)
+        # A real deck pptx at full floor size, nothing else.
+        _a_floor = max(int(next(d for d in DELIVERABLE_AUDIT_SPEC
+                                if d["key"] == "deck_pptx").get("min_bytes", 1)), 1)
+        (base / "deck-FINAL.pptx").write_bytes(b"x" * _a_floor)
         missing = check_bundle_complete(base, deck_slug="deck")
         expect = set(REQUIRED_KEYS) - {"deck_pptx"}
         if set(missing) != expect:
@@ -265,19 +271,39 @@ def _selftest() -> int:
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         (base / "deck-FINAL.pptx").write_bytes(b"")
-        (base / "PRESENTERS-SPEECH.md").write_text("real speech text")
+        (base / "PRESENTERS-SPEECH.md").write_text("real speech text" * 400)
         missing = check_bundle_complete(base, deck_slug="deck")
         if "deck_pptx" not in missing:
             fails.append("B zero-byte: a zero-byte deck_pptx must count as missing")
         if "speech_md" in missing:
             fails.append("B zero-byte: a real speech_md must NOT be missing")
 
+    # CASE F27 — a NON-empty but undersized stub counts as missing: audio_mp3
+    # has a 512 KB floor; a 1-byte 'audio.mp3' previously passed FIX-8.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        min_by_key = {d["key"]: d.get("min_bytes", 1) for d in DELIVERABLE_AUDIT_SPEC}
+        for spec in REQUIRED_DELIVERABLES:
+            fname = _expand_filename(spec["filename"], "deck")
+            floor = int(min_by_key.get(spec["key"], 1))
+            if spec["key"] == "audio_mp3":
+                (base / fname).write_bytes(b"ID3stub")  # 8 bytes << 512 KB floor
+            else:
+                (base / fname).write_bytes(b"x" * max(floor, 1))
+        missing = check_bundle_complete(base, deck_slug="deck")
+        if missing != ["audio_mp3"]:
+            fails.append(f"F27 stub: expected ['audio_mp3'] undersized, got {sorted(missing)}")
+
+    def _write_full_bundle(base: Path, slug: str) -> None:
+        min_by_key = {d["key"]: d.get("min_bytes", 1) for d in DELIVERABLE_AUDIT_SPEC}
+        for spec in REQUIRED_DELIVERABLES:
+            fname = _expand_filename(spec["filename"], slug)
+            (base / fname).write_bytes(b"x" * max(int(min_by_key.get(spec["key"], 1)), 1))
+
     # CASE C — full bundle -> PASSES, bundle_complete.json written.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        for spec in REQUIRED_DELIVERABLES:
-            fname = _expand_filename(spec["filename"], "deck")
-            (base / fname).write_bytes(b"x" * 1024)
+        _write_full_bundle(base, "deck")
         missing = check_bundle_complete(base, deck_slug="deck")
         if missing:
             fails.append(f"C full: expected no missing, got {sorted(missing)}")
@@ -296,9 +322,7 @@ def _selftest() -> int:
     # CASE D — deck_slug templating.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        for spec in REQUIRED_DELIVERABLES:
-            fname = _expand_filename(spec["filename"], "acme-q1")
-            (base / fname).write_bytes(b"x" * 1024)
+        _write_full_bundle(base, "acme-q1")
         missing = check_bundle_complete(base, deck_slug="acme-q1")
         if missing:
             fails.append(f"D slug: expected no missing, got {sorted(missing)}")

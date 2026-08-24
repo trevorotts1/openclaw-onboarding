@@ -1,21 +1,33 @@
 {
   "deck_slug": "golden-quest",
-  "declared_at": "2026-07-02T09:00:00+00:00",
+  "declared_at": "2026-08-24T09:00:00+00:00",
   "steps": [
     {
       "order": 0.1,
       "id": "P0A-INTAKE",
-      "name": "Deck Intake",
-      "owning_role": "brainstorming-buddy-presentations"
+      "name": "Intake / Interview Confirm",
+      "owning_role": "director-of-presentations"
+    },
+    {
+      "order": 0.14,
+      "id": "P-SP-CLAIM",
+      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "owning_role": "signature-presentation-architect"
     },
     {
       "order": 0.15,
       "id": "P-SP-INTAKE",
-      "name": "Signature Intake Gate (prove_sp_intake)",
+      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
       "owning_role": "signature-presentation-architect"
     },
     {
-      "order": 4.0,
+      "order": 0.16,
+      "id": "P-SP-INTAKE-TRACE",
+      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "owning_role": "signature-presentation-architect"
+    },
+    {
+      "order": 4,
       "id": "P4-COPY",
       "name": "Slide Copy",
       "owning_role": "slide-copywriter"
@@ -23,16 +35,16 @@
     {
       "order": 4.1,
       "id": "P-SP-STRUCTURE",
-      "name": "Signature Structure Gate (prove_sp_structure)",
-      "owning_role": "qc-specialist-signature-presentations"
+      "name": "Signature-Presentation Structure Gate (sacred structure contract)",
+      "owning_role": "signature-presentation-architect"
     },
     {
       "order": 4.15,
       "id": "P-SP-P3-HYGIENE",
-      "name": "Signature Phase-3 No-Pitch Gate (prove_sp_no_pitch)",
+      "name": "Signature-Presentation Phase-3 No-Pitch Hygiene Gate",
       "owning_role": "qc-specialist-signature-presentations"
     }
   ],
-  "total": 5,
+  "total": 7,
   "step_declaration_msg_id": "golden-quest-plan-0001"
 }
