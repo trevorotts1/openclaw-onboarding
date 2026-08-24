@@ -1,3 +1,20 @@
+## [v22.0.69]  -  2026-08-24  -  fix(compat): bump commandCenter.pinnedTag to v6.0.92 so fleet-refresh ships the CC-lane sweep fixes
+
+Correctness fix in the v19.0.0/v20.0.2/v20.0.7/v21.7.32 lineage: resolve_cc_tag
+returns pinnedTag unconditionally, and the merge agent that shipped v22.0.68 left
+the pin at v6.0.91 while the Command Center lane released v6.0.92 (commit 1809a5f,
+tag verified). The stale pin made fleet-refresh `git checkout v6.0.91` on every box,
+deploying a Command Center WITHOUT the four CC-lane fixes from this sweep:
+
+- F01: bulk task-update route now requires the presentations process_certificate on move-to-done (raw bulk UPDATE can no longer bypass transition()).
+- F09: stale-task sweep exempts long presentations renders only with recent events activity (PRESENTATIONS_RENDER_EXEMPT_HOURS 72h ceiling / PRESENTATIONS_ACTIVITY_WINDOW_HOURS 24h window); dead runs still age out.
+- F14: qc-scorer done-transition reads the stored process_certificate; cards passing QC >=8.5 no longer stall in review with PRECONDITION_PROCESS_CERTIFICATE.
+- F26: parent task done-count excludes children still in review.
+
+v6.0.92 >= minVersion (v4.73.0), maxVersion null — schema contract holds.
+No endpoint or mission-control.db change. Backup of prior state:
+cc-compat.json.bak-presfix-pinnedtag-20260824 (untracked).
+
 ## [v22.0.68]  -  2026-08-24  -  fix(presentations): enforcement sweep F01–F27 — QC made real, hangs bounded, cards un-stuck
 
 Cross-repo sweep with blackceo-command-center v6.0.92. Full ledger with backup paths,
