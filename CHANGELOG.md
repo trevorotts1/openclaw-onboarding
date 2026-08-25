@@ -1,3 +1,35 @@
+## [v22.0.72]  -  2026-08-24  -  fix(presentations): F04 attestation filter rejected every genuine runner row (v22.0.68 regression) — phase chain + delivery boundary restored
+
+The v22.0.68 F04 hardening added a `status=='done'` filter to the attestation
+readers, but the writer `attest_phase()` NEVER writes `'done'` — it writes
+`artifact_present`, `preflight_ok`, `preflight_ok_adhoc`, or `qc_pass_measurer`.
+Every genuine runner row was therefore dropped:
+
+- build_deck.check_phase_preconditions false-tripped AF-PHASE-SKIPPED after the
+  first phase (the RUNNER-ATTEST SEEN (3C/D1) regression test failed in CI,
+ catching the defect exactly as designed).
+- canonical_render_guard.attested_phase_ids refused fully-attested runs at the
+  delivery boundary gate.
+
+Fix: both readers accept the writer's real completion statuses plus the legacy
+'done' shape; `substance_verified is True` stays the forged-row tooth;
+'qc_owner_override' rows remain excluded (overrides satisfy the chain only via
+phase_skip_approvals.json). The regression test now passes
+substance_verified=True like every production call site. Renderer pin re-stamped.
+
+Also:
+- 59-anthology-engine (0.1.30 -> 0.1.31): INSTALL.md ANTHOLOGY_STATE_DIR row
+  reworded without the retired docs-language term (filename citations do not
+  exempt the substring; the allowlist lists are empty by doctrine).
+- Repo release bump v22.0.71 -> v22.0.72 via scripts/bump-version.sh (all 10
+  markers agree); skill 23 rides the repo version as its carrier.
+
+Local proof: test_preflight.py exit 0 (RUNNER-ATTEST PASS);
+tests/test_delivery_guard_selfblock.py 6/6; sync_check.py IN SYNC;
+gate_integrity_check.py OK; runner_gate_integrity_check.py OK; test_cc_board.py +
+test_cc_contract.py exit 0; check-docs-language.py 0 new occurrences;
+qc-assert-repo-consistency rc=0; bump-version.sh --check green.
+
 ## [v22.0.70]  -  2026-08-24  -  fix(podcast-audit): Skill 58 end-to-end diagnostic sweep F1-F8 — icon-clobber guard, cron-guard blind spots, n8n export drift
 
 Full end-to-end diagnostic of the podcast skill set (Skill 58), its live n8n workflows, and the
