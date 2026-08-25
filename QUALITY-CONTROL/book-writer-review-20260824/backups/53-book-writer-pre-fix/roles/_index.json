@@ -1,0 +1,98 @@
+{
+  "$schema": "https://openclaw.ai/schemas/book-writer-role-index/v1",
+  "contract": "book-writer-role-index",
+  "skill": "book-writer",
+  "skill_number": 53,
+  "description": "Registry of the 7 dispatchable role SOPs under 53-book-writer/roles/, each with a canonical content_sha (re-stamp with hash_role_index.py after any role SOP edit). The SOLE dispatcher is the foreman (run_book_writer.py, via book-writer-entry.sh); roles never invoke each other. PERSONAS.json is a DATA-only fictional-voice palette, not a role.",
+  "dispatcher": {
+    "kind": "foreman",
+    "entry": "book-writer-entry.sh",
+    "orchestrator": "run_book_writer.py",
+    "note": "The main agent acts as foreman via run_book_writer.py (dispatched through book-writer-entry.sh). Roles are dispatched by the foreman only and never invoke each other."
+  },
+  "roles": [
+    {
+      "slug": "avatar-analyst",
+      "path": "roles/AVATAR-ANALYST.md",
+      "phase": "P1-AVATAR",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:403b354efd90f70c9b65ced2aa92f93e3faf6fff97253b3f3003cde77a94318b",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "tone-analyst",
+      "path": "roles/TONE-ANALYST.md",
+      "phase": "P2-TONE",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:93cfb8fbf24edf6b254007a96829f9de13308b9d48c0077e0403e20533a2534e",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "title-strategist",
+      "path": "roles/TITLE-STRATEGIST.md",
+      "phase": "P3-TITLES-GATE",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:26389ae0b37310b75ef8ad06f14a0f68da14212558dfcb651a516b687c3b9921",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "book-architect",
+      "path": "roles/BOOK-ARCHITECT.md",
+      "phase": "P4-OUTLINE-GATE",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:42a3d7794c6d60ae323ebe49364619e457b29aa48ae4855115026260a9adf268",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "chapter-writer",
+      "path": "roles/CHAPTER-WRITER.md",
+      "phase": "P5-CHAPTERS",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:95e4dc76dd4e7d718a87ee23697ae87e45b61f246b33e075b8aec825845af5ac",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "packager",
+      "path": "roles/PACKAGER.md",
+      "phase": "P6-PACKAGE",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:20031215bce5f1d2bbae1aae5433283bc68627d0fa6728305810665a8ae2b4a6",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    },
+    {
+      "slug": "reviser",
+      "path": "roles/REVISER.md",
+      "phase": "P6-PACKAGE",
+      "dispatched_by": "foreman",
+      "content_sha": "sha256:87ae3cd7b28f03b96f509cceeae052f38e03069f5fb9588e36baefde7003b8c3",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    }
+  ],
+  "persona_palette": [
+    {
+      "slug": "book-writer-personas",
+      "path": "PERSONAS.json",
+      "kind": "data-only-palette",
+      "content_sha": "sha256:ad47ce02932d175910846ba8fcb3208eb7856773e459a82b85609f0dc286cecc",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-05T15:26:42.140189+00:00"
+    }
+  ],
+  "content_manifest": {
+    "algo": "sha256",
+    "normalize": [
+      "lf-newlines",
+      "strip-trailing-nl"
+    ],
+    "generator": "scripts/hash_role_index.py",
+    "generated_at": "2026-07-05T15:26:42.140189+00:00",
+    "manifest_schema": "1.0"
+  }
+}

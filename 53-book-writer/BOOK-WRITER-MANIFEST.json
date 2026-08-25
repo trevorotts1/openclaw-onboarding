@@ -2,10 +2,10 @@
   "manifest_version": 1,
   "skill": "book-writer",
   "skill_number": 53,
-  "skill_version": "1.2.0",
-  "human_name": "Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version)",
+  "skill_version": "1.3.0",
+  "human_name": "Book Writer \u2014 Ghostwriting Engine (Avatar Alchemist, BOOK version)",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Book Writer pipeline (the BOOK version of the Avatar Alchemist). The deterministic assembler/certifier run_book_writer.py walks phases[] IN ORDER (P0->P8) with NO phase skips. Each phase declares produces_artifact + its gate_codes (AF-BK-*). Every AF-BK-* below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/ (py_symbol names the deciding function). Editing this file is step (i) of any Book Writer change: add the gate, add the AF code here with its trigger, add the checker, add the golden + broken-variant fixture. Anthology is the SEPARATE sibling Skill 54 and is NOT part of this pipeline.",
-  "design_law": "Enforcement, not description. Every SACRED book count/floor is MEASURED on the STRIPPED text (markdown + whitespace removed) of the artifact — a model's self-reported chapter or word count is NEVER trusted, so a whitespace-padding attack cannot fake a floor. Locked title/subtitle immutability, verbatim personal-story placement, and sequential chapter-batch continuity are PROVEN, not requested. Client runtime resolves every tier (HEAVY/MID/FORMATTER/RESEARCHER/IMAGE) to the CLIENT's own providers via model-map.json — NEVER Anthropic/claude-* ids or operator keys. The provider-neutral gates are stdlib Python that run identically on every box.",
+  "design_law": "Enforcement, not description. Every SACRED book count/floor is MEASURED on the STRIPPED text (markdown + whitespace removed) of the artifact \u2014 a model's self-reported chapter or word count is NEVER trusted, so a whitespace-padding attack cannot fake a floor. Locked title/subtitle immutability, verbatim personal-story placement, and sequential chapter-batch continuity are PROVEN, not requested. Client runtime resolves every tier (HEAVY/MID/FORMATTER/RESEARCHER/IMAGE) to the CLIENT's own providers via model-map.json \u2014 NEVER Anthropic/claude-* ids or operator keys. The provider-neutral gates are stdlib Python that run identically on every box.",
   "shared_tone_core": "shared-utils/tone-writing-core",
   "source_prompt_pins": {
     "prompts/01-avatar-questions-1-30/system.md": "c6a6eb2c270d4018729cad194400a45215d1584d59c39b46d6bd96a45e11edd6",
@@ -89,13 +89,13 @@
       "GATE-4-approval-r2"
     ],
     "4x3x3": [
-      "GATE-433",
       "GATE-1-title",
       "GATE-2-outline",
+      "GATE-433",
       "GATE-3-approval"
     ]
   },
-  "gates_order_note": "In-chat human checkpoints replacing the source Gmail sendAndWait forms, exact order preserved: titles -> outline -> final approval -> (optional) second revision. Each gate receipt records the human's actual reply text + timestamp; downstream stage receipts reference the gate-receipt hash they depended on (approvals cannot be back-filled).",
+  "gates_order_note": "In-chat human checkpoints replacing the source Gmail sendAndWait forms, exact order preserved: titles -> outline -> final approval -> (optional) second revision. In the 4x3x3 mode GATE-433 (30 titles / 4 outcomes / deck-schema proof) is enforced at phase P4-OUTLINE-GATE, after the outline gates and before final approval. Each gate receipt records the human's actual reply text + timestamp; downstream stage receipts reference the gate-receipt hash they depended on (approvals cannot be back-filled).",
   "tiers": {
     "HEAVY-WRITER": "client's strongest long-form model (their OpenRouter primary or ollama-cloud large model, maxTokens 65536, baseUrl required)",
     "MID-WRITER": "client's mid model",
@@ -114,7 +114,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_intake",
-        "label": "run/intake.json present and prove_bw_intake.py PASS — version=book explicit, mode in {full,4x3x3}, all required fields non-boilerplate, book_stories present (N/A allowed). version=brand hands off to Skill 52, never runs here."
+        "label": "run/intake.json present and prove_bw_intake.py PASS \u2014 version=book explicit, mode in {full,4x3x3}, all required fields non-boilerplate, book_stories present (N/A allowed). version=brand hands off to Skill 52, never runs here."
       },
       "gate_codes": [
         "AF-BK-INTAKE-MISSING",
@@ -155,7 +155,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_tone",
-        "label": "prove_bw_tone.py PASS — blended tone >= 3000 stripped words; tone stages 04-08 in lockstep with shared-utils/tone-writing-core (verify_tone_core_sync.py)."
+        "label": "prove_bw_tone.py PASS \u2014 blended tone >= 3000 stripped words; tone stages 04-08 in lockstep with shared-utils/tone-writing-core (verify_tone_core_sync.py)."
       },
       "gate_codes": [
         "AF-BK-TONE-LEN"
@@ -172,7 +172,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_title_lock",
-        "label": "prove_bw_titlelock.py PASS — the GATE-1 locked title + subtitle appear byte-exact in every required downstream artifact."
+        "label": "prove_bw_titlelock.py PASS \u2014 the GATE-1 locked title + subtitle appear byte-exact in every required downstream artifact."
       },
       "gate_codes": [
         "AF-BK-TITLE-LOCK"
@@ -192,7 +192,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_outline",
-        "label": "prove_bw_stories.py PASS — each non-N/A personal story key phrase present in the approved outline; 12-title extraction schema-valid."
+        "label": "prove_bw_stories.py PASS \u2014 each non-N/A personal story key phrase present in the approved outline; 12-title extraction schema-valid."
       },
       "gate_codes": [
         "AF-BK-STORIES"
@@ -253,7 +253,7 @@
       "preflight": {
         "required": true,
         "checker": "check_qc",
-        "label": "prove_bw_noanthropic.py PASS — RUN-LEDGER.json is PRESENT and records at least one model id (fail-closed when absent or empty), no /anthropic|claude/i model id, and no operator credential name in the LIVE run env (scanned by NAME only) + prove_bw_433.py PASS when mode=4x3x3. Anonymization (AF-BK-ANON) is enforced at P6-PACKAGE over the assembled bundle."
+        "label": "prove_bw_noanthropic.py PASS \u2014 RUN-LEDGER.json is PRESENT and records at least one model id (fail-closed when absent or empty), no /anthropic|claude/i model id, and no operator credential name in the LIVE run env (scanned by NAME only) + prove_bw_433.py PASS when mode=4x3x3. Anonymization (AF-BK-ANON) is enforced at P6-PACKAGE over the assembled bundle."
       },
       "gate_codes": [
         "AF-BK-ANTHROPIC",
@@ -347,7 +347,7 @@
       "code": "AF-BK-CHALLENGE",
       "stage": "P6-PACKAGE",
       "level": "challenge",
-      "trigger": "the 30-Day Challenge does not have exactly 30 day-sections (heading pattern 'Day <n> —')",
+      "trigger": "the 30-Day Challenge does not have exactly 30 day-sections (heading pattern 'Day <n> \u2014')",
       "enforced_by": "prove_bw_challenge",
       "py_symbol": "evaluate"
     },
@@ -384,6 +384,14 @@
       "py_symbol": "evaluate"
     },
     {
+      "code": "AF-BK-LEDGER-COVERAGE",
+      "stage": "P7-QC",
+      "level": "run",
+      "trigger": "a produced non-degradable manifest stage artifact exists on disk but no RUN-LEDGER entry references that stage (a stage that ran but was never recorded breaks provenance)",
+      "enforced_by": "run_book_writer.py",
+      "py_symbol": "check_qc"
+    },
+    {
       "code": "AF-BK-ANON",
       "stage": "P6-PACKAGE",
       "level": "skill",
@@ -396,23 +404,23 @@
       "stage": "P8-DELIVER",
       "level": "run",
       "trigger": "a phase was attempted out of order or the certificate chain is broken",
-      "enforced_by": "run_book_writer",
-      "py_symbol": "run"
+      "enforced_by": "scripts/prove_bw_process.py",
+      "py_symbol": "check_stage_chain"
     },
     {
       "code": "AF-BK-PROCESS-INTEGRITY",
       "stage": "P8-DELIVER",
       "level": "run",
       "trigger": "a certificate was requested without a full P0->P7 pass",
-      "enforced_by": "run_book_writer",
-      "py_symbol": "_write_certificate"
+      "enforced_by": "run_book_writer.py",
+      "py_symbol": "write_certificate"
     },
     {
       "code": "AF-BK-HASH-PIN",
       "stage": "entry",
       "level": "enforcement",
       "trigger": "the enforcement-set hash (orchestrator + provers + _bw_common) does not match the pinned head (ENGINE-PIN.sha256)",
-      "enforced_by": "book-writer-entry",
+      "enforced_by": "scripts/prove_bw_process.py",
       "py_symbol": "version_hash_pin"
     },
     {
@@ -420,7 +428,7 @@
       "stage": "entry",
       "level": "run-dir",
       "trigger": "a hand-rolled external uploader/notifier (Google Drive / Slack / Gmail / n8n / Airtable / GHL) is present in the run directory, bypassing the local-labeled-deliverable handoff",
-      "enforced_by": "book-writer-entry",
+      "enforced_by": "scripts/prove_bw_process.py",
       "py_symbol": "bypass_scan"
     }
   ],
@@ -786,6 +794,7 @@
       ],
       "tier": "FORMATTER",
       "mode": "4x3x3",
+      "note": "deliverable produced during QC phase by design \u2014 the slides-extract stage runs inside P7-QC so prove_bw_433.py can measure the assembled deck payload before the certificate is minted; the phase label is intentional, not a misordering.",
       "floors": {
         "deck_schema": true,
         "phase_map": [

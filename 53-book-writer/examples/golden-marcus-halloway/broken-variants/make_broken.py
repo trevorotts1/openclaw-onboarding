@@ -8,19 +8,16 @@ twelve fail-closed provers, and asserts every one is REJECTED (never silently
 served). Read-only w.r.t. the checked-in golden run (mutations are applied to
 in-memory copies). Writes ONLY REJECTION-RESULTS.json.
 
-AUTHORING STATUS (Agent A): the mutation logic + the AF-BK map are FINAL and
-reference the pinned GOLDEN-BOOK-BIBLE layout. Variants whose source is a DATA
-anchor already shipped by Agent A (intake.json, stories.json, 433_Deck_Data.json,
-RUN-LEDGER) run NOW. Variants that mutate Wave-2 PROSE (chapters / tone / outline /
-challenge / blurb / cover) report {"blocked_on_prose": true} until that prose
-exists; Agent D re-runs this AFTER Wave-2 authors the prose to light every variant.
+FAIL-CLOSED: every source artifact a variant needs ships in-repo. A missing/empty
+source artifact means the variant CANNOT be built -> that is counted as a FAILURE
+(BUILD-FAIL, exit nonzero), never a silent skip.
 
 Usage:
-  python3 make_broken.py               # verify every present variant rejects; refresh REJECTION-RESULTS.json
+  python3 make_broken.py               # verify every variant rejects; refresh REJECTION-RESULTS.json
   python3 make_broken.py --results <p> # write the results ledger to <p> (read-only tree; used by verify.sh)
 
-Exit 0 = every PRESENT variant rejected with its expected code (blocked-on-prose
-variants are not counted as failures); 1 = a present variant leaked.
+Exit 0 = every variant was built AND rejected with its expected code;
+1 = a variant leaked OR could not be built.
 """
 from __future__ import annotations
 import argparse
@@ -87,7 +84,15 @@ def _res(vio):
     return (2 if vio else 0), sorted({cd for cd, _ in vio}), _fmt(vio)
 
 
-BLOCKED = ("__blocked__", [], "blocked_on_prose")
+class _BuildError(Exception):
+    """A variant could not build its mutation because a source artifact is absent."""
+
+
+def _require(value, rel):
+    if value is None or value == {} or value == []:
+        raise _BuildError("source artifact %s is missing/empty — the variant cannot be built "
+                          "(fail-closed: a missing fixture counts as a FAILURE, not a skip)" % rel)
+    return value
 
 
 # ---- data-anchor variants (run NOW) -----------------------------------------
@@ -155,12 +160,11 @@ def v_entry_bypass():
     return _res(p_proc.bypass_scan(src).violations)
 
 
-# ---- prose-dependent variants (blocked until Wave-2 authors prose) ----------
+# ---- prose-dependent variants (source artifacts ship in-repo; a missing one is a FAILURE) --
 def v_title_lock():
-    chaps = _chapters()
-    title, subtitle = p_title.parse_approved_title(_text("artifacts/APPROVED-TITLE.txt") or "")
-    if not chaps:
-        return BLOCKED
+    chaps = _require(_chapters(), "run/chapters/")
+    title, subtitle = p_title.parse_approved_title(_require(
+        _text("artifacts/APPROVED-TITLE.txt"), "artifacts/APPROVED-TITLE.txt"))
     bad = copy.deepcopy(chaps)
     k = min(bad)
     bad[k] = bad[k].replace(subtitle, subtitle.replace("Trust", "Power")) if subtitle in bad[k] \
@@ -170,12 +174,11 @@ def v_title_lock():
 
 
 def v_stories():
-    chaps = _chapters()
-    outline = _text("artifacts/13-outline.md")
-    stories = _json("stories.json")
-    if not chaps or outline is None:
-        return BLOCKED
-    title, subtitle = p_title.parse_approved_title(_text("artifacts/APPROVED-TITLE.txt") or "")
+    chaps = _require(_chapters(), "run/chapters/")
+    outline = _require(_text("artifacts/13-outline.md"), "artifacts/13-outline.md")
+    stories = _require(_json("stories.json"), "stories.json")
+    title, subtitle = p_title.parse_approved_title(_require(
+        _text("artifacts/APPROVED-TITLE.txt"), "artifacts/APPROVED-TITLE.txt"))
     manu = _manuscript(chaps, title, subtitle)
     key = stories[0]["key_phrase"]
     manu_bad = manu.replace(key, "did some routine work")
@@ -183,17 +186,13 @@ def v_stories():
 
 
 def v_chap_count():
-    chaps = _chapters()
-    if not chaps:
-        return BLOCKED
+    chaps = _require(_chapters(), "run/chapters/")
     bad = dict(sorted(chaps.items())[:-1])   # drop chapter 12
     return _res(p_chap.evaluate(bad).violations)
 
 
 def v_chap_len():
-    chaps = _chapters()
-    if not chaps:
-        return BLOCKED
+    chaps = _require(_chapters(), "run/chapters/")
     bad = copy.deepcopy(chaps)
     k = sorted(bad)[6] if len(bad) >= 7 else min(bad)
     bad[k] = "# short chapter\n\nfar too short to be a real chapter."
@@ -201,14 +200,15 @@ def v_chap_len():
 
 
 def v_continuity():
-    chaps = _chapters()
+    chaps = _require(_chapters(), "run/chapters/")
     receipts = {}
     for stage, bnum, _ in p_cont.BATCHES:
         r = _json("receipts/G-STAGE-%s.json" % stage)
         if r is not None:
             receipts[bnum] = r
-    if not chaps or len(receipts) < 4:
-        return BLOCKED
+    if len(receipts) < 4:
+        raise _BuildError("only %d of 4 batch receipts present under run/receipts/ — variant "
+                          "cannot be built (fail-closed)" % len(receipts))
     csha = {n: hashlib.sha256(chaps[n].encode("utf-8")).hexdigest() for n in chaps}
     bad = copy.deepcopy(receipts)
     if 3 in bad:
@@ -217,17 +217,13 @@ def v_continuity():
 
 
 def v_tone_len():
-    tone = _text("artifacts/08-blended-tone.md")
-    if tone is None:
-        return BLOCKED
+    tone = _require(_text("artifacts/08-blended-tone.md"), "artifacts/08-blended-tone.md")
     bad = "# The Marcus Halloway Tone\n" + " ".join(tone.split()[:400])   # truncate under floor
     return _res(p_tone.evaluate(bad).violations)
 
 
 def v_challenge():
-    ch = _text("artifacts/21-30day-challenge.md")
-    if ch is None:
-        return BLOCKED
+    ch = _require(_text("artifacts/21-30day-challenge.md"), "artifacts/21-30day-challenge.md")
     # drop one 'Day N —' heading -> 29
     lines, dropped = [], False
     for line in ch.splitlines():
@@ -239,9 +235,7 @@ def v_challenge():
 
 
 def v_placeholder():
-    chaps = _chapters()
-    if not chaps:
-        return BLOCKED
+    chaps = _require(_chapters(), "run/chapters/")
     bad = {"chapter/ch01.md": chaps[min(chaps)] + "\n\nDear {{intake.first_name}}, welcome."}
     return _res(p_ph.evaluate(bad).violations)
 
@@ -277,11 +271,14 @@ def main(argv):
     ok = True
     print("== golden-marcus-halloway :: broken-variant fail-closed proof ==")
     for name, expected, prover, fn in VARIANTS:
-        out = fn()
-        if out == BLOCKED:
-            results[name] = {"prover": prover, "expected_code": expected, "blocked_on_prose": True,
-                             "note": "awaiting Wave-2 golden prose; Agent D re-runs to light this variant"}
-            print("  [BLOCKED] %-22s %-24s -> %s (awaiting Wave-2 prose)" % (name, prover, expected))
+        try:
+            out = fn()
+        except _BuildError as exc:
+            # a variant that cannot build its mutation is a FAILURE, never a silent skip
+            ok = False
+            results[name] = {"prover": prover, "expected_code": expected,
+                             "build_error": str(exc)}
+            print("  [BUILD-FAIL] %-22s %-24s -> %s" % (name, prover, exc))
             continue
         rc, codes, text = out
         rejected = rc != 0 and expected in codes
@@ -297,10 +294,10 @@ def main(argv):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print("  wrote %s" % out_path)
-    present = [n for n, r in results.items() if not r.get("blocked_on_prose")]
-    blocked = [n for n, r in results.items() if r.get("blocked_on_prose")]
-    print("RESULT: %s — %d present variant(s) checked, %d blocked-on-prose"
-          % ("PASS" if ok else "FAIL", len(present), len(blocked)))
+    built = [n for n, r in results.items() if not r.get("build_error")]
+    failed_build = [n for n, r in results.items() if r.get("build_error")]
+    print("RESULT: %s — %d variant(s) built+rejected-checked, %d could not be built"
+          % ("PASS" if ok else "FAIL", len(built), len(failed_build)))
     return 0 if ok else 1
 
 

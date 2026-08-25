@@ -9,20 +9,20 @@
   "locked_subtitle": "How the Best New Leaders Trade Control for Trust",
   "measured_chapter_count": 12,
   "measured_chapter_word_counts": {
-    "1": 2313,
-    "2": 2345,
-    "3": 2341,
-    "4": 2414,
-    "5": 2365,
-    "6": 2438,
-    "7": 2497,
-    "8": 2440,
-    "9": 2512,
-    "10": 2359,
-    "11": 2322,
-    "12": 2329
+    "1": 2303,
+    "2": 2337,
+    "3": 2333,
+    "4": 2406,
+    "5": 2358,
+    "6": 2429,
+    "7": 2485,
+    "8": 2428,
+    "9": 2502,
+    "10": 2350,
+    "11": 2315,
+    "12": 2322
   },
-  "measured_tone_word_count": 3775,
+  "measured_tone_word_count": 3759,
   "measured_challenge_sections": 30,
   "title_lock_ok": true,
   "stories_placed": 2,
@@ -40,6 +40,7 @@
   "verified_phases": 9,
   "all_phases_pass": true,
   "runtime": "local-only (no n8n / Airtable / Google / Gmail / Slack / GHL)",
+  "local_downloads_bundle": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.Gty2nS775s/Marcus_Halloway-Book/Book_Writer_20260825T020013Z",
   "steps": [
     {
       "phase_id": "P0-INTAKE",
@@ -87,6 +88,6 @@
       "ok": true
     }
   ],
-  "certificate_sha": "691733c859f6c18121ce700f6d795a76b4340bf166ac125d176d4ddb43549165",
-  "certified_at": "2026-07-02T23:01:57.145761+00:00"
+  "certificate_sha": "781e41c9036af74d69f7cca98219a1acbc1103c32fb2972dcd746bc1bfa53806",
+  "certified_at": "2026-08-25T02:00:13.920708+00:00"
 }

@@ -28,7 +28,8 @@ One completed book-intake interview → a tone-matched **12-chapter nonfiction b
 
 - **`full`** — the flagship 12-chapter book (source 153 nodes).
 - **`4x3x3`** — the offer book: exactly **30 program titles**, exactly **4 Transformational Outcomes**,
-  a KP document, and a schema-valid `433_Deck_Data.json` + deck outline handed to **Skill 51**. The 12
+  a KP document, and a schema-valid `433_Deck_Data.json` + deck outline prepared FOR **Skill 51**
+  (no automated import exists today — Skill 51 authors decks through its own 8-Questions intake). The 12
   chapters map **4 phases × 3 chapters**. Consumes an existing avatar dossier + tone doc.
 - **Anthology** is the SEPARATE sibling **Skill 54** (multi-author). Referenced, never built here.
 

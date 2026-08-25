@@ -1,0 +1,16 @@
+{
+  "schema": "book-writer-degraded-receipts-v1",
+  "note": "Honest degradation receipts for the golden regression run. The RESEARCHER stage (02-avatar-questions-31-32) produced no research artifact and the IMAGE stage (23-cover-image) rendered no cover PNG (no image provider on the fixture box); both are recorded here so absence is an honest receipt, never silence. The cover-prompt .md always ships.",
+  "receipts": [
+    {
+      "stage_id": "02-avatar-questions-31-32",
+      "reason": "degraded:search — no web-search tool configured on the fixture box",
+      "degraded": true
+    },
+    {
+      "stage_id": "23-cover-image",
+      "reason": "degraded:image — no image provider configured on the fixture box; cover-prompt .md ships instead",
+      "degraded": true
+    }
+  ]
+}

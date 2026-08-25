@@ -94,15 +94,40 @@ def _nonce_ok(run_dir: Path) -> bool:
 # receipts + the mc-board receipt live here (NOT working/checkpoints).
 RECEIPT_SUBDIR = ("run", "checkpoints")
 
+_CHAPTER_NAME_RE = re.compile(r"^ch(\d+)\.md$")
+
+
+class ChapterNamingError(ValueError):
+    """A file in run/chapters/ is not named ch<N>.md (or chapter numbers collide)."""
+
+
+def _iso_ts(value):
+    """Parse an ISO-8601 timestamp (tolerating a trailing Z); None if unparseable."""
+    s = str(value or "").strip()
+    if not s:
+        return None
+    if s.endswith(("Z", "z")):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
 
 def load_gate_receipts(run_dir: Path) -> dict:
     """Return {gate_id: record} for every WELL-FORMED human-gate approval receipt
-    (approved:true + a non-empty approved_by + a timestamp), mirroring Skill 48's
-    owner-approval shape. A file-presence-only 'approval' authored by the pipeline is
-    NOT sufficient — the gate reads the actual approved/approved_by/timestamp fields,
-    so an approval can never be back-filled or self-attested away. Receipts live at
-    <run_dir>/run/checkpoints/gate-receipts.json (a single object with receipts[]) or
-    one JSON object per file under <run_dir>/run/checkpoints/gates/*.json."""
+    (approved:true + a non-empty approved_by + a parseable ISO-8601 timestamp +
+    an artifact_sha256 that matches the LIVE sha of the artifact the gate locked),
+    mirroring Skill 48's owner-approval shape. A file-presence-only 'approval'
+    authored by the pipeline is NOT sufficient — the gate reads the actual
+    approved/approved_by/timestamp/artifact_sha256 fields, so an approval can
+    never be back-filled or self-attested away. Receipts live at
+    <run_dir>/run/checkpoints/gate-receipts.json (a single object with receipts[])
+    or one JSON object per file under <run_dir>/run/checkpoints/gates/*.json."""
     approvals: dict = {}
     cdir = run_dir.joinpath(*RECEIPT_SUBDIR)
     candidates = []
@@ -112,6 +137,12 @@ def load_gate_receipts(run_dir: Path) -> dict:
     gdir = cdir / "gates"
     if gdir.is_dir():
         candidates.extend(sorted(gdir.glob("*.json")))
+    # gate_id -> the live artifact its receipt must be bound to (sha256)
+    bound_artifacts = {
+        "GATE-1-title": run_dir / "run" / "artifacts" / "APPROVED-TITLE.txt",
+        "GATE-2-outline": run_dir / "run" / "artifacts" / "13-outline.md",
+        "GATE-433": run_dir / "run" / "433" / "433_Deck_Data.json",
+    }
     for path in candidates:
         try:
             obj = json.loads(path.read_text(encoding="utf-8"))
@@ -127,11 +158,25 @@ def load_gate_receipts(run_dir: Path) -> dict:
             if not isinstance(rec, dict):
                 continue
             gid = rec.get("gate_id") or rec.get("phase_id")
-            ts = rec.get("approved_at") or rec.get("timestamp")
-            if (gid and rec.get("approved") is True
-                    and str(rec.get("approved_by", "")).strip()
-                    and str(ts or "").strip()):
-                approvals[gid] = rec
+            ts_raw = rec.get("approved_at") or rec.get("timestamp")
+            if (not gid or rec.get("approved") is not True
+                    or not str(rec.get("approved_by", "")).strip()
+                    or _iso_ts(ts_raw) is None):
+                continue
+            artifact = bound_artifacts.get(gid)
+            if artifact is None:
+                approvals[gid] = rec  # gates without a bound artifact: fields only
+                continue
+            expected = str(rec.get("artifact_sha256") or "").strip().lower()
+            live_sha = ""
+            try:
+                if artifact.is_file():
+                    live_sha = _sha256_file(artifact)
+            except OSError:
+                live_sha = ""
+            if not expected or not live_sha or expected != live_sha.lower():
+                continue  # missing/mismatched binding = gate NOT satisfied (fail-closed)
+            approvals[gid] = rec
     return approvals
 
 
@@ -140,9 +185,72 @@ def _gate_ok(approvals: dict, gate_id: str) -> bool:
 
 
 def _ledger_model_id_count(ledger) -> int:
-    """Number of recorded model ids anywhere in the ledger (uses the same walker the
-    no-Anthropic gate uses)."""
-    return sum(1 for _jp, _mid in p_anth._iter_model_ids(ledger))
+    """Number of recorded string leaves anywhere in the ledger (uses the same walker
+    the no-Anthropic gate uses — a model id may hide under any alias key)."""
+    return sum(1 for _jp, _mid in p_anth._iter_string_leaves(ledger))
+
+
+# manifest stage_id -> its produced artifact under run/ (None = not file-checkable).
+# Degradable stages (optional revision rounds, IMAGE cover) are excluded: their whole
+# point is that they may legitimately be absent.
+_STAGE_ARTIFACTS = {
+    "01-avatar-questions-1-30": "artifacts/01-avatar.md",
+    "03-rewrite-avatar": "artifacts/01-avatar.md",
+    "08-blended-tone": "artifacts/08-blended-tone.md",
+    "10-suggested-titles": "artifacts/10-suggested-titles.md",
+    "11-book-blurb": "artifacts/11-blurb.md",
+    "12-chapter-titles": "artifacts/12-chapter-titles.md",
+    "13-create-outline": "artifacts/13-outline.md",
+    "15-write-chapters-b1": None,
+    "16-write-chapters-b2": None,
+    "17-write-chapters-b3": None,
+    "18-write-chapters-b4": None,
+    "21-30day-challenge": "artifacts/21-30day-challenge.md",
+    "22-cover-prompt": "artifacts/22-cover-prompt.md",
+}
+
+
+def _ledger_stage_ids(ledger_obj):
+    """Every stage id referenced anywhere in the ledger (stages[].stage, stage_id,
+    or any string value keyed 'stage'/'stage_id'/'stage_ids')."""
+    ids = set()
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k in ("stage", "stage_id") and isinstance(v, str) and v.strip():
+                    ids.add(v.strip())
+                elif k == "stage_ids" and isinstance(v, list):
+                    ids.update(str(s).strip() for s in v
+                               if isinstance(s, str) and s.strip())
+                else:
+                    _walk(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _walk(item)
+
+    _walk(ledger_obj)
+    return ids
+
+
+def _uncovered_stages(bk: Book, ledger_obj) -> list:
+    """Manifest stages whose artifact exists on disk but which no ledger entry
+    references. Chapter batches are covered when ANY chapter file exists."""
+    recorded = _ledger_stage_ids(ledger_obj)
+    uncovered = []
+    for stage_id, rel in _STAGE_ARTIFACTS.items():
+        if rel is not None:
+            if not (bk.rd / rel).is_file():
+                continue  # nothing produced -> nothing to demand coverage for
+            if stage_id not in recorded and not any(
+                    s.startswith(stage_id.rsplit("-", 1)[0]) for s in recorded):
+                uncovered.append(stage_id)
+        else:  # a chapter batch: covered iff any ch*.md exists on disk
+            if bk.chapters_dir.is_dir() and any(bk.chapters_dir.glob("ch*.md")) \
+                    and not any(s.startswith(stage_id.split("-")[0] + "-write-chapters")
+                                for s in recorded):
+                uncovered.append(stage_id)
+    return uncovered
 
 
 # ---- authored-zone accessors ------------------------------------------------
@@ -174,9 +282,29 @@ class Book:
         return str(self.intake().get("mode", "full")).strip().lower() or "full"
 
     def chapter_files(self):
+        """Digit-ordered ch<N>.md files (ch2 sorts after ch11, never before). Any
+        non-conforming name in chapters_dir is a fail-closed error, as is a
+        duplicate chapter number."""
         if not self.chapters_dir.is_dir():
             return []
-        return sorted(self.chapters_dir.glob("ch*.md"))
+        numbered = []
+        for p in self.chapters_dir.iterdir():
+            if not p.is_file():
+                continue
+            m = _CHAPTER_NAME_RE.match(p.name)
+            if not m:
+                raise ChapterNamingError(
+                    "run/chapters/%s does not match the required ch<N>.md naming "
+                    "(fail-closed; rename it or remove it)" % p.name)
+            numbered.append((int(m.group(1)), p))
+        seen = {}
+        for num, p in sorted(numbered, key=lambda t: t[0]):
+            if num in seen:
+                raise ChapterNamingError(
+                    "duplicate chapter number %d in run/chapters (%s and %s)"
+                    % (num, seen[num].name, p.name))
+            seen[num] = p
+        return [p for _n, p in sorted(numbered, key=lambda t: t[0])]
 
     def manuscript_text(self, title, subtitle):
         parts = ["# %s\n## %s\n" % (title, subtitle)]
@@ -214,7 +342,23 @@ def check_avatar(bk: Book):
         return False, ("missing run/artifacts/01-avatar.md — FAIL-CLOSED: the book cannot "
                        "complete without the authored avatar dossier (authored by the baked "
                        "stage prompt; see prompts/01-avatar-questions-1-30)"), {}
-    return True, "avatar dossier present", {}
+    wc = c.word_count(p.read_text(encoding="utf-8"))
+    if wc < 150:
+        return False, ("run/artifacts/01-avatar.md measured %d stripped words, below the "
+                       "150-word floor — FAIL-CLOSED: an empty/stub avatar dossier cannot "
+                       "pass" % wc), {}
+    # RESEARCHER-tier stage 02: its expected research artifact must exist OR carry a
+    # degraded receipt — silence is not a degradation.
+    research = bk.artifacts / "02-avatar-research.md"
+    if not research.is_file():
+        deg = _degraded_receipts(bk).get("02-avatar-questions-31-32")
+        if not deg:
+            return False, ("run/artifacts/02-avatar-research.md (RESEARCHER stage "
+                           "02-avatar-questions-31-32) is ABSENT with no degraded receipt "
+                           "— FAIL-CLOSED: produce the artifact, or write "
+                           "run/checkpoints/degraded-receipts.json entry "
+                           "{stage_id:'02-avatar-questions-31-32', reason, degraded:true}"), {}
+    return True, "avatar dossier present (%d words)" % wc, {}
 
 
 def check_tone(bk: Book):
@@ -248,6 +392,11 @@ def check_outline(bk: Book, approvals: dict):
                        "stage prompt; see prompts/13-create-outline)"), {}
     if not stories.is_file():
         return False, "missing run/stories.json", {}
+    if bk.mode() == "4x3x3" and not _gate_ok(approvals, "GATE-433"):
+        return False, ("GATE-433 approval receipt missing/malformed (4x3x3 mode: the "
+                       "30 titles + outcomes cannot advance without the client's "
+                       "approved receipt — approved:true + approved_by + ISO timestamp "
+                       "+ artifact_sha256 bound to run/433/433_Deck_Data.json)"), {}
     if not _gate_ok(approvals, "GATE-2-outline"):
         return False, ("GATE-2-outline approval receipt missing/malformed "
                        "(need approved:true + approved_by + timestamp in "
@@ -270,8 +419,10 @@ def check_chapters(bk: Book):
                        "authored chapters (authored by the baked chapter-batch stage prompts; "
                        "see prompts/15-write-chapters-b1 … 18-write-chapters-b4)"), {}
     chap_texts = {}
-    for i, p in enumerate(files, 1):
-        chap_texts[i] = p.read_text(encoding="utf-8")
+    for p in files:
+        # key by the DIGITS in the filename stem (ch07 -> 7) so the in-run numbering
+        # matches the standalone provers (prove_bw_chapters --chapters-dir keys by digits)
+        chap_texts[int(_CHAPTER_NAME_RE.match(p.name).group(1))] = p.read_text(encoding="utf-8")
     res_c = p_chap.evaluate(chap_texts)
     # continuity over receipts
     receipts = {}
@@ -290,21 +441,44 @@ def check_chapters(bk: Book):
     return ok, msg, {"chapter_count": len(chap_texts), "chapter_word_counts": wc}
 
 
-def _anon_tokens():
+def _degraded_receipts(bk: Book) -> dict:
+    """{stage_id: receipt} from run/checkpoints/degraded-receipts.json (or a list)."""
+    p = bk.run_dir.joinpath(*RECEIPT_SUBDIR) / "degraded-receipts.json"
+    if not p.is_file():
+        return {}
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    records = obj.get("receipts") if isinstance(obj, dict) else obj
+    if not isinstance(records, list):
+        return {}
+    out = {}
+    for rec in records:
+        if isinstance(rec, dict) and str(rec.get("stage_id", "")).strip() \
+                and rec.get("degraded") is True:
+            out[str(rec["stage_id"]).strip()] = rec
+    return out
+
+
+def _anon_tokens(bk: Book):
     """Client-name denylist for the runtime anonymization lint. Supplied at
-    delivery time by NAME only via env (never checked into the fleet repo); an
-    empty list is a clean no-op (nothing to lint)."""
+    delivery time by NAME only via env BW_ANON_TOKENS, or via a
+    run/checkpoints/anon-tokens.txt file when the env is unset/empty (never
+    checked into the fleet repo)."""
     tokens = []
     inline = os.environ.get("BW_ANON_TOKENS", "")
     if inline.strip():
         tokens += inline.split(",")
-    tf = os.environ.get("BW_ANON_TOKENS_FILE", "")
-    if tf and Path(tf).is_file():
-        try:
-            tokens += Path(tf).read_text(encoding="utf-8").splitlines()
-        except OSError:
-            pass
-    return tokens
+    else:
+        tf = bk.run_dir.joinpath(*RECEIPT_SUBDIR) / "anon-tokens.txt"
+        if tf.is_file():
+            try:
+                tokens += [ln for ln in tf.read_text(encoding="utf-8").splitlines()
+                           if ln.strip()]
+            except OSError:
+                pass
+    return [t for t in (s.strip() for s in tokens) if t]
 
 
 def check_package(bk: Book, staging_dir: Path, approvals: dict):
@@ -321,9 +495,21 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
         return False, ("missing run/artifacts/22-cover-prompt.md — FAIL-CLOSED: the book "
                        "cannot complete without the authored cover prompt (P6-PACKAGE stage "
                        "22-cover-prompt declares floor title_lock; author it and re-run)"), {}
+    # IMAGE-tier stage 23: the cover image is optional ONLY with an honest degraded
+    # receipt — absence alone is never a degradation.
+    cover_img = bk.artifacts / "23-cover-image.png"
+    if not cover_img.is_file():
+        deg = _degraded_receipts(bk).get("23-cover-image")
+        if not deg:
+            return False, ("run/artifacts/23-cover-image.png (IMAGE stage 23-cover-image) "
+                           "is ABSENT with no degraded receipt — FAIL-CLOSED: render the "
+                           "cover, or write run/checkpoints/degraded-receipts.json entry "
+                           "{stage_id:'23-cover-image', reason, degraded:true}"), {}
     # BUG-5 FAIL-CLOSED: the blurb, suggested titles, and chapter titles are REQUIRED
     # P6-PACKAGE deliverables — the certificate must never claim all_phases_pass
     # without them. Mirrors the hard requirement on 21-30day-challenge.md above.
+    _FLOORS = {"10-suggested-titles.md": 30, "11-blurb.md": 100,
+               "12-chapter-titles.md": 60, "22-cover-prompt.md": 50}
     for rel in ("10-suggested-titles.md", "11-blurb.md", "12-chapter-titles.md"):
         req = bk.artifacts / rel
         if not req.is_file():
@@ -331,14 +517,27 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
                            "complete without the authored %s (authoring stage deferred "
                            "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. "
                            "PENDING')" % (rel, rel)), {}
-    # title-lock across required artifacts
+    for rel, floor in sorted(_FLOORS.items()):
+        fp = bk.artifacts / rel
+        if not fp.is_file():  # cover-prompt presence already enforced above
+            continue
+        wc = c.word_count(fp.read_text(encoding="utf-8"))
+        if wc < floor:
+            return False, ("run/artifacts/%s measured %d stripped words, below its %d-word "
+                           "floor — FAIL-CLOSED: an empty/stub artifact cannot pass"
+                           % (rel, wc, floor)), {}
+    # title-lock across required artifacts (a required target absent from disk is an
+    # explicit fail-closed violation — never a silent skip)
     title, subtitle = bk.title_subtitle()
     targets = {}
     for label, rel in (("blurb", "11-blurb.md"), ("outline", "13-outline.md"),
                        ("cover-prompt", "22-cover-prompt.md")):
         p = bk.artifacts / rel
-        if p.is_file():
-            targets[label] = p.read_text(encoding="utf-8")
+        if not p.is_file():
+            return False, ("title-lock target missing: run/artifacts/%s (%s) is absent "
+                           "— FAIL-CLOSED: every required artifact must carry the locked "
+                           "title" % (rel, label)), {}
+        targets[label] = p.read_text(encoding="utf-8")
     for p in bk.chapter_files():
         targets["chapter/%s" % p.name] = p.read_text(encoding="utf-8")
     targets["manuscript"] = bk.manuscript_text(title, subtitle)
@@ -352,7 +551,34 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
     # anonymization lint over the SAME assembled bundle (prove_bw_anon now runs in the
     # runtime pipeline — no-op with no configured tokens, fail-closed when a configured
     # client-name token leaks into a deliverable).
-    res_anon = p_anon.evaluate(staged_texts, _anon_tokens()) if staged_texts else c.Result("noop-anon")
+    raw_anon_tokens = _anon_tokens(bk)
+    # The author's OWN name is not a leak: the deliverables are the client's book,
+    # bylined with their name (cover prompt, tone doc, APPROVED-TITLE.txt, blurb).
+    # AF-BK-ANON guards against OTHER people's names leaking, so drop tokens that
+    # are just the intake identity (full name or its parts) from the denylist.
+    _ident_parts = [str(bk.intake().get(k) or "").strip()
+                    for k in ("first_name", "last_name")]
+    _ident = {_p.lower() for _p in (_ident_parts[0], _ident_parts[1],
+                                    " ".join(_x for _x in _ident_parts if _x)) if _p}
+    anon_tokens = [t for t in raw_anon_tokens if t.strip().lower() not in _ident]
+    # FAIL-CLOSED AFTER the identity filter: a denylist that was empty to begin
+    # with, OR one whose every token was exempted as the author's own name, both
+    # make evaluate() vacuous (R-P15 hole). The gate must block on either path.
+    if not anon_tokens:
+        first = str((bk.intake().get("first_name") or "")).strip()
+        if not raw_anon_tokens:
+            print("WARNING: BW_ANON_TOKENS unset — anonymization vacuous", file=sys.stderr)
+            if first:
+                return False, ("BW_ANON_TOKENS unset — anonymization vacuous — FAIL-CLOSED: "
+                               "the client's first_name is present in intake.json, so the "
+                               "delivery-time denylist must be supplied via env BW_ANON_TOKENS "
+                               "or run/checkpoints/anon-tokens.txt (spec R-P15)"), {}
+        else:
+            return False, ("anonymization vacuous — FAIL-CLOSED: every configured denylist "
+                           "token was exempted as the author's own name, so no tokens remain "
+                           "to lint with. Supply at least one non-identity token via env "
+                           "BW_ANON_TOKENS or run/checkpoints/anon-tokens.txt (spec R-P15)"), {}
+    res_anon = p_anon.evaluate(staged_texts, anon_tokens) if staged_texts else c.Result("noop-anon")
     # GATE-3 / GATE-4 revision-round approvals (conditional): only required when the
     # corresponding rewrite round actually ran (its receipt exists). Mirrors the
     # source's two email-gated revision loops; up to TWO rounds, receipted.
@@ -454,6 +680,17 @@ def check_qc(bk: Book):
     report["no_anthropic"]["passed"] = ok
     report["no_anthropic"]["violations"] = [{"code": cd, "message": m} for cd, m in res_anth.violations]
     report["no_anthropic"]["notes"] = res_anth.notes
+    # ledger stage coverage: every non-degradable manifest stage whose produced
+    # artifact exists on disk must appear in at least one ledger entry — a stage that
+    # ran but was never recorded breaks provenance (fail-closed).
+    uncovered = _uncovered_stages(bk, ledger_obj)
+    if uncovered:
+        ok = False
+        m2 = ("ledger coverage FAIL: no RUN-LEDGER entry references produced stage(s): %s "
+              "(fail-closed; every executed stage must record its resolved model id)"
+              % ", ".join(uncovered))
+        msg += " | " + m2
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-LEDGER-COVERAGE", "message": m2})
     if bk.mode() == "4x3x3":
         report["433"] = {"passed": False, "violations": [], "notes": [], "measured": {}}
         titles = bk.d433 / "41-30-titles.md"
@@ -787,6 +1024,15 @@ def run(bk: Book) -> int:
               file=sys.stderr)
         _quarantine(bk, staging)
         return EXIT_GATE
+    except ChapterNamingError as exc:
+        # fail-closed: run/chapters/ carries a non-conforming name or duplicate number
+        _LAST_BLOCK.clear()
+        _LAST_BLOCK.update({"phase_id": "P5-CHAPTERS", "note": str(exc)})
+        print("=== PHASE P5-CHAPTERS === [FAIL] %s" % exc)
+        print("BLOCKED at P5-CHAPTERS (fail-closed). Fix the chapter naming and re-run.",
+              file=sys.stderr)
+        _quarantine(bk, staging)
+        return EXIT_GATE
     approvals = load_gate_receipts(bk.run_dir)
     measured = {}
     steps = []
@@ -891,17 +1137,24 @@ def _mc_board_begin(run_dir):
             run_dir, slug=run_dir.name,
             title="Book Writer — %s" % run_dir.name,
             department="marketing", persona="Book Writer", source="book-writer",
-            receipt_subdir=RECEIPT_SUBDIR)
+            receipt_subdir=RECEIPT_SUBDIR,
+            evidence_root=str(run_dir))
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
         return None
 
 
-def _mc_board_done(run_dir, task_id):
+def _mc_board_done(run_dir, task_id, process_certificate_sha=""):
     try:
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered",
-                              receipt_subdir=RECEIPT_SUBDIR)
+        delivery_index = Path(run_dir) / "delivery" / bundle_name(Book(Path(run_dir))) / "00-INDEX.md"
+        ok = mc_board.complete_run(run_dir, task_id, note="certified + delivered",
+                                   deliverable_url=str(delivery_index),
+                                   process_certificate_sha=process_certificate_sha,
+                                   receipt_subdir=RECEIPT_SUBDIR)
+        if not ok:
+            print("[mc_board] complete_run returned False — card not advanced to "
+                  "review (best-effort; run itself is unaffected)", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
@@ -942,7 +1195,14 @@ def main(argv=None):
     _mc_task = _mc_board_begin(run_dir)
     rc = run(Book(run_dir))
     if rc == EXIT_PASS:
-        _mc_board_done(run_dir, _mc_task)
+        cert_sha = ""
+        try:
+            cert_sha = (json.loads((Path(run_dir) / "delivery" / bundle_name(Book(run_dir)) /
+                                    "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8")
+                                 ).get("certificate_sha") or "")
+        except (OSError, ValueError):
+            pass
+        _mc_board_done(run_dir, _mc_task, process_certificate_sha=cert_sha)
     else:
         # A gate failure after the card was opened: mark it blocked so it never
         # strands invisibly at in_progress (FIX-XC-06). FAIL-SOFT.

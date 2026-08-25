@@ -25,33 +25,39 @@ import _bw_common as c  # noqa: E402
 AF_ANTHROPIC = "AF-BK-ANTHROPIC"
 
 # Operator credential-name shapes that must never appear in a client run env.
+# ANTHROPIC_* / CLAUDE_* names set by a DEVELOPMENT agent harness (Claude Code,
+# 9Router) are host-side, not client-run credentials — the orchestrator passes
+# --env-keys (a curated allowlist) at runtime; when it does not, only these
+# operator-shaped hints are scanned so an operator box running its own agent
+# tooling is not falsely flagged for vars it does not pass into runs.
 _OPERATOR_CRED_HINTS = ("OPERATOR_", "BLACKCEO_OPERATOR", "OC_OPERATOR_KEY")
 
 
-def _iter_model_ids(obj, path="ledger"):
-    """Yield (json_path, model_id_string) for every 'model'/'model_id'/'resolved_model'
-    value anywhere in the ledger structure."""
+def _iter_string_leaves(obj, path="ledger"):
+    """Yield (json_path, string) for EVERY string leaf anywhere in the ledger
+    structure — not just keys named 'model'. A model id can hide under any alias
+    (model_name / modelId / llm / engine / model_used / preflight_tier_map …), so
+    the deep scan tests every string value against the ban regex."""
     if isinstance(obj, dict):
         for k, v in obj.items():
-            if k in ("model", "model_id", "resolved_model", "provider_model") and isinstance(v, str):
-                yield ("%s.%s" % (path, k), v)
-            else:
-                yield from _iter_model_ids(v, "%s.%s" % (path, k))
+            yield from _iter_string_leaves(v, "%s.%s" % (path, k))
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
-            yield from _iter_model_ids(v, "%s[%d]" % (path, i))
+            yield from _iter_string_leaves(v, "%s[%d]" % (path, i))
+    elif isinstance(obj, str):
+        yield (path, obj)
 
 
 def evaluate(ledger, env=None) -> c.Result:
     r = c.Result("prove_bw_noanthropic")
     found_any = False
-    for jpath, mid in _iter_model_ids(ledger):
+    for jpath, mid in _iter_string_leaves(ledger):
         found_any = True
         if c._ANTHROPIC_RE.search(mid):
-            r.fail(AF_ANTHROPIC, "Anthropic/claude model id %r at %s (client boxes never run "
+            r.fail(AF_ANTHROPIC, "/anthropic|claude/i string %r at %s (client boxes never run "
                    "Anthropic)" % (mid, jpath))
     if not found_any:
-        r.note("no model ids recorded in the ledger (nothing to reject)")
+        r.note("ledger has no string values (nothing to reject)")
     # operator credential names in the run env
     env = env if env is not None else dict(os.environ)
     for k in env:
@@ -81,6 +87,30 @@ def self_test() -> int:
     checks.append(("bare claude-sonnet-4 AUTOFAILs AF-BK-ANTHROPIC",
                    any(cd == AF_ANTHROPIC for cd, _ in evaluate(bad2, env={}).violations)))
     checks.append(("operator cred name in env AUTOFAILs AF-BK-ANTHROPIC",
+                   any(cd == AF_ANTHROPIC for cd, _ in
+                       evaluate(good, env={"OPERATOR_OPENROUTER_KEY": "x"}).violations)))
+    checks.append(("model as LIST value [\"anthropic/claude-opus-4\"] AUTOFAILs",
+                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(
+                       {"stages": [{"model": ["anthropic/claude-opus-4"]}]}, env={}).violations)))
+    checks.append(("NESTED dict model {\"id\": \"anthropic/x\"} AUTOFAILs",
+                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(
+                       {"stages": [{"model": {"id": "anthropic/claude-x"}}]}, env={}).violations)))
+    alias_bad = {"stages": [{"stage": "x", "model_name": "claude-haiku"},
+                            {"stage": "y", "modelId": "anthropic/eu.x"},
+                            {"stage": "z", "llm": "claude-instant"},
+                            {"stage": "w", "engine": "us.anthropic.claude-3"},
+                            {"stage": "v", "model_used": "claude-fable"}]}
+    checks.append(("alias keys model_name/modelId/llm/engine/model_used ALL AUTOFAILs",
+                   all(any(cd == AF_ANTHROPIC for cd, _ in evaluate(
+                       {"stages": [s]}, env={}).violations) for s in alias_bad["stages"])))
+    tier_bad = {"preflight_tier_map": {"thinking": "claude-opus-5"}}
+    checks.append(("preflight_tier_map value claude-opus-5 AUTOFAILs",
+                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(tier_bad, env={}).violations)))
+    checks.append(("ANTHROPIC_API_KEY in env does NOT autofail (host-side agent-harness var, "
+                   "not a client-run credential)",
+                   not any(cd == AF_ANTHROPIC for cd, _ in
+                           evaluate(good, env={"ANTHROPIC_API_KEY": "x"}).violations)))
+    checks.append(("OPERATOR_ cred name in env AUTOFAILs AF-BK-ANTHROPIC",
                    any(cd == AF_ANTHROPIC for cd, _ in
                        evaluate(good, env={"OPERATOR_OPENROUTER_KEY": "x"}).violations)))
     return c.selftest_report("prove_bw_noanthropic", checks)

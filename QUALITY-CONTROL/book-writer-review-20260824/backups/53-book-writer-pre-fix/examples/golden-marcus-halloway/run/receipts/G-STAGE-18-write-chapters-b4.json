@@ -1,0 +1,20 @@
+{
+  "stage": "18-write-chapters-b4",
+  "batch": 4,
+  "chapters_written": [
+    10,
+    11,
+    12
+  ],
+  "prior_chapters_embedded": {
+    "1": "4405fa3c2004b6ee7034577251fcbc9bcca34edd91745c0f7c60a4e63fb5e5bd",
+    "2": "d1cfb3cb27874f3d543a5b98767789cda820dcafbf8a94100e33b1adfb9844f4",
+    "3": "78d8b178603227df9146b98e0fd1d5420bcda6ddbb7b21c7e28cc146381b125b",
+    "4": "911f8b1fe98bbc7f31cf01d690c5af001bc9d9bded2ee211ae415dbec2659fd0",
+    "5": "36dfe277fcec4a4364d012a4ebca3a9949b8c475d1b5cad983a808e9227fbdb8",
+    "6": "a4dabb811d37ca544e2dac5275a8c99530082df1dc82dcb85cf63193a6a43762",
+    "7": "4160577714c4163a822726b8c384d4117e98ef5c1888edf8bbf6caf78d2a44c9",
+    "8": "b3222b2bc78be41ce896a2cda3cc25fa6c6e6b10f9a01160d08133658cd3c580",
+    "9": "2d956bbd0f9dd83a86a81b842e3f4575ab2d1bcf3a9bdb4360a753d557f7366e"
+  }
+}

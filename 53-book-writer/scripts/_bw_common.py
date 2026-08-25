@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 # ---- exit codes (shared by every prover) ------------------------------------
@@ -114,7 +115,14 @@ def strip_markdown(text: str) -> str:
         if in_fence:
             continue
         out_lines.append(_MD_INLINE_RE.sub("", line).strip())
-    return "\n".join(out_lines)
+    joined = "\n".join(out_lines)
+    # Invisible-character laundering: strip every Unicode Cf (format: zero-width
+    # space, soft hyphen, bidi controls) and Cc (control) character so a chapter
+    # padded with U+200B cannot smuggle "words" past the counter, then NFKC-normalize
+    # so lookalike codepoints collapse to their canonical form.
+    joined = "".join(ch for ch in joined
+                     if unicodedata.category(ch) not in ("Cf", "Cc"))
+    return unicodedata.normalize("NFKC", joined)
 
 
 def word_count(text: str) -> int:

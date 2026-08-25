@@ -1,0 +1,182 @@
+{
+  "01_intake_missing": {
+    "prover": "prove_bw_intake.py",
+    "expected_code": "AF-BK-INTAKE-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-INTAKE-MISSING"
+    ],
+    "out": "VIOLATION [AF-BK-INTAKE-MISSING] required shared field 'ideal_avatar' missing/empty/boilerplate"
+  },
+  "02_version_unset": {
+    "prover": "prove_bw_intake.py",
+    "expected_code": "AF-BK-VERSION",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-VERSION"
+    ],
+    "out": "VIOLATION [AF-BK-VERSION] version must be explicitly 'book' or 'brand' (got ''); no default, no inference from other answers"
+  },
+  "03_title_lock": {
+    "prover": "prove_bw_titlelock.py",
+    "expected_code": "AF-BK-TITLE-LOCK",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-TITLE-LOCK"
+    ],
+    "out": "VIOLATION [AF-BK-TITLE-LOCK] locked SUBTITLE 'How the Best New Leaders Trade Control for Trust' not byte-exact in chapter/1"
+  },
+  "04_stories_dropped": {
+    "prover": "prove_bw_stories.py",
+    "expected_code": "AF-BK-STORIES",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-STORIES"
+    ],
+    "out": "VIOLATION [AF-BK-STORIES] story STORY-A key phrase not in the MANUSCRIPT: \"rewrote a junior engineer's pull request at 2 a.m.\""
+  },
+  "05_chap_count": {
+    "prover": "prove_bw_chapters.py",
+    "expected_code": "AF-BK-CHAP-COUNT",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-CHAP-COUNT"
+    ],
+    "out": "VIOLATION [AF-BK-CHAP-COUNT] found 11 chapter(s); the book must have exactly 12\nVIOLATION [AF-BK-CHAP-COUNT] chapter numbering [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] is not the exact sequence 1..12"
+  },
+  "06_chap_len": {
+    "prover": "prove_bw_chapters.py",
+    "expected_code": "AF-BK-CHAP-LEN",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-CHAP-LEN"
+    ],
+    "out": "VIOLATION [AF-BK-CHAP-LEN] chapter 7 measured 10 stripped words, outside [2000,3500] (self-reported counts ignored; whitespace padding is inert)"
+  },
+  "07_continuity": {
+    "prover": "prove_bw_continuity.py",
+    "expected_code": "AF-BK-CONTINUITY",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-CONTINUITY"
+    ],
+    "out": "VIOLATION [AF-BK-CONTINUITY] batch 3 did not embed prior chapter 2 (continuity broken \u2014 batch written without its predecessors)"
+  },
+  "08_tone_len": {
+    "prover": "prove_bw_tone.py",
+    "expected_code": "AF-BK-TONE-LEN",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-TONE-LEN"
+    ],
+    "out": "VIOLATION [AF-BK-TONE-LEN] blended tone measured 407 stripped words, below the 3000 floor (self-reported counts ignored)"
+  },
+  "09_challenge": {
+    "prover": "prove_bw_challenge.py",
+    "expected_code": "AF-BK-CHALLENGE",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-CHALLENGE"
+    ],
+    "out": "VIOLATION [AF-BK-CHALLENGE] found 29 day-section(s); the challenge must have exactly 30 ('Day <n> \u2014' headings)"
+  },
+  "10_433_counts": {
+    "prover": "prove_bw_433.py",
+    "expected_code": "AF-BK-433-COUNTS",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-433-COUNTS"
+    ],
+    "out": "VIOLATION [AF-BK-433-COUNTS] found 29 program titles; 4x3x3 requires exactly 30"
+  },
+  "11_433_map": {
+    "prover": "prove_bw_433.py",
+    "expected_code": "AF-BK-433-MAP",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-433-MAP"
+    ],
+    "out": "VIOLATION [AF-BK-433-MAP] phase 1 must list exactly 3 chapters (got ['The Promotion That Broke You', 'Why Your Old Superpower Now Fails'])\nVIOLATION [AF-BK-433-MAP] the phase map covers 9 chapters; must be exactly 12 (4x3)"
+  },
+  "12_placeholder": {
+    "prover": "prove_bw_placeholder.py",
+    "expected_code": "AF-BK-PLACEHOLDER",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-PLACEHOLDER"
+    ],
+    "out": "VIOLATION [AF-BK-PLACEHOLDER] unresolved token '{{intake.first_name}}' in chapter/ch01.md"
+  },
+  "13_anthropic": {
+    "prover": "prove_bw_noanthropic.py",
+    "expected_code": "AF-BK-ANTHROPIC",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-ANTHROPIC"
+    ],
+    "out": "VIOLATION [AF-BK-ANTHROPIC] Anthropic/claude model id 'anthropic/claude-opus-4' at ledger.stages[0].model (client boxes never run Anthropic)"
+  },
+  "14_anon": {
+    "prover": "prove_bw_anon.py",
+    "expected_code": "AF-BK-ANON",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-ANON"
+    ],
+    "out": "VIOLATION [AF-BK-ANON] configured client-name token 'Northwind Retail Group' found in deliverable-meta.json"
+  },
+  "15_stage_skipped": {
+    "prover": "prove_bw_process.py",
+    "expected_code": "AF-BK-STAGE-SKIPPED",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-STAGE-SKIPPED"
+    ],
+    "out": "VIOLATION [AF-BK-STAGE-SKIPPED] certificate phase chain ['P0-INTAKE', 'P2-TONE', 'P1-AVATAR', 'P3-TITLES-GATE', 'P4-OUTLINE-GATE', 'P5-CHAPTERS', 'P6-PACKAGE', 'P7-QC', 'P8-DELIVER'] != canonical order ['P0-INTAKE', 'P1-AVATAR', 'P2-TONE', 'P3-TITLES-GATE', 'P4-OUTLINE-GATE', 'P5-CHAPTERS', 'P6-PACKAGE', 'P7-QC', 'P8-DELIVER'] (phase skipped or reordered)"
+  },
+  "16_process_integrity": {
+    "prover": "prove_bw_process.py",
+    "expected_code": "AF-BK-PROCESS-INTEGRITY",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-PROCESS-INTEGRITY"
+    ],
+    "out": "VIOLATION [AF-BK-PROCESS-INTEGRITY] certificate present without a full P0->P8 pass (a phase step is not ok)"
+  },
+  "17_hash_pin": {
+    "prover": "prove_bw_process.py",
+    "expected_code": "AF-BK-HASH-PIN",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-HASH-PIN"
+    ],
+    "out": "VIOLATION [AF-BK-HASH-PIN] enforcement-set hash 769a4e6d0003.. != pinned head deadbeef.. (a prover was modified)"
+  },
+  "18_entry_bypass": {
+    "prover": "prove_bw_process.py",
+    "expected_code": "AF-BK-ENTRY-BYPASS",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-ENTRY-BYPASS"
+    ],
+    "out": "VIOLATION [AF-BK-ENTRY-BYPASS] upload.py: a Google Drive upload/copy (delivery is LOCAL-ONLY; no external senders)"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "artifact": "run/qc/book_qc_report.json",
+  "schema": "book-writer-qc-report-v1",
+  "mode": "full",
+  "no_anthropic": {
+    "passed": true,
+    "violations": [],
+    "notes": [
+      "no /anthropic|claude/i model id; no operator credential name in env"
+    ]
+  },
+  "433": null,
+  "measured": {
+    "model_id_count": 57
+  },
+  "qc_passed": true,
+  "message": "no-anthropic PASS"
+}

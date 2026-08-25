@@ -47,6 +47,10 @@ def _sha(text: str) -> str:
 def evaluate(receipts: dict, chapter_sha: dict) -> c.Result:
     """receipts: {batch_number:int -> receipt dict}. chapter_sha: {chapter:int -> sha256}."""
     r = c.Result("prove_bw_continuity")
+    if len(chapter_sha) != c.CHAPTER_COUNT:
+        r.fail(AF_CONTINUITY, "found %d measured chapter sha(s) in the chapters dir; the book "
+               "must have exactly %d (an absent chapter cannot prove continuity)"
+               % (len(chapter_sha), c.CHAPTER_COUNT))
     prior = []  # chapters written by earlier batches, in order
     for stage, bnum, chapters in BATCHES:
         rec = receipts.get(bnum)
@@ -61,7 +65,10 @@ def evaluate(receipts: dict, chapter_sha: dict) -> c.Result:
             if pc not in embedded:
                 r.fail(AF_CONTINUITY, "batch %d did not embed prior chapter %d "
                        "(continuity broken — batch written without its predecessors)" % (bnum, pc))
-            elif chapter_sha.get(pc) and embedded[pc] != chapter_sha[pc]:
+            elif pc not in chapter_sha:
+                r.fail(AF_CONTINUITY, "batch %d recorded sha256 for prior chapter %d but there is "
+                       "no measured sha — prior chapter file absent" % (bnum, pc))
+            elif embedded[pc] != chapter_sha[pc]:
                 r.fail(AF_CONTINUITY, "batch %d recorded sha256 %s.. for prior chapter %d but the "
                        "actual chapter sha256 is %s.. (payload did not contain THIS chapter)"
                        % (bnum, str(embedded[pc])[:12], pc, str(chapter_sha[pc])[:12]))
@@ -125,6 +132,14 @@ def self_test() -> int:
     bad2 = good_receipts(); bad2[4]["prior_chapters_embedded"]["1"] = "deadbeef" * 8
     checks.append(("batch with a tampered prior sha AUTOFAILs AF-BK-CONTINUITY",
                    any(cd == AF_CONTINUITY for cd, _ in evaluate(bad2, csha).violations)))
+    # receipts reference shas but the chapters dir is empty -> no measured shas
+    checks.append(("receipts with an EMPTY chapters dir AUTOFAILs (no measured sha — "
+                   "chapter files absent)",
+                   any(cd == AF_CONTINUITY for cd, _ in evaluate(good_receipts(), {}).violations)))
+    # only 11 of 12 chapter files present
+    csha11 = {n: s for n, s in csha.items() if n != 12}
+    checks.append(("only 11 of 12 chapters measured AUTOFAILs AF-BK-CONTINUITY",
+                   any(cd == AF_CONTINUITY for cd, _ in evaluate(good_receipts(), csha11).violations)))
     return c.selftest_report("prove_bw_continuity", checks)
 
 

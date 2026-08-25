@@ -1,0 +1,12 @@
+{
+  "version": "brand",
+  "first_name": "Jordan",
+  "last_name": "Rivers",
+  "ideal_avatar": "aspiring women founders in the wellness space",
+  "niche": "holistic business coaching",
+  "primary_goal": "launch a profitable, purpose-led practice",
+  "tone_style_1": "Maya Angelou in Letter to My Daughter",
+  "tone_style_2": "N/A",
+  "tone": "inspirational, thought-provoking",
+  "note": "version=brand reaching Skill 53 must HAND OFF to Skill 52 (or park); it never runs the book pipeline. Prove with: prove_bw_intake.py test-fixtures/intake-brand.json (parks) and --brand-skill-present (routes)."
+}

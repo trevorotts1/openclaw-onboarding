@@ -4,14 +4,14 @@
 - **Book:** The Quiet Authority — How the Best New Leaders Trade Control for Trust
 - **Mode:** full
 - **Measured chapters:** 12 (each 2000-3500 stripped words)
-- **Measured blended-tone words:** 3775 (>= 3000)
+- **Measured blended-tone words:** 3759 (>= 3000)
 - **Measured challenge day-sections:** 30 / 30
 - **Title lock OK:** True
 - **Stories placed:** 2
 - **All phases pass:** True
 - **Runtime:** local-only (no n8n / Airtable / Google / Gmail / Slack / GHL)
-- **Certificate SHA:** `691733c859f6c18121ce700f6d795a76b4340bf166ac125d176d4ddb43549165`
-- **Certified at:** 2026-07-02T23:01:57.145761+00:00
+- **Certificate SHA:** `781e41c9036af74d69f7cca98219a1acbc1103c32fb2972dcd746bc1bfa53806`
+- **Certified at:** 2026-08-25T02:00:13.920708+00:00
 
 | Phase | Verified |
 |---|---|

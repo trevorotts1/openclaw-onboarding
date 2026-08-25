@@ -1,0 +1,4 @@
+TITLE: The Quiet Authority
+SUBTITLE: How the Best New Leaders Trade Control for Trust
+LOCKED_BY: GATE-1-title
+APPROVED_BY: Marcus Halloway (author, in-chat checkpoint)

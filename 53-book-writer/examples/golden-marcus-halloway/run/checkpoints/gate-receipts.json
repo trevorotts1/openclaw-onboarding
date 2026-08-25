@@ -1,12 +1,14 @@
 {
   "schema": "book-writer-gate-receipts-v1",
-  "note": "In-chat human checkpoint approvals for the golden regression run (fictional author Marcus Halloway). Each receipt records approved:true + approved_by + a timestamp; downstream phases refuse to advance without the matching gate receipt (approvals cannot be self-attested or back-filled). This golden run has no revision rounds, so there is no GATE-3/GATE-4 receipt.",
+  "note": "In-chat human checkpoint approvals for the golden regression run (fictional author Marcus Halloway). Each receipt records approved:true + approved_by + a parseable ISO-8601 timestamp + an artifact_sha256 binding the approval to the LIVE sha256 of the artifact the gate locked (a receipt whose sha no longer matches the artifact is NOT a satisfied gate — approvals cannot be back-filled or re-pointed). This golden run has no revision rounds, so there is no GATE-3/GATE-4 receipt.",
   "receipts": [
     {
       "gate_id": "GATE-1-title",
       "approved": true,
       "approved_by": "Marcus Halloway",
       "approved_at": "2026-07-02T22:40:11+00:00",
+      "artifact_sha256": "52801509922c8ac73a3f97bf496b9c228952322956c59f403e5f20176caceb99",
+      "artifact": "run/artifacts/APPROVED-TITLE.txt",
       "reply": "Locked. Title: The Quiet Authority / Subtitle: How the Best New Leaders Trade Control for Trust."
     },
     {
@@ -14,6 +16,8 @@
       "approved": true,
       "approved_by": "Marcus Halloway",
       "approved_at": "2026-07-02T22:52:03+00:00",
+      "artifact_sha256": "91c39f1fea3f90f72050ab739eab6959ba4e83a0962aee86507bb66a8cf9e207",
+      "artifact": "run/artifacts/13-outline.md",
       "reply": "Outline approved — proceed to chapters."
     }
   ]
