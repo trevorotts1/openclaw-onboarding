@@ -66,7 +66,7 @@ warn_only "iframe-drag LIVE selftest passes (needs Playwright)" "python3 \"$SK/t
 # for builds and NEVER auto-invoked. So they are warn-only, not a hard assert.
 warn_only "GHL manual-only login email set (operator last resort, optional)"     "[ -n \"$GHL_AGENCY_EMAIL\" ] || [ -n \"$GHL_EMAIL\" ]"
 warn_only "GHL manual-only login password set (operator last resort, optional)"  "[ -n \"$GHL_AGENCY_PASSWORD\" ] || [ -n \"$GHL_PASSWORD\" ]"
-assert "Secrets file chmod 600"         "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
+assert "Secrets file chmod 600"         "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
 warn_only "agent-browser installed (PRIMARY engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"

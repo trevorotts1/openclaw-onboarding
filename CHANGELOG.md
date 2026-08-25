@@ -1,3 +1,14 @@
+## [v22.0.73]  -  2026-08-25  -  fix(qc): GNU stat chmod assertion false-failed on Linux VPS boxes (06-ghl-install-pages bump; see v6.x per-skill bumps for the other five)
+
+On Linux, GNU `stat -f %A` (BSD syntax) prints a filesystem report to stdout with
+rc=1 instead of failing cleanly, so the BSD-first fallback chain captured garbage
+and the chmod-600 assertion compared that text to '600' — failing on every Linux
+box even when the secrets file mode was correct. All six affected qc scripts now
+probe `stat -c %a` (GNU/Linux) first with `stat -f %A` as the BSD fallback.
+Control-tested on darwin and on a Linux container (both return 600).
+Live evidence: openclaw-0ht9 roll 2026-08-25, 18 skills "NOT verified" while
+content installed correctly.
+
 ## [v22.0.72]  -  2026-08-24  -  fix(presentations): F04 attestation filter rejected every genuine runner row (v22.0.68 regression) — phase chain + delivery boundary restored
 
 The v22.0.68 F04 hardening added a `status=='done'` filter to the attestation

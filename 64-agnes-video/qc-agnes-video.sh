@@ -48,7 +48,7 @@ assert "reference documents the 441 num_frames cap" "grep -q '441' \"$REF\""
 
 # ── Warn-only: environment / on-box concerns (never fail the build) ──
 warn_only "AGNES_AI_API_KEY set (SET/NOT-SET only; value never printed)" "[ -n \"$AGNES_AI_API_KEY\" ]"
-warn_only "secrets file chmod 600" "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
+warn_only "secrets file chmod 600" "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 warn_only "installed skills dir carries 64-agnes-video" "[ -d \"$SKILLS_DIR_DEFAULT/64-agnes-video\" ]"
 if [ -n "$AGNES_AI_API_KEY" ]; then
   RESP=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AGNES_AI_API_KEY" "https://apihub.agnes-ai.com/agnesapi?video_id=qc-probe" 2>/dev/null)

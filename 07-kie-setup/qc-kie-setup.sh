@@ -20,7 +20,7 @@ echo "═══ Skill 07 — KIE Setup — Install QC ═══"
 echo ""
 assert "Skill 07 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/07-kie-setup\" ]"
 assert "KIE_API_KEY set" "[ -n \"$KIE_API_KEY\" ]"
-assert "Secrets file chmod 600" "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
+assert "Secrets file chmod 600" "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 RESP=$(curl -sS -m 10 -H "Authorization: Bearer $KIE_API_KEY" "https://api.kie.ai/api/v1/chat/credit" 2>/dev/null)
 warn_only "kie.ai API responds" "echo \"$RESP\" | grep -qE 'credit|balance|code|data'"
 warn_only "TOOLS.md references kie.ai" "grep -qi 'kie' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"

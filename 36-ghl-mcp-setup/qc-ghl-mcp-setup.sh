@@ -193,7 +193,7 @@ assert "GHL PIT set (any canonical alias)"         "[ -n \"$RESOLVED_PIT\" ]"
 assert "GHL PIT starts with pit-"                 "[[ \"$RESOLVED_PIT\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID is set"            "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "Canonical secrets file exists"             "[ -f \"$SECRETS_ENV\" ]"
-SEC_MODE=$(stat -f %A "$SECRETS_ENV" 2>/dev/null || stat -c %a "$SECRETS_ENV" 2>/dev/null)
+SEC_MODE=$(stat -c %a "$SECRETS_ENV" 2>/dev/null || stat -f %A "$SECRETS_ENV" 2>/dev/null)
 assert "Secrets file is chmod 600"                 "[ \"$SEC_MODE\" = '600' ]"
 warn_only "PIT mirrored in openclaw.json env.vars" "command -v openclaw && openclaw config get env.vars.GOHIGHLEVEL_API_KEY 2>/dev/null | grep -q 'pit-'"
 warn_only "Location ID in openclaw.json env.vars"  "command -v openclaw && openclaw config get env.vars.GOHIGHLEVEL_LOCATION_ID 2>/dev/null | grep -q ."

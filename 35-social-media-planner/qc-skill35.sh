@@ -129,7 +129,7 @@ assert "GOHIGHLEVEL_API_KEY starts with pit-" "[[ \"${GOHIGHLEVEL_API_KEY:-}\" =
 assert "GOHIGHLEVEL_LOCATION_ID is set"       "[ -n \"${GOHIGHLEVEL_LOCATION_ID:-}\" ]"
 assert "GOHIGHLEVEL_LOCATION_ID is 18-24 chars"  "[ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -ge 18 ] && [ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -le 24 ]"
 assert "Canonical secrets file exists"        "[ -f \"$SECRETS_ENV\" ]"
-SEC_MODE=$(stat -f %A "$SECRETS_ENV" 2>/dev/null || stat -c %a "$SECRETS_ENV" 2>/dev/null)
+SEC_MODE=$(stat -c %a "$SECRETS_ENV" 2>/dev/null || stat -f %A "$SECRETS_ENV" 2>/dev/null)
 assert "Secrets file is chmod 600"            "[ \"$SEC_MODE\" = '600' ]"
 warn_only "Deprecated GHL_PRIVATE_TOKEN NOT in canonical secrets (should be migrated)" \
   "! grep -q '^GHL_PRIVATE_TOKEN=' \"$SECRETS_ENV\""
