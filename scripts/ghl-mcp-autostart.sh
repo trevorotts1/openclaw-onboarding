@@ -152,7 +152,15 @@ log() { printf '  [ghl-mcp-autostart] %s\n' "$*"; }
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # ── Platform + paths ─────────────────────────────────────────────────────────
-if [ -f /data/.openclaw/openclaw.json ]; then
+# A box is "VPS-shaped" if its config lives under /data/.openclaw (Hostinger
+# VPS / canonical containers) OR if the OPENCLAW_ROOT env / cli is data-rooted.
+# Otherwise it's "Mac-shaped" — which also covers Linux containers whose config
+# lives under $HOME/.openclaw (e.g. oc-janet-pinkney: HOME layout, no launchd,
+# no pm2). The VPS branches hardcode /data/logs and assume pm2/systemd; the
+# Mac branches default to $HOME/Library/Logs/ghl-mcp. A Linux container with a
+# HOME-rooted config MUST fall into the Mac branch AND survive without launchd
+# — FALLBACK B (setsid supervised loop) covers that path with $HOME/logs.
+if [ -f /data/.openclaw/openclaw.json ] || [ "${OPENCLAW_ROOT:-}" = "/data/.openclaw" ]; then
   PLATFORM="vps"
   OC_ROOT="/data/.openclaw"
   MCP_DIR="/data/mcp-servers/ghl-community-mcp"
@@ -165,6 +173,15 @@ else
 fi
 OC_JSON="$OC_ROOT/openclaw.json"
 SECRETS_ENV="$OC_ROOT/secrets/.env"
+# Third shape: Mac-path layout on LINUX (config under $HOME/.openclaw, no
+# launchd). start_service_mac would write plists nothing will ever run — the
+# exact silent failure oc-janet-pinkney hit live (2026-08-25): autostart
+# reported STARTED_UNHEALTHY forever while zero supervisors existed. Route
+# these boxes to the HOME-path setsid supervised loop instead.
+if [ "$PLATFORM" = "mac" ] && [ "$(uname -s)" != "Darwin" ]; then
+  PLATFORM="linux-home"
+  LOG_DIR="$HOME/logs"
+fi
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 # ── STATUS reporter (callers grep this line; honest, never "done" on a gap) ──
@@ -1306,14 +1323,14 @@ module.exports = {
       // D6 (P0): read by .ghl-mcp-bind-guard.cjs (preloaded by the launcher),
       // never by main.js — upstream hardcodes its 0.0.0.0 bind.
       GHL_MCP_BIND_HOST: "${GHL_MCP_BIND_HOST}",
-      GHL_MCP_LOG_DIR: "/data/logs",
+      GHL_MCP_LOG_DIR: "${LOG_DIR}",
       GHL_MCP_LOG_MAX_BYTES: "${GHL_MCP_LOG_MAX_BYTES}",
       GHL_MCP_LOG_KEEP: "${GHL_MCP_LOG_KEEP}",
       GHL_BASE_URL: "https://services.leadconnectorhq.com",
       GHL_LOCATION_ID: "${GHL_LOC}"
     }, _secret),
-    out_file: "/data/logs/ghl-mcp.log",
-    error_file: "/data/logs/ghl-mcp.err.log"
+    out_file: "${LOG_DIR}/ghl-mcp.log",
+    error_file: "${LOG_DIR}/ghl-mcp.err.log"
   }]
 };
 EOF
@@ -1394,7 +1411,9 @@ _pm2_registration_mismatch() {
 
 start_service_vps() {
   local NODE_PATH; NODE_PATH="$(command -v node)"
-  mkdir -p /data/logs 2>/dev/null || true
+  # $LOG_DIR follows the platform shape (/data/logs on data-rooted boxes,
+  # $HOME/logs on HOME-layout Linux containers). Never assume /data exists.
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
   write_vps_ecosystem
 
   # ── PRIMARY: pm2 (the fleet-standard supervisor; survives container restart via
@@ -1448,7 +1467,7 @@ Environment=MCP_SERVER_PORT=${GHL_MCP_PORT}
 Environment=GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
 # D6 (P0): loopback bind, enforced by the launcher's .ghl-mcp-bind-guard.cjs.
 Environment=GHL_MCP_BIND_HOST=${GHL_MCP_BIND_HOST}
-Environment=GHL_MCP_LOG_DIR=/data/logs
+Environment=GHL_MCP_LOG_DIR=${LOG_DIR}
 Environment=GHL_MCP_LOG_MAX_BYTES=${GHL_MCP_LOG_MAX_BYTES}
 Environment=GHL_MCP_LOG_KEEP=${GHL_MCP_LOG_KEEP}
 Environment=NODE_ENV=production
@@ -1458,8 +1477,8 @@ ExecStart=/bin/bash ${LAUNCHER}
 Restart=on-failure
 RestartSec=30
 EnvironmentFile=${MCP_DIR}/.env
-StandardOutput=append:/data/logs/ghl-mcp.log
-StandardError=append:/data/logs/ghl-mcp.err.log
+StandardOutput=append:${LOG_DIR}/ghl-mcp.log
+StandardError=append:${LOG_DIR}/ghl-mcp.err.log
 
 [Install]
 WantedBy=multi-user.target
@@ -1488,9 +1507,9 @@ while true; do
   PORT="${GHL_MCP_PORT}" MCP_SERVER_PORT="${GHL_MCP_PORT}" \\
     GHL_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE}" NODE_ENV=production \\
     GHL_MCP_BIND_HOST="${GHL_MCP_BIND_HOST}" \\
-    GHL_MCP_NODE_BIN="${NODE_PATH}" GHL_MCP_LOG_DIR="/data/logs" \\
+    GHL_MCP_NODE_BIN="${NODE_PATH}" GHL_MCP_LOG_DIR="${LOG_DIR}" \\
     GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES}" GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP}" \\
-    /bin/bash "${LAUNCHER}" >> /data/logs/ghl-mcp.log 2>&1
+    /bin/bash "${LAUNCHER}" >> ${LOG_DIR}/ghl-mcp.log 2>&1
   rc=\$?
   # Clean exit = deliberate stop (missing/rejected credential). Do NOT loop.
   [ "\$rc" = "0" ] && break
@@ -1500,9 +1519,9 @@ EOF
   chmod +x "$SUP" 2>/dev/null || true
   # setsid detaches from the controlling terminal so it survives exec/session teardown.
   if command -v setsid >/dev/null 2>&1; then
-    setsid nohup bash "$SUP" >> /data/logs/ghl-mcp.log 2>&1 < /dev/null &
+    setsid nohup bash "$SUP" >> "$LOG_DIR"/ghl-mcp.log 2>&1 < /dev/null &
   else
-    nohup bash "$SUP" >> /data/logs/ghl-mcp.log 2>&1 < /dev/null &
+    nohup bash "$SUP" >> "$LOG_DIR"/ghl-mcp.log 2>&1 < /dev/null &
   fi
   disown 2>/dev/null || true
 }
@@ -1520,7 +1539,7 @@ install_vps_reboot_resurrect() {
   pm2 startup >/dev/null 2>&1 || true
   # Idempotent @reboot cron entry (covers bare containers + plain VPS reboots).
   if command -v crontab >/dev/null 2>&1; then
-    local LINE="@reboot ${PM2_BIN} resurrect >/data/logs/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
+    local LINE="@reboot ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
     upsert_cron_line "$CRON_TAG_RESURRECT" "$LINE" \
       && log "installed/refreshed @reboot 'pm2 resurrect' cron (reboot-surviving)"
   fi
@@ -1535,7 +1554,7 @@ install_vps_reboot_resurrect() {
 #      VPS, pm2-logrotate under pm2) when it can be configured WITHOUT an
 #      interactive sudo prompt. Never blocks, never prompts.
 install_log_rotation() {
-  if [ "$PLATFORM" = "mac" ]; then
+  if [ "$PLATFORM" = "mac" ] || [ "$PLATFORM" = "linux-home" ]; then
     local NSCONF="/etc/newsyslog.d/com.clawd.ghl-mcp.conf"
     if [ ! -f "$NSCONF" ] && sudo -n true 2>/dev/null; then
       printf '# logfilename                                  [owner:group]  mode count size(KB) when  flags\n%s/Library/Logs/ghl-mcp/stderr.log  %s:staff  644  %s  10240  *  GJ\n%s/Library/Logs/ghl-mcp/stdout.log  %s:staff  644  %s  10240  *  GJ\n' \
@@ -1556,7 +1575,7 @@ install_log_rotation() {
     fi
     local LRCONF="/etc/logrotate.d/ghl-mcp"
     if [ ! -f "$LRCONF" ] && command -v logrotate >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-      printf '/data/logs/ghl-mcp*.log {\n    size 10M\n    rotate %s\n    missingok\n    notifempty\n    compress\n    delaycompress\n    copytruncate\n}\n' "$GHL_MCP_LOG_KEEP" \
+      printf '%s/ghl-mcp*.log {\n    size 10M\n    rotate %s\n    missingok\n    notifempty\n    compress\n    delaycompress\n    copytruncate\n}\n' "$LOG_DIR" "$GHL_MCP_LOG_KEEP" \
         | sudo -n tee "$LRCONF" >/dev/null 2>&1 \
         && log "installed logrotate config $LRCONF (10 MB, keep ${GHL_MCP_LOG_KEEP}, copytruncate)" \
         || log "logrotate config not installed — the launcher/probe rotation still applies"
@@ -1570,7 +1589,10 @@ install_log_rotation() {
 # ── 7. Periodic liveness probe (D5) — every 15 minutes, self-healing once ────
 install_periodic_probe() {
   [ -n "${PROBE:-}" ] || { log "ghl-mcp-probe.sh not co-located — periodic liveness probe NOT installed"; return 0; }
-  if [ "$PLATFORM" = "mac" ]; then
+  # launchd exists ONLY on Darwin. A HOME-layout Linux container must never be
+  # handed a plist — nothing will ever run it (the silent failure this class
+  # of box hit live). Cron covers linux-home.
+  if [ "$PLATFORM" = "mac" ] && [ "$(uname -s)" = "Darwin" ]; then
     local PPLIST="$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist"
     cat > "$PPLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1774,6 +1796,8 @@ fi
 if [ "$PLATFORM" = "mac" ]; then
   start_service_mac
 else
+  # linux-home boxes (HOME-layout Linux containers) share the VPS supervisor
+  # chain: pm2 if present, systemd if present, else the setsid relaunch loop.
   start_service_vps
 fi
 
