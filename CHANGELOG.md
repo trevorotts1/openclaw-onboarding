@@ -1,3 +1,55 @@
+## [v22.0.72]  -  2026-08-24  -  fix(presentations): F04 attestation filter rejected every genuine runner row (v22.0.68 regression) — phase chain + delivery boundary restored
+
+The v22.0.68 F04 hardening added a `status=='done'` filter to the attestation
+readers, but the writer `attest_phase()` NEVER writes `'done'` — it writes
+`artifact_present`, `preflight_ok`, `preflight_ok_adhoc`, or `qc_pass_measurer`.
+Every genuine runner row was therefore dropped:
+
+- build_deck.check_phase_preconditions false-tripped AF-PHASE-SKIPPED after the
+  first phase (the RUNNER-ATTEST SEEN (3C/D1) regression test failed in CI,
+ catching the defect exactly as designed).
+- canonical_render_guard.attested_phase_ids refused fully-attested runs at the
+  delivery boundary gate.
+
+Fix: both readers accept the writer's real completion statuses plus the legacy
+'done' shape; `substance_verified is True` stays the forged-row tooth;
+'qc_owner_override' rows remain excluded (overrides satisfy the chain only via
+phase_skip_approvals.json). The regression test now passes
+substance_verified=True like every production call site. Renderer pin re-stamped.
+
+Also:
+- 59-anthology-engine (0.1.30 -> 0.1.31): INSTALL.md ANTHOLOGY_STATE_DIR row
+  reworded without the retired docs-language term (filename citations do not
+  exempt the substring; the allowlist lists are empty by doctrine).
+- Repo release bump v22.0.71 -> v22.0.72 via scripts/bump-version.sh (all 10
+  markers agree); skill 23 rides the repo version as its carrier.
+
+Local proof: test_preflight.py exit 0 (RUNNER-ATTEST PASS);
+tests/test_delivery_guard_selfblock.py 6/6; sync_check.py IN SYNC;
+gate_integrity_check.py OK; runner_gate_integrity_check.py OK; test_cc_board.py +
+test_cc_contract.py exit 0; check-docs-language.py 0 new occurrences;
+qc-assert-repo-consistency rc=0; bump-version.sh --check green.
+
+## [v22.0.71]  -  2026-08-24  -  book-writer v1.3.0: hardening release — QC-pass fixes, GATE-433 binding, repo bump
+
+Skill 53 (book-writer) v1.3.0 hardening (f59f98c34), with repo bump to v22.0.71:
+
+- GATE-433 bound to its artifact (fail-closed): in 4x3x3 mode the approval receipt for
+  `GATE-433` must carry an `artifact_sha256` matching the LIVE sha of
+  `run/433/433_Deck_Data.json`; a missing/mismatched binding blocks at P4 (AF-BK gate check).
+- Anon denylist fail-closed after identity filter: if every configured anonymous-token is
+  exempted as the author's own name, that emptiness is an AUTOFAIL rather than a silent pass.
+- Ledger-coverage violations coded: `AF-BK-LEDGER-COVERAGE` added to the manifest autofail list;
+  `AF-BK-PROCESS-INTEGRITY` enforcement attribution corrected.
+- Legacy duplicate `load_gate_receipts` removed; single canonical loader remains.
+- Receipt schema tightened: approvals must live inside `receipts[]` with
+  `gate_id`/`approved:true`/`approved_by`/ISO `approved_at`, plus artifact binding where one
+  exists — presence-only or top-level-key receipts are ignored fail-closed.
+- Golden example re-stamped under corrected measurement; ENGINE-PIN re-minted (v2 length-prefixed
+  framing); anon-tokens shipped in golden checkpoints.
+- Full battery green: verify.sh PASS, 18/18 broken variants rejected, all prover self-tests exit 0,
+  golden pilot rc=0 with stable certificate sha.
+
 ## [v22.0.70]  -  2026-08-24  -  fix(podcast-audit): Skill 58 end-to-end diagnostic sweep F1-F8 — icon-clobber guard, cron-guard blind spots, n8n export drift
 
 Full end-to-end diagnostic of the podcast skill set (Skill 58), its live n8n workflows, and the

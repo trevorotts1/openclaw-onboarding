@@ -253,16 +253,21 @@ def attested_phase_ids(run_dir: Path) -> set:
     phase record (which counts as P4-RENDER) are honored.
 
     F04: an attestation row counts ONLY when it is a COMPLETED,
-    substance-verified one (status == 'done' AND substance_verified is True).
-    Bare id-only rows — the shape a hand-edited manifest produces — do not
-    satisfy the delivery boundary chain. The runner's attest_phase() always
-    writes both fields; only forged/incomplete rows drop out here."""
+    substance-verified one. The writer attest_phase() emits the completion
+    statuses 'artifact_present', 'preflight_ok', 'preflight_ok_adhoc', and
+    'qc_pass_measurer' — never a literal 'done' — so the former status=='done'-
+    only filter rejected EVERY genuine runner row (the v22.0.68 regression this
+    fixes). 'done' stays accepted as the legacy/hand-manifest completed shape.
+    Bare id-only rows missing substance_verified — the shape a hand-edited
+    manifest produces — still do not satisfy the delivery boundary chain."""
     obj = _load_process_manifest(run_dir)
     ids = set()
     for att in obj.get("phase_attestations", []) or []:
         if not isinstance(att, dict):
             continue
-        if str(att.get("status", "")).strip().lower() != "done":
+        if str(att.get("status", "")).strip().lower() not in (
+                "done", "artifact_present", "preflight_ok",
+                "preflight_ok_adhoc", "qc_pass_measurer"):
             continue
         if att.get("substance_verified") is not True:
             continue
