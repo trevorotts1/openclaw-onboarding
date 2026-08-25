@@ -191,11 +191,12 @@
     "1": "unexpected error",
     "2": "validation or guard refusal",
     "3": "dependency unavailable or held",
-    "4": "enforced violation detected",
+    "4": "credentials-pending readiness (GATE 2.5): install complete, deferred creds absent — provision and retry",
     "5": "data or read-back mismatch",
     "6": "deps unresolved",
     "7": "hash pin mismatch",
-    "8": "model-map pre-gate failure"
+    "8": "model-map pre-gate failure",
+    "10": "input error: malformed --participant-key (missing :: separator)"
   },
   "script_inventory": [
     {

@@ -88,12 +88,14 @@ done
 # Require --participant-key to carry a <contact>::<anthology> contract.
 # A bare string without '::' is an input error, not a hold -- give the
 # operator a distinct code and message so they can distinguish.
+# D10 resolution: malformed input exits 10; exit 4 is RESERVED for GATE 2.5
+# credentials-pending readiness only. One meaning per code.
 if [ -n "$KEY" ] && ! echo "$KEY" | grep -q '::'; then
     echo >&2
     echo "ERROR [$PROG]: --participant-key '$KEY' is malformed." >&2
     echo "  The key MUST be in <contact>::<anthology> format (a double-colon separator)." >&2
     echo "  Example: alice-wonderland::grumpy-cat-adventures" >&2
-    exit 4
+    exit 10
 fi
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
