@@ -47,23 +47,29 @@ async function route(request, env) {
     return jsonResponse({ status: "ok", service: "presentation-interview", ttl_days: DEFAULT_TTL_DAYS });
   }
   if (parts[0] !== "api") return errorResponse("not found", 404);
-  if (parts.length === 2 && parts[0] === "intake" && parts[1] === "list" && method === "GET") return listIntakes(request, env);
-  if (parts.length === 1 && parts[0] === "intake" && method === "POST") return storeIntake(request, env);
-  if (parts.length === 1 && parts[0] === "dept-start" && method === "POST") return triggerDeptStart(request, env);
-  if (parts[0] === "sessions") return routeSessions(request, env, parts, method, url);
+  // F22 — the three intake routes below matched parts[0]/parts.length as if the
+  // "/api" segment had been consumed. pathname.split("/").filter(Boolean) on
+  // "/api/intake" yields ["api","intake"] (length 2), so every condition here was
+  // dead code: POST /api/intake and /api/dept-start 404'd forever and deploying
+  // this worker verbatim broke the whole submit path. Indexes now match reality.
+  if (parts.length === 3 && parts[1] === "intake" && parts[2] === "list" && method === "GET") return listIntakes(request, env);
+  if (parts.length === 2 && parts[1] === "intake" && method === "POST") return storeIntake(request, env);
+  if (parts.length === 2 && parts[1] === "dept-start" && method === "POST") return triggerDeptStart(request, env);
+  if (parts[1] === "sessions") return routeSessions(request, env, parts, method, url);
   return errorResponse("not found", 404);
 }
 
 // ---- session API (same contract as the repo intake-miniapp) ----------------
 
 async function routeSessions(request, env, parts, method, url) {
-  if (parts.length === 1 && method === "POST") return mintSession(request, env);
-  const token = parts[1];
+  // F22 — same off-by-one as the router: parts includes the leading "api".
+  if (parts.length === 2 && method === "POST") return mintSession(request, env);
+  const token = parts[2];
   if (!token || !isValidTokenShape(token)) return errorResponse("bad token", 400);
-  if (parts.length === 2 && method === "GET") return getSession(env, token);
-  if (parts.length === 3 && parts[2] === "answers" && method === "POST") return postAnswer(request, env, token);
-  if (parts.length === 3 && parts[2] === "answers" && method === "GET") return pollAnswers(request, env, token);
-  if (parts.length === 3 && parts[2] === "complete" && method === "POST") return completeSession(env, token);
+  if (parts.length === 3 && method === "GET") return getSession(env, token);
+  if (parts.length === 4 && parts[3] === "answers" && method === "POST") return postAnswer(request, env, token);
+  if (parts.length === 4 && parts[3] === "answers" && method === "GET") return pollAnswers(request, env, token);
+  if (parts.length === 4 && parts[3] === "complete" && method === "POST") return completeSession(env, token);
   return errorResponse("not found", 404);
 }
 
@@ -161,12 +167,50 @@ async function loadOpenSession(env, token, allowComplete = false) {
  * Body: { file_name, intake }. The intake object is the dept-format record the
  * box's deck-intake-driver / cc_board ingest path expects. Stored in D1 and
  * made available to the box bridge (which polls it into the run dir).
+ *
+ * F21 COMPLETENESS GATE: an intake missing any REQUIRED deck_brief field (the
+ * required+block_gate questions of the curated set) or pre_presentation_capture.
+ * PRESENTATION_TYPE is rejected with 422 naming the missing fields. Before this
+ * gate the server accepted `{}` — a hollow intake flowed downstream, the bridge
+ * minted a card from it, and the failure only surfaced mid-build as garbage
+ * copy. Server-side validation mirrors what the UI enforces client-side.
  */
+const REQUIRED_BRIEF_FIELDS = [
+  "OFFER_NAME",
+  "NAMED_METHODOLOGY",
+  "TRANSFORMATION_PROMISE",
+  "TIME_TO_RESULT",
+  "AUDIENCE",
+  "CTA_ACTION",
+  "TONE",
+  "FINAL_PRICE",
+  "WANT_SALES_CHECKOUT",
+  "WANT_VSL_PAGE",
+];
+
+function validateIntakeCompleteness(intake) {
+  const brief = (intake && typeof intake.deck_brief === "object" && intake.deck_brief) || {};
+  const pre = (intake && typeof intake.pre_presentation_capture === "object" && intake.pre_presentation_capture) || {};
+  const missing = [];
+  for (const f of REQUIRED_BRIEF_FIELDS) {
+    const v = brief[f];
+    if (v === undefined || v === null || (typeof v === "string" && !v.trim())) missing.push("deck_brief." + f);
+  }
+  if (!pre.PRESENTATION_TYPE || (typeof pre.PRESENTATION_TYPE === "string" && !pre.PRESENTATION_TYPE.trim())) {
+    missing.push("pre_presentation_capture.PRESENTATION_TYPE");
+  }
+  return missing;
+}
+
 async function storeIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const intake = body.intake;
   if (!intake || typeof intake !== "object") return errorResponse("intake object required", 400);
+  const missingFields = validateIntakeCompleteness(intake);
+  if (missingFields.length) {
+    return jsonResponse({ status: "rejected", error: "intake incomplete — required fields missing or empty", missing: missingFields }, 422);
+  }
   const file_name = (body.file_name || "intake.json").replace(/[^A-Za-z0-9._-]/g, "");
   const session_id = intake.intake_session_id || file_name.replace(/\..+$/, "");
   const created = nowSeconds();

@@ -234,9 +234,14 @@ def cmd_ingest(args) -> int:
         if task_id:
             print(json.dumps({"status": "dept_started", "session_id": args.session_id, "task_id": task_id}))
             return 0
-        print(json.dumps({"status": "dept_start_deferred", "session_id": args.session_id,
-                          "note": "cc_board.ingest_deck_task returned None (board URL unset or transport failure); run staged for pickup"}))
-        return 0
+        # FIX F12: a None here means NO kanban card exists — returning 0 lets
+        # cmd_poll mark the session processed and the card is silently never
+        # created, never retried. Return nonzero so poll leaves the session
+        # unprocessed and retries on the next pass.
+        print(json.dumps({"status": "dept_start_failed", "session_id": args.session_id,
+                          "note": "cc_board.ingest_deck_task returned None (board URL unset or transport failure); session left for retry"}),
+              file=sys.stderr)
+        return 5
 
     # 3) Fall back to the Worker /api/dept-start endpoint.
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
@@ -307,7 +312,16 @@ def cmd_poll(args) -> int:
             worker_url=args.worker_url, session_id=sid, run_dir=str(run_dir),
             verbose=args.verbose, func=cmd_ingest,
         )
-        rc = cmd_ingest(sub)
+        # FIX F13: one poison session (malformed payload, transport crash) used
+        # to raise out of the loop and kill the whole poll batch — every other
+        # waiting session behind it was never attempted. Contain the failure to
+        # the single session; unprocessed sessions retry on the next poll.
+        try:
+            rc = cmd_ingest(sub)
+        except Exception as exc:  # noqa: BLE001 — poll must survive any single bad session
+            print(json.dumps({"status": "ingest_crashed", "session_id": sid,
+                              "error": f"{type(exc).__name__}: {exc}"}), file=sys.stderr)
+            continue
         if rc == 0:
             _mark_processed(args, sid)
             ingested += 1

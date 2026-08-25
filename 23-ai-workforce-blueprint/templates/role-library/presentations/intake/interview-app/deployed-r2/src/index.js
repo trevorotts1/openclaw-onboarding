@@ -181,12 +181,48 @@ function intakeKey(sessionId) { return INTAKE_PREFIX + String(sessionId).replace
  * POST /api/intake — store the assembled intake JSON so the box bridge can
  * poll it into the run dir (R2-backed). Same contract as the D1 worker.
  * Body: { file_name, intake }.
+ *
+ * F21 COMPLETENESS GATE (mirrors the repo worker): an intake missing any
+ * REQUIRED deck_brief field or pre_presentation_capture.PRESENTATION_TYPE is
+ * rejected with 422 naming the missing fields. Before this gate the server
+ * accepted `{}` and the hollow intake flowed downstream into a doomed build.
  */
+const REQUIRED_BRIEF_FIELDS = [
+  "OFFER_NAME",
+  "NAMED_METHODOLOGY",
+  "TRANSFORMATION_PROMISE",
+  "TIME_TO_RESULT",
+  "AUDIENCE",
+  "CTA_ACTION",
+  "TONE",
+  "FINAL_PRICE",
+  "WANT_SALES_CHECKOUT",
+  "WANT_VSL_PAGE",
+];
+
+function validateIntakeCompleteness(intake) {
+  const brief = (intake && typeof intake.deck_brief === "object" && intake.deck_brief) || {};
+  const pre = (intake && typeof intake.pre_presentation_capture === "object" && intake.pre_presentation_capture) || {};
+  const missing = [];
+  for (const f of REQUIRED_BRIEF_FIELDS) {
+    const v = brief[f];
+    if (v === undefined || v === null || (typeof v === "string" && !v.trim())) missing.push("deck_brief." + f);
+  }
+  if (!pre.PRESENTATION_TYPE || (typeof pre.PRESENTATION_TYPE === "string" && !pre.PRESENTATION_TYPE.trim())) {
+    missing.push("pre_presentation_capture.PRESENTATION_TYPE");
+  }
+  return missing;
+}
+
 async function storeIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const intake = body.intake;
   if (!intake || typeof intake !== "object") return errorResponse("intake object required", 400);
+  const missingFields = validateIntakeCompleteness(intake);
+  if (missingFields.length) {
+    return jsonResponse({ status: "rejected", error: "intake incomplete — required fields missing or empty", missing: missingFields }, 422);
+  }
   const file_name = (body.file_name || "intake.json").replace(/[^A-Za-z0-9._-]/g, "");
   const session_id = intake.intake_session_id || file_name.replace(/\..+$/, "");
   const created = nowSeconds();

@@ -17,6 +17,7 @@
 """Fail-closed personal-story placement gate (Skill 53)."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -24,6 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _bw_common as c  # noqa: E402
 
 AF_STORIES = "AF-BK-STORIES"
+
+# conventional intake location relative to the stories.json parent (a run dir)
+_INTAKE_CANDIDATES = ("intake.json", "../intake.json")
 
 
 def evaluate(stories, outline_text: str, manuscript_text: str) -> c.Result:
@@ -53,15 +57,75 @@ def evaluate(stories, outline_text: str, manuscript_text: str) -> c.Result:
         if in_outline and in_manu:
             r.note("story %s placed in outline + manuscript" % sid)
     if checked == 0:
-        r.note("no non-N/A stories to place")
+        r.fail(AF_STORIES, "no non-N/A story placed: %d story entry(s) in the intake declare a "
+               "non-N/A key_phrase but ZERO were checked (fail-closed — an empty stories list "
+               "cannot prove placement)" % (len(stories),))
     return r
 
 
-def prove(stories_path, outline_path, manuscript_path, as_json=False) -> int:
+def _load_intake(stories_path, intake_flag=None):
+    """Best-effort intake load for the zero-checked-stories cross-check. Returns
+    (intake_obj_or_None)."""
+    candidates = []
+    if intake_flag:
+        candidates.append(Path(intake_flag))
+    else:
+        sp = Path(stories_path)
+        base = sp.parent if sp.parent.name != "" else Path(".")
+        for cand in _INTAKE_CANDIDATES:
+            p = (base / cand).resolve()
+            candidates.append(p)
+    for p in candidates:
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _intake_declares_story(intake) -> bool:
+    """True when any book_stories entry carries a non-N/A key_phrase."""
+    if not isinstance(intake, dict):
+        return False
+    entries = intake.get("book_stories")
+    if isinstance(entries, dict):
+        entries = list(entries.values())
+    if not isinstance(entries, list):
+        return False
+    for e in entries:
+        key = ""
+        if isinstance(e, dict):
+            key = e.get("key_phrase") or e.get("text") or ""
+        elif isinstance(e, str):
+            key = e
+        if c.is_present(key) and not c.is_na(key):
+            return True
+    return False
+
+
+def prove(stories_path, outline_path, manuscript_path, as_json=False,
+          intake=None) -> int:
     stories = c.read_json(stories_path)
     outline = c.read_text(outline_path)
     manuscript = c.read_text(manuscript_path)
-    return evaluate(stories, outline, manuscript).emit(as_json)
+    r = evaluate(stories, outline, manuscript)
+    # fail-closed belt: when the prover checked ZERO non-N/A stories, cross-check the
+    # intake. If the intake declares a real story but none was checked, that is a
+    # silent drop — autofail. If no intake is reachable we keep current behavior and
+    # log a warning note.
+    checked = sum(1 for st in (stories or [])
+                  if isinstance(st, dict)
+                  and c.is_present(st.get("key_phrase") or st.get("text") or "")
+                  and not c.is_na(st.get("key_phrase") or st.get("text") or ""))
+    if checked == 0:
+        intake = intake if intake is not None else _load_intake(stories_path)
+        if intake is None:
+            r.note("WARNING: zero non-N/A stories checked and no intake.json found at a "
+                   "conventional path — pass --intake to make this check binding")
+        elif _intake_declares_story(intake):
+            r.fail(AF_STORIES, "the intake declares at least one non-N/A personal story "
+                   "but ZERO stories were checked against outline+manuscript (silent drop)")
+    return r.emit(as_json)
 
 
 def self_test() -> int:
@@ -100,6 +164,8 @@ def main(argv=None):
     ap.add_argument("--stories", help="run/stories.json")
     ap.add_argument("--outline", help="approved outline .md")
     ap.add_argument("--manuscript", help="assembled manuscript .md (all chapters)")
+    ap.add_argument("--intake", help="intake.json (optional; enables the zero-checked-stories "
+                    "cross-check when stories.json's sibling intake is not reachable)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
@@ -107,7 +173,9 @@ def main(argv=None):
         return self_test()
     if not (args.stories and args.outline and args.manuscript):
         ap.error("--stories, --outline and --manuscript are required (or use --self-test)")
-    return prove(args.stories, args.outline, args.manuscript, as_json=args.json)
+    return prove(args.stories, args.outline, args.manuscript, as_json=args.json,
+                 intake=json.loads(Path(args.intake).read_text(encoding="utf-8"))
+                 if args.intake else None)
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@
     "got_codes": [
       "AF-BK-CHAP-LEN"
     ],
-    "out": "VIOLATION [AF-BK-CHAP-LEN] chapter 7 measured 10 stripped words, outside [2000,3500] (self-reported counts ignored; whitespace padding is inert)"
+    "out": "VIOLATION [AF-BK-CHAP-LEN] chapter 7 measured 9 stripped words, outside [2000,3500] (self-reported counts ignored; whitespace padding is inert)"
   },
   "07_continuity": {
     "prover": "prove_bw_continuity.py",
@@ -77,7 +77,7 @@
     "got_codes": [
       "AF-BK-TONE-LEN"
     ],
-    "out": "VIOLATION [AF-BK-TONE-LEN] blended tone measured 407 stripped words, below the 3000 floor (self-reported counts ignored)"
+    "out": "VIOLATION [AF-BK-TONE-LEN] blended tone measured 406 stripped words, below the 3000 floor (self-reported counts ignored)"
   },
   "09_challenge": {
     "prover": "prove_bw_challenge.py",
@@ -127,7 +127,7 @@
     "got_codes": [
       "AF-BK-ANTHROPIC"
     ],
-    "out": "VIOLATION [AF-BK-ANTHROPIC] Anthropic/claude model id 'anthropic/claude-opus-4' at ledger.stages[0].model (client boxes never run Anthropic)"
+    "out": "VIOLATION [AF-BK-ANTHROPIC] /anthropic|claude/i string 'anthropic/claude-opus-4' at ledger.stages[0].model (client boxes never run Anthropic)"
   },
   "14_anon": {
     "prover": "prove_bw_anon.py",
@@ -167,7 +167,7 @@
     "got_codes": [
       "AF-BK-HASH-PIN"
     ],
-    "out": "VIOLATION [AF-BK-HASH-PIN] enforcement-set hash 769a4e6d0003.. != pinned head deadbeef.. (a prover was modified)"
+    "out": "VIOLATION [AF-BK-HASH-PIN] enforcement-set hash 769a4e6d0003 (v1 framing).. != pinned head deadbeef.. (a prover was modified)"
   },
   "18_entry_bypass": {
     "prover": "prove_bw_process.py",

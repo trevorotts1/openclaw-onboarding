@@ -1,7 +1,7 @@
 ---
 name: book-writer
 description: Turns ONE completed book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets — avatar dossier, the blended "The {First} {Last} Tone", locked title/subtitle + approved outline, print-ready manuscript, a 30-Day Challenge, and an AI cover prompt — delivered as labeled files in ~/Downloads. Fully local at runtime — no n8n, no Airtable, no Google/Gmail/Slack/GHL — on the client's OWN model providers, never Anthropic. A Book/Brand version selector runs FIRST: version=book runs here; version=brand hands off to Skill 52 (avatar-alchemist). Modes full (flagship 12-chapter book) and 4x3x3 (offer book: 30 titles / 4 Transformational Outcomes / KP doc / 433_Deck_Data.json handed to Skill 51). Every SACRED count/floor is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed process certificate. Trigger with "write my book", "run book writer", "book version of avatar alchemist", "12-chapter book for <name>", or "4x3x3 book".
-version: 1.2.2
+version: 1.3.0
 ---
 
 # Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (Skill 53)
@@ -142,9 +142,12 @@ choice is never substituted. Role files and SOPs name client-provider tiers, nev
 
 ## Downstream handoffs (see INSTRUCTIONS.md)
 
-`433_Deck_Data.json` + deck outline → **Skill 51** (signature-presentation); avatar dossier + blended
-tone ↔ **Skill 52** (both directions); `Book_Cover_Prompt.md` → any image provider; the manuscript →
-**Skills 49/50** for launch assets.
+`433_Deck_Data.json` + deck outline → **Skill 51** (signature-presentation): a schema-valid deck
+payload prepared FOR Skill 51 — **no automated import exists today**; Skill 51 authors decks through
+its own 8-Questions intake. Avatar dossier + blended tone ↔ **Skill 52** (both directions);
+`Book_Cover_Prompt.md` → any image provider; the manuscript → **Skills 49/50** for launch assets
+(**manual input only** — no automated handoff exists; the finished manuscript is supplied to those
+skills through their own intakes).
 
 ## Relationship to Skill 52 (avatar-alchemist) — cross-linked, NEVER merged
 

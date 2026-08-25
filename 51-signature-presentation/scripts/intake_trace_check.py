@@ -192,42 +192,82 @@ def _keywords(prompt: str) -> set:
     return {w for w in words if len(w) > 3 and w not in _STOPWORDS}
 
 
+class MissingQuestionBank(RuntimeError):
+    """Raised when a question bank spec is missing, corrupt, or loads zero
+    questions. F25: the bank is the conversation gate's entire matching
+    substrate — a silently-empty bank guts BATCH-IN-TURN and NO-CHOICE-OPENER
+    detection while the tool still prints PASS."""
+
+
 def load_bank_questions(sp_spec_path=None, deck_questions_path=None) -> dict:
     """Returns {question_id: {"prompt":..., "keywords": set(...)}} across
-    both migrated banks. Missing files are tolerated (empty dict for that
-    bank) so this scanner degrades gracefully rather than crashing QC."""
+    both migrated banks.
+
+    F25 fail-closed contract: a MISSING or UNPARSEABLE bank file raises
+    MissingQuestionBank instead of degrading to an empty dict. The two engine
+    call sites (build_deck.py / slice1_gate_verifiers.py) already wrap this in
+    except-Exception -> AF-INTAKE-BATCH FAIL, so raising there turns a silent
+    no-op scan into a named gate failure. The CLI catches it and exits 3.
+    """
     bank = {}
+    problems = []
 
     sp_path = Path(sp_spec_path) if sp_spec_path else SP_SPEC_PATH
-    if sp_path.exists():
+    if not sp_path.exists():
+        problems.append(f"SP question bank not found: {sp_path}")
+    else:
         try:
             spec = json.loads(sp_path.read_text(encoding="utf-8"))
+            loaded = 0
             for q in spec.get("questions") or []:
                 qid, prompt = q.get("id"), q.get("prompt") or ""
                 if qid and prompt:
                     bank[f"sp:{qid}"] = {"prompt": prompt, "keywords": _keywords(prompt)}
+                    loaded += 1
             frame_q = spec.get("frame_selection_question") or {}
             if frame_q.get("prompt"):
                 bank["sp:frame_selection"] = {
                     "prompt": frame_q["prompt"], "keywords": _keywords(frame_q["prompt"])
                 }
-        except (json.JSONDecodeError, OSError):
-            pass
+                loaded += 1
+            if loaded == 0:
+                problems.append(
+                    f"SP question bank parsed to ZERO questions ({sp_path}) — "
+                    "spec malformed or question list empty")
+        except (json.JSONDecodeError, OSError) as exc:
+            problems.append(f"SP question bank unreadable/corrupt at {sp_path}: {exc}")
 
     dq_path = Path(deck_questions_path) if deck_questions_path else None
     candidates = [dq_path] if dq_path else DECK_QUESTIONS_CANDIDATES
+    dq_found = False
+    last_err = None
     for c in candidates:
         if c and c.exists():
+            dq_found = True
             try:
                 dq = json.loads(c.read_text(encoding="utf-8"))
+                loaded = 0
                 for q in dq.get("questions") or []:
                     qid, prompt = q.get("id"), q.get("prompt") or ""
                     if qid and prompt:
                         bank[f"deck:{qid}"] = {"prompt": prompt, "keywords": _keywords(prompt)}
-            except (json.JSONDecodeError, OSError):
-                pass
+                        loaded += 1
+                if loaded == 0:
+                    problems.append(
+                        f"deck question bank parsed to ZERO questions ({c}) — "
+                        "spec malformed or question list empty")
+            except (json.JSONDecodeError, OSError) as exc:
+                last_err = f"deck question bank unreadable/corrupt at {c}: {exc}"
             break
+    if last_err:
+        problems.append(last_err)
+    elif not dq_found:
+        problems.append(
+            f"deck question bank not found in any candidate path "
+            f"({', '.join(str(c) for c in candidates)})")
 
+    if problems:
+        raise MissingQuestionBank("; ".join(problems))
     return bank
 
 
@@ -592,7 +632,12 @@ def main(argv=None) -> int:
     prov_fails = check_driver_provenance(envelope)
     provenance_violations = _provenance_to_violations(prov_fails)
 
-    bank = load_bank_questions(args.sp_spec, args.deck_questions)
+    try:
+        bank = load_bank_questions(args.sp_spec, args.deck_questions)
+    except MissingQuestionBank as exc:
+        print(json.dumps({"status": "error",
+                          "message": f"question bank unavailable — conversation gate cannot run: {exc}"}))
+        return EXIT_USAGE
     result = scan_transcript(turns, bank)
     result["violations"] = provenance_violations + result["violations"]
     result["pass"] = len(result["violations"]) == 0
@@ -617,7 +662,17 @@ def main(argv=None) -> int:
 def _self_test() -> bool:
     print("[intake_trace_check] --self-test: starting...")
     ok = True
-    bank = load_bank_questions()
+    bank = load_bank_questions()  # F25: raises MissingQuestionBank on missing banks
+
+    # Test 0 (F25): a mispathed spec must FAIL CLOSED, not degrade to PASS.
+    try:
+        load_bank_questions(sp_spec_path="/nonexistent/sp-8-questions.json")
+        t0 = False
+    except MissingQuestionBank:
+        t0 = True
+    ok = ok and t0
+    print(f"[self-test] Test 0 {'PASS' if t0 else 'FAIL'}: mispathed SP spec -> "
+          f"MissingQuestionBank raised (fail-closed, not silent empty-bank PASS)")
 
     # Test 1: a clean, one-question-per-turn signature intake -> PASS.
     clean = [

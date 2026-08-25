@@ -1,0 +1,129 @@
+{
+  "skill": "book-writer",
+  "author": "Marcus Halloway",
+  "measured": {
+    "tone_word_count": 3775,
+    "title": "The Quiet Authority",
+    "subtitle": "How the Best New Leaders Trade Control for Trust",
+    "stories_placed": 2,
+    "chapter_count": 12,
+    "chapter_word_counts": {
+      "1": 2313,
+      "2": 2345,
+      "3": 2341,
+      "4": 2414,
+      "5": 2365,
+      "6": 2438,
+      "7": 2497,
+      "8": 2440,
+      "9": 2512,
+      "10": 2359,
+      "11": 2322,
+      "12": 2329
+    },
+    "challenge_sections": 30,
+    "title_lock_ok": true
+  },
+  "files": [
+    {
+      "file": "00-INDEX.md",
+      "sha256": "5756ca93d438f59170818a6f9c9032ef91692c7ab515a2fcd6955646c5796fad"
+    },
+    {
+      "file": "30_Day_Challenge-Marcus_Halloway.md",
+      "sha256": "ced960025d15bde267f3c28b17cc18d3d2807c9b61304861a0983bb9686371e2"
+    },
+    {
+      "file": "APPROVED-OUTLINE.md",
+      "sha256": "91c39f1fea3f90f72050ab739eab6959ba4e83a0962aee86507bb66a8cf9e207"
+    },
+    {
+      "file": "APPROVED-TITLE.txt",
+      "sha256": "52801509922c8ac73a3f97bf496b9c228952322956c59f403e5f20176caceb99"
+    },
+    {
+      "file": "Avatar_Document-Marcus_Halloway.md",
+      "sha256": "6842a2e1d6364bd039065e8248cf18c016dd3182f24ac99cdb8617c5dd6b45f0"
+    },
+    {
+      "file": "Book_Blurb_and_Chapter_Titles-Marcus_Halloway.md",
+      "sha256": "3cceab31b714288cecd8c2614dfc27170deecf6c1efdb5df041a1bd808ab896e"
+    },
+    {
+      "file": "Book_Cover_Prompt.md",
+      "sha256": "07550a3e0c35ee931a07bd75659a0fd0c170bef6f966ad007af7e4c59de99222"
+    },
+    {
+      "file": "MANIFEST.json",
+      "sha256": "ab3a6609320dcff5af873d51a0d9f4dd5459ff4cc269976a7a0edca19b3d2f18"
+    },
+    {
+      "file": "PROCESS-CERTIFICATE.json",
+      "sha256": "b7de7cfabe502022d29a66b8a423b95098986fda12ca4d034cb2ec2830430d5f"
+    },
+    {
+      "file": "PROCESS-CERTIFICATE.md",
+      "sha256": "6d08e31b3785f8d4e0c4d95622a98f91003953b23e072d7992bf2556a8d65b64"
+    },
+    {
+      "file": "Suggested_Titles-Marcus_Halloway.md",
+      "sha256": "063af94286b09d018f0ed2185694da8eaad05e4aee96e79dc740b9d25932355e"
+    },
+    {
+      "file": "The_Quiet_Authority-Manuscript.md",
+      "sha256": "f25d4ce2c35e7a088871d38f98c85405fc9f83fa10174511805a0f34e9859556"
+    },
+    {
+      "file": "Tone_Communication_Style_Analysis-Marcus_Halloway.md",
+      "sha256": "719c72a2eab02b451499305be2dc83a4d3c03af3d6ff7e9bdbdaac19c5b28660"
+    },
+    {
+      "file": "chapters/ch01.md",
+      "sha256": "4405fa3c2004b6ee7034577251fcbc9bcca34edd91745c0f7c60a4e63fb5e5bd"
+    },
+    {
+      "file": "chapters/ch02.md",
+      "sha256": "d1cfb3cb27874f3d543a5b98767789cda820dcafbf8a94100e33b1adfb9844f4"
+    },
+    {
+      "file": "chapters/ch03.md",
+      "sha256": "78d8b178603227df9146b98e0fd1d5420bcda6ddbb7b21c7e28cc146381b125b"
+    },
+    {
+      "file": "chapters/ch04.md",
+      "sha256": "911f8b1fe98bbc7f31cf01d690c5af001bc9d9bded2ee211ae415dbec2659fd0"
+    },
+    {
+      "file": "chapters/ch05.md",
+      "sha256": "36dfe277fcec4a4364d012a4ebca3a9949b8c475d1b5cad983a808e9227fbdb8"
+    },
+    {
+      "file": "chapters/ch06.md",
+      "sha256": "a4dabb811d37ca544e2dac5275a8c99530082df1dc82dcb85cf63193a6a43762"
+    },
+    {
+      "file": "chapters/ch07.md",
+      "sha256": "4160577714c4163a822726b8c384d4117e98ef5c1888edf8bbf6caf78d2a44c9"
+    },
+    {
+      "file": "chapters/ch08.md",
+      "sha256": "b3222b2bc78be41ce896a2cda3cc25fa6c6e6b10f9a01160d08133658cd3c580"
+    },
+    {
+      "file": "chapters/ch09.md",
+      "sha256": "2d956bbd0f9dd83a86a81b842e3f4575ab2d1bcf3a9bdb4360a753d557f7366e"
+    },
+    {
+      "file": "chapters/ch10.md",
+      "sha256": "4e10c82c2ba0a3d37febd1e3f24ab25ce58f02668d8cfccd33f96a1dec0e3418"
+    },
+    {
+      "file": "chapters/ch11.md",
+      "sha256": "01fc5bf74c98f198bf5c5c621c6bc9abfb521d98e9854a05c46fe9969eac80cc"
+    },
+    {
+      "file": "chapters/ch12.md",
+      "sha256": "99e39d01f3e9792e351f38d94e070c0fffde14e240dcc06582e5f3ecf8701d0c"
+    }
+  ]
+}

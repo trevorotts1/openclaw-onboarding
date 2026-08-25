@@ -15,11 +15,15 @@
 #                         exists in the run dir: Google Drive, Slack, Gmail/SMTP,
 #                         an n8n webhook, an Airtable write, or a GHL call. The
 #                         Book Writer is LOCAL-ONLY; delivery is a labeled bundle
-#                         in ~/Downloads (exit 5, AF-BK-ENTRY-BYPASS).
+#                         in ~/Downloads (exit 5, AF-BK-ENTRY-BYPASS). SKIPPED
+#                         under --plan.
 #   3. VERSION/HASH PIN — content hash of the enforcement set (run_book_writer.py
 #                         + _bw_common.py + the twelve provers); if
 #                         ENGINE-PIN.sha256 is present the hash MUST match
-#                         (exit 7, AF-BK-HASH-PIN).
+#                         (exit 7, AF-BK-HASH-PIN). SKIPPED under --plan.
+#   4. PREFLIGHT        — when preflight.sh exists it probes the client's OWN
+#                         providers (never Anthropic) and resolves every REQUIRED
+#                         tier; any failure exits 7 (BW_PREFLIGHT_UNCONFIGURED).
 #
 # THE ONLY PATH:  bash book-writer-entry.sh --run-dir DIR [--plan]
 #
@@ -47,7 +51,8 @@ REQUIRED:
   --run-dir DIR   the book run directory (contains run/ authored artifacts)
 
 OPTIONS:
-  --plan          print the canonical phase plan and exit (gates still run)
+  --plan          print the canonical phase plan and exit (DEPS CHECK runs;
+                  BYPASS-SCAN + HASH-PIN + PREFLIGHT are skipped under --plan)
   -h | --help     this help
 
 There is NO other sanctioned way to run the engine. A hand-rolled external
@@ -114,8 +119,23 @@ fi
 # All gates passed — hand off to the deterministic assembler/certifier.
 # ===========================================================================
 if [ "$PLAN" -eq 1 ]; then
-    note "PLAN — printing the canonical phase plan (gates ran)"
+    note "PLAN — printing the canonical phase plan (BYPASS-SCAN + HASH-PIN + PREFLIGHT skipped under --plan)"
     exec python3 "$RUNNER" --plan
+fi
+
+# ===========================================================================
+# GATE — PREFLIGHT (provider capability probe; exit 7 BW_PREFLIGHT_UNCONFIGURED)
+# ===========================================================================
+PREFLIGHT="$SELF_DIR/preflight.sh"
+if [ -f "$PREFLIGHT" ]; then
+    note "GATE 4/4 — PREFLIGHT (client provider tiers; never Anthropic)"
+    bash "$PREFLIGHT" --run-dir "$RUN_DIR"
+    PREF_RC=$?
+    if [ "$PREF_RC" -ne 0 ]; then
+        echo "PREFLIGHT FAILED (rc=$PREF_RC) — a REQUIRED tier is unresolved or resolves to an Anthropic id." >&2
+        exit 7
+    fi
+    echo "  OK: every REQUIRED tier resolved to a non-Anthropic client model"
 fi
 
 note "ALL GATES PASSED — dispatching run_book_writer.py"

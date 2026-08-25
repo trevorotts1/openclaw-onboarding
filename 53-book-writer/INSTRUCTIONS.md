@@ -6,10 +6,10 @@ All handoffs are LOCAL artifacts or in-conversation; the skill never calls an ex
 
 | Artifact | Goes to | How |
 |---|---|---|
-| `433_Deck_Data.json` + `433_Deck_Outline.md` (4x3x3) | **Skill 51** (signature-presentation) | schema-valid deck data + outline; Skill 51 builds the offer deck. `prove_bw_433.py` guarantees the schema. |
+| `433_Deck_Data.json` + `433_Deck_Outline.md` (4x3x3) | **Skill 51** (signature-presentation) | schema-valid deck payload prepared FOR Skill 51 — no automated import exists today; Skill 51 authors decks through its own 8-Questions intake. `prove_bw_433.py` guarantees the schema. |
 | Avatar dossier + blended tone (`08-blended-tone.md`) | **Skill 52** (avatar-alchemist) | accepted in BOTH directions; the shared tone core keeps them consistent. |
 | `Book_Cover_Prompt.md` | any image provider | the prompt file always ships; the client runs it on their own IMAGE tier. |
-| The manuscript (`*-Manuscript.md`) | **Skills 49 / 50** (signature-funnel / email-engine) | launch assets from the finished book. |
+| The manuscript (`*-Manuscript.md`) | **Skills 49 / 50** (signature-funnel / email-engine) | launch assets from the finished book — manual input only; no automated handoff exists (supply it through those skills' own intakes). |
 
 ## Inbound
 

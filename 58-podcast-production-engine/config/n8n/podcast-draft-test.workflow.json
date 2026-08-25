@@ -1,13 +1,8 @@
 {
-  "meta": {
-    "version": "1.0.0",
-    "minN8nSchemaVersion": "1.0",
-    "note": "U041: sanitized live export from 2026-08-01 audit -- podcast-draft-test workflow."
-  },
   "id": "ekgaJz8Ua2hnaArd",
-  "name": "podcast-draft-test (audit 2026-08-01)",
+  "name": "🎙️ Podcast: draft-test (audit 2026-08-01)",
   "description": null,
-  "active": false,
+  "active": true,
   "isArchived": false,
   "nodes": [
     {
@@ -27,12 +22,7 @@
         0
       ],
       "webhookId": "podcast-draft-test",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "JVRJ3oLlNNT202IJ",
-          "name": "Podcast Publish Gate (restored 2026-08-01)"
-        }
-      }
+      "notes": ""
     },
     {
       "parameters": {
@@ -45,7 +35,9 @@
       "position": [
         220,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -75,7 +67,9 @@
       "position": [
         440,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -92,7 +86,9 @@
       "position": [
         660,
         220
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -117,8 +113,7 @@
             }
           ]
         },
-        "returnAll": false,
-        "limit": 1
+        "returnAll": true
       },
       "id": "a5",
       "name": "Standing Gate - Roster Lookup",
@@ -127,11 +122,13 @@
       "position": [
         660,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
-        "jsCode": "// Standing verdict + authoritative channel id. Fail closed.\nconst guard = $('Guard - Validate Payload').first().json;\nconst items = $input.all().map((i) => i.json).filter((r) => r && Object.keys(r).length > 0 && !r.error);\nif (!items.length) return [{ json: { ok: false, reason: 'identity_unknown' } }];\nconst row = items[0];\nif (String(row.good_standing || '').toUpperCase() !== 'YES') return [{ json: { ok: false, reason: 'not_in_good_standing' } }];\nconst channel = row.podbean_channel_id || '';\nif (!channel) return [{ json: { ok: false, reason: 'no_channel_on_roster' } }];\nif (guard.payload_podcast_id && guard.payload_podcast_id !== channel) {\n  return [{ json: { ok: false, reason: 'channel_mismatch', roster_channel: channel } }];\n}\nreturn [{ json: { ok: true, channel_id: channel, title: guard.title, description: guard.description, audio_url: guard.audio_url } }];"
+        "jsCode": "// MULTIROW (two-show fleet model, 2026-08-03): channel-preferred row selection with legacy fallback.\n// Standing verdict + authoritative channel id. Fail closed.\nconst guard = $('Guard - Validate Payload').first().json;\nconst items = $input.all().map((i) => i.json).filter((r) => r && Object.keys(r).length > 0 && !r.error);\nif (!items.length) return [{ json: { ok: false, reason: 'identity_unknown' } }];\nconst row = (guard.payload_podcast_id ? items.find(r => String(r.podbean_channel_id || '').trim() === guard.payload_podcast_id) : null) || items[0];\nif (String(row.good_standing || '').toUpperCase() !== 'YES') return [{ json: { ok: false, reason: 'not_in_good_standing' } }];\nconst channel = row.podbean_channel_id || '';\nif (!channel) return [{ json: { ok: false, reason: 'no_channel_on_roster' } }];\nif (guard.payload_podcast_id && guard.payload_podcast_id !== channel) {\n  return [{ json: { ok: false, reason: 'channel_mismatch', roster_channel: channel } }];\n}\nreturn [{ json: { ok: true, channel_id: channel, title: guard.title, description: guard.description, audio_url: guard.audio_url } }];"
       },
       "id": "a6",
       "name": "Standing Gate - Verdict",
@@ -140,7 +137,9 @@
       "position": [
         880,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -170,7 +169,9 @@
       "position": [
         1100,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -187,7 +188,9 @@
       "position": [
         1320,
         220
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -228,12 +231,8 @@
         1320,
         0
       ],
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "EZApXhsHExXctBrB",
-          "name": "Podbean BlackCEO (client_credentials)"
-        }
-      }
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -254,7 +253,9 @@
       "position": [
         1540,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -267,7 +268,9 @@
       "position": [
         1760,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -302,7 +305,9 @@
       "position": [
         1980,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -329,7 +334,9 @@
       "position": [
         2200,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -391,7 +398,9 @@
       "position": [
         2420,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -405,7 +414,9 @@
       "position": [
         2640,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -421,7 +432,9 @@
         2860,
         0
       ],
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -436,7 +449,9 @@
       "position": [
         3080,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -449,7 +464,9 @@
       "position": [
         2090,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -486,12 +503,8 @@
         2750,
         0
       ],
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "EZApXhsHExXctBrB",
-          "name": "Podbean BlackCEO (client_credentials)"
-        }
-      }
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -506,7 +519,27 @@
       "position": [
         3190,
         220
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
+    },
+    {
+      "id": "sticky-note-283732a5",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -300
+      ],
+      "parameters": {
+        "width": 700,
+        "height": 420,
+        "color": 4,
+        "content": "PODCAST PRODUCTION ENGINE -- Skill 58\nWhat: End-to-end draft-verification pipeline: authenticates with Podbean, downloads audio from a URL, uploads it to Podbean, creates a DRAFT episode, verifies the draft is published, then DELETES it. This is a SAFETY TEST -- it proves the full Podbean upload+create pipeline works before trusting it with a real publish.\nTrigger: POST /webhook/podcast-draft-test (header-authenticated)\nOutput: JSON confirming draft episode was created, verified (status=draft), and deleted (deleted=true), all without appearing on the live feed\nCredentials: Podcast Publish Gate (header auth), Podbean BlackCEO (client_credentials OAuth)\nFlow: Guard -> Standing Gate (roster lookup) -> Podbean OAuth Token -> Download Audio -> uploadAuthorize -> PUT Audio -> Create Draft Episode -> Fetch Draft Verify -> Podbean OAuth Delete Token -> DELETE Draft -> Respond"
+      },
+      "notes": "",
+      "webhookId": null
     }
   ],
   "connections": {
@@ -710,5 +743,10 @@
   },
   "settings": {
     "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: sanitized live export re-taken 2026-08-24 (node-level credentials stripped) -- podcast-draft-test workflow. The live n8n API returns meta:null, so this U041 version marker is maintained in-repo and MUST be re-added after every re-export or validate_n8n_workflow.py fails."
   }
 }

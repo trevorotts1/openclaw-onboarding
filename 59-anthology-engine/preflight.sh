@@ -96,7 +96,7 @@ print("true" if res.get("present") else "false")
         echo "preflight --gate-credential: ANTHOLOGY_GATE_TOKEN_SECRET SET -- PASS"
         exit 0
     fi
-    echo "AF-AE-GATE-TOKEN-SECRET: ANTHOLOGY_GATE_TOKEN_SECRET NOT SET. The gate engine mints participant tokens with this HMAC secret. Generate a 64-char hex value and set it in ~/.openclaw/secrets/secrets.env, then re-run." >&2
+    echo "AF-AE-GATE-TOKEN-SECRET: ANTHOLOGY_GATE_TOKEN_SECRET NOT SET. The gate engine mints participant tokens with this HMAC secret. Generate a 64-char hex value and set it in ~/.openclaw/secrets/.env, then re-run." >&2
     exit 2
 fi
 
@@ -341,6 +341,7 @@ REQUIRED = {"HEAVY-WRITER", "LIGHT", "JUDGE", "IMAGE"}
 
 resolved_tiers = {}
 unresolved_required = []
+unresolved_optional = []
 
 for name, t in tiers_tmpl.items():
     if name == "IMAGE":
@@ -350,9 +351,13 @@ for name, t in tiers_tmpl.items():
         # is set; hold with a WARNING + absent_behavior when it is not.
         kie_configured = os.environ.get("KIE_API_KEY", "").strip() != ""
         if not kie_configured:
-            unresolved_required.append(name)
+            # Degrade, never fail: the S7 cover HOLDS (as this comment documents);
+            # the rest of the pipeline is unaffected. IMAGE goes to
+            # unresolved_optional so the box resolves with a warning instead of
+            # exiting 2 on a missing image key.
+            unresolved_optional.append(name)
             print("WARNING: IMAGE tier unresolved -- KIE_API_KEY not set. "
-                  "S7 cover generation will hold: %s"
+                  "S7 cover generation will HOLD: %s"
                   % t.get("absent_behavior", "cover ships as a prompt doc."),
                   file=sys.stderr)
             continue
@@ -421,6 +426,12 @@ if unresolved_required:
           % (", ".join(sorted(unresolved_required)), ", ".join(inventory) or "(none)"),
           file=sys.stderr)
     sys.exit(2)
+
+if unresolved_optional:
+    print("WARNING: optional tier(s) unresolved and degraded to HOLD: %s "
+          "(the affected stage holds; the run continues)"
+          % ", ".join(sorted(unresolved_optional)),
+          file=sys.stderr)
 
 # Resolution-time JUDGE independence invariant (AF-AE-JUDGE-INDEPENDENCE). A judge
 # may not grade its own draft, so the JUDGE tier must NOT resolve to the same primary

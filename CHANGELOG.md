@@ -1,3 +1,81 @@
+## [v22.0.70]  -  2026-08-24  -  fix(podcast-audit): Skill 58 end-to-end diagnostic sweep F1-F8 — icon-clobber guard, cron-guard blind spots, n8n export drift
+
+Full end-to-end diagnostic of the podcast skill set (Skill 58), its live n8n workflows, and the
+GHL rail; eight findings fixed and independently verified (Sonnet adversarial pass + full suites).
+Diagnostic ledger: /tmp/podcast-diag/FINDINGS.md (scratch).
+
+Skill 58 (version 0.1.43 -> 0.1.44):
+- F2 guard-cron-inventory.py: static scan now joins backslash continuation lines before matching
+  and skips `cron add` matches inside quoted prose (_quote_depth_at). Odd-backslash-count test so
+  a literal trailing backslash is not treated as a continuation; comment lines never start a
+  continuation join (comment-continuation blocks in generate_cover.sh previously blinded the guard).
+  False AF-PPE-ANNOUNCE/AF-PPE-SECOND-CRON phantom findings on provision-podcast-client.sh gone.
+- F3 install-podcast-department.sh: five em dashes replaced with double hyphens (zero-em-dash gate green).
+- F4 tests/test-podcast-provision-activation.sh rewritten for the NO-DAEMON doctrine: codes 22/23
+  wired, exit code 24 asserted absent, scheduler installer invocation forbidden, advancement
+  own-turn ledger fact required. 18/18 pass.
+- F5 config/n8n re-exports: draft-test (21 nodes), draft-cleanup (6), standing-check (10) fetched
+  from live via API, sanitized to zero credentials / no pinData/staticData, U041 meta block
+  preserved. verify-n8n-deploy.py: all MATCH, exit 0.
+- F5b verify-n8n-deploy.py: podbean-broker added to DOCUMENTED_UNUSED skip list — its deliberate
+  un-import (config/n8n/README.md) no longer reports DRIFT.
+- F6 verify-n8n-deploy.py auto-appends /api/v1 to a bare N8N_API_URL (proven live).
+- F7 PODCAST-SNAPSHOT-BUILD-MANIFEST.md rows 7/8 + decision #5: LARGE_TEXT live-verified note.
+- F8 command-center payload serializers.ts + tests synced byte-identical to CC live.
+
+Command Center lane (rides this repo's release; CC repo is not git-tracked locally):
+- F1 migrations.ts reseedWorkspacesFromConfig: engine slugs (podcast/anthology) with blank manifest
+  emoji bind a NULL keep-existing sentinel instead of clobbering migration-113 canonical icons;
+  ON CONFLICT uses CASE WHEN excluded.icon IS NULL; LOWER(excluded.slug) for case-insensitive
+  engine-slug match. sync-departments-from-build-state.py R-39 branch preserves existing icon.
+  Live mission-control.db repaired: podcast=🎙️ anthology=📚 company_id=default.
+  migration-113 test 3/3 pass.
+
+Verified healthy (no action): live publish rail FAIL-CLOSED v70 active; webhook auth probes 403/404
+fail-closed on all four webhooks; GHL four podcast workflows published ALL PASS; skill pytest 531
+passed 0 failed; qc-podcast.sh 15 passed | 0 failed.
+
+Pre-existing CC failures NOT from this sweep (control-proven identical before edits):
+migration-114 presentations sort_order/name/rowcount (3/4), departments-manifest-empty-guard (6/1),
+mr21-reseed-dept-prefix-migration vitest (1). CC is not a git repo — age undetermined.
+
+## [v22.0.69]  -  2026-08-24  -  fix(compat): bump commandCenter.pinnedTag to v6.0.92 so fleet-refresh ships the CC-lane sweep fixes
+
+Correctness fix in the v19.0.0/v20.0.2/v20.0.7/v21.7.32 lineage: resolve_cc_tag
+returns pinnedTag unconditionally, and the merge agent that shipped v22.0.68 left
+the pin at v6.0.91 while the Command Center lane released v6.0.92 (commit 1809a5f,
+tag verified). The stale pin made fleet-refresh `git checkout v6.0.91` on every box,
+deploying a Command Center WITHOUT the four CC-lane fixes from this sweep:
+
+- F01: bulk task-update route now requires the presentations process_certificate on move-to-done (raw bulk UPDATE can no longer bypass transition()).
+- F09: stale-task sweep exempts long presentations renders only with recent events activity (PRESENTATIONS_RENDER_EXEMPT_HOURS 72h ceiling / PRESENTATIONS_ACTIVITY_WINDOW_HOURS 24h window); dead runs still age out.
+- F14: qc-scorer done-transition reads the stored process_certificate; cards passing QC >=8.5 no longer stall in review with PRECONDITION_PROCESS_CERTIFICATE.
+- F26: parent task done-count excludes children still in review.
+
+v6.0.92 >= minVersion (v4.73.0), maxVersion null — schema contract holds.
+No endpoint or mission-control.db change. Backup of prior state:
+cc-compat.json.bak-presfix-pinnedtag-20260824 (untracked).
+
+## [v22.0.68]  -  2026-08-24  -  fix(presentations): enforcement sweep F01–F27 — QC made real, hangs bounded, cards un-stuck
+
+Cross-repo sweep with blackceo-command-center v6.0.92. Full ledger with backup paths,
+behavioral proofs, and Gemini 3.7 Flash adversarial QC verdicts (22/22 PASS):
+QUALITY-CONTROL/presentation-dept-fix-20260824/ (LEDGER.md, SPEC-presentations-enforcement.md).
+
+Root causes closed: steps skipped because nothing enforced the chain (48 qc_check codes had no
+runtime caller; attestation rows trusted blindly; verifier crashes degraded to PASS); timeouts
+(unbounded KIE 429 retries; timeout-less subprocess fallbacks; re-render re-billing; client fetch
+without timeout); kanban cards dying silently (deployed intake UI crashed every submission before
+a card existed; poison sessions crash-looped polls; soft-failed card creation marked processed);
+QC cosmetic (certs minted despite integrity gaps; 1-byte stubs passed FIX-8; rounding let 8.49996
+pass as 8.5; self-writable skip tokens waived terminal QC).
+
+Highlights: F02 qc_check wired fail-closed at delivery · F04 attestations require status=done +
+substance_verified · F05 sacred-structure hash pin enforced in verify.sh · F09 stale-sweep render
+exemption requires events within a 24h window strictly shorter than the 72h ceiling · F27 bundle
+gate enforces DELIVERABLE_AUDIT_SPEC min_bytes floors · F16 geometry/spelling hard-fail by default
+on canonical runs.
+
 ## [v22.0.67]  -  2026-08-21  -  fix(roll): wired-sentinel recheck gate + FALLBACK B supervisor assert
 
 - `update-skills.sh` CONTENT RECHECK could exit 0 on a content-current box without confirming the wiring loop ever ran, leaving boxes permanently UNWIRED (content synced, zero `.wired-<version>` sentinels) while reporting green. The recheck now counts every numbered skill dir the wiring loop would wire (same glob, same ARCHIVED skip) and falls through to the full pass — idempotent, fast-skips already-sentinel'd skills — when any sentinel is missing.

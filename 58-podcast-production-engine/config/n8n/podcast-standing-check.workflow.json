@@ -1,18 +1,13 @@
 {
-  "meta": {
-    "version": "1.0.0",
-    "minN8nSchemaVersion": "1.0",
-    "note": "U041: sanitized live export from 2026-08-01 audit -- podcast-standing-check workflow."
-  },
   "id": "EF3xsMuSQheZ98U6",
-  "name": "podcast-standing-check",
+  "name": "🎙️ Podcast: standing-check",
   "description": "",
-  "active": false,
+  "active": true,
   "isArchived": false,
   "nodes": [
     {
       "id": "b5b06557-f59a-4c23-8ac5-df8c8adaf8b5",
-      "name": "Webhook  --  Standing Check",
+      "name": "Webhook — Standing Check",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
@@ -27,17 +22,11 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "JVRJ3oLlNNT202IJ",
-          "name": "Podcast Publish Gate (restored 2026-08-01)"
-        }
-      },
       "notes": "U13 (Skill 58 Phase 2). SAME header credential as the publish gate (TkL0rn2SH3q32SeB). Body: {client_last_name, client_email, podcast_id?}."
     },
     {
       "id": "38b50a9f-95b2-4d09-853c-187b7ad90c43",
-      "name": "Roster Lookup  --  Good Standing + Identity",
+      "name": "Roster Lookup — Good Standing + Identity",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
@@ -66,15 +55,16 @@
             }
           ]
         },
-        "returnAll": false,
-        "limit": 1
+        "returnAll": true
       },
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "7c2303cf-73d6-4ca3-97a1-953372c848b9",
-      "name": "Code  --  Determine Standing Verdict",
+      "name": "Code — Determine Standing Verdict",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -82,12 +72,14 @@
         0
       ],
       "parameters": {
-        "jsCode": "// PURPOSE: U13 standing pre-check verdict (Skill 58 Phase 2). Fail-closed: any\n// ambiguity (lookup error, unknown identity, flipped NO row) resolves to\n// good_standing:false. Never leaks roster data beyond {ok, good_standing, reason}.\n\nconst webhookJson = $('Webhook  --  Standing Check').first().json;\nconst body = webhookJson.body || webhookJson;\nconst lastName = (body.client_last_name || '').trim();\nconst email = (body.client_email || '').toLowerCase().trim();\nconst podcastId = body.podcast_id || '';\n\nconst inputItems = $input.all();\nconst lookupErrored = inputItems.length > 0 && inputItems[0].json && inputItems[0].json.error;\nconst rows = lookupErrored ? [] : inputItems.map((i) => i.json).filter((r) => r && Object.keys(r).length > 0);\n\nlet good_standing = false;\nlet reason;\n\nif (lookupErrored) {\n  reason = 'lookup_error';\n} else if (rows.length === 0) {\n  reason = 'identity_unknown';\n} else {\n  const row = rows[0];\n  if (String(row.good_standing || '').toUpperCase() !== 'YES') {\n    reason = 'not_in_good_standing';\n  } else {\n    good_standing = true;\n  }\n}\n\nconst responseBody = { ok: true, good_standing };\nif (reason) responseBody.reason = reason;\n\nreturn [{\n  json: {\n    responseBody,\n    ledgerRow: {\n      idempotency_key: `precheck-${lastName}|${email}|${Date.now()}`,\n      channel_id: podcastId,\n      episode_number: 0,\n      permalink_url: '',\n      status: 'precheck',\n      reason: reason || '',\n      source: 'podcast-standing-check',\n      completed_at: new Date().toISOString()\n    }\n  }\n}];"
-      }
+        "jsCode": "// MULTIROW (two-show fleet model, 2026-08-03): channel-preferred row selection with legacy fallback.\n// PURPOSE: U13 standing pre-check verdict (Skill 58 Phase 2). Fail-closed: any\n// ambiguity (lookup error, unknown identity, flipped NO row) resolves to\n// good_standing:false. Never leaks roster data beyond {ok, good_standing, reason}.\n\nconst webhookJson = $('Webhook — Standing Check').first().json;\nconst body = webhookJson.body || webhookJson;\nconst lastName = (body.client_last_name || '').trim();\nconst email = (body.client_email || '').toLowerCase().trim();\nconst podcastId = body.podcast_id || '';\n\nconst inputItems = $input.all();\nconst lookupErrored = inputItems.length > 0 && inputItems[0].json && inputItems[0].json.error;\nconst rows = lookupErrored ? [] : inputItems.map((i) => i.json).filter((r) => r && Object.keys(r).length > 0);\n\nlet good_standing = false;\nlet reason;\n\nif (lookupErrored) {\n  reason = 'lookup_error';\n} else if (rows.length === 0) {\n  reason = 'identity_unknown';\n} else {\n  const row = (podcastId ? rows.find(r => String(r.podbean_channel_id || '').trim() === podcastId) : null) || rows[0];\n  if (String(row.good_standing || '').toUpperCase() !== 'YES') {\n    reason = 'not_in_good_standing';\n  } else {\n    good_standing = true;\n  }\n}\n\nconst responseBody = { ok: true, good_standing };\nif (reason) responseBody.reason = reason;\n\nreturn [{\n  json: {\n    responseBody,\n    ledgerRow: {\n      idempotency_key: `precheck-${lastName}|${email}|${Date.now()}`,\n      channel_id: podcastId,\n      episode_number: 0,\n      permalink_url: '',\n      status: 'precheck',\n      reason: reason || '',\n      source: 'podcast-standing-check',\n      completed_at: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "45f43803-788c-475b-a367-96fe96e59641",
-      "name": "Respond to Webhook  --  Standing Verdict",
+      "name": "Respond to Webhook — Standing Verdict",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
@@ -96,13 +88,15 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $('Fleet Gate  --  Combine Verdict').first().json.responseBody }}",
+        "responseBody": "={{ $('Fleet Gate — Combine Verdict').first().json.responseBody }}",
         "options": {}
-      }
+      },
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "28429ebd-25f0-49f2-8763-9a2f2104685b",
-      "name": "Data Table  --  Log Precheck Verdict",
+      "name": "Data Table — Log Precheck Verdict",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
@@ -131,11 +125,13 @@
         },
         "options": {}
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "ef9e1c1f-7e01-47cf-b37c-886681331ac6",
-      "name": "Fleet Gate  --  Lookup All Rows",
+      "name": "Fleet Gate — Lookup All Rows",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
@@ -154,11 +150,12 @@
       },
       "notes": "ADDITIONAL gate (2026-07-30), layered on top of the existing podcast_publish_roster precheck above -- does not replace it. Reads ALL fleet_standing rows (no email/last_name columns exist on that table) so the next Code node can match by aliases/client_label.",
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "webhookId": null
     },
     {
       "id": "06cc3e5a-1557-42da-a77c-036ba8685bed",
-      "name": "Fleet Gate  --  Combine Verdict",
+      "name": "Fleet Gate — Combine Verdict",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -166,12 +163,14 @@
         200
       ],
       "parameters": {
-        "jsCode": "// FLEET STANDING GATE (additional, layered on top of the existing podcast_publish_roster\n// good-standing precheck computed by 'Code  --  Determine Standing Verdict', immediately above).\n// Does NOT replace or weaken that check -- if it already failed, its exact reason passes\n// through untouched. Only when it already PASSED does this node also require the newer\n// fleet_standing table (id aoLFsegM1aDIrcDj): approved = (good_standing === true) &&\n// (podcast_approved === true), good_standing OUTRANKING podcast_approved. Fail-closed:\n// lookup error / unresolved identity / null columns all resolve to NOT approved, reason\n// 'not_enrolled' (the safe default -- never guess 'standing' when unsure).\n//\n// fleet_standing has no email/last_name columns, only box_slug/client_label/aliases\n// (pipe-delimited). This endpoint's payload carries client_email/client_last_name, so\n// identity is resolved the same alias-matching way used in the main publish gate\n// (TkL0rn2SH3q32SeB) and in system-access-rejection-notify (UqfhxcPqlB0aPgf5).\n\nconst oldResult = $('Code  --  Determine Standing Verdict').first().json; // {responseBody, ledgerRow}\nconst wh = $('Webhook  --  Standing Check').first().json;\nconst body = wh.body || wh;\n\nconst norm = (s) => String(s === null || s === undefined ? '' : s).trim().toLowerCase();\nconst lookupEmail = norm(body.client_email);\nconst lookupLastName = norm(body.client_last_name);\n\nconst rows = $input.all()\n  .map((i) => (i && i.json) || null)\n  .filter((r) => r && !r.error && typeof r === 'object' && ('box_slug' in r || 'client_label' in r));\n\nfunction labelLastName(label) {\n  const stripped = String(label || '').replace(/\\s*\\(.*$/, '').trim();\n  const parts = stripped.split(/\\s+/).filter(Boolean);\n  return parts.length ? norm(parts[parts.length - 1]) : '';\n}\n\nconst matches = rows.filter((r) => {\n  const aliasTokens = norm(r.aliases).split('|').map((a) => a.trim()).filter(Boolean);\n  const aliasExact = (!!lookupEmail && aliasTokens.includes(lookupEmail)) ||\n                      (!!lookupLastName && aliasTokens.includes(lookupLastName));\n  const aliasSubstring = !aliasExact && !!lookupLastName && aliasTokens.some((a) => a.includes(lookupLastName));\n  const labelMatch = !!lookupLastName && labelLastName(r.client_label) === lookupLastName;\n  return aliasExact || aliasSubstring || labelMatch;\n});\n\n// 2026-08-01 audit fix (INLINE-07): exact email-token match takes precedence over\n// substring/label matches, so shared last names (e.g. 'SampleName' matching 'Sample Person')\n// no longer create false ambiguity. Still fail-closed: >1 exact email match remains ambiguous.\nconst exactEmailMatches = matches.filter((r) => {\n  const t = norm(r.aliases).split('|').map((a) => a.trim()).filter(Boolean);\n  return !!lookupEmail && t.includes(lookupEmail);\n});\nconst resolvedMatches = exactEmailMatches.length > 0 ? exactEmailMatches : matches;\nconst matched = resolvedMatches.length === 1;\nconst person = matched ? resolvedMatches[0] : null;\n\nfunction readBool(row, col) {\n  if (!row || !Object.prototype.hasOwnProperty.call(row, col)) return null;\n  const v = row[col];\n  if (v === true) return true;\n  if (v === false) return false;\n  const n = norm(v);\n  if (['true', 'yes', '1'].indexOf(n) !== -1) return true;\n  if (['false', 'no', '0'].indexOf(n) !== -1) return false;\n  return null;\n}\n\nconst goodStanding = matched ? readBool(person, 'good_standing') : null;\nconst podcastApproved = matched ? readBool(person, 'podcast_approved') : null;\nconst fleetApproved = matched && goodStanding === true && podcastApproved === true;\n\nlet fleetReasonCode;\nif (matched && goodStanding === false) {\n  fleetReasonCode = 'standing';\n} else {\n  fleetReasonCode = 'not_enrolled';\n}\n\nconst oldGoodStanding = !!(oldResult.responseBody && oldResult.responseBody.good_standing);\nconst oldReason = oldResult.responseBody ? oldResult.responseBody.reason : undefined;\n\n// The fleet gate only has a say if the OLD gate already passed. If the old gate already\n// failed, its reason passes through byte-for-byte -- this node never overrides it.\nconst fleetCausedRefusal = oldGoodStanding && !fleetApproved;\n\nlet finalGoodStanding, finalReason;\nif (!oldGoodStanding) {\n  finalGoodStanding = false;\n  finalReason = oldReason;\n} else if (!fleetApproved) {\n  finalGoodStanding = false;\n  finalReason = fleetReasonCode === 'standing' ? 'not_in_good_standing' : 'not_enrolled';\n} else {\n  finalGoodStanding = true;\n  finalReason = undefined;\n}\n\nconst responseBody = { ok: true, good_standing: finalGoodStanding };\nif (finalReason) responseBody.reason = finalReason;\n\nconst ledgerRow = Object.assign({}, oldResult.ledgerRow, {\n  reason: finalReason || ''\n});\n\nconst notifyReason = matched\n  ? ('podcast standing-check (fleet_standing): ' + fleetReasonCode)\n  : ('podcast standing-check (fleet_standing): identity unresolved, match_count=' + matches.length);\n\nreturn [{\n  json: {\n    responseBody,\n    ledgerRow,\n    fleet_caused_refusal: fleetCausedRefusal,\n    fleet_box_slug: matched ? String(person.box_slug || '') : '',\n    fleet_client_label: matched ? String(person.client_label || '') : '',\n    fleet_client_email: body.client_email || '',\n    fleet_gate_notify_reason: notifyReason\n  }\n}];"
-      }
+        "jsCode": "// FLEET STANDING GATE (additional, layered on top of the existing podcast_publish_roster\n// good-standing precheck computed by 'Code — Determine Standing Verdict', immediately above).\n// Does NOT replace or weaken that check -- if it already failed, its exact reason passes\n// through untouched. Only when it already PASSED does this node also require the newer\n// fleet_standing table (id aoLFsegM1aDIrcDj): approved = (good_standing === true) &&\n// (podcast_approved === true), good_standing OUTRANKING podcast_approved. Fail-closed:\n// lookup error / unresolved identity / null columns all resolve to NOT approved, reason\n// 'not_enrolled' (the safe default -- never guess 'standing' when unsure).\n//\n// fleet_standing has no email/last_name columns, only box_slug/client_label/aliases\n// (pipe-delimited). This endpoint's payload carries client_email/client_last_name, so\n// identity is resolved the same alias-matching way used in the main publish gate\n// (TkL0rn2SH3q32SeB) and in system-access-rejection-notify (UqfhxcPqlB0aPgf5).\n\nconst oldResult = $('Code — Determine Standing Verdict').first().json; // {responseBody, ledgerRow}\nconst wh = $('Webhook — Standing Check').first().json;\nconst body = wh.body || wh;\n\n// === SHARED IDENTITY NORMALISER (FIX-RESCUE-19, 2026-08-03) ================\n// Reconciled with fleet-standing-check (hfSyTquUQ0SccMzD) so the fleet runs ONE\n// normalisation rule instead of a per-workflow variant. Two changes vs the local\n// norm() this replaces:\n//   * PLACEHOLDER DENYLIST. A token an LLM or a seed script writes when it could\n//     not resolve a real value ('TBD', 'unknown', 'n/a', 'none', '-') must never\n//     function as an identifier. It previously did, and combined with the\n//     substring match tier below that is a live cross-client hazard: a payload\n//     carrying the literal 'NA' substring-matches any alias containing 'na', and\n//     live roster aliases do contain it -- so this gate could read a DIFFERENT\n//     person's good_standing / *_approved columns and decide from them.\n//   * WHITESPACE COLLAPSE. 'van  dyke' and 'van dyke' are one name.\n// readBool() also calls norm(); the denylist does not change any of its outcomes\n// ('null'/'none'/'-' already returned null, and '0'/'1' are not placeholders).\n// DELIBERATELY NOT CHANGED HERE: the substring match tier, and the fail-CLOSED\n// direction. This node must stay fail-closed (refusing a publish is recoverable);\n// fleet-standing-check must stay fail-OPEN (refusing a rescue is not). That\n// divergence is intentional and is recorded in CAP-VECTORS-CLOSED.md -- do not\n// \"harmonise\" it away.\nconst IDENT_PLACEHOLDERS = new Set(['', 'tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba']);\nconst norm = (s) => {\n  const n = String(s === null || s === undefined ? '' : s).trim().toLowerCase().replace(/\\s+/g, ' ');\n  return IDENT_PLACEHOLDERS.has(n) ? '' : n;\n};\nconst lookupEmail = norm(body.client_email);\nconst lookupLastName = norm(body.client_last_name);\n\nconst rows = $input.all()\n  .map((i) => (i && i.json) || null)\n  .filter((r) => r && !r.error && typeof r === 'object' && ('box_slug' in r || 'client_label' in r));\n\nfunction labelLastName(label) {\n  const stripped = String(label || '').replace(/\\s*\\(.*$/, '').trim();\n  const parts = stripped.split(/\\s+/).filter(Boolean);\n  return parts.length ? norm(parts[parts.length - 1]) : '';\n}\n\nconst matches = rows.filter((r) => {\n  const aliasTokens = norm(r.aliases).split('|').map((a) => a.trim()).filter(Boolean);\n  const aliasExact = (!!lookupEmail && aliasTokens.includes(lookupEmail)) ||\n                      (!!lookupLastName && aliasTokens.includes(lookupLastName));\n  const aliasSubstring = !aliasExact && !!lookupLastName && aliasTokens.some((a) => a.includes(lookupLastName));\n  const labelMatch = !!lookupLastName && labelLastName(r.client_label) === lookupLastName;\n  return aliasExact || aliasSubstring || labelMatch;\n});\n\n// 2026-08-01 audit fix (INLINE-07): exact email-token match takes precedence over\n// substring/label matches, so shared last names (e.g. 'Otts' matching 'Eddie Otts')\n// no longer create false ambiguity. Still fail-closed: >1 exact email match remains ambiguous.\nconst exactEmailMatches = matches.filter((r) => {\n  const t = norm(r.aliases).split('|').map((a) => a.trim()).filter(Boolean);\n  return !!lookupEmail && t.includes(lookupEmail);\n});\nconst resolvedMatches = exactEmailMatches.length > 0 ? exactEmailMatches : matches;\nconst matched = resolvedMatches.length === 1;\nconst person = matched ? resolvedMatches[0] : null;\n\nfunction readBool(row, col) {\n  if (!row || !Object.prototype.hasOwnProperty.call(row, col)) return null;\n  const v = row[col];\n  if (v === true) return true;\n  if (v === false) return false;\n  const n = norm(v);\n  if (['true', 'yes', '1'].indexOf(n) !== -1) return true;\n  if (['false', 'no', '0'].indexOf(n) !== -1) return false;\n  return null;\n}\n\nconst goodStanding = matched ? readBool(person, 'good_standing') : null;\nconst podcastApproved = matched ? readBool(person, 'podcast_approved') : null;\nconst fleetApproved = matched && goodStanding === true && podcastApproved === true;\n\nlet fleetReasonCode;\nif (matched && goodStanding === false) {\n  fleetReasonCode = 'standing';\n} else {\n  fleetReasonCode = 'not_enrolled';\n}\n\nconst oldGoodStanding = !!(oldResult.responseBody && oldResult.responseBody.good_standing);\nconst oldReason = oldResult.responseBody ? oldResult.responseBody.reason : undefined;\n\n// The fleet gate only has a say if the OLD gate already passed. If the old gate already\n// failed, its reason passes through byte-for-byte -- this node never overrides it.\nconst fleetCausedRefusal = oldGoodStanding && !fleetApproved;\n\nlet finalGoodStanding, finalReason;\nif (!oldGoodStanding) {\n  finalGoodStanding = false;\n  finalReason = oldReason;\n} else if (!fleetApproved) {\n  finalGoodStanding = false;\n  finalReason = fleetReasonCode === 'standing' ? 'not_in_good_standing' : 'not_enrolled';\n} else {\n  finalGoodStanding = true;\n  finalReason = undefined;\n}\n\nconst responseBody = { ok: true, good_standing: finalGoodStanding };\nif (finalReason) responseBody.reason = finalReason;\n\nconst ledgerRow = Object.assign({}, oldResult.ledgerRow, {\n  reason: finalReason || ''\n});\n\nconst notifyReason = matched\n  ? ('podcast standing-check (fleet_standing): ' + fleetReasonCode)\n  : ('podcast standing-check (fleet_standing): identity unresolved, match_count=' + matches.length);\n\nreturn [{\n  json: {\n    responseBody,\n    ledgerRow,\n    fleet_caused_refusal: fleetCausedRefusal,\n    fleet_box_slug: matched ? String(person.box_slug || '') : '',\n    fleet_client_label: matched ? String(person.client_label || '') : '',\n    fleet_client_email: body.client_email || '',\n    fleet_gate_notify_reason: notifyReason,\n    // FIX-RESCUE-19 diagnostic: see the note in TkL0rn2SH3q32SeB. 0 rows means\n    // the roster read returned nothing and every client is being refused.\n    fleet_roster_rows: rows.length\n  }\n}];"
+      },
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "6412eb2f-6c09-42c8-b85a-822de6bac94d",
-      "name": "IF  --  Fleet Gate Caused Refusal",
+      "name": "IF — Fleet Gate Caused Refusal",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
@@ -201,11 +200,13 @@
           "combinator": "and"
         },
         "options": {}
-      }
+      },
+      "notes": "",
+      "webhookId": null
     },
     {
       "id": "3f903900-6a83-43fb-b2f2-99447bdfb4b2",
-      "name": "HTTP Request  --  Notify Rejection (fleet_standing)",
+      "name": "HTTP Request — Notify Rejection (fleet_standing)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -229,117 +230,114 @@
           }
         }
       },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "8HTB7khC7fDcRVhN",
-          "name": "fleetStandingCheck Header Auth"
-        }
-      },
-      "notes": "Fires only when the fleet_standing gate is specifically the cause of refusal (old podcast_publish_roster gate already passed). Fail-soft: onError continueRegularOutput + neverError so a dead notifier never blocks the response to the client box, which is built independently from 'Fleet Gate  --  Combine Verdict' via Data Table  --  Log Precheck Verdict / Respond to Webhook  --  Standing Verdict.",
+      "notes": "Fires only when the fleet_standing gate is specifically the cause of refusal (old podcast_publish_roster gate already passed). Fail-soft: onError continueRegularOutput + neverError so a dead notifier never blocks the response to the client box, which is built independently from 'Fleet Gate — Combine Verdict' via Data Table — Log Precheck Verdict / Respond to Webhook — Standing Verdict.",
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "webhookId": null
     },
     {
-      "id": "sticky-note-62e14b48",
-      "name": "Sticky - Podcast Standing Check",
+      "id": "sticky-note-21ebf556",
+      "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2150,
-        -200
+        -240,
+        -300
       ],
       "parameters": {
-        "width": 560,
-        "height": 480,
+        "width": 700,
+        "height": 460,
         "color": 4,
-        "content": "## podcast-standing-check\n\nPrecheck workflow for podcast system. Part of podcast approval gate.\n\n### What it does\nValidates client podcast approval status before workflow executes.\n\n### Called by\nPodcast engine. Returns approval status to gate system.\n\n### Returns\nCalls fleet-system-standing-check with system=\"podcast\""
-      }
+        "content": "PODCAST PRODUCTION ENGINE -- Skill 58\nWhat: Dual-gate standing check that validates whether a client is authorized to publish a podcast episode. First checks the podcast_publish_roster data table for good_standing, then layers on the fleet_standing gate (good_standing + podcast_approved flags). Returns a fail-closed verdict used by create-podcast-episode-from-openclaw before publishing.\nTrigger: POST /webhook/podcast-standing-check (header-authenticated, same credential as the publish gate)\nOutput: JSON {ok: true, good_standing: boolean, reason: string}. Also logs every verdict to the podcast_publish_ledger data table for audit.\nCredentials: Podcast Publish Gate (header auth), fleetStandingCheck Header Auth (for rejection notification)\nCalled by: create-podcast-episode-from-openclaw (TkL0rn2SH3q32SeB) before any Podbean API calls"
+      },
+      "notes": "",
+      "webhookId": null
     }
   ],
   "connections": {
-    "Webhook  --  Standing Check": {
+    "Webhook — Standing Check": {
       "main": [
         [
           {
-            "node": "Roster Lookup  --  Good Standing + Identity",
+            "node": "Roster Lookup — Good Standing + Identity",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Roster Lookup  --  Good Standing + Identity": {
+    "Roster Lookup — Good Standing + Identity": {
       "main": [
         [
           {
-            "node": "Code  --  Determine Standing Verdict",
+            "node": "Code — Determine Standing Verdict",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Data Table  --  Log Precheck Verdict": {
+    "Data Table — Log Precheck Verdict": {
       "main": [
         [
           {
-            "node": "Respond to Webhook  --  Standing Verdict",
+            "node": "Respond to Webhook — Standing Verdict",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Code  --  Determine Standing Verdict": {
+    "Code — Determine Standing Verdict": {
       "main": [
         [
           {
-            "node": "Fleet Gate  --  Lookup All Rows",
+            "node": "Fleet Gate — Lookup All Rows",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fleet Gate  --  Lookup All Rows": {
+    "Fleet Gate — Lookup All Rows": {
       "main": [
         [
           {
-            "node": "Fleet Gate  --  Combine Verdict",
+            "node": "Fleet Gate — Combine Verdict",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fleet Gate  --  Combine Verdict": {
+    "Fleet Gate — Combine Verdict": {
       "main": [
         [
           {
-            "node": "IF  --  Fleet Gate Caused Refusal",
+            "node": "IF — Fleet Gate Caused Refusal",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF  --  Fleet Gate Caused Refusal": {
+    "IF — Fleet Gate Caused Refusal": {
       "main": [
         [
           {
-            "node": "Data Table  --  Log Precheck Verdict",
+            "node": "Data Table — Log Precheck Verdict",
             "type": "main",
             "index": 0
           },
           {
-            "node": "HTTP Request  --  Notify Rejection (fleet_standing)",
+            "node": "HTTP Request — Notify Rejection (fleet_standing)",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Data Table  --  Log Precheck Verdict",
+            "node": "Data Table — Log Precheck Verdict",
             "type": "main",
             "index": 0
           }
@@ -349,5 +347,10 @@
   },
   "settings": {
     "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: sanitized live export re-taken 2026-08-24 (node-level credentials stripped) -- podcast-standing-check workflow. The live n8n API returns meta:null, so this U041 version marker is maintained in-repo and MUST be re-added after every re-export or validate_n8n_workflow.py fails."
   }
 }

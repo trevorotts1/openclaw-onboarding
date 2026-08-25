@@ -712,6 +712,34 @@
       return payload;
     }
 
+    /* F10 — a hung sink used to leave the spinner forever: fetch has NO default
+       timeout. Every POST now races an abort timer (20 s) and retries twice
+       with backoff before surfacing a retryable error message. */
+    var FETCH_TIMEOUT_MS = 20000;
+    var FETCH_RETRIES = 2;
+
+    function fetchWithTimeout(url, opts, retriesLeft) {
+      opts = opts || {};
+      retriesLeft = (typeof retriesLeft === "number") ? retriesLeft : FETCH_RETRIES;
+      var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, FETCH_TIMEOUT_MS) : null;
+      if (ctrl) opts.signal = ctrl.signal;
+      return fetch(url, opts).then(function (r) {
+        if (timer) clearTimeout(timer);
+        return r;
+      }).catch(function (err) {
+        if (timer) clearTimeout(timer);
+        var timedOut = err && (err.name === "AbortError");
+        if (timedOut && retriesLeft > 0) {
+          return new Promise(function (res) { setTimeout(res, 1500 * (FETCH_RETRIES - retriesLeft + 1)); })
+            .then(function () { return fetchWithTimeout(url, opts, retriesLeft - 1); });
+        }
+        err = err || new Error("network error");
+        if (timedOut) err.message = "The server took too long to respond. Please try again.";
+        throw err;
+      });
+    }
+
     /* write the intake JSON file (client-side download + POST to the box sink) */
     function writeIntakeFile(payload) {
       var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -721,7 +749,7 @@
       var sink = document.body.getAttribute("data-intake-sink") || "";
       var fname = "intake-" + (payload.intake_session_id || "pres") + ".json";
       if (sink) {
-        return fetch(sink, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file_name: fname, intake: payload }) })
+        return fetchWithTimeout(sink, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file_name: fname, intake: payload }) })
           .then(function (r) { if (!r.ok) throw new Error("The box could not store your intake file."); return { stored: "box", fname: fname }; })
           .catch(function (err) { /* fall back to download */ download(blob, fname); return { stored: "download", fname: fname }; });
       }
@@ -738,7 +766,7 @@
            intake path can pick it up (see repo docs). */
         return Promise.resolve({ trigger: "deferred", note: "box picks up via intake_session_id; no /api/dept-start endpoint wired on this static host" });
       }
-      return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intake_session_id: qid, intake: payload }) })
+      return fetchWithTimeout(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intake_session_id: qid, intake: payload }) })
         .then(function (r) { if (!r.ok) throw new Error("The presentation department could not be started."); return { trigger: "fired", url: url }; });
     }
 

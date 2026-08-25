@@ -99,6 +99,15 @@ def self_test() -> int:
     longc = dict(good); longc[3] = ("word " * 4000).strip()
     checks.append(("a 4000-word chapter AUTOFAILs AF-BK-CHAP-LEN",
                    any(cd == AF_LEN for cd, _ in evaluate(longc).violations)))
+    # invisible-character laundering: a ~1050-word real chapter padded to apparent
+    # length with U+200B (zero-width space) mid-word must STILL autofail the floor —
+    # Cf characters are stripped before counting, so they cannot forge words.
+    zwsp = "​"
+    short_real = ("realword " * 1050).strip()
+    laundered = zwsp.join(short_real[i:i + 3] for i in range(0, len(short_real), 3))
+    zpad = dict(good); zpad[9] = laundered
+    checks.append(("U+200B-injected 1050-word chapter STILL AUTOFAILs AF-BK-CHAP-LEN",
+                   any(cd == AF_LEN for cd, _ in evaluate(zpad).violations)))
     # manuscript parsing splits on Chapter headings
     manu = "\n".join("# Chapter %d — T\n%s" % (n, good[n]) for n in range(1, 13))
     checks.append(("manuscript parse yields 12 chapters", len(_from_manuscript(manu)) == 12))

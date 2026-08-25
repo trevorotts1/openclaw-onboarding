@@ -63,7 +63,10 @@
 #   --producer-id ID     optional producer scoping.
 #   --confirm-name NAME  typed anthology-name confirmation (required for --live).
 #   --state-dir DIR | --db PATH   ledger location (passed to anthology_state.py).
-#   --gateway-config P   gateway hooks config (default ~/.openclaw/openclaw.json).
+#   --gateway-config P   gateway hooks config (default resolution: the openclaw
+#                        config file, then $ANTHOLOGY_OC_ROOT/openclaw.json, then
+#                        /data/.openclaw/openclaw.json, then $HOME/.openclaw/
+#                        openclaw.json).
 #   --secrets-file P     0600 file that holds ANTHOLOGY_GATE_TOKEN_SECRET (target
 #                        of the rotation write; else the operator surface names it).
 #   --base-url URL       gateway base for the route probe (default
@@ -88,7 +91,25 @@ RV_PRODUCER_ID=""
 RV_CONFIRM_NAME=""
 RV_STATE_DIR=""
 RV_DB=""
-RV_GATEWAY_CONFIG="${HOME:-/tmp}/.openclaw/openclaw.json"
+RV_GATEWAY_CONFIG=""
+# Gateway config resolution (mirrors provision-anthology-client.sh):
+# `openclaw config file` output wins, else ANTHOLOGY_OC_ROOT, else the
+# platform default (/data/.openclaw on VPS, $HOME/.openclaw on Mac),
+# else --gateway-config may override everything.
+_oc_cfg="$(openclaw config file 2>/dev/null | tail -1)" || _oc_cfg=""
+_oc_cfg="${_oc_cfg#\~}"
+if [ -n "$_oc_cfg" ] && [ "${_oc_cfg#/}" = "$_oc_cfg" ]; then
+    _oc_cfg="$HOME/$_oc_cfg"
+fi
+if [ -n "$_oc_cfg" ] && [ -f "$_oc_cfg" ]; then
+    RV_GATEWAY_CONFIG="$_oc_cfg"
+elif [ -n "${ANTHOLOGY_OC_ROOT:-}" ] && [ -f "${ANTHOLOGY_OC_ROOT%/}/openclaw.json" ]; then
+    RV_GATEWAY_CONFIG="${ANTHOLOGY_OC_ROOT%/}/openclaw.json"
+elif [ -f /data/.openclaw/openclaw.json ]; then
+    RV_GATEWAY_CONFIG="/data/.openclaw/openclaw.json"
+elif [ -f "${HOME:-/tmp}/.openclaw/openclaw.json" ]; then
+    RV_GATEWAY_CONFIG="${HOME:-/tmp}/.openclaw/openclaw.json"
+fi
 RV_SECRETS_FILE=""
 RV_BASEURL="http://127.0.0.1:18789"
 RV_OUT_DIR=""

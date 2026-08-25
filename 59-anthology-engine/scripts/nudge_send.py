@@ -309,7 +309,7 @@ def _mint_participant_link(subject_key, state_dir, config_path):
 
 
 def _producer_link(cfg, subject_key):
-    base = ((cfg.get("board") or {}).get("card_base_url")) or "/board"
+    base = ((cfg.get("board") or {}).get("card_base_url")) or "/workspace/anthology"
     sep = "&" if "?" in base else "?"
     return "%s%scard=%s" % (base, sep, subject_key)
 

@@ -84,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -339,9 +340,14 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
         for f in guard_blocking:
             blocking_reasons.append(
                 f"[{f['af_code']}] {f['file']}:{f['line']} -- {f['reason']}")
-
-    computed_average = (round(sum(numeric_averages) / len(numeric_averages), 4)
-                        if len(numeric_averages) == len(AVERAGED_DOMAINS) else None)
+    raw_average = (sum(numeric_averages) / len(numeric_averages)
+                   if len(numeric_averages) == len(AVERAGED_DOMAINS) else None)
+    # F20 — round DOWN to 4dp for display, compare the RAW value against the
+    # threshold. round() uses banker's rounding and rounds 8.49996 UP to 8.5,
+    # letting a below-threshold deck pass on a rounding artifact. floor at the
+    # display precision means displayed >= threshold implies raw >= threshold.
+    computed_average = (math.floor(raw_average * 10 ** 4) / 10 ** 4
+                        if raw_average is not None else None)
 
     overall_pass = (not blocking_reasons) and computed_average is not None \
         and computed_average >= QC_PASS_THRESHOLD

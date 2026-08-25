@@ -6,12 +6,12 @@
   "contract": "anthology-engine-u10-u13-workflows",
   "data": {
     "email": {
-      "body": "Hi {{ contact.first_name }},\n\nYour author profile for {{ custom_values.anthology_name }} is ready.\n\nYou can view the PDF here:\n{{contact.anthology_avatar_pdf_url}}\n\nAnd you can edit your Google Doc here:\n{{contact.anthology_avatar_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you are happy with it, you can move to the next step by opening this link:\nhttps://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s1_gate\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
+      "body": "Hi {{ contact.first_name }},\n\nYour author profile for {{ custom_values.anthology_name }} is ready.\n\nYou can view the PDF here:\n{{contact.anthology_avatar_pdf_url}}\n\nAnd you can edit your Google Doc here:\n{{contact.anthology_avatar_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you are happy with it, you can move to the next step by opening this link:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_id }}&stage=s1_gate\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
       "doc_link": "{{contact.anthology_avatar_doc_url}}",
       "from_name": "{{ custom_values.producer }}",
       "pdf_link": "{{contact.anthology_avatar_pdf_url}}",
       "reply_to": "{{ custom_values.producer_email }}",
-      "stage_form_link": "https://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s1_gate",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_id }}&stage=s1_gate",
       "subject": "Your author profile for {{ custom_values.anthology_name }} is ready"
     },
     "sms": {

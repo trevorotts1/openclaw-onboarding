@@ -48,12 +48,23 @@ def _make_run_dir(attested_ids):
     `attested_ids` and nothing else. No hand-rolled scripts, no rendered PNGs,
     no image_qc_report.json — scan_run_dir()/run_fix2_checks()/
     qc_generator_guard all defer/pass cleanly on an empty run dir, so the only
-    thing under test is the attestation sweep."""
+    thing under test is the attestation sweep.
+
+    F04: attestation rows must be COMPLETED + substance-verified
+    (status=='done', substance_verified==True) to count — the same shape the
+    runner's attest_phase() writes. Bare id-only rows are forged-shaped and
+    satisfy nothing."""
     r = pathlib.Path(tempfile.mkdtemp())
     (r / "working" / "checkpoints").mkdir(parents=True)
     manifest = {
         "phase_attestations": [
-            {"phase_id": pid, "role": "test", "method": "artifact_present"}
+            {
+                "phase_id": pid,
+                "role": "test",
+                "method": "artifact_present",
+                "status": "done",
+                "substance_verified": True,
+            }
             for pid in attested_ids
         ]
     }

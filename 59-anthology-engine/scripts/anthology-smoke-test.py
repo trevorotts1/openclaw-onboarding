@@ -422,7 +422,7 @@ def probe_provider(provider, key, opener, environ=None):
 # --strict-hold is passed). The exact age subcommand is resolved defensively so a
 # CLI-name drift in hold_queue.py cannot silently no-op the aging.
 # ---------------------------------------------------------------------------
-_HOLD_QUEUE_AGE_CANDIDATES = ("age", "age-tick", "tick", "age_tick")
+_HOLD_QUEUE_AGE_CANDIDATES = ("tick", "age", "age-tick", "age_tick")
 
 
 def age_hold_queue(scripts_dir, environ=None, runner=None):

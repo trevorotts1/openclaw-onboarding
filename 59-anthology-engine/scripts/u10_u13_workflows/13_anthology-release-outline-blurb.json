@@ -8,12 +8,12 @@
     "email": {
       "blurb_doc_link": "{{contact.anthology_blurb_doc_url}}",
       "blurb_pdf_link": "{{contact.anthology_blurb_pdf_url}}",
-      "body": "Hi {{ contact.first_name }},\n\nYour blurb and outline for {{ custom_values.anthology_name }} are ready.\n\nYou can view the Blurb PDF here:\n{{contact.anthology_blurb_pdf_url}}\n\nAnd you can edit your Blurb Google Doc here:\n{{contact.anthology_blurb_doc_url}}\n\nYou can view the Outline PDF here:\n{{contact.anthology_outline_pdf_url}}\n\nAnd you can edit your Outline Google Doc here:\n{{contact.anthology_outline_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you are happy with them, you can move to the next step by opening this link:\nhttps://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s4_blurb_outline\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
+      "body": "Hi {{ contact.first_name }},\n\nYour blurb and outline for {{ custom_values.anthology_name }} are ready.\n\nYou can view the Blurb PDF here:\n{{contact.anthology_blurb_pdf_url}}\n\nAnd you can edit your Blurb Google Doc here:\n{{contact.anthology_blurb_doc_url}}\n\nYou can view the Outline PDF here:\n{{contact.anthology_outline_pdf_url}}\n\nAnd you can edit your Outline Google Doc here:\n{{contact.anthology_outline_doc_url}}\n\nThe PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.\n\nIf you are happy with them, you can move to the next step by opening this link:\nhttps://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_id }}&stage=s4_blurb_outline\n\nThank you for being part of {{ custom_values.anthology_name }}.\n\nWarmly,\nThe Editors",
       "from_name": "{{ custom_values.producer }}",
       "outline_doc_link": "{{contact.anthology_outline_doc_url}}",
       "outline_pdf_link": "{{contact.anthology_outline_pdf_url}}",
       "reply_to": "{{ custom_values.producer_email }}",
-      "stage_form_link": "https://link.msgsndr.com/widget/form/riNlAkYbcW3g92VRLqq0?anthology_id={{ contact.anthology_id }}&stage=s4_blurb_outline",
+      "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_id }}&stage=s4_blurb_outline",
       "subject": "Your blurb and outline for {{ custom_values.anthology_name }} is ready"
     },
     "sms": {

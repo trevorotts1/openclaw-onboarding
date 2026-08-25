@@ -55,8 +55,9 @@ via `anthology-chapter-author`, invoked as a local subprocess through
 
 ## Provider rule (binding)
 Client box → the client's OWN configured providers and keys, resolved per box
-into `model-map.json` (GLM 5.2 on Ollama Cloud, then OpenRouter, then Gemini 3.5
-Flash; the client's own Kie.ai key for S7). Never Anthropic / `claude-*`, never
+into `model-map.json` (resolved chain: kimi-k2.6:cloud on ollama-cloud →
+deepseek-v4-pro → xiaomi/mimo-v2.5-pro; the client's own Kie.ai key for S7).
+Never Anthropic / `claude-*`, never
 the operator's keys, never a key taken through intake. `model_router.py` deny
 patterns refuse Anthropic-family identifiers at call time; `guard-no-anthropic-
 runtime.py` refuses them statically over every shipped file this role touches.

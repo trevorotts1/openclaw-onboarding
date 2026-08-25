@@ -22,7 +22,7 @@
         "from_name": "{{ custom_values.producer }}",
         "pdf_link": "{{contact.anthology_titles_pdf_url}}",
         "reply_to": "{{ custom_values.producer_email }}",
-        "stage_form_link": "https://link.msgsndr.com/widget/form/UgiiSoZsA4vyqOVfO5fi?anthology_id={{ contact.anthology_active_id }}&stage=s3_gate",
+        "stage_form_link": "https://link.msgsndr.com/widget/form/<form_id>?anthology_id={{ contact.anthology_active_id }}&stage=s3_gate",
         "subject": "Your title for {{ custom_values.anthology_name }} is ready"
       },
       "sms": {

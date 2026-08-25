@@ -391,11 +391,18 @@ def poll_snapshot_status(client, location_id: str, *, timeout_s: int,
     """Poll GET /snapshots/status?locationId=... until "completed". Returns
     (rc, status). rc EX_OK on completed; EX_HELD on timeout/stalled
     (AF-AE-SNAPIMPORT-STATUS-STALLED) or a transient/edge error (never a false
-    pass); EX_STOP on a scope denial (never retry a scope STOP)."""
+    pass); EX_STOP on a scope denial (never retry a scope STOP).
+    Transient CafUnreachable (edge blip, HTTP 429 rate-limit) does NOT abort the
+    poll: it logs a warning and retries with a short backoff (start 5s, double to
+    cap 60s) until the deadline; deadline exhaustion is EX_HELD as before.
+    FAILED is terminal: one EX_HELD with status "failed" and terminal=True as the
+    third tuple element (out-of-band; the status itself stays a bare token),
+    no further looping."""
     out = out or sys.stderr
     masked = reg._mask_location(location_id)
     deadline = time.monotonic() + timeout_s
     last_status = ""
+    backoff_s = 5
     while True:
         try:
             resp = client._request("GET", SNAPSHOT_STATUS_PATH, query={"locationId": location_id})
@@ -403,25 +410,33 @@ def poll_snapshot_status(client, location_id: str, *, timeout_s: int,
             out.write("[snapshot-status] STOP: token not authorized for snapshot-status "
                       "on marker %s (AF-AE-SNAPIMPORT-STATUS-STALLED: never a false "
                       "pass).\n" % masked)
-            return EX_STOP, last_status
+            return EX_STOP, last_status, False
         except reg.CafUnreachable as exc:
-            out.write("[snapshot-status] HELD: %s (marker %s). Retryable.\n" % (exc, masked))
-            return EX_HELD, last_status
+            if time.monotonic() >= deadline:
+                out.write("[snapshot-status] HELD: %s (marker %s); deadline exhausted "
+                          "while unreachable.\n" % (exc, masked))
+                return EX_HELD, last_status, False
+            out.write("[snapshot-status] WARNING: transient error (%s) on marker %s; "
+                      "retrying in %ds until deadline.\n" % (exc, masked, backoff_s))
+            sleep_fn(min(backoff_s, max(0, int(deadline - time.monotonic()))))
+            backoff_s = min(backoff_s * 2, 60)
+            continue
         status = (resp.get("status") or "").strip().lower() or last_status
         if status:
             last_status = status
         if status == _STATUS_COMPLETED:
             out.write("[snapshot-status] completed (marker %s).\n" % masked)
-            return EX_OK, status
+            return EX_OK, status, False
         if status == _STATUS_FAILED:
             out.write("[snapshot-status] FAILED (marker %s): the import reported failure. "
-                      "AF-AE-SNAPIMPORT-STATUS-STALLED: never a false pass.\n" % masked)
-            return EX_HELD, status
+                      "Terminal — AF-AE-SNAPIMPORT-STATUS-STALLED: never a false pass; "
+                      "no further polling.\n" % masked)
+            return EX_HELD, status, True
         if time.monotonic() >= deadline:
             out.write("[snapshot-status] stalled (marker %s): status %r never reached "
                       "completed within %ds. AF-AE-SNAPIMPORT-STATUS-STALLED: HELD, "
                       "retryable, never a false pass.\n" % (masked, last_status, timeout_s))
-            return EX_HELD, last_status
+            return EX_HELD, last_status, False
         sleep_fn(interval_s)
 
 
@@ -576,17 +591,19 @@ def provision_import(client, location_id: str, fixture: dict, contract: dict,
 
     # -- 4. status poll (bounded) ----------------------------------------------
     if poll_count == 0:
-        rc, status = EX_HELD, ""
+        rc, status, terminal = EX_HELD, "", False
         out.write("[provision-import] --poll-count 0: status poll skipped; the import "
                   "is NOT verified. AF-AE-SNAPIMPORT-STATUS-STALLED: HELD, re-run "
                   "`status` to complete.\n")
     else:
-        rc, status = poll_snapshot_status(
+        rc, status, terminal = poll_snapshot_status(
             client, location_id, timeout_s=poll_timeout_s, interval_s=poll_interval_s,
             out=out)
     report["status"] = status
     if rc != EX_OK:
         report["import_state"] = "status_not_completed"
+        if terminal:
+            report["terminal"] = True
         write_provision_report(report_path, report, out=out)
         return rc
 
@@ -621,11 +638,12 @@ def fixture_path_for(fixture: dict) -> str:
 # ---------------------------------------------------------------------------
 def status_command(client, location_id: str, *, timeout_s: int, interval_s: int,
                    out=None, jsonout=None):
-    rc, status = poll_snapshot_status(client, location_id, timeout_s=timeout_s,
-                                      interval_s=interval_s, out=out)
+    rc, status, terminal = poll_snapshot_status(client, location_id,
+                                                timeout_s=timeout_s,
+                                                interval_s=interval_s, out=out)
     if jsonout is not None:
         json.dump({"ok": rc == EX_OK, "location": reg._mask_location(location_id),
-                   "status": status, "exit": rc}, jsonout)
+                   "status": status, "exit": rc, "terminal": terminal}, jsonout)
         jsonout.write("\n")
     return rc
 

@@ -4,11 +4,20 @@
   "phase_attestations": [
     {
       "phase_id": "P0A-INTAKE",
-      "owning_role": "brainstorming-buddy-presentations",
+      "owning_role": "director-of-presentations",
       "status": "attested",
       "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
       "substance_verified": true,
       "attested_at": "2026-07-02T09:05:00+00:00"
+    },
+    {
+      "phase_id": "P-SP-CLAIM",
+      "owning_role": "signature-presentation-architect",
+      "status": "attested",
+      "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:10:00+00:00",
+      "gate_output": "PASS: no SP claim-gate violation."
     },
     {
       "phase_id": "P-SP-INTAKE",
@@ -17,6 +26,15 @@
       "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
       "substance_verified": true,
       "attested_at": "2026-07-02T09:15:00+00:00"
+    },
+    {
+      "phase_id": "P-SP-INTAKE-TRACE",
+      "owning_role": "signature-presentation-architect",
+      "status": "attested",
+      "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:20:00+00:00",
+      "gate_output": "[intake_trace_check] PASS -- 10 assistant turn(s) scanned, 0 violation(s)"
     },
     {
       "phase_id": "P4-COPY",
@@ -28,7 +46,7 @@
     },
     {
       "phase_id": "P-SP-STRUCTURE",
-      "owning_role": "qc-specialist-signature-presentations",
+      "owning_role": "signature-presentation-architect",
       "status": "attested",
       "artifact_sha": "88555d718d1c386c17c52e4eba48059602927c48ed902c82a7d6b733c53c031e",
       "substance_verified": true,
@@ -45,11 +63,23 @@
   ],
   "owner_skip_approvals": [],
   "signature_presentation_gates": {
+    "P-SP-CLAIM": {
+      "rc": 0,
+      "passed": true,
+      "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_routing.py --run-dir $REPO/51-signature-presentation/examples/golden-quest",
+      "output": "PASS: no SP claim-gate violation."
+    },
     "P-SP-INTAKE": {
       "rc": 0,
       "passed": true,
       "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_intake.py $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json",
       "output": "== Signature Presentation :: 8-Questions-in-ONE-block intake gate ==\nsource: $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json\nRESULT: PASS \u2014 all 8 Questions + frame question delivered as ONE block; frame set."
+    },
+    "P-SP-INTAKE-TRACE": {
+      "rc": 0,
+      "passed": true,
+      "cmd": "python3 $REPO/51-signature-presentation/scripts/intake_trace_check.py $REPO/51-signature-presentation/examples/golden-quest/working/interview/intake_transcript.json",
+      "output": "[intake_trace_check] PASS -- 10 assistant turn(s) scanned, 0 violation(s)"
     },
     "P-SP-STRUCTURE": {
       "rc": 0,

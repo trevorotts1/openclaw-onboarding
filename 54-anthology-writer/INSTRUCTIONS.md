@@ -65,6 +65,8 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
    Four individual tone-style analyses feed one blended synthesis. Produce
    `working/tone-doc.md` (the blended tone, >= 3,000 stripped words).
 
+   NOTE: model-map.json is REQUIRED by P6; resolve before starting.
+
    | Stage | Prompt asset | Tier | Produces | Input substitutions |
    |---|---|---|---|---|
    | aw-01 | `prompts/04-tone-style-1/system.md` + `user.md` | MID-WRITER | (internal -- fed to aw-05) | `{{intake.tone_style_1}}`, avatar dossier |
@@ -175,8 +177,10 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
 - **Subprocess timeout (AF-AW-PROVER-TIMEOUT):** every prover call has a 300s
   ceiling. A hung prover (deadlocked, infinite loop, stalled upstream model call)
   is killed and the phase fails closed with `AF-AW-PROVER-TIMEOUT`. The stderr
-  message names the hung prover and offers clear diagnostic guidance. There is no
-  auto-retry — the operator must diagnose the hung prover before re-running.
+  message names the hung prover and offers clear diagnostic guidance. Timeouts are
+  never re-launched — the operator must diagnose the hung prover before re-running.
+  A prover that exits NONZERO (without timing out) IS retried automatically: up to
+  3 attempts with 1s/2s backoff, then the phase fails closed.
 - **Degraded handling:** if the NON-Anthropic upstream model is unreachable or
   returns an error, the authoring stage leaves no artifact; the corresponding QC
   phase sees a missing artifact and fails closed. The orchestrator never falls

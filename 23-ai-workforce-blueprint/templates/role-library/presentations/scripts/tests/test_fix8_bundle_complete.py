@@ -1,9 +1,11 @@
-"""Tests for FIX-8 — the full 9-deliverable bundle gate (bundle_complete.json).
+"""Tests for FIX-8 — the full 10-deliverable bundle gate (bundle_complete.json).
 
 Bar (Gauntlet Loop FIX-8 / T-09 / M2-M9):
   * a DECK-ONLY bundle FAILS, enumerating exactly which deliverables are missing;
   * the FULL deliverable bundle PASSES and writes bundle_complete.json;
   * a zero-byte / placeholder file is NOT 'done' (non-empty is required);
+  * F27: an undersized stub (below its DELIVERABLE_AUDIT_SPEC min_bytes floor)
+    is NOT 'done' either — a 1-byte audio.mp3 must fail the gate;
   * the gate is fail-closed: a partial bundle never gets a pass marker, and a
     stale pass marker is removed when the bundle regresses.
 
@@ -22,18 +24,20 @@ if str(SCRIPTS) not in sys.path:
 import fix_bundle_complete as fbc  # noqa: E402
 
 REQUIRED_KEYS = fbc.REQUIRED_KEYS
+_MIN_BYTES = {d["key"]: max(int(d.get("min_bytes", 1)), 1) for d in fbc.DELIVERABLE_AUDIT_SPEC}
 
 
 def _write_full_bundle(base: pathlib.Path, deck_slug: str = "deck") -> None:
-    """Write all required deliverables as real non-empty files."""
+    """Write all required deliverables at or above their min_bytes floors."""
     for spec in fbc.REQUIRED_DELIVERABLES:
         fname = fbc._expand_filename(spec["filename"], deck_slug)
-        (base / fname).write_bytes(b"x" * 2048)
+        (base / fname).write_bytes(b"x" * _MIN_BYTES[spec["key"]])
 
 
 def _write_deck_only(base: pathlib.Path, deck_slug: str = "deck") -> None:
-    """Write ONLY the deck pptx (the live E2E failure: 8 of 9 missing)."""
-    (base / fbc._expand_filename("{deck_slug}-FINAL.pptx", deck_slug)).write_bytes(b"x" * 2048)
+    """Write ONLY the deck pptx (the live E2E failure: the rest missing)."""
+    floor = _MIN_BYTES["deck_pptx"]
+    (base / fbc._expand_filename("{deck_slug}-FINAL.pptx", deck_slug)).write_bytes(b"x" * floor)
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +87,32 @@ def test_zero_byte_placeholder_is_not_done(tmp_path):
     base = tmp_path / "zero"
     base.mkdir(parents=True)
     (base / "deck-FINAL.pptx").write_bytes(b"")  # empty placeholder
-    (base / "PRESENTERS-SPEECH.md").write_text("real speech text")
+    floor = _MIN_BYTES["speech_md"]
+    (base / "PRESENTERS-SPEECH.md").write_text("real speech text" * ((floor // 16) + 1))
 
     missing = fbc.check_bundle_complete(base, deck_slug="deck")
     assert "deck_pptx" in missing, "a zero-byte deck_pptx must count as missing"
     assert "speech_md" not in missing, "a real non-empty speech_md must not be missing"
+
+
+def test_undersized_stub_is_not_done_f27(tmp_path):
+    """F27: a NON-empty but undersized file is NOT 'done' — each deliverable must
+    clear its DELIVERABLE_AUDIT_SPEC min_bytes floor. audio_mp3 has a 512 KB
+    floor; an 8-byte stub previously passed FIX-8 as complete."""
+    base = tmp_path / "stub"
+    base.mkdir(parents=True)
+    for spec in fbc.REQUIRED_DELIVERABLES:
+        fname = fbc._expand_filename(spec["filename"], "deck")
+        if spec["key"] == "audio_mp3":
+            (base / fname).write_bytes(b"ID3stub")  # 8 bytes << 512 KB floor
+        else:
+            (base / fname).write_bytes(b"x" * _MIN_BYTES[spec["key"]])
+
+    missing = fbc.check_bundle_complete(base, deck_slug="deck")
+    assert missing == ["audio_mp3"], (
+        f"an undersized audio_mp3 must be the only missing key; got {sorted(missing)}")
+    ok, missing_run, gate = fbc.run_bundle_gate(base, deck_slug="deck")
+    assert ok is False and gate is None, "the gate must fail closed on an undersized stub"
 
 
 def test_stale_pass_marker_removed_on_regression(tmp_path):
@@ -146,7 +171,8 @@ def test_in_pipeline_runner_resolution_path(tmp_path):
     bundle.mkdir(parents=True)
 
     slug = rsd._deck_slug(run_dir)
-    (bundle / fbc._expand_filename("{deck_slug}-FINAL.pptx", slug)).write_bytes(b"x" * 2048)
+    (bundle / fbc._expand_filename("{deck_slug}-FINAL.pptx", slug)).write_bytes(
+        b"x" * _MIN_BYTES["deck_pptx"])
 
     resolved = fbc.resolve_bundle_dir(run_dir)
     assert resolved == tmp_path / "bundle", "bundleDir from process_manifest must win"
@@ -156,7 +182,8 @@ def test_in_pipeline_runner_resolution_path(tmp_path):
     assert gate is None
 
     for spec in fbc.REQUIRED_DELIVERABLES:
-        (bundle / fbc._expand_filename(spec["filename"], slug)).write_bytes(b"x" * 2048)
+        (bundle / fbc._expand_filename(spec["filename"], slug)).write_bytes(
+            b"x" * _MIN_BYTES[spec["key"]])
     ok2, missing2, gate2 = fbc.run_bundle_gate(bundle, deck_slug=slug)
     assert ok2 is True and missing2 == [] and gate2 is not None and gate2.is_file()
 

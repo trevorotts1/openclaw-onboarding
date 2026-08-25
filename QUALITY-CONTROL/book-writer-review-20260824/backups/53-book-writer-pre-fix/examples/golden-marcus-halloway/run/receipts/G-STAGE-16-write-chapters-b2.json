@@ -1,0 +1,14 @@
+{
+  "stage": "16-write-chapters-b2",
+  "batch": 2,
+  "chapters_written": [
+    4,
+    5,
+    6
+  ],
+  "prior_chapters_embedded": {
+    "1": "4405fa3c2004b6ee7034577251fcbc9bcca34edd91745c0f7c60a4e63fb5e5bd",
+    "2": "d1cfb3cb27874f3d543a5b98767789cda820dcafbf8a94100e33b1adfb9844f4",
+    "3": "78d8b178603227df9146b98e0fd1d5420bcda6ddbb7b21c7e28cc146381b125b"
+  }
+}

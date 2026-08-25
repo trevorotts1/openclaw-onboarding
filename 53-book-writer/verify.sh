@@ -85,20 +85,20 @@ else
     printf '  [FAIL] shared_tone_core manifest key missing/wrong\n'; fails=$((fails + 1))
 fi
 
-# 3) broken-variants reject via make_broken.py (data-anchor variants now; prose ones when authored).
+# 3) broken-variants reject via make_broken.py (all variants — sources ship in-repo).
 echo "-- 3) broken-variants fail-closed proof --"
 if [ -f "$EBV/make_broken.py" ]; then
     RESULTS_TMP="$(mktemp)"
-    if "$PY" "$EBV/make_broken.py" --results "$RESULTS_TMP" >/dev/null 2>&1; then
-        printf '  [PASS] every PRESENT broken-variant rejects with its AF-BK code\n'
+    if "$PY" "$EBV/make_broken.py" --results "$RESULTS_TMP"; then
+        printf '  [PASS] every broken-variant builds and rejects with its AF-BK code\n'
     else
-        printf '  [FAIL] a broken-variant leaked (see make_broken.py output)\n'
-        "$PY" "$EBV/make_broken.py" --results "$RESULTS_TMP" 2>&1 | sed 's/^/         /'
+        printf '  [FAIL] a broken-variant leaked or could not be built (output above)\n'
         fails=$((fails + 1))
     fi
     rm -f "$RESULTS_TMP"
 else
-    printf '  [WARN] make_broken.py missing — skipping\n'
+    printf '  [FAIL] make_broken.py missing at %s — the fail-closed variant proof cannot run\n' "$EBV"
+    fails=$((fails + 1))
 fi
 
 # 7) no-Anthropic / no-client-name / no-absolute-path scans over shipped files.
@@ -180,12 +180,19 @@ PY
     rm -f "$BRAND"
 fi
 
-# 2) golden bundle PASS + 4) idempotency — GATED on Wave-2 prose + Agent D's assembled cert.
-echo "-- 2/4) golden bundle + idempotency (prose-gated) --"
+# 2) golden bundle PASS + 4) idempotency — UNCONDITIONAL. The golden prose AND the
+# shipped certificate are committed in-repo; their absence is a FAIL, never a TODO.
+echo "-- 2/4) golden bundle + idempotency --"
 # find(1) does its own matching (no shell glob), so an absent delivery/ never aborts
 # under zsh's nomatch and never leaks a literal glob under bash.
 SHIP_CERT="$(find "$EX/delivery" -maxdepth 2 -name PROCESS-CERTIFICATE.json 2>/dev/null | head -1)"
-if [ -f "$EX/run/chapters/ch12.md" ] && [ -n "$SHIP_CERT" ]; then
+if [ ! -f "$EX/run/chapters/ch12.md" ]; then
+    printf '  [FAIL] golden ch12.md absent at %s — the golden bundle is incomplete\n' "$EX/run/chapters/"
+    fails=$((fails + 1))
+elif [ -z "$SHIP_CERT" ] || [ ! -f "$SHIP_CERT" ]; then
+    printf '  [FAIL] shipped PROCESS-CERTIFICATE.json absent under %s — the golden certificate is missing\n' "$EX/delivery/"
+    fails=$((fails + 1))
+else
     TMP="$(mktemp -d)"
     DLROOT="$(mktemp -d)"   # keep the labeled ~/Downloads copy OUT of the real ~/Downloads
     trap 'rm -rf "$TMP" "$DLROOT"' EXIT
@@ -208,10 +215,17 @@ if [ -f "$EX/run/chapters/ch12.md" ] && [ -n "$SHIP_CERT" ]; then
         printf '  [FAIL] golden pilot through the entry failed\n'; fails=$((fails + 1))
     fi
     rm -rf "$TMP" "$DLROOT"; trap - EXIT
-else
-    printf '  [TODO] golden prose / shipped certificate absent — Wave-2 authors prose, Agent D runs\n'
-    printf '         run_book_writer.py to assemble the bundle + mint the certificate, then this\n'
-    printf '         section lights up (golden-bundle PASS + certificate_sha idempotency).\n'
+fi
+
+# 4b) UNCONDITIONAL process guard over the REAL tree — live hash-pin of the
+# enforcement set against ENGINE-PIN.sha256 plus a bypass scan of the run dir,
+# and a phase-chain re-check of the shipped golden certificate.
+echo "-- 4b) live process guard (hash-pin + bypass-scan + shipped cert chain) --"
+run "prove_bw_process.py --run-dir/--skill-dir on the real tree" \
+    "$PY" "$SCRIPTS/prove_bw_process.py" --run-dir "$SKILL_DIR" --skill-dir "$SKILL_DIR"
+if [ -n "$SHIP_CERT" ] && [ -f "$SHIP_CERT" ]; then
+    run "shipped golden PROCESS-CERTIFICATE phase chain" \
+        "$PY" "$SCRIPTS/prove_bw_process.py" --certificate "$SHIP_CERT"
 fi
 
 # 9) role-SOP registry (content_sha re-stamp gate) — the 7 role SOPs are registered

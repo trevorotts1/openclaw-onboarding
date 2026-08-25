@@ -82,3 +82,6 @@ client-roster.txt
 # committed artifact is the PASS report (canary-run/reports/CANARY-REPORT.json),
 # which lives OUTSIDE state/ and stays tracked.
 59-anthology-engine/canary-run/state/
+# battery_e2e_test.py persists the same class of runtime state under
+# canary-run/battery-state/: certs, env payloads, SQLite DBs, transcripts.
+59-anthology-engine/canary-run/battery-state/

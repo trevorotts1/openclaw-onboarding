@@ -1,5 +1,25 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.3.0 — hardening release: QC-pass fixes, GATE-433 binding, ledger coverage
+
+- **GATE-433 bound to its artifact (fail-closed)**: in 4x3x3 mode the approval receipt
+  for `GATE-433` now must carry an `artifact_sha256` matching the LIVE sha of
+  `run/433/433_Deck_Data.json`; a missing/mismatched binding leaves the gate
+  unsatisfied and blocks at P4 (`AF-BK` gate check, run_book_writer.py).
+- **Anon denylist fail-closed after identity filter**: if every configured
+  anonymous-token is exempted as the author's own name, that emptiness is now an
+  AUTOFAIL rather than a silent pass.
+- **Ledger-coverage violations coded**: `AF-BK-LEDGER-COVERAGE` added to the manifest
+  autofail list; `AF-BK-PROCESS-INTEGRITY` enforcement attribution corrected.
+- Legacy duplicate `load_gate_receipts` removed; single canonical loader remains.
+- Receipt schema tightened: approvals must live inside `receipts[]` with
+  `gate_id`/`approved:true`/`approved_by`/ISO `approved_at`, plus artifact binding
+  where one exists — presence-only or top-level-key receipts are ignored fail-closed.
+- Golden example re-stamped under corrected measurement; ENGINE-PIN re-minted
+  (v2 length-prefixed framing); anon-tokens shipped in golden checkpoints.
+- Full battery green: verify.sh PASS, 18/18 broken variants rejected, all prover
+  self-tests exit 0, golden pilot rc=0 with stable certificate sha.
+
 ## 1.2.1 — golden delivery example: Marcus Halloway 30-Day Challenge book
 
 - Ships `examples/golden-marcus-halloway/delivery/Marcus_Halloway-Book/30_Day_Challenge-Marcus_Halloway.md` —

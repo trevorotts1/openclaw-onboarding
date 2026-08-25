@@ -1,0 +1,20 @@
+{
+  "schema": "book-writer-gate-receipts-v1",
+  "note": "In-chat human checkpoint approvals for the golden regression run (fictional author Marcus Halloway). Each receipt records approved:true + approved_by + a timestamp; downstream phases refuse to advance without the matching gate receipt (approvals cannot be self-attested or back-filled). This golden run has no revision rounds, so there is no GATE-3/GATE-4 receipt.",
+  "receipts": [
+    {
+      "gate_id": "GATE-1-title",
+      "approved": true,
+      "approved_by": "Marcus Halloway",
+      "approved_at": "2026-07-02T22:40:11+00:00",
+      "reply": "Locked. Title: The Quiet Authority / Subtitle: How the Best New Leaders Trade Control for Trust."
+    },
+    {
+      "gate_id": "GATE-2-outline",
+      "approved": true,
+      "approved_by": "Marcus Halloway",
+      "approved_at": "2026-07-02T22:52:03+00:00",
+      "reply": "Outline approved — proceed to chapters."
+    }
+  ]
+}

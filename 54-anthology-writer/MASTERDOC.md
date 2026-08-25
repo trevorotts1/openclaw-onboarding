@@ -84,7 +84,12 @@ There is NO formatter tier — the five source HTML-formatter LLM calls are
   (`run_anthology.py`) itself is dispatched by `anthology-entry.sh` via `exec` with
   no timeout shell built-in — the 300s per-prover ceiling plus the entry-script
   `trap ... EXIT INT TERM HUP` handler form the entire watchdog surface.
-- **No automatic retry:** a timed-out prover is NOT re-launched. The operator must
+- **Retry on nonzero exit:** a prover that EXITS nonzero (but does not hang past
+  the 300s ceiling) is re-launched automatically — up to 3 total attempts with a
+  1s then 2s backoff between attempts (`delay = 2 ** attempt` in both
+  `_run_prover` and `_run_prover_json`). If all 3 attempts fail, the phase fails
+  closed and the final return code is reported to stderr.
+- **No automatic retry on timeout:** a timed-out prover is NOT re-launched. The operator must
   inspect the hung prover for deadlocks, infinite loops, or stalled upstream model
   calls, fix the root cause, and re-run through `anthology-entry.sh`. The process
   manifest records the failed phase for audit.

@@ -288,6 +288,14 @@ POLL_INTERVAL_S = POLL_FAST_S
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
 
+# F07 — cap on CONSECUTIVE 429 backoffs inside a single submit. The old loops
+# (`while True: try submit except RateLimited: sleep`) had NO bound: a sustained
+# rate limit (account throttled, quota exhausted, KIE incident) spun the submit
+# stage forever and the run hung in 'in_progress' with no failure surfaced.
+# KIE's window is 20 req / 10s; RATE_LIMIT_SLEEP_S=20 means ~1 attempt/slot, so
+# N consecutive 429s ≈ N*20s of continuous throttling before we give up.
+KIE_SUBMIT_MAX_429 = max(1, int(os.environ.get("KIE_SUBMIT_MAX_429", "15")))
+
 # ---------------------------------------------------------------------------
 # BATCH-RENDER cadence (FIX-5 / D22 root cause B). KIE allows 20 new generation
 # requests per 10s per account and 100+ concurrent tasks. The old path submitted
@@ -1850,13 +1858,21 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
     for attempt in range(1, SLIDE_MAX_ATTEMPTS + 1):
         print(f"  [{name}] attempt {attempt}/{SLIDE_MAX_ATTEMPTS}", flush=True)
         try:
-            # submit (429-aware)
+            # submit (429-aware). F07: bounded — see KIE_SUBMIT_MAX_429.
+            _rl_streak = 0
             while True:
                 try:
                     task_id = submit_task(prompt, api_key, logo_url=logo_url)
                     break
                 except RateLimited:
-                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
+                    _rl_streak += 1
+                    if _rl_streak >= KIE_SUBMIT_MAX_429:
+                        raise RuntimeError(
+                            f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
+                            f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
+                            "sustained throttling) — giving up on this slide (F07)")
+                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
+                          f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
                     time.sleep(RATE_LIMIT_SLEEP_S)
             print(f"    submitted -> taskId={task_id}", flush=True)
             _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
@@ -1946,9 +1962,62 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     submitted = {}  # ordinal -> (slide, task_id)
     submit_failures = []  # {slide, error}
     start = time.time()
-    print(f"=== BATCH SUBMIT: {n} prompts, {submit_interval:.1f}s apart "
-          f"(kie 20/10s cap + 100 concurrent tasks) ===", flush=True)
+
+    # F08 — RESUME REUSE: before re-submitting ANY slide, check the completed-task
+    # ledger (pending_tasks.json records written by _record_completed_task) for an
+    # existing VERIFIED render of this slide. A crash mid-batch used to re-bill ALL
+    # slides on resume even though most PNGs were already rendered, verified, and
+    # recorded with their sha256. A ledger entry counts ONLY when: completed=True,
+    # the recorded output_path still exists, and its sha256 matches the recorded
+    # one — i.e., exactly the evidence a fresh download+verify would produce.
+    # Anything else falls through to a fresh submit. The runner's FIX-E2E gate
+    # re-verifies the full set afterwards either way.
+    _reused: list = []
+    pending_submit: list = []
+
+    def _ledger_verified_png(ordinal: int) -> Optional[Path]:
+        rec = _read_pending_tasks(run_dir).get(str(ordinal)) or {}
+        if not rec.get("completed"):
+            return None
+        op = rec.get("output_path")
+        sha = rec.get("sha256")
+        if not op or not sha:
+            return None
+        p = Path(op)
+        if not p.is_file():
+            return None
+        try:
+            if hashlib.sha256(p.read_bytes()).hexdigest() != sha:
+                return None
+        except OSError:
+            return None
+        return p
+
     for slide in ordered:
+        ordinal = int(slide["slide"])
+        name = f"slide-{ordinal:02d}"
+        _existing = _ledger_verified_png(ordinal)
+        if _existing is not None:
+            try:
+                verify_png(_existing)  # magic-bytes + non-empty re-check (raises on bad file)
+            except Exception:  # noqa: BLE001 — ledger said verified but the file is bad: re-submit
+                pass
+            else:
+                _reused.append(ordinal)
+                print(f"  [{name}] RESUME REUSE: verified PNG already present "
+                      f"({_existing}, sha256 matches ledger) — no re-bill (F08)",
+                      flush=True)
+                continue
+        pending_submit.append(slide)
+
+    if _reused:
+        print(f"=== F08 RESUME: reusing {len(_reused)} pre-verified "
+              f"slide(s) {_reused}; submitting only the remaining "
+              f"{len(pending_submit)} ===", flush=True)
+
+    print(f"=== BATCH SUBMIT: {len(pending_submit)} prompts, {submit_interval:.1f}s apart "
+          f"(kie 20/10s cap + 100 concurrent tasks) ===", flush=True)
+    for slide in pending_submit:
         ordinal = int(slide["slide"])
         name = f"slide-{ordinal:02d}"
         try:
@@ -1956,12 +2025,22 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
             # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
             # everything else (network, shape, 401) fails that slide without blocking
             # the batch. Never re-submit a slide that already has a taskId.
+            # F07: bounded — KIE_SUBMIT_MAX_429 consecutive backoffs then this slide
+            # FAILS (batch continues; the failure is surfaced, never a silent hang).
+            _rl_streak = 0
             while True:
                 try:
                     task_id = submit_task(prompt, api_key, logo_url=logo_url)
                     break
                 except RateLimited:
-                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
+                    _rl_streak += 1
+                    if _rl_streak >= KIE_SUBMIT_MAX_429:
+                        raise RuntimeError(
+                            f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
+                            f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
+                            "sustained throttling) — giving up on this slide (F07)")
+                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
+                          f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
                     time.sleep(RATE_LIMIT_SLEEP_S)
             submitted[ordinal] = (slide, task_id)
             _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
@@ -1980,6 +2059,16 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     rendered = []
     poll_failures = list(submit_failures)
     pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
+    # F08: reused slides never re-billed — seed them straight into `rendered`
+    # (with their recorded taskId) so Phase B polls only genuinely new tasks and
+    # the returned contract counts every slide exactly once.
+    for _ord in _reused:
+        _rec = _read_pending_tasks(run_dir).get(str(_ord)) or {}
+        _slide = next((s for s in ordered if int(s["slide"]) == _ord), None)
+        if _slide is not None:
+            rendered.append({"slide": _ord,
+                             "file": str(_ledger_verified_png(_ord)),
+                             "taskId": str(_rec.get("task_id") or "resumed")})
     poll_start = time.time()
     pass_no = 0
     while pending:
@@ -6129,11 +6218,25 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             #     now mirrors run_signature_deck._attested_phase_ids and
             #     canonical_render_guard.attested_phase_ids (one contract, three readers).
             for att in obj.get("phase_attestations", []) or []:
-                if isinstance(att, dict):
-                    for k in ("phase_id", "id", "name"):
-                        v = att.get(k)
-                        if isinstance(v, str) and v.strip():
-                            attested.add(v.strip())
+                if not isinstance(att, dict):
+                    continue
+                # F04 — a hand-written or partial row must NOT satisfy the chain.
+                # A row counts as an attestation ONLY when it is a COMPLETED,
+                # substance-verified one: status == 'done' AND
+                # substance_verified is True. Rows missing either field are the
+                # exact shape a hand-edited manifest produces (id present, no
+                # completion evidence) — trusting them let later phases pass a
+                # precondition whose phase never actually finished. The runner's
+                # attest_phase() always writes both fields, so every genuine
+                # runner row still counts; only forged/incomplete rows drop out.
+                if str(att.get("status", "")).strip().lower() != "done":
+                    continue
+                if att.get("substance_verified") is not True:
+                    continue
+                for k in ("phase_id", "id", "name"):
+                    v = att.get(k)
+                    if isinstance(v, str) and v.strip():
+                        attested.add(v.strip())
             # (2) build_deck.py appends its OWN render record under "phases" as
             #     {"phase": "render", ...}; that record counts as the P4-RENDER phase being
             #     attested (a canonical render is seen without the runner re-stamping it).

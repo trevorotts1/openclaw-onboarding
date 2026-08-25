@@ -573,7 +573,7 @@ def _default_block_ask(phase_id: str, note: str) -> str:
 def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
                note: str = "", deliverable_url: str = "",
                blocked_reason: str = "approval", blocked_on_human: str = "operator",
-               ask: str = "") -> bool:
+               ask: str = "", process_certificate_sha: str = "") -> bool:
     """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
     Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS.
 
@@ -586,6 +586,8 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
         payload["note"] = note
     if deliverable_url:
         payload["deliverable_url"] = deliverable_url
+    if process_certificate_sha:
+        payload["process_certificate_sha"] = process_certificate_sha
     if status == "blocked":
         payload["blocked_reason"] = (blocked_reason or "approval").strip() or "approval"
         payload["blocked_on_human"] = (blocked_on_human or "operator").strip() or "operator"
@@ -614,6 +616,7 @@ def card_advance(
     blocked_reason: str = "approval",
     blocked_on_human: str = "operator",
     ask: str = "",
+    process_certificate_sha: str = "",
     env: Optional[dict] = None,
     receipt_subdir=None,
 ) -> bool:
@@ -651,7 +654,8 @@ def card_advance(
         # Card status unknown (board unreachable / card missing): attempt a single
         # direct move and let the server reject an illegal jump (fail-soft).
         return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url,
-                          blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask)
+                          blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask,
+                          process_certificate_sha=process_certificate_sha)
     if current == target:
         _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
         return True
@@ -666,6 +670,7 @@ def card_advance(
             tid, phase_id, step, cfg,
             note=note if last else f"auto-step toward {target}",
             deliverable_url=deliverable_url if last else "",
+            process_certificate_sha=process_certificate_sha if last else "",
             blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask,
         )
         if not ok:
@@ -687,12 +692,17 @@ def begin_run(
     persona: str = "",
     source: str = "",
     description: str = "",
+    process_certificate_sha: str = "",
     env: Optional[dict] = None,
     receipt_subdir=None,
     evidence_root: Optional[str] = None,
 ) -> Optional[str]:
     """Open the run's card and move it to in_progress. Returns the task_id or None.
     Never raises — the board is a view, never a gate.
+
+    ``process_certificate_sha`` (optional): forwarded to ``card_advance`` so an
+    in-progress move can register a presented certificate on the card (empty =
+    nothing sent, payload unchanged).
 
     ``evidence_root`` (U100, opt-in, default None): forwarded to ``card_open``
     — see its docstring."""
@@ -705,13 +715,22 @@ def begin_run(
         if tid:
             note = "run started"
             reroute = _read_receipt(run_dir, receipt_subdir).get("original_department_slug")
-            if reroute:
+            if reroute and _normalize_department_slug(department) not in KNOWN_DEPARTMENT_SLUGS:
                 note = (
                     f"run started (auto-rerouted from unrecognized department_slug "
                     f"{reroute!r} to '{GENERAL_TASK_SLUG}')"
                 )
+            elif reroute:
+                # The department now resolves to a canonical slug (fixed config or
+                # re-run with the right slug): clear the stale rerout markers so the
+                # merged payload no longer carries the old bad slug.
+                _merge_receipt(run_dir, {
+                    "department_slug_rerouted": False,
+                    "original_department_slug": "",
+                }, receipt_subdir)
             card_advance(run_dir, tid, phase_id="run", status="in_progress",
-                         note=note, env=env, receipt_subdir=receipt_subdir)
+                         note=note, process_certificate_sha=(process_certificate_sha or "").strip(),
+                         env=env, receipt_subdir=receipt_subdir)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
@@ -720,13 +739,15 @@ def begin_run(
 
 def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "deliver",
                  note: str = "", status: str = "review", deliverable_url: str = "",
+                 process_certificate_sha: str = "",
                  env: Optional[dict] = None, receipt_subdir=None) -> bool:
     """Move the run's card to its TERMINAL producer status — `review` by default,
     NEVER `done`. review->done is owned exclusively by the independent QC scorer
     (PASS >= 8.5); a producer that posted `done` here would skip the QC column,
-    which is THE board bug this helper exists to prevent. The deliverable link, when
-    supplied, is registered on the card. Recovers the task_id from the receipt when
-    not supplied. Never raises — the board is a view, never a gate."""
+    which is THE board bug this helper exists to prevent. The deliverable link and
+    the process certificate sha, when supplied, are registered on the card.
+    Recovers the task_id from the receipt when not supplied. Never raises — the
+    board is a view, never a gate."""
     try:
         target = (status or "review").strip().lower() or "review"
         if target in _PRODUCER_FORBIDDEN:
@@ -736,6 +757,7 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
         default_note = "certified — awaiting QC promotion"
         return card_advance(run_dir, task_id, phase_id=phase_id, status=target,
                             note=note or default_note, deliverable_url=deliverable_url,
+                            process_certificate_sha=(process_certificate_sha or "").strip(),
                             env=env, receipt_subdir=receipt_subdir)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")

@@ -1,13 +1,8 @@
 {
-  "meta": {
-    "version": "1.0.0",
-    "minN8nSchemaVersion": "1.0",
-    "note": "U041: sanitized live export from 2026-08-01 audit -- podcast-draft-cleanup workflow."
-  },
   "id": "2ZoGNafrdEBjEaLs",
-  "name": "podcast-draft-cleanup (audit 2026-08-01)",
+  "name": "🎙️ Podcast: draft-cleanup (audit 2026-08-01)",
   "description": null,
-  "active": false,
+  "active": true,
   "isArchived": false,
   "nodes": [
     {
@@ -27,12 +22,7 @@
         0
       ],
       "webhookId": "podcast-draft-cleanup",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "JVRJ3oLlNNT202IJ",
-          "name": "Podcast Publish Gate (restored 2026-08-01)"
-        }
-      }
+      "notes": ""
     },
     {
       "parameters": {
@@ -45,7 +35,9 @@
       "position": [
         220,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -82,12 +74,8 @@
         440,
         0
       ],
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "EZApXhsHExXctBrB",
-          "name": "Podbean BlackCEO (client_credentials)"
-        }
-      }
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -111,7 +99,9 @@
       "position": [
         660,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
     },
     {
       "parameters": {
@@ -126,7 +116,27 @@
       "position": [
         880,
         0
-      ]
+      ],
+      "notes": "",
+      "webhookId": null
+    },
+    {
+      "id": "sticky-note-7b6a7fe5",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -300
+      ],
+      "parameters": {
+        "width": 700,
+        "height": 380,
+        "color": 4,
+        "content": "PODCAST PRODUCTION ENGINE -- Skill 58\nWhat: Deletes a draft podcast episode from Podbean by episode ID. This is the cleanup companion to podcast-draft-test.\nTrigger: POST /webhook/podcast-draft-cleanup (header-authenticated)\nOutput: JSON confirmation with episode_id, HTTP status code from Podbean DELETE, and deleted status\nCredentials: Podcast Publish Gate (header auth), Podbean BlackCEO (client_credentials OAuth)\nUsed by: podcast-draft-test workflow after creating+verifying a draft, and callable manually for orphaned drafts"
+      },
+      "notes": "",
+      "webhookId": null
     }
   ],
   "connections": {
@@ -177,5 +187,10 @@
   },
   "settings": {
     "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: sanitized live export re-taken 2026-08-24 (node-level credentials stripped) -- podcast-draft-cleanup workflow. The live n8n API returns meta:null, so this U041 version marker is maintained in-repo and MUST be re-added after every re-export or validate_n8n_workflow.py fails."
   }
 }

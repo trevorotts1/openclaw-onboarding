@@ -152,6 +152,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from anthology_run_dir import safe_run_key  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Exit codes (house map).
 # ---------------------------------------------------------------------------
@@ -257,7 +260,7 @@ CC_REPO_CANDIDATES = (
 # --verify-report refuses the report.
 DEFERRED_LIVE_CHECKS = (
     "live 4-style cover render (Kie + Drive landing)",
-    "live Doc pull-back byte round-trip",
+    "live Doc pull-back byte round-trip (NEW-5)",
 )
 DEFERRED_LIVE_NOTE = (
     "12/12 is STAGE-LEVEL, not check-level: the two live checks above are "
@@ -618,8 +621,7 @@ def avatar_text(first, last, n_words=320):
 
 
 def _write_working(state_dir, participant_key, name, text):
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_"
-                   for c in (participant_key or "unknown"))
+    safe = safe_run_key(participant_key)
     d = Path(state_dir) / "runs" / "participants" / safe / "working"
     d.mkdir(parents=True, exist_ok=True)
     p = d / name
@@ -628,15 +630,12 @@ def _write_working(state_dir, participant_key, name, text):
 
 
 def _working_path(state_dir, participant_key, name):
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_"
-                   for c in (participant_key or "unknown"))
+    safe = safe_run_key(participant_key)
     return Path(state_dir) / "runs" / "participants" / safe / "working" / name
 
 
 def _s9_run_dir(state_dir, anthology_id):
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_"
-                   for c in (anthology_id or "unknown"))
-    return Path(state_dir) / "runs" / "s9" / safe
+    return Path(state_dir) / "runs" / "s9" / safe_run_key(anthology_id)
 
 
 def _sha256_text(text):
@@ -976,7 +975,7 @@ def verify_pullback_contract(rep, state_dir):
             rep.check("live Doc pull-back byte round-trip (NEW-5)", True,
                       "prove_aw_doc_pullback PASS")
         elif rc3 == 3:
-            rep.deferred("live Doc pull-back byte round-trip",
+            rep.deferred("live Doc pull-back byte round-trip (NEW-5)",
                          "prove_aw_doc_pullback held: %s" % (err3 or "")[:200])
         else:
             rep.check("live Doc pull-back byte round-trip (NEW-5)", False,
@@ -2528,8 +2527,6 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     argv = list(argv)
-    if "--self-test" in argv:
-        argv = ["--self-test" if a == "--self-test" else a for a in argv]
     if "--selftest" in argv:
         argv = ["--self-test" if a == "--selftest" else a for a in argv]
     args = build_parser().parse_args(argv)

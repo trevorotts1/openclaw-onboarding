@@ -302,6 +302,28 @@ def _process_manifest_path(run_dir: Path) -> Path:
     return run_dir / "working" / "checkpoints" / "process_manifest.json"
 
 
+def _atomic_write_json(path: Path, obj) -> None:
+    """F18 — write JSON atomically (temp file + os.replace). process_manifest.json
+    is the ENTIRE attestation chain: every phase_attestations row, the render
+    record, and every owner-skip event. A plain write_text truncates the file to
+    zero BEFORE writing; a crash (power loss, OOM kill, SIGKILL mid-write) at that
+    instant destroys the whole chain and every downstream precondition gate
+    (build_deck.check_phase_preconditions, canonical_render_guard, FIX-E2E
+    attest-existing) loses its proof. os.replace is atomic on POSIX and Windows:
+    readers see either the old complete file or the new complete one, never a
+    truncated one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".tmp-{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps(obj, indent=2))
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _load_process_manifest(run_dir: Path) -> dict:
     p = _process_manifest_path(run_dir)
     if not p.exists():
@@ -398,7 +420,7 @@ def _write_render_record_from_existing(run_dir: Path, out_path: Path) -> str:
         "output_pptx": str(out_path), "slides": _per_slide,
         "artifact_sha": _record_sha, "attested_existing": True,
     })
-    _manifest_p.write_text(_json.dumps(_obj, indent=2))
+    _atomic_write_json(_manifest_p, _obj)
     return _record_sha
 
 
@@ -450,7 +472,7 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         "substance_verified": substance_verified,
         "attested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
-    p.write_text(json.dumps(obj, indent=2))
+    _atomic_write_json(p, obj)
 
 
 # ---------------------------------------------------------------------------
@@ -986,11 +1008,10 @@ def declare_plan(run_dir: Path, phases: list) -> None:
 
     # Record step_declaration_msg_id in process_manifest.json too.
     pm_path = _process_manifest_path(run_dir)
-    pm_path.parent.mkdir(parents=True, exist_ok=True)
     obj = _load_process_manifest(run_dir)
     if "step_declaration_msg_id" not in obj:
         obj["step_declaration_msg_id"] = msg_id
-        pm_path.write_text(json.dumps(obj, indent=2))
+        _atomic_write_json(pm_path, obj)
 
     print(f"=== DECLARE-PLAN: step contract written ({len(steps)} steps enforced, "
           f"{len(client_visible)} told to the client, msg_id={msg_id!r}) ===",
@@ -1258,24 +1279,34 @@ def load_skip_approvals(run_dir: Path) -> dict:
             )
             continue
 
-        # (2) Reject placeholder/timezone-free timestamps.
-        if ts:
-            _midnight = ts.endswith("T00:00:00") or "T00:00:00+" in ts or "T00:00:00Z" in ts
-            if _midnight:
-                print(
-                    f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
-                    f"timestamp {ts!r} is a midnight placeholder — likely fabricated.",
-                    file=sys.stderr,
-                )
-                continue
-            _has_tz = ts.endswith("Z") or bool(re.search(r"[+-]\d{2}:\d{2}$", ts))
-            if not _has_tz:
-                print(
-                    f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
-                    f"timestamp {ts!r} has no timezone — not a verifiable timestamp.",
-                    file=sys.stderr,
-                )
-                continue
+        # (2) Reject placeholder/timezone-free timestamps. F19: an EMPTY timestamp
+        # used to skip this whole branch (`if ts:`) and the record passed — the
+        # exact hole the validation was written to close. Absence of a timestamp
+        # is as unverifiable as a placeholder one; reject it the same way.
+        if not ts:
+            print(
+                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                f"timestamp is EMPTY — a skip with no timestamp is not a "
+                "verifiable owner decision.",
+                file=sys.stderr,
+            )
+            continue
+        _midnight = ts.endswith("T00:00:00") or "T00:00:00+" in ts or "T00:00:00Z" in ts
+        if _midnight:
+            print(
+                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                f"timestamp {ts!r} is a midnight placeholder — likely fabricated.",
+                file=sys.stderr,
+            )
+            continue
+        _has_tz = ts.endswith("Z") or bool(re.search(r"[+-]\d{2}:\d{2}$", ts))
+        if not _has_tz:
+            print(
+                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                f"timestamp {ts!r} has no timezone — not a verifiable timestamp.",
+                file=sys.stderr,
+            )
+            continue
 
         # (3) AUTHENTICITY / REQUIRED MESSAGE ID (FIX-1 — AF-FORGED-APPROVAL).
         # EVERY skip record MUST carry a non-empty owner_msg_id — the FORGER's exact
@@ -2081,8 +2112,9 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
     in-process), the loop writes the work order and returns EXIT_QC_ROUTEBACK WITHOUT
     attesting — the orchestrator re-authors only the failing slides and re-runs this phase;
     the cap is still enforced via the on-disk routeback count. After the cap, the only exit
-    is a logged owner override (build_deck._owner_skip_approved); otherwise the phase is
-    refused so the failing work physically cannot advance.
+    is a logged owner override routed through load_skip_approvals — which REFUSES QC
+    phases outright (AF-QC-SKIP: structurally unskippable), so in practice no override
+    exists; otherwise the phase is refused so the failing work physically cannot advance.
 
     FIX 4/E: computes a real artifact sha for the QC report before attesting (sha must
     be non-empty). FIX 5d: records substance_verified=True on qc_pass_measurer attest."""
@@ -2123,7 +2155,24 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
             return 0
 
         if consumed >= max_attempts:
-            rec = bd._owner_skip_approved(run_dir, af_code)
+            # F17 — route the cap-exhaustion override through the SAME
+            # load_skip_approvals contract every other gate obeys. That loader
+            # REFUSES records whose phase_id is in bd.UNSKIPPABLE_QC_PHASES
+            # (AF-QC-SKIP: no owner record can waive a QC phase), so a self-written
+            # owner_skip_approval row for AF-COPY-QC / AF-PROMPT-QC can no longer
+            # waive terminal QC failure here — the direct bd._owner_skip_approved
+            # consult this loop used before read ONLY the agent-writable
+            # process_manifest.json owner_skip_approval input and never applied the
+            # unskippable-QC refusal. ForgedApprovalError (a forged/unresolvable
+            # owner_msg_id) also fails closed: caught, disclosed, treated as NO
+            # override.
+            try:
+                _skip_approvals = load_skip_approvals(run_dir)
+            except ForgedApprovalError as _fae:
+                print(f"[{phase}] cap-exhaustion override DENIED — "
+                      f"{_fae}", file=sys.stderr, flush=True)
+                _skip_approvals = {}
+            rec = _skip_approvals.get(phase_id)
             if rec:
                 sha = _compute_artifact_sha(run_dir, _produces_art)
                 attest_phase(run_dir, phase_id, owning_role, "qc_owner_override",
@@ -2133,8 +2182,9 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
                 return 0
             print("\n" + "!" * 78, file=sys.stderr)
             print(f"FATAL {af_code}: re-author attempts exhausted ({consumed}/{max_attempts}) "
-                  f"and no logged owner override. Refusing to advance — the failing "
-                  f"{downstream}.", file=sys.stderr)
+                  f"and no logged owner override. QC phases are structurally unskippable "
+                  f"(AF-QC-SKIP): no owner record waives a QC phase. Refusing to advance "
+                  f"— the failing {downstream}.", file=sys.stderr)
             print("!" * 78 + "\n", file=sys.stderr)
             return EXIT_QC_EXHAUSTED
 
@@ -2672,6 +2722,55 @@ def main():
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
 
+            # F02: MECHANICAL QC ENFORCEMENT GATE (qc_check.py) — the 48 manifest
+            # AF codes declared enforced_by:"qc_check" previously had NO runtime
+            # caller: qc_check.py existed but nothing invoked it, so those codes
+            # were declared-but-unenforced. Run it here at the delivery boundary,
+            # fail-closed, alongside the other pre-delivery gates. Exit 1 = any
+            # mechanical violation or false-negative cross-check hit; exit 2 =
+            # tooling error. Both block delivery.
+            try:
+                qc_check_path = HERE / "qc_check.py"
+                if not qc_check_path.exists():
+                    print(
+                        "FATAL PRE-DELIVERY: AF-QC-CHECK — qc_check.py not found at "
+                        f"{qc_check_path}; the 48 mechanically-enforced QC codes cannot "
+                        "be proven clean and delivery is blocked (fail-closed).",
+                        file=sys.stderr,
+                    )
+                    sys.exit(EXIT_GUARD_BLOCK)
+                qcc_proc = subprocess.run(
+                    [sys.executable, str(qc_check_path), "--run-dir", str(run_dir)],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if qcc_proc.returncode != 0:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print("FATAL PRE-DELIVERY: AF-QC-CHECK — qc_check found violations:",
+                          file=sys.stderr)
+                    print((qcc_proc.stdout + qcc_proc.stderr).strip(), file=sys.stderr)
+                    print("The ONLY bypass is a logged owner_skip_approval token "
+                          "(gate=AF-QC-CHECK). An agent may NOT self-approve.", file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                print("=== QC-CHECK GATE: PASS — zero mechanical QC violations "
+                      "(48 enforced_by=qc_check codes clean) ===", flush=True)
+            except SystemExit:
+                raise
+            except subprocess.TimeoutExpired:
+                print(
+                    "FATAL PRE-DELIVERY: AF-QC-CHECK — qc_check.py timed out (>300s); "
+                    "delivery is blocked (fail-closed).",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_GUARD_BLOCK)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"FATAL PRE-DELIVERY: AF-QC-CHECK — qc_check raised {exc!r}; "
+                    "delivery is blocked (fail-closed).",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_GUARD_BLOCK)
+
             # FIX 2: prove-deck.py — end-of-process no-skip proof (AF-PROCESS-INTEGRITY).
             # Walks every declared step and asserts ordered / validated / reported.
             # Exit 9 from prove-deck is a HARD block on delivery attestation.
@@ -2942,7 +3041,17 @@ def _dispatch_generic_executor(run_dir: Path, executor: dict, phase_id: str) -> 
                 proc = run_with_cleanup(argv, cwd=str(HERE.parent),
                                         timeout=EXECUTOR_TIMEOUT_SECONDS, capture=False)
             else:
-                proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+                # F06: reaper unavailable (process_reaper.py missing). The fallback
+                # used to be a bare subprocess.run with NO timeout — the exact
+                # silent infinite-hang path D21 closed. Keep a hard cap even
+                # without the reaper, and say loudly WHY the weaker path runs.
+                print("WARNING: process_reaper.run_with_cleanup UNAVAILABLE — "
+                      f"executor{stage} falls back to plain subprocess with the same "
+                      f"{EXECUTOR_TIMEOUT_SECONDS}s hard cap but NO process-group "
+                      "cleanup on timeout. Restore process_reaper.py beside "
+                      "run_signature_deck.py.", file=sys.stderr, flush=True)
+                proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent),
+                                      timeout=EXECUTOR_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired as exc:
             print(
                 f"FATAL: phase {phase_id!r} executor{stage} exceeded the "
@@ -3005,7 +3114,14 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
             proc = run_with_cleanup(cmd, timeout=RENDER_DISPATCH_TIMEOUT_SECONDS,
                                     capture=False)
         else:
-            proc = subprocess.run(cmd)
+            # F06: reaper unavailable — loud warning + hard cap (was: unbounded
+            # bare subprocess.run, the silent infinite-hang path).
+            print("WARNING: process_reaper.run_with_cleanup UNAVAILABLE — render "
+                  f"dispatch falls back to plain subprocess with the same "
+                  f"{RENDER_DISPATCH_TIMEOUT_SECONDS}s hard cap but NO process-group "
+                  "cleanup on timeout. Restore process_reaper.py beside "
+                  "run_signature_deck.py.", file=sys.stderr, flush=True)
+            proc = subprocess.run(cmd, timeout=RENDER_DISPATCH_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         print("FATAL PRE-DELIVERY: AF-RENDER-TIMEOUT — build_deck.py render exceeded "
               f"{RENDER_DISPATCH_TIMEOUT_SECONDS}s and was killed (process group "
@@ -3043,7 +3159,14 @@ def _dispatch_notes_sync(run_dir: Path, slides_path: Path, out_path: Path,
             proc = run_with_cleanup(cmd, timeout=EXECUTOR_TIMEOUT_SECONDS,
                                     capture=False)
         else:
-            proc = subprocess.run(cmd)
+            # F06: reaper unavailable — loud warning + hard cap (was: unbounded
+            # bare subprocess.run, the silent infinite-hang path).
+            print("WARNING: process_reaper.run_with_cleanup UNAVAILABLE — notes-sync "
+                  f"falls back to plain subprocess with the same "
+                  f"{EXECUTOR_TIMEOUT_SECONDS}s hard cap but NO process-group "
+                  "cleanup on timeout. Restore process_reaper.py beside "
+                  "run_signature_deck.py.", file=sys.stderr, flush=True)
+            proc = subprocess.run(cmd, timeout=EXECUTOR_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         print("FATAL PRE-DELIVERY: AF-NOTES-SYNC-TIMEOUT — notes-sync exceeded "
               f"{EXECUTOR_TIMEOUT_SECONDS}s and was killed (process group cleaned up).",

@@ -63,6 +63,22 @@ for p in prove_sp_routing prove_sp_intake prove_sp_structure prove_sp_no_pitch i
     fi
 done
 
+# 1a) SACRED-STRUCTURE PIN (F05) — the golden sha256 set in
+#     scripts/sacred-structure-hashes.json is the U98/D1 "structure preserved"
+#     half of blend voice governance. Before this check, NOTHING in verify.sh or
+#     --prove ever READ that pin: it was generated once and enforced only by a
+#     unit test that CI may not run on every box. A silent edit to MASTERDOC.md,
+#     a frame template, sp_structure.json, or sp-8-questions.json weakened every
+#     prover downstream without any gate noticing. This runs the pin comparison
+#     fail-closed: missing pin, missing file, or ANY hash drift = FAIL.
+if [ -f "$SP_SCRIPTS/blend_voice_governance.py" ]; then
+    run "sacred-structure pin vs scripts/sacred-structure-hashes.json" \
+        "$PY" "$SP_SCRIPTS/blend_voice_governance.py" --prove-pin
+else
+    printf '  [FAIL] blend_voice_governance.py missing at %s — sacred-structure pin cannot be checked\n' "$SP_SCRIPTS"
+    fails=$((fails + 1))
+fi
+
 # 1b) ENGINE WIRE-PRESENCE — Skill 51 has NO build path of its own; its gates only
 #     bite when the Skill-23 presentations engine (build_deck.py) DEFINES + REGISTERS
 #     the four _chk_sp_* wrappers (the claim gate + the three sacred gates). When the

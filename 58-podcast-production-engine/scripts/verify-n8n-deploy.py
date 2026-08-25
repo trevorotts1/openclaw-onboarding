@@ -222,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     api_url = os.environ.get("N8N_API_URL", "").strip()
     api_key = os.environ.get("N8N_API_KEY", "").strip()
 
+    # Bare-host URLs silently 404 on every n8n endpoint; auto-append the API root.
+    if api_url and not api_url.rstrip("/").endswith("/api/v1"):
+        api_url = api_url.rstrip("/") + "/api/v1"
+
     if not api_url or not api_key:
         print(
             f"N8N_API_URL={_redacted(api_url)} N8N_API_KEY={_redacted(api_key)} "
@@ -249,10 +253,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Live instance has {len(live_workflows)} workflow(s)\n")
 
+    # Deliberately un-imported fallbacks (see config/n8n/README.md): their absence
+    # from the live instance is the intended state, not drift.
+    DOCUMENTED_UNUSED = {"podbean-broker.workflow.json"}
+
     exit_code = 0
 
     for wf_file in workflow_files:
         label = wf_file.name
+
+        if label in DOCUMENTED_UNUSED:
+            print(f"  [SKIP] {label} -- documented-unimported fallback "
+                  f"(config/n8n/README.md); absence from live is expected")
+            continue
 
         exported = _load_workflow_file(wf_file)
         if exported is None:

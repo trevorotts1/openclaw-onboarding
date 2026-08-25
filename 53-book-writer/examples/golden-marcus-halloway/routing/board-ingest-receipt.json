@@ -1,0 +1,9 @@
+{
+  "attempted_at": "2026-08-25T02:00:13Z",
+  "mc_url_set": false,
+  "ok": false,
+  "task_id": null,
+  "department_slug": "marketing",
+  "source": "book-writer",
+  "reason": "COMMAND_CENTER_URL/MISSION_CONTROL_URL unset"
+}

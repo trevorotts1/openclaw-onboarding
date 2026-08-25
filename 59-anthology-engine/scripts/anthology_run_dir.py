@@ -24,6 +24,13 @@ from pathlib import Path
 _SKILL_59_ROOT = Path(__file__).resolve().parent.parent
 
 
+def safe_run_key(key):
+    """The ONE run-key sanitizer: unsafe chars become '_'. Shared by every
+    consumer of a per-participant or per-anthology run directory."""
+    return "".join(c if (c.isalnum() or c in "-_.") else "_"
+                   for c in (key or "unknown"))
+
+
 def resolve_participant_run_dir(participant_id, base=None):
     """Resolve (and create) the single durable per-participant run directory
     shared by EVERY anthology authoring stage.
@@ -41,7 +48,7 @@ def resolve_participant_run_dir(participant_id, base=None):
     """
     if base is None:
         base = _SKILL_59_ROOT
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (participant_id or "unknown"))
+    safe = safe_run_key(participant_id)
     # ONE canonical directory per participant, shared by EVERY authoring stage.
     # It used to be stage-scoped (state/runs/<STAGE>/<safe>), which meant S2 handed
     # 54-anthology-writer/run_anthology.py an EMPTY directory: the orchestrator walks

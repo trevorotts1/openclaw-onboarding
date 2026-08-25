@@ -250,11 +250,23 @@ def load_owner_skip_approvals(run_dir: Path) -> dict:
 def attested_phase_ids(run_dir: Path) -> set:
     """Phase ids proven by an attestation in process_manifest.json. Mirrors the
     runner: both 'phase_attestations' records AND build_deck.py's own 'render'
-    phase record (which counts as P4-RENDER) are honored."""
+    phase record (which counts as P4-RENDER) are honored.
+
+    F04: an attestation row counts ONLY when it is a COMPLETED,
+    substance-verified one (status == 'done' AND substance_verified is True).
+    Bare id-only rows — the shape a hand-edited manifest produces — do not
+    satisfy the delivery boundary chain. The runner's attest_phase() always
+    writes both fields; only forged/incomplete rows drop out here."""
     obj = _load_process_manifest(run_dir)
     ids = set()
     for att in obj.get("phase_attestations", []) or []:
-        if isinstance(att, dict) and att.get("phase_id"):
+        if not isinstance(att, dict):
+            continue
+        if str(att.get("status", "")).strip().lower() != "done":
+            continue
+        if att.get("substance_verified") is not True:
+            continue
+        if att.get("phase_id"):
             ids.add(att["phase_id"])
     for ph in obj.get("phases", []) or []:
         if isinstance(ph, dict) and ph.get("phase") == "render":

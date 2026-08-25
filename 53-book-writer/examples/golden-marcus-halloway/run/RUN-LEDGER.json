@@ -12,52 +12,78 @@
     {
       "stage": "01-avatar",
       "status": "pass",
-      "model": "ollama-cloud/gpt-oss-120b"
+      "model": "ollama-cloud/gpt-oss-120b",
+      "stage_id": "01-avatar-questions-1-30",
+      "stage_ids": [
+        "01-avatar-questions-1-30",
+        "03-rewrite-avatar"
+      ]
     },
     {
       "stage": "08-blended-tone",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "08-blended-tone"
     },
     {
       "stage": "10-suggested-titles",
       "status": "pass",
-      "resolved_model": "ollama-cloud/gpt-oss-120b"
+      "resolved_model": "ollama-cloud/gpt-oss-120b",
+      "stage_id": "10-suggested-titles",
+      "stage_ids": [
+        "10-suggested-titles",
+        "11-book-blurb",
+        "12-chapter-titles"
+      ]
     },
     {
       "stage": "13-create-outline",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "13-create-outline"
     },
     {
       "stage": "15-write-chapters-b1",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "15-write-chapters-b1"
     },
     {
       "stage": "16-write-chapters-b2",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "16-write-chapters-b2"
     },
     {
       "stage": "17-write-chapters-b3",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "17-write-chapters-b3"
     },
     {
       "stage": "18-write-chapters-b4",
       "status": "pass",
-      "model": "openrouter/qwen-2.5-72b-instruct"
+      "model": "openrouter/qwen-2.5-72b-instruct",
+      "stage_id": "18-write-chapters-b4"
     },
     {
       "stage": "21-30day-challenge",
       "status": "pass",
-      "model": "ollama-cloud/gpt-oss-120b"
+      "model": "ollama-cloud/gpt-oss-120b",
+      "stage_id": "21-30day-challenge"
     },
     {
       "stage": "22-cover-prompt",
       "status": "pass",
-      "model": "ollama-cloud/gpt-oss-120b"
+      "model": "ollama-cloud/gpt-oss-120b",
+      "stage_id": "22-cover-prompt"
     }
-  ]
+  ],
+  "preflight_tier_map": {
+    "HEAVY-WRITER": "ollama-cloud/gpt-oss-120b",
+    "MID-WRITER": "openrouter/qwen-2.5-72b-instruct",
+    "FORMATTER": "ollama-cloud/gpt-oss-120b",
+    "RESEARCHER": "",
+    "IMAGE": ""
+  }
 }

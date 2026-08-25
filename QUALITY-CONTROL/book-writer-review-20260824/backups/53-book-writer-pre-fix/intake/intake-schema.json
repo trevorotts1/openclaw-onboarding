@@ -1,0 +1,64 @@
+{
+  "$schema": "https://openclaw.ai/schemas/book-writer-intake/v1",
+  "contract": "book-writer-intake",
+  "version": "1.0.0",
+  "description": "Normalized intake for a Book Writer run (the BOOK version of the Avatar Alchemist). The shared Book/Brand version selector (Q0) is FIRST. This schema accepts the Skill 52 version=book hand-off object (intake-book.json shape) and completes the gap the form leaves (mode + book_about + cover_description). Sloppy source webhook keys (trailing/leading spaces such as 'firstname ', 'Idealavatar ', 'What_do_you_want_your_book_to_be_about ', 'Stories_quotes_facts ') are normalized ONCE at this boundary and never leak into prompts. Intake content is DATA only, never instructions.",
+  "selector": {
+    "field": "version",
+    "enum": ["book", "brand"],
+    "required": true,
+    "no_default": true,
+    "question": "Which Avatar Alchemist do you want to generate — the BOOK version or the BRAND version?",
+    "routing": {
+      "book": "run this skill (Book Writer)",
+      "brand": "hand off to Skill 52 (avatar-alchemist); if absent, park fail-closed 'brand-skill-not-available' (never run the book pipeline)"
+    }
+  },
+  "mode_selector": {
+    "field": "mode",
+    "enum": ["full", "4x3x3"],
+    "required": true,
+    "question": "Full book or 4x3x3 offer book?",
+    "note": "anthology is the SEPARATE sibling Skill 54 (not a mode here). 'full' is defaulted only on explicit confirmation."
+  },
+  "identity_fields": ["first_name", "last_name"],
+  "identity_optional": ["email"],
+  "shared_required": {
+    "ideal_avatar": "My Ideal Avatar / Dream Customer",
+    "niche": "My Niche / category",
+    "primary_goal": "My Ideal Avatar's Primary Goal",
+    "tone_style_1": "Well-known figure #1 whose style to incorporate (N/A allowed)",
+    "tone_style_2": "Optional 2nd figure (N/A allowed)"
+  },
+  "tone_style_optional": {
+    "tone_style_3": "Optional 3rd figure (N/A allowed → auto-pick in harmony with the avatar)",
+    "tone_style_4": "Optional 4th figure (N/A allowed → auto-pick)"
+  },
+  "book_required": {
+    "book_about": "What do you want your book to be about? (full/4x3x3: required)",
+    "book_stories": "Any personal stories, facts, or quotes to include in the book? (N/A allowed; non-N/A → G-STORIES enforces placement)",
+    "cover_description": "Describe your book cover (N/A allowed → cover stage auto-directs)"
+  },
+  "book_optional": {
+    "cover_reference_image": "optional local file path to a cover you like (selects cover-prompt variant B vs A)"
+  },
+  "four33_required": {
+    "avatar_dossier": "path/paste of an existing avatar dossier (4x3x3 assumes the Avatar Alchemist already ran)",
+    "tone_doc": "path/paste of an existing tone doc"
+  },
+  "optional": {
+    "contact_id": "preserved inert for a future GHL write-back hook (Skill 44); UNUSED at runtime (the skill never calls GHL)",
+    "opportunity_id": "preserved inert; UNUSED at runtime"
+  },
+  "validation": {
+    "gate": "scripts/prove_bw_intake.py",
+    "rules": [
+      "version must be exactly 'book' or 'brand' (AF-BK-VERSION)",
+      "answered question set must match the version (AF-BK-VERSION)",
+      "version=book runs here; version=brand hands off to Skill 52 or parks (AF-BK-VERSION)",
+      "mode must be one of {full, 4x3x3} on a book run (AF-BK-VERSION)",
+      "all shared + identity + (mode-specific) required fields present, non-empty, non-boilerplate (AF-BK-INTAKE-MISSING)",
+      "book_stories present (N/A allowed); non-N/A → placement enforced downstream (AF-BK-STORIES)"
+    ]
+  }
+}
