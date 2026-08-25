@@ -39,6 +39,13 @@ elif [ -x "$HOME/.local/bin/openclaw" ]; then
   _OC_BIN="$HOME/.local/bin/openclaw"
 fi
 [ -n "$_OC_BIN" ] || { echo "65-rescue-receiver: openclaw CLI not found" >&2; exit 1; }
+# The CLI is a node script with a `#!/usr/bin/env node` shebang. Under the
+# updater's stripped PATH, `env` cannot resolve node even when the CLI path
+# is absolute — so prepend the CLI's own directory (where the toolchain's
+# node symlink lives) to PATH before invoking it.
+case "$_OC_BIN" in
+  */*) _BIN_DIR="${_OC_BIN%/*}"; [ -d "$_BIN_DIR" ] && PATH="$_BIN_DIR:$PATH";;
+esac
 # Legacy cleanup MUST precede the canonical early-exit below, or boxes wired
 # under the old name accumulate a second poller every time this script runs
 # (both crons firing = double delivery).

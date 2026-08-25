@@ -1,3 +1,13 @@
+## [v22.0.74]  -  2026-08-25  -  fix(65-rescue-receiver): wire.sh cron add failed under updater's stripped PATH (`env: node: No such file or directory`)
+
+The openclaw CLI has a `#!/usr/bin/env node` shebang. The updater invokes
+installers with a stripped environment (no /opt/homebrew/bin), and wire.sh's
+absolute-path fallback found the CLI but `env` still could not resolve node —
+so `cron add` failed, wire.sh exited 1, and the .wired sentinel was withheld.
+Fix: after resolving _OC_BIN, prepend its own directory to PATH so node
+resolves. Regression-proven live on rescue-barret-matthews: cron removed,
+fixed wire.sh run under `env -i PATH=/usr/bin:/bin` re-registered rescue-rr-box-poll rc=0.
+
 ## [v22.0.73]  -  2026-08-25  -  fix(qc): GNU stat chmod assertion false-failed on Linux VPS boxes (06-ghl-install-pages bump; see v6.x per-skill bumps for the other five)
 
 On Linux, GNU `stat -f %A` (BSD syntax) prints a filesystem report to stdout with
