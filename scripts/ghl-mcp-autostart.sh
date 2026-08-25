@@ -1629,10 +1629,28 @@ EOF
       launchctl load "$PPLIST" >/dev/null 2>&1 || true
     log "periodic liveness probe installed (com.clawd.ghl-mcp-probe, every 900s)"
   else
-    command -v crontab >/dev/null 2>&1 || return 0
-    local LINE="*/15 * * * * GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1 ${CRON_TAG_PROBE}"
-    upsert_cron_line "$CRON_TAG_PROBE" "$LINE" \
-      && log "periodic liveness probe cron installed/refreshed (*/15)"
+    if command -v crontab >/dev/null 2>&1; then
+      local LINE="*/15 * * * * GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1 ${CRON_TAG_PROBE}"
+      upsert_cron_line "$CRON_TAG_PROBE" "$LINE" \
+        && log "periodic liveness probe cron installed/refreshed (*/15)" \
+        && return 0
+    fi
+    # HOME-layout containers may have no crontab at all (oc-janet-pinkney).
+    # Fall back to the openclaw cron STORE — the gateway runs it, no OS cron
+    # needed. A silent return here would leave the probe uninstalled and the
+    # crash-only supervisor unwatched.
+    _OC_BIN="$(command -v openclaw || true)"
+    [ -n "$_OC_BIN" ] || { log "no crontab AND no openclaw CLI — periodic probe NOT installed"; return 0; }
+    if "$_OC_BIN" cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
+      log "periodic liveness probe already registered in the openclaw cron store"
+      return 0
+    fi
+    if "$_OC_BIN" cron add --name "ghl-mcp-probe" --cron "*/15 * * * *" \
+         --command "GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1" >&2; then
+      log "periodic liveness probe registered in the openclaw cron store (*/15)"
+    else
+      log "openclaw cron add FAILED for ghl-mcp-probe — periodic probe NOT installed"
+    fi
   fi
 }
 
