@@ -65,15 +65,15 @@ fi
 # only the missing ones — a re-run is then a true no-op (0 rows).
 EXISTING=$(curl -sS -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$HOST/api/v1/data-tables/$TABLE_ID/rows" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); rows=d.get("data",[]); print("\n".join(sorted(set(r.get("box_slug","") for r in rows if r.get("box_slug")))))' 2>/dev/null || true)
-python3 - "$SLUGS_FILE" "$EXISTING" <<'DEDUP'
+python3 - "$SLUGS_FILE" "$EXISTING" > /tmp/rr-seed-missing.txt <<'DEDUP'
 import sys
 want = [l.strip() for l in open(sys.argv[1]) if l.strip()]
 have = set(sys.argv[2].split()) if len(sys.argv) > 2 and sys.argv[2] else set()
 missing = [s for s in want if s not in have]
 print("\n".join(missing))
 DEDUP
-python3 - "$SLUGS_FILE" "$EXISTING" > /tmp/rr-seed-missing.txt 2>/dev/null || true
-mapfile -t SLUGS < /tmp/rr-seed-missing.txt
+SLUGS=()
+while IFS= read -r _line; do [ -n "$_line" ] && SLUGS+=("$_line"); done < /tmp/rr-seed-missing.txt
 N=${#SLUGS[@]}
 echo "seed-rr-agent-map: $N slugs missing (of $(echo "$EXISTING" | grep -c .) existing) — dry-run=$DRY_RUN"
 if [ "$N" -eq 0 ]; then
@@ -128,13 +128,13 @@ NOW=$(python3 -c 'import datetime;print(datetime.datetime.now(datetime.timezone.
   FIRST=1
   for s in "${SLUGS[@]}"; do
     [ -n "$s" ] || continue
-    AGENT=$(resolve_default_agent "$s")
+    AGENT=$(resolve_default_agent "$s") || AGENT=""
     if [ -z "$AGENT" ]; then
-      echo "seed-skip $s cannot-resolve-default-agent"
+      echo "seed-skip $s cannot-resolve-default-agent" >&2
       SKIPPED=$((SKIPPED+1))
       continue
     fi
-    echo "seed-map $s agent=$AGENT"
+    echo "seed-map $s agent=$AGENT" >&2
     printf '%s\t%s\n' "$s" "$AGENT" >> "$RESOLVED_FILE"
     [ "$FIRST" -eq 1 ] || echo -n ','
     FIRST=0
