@@ -9,13 +9,16 @@ creds because they were never there.
 
 ## Deployment state (live)
 
-The shipped 54-node asset (`anthology-drive-broker.workflow.json`) is deployed and
-**active** on the n8n instance at `https://main.blackceoautomations.com`. Only one
-workflow on the `anthology-drive` webhook path is active:
+**2026-08-25:** a live-vs-asset drift audit found the U25 fail-closed fixes (422 email
+gate, 502 share-fail, Share Confirmed? gate) present in the shipped asset but NOT on the
+live instance — live was still running the older 53-node code with 200-with-warning
+share-fail semantics. The hardened 54-node asset was re-deployed over workflow
+`nbLpXv8hdizilHHt` via the API full-update path and is now **active**. Only one workflow
+on the `anthology-drive` webhook path is active:
 
 | Workflow ID | Name | Active | Nodes | Webhook |
 |---|---|---|---|---|
-| `nbLpXv8hdizilHHt` | Anthology Drive Broker | **active** | 53 | `anthology-drive` |
+| `nbLpXv8hdizilHHt` | Anthology Drive Broker | **active** | 54 | `anthology-drive` |
 | `F2X3SxZVhWRDxHOV` | Anthology Drive Broker (old 20-node) | inactive | 20 | `anthology-drive` |
 | `S8E6c41WfB8fAGiL` | Anthology Drive Broker (GK-02, 52-node) | inactive | 52 | `anthology-drive` |
 
@@ -24,6 +27,10 @@ Retry-with-Notification node on the producer editor share (the 53-node shipped a
 it; U25 later added the Share Confirmed? gate, making the asset 54 nodes). The old 20-node
 broker (`F2X3SxZVhWRDxHOV`) is a pre-tree-building stub, also inactive.
 The shipped 54-node asset is the sole active broker.
+
+**Drift rule:** after ANY edit to the shipped asset, verify live parity by fetching
+`GET /api/v1/workflows/nbLpXv8hdizilHHt` and diffing node count + `Authorize & Dispatch`
+jsCode against the file. The README's "deployed" claim must never outrun that check.
 
 ## Import / re-import (if re-deploying from the shipped asset)
 
