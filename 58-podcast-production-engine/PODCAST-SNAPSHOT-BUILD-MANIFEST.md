@@ -26,8 +26,8 @@ Create each field with `name = <create-name>`; GHL derives `fieldKey = contact.<
 | 4 | `podcast_interview_smiq` | VERBATIM | LARGE_TEXT | folder `Podcast Survey` | SMIQ, mandatory transparency beat; REQUIRED. |
 | 5 | `smiq_answers` | VERBATIM | LARGE_TEXT | folder `Podcast Survey` | SMIQ supporting (optional). |
 | 6 | `smiq_history` | VERBATIM | LARGE_TEXT | folder `Podcast Survey` | SMIQ supporting (optional). |
-| 7 | `my_client_smiq_answers` | VERBATIM | **TEXT** (live legacy; spec draft wrongly said LARGE_TEXT) | folder `Podcast Survey` | SMIQ supporting (optional). |
-| 8 | `my_client_smiq_history` | VERBATIM | **TEXT** (live legacy; spec draft wrongly said LARGE_TEXT) | folder `Podcast Survey` | SMIQ supporting (optional). |
+| 7 | `my_client_smiq_answers` | VERBATIM | LARGE_TEXT (live-verified 2026-08-24; the §A-era TEXT note described the pre-K.6 build - see SECTION K.5) | folder `Podcast Survey` | SMIQ supporting (optional). |
+| 8 | `my_client_smiq_history` | VERBATIM | LARGE_TEXT (live-verified 2026-08-24; the §A-era TEXT note described the pre-K.6 build - see SECTION K.5) | folder `Podcast Survey` | SMIQ supporting (optional). |
 | 9 | `podcast_survey__additional_info` | VERBATIM - DOUBLE underscore | LARGE_TEXT | folder `Podcast Survey` | Optional extra context. Never normalize to single underscore. |
 | 10 | `date_for_release` | VERBATIM | DATE | folder `Personal Podcast` | Future date = scheduled Podbean publish. |
 | 11 | `podcast_survey__quick_visual_description` | **RECOVERED-LEGACY - DOUBLE underscore** (spec draft wrongly used single underscore `podcast_survey_quick_visual_description`) | LARGE_TEXT | folder `Podcast Survey` | Cover-image description; feeds image gen ONLY, never spoken; REQUIRED. NOT in engine READ_KEYS - resolved via webhook, so legacy key is free-choice and adopted. |
@@ -246,7 +246,7 @@ Radio -> `contact.select_your_presentation_style_personal_podcast`. Option VALUE
 2. **Visual-description key:** `podcast_survey__quick_visual_description` (DOUBLE underscore) - the real legacy key; spec draft's single-underscore was wrong.
 3. **Tags:** keep `Podcast Completed Survey Style` / `podcast episode is ready` (space-separated), NOT the legacy hyphenated strings. WHY: `enroll.py WF_TAGS` + `has_tag()` case-insensitive-but-hyphen-sensitive comparison; hyphenated legacy tags would silently fail verification.
 4. **Personal-survey Q1 field (THE flagged open question, old review §3/§7):** RESOLVED to the DEDICATED field `select_your_presentation_style_personal_podcast`. WHY: the box engine's `constants.py READ_KEYS` includes it and `questionnaires/index.json` names it the `personal_variant_field` for style resolution; it keeps the two style selectors cleanly separated; the box mapper reads either field and normalizes both values; the legacy's shared-field branch was a retired-n8n implementation detail, not a box-engine constraint. WF-2 sends `style` from this dedicated field; no IF/ELSE branch needed (box routes).
-5. **dataTypes:** adopt live legacy - `my_client_smiq_answers`/`my_client_smiq_history` = TEXT; all Group 3 write-backs + `book_teaser` = LARGE_TEXT. WHY: engine asserts KEYS not types; live values are proven.
+5. **dataTypes:** adopt live legacy - `my_client_smiq_answers`/`my_client_smiq_history` = TEXT at the §A read (live OLD build); after the K.6 resolutions applied live they are LARGE_TEXT (re-verified 2026-08-24). All Group 3 write-backs + `book_teaser` = LARGE_TEXT. WHY: engine asserts KEYS not types; live values are proven.
 6. **Custom value #5 secret transport:** DEFAULT custom-value form (portable snapshot); per-client operator override to paste-into-workflow-header allowed. Recorded, not a blocker.
 
 ## SECTION H - DELIBERATELY EXCLUDED FROM THE SNAPSHOT (conscious scope, old review §4/§5/§7)

@@ -30,7 +30,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Whole days since an ISO timestamp (UTC), floored at 0. */
 export function daysSince(iso: string | null): number | null {
   if (!iso) return null;
-  const then = Date.parse(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+  const then = Date.parse(/Z|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z');
   if (Number.isNaN(then)) return null;
   return Math.max(0, Math.floor((Date.now() - then) / MS_PER_DAY));
 }

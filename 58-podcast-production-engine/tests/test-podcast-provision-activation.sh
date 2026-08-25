@@ -9,15 +9,21 @@
 # CLOSED: presence (a missing helper aborts, naming the missing piece), run rc
 # (nonzero aborts), and a --check read-back (must report ACTIVE). Operator
 # override --skip-activation records activation=skipped. Revocation tears the
-# sequence down symmetrically (hook unregister + scheduler stop; the department
-# install is box-level shared infrastructure and is NOT removed).
+# sequence down symmetrically (hook unregister; the department install is
+# box-level shared infrastructure and is NOT removed).
+#
+# NO-DAEMON DOCTRINE: there is NO scheduler installer and NO scheduler
+# activation step (the department agent advances TaskFlows in its own turn via
+# podcast_step_driver.py). The tests below assert that ABSENCE structurally,
+# and keep asserting that revoke still detects legacy scheduler residue in its
+# 9d box-clean read-back.
 #
 # The Workflow 1 activation helpers (register-podcast-hook.sh,
-# install-podcast-department.sh, install-podcast-scheduler.sh) land in the same
-# merge batch, so this test exercises the STEP 8 gate machinery against STUB
-# helpers that honor the documented contract (idempotent install; "--check"
-# first arg returns 0 iff the piece is active), plus structural checks on both
-# scripts. It does not require a Cloudflare token or network access.
+# install-podcast-department.sh) land in the same merge batch, so this test
+# exercises the STEP 8 gate machinery against STUB helpers that honor the
+# documented contract (idempotent install; "--check" first arg returns 0 iff
+# the piece is active), plus structural checks on both scripts. It does not
+# require a Cloudflare token or network access.
 #
 # Usage:
 #   bash 58-podcast-production-engine/tests/test-podcast-provision-activation.sh
@@ -31,18 +37,21 @@
 #   6.  activation_step: helper present but NOT executable -> die 22.
 #   7.  activation_step: helper run returns nonzero -> die (stage code).
 #   8.  activation_step: helper installs but --check reports inactive -> die.
-#   9.  activation_step: all three pieces install + verify ACTIVE (exact call
+#   9.  activation_step: both pieces install + verify ACTIVE (exact call
 #       pattern: install once, then --check once, --client-slug <slug> on the
-#       hook and scheduler steps).
+#       hook step).
 #   10. Idempotency: re-running the sequence over already-active pieces passes.
 #   11. DRY-RUN: helpers are never invoked and nothing dies.
-#   12. Stage exit codes 22/23/24 are the department/hook/scheduler codes.
-#   13. revoke: 5b-scheduler-stop present in BOTH the edge-only and full paths.
-#   14. revoke: step 9d verifies scheduler residue (processor-gone proof).
+#   12. Stage exit codes 22/23 are wired; NO scheduler exit code exists
+#       (no-daemon doctrine: code 24 retired with the scheduler).
+#   13. NO-DAEMON: provision has NO scheduler activation step; guard needles
+#       would flag any resurrection.
+#   14. revoke: step 9d verifies legacy scheduler residue (processor-gone proof)
+#       even though no new scheduler can be installed.
 #   15. revoke: unregisters via --remove --client-slug (symmetric to provision).
 #   16. revoke: does NOT remove the shared department install.
-#   17. Audit hook: provision records facts.scheduler_installer; revoke
-#       resolves it from the provision ledger.
+#   17. Advancement fact: provision records advancement=own-turn on success
+#       (no-daemon doctrine made visible in the ledger).
 #   18. Zero em dashes in both scripts (Skill 58 convention).
 #
 # MUTATION PROOF (verified during development): removing the die call from the
@@ -177,66 +186,64 @@ rm -f "$SCRIPT_DIR/register-podcast-hook.sh"
 reset_harness
 make_stub "install-podcast-department.sh" 0 0
 make_stub "register-podcast-hook.sh" 0 0
-make_stub "install-podcast-scheduler.sh" 0 0
 run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
   || fail "healthy department step died: $(die_code) $(die_msg)"
 run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" \
   || fail "healthy hook step died: $(die_code) $(die_msg)"
-run_gate "activation:scheduler" 24 "the scheduler installer" "install-podcast-scheduler.sh" --client-slug "tclient" \
-  || fail "healthy scheduler step died: $(die_code) $(die_msg)"
 EXPECTED_CALLS="install-podcast-department.sh
 install-podcast-department.sh --check
 register-podcast-hook.sh --client-slug tclient
-register-podcast-hook.sh --check --client-slug tclient
-install-podcast-scheduler.sh --client-slug tclient
-install-podcast-scheduler.sh --check --client-slug tclient"
+register-podcast-hook.sh --check --client-slug tclient"
 [ "$(cat "$CALL_LOG")" = "$EXPECTED_CALLS" ] \
   || fail "activation call pattern wrong; got: $(tr '\n' '|' < "$CALL_LOG")"
-pass "full sequence: install once then --check once per piece; hook + scheduler use --client-slug"
+pass "full sequence: install once then --check once per piece; hook uses --client-slug"
 
 # --- 10: idempotency - re-running over already-active pieces passes -----------
 run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
   || fail "re-run over active pieces died: $(die_code) $(die_msg)"
 run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" \
   || fail "re-run over active pieces died: $(die_code) $(die_msg)"
-run_gate "activation:scheduler" 24 "the scheduler installer" "install-podcast-scheduler.sh" --client-slug "tclient" \
-  || fail "re-run over active pieces died: $(die_code) $(die_msg)"
 pass "idempotent: re-running activation over active pieces passes"
 
 # --- 11: dry-run never invokes helpers and never dies --------------------------
 reset_harness
-rm -f "$SCRIPT_DIR/install-podcast-department.sh" "$SCRIPT_DIR/register-podcast-hook.sh" "$SCRIPT_DIR/install-podcast-scheduler.sh"
+rm -f "$SCRIPT_DIR/install-podcast-department.sh" "$SCRIPT_DIR/register-podcast-hook.sh"
 DRY_RUN="1"
-run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
-run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" || rc=$?
-run_gate "activation:scheduler" 24 "the scheduler installer" "install-podcast-scheduler.sh" --client-slug "tclient" || rc=$?
+rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
+rc=0; run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" || rc=$?
 DRY_RUN="0"
 [ -f "$DIE_FILE" ] && fail "dry-run must not die even with missing helpers, got: $(die_code) $(die_msg)"
 [ -s "$CALL_LOG" ] && fail "dry-run must never invoke helpers"
 grep -q 'DRY-RUN' "$STEPS_LOG" || fail "dry-run must log DRY-RUN steps"
 pass "dry-run: helpers never invoked, nothing dies"
 
-# --- 12: stage exit codes 22/23/24 are wired in the STEP 8 block --------------
-for pair in "22:install-podcast-department.sh" "23:register-podcast-hook.sh" "24:install-podcast-scheduler.sh"; do
+# --- 12: stage exit codes 22/23 are wired; NO scheduler code exists ------------
+for pair in "22:install-podcast-department.sh" "23:register-podcast-hook.sh"; do
   code="${pair%%:*}"; helper="${pair#*:}"
   grep -E "activation_step \"activation:[a-z]+\"[[:space:]]+${code}[[:space:]].*${helper}" "$PROVISION" >/dev/null \
     || fail "STEP 8 must call activation_step with exit code $code for $helper"
 done
-pass "stage exit codes wired: 22 department, 23 hook, 24 scheduler"
+grep -E 'activation_step[[:space:]]+"[^"]*"[[:space:]]+24\b' "$PROVISION" >/dev/null \
+  && fail "STEP 8 must NOT wire exit code 24 (no-daemon doctrine retired it)"
+pass "stage exit codes wired: 22 department, 23 hook; code 24 retired"
 
-# --- 13: revoke has 5b-scheduler-stop on BOTH paths ---------------------------
-EDGE_PATH_COUNT="$(sed -n '/EDGE_ONLY" = "1" \]; then/,/^else$/p' "$REVOKE" | grep -c '5b-scheduler-stop' || true)"
-FULL_PATH_COUNT="$(sed -n '/^else$/,/^fi$/p' "$REVOKE" | grep -c '5b-scheduler-stop' || true)"
-[ "${EDGE_PATH_COUNT:-0}" -ge 1 ] || fail "edge-only path must record 5b-scheduler-stop PENDING"
-[ "${FULL_PATH_COUNT:-0}" -ge 1 ] || fail "full path must run 5b-scheduler-stop teardown"
-pass "revoke: 5b-scheduler-stop present in edge-only and full paths"
+# --- 13: NO-DAEMON doctrine - no scheduler activation step in provision --------
+if grep -q 'install-podcast-scheduler\.sh' "$PROVISION"; then
+  # The only permitted mention is inside comments explaining the doctrine.
+  grep 'install-podcast-scheduler\.sh' "$PROVISION" | grep -vE '^[[:space:]]*#' \
+    | grep -vE '#.*install-podcast-scheduler\.sh' >/dev/null \
+    && fail "provision must not invoke install-podcast-scheduler.sh (no-daemon doctrine)"
+fi
+grep -q 'NO-DAEMON DOCTRINE' "$PROVISION" \
+  || fail "provision must document the no-daemon doctrine at STEP 8"
+pass "no scheduler activation step (no-daemon doctrine holds)"
 
-# --- 14: revoke step 9d verifies scheduler residue -----------------------------
+# --- 14: revoke step 9d verifies legacy scheduler residue ----------------------
 grep -q 'scheduler STILL ACTIVE' "$REVOKE" \
   || fail "9d-box-clean must detect a still-active scheduler"
 grep -q -- '--check --client-slug' "$REVOKE" \
   || fail "9d must use the scheduler installer --check read-back"
-pass "revoke: step 9d verifies the scheduler is gone"
+pass "revoke: step 9d verifies legacy scheduler residue is gone"
 
 # --- 15: revoke unregisters symmetrically via --remove --client-slug -----------
 grep -q -- '--remove --client-slug' "$REVOKE" \
@@ -248,12 +255,10 @@ grep -E 'install-podcast-department\.sh.*--remove' "$REVOKE" >/dev/null \
   && fail "revoke must NOT remove the box-level shared department install"
 pass "revoke: shared department install is preserved"
 
-# --- 17: audit hook - provision records the installer, revoke resolves it ------
-grep -q 'ledger_fact "scheduler_installer"' "$PROVISION" \
-  || fail "provision must record facts.scheduler_installer for the fleet audit"
-grep -q 'scheduler_installer' "$REVOKE" \
-  || fail "revoke must resolve the scheduler installer from the provision ledger fact"
-pass "audit hook: provision records scheduler_installer; revoke resolves it"
+# --- 17: advancement fact - provision records own-turn advancement -------------
+grep -q 'ledger_fact "advancement" "own-turn"' "$PROVISION" \
+  || fail "provision must record facts.advancement=own-turn on successful activation"
+pass "audit hook: provision records advancement=own-turn"
 
 # --- 18: zero em dashes (Skill 58 convention) ----------------------------------
 if grep -q $'\xe2\x80\x94' "$PROVISION" "$REVOKE"; then

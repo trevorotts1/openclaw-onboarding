@@ -137,8 +137,8 @@ FLAGS:
                      applying them (operator canary preview). Still requires the token.
   --force            Recreate the Access app even if one already exists for the host.
   --skip-activation  OPERATOR OVERRIDE. Do NOT run the processor activation
-                     sequence (install-podcast-department.sh, register-podcast-hook.sh
-                     --client-slug <slug>, install-podcast-scheduler.sh). By default
+                     sequence (install-podcast-department.sh,
+                     register-podcast-hook.sh --client-slug <slug>). By default
                      EVERY provision activates the processor (fleet guarantee:
                      provision => processor active). The override is logged in the
                      ledger as activation=skipped so the fleet audit can flag the
@@ -160,9 +160,6 @@ ENV:
   PODCAST_NODE_USER      Box runtime user for config writes (default: node). Config is
                          never written as root.
   PODCAST_LEDGER_DIR     Ledger directory (default /tmp/podcast-provision).
-  PODCAST_SCHEDULER_INSTALLER  Optional scheduler installer filename in scripts/
-                         (default install-podcast-scheduler.sh, the activation-layer
-                         contract from Workflow 1).
   SECRETS_ENV_FILE       Box secrets file (default $HOME/.openclaw/secrets.env).
 USAGE
 }
@@ -868,7 +865,7 @@ provision_fb_ads
 # Sequence (activation layer, Workflow 1, same merge batch):
 #   8a. install-podcast-department.sh                       (department install)
 #   8b. register-podcast-hook.sh --client-slug <slug>       (inbound hook mapping)
-#   (No 8c: no scheduler exists. No-daemon doctrine — the department agent
+#   (No 8c: no scheduler exists. No-daemon doctrine -- the department agent
 #   advances TaskFlows in its own turn via podcast_step_driver.py.)
 #
 # Every step is GATED three ways and FAILS CLOSED:

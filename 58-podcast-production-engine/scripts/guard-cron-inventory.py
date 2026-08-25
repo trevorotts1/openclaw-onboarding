@@ -367,13 +367,63 @@ def _static_scan_file(path):
         lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as exc:
         return [(AF_IO, "unreadable:%s" % type(exc).__name__)], reg_names
+    # Join backslash-continuation lines so a multiline `openclaw cron add ... \
+    #   --no-deliver` is scanned as ONE logical line (a real registrar that puts
+    #   its flags on continuation lines must not false-positive AF-PPE-ANNOUNCE).
+    logical: list[tuple[int, str]] = []
+    parts: list[str] = []
+    start = 0
     for lineno, raw in enumerate(lines, 1):
-        line = raw.strip()
+        text = raw.rstrip("\n")
+        # An ODD number of trailing backslashes is a real continuation; an even
+        # count is escaped literal backslashes, so the logical line ENDS there.
+        cont = (len(text) - len(text.rstrip("\\"))) % 2 == 1
+        piece = text[:-1] if cont else text
+        if parts:
+            parts.append(piece.strip())
+            if not cont:
+                logical.append((start, " ".join(parts).strip()))
+                parts = []
+        elif cont and not text.lstrip().startswith("#"):
+            # A shell comment ends at the newline - a trailing backslash does NOT
+            # continue it. Never let a commented usage block swallow (and hide)
+            # the next real line, which would blind this guard.
+            parts = [piece.strip()]
+            start = lineno
+        else:
+            logical.append((lineno, text.strip()))
+    if parts:
+        logical.append((start, " ".join(parts).strip()))
+
+    def _quote_depth_at(s: str, idx: int) -> int:
+        depth = 0
+        quote = ""
+        i = 0
+        while i < idx:
+            ch = s[i]
+            if quote:
+                if ch == "\\" and quote == '"':
+                    i += 1
+                elif ch == quote:
+                    quote = ""
+                    depth -= 1
+            elif ch in "\"'":
+                quote = ch
+                depth += 1
+            i += 1
+        return depth
+
+    for lineno, line in logical:
         if not line or line.startswith("#"):
             continue
         if _HEARTBEAT_REG_RE.search(line):
             findings.append((AF_HEARTBEAT, "heartbeat-registration:%s:%d" % (path.name, lineno)))
-        if not _CRON_ADD_RE.search(line):
+        m_ca = _CRON_ADD_RE.search(line)
+        if not m_ca:
+            continue
+        # A registrar invokes cron add OUTSIDE quotes; a hit that lives only
+        # inside a quoted message ("openclaw cron add failed...") is prose.
+        if _quote_depth_at(line, m_ca.start()) > 0:
             continue
         # This is a cron registration line.
         low = line.lower()

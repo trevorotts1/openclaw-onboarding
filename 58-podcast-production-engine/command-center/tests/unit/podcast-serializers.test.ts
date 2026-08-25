@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   OPERATOR_ONLY_JOB_KEYS,
+  daysSince,
   toClientEvents,
   toClientJob,
   toClientQueueRow,
@@ -134,6 +135,21 @@ test('summary hides spend from clients and shows it to operators', () => {
   assert.equal('spendThisMonth' in clientSummary, false);
   const operatorSummary = toSummary(counts, true);
   assert.equal(operatorSummary.spendThisMonth, 3.21);
+});
+
+test('daysSince returns non-null for Z, +00:00, +05:30, and -05:00 suffixes', () => {
+  assert.equal(typeof daysSince('2026-06-30T00:00:00Z'), 'number');
+  assert.equal(typeof daysSince('2026-06-30T00:00:00+00:00'), 'number');
+  assert.equal(typeof daysSince('2026-06-30T00:00:00+05:30'), 'number');
+  assert.equal(typeof daysSince('2026-06-30T00:00:00-05:00'), 'number');
+});
+
+test('daysSince returns null for null input', () => {
+  assert.equal(daysSince(null), null);
+});
+
+test('daysSince returns null for invalid input', () => {
+  assert.equal(daysSince('not-a-date'), null);
 });
 
 test('stage taxonomy covers every status and aged-out override applies', () => {

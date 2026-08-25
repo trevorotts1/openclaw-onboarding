@@ -326,7 +326,7 @@ if [ "$MODE" = "verify" ]; then
     MISS=$((MISS+1))
   fi
 
-  # Unit 3.5 — the runtime dir must be a self-sufficient runtime, never an
+  # Unit 3.5 -- the runtime dir must be a self-sufficient runtime, never an
   # empty directory. resolveSpecialistSessionKey probes this dir; the Command
   # Center holds the task as routed_but_not_dispatched when it is empty.
   RUNTIME_FILES="AGENTS.md IDENTITY.md SOUL.md MEMORY.md HEARTBEAT"
@@ -450,7 +450,7 @@ mkdir -p "$AGENT_DIR" "$AGENT_DIR/agent" "$AGENT_DIR/sessions"
 log "  + $AGENT_DIR/agent (sqlite home; created lazily by the gateway on first dispatch)"
 log "  + $AGENT_DIR/sessions (session transcripts)"
 
-# Unit 3.5 — materialize the per-agent files into the runtime dir. Sources, in
+# Unit 3.5 -- materialize the per-agent files into the runtime dir. Sources, in
 # priority order: the workspace-scaffolded file (scaffold-agent-files.sh wrote
 # it at $WORKSPACE_DIR/IDENTITY.md etc.), then a lightweight stub. The shared
 # AGENTS.md lives at the workspace root as a symlink to the shared copy; when
@@ -458,7 +458,7 @@ log "  + $AGENT_DIR/sessions (session transcripts)"
 RUNTIME_FILES="AGENTS.md IDENTITY.md SOUL.md MEMORY.md HEARTBEAT"
 for f in $RUNTIME_FILES; do
   if [ -f "$AGENT_DIR/$f" ]; then
-    continue  # already materialized — never overwrite operator-curated content
+    continue  # already materialized -- never overwrite operator-curated content
   fi
   if [ -f "$WORKSPACE_DIR/$f" ]; then
     cp "$WORKSPACE_DIR/$f" "$AGENT_DIR/$f" 2>/dev/null \
@@ -469,9 +469,9 @@ for f in $RUNTIME_FILES; do
       && log "  + $AGENT_DIR/$f (resolved from workspace symlink)" \
       || log "  WARNING: could not resolve $WORKSPACE_DIR/$f into $AGENT_DIR"
   else
-    # Lightweight stub — the runtime dir is never empty. Content is a pointer
+    # Lightweight stub -- the runtime dir is never empty. Content is a pointer
     # to the workspace originals so a later full scaffold supersedes it.
-    printf '# %s — dept-podcast runtime dir placeholder.\n# Full content lives in the workspace scaffold (%s/%s).\n# Re-run scaffold-agent-files.sh or install-podcast-department.sh to supersede.\n' \
+    printf '# %s -- dept-podcast runtime dir placeholder.\n# Full content lives in the workspace scaffold (%s/%s).\n# Re-run scaffold-agent-files.sh or install-podcast-department.sh to supersede.\n' \
       "$f" "$WORKSPACE_DIR" "$f" > "$AGENT_DIR/$f" 2>/dev/null \
       && log "  + $AGENT_DIR/$f (lightweight stub)" \
       || log "  WARNING: could not write $AGENT_DIR/$f"

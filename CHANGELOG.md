@@ -1,3 +1,44 @@
+## [v22.0.70]  -  2026-08-24  -  fix(podcast-audit): Skill 58 end-to-end diagnostic sweep F1-F8 — icon-clobber guard, cron-guard blind spots, n8n export drift
+
+Full end-to-end diagnostic of the podcast skill set (Skill 58), its live n8n workflows, and the
+GHL rail; eight findings fixed and independently verified (Sonnet adversarial pass + full suites).
+Diagnostic ledger: /tmp/podcast-diag/FINDINGS.md (scratch).
+
+Skill 58 (version 0.1.43 -> 0.1.44):
+- F2 guard-cron-inventory.py: static scan now joins backslash continuation lines before matching
+  and skips `cron add` matches inside quoted prose (_quote_depth_at). Odd-backslash-count test so
+  a literal trailing backslash is not treated as a continuation; comment lines never start a
+  continuation join (comment-continuation blocks in generate_cover.sh previously blinded the guard).
+  False AF-PPE-ANNOUNCE/AF-PPE-SECOND-CRON phantom findings on provision-podcast-client.sh gone.
+- F3 install-podcast-department.sh: five em dashes replaced with double hyphens (zero-em-dash gate green).
+- F4 tests/test-podcast-provision-activation.sh rewritten for the NO-DAEMON doctrine: codes 22/23
+  wired, exit code 24 asserted absent, scheduler installer invocation forbidden, advancement
+  own-turn ledger fact required. 18/18 pass.
+- F5 config/n8n re-exports: draft-test (21 nodes), draft-cleanup (6), standing-check (10) fetched
+  from live via API, sanitized to zero credentials / no pinData/staticData, U041 meta block
+  preserved. verify-n8n-deploy.py: all MATCH, exit 0.
+- F5b verify-n8n-deploy.py: podbean-broker added to DOCUMENTED_UNUSED skip list — its deliberate
+  un-import (config/n8n/README.md) no longer reports DRIFT.
+- F6 verify-n8n-deploy.py auto-appends /api/v1 to a bare N8N_API_URL (proven live).
+- F7 PODCAST-SNAPSHOT-BUILD-MANIFEST.md rows 7/8 + decision #5: LARGE_TEXT live-verified note.
+- F8 command-center payload serializers.ts + tests synced byte-identical to CC live.
+
+Command Center lane (rides this repo's release; CC repo is not git-tracked locally):
+- F1 migrations.ts reseedWorkspacesFromConfig: engine slugs (podcast/anthology) with blank manifest
+  emoji bind a NULL keep-existing sentinel instead of clobbering migration-113 canonical icons;
+  ON CONFLICT uses CASE WHEN excluded.icon IS NULL; LOWER(excluded.slug) for case-insensitive
+  engine-slug match. sync-departments-from-build-state.py R-39 branch preserves existing icon.
+  Live mission-control.db repaired: podcast=🎙️ anthology=📚 company_id=default.
+  migration-113 test 3/3 pass.
+
+Verified healthy (no action): live publish rail FAIL-CLOSED v70 active; webhook auth probes 403/404
+fail-closed on all four webhooks; GHL four podcast workflows published ALL PASS; skill pytest 531
+passed 0 failed; qc-podcast.sh 15 passed | 0 failed.
+
+Pre-existing CC failures NOT from this sweep (control-proven identical before edits):
+migration-114 presentations sort_order/name/rowcount (3/4), departments-manifest-empty-guard (6/1),
+mr21-reseed-dept-prefix-migration vitest (1). CC is not a git repo — age undetermined.
+
 ## [v22.0.69]  -  2026-08-24  -  fix(compat): bump commandCenter.pinnedTag to v6.0.92 so fleet-refresh ships the CC-lane sweep fixes
 
 Correctness fix in the v19.0.0/v20.0.2/v20.0.7/v21.7.32 lineage: resolve_cc_tag
