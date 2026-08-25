@@ -42,7 +42,7 @@ assert "GHL PIT set (any canonical alias)"        "[ -n \"$RESOLVED_PIT\" ]"
 warn_only "Value starts with pit- (PIT convention)" "[[ \"$RESOLVED_PIT\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID set"              "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "Location ID 18-24 chars"                  "[ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -ge 18 ] && [ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -le 24 ]"
-assert "Secrets file chmod 600"                   "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
+assert "Secrets file chmod 600"                   "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 RESP=$(curl -sS -m 10 -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" -H "Version: 2021-07-28" \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" 2>/dev/null)
 # RESP holds JSON with double-quotes; feed grep DIRECTLY (not through eval) so the
