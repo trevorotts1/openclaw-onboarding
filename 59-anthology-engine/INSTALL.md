@@ -244,7 +244,7 @@ script (SET / NOT SET only). "Absent" behavior below is the exact fail-soft cont
 
 | Variable | Purpose | When absent |
 |----------|---------|-------------|
-| `ANTHOLOGY_STATE_DIR` | Overrides the engine state directory (the SQLite ledger, gate nonce DB, and `runs/` tree) for `anthology_state.py`, `gate_engine.py`, `nudge_send.py`, `hold_queue.py`, the canary, and every sibling that resolves a state path. Highest-priority override, ahead of `--state-dir` fallbacks in some CLIs and always ahead of the data-dir default. | Falls back to `$OPENCLAW_DATA_DIR/anthology-engine/state`, then to `~/.anthology-engine/state`. Nothing fails; the state just lives at the default location. |
+| `ANTHOLOGY_STATE_DIR` | Overrides the engine state directory (the SQLite ledger, gate nonce DB, and `runs/` tree) for `anthology_state.py`, `gate_engine.py`, `nudge_send.py`, `hold_queue.py`, `canary_e2e_test.py`, and every sibling that resolves a state path. Highest-priority override, ahead of `--state-dir` fallbacks in some CLIs and always ahead of the data-dir default. | Falls back to `$OPENCLAW_DATA_DIR/anthology-engine/state`, then to `~/.anthology-engine/state`. Nothing fails; the state just lives at the default location. |
 | `OPENCLAW_DATA_DIR` | The OpenClaw data root used as the second-level base for the engine state directory (`$OPENCLAW_DATA_DIR/anthology-engine/state`). | Skipped; resolution drops to `~/.anthology-engine/state` under the node user home. |
 
 ### Nudge delivery
