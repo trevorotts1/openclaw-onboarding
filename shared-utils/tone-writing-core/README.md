@@ -44,7 +44,7 @@ consumer's baked tone stage drifts from the canonical copy here.
 
 Each style stage: grade-level analysis first ("communicates at the 10th-grade / PhD level"), then a
 `[TONE]` explanation + mimic-without-plagiarizing instructions + one example paragraph; on `N/A`
-the stage MUST auto-pick a real, well-known person in harmony with the avatar's 32 answers.
+the stage does NOT self-pick from prompt prose — see "N/A auto-pick is deterministic (F4.3)" below.
 
 ### N/A auto-pick is deterministic (F4.3) — and BLEND-GOVERNED (Skill 6 U98, D1 ruling)
 

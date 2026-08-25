@@ -9,7 +9,7 @@
 Analyze the communication style of this person:
 [{{intake.tone_style_1}}]
 
-In scenarios where there is no person mentioned for you to modeo or analyze or you see N/A then you may use this information to identify a person that would be in harmony with information I am providing you here : (only find a real person to model when this scenario exists.)
+In scenarios where there is no person mentioned for you to model or analyze or you see N/A then you may use this information to identify a person that would be in harmony with information I am providing you here : (only find a real person to model when this scenario exists.)
 [
 {{artifact.upstream}}
 {{artifact.upstream}}

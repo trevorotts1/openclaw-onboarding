@@ -14,8 +14,10 @@ machine floors are enforced by each skill's content prover (`aa_build_check.py` 
   writing instructions, then one short example paragraph.
 
 ## R3 — N/A auto-pick (never a dead field)
-- If a tone-style input is `N/A`/`na`/blank, the stage MUST auto-pick a real, well-known figure in
-  harmony with the avatar's 32 answers — the style field is never left empty.
+- If a tone-style input is `N/A`/`na`/blank, the slot is resolved by the deterministic F4.3
+  selector (`tone_persona_autopick.py` → `persona_for_job.py`), logged before any tone stage
+  runs — the style field is never left empty, and the stage itself NEVER self-picks a persona
+  from its own prompt prose.
 
 ## R4 — Markdown-only, no bracketed scaffolding
 - Output is pure Markdown. No `[bracketed]` template text may survive into the artifact.

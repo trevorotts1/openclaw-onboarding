@@ -38,9 +38,9 @@
       "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND",
       "OLLAMA_MODELS"
     ],
-    "probed_at": "2026-08-25T02:00:22.878571+00:00"
+    "probed_at": "2026-08-25T11:02:07.607107+00:00"
   },
   "search_capability": "unknown",
   "image_capability": "unknown",
-  "resolved_at": "2026-08-25T02:00:22.878571+00:00"
+  "resolved_at": "2026-08-25T11:02:07.607107+00:00"
 }

@@ -23,7 +23,7 @@
     },
     "challenge_sections": 30,
     "title_lock_ok": true,
-    "downloads_bundle": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.Gty2nS775s/Marcus_Halloway-Book/Book_Writer_20260825T020013Z"
+    "downloads_bundle": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.NhqRGA4xpA/Marcus_Halloway-Book/Book_Writer_20260825T110215Z"
   },
   "files": [
     {
@@ -60,11 +60,11 @@
     },
     {
       "file": "PROCESS-CERTIFICATE.json",
-      "sha256": "e16bfe06b6b2d87639ddfe618adc070e152c09e11ad854adbc3045163be8f32b"
+      "sha256": "cb91bc73304ae48ad8a925cfa284e34978e19389a4adca22c9995bcfd4ea5f14"
     },
     {
       "file": "PROCESS-CERTIFICATE.md",
-      "sha256": "962344c47e7bcc8a939215df6ea28e4e5559f722e680562a84612d52fab7e567"
+      "sha256": "77eda60a434c4183f7b7a4d285e5da4de9c9d7fb70240ddc44f2173b288f8eef"
     },
     {
       "file": "Suggested_Titles-Marcus_Halloway.md",

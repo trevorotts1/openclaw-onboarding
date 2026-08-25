@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "skill": "book-writer",
   "skill_number": 53,
-  "skill_version": "1.3.0",
+  "skill_version": "1.3.1",
   "human_name": "Book Writer \u2014 Ghostwriting Engine (Avatar Alchemist, BOOK version)",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Book Writer pipeline (the BOOK version of the Avatar Alchemist). The deterministic assembler/certifier run_book_writer.py walks phases[] IN ORDER (P0->P8) with NO phase skips. Each phase declares produces_artifact + its gate_codes (AF-BK-*). Every AF-BK-* below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/ (py_symbol names the deciding function). Editing this file is step (i) of any Book Writer change: add the gate, add the AF code here with its trigger, add the checker, add the golden + broken-variant fixture. Anthology is the SEPARATE sibling Skill 54 and is NOT part of this pipeline.",
   "design_law": "Enforcement, not description. Every SACRED book count/floor is MEASURED on the STRIPPED text (markdown + whitespace removed) of the artifact \u2014 a model's self-reported chapter or word count is NEVER trusted, so a whitespace-padding attack cannot fake a floor. Locked title/subtitle immutability, verbatim personal-story placement, and sequential chapter-batch continuity are PROVEN, not requested. Client runtime resolves every tier (HEAVY/MID/FORMATTER/RESEARCHER/IMAGE) to the CLIENT's own providers via model-map.json \u2014 NEVER Anthropic/claude-* ids or operator keys. The provider-neutral gates are stdlib Python that run identically on every box.",

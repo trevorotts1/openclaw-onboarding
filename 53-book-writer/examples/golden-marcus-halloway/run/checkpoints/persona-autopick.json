@@ -1,0 +1,198 @@
+{
+  "resolved_by": "tone_persona_autopick",
+  "slots": {
+    "tone_style_1": {
+      "slot": "Simon Sinek in Leaders Eat Last",
+      "resolved": true,
+      "mode": "client-named",
+      "persona_id": "Simon Sinek in Leaders Eat Last",
+      "persona_name": "Simon Sinek in Leaders Eat Last",
+      "section4_excerpt": "",
+      "source": "client-named",
+      "governed": false
+    },
+    "tone_style_2": {
+      "slot": "N/A",
+      "resolved": true,
+      "mode": "auto-pick",
+      "persona_id": "sharma-5am-club",
+      "persona_name": "Sharma 5Am Club",
+      "section4_excerpt": "## Section 4 - Agent Governance Framework\n\n**Governance Name:** World-Class Morning-to-Output Standard\n\n**What this governs:** AI-assisted professional execution quality across strategy, planning, writing, outreach, leadership communication, customer workflows, and operational design by enforcing focus-first, depth-first production standards.\n\n**Target Departments:** Sales, Marketing, Leadership, Content, Customer Success, Operations  \n**Target Roles:** SDR, AE, Sales Manager, Marketing Manager, Content Strategist, Copywriter, Team Lead, CSM, Ops Manager, Founder/CEO  \n**Target Task Types:** Prospecting plans, outbound messaging, campaign strategy, content creation, meeting briefs, weekly planning, process docs, playbooks, postmortems, performance reviews\n\n### 4A - The Execution Standard\n\n**Pre-task requirements (must exist before start):**\n1. Clear objective in one sentence (\u201cThis output must achieve ___\u201d).\n2. Target audience/user defined with context and constraint.\n3. Success criteria with at least 3 measurable outcomes.\n4. Priority rank (is this the 90/90/1-level task or not?).\n5. Inputs provided (data, prior docs, examples, deadlines).\n6. Quality bar declared (\u201cworld-class\u201d definition for this task).\n7. Distraction controls declared (single-task scope, no scope drift).\n\n**Quality bar (specific):**\n- Output is singularly focused on the highest-leverage objective.\n- Shows gr \u2026",
+      "source": null,
+      "governed": true,
+      "blend_directive": "Audience not yet confirmed \u2014 draft with Sharma 5Am Club's expertise on '# Avatar Dossier \u2014 The Newly-Promoted First-Time Engineering Manager\\n\\nMeet the reader this book was written for: the newly-promoted first-time engineering manager who was, until a few months ago, the top individual contributor on the team. She is somewhere between 28 and 38 years old. She was promoted in the last year \u2014 often in the last six months \u2014 to lead four to eight people she used to sit beside and code with. She earned the role the way most technical people earn things: by being the person with the answers. And now, for the first time in her career, being the person with the answers is quietly making everything worse.\\n\\nThis is the person we are talking to on every page. Not a theoretical \"leader.\" A specific human, tired, opening this book at ten at night after the standup, the reviews, the escalations, and a dinner she half-ate at her desk.\\n\\n## Who they are\\n\\nThey are excellent. That is the important part. This is not a story about a weak performer who got lucky. This reader was the best debugger on the team, the one paged when production broke, the one whose pull requests other people quoted as the standard. Their identity is fused to that competence. When you ask them \"who are you at work?\" the honest answer is \"the one who can figure it out.\" For a decade, that identity was rewarded with raises, respect, and finally a title. So it feels insane that the same identity is now the problem.\\n\\nThey manage a small team \u2014 usually four to eight engineers, some of whom were peers last quarter. They are still in the code. They still review most pull requests. They still get pulled into the hard bugs because, well, they are the fastest. On paper they were promoted. In practice they took on a second full-time job and kept the first one.\\n\\n## The wound\\n\\nHere is what hurts, named plainly. This reader believes, deep down, that leadership means being the person with the answers. So they equate delegating with losing quality. When a teammate ships something \"good enough,\" they feel it as a threat, not a win. They rewrite other people\\'s work at night because they cannot stand to see it done differently than they would have done it. They tell themselves this is standards. It is actually fear.\\n\\nAnd the team feels it. The team has gone quiet. People stopped bringing rough ideas because rough ideas get corrected. They stopped making decisions because decisions get overridden. They wait. They ask permission. The manager reads this dependence as proof that the team still needs them \u2014 the exact opposite of the truth. The manager has become the ceiling. Nothing on the team can rise higher than what one exhausted person can personally touch.\\n\\nThe private symptoms are specific: nights spent redoing work, a calendar with no white space, a growing resentment (\"why do I have to do everything?\"), and a shameful thought they would never say out loud \u2014 *I was better at my job before they made me a boss.* They are lonely in a way individual contributors rarely are, because the old peer group is now the team, and the new peer group of managers feels like a country they don\\'t have a passport for.\\n\\n## The desired transformation\\n\\nWhat they want is not a personality transplant. They do not want to become a golf-playing, back-slapping \"people person.\" They want something quieter and more real. They want a high-trust team that ships strong work without them standing in the critical path. They want to be able to take a vacation without the product stalling. They want to give feedback that makes someone better instead of smaller. They want to walk out of the office at a normal hour and trust that the right thing will still happen.\\n\\nSaid in their own words, the primary goal is this: `lead a high-trust team that ships without them being the bottleneck, and stop micromanaging`.\\n\\nThat is the whole arc. Trade control for trust. Stop being the smartest person in the room and become the leader who multiplies everyone else. The transformation we are aiming for is a team that ships high-quality work without the manager in the loop, trust that survives the manager leaving the room, and feedback that lands without fear. When it works, the reader stops being a bottleneck with a title and becomes an actual leader \u2014 one whose authority is felt even when they say nothing at all.\\n\\n## What they need from this book\\n\\nThey do not need a lecture. They have read the lectures. They need to be told, without shame, that the habit that got them here is normal, common, and survivable \u2014 and then handed a concrete, day-by-day way out. They need scenes they recognize, small numbers they can act on, and one practice per chapter they can run tomorrow. They need permission to let go, and proof that letting go is not the same as giving up.\\n\\nThat is who is reading. Everything downstream \u2014 the tone, the chapters, the 30-Day Challenge \u2014 is built for this one tired, capable, quietly scared person, and for the leader they are about to become.\\n' in a neutral house voice; the audience voice is applied once confirmed. The task-side persona is Deziel Content Fuel Framework \u2014 apply ITS process and decision method to execute the work.\n\nSUBSTANCE \u2014 Sharma 5Am Club (sharma-5am-club)\n  tone: high-energy, theatrical, confrontational-toward-mediocrity, encouraging, metaphor-rich, exacting | cadence: Short commands plus provocative questions; imperatives and emotionally charged imagery; diagnoses reality fast.\n  devices: Victory Hour / 20-20-20, 66-day automaticity, 'own your morning, elevate your life' | signature move: minute-by-minute first-hour audit\n  avoid: 'good enough, ship it', 'someday', 'I'm not a morning person', 'let's multitask this', 'I'm too busy', 'close enough', busy-equals-productive, negotiating with standards\nTASK \u2014 Deziel Content Fuel Framework (deziel-content-fuel-framework)\n  tone: warm, encouraging, demystifying, practical, playful, confident | cadence: Reassures first, then hands over the structure; brisk, generative, and example-driven \u2014 generate broadly, then choose narrowly.\n  devices: the 10 Focuses \u00d7 10 Formats grid (100 ideas per topic), the 4 Content Multipliers (Time, Demographic, Location, Resources), 'pick two numbers from 1 to 10' gamification | signature move: 'creativity within confines'\n  avoid: 'I'm not creative' fatalism, waiting for inspiration / the muse, brainstorming against a blank page, defaulting to a single format, mistaking maximal output for the goal, hype without structure\nVOICE CONTRACT: echo one line into persona-selection-log confirming the register you wrote in. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+      "voice": {
+        "audience_persona": null,
+        "topic_persona": {
+          "id": "sharma-5am-club",
+          "why": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'works'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic.."
+        },
+        "collapsed": false,
+        "collapsed_persona_id": null,
+        "topic_as_task_guidance": true
+      },
+      "resolved_audience": {
+        "source": "asked",
+        "candidates": [],
+        "confidence": "none",
+        "label": null,
+        "ask": "What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "confirm_required": true
+      },
+      "rationale": {
+        "audience_resolution": "source=asked, confidence=none, candidates=[] \u2014 ASK: What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "audience_persona": "no audience persona: audience not yet confirmed",
+        "topic_persona": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'works'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic..",
+        "collapse": "distinct audience + topic personas (blend)",
+        "voice_persona_mirror": "back-compat persona_id mirrors the voice persona sharma-5am-club",
+        "task_decomposition": "2 part(s), 2 distinct persona(s) [heuristic] \u2014 topic persona doubles as task guidance",
+        "conversion_goal": "",
+        "goal_source": "asked",
+        "chosen_closer": "deziel-content-fuel-framework",
+        "conversion_goal_resolution": "source=asked, confirm_required=True \u2014 ASK: What must this page make the reader DO?",
+        "invariant": {
+          "ok": true,
+          "count": 3,
+          "roles": [
+            {
+              "role": "topic",
+              "persona_id": "sharma-5am-club"
+            },
+            {
+              "role": "task",
+              "persona_id": "deziel-content-fuel-framework"
+            },
+            {
+              "role": "task",
+              "persona_id": "hunt-thomas-pragmatic-programmer"
+            }
+          ],
+          "collapsed": false,
+          "reason": "ok"
+        }
+      }
+    },
+    "tone_style_3": {
+      "slot": null,
+      "resolved": true,
+      "mode": "auto-pick",
+      "persona_id": "sharma-5am-club",
+      "persona_name": "Sharma 5Am Club",
+      "section4_excerpt": "## Section 4 - Agent Governance Framework\n\n**Governance Name:** World-Class Morning-to-Output Standard\n\n**What this governs:** AI-assisted professional execution quality across strategy, planning, writing, outreach, leadership communication, customer workflows, and operational design by enforcing focus-first, depth-first production standards.\n\n**Target Departments:** Sales, Marketing, Leadership, Content, Customer Success, Operations  \n**Target Roles:** SDR, AE, Sales Manager, Marketing Manager, Content Strategist, Copywriter, Team Lead, CSM, Ops Manager, Founder/CEO  \n**Target Task Types:** Prospecting plans, outbound messaging, campaign strategy, content creation, meeting briefs, weekly planning, process docs, playbooks, postmortems, performance reviews\n\n### 4A - The Execution Standard\n\n**Pre-task requirements (must exist before start):**\n1. Clear objective in one sentence (\u201cThis output must achieve ___\u201d).\n2. Target audience/user defined with context and constraint.\n3. Success criteria with at least 3 measurable outcomes.\n4. Priority rank (is this the 90/90/1-level task or not?).\n5. Inputs provided (data, prior docs, examples, deadlines).\n6. Quality bar declared (\u201cworld-class\u201d definition for this task).\n7. Distraction controls declared (single-task scope, no scope drift).\n\n**Quality bar (specific):**\n- Output is singularly focused on the highest-leverage objective.\n- Shows gr \u2026",
+      "source": null,
+      "governed": true,
+      "blend_directive": "Audience not yet confirmed \u2014 draft with Sharma 5Am Club's expertise on '# Avatar Dossier \u2014 The Newly-Promoted First-Time Engineering Manager\\n\\nMeet the reader this book was written for: the newly-promoted first-time engineering manager who was, until a few months ago, the top individual contributor on the team. She is somewhere between 28 and 38 years old. She was promoted in the last year \u2014 often in the last six months \u2014 to lead four to eight people she used to sit beside and code with. She earned the role the way most technical people earn things: by being the person with the answers. And now, for the first time in her career, being the person with the answers is quietly making everything worse.\\n\\nThis is the person we are talking to on every page. Not a theoretical \"leader.\" A specific human, tired, opening this book at ten at night after the standup, the reviews, the escalations, and a dinner she half-ate at her desk.\\n\\n## Who they are\\n\\nThey are excellent. That is the important part. This is not a story about a weak performer who got lucky. This reader was the best debugger on the team, the one paged when production broke, the one whose pull requests other people quoted as the standard. Their identity is fused to that competence. When you ask them \"who are you at work?\" the honest answer is \"the one who can figure it out.\" For a decade, that identity was rewarded with raises, respect, and finally a title. So it feels insane that the same identity is now the problem.\\n\\nThey manage a small team \u2014 usually four to eight engineers, some of whom were peers last quarter. They are still in the code. They still review most pull requests. They still get pulled into the hard bugs because, well, they are the fastest. On paper they were promoted. In practice they took on a second full-time job and kept the first one.\\n\\n## The wound\\n\\nHere is what hurts, named plainly. This reader believes, deep down, that leadership means being the person with the answers. So they equate delegating with losing quality. When a teammate ships something \"good enough,\" they feel it as a threat, not a win. They rewrite other people\\'s work at night because they cannot stand to see it done differently than they would have done it. They tell themselves this is standards. It is actually fear.\\n\\nAnd the team feels it. The team has gone quiet. People stopped bringing rough ideas because rough ideas get corrected. They stopped making decisions because decisions get overridden. They wait. They ask permission. The manager reads this dependence as proof that the team still needs them \u2014 the exact opposite of the truth. The manager has become the ceiling. Nothing on the team can rise higher than what one exhausted person can personally touch.\\n\\nThe private symptoms are specific: nights spent redoing work, a calendar with no white space, a growing resentment (\"why do I have to do everything?\"), and a shameful thought they would never say out loud \u2014 *I was better at my job before they made me a boss.* They are lonely in a way individual contributors rarely are, because the old peer group is now the team, and the new peer group of managers feels like a country they don\\'t have a passport for.\\n\\n## The desired transformation\\n\\nWhat they want is not a personality transplant. They do not want to become a golf-playing, back-slapping \"people person.\" They want something quieter and more real. They want a high-trust team that ships strong work without them standing in the critical path. They want to be able to take a vacation without the product stalling. They want to give feedback that makes someone better instead of smaller. They want to walk out of the office at a normal hour and trust that the right thing will still happen.\\n\\nSaid in their own words, the primary goal is this: `lead a high-trust team that ships without them being the bottleneck, and stop micromanaging`.\\n\\nThat is the whole arc. Trade control for trust. Stop being the smartest person in the room and become the leader who multiplies everyone else. The transformation we are aiming for is a team that ships high-quality work without the manager in the loop, trust that survives the manager leaving the room, and feedback that lands without fear. When it works, the reader stops being a bottleneck with a title and becomes an actual leader \u2014 one whose authority is felt even when they say nothing at all.\\n\\n## What they need from this book\\n\\nThey do not need a lecture. They have read the lectures. They need to be told, without shame, that the habit that got them here is normal, common, and survivable \u2014 and then handed a concrete, day-by-day way out. They need scenes they recognize, small numbers they can act on, and one practice per chapter they can run tomorrow. They need permission to let go, and proof that letting go is not the same as giving up.\\n\\nThat is who is reading. Everything downstream \u2014 the tone, the chapters, the 30-Day Challenge \u2014 is built for this one tired, capable, quietly scared person, and for the leader they are about to become.\\n' in a neutral house voice; the audience voice is applied once confirmed. The task-side persona is Deziel Content Fuel Framework \u2014 apply ITS process and decision method to execute the work.\n\nSUBSTANCE \u2014 Sharma 5Am Club (sharma-5am-club)\n  tone: high-energy, theatrical, confrontational-toward-mediocrity, encouraging, metaphor-rich, exacting | cadence: Short commands plus provocative questions; imperatives and emotionally charged imagery; diagnoses reality fast.\n  devices: Victory Hour / 20-20-20, 66-day automaticity, 'own your morning, elevate your life' | signature move: minute-by-minute first-hour audit\n  avoid: 'good enough, ship it', 'someday', 'I'm not a morning person', 'let's multitask this', 'I'm too busy', 'close enough', busy-equals-productive, negotiating with standards\nTASK \u2014 Deziel Content Fuel Framework (deziel-content-fuel-framework)\n  tone: warm, encouraging, demystifying, practical, playful, confident | cadence: Reassures first, then hands over the structure; brisk, generative, and example-driven \u2014 generate broadly, then choose narrowly.\n  devices: the 10 Focuses \u00d7 10 Formats grid (100 ideas per topic), the 4 Content Multipliers (Time, Demographic, Location, Resources), 'pick two numbers from 1 to 10' gamification | signature move: 'creativity within confines'\n  avoid: 'I'm not creative' fatalism, waiting for inspiration / the muse, brainstorming against a blank page, defaulting to a single format, mistaking maximal output for the goal, hype without structure\nVOICE CONTRACT: echo one line into persona-selection-log confirming the register you wrote in. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+      "voice": {
+        "audience_persona": null,
+        "topic_persona": {
+          "id": "sharma-5am-club",
+          "why": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'work'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic.."
+        },
+        "collapsed": false,
+        "collapsed_persona_id": null,
+        "topic_as_task_guidance": true
+      },
+      "resolved_audience": {
+        "source": "asked",
+        "candidates": [],
+        "confidence": "none",
+        "label": null,
+        "ask": "What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "confirm_required": true
+      },
+      "rationale": {
+        "audience_resolution": "source=asked, confidence=none, candidates=[] \u2014 ASK: What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "audience_persona": "no audience persona: audience not yet confirmed",
+        "topic_persona": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'work'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic..",
+        "collapse": "distinct audience + topic personas (blend)",
+        "voice_persona_mirror": "back-compat persona_id mirrors the voice persona sharma-5am-club",
+        "task_decomposition": "2 part(s), 2 distinct persona(s) [heuristic] \u2014 topic persona doubles as task guidance",
+        "conversion_goal": "",
+        "goal_source": "asked",
+        "chosen_closer": "deziel-content-fuel-framework",
+        "conversion_goal_resolution": "source=asked, confirm_required=True \u2014 ASK: What must this page make the reader DO?",
+        "invariant": {
+          "ok": true,
+          "count": 3,
+          "roles": [
+            {
+              "role": "topic",
+              "persona_id": "sharma-5am-club"
+            },
+            {
+              "role": "task",
+              "persona_id": "deziel-content-fuel-framework"
+            },
+            {
+              "role": "task",
+              "persona_id": "hunt-thomas-pragmatic-programmer"
+            }
+          ],
+          "collapsed": false,
+          "reason": "ok"
+        }
+      }
+    },
+    "tone_style_4": {
+      "slot": null,
+      "resolved": true,
+      "mode": "auto-pick",
+      "persona_id": "sharma-5am-club",
+      "persona_name": "Sharma 5Am Club",
+      "section4_excerpt": "## Section 4 - Agent Governance Framework\n\n**Governance Name:** World-Class Morning-to-Output Standard\n\n**What this governs:** AI-assisted professional execution quality across strategy, planning, writing, outreach, leadership communication, customer workflows, and operational design by enforcing focus-first, depth-first production standards.\n\n**Target Departments:** Sales, Marketing, Leadership, Content, Customer Success, Operations  \n**Target Roles:** SDR, AE, Sales Manager, Marketing Manager, Content Strategist, Copywriter, Team Lead, CSM, Ops Manager, Founder/CEO  \n**Target Task Types:** Prospecting plans, outbound messaging, campaign strategy, content creation, meeting briefs, weekly planning, process docs, playbooks, postmortems, performance reviews\n\n### 4A - The Execution Standard\n\n**Pre-task requirements (must exist before start):**\n1. Clear objective in one sentence (\u201cThis output must achieve ___\u201d).\n2. Target audience/user defined with context and constraint.\n3. Success criteria with at least 3 measurable outcomes.\n4. Priority rank (is this the 90/90/1-level task or not?).\n5. Inputs provided (data, prior docs, examples, deadlines).\n6. Quality bar declared (\u201cworld-class\u201d definition for this task).\n7. Distraction controls declared (single-task scope, no scope drift).\n\n**Quality bar (specific):**\n- Output is singularly focused on the highest-leverage objective.\n- Shows gr \u2026",
+      "source": null,
+      "governed": true,
+      "blend_directive": "Audience not yet confirmed \u2014 draft with Sharma 5Am Club's expertise on '# Avatar Dossier \u2014 The Newly-Promoted First-Time Engineering Manager\\n\\nMeet the reader this book was written for: the newly-promoted first-time engineering manager who was, until a few months ago, the top individual contributor on the team. She is somewhere between 28 and 38 years old. She was promoted in the last year \u2014 often in the last six months \u2014 to lead four to eight people she used to sit beside and code with. She earned the role the way most technical people earn things: by being the person with the answers. And now, for the first time in her career, being the person with the answers is quietly making everything worse.\\n\\nThis is the person we are talking to on every page. Not a theoretical \"leader.\" A specific human, tired, opening this book at ten at night after the standup, the reviews, the escalations, and a dinner she half-ate at her desk.\\n\\n## Who they are\\n\\nThey are excellent. That is the important part. This is not a story about a weak performer who got lucky. This reader was the best debugger on the team, the one paged when production broke, the one whose pull requests other people quoted as the standard. Their identity is fused to that competence. When you ask them \"who are you at work?\" the honest answer is \"the one who can figure it out.\" For a decade, that identity was rewarded with raises, respect, and finally a title. So it feels insane that the same identity is now the problem.\\n\\nThey manage a small team \u2014 usually four to eight engineers, some of whom were peers last quarter. They are still in the code. They still review most pull requests. They still get pulled into the hard bugs because, well, they are the fastest. On paper they were promoted. In practice they took on a second full-time job and kept the first one.\\n\\n## The wound\\n\\nHere is what hurts, named plainly. This reader believes, deep down, that leadership means being the person with the answers. So they equate delegating with losing quality. When a teammate ships something \"good enough,\" they feel it as a threat, not a win. They rewrite other people\\'s work at night because they cannot stand to see it done differently than they would have done it. They tell themselves this is standards. It is actually fear.\\n\\nAnd the team feels it. The team has gone quiet. People stopped bringing rough ideas because rough ideas get corrected. They stopped making decisions because decisions get overridden. They wait. They ask permission. The manager reads this dependence as proof that the team still needs them \u2014 the exact opposite of the truth. The manager has become the ceiling. Nothing on the team can rise higher than what one exhausted person can personally touch.\\n\\nThe private symptoms are specific: nights spent redoing work, a calendar with no white space, a growing resentment (\"why do I have to do everything?\"), and a shameful thought they would never say out loud \u2014 *I was better at my job before they made me a boss.* They are lonely in a way individual contributors rarely are, because the old peer group is now the team, and the new peer group of managers feels like a country they don\\'t have a passport for.\\n\\n## The desired transformation\\n\\nWhat they want is not a personality transplant. They do not want to become a golf-playing, back-slapping \"people person.\" They want something quieter and more real. They want a high-trust team that ships strong work without them standing in the critical path. They want to be able to take a vacation without the product stalling. They want to give feedback that makes someone better instead of smaller. They want to walk out of the office at a normal hour and trust that the right thing will still happen.\\n\\nSaid in their own words, the primary goal is this: `lead a high-trust team that ships without them being the bottleneck, and stop micromanaging`.\\n\\nThat is the whole arc. Trade control for trust. Stop being the smartest person in the room and become the leader who multiplies everyone else. The transformation we are aiming for is a team that ships high-quality work without the manager in the loop, trust that survives the manager leaving the room, and feedback that lands without fear. When it works, the reader stops being a bottleneck with a title and becomes an actual leader \u2014 one whose authority is felt even when they say nothing at all.\\n\\n## What they need from this book\\n\\nThey do not need a lecture. They have read the lectures. They need to be told, without shame, that the habit that got them here is normal, common, and survivable \u2014 and then handed a concrete, day-by-day way out. They need scenes they recognize, small numbers they can act on, and one practice per chapter they can run tomorrow. They need permission to let go, and proof that letting go is not the same as giving up.\\n\\nThat is who is reading. Everything downstream \u2014 the tone, the chapters, the 30-Day Challenge \u2014 is built for this one tired, capable, quietly scared person, and for the leader they are about to become.\\n' in a neutral house voice; the audience voice is applied once confirmed. The task-side persona is Deziel Content Fuel Framework \u2014 apply ITS process and decision method to execute the work.\n\nSUBSTANCE \u2014 Sharma 5Am Club (sharma-5am-club)\n  tone: high-energy, theatrical, confrontational-toward-mediocrity, encouraging, metaphor-rich, exacting | cadence: Short commands plus provocative questions; imperatives and emotionally charged imagery; diagnoses reality fast.\n  devices: Victory Hour / 20-20-20, 66-day automaticity, 'own your morning, elevate your life' | signature move: minute-by-minute first-hour audit\n  avoid: 'good enough, ship it', 'someday', 'I'm not a morning person', 'let's multitask this', 'I'm too busy', 'close enough', busy-equals-productive, negotiating with standards\nTASK \u2014 Deziel Content Fuel Framework (deziel-content-fuel-framework)\n  tone: warm, encouraging, demystifying, practical, playful, confident | cadence: Reassures first, then hands over the structure; brisk, generative, and example-driven \u2014 generate broadly, then choose narrowly.\n  devices: the 10 Focuses \u00d7 10 Formats grid (100 ideas per topic), the 4 Content Multipliers (Time, Demographic, Location, Resources), 'pick two numbers from 1 to 10' gamification | signature move: 'creativity within confines'\n  avoid: 'I'm not creative' fatalism, waiting for inspiration / the muse, brainstorming against a blank page, defaulting to a single format, mistaking maximal output for the goal, hype without structure\nVOICE CONTRACT: echo one line into persona-selection-log confirming the register you wrote in. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+      "voice": {
+        "audience_persona": null,
+        "topic_persona": {
+          "id": "sharma-5am-club",
+          "why": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'works'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic.."
+        },
+        "collapsed": false,
+        "collapsed_persona_id": null,
+        "topic_as_task_guidance": true
+      },
+      "resolved_audience": {
+        "source": "asked",
+        "candidates": [],
+        "confidence": "none",
+        "label": null,
+        "ask": "What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "confirm_required": true
+      },
+      "rationale": {
+        "audience_resolution": "source=asked, confidence=none, candidates=[] \u2014 ASK: What audience are we dealing with? No audience is on file in the onboarding ICP \u2014 name the audience so I can pick the voice.",
+        "audience_persona": "no audience persona: audience not yet confirmed",
+        "topic_persona": "Topic expertise: its topics[] match the job on ['deep', 'habit', 'manage', 'person', 'personality', 'personally', 'product', 'quality', 'transformation', 'works'] (10 signal(s)); voice: Theatrical, high-voltage performance coach who is confrontational toward mediocrity and deeply encouraging toward potential: own your first hour, protect your focus, and run discipline as identity until it becomes automatic..",
+        "collapse": "distinct audience + topic personas (blend)",
+        "voice_persona_mirror": "back-compat persona_id mirrors the voice persona sharma-5am-club",
+        "task_decomposition": "2 part(s), 2 distinct persona(s) [heuristic] \u2014 topic persona doubles as task guidance",
+        "conversion_goal": "",
+        "goal_source": "asked",
+        "chosen_closer": "deziel-content-fuel-framework",
+        "conversion_goal_resolution": "source=asked, confirm_required=True \u2014 ASK: What must this page make the reader DO?",
+        "invariant": {
+          "ok": true,
+          "count": 3,
+          "roles": [
+            {
+              "role": "topic",
+              "persona_id": "sharma-5am-club"
+            },
+            {
+              "role": "task",
+              "persona_id": "deziel-content-fuel-framework"
+            },
+            {
+              "role": "task",
+              "persona_id": "hunt-thomas-pragmatic-programmer"
+            }
+          ],
+          "collapsed": false,
+          "reason": "ok"
+        }
+      }
+    }
+  }
+}

@@ -62,6 +62,19 @@ import prove_bw_noanthropic as p_anth   # noqa: E402
 import prove_bw_anon as p_anon          # noqa: E402
 import prove_bw_433 as p_433            # noqa: E402
 
+# F4.3 deterministic N/A tone-slot resolver (shared tone-writing-core). The
+# prompt layer NO LONGER self-picks a persona on N/A — the runtime resolves
+# those slots here, before any tone stage sees them. Import is best-effort at
+# module load but FAIL-CLOSED inside resolve_tone_slots(): a missing resolver
+# blocks P2 rather than letting a naked N/A reach tone authoring.
+_SHARED_CORE = _SKILL_DIR.parent / "shared-utils" / "tone-writing-core"
+if str(_SHARED_CORE) not in sys.path:
+    sys.path.insert(0, str(_SHARED_CORE))
+try:
+    import tone_persona_autopick as tpa  # noqa: E402
+except ImportError:  # pragma: no cover - surfaced fail-closed in check_tone
+    tpa = None
+
 PHASE_ORDER = ["P0-INTAKE", "P1-AVATAR", "P2-TONE", "P3-TITLES-GATE", "P4-OUTLINE-GATE",
                "P5-CHAPTERS", "P6-PACKAGE", "P7-QC", "P8-DELIVER"]
 
@@ -361,14 +374,74 @@ def check_avatar(bk: Book):
     return True, "avatar dossier present (%d words)" % wc, {}
 
 
+def resolve_tone_slots(bk: Book) -> tuple:
+    """F4.3 na_autopick wiring: every intake tone_style_N slot resolves through the
+    shared deterministic selector (client-named pass through untouched; N/A routed
+    to persona_for_job). Writes run/checkpoints/persona-autopick.json as the audit
+    trail. FAIL-CLOSED: resolver absent, an N/A slot unresolved, or a blend-governed
+    directive missing its guardrail clause blocks the run (never a naked N/A)."""
+    ckpt = bk.run_dir / "run" / "checkpoints" / "persona-autopick.json"
+    i = bk.intake() or {}
+    slots = {k: i.get(k) for k in ("tone_style_1", "tone_style_2",
+                                   "tone_style_3", "tone_style_4")
+             if k in i}
+    if tpa is None:
+        return False, ("tone_persona_autopick resolver not importable from "
+                       "shared-utils/tone-writing-core — FAIL-CLOSED (F4.3): N/A tone "
+                       "slots may never fall back to prompt-level self-pick"), {}
+    if not any(tpa.is_na(v) for v in slots.values()):
+        # Nothing to auto-pick; still record the pass-through so the audit trail
+        # proves every slot was accounted for.
+        record = {"resolved_by": "tone_persona_autopick", "slots": {}}
+        try:
+            ckpt.parent.mkdir(parents=True, exist_ok=True)
+            ckpt.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        return True, "no N/A tone slots (client-named only)", {}
+    avatar_ctx = ""
+    av = bk.artifacts / "01-avatar.md"
+    if av.is_file():
+        avatar_ctx = av.read_text(encoding="utf-8")[:8000]
+    results = tpa.autopick([slots.get("tone_style_%d" % n) for n in (1, 2, 3, 4)],
+                           avatar_ctx)
+    problems = []
+    for n, r in zip((1, 2, 3, 4), results):
+        if r["mode"] == "auto-pick":
+            if not r.get("persona_id"):
+                problems.append("tone_style_%d resolved with NO persona_id" % n)
+            if r.get("warning"):
+                problems.append("tone_style_%d: %s" % (n, r["warning"]))
+    record = {"resolved_by": "tone_persona_autopick",
+              "slots": {"tone_style_%d" % n: r
+                        for n, r in zip((1, 2, 3, 4), results)}}
+    try:
+        ckpt.parent.mkdir(parents=True, exist_ok=True)
+        ckpt.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    if problems:
+        return False, ("N/A tone-slot resolution FAILED (%s) — FAIL-CLOSED: fix the "
+                       "selector/persona library before re-run" % "; ".join(problems)), {}
+    picked = ["%s->%s" % (k, v["persona_id"])
+              for k, v in record["slots"].items() if v["mode"] == "auto-pick"]
+    return True, ("N/A tone slots auto-resolved deterministically (%s); checkpoint "
+                  "run/checkpoints/persona-autopick.json" % ", ".join(picked)), {}
+
+
 def check_tone(bk: Book):
+    ok, msg, extra = resolve_tone_slots(bk)
+    print("=== PHASE P2-TONE :: persona-autopick === [%s] %s"
+          % ("OK" if ok else "FAIL", msg))
+    if not ok:
+        return False, msg, extra
     p = bk.artifacts / "08-blended-tone.md"
     if not p.is_file():
         return False, ("missing run/artifacts/08-blended-tone.md — FAIL-CLOSED: the book "
                        "cannot complete without the authored blended tone"), {}
     res = p_tone.evaluate(p.read_text(encoding="utf-8"))
-    ok, msg = _phase_result(res)
-    return ok, "tone %s" % msg, {"tone_word_count": c.word_count(p.read_text(encoding="utf-8"))}
+    ok2, msg2 = _phase_result(res)
+    return ok2, "tone %s" % msg2, {"tone_word_count": c.word_count(p.read_text(encoding="utf-8"))}
 
 
 def check_titles(bk: Book, approvals: dict):
