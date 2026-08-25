@@ -1,3 +1,29 @@
+## [v22.0.75]  -  2026-08-25  -  fix(compat): bump commandCenter.pinnedTag to v6.0.93 so fleet-refresh ships the U55 hang root-fix + five latent-failure repairs
+
+`resolve_cc_tag` returns `pinnedTag` unconditionally, so leaving the pin at
+v6.0.92 would make every fleet roll `git checkout v6.0.92` and deploy a
+Command Center WITHOUT the fixes shipped in CC v6.0.93 (annotated tag at
+commit affdb6c, CI 24/24 green):
+
+- **U55 CI hang root-fix** — two stacked event-loop keepers (detached
+  autoDispatchTask WebSockets + OpenClawClient's shared 5-minute cleanup
+  interval) held every node:test child alive ~6h; fixed by a suite-wide
+  gateway mute shim and `.unref()` on the timer. U55 had never completed,
+  which also hid everything below.
+- **Migrations 121/125** ALTER TABLE'd tables absent from fixture DBs
+  (`PRAGMA table_info()` returns [] for a MISSING table); both now check
+  sqlite_master first, same convention as migration 116.
+- **reseedWorkspacesFromConfig clobbered engine sort_order on every boot**
+  (podcast 1100→1000, presentations 100→1000) — REAL production bug affecting
+  Skill 58 board ordering; upsert now restores engineSortOrders.
+- **test:unit exclusion drift**: three vitest-only files crashed node --test
+  with ESM/CJS errors; added to the grep list, still covered by vitest.
+
+minVersion UNCHANGED (v4.73.0, permissive). v6.0.93 >= minVersion, maxVersion
+null — schema contract holds. Repo version rolls v22.0.72 → v22.0.75 (skipping
+v22.0.73/v22.0.74: CHANGELOG entries already on main without matching /version
+bumps or tags; this release re-unifies all markers above both).
+
 ## [v22.0.74]  -  2026-08-25  -  fix(65-rescue-receiver): wire.sh cron add failed under updater's stripped PATH (`env: node: No such file or directory`)
 
 The openclaw CLI has a `#!/usr/bin/env node` shebang. The updater invokes
