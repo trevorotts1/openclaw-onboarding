@@ -8,7 +8,10 @@
   proved by `verify_tone_core_sync.py`).
 - **Client tier:** MID-WRITER (all five). NEVER an Anthropic/`claude-*` id.
 - **Permitted inputs:** the avatar dossier (`artifacts/01-avatar.md`) + the intake `tone_style_1..4`.
-  On `N/A` a style stage MUST auto-pick a real, well-known figure in harmony with the avatar's answers.
+  On `N/A` the orchestrator (NOT the prompt layer) resolves the slot through the deterministic
+  F4.3 selector — `shared-utils/tone-writing-core/tone_persona_autopick.py` → `persona_for_job.py`,
+  logged to `run/checkpoints/persona-autopick.json`. A style stage NEVER self-picks a persona
+  from its own prose; it consumes the resolver's logged pick.
 - **Optional persona palette (`PERSONAS.json`, skill root):** when a client leaves an influence at `N/A`
   and prefers a fully fictional voice, the analyst MAY adopt a named house persona from `PERSONAS.json`
   (matched by its `best_for` to the avatar) instead of a real figure. The file is DATA only; it never
@@ -20,7 +23,8 @@
 
 ## SOP
 1. **When:** after the avatar dossier receipt exists.
-2. **Inputs:** the four style names (N/A → auto-pick) + the dossier.
+2. **Inputs:** the four style names (N/A pre-resolved by the orchestrator's persona-autopick
+   checkpoint) + the dossier.
 3. **Steps:** run 04–07 (four analyses, internal feeders) → run 08 to blend them into the named voice.
 4. **Outputs:** `run/artifacts/08-blended-tone.md`; foreman-attested receipts.
 5. **Hand-to:** the foreman (which schedules TITLE-STRATEGIST).

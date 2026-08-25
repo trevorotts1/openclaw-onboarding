@@ -21,9 +21,9 @@ or removed (DROP), and which gate now enforces it.
 
 - **G1 — Avatar/tone-influence export:** the anthology's tone stages consume the
   avatar's 32 answers via the shared tone core (04..08). Where a contributor
-  supplies fewer than 4 named influences, the tone stage auto-picks a real,
-  well-known figure in harmony with the avatar answers (tone-core R3). Nothing is
-  fabricated about the contributor.
+  supplies fewer than 4 named influences, the N/A slots resolve deterministically
+  through the tone-core F4.3 selector (`tone_persona_autopick.py`), logged — never
+  by prompt-level self-pick. Nothing is fabricated about the contributor.
 - **G2 — Cover generation:** optional; if the client configured no image
   provider, the run records `degraded:image` and ships the cover PROMPT doc only.
 - **G3 — Research grounding:** optional; absent a client search tool the run

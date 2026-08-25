@@ -1,5 +1,24 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.3.1 — F4.3 na_autopick wired; forbidden self-pick prose removed (tone-core GO fixes)
+
+- **na_autopick resolver WIRED into the runtime**: `run_book_writer.py` now resolves every
+  intake `tone_style_1..4` slot through the shared deterministic F4.3 selector
+  (`shared-utils/tone-writing-core/tone_persona_autopick.py` → `persona_for_job.py`) at P2-TONE,
+  BEFORE any tone stage runs. Client-named slots pass through untouched (sovereignty); N/A slots
+  are routed through the canonical selector and LOGGED to `run/checkpoints/persona-autopick.json`.
+  FAIL-CLOSED: resolver unimportable, an N/A resolving with no persona_id, or a blend-governed
+  directive missing its guardrail clause blocks the run — a naked N/A can never reach tone
+  authoring, and the prompt layer never self-picks.
+- **Forbidden prompt instruction removed** from all 20 tone `methodology.md` files across
+  shared-core + 52/53/54 ("choose a relevant well known person…" self-pick line) — replaced by
+  the deterministic runtime resolver above.
+- **Typo fixed** "to modeo" → "to model" in 16 tone-stage `user.md` files.
+- **Doctrine docs updated to match**: roles/TONE-ANALYST.md, shared-core README + writing-rails R3,
+  54-anthology-writer intake template + REPAIRS.md G1 now describe the deterministic resolver,
+  not prompt-level self-pick.
+- ENGINE-PIN re-minted under v2 framing for the modified orchestrator.
+
 ## 1.3.0 — hardening release: QC-pass fixes, GATE-433 binding, ledger coverage
 
 - **GATE-433 bound to its artifact (fail-closed)**: in 4x3x3 mode the approval receipt

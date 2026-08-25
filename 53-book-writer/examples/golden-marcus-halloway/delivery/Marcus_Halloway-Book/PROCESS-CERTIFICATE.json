@@ -40,7 +40,7 @@
   "verified_phases": 9,
   "all_phases_pass": true,
   "runtime": "local-only (no n8n / Airtable / Google / Gmail / Slack / GHL)",
-  "local_downloads_bundle": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.Gty2nS775s/Marcus_Halloway-Book/Book_Writer_20260825T020013Z",
+  "local_downloads_bundle": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.NhqRGA4xpA/Marcus_Halloway-Book/Book_Writer_20260825T110215Z",
   "steps": [
     {
       "phase_id": "P0-INTAKE",
@@ -89,5 +89,5 @@
     }
   ],
   "certificate_sha": "781e41c9036af74d69f7cca98219a1acbc1103c32fb2972dcd746bc1bfa53806",
-  "certified_at": "2026-08-25T02:00:13.920708+00:00"
+  "certified_at": "2026-08-25T11:02:15.687348+00:00"
 }

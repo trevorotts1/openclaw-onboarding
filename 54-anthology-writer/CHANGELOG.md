@@ -1,5 +1,14 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.9 — 2026-08-25 — tone-core GO fixes: doctrine docs match deterministic resolver
+
+- `intake/aw-intake-template.md` + `REPAIRS.md` G1 no longer describe prompt-level
+  "auto-pick a real, well-known figure" — they now name the shared deterministic F4.3
+  selector (`tone_persona_autopick.py`), logged, never prompt self-pick.
+- Stripped the forbidden self-pick line from all five tone-stage `methodology.md`
+  prompts; fixed "to modeo" → "to model" in the four `user.md` prompts (lockstep with
+  shared core + 52/53). Runtime wiring shipped in skill 53 v1.3.1.
+
 ## 1.4.7 — 2026-08-02 — Warfix Round 2: FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37
 
 ### Fixed (Round 2 — FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37)

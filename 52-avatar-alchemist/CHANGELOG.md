@@ -1,5 +1,14 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.5.4 — 2026-08-25 — tone-core GO fixes: forbidden self-pick prose removed
+
+- Stripped the forbidden "choose a relevant well known person" self-pick line from all five
+  tone-stage `methodology.md` prompts (lockstep with shared tone-writing-core + skills 53/54).
+- Fixed typo "to modeo" → "to model" in the four tone-stage `user.md` prompts.
+- N/A tone slots are now resolved ONLY by the shared deterministic F4.3 selector
+  (`shared-utils/tone-writing-core/tone_persona_autopick.py`), never by prompt-level
+  self-pick (runtime wiring lives in skill 53's orchestrator; 53 v1.3.1).
+
 ## 1.5.3 — 2026-07-21 — T0-28: book routing is acknowledgement-based, not directory-based
 
 ### Fixed

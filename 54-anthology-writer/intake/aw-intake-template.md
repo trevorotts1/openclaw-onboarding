@@ -26,5 +26,6 @@ config, never through intake (`AF-AW-INTAKE-CREDENTIAL`).
 
 - `personal_stories` may be the literal string `"N/A"` if the contributor has no
   personal story; then the placement gate is vacuously satisfied.
-- `tone_influences` may contain `"N/A"` slots — the tone stage auto-picks a real,
-  well-known figure in harmony with the avatar answers (tone-core R3).
+- `tone_influences` may contain `"N/A"` slots — resolved deterministically by the
+  shared tone-core F4.3 selector (`tone_persona_autopick.py` → `persona_for_job.py`),
+  never by prompt-level self-pick; every pick is logged.
