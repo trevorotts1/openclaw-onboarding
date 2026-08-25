@@ -35,7 +35,7 @@
 #   spamming logs. It runs every 2 minutes on 38 machines forever.
 #
 # RECEIVER_VERSION: reported in every claim and ack (fleet version visibility).
-RECEIVER_VERSION="1.0.0"
+RECEIVER_VERSION="1.1.0"
 
 # ---------------------------------------------------------------------------
 # OpenClaw root resolution. <root>/secrets/.env holds enrollment credentials.
@@ -274,6 +274,42 @@ try:
         print(str(v))
 except Exception:
     sys.exit(0)
+' 2>/dev/null
+        return 0
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# _resolve_default_agent — prints the id of the box's default agent, or nothing.
+# Pure: no token, no payload. Parses `openclaw agents list --json`, taking the
+# FIRST entry whose "isDefault" is true. jq preferred, python3 fallback; neither
+# => empty (caller treats empty as "resolution failed", never a guessed success).
+# ---------------------------------------------------------------------------
+_resolve_default_agent() {
+    _rda_out=$("$_OC_BIN" agents list --json 2>/dev/null) || return 0
+    [ -n "$_rda_out" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$_rda_out" | jq -r '
+          ([.[] | select(.isDefault == true)] | first | .id)
+          // empty' 2>/dev/null
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$_rda_out" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(d, list):
+    sys.exit(0)
+for entry in d:
+    if isinstance(entry, dict) and entry.get("isDefault") is True:
+        aid = entry.get("id")
+        if aid:
+            print(aid)
+        break
 ' 2>/dev/null
         return 0
     fi
@@ -562,8 +598,39 @@ _start_ts=$(date +%s 2>/dev/null || echo 0)
 # seen as "already closed" dedup losses on late answers). The token is NOT in
 # this command line and is NOT exported to this child. The exit code is captured
 # with NO `|| true` (that would mask a non-zero rc and lie about delivery).
-AGENT_OUT=$("$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>/dev/null)
+_AGENT_ERR_PATH="$_TMP/rr-poll-agent-err.$$"
+AGENT_OUT=$("$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>"$_AGENT_ERR_PATH")
 AGENT_RC=$?
+_AGENT_ERR=""
+if [ -f "$_AGENT_ERR_PATH" ]; then
+    _AGENT_ERR=$(cat "$_AGENT_ERR_PATH" 2>/dev/null)
+    rm -f "$_AGENT_ERR_PATH"
+fi
+
+# ---------------------------------------------------------------------------
+# Agent-id fallback (v1.1.0): some boxes have no agent named "main", so the
+# CLI fails instantly with 'Unknown agent id'. Resolve the box's default agent
+# id once and retry the turn ONCE. The verdict still comes only from the
+# retry's own exit code and reply — the honesty contract is untouched.
+# ---------------------------------------------------------------------------
+_rc_first=$AGENT_RC
+case "$_AGENT_ERR" in
+    *"Unknown agent id"*)
+        # Gate on a genuinely FAILED first turn. A turn that exited 0 already
+        # delivered to the client; re-running it would double-deliver and could
+        # overwrite that real success with the retry's failure. "One agent turn,
+        # ever" holds only if this guard is here.
+        if [ "$_rc_first" -ne 0 ]; then
+            _RESOLVED_AGENT=$(_resolve_default_agent)
+            if [ -n "$_RESOLVED_AGENT" ] && [ "$_RESOLVED_AGENT" != "$AGENT_ID" ]; then
+                _log "agent-id-fallback from=$AGENT_ID to=$_RESOLVED_AGENT rc_before=$_rc_first"
+                AGENT_OUT=$("$_OC_BIN" agent --agent "$_RESOLVED_AGENT" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>/dev/null)
+                AGENT_RC=$?
+                AGENT_ID="$_RESOLVED_AGENT"
+            fi
+        fi
+        ;;
+esac
 
 _end_ts=$(date +%s 2>/dev/null || echo 0)
 _elapsed=$(( _end_ts - _start_ts ))
