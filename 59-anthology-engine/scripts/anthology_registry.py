@@ -253,6 +253,32 @@ def resolve_location(override: str = ""):
     return _env_first(LOCATION_LABELS)
 
 
+# The OPERATOR-OWNED AGENCY token labels (P03/P04 fix): the snapshot PUSH leg
+# (agency -> own sub-account) requires locations.write scope, which only the
+# agency PIT carries; the client's location-scoped PIT cannot push. Resolved
+# across the same stores as everything else. Operator-owned by doctrine
+# (Trevor's keys are for Spaulding/Convert-and-Flow only); a value is NEVER
+# printed. Absent -> callers fall back to the client PIT (old behavior).
+AGENCY_PIT_LABELS = (
+    "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT",
+    "GOHIGHLEVEL_AGENCY_PIT",
+    "GHL_AGENCY_PIT",
+    "CONVERT_AND_FLOW_AGENCY_PIT",
+)
+
+
+def resolve_agency_pit():
+    """Resolve the operator-owned agency private-integration token for the
+    snapshot PUSH leg. Returns (label, token) or (None, None). Validates the
+    pit- prefix like resolve_pit; the value is NEVER printed."""
+    label, token = _env_first(AGENCY_PIT_LABELS)
+    if not token:
+        return None, None
+    if not token.startswith(PIT_PREFIX):
+        return label, None
+    return label, token
+
+
 # ---------------------------------------------------------------------------
 # Convert and Flow REST client. STDLIB urllib only. Never logs the token or a
 # response body (either could echo a credential). Distinguishes scope-denied
@@ -1289,6 +1315,32 @@ def _live_client(location_override: str = "", out=None):
     out.write("[creds] PIT resolved via %s (SET). Location via %s (marker %s).\n"
               % (pit_label, loc_label, _mask_location(loc)))
     return CafClient(token), loc
+
+
+def live_push_client(location_override: str = "", out=None):
+    """A CafClient for the snapshot PUSH leg: prefers the OPERATOR-OWNED agency
+    PIT (carries locations.write; required for agency -> own sub-account pushes,
+    P03/P04). Falls back to the client PIT when no agency label resolves — the
+    pre-P03 behavior — so existing single-token setups keep working. Location
+    resolution and all stop surfaces mirror _live_client."""
+    out = out or sys.stderr
+    ag_label, ag_token = resolve_agency_pit()
+    if ag_token:
+        out.write("[creds] PUSH leg: AGENCY PIT resolved via %s (SET).\n" % ag_label)
+        client, rc_or_loc = _live_client(location_override, out=out)
+        if client is None:
+            return None, rc_or_loc
+        # Rebuild on the agency token; keep _live_client's location surface.
+        return CafClient(ag_token), rc_or_loc
+    if ag_label:
+        _stop(out, "An agency PIT label is SET but its value is not a valid private-integration token.",
+              ["Label %s resolved a value that does NOT start with %r." % (ag_label, PIT_PREFIX),
+               "The value is not printed. Set a real pit- agency token under one of: %s"
+               % ", ".join(AGENCY_PIT_LABELS)])
+        return None, EX_STOP
+    out.write("[creds] PUSH leg: no agency PIT label resolved (%s) — falling back to "
+              "the client PIT.\n" % ", ".join(AGENCY_PIT_LABELS))
+    return _live_client(location_override, out=out)
 
 
 # ---------------------------------------------------------------------------

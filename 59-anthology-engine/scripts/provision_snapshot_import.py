@@ -1053,7 +1053,7 @@ def main(argv=None):
                                "state": "planned_push"}, jsonout)
                     jsonout.write("\n")
                 return EX_OK
-            client, loc_or_rc = reg._live_client(args.location_id)
+            client, loc_or_rc = reg.live_push_client(args.location_id)
             if client is None:
                 return loc_or_rc
             return provision_import(
@@ -1065,7 +1065,7 @@ def main(argv=None):
                 poll_count=args.poll_count, dry_run=False, jsonout=jsonout)
 
         if args.cmd == "status":
-            client, loc_or_rc = reg._live_client(args.location_id)
+            client, loc_or_rc = reg.live_push_client(args.location_id)
             if client is None:
                 return loc_or_rc
             return status_command(client, loc_or_rc,

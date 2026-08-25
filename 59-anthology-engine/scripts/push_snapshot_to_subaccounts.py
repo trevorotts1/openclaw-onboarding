@@ -1411,7 +1411,7 @@ def main(argv=None):
                            "performed.",
                            "AF-AE-SNAP-PUSH-NO-FIXTURE: STOP."])
                 return EX_STOP
-            client, loc_or_rc = reg._live_client(args.location_id)
+            client, loc_or_rc = reg.live_push_client(args.location_id)
             if client is None:
                 return loc_or_rc
             return run_batch(
@@ -1422,7 +1422,7 @@ def main(argv=None):
                 dry_run=False, jsonout=jsonout)
 
         if args.cmd == "status":
-            client, loc_or_rc = reg._live_client(args.location_id)
+            client, loc_or_rc = reg.live_push_client(args.location_id)
             if client is None:
                 return loc_or_rc
             return status_batch(client, targets, contract,
@@ -1430,7 +1430,7 @@ def main(argv=None):
                                 interval_s=args.poll_interval, jsonout=jsonout)
 
         if args.cmd == "verify-only":
-            client, loc_or_rc = reg._live_client(args.location_id)
+            client, loc_or_rc = reg.live_push_client(args.location_id)
             if client is None:
                 return loc_or_rc
             return verify_only_batch(client, targets, contract, field_map,
