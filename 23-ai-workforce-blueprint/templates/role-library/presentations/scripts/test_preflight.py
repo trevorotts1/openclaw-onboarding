@@ -2929,7 +2929,8 @@ def test_runner_attestation_seen_by_preconditions():
     rd = Path(tempfile.mkdtemp(prefix="deck_attest_seen_"))
     (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
     rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present",
-                     "no-artifact-spec")  # FIX 4/E: attest_phase now requires a non-empty artifact_sha
+                     artifact_sha="no-artifact-spec",
+                     substance_verified=True)  # FIX 4/E sha + F04 substance tooth, matching every production attest_phase call site
     pm = json.loads((rd / "working" / "checkpoints" / "process_manifest.json").read_text())
     if "P0B-PRIORITY" not in [a.get("phase_id") for a in pm.get("phase_attestations", [])]:
         fails.append("ATTEST-SEEN: runner attest_phase did not write phase_attestations[].phase_id")

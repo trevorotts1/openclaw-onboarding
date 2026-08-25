@@ -6222,14 +6222,21 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
                     continue
                 # F04 — a hand-written or partial row must NOT satisfy the chain.
                 # A row counts as an attestation ONLY when it is a COMPLETED,
-                # substance-verified one: status == 'done' AND
-                # substance_verified is True. Rows missing either field are the
-                # exact shape a hand-edited manifest produces (id present, no
-                # completion evidence) — trusting them let later phases pass a
-                # precondition whose phase never actually finished. The runner's
-                # attest_phase() always writes both fields, so every genuine
-                # runner row still counts; only forged/incomplete rows drop out.
-                if str(att.get("status", "")).strip().lower() != "done":
+                # substance-verified one. The writer attest_phase() emits the
+                # completion statuses 'artifact_present', 'preflight_ok',
+                # 'preflight_ok_adhoc', and 'qc_pass_measurer' — it NEVER writes
+                # a literal 'done' — so the former status=='done'-only filter
+                # rejected EVERY genuine runner row and broke the phase chain
+                # (the v22.0.68 regression this fixes). 'done' stays accepted as
+                # the legacy/hand-manifest completed shape. The retained TOOTH is
+                # substance_verified is True: rows missing it are the exact shape
+                # a hand-edited manifest produces and drop out here; owner
+                # overrides ('qc_owner_override') carry substance_verified False
+                # and still cannot launder through — they satisfy the chain only
+                # via phase_skip_approvals.json.
+                if str(att.get("status", "")).strip().lower() not in (
+                        "done", "artifact_present", "preflight_ok",
+                        "preflight_ok_adhoc", "qc_pass_measurer"):
                     continue
                 if att.get("substance_verified") is not True:
                     continue
