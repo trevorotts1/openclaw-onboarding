@@ -234,3 +234,57 @@ The pin file must be committed alongside the enforcement candidates it covers.
 | `config/model-map.template.json` | Tier map template with `<CLIENT_*>` placeholders (never committed resolved) |
 | `preflight.sh` | Per-box model resolution from the CLIENT's own `openclaw.json` |
 | `config/field-map.json` | Convert and Flow custom field keys (single source of truth) |
+
+## 11. Environment variables
+
+Every engine variable is resolved env-first BY LABEL; values are never printed by any
+script (SET / NOT SET only). "Absent" behavior below is the exact fail-soft contract.
+
+### State layout
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `ANTHOLOGY_STATE_DIR` | Overrides the engine state directory (the SQLite ledger, gate nonce DB, and `runs/` tree) for `anthology_state.py`, `gate_engine.py`, `nudge_send.py`, `hold_queue.py`, the canary, and every sibling that resolves a state path. Highest-priority override, ahead of `--state-dir` fallbacks in some CLIs and always ahead of the data-dir default. | Falls back to `$OPENCLAW_DATA_DIR/anthology-engine/state`, then to `~/.anthology-engine/state`. Nothing fails; the state just lives at the default location. |
+| `OPENCLAW_DATA_DIR` | The OpenClaw data root used as the second-level base for the engine state directory (`$OPENCLAW_DATA_DIR/anthology-engine/state`). | Skipped; resolution drops to `~/.anthology-engine/state` under the node user home. |
+
+### Nudge delivery
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `NUDGE_DELIVERY_CMD` | Space-split argv template for the process that delivers gate nudges (Skill 50 email-engine or the gateway notification path). Supports `{recipient}` and `{subject}` placeholders; the body arrives on stdin. Config slots (`nudge_delivery_cmd`) win over this env value. | No delivery path resolves -> nudge_send exits 3 (`no_delivery_path`); it NEVER sends to a literal recipient or silently succeeds. |
+
+### Smoke-test / cost metering
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `MINIMAX_API_HOST` | Regional MiniMax API host override for balance probing (e.g. `https://api.minimax.io`). Must be on the pinned allowlist; an off-allowlist host is ignored. | Both pinned hosts are tried in order: global (`api.minimax.io`) first, China regional (`api.minimaxi.com`) second, bounded retry, still zero-cost. |
+| `ANTHOLOGY_COST_BUDGETS` | Path to a per-box budget config JSON (`type_ceilings`, `global_ceiling`, `prices`) consumed by `anthology-cost-ledger.py`; wins over the embedded `config/cost-budgets.json`. | The skill's own `cost-budgets.json` is used if present; otherwise the embedded defaults apply (fail-soft, never raises). |
+| `ANTHOLOGY_COST_CEILING_TOKENS` | Integer global token ceiling override applied after any budget config loads. A non-integer value logs a WARN and is ignored. | The ceiling comes from the loaded budget config or its default; metering still runs. |
+
+### Daily-tick arg overrides (JSON list of extra CLI args)
+
+All three follow the same convention: a JSON array string of extra CLI args appended
+to the respective subcommand, e.g. `ANTHOLOGY_HOLD_QUEUE_AGE_ARGS='["--json"]'`.
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `ANTHOLOGY_HOLD_QUEUE_AGE_ARGS` | Extra args for the hold-queue age tick (`hold_queue.py tick`) shelled by the daily smoke test. | The smoke test invokes `tick` with its default args. |
+| `ANTHOLOGY_ALERT_ARGS` | Extra args for `alert-dedup.py` when the daily tick fires the ONE deduped founder Telegram alert. Supports `{payload}` and `{key}` placeholders substituted with the written record path and dedup key. | The documented default invocation contract is used (`--source/--dedup-key/--summary/--payload-file`). |
+| `ANTHOLOGY_STALE_SWEEP_ARGS` | Extra args for the read-only stale-cursor sweep (`anthology_state.py stale-cursors`), e.g. `'["--default-hours","12"]'` (E8 detection: crashed/hung stage runners). | Default thresholds apply (24h machine cursors; 168h group-wait cursors). |
+
+### Secrets and credentials (labels only; values never printed)
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `ANTHOLOGY_PROCESS_CERT_SECRET` | HMAC secret for the signed S8 process certificate (alias `ANTHOLOGY_CERT_SECRET` also accepted). Signs `content_sha256` so a certificate can be re-verified independently. | Certificates issue UNSIGNED (fail-soft): `signed:false` with a note; delivery is never blocked on signing. A signed certificate verified on a box without the secret reports ok=True with reason `UNVERIFIED (no secret)` plus a stderr warning -- content hash still binds the identity core. |
+| `ANTHOLOGY_INTAKE_HOOK_SECRET` | Shared secret carried in the Authorization header of intake webhook calls; also minted into the registry custom value at provisioning. | Intake hook verification refuses unsigned/mismatched calls; snapshot provisioning records the custom value as SKIPPED until the secret is exported (step 7 of install), then re-run. |
+| `ANTHOLOGY_GHL_FIREBASE_API_KEY` | Firebase Web API key for the Convert and Flow (GHL) internal identity rail token exchange (`securetoken.googleapis.com/v1/token`). Aliases: `GOHIGHLEVEL_FIREBASE_API_KEY`. | Internal-rail calls that need a fresh Firebase token cannot mint one; affected probes report the label NOT SET and skip/fail loudly per their contracts. |
+| `ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN` | Long-lived refresh token exchanged (with the API key above) for short-lived internal-rail ID tokens. Aliases: `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`, `GHL_FIREBASE_REFRESH_TOKEN`. | Same as above: no token exchange possible; scripts resolve SET/NOT SET and degrade per-script (never print anything). |
+| `KIE_API_KEY` | Kie.ai credential for live cover renders (S7) and the zero-cost credit pre-flight probe. Resolved BY LABEL from the client env stores; the per-box label may differ via model-map `<CLIENT_KIE_KEY_LABEL>`. | S7 renders HELD (exit 3, `credential_not_set`); the structural cover proofs stand and no paid generation is attempted. |
+
+### Public hostname
+
+| Variable | Purpose | When absent |
+|----------|---------|-------------|
+| `ANTHOLOGY_PUBLIC_HOSTNAME` | This box's public hostname for building absolute webhook URLs (intake T-battery, snapshot custom values). Aliases: `PUBLIC_HOSTNAME`, `OPENCLAW_PUBLIC_HOSTNAME`. CLI `--public-hostname` wins over all three. | Snapshot provisioning marks `anthology_webhook_url` SKIPPED with the exact remediation hint; relative URLs stay relative. |
+

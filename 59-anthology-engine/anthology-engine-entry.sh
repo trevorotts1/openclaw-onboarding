@@ -167,31 +167,35 @@ fi
 # GATE 1b -- MODEL-MAP PRE-GATE (preflight.sh --check)
 # ===========================================================================
 note "GATE 1b/3 -- MODEL-MAP PRE-GATE (preflight.sh RESOLVE-then-check)"
-if [ -n "$RUN_DIR" ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
+if command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
+    # Runs on EVERY dispatch, bare (--run-dir omitted) included. On a bare
+    # dispatch the gate targets the SKILL-ROOT model-map.json (the same
+    # resolution chain the run-dir case uses).
+    GATE_MAP_DIR="${RUN_DIR:-$SELF_DIR}"
     # RESOLVE-then-check. A plain --check PASSES on an ABSENT map ("installer resolves
     # per box"), so a box the installer never resolved sails through GATE 1b only to
     # hard-fail deep at S9 with UnresolvedMapError. Fail CLOSED early: if no resolved
     # model-map.json exists in ANY location the router will read (run dir, skill dir,
     # config/), resolve it now from the client's OWN models; a box that cannot resolve
     # a REQUIRED tier (or has JUDGE == HEAVY-WRITER) exits 2 here, not mid-run.
-    if [ ! -f "$RUN_DIR/model-map.json" ] \
+    if [ ! -f "$GATE_MAP_DIR/model-map.json" ] \
        && [ ! -f "$SELF_DIR/model-map.json" ] \
        && [ ! -f "$SELF_DIR/config/model-map.json" ]; then
-        echo "  no resolved model-map.json in run dir / skill dir / config -- resolving this box now..."
-        bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR"; RS_RC=$?
-        if [ ! -f "$RUN_DIR/model-map.json" ]; then
+        echo "  no resolved model-map.json in ${RUN_DIR:+run dir /}skill dir / config -- resolving this box now..."
+        bash "$SELF_DIR/preflight.sh" --run-dir "$GATE_MAP_DIR"; RS_RC=$?
+        if [ ! -f "$GATE_MAP_DIR/model-map.json" ]; then
             gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "no resolved model-map.json anywhere and per-box \
 resolution did not produce one (preflight rc=$RS_RC: the client has no resolvable model for a REQUIRED \
 tier, JUDGE resolved equal to HEAVY-WRITER, or the fleet shared-utils/select_model.py is absent). The \
 engine will not run unresolved; resolve the tier map on a configured box (preflight.sh) and re-run."
         fi
     fi
-    if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
+    if bash "$SELF_DIR/preflight.sh" --run-dir "$GATE_MAP_DIR" --check; then
         :
     else
         PF_RC=$?
         if [ "$PF_RC" -eq 2 ]; then
-            gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "the run-dir model-map.json still carries \
+            gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "the model-map.json (${GATE_MAP_DIR}/model-map.json) still carries \
 <CLIENT_*> placeholders or an Anthropic-family id -- the fleet installer has not resolved this box. \
 Resolve the tier map on a configured box (preflight.sh) and re-run."
         else
@@ -199,19 +203,24 @@ Resolve the tier map on a configured box (preflight.sh) and re-run."
         fi
     fi
 else
-    echo "  (model-map pre-gate skipped: no --run-dir, python3 absent, or preflight.sh missing)"
+    echo "  (model-map pre-gate skipped: python3 absent or preflight.sh missing)"
 fi
 
 # ===========================================================================
 # GATE 2 -- BYPASS-SCAN (refuse hand-rolled ungoverned external senders in the run dir)
 # AF-AE-BYPASS. The engine's OWN adapters in scripts/ are the sanctioned path and
-# are excluded; only files DROPPED INTO the run dir are scanned.
+# are excluded; only files DROPPED INTO the scanned dir are scanned. On a bare
+# dispatch (--run-dir omitted) the scan targets the SKILL ROOT so the gate still
+# executes on every invocation.
 # ===========================================================================
 note "GATE 2/3 -- BYPASS-SCAN (run-dir n8n/Airtable/legacy-base/literal-key detection)"
-if [ -n "$RUN_DIR" ] && command -v python3 >/dev/null 2>&1; then
-    SCAN_OUT="$(RUN_DIR="$RUN_DIR" SELF_DIR="$SELF_DIR" python3 - <<'PY' 2>&1
+SCAN_DIR="${RUN_DIR:-$SELF_DIR}"
+if [ "$(realpath "$SCAN_DIR" 2>/dev/null || echo "$SCAN_DIR")" = "$(realpath "$SELF_DIR" 2>/dev/null || echo "$SELF_DIR")" ]; then
+    echo "  (scan skipped: bare dispatch — scan root is the skill's own tree)"
+elif command -v python3 >/dev/null 2>&1; then
+    SCAN_OUT="$(SCAN_DIR="$SCAN_DIR" SELF_DIR="$SELF_DIR" python3 - <<'PY' 2>&1
 import os, re, sys
-run_dir = os.path.realpath(os.environ["RUN_DIR"])
+run_dir = os.path.realpath(os.environ["SCAN_DIR"])
 self_dir = os.path.realpath(os.environ["SELF_DIR"])
 re_n8n = re.compile(r"/webhook/|n8n\.cloud|X-N8N-API-KEY", re.I)
 re_air = re.compile(r"api\.airtable\.com|airtable\.com/v0", re.I)
@@ -246,11 +255,11 @@ PY
 )"; SCAN_RC=$?
     printf '%s\n' "$SCAN_OUT"
     if [ "$SCAN_RC" -eq 5 ]; then
-        gate_fail "AF-AE-BYPASS" 5 "a hand-rolled ungoverned external sender is present in $RUN_DIR. \
+        gate_fail "AF-AE-BYPASS" 5 "a hand-rolled ungoverned external sender is present in $SCAN_DIR. \
 All external I/O routes through the engine's sanctioned adapters in scripts/; remove the sender(s) above and re-run."
     fi
 else
-    echo "  (scan skipped: no --run-dir or python3 absent)"
+    echo "  (scan skipped: python3 absent)"
 fi
 
 # ===========================================================================

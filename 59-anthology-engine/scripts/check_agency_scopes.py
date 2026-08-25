@@ -19,13 +19,23 @@ endpoint's auth outcome (401 invalid token vs 403/insuf_scope vs 404
 route-exists) without ever issuing the write.
 """
 
+import argparse
 import json
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 import anthology_registry as reg
+
+SKILL_DIR = Path(__file__).resolve().parent.parent
+CONTRACT_PATH = SKILL_DIR / "config" / "anthology-snapshot-contract.json"
+
+# The template location id is the CONTRACT's source_template_location (the
+# operator's OWN template location, operator infrastructure config, not a
+# secret). --location-id overrides for tests, matching the sibling verifiers.
+DEFAULT_TEMPLATE_LOCATION = "2HIKGNgsixWx0yds7Qnx"
 
 EX_OK = 0
 EX_SCOPE_MISSING = 4      # a required scope is provably absent
@@ -160,7 +170,19 @@ def probe_write_only(client, path, scope_name):
     return ("UNKNOWN", "%s: HTTP %d on %s — %s" % (scope_name, code, path, body[:100]))
 
 
-def main():
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        prog="check_agency_scopes.py",
+        description="U24 — probe the agency PIT's scopes on the Anthology "
+                    "Convert and Flow template location (READ-ONLY: every "
+                    "probe is a GET; values are never printed).")
+    ap.add_argument("--location-id", default="",
+                    help="override the template location id (default: the "
+                         "contract's source_template_location."
+                         "template_location_id, %s; never printed)"
+                         % DEFAULT_TEMPLATE_LOCATION)
+    args = ap.parse_args(argv)
+
     _, token = reg.resolve_pit()
     if not token:
         checked = ", ".join(reg.PIT_LABELS)
@@ -168,14 +190,25 @@ def main():
                      "U24 cannot be probed without the agency token." % checked)
         return EX_STOP
 
+    try:
+        with open(CONTRACT_PATH) as fh:
+            contract = json.load(fh)
+    except (OSError, ValueError) as exc:
+        _out("HELD", "cannot read anthology-snapshot-contract.json (%s); "
+                     "falling back to the built-in default" % type(exc).__name__)
+        contract = {}
+    location_id = (args.location_id.strip()
+                   or (contract.get("source_template_location") or {}).get("template_location_id")
+                   or DEFAULT_TEMPLATE_LOCATION)
+
     client = reg.CafClient(token)
     results = []
     results.append(probe_snapshot_readonly(client))
-    results.append(probe_opportunities_read(client, "2HIKGNgsixWx0yds7Qnx"))
+    results.append(probe_opportunities_read(client, location_id))
     results.append(probe_locations_read(client))
     results.append(probe_write_only(client, "/snapshots/from-location",
                                     "snapshots.write"))
-    results.append(probe_write_only(client, "/locations/2HIKGNgsixWx0yds7Qnx",
+    results.append(probe_write_only(client, "/locations/%s" % location_id,
                                     "locations.write"))
 
     _out("result", "U24 scope probe (read-only, values masked):")

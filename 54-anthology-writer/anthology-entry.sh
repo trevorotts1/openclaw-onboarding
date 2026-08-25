@@ -230,6 +230,13 @@ fi
 note "GATE 2/4 — MODEL-MAP PRE-GATE (preflight.sh --check)"
 if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
     if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
+        # Fresh-box landmine: a MISSING skill-root model-map.json passes --check by
+        # design ("installer resolves per box"), but any invocation that will reach
+        # authoring phases fails at P6 without one. Warn at entry, fatal stays at P6.
+        SKILL_ROOT_MAP="$SELF_DIR/model-map.json"
+        if [ ! -f "$SKILL_ROOT_MAP" ] && [ ! -f "$SELF_DIR/config/model-map.json" ]; then
+            echo "WARNING: model-map.json absent — authoring will fail at P6; run preflight/model resolution first" >&2
+        fi
         :
     else
         PF_RC=$?

@@ -674,7 +674,7 @@ def run(manifest, run_dir: Path, upto, resume: bool = False, mc_task=None) -> in
             p.get("id") == pid and p.get("passed") for p in prev.get("phases", [])
         ):
             # Already passed, but we are past the resume marker — re-use old entry.
-            print("   (--resume: already passed, skipped)")
+            print("   (--resume: already passed — re-checking)")
 
         if pre.get("required"):
             ok, msg = _run_checker(pre["checker"], run_dir)

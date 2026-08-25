@@ -444,7 +444,12 @@ def verify_certificate(cert, environ=None):
         return True, "unsigned (content hash intact)"
     _, secret = resolve_cert_secret(environ)
     if not secret:
-        return True, "signed certificate; no secret available to re-verify HMAC (hash intact)"
+        sys.stderr.write("[delivery_report] WARNING: certificate carries an HMAC "
+                         "signature but no cert secret resolved (%s) -- HMAC UNVERIFIED "
+                         "(fail-soft)\n" % ", ".join(CERT_SECRET_LABELS))
+        return True, ("UNVERIFIED (no secret): signed certificate; no cert secret "
+                      "resolved by label (%s) to re-verify the HMAC (content hash intact)"
+                      % ", ".join(CERT_SECRET_LABELS))
     want = hmac.new(secret.encode("utf-8"), expect.encode("utf-8"), hashlib.sha256).hexdigest()
     if want != sig.get("value"):
         return False, "HMAC signature mismatch"

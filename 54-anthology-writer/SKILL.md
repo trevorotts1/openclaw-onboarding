@@ -107,6 +107,7 @@ in any skill script or sub-agent prompt.
 | Process integrity | a signed certificate requires a full P0→P6 pass; no phase skips | AF-AW-PROCESS-INTEGRITY / AF-AW-STAGE-SKIPPED |
 | Entry front-door | no hand-rolled external uploader/notifier in the run dir | AF-AW-ENTRY-BYPASS |
 | Model-map resolved | a resolved run-dir `model-map.json` carries no `<CLIENT_*>` placeholder / Anthropic id | AF-AW-UNRESOLVED-MODELMAP |
+| Model role resolved | run-dir `model-map.json` present at P6 chapter QC; absent fails closed | AF-AW-MODEL-ROLE |
 
 ## What you never do
 
@@ -225,7 +226,7 @@ Layer 2 orchestration.
 
 - [INSTRUCTIONS.md](INSTRUCTIONS.md) — operator quick-start: preflight, intake, one-entry run, guardrails, verify/CI.
 - [REPAIRS.md](REPAIRS.md) — the faithful-or-repaired defect register (KEEP / REPAIR / DROP) tracing every source behavior to its enforcing gate.
-- [skill-version.txt](skill-version.txt) — the current skill version (1.4.1).
+- [skill-version.txt](skill-version.txt) — the current skill version (1.4.7).
 
 ## Environment Variables
 

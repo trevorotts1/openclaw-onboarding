@@ -372,6 +372,8 @@ class CafClient:
                     "authenticated Convert and Flow session" % code)
             if code in (400, 409, 422):
                 raise CafValidation("Convert and Flow rejected the request (HTTP %s)" % code)
+            if code == 429:
+                raise CafUnreachable("Convert and Flow rate-limited the request (HTTP 429) on %s" % method)
             raise CafUnreachable("Convert and Flow HTTP %s on %s" % (code, method))
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             raise CafUnreachable("Convert and Flow transport error: %s" % type(exc).__name__)

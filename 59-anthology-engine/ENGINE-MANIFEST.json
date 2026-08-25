@@ -2,12 +2,12 @@
   "manifest_version": 1,
   "skill": "anthology-engine",
   "skill_number": 59,
-  "skill_version": "0.1.28",
+  "skill_version": "0.1.29",
   "schema_version": "1",
   "ledger_schema_version": 1,
   "authoring_core": "54-anthology-writer",
   "shared_tone_core": "shared-utils/tone-writing-core",
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages). LATER UNITS extend the inventory beyond the W1 normative set: rows 37..52 (W3/W-snapshot/fleet/unit batches U17..U26), row 53 (U23 GHL-gated SMS phone provisioner) and row 54 (U02 GHL template live re-verifier live_verify_template.py) \u2014 each documented with its own purpose + exit-code contract so inventory-equals-shipped-set holds across the whole shipped set.",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages). LATER UNITS extend the inventory beyond the W1 normative set: rows 37..63 (W3/W-snapshot/fleet/unit batches U17..U26 and the later unit batches) \u2014 each documented with its own purpose + exit-code contract so inventory-equals-shipped-set holds across the whole shipped set (rows through 63).",
   "doctrine": "Move in silence (operator-verbose, client-silent; only the three sanctioned nudge templates ever reach a client). Nothing Anthropic ships in any runtime file (guard-no-anthropic-runtime.py + model_router.py deny patterns). Every credential is referenced by label and location only, never by value. The client-facing platform name is Convert and Flow. Config writes run as the node user, never root. Keying is contact_id, never email. Enforcement, not description: every SACRED floor is a fail-closed prover, never advice.",
   "layers": {
     "L2_orchestration": "The ONLY layer that touches the ledger, the model router, and the gates. intake_router.py -> anthology_state.py -> the stage runners.",
@@ -192,7 +192,10 @@
     "2": "validation or guard refusal",
     "3": "dependency unavailable or held",
     "4": "enforced violation detected",
-    "5": "data or read-back mismatch"
+    "5": "data or read-back mismatch",
+    "6": "deps unresolved",
+    "7": "hash pin mismatch",
+    "8": "model-map pre-gate failure"
   },
   "script_inventory": [
     {

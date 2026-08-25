@@ -500,6 +500,14 @@
       "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)",
       "enforced_by": "anthology-entry",
       "py_symbol": "version_hash_pin"
+    },
+    {
+      "code": "AF-AW-MODEL-ROLE",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "run-dir model-map.json is missing at P6 chapter QC — fail-closed; authoring cannot proceed on an unresolved model chain",
+      "enforced_by": "prove_aw_model_role",
+      "py_symbol": "evaluate"
     }
   ]
 }

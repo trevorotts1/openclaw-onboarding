@@ -68,6 +68,7 @@
     "rewrite_budget": 2
   },
   "board": {
+    "card_base_url": "/workspace/anthology",
     "ingest_endpoint": "POST /api/tasks/ingest",
     "auth": "HMAC (x-webhook-signature over WEBHOOK_SECRET) plus Bearer (MC_API_TOKEN); Skill 32's existing pair, reused never duplicated",
     "fail_soft": "board unreachability NEVER blocks the pipeline; the ledger remains the truth and the card reconciles on the daily tick",
