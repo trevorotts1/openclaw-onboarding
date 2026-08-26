@@ -3,6 +3,149 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.4] - 2026-08-26
+
+**The two false engines behind the storm.** 0.6.3 gated how often an escalation
+is SENT. This release fixes the two things that were manufacturing the escalations
+in the first place: findings that multiplied without limit, and a fail-closed
+signature that fired on documents that merely DISCUSSED authorization. Both ship
+together so the fleet rolls once.
+
+### Fix A - findings dedup (`loop_ledger.py`)
+
+`record_finding` was a **bare INSERT**, and the `findings` table carried **no
+unique index on `dedup_key`** - `PRAGMA index_list(findings)` showed only
+`ix_find_ts(tick_ts)` and `ix_find_open(state, loop_class)`, neither unique. The
+`dedup_key` column had been there all along; nothing ever enforced it. So a
+condition re-observed on every 15-minute tick appended a row on every tick,
+forever. Measured on one live box: **4,084 rows across 12 distinct `dedup_key`s**,
+feeding a 100-210 escalation/hour storm.
+
+**Uniqueness is scoped to ACTIVE states only** - `ACTIVE_FINDING_STATES =
+("open","planned","escalated","parked")`, one module constant feeding all three
+users (the index DDL, the migration collapse, the `record_finding` lookup) so they
+cannot drift. The scoping is the design, not an optimisation: once a finding is
+fixed or verified its key is FREE again, so a **recurrence after a fix opens a NEW
+row** rather than resurrecting closed history. Unscoped uniqueness would have made
+"it came back" indistinguishable from "it never left".
+
+`_migrate_findings_dedup()` runs at the end of `_bootstrap()`, so **every ledger
+open** migrates - no separate step, no box left behind. All three steps sit inside
+**one `BEGIN IMMEDIATE`** with full manual transaction control (under Python's
+default `isolation_level`, DDL does NOT open an implicit transaction and would
+commit on the spot, which is exactly the half-migrated state this must be unable
+to produce). SQLite DDL is transactional, so a crash rolls the whole thing back
+and the next open re-runs it clean. **The order is the crux and is not
+rearrangeable**, because `CREATE UNIQUE INDEX` scans existing rows and fails
+outright if two active rows already share a key:
+
+1. `PRAGMA table_info(findings)` guard, then `ALTER TABLE findings ADD COLUMN
+   times_seen INTEGER NOT NULL DEFAULT 1`. The guard is mandatory - a second ALTER
+   is an error and this runs on every open.
+2. **Collapse by DEMOTION - nothing is ever deleted.** A DELETE would dangle
+   `fix_actions.finding_id` (the healer's audit trail points at those ids) and
+   destroy the evidence of the storm itself. Duplicates are set to `resolved`,
+   which `open_findings()` (filtering `state='open'`) stops seeing while the rows
+   stay fully readable as history. **Survivor = `MAX(finding_id)` per key** = the
+   freshest observation; the survivor is NOT modified and **keeps its own state**,
+   so a group mixing open+escalated leaves whichever row is newest exactly as it
+   was. Rows already inactive are untouched history. The count is written to
+   `meta.migration_findings_dedup_collapsed` for audit, and only when non-zero so
+   a later no-op cannot overwrite the real number with 0.
+3. `CREATE UNIQUE INDEX IF NOT EXISTS ux_find_active_key ON findings(dedup_key)
+   WHERE dedup_key IS NOT NULL AND state IN (...)`. Partial index = SQLite 3.8.0+
+   (2013). NULL keys stay exempt and unlimited.
+
+`record_finding` is now **UPDATE-then-INSERT** (safe as a read-then-write pair
+because this module IS the single writer per spec 6.1, on a WAL connection with
+`busy_timeout=30000`; the partial index is the backstop if that law is ever
+broken). A `dedup_key` of `None` takes the original INSERT path, byte-for-byte
+unchanged. An active hit refreshes `severity`/`detail`/`evidence_path`/`tier`/
+timestamps and bumps `times_seen`, and **deliberately does NOT touch `state`** -
+an escalated finding stays escalated. Whether something re-escalates belongs to
+0.6.3's digest gate and refusal backoff; making it a side effect of re-observation
+would flap the state and re-open the very storm this closes. **No `ON CONFLICT`
+upsert syntax is introduced anywhere**, so no SQLite 3.24+ floor is added.
+
+Replayed in the self-test: **200 re-observations of one condition = 1 row with
+`times_seen=200`**, where the old code produced 200 rows.
+
+### Fix B - `fail_closed_markers` false positives (`loop_watchdog.py`, `signatures.json`)
+
+D6 scored a call fail-closed on a **case-insensitive substring** of markers like
+`unauthorized`/`forbidden` anywhere in the tool RESULT payload. An agent READING a
+document about authorization was therefore scored as an agent being REFUSED.
+Proven on a live box: benign `ls`/`find`/`cat` over one real-estate playbook
+directory holding 5 marker-bearing files produced escalations. **Marker density is
+not the discriminator** - a healthy box measured 7.4% density with 0 spills, equal
+to or higher than the storm boxes.
+
+The binding constraint is the module's own design law (`collect_bursts`): tool
+ARGUMENTS are never read and only counts leave the function. **Classifying by
+command line is therefore forbidden**, and stays forbidden. Both new layers use
+only the tool NAME and the RESULT text, both already in scope.
+
+- **L1 - tool-name exemption.** `result_scan_exempt_tools` is pinned as DATA:
+  `read`, `memory_search`, `tool_search`, `tool_describe` - tools whose result IS
+  retrieved content by construction, so a marker in it describes the DOCUMENT, not
+  this call's outcome. **These ids were measured, not guessed**: a read-only pass
+  over 400 live session transcripts reusing the watchdog's own `_tool_result_of`,
+  printing distinct tool NAME + COUNT only (never payload text, per the same
+  privacy law), yielding 14 real ids. Exempt tools **still count toward `calls` and
+  `errors`** - only marker scanning is skipped, so D6 burst detection on read tools
+  is fully preserved.
+- **L2 - structural error shape**, which carries the shell-tool case L1 cannot
+  exempt: `failclosed = markers_hit AND (err OR error_shape_hit)`. The
+  `error_shape_patterns` are pinned in `signatures.json` and compiled once per
+  distinct pattern set: JSON error keys, an `HTTP/1.x 4xx` status line, JSON
+  status fields, and CLI failure prefixes (`curl: (N)`, `wget:`, `Traceback`).
+  Prose cannot forge any of them. A pattern that fails to compile is skipped
+  rather than raised - a config typo must never take the watchdog down.
+
+**A prose-proximity window was built, measured and REJECTED**: real playbook prose
+contains sentences like "common error: unauthorized access", so it fails the
+healthy-box control. The repro fixture carries that exact sentence so the rejected
+design has a permanent headstone in the test suite.
+
+**No contradiction with `deliberately_excluded: ["401","403"]`**, which still bans
+the BARE numeric substring that measured 2.8x inflation. The new regexes use those
+numbers ONLY anchored inside an HTTP status line or as a quoted JSON status
+value - structural positions a byte count or line number cannot occupy. The
+`match:` description, the block note and the exclusion note are all updated in the
+same commit, so config and code cannot say different things.
+
+**UNCHANGED:** the markers list, and `thresholds.json` `d6_futile_retry_burst`
+(window 60s, warn 3, p1 5). This is per-call classification precision, not a new
+trigger.
+
+**KNOWN RESIDUAL, documented rather than hidden:** an `exec` that cats a file
+containing a verbatim structured error dump still scores fail-closed - by tool name
+and result shape it is identical to a real refusal. It needs 3+ such reads inside
+60s to reach threshold, and L1 removes the case entirely for native read tools.
+
+### Tests - every one proven able to FAIL
+
+Migration self-test (following the `loop_backoff.py` precedent): a temp DB seeded
+in the OLD shape with duplicate groups including **mixed open+escalated**, run
+twice for idempotency, plus a **real failure injected at step 3** (an object
+occupying the index name, so SQLite genuinely refuses the CREATE rather than a
+monkeypatch) proving the rollback leaves no column and no demotion and the next
+open finishes clean. Survivor choice, demotion count, index presence and all four
+`record_finding` branches are asserted.
+
+Three D6 discriminator fixtures, each asserted in BOTH directions: the **repro**
+(3 shell reads of marker-bearing prose in 60s -> `failclosed=0`, where the old rule
+gave 3), the **genuine refusal** (same tool, same exit-0 status, structured auth
+error -> `failclosed=3` KEPT, guarding against over-pruning), and the **read-tool
+exemption** (verbatim error JSON that deliberately satisfies L2 -> 0, while the
+IDENTICAL payload through `exec` still gives 3, proving L1 works independently).
+Each fixture re-runs the pre-0.6.4 rule inline and asserts it disagrees, so a
+fixture that stops discriminating fails loudly instead of passing vacuously.
+
+Mutation-proved: disabling the dedup branch, neutering the collapse step, and
+reverting to the markers-only rule each make the suite fail (rc=1) at the exact
+assertion that covers them.
+
 ## [0.6.3] - 2026-08-26
 
 **The escalation amplifier.** The Rescue Rangers escalation path had **no dedup
