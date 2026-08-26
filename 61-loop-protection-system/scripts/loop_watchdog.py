@@ -94,7 +94,8 @@ def _dedup_ok(led, finding, window_hours):
 
 def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     """One deterministic tick over INJECTED evidence. Returns a summary dict:
-      {armed, findings, applied, planned, escalated, alerts, errors}
+      {armed, findings, applied, planned, escalated, escalation_unsent, alerts,
+       errors, drain}
     Zero model calls. With armed False (DRY_RUN) NOTHING is mutated outside OUR ledger
     (findings are still recorded - observing is the whole point of burn-in).
 
@@ -112,7 +113,8 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     window_hours = thresholds["alert"]["dedup_window_hours"]
 
     summary = {"armed": armed, "findings": 0, "applied": 0, "planned": 0,
-               "escalated": 0, "alerts": 0, "errors": 0, "by_class": {}}
+               "escalated": 0, "escalation_unsent": 0, "alerts": 0, "errors": 0,
+               "by_class": {}}
 
     findings = run_detectors(evidence, thresholds, signatures)
     for f in findings:
@@ -125,6 +127,37 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
                 "ERROR [loop_watchdog]: finding %s/%s failed to process (%s: %s); "
                 "CONTINUING to the next finding - one bad unit never kills the tick\n"
                 % (f.get("loop_class"), f.get("unit"), type(exc).__name__, exc))
+
+    # Drain the UNSENT spill queue REPAIRS.md always claimed was retried.
+    #
+    # DISARMED BY DEFAULT. Absent env = OFF; re-arming is a deliberate explicit
+    # act. This gate is the safety, not the rate cap in loop_escalate.py: a
+    # numeric default cannot protect anything here, because update-skills.sh
+    # delivers the skill with `cp -Rp` and OVERWRITES this file on every box, so
+    # a roll would wipe a box-local disarm and re-arm all 35 boxes at once. The
+    # repo ships the SAME gate the live fleet carries so a roll PRESERVES the
+    # disarm. Do not rename the env var or the marker without changing both.
+    #
+    # WHY: this module's limiter is PER BOX; the intake limit is GLOBAL (12/60s).
+    # 35 polite boxes still compose to ~70 posts per tick window. Run autonomously
+    # on 2026-08-26 it delivered 10,595 escalations, drove the shared intake to
+    # HTTP 429, and degraded execution from 29.8s to 229s - timing out REAL client
+    # escalations against the 120s client timeout.
+    #
+    # Runs LAST, and only when delivering for real: an injected transport means
+    # --no-send or a self-test, and a stub returning True would archive the whole
+    # backlog without posting anything.
+    if escalate_transport is None and os.environ.get("RESCUE_RANGERS_DRAIN_ENABLE", "") == "1":
+        try:
+            summary["drain"] = ESC.drain()
+        except Exception as exc:  # noqa: BLE001 - a drain never kills the tick
+            summary["drain"] = {"error": "%s: %s" % (type(exc).__name__, exc)}
+    else:
+        # Recorded either way, so a tick log PROVES the state instead of implying
+        # it by silence - the same reason a failed escalation is no longer logged
+        # as "escalated".
+        summary["drain"] = {"skipped": "DISARMED RR-DRAIN-DISARMED-20260826",
+                            "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}
     return summary
 
 
@@ -198,9 +231,20 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
             action_needed="operator decision / approve fix",
             finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
             revert_cmd=kc.get("revert_cmd"))
-        ESC.send(payload, transport=escalate_transport)
-        led.set_finding_state(fid, "escalated")
-        summary["escalated"] += 1
+        res = ESC.send(payload, transport=escalate_transport)
+        if res.get("sent"):
+            led.set_finding_state(fid, "escalated")
+            summary["escalated"] += 1
+        else:
+            # An escalation the intake never admitted is NOT escalated. Marking
+            # it so is how fleet-wide loss stayed invisible: the finding was
+            # closed in the ledger, the payload sat in UNSENT, and nobody was
+            # ever told. Left OPEN so the next tick re-escalates it.
+            summary["escalation_unsent"] += 1
+            sys.stderr.write(
+                "ERROR [loop_watchdog]: escalation for finding %s NOT admitted "
+                "(%s); payload spilled to %s; left open for retry\n"
+                % (fid, res.get("error"), res.get("unsent_path")))
 
     # operator alert (deduped). P1 bypasses batching but not dedup.
     if f["severity"] in ("P1", "P2") and _dedup_ok(led, f, window_hours):
@@ -1340,6 +1384,48 @@ def self_test():
         s3 = tick(empty, led, armed=True, escalate_transport=dead_tx, box="box-example")
         assert s3["findings"] >= 1
         print("  escalate case: PASS (offline escalation via UNSENT fallback, no crash)")
+
+        # THE DRAIN ENABLE GATE. This is the path every box takes on every tick,
+        # and getting it wrong once already saturated the shared intake, so it is
+        # asserted, not assumed. ESC.drain is replaced by a recorder: if the gate
+        # leaks, the recorder fires and the assertion names it - no network is
+        # involved either way. Evidence is quiet, so no finding escalates and the
+        # real ESC.send is never reached even with escalate_transport=None.
+        _quiet = {"units": [{"name": "gw", "delta": 0}], "windows": [], "runs": [],
+                  "crons": [], "wedge": {}}
+        _drain_calls = []
+        _real_drain = ESC.drain
+        ESC.drain = lambda *a, **k: (_drain_calls.append(1) or {"posted": 0})
+        try:
+            # (a) env ABSENT -> DISARMED. The default state of every box.
+            os.environ.pop("RESCUE_RANGERS_DRAIN_ENABLE", None)
+            sg = tick(_quiet, led, armed=False, escalate_transport=None, box="box-example")
+            assert not _drain_calls, "DISARMED tick still ran the drain"
+            assert sg["drain"]["skipped"] == "DISARMED RR-DRAIN-DISARMED-20260826", sg["drain"]
+            assert sg["drain"]["rearm"] == "RESCUE_RANGERS_DRAIN_ENABLE=1", sg["drain"]
+
+            # (b) a value that is not exactly "1" is NOT an enable
+            for _almost in ("0", "true", "yes", "", "1 ", "ENABLE"):
+                os.environ["RESCUE_RANGERS_DRAIN_ENABLE"] = _almost
+                tick(_quiet, led, armed=False, escalate_transport=None, box="box-example")
+                assert not _drain_calls, "%r was treated as an enable" % _almost
+
+            # (c) an injected transport NEVER drains, even when armed
+            os.environ["RESCUE_RANGERS_DRAIN_ENABLE"] = "1"
+            tick(_quiet, led, armed=False, escalate_transport=dead_tx, box="box-example")
+            assert not _drain_calls, "an injected transport drained"
+
+            # (d) explicit enable + real delivery path -> the drain DOES run,
+            #     because a safety that can never be lifted is not a safety.
+            sg2 = tick(_quiet, led, armed=False, escalate_transport=None, box="box-example")
+            assert _drain_calls == [1], "explicit enable did not run the drain"
+            assert sg2["drain"] == {"posted": 0}, sg2["drain"]
+        finally:
+            ESC.drain = _real_drain
+            os.environ.pop("RESCUE_RANGERS_DRAIN_ENABLE", None)
+        print("  drain-gate case: PASS (absent env DISARMS and is recorded in the tick; "
+              "near-miss values are not enables; injected transport never drains; "
+              "an explicit =1 re-arms)")
 
         led.close()
         os.environ.pop("LOOP_STATE_DIR", None)

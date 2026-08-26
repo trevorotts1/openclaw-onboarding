@@ -45,9 +45,68 @@ window (pid stable at t+15/35/65s).
 
 Escalations go ONLY via the n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`
 (`openclaw message send` to the group is silently dropped - bots cannot read other
-bots). If the webhook was down, the payload is written to
-`<state>/escalations/UNSENT-esc-*.json` and retried next tick. Check that dir; confirm
-`$RESCUE_RANGERS_WEBHOOK_URL` is set and reachable.
+bots). If the webhook was down, OR the intake REFUSED the payload, it is written to
+`<state>/escalations/UNSENT-esc-*.json` with the reason in `_unsent_reason`.
+
+Spills are replayed by `loop_escalate.py --drain`, which is **DISARMED BY DEFAULT and
+operator-run**. The watchdog's automatic drain is behind an explicit enable gate:
+
+    RESCUE_RANGERS_DRAIN_ENABLE=1        # absent env = DISARMED
+
+With the env absent the tick records
+`{"skipped": "DISARMED RR-DRAIN-DISARMED-20260826", "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}`,
+so a tick log PROVES the state either way instead of implying it by silence.
+
+There are TWO INDEPENDENT LOCKS, and an automatic drain requires BOTH to be released:
+
+    RESCUE_RANGERS_DRAIN_ENABLE=1        # 1. the gate: is drain() CALLED at all
+    RESCUE_RANGERS_DRAIN_PER_TICK=2      # 2. the cap: default 0, so a call no-ops
+
+Setting only the first changes nothing - the call is made and returns immediately with
+`"stopped": "drain disabled: per-tick cap is 0 ..."`. That is deliberate: every
+single-layer protection in this incident failed somewhere. `2` is the recommended rate.
+An explicit `RESCUE_RANGERS_DRAIN_PER_TICK=0` is honoured as a real kill and no longer
+falls back to the default.
+
+Drain a backlog deliberately with `loop_escalate.py --drain --limit N` (add `--dry-run`
+to see what would be replayed without posting). NOTE: a direct `--drain` run bypasses
+the enable gate entirely - that is correct and intended for operator-run drains, but it
+means a direct call posting is NOT evidence that the automatic drain is armed. To check
+whether a box drains by itself, read the gate in `loop_watchdog.py`, or look for the
+DISARMED marker in a tick summary.
+
+WHY IT IS OFF (2026-08-26): the limiter in the script is PER BOX, but the intake limit
+is GLOBAL - "more than 12 escalations/60s" for the whole fleet. 35 boxes each behaving
+politely at 2/tick still compose to ~70 posts per tick window against a ceiling of 12.
+Run autonomously fleet-wide it delivered 10,595 stranded escalations and saturated the
+shared intake: HTTP 429, and execution duration degraded from a 29.8s baseline to
+229s/221s/187s/183s. Since the client timeout is 120s, REAL client escalations then
+timed out. Draining a backlog must never starve live traffic. Turning it on fleet-wide
+requires GLOBAL sequencing across boxes, or a per-box limit enforced at the intake.
+
+The gate lives in `loop_watchdog.py` rather than in a numeric default because
+`update-skills.sh` delivers this skill with `cp -Rp` and OVERWRITES that file on every
+box. A box-local disarm would be wiped by the next roll, re-arming the whole fleet at
+once. The repo ships the same gate the live boxes carry, so a roll PRESERVES the
+disarmed state.
+
+When enabled, the drain is deliberately slow: spills are deduped by problem identity,
+at most N DISTINCT problems are re-posted per tick, spaced after a per-box jitter, and
+it stops the moment one post fails. A file is cleared only on confirmed admission and
+is MOVED to `<state>/escalations/drained/`, never deleted.
+
+To work a backlog down safely, run it from ONE box at a time with a small `--limit` and
+watch intake latency between runs.
+
+Check both dirs; read `_unsent_reason` first - it names the fault. Confirm
+`$RESCUE_RANGERS_WEBHOOK_URL` is set and reachable, and that
+`$RESCUE_RANGERS_WEBHOOK_SECRET` is present (the intake 403s without the header).
+`--drain --dry-run` reports what WOULD be replayed and posts nothing.
+
+NOTE (2026-08-26): before this date the line above claimed spills were "retried next
+tick". Nothing ever read the directory back - no replay code existed - so every spilled
+escalation was lost. If a box has a large backlog under `escalations/`, that is the
+cause, and the drain will work through it a few problems per tick.
 
 ## 6. False positives above the floor
 
