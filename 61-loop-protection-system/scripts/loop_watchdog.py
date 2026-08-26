@@ -52,6 +52,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -1264,6 +1265,31 @@ def _tool_result_of(row):
     return (name, ts, err, text)
 
 
+_ERROR_SHAPE_CACHE = {}
+
+
+def _error_shape_res(patterns):
+    """Compile the pinned error_shape_patterns ONCE per distinct pattern set.
+
+    The set comes from signatures.json (DATA, not code) but is compiled here and
+    memoised at module level, so a 15-minute tick scanning thousands of results
+    pays the compile cost once rather than per record. A pattern that fails to
+    compile is SKIPPED, never raised: a typo in pinned config must not be able to
+    take the watchdog down - a slightly weaker detector is recoverable, a dead
+    watchdog on a looping box is not."""
+    key = tuple(patterns)
+    got = _ERROR_SHAPE_CACHE.get(key)
+    if got is None:
+        got = []
+        for p in key:
+            try:
+                got.append(re.compile(p, re.IGNORECASE | re.MULTILINE))
+            except re.error:
+                continue
+        _ERROR_SHAPE_CACHE[key] = got
+    return got
+
+
 def collect_bursts(files=None, thresholds=None, signatures=None):
     """D6 evidence: per (transcript, tool), the heaviest sliding window of calls.
 
@@ -1282,6 +1308,23 @@ def collect_bursts(files=None, thresholds=None, signatures=None):
     kind enters a burst measurement, so a finding cannot leak a secret that
     happened to sit next to an auth error.
 
+    v0.6.4 - FAIL-CLOSED IS NOW A TWO-LAYER TEST, because a bare marker match was
+    scoring an agent that merely READ a document about authorization as an agent
+    being REFUSED (benign `ls`/`find`/`cat` over one playbook directory escalated
+    on a live box):
+      L1  a tool in `result_scan_exempt_tools` is skipped for marker scanning,
+          because its result IS retrieved content by construction. It still counts
+          toward calls and errors, so read-tool bursts are fully preserved.
+      L2  everything else needs marker AND (tool-layer failure OR a structural
+          `error_shape_patterns` match) - a JSON error key, an HTTP 4xx status
+          line, a CLI failure prefix. Prose cannot forge any of those.
+    Both layers use ONLY the tool NAME and the RESULT text, both already in scope.
+    CLASSIFYING BY COMMAND LINE IS FORBIDDEN HERE and always will be - reading the
+    arguments to decide whether a `cat` is benign would break the law three
+    paragraphs up, which is the one guarantee this function actually sells.
+    Threshold behaviour is UNCHANGED: this is per-call precision, not a new
+    trigger. See signatures.json for the measured evidence and the known residual.
+
     Records with no parseable timestamp are counted toward the tool's total but
     cannot be placed in a window; a transcript where NO record has a timestamp
     therefore yields no burst rather than a false one. A probe miss is DATA."""
@@ -1291,6 +1334,10 @@ def collect_bursts(files=None, thresholds=None, signatures=None):
     sig = signatures if signatures is not None else C.load_signatures()
     fcm = sig.get("fail_closed_markers") if isinstance(sig, dict) else {}
     markers = [str(x).lower() for x in ((fcm or {}).get("markers") or [])]
+    # v0.6.4 two-layer fail-closed classification (see signatures.json for the
+    # measured evidence behind both layers).
+    exempt = {str(x) for x in ((fcm or {}).get("result_scan_exempt_tools") or [])}
+    shapes = _error_shape_res((fcm or {}).get("error_shape_patterns") or [])
     if files is None:
         files = _session_files(max_files=int(d5t["max_session_files"]))
     window = float(t["window_seconds"])
@@ -1308,7 +1355,23 @@ def collect_bursts(files=None, thresholds=None, signatures=None):
             if ts is None:
                 continue
             low = text.lower() if text else ""
-            failclosed = bool(low) and any(mk in low for mk in markers)
+            if name in exempt:
+                # L1. This tool's result IS retrieved CONTENT (file bytes, a stored
+                # memory, a tool catalog entry), so a marker in it describes the
+                # DOCUMENT, not this call's outcome. Exempt from marker scanning
+                # ONLY - the call still lands in `per` below and still counts
+                # toward calls and errors, so D6 bursts on read tools are intact.
+                failclosed = False
+            else:
+                # L2. A marker proves the WORD is present; it never proved THIS
+                # call was refused. Require the result to have failed at the tool
+                # layer, or to be shaped like an error at all. Prose cannot forge
+                # a quoted JSON key, an HTTP status line, or a CLI failure prefix,
+                # which is exactly what separates a playbook that DISCUSSES
+                # authorization from an API that REFUSED one.
+                markers_hit = bool(low) and any(mk in low for mk in markers)
+                failclosed = bool(markers_hit and
+                                  (err or any(r.search(text) for r in shapes)))
             per.setdefault(name, []).append((ts.timestamp(), err, failclosed))
         for name, seq in per.items():
             seq.sort()
@@ -2046,6 +2109,103 @@ def self_test():
               "delta=12 still P1; a reset counter re-baselines instead of spiking)")
         for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", _PROBES_OFF_ENV):
             os.environ.pop(k, None)
+
+    # ---- D6 FAIL-CLOSED DISCRIMINATION (v0.6.4) ----------------------------
+    # A bare marker match scored an agent that READ a document mentioning
+    # authorization as an agent that was REFUSED. Benign ls/find/cat over one
+    # playbook directory holding 5 marker-bearing files escalated on a live box.
+    # Asserted in BOTH directions on the SAME tool name, because the only thing
+    # easier than shipping a false positive is "fixing" it into a false negative.
+    print("[loop_watchdog] self-test: D6 fail-closed discrimination (v0.6.4)")
+    sig = C.load_signatures()
+    thr6 = C.load_skill_config("thresholds.json")
+
+    def _burst_fixture(td, tool, texts, name="s.jsonl"):
+        """Write N marker-bearing results 10s apart, PLUS one genuinely errored
+        result with benign text. The error record keeps the measurement alive past
+        collect_bursts' silence rule, so `calls` and `errors` can be asserted even
+        when failclosed is correctly 0 - that is how "still counted" is PROVEN
+        rather than assumed."""
+        p = os.path.join(td, name)
+        base = datetime(2026, 8, 26, 12, 0, 0, tzinfo=timezone.utc)
+        with open(p, "w", encoding="utf-8") as fh:
+            for i, t in enumerate(list(texts) + ["ordinary output, nothing notable"]):
+                fh.write(json.dumps({
+                    "type": "message",
+                    "message": {"role": "toolResult", "toolName": tool,
+                                "timestamp": (base + timedelta(seconds=10 * i)).isoformat(),
+                                "isError": i == len(texts),
+                                "details": {"status": "completed"},
+                                "content": t}}) + "\n")
+        return p
+
+    def _measure(path):
+        out = collect_bursts(files=[path], thresholds=thr6, signatures=sig)
+        assert len(out) == 1, out
+        return out[0]
+
+    def _old_rule_fcs(texts):
+        """The PRE-0.6.4 rule, replayed on the same fixture text. Its answer is
+        what makes each fixture a DISCRIMINATOR rather than a fixture that would
+        pass either way - if this ever equals the new answer, the test proves
+        nothing and must be rewritten."""
+        mk = [str(x).lower() for x in sig["fail_closed_markers"]["markers"]]
+        return sum(1 for t in texts if any(m in t.lower() for m in mk))
+
+    with tempfile.TemporaryDirectory() as td:
+        # 1. THE REPRO. Shell tool, exit 0, payload is playbook PROSE that DISCUSSES
+        #    authorization. Note the third paragraph carries the bare word "error"
+        #    in prose on purpose: the rejected proximity-window design would have
+        #    scored it fail-closed, so this fixture is also that design's headstone.
+        prose = [
+            "Step 4. If the portal returns unauthorized, the agent should stop and "
+            "hand the account back to the operator rather than retrying.",
+            "Access tiers: a buyer record is forbidden to junior staff and visible "
+            "to the listing owner only. Escalate exceptions to the broker.",
+            "Troubleshooting. A common error: unauthorized access to the vault "
+            "usually means the seat was never provisioned. Authentication failed "
+            "messages in the console are expected during onboarding.",
+        ]
+        b1 = _measure(_burst_fixture(td, "exec", prose, "repro.jsonl"))
+        assert b1["failclosed"] == 0, b1
+        assert b1["calls"] == 4 and b1["errors"] == 1, b1
+        assert _old_rule_fcs(prose) == 3, "fixture 1 no longer discriminates"
+        print("  repro case: PASS (3 shell reads of marker-bearing PROSE in 60s -> "
+              "failclosed=0 where the old rule gave 3; calls=4/errors=1 still "
+              "counted; the 'common error:' paragraph proves the rejected "
+              "proximity window would have failed here)")
+
+        # 2. GENUINE REFUSAL, same tool, same exit-0 status. This is the direction
+        #    that guards against over-pruning: the whole point of D6 is the call
+        #    that SUCCEEDS while the dependency behind it refuses.
+        refusal = ['{"error":{"type":"authentication_error","message":'
+                   '"invalid_api_key: the supplied key is not valid"}}'] * 3
+        b2 = _measure(_burst_fixture(td, "exec", refusal, "refusal.jsonl"))
+        assert b2["failclosed"] == 3, b2
+        assert b2["calls"] == 4 and b2["errors"] == 1, b2
+        assert _old_rule_fcs(refusal) == 3
+        print("  genuine-refusal case: PASS (same tool, same exit-0 status, "
+              "structured auth error -> failclosed=3 KEPT; L2 prunes prose "
+              "without pruning real refusals)")
+
+        # 3. READ-TOOL EXEMPTION, proven INDEPENDENT of L2: the payload is verbatim
+        #    raw error JSON, which satisfies L2 outright. Only the tool-name
+        #    exemption can bring this to zero.
+        exempt_tool = sig["fail_closed_markers"]["result_scan_exempt_tools"][0]
+        raw_err = ['{"error":{"code":403,"reason":"forbidden","message":'
+                   '"unauthorized"}}'] * 3
+        b3 = _measure(_burst_fixture(td, exempt_tool, raw_err, "readtool.jsonl"))
+        assert b3["failclosed"] == 0, b3
+        assert b3["calls"] == 4 and b3["errors"] == 1, b3
+        assert _old_rule_fcs(raw_err) == 3
+        # Same bytes through a NON-exempt tool must still fire - otherwise the
+        # exemption is not what zeroed it and this case proves nothing.
+        b3b = _measure(_burst_fixture(td, "exec", raw_err, "readtool_ctl.jsonl"))
+        assert b3b["failclosed"] == 3, b3b
+        print("  read-exemption case: PASS (tool %r carrying verbatim error JSON "
+              "-> failclosed=0 while the IDENTICAL payload through `exec` still "
+              "gives 3, so L1 is doing the work, not L2; calls/errors preserved)"
+              % exempt_tool)
 
     print("[loop_watchdog] self-test: PASS")
     return 0
