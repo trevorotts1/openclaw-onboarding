@@ -3,6 +3,101 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.5] - 2026-08-26
+
+**A watchdog that looks watched and isn't.** Two independent defects, both of
+which made an UNWATCHED box read as a healthy one. Neither was a bug in the
+detectors; both were bugs in how the system reported on itself.
+
+### Fix A - the cron gate stops lying (`install.sh`)
+
+Registration was gated on a bare `command -v openclaw`. `update-skills.sh` runs
+every installer as a plain `bash install.sh` - a NON-login shell whose PATH on a
+Mac box is `/usr/bin:/bin:/usr/sbin:/sbin`, while `openclaw` lives in
+`~/.local/bin` or `/opt/homebrew/bin`. The gate therefore MISSED on essentially
+every Mac: **19 of the 26 roll logs from 2026-08-26 say "cron registration
+skipped"**. The installer then fired its one-shot post-install tick, printed
+`ledger healthy. Install OK`, and **exited 0**.
+
+Two defects came out of that one line:
+
+1. **The gate fired spuriously.** openclaw was installed and reachable the whole
+   time. `_resolve_openclaw` now looks past `$PATH`: an explicit
+   `$LOOP_OPENCLAW_BIN`, then `$PATH`, then a LOGIN shell, then the known install
+   prefixes.
+2. **"Skipped" exited 0 while printing success**, so a roll could never create or
+   repair a missing cron yet reported OK forever. One box was found carrying live
+   P1 findings with **no recurring tick at all**, its ledger kept looking fresh by
+   this very installer's post-install tick.
+
+**What it deliberately does NOT do.** "Skipped" never implied "missing" - the
+control is a box whose roll log says "skipped" while carrying FOUR healthy enabled
+registrations. Hard-failing every roll that registers nothing would be worse than
+the bug. So **existence is checked first** (`openclaw cron list --all --json`,
+matched on the `loop-tick-` name PREFIX because `hostname` drifts), and:
+
+| state | behaviour |
+|---|---|
+| already enabled | quiet success, **no duplicate added** |
+| none registered | register, then succeed |
+| registered but ALL DISABLED | **rc 5**, and NOT re-enabled - a disabled cron is a decision somebody made |
+| cron state undetermined | **rc 5**, and never a blind registration |
+| `openclaw` unresolvable | **rc 5**, never `Install OK` |
+| `--no-cron` | explicit opt-out, still rc 0 |
+
+`--all` is required: plain `openclaw cron list` **HIDES disabled jobs**, which is
+exactly how a box with a disabled loop-tick read as having none at all.
+
+New exit code **5 = cron-not-confirmed**. This is a real failure to
+`update-skills.sh`, which surfaces it, withholds the `.wired` sentinel, and
+retries the skill on the next roll - the correct outcome for an unscheduled
+watchdog.
+
+### Fix B - liveness is measured, not inferred (`loop_watchdog.py`)
+
+`tick()` now writes `meta.last_tick_ts` **unconditionally**, on every completed
+tick, findings or none.
+
+Liveness used to be inferred from `MAX(findings.tick_ts)`, and that number does
+not mean what a reader assumes: it measures whether the box **has a detectable
+condition**, not whether the watchdog **ran**. `record_finding` writes only when a
+detector fires, so a box whose conditions cleared writes nothing and its newest
+finding freezes at the last real problem - while the tick keeps running perfectly
+every 15 minutes. On 2026-08-26 a fleet sweep read that frozen number as a dead
+watchdog and classified **five healthy boxes as unwatched**, including one with 27
+findings in its entire history that was ticking normally 100 seconds before it was
+measured. The inference ran the wrong way: a quiet ledger is the watchdog
+reporting all-clear, and it was read as a casualty.
+
+The old signal was recoverable only by accident - the ledger file's mtime advanced
+each tick because `collect_crons()` calls `set_meta("d4_cron_fires")`
+unconditionally. That is a side effect of an unrelated detector, not a promise;
+anyone who made it conditional would have removed the fleet's only honest
+heartbeat without touching anything named like one.
+
+**What it proves and what it does not.** It proves a tick RAN and reached the end.
+It does **not** prove a recurring cron is scheduled - `install.sh`'s one-shot tick
+stamps it too. Cron existence is a separate fact, checked separately by Fix A.
+Read both, or you have only swapped one comfortable inference for another.
+
+### Tests (both directions, all failable)
+
+`install.sh --self-test` gains seven cron cases driven by a **stub `openclaw`**
+that records what it was ASKED to do, so "did not add a duplicate" and "did not
+re-enable a human's disabled cron" are checked by the ABSENCE of a marker rather
+than the absence of a complaint. `loop_watchdog.py --self-test` gains a heartbeat
+case asserting the DISTINCTION: across a zero-findings tick the findings table
+stays frozen (no new row, no refreshed timestamp) while `last_tick_ts` is written
+live.
+
+Proven failable by mutation, not assumed:
+
+| mutation | caught by |
+|---|---|
+| success line un-gated from cron state (the old bug) | `cron case 'add-fails' exited 0, expected 5` |
+| existence check removed (register blindly) | `added a DUPLICATE cron on a box that already had one` |
+| heartbeat write deleted | `a zero-findings tick wrote NO heartbeat - that IS the bug` |
+
 ## [0.6.4] - 2026-08-26
 
 **The two false engines behind the storm.** 0.6.3 gated how often an escalation

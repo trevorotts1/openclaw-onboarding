@@ -67,7 +67,7 @@ import loop_common as C  # noqa: E402
 import loop_detectors as D  # noqa: E402
 import loop_killcards as KC  # noqa: E402
 import loop_escalate as ESC  # noqa: E402
-from loop_ledger import Ledger, openclaw_root  # noqa: E402
+from loop_ledger import Ledger, openclaw_root, now_utc  # noqa: E402
 
 
 def run_detectors(evidence, thresholds, signatures):
@@ -315,6 +315,37 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
         # as "escalated".
         summary["drain"] = {"skipped": "DISARMED RR-DRAIN-DISARMED-20260826",
                             "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}
+
+    # THE HEARTBEAT (LOOP-HEARTBEAT-20260826). Written LAST and UNCONDITIONALLY:
+    # every completed tick stamps it, whether it found seven things or nothing at
+    # all.
+    #
+    # WHY THIS EXISTS. Liveness used to be inferred from MAX(findings.tick_ts),
+    # and that number does not mean what a reader assumes. It measures whether the
+    # box HAS a detectable condition, not whether the watchdog RAN. record_finding
+    # writes a row only when a detector fires, so a box whose conditions cleared
+    # writes nothing and its newest finding freezes at the last real problem -
+    # while the tick keeps running perfectly every 15 minutes. On 2026-08-26 a
+    # fleet sweep read that frozen number as a dead watchdog and classified five
+    # healthy boxes as unwatched, including one with 27 findings in its entire
+    # history that was ticking normally 100 seconds before it was measured. The
+    # inference ran the wrong way: a QUIET ledger is the watchdog reporting
+    # all-clear, and the sweep read it as a casualty.
+    #
+    # The old signal was recoverable only by accident. The ledger file's mtime did
+    # advance every tick, because collect_crons() calls set_meta("d4_cron_fires")
+    # unconditionally - but that is a side effect of an unrelated detector, not a
+    # promise. Anyone who moved that call, or made it conditional, would have
+    # silently removed the fleet's only honest heartbeat without touching
+    # anything named like one. This key is the promise, stated on purpose.
+    #
+    # PRECISELY WHAT IT PROVES, AND WHAT IT DOES NOT. It proves a tick RAN and got
+    # to the end. It does NOT prove a recurring cron is scheduled: install.sh's
+    # one-shot post-install tick stamps it too, so a box with no cron at all reads
+    # fresh for exactly as long as it takes to notice. Cron existence is a
+    # SEPARATE fact and install.sh checks it separately. Read both, or you have
+    # only swapped one comfortable inference for another.
+    led.set_meta("last_tick_ts", now_utc())
     return summary
 
 
@@ -1638,6 +1669,35 @@ def self_test():
         s2 = tick({"units": [{"name": "gw", "delta": 0}]}, led, armed=False, box="box-example")
         assert s2["findings"] == 0 and s2["alerts"] == 0
         print("  quiet case: PASS (no findings, no alerts on a healthy box)")
+
+        # THE TICK HEARTBEAT (LOOP-HEARTBEAT-20260826). The exact case the OLD
+        # instrument structurally could not see: a tick that runs perfectly and
+        # records NOTHING. Liveness used to be inferred from MAX(findings.tick_ts),
+        # which FREEZES on a healthy quiet box - on 2026-08-26 that inference
+        # classified five normally-ticking boxes as unwatched.
+        #
+        # So this asserts the DISTINCTION, not merely that a key exists: across a
+        # zero-findings tick the findings table must stay frozen (no new row, no
+        # refreshed timestamp) while the heartbeat is written live. The ledger
+        # already holds the DRY_RUN case's LP-B1 row, so "frozen" is a real
+        # measurement here and not the trivial emptiness of a fresh sandbox.
+        _rows_before = len(led.all_findings())
+        _frozen = led.all_findings(limit=1)[0]["tick_ts"]
+        assert _rows_before >= 1, "precondition: ledger should already hold a finding"
+        # Cleared first, so a PASS cannot come from a value an earlier tick left behind.
+        led.set_meta("last_tick_ts", "")
+        s2b = tick({"units": [{"name": "gw", "delta": 0}]}, led, armed=False,
+                   box="box-example")
+        assert s2b["findings"] == 0, s2b          # it really is a zero-findings tick
+        _beat = led.get_meta("last_tick_ts")
+        assert _beat, "a zero-findings tick wrote NO heartbeat - that IS the bug"
+        assert len(led.all_findings()) == _rows_before, "a quiet tick added a row"
+        assert led.all_findings(limit=1)[0]["tick_ts"] == _frozen, \
+            "the findings table moved on a zero-findings tick"
+        _age = (datetime.now(timezone.utc) - datetime.fromisoformat(_beat)).total_seconds()
+        assert 0 <= _age < 120, "heartbeat is not a live timestamp: %r" % _beat
+        print("  heartbeat case: PASS (zero-findings tick: findings table FROZEN, "
+              "last_tick_ts written live - the state the old instrument read as death)")
 
         # Tier-3 class escalates offline (UNSENT fallback), never tight-loops.
         empty = {"units": [], "crons": [{"name": "noop", "declared_schedule": "@daily",
