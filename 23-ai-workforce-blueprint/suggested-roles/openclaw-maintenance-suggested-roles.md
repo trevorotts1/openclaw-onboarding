@@ -26,8 +26,11 @@ The Token Manager / Furnace Watch Specialist (role 13) performs an **hourly, rea
 Every specialist in this department (including the 4 new ones) escalates ambiguous or feature-bearing findings via the **n8n webhook** (`$RESCUE_RANGERS_WEBHOOK_URL`):
 
 ```bash
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
 curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
   -H 'Content-Type: application/json' \
+  "${_RR_SECRET_ARGS[@]}" \
   -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"<ROLE_ID>\",\"message\":\"<escalation text>\"}"
 ```
 

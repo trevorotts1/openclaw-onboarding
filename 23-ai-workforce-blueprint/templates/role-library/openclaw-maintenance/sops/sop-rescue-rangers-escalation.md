@@ -48,11 +48,14 @@
    ```
 2. Send via the n8n webhook (the ONLY path the rescue agent reads):
    ```bash
+   _RR_SECRET_ARGS=()
+   [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
      -H 'Content-Type: application/json' \
+     "${_RR_SECRET_ARGS[@]}" \
      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"<ROLE_ID>\",\"message\":\"<escalation text from step 1>\"}"
    ```
-   `RESCUE_RANGERS_WEBHOOK_URL` is seeded by install.sh (default: `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Do NOT use `openclaw message send -t <group>` — bots cannot read other bots and the old Telegram group path is silently dropped.
+   `RESCUE_RANGERS_WEBHOOK_URL` is seeded by install.sh (default: `https://main.blackceoautomations.com/webhook/rr-v2-intake`). `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL — the array pattern above skips the header when unset, but the relay's Auth Check rejects the request with 401 Unauthorized when the header is missing, so this is not optional in a properly seeded environment. Do NOT use `openclaw message send -t <group>` — bots cannot read other bots and the old Telegram group path is silently dropped.
 3. Log the escalation to `working/maintenance/escalations/esc-YYYYMMDD-HHMMSS.json`.
 4. After sending: HALT this fix thread and wait for operator response. Do NOT retry the fix without operator direction.
 
