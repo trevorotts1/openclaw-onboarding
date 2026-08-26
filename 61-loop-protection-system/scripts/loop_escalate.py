@@ -100,16 +100,24 @@ DEFAULT_TIMEOUT = 120.0
 DRAIN_LIMIT_ENV = "RESCUE_RANGERS_DRAIN_PER_TICK"
 DRAIN_SPACING_ENV = "RESCUE_RANGERS_DRAIN_SPACING"
 DRAIN_JITTER_ENV = "RESCUE_RANGERS_DRAIN_JITTER"
-# The RATE CAP that applies ONCE THE DRAIN IS DELIBERATELY ENABLED. It is NOT the
-# safety. The safety is the explicit enable gate in loop_watchdog.tick():
+# THE SECOND OF TWO INDEPENDENT LOCKS on the autonomous drain. Both must be
+# deliberately released before a tick can post anything:
 #
-#     RESCUE_RANGERS_DRAIN_ENABLE=1     (absent env = DISARMED)
+#     1. RESCUE_RANGERS_DRAIN_ENABLE=1   - the gate in loop_watchdog.tick(),
+#                                          which decides whether drain() is CALLED
+#     2. RESCUE_RANGERS_DRAIN_PER_TICK=N - this cap, which decides whether a call
+#                                          DOES anything (0 = no-op, see `cap <= 0`)
 #
-# A numeric default cannot be the safety, because update-skills.sh delivers this
-# tree with `cp -Rp` (3197/3200) and OVERWRITES loop_watchdog.py on every box - so
-# a roll would wipe any box-local disarm and re-arm the whole fleet at once. The
-# repo therefore ships the SAME gate the live boxes carry, and a roll PRESERVES
-# the disarmed state instead of destroying it.
+# The gate is the PRIMARY safety and lives in loop_watchdog.py because
+# update-skills.sh delivers this tree with `cp -Rp` (3197/3200) and OVERWRITES
+# that file on every box: a box-local disarm would be wiped by the next roll, so
+# the repo ships the SAME gate the live boxes carry and a roll PRESERVES it. This
+# cap is the second, independent lock - if the gate is ever removed or mis-edited,
+# a default of 0 still means a tick posts nothing.
+#
+# 2 is the RECOMMENDED RATE once the drain is deliberately enabled. It is
+# documented here rather than encoded as the default, precisely so that enabling
+# is an act and not an oversight.
 #
 # WHY ANY OF THIS EXISTS. The limiter in this file is PER BOX (cap, spacing,
 # per-box jitter, stop-on-first-failure). The Rescue Rangers intake limit is
@@ -127,7 +135,7 @@ DRAIN_JITTER_ENV = "RESCUE_RANGERS_DRAIN_JITTER"
 # Re-enabling autonomously fleet-wide requires GLOBAL sequencing across boxes, or
 # a per-box limit enforced at the intake, FIRST. Whoever raises this number, or
 # removes that gate, is deciding to repeat the paragraph above.
-DEFAULT_DRAIN_LIMIT = 2
+DEFAULT_DRAIN_LIMIT = 0
 DEFAULT_DRAIN_SPACING = 5.0
 DEFAULT_DRAIN_JITTER = 45.0
 _SECRET_SHAPES = ("sk-", "Bearer ", "eyJ", "AIza", "xoxb-")
@@ -358,12 +366,26 @@ def drain(limit=None, transport=None, url=None, dry_run=False, spacing=None):
     inside self_test(). Escalations were detected correctly, spilled faithfully,
     and lost forever - 17,058 files across the fleet, none ever delivered.
 
-    OFF BY DEFAULT (DEFAULT_DRAIN_LIMIT = 0) - a cap of 0 returns immediately
-    having read, posted and moved nothing. Enable it deliberately, per run, with
-    `--drain --limit N`, or per box via $RESCUE_RANGERS_DRAIN_PER_TICK. The reason
-    is written out at DEFAULT_DRAIN_LIMIT: this limiter is per box, the intake
-    limit is global, and on 2026-08-26 those two facts composed into a measured
-    429 plus a 7x latency collapse that timed out live client escalations.
+    THE AUTONOMOUS DRAIN IS OFF BY DEFAULT, AND THE CAP IS NOT WHY.
+
+    The PRIMARY safety is the gate in loop_watchdog.tick(), which refuses to CALL
+    this function unless RESCUE_RANGERS_DRAIN_ENABLE=1. Read that gate, not this
+    docstring, to know whether a box drains.
+
+    The cap is a SECOND, INDEPENDENT lock: DEFAULT_DRAIN_LIMIT = 0, and `cap <= 0`
+    short-circuits before anything is read, posted or moved. An explicit
+    RESCUE_RANGERS_DRAIN_PER_TICK=0 is honoured as a real kill, not swallowed back
+    to a default. So a tick posts only if BOTH the gate is opened AND a positive
+    cap is set. 2 is the recommended RATE once enabled - documented, deliberately
+    not encoded as the default.
+
+    CALLING drain() DIRECTLY BYPASSES THE GATE ENTIRELY. That is correct: it is
+    how `--drain` is meant to work, operator-run and deliberate. It also means a
+    direct call that posts is NOT evidence that the autonomous drain is armed -
+    the gate lives in tick(), not here. Someone tested exactly that on 2026-08-26
+    and concluded the fleet would re-arm on the next roll; it would not. If you
+    are checking whether a box drains by itself, call tick(), or read line ~150 of
+    loop_watchdog.py.
 
     Deliberately SLOW even when enabled. The Rescue Rangers intake is rate-limited
     GLOBALLY across the fleet, not per box, so a fast drain sheds OTHER clients'
@@ -685,19 +707,39 @@ def self_test():
         assert drain(limit=1, transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
         print("  drain cap case: PASS (per-tick cap honoured; dry-run posts nothing)")
 
-        # ZERO IS A REAL SETTING, and a disabled drain is a CLEAN no-op.
-        # `RESCUE_RANGERS_DRAIN_PER_TICK=0` used to fall back to the DEFAULT rate -
-        # an operator who set it to 0 got a full-speed drain. Both halves are
-        # asserted here: that 0 is honoured, and that honouring it does nothing.
+        # DOC-DRIFT GATE. The docstring must state the SAME default the constant
+        # holds. This whole outage was documentation asserting a property the code
+        # did not have - REPAIRS.md promised spills were "retried next tick" while
+        # nothing read them back, and 17,058 escalations died in that gap. A drill
+        # that catches prose drifting from code is worth more here than another
+        # behavioural case, because prose is what the next maintainer trusts.
+        import re as _re
+        _stated = _re.search(r"DEFAULT_DRAIN_LIMIT = (\d+)", drain.__doc__ or "")
+        assert _stated, "drain() docstring no longer states DEFAULT_DRAIN_LIMIT at all"
+        assert int(_stated.group(1)) == DEFAULT_DRAIN_LIMIT, (
+            "DOC DRIFT: drain() docstring says DEFAULT_DRAIN_LIMIT = %s but the "
+            "constant is %d" % (_stated.group(1), DEFAULT_DRAIN_LIMIT))
+
+        # ZERO IS A REAL SETTING. `RESCUE_RANGERS_DRAIN_PER_TICK=0` used to fall
+        # back to the DEFAULT rate, so an operator who set it to 0 got a
+        # full-speed drain. Proven against a NON-ZERO default on purpose: with
+        # DEFAULT_DRAIN_LIMIT now 0, asserting `_drain_limit() == 0` would pass
+        # even if the old zero-swallowing code came back, because the fallback
+        # value and the honoured value would be the same number. This probe is
+        # what keeps the regression detectable.
+        _PROBE = "RESCUE_RANGERS_ZERO_PROBE"
+        os.environ[_PROBE] = "0"
+        assert _env_num(_PROBE, 7, int, minimum=0) == 0, \
+            "an explicit 0 must NOT fall back to the default"
+        os.environ[_PROBE] = "not-a-number"
+        assert _env_num(_PROBE, 7, int, minimum=0) == 7    # a typo is not a 0
+        os.environ[_PROBE] = "-5"
+        assert _env_num(_PROBE, 7, int, minimum=0) == 7    # nonsense is not a 0
+        os.environ.pop(_PROBE, None)
+        assert _env_num(_PROBE, 7, int, minimum=0) == 7    # unset is not a 0
+
         os.environ.pop(DRAIN_LIMIT_ENV, None)
-        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # unset -> default
-        os.environ[DRAIN_LIMIT_ENV] = "0"
-        assert _drain_limit() == 0, "an explicit 0 must NOT fall back to the default"
-        os.environ[DRAIN_LIMIT_ENV] = "not-a-number"
-        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # a typo is not a 0
-        os.environ[DRAIN_LIMIT_ENV] = "-5"
-        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # nonsense is not a 0
-        os.environ[DRAIN_LIMIT_ENV] = "0"                 # back to DISABLED
+        assert _drain_limit() == DEFAULT_DRAIN_LIMIT == 0  # the shipped default
 
         (esc_dir / "UNSENT-esc-LP-C1-20260826T020000.json").write_text(
             json.dumps(dict(base, driver="LP-C1"), sort_keys=True), encoding="utf-8")
@@ -723,9 +765,9 @@ def self_test():
         assert _drain_limit() == 1
         assert drain(transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
         os.environ.pop(DRAIN_LIMIT_ENV, None)
-        print("  drain DISABLED case: PASS (explicit 0 honoured, not swallowed; typo and "
-              "negative fall back; a disabled drain posts/reads/moves nothing and does "
-              "not raise; backlog still reported)")
+        print("  drain DISABLED case: PASS (docstring default matches the constant; "
+              "explicit 0 honoured against a non-zero default; typo/negative/unset fall "
+              "back; a disabled drain posts/reads/moves nothing and does not raise)")
 
         os.environ.pop("LOOP_STATE_DIR", None)
 

@@ -55,11 +55,25 @@ operator-run**. The watchdog's automatic drain is behind an explicit enable gate
 
 With the env absent the tick records
 `{"skipped": "DISARMED RR-DRAIN-DISARMED-20260826", "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}`,
-so a tick log PROVES the state either way instead of implying it by silence. Drain a
-backlog deliberately with `loop_escalate.py --drain --limit N` (add `--dry-run` to see
-what would be replayed without posting). `$RESCUE_RANGERS_DRAIN_PER_TICK` sets the rate
-cap once enabled; setting it to `0` genuinely disables the drain (an explicit zero is
-honoured and no longer falls back to the default).
+so a tick log PROVES the state either way instead of implying it by silence.
+
+There are TWO INDEPENDENT LOCKS, and an automatic drain requires BOTH to be released:
+
+    RESCUE_RANGERS_DRAIN_ENABLE=1        # 1. the gate: is drain() CALLED at all
+    RESCUE_RANGERS_DRAIN_PER_TICK=2      # 2. the cap: default 0, so a call no-ops
+
+Setting only the first changes nothing - the call is made and returns immediately with
+`"stopped": "drain disabled: per-tick cap is 0 ..."`. That is deliberate: every
+single-layer protection in this incident failed somewhere. `2` is the recommended rate.
+An explicit `RESCUE_RANGERS_DRAIN_PER_TICK=0` is honoured as a real kill and no longer
+falls back to the default.
+
+Drain a backlog deliberately with `loop_escalate.py --drain --limit N` (add `--dry-run`
+to see what would be replayed without posting). NOTE: a direct `--drain` run bypasses
+the enable gate entirely - that is correct and intended for operator-run drains, but it
+means a direct call posting is NOT evidence that the automatic drain is armed. To check
+whether a box drains by itself, read the gate in `loop_watchdog.py`, or look for the
+DISARMED marker in a tick summary.
 
 WHY IT IS OFF (2026-08-26): the limiter in the script is PER BOX, but the intake limit
 is GLOBAL - "more than 12 escalations/60s" for the whole fleet. 35 boxes each behaving
