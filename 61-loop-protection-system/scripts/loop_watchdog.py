@@ -67,7 +67,7 @@ import loop_common as C  # noqa: E402
 import loop_detectors as D  # noqa: E402
 import loop_killcards as KC  # noqa: E402
 import loop_escalate as ESC  # noqa: E402
-from loop_ledger import Ledger, openclaw_root  # noqa: E402
+from loop_ledger import Ledger, now_utc, openclaw_root  # noqa: E402
 
 
 def run_detectors(evidence, thresholds, signatures):
@@ -315,6 +315,36 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
         # as "escalated".
         summary["drain"] = {"skipped": "DISARMED RR-DRAIN-DISARMED-20260826",
                             "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}
+
+    # ---- LIVENESS: the one fact nothing recorded (v0.6.5) -------------------
+    # "When did the watchdog last RUN" had NO direct signal. The fleet inferred it
+    # from MAX(findings.tick_ts), which is not liveness at all - it measures
+    # whether a box HAS a loop condition. On 2026-08-26 that proxy produced a
+    # false "6 boxes unwatched" report; one of those boxes had ticked 13 minutes
+    # earlier and simply had nothing to find. THE HEALTHY BOX IS EXACTLY THE BOX
+    # THAT METRIC CALLS DEAD, which is the worst possible direction for the error
+    # to run. The only other instruments were loop.db's file mtime and the cron
+    # engine's own lastRunAtMs - neither of which is inside the ledger, so neither
+    # survives a box you can only reach through this skill.
+    #
+    # WRITTEN ON EVERY TICK, FINDINGS OR NONE. The zero-findings tick is the whole
+    # point: it is the case the broken metric gets wrong.
+    #
+    # LAST, and outside the per-finding boundary: the stamp means "this tick ran to
+    # completion", so a tick that died mid-way must NOT leave a fresh one. A failed
+    # write is REPORTED and COUNTED, never swallowed - a liveness key that silently
+    # stops updating is the same lie wearing a new hat.
+    try:
+        led.set_meta("last_tick_ts", now_utc())
+        led.set_meta("last_tick_findings", summary["findings"])
+        led.set_meta("last_tick_errors", summary["errors"])
+        led.set_meta("last_tick_armed", "true" if armed else "false")
+    except Exception as exc:  # noqa: BLE001 - reported, never silent
+        summary["errors"] += 1
+        sys.stderr.write(
+            "ERROR [loop_watchdog]: the tick completed but last_tick_ts could NOT be "
+            "written (%s: %s). This box will read as UNWATCHED until it can be.\n"
+            % (type(exc).__name__, exc))
     return summary
 
 
@@ -1639,6 +1669,38 @@ def self_test():
         assert s2["findings"] == 0 and s2["alerts"] == 0
         print("  quiet case: PASS (no findings, no alerts on a healthy box)")
 
+        # ---- LIVENESS, PROVED ON THE CASE THE OLD METRIC GETS WRONG --------
+        # The tick above found NOTHING. That is precisely the box a
+        # MAX(findings.tick_ts) proxy declares unwatched. Both halves are
+        # asserted: last_tick_ts advanced, AND the old proxy did not - so this
+        # case fails the moment someone moves the stamp inside the findings path.
+        live_before = led.get_meta("last_tick_ts")
+        assert live_before, "a completed tick did not write last_tick_ts"
+        assert led.get_meta("last_tick_findings") == "0", led.get_meta("last_tick_findings")
+        max_finding_ts = led.conn.execute(
+            "SELECT MAX(tick_ts) AS m FROM findings").fetchone()["m"]
+        # Second-precision timestamps cannot prove "advanced" inside one second, so
+        # the stamp is backdated to 2000 first: EVERY tick must overwrite it, not
+        # just the first one that happened to find the key missing.
+        led.set_meta("last_tick_ts", "2000-01-01T00:00:00+00:00")
+        s2b = tick({"units": [{"name": "gw", "delta": 0}]}, led, armed=False, box="box-example")
+        assert s2b["findings"] == 0
+        assert led.get_meta("last_tick_ts") != "2000-01-01T00:00:00+00:00", \
+            "a zero-findings tick did not REWRITE last_tick_ts"
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(led.get_meta("last_tick_ts"))).total_seconds()
+        assert 0 <= age < 120, "last_tick_ts is not fresh (age=%ss)" % age
+        max_finding_ts2 = led.conn.execute(
+            "SELECT MAX(tick_ts) AS m FROM findings").fetchone()["m"]
+        assert max_finding_ts2 == max_finding_ts, \
+            "the control moved: this fixture no longer isolates liveness from findings"
+        assert led.get_meta("last_tick_mode") in (None, "live", "dry-run")
+        print("  liveness case: PASS (a tick that finds NOTHING still stamps "
+              "last_tick_ts=%s findings=0, while MAX(findings.tick_ts) stays "
+              "frozen at %r - the exact split that produced the false "
+              "'6 boxes unwatched' report)"
+              % (led.get_meta("last_tick_ts"), max_finding_ts))
+
         # Tier-3 class escalates offline (UNSENT fallback), never tight-loops.
         empty = {"units": [], "crons": [{"name": "noop", "declared_schedule": "@daily",
                  "actual_fires_per_day": 300}], "windows": [], "runs": [], "wedge": {}}
@@ -2235,6 +2297,14 @@ def _cli(argv=None):
         tx = (lambda url, body: True) if a.no_send else None
         summary = tick(evidence, led, armed=False if a.dry_run else None,
                        escalate_transport=tx, box=box)
+        # Beside last_tick_ts, not inside it: freshness is the question, but an
+        # operator reading a fresh stamp deserves to know whether it came from the
+        # scheduled watchdog or from install.sh's forced observe-only tick.
+        try:
+            led.set_meta("last_tick_mode", "dry-run" if a.dry_run else "live")
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write("ERROR [loop_watchdog]: could not write last_tick_mode "
+                             "(%s: %s)\n" % (type(exc).__name__, exc))
         print(json.dumps(summary, sort_keys=True))
         return 0
     finally:
