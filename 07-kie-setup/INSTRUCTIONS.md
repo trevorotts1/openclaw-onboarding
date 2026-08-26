@@ -160,44 +160,23 @@ All requests require this header:
   Authorization: Bearer YOUR_API_KEY
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GENERATING IMAGES
+GENERATING IMAGES (MODALITY ROUTING)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-To generate an image, send a POST request to the createTask endpoint with
-a model name and your prompt.
+Model selection, parameter validation, prompt expansion, and generation are
+owned by the dedicated modality skill **66-kie-image (KIE Image)** and its
+machine-readable model registry.
 
-Available image models:
-
-| Model Name          | What It Does                          | Cost    |
-|---------------------|---------------------------------------|---------|
-| nano-banana-pro     | Best image model. Text-to-image and   | ~$0.09  |
-|                     | image-to-image. Supports references.  |         |
-| google/nano-banana  | Text-to-image only. Simpler model.    | Varies  |
-| google/nano-banana-edit | Edit existing images with prompts. | Varies  |
-| flux-1.1-pro        | High quality image generation.        | Varies  |
-| gpt-image-1.5       | GPT-based image generation.           | Varies  |
-
-The most common model you will use is "nano-banana-pro". This is the
-recommended default for all image generation.
-
-How to submit an image job:
-
+To generate an image via the generic Market API:
 1. Send a POST request to: https://api.kie.ai/api/v1/jobs/createTask
-2. Include the model name, your prompt, and optional settings like
-   aspect ratio and resolution.
-3. You will get back a taskId.
-4. Use that taskId to check on the job (see "Checking Job Status" below).
+2. Header: `Authorization: Bearer YOUR_API_KEY`
+3. Include the canonical `model` ID, your `prompt`, and mode-specific parameters
+   (e.g., `aspect_ratio`, `resolution`, `input_urls` / `image_input`).
+4. You will get back a `taskId` with initial state `waiting` or `queuing`.
+5. Check job status or receive result via `callBackUrl`.
 
-Key settings for image generation:
-- prompt: What you want the image to show (up to 10,000 characters for
-  nano-banana-pro)
-- aspect_ratio: The shape of the image. Options include:
-  1:1 (square), 16:9 (widescreen), 9:16 (tall/portrait), 3:2, 2:3,
-  4:3, 3:4, 4:5, 5:4, 21:9
-- resolution: How detailed the image is. Options: 1K, 2K, 4K
-- output_format: png or jpg
-- image_input: (Optional) Up to 8 reference images as URLs. Use this
-  when you want the AI to base the new image on existing images.
+For the complete image model catalog, limits matrix, and prompt expansion policy,
+see `66-kie-image` (and `kie-setup-full.md` for historical endpoint schemas).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GENERATING VIDEOS

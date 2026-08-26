@@ -1,0 +1,29 @@
+{
+  "skill": "68-kie-audio",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 68."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 68."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "Kie.ai API Key (existing fleet credential, shared with Skill 07)",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "KIE_API_KEY is the EXISTING fleet credential Skill 07 (kie-setup) already uses against api.kie.ai. This skill REFERENCES that key for TTS/music/Suno — do NOT mint a new one. Add KIE_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Get your API key from app.kie.ai > Settings > API Keys. Confirm it is SET (never print the value). There is NO separate STT key — there is no STT route at all."
+    }
+  ]
+}

@@ -6,8 +6,7 @@ description: >
   platform (apihub.agnes-ai.com). One API key, one POST, one JSON response
   with an image URL or Base64 — no task polling.
 metadata:
-
-  version: "1.0.1"
+  version: "1.2.0"
   priority: HIGH
 ---
 
@@ -35,62 +34,61 @@ Model name: `agnes-image-2.1-flash`. Endpoint:
 
 This skill is for the Agnes IMAGE endpoint specifically. It is NOT a general
 image-model default: department pipelines and other skills pin their own image
-model (for example the KIE.ai / Nano Banana Pro default in Skill 07, or the
-Presentations GPT-Image-2 pin). Only reach for Agnes Image when the request
-names Agnes, or an upstream skill routes to it.
+model (for example the KIE Image registry in Skill 66, or specific department
+pins). Only reach for Agnes Image when the request names Agnes, or an upstream
+skill routes to it.
 
-## Image-Prompt Character Band (MANDATORY -- 5,000-19,000)
+## Prompt Policy & House Operating Bands
 
-Per decision GK-D2 (extended to Agnes skills 63/64), every image prompt authored
-for GPT-image-2 OR Agnes Image 2.1 Flash must fall within the SACRED band:
+Agnes vendor documentation does **NOT** publish a hard character or token limit
+(`cap_status: "NOT_PUBLISHED"` in `models.json`). Do not invent a vendor cap.
 
-- **FLOOR: 5,000 characters (stripped)** -- a prompt below 5,000 chars is a thin
-  stub, NOT submitted, NOT rendered. 5,000 is the HARD MINIMUM.
-- **CEILING: 19,000 characters (stripped)** -- the API accepts up to 25,000 chars;
-  the 19,000 cap leaves ~6,000 chars of headroom to stay well clear of the
-  endpoint's truncation boundary. Do NOT exceed 19,000.
-- **Valid range: 5,000-19,000.**
+Per BlackCEO prompt policy (Spec §5 & §10.5):
+- **House Target Floor**: 5,000 characters (stripped) — prompts below 5,000 chars
+  are thin stubs. Short user prompts are NOT an error (§5.3); the system expands
+  them into rich production prompts rather than rejecting them.
+- **House Normal Target**: ~9,000 characters (stripped) — high-information-density
+  production target.
+- **House Preferred Maximum**: 19,000 characters (stripped) — preferred headroom.
+  Prompts above 19,000 characters trigger a non-fatal advisory but are NOT
+  hard-rejected at the API boundary if intentional.
+- **Status**: `PENDING_ACCEPTANCE_TEST` — house bands serve as targets, not
+  invented vendor laws.
 
-Enforcement: `prove_agnes_image_prompt_floor.py` (shipped in this folder) is the
-deterministic gate. It checks stripped character count (whitespace never counts),
-rejects below 5,000 (`AF-AGNES-PROMPT-FLOOR`, exit 2), rejects above 19,000
-(`AF-AGNES-PROMPT-CEILING`, exit 2), and exits 0 only when the prompt clears both
-gates. Run it as a preflight before any paid API call:
+Enforcement & Validation:
+- `scripts/validate_prompt.py`: model-aware prompt validator reporting band
+  status (thin stub, target zone, upper band, above preferred max) and enforcing
+  logo-I2I and style-reference rules.
+- `prove_agnes_image_prompt_floor.py`: deterministic quality gate verifying
+  prompt status, logo I2I intent, and style-reference directives.
 
+```bash
+python3 63-agnes-image/scripts/validate_prompt.py --file working/prompts/<id>.txt
 ```
-python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file working/prompts/<id>.txt
-```
-
-A QA version with self-tests (suitable for CI) runs with `--self-test`.
-
-This band applies whenever the target endpoint is GPT-image-2 (T2I or I2I) or
-Agnes Image 2.1 Flash. It does NOT apply to shorter-cap endpoints such as
-Seedream 4.5 (3,000-char cap) or Ideogram V3 (5,000-char cap) -- those carry
-their own bands in `45-design-intelligence-library/library/_system/prompt-bands.json`.
 
 ## Image-to-Image for Logos (MANDATORY)
 
 When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
 or any existing brand image, you MUST use IMAGE-TO-IMAGE generation -- provide the
-logo as a reference image via `extra_body.image[]` (Agnes) or `input_urls`
-(Kie.ai GPT-Image 2 I2I). Text-to-image generation of a logo is PROHIBITED: a
-text-to-image model cannot render a specific client's logo accurately and will
-invent a lookalike instead. The prove-agnes gate checks for this:
+logo as a reference image via `extra_body.image[]`. Text-to-image generation of a
+logo is PROHIBITED: a text-to-image model cannot render a specific client's logo
+accurately and will invent a lookalike instead. The validation scripts check for
+this:
 
-```
-python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file prompt.txt --logo
+```bash
+python3 63-agnes-image/scripts/validate_prompt.py --file prompt.txt --logo
 ```
 
 When a logo reference triggers an I2I call, the style-reference-only directive is
-MANDATORY (MODEL-SPECS section 4): "Use the attached images only as style
-reference for color grading, lighting, and composition -- do not copy their
-subjects, faces, or text." The gate checks this with `--style-ref`.
+MANDATORY: "Use the attached images only as style reference for color grading,
+lighting, and composition -- do not copy their subjects, faces, or text." Pass
+`--style-ref` to enforce this.
 
 ## Style-Reference-Only Directive (MANDATORY when reference images attached)
 
 Whenever ANY reference image is attached for style guidance (not just logos), the
-prompt MUST carry the style-reference-only directive verbatim. Pass `--style-ref`
-to the gate to enforce this check.
+prompt MUST carry the style-reference-only directive verbatim:
+`Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text.`
 
 ## Prerequisites
 
@@ -106,15 +104,15 @@ to the gate to enforce this check.
 
 1. **The synchronous request pattern** — one `POST /v1/images/generations`, one
    JSON response. No task id, no polling loop. This is the opposite of the
-   asynchronous "create task then poll" pattern in Skill 07 (KIE.ai) and in the
-   Agnes VIDEO endpoint.
+   asynchronous "create task then poll" pattern in KIE.ai skills and the Agnes
+   VIDEO endpoint.
 2. **Required fields** — `model`, `prompt`, `size`.
 3. **Size tiers and aspect ratios** — `size` is a TIER (`1K`, `2K`, `3K`, `4K`),
    combined with `ratio` (`1:1` default, plus `3:4`, `4:3`, `16:9`, `9:16`,
    `2:3`, `3:2`, `21:9`). Legacy exact sizes such as `1024x768` are accepted but
    may be normalized to the nearest tier.
 4. **The output-dimension table** — every ratio × tier maps to exact pixels
-   (for example `16:9` at `2K` = `2624x1472`). Full table in
+   (for example `16:9` at `2K` = `2624x1472`). Full table in `models.json` and
    `agnes-image-full.md`.
 5. **Image-to-image** — pass input image URL(s) or Data-URI Base64 in
    `extra_body.image[]`. Image-to-image does NOT require `tags: ["img2img"]`.
@@ -125,27 +123,29 @@ to the gate to enforce this check.
 7. **Rate-limit / tier awareness** — Agnes meters requests-per-minute by ACCOUNT
    TIER and (on paid Token Plans) daily quotas. Treat HTTP 429 as the live
    source of truth and back off; never hardcode a ceiling. See the rate-limit
-   section in `agnes-image-full.md`.
+   section in `agnes-image-full.md` and `references/api-patterns.md`.
 8. **Pricing** — image generation is currently promotional `$0 / image`
-   (standard reference rate `$0.003 / image`).
+   (standard reference rate `$0.003 / image`). Reference images: first 3 free,
+   4th+ `$0.003 / image` at list price.
+9. **Machine-Readable Registry & Validators** — `models.json`, `scripts/validate_prompt.py`,
+   `scripts/validate_payload.py`, and `scripts/normalize_alias.py`.
 
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** — you are here. Start with this file.
-2. **agnes-image-full.md** — the complete reference: every parameter, the full
-   output-dimension table, working curl examples for text-to-image and
-   image-to-image, the response shape, error handling, and the tier/rate-limit
-   section. Go here when you need exact API details.
-3. **INSTRUCTIONS.md** — how to call the endpoint day to day.
-4. **INSTALL.md** — how to confirm the `AGNES_AI_API_KEY` credential and verify
-   the endpoint responds.
-5. **EXAMPLES.md** — copy-paste curl examples for common tasks.
-6. **CORE_UPDATES.md** — what to add to AGENTS.md, TOOLS.md, and MEMORY.md.
-7. **prove_agnes_image_prompt_floor.py** — the deterministic prompt-band
-   enforcement gate: checks every prompt against the 5,000–19,000-char band,
-   enforces the image-to-image-for-logos rule, and verifies the mandatory
-   style-reference-only directive. Run before any paid API call to Agnes Image or
-   GPT-image-2. Self-tests with `--self-test` for CI.
+2. **models.json** — machine-readable capability registry for `agnes-image-2.1-flash`.
+3. **references/prompt-policy.md** — prompt policy, house bands, and expansion guide.
+4. **references/api-patterns.md** — request patterns, payload gotchas, and error handling.
+5. **references/qc.md** — visual quality control checklist and retry ladder.
+6. **agnes-image-full.md** — complete narrative reference and dimension tables.
+7. **INSTRUCTIONS.md** — how to call the endpoint day to day.
+8. **INSTALL.md** — how to confirm credentials and verify connectivity.
+9. **EXAMPLES.md** — copy-paste curl examples for common tasks.
+10. **CORE_UPDATES.md** — what to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+11. **scripts/validate_prompt.py** — model-aware prompt validation script.
+12. **scripts/validate_payload.py** — JSON payload validation script.
+13. **scripts/normalize_alias.py** — alias normalization script.
+14. **prove_agnes_image_prompt_floor.py** — prompt band quality gate.
 
 ## Critical Things to Know
 
@@ -168,14 +168,10 @@ to the gate to enforce this check.
 - **Rate limits are per account tier — read them live.** Do not bake a numeric
   request/day cap into any logic. If the account is on a paid Token Plan the
   daily quotas apply; on the free/default tier only requests-per-minute apply.
-  Treat a 429 as the authority and back off. The full tier table (with its
-  confirmed and unverified cells) is in `agnes-image-full.md`.
-- **Prompt length must be 5,000–19,000 characters (stripped).** Never submit a
-  prompt below 5,000 chars (thin stub) or above 19,000 chars (stays clear of the
-  API's 25,000-char max with ~6,000 chars of headroom). Run the deterministic
-  gate before any paid call: `python3 63-agnes-image/prove_agnes_image_prompt_floor.py
-  --file <prompt.txt>`. A prompt under 5,000 chars or over 19,000 chars is NOT
-  submitted — re-author first.
+  Treat a 429 as the authority and back off. Full details in `references/api-patterns.md`.
+- **Vendor prompt cap is NOT_PUBLISHED.** Do not invent a vendor cap.
+  House operating policy targets 5,000–19,000 characters (~9,000 target). Short user
+  prompts are expanded, not rejected. Run `scripts/validate_prompt.py` before calls.
 - **Logo requests MUST use image-to-image.** When a prompt involves the client's
   logo, wordmark, or existing brand image, use I2I (pass the logo as a reference
   image via `extra_body.image[]`), never text-to-image. Add the mandatory
