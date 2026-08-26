@@ -3,6 +3,125 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.5] - 2026-08-26
+
+**The watchdog itself was the unmeasured thing.** 0.6.3 and 0.6.4 killed the escalation
+storm; the loop is dead and the ticket rate fell from 212/hr to about 1/hr. This release
+fixes the three defects that made the watchdog's own state unknowable: an installer that
+reported success over a box it never scheduled, a cron registration with no idempotency
+check, and no signal at all for "when did this thing last run".
+
+### Fix A — `install.sh` can no longer print "Install OK" over an unscheduled watchdog
+
+The cron step was gated on `command -v openclaw` (`install.sh:75`). A bare ssh to a Mac
+gets `PATH=/usr/bin:/bin:/usr/sbin:/sbin` — no openclaw, no node — so the gate evaluated
+FALSE, took the else branch, and execution fell straight through to the unconditional
+`Install OK` at `install.sh:116`. **That pattern appears in 19 of 26 roll logs.**
+Operators read "Install OK" and believed the box was protected while nothing was ever
+scheduled. openclaw was installed the whole time — `/opt/homebrew/bin` on Apple Silicon,
+`/usr/local/bin` on Intel, `~/.local/bin` on the operator box. A PATH failure was being
+reported as a capability fact. The `cron add` FAILURE path had the same hole: a WARN on
+stderr, then `Install OK`.
+
+The gate is gone. `loop_cron.py` resolves the binary itself and returns a NAMED negative
+when it cannot. `do_install` now carries `cron_state` to the end and the verdict is a
+case, not an unconditional echo:
+
+| `cron_state` | Verdict | Exit |
+|---|---|---|
+| `ok` | `Install OK` | 0 |
+| `skipped-by-operator` (`--no-cron`) | scripts installed + a **NOT PROTECTED** banner | 0 |
+| `undetermined` / `needs-operator` / `failed` | **INSTALL INCOMPLETE** banner | **5** |
+
+`update-skills.sh:6900-6910` treats a non-zero installer as FAILED, withholds the
+`.wired` sentinel and retries on the next roll — which is exactly what a box with no
+watchdog always deserved. **Rollout note:** a box that genuinely cannot register its
+cron will now be reported as a failed skill install on every roll until it can. That is
+the intended behaviour; it is also a visible change in roll output.
+
+### Fix B — `openclaw cron add` had no idempotency check (`scripts/loop_cron.py`, new)
+
+`install.sh` called `openclaw cron add --name "loop-tick-${BOX}"` unconditionally, and
+the CLI has **no upsert**. Every re-run added another job. Measured 2026-08-26 across 34
+running boxes: **25 carried 2-12 duplicate `loop-tick-*` jobs**, all enabled, all
+`*/15`. The operator box held three identical jobs whose `lastRunAtMs` values were
+**4 seconds apart** — one window, three ticks, the same finding processed three times.
+
+`loop_cron.py reconcile` is LIST → DECIDE → ACT → **LIST AGAIN AND PROVE IT**:
+
+* **`--all` is mandatory, not defensive.** `openclaw cron list` hides disabled jobs
+  (`--all  Include disabled jobs (default: false)`). Without it a disabled loop-tick job
+  is invisible, the reconciler concludes "none exist", and adds a duplicate of a job
+  that is already there. The self-test proves the *instrument* first: it asserts the
+  stub listing HIDES the seeded disabled job, so dropping `--all` fails that case
+  instead of silently passing.
+* **none → add one. one → keep it, repairing name/schedule/command/cwd/disabled IN
+  PLACE. several → collapse to one**, keeping the oldest (longest run history) and
+  removing the rest by id, loudly. Safe to run on an already-duplicated box; running the
+  installer ten times leaves exactly one job.
+* **Blast radius:** only a job that is BOTH named `loop-tick-*` AND recognisably ours (a
+  command payload invoking `loop-companion.sh tick`) is ever removed. Anything else is
+  left untouched and reported NEEDS-OPERATOR (exit 4). `LOOP_CRON_NO_PRUNE=1` /
+  `--no-prune` reports duplicates instead of collapsing them.
+* **A failed listing is never "no jobs".** A non-zero CLI exit, unparsable output, a
+  `hasMore` page this CLI cannot fetch (`cron list` has no `--limit`/`--offset`), or an
+  unresolved binary all return UNDETERMINED (exit 3) naming every source probed — and
+  add NOTHING. "I could not look" plus "add one" is precisely how 12 duplicates form.
+
+### Fix C — `last_tick_ts`: a liveness signal that survives a quiet box
+
+There was no direct "when did the watchdog last RUN" fact. The instruments available
+were `loop.db`'s file mtime and the cron engine's own `lastRunAtMs` — both OUTSIDE the
+ledger — and `MAX(findings.tick_ts)`, which is **not liveness**: it answers *does this
+box have a loop condition*. **A healthy box that finds nothing reads as a dead
+watchdog.** That proxy produced a false "6 boxes unwatched" report on 2026-08-26; one of
+the six had ticked 13 minutes earlier.
+
+`tick()` now stamps ledger meta on **every completed tick, findings or none** —
+`last_tick_ts`, `last_tick_findings`, `last_tick_errors`, `last_tick_armed` — and the
+CLI adds `last_tick_mode` (live | dry-run) so `install.sh`'s forced observe-only tick is
+not mistaken for a scheduled one. Written LAST and outside the per-finding failure
+boundary: the stamp means *this tick completed*, so a tick that died mid-way must not
+leave a fresh one. A failed write increments `errors` and prints to stderr.
+
+`loop_ledger.py liveness [--max-age-minutes N]` (default 45 = three missed 15-minute
+ticks) is the instrument: exit 0 fresh, 3 stale. A **missing** stamp is exit 3 with a
+reason that says so — "older than v0.6.5, or has never completed a tick" — never a
+silent 0 and never a claim that the box is unwatched. `loop-companion.sh status` now
+leads with the last tick, because a status screen that lists findings without saying
+when the watchdog last ran invites "no findings" to be read as "healthy".
+
+### `verify.sh` proves the BOX, not just the fixtures
+
+Every drill in the battery ran against scratch fixtures, and all of them were green on
+the day 25 of 34 boxes were found carrying duplicate cron jobs. Section 4, the
+**STANDING GATE**, reads this box: **D-CRON-ONE** (exactly one enabled loop-tick job,
+and it is ours) and **D-TICK-FRESH** (a tick completed within 45 minutes). UNDETERMINED
+gets its own exit code — **5**, never folded into the pass. Flags: default = offline
+drills + standing gate; `--offline` (CI, source checkout) prints that the standing gate
+did NOT run so an offline pass cannot be read as a fleet fact; `--live` runs the gate
+alone.
+
+### Failable, and proven so
+
+| Mutation | Result |
+|---|---|
+| drop `--all` from the listing | disabled-job case adds a duplicate → FAIL |
+| treat UNDETERMINED as "no jobs" | undetermined case mutates the cron table → FAIL |
+| restore the unconditional `Install OK` | "an unscheduled watchdog exited 0, expected 5" → FAIL |
+| stamp `last_tick_ts` only when findings exist | liveness case → FAIL |
+
+Every mutation above was run, not reasoned about. Standing gate, six sandboxed runs
+against a stub gateway: 0 jobs → 4, one job + fresh stamp → 0, three duplicates → 4,
+stale stamp → 4, `cron list` exits 7 → 5, binary unresolvable → 5. Offline battery: 34
+PASS / exit 0. Combined default path: 36 PASS / exit 0.
+
+### Files
+
+`scripts/loop_cron.py` (new), `install.sh`, `scripts/loop_watchdog.py`,
+`scripts/loop_ledger.py`, `scripts/loop_companion.sh`, `loop-companion.sh`, `verify.sh`,
+`tests/drills/D-CRON-ONE.md`, `SKILL.md`, `skill-version.txt`.
+
 ## [0.6.4] - 2026-08-26
 
 **The two false engines behind the storm.** 0.6.3 gated how often an escalation

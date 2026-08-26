@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries seven loop-specific detectors D1-D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, self-blocking-run / transcript poison, futile semantic retry burst, and cross-run resend) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.6.4
+version: 0.6.5
 ---
 
 # Loop Protection System (Skill 61)
@@ -203,19 +203,61 @@ finding is left `open` and is never marked `escalated`. The tick summary separat
 `escalated` (admitted), `escalation_unsent` (refused) and `escalation_suppressed`
 (never attempted). Drills: `tests/drills/D-ESC-GATE.md`.
 
+## One cron job, and a way to tell it is alive (v0.6.5)
+
+Two facts about a box were unknowable from inside this skill until 0.6.5, and both had
+already gone wrong at fleet scale.
+
+**Exactly one watchdog cron job.** `openclaw cron add` has no upsert and `install.sh`
+called it unconditionally, so every re-run added another job. Measured 2026-08-26 across
+34 running boxes: **25 carried 2-12 duplicate `loop-tick-*` jobs**, all enabled, all
+`*/15`. `scripts/loop_cron.py` replaces the blind add with LIST → DECIDE → ACT →
+**LIST AGAIN AND PROVE IT**. Running `install.sh` ten times now leaves exactly one job.
+`--all` is mandatory on the listing, because `openclaw cron list` **hides disabled jobs**
+and a disabled loop-tick job that cannot be seen is a duplicate waiting to be created.
+Only a job that is BOTH named `loop-tick-*` AND recognisably ours (a command payload
+invoking `loop-companion.sh tick`) is ever removed; anything else is reported and left
+alone.
+
+**`last_tick_ts`.** There was no direct "when did the watchdog last RUN" signal, so
+liveness was inferred from `MAX(findings.tick_ts)` — which measures whether a box *has a
+loop condition*, not whether the watchdog ran. **A healthy box reads as a dead
+watchdog**, and that produced a false "6 boxes unwatched" report on 2026-08-26; one of
+the six had ticked 13 minutes earlier. Every completed tick now stamps `last_tick_ts`
+(plus `last_tick_findings`, `last_tick_errors`, `last_tick_armed`, and `last_tick_mode`
+= live | dry-run), **including a tick that finds nothing** — exactly the case the old
+proxy got wrong. `loop_ledger.py liveness` is the instrument.
+
+Neither fact is allowed to be free: an install whose cron job is not PROVEN exits **5**
+and cannot print "Install OK", and a listing that cannot be read is **UNDETERMINED**,
+never "no jobs". Drills: `tests/drills/D-CRON-ONE.md`.
+
 ## Entry and verify
 
     bash 61-loop-protection-system/loop-companion.sh tick          # one watchdog tick
     bash 61-loop-protection-system/loop-companion.sh audit --local # read-only detector pass
-    bash 61-loop-protection-system/loop-companion.sh status        # armed?, breakers, parked, findings
+    bash 61-loop-protection-system/loop-companion.sh status        # armed?, last tick, breakers, findings
     bash 61-loop-protection-system/loop-companion.sh --self-test    # every script self-test
-    bash 61-loop-protection-system/verify.sh                       # the failable drill battery
+    bash 61-loop-protection-system/verify.sh                       # drills + the standing gate
+    bash 61-loop-protection-system/verify.sh --live                # THIS box: one cron job, fresh tick
+    python3 61-loop-protection-system/scripts/loop_cron.py status  # how many loop-tick jobs exist
+    python3 61-loop-protection-system/scripts/loop_ledger.py liveness  # when did it last tick
+
+`verify.sh` exits **0** verified, **4** drift/failure, **5** standing gate UNDETERMINED.
+Exit 5 is the one that matters most in practice: an unreachable gateway, an unresolvable
+`openclaw` binary (a Mac's bare-ssh `PATH` is `/usr/bin:/bin:/usr/sbin:/sbin` — no
+openclaw) or a pre-0.6.5 ledger means **we could not look**, and that is never reported
+as a pass.
 
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
-network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (twenty-three drills; the D-ESCALATE drill injects a failing transport, so no external
-API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
+network, no model). `verify.sh` is the independent, failable end-to-end
+proof: sections 1-3 are FULLY OFFLINE (the D-ESCALATE drill injects a failing transport,
+so no external API is ever touched) and section 4 is the v0.6.5 STANDING GATE, which
+reads this box's own cron table and ledger because a battery that only ever examined
+scratch fixtures stayed green while 25 of 34 boxes accumulated duplicate cron jobs.
+Use `--offline` to skip it (CI, a source checkout); the offline verdict then says so
+out loud, so it can never be read as a fact about a real box. Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
 revert (`unpark --finding <id>`) and asserts it unparks. Four more prove D5 in BOTH

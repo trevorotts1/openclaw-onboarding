@@ -38,6 +38,16 @@ The manual, per-skill equivalent is unchanged:
    The box is left in **DRY_RUN observe-only** (`armed=false`) - the 7-day burn-in.
    During burn-in it RECORDS every finding but changes nothing.
 
+   Since v0.6.5 the installer PROVES the cron job it registers: it lists first
+   (`--all`, so a disabled job is not invisible), leaves **exactly one**
+   `loop-tick-*` job however many times you run it, and **exits 5 without printing
+   "Install OK"** if the watchdog is not scheduled. Confirm the box independently:
+
+       bash 61-loop-protection-system/verify.sh --live
+
+   Exit 0 = one cron job and a fresh completed tick; 4 = one of those is wrong and
+   is named; 5 = UNDETERMINED (the gateway could not be read), which is never a pass.
+
 2. Watch what it would have done:
 
        bash 61-loop-protection-system/loop-companion.sh audit --local
