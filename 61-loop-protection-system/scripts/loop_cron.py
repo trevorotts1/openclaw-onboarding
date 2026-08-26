@@ -105,6 +105,10 @@ def find_openclaw():
         probed.append("$LOOP_OPENCLAW_BIN=%s" % env)
         if os.path.isfile(env) and os.access(env, os.X_OK):
             return env, probed
+        # NO FALLBACK. An explicit override that does not resolve is an error, not
+        # an invitation to go hunting - and a hermetic test that pointed here must
+        # NEVER be able to reach a real gateway because its stub path was wrong.
+        return None, probed
     probed.append("PATH=%s" % os.environ.get("PATH", ""))
     which = shutil.which("openclaw")
     if which:
@@ -580,6 +584,21 @@ def _self_test():
           "every probed source: PATH + %d candidate dirs, never a bare 'not installed')"
           % len(_CANDIDATE_DIRS))
 
+    # ---- 8b. an explicit override that does not resolve NEVER falls back --
+    # This is a safety property, not a nicety: install.sh's self-test points
+    # LOOP_OPENCLAW_BIN at a path that does not exist to force UNDETERMINED. If
+    # resolution fell through to PATH, that "hermetic" test would find the REAL
+    # openclaw and reconcile the REAL box's cron table.
+    os.environ["LOOP_OPENCLAW_BIN"] = os.path.join(td, "no-such-openclaw")
+    try:
+        found, probed = find_openclaw()
+        assert found is None, "a bad LOOP_OPENCLAW_BIN fell back to %s" % found
+        assert len(probed) == 1 and probed[0].startswith("$LOOP_OPENCLAW_BIN="), probed
+    finally:
+        os.environ.pop("LOOP_OPENCLAW_BIN", None)
+    print("  override-no-fallback case: PASS (an unresolvable LOOP_OPENCLAW_BIN "
+          "returns None immediately - a stub-based test can never reach a real gateway)")
+
     # ---- 9. --no-prune reports instead of converging ----------------------
     seed([ours_row(11), ours_row(12)])
     rc, res = reconcile(stub, name, expr, command, cwd, prune=False, log=quiet)
@@ -597,6 +616,11 @@ def _cli(argv=None):
         prog="loop_cron.py",
         description="Idempotent reconciliation of the Loop Protection watchdog cron job.")
     ap.add_argument("--self-test", action="store_true")
+    # TEST-ONLY. Writes the stub gateway this module's own self-test uses, so
+    # install.sh's self-test can be hermetic against the SAME fake instead of
+    # carrying a second copy that drifts. Never used at runtime.
+    ap.add_argument("--emit-stub", metavar="PATH",
+                    help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd", required=False)
 
     sp = sub.add_parser("reconcile", help="leave EXACTLY ONE loop-tick job, proven")
@@ -612,6 +636,11 @@ def _cli(argv=None):
     sp.add_argument("--json", action="store_true")
 
     a = ap.parse_args(argv)
+    if a.emit_stub:
+        with open(a.emit_stub, "w") as fh:
+            fh.write(_STUB)
+        os.chmod(a.emit_stub, 0o755)
+        return EX_OK
     if a.self_test:
         return _self_test()
     if not a.cmd:

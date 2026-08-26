@@ -14,20 +14,24 @@
 #    ever true of a FRESH ledger, and the post-install tick honored the ledger - so
 #    on an armed box that sentence authorized a live armed tick over that box's real
 #    sessions. The tick below is therefore pinned with --dry-run.
-# 4. register the ONE host-level watchdog cron (--no-deliver; operator target only)
+# 4. RECONCILE the ONE host-level watchdog cron (--no-deliver; operator target only):
+#    list --all, keep/repair exactly one, collapse duplicates, re-list to prove it
 #    OUTSIDE any OpenClaw session (the Box B law); fire a FORCED-DRY_RUN manual tick;
 #    confirm a ledger row landed
 # Re-running is safe: it re-verifies + upgrades scripts in place and NEVER arms or
 # disarms the box (arming is `arm`'s job alone), and never applies a fix.
 #
 # CONFIG-TOUCHING => refuses root (cron registration; on VPS run inside
-# `docker exec -u node`). EXIT: 0 OK, 3 dep, 4 refused, 1 error.
+# `docker exec -u node`). EXIT: 0 OK, 3 dep, 4 refused, 5 NO PROVEN CRON, 1 error.
+# 5 is the 0.6.5 addition: an install whose watchdog tick is not scheduled and
+# PROVEN can no longer print "Install OK" - see the cron block for the 19-of-26
+# roll logs that reported success over a box nothing was ever scheduled on.
 # =============================================================================
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SELF_DIR/scripts"
 TAG="[loop-install]"
-EX_OK=0; EX_ERR=1; EX_DEP=3; EX_REFUSED=4
+EX_OK=0; EX_ERR=1; EX_DEP=3; EX_REFUSED=4; EX_CRON=5
 
 ROLE="client"; BOX=""; NO_CRON=0; SELFTEST=0
 while [ $# -gt 0 ]; do
@@ -56,6 +60,7 @@ except Exception: pass'
 }
 
 do_install() {
+    local cron_state="unknown"
     echo "$TAG preflight..."
     bash "$SELF_DIR/preflight.sh" --check || return $?
 
@@ -72,33 +77,60 @@ led.set_meta("role", sys.argv[2]); led.set_meta("box", sys.argv[3])
 led.close(); print("meta set")
 PY
 
-    if [ "$NO_CRON" -eq 0 ] && command -v openclaw >/dev/null 2>&1; then
-        echo "$TAG registering the 15-minute host-level watchdog tick (--no-deliver, operator-only)..."
-        # The schedule flag is --cron, NOT --schedule. `openclaw cron add --help` on
-        # 2026.7.1-2 offers --cron/--every/--at (plus a positional schedule) and has NO
-        # --schedule at all, so the old invocation could only ever exit non-zero: cron
-        # registration was structurally impossible, and the operator saw a bare WARN
-        # because stderr went to /dev/null. Never again: on the FAILURE path the real
-        # stderr is printed, so a rejected flag names itself.
-        # --command-cwd pins the job's working directory to THIS engine copy.
-        local cron_err cron_rc
-        cron_err="$(openclaw cron add \
+    # ---- THE WATCHDOG CRON: reconciled, never blindly added -----------------
+    # TWO defects lived here until 0.6.5, and they compounded.
+    #
+    # (1) THE GATE WAS `command -v openclaw`. A bare ssh to a Mac gets
+    #     PATH=/usr/bin:/bin:/usr/sbin:/sbin - no openclaw, no node. The gate
+    #     therefore evaluated FALSE on Mac after Mac, took the else branch, and
+    #     execution fell straight through to "Install OK" below. That pattern is in
+    #     19 of 26 roll logs: the operator read "Install OK" and believed the box was
+    #     protected while NOTHING was ever scheduled. openclaw was installed the whole
+    #     time (measured: /opt/homebrew/bin on Apple Silicon, /usr/local/bin on Intel,
+    #     ~/.local/bin on the operator box) - it was a PATH failure being reported as
+    #     a capability fact. loop_cron.py now resolves the binary itself and, when it
+    #     truly cannot, returns UNDETERMINED naming every path it probed.
+    #
+    # (2) `openclaw cron add` RAN UNCONDITIONALLY and has no upsert, so every re-run
+    #     added ANOTHER job. Measured 2026-08-26: 25 of 34 running boxes carried 2-12
+    #     duplicate loop-tick jobs, all enabled, all */15 - the watchdog firing up to
+    #     12x per window. loop_cron.py lists first (--all: `cron list` HIDES disabled
+    #     jobs), keeps or repairs exactly one, collapses the rest, and re-lists to
+    #     PROVE the result. Running this installer 10 times now leaves exactly 1 job.
+    #
+    # THE VERDICT IS NO LONGER FREE. cron_state is carried to the end of do_install
+    # and a box whose watchdog is not scheduled CANNOT print "Install OK" - it exits
+    # EX_CRON(5). update-skills.sh treats a non-zero installer as FAILED, withholds
+    # the .wired sentinel and retries next roll, which is exactly the loud behaviour
+    # a silently unscheduled watchdog always deserved.
+    if [ "$NO_CRON" -eq 1 ]; then
+        cron_state="skipped-by-operator"
+        echo "$TAG cron registration SKIPPED - --no-cron was passed explicitly."
+        echo "$TAG NOTHING on this box will run the watchdog. Manual tick command:"
+        echo "  bash $SELF_DIR/loop-companion.sh tick"
+    else
+        echo "$TAG reconciling the 15-minute host-level watchdog tick (--no-deliver, operator-only)..."
+        local cron_rc
+        cron_rc=0
+        python3 "$SCRIPTS/loop_cron.py" reconcile \
             --name "loop-tick-${BOX}" \
             --cron "*/15 * * * *" \
-            --no-deliver \
-            --command-cwd "$SELF_DIR" \
-            --command "bash $SELF_DIR/loop-companion.sh tick" 2>&1 >/dev/null)"
-        cron_rc=$?
-        if [ "$cron_rc" -eq 0 ]; then
-            echo "$TAG tick cron registered (loop-tick-${BOX}, */15, --no-deliver)"
-        else
-            echo "$TAG WARN: cron add failed (exit $cron_rc); register manually with:" >&2
-            echo "  openclaw cron add --name loop-tick-${BOX} --cron '*/15 * * * *' --no-deliver --command-cwd '$SELF_DIR' --command 'bash $SELF_DIR/loop-companion.sh tick'" >&2
-            [ -n "$cron_err" ] && printf '%s\n' "$cron_err" >&2
-        fi
-    else
-        echo "$TAG cron registration skipped (no gateway or --no-cron). Manual tick command:"
-        echo "  bash $SELF_DIR/loop-companion.sh tick"
+            --command "bash $SELF_DIR/loop-companion.sh tick" \
+            --cwd "$SELF_DIR" || cron_rc=$?
+        case "$cron_rc" in
+            0) cron_state="ok"
+               echo "$TAG watchdog cron PROVEN: exactly one enabled loop-tick-${BOX} (*/15, --no-deliver)" ;;
+            3) cron_state="undetermined"
+               echo "$TAG UNDETERMINED: could not READ this box's cron table (see the named" >&2
+               echo "$TAG   probe list above). Nothing was added. This is NOT a claim that the" >&2
+               echo "$TAG   box has no watchdog - it is a claim that we could not look." >&2 ;;
+            4) cron_state="needs-operator"
+               echo "$TAG NEEDS OPERATOR: loop-tick job(s) this installer will not touch, or" >&2
+               echo "$TAG   duplicates left in place by LOOP_CRON_NO_PRUNE=1. See above." >&2 ;;
+            *) cron_state="failed"
+               echo "$TAG ERROR: cron reconciliation FAILED (exit $cron_rc). Register manually:" >&2
+               echo "  openclaw cron add --name loop-tick-${BOX} --cron '*/15 * * * *' --no-deliver --command-cwd '$SELF_DIR' --command 'bash $SELF_DIR/loop-companion.sh tick'" >&2 ;;
+        esac
     fi
 
     # A FORCED DRY_RUN TICK, never an armed one. `--no-send` only suppresses delivery:
@@ -112,13 +144,40 @@ PY
     fi
     echo "$TAG firing a manual tick, FORCED observe-only (--dry-run: applies nothing)..."
     py loop_watchdog.py tick --no-send --dry-run >/dev/null 2>&1 || true
-    if py loop_ledger.py init >/dev/null 2>&1; then
-        echo "$TAG ledger healthy. Install OK (role=$ROLE box=$BOX; armed state UNCHANGED)."
-        echo "$TAG After the 7-day burn-in, arm Tier-1 with: bash $SELF_DIR/loop-companion.sh arm"
-    else
+    if ! py loop_ledger.py init >/dev/null 2>&1; then
         echo "$TAG ERROR: ledger not healthy after install" >&2; return $EX_ERR
     fi
-    return $EX_OK
+
+    # ---- THE VERDICT --------------------------------------------------------
+    # "Install OK" used to be unconditional once the ledger opened, so a box whose
+    # watchdog was never scheduled reported success in the same breath as the line
+    # saying the cron step had been skipped. A watchdog that is not scheduled is not
+    # installed, whatever else worked.
+    case "$cron_state" in
+        ok)
+            echo "$TAG ledger healthy. Install OK (role=$ROLE box=$BOX; armed state UNCHANGED)."
+            echo "$TAG After the 7-day burn-in, arm Tier-1 with: bash $SELF_DIR/loop-companion.sh arm"
+            return $EX_OK ;;
+        skipped-by-operator)
+            # The operator asked for this explicitly, so it is not a failure - but it
+            # is never reported as a protected box either.
+            echo "$TAG ledger healthy. Scripts installed (role=$ROLE box=$BOX; armed state UNCHANGED)."
+            echo "$TAG ============================================================"
+            echo "$TAG  NOT PROTECTED: --no-cron was passed, so no watchdog is"
+            echo "$TAG  scheduled on this box. Re-run WITHOUT --no-cron, or"
+            echo "$TAG  register the tick yourself, before calling this box done."
+            echo "$TAG ============================================================"
+            return $EX_OK ;;
+        *)
+            echo "$TAG ============================================================" >&2
+            echo "$TAG  INSTALL INCOMPLETE - cron state: $cron_state" >&2
+            echo "$TAG  The ledger and scripts are in place, but this box has NO" >&2
+            echo "$TAG  PROVEN 15-minute watchdog tick. It is NOT protected, and" >&2
+            echo "$TAG  this installer will NOT report success for it." >&2
+            echo "$TAG  Verify with: bash $SELF_DIR/verify.sh --live" >&2
+            echo "$TAG ============================================================" >&2
+            return $EX_CRON ;;
+    esac
 }
 
 self_test() {
@@ -172,6 +231,56 @@ PY
     [ "$fixes" = "0" ] || { echo "$TAG self-test FAIL: install applied $fixes fix(es) on an armed box; the post-install tick must be forced DRY_RUN" >&2; rm -rf "$td"; return 1; }
     echo "  armed-box case: PASS (armed left TRUE; a poisoned bait transcript that an"
     echo "                  armed tick WOULD roll is untouched and ZERO fixes applied)"
+
+    # ---- THE VERDICT, FAILABLE IN BOTH DIRECTIONS -------------------------
+    # The 0.6.5 defect: a box whose cron step was skipped still printed
+    # "Install OK". Both cases below run the REAL do_install with cron enabled,
+    # against a STUB gateway (loop_cron.py --emit-stub, the same fake its own
+    # self-test uses - one source, so they cannot drift). Hermetic: an
+    # unresolvable LOOP_OPENCLAW_BIN returns UNDETERMINED without falling back
+    # to PATH, so neither case can ever reach this box's real gateway.
+    local out rc stub fdb
+    stub="$td/openclaw-stub"
+    python3 "$SCRIPTS/loop_cron.py" --emit-stub "$stub" \
+        || { echo "$TAG self-test FAIL: could not emit the stub gateway" >&2; rm -rf "$td"; return 1; }
+    fdb="$td/fake-cron.json"
+
+    # (a) CRON UNPROVEN -> exit 5 and the words "Install OK" must NOT appear.
+    #     This is the exact Mac shape: openclaw not resolvable from this PATH.
+    rc=0
+    out="$(LOOP_OPENCLAW_BIN="$td/no-such-openclaw" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install 2>&1)" || rc=$?
+    [ "$rc" -eq 5 ] || { echo "$TAG self-test FAIL: an unscheduled watchdog exited $rc, expected 5" >&2; rm -rf "$td"; return 1; }
+    case "$out" in
+        *"Install OK"*) echo "$TAG self-test FAIL: printed 'Install OK' with NO watchdog cron" >&2; rm -rf "$td"; return 1 ;;
+    esac
+    case "$out" in
+        *"INSTALL INCOMPLETE"*) : ;;
+        *) echo "$TAG self-test FAIL: an unscheduled watchdog produced no loud banner" >&2; rm -rf "$td"; return 1 ;;
+    esac
+    echo "  unproven-cron case: PASS (exit 5, loud banner, and the words 'Install OK'"
+    echo "                      are ABSENT from the entire transcript)"
+
+    # (b) CRON PROVEN -> exit 0, "Install OK", and EXACTLY ONE job - after THREE
+    #     installs, which is the duplicate-cron defect measured on 25 of 34 boxes.
+    rc=0
+    out="$(LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install 2>&1)" || rc=$?
+    [ "$rc" -eq 0 ] || { echo "$TAG self-test FAIL: a proven cron install exited $rc" >&2; rm -rf "$td"; return 1; }
+    case "$out" in
+        *"Install OK"*) : ;;
+        *) echo "$TAG self-test FAIL: a proven cron install did not report Install OK" >&2; rm -rf "$td"; return 1 ;;
+    esac
+    LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install >/dev/null 2>&1 || true
+    LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install >/dev/null 2>&1 || true
+    local njobs
+    njobs="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$fdb" 2>/dev/null)"
+    [ "$njobs" = "1" ] || { echo "$TAG self-test FAIL: 3 installs left $njobs cron job(s), expected exactly 1" >&2; rm -rf "$td"; return 1; }
+    echo "  proven-cron case: PASS (exit 0, Install OK, and THREE consecutive installs"
+    echo "                    leave EXACTLY ONE loop-tick job)"
+
     rm -rf "$td"; unset LOOP_STATE_DIR LOOP_OPENCLAW_ROOT
     echo "$TAG self-test: PASS"; return 0
 }
