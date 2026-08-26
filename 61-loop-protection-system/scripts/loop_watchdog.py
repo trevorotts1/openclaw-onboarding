@@ -328,7 +328,27 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     # survives a box you can only reach through this skill.
     #
     # WRITTEN ON EVERY TICK, FINDINGS OR NONE. The zero-findings tick is the whole
-    # point: it is the case the broken metric gets wrong.
+    # point: it is the case the broken metric gets wrong. record_finding writes a row
+    # only when a detector fires, so a box whose conditions CLEARED writes nothing and
+    # its newest finding freezes at the last real problem - while the tick keeps
+    # running perfectly every 15 minutes. The inference ran the wrong way round: a
+    # quiet ledger is the watchdog reporting all-clear, and the sweep read it as a
+    # casualty.
+    #
+    # THE OLD SIGNAL WAS RECOVERABLE ONLY BY ACCIDENT. The ledger file's mtime did
+    # advance every tick - but only because collect_crons() calls
+    # set_meta("d4_cron_fires") unconditionally. That is a side effect of an
+    # unrelated detector, not a promise. Anyone who moved that call, or made it
+    # conditional, would have silently removed the fleet's only honest heartbeat
+    # without touching anything named like one. This key is the promise, stated on
+    # purpose.
+    #
+    # WHAT IT PROVES, AND WHAT IT DOES NOT. It proves a tick RAN and reached the end.
+    # It does NOT prove a RECURRING CRON is scheduled: install.sh's one-shot
+    # post-install tick stamps it too, which is exactly why last_tick_mode records
+    # "dry-run" for that tick. Cron existence is a SEPARATE fact, checked separately
+    # by loop_cron.py. Read both, or you have only swapped one comfortable inference
+    # for another.
     #
     # LAST, and outside the per-finding boundary: the stamp means "this tick ran to
     # completion", so a tick that died mid-way must NOT leave a fresh one. A failed

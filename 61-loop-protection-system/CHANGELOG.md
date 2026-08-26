@@ -3,6 +3,97 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.6] - 2026-08-26
+
+**What 0.6.5 got wrong about other people's decisions.** 0.6.5 shipped the idempotent
+cron reconciler, the installer verdict and `last_tick_ts`. This release corrects four
+things in that work and hardens a fifth. It exists as its own version because 0.6.5 is
+already on the fleet's main line and these change behaviour that shipped.
+
+### Fix A - a disabled cron is a HUMAN DECISION, never drift to repair
+
+0.6.5 treated a disabled `loop-tick-*` job as drift and switched it back on. That is
+wrong. Somebody may have disabled it deliberately - quite possibly to stop a runaway -
+and **an installer that quietly undoes a human decision is a worse failure than the one
+it is fixing.**
+
+A box whose loop-tick registrations are ALL disabled is now NEEDS-OPERATOR: the
+reconciler exits 4, `install.sh` exits 5, nothing is re-enabled, nothing is added
+alongside, and the two commands an operator runs to re-enable it deliberately are printed.
+`--all` on the listing still matters exactly as much - it is what makes the disabled job
+VISIBLE so it is not duplicated - but seeing it is not permission to change it.
+
+### Fix B - a login-shell probe in the binary resolution chain
+
+`bash -lc 'command -v openclaw'` finds the CLI wherever THAT box's own profile puts it -
+nvm, asdf, a custom npm prefix - which no hardcoded candidate list can anticipate. It runs
+before the fixed candidates.
+
+**Measured, not assumed, and the caveat is now in the code:** on the operator Mac this
+probe comes back EMPTY even though openclaw is right there in `~/.local/bin`, because
+`bash -lc` sources the *bash* profile while that PATH entry lives in the zsh config. The
+fixed candidate list is what resolves it on that box. Each path catches what the other
+cannot, which is why both ship. `LOOP_NO_PROBES=1` skips it - the same seam the rest of
+the skill already uses to keep a self-test from touching a real shell or a real gateway.
+
+### Fix C - the schedule flag is PROBED off `cron add --help`, never assumed
+
+Before emitting anything, the reconciler reads `openclaw cron add --help` and uses
+whichever of `--cron` / `--schedule` that CLI actually offers. If it offers **neither**,
+it REFUSES and says so rather than emitting a command the CLI will reject.
+
+For the record, because a field report said otherwise: **`--schedule` has not been in this
+repo since v0.4.0.** `git log -S'--schedule "*/15' -- 61-loop-protection-system/install.sh`
+points at `2e2766c77`, the commit that introduced `--cron`; `origin/main`'s install.sh
+line 87 is `--cron`; and the installed copy on the operator box (skill-version 0.6.4) is
+`--cron` too. A box still invoking `--schedule` is running an install.sh **older than
+v0.4.0** - a delivery gap, not a source defect. The probe is still the right fix: it makes
+the NEXT flag rename surface instead of silently no-opping the way that one did.
+
+### Fix D - nothing is renamed, and only the schedule is repaired
+
+`BOX` comes from `hostname`, which flaps (`Mac.lan` -> `Mac`). The question this skill asks
+is "does THIS BOX have a watchdog tick scheduled", not "does one exist under the name I
+would pick today", so renaming a working job on every flap is pure churn. Name, command and
+cwd drift are now **reported and left alone**; only a wrong **schedule** is edited in place,
+because that one is a functional defect.
+
+### Hardening - exactly one, and a guard against breaking every Mac roll
+
+`verify.sh`'s D-CRON-ONE and `loop_cron.py status` now assert the schedule as well:
+**exactly one loop-tick job, enabled, ours, on `*/15 * * * *`** - the verified correct
+post-state across all 25 boxes remediated on 2026-08-26. Exactly one, never `>= 1`; a `>=`
+check is what let 2-12 duplicates per box read as healthy in the first place.
+
+And the case that matters most in the other direction: **"skipped" never implied
+"missing"** - the control is a box whose roll log says skipped while carrying four healthy
+enabled registrations. A correct box must come out of a roll with **not one** of
+add/edit/rm called. That is asserted at both levels now, by the ABSENCE of a stub marker
+rather than the absence of a complaint. If it ever fails, this skill has started rewriting
+a working cron job on every roll across the fleet.
+
+### Also
+
+`tick()`'s heartbeat comment now records why the old signal survived at all: the ledger
+file's mtime advanced every tick only as a **side effect** of `collect_crons()` calling
+`set_meta("d4_cron_fires")` unconditionally. That is not a promise, and anyone who made
+that call conditional would have removed the fleet's only honest heartbeat without touching
+anything named like one. It also states plainly what `last_tick_ts` does NOT prove: a
+recurring cron is a separate fact, since `install.sh`'s own one-shot tick stamps it too
+(which is why `last_tick_mode` records `dry-run` for exactly that tick).
+
+### Tests
+
+`loop_cron.py --self-test` 13 cases (adds already-correct-touch-nothing, the schedule-flag
+probe in all three shapes, and disabled-is-a-decision). `install.sh --self-test` 9 cases
+(adds already-scheduled, disabled-only, undetermined-list). `verify.sh --offline` 34 PASS.
+`scripts/test-loop-protection-wiring.sh` 10 passed / 0 failed. Standing gate re-run against
+a stub gateway: no job -> 4, correct -> 0, **wrong schedule `*/5` -> 4** (the new
+assertion), disabled-only -> 4, `cron list` rc 7 -> 5, binary unresolvable -> 5.
+
+`config/rollout.json` is deliberately untouched - it carries fleet-activation state and
+must never be modified by an upgrade path.
+
 ## [0.6.5] - 2026-08-26
 
 **The watchdog itself was the unmeasured thing.** 0.6.3 and 0.6.4 killed the escalation

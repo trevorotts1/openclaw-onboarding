@@ -281,6 +281,51 @@ PY
     echo "  proven-cron case: PASS (exit 0, Install OK, and THREE consecutive installs"
     echo "                    leave EXACTLY ONE loop-tick job)"
 
+    # (c) ALREADY SCHEDULED AND CORRECT -> quiet success, and NOT ONE mutating call.
+    #     THE regression guard that matters most: if this fails, the skill has
+    #     started rewriting a working cron job on every roll across the fleet, and
+    #     "skipped" never implied "missing" - a box whose roll log says skipped can
+    #     be carrying four healthy enabled registrations.
+    rm -f "$td/add-called" "$td/edit-called" "$td/enable-called" 2>/dev/null || true
+    rc=0
+    out="$(LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install 2>&1)" || rc=$?
+    [ "$rc" -eq 0 ] || { echo "$TAG self-test FAIL: an already-scheduled box exited $rc, expected 0" >&2; rm -rf "$td"; return 1; }
+    [ -f "$td/add-called" ] && { echo "$TAG self-test FAIL: added a DUPLICATE cron on a box that already had one" >&2; rm -rf "$td"; return 1; }
+    [ -f "$td/edit-called" ] && { echo "$TAG self-test FAIL: rewrote a correctly-scheduled cron job" >&2; rm -rf "$td"; return 1; }
+    echo "  already-scheduled case: PASS (rc=0, Install OK, and NOT ONE of add/edit"
+    echo "                         was called - a correct box is left completely alone)"
+
+    # (d) EXISTS BUT DISABLED -> rc 5, never re-enabled, never duplicated.
+    #     A disabled cron is a DECISION somebody made, quite possibly to stop a
+    #     runaway. An installer that quietly undoes it is a worse failure than the
+    #     one it is fixing.
+    python3 -c 'import json,sys
+p=sys.argv[1]; j=json.load(open(p))
+for r in j: r["enabled"]=False
+json.dump(j,open(p,"w"))' "$fdb"
+    rm -f "$td/add-called" "$td/edit-called" "$td/enable-called" 2>/dev/null || true
+    rc=0
+    out="$(LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" LOOP_NO_PROBES=1 NO_CRON=0 \
+        ROLE="client" BOX="selftest-box-example" do_install 2>&1)" || rc=$?
+    [ "$rc" -eq 5 ] || { echo "$TAG self-test FAIL: an all-disabled box exited $rc, expected 5" >&2; rm -rf "$td"; return 1; }
+    [ -f "$td/enable-called" ] && { echo "$TAG self-test FAIL: silently re-enabled a deliberately disabled cron" >&2; rm -rf "$td"; return 1; }
+    [ -f "$td/add-called" ] && { echo "$TAG self-test FAIL: added a duplicate alongside a disabled registration" >&2; rm -rf "$td"; return 1; }
+    case "$out" in
+        *"Install OK"*) echo "$TAG self-test FAIL: reported Install OK with only a DISABLED cron" >&2; rm -rf "$td"; return 1 ;;
+    esac
+    echo "  disabled-only case: PASS (rc=5, no 'Install OK', not re-enabled, not duplicated)"
+
+    # (e) GATEWAY WILL NOT ANSWER -> rc 5, and never a blind registration.
+    #     Guessing "none" is how one box reached twelve duplicates.
+    rm -f "$td/add-called" 2>/dev/null || true
+    rc=0
+    out="$(LOOP_OPENCLAW_BIN="$stub" FAKE_CRON_DB="$fdb" FAKE_CRON_FAIL=9 LOOP_NO_PROBES=1 \
+        NO_CRON=0 ROLE="client" BOX="selftest-box-example" do_install 2>&1)" || rc=$?
+    [ "$rc" -eq 5 ] || { echo "$TAG self-test FAIL: an unreadable cron table exited $rc, expected 5" >&2; rm -rf "$td"; return 1; }
+    [ -f "$td/add-called" ] && { echo "$TAG self-test FAIL: registered BLIND when cron state was UNDETERMINED" >&2; rm -rf "$td"; return 1; }
+    echo "  undetermined-list case: PASS (rc=5, and nothing registered blind)"
+
     rm -rf "$td"; unset LOOP_STATE_DIR LOOP_OPENCLAW_ROOT
     echo "$TAG self-test: PASS"; return 0
 }

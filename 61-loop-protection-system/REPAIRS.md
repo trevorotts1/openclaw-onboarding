@@ -160,8 +160,12 @@ window. Re-running the installer now COLLAPSES them to one:
 
     bash loop-companion.sh install --role client --box <box>
 
-It keeps the oldest job (longest run history), repairs its name/schedule/command in
-place, and removes the rest by id, printing every removal. It only ever removes a job
+It keeps the oldest ENABLED job (longest run history), fixes its schedule in place if it
+is not `*/15 * * * *`, and removes the rest by id, printing every removal. It does NOT
+rename it (hostnames flap `Mac.lan` -> `Mac`; renaming a working job every flap is churn)
+and it does NOT re-enable a DISABLED registration — that is somebody's decision, so the
+installer reports it and exits 5 instead. Re-enable deliberately:
+`openclaw cron list --all` to find the id, then `openclaw cron enable <id>`. It only ever removes a job
 that is BOTH named `loop-tick-*` AND recognisably ours; anything else is reported and
 left alone for you. `LOOP_CRON_NO_PRUNE=1` reports instead of removing.
 

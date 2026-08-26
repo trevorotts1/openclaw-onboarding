@@ -113,6 +113,32 @@ def find_openclaw():
     which = shutil.which("openclaw")
     if which:
         return which, probed
+    # A LOGIN SHELL, which is where a Mac box's PATH actually gets set. This finds
+    # openclaw wherever THAT box's own profile puts it - nvm, asdf, a custom npm
+    # prefix - none of which a hardcoded list can anticipate. It runs before the
+    # fixed candidates for exactly that reason.
+    #
+    # NOT A REPLACEMENT FOR THE FIXED LIST, and measured, not assumed: on the
+    # operator Mac this probe comes back EMPTY even though openclaw is right there
+    # in ~/.local/bin, because `bash -lc` sources the bash profile and that PATH
+    # entry lives in the zsh config. The fixed candidates below are what actually
+    # resolve it there. Each path catches what the other cannot.
+    #
+    # LOOP_NO_PROBES=1 skips it - the same seam the rest of the skill uses to stay
+    # hermetic, so a self-test can never reach a real shell or a real gateway.
+    if os.environ.get("LOOP_NO_PROBES", "") == "1":
+        probed.append("bash -lc 'command -v openclaw' (SKIPPED: LOOP_NO_PROBES=1)")
+    else:
+        probed.append("bash -lc 'command -v openclaw'")
+        try:
+            proc = subprocess.run(["bash", "-lc", "command -v openclaw"],
+                                  capture_output=True, text=True, timeout=20)
+            cand = (proc.stdout or "").strip().splitlines()
+            cand = cand[-1].strip() if cand else ""
+            if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand, probed
+        except (OSError, subprocess.SubprocessError):
+            pass  # a login shell that will not run is one more probe that missed
     for d in _CANDIDATE_DIRS:
         cand = os.path.join(_expand(d), "openclaw")
         probed.append(cand)
@@ -155,6 +181,31 @@ def _parse_json_object(raw):
             pass
     raise Undetermined("`cron list --json` output did not parse as JSON (%d bytes)"
                        % len(raw))
+
+
+def schedule_flag(binary):
+    """Which flag THIS CLI takes a cron expression on. Probed, never assumed.
+
+    `--schedule` was removed from this installer in v0.4.0 (2e2766c77) because
+    2026.7.1-2 has no such flag - it offers --cron/--every/--at. A box still
+    invoking --schedule is running an install.sh older than that. Emitting a flag
+    the CLI will reject is how cron registration became structurally impossible
+    while the installer reported success, so the flag is READ off `cron add --help`
+    and, when neither candidate is present, we REFUSE rather than emit something
+    that cannot work. The next rename surfaces here instead of silently no-opping.
+    """
+    rc, out, err = _run(binary, ["cron", "add", "--help"], timeout=30)
+    text = (out or "") + (err or "")
+    if rc != 0 and not text.strip():
+        raise Undetermined("`openclaw cron add --help` exited %d with no output, so the "
+                           "schedule flag could not be determined" % rc)
+    for flag in ("--cron", "--schedule"):
+        if re.search(r"(^|\s)%s(\s|,|=|$)" % re.escape(flag), text, re.M):
+            return flag
+    raise Undetermined(
+        "`openclaw cron add --help` offers NEITHER --cron NOR --schedule (%d bytes of "
+        "help read). REFUSING to emit a schedule flag this CLI does not accept - that "
+        "is exactly how registration failed silently before v0.4.0." % len(text))
 
 
 def list_jobs(binary):
@@ -221,68 +272,74 @@ def _created(job):
 
 
 def pick_keeper(candidates, desired_name, desired_cmd, desired_cwd, desired_expr):
-    """The survivor of a collapse. Preference order, most decisive first:
-       1. enabled over disabled (a live job's run history is worth keeping)
-       2. an EXACT name match
-       3. a payload that already matches what we want (zero repair needed)
-       4. the OLDEST - it owns the longest run history, and churn is the enemy
-    Deterministic: ties break on createdAtMs then id, so two runs pick the same
-    job and the second run is a no-op."""
-    def rank(j):
-        payload = j.get("payload") or {}
-        cwd_ok = (not desired_cwd) or (payload.get("cwd") == desired_cwd)
-        exact = (job_command_text(j).find(desired_cmd) >= 0) and cwd_ok \
-            and _sched_expr(j) == desired_expr
-        return (0 if j.get("enabled") else 1,
-                0 if str(j.get("name") or "") == desired_name else 1,
-                0 if exact else 1,
-                _created(j),
-                str(j.get("id") or ""))
-    return sorted(candidates, key=rank)[0]
+    """The survivor of a collapse: the OLDEST job, which owns the longest run
+    history. Deterministic - ties break on createdAtMs then id, so two runs pick the
+    same job and the second run is a no-op. Churn is the enemy here; a job that has
+    been ticking for weeks is worth more than one that matches today's spelling."""
+    return sorted(candidates, key=lambda j: (_created(j), str(j.get("id") or "")))[0]
 
 
 def _drift(job, desired_name, desired_cmd, desired_cwd, desired_expr):
-    """What about the keeper disagrees with what this version wants."""
+    """What about the keeper disagrees with what this version would register.
+
+    ONLY `schedule` is ever acted on. The rest is reported and left alone:
+
+      name     `BOX` comes from `hostname`, which drifts (Mac.lan -> Mac). The
+               question is "does THIS BOX have a watchdog tick scheduled", not
+               "does one exist under the name I would pick today". Renaming a
+               working job on every hostname flap is pure churn.
+      command  rewriting the payload of a job that is ticking fine risks breaking
+               the one thing that works, on a box we cannot see.
+      cwd      same.
+      disabled NEVER touched. A disabled cron is a DECISION somebody made, quite
+               possibly to stop a runaway. An installer that quietly undoes a human
+               decision is a worse failure than the one it is fixing.
+    """
     out = []
-    if str(job.get("name") or "") != desired_name:
-        out.append("name")
     if _sched_expr(job) != desired_expr:
         out.append("schedule")
+    noted = []
+    if str(job.get("name") or "") != desired_name:
+        noted.append("name")
     if job_command_text(job).find(desired_cmd) < 0:
-        out.append("command")
+        noted.append("command")
     payload = job.get("payload") or {}
     if desired_cwd and payload.get("cwd") != desired_cwd:
-        out.append("cwd")
-    if not job.get("enabled"):
-        out.append("disabled")
-    return out
+        noted.append("cwd")
+    return out, noted
 
 
 def reconcile(binary, name, expr, command, cwd, prune=True, log=print):
     """LIST -> DECIDE -> ACT -> LIST AGAIN AND PROVE IT.
-    Returns (exit_code, result_dict). Mutates only jobs that are BOTH named
-    loop-tick-* AND recognisably ours."""
+
+    Mutates only jobs that are BOTH named loop-tick-* AND recognisably ours, and
+    among those only ENABLED duplicates (removed) and a wrong schedule (edited).
+    Returns (exit_code, result_dict)."""
     result = {"name": name, "action": None, "kept": None, "removed": [],
-              "repaired": [], "foreign": [], "final_count": None,
-              "undetermined": None}
+              "repaired": [], "noted": [], "disabled": [], "foreign": [],
+              "final_count": None, "undetermined": None}
 
     jobs, meta = list_jobs(binary)             # may raise Undetermined
     candidates = [j for j in jobs if matches_name(j, name)]
     ours = [j for j in candidates if is_ours(j)]
     foreign = [j for j in candidates if not is_ours(j)]
+    enabled_ours = [j for j in ours if j.get("enabled")]
+    disabled_ours = [j for j in ours if not j.get("enabled")]
     result["foreign"] = [str(j.get("id")) for j in foreign]
+    result["disabled"] = [str(j.get("id")) for j in disabled_ours]
 
     if not candidates:
-        # A truncated page is the one way an empty candidate list can LIE, and
-        # this CLI has no --offset to chase it with.
+        # A truncated page is the one way an empty candidate list can LIE, and this
+        # CLI has no --offset to chase it with.
         if meta.get("hasMore"):
             raise Undetermined(
                 "`cron list` reported hasMore=true (total=%s, returned=%d) and this CLI "
                 "has NO --limit/--offset flag: an existing loop-tick job may be on an "
                 "unfetchable page. REFUSING to add - that is how duplicates are born."
                 % (meta.get("total"), len(jobs)))
-        log("  no loop-tick job present -> adding one")
-        rc, out, err = _run(binary, ["cron", "add", "--name", name, "--cron", expr,
+        sched = schedule_flag(binary)          # may raise Undetermined
+        log("  no loop-tick job present -> adding one (%s %r)" % (sched, expr))
+        rc, out, err = _run(binary, ["cron", "add", "--name", name, sched, expr,
                                      "--no-deliver", "--command-cwd", cwd,
                                      "--command", command,
                                      "--timeout", _CLI_TIMEOUT_MS])
@@ -293,36 +350,55 @@ def reconcile(binary, name, expr, command, cwd, prune=True, log=print):
                 log("    %s" % line)
             return EX_ERR, result
         result["action"] = "added"
+
+    elif not enabled_ours:
+        # Jobs exist under our name, and NOT ONE of ours is running.
+        result["action"] = "not-enabled"
+        if disabled_ours:
+            log("  LOUD: this box has %d loop-tick registration(s) and EVERY ONE IS "
+                "DISABLED. No watchdog tick is running here." % len(disabled_ours))
+            log("  NOT re-enabling and NOT adding a duplicate: a disabled cron is a")
+            log("  DECISION somebody made. An operator re-enables it deliberately:")
+            log("    openclaw cron list --all   # find the id")
+            log("    openclaw cron enable <id>")
+        if foreign:
+            log("  LOUD: %d job(s) named %s* are NOT recognisable as this skill's tick "
+                "(left untouched, by id: %s)"
+                % (len(foreign), JOB_NAME_PREFIX, ", ".join(result["foreign"])))
+        return EX_NEEDS_OPERATOR, result
+
     else:
-        keeper = pick_keeper(ours or candidates, name, command, cwd, expr)
+        keeper = pick_keeper(enabled_ours, name, command, cwd, expr)
         result["kept"] = str(keeper.get("id"))
         result["action"] = "kept"
-        if is_ours(keeper):
-            drift = _drift(keeper, name, command, cwd, expr)
-            if drift:
-                log("  repairing the surviving job IN PLACE (%s): %s"
-                    % (result["kept"], ", ".join(drift)))
-                args = ["cron", "edit", result["kept"], "--name", name,
-                        "--cron", expr, "--no-deliver", "--command-cwd", cwd,
-                        "--command", command, "--timeout", _CLI_TIMEOUT_MS]
-                if "disabled" in drift:
-                    args.append("--enable")
-                rc, out, err = _run(binary, args)
-                if rc != 0:
-                    result["action"] = "repair-failed"
-                    log("  ERROR: `openclaw cron edit` exited %d" % rc)
-                    for line in (err or out or "").strip().splitlines()[-4:]:
-                        log("    %s" % line)
-                    return EX_ERR, result
-                result["repaired"] = drift
-                result["action"] = "repaired"
-        extras = [j for j in ours if str(j.get("id")) != result["kept"]]
+        drift, noted = _drift(keeper, name, command, cwd, expr)
+        result["noted"] = noted
+        if noted:
+            log("  NOTED on the surviving job (%s), deliberately NOT changed: %s"
+                % (result["kept"], ", ".join(noted)))
+        if drift:
+            sched = schedule_flag(binary)      # may raise Undetermined
+            log("  repairing the surviving job IN PLACE (%s): schedule %r -> %r"
+                % (result["kept"], _sched_expr(keeper), expr))
+            rc, out, err = _run(binary, ["cron", "edit", result["kept"], sched, expr,
+                                         "--timeout", _CLI_TIMEOUT_MS])
+            if rc != 0:
+                result["action"] = "repair-failed"
+                log("  ERROR: `openclaw cron edit` exited %d" % rc)
+                for line in (err or out or "").strip().splitlines()[-4:]:
+                    log("    %s" % line)
+                return EX_ERR, result
+            result["repaired"] = drift
+            result["action"] = "repaired"
+
+        extras = [j for j in enabled_ours if str(j.get("id")) != result["kept"]]
         if extras:
-            log("  LOUD: %d DUPLICATE loop-tick job(s) on this box - the watchdog has "
-                "been firing %dx per window" % (len(extras), len(extras) + 1))
+            log("  LOUD: %d DUPLICATE enabled loop-tick job(s) on this box - the "
+                "watchdog has been firing %dx per window"
+                % (len(extras), len(extras) + 1))
             if not prune:
-                log("  pruning DISABLED (--no-prune / LOOP_CRON_NO_PRUNE=1); "
-                    "the duplicates are LEFT IN PLACE and this box is NOT reconciled")
+                log("  pruning DISABLED (--no-prune / LOOP_CRON_NO_PRUNE=1); the "
+                    "duplicates are LEFT IN PLACE and this box is NOT reconciled")
                 result["action"] = "duplicates-left"
                 result["final_count"] = len(candidates)
                 return EX_NEEDS_OPERATOR, result
@@ -345,10 +421,10 @@ def reconcile(binary, name, expr, command, cwd, prune=True, log=print):
     final = [j for j in jobs2 if matches_name(j, name)]
     result["final_count"] = len(final)
 
-    if foreign:
-        log("  NEEDS OPERATOR: %d job(s) named %s* are NOT recognisable as this "
-            "skill's tick (left untouched, by id: %s)"
-            % (len(foreign), JOB_NAME_PREFIX, ", ".join(result["foreign"])))
+    if foreign or disabled_ours:
+        log("  NEEDS OPERATOR: %d unrecognised and %d DISABLED loop-tick job(s) remain "
+            "beside the live one. Left untouched on purpose; a human decides."
+            % (len(foreign), len(disabled_ours)))
         return EX_NEEDS_OPERATOR, result
 
     if len(final) != 1:
@@ -362,12 +438,20 @@ def reconcile(binary, name, expr, command, cwd, prune=True, log=print):
     if not is_ours(only):
         log("  ERROR: the surviving loop-tick job does not invoke this skill's tick")
         return EX_ERR, result
+    if _sched_expr(only) != expr:
+        log("  ERROR: the surviving loop-tick job runs on %r, expected %r"
+            % (_sched_expr(only), expr))
+        return EX_ERR, result
     return EX_OK, result
 
 
-def status(binary, name_prefix=JOB_NAME_PREFIX):
+def status(binary, name_prefix=JOB_NAME_PREFIX, expect_expr=DEFAULT_CRON_EXPR):
     """Read-only: what loop-tick jobs does this box actually carry?
-    (exit_code, dict). Exactly one enabled job of ours = EX_OK."""
+
+    (exit_code, dict). EX_OK requires EXACTLY ONE job, enabled, ours, on
+    `expect_expr`. Exactly one - never ">= 1". That is the verified correct
+    post-state across all 25 boxes remediated on 2026-08-26, and a ">= 1" check is
+    precisely what let 2-12 duplicates per box pass for healthy."""
     jobs, meta = list_jobs(binary)             # may raise Undetermined
     found = [j for j in jobs if str(j.get("name") or "").startswith(name_prefix)]
     out = {"count": len(found),
@@ -378,7 +462,9 @@ def status(binary, name_prefix=JOB_NAME_PREFIX):
            "schedules": sorted({str(_sched_expr(j)) for j in found}),
            "last_run_at_ms": [j.get("lastRunAtMs") for j in found],
            "hasMore": meta.get("hasMore"), "total": meta.get("total")}
-    if len(found) == 1 and out["enabled"] == 1 and out["ours"] == 1:
+    out["expect_schedule"] = expect_expr
+    if (len(found) == 1 and out["enabled"] == 1 and out["ours"] == 1
+            and out["schedules"] == [expect_expr]):
         return EX_OK, out
     if not found and meta.get("hasMore"):
         raise Undetermined("no loop-tick job on this page and hasMore=true")
@@ -410,6 +496,16 @@ def flag(name, default=None):
 def save():
     json.dump(jobs, open(db, "w"))
 
+if cmd == "add" and "--help" in rest:
+    # $FAKE_CRON_HELP: "cron" (default), "schedule" (a legacy CLI), "none".
+    mode = os.environ.get("FAKE_CRON_HELP", "cron")
+    print("Usage: openclaw cron add [options]")
+    if mode == "cron":
+        print("  --cron <expr>       Cron expression (5-field or 6-field with seconds)")
+    elif mode == "schedule":
+        print("  --schedule <expr>   Schedule string")
+    print("  --name <name>       Job name")
+    sys.exit(0)
 if cmd == "list":
     fail = os.environ.get("FAKE_CRON_FAIL", "")
     if fail:
@@ -420,12 +516,18 @@ if cmd == "list":
                       "limit": len(vis), "offset": 0, "nextOffset": None}))
     sys.exit(0)
 if cmd == "add":
+    _expr = flag("--cron", flag("--schedule"))
+    if _expr is None:
+        sys.stderr.write("stub: no schedule flag given\n"); sys.exit(2)
     jobs.append({"id": str(uuid.uuid4()), "name": flag("--name"), "enabled": True,
                  "createdAtMs": 1000 + len(jobs),
-                 "schedule": {"kind": "cron", "expr": flag("--cron")},
+                 "schedule": {"kind": "cron", "expr": _expr},
                  "payload": {"kind": "command", "cwd": flag("--command-cwd"),
                              "argv": ["sh", "-lc", flag("--command")]}})
     save(); print(json.dumps({"ok": True})); sys.exit(0)
+if cmd == "enable":
+    open(os.path.join(os.path.dirname(db), "enable-called"), "w").close()
+    sys.exit(0)
 if cmd in ("rm", "remove"):
     jid = rest[0]
     keep = [j for j in jobs if j["id"] != jid]
@@ -433,11 +535,14 @@ if cmd in ("rm", "remove"):
         sys.stderr.write("stub: no such job\n"); sys.exit(1)
     jobs = keep; save(); sys.exit(0)
 if cmd == "edit":
+    open(os.path.join(os.path.dirname(db), "edit-called"), "w").close()
     jid = rest[0]
     for j in jobs:
         if j["id"] == jid:
             if "--name" in rest: j["name"] = flag("--name")
             if "--cron" in rest: j["schedule"] = {"kind": "cron", "expr": flag("--cron")}
+            if "--schedule" in rest:
+                j["schedule"] = {"kind": "cron", "expr": flag("--schedule")}
             if "--command" in rest:
                 j["payload"] = {"kind": "command", "cwd": flag("--command-cwd"),
                                 "argv": ["sh", "-lc", flag("--command")]}
@@ -472,6 +577,16 @@ def _self_test():
     def seed(rows):
         json.dump(rows, open(dbp, "w"))
 
+    def _mark(nm):
+        return os.path.exists(os.path.join(td, nm))
+
+    def _clear_marks():
+        for nm in ("add-called", "edit-called", "enable-called"):
+            try:
+                os.remove(os.path.join(td, nm))
+            except OSError:
+                pass
+
     def ours_row(i, enabled=True, nm=name, cmdtext=None, sched=expr):
         return {"id": "seed-%d" % i, "name": nm, "enabled": enabled,
                 "createdAtMs": 100 + i,
@@ -505,30 +620,79 @@ def _self_test():
     print("  duplicate-collapse case: PASS (3 enabled duplicates -> 1, oldest kept, "
           "2 removed by id)")
 
-    # ---- 4. --all IS the fix: a DISABLED job must be found, not duplicated -
+    # ---- 4. --all IS the fix: a DISABLED job must be SEEN, never duplicated,
+    #         and never silently switched back on ---------------------------
     seed([ours_row(7, enabled=False)])
     # Prove the instrument first: without --all the stub HIDES it, so a
     # reconciler that dropped --all would see zero and add a duplicate.
     rc_h, out_h, _ = _run(stub, ["cron", "list", "--json"])
     assert rc_h == 0 and json.loads(out_h)["jobs"] == [], \
         "control failed: the stub did not hide the disabled job, so this drill proves nothing"
+    _clear_marks()
     rc, res = reconcile(stub, name, expr, command, cwd, log=quiet)
     rows = load()
-    assert rc == EX_OK and len(rows) == 1, (rc, res, rows)
-    assert rows[0]["id"] == "seed-7" and rows[0]["enabled"], rows
-    assert "disabled" in res["repaired"], res
-    print("  disabled-job case: PASS (a job INVISIBLE without --all is found and "
-          "re-enabled in place, NOT duplicated - control proves the stub hides it)")
+    assert rc == EX_NEEDS_OPERATOR, (rc, res)
+    assert len(rows) == 1 and rows[0]["id"] == "seed-7", rows
+    assert rows[0]["enabled"] is False, "a deliberately DISABLED cron was switched on"
+    assert not _mark("enable-called"), "called `cron enable` on a human's disabled job"
+    assert not _mark("add-called"), "added a duplicate alongside a disabled registration"
+    print("  disabled-job case: PASS (a job INVISIBLE without --all is FOUND - control "
+          "proves the stub hides it - then left disabled, not duplicated, exit 4)")
 
-    # ---- 5. drift repaired in place, never re-added -----------------------
+    # ---- 5. schedule drift is repaired; name/command/cwd are NOT ----------
+    # A wrong schedule is a functional defect (the fleet's correct post-state is
+    # exactly */15). A drifted NAME is not: BOX comes from `hostname`, which
+    # flaps Mac.lan -> Mac, and renaming a working job on every flap is churn.
     seed([ours_row(8, nm="loop-tick-oldhostname", sched="*/5 * * * *",
                    cmdtext="bash /old/path/loop-companion.sh tick")])
     rc, res = reconcile(stub, name, expr, command, cwd, log=quiet)
     rows = load()
     assert rc == EX_OK and len(rows) == 1 and rows[0]["id"] == "seed-8", (rc, rows)
-    assert rows[0]["name"] == name and rows[0]["schedule"]["expr"] == expr
-    assert sorted(res["repaired"]) == ["command", "name", "schedule"], res
-    print("  drift case: PASS (a renamed/re-scheduled/moved job is edited IN PLACE)")
+    assert rows[0]["schedule"]["expr"] == expr, rows
+    assert rows[0]["name"] == "loop-tick-oldhostname", "the job was RENAMED"
+    assert res["repaired"] == ["schedule"], res
+    assert sorted(res["noted"]) == ["command", "name"], res
+    print("  drift case: PASS (a wrong SCHEDULE is fixed in place; a drifted name and "
+          "command are reported and deliberately left alone)")
+
+    # ---- 5b. ALREADY CORRECT: touch nothing at all ------------------------
+    # THE REGRESSION GUARD THAT MATTERS MOST. If this ever fails, the skill has
+    # started rewriting a working cron job on every roll across the whole fleet.
+    seed([ours_row(20)])
+    _clear_marks()
+    rc, res = reconcile(stub, name, expr, command, cwd, log=quiet)
+    assert rc == EX_OK and len(load()) == 1, (rc, load())
+    assert res["action"] == "kept" and not res["repaired"], res
+    assert not _mark("add-called") and not _mark("edit-called"), \
+        "a correctly-scheduled box was mutated anyway"
+    print("  already-correct case: PASS (rc=0, and NOT ONE of add/edit/rm was called)")
+
+    # ---- 5c. the schedule flag is PROBED, never assumed -------------------
+    os.environ["FAKE_CRON_HELP"] = "schedule"
+    assert schedule_flag(stub) == "--schedule", "did not honour a legacy CLI's flag"
+    os.environ["FAKE_CRON_HELP"] = "cron"
+    assert schedule_flag(stub) == "--cron"
+    os.environ["FAKE_CRON_HELP"] = "none"
+    try:
+        schedule_flag(stub)
+        raise AssertionError("a CLI offering NEITHER flag did not raise Undetermined")
+    except Undetermined as exc:
+        assert "NEITHER" in str(exc), str(exc)
+    finally:
+        os.environ["FAKE_CRON_HELP"] = "cron"
+    # ...and a CLI offering neither must not be able to register anything at all.
+    seed([])
+    os.environ["FAKE_CRON_HELP"] = "none"
+    try:
+        reconcile(stub, name, expr, command, cwd, log=quiet)
+        raise AssertionError("registered against a CLI with no usable schedule flag")
+    except Undetermined:
+        pass
+    finally:
+        os.environ["FAKE_CRON_HELP"] = "cron"
+    assert load() == [], "something was added despite an unusable schedule flag"
+    print("  schedule-flag case: PASS (--cron / --schedule read off `cron add --help`; "
+          "a CLI offering neither is UNDETERMINED and registers NOTHING)")
 
     # ---- 6. a loop-tick-* job that is NOT ours is NEVER removed -----------
     foreign = {"id": "foreign-1", "name": "loop-tick-something-else", "enabled": True,
@@ -567,22 +731,25 @@ def _self_test():
     old = os.environ.pop("LOOP_OPENCLAW_BIN", None)
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = os.path.join(td, "empty-bin")
+    os.environ["LOOP_NO_PROBES"] = "1"   # the login-shell probe is real; pin it off
     globals_ref["_CANDIDATE_DIRS"] = tuple(os.path.join(td, "nowhere-%d" % i)
                                            for i in range(len(real_dirs)))
     try:
         found, probed = find_openclaw()
         assert found is None, "resolution succeeded against dirs that do not exist"
         assert probed[0].startswith("PATH="), probed
-        assert len(probed) == 1 + len(real_dirs), probed
+        assert "SKIPPED" in probed[1], probed
+        assert len(probed) == 2 + len(real_dirs), probed
     finally:
         globals_ref["_CANDIDATE_DIRS"] = real_dirs
         os.environ["PATH"] = old_path
+        os.environ.pop("LOOP_NO_PROBES", None)
         if old:
             os.environ["LOOP_OPENCLAW_BIN"] = old
     assert all(d.startswith(("/", "~")) for d in _CANDIDATE_DIRS), _CANDIDATE_DIRS
     print("  named-negative case: PASS (a resolution failure returns None and names "
-          "every probed source: PATH + %d candidate dirs, never a bare 'not installed')"
-          % len(_CANDIDATE_DIRS))
+          "every probed source: PATH + a login shell + %d candidate dirs, never a "
+          "bare 'not installed')" % len(_CANDIDATE_DIRS))
 
     # ---- 8b. an explicit override that does not resolve NEVER falls back --
     # This is a safety property, not a nicety: install.sh's self-test points

@@ -841,7 +841,10 @@ fi   # RUN_OFFLINE
 # It cannot see that this box carries 7 duplicate cron jobs, or that nothing has
 # ticked since Tuesday. Two live facts, each with a NAMED negative:
 #
-#   D-CRON-ONE    EXACTLY ONE enabled loop-tick job, and it is ours.
+#   D-CRON-ONE    EXACTLY ONE loop-tick job: enabled, ours, on */15 * * * * - the
+#                 verified correct post-state across all 25 boxes remediated on
+#                 2026-08-26. EXACTLY one, never ">= 1": a >= check is what let
+#                 2-12 duplicates per box read as healthy in the first place.
 #                 Instrument: `openclaw cron list --all` via loop_cron.py status.
 #                 --all is load-bearing: without it a DISABLED job is invisible.
 #   D-TICK-FRESH  the watchdog COMPLETED a tick within 45 minutes (three ticks).
@@ -859,12 +862,12 @@ if [ "$RUN_LIVE" -eq 1 ]; then
     step "4/4 STANDING GATE (this box): D-CRON-ONE, D-TICK-FRESH"
     _cron_out="$(python3 "$SCRIPTS/loop_cron.py" status --json 2>&1)"; _cron_rc=$?
     case "$_cron_rc" in
-        0) ok "D-CRON-ONE exactly one enabled loop-tick job, and it is ours"
+        0) ok "D-CRON-ONE exactly ONE loop-tick job: enabled, ours, on */15 * * * *"
            echo "      $(printf '%s' "$_cron_out" | tail -1)" ;;
         3) UNDET=$((UNDET+1))
            echo "  UNDETERMINED: D-CRON-ONE could not READ this box's cron table." >&2
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
-        *) bad "D-CRON-ONE this box does NOT carry exactly one enabled loop-tick job"
+        *) bad "D-CRON-ONE this box does NOT carry exactly ONE enabled loop-tick job on */15 (exactly one - never >= 1, which is how 2-12 duplicates per box passed for healthy)"
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
     esac
 

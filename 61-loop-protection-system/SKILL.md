@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries seven loop-specific detectors D1-D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, self-blocking-run / transcript poison, futile semantic retry burst, and cross-run resend) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.6.5
+version: 0.6.6
 ---
 
 # Loop Protection System (Skill 61)
@@ -217,7 +217,11 @@ called it unconditionally, so every re-run added another job. Measured 2026-08-2
 and a disabled loop-tick job that cannot be seen is a duplicate waiting to be created.
 Only a job that is BOTH named `loop-tick-*` AND recognisably ours (a command payload
 invoking `loop-companion.sh tick`) is ever removed; anything else is reported and left
-alone.
+alone. A **disabled** registration is never switched back on and never duplicated
+alongside — a disabled cron is a decision somebody made, and an installer that quietly
+undoes a human decision is a worse failure than the one it is fixing. The schedule flag is
+**probed off `openclaw cron add --help`**, never assumed, so the next CLI rename surfaces
+instead of silently no-opping the way `--schedule` did before v0.4.0.
 
 **`last_tick_ts`.** There was no direct "when did the watchdog last RUN" signal, so
 liveness was inferred from `MAX(findings.tick_ts)` — which measures whether a box *has a
@@ -239,7 +243,7 @@ never "no jobs". Drills: `tests/drills/D-CRON-ONE.md`.
     bash 61-loop-protection-system/loop-companion.sh status        # armed?, last tick, breakers, findings
     bash 61-loop-protection-system/loop-companion.sh --self-test    # every script self-test
     bash 61-loop-protection-system/verify.sh                       # drills + the standing gate
-    bash 61-loop-protection-system/verify.sh --live                # THIS box: one cron job, fresh tick
+    bash 61-loop-protection-system/verify.sh --live                # THIS box: ONE */15 cron job, fresh tick
     python3 61-loop-protection-system/scripts/loop_cron.py status  # how many loop-tick jobs exist
     python3 61-loop-protection-system/scripts/loop_ledger.py liveness  # when did it last tick
 

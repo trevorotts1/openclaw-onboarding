@@ -21,8 +21,31 @@ ticked **13 minutes** earlier.
 
 | Drill | Proves | Instrument |
 |---|---|---|
-| **D-CRON-ONE** | This box carries **exactly one** loop-tick job, it is **enabled**, and its payload is **ours** (a command job invoking `loop-companion.sh tick`). | `loop_cron.py status` → `openclaw cron list --all --json` |
+| **D-CRON-ONE** | This box carries **exactly one** loop-tick job, it is **enabled**, its schedule is **`*/15 * * * *`**, and its payload is **ours** (a command job invoking `loop-companion.sh tick`). | `loop_cron.py status` → `openclaw cron list --all --json` |
 | **D-TICK-FRESH** | The watchdog **completed** a tick within 45 minutes (three missed `*/15` ticks). | `loop_ledger.py liveness` → ledger meta `last_tick_ts` |
+
+**Exactly one — never `>= 1`.** That is the verified correct post-state across all 25
+boxes remediated on 2026-08-26, and a `>=` check is precisely what let 2–12 duplicates per
+box pass for healthy.
+
+## What the reconciler will and will not touch
+
+| Condition | Action |
+|---|---|
+| no loop-tick job | add one |
+| one enabled, correct | **nothing at all** — not one add/edit/rm call |
+| one enabled, wrong schedule | edit the schedule **in place** |
+| several enabled | collapse to one, oldest kept, rest removed by id |
+| drifted **name** / command / cwd | reported, **left alone** — `BOX` comes from `hostname`, which flaps `Mac.lan` → `Mac`, and renaming a working job on every flap is churn |
+| every registration **disabled** | **exit 4, never re-enabled, never duplicated** — a disabled cron is a decision somebody made, quite possibly to stop a runaway. An installer that quietly undoes a human decision is a worse failure than the one it is fixing |
+| a `loop-tick-*` job that is not ours | reported, never removed |
+
+The schedule flag itself is **probed, not assumed**: the reconciler reads
+`openclaw cron add --help` and uses whichever of `--cron` / `--schedule` that CLI offers,
+and refuses outright if it offers neither. `--schedule` was removed from this installer in
+v0.4.0 (`2e2766c77`) because 2026.7.1-2 has no such flag; a box still invoking it is
+running an install.sh older than that. The probe means the next rename surfaces instead of
+silently no-opping.
 
 `--all` is load-bearing, not defensive: `openclaw cron list` **hides disabled jobs**
 (2026.7.1-2: `--all  Include disabled jobs (default: false)`). Without it a disabled
@@ -38,8 +61,10 @@ Six sandboxed runs of `verify.sh --live` against a stub gateway and a scratch le
 | Box state | Exit | Verdict |
 |---|---|---|
 | 0 cron jobs, no stamp | 4 | D-CRON-ONE **FAIL** (+ D-TICK-FRESH undetermined) |
-| 1 job, stamp 0.9s old | 0 | both PASS |
+| 1 job, `*/15`, stamp 0.9s old | 0 | both PASS |
 | 3 duplicate jobs | 4 | D-CRON-ONE **FAIL**, count=3 named |
+| 1 job on `*/5` | 4 | D-CRON-ONE **FAIL** on the schedule |
+| 1 job, disabled | 4 | D-CRON-ONE **FAIL**, and the installer will not re-enable it |
 | 1 job, stamp from yesterday | 4 | D-TICK-FRESH **FAIL** |
 | `cron list` exits 7 | 5 | **UNDETERMINED**, never a pass |
 | `openclaw` unresolvable | 5 | **UNDETERMINED**, every probed path named |
