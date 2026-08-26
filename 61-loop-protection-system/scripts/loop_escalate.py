@@ -166,10 +166,29 @@ def _env_num(name, default, cast=float):
 
 
 def _rr_timeout():
-    """The intake's real admission path measured 29.8s (n8n execution 596246) and
-    longer under fleet load, but the transport waited 10s. Every escalation was
-    abandoned MID-FLIGHT and spilled to UNSENT while the intake was about to
-    accept it - a self-inflicted timeout no field-name fix could cure."""
+    """The intake's real admission path measured 29.8s (n8n execution 596246), and
+    a confirmed accepted post measured 30.3s, but the transport waited 10s. Every
+    escalation was abandoned MID-FLIGHT and spilled to UNSENT while the intake was
+    about to accept it - a self-inflicted timeout no field-name fix could cure.
+
+    WHY 120 AND NOT 45 OR 60. The number is not headroom-for-its-own-sake; it is
+    set by an ASYMMETRY. Aborting the client does NOT cancel the server: n8n keeps
+    processing a post we walked away from, so a premature timeout does not merely
+    delay an escalation, it (a) loses it silently, (b) writes a spill for a ticket
+    that may in fact have been admitted, and (c) hands that spill to drain() to be
+    posted AGAIN - manufacturing duplicates at the rescue team. Waiting too long
+    costs only tick latency, and only when the intake is already unhealthy.
+
+    This skill exists because of exactly that misread. LP-A10 (2026-08-04): a
+    sessions_send caller hit the tool's hardcoded 30000ms fallback, misread the
+    local timeout as a DELIVERY FAILURE, and resent a byte-identical payload 6-8x
+    as fresh top-level runs. Pinning our own client timeout near the server's
+    observed latency would rebuild that class inside the loop detector itself.
+
+    So: 120s ~= 4x the measured 30.3s admission, which absorbs a doubling under
+    fleet load and still leaves margin, while staying well inside a watchdog tick.
+    Overridable per box via $RESCUE_RANGERS_TIMEOUT - no code change needed, since
+    a value this operational should be tunable when a box proves it wrong."""
     return _env_num(TIMEOUT_ENV, DEFAULT_TIMEOUT, float)
 
 
@@ -459,6 +478,80 @@ def self_test():
         assert not _missing, ("_urllib_transport references undefined global(s): %s"
                               % ", ".join(_missing))
         print("  transport-globals case: PASS (no undefined name on the real send path)")
+
+        # EXECUTE the real _urllib_transport. Every other drill in this battery
+        # injects a stub transport, so this function - the ONLY code path a real
+        # escalation takes - is otherwise NEVER RUN, and an undefined name, a
+        # missing header or a reverted timeout there is invisible to all of them.
+        # That structural blind spot is how a NameError reached a staged build.
+        # urlopen is stubbed, so this stays fully offline: no socket is opened.
+        import urllib.error as _uerr
+        import urllib.request as _ureq
+
+        class _FakeResp:
+            def __init__(self, status, body):
+                self.status, self._body = status, body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def read(self, _n=-1):
+                return self._body
+
+        _calls = []
+
+        def _stub(status, body):
+            def _fake_urlopen(req, timeout=None):
+                _calls.append({"timeout": timeout, "url": req.full_url,
+                               "headers": {k.lower(): v
+                                           for k, v in req.header_items()}})
+                return _FakeResp(status, body)
+            return _fake_urlopen
+
+        _real_urlopen = _ureq.urlopen
+        try:
+            # (a) admitted 200 -> True, secret header attached, timeout honoured
+            os.environ[SECRET_ENV] = "drill-placeholder-not-a-credential"
+            _ureq.urlopen = _stub(200, '{"accepted":true,"ticketId":"T1"}')
+            assert _urllib_transport("https://intake.invalid/x", b'{"a":1}') is True
+            assert _calls[-1]["headers"].get("x-rescue-secret") == \
+                "drill-placeholder-not-a-credential"
+            assert _calls[-1]["headers"].get("content-type") == "application/json"
+            assert _calls[-1]["timeout"] == _rr_timeout() >= 90, _calls[-1]["timeout"]
+
+            # (b) a 200 whose BODY refuses is a refusal, on the real path
+            _ureq.urlopen = _stub(200, '{"accepted":false,"rejectReason":"missing message"}')
+            try:
+                _urllib_transport("https://intake.invalid/x", b'{"a":1}')
+                raise AssertionError("a refusing 200 must not return success")
+            except EscalationRefused:
+                pass
+
+            # (c) a transport-level HTTP error is a refusal, not a crash
+            def _raise_http(req, timeout=None):
+                raise _uerr.HTTPError("https://intake.invalid/x", 403, "Forbidden",
+                                      {}, None)
+            _ureq.urlopen = _raise_http
+            try:
+                _urllib_transport("https://intake.invalid/x", b'{"a":1}')
+                raise AssertionError("a 403 must not return success")
+            except EscalationRefused as exc:
+                assert "403" in str(exc)
+
+            # (d) no secret in env -> no header invented
+            os.environ.pop(SECRET_ENV, None)
+            _ureq.urlopen = _stub(200, '{"accepted":true}')
+            assert _urllib_transport("https://intake.invalid/x", b'{"a":1}') is True
+            assert "x-rescue-secret" not in _calls[-1]["headers"]
+        finally:
+            _ureq.urlopen = _real_urlopen
+            os.environ.pop(SECRET_ENV, None)
+        print("  transport-EXECUTED case: PASS (real _urllib_transport run offline: "
+              "secret header, %ss timeout, 200-refusal and 403 both refused)"
+              % int(_rr_timeout()))
 
         # A quote-wrapped env URL and a 10s timeout each killed real escalations
         # on their own. Both proven here, offline, with no network.
