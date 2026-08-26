@@ -39,7 +39,8 @@ aggregate_self_test() {
     echo "$TAG --self-test: running every script's self-test"
     local rc=0 f s
     for f in loop_ledger.py loop_common.py loop_detectors.py loop_backoff.py \
-             loop_breaker.py loop_killcards.py loop_escalate.py loop_watchdog.py; do
+             loop_breaker.py loop_killcards.py loop_escalate.py loop_cron.py \
+             loop_watchdog.py; do
         echo "--- $f ---"; python3 "$SCRIPTS/$f" --self-test || rc=1
     done
     for s in scan-no-secrets.sh scan-no-client-identifiers.sh scan-no-json-exports.sh; do
