@@ -35,7 +35,7 @@
 #   spamming logs. It runs every 2 minutes on 38 machines forever.
 #
 # RECEIVER_VERSION: reported in every claim and ack (fleet version visibility).
-RECEIVER_VERSION="1.1.0"
+RECEIVER_VERSION="1.2.0"
 
 # ---------------------------------------------------------------------------
 # OpenClaw root resolution. <root>/secrets/.env holds enrollment credentials.
@@ -218,7 +218,25 @@ _post() {
     printf '%s' "$_req_body" > "$_tmpbody"
     _out=""
     _code=""
+    # curl retry capability. Plain `--retry` never retries POST (non-idempotent)
+    # on curl >= 7.71, and `--retry-all-errors` (which re-enables POST retry) is
+    # itself unknown to curl < 7.71. Detect once: best = retry-all-errors,
+    # fallback = plain --retry (still retries connection-reset/timeout rc=28 path
+    # failures on older boxes), none = old one-shot behavior. The fleet carries
+    # both curl 7.68 (Ubuntu 20.04) and >= 7.81 (22.04+, Debian 12, macOS 12+).
+    _RETRY=""
+    if _ver=$(curl --version 2>/dev/null | head -1 | awk '{print $2}'); then
+        _maj=${_ver%%.*}; _rest=${_ver#*.}; _min=${_rest%%.*}
+        if [ -n "$_maj" ] && [ -n "$_min" ]; then
+            if [ "$_maj" -gt 7 ] 2>/dev/null || { [ "$_maj" -eq 7 ] 2>/dev/null && [ "$_min" -ge 71 ] 2>/dev/null; }; then
+                _RETRY="--retry 2 --retry-all-errors --retry-delay 3"
+            elif [ "$_maj" -eq 7 ] 2>/dev/null && [ "$_min" -ge 68 ] 2>/dev/null; then
+                _RETRY="--retry 2 --retry-delay 3"
+            fi
+        fi
+    fi
     _code=$(curl -sS --max-time 25 --connect-timeout 10 \
+        $_RETRY \
         -H @"$_hdr" \
         -H 'Content-Type: application/json' \
         --data-binary @"$_tmpbody" \
