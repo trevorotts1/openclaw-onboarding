@@ -136,7 +136,41 @@ tune the relevant threshold in `config/thresholds.json` (it rides the repo + rol
 never a box-local edit), reproduce the false positive as a fixture, and route through
 the Healer so the signature is corrected once, fleet-wide.
 
-## 7. The watchdog cron is missing or the tick never fires
+## 7. The watchdog cron is missing, duplicated, or the tick never fires
+
+**Ask the box, do not guess.** Two commands answer it, and both give a NAMED negative
+rather than a bare "no":
+
+    bash verify.sh --live                              # both facts at once
+    python3 scripts/loop_cron.py status --json         # how many loop-tick jobs exist
+    python3 scripts/loop_ledger.py liveness            # when a tick last COMPLETED
+
+Exit 0 = proven; 4 = wrong (the count or the age is named); **5 = UNDETERMINED**, which
+means the gateway could not be read or `openclaw` could not be resolved — not that the
+box is unwatched. If `loop_cron.py` reports it probed a list of paths and found nothing,
+the binary is almost certainly there and off `PATH`: a bare ssh to a Mac gets
+`/usr/bin:/bin:/usr/sbin:/sbin`, while openclaw lives in `/opt/homebrew/bin` (Apple
+Silicon), `/usr/local/bin` (Intel) or `~/.local/bin`. Point `LOOP_OPENCLAW_BIN` at it
+and re-run.
+
+**DUPLICATES (v0.6.5).** Until 0.6.5 `install.sh` called `openclaw cron add`
+unconditionally and the CLI has no upsert, so every re-run added another job — 25 of 34
+boxes carried 2-12 of them, all enabled, all `*/15`, the watchdog firing 2-12x per
+window. Re-running the installer now COLLAPSES them to one:
+
+    bash loop-companion.sh install --role client --box <box>
+
+It keeps the oldest job (longest run history), repairs its name/schedule/command in
+place, and removes the rest by id, printing every removal. It only ever removes a job
+that is BOTH named `loop-tick-*` AND recognisably ours; anything else is reported and
+left alone for you. `LOOP_CRON_NO_PRUNE=1` reports instead of removing.
+
+**A TICK THAT NEVER FIRES.** `liveness` reads ledger meta `last_tick_ts`, stamped by
+every completed tick including one that finds nothing. Do **not** substitute
+`MAX(findings.tick_ts)` — that measures whether the box HAS a loop, so a healthy box
+reads as a dead watchdog; it produced a false "6 boxes unwatched" report on 2026-08-26,
+one of which had ticked 13 minutes earlier. A ledger with no stamp at all is a watchdog
+older than v0.6.5, not a dead one — check the cron job before concluding anything.
 
 `loop-companion.sh install` re-registers the host-level `*/15` tick (`--no-deliver`,
 operator-only, OUTSIDE any OpenClaw session). Because the watchdog must survive the
