@@ -1,16 +1,23 @@
-# Core File Updates: KIE Video (Skill 67)
+# KIE Video (67) - Core File Updates
 
-This document describes the lean, high-signal reference updates for Skill 67 (KIE Video).
-These updates are applied automatically and idempotently by `wire.sh`.
+Update ONLY the files listed below. Use the EXACT text provided.
+Do not update files marked NO UPDATE NEEDED.
+
+**These updates are PERFORMED by `wire.sh`, not pasted.** `wire.sh` writes each block
+behind its `<!-- BEGIN/END skill:67-kie-video:<target> -->` marker REPLACE-IN-PLACE,
+with `[MASTER_FILES_FOLDER]` resolved to this box's absolute master-files path, and
+stamps `<!-- skill:67-kie-video:core-update-applied -->`. Earlier versions had no
+installer, so the generic merger copied this section VERBATIM and every box ended up
+with the literal word `Add:`, a markdown code fence, and an unresolved relative
+pointer in its AGENTS.md. Never paste the instruction — run `bash wire.sh`.
 
 ---
 
-## 1. AGENTS.md Update
+## AGENTS.md - UPDATE REQUIRED
 
-Add to the AGENTS.md file in the active workspace:
+Add:
 
-```markdown
-<!-- BEGIN skill:67-kie-video:agents -->
+```
 ## Media Generation Routing
 - generic image -> provider router -> Agnes Image (63) or KIE Image (66)
 - generic video -> provider router -> Agnes Video (64) or KIE Video (67)
@@ -27,18 +34,16 @@ Add to the AGENTS.md file in the active workspace:
 - Default picks: Long-form (>15s) -> Wan 3.0 (wan/3-0-video); Multi-shot -> Kling 3.0 Omni; 2K -> MiniMax H3; explicit user model wins.
 - Validators run before dispatch: scripts/validate_prompt.py, scripts/validate_payload.py, scripts/select_video_model.py, scripts/normalize_alias.py.
 - Prompt bands: Wan 3.0/Gemini Omni/Seedance 2.5 (20K-30K cap, house band 5K-19K); MiniMax/PixVerse/Wan 2.7 (5K-7K caps); Kling Omni (3,072 cap); others NOT_PUBLISHED.
-- Full registry + per-family tables: $REF_DEST/models.json, $REF_DEST/references/
-<!-- END skill:67-kie-video:agents -->
+- Full registry + per-family tables: [MASTER_FILES_FOLDER]/67-kie-video/models.json, [MASTER_FILES_FOLDER]/67-kie-video/references/
 ```
 
 ---
 
-## 2. TOOLS.md Update
+## TOOLS.md - UPDATE REQUIRED
 
-Add to the TOOLS.md file in the active workspace:
+Add:
 
-```markdown
-<!-- BEGIN skill:67-kie-video:tools -->
+```
 ## KIE Video API (Skill 67)
 - Auth: Bearer <KIE_API_KEY>
 - POST https://api.kie.ai/api/v1/jobs/createTask (asynchronous; response 200 = task created with taskId)
@@ -46,22 +51,35 @@ Add to the TOOLS.md file in the active workspace:
 - GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state enum: waiting/queuing/generating/success/fail; resultJson.resultUrls on success)
 - Callbacks: callBackUrl field; HMAC-SHA256 scheme base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey)); headers X-Webhook-Timestamp / X-Webhook-Signature; ack {"code":200,"msg":"success"}
 - Rate: 20 new generation requests/10s; 100+ concurrent. Result URLs expire ~24h; media deleted after 14 days.
-- Registry: $REF_DEST/models.json + $REF_DEST/references/ (37 models, limits, durations, resolutions, reference caps)
+- Registry: [MASTER_FILES_FOLDER]/67-kie-video/models.json + [MASTER_FILES_FOLDER]/67-kie-video/references/ (37 models, limits, durations, resolutions, reference caps)
 - Validators: scripts/validate_prompt.py, scripts/validate_payload.py (run before dispatch; never after)
-<!-- END skill:67-kie-video:tools -->
 ```
 
 ---
 
-## 3. MEMORY.md Update
+## MEMORY.md - UPDATE REQUIRED
 
-Add to the MEMORY.md file in the active workspace:
+Add:
 
-```markdown
-<!-- BEGIN skill:67-kie-video:memory -->
+```
 ## KIE Video (67) — installed
 - KIE.ai Market API + Dedicated Runway/Veo endpoints; async createTask -> recordInfo polling or Skill 46 callback (never treat 200 as done)
 - Key: KIE_API_KEY; autonomous routing by capability hierarchy, explicit model wins
-- Registry + tables: $REF_DEST/models.json, $REF_DEST/references/
-<!-- END skill:67-kie-video:memory -->
+- Registry + tables: [MASTER_FILES_FOLDER]/67-kie-video/models.json, [MASTER_FILES_FOLDER]/67-kie-video/references/
 ```
+
+---
+
+## IDENTITY.md - NO UPDATE NEEDED
+
+---
+
+## HEARTBEAT.md - NO UPDATE NEEDED
+
+---
+
+## USER.md - NO UPDATE NEEDED
+
+---
+
+## SOUL.md - NO UPDATE NEEDED
