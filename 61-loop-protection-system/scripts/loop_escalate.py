@@ -100,25 +100,34 @@ DEFAULT_TIMEOUT = 120.0
 DRAIN_LIMIT_ENV = "RESCUE_RANGERS_DRAIN_PER_TICK"
 DRAIN_SPACING_ENV = "RESCUE_RANGERS_DRAIN_SPACING"
 DRAIN_JITTER_ENV = "RESCUE_RANGERS_DRAIN_JITTER"
-# 0 = THE PER-TICK DRAIN IS OFF. This is a deliberate default, not a placeholder.
+# The RATE CAP that applies ONCE THE DRAIN IS DELIBERATELY ENABLED. It is NOT the
+# safety. The safety is the explicit enable gate in loop_watchdog.tick():
 #
-# The limiter in this file is PER BOX (cap, spacing, jitter, stop-on-first-failure).
-# The Rescue Rangers intake limit is GLOBAL: "more than 12 escalations/60s" for the
-# WHOLE fleet. Per-box politeness cannot bound a global resource - 35 boxes each
-# behaving impeccably at 2/tick still compose to ~70 posts per tick window against a
-# ceiling of 12. That is a composition property; no per-box unit test can observe it.
+#     RESCUE_RANGERS_DRAIN_ENABLE=1     (absent env = DISARMED)
 #
-# MEASURED 2026-08-26, autonomous drain enabled on 35 boxes: 10,595 stranded
-# escalations were delivered, and the shared intake returned HTTP 429 while execution
-# duration degraded from a 29.8s baseline to 229s/221s/187s/183s - roughly 7x. Because
-# the client timeout is 120s, REAL client escalations timed out against a saturated
-# intake. The drain was starving live traffic to clear a backlog.
+# A numeric default cannot be the safety, because update-skills.sh delivers this
+# tree with `cp -Rp` (3197/3200) and OVERWRITES loop_watchdog.py on every box - so
+# a roll would wipe any box-local disarm and re-arm the whole fleet at once. The
+# repo therefore ships the SAME gate the live boxes carry, and a roll PRESERVES
+# the disarmed state instead of destroying it.
 #
-# The capability is correct and stays: run it deliberately, operator-driven and
-# globally sequenced, via `loop_escalate.py --drain --limit N`. Raising this number so
-# it runs autonomously fleet-wide requires GLOBAL sequencing across boxes, or a
-# per-box limit enforced at the intake, FIRST. It is the autonomy that is unsafe.
-DEFAULT_DRAIN_LIMIT = 0
+# WHY ANY OF THIS EXISTS. The limiter in this file is PER BOX (cap, spacing,
+# per-box jitter, stop-on-first-failure). The Rescue Rangers intake limit is
+# GLOBAL: "more than 12 escalations/60s" for the WHOLE fleet. Per-box politeness
+# cannot bound a global resource - 35 boxes each behaving impeccably at 2/tick
+# still compose to ~70 posts per tick window against a ceiling of 12. That is a
+# composition property of the fleet, invisible to any per-box unit test.
+#
+# MEASURED 2026-08-26, autonomous drain live on 35 boxes: 10,595 stranded
+# escalations delivered, the shared intake returning HTTP 429, and execution
+# duration degraded from a 29.8s baseline to 229s/221s/187s/183s - roughly 7x.
+# With a 120s client timeout, REAL client escalations then timed out. The drain
+# was starving live traffic to clear a backlog.
+#
+# Re-enabling autonomously fleet-wide requires GLOBAL sequencing across boxes, or
+# a per-box limit enforced at the intake, FIRST. Whoever raises this number, or
+# removes that gate, is deciding to repeat the paragraph above.
+DEFAULT_DRAIN_LIMIT = 2
 DEFAULT_DRAIN_SPACING = 5.0
 DEFAULT_DRAIN_JITTER = 45.0
 _SECRET_SHAPES = ("sk-", "Bearer ", "eyJ", "AIza", "xoxb-")
@@ -175,12 +184,31 @@ def _unquote_env(value):
     return v
 
 
-def _env_num(name, default, cast=float):
+def _env_num(name, default, cast=float, minimum=0):
+    """Read a numeric tunable from the environment. ZERO IS A REAL SETTING.
+
+    This helper used to end `return v if v > 0 else default`, which silently
+    swallowed an explicit zero and handed back the DEFAULT. So
+    `RESCUE_RANGERS_DRAIN_PER_TICK=0` did not disable the drain - it parsed to 0,
+    failed `v > 0`, and returned the default rate, leaving a drain running at full
+    speed while the operator believed it was off. For a rate limiter, "set it to
+    zero to stop it" is the first thing anyone reaches for under pressure, and it
+    did exactly the opposite. It affected every tunable here: PER_TICK, SPACING
+    and JITTER alike. Fixed 2026-08-26.
+
+    UNSET or UNPARSEABLE -> default: absence is not a setting, and a typo must
+    never read as a deliberate 0. Below `minimum` -> default. Callers pass the
+    minimum they can actually honour - 0 where "off" is meaningful, a positive
+    floor where it is not, since a 0-second timeout is not a configuration, it is
+    a fault."""
+    raw = _unquote_env(os.environ.get(name, ""))
+    if raw == "":
+        return default
     try:
-        v = cast(_unquote_env(os.environ.get(name, "")) or 0)
+        v = cast(raw)
     except (TypeError, ValueError):
-        v = 0
-    return v if v > 0 else default
+        return default
+    return v if v >= minimum else default
 
 
 def _rr_timeout():
@@ -207,22 +235,24 @@ def _rr_timeout():
     fleet load and still leaves margin, while staying well inside a watchdog tick.
     Overridable per box via $RESCUE_RANGERS_TIMEOUT - no code change needed, since
     a value this operational should be tunable when a box proves it wrong."""
-    return _env_num(TIMEOUT_ENV, DEFAULT_TIMEOUT, float)
+    # minimum=1: a sub-second escalation timeout is a fault, never a setting.
+    return _env_num(TIMEOUT_ENV, DEFAULT_TIMEOUT, float, minimum=1)
 
 
 def _drain_limit():
-    return int(_env_num(DRAIN_LIMIT_ENV, DEFAULT_DRAIN_LIMIT, int))
+    # minimum=0: zero is meaningful here - it means DO NOT DRAIN.
+    return int(_env_num(DRAIN_LIMIT_ENV, DEFAULT_DRAIN_LIMIT, int, minimum=0))
 
 
 def _drain_spacing():
-    return _env_num(DRAIN_SPACING_ENV, DEFAULT_DRAIN_SPACING, float)
+    return _env_num(DRAIN_SPACING_ENV, DEFAULT_DRAIN_SPACING, float, minimum=0)
 
 
 def _drain_jitter():
     """Deterministic per-box offset (never random, so a run is reproducible) so
     that boxes sharing a */15 cron do not all hit a GLOBALLY rate-limited intake
     in the same instant."""
-    span = _env_num(DRAIN_JITTER_ENV, DEFAULT_DRAIN_JITTER, float)
+    span = _env_num(DRAIN_JITTER_ENV, DEFAULT_DRAIN_JITTER, float, minimum=0)
     h = hashlib.sha256(os.uname().nodename.encode("utf-8")).digest()[0]
     return (h / 255.0) * span
 
@@ -655,13 +685,20 @@ def self_test():
         assert drain(limit=1, transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
         print("  drain cap case: PASS (per-tick cap honoured; dry-run posts nothing)")
 
-        # THE SHIPPED DEFAULT. Every box takes this path on every tick, so it is
-        # asserted rather than assumed: the autonomous drain is OFF, and a cap of
-        # 0 is a CLEAN no-op - nothing posted, nothing archived, no spill file
-        # touched, no exception. See DEFAULT_DRAIN_LIMIT for why.
+        # ZERO IS A REAL SETTING, and a disabled drain is a CLEAN no-op.
+        # `RESCUE_RANGERS_DRAIN_PER_TICK=0` used to fall back to the DEFAULT rate -
+        # an operator who set it to 0 got a full-speed drain. Both halves are
+        # asserted here: that 0 is honoured, and that honouring it does nothing.
         os.environ.pop(DRAIN_LIMIT_ENV, None)
-        assert DEFAULT_DRAIN_LIMIT == 0, "the autonomous drain must ship OFF"
-        assert _drain_limit() == 0, "no env -> the drain must stay OFF"
+        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # unset -> default
+        os.environ[DRAIN_LIMIT_ENV] = "0"
+        assert _drain_limit() == 0, "an explicit 0 must NOT fall back to the default"
+        os.environ[DRAIN_LIMIT_ENV] = "not-a-number"
+        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # a typo is not a 0
+        os.environ[DRAIN_LIMIT_ENV] = "-5"
+        assert _drain_limit() == DEFAULT_DRAIN_LIMIT      # nonsense is not a 0
+        os.environ[DRAIN_LIMIT_ENV] = "0"                 # back to DISABLED
+
         (esc_dir / "UNSENT-esc-LP-C1-20260826T020000.json").write_text(
             json.dumps(dict(base, driver="LP-C1"), sort_keys=True), encoding="utf-8")
         _before = sorted(q.name for q in esc_dir.glob("UNSENT-esc-*.json"))
@@ -671,21 +708,24 @@ def self_test():
         def _must_not_post(url, body):
             raise AssertionError("a disabled drain POSTED - it must never reach the intake")
 
-        r0 = drain(transport=_must_not_post, spacing=0)      # limit=None -> the default
+        r0 = drain(transport=_must_not_post, spacing=0)   # limit=None -> reads the env
         assert r0["posted"] == 0 and r0["archived_files"] == 0, r0
-        assert r0["unparseable"] == 0, r0                    # nothing was even READ
+        assert r0["unparseable"] == 0, r0                 # nothing was even READ
         assert "disabled" in (r0["stopped"] or ""), r0
-        assert r0["pending_files"] == len(_before), r0       # backlog still reported
+        assert r0["pending_files"] == len(_before), r0    # backlog still reported
         assert sorted(q.name for q in esc_dir.glob("UNSENT-esc-*.json")) == _before
         assert sorted(q.name for q in (esc_dir / "drained").glob("*.json")) == _arch_before
         assert len(seen) == _posts_before
-        # ...and the env override still turns it back on, deliberately.
+        # an explicit limit=0 argument is equally a no-op, not just the env
+        assert drain(limit=0, transport=_must_not_post, spacing=0)["posted"] == 0
+        # ...and a real cap turns it back on, deliberately.
         os.environ[DRAIN_LIMIT_ENV] = "1"
         assert _drain_limit() == 1
         assert drain(transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
         os.environ.pop(DRAIN_LIMIT_ENV, None)
-        print("  drain DEFAULT-OFF case: PASS (cap 0 posts nothing, reads nothing, "
-              "moves no file, does not raise; backlog still reported; env re-enables)")
+        print("  drain DISABLED case: PASS (explicit 0 honoured, not swallowed; typo and "
+              "negative fall back; a disabled drain posts/reads/moves nothing and does "
+              "not raise; backlog still reported)")
 
         os.environ.pop("LOOP_STATE_DIR", None)
 

@@ -48,11 +48,18 @@ Escalations go ONLY via the n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`
 bots). If the webhook was down, OR the intake REFUSED the payload, it is written to
 `<state>/escalations/UNSENT-esc-*.json` with the reason in `_unsent_reason`.
 
-Spills are replayed by `loop_escalate.py --drain`, which is **OFF BY DEFAULT and
-operator-run**. The watchdog calls it at the end of a real tick, but with a per-tick
-cap of 0 that call reads nothing, posts nothing and moves nothing - it only reports the
-backlog size. Enable it deliberately for one run with `--drain --limit N`, or per box
-with `$RESCUE_RANGERS_DRAIN_PER_TICK`.
+Spills are replayed by `loop_escalate.py --drain`, which is **DISARMED BY DEFAULT and
+operator-run**. The watchdog's automatic drain is behind an explicit enable gate:
+
+    RESCUE_RANGERS_DRAIN_ENABLE=1        # absent env = DISARMED
+
+With the env absent the tick records
+`{"skipped": "DISARMED RR-DRAIN-DISARMED-20260826", "rearm": "RESCUE_RANGERS_DRAIN_ENABLE=1"}`,
+so a tick log PROVES the state either way instead of implying it by silence. Drain a
+backlog deliberately with `loop_escalate.py --drain --limit N` (add `--dry-run` to see
+what would be replayed without posting). `$RESCUE_RANGERS_DRAIN_PER_TICK` sets the rate
+cap once enabled; setting it to `0` genuinely disables the drain (an explicit zero is
+honoured and no longer falls back to the default).
 
 WHY IT IS OFF (2026-08-26): the limiter in the script is PER BOX, but the intake limit
 is GLOBAL - "more than 12 escalations/60s" for the whole fleet. 35 boxes each behaving
@@ -62,6 +69,12 @@ shared intake: HTTP 429, and execution duration degraded from a 29.8s baseline t
 229s/221s/187s/183s. Since the client timeout is 120s, REAL client escalations then
 timed out. Draining a backlog must never starve live traffic. Turning it on fleet-wide
 requires GLOBAL sequencing across boxes, or a per-box limit enforced at the intake.
+
+The gate lives in `loop_watchdog.py` rather than in a numeric default because
+`update-skills.sh` delivers this skill with `cp -Rp` and OVERWRITES that file on every
+box. A box-local disarm would be wiped by the next roll, re-arming the whole fleet at
+once. The repo ships the same gate the live boxes carry, so a roll PRESERVES the
+disarmed state.
 
 When enabled, the drain is deliberately slow: spills are deduped by problem identity,
 at most N DISTINCT problems are re-posted per tick, spaced after a per-box jitter, and
