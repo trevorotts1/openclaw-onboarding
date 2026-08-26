@@ -43,6 +43,27 @@ window (pid stable at t+15/35/65s).
 
 ## 5. An escalation did not reach Rescue Rangers
 
+**First check whether it was SUPPRESSED rather than lost.** Since 0.6.3 every
+escalation passes a per-key gate (RR-ESC-GATE-20260826). The tick's stderr names it:
+
+    INFO [loop_watchdog]: escalation for finding <id> SUPPRESSED (dedup|backoff; key=... window=12.0h attempt=N next_at=...); finding left OPEN, not escalated
+
+- `dedup` - this exact `dedup_key` was already ADMITTED inside
+  `alert.escalation.dedup_window_hours` (12h). Working as designed; the finding stays
+  `open` and re-escalates after the window.
+- `backoff` - the intake REFUSED this key and it is waiting until `next_at`
+  (2h/4h/8h/16h/24h cap, jittered). Read the matching `ERROR` line above it for the
+  refusal reason, and the spill file's `_unsent_reason`.
+
+Suppression is **per `dedup_key`**, so a different problem still escalates immediately.
+If a NEW problem was suppressed, that is a P0 defect in this skill - not a tuning
+question. `escalation_suppressed_by` in the tick summary breaks the count down by
+reason, and `escalate:<dedup_key>` rows in the ledger's `backoff_state` table show
+every key currently backed off (the ledger DB is `<state>/loop.db`; this one-liner is
+paste-tested and needs only python3, which preflight already requires):
+
+    cd ~/.openclaw/skills/61-loop-protection-system/scripts && python3 -c "import sys;sys.path.insert(0,'.');from loop_ledger import Ledger;l=Ledger();print('\n'.join('%s attempt=%s next_at=%s'%(r['job'],r['attempt'],r['next_at']) for r in l.conn.execute(\"SELECT job,attempt,next_at FROM backoff_state WHERE job LIKE 'escalate:%' ORDER BY next_at\")) or 'no escalation backoffs');l.close()"
+
 Escalations go ONLY via the n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`
 (`openclaw message send` to the group is silently dropped - bots cannot read other
 bots). If the webhook was down, OR the intake REFUSED the payload, it is written to

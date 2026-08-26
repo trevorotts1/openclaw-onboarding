@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries seven loop-specific detectors D1-D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, self-blocking-run / transcript poison, futile semantic retry burst, and cross-run resend) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.6.2
+version: 0.6.3
 ---
 
 # Loop Protection System (Skill 61)
@@ -176,6 +176,32 @@ SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is a P1.
   absolute - the system parks timers, never substitutes models), credentials,
   doctrine files, deletion of anything, ambiguous findings, and any fix whose verify
   failed once. These go to Rescue Rangers with the structured escalation format.
+
+**Every escalation passes a per-key gate first** (RR-ESC-GATE-20260826). The channel
+had no dedup and no backoff: on one live box a single `dedup_key` produced **992
+escalations**, because a finding whose escalation the intake never admitted is left
+OPEN by design and therefore re-posts on every 15-minute tick, forever. The intake's
+rate limit is **GLOBAL** across the fleet (12/60s), so one box's runaway key sheds
+other clients' live escalations. Two controls now stand in front of the send, both
+keyed on the finding's own `dedup_key`:
+
+- **Dedup** - one escalation per key per `alert.escalation.dedup_window_hours`
+  (**12h**, deliberately quieter than the 6h operator-alert window: an alert is a
+  local note in this box's ledger, an escalation pages a human rescue team over a
+  globally rate-limited intake). The digest is stamped **only on an ADMITTED
+  delivery**, never on an attempt - a refusal that silenced its own retry would be
+  silent loss.
+- **Backoff** - a refusal (HTTP 429/502, read timeout) advances that key through the
+  existing `loop_backoff` ladder and the `backoff_state` table: 2h/4h/8h/16h/24h(cap),
+  jittered. A refusal can never produce an immediate identical retry. An admitted
+  delivery clears the ladder.
+
+Both are **per key**. A genuinely new problem carries a new `dedup_key` and escalates
+immediately, on the same tick, even while another key sits in a 24h backoff - turning
+a noisy system into a silent one would be the worse failure by far. A suppressed
+finding is left `open` and is never marked `escalated`. The tick summary separates
+`escalated` (admitted), `escalation_unsent` (refused) and `escalation_suppressed`
+(never attempted). Drills: `tests/drills/D-ESC-GATE.md`.
 
 ## Entry and verify
 

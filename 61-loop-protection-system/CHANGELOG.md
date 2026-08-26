@@ -3,6 +3,97 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.3] - 2026-08-26
+
+**The escalation amplifier.** The Rescue Rangers escalation path had **no dedup
+and no backoff** - while the operator alert sitting directly beside it in
+`_handle_finding` had both. 0.6.2 fixed delivery; this fixes the volume that
+delivery then produced.
+
+Measured on ONE live box: a single `dedup_key` produced **992 escalations**, and
+the findings table held **4,084 rows across 12 distinct `dedup_key`s**. The
+mechanism follows directly from 0.6.2's own (correct) rule: an escalation the
+intake never admits leaves the finding **OPEN**, so the byte-identical escalation
+is rebuilt and re-posted on the next 15-minute tick, and the next, forever. When
+the intake refuses - `HTTP 429 {"accepted":false}`, `HTTP 502`, a read timeout -
+nothing slowed the retry down. The intake's rate limit is **GLOBAL** (12/60s) for
+the whole fleet, so one box's runaway key sheds **other clients' real
+escalations**. One box held 5 spill files carrying the identical finding.
+
+**Two controls now stand in front of `ESC.send()`, both keyed on the finding's own
+`dedup_key`.** Neither is new machinery: both reuse what the skill already
+shipped.
+
+1. **Dedup**, mirroring the operator alert's `_dedup_ok`, through the existing
+   `digests` table and its `ix_dig_key` index. Window
+   `alert.escalation.dedup_window_hours` = **12h**, deliberately NOT the 6h alert
+   window: an operator alert is a local note in this box's own ledger, while an
+   escalation is a POST to a globally rate-limited shared intake that pages a
+   human rescue team, so it must be strictly quieter - not merely as quiet. 12h
+   means the rescue team sees each distinct unresolved problem at most once per
+   work shift. Against the measured incident that one key posts **21 times
+   instead of 992**, and the whole box at most 24 times a day against a measured
+   ~1,150.
+2. **Backoff on refusal**, through `loop_backoff.py` and the `backoff_state`
+   table - both built in 0.1.0 and **never wired to anything** (the table is
+   empty on a live box). A refusal advances that key: 2h/4h/8h/16h/24h(cap),
+   jittered, persisted. A refusal can no longer cause an immediate identical
+   retry. An **admitted** delivery clears the ladder, which is exactly
+   `loop_backoff`'s "progress is measured by a real artifact" rule - an admission
+   IS the artifact.
+
+**The digest is stamped ONLY on an ADMITTED delivery.** A refusal writes no
+digest. This is the load-bearing detail: a failed attempt that recorded its own
+digest would suppress its own retry, and the escalation nobody received would
+never be sent again. That is silent loss - the failure this skill exists to
+prevent, and strictly worse than the noise being fixed here.
+
+**A genuinely NEW finding is never suppressed.** Both controls are per
+`dedup_key`, never per class, per box, or global. A new problem escalates
+immediately, on the very tick another key sits at the 24h backoff cap. Turning a
+noisy system into a silent one would be the worse outcome by a wide margin, so
+`D-ESC-NEWKEY` and `D-ESC-TICK` assert exactly that, and a mutation that makes
+suppression global is caught by four drills at once.
+
+**0.6.2's semantics are unchanged.** An escalation the intake never admitted is
+still NOT escalated; the finding is still left `open`; the spill still lands in
+`UNSENT-esc-*.json`. A SUPPRESSED escalation is a third state: no payload is
+built, `ESC.send` is never reached, no spill is written, the finding is left
+`open` and is never marked `escalated`. The tick summary now separates all three
+- `escalated` (admitted), `escalation_unsent` (refused), `escalation_suppressed`
+(never attempted, with `escalation_suppressed_by` breaking it down by reason) -
+where one number used to blur them. `escalation_channel_degraded` counts the case
+where the retry breaker trips after K consecutive refusals; it is logged, never
+converted into another post, because the channel that failed IS Rescue Rangers.
+
+**The digest key is namespaced** (`escalation|<dedup_key>`). `recent_digest()`
+matches on `dedup_key` alone and ignores `kind`, so an un-namespaced escalation
+digest would have silenced the operator alert for the same finding, and vice
+versa: two channels, one mute button.
+
+**Tests.** Five new drills in `verify.sh` plus a whole-tick case in
+`loop_watchdog --self-test`, documented in `tests/drills/D-ESC-GATE.md`. Every one
+is **failable in both directions** - each proves the gate HOLDS when it should and
+RELEASES when it should, because a suppression proven only in the holding
+direction is how a noisy system gets quietly turned into a silent one. All six
+were run against deliberately broken copies of the skill and confirmed RED:
+dedup gate removed, backoff gate removed, suppression made global, a refusal that
+writes a digest, the gate reading the alert's 6h window, and the escalation window
+"tidied" to equal the alert window.
+
+That last mutation is the **anti-vacuity guard**, and it is there because of
+0.6.2: a drill kept passing there because a default and the honoured value had
+become the same number - a dead test showing green. `D-ESC-DEDUP` therefore
+proves the window with overrides of 3h and 5h, values that match neither the
+shipped 12h nor the alert's 6h, so a hardcoded constant cannot pass it. And
+`D-ESC-DRIFT` fails first, naming the reason, if anyone ever makes the two windows
+equal.
+
+An explicit `dedup_window_hours: 0` disables the dedup and is honoured as zero -
+fault 5 of 0.6.2 was a limiter set to 0 returning the DEFAULT rate.
+
+Repo-only change. No box is armed, activated, or touched by this release.
+
 ## [0.6.2] - 2026-08-26
 
 **Rescue Rangers escalation could not deliver.** Six independent faults, each
