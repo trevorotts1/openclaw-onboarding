@@ -3,6 +3,62 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.6.2] - 2026-08-26
+
+**Rescue Rangers escalation could not deliver.** Six independent faults, each
+fatal on its own. Escalations were detected correctly and then died silently for
+days; the cost was real, including a client tax deadline missed because the
+escalation raising it was never delivered.
+
+1. **Wrong field name.** `build_payload()` emitted `finding`; the intake requires
+   one of `message|problem|problem_text|problemText`. A correctly-detected loop
+   was refused at the door. `message` now rides alongside `finding`, which is
+   KEPT so nothing downstream that reads it breaks.
+2. **A 10s timeout against a ~30s admission path.** Measured at 29819ms (n8n
+   execution 596246); a confirmed accepted post took 30.3s. Every escalation was
+   abandoned mid-flight while the intake was about to accept it. Now 120s, via
+   `$RESCUE_RANGERS_TIMEOUT`. 120 is ~4x the measured admission deliberately:
+   aborting the client does not cancel the server, so a premature timeout loses
+   the escalation, spills a payload that may already have been admitted, and
+   feeds it back for a duplicate post. LP-A10 in this same skill is the
+   precedent for misreading a local timeout as a delivery failure.
+3. **A retry that never existed.** Spills were written to `UNSENT-esc-*.json`
+   "for next-tick retry" and nothing ever read the directory back - the only
+   `glob("UNSENT-*")` calls in the skill lived inside `self_test()`. 17,058
+   files were stranded fleet-wide. Adds `drain()` and `--drain/--limit`.
+4. **HTTP 200 with a refusal in the body.** The intake can answer 200 carrying
+   an admission rejection, so a naive 2xx check read a refusal as success. Status
+   AND body are now inspected; an unparseable body is UNDETERMINED, never a
+   refusal.
+5. **`_env_num()` swallowed an explicit zero.** It ended `return v if v > 0 else
+   default`, so setting a rate limiter to 0 returned the DEFAULT rate - the one
+   thing an operator reaches for under pressure did the opposite.
+6. **Documentation asserting safety the code did not have.** `REPAIRS.md`
+   promised spills were retried; a `drain()` docstring later named the wrong
+   reason the drain was off. Both corrected, and a drill now fails if the stated
+   default and the real constant disagree.
+
+Also: `loop_watchdog` no longer records a finding as `escalated` when the intake
+never admitted it - it counts `escalation_unsent`, logs to stderr, and leaves the
+finding OPEN. That mislabelling is how fleet-wide loss stayed invisible.
+
+**The autonomous drain ships DISARMED**, behind two independent locks:
+`RESCUE_RANGERS_DRAIN_ENABLE=1` gates whether `tick()` calls it, and
+`DEFAULT_DRAIN_LIMIT = 0` means a call no-ops. Run autonomously it saturated the
+shared intake: the limiter here is PER BOX but the intake limit is GLOBAL
+(12/60s), so 35 boxes at 2/tick compose to ~70 posts per window against a ceiling
+of 12. Measured 2026-08-26: HTTP 429 and execution duration degraded from a 29.8s
+baseline to 229s/221s/187s/183s, timing out live client escalations. Per-box
+politeness cannot bound a global resource. Enabling it fleet-wide requires global
+sequencing or a per-box limit at the intake first.
+
+**Tests.** New drills cover the real `_urllib_transport` path (never executed by
+any prior drill, because every one injects a stub - which is how a `NameError`
+reached a staged build), the enable gate, the disabled drain, and docstring/code
+drift. Each was proven failable against a deliberately broken copy.
+
+Repo-only change. No box is armed, activated, or touched by this release.
+
 ## [0.6.0] - 2026-08-18
 
 New loop class **LP-A10: agent-to-agent cross-run resend loop**, closing a real
