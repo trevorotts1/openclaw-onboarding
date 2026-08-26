@@ -48,12 +48,28 @@ Escalations go ONLY via the n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`
 bots). If the webhook was down, OR the intake REFUSED the payload, it is written to
 `<state>/escalations/UNSENT-esc-*.json` with the reason in `_unsent_reason`.
 
-Spills are replayed by `loop_escalate.py --drain`, which the watchdog runs at the end
-of every real tick. The drain is deliberately slow because the intake is rate-limited
-GLOBALLY across the fleet, not per box: spills are deduped by problem identity, at most
-`$RESCUE_RANGERS_DRAIN_PER_TICK` (default 2) DISTINCT problems are re-posted per tick,
-and the drain stops the moment one post fails. A file is cleared only on confirmed
-admission and is MOVED to `<state>/escalations/drained/`, never deleted.
+Spills are replayed by `loop_escalate.py --drain`, which is **OFF BY DEFAULT and
+operator-run**. The watchdog calls it at the end of a real tick, but with a per-tick
+cap of 0 that call reads nothing, posts nothing and moves nothing - it only reports the
+backlog size. Enable it deliberately for one run with `--drain --limit N`, or per box
+with `$RESCUE_RANGERS_DRAIN_PER_TICK`.
+
+WHY IT IS OFF (2026-08-26): the limiter in the script is PER BOX, but the intake limit
+is GLOBAL - "more than 12 escalations/60s" for the whole fleet. 35 boxes each behaving
+politely at 2/tick still compose to ~70 posts per tick window against a ceiling of 12.
+Run autonomously fleet-wide it delivered 10,595 stranded escalations and saturated the
+shared intake: HTTP 429, and execution duration degraded from a 29.8s baseline to
+229s/221s/187s/183s. Since the client timeout is 120s, REAL client escalations then
+timed out. Draining a backlog must never starve live traffic. Turning it on fleet-wide
+requires GLOBAL sequencing across boxes, or a per-box limit enforced at the intake.
+
+When enabled, the drain is deliberately slow: spills are deduped by problem identity,
+at most N DISTINCT problems are re-posted per tick, spaced after a per-box jitter, and
+it stops the moment one post fails. A file is cleared only on confirmed admission and
+is MOVED to `<state>/escalations/drained/`, never deleted.
+
+To work a backlog down safely, run it from ONE box at a time with a small `--limit` and
+watch intake latency between runs.
 
 Check both dirs; read `_unsent_reason` first - it names the fault. Confirm
 `$RESCUE_RANGERS_WEBHOOK_URL` is set and reachable, and that

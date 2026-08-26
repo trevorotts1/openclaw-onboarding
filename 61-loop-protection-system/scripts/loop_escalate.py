@@ -100,7 +100,25 @@ DEFAULT_TIMEOUT = 120.0
 DRAIN_LIMIT_ENV = "RESCUE_RANGERS_DRAIN_PER_TICK"
 DRAIN_SPACING_ENV = "RESCUE_RANGERS_DRAIN_SPACING"
 DRAIN_JITTER_ENV = "RESCUE_RANGERS_DRAIN_JITTER"
-DEFAULT_DRAIN_LIMIT = 2
+# 0 = THE PER-TICK DRAIN IS OFF. This is a deliberate default, not a placeholder.
+#
+# The limiter in this file is PER BOX (cap, spacing, jitter, stop-on-first-failure).
+# The Rescue Rangers intake limit is GLOBAL: "more than 12 escalations/60s" for the
+# WHOLE fleet. Per-box politeness cannot bound a global resource - 35 boxes each
+# behaving impeccably at 2/tick still compose to ~70 posts per tick window against a
+# ceiling of 12. That is a composition property; no per-box unit test can observe it.
+#
+# MEASURED 2026-08-26, autonomous drain enabled on 35 boxes: 10,595 stranded
+# escalations were delivered, and the shared intake returned HTTP 429 while execution
+# duration degraded from a 29.8s baseline to 229s/221s/187s/183s - roughly 7x. Because
+# the client timeout is 120s, REAL client escalations timed out against a saturated
+# intake. The drain was starving live traffic to clear a backlog.
+#
+# The capability is correct and stays: run it deliberately, operator-driven and
+# globally sequenced, via `loop_escalate.py --drain --limit N`. Raising this number so
+# it runs autonomously fleet-wide requires GLOBAL sequencing across boxes, or a
+# per-box limit enforced at the intake, FIRST. It is the autonomy that is unsafe.
+DEFAULT_DRAIN_LIMIT = 0
 DEFAULT_DRAIN_SPACING = 5.0
 DEFAULT_DRAIN_JITTER = 45.0
 _SECRET_SHAPES = ("sk-", "Bearer ", "eyJ", "AIza", "xoxb-")
@@ -310,11 +328,18 @@ def drain(limit=None, transport=None, url=None, dry_run=False, spacing=None):
     inside self_test(). Escalations were detected correctly, spilled faithfully,
     and lost forever - 17,058 files across the fleet, none ever delivered.
 
-    Deliberately SLOW. The Rescue Rangers intake is rate-limited GLOBALLY across
-    the fleet, not per box, so a fast drain would shed OTHER clients' live
-    escalations - a self-inflicted outage worse than the backlog. Therefore:
+    OFF BY DEFAULT (DEFAULT_DRAIN_LIMIT = 0) - a cap of 0 returns immediately
+    having read, posted and moved nothing. Enable it deliberately, per run, with
+    `--drain --limit N`, or per box via $RESCUE_RANGERS_DRAIN_PER_TICK. The reason
+    is written out at DEFAULT_DRAIN_LIMIT: this limiter is per box, the intake
+    limit is global, and on 2026-08-26 those two facts composed into a measured
+    429 plus a 7x latency collapse that timed out live client escalations.
+
+    Deliberately SLOW even when enabled. The Rescue Rangers intake is rate-limited
+    GLOBALLY across the fleet, not per box, so a fast drain sheds OTHER clients'
+    live escalations - a self-inflicted outage worse than the backlog. Therefore:
       * spills are DEDUPED by problem identity (see _spill_signature),
-      * at most `limit` distinct problems per tick (default 2),
+      * at most `limit` distinct problems per tick,
       * spaced `spacing` seconds apart after a deterministic per-box offset,
       * and the drain STOPS for this tick the moment one post fails.
 
@@ -331,6 +356,13 @@ def drain(limit=None, transport=None, url=None, dry_run=False, spacing=None):
                "stopped": None}
     if not files:
         return summary
+    cap = _drain_limit() if limit is None else int(limit)
+    if cap <= 0:
+        # OFF. Return the backlog size (glob only - the operator needs to see it)
+        # but read nothing, post nothing, move nothing. See DEFAULT_DRAIN_LIMIT.
+        summary["stopped"] = ("drain disabled: per-tick cap is 0 - set "
+                              "$%s to enable" % DRAIN_LIMIT_ENV)
+        return summary
     groups = {}
     for f in files:
         try:
@@ -346,7 +378,6 @@ def drain(limit=None, transport=None, url=None, dry_run=False, spacing=None):
         summary["stopped"] = "every pending spill was unparseable"
         return summary
     order = sorted(groups.items(), key=lambda kv: kv[1][0][0].stat().st_mtime)
-    cap = _drain_limit() if limit is None else int(limit)
     gap = _drain_spacing() if spacing is None else float(spacing)
     known = {str(p) for p in files}
     first = True
@@ -623,6 +654,38 @@ def self_test():
         # The per-tick cap is what protects a GLOBALLY rate-limited intake.
         assert drain(limit=1, transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
         print("  drain cap case: PASS (per-tick cap honoured; dry-run posts nothing)")
+
+        # THE SHIPPED DEFAULT. Every box takes this path on every tick, so it is
+        # asserted rather than assumed: the autonomous drain is OFF, and a cap of
+        # 0 is a CLEAN no-op - nothing posted, nothing archived, no spill file
+        # touched, no exception. See DEFAULT_DRAIN_LIMIT for why.
+        os.environ.pop(DRAIN_LIMIT_ENV, None)
+        assert DEFAULT_DRAIN_LIMIT == 0, "the autonomous drain must ship OFF"
+        assert _drain_limit() == 0, "no env -> the drain must stay OFF"
+        (esc_dir / "UNSENT-esc-LP-C1-20260826T020000.json").write_text(
+            json.dumps(dict(base, driver="LP-C1"), sort_keys=True), encoding="utf-8")
+        _before = sorted(q.name for q in esc_dir.glob("UNSENT-esc-*.json"))
+        _arch_before = sorted(q.name for q in (esc_dir / "drained").glob("*.json"))
+        _posts_before = len(seen)
+
+        def _must_not_post(url, body):
+            raise AssertionError("a disabled drain POSTED - it must never reach the intake")
+
+        r0 = drain(transport=_must_not_post, spacing=0)      # limit=None -> the default
+        assert r0["posted"] == 0 and r0["archived_files"] == 0, r0
+        assert r0["unparseable"] == 0, r0                    # nothing was even READ
+        assert "disabled" in (r0["stopped"] or ""), r0
+        assert r0["pending_files"] == len(_before), r0       # backlog still reported
+        assert sorted(q.name for q in esc_dir.glob("UNSENT-esc-*.json")) == _before
+        assert sorted(q.name for q in (esc_dir / "drained").glob("*.json")) == _arch_before
+        assert len(seen) == _posts_before
+        # ...and the env override still turns it back on, deliberately.
+        os.environ[DRAIN_LIMIT_ENV] = "1"
+        assert _drain_limit() == 1
+        assert drain(transport=counting_ok, spacing=0, dry_run=True)["posted"] == 1
+        os.environ.pop(DRAIN_LIMIT_ENV, None)
+        print("  drain DEFAULT-OFF case: PASS (cap 0 posts nothing, reads nothing, "
+              "moves no file, does not raise; backlog still reported; env re-enables)")
 
         os.environ.pop("LOOP_STATE_DIR", None)
 
