@@ -626,6 +626,18 @@ def _cli(argv=None):
     sp.add_argument("--dedup-key", required=True)
     sp.add_argument("--window-hours", type=float, default=6.0)
 
+    # v0.6.5. THE LIVENESS INSTRUMENT, so nobody has to invent one again.
+    # The proxies previously in use were loop.db's file MTIME and the cron
+    # engine's lastRunAtMs - both outside the ledger - and MAX(findings.tick_ts),
+    # which is not liveness at all: it answers "does this box HAVE a loop", so a
+    # healthy box reads as a dead watchdog. That proxy produced a false
+    # "6 boxes unwatched" report on 2026-08-26; one of the six had ticked 13
+    # minutes earlier. Default 45 minutes = three missed 15-minute ticks.
+    sp = sub.add_parser("liveness",
+                        help="exit 0 if the watchdog completed a tick within "
+                             "--max-age-minutes, else 3 (missing stamp = 3, never 0)")
+    sp.add_argument("--max-age-minutes", type=float, default=45.0)
+
     args = ap.parse_args(argv)
 
     if getattr(args, "self_test", False):
@@ -670,6 +682,32 @@ def _cli(argv=None):
         elif c == "set-offset":
             led.set_offset(args.name, args.offset)
             _emit({"ok": True, "name": args.name, "offset": args.offset})
+        elif c == "liveness":
+            ts = led.get_meta("last_tick_ts")
+            dt = _parse_iso(ts) if ts else None
+            if dt is None:
+                # ABSENT IS NOT FRESH, and it is not "broken" either - it is a
+                # NAMED negative. A pre-0.6.5 watchdog never wrote this key, so the
+                # reason says so rather than implying the box is dead.
+                _emit({"fresh": False, "last_tick_ts": ts, "age_seconds": None,
+                       "max_age_minutes": args.max_age_minutes,
+                       "reason": ("no last_tick_ts in ledger meta: this watchdog is "
+                                  "older than v0.6.5, or has never COMPLETED a tick. "
+                                  "It is NOT evidence that the box is unwatched - "
+                                  "check the cron job with loop_cron.py status.")
+                       if ts is None else
+                       "last_tick_ts is present but unparsable: %r" % ts})
+                return EX_FALSE
+            age = (datetime.now(timezone.utc) - dt).total_seconds()
+            fresh = age <= args.max_age_minutes * 60.0
+            _emit({"fresh": fresh, "last_tick_ts": ts, "age_seconds": round(age, 1),
+                   "max_age_minutes": args.max_age_minutes,
+                   "last_tick_findings": led.get_meta("last_tick_findings"),
+                   "last_tick_errors": led.get_meta("last_tick_errors"),
+                   "last_tick_mode": led.get_meta("last_tick_mode"),
+                   "last_tick_armed": led.get_meta("last_tick_armed"),
+                   "db": str(led.db_path)})
+            return EX_OK if fresh else EX_FALSE
         elif c == "recent-digest":
             r = led.recent_digest(args.dedup_key, args.window_hours)
             _emit({"present": r is not None})
@@ -970,6 +1008,31 @@ def self_test():
         print("  storm case: PASS (200 re-observations = 1 row, times_seen=200 - "
               "the 4,084-row/12-key field state can no longer form)")
         led.close()
+
+        # ---- the liveness instrument (v0.6.5) ------------------------------
+        # Failable in BOTH directions, because a freshness check that cannot go
+        # stale is a green light with no bulb in it.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as td3:
+            sd3 = Path(td3) / "loop-protection"
+            led3 = Ledger(sd3)
+            assert _cli(["--state-dir", str(sd3), "liveness"]) == EX_FALSE, \
+                "a ledger that never ticked reported FRESH"
+            led3.set_meta("last_tick_ts", now_utc())
+            assert _cli(["--state-dir", str(sd3), "liveness"]) == EX_OK
+            led3.set_meta("last_tick_ts", "2000-01-01T00:00:00+00:00")
+            assert _cli(["--state-dir", str(sd3), "liveness"]) == EX_FALSE, \
+                "a 26-year-old stamp reported FRESH"
+            # A finding does NOT make a box live: this is the exact confusion
+            # that produced the false 'unwatched' report, inverted.
+            led3.record_finding("LP-A1", "P1", detail="present but stale watchdog")
+            assert _cli(["--state-dir", str(sd3), "liveness"]) == EX_FALSE, \
+                "a fresh FINDING was mistaken for a fresh TICK"
+            led3.set_meta("last_tick_ts", "not-a-timestamp")
+            assert _cli(["--state-dir", str(sd3), "liveness"]) == EX_FALSE
+            led3.close()
+        print("  liveness case: PASS (missing/stale/unparsable stamp -> exit 3; a "
+              "fresh stamp -> exit 0; a fresh FINDING never counts as a tick)")
 
     print("[loop_ledger] self-test: PASS")
     return EX_OK

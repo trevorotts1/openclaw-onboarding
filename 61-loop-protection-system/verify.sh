@@ -3,15 +3,31 @@
 # SKILL 61 - LOOP PROTECTION SYSTEM :: verify.sh
 # THE INDEPENDENT, FAILABLE DRILL BATTERY (spec Section 9.4).
 # -----------------------------------------------------------------------------
-# READ-ONLY and idempotent. FULLY OFFLINE: every drill runs against SCRATCH
-# fixtures (never a live box, never a live config, never a real credential) and
-# NEVER touches an external API - the D-ESCALATE drill injects a failing transport
+# READ-ONLY and idempotent. Sections 1-3 are FULLY OFFLINE: every drill runs
+# against SCRATCH fixtures (never a live box, never a live config, never a real
+# credential). Section 4, the v0.6.5 STANDING GATE, is the deliberate exception -
+# it READS this box's own cron table and ledger, because a battery that only ever
+# examined scratch fixtures stayed green while 25 of 34 boxes accumulated 2-12
+# duplicate loop-tick cron jobs and nobody could tell which boxes were ticking.
+# It adds, edits and removes NOTHING: no cron job, no finding, no config. It is
+# not literally write-free, and saying so would be the kind of convenient claim
+# this skill exists to catch - opening the ledger runs the same idempotent schema
+# bootstrap every tick already performs, and on a box with no ledger yet it
+# creates an empty one. Skip it with --offline or LOOP_VERIFY_NO_LIVE=1; run it
+# alone with --live.
+#
+# Sections 1-3 NEVER touch an external API - the D-ESCALATE drill injects a failing transport
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN,
 # D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP,
 # D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT,
-# D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*).
+# D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*),
+# plus section 4's two LIVE checks: D-CRON-ONE (exactly one enabled loop-tick job,
+# proven through `openclaw cron list --all`) and D-TICK-FRESH (the watchdog
+# COMPLETED a tick within 45 minutes, read from ledger meta last_tick_ts - NOT
+# from MAX(findings.tick_ts), which measures whether the box HAS a loop and so
+# calls a healthy box dead).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
@@ -20,13 +36,33 @@
 # tick until the filename passed 255 bytes and the uncaught OSError killed the
 # scheduled job.
 #
-# EXIT: 0 verified, 4 drift/failure.
+# EXIT: 0 verified, 4 drift/failure, 5 STANDING GATE UNDETERMINED (v0.6.5 - the
+# live checks could not be PROVEN either way; never folded into a pass).
 # =============================================================================
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SELF_DIR/scripts"
 TAG="[loop-verify]"
 FAILS=0
+UNDET=0
+
+# v0.6.5. The offline drills prove the MECHANISM; the standing gate proves THIS
+# BOX. Both matter, and they answer different questions - a battery that only
+# ever ran against scratch fixtures is how 25 of 34 boxes accumulated duplicate
+# cron jobs while every drill stayed green.
+#   (default)   offline drills + standing gate
+#   --live      the standing gate ONLY (fast operator check on a real box)
+#   --offline   the offline drills ONLY (source checkout / CI; no gateway)
+RUN_OFFLINE=1; RUN_LIVE=1
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --live)    RUN_OFFLINE=0; RUN_LIVE=1; shift ;;
+        --offline) RUN_OFFLINE=1; RUN_LIVE=0; shift ;;
+        -h|--help) echo "$TAG usage: verify.sh [--live | --offline]"; exit 0 ;;
+        *) echo "$TAG unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+[ "${LOOP_VERIFY_NO_LIVE:-0}" = "1" ] && RUN_LIVE=0
 
 step() { echo; echo "== $* =="; }
 ok()   { echo "  PASS: $*"; }
@@ -34,8 +70,9 @@ bad()  { echo "  FAIL: $*" >&2; FAILS=$((FAILS+1)); }
 
 command -v python3 >/dev/null 2>&1 || { echo "$TAG FATAL: python3 required" >&2; exit 4; }
 
+if [ "$RUN_OFFLINE" -eq 1 ]; then
 # ---- 1. every script self-test (the aggregate gate) -------------------------
-step "1/3 every script --self-test"
+step "1/4 every script --self-test"
 if bash "$SELF_DIR/loop-companion.sh" --self-test >/tmp/loop-verify-selftest.$$ 2>&1; then
     ok "all script self-tests"
 else
@@ -45,14 +82,14 @@ fi
 rm -f /tmp/loop-verify-selftest.$$ 2>/dev/null || true
 
 # ---- 2. four merge-gate scanners CLEAN over the tree ------------------------
-step "2/3 four merge-gate scanners CLEAN over the skill tree"
+step "2/4 four merge-gate scanners CLEAN over the skill tree"
 python3 "$SCRIPTS/guard-no-anthropic-runtime.py" >/dev/null 2>&1 && ok "guard-no-anthropic (0)" || bad "guard-no-anthropic"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-secrets.sh" --root "$SELF_DIR" --strict >/dev/null 2>&1 && ok "scan-no-secrets (0)" || bad "scan-no-secrets"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-client-identifiers (0)" || bad "scan-no-client-identifiers"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
+step "3/4 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -797,12 +834,79 @@ print("  all fixture drills PASS")
 sys.exit(0)
 PY
 [ $? -eq 0 ] || bad "fixture drills"
+fi   # RUN_OFFLINE
+
+# ---- 4. THE STANDING GATE: this box, right now (v0.6.5) ---------------------
+# Everything above runs against scratch fixtures and proves the CODE is right.
+# It cannot see that this box carries 7 duplicate cron jobs, or that nothing has
+# ticked since Tuesday. Two live facts, each with a NAMED negative:
+#
+#   D-CRON-ONE    EXACTLY ONE loop-tick job: enabled, ours, on */15 * * * * - the
+#                 verified correct post-state across all 25 boxes remediated on
+#                 2026-08-26. EXACTLY one, never ">= 1": a >= check is what let
+#                 2-12 duplicates per box read as healthy in the first place.
+#                 Instrument: `openclaw cron list --all` via loop_cron.py status.
+#                 --all is load-bearing: without it a DISABLED job is invisible.
+#   D-TICK-FRESH  the watchdog COMPLETED a tick within 45 minutes (three ticks).
+#                 Instrument: ledger meta last_tick_ts via loop_ledger liveness.
+#                 NOT MAX(findings.tick_ts) - that measures whether the box HAS a
+#                 loop, so a healthy box reads as a dead watchdog. It produced a
+#                 false "6 boxes unwatched" report on 2026-08-26; one of the six
+#                 had ticked 13 minutes earlier.
+#
+# UNDETERMINED IS ITS OWN VERDICT (exit 5), never folded into PASS. An
+# unreachable gateway, an unresolvable openclaw, a ledger that does not exist
+# because this is a source checkout - none of those are evidence that the box is
+# fine, and none are evidence that it is broken.
+if [ "$RUN_LIVE" -eq 1 ]; then
+    step "4/4 STANDING GATE (this box): D-CRON-ONE, D-TICK-FRESH"
+    _cron_out="$(python3 "$SCRIPTS/loop_cron.py" status --json 2>&1)"; _cron_rc=$?
+    case "$_cron_rc" in
+        0) ok "D-CRON-ONE exactly ONE loop-tick job: enabled, ours, on */15 * * * *"
+           echo "      $(printf '%s' "$_cron_out" | tail -1)" ;;
+        3) UNDET=$((UNDET+1))
+           echo "  UNDETERMINED: D-CRON-ONE could not READ this box's cron table." >&2
+           printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
+        *) bad "D-CRON-ONE this box does NOT carry exactly ONE enabled loop-tick job on */15 (exactly one - never >= 1, which is how 2-12 duplicates per box passed for healthy)"
+           printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
+    esac
+
+    _live_out="$(python3 "$SCRIPTS/loop_ledger.py" liveness --max-age-minutes 45 2>&1)"; _live_rc=$?
+    if [ "$_live_rc" -eq 0 ]; then
+        ok "D-TICK-FRESH the watchdog completed a tick within 45 minutes"
+        echo "      $(printf '%s' "$_live_out" | tail -1)"
+    elif printf '%s' "$_live_out" | /usr/bin/grep -q '"last_tick_ts": null'; then
+        # A pre-0.6.5 watchdog never wrote the key. Absence of the INSTRUMENT is
+        # not absence of the TICK - reporting it as failure would be the same
+        # false-negative this release exists to kill.
+        UNDET=$((UNDET+1))
+        echo "  UNDETERMINED: D-TICK-FRESH no last_tick_ts in this ledger (a watchdog" >&2
+        echo "      older than v0.6.5, or one that has never completed a tick). Not a" >&2
+        echo "      verdict on whether the box is watched - check D-CRON-ONE above." >&2
+    else
+        bad "D-TICK-FRESH no completed tick in the last 45 minutes (3 missed ticks)"
+        printf '%s\n' "$_live_out" | sed 's/^/      /' >&2
+    fi
+fi
 
 echo
-if [ "$FAILS" -eq 0 ]; then
-    echo "$TAG VERIFIED: every self-test, scanner, and drill passed (fully offline)."
-    exit 0
-else
+if [ "$FAILS" -ne 0 ]; then
     echo "$TAG DRIFT: $FAILS check(s) failed." >&2
     exit 4
 fi
+if [ "$UNDET" -ne 0 ]; then
+    echo "$TAG UNDETERMINED: $UNDET standing-gate check(s) could not be PROVEN." >&2
+    echo "$TAG   Everything that COULD be checked passed. This is not a pass." >&2
+    exit 5
+fi
+if [ "$RUN_LIVE" -eq 1 ] && [ "$RUN_OFFLINE" -eq 1 ]; then
+    echo "$TAG VERIFIED: every self-test, scanner and drill passed, AND this box"
+    echo "$TAG   carries exactly one loop-tick job with a fresh completed tick."
+elif [ "$RUN_LIVE" -eq 1 ]; then
+    echo "$TAG VERIFIED (standing gate only): exactly one loop-tick job, fresh tick."
+else
+    echo "$TAG VERIFIED (offline only): every self-test, scanner and drill passed."
+    echo "$TAG   THE STANDING GATE DID NOT RUN - this says nothing about whether any"
+    echo "$TAG   box is actually scheduled or ticking. Run verify.sh --live on the box."
+fi
+exit 0

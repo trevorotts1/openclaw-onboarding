@@ -67,8 +67,29 @@ import sys
 sys.path.insert(0, sys.argv[1])
 from loop_ledger import Ledger
 led = Ledger()
+from datetime import datetime, timezone
 print("LOOP PROTECTION STATUS")
 print("  armed: %s (DRY_RUN observe-only when false)" % led.is_armed())
+# LIVENESS FIRST-CLASS (v0.6.5). A status screen that lists findings without
+# saying when the watchdog last RAN invites the reader to treat "no findings" as
+# "healthy" - which is precisely the confusion that produced a false
+# "6 boxes unwatched" report from MAX(findings.tick_ts).
+_lt = led.get_meta("last_tick_ts")
+if not _lt:
+    print("  last tick: NEVER RECORDED (pre-0.6.5 watchdog, or no tick has "
+          "completed). This is NOT proof the box is unwatched - check the cron "
+          "job: python3 scripts/loop_cron.py status")
+else:
+    try:
+        _age = (datetime.now(timezone.utc)
+                - datetime.fromisoformat(str(_lt).replace("Z", "+00:00"))).total_seconds()
+        print("  last tick: %s (%.1f min ago, %s, findings=%s, errors=%s)"
+              % (_lt, _age / 60.0, led.get_meta("last_tick_mode") or "mode?",
+                 led.get_meta("last_tick_findings"), led.get_meta("last_tick_errors")))
+        if _age > 45 * 60:
+            print("  ^^ STALE: more than three 15-minute ticks missed")
+    except (ValueError, TypeError):
+        print("  last tick: UNPARSABLE stamp %r" % _lt)
 print("  tripped breakers: %d" % len(led.tripped_breakers()))
 print("  parked units: %s" % ", ".join(r["unit"] for r in led.parked_units()) or "(none)")
 print("  open findings: %d" % len(led.open_findings()))
