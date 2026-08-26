@@ -45,9 +45,25 @@ window (pid stable at t+15/35/65s).
 
 Escalations go ONLY via the n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`
 (`openclaw message send` to the group is silently dropped - bots cannot read other
-bots). If the webhook was down, the payload is written to
-`<state>/escalations/UNSENT-esc-*.json` and retried next tick. Check that dir; confirm
-`$RESCUE_RANGERS_WEBHOOK_URL` is set and reachable.
+bots). If the webhook was down, OR the intake REFUSED the payload, it is written to
+`<state>/escalations/UNSENT-esc-*.json` with the reason in `_unsent_reason`.
+
+Spills are replayed by `loop_escalate.py --drain`, which the watchdog runs at the end
+of every real tick. The drain is deliberately slow because the intake is rate-limited
+GLOBALLY across the fleet, not per box: spills are deduped by problem identity, at most
+`$RESCUE_RANGERS_DRAIN_PER_TICK` (default 2) DISTINCT problems are re-posted per tick,
+and the drain stops the moment one post fails. A file is cleared only on confirmed
+admission and is MOVED to `<state>/escalations/drained/`, never deleted.
+
+Check both dirs; read `_unsent_reason` first - it names the fault. Confirm
+`$RESCUE_RANGERS_WEBHOOK_URL` is set and reachable, and that
+`$RESCUE_RANGERS_WEBHOOK_SECRET` is present (the intake 403s without the header).
+`--drain --dry-run` reports what WOULD be replayed and posts nothing.
+
+NOTE (2026-08-26): before this date the line above claimed spills were "retried next
+tick". Nothing ever read the directory back - no replay code existed - so every spilled
+escalation was lost. If a box has a large backlog under `escalations/`, that is the
+cause, and the drain will work through it a few problems per tick.
 
 ## 6. False positives above the floor
 

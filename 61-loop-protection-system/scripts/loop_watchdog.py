@@ -94,7 +94,8 @@ def _dedup_ok(led, finding, window_hours):
 
 def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     """One deterministic tick over INJECTED evidence. Returns a summary dict:
-      {armed, findings, applied, planned, escalated, alerts, errors}
+      {armed, findings, applied, planned, escalated, escalation_unsent, alerts,
+       errors, drain}
     Zero model calls. With armed False (DRY_RUN) NOTHING is mutated outside OUR ledger
     (findings are still recorded - observing is the whole point of burn-in).
 
@@ -112,7 +113,8 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     window_hours = thresholds["alert"]["dedup_window_hours"]
 
     summary = {"armed": armed, "findings": 0, "applied": 0, "planned": 0,
-               "escalated": 0, "alerts": 0, "errors": 0, "by_class": {}}
+               "escalated": 0, "escalation_unsent": 0, "alerts": 0, "errors": 0,
+               "by_class": {}}
 
     findings = run_detectors(evidence, thresholds, signatures)
     for f in findings:
@@ -125,6 +127,18 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
                 "ERROR [loop_watchdog]: finding %s/%s failed to process (%s: %s); "
                 "CONTINUING to the next finding - one bad unit never kills the tick\n"
                 % (f.get("loop_class"), f.get("unit"), type(exc).__name__, exc))
+
+    # Drain the UNSENT spill queue REPAIRS.md always claimed was retried.
+    # Runs LAST, and only when delivering for real: an injected transport means
+    # --no-send or a self-test, and a stub returning True would archive the
+    # whole backlog without posting anything.
+    if escalate_transport is None:
+        try:
+            summary["drain"] = ESC.drain()
+        except Exception as exc:  # noqa: BLE001 - a drain never kills the tick
+            summary["drain"] = {"error": "%s: %s" % (type(exc).__name__, exc)}
+    else:
+        summary["drain"] = {"skipped": "injected transport"}
     return summary
 
 
@@ -198,9 +212,20 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
             action_needed="operator decision / approve fix",
             finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
             revert_cmd=kc.get("revert_cmd"))
-        ESC.send(payload, transport=escalate_transport)
-        led.set_finding_state(fid, "escalated")
-        summary["escalated"] += 1
+        res = ESC.send(payload, transport=escalate_transport)
+        if res.get("sent"):
+            led.set_finding_state(fid, "escalated")
+            summary["escalated"] += 1
+        else:
+            # An escalation the intake never admitted is NOT escalated. Marking
+            # it so is how fleet-wide loss stayed invisible: the finding was
+            # closed in the ledger, the payload sat in UNSENT, and nobody was
+            # ever told. Left OPEN so the next tick re-escalates it.
+            summary["escalation_unsent"] += 1
+            sys.stderr.write(
+                "ERROR [loop_watchdog]: escalation for finding %s NOT admitted "
+                "(%s); payload spilled to %s; left open for retry\n"
+                % (fid, res.get("error"), res.get("unsent_path")))
 
     # operator alert (deduped). P1 bypasses batching but not dedup.
     if f["severity"] in ("P1", "P2") and _dedup_ok(led, f, window_hours):
