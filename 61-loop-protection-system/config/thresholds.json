@@ -83,7 +83,9 @@
     "p1_bypasses_batch": true,
     "escalation": {
       "p1_unacked_minutes": 30,
+      "dedup_window_hours": 12,
       "channel": "rescue-rangers",
+      "_dedup_source": "RR-ESC-GATE-20260826. One Rescue Rangers escalation per finding dedup_key per 12h, DELIBERATELY NOT the 6h alert window above. An operator alert is a local note in the box's own ledger; an escalation is a POST to a GLOBALLY rate-limited shared intake (12/60s across the whole fleet) that pages a human rescue team, so it must be strictly quieter than the alert, never merely as quiet. 12h = the rescue team sees each DISTINCT unresolved problem at most once per work shift, twice a day: often enough that an unresolved problem cannot go dark, rare enough that a problem already in someone's hands cannot page them again. Measured 2026-08-26 on one live box: a SINGLE dedup_key produced 992 escalations (~10.3 days of 15-minute ticks) and the findings table held 4,084 rows across 12 distinct keys; at 12h that key posts 21 times instead of 992, and the whole box at most 24 times a day against a measured ~1,150. Sits BELOW the 24h backoff cap so the dedup and the refusal backoff compose instead of one making the other unreachable. Dedup is PER KEY and the digest is stamped ONLY on an ADMITTED delivery - a genuinely NEW problem escalates immediately even while another key is in backoff, and a refused escalation never silences its own retry. 0 disables the dedup and is honoured as zero (fault 5 of 0.6.2: an explicit 0 that returns the default is the opposite of what an operator reached for).",
       "_locked": "Section 7: an unacknowledged P1 goes to Rescue Rangers after 30 minutes; a dead-man P1 escalates immediately. Thresholds shared with Skill 60."
     }
   }

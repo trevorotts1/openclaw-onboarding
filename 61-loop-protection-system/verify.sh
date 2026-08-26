@@ -9,7 +9,8 @@
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN,
-# D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
+# D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP,
+# D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT,
 # D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
@@ -51,7 +52,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -62,6 +63,8 @@ import loop_breaker as BR
 import loop_backoff as BO
 import loop_killcards as KC
 import loop_escalate as ESC
+import loop_watchdog as W
+from datetime import datetime, timedelta, timezone
 from loop_ledger import Ledger
 os.environ["LOOP_ALLOW_ROOT"] = "1"  # allow config-touching kill cards in a CI/root sandbox
 
@@ -193,6 +196,192 @@ with tempfile.TemporaryDirectory() as td:
     check("D-ESCALATE offline UNSENT fallback (no external API), no secret in payload",
           unsent_ok and "LP-B3" in body and "sk-" not in body)
     os.environ.pop("LOOP_STATE_DIR", None)
+
+# --------------------------------------------------------------------------- #
+# D-ESC-DRIFT / D-ESC-DEDUP / D-ESC-BACKOFF / D-ESC-NEWKEY / D-ESC-TICK
+# RR-ESC-GATE-20260826. The Rescue Rangers escalation path had NO dedup and NO
+# backoff while the operator alert beside it had both. Measured on ONE live box:
+# a single dedup_key produced 992 escalations and the findings table held 4,084
+# rows across 12 distinct keys, against an intake whose rate limit is GLOBAL
+# across the fleet - so one box's runaway key sheds OTHER clients' escalations.
+#
+# Every drill below is FAILABLE IN BOTH DIRECTIONS: each proves the gate HOLDS
+# when it should AND RELEASES when it should. A suppression drill that cannot
+# demonstrate the release is exactly how a noisy system is turned into a silent
+# one with nobody noticing, and silent loss is the worse failure of the two.
+def _esc_th(window_hours):
+    """thresholds with ONLY alert.escalation.dedup_window_hours overridden."""
+    t = json.loads(json.dumps(th))
+    t["alert"]["escalation"]["dedup_window_hours"] = window_hours
+    return t
+
+def _backdate_digest(led, key, hours):
+    ts = (datetime.now(timezone.utc) - timedelta(hours=hours)) \
+        .replace(microsecond=0).isoformat()
+    led.conn.execute("UPDATE digests SET sent_ts=? WHERE dedup_key=?",
+                     (ts, W.ESCALATION_DIGEST_PREFIX + key))
+    led.conn.commit()
+
+F_A = {"loop_class": "LP-A4", "severity": "P1", "unit": "unit-a",
+       "dedup_key": "LP-A4|unit-a"}
+F_B = {"loop_class": "LP-A4", "severity": "P1", "unit": "unit-b",
+       "dedup_key": "LP-A4|unit-b"}
+
+# D-ESC-DRIFT: the shipped config value and the code fallback must AGREE (so
+# deleting the config key cannot silently change behaviour), and the escalation
+# window must stay DIFFERENT from the alert window. Both numbers are LITERALS
+# here, never read from the module under test. The second half is the
+# anti-vacuity guard: if someone "tidies" the escalation window to the alert's
+# 6h, the honoured-value drills below silently lose their power to discriminate
+# a config read from a hardcoded constant, and a green board would prove nothing.
+check("D-ESC-DRIFT shipped escalation window == code fallback (12h) and stays "
+      "DISTINCT from the 6h alert window",
+      th["alert"]["escalation"]["dedup_window_hours"] == 12
+      and W.DEFAULT_ESCALATION_DEDUP_WINDOW_HOURS == 12
+      and th["alert"]["dedup_window_hours"] == 6)
+
+# D-ESC-DEDUP: holds inside the window, RELEASES outside it, and honours an
+# override that is neither the shipped 12h nor the alert 6h.
+with tempfile.TemporaryDirectory() as td:
+    led = Ledger(os.path.join(td, "loop-protection"))
+    g0 = W._escalation_gate(led, F_A, th)             # nothing recorded yet -> clear
+    W._escalation_admitted(led, "LP-A4|unit-a")
+    g1 = W._escalation_gate(led, F_A, th)             # digest is NOW      -> HELD
+    _backdate_digest(led, "LP-A4|unit-a", 11)
+    g2 = W._escalation_gate(led, F_A, th)             # 11h < 12h          -> HELD
+    _backdate_digest(led, "LP-A4|unit-a", 13)
+    g3 = W._escalation_gate(led, F_A, th)             # 13h > 12h          -> RELEASED
+    _backdate_digest(led, "LP-A4|unit-a", 4)
+    g4 = W._escalation_gate(led, F_A, _esc_th(3))     # 4h > 3h            -> RELEASED
+    g5 = W._escalation_gate(led, F_A, _esc_th(5))     # 4h < 5h            -> HELD
+    g6 = W._escalation_gate(led, F_A, _esc_th(0))     # 0 = no dedup       -> RELEASED
+    led.close()
+    # g4/g5 are the discriminators: a hardcoded 12 fails g4, a read of the
+    # alert's 6 fails g4, and ignoring the window entirely fails g5.
+    check("D-ESC-DEDUP holds inside the window and RELEASES outside it; a 3h/5h "
+          "override beats both the shipped 12h and the alert 6h; an explicit 0 "
+          "disables the dedup rather than falling back to the default",
+          g0["ok"] and g0["reason"] == "clear"
+          and (not g1["ok"]) and g1["reason"] == "dedup" and g1["window_hours"] == 12.0
+          and (not g2["ok"]) and g2["reason"] == "dedup"
+          and g3["ok"] and g3["reason"] == "clear"
+          and g4["ok"]
+          and (not g5["ok"]) and g5["reason"] == "dedup"
+          and g6["ok"] and g6["window_hours"] == 0.0)
+
+# D-ESC-BACKOFF: a refusal advances the EXISTING loop_backoff ladder on that key
+# and writes NO digest, so the refusal can never silence its own retry.
+with tempfile.TemporaryDirectory() as td:
+    led = Ledger(os.path.join(td, "loop-protection"))
+    t0 = datetime.now(timezone.utc)
+    r1 = W._escalation_refused(led, "LP-A4|unit-a", th)
+    d1 = (C.parse_iso8601(r1["next_at"]) - t0).total_seconds()
+    gb1 = W._escalation_gate(led, F_A, th)
+    no_digest = led.recent_digest(W.ESCALATION_DIGEST_PREFIX + "LP-A4|unit-a", 24) is None
+    r2 = W._escalation_refused(led, "LP-A4|unit-a", th)
+    # RELEASE direction: once next_at is in the PAST the key retries. A backoff
+    # that never expires is silence wearing a backoff's name.
+    led.upsert_backoff("escalate:LP-A4|unit-a", attempt=2, base_seconds=7200,
+                       cap_seconds=86400,
+                       next_at=(t0 - timedelta(hours=1)).replace(microsecond=0).isoformat())
+    gb2 = W._escalation_gate(led, F_A, th)
+    W._escalation_admitted(led, "LP-A4|unit-a")   # an admission is the artifact
+    cleared = int(led.get_backoff("escalate:LP-A4|unit-a")["attempt"])
+    led.close()
+    check("D-ESC-BACKOFF a refusal schedules ~2h then ~4h (jittered, NEVER an "
+          "immediate identical retry), writes NO digest, RELEASES once next_at "
+          "passes, and an admitted delivery resets the ladder to 0",
+          r1["attempt"] == 1 and 6480 <= d1 <= 7920
+          and (not gb1["ok"]) and gb1["reason"] == "backoff"
+          and no_digest
+          and r2["attempt"] == 2 and 12960 <= r2["interval_seconds"] <= 15840
+          and gb2["ok"] and gb2["reason"] == "clear"
+          and cleared == 0)
+
+# D-ESC-NEWKEY: THE ONE THAT MATTERS MOST. A genuinely new problem must escalate
+# immediately even while another key is both deduped and pinned at the 24h cap.
+with tempfile.TemporaryDirectory() as td:
+    led = Ledger(os.path.join(td, "loop-protection"))
+    W._escalation_admitted(led, "LP-A4|unit-a")
+    for _ in range(6):
+        rN = W._escalation_refused(led, "LP-A4|unit-a", th)
+    ga = W._escalation_gate(led, F_A, th)
+    gbnew = W._escalation_gate(led, F_B, th)
+    led.close()
+    check("D-ESC-NEWKEY a NEW dedup_key escalates IMMEDIATELY while another key "
+          "is deduped AND pinned at the 24h backoff cap - suppression is per "
+          "key, never per class, per box or global",
+          (not ga["ok"]) and ga["attempt"] == 6
+          and rN["attempt"] == 6 and 77760 <= rN["interval_seconds"] <= 95040
+          and gbnew["ok"] and gbnew["reason"] == "clear" and gbnew["attempt"] == 0)
+
+# D-ESC-TICK: REACHABILITY BY EXECUTION, not by grep. The gate is exercised
+# through the WHOLE tick() pipeline with real detectors and a real ledger. The
+# second tick injects a transport that RECORDS THE FACT IT WAS CALLED, so a
+# leaking gate cannot hide: if the deduped key reaches ESC.send, the recorder
+# fires and the assertion names it.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+    led = Ledger()
+    _b = {"units": [], "windows": [], "runs": [], "wedge": {}}
+    _c1 = [{"name": "esc-drill-1", "declared_schedule": "@daily",
+            "actual_fires_per_day": 300}]
+    _c2 = _c1 + [{"name": "esc-drill-2", "declared_schedule": "@daily",
+                  "actual_fires_per_day": 300}]
+    # The transport records the finding_id it was handed. The escalation PROSE
+    # names no unit ("cron fired 300/day vs declared bound 1/day"), so WHICH key
+    # got through is resolved from the ledger by id - measured, never inferred
+    # from a string that happens to contain the name.
+    _seen = []
+    def _admit(url, body):
+        _seen.append(json.loads(body.decode("utf-8"))["machine"]["finding_id"])
+        return True
+    def _record_and_refuse(url, body):
+        _seen.append(json.loads(body.decode("utf-8"))["machine"]["finding_id"])
+        raise RuntimeError("intake HTTP 429 (drill): refused")
+    t1 = W.tick(dict(_b, crons=_c1), led, armed=True,
+                escalate_transport=_admit, box="box-example")
+    n1 = len(_seen)
+    t2 = W.tick(dict(_b, crons=_c1), led, armed=True,
+                escalate_transport=_record_and_refuse, box="box-example")
+    n2 = len(_seen)
+    t3 = W.tick(dict(_b, crons=_c2), led, armed=True,
+                escalate_transport=_record_and_refuse, box="box-example")
+    n3 = len(_seen)
+    def _key_of(fid):
+        r = led.conn.execute("SELECT dedup_key FROM findings WHERE finding_id=?",
+                             (fid,)).fetchone()
+        return r["dedup_key"] if r else None
+    reached_t3 = [_key_of(x) for x in _seen[n2:]]
+    states_t3 = {_key_of(r["finding_id"]): r["state"] for r in led.all_findings()}
+    led.close()
+    os.environ.pop("LOOP_STATE_DIR", None)
+    print("    D-ESC-TICK tick1 (admitted)  : %s" % json.dumps(
+        {k: t1[k] for k in ("escalated", "escalation_unsent", "escalation_suppressed",
+                            "escalation_suppressed_by")}, sort_keys=True))
+    print("    D-ESC-TICK tick2 (same key)  : %s" % json.dumps(
+        {k: t2[k] for k in ("escalated", "escalation_unsent", "escalation_suppressed",
+                            "escalation_suppressed_by")}, sort_keys=True))
+    print("    D-ESC-TICK tick3 (+ NEW key) : %s" % json.dumps(
+        {k: t3[k] for k in ("escalated", "escalation_unsent", "escalation_suppressed",
+                            "escalation_suppressed_by")}, sort_keys=True))
+    print("    D-ESC-TICK transport calls   : tick1=%d tick2=%d tick3=%d" %
+          (n1, n2 - n1, n3 - n2))
+    print("    D-ESC-TICK keys reaching the transport on tick3: %s" % reached_t3)
+    check("D-ESC-TICK through the real tick(): 1st escalates, 2nd is SUPPRESSED "
+          "and never reaches the transport, 3rd delivers the NEW key on the very "
+          "tick the old key stays suppressed; a suppressed finding is never "
+          "marked escalated and no tick raises",
+          t1["escalated"] == 1 and t1["escalation_suppressed"] == 0 and t1["errors"] == 0
+          and t2["escalated"] == 0 and t2["escalation_unsent"] == 0
+          and t2["escalation_suppressed"] == 1
+          and t2["escalation_suppressed_by"] == {"dedup": 1}
+          and n2 == n1 and t2["errors"] == 0
+          and t3["escalation_suppressed"] == 1 and t3["escalation_unsent"] == 1
+          and t3["escalated"] == 0 and t3["errors"] == 0
+          and reached_t3 == ["LP-A4|esc-drill-2"]
+          and states_t3 == {"LP-A4|esc-drill-1": "escalated",
+                            "LP-A4|esc-drill-2": "open"})
 
 # D-DRYRUN: armed=false -> a Tier-1 kill card PLANS and the target file is byte-identical.
 with tempfile.TemporaryDirectory() as td:

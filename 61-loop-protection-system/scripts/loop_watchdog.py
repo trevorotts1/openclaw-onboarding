@@ -61,6 +61,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+import loop_backoff as BO  # noqa: E402
 import loop_common as C  # noqa: E402
 import loop_detectors as D  # noqa: E402
 import loop_killcards as KC  # noqa: E402
@@ -92,10 +93,158 @@ def _dedup_ok(led, finding, window_hours):
     return True
 
 
+
+# --------------------------------------------------------------------------- #
+# THE ESCALATION GATE (RR-ESC-GATE-20260826)
+# --------------------------------------------------------------------------- #
+# The Rescue Rangers escalation path had NO dedup and NO backoff - while the
+# operator ALERT sitting directly below it in _handle_finding had both. Measured
+# on ONE live box: a single dedup_key produced 992 escalations, and the findings
+# table held 4,084 rows across 12 distinct dedup_keys. The mechanism is not
+# exotic. RR-SENDER-FIX-20260826 correctly leaves a finding OPEN when the intake
+# never admits its escalation, so the byte-identical escalation is rebuilt and
+# re-posted on the NEXT 15-minute tick, and the next, forever. The intake's rate
+# limit is GLOBAL (12/60s) across the whole fleet, so one box's runaway key
+# sheds OTHER clients' live escalations; one box held 5 spill files carrying the
+# same finding.
+#
+# Two independent controls now stand in front of ESC.send(), BOTH keyed on the
+# finding's OWN dedup_key:
+#
+#   DEDUP    one escalation per key per window, and the digest is written ONLY
+#            after the intake ADMITS the payload. A refusal must NEVER write a
+#            digest: an attempt that silences its own retry is silent loss,
+#            which is strictly worse than the noise this fixes.
+#   BACKOFF  a refusal (HTTP 429, HTTP 502, read timeout) advances that key
+#            through the EXISTING loop_backoff module and the backoff_state
+#            table - 2h/4h/8h/16h/24h(cap), jittered. A refusal therefore can
+#            never produce an immediate identical retry. An ADMITTED delivery
+#            CLEARS the key's backoff: an admission is loop_backoff's "real
+#            artifact of progress", so the next refusal restarts the ladder at
+#            2h instead of resuming at the cap.
+#
+# BOTH are PER KEY. A genuinely NEW problem carries a NEW dedup_key and
+# escalates IMMEDIATELY, on the same tick, even while another key sits in a 24h
+# backoff. Nothing here is global, per-box or per-class, precisely so that
+# turning a noisy system into a SILENT one is structurally impossible - that
+# failure would be far worse than the one being repaired.
+#
+# The digest key is NAMESPACED. Ledger.recent_digest() matches on dedup_key
+# ALONE and ignores `kind`, so an un-namespaced escalation digest would silence
+# the operator alert for the same finding, and vice versa: two channels, one
+# mute button. loop_killcards' resend cooldown namespaces for the same reason.
+ESCALATION_DIGEST_KIND = "escalation"
+ESCALATION_DIGEST_PREFIX = "escalation|"
+ESCALATION_BACKOFF_PREFIX = "escalate:"
+
+# Fallback window when config/thresholds.json carries no
+# alert.escalation.dedup_window_hours.
+#
+# 12h, DELIBERATELY NOT the 6h alert window. An operator alert is a local note
+# in this box's own ledger; an escalation is a POST to a globally rate-limited
+# shared intake that pages a human rescue team, so it must be strictly quieter
+# than the alert, never merely as quiet. 12h means the rescue team sees each
+# DISTINCT unresolved problem at most once per work shift - twice a day: often
+# enough that an unresolved problem cannot go dark, rare enough that a problem
+# already in someone's hands cannot page them again. Against the measured
+# incident: that one key persisted ~10.3 days (992 ticks x 15 min); at 12h it
+# posts 21 times instead of 992, and the whole box's 12 keys post at most 24
+# times a day against a measured ~1,150. It also sits BELOW the 24h backoff cap,
+# so the two controls compose instead of one making the other unreachable.
+DEFAULT_ESCALATION_DEDUP_WINDOW_HOURS = 12
+
+
+def _escalation_key(finding):
+    """The identity of the PROBLEM, not of the attempt. Same derivation as
+    _dedup_ok's, so the alert channel and the escalation channel cannot disagree
+    about what "the same problem" means. Every detector finding already carries a
+    dedup_key (loop_detectors._finding always sets one); the fallback is kept
+    because _handle_finding also accepts injected findings."""
+    return finding.get("dedup_key") or (
+        "%s|%s" % (finding["loop_class"], finding.get("unit")))
+
+
+def _escalation_window_hours(thresholds):
+    """alert.escalation.dedup_window_hours, else the module default.
+
+    A configured 0 means "no escalation dedup" and is HONOURED rather than
+    replaced by the default. `value or default` swallowing an explicit zero is
+    fault 5 of 0.6.2, where setting a rate limiter to 0 returned the DEFAULT
+    rate - the one thing an operator reaches for under pressure did the
+    opposite. Presence, never truthiness."""
+    cfg = (thresholds.get("alert") or {}).get("escalation") or {}
+    raw = cfg.get("dedup_window_hours")
+    if raw is None:
+        return float(DEFAULT_ESCALATION_DEDUP_WINDOW_HOURS)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(DEFAULT_ESCALATION_DEDUP_WINDOW_HOURS)
+
+
+def _escalation_gate(led, finding, thresholds, now=None):
+    """May THIS finding post to Rescue Rangers on THIS tick?
+
+    READ-ONLY, unlike _dedup_ok which records its digest as it checks. The
+    escalation digest is written only once the intake has ADMITTED the payload
+    (see _escalation_admitted), because a digest stamped at attempt time would
+    suppress the retry of an escalation that was never delivered.
+
+    Returns {ok, reason, key, window_hours, attempt, next_at}; `reason` is
+    'clear', 'backoff' or 'dedup'. Backoff is tested FIRST: a key in backoff is
+    the pathological case - the intake actively refused it - and naming that is
+    more use to an operator than naming the dedup that would also have held it.
+    """
+    key = _escalation_key(finding)
+    now = now or datetime.now(timezone.utc)
+    window = _escalation_window_hours(thresholds)
+    bo = led.get_backoff(ESCALATION_BACKOFF_PREFIX + key) or {}
+    attempt = int(bo.get("attempt") or 0)
+    next_at = bo.get("next_at")
+    # C.parse_iso8601 always returns an AWARE UTC datetime or None, so `nxt > now`
+    # can never raise a naive/aware TypeError. An unreadable next_at yields None
+    # and the gate opens: this path fails OPEN, toward delivering. That direction
+    # is deliberate - the worse failure of the two is silence, so a corrupt
+    # backoff row must cost an extra post, never a lost escalation.
+    nxt = C.parse_iso8601(next_at) if next_at else None
+    out = {"key": key, "window_hours": window, "attempt": attempt,
+           "next_at": next_at}
+    if nxt is not None and nxt > now:
+        out.update(ok=False, reason="backoff")
+        return out
+    # window 0 disables the dedup outright. The explicit guard is not redundant:
+    # recent_digest()'s cutoff at window 0 is `now`, and a digest stamped in the
+    # SAME second satisfies `ts >= cutoff`, so a 0 window would still suppress
+    # once. 0 must mean zero.
+    if window > 0 and led.recent_digest(ESCALATION_DIGEST_PREFIX + key, window):
+        out.update(ok=False, reason="dedup")
+        return out
+    out.update(ok=True, reason="clear")
+    return out
+
+
+def _escalation_admitted(led, key):
+    """The intake ADMITTED this escalation. Stamp the dedup digest (this is the
+    ONLY place it is written) and clear the key's backoff ladder."""
+    led.record_digest(ESCALATION_DIGEST_KIND, ESCALATION_DIGEST_PREFIX + key,
+                      payload="admitted")
+    BO.clear(ESCALATION_BACKOFF_PREFIX + key, led)
+
+
+def _escalation_refused(led, key, thresholds):
+    """The intake did NOT admit it. NO digest is written - that would silence the
+    retry of an escalation nobody received. The key's backoff advances one rung
+    instead (2h/4h/8h/16h/24h cap, jittered so 35 boxes sharing a */15 cron do
+    not re-post in the same instant). Returns loop_backoff's dict
+    {job, attempt, interval_seconds, next_at, escalate}."""
+    return BO.register_failure(ESCALATION_BACKOFF_PREFIX + key, thresholds, led)
+
+
 def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     """One deterministic tick over INJECTED evidence. Returns a summary dict:
-      {armed, findings, applied, planned, escalated, escalation_unsent, alerts,
-       errors, drain}
+      {armed, findings, applied, planned, escalated, escalation_unsent,
+       escalation_suppressed, escalation_suppressed_by, escalation_channel_degraded,
+       alerts, errors, drain}
     Zero model calls. With armed False (DRY_RUN) NOTHING is mutated outside OUR ledger
     (findings are still recorded - observing is the whole point of burn-in).
 
@@ -113,7 +262,14 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
     window_hours = thresholds["alert"]["dedup_window_hours"]
 
     summary = {"armed": armed, "findings": 0, "applied": 0, "planned": 0,
-               "escalated": 0, "escalation_unsent": 0, "alerts": 0, "errors": 0,
+               "escalated": 0, "escalation_unsent": 0,
+               # RR-ESC-GATE-20260826. `escalated` counts ADMITTED deliveries,
+               # `escalation_unsent` counts attempts the intake refused, and
+               # `escalation_suppressed` counts attempts the gate never made -
+               # three distinct outcomes that used to be one number.
+               "escalation_suppressed": 0, "escalation_suppressed_by": {},
+               "escalation_channel_degraded": 0,
+               "alerts": 0, "errors": 0,
                "by_class": {}}
 
     findings = run_detectors(evidence, thresholds, signatures)
@@ -222,29 +378,70 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
     else:
         summary["planned"] += 1
 
-    # escalate Tier-3 and any healer-breaker escalation via Rescue Rangers
+    # Escalate Tier-3 and any healer-breaker escalation via Rescue Rangers -
+    # THROUGH the per-key gate (RR-ESC-GATE-20260826). Nothing else in this
+    # function changed: the gate decides only WHETHER this key may post now.
     if result.get("escalate"):
-        payload = ESC.build_payload(
-            box=box, loop_class=f["loop_class"], finding=f.get("detail"),
-            evidence_path=f.get("evidence_path"),
-            proposed_fix=kc.get("what"), why=result.get("detail"),
-            action_needed="operator decision / approve fix",
-            finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
-            revert_cmd=kc.get("revert_cmd"))
-        res = ESC.send(payload, transport=escalate_transport)
-        if res.get("sent"):
-            led.set_finding_state(fid, "escalated")
-            summary["escalated"] += 1
-        else:
-            # An escalation the intake never admitted is NOT escalated. Marking
-            # it so is how fleet-wide loss stayed invisible: the finding was
-            # closed in the ledger, the payload sat in UNSENT, and nobody was
-            # ever told. Left OPEN so the next tick re-escalates it.
-            summary["escalation_unsent"] += 1
+        gate = _escalation_gate(led, f, thresholds)
+        if not gate["ok"]:
+            # SUPPRESSED. No payload is built, ESC.send is never reached, and
+            # therefore no spill file is written - 5 identical spills for one
+            # finding on one box is what the ungated path cost. The finding is
+            # left OPEN and is NOT marked 'escalated': RR-SENDER-FIX-20260826's
+            # rule holds unchanged, only an ADMITTED escalation is an
+            # escalation, and a suppressed one was never even attempted. The
+            # first eligible tick after the window or the backoff expires
+            # escalates it.
+            summary["escalation_suppressed"] += 1
+            summary["escalation_suppressed_by"][gate["reason"]] = \
+                summary["escalation_suppressed_by"].get(gate["reason"], 0) + 1
             sys.stderr.write(
-                "ERROR [loop_watchdog]: escalation for finding %s NOT admitted "
-                "(%s); payload spilled to %s; left open for retry\n"
-                % (fid, res.get("error"), res.get("unsent_path")))
+                "INFO [loop_watchdog]: escalation for finding %s SUPPRESSED "
+                "(%s; key=%s window=%sh attempt=%s next_at=%s); finding left "
+                "OPEN, not escalated\n"
+                % (fid, gate["reason"], gate["key"], gate["window_hours"],
+                   gate["attempt"], gate["next_at"]))
+        else:
+            payload = ESC.build_payload(
+                box=box, loop_class=f["loop_class"], finding=f.get("detail"),
+                evidence_path=f.get("evidence_path"),
+                proposed_fix=kc.get("what"), why=result.get("detail"),
+                action_needed="operator decision / approve fix",
+                finding_id=fid, killcard_cmd=kc.get("killcard_cmd"),
+                revert_cmd=kc.get("revert_cmd"))
+            res = ESC.send(payload, transport=escalate_transport)
+            if res.get("sent"):
+                _escalation_admitted(led, gate["key"])
+                led.set_finding_state(fid, "escalated")
+                summary["escalated"] += 1
+            else:
+                # An escalation the intake never admitted is NOT escalated.
+                # Marking it so is how fleet-wide loss stayed invisible: the
+                # finding was closed in the ledger, the payload sat in UNSENT,
+                # and nobody was ever told. Left OPEN so a LATER tick
+                # re-escalates it - later, never immediately: the identical
+                # payload now backs off 2h/4h/8h/16h/24h(cap) on this key.
+                summary["escalation_unsent"] += 1
+                bo = _escalation_refused(led, gate["key"], thresholds)
+                sys.stderr.write(
+                    "ERROR [loop_watchdog]: escalation for finding %s NOT "
+                    "admitted (%s); payload spilled to %s; left open; key=%s "
+                    "backs off to %s (attempt %d)\n"
+                    % (fid, res.get("error"), res.get("unsent_path"),
+                       gate["key"], bo["next_at"], bo["attempt"]))
+                if bo.get("escalate"):
+                    # loop_backoff's retry breaker trips after K consecutive
+                    # failures and normally means "hand it up to Rescue
+                    # Rangers" - which is the very channel that is failing. It
+                    # is RECORDED and logged, never converted into another post
+                    # to the thing that just refused K times in a row.
+                    summary["escalation_channel_degraded"] += 1
+                    sys.stderr.write(
+                        "ERROR [loop_watchdog]: Rescue Rangers refused key=%s "
+                        "%d consecutive times - the ESCALATION CHANNEL itself "
+                        "is degraded on this box. Not re-escalated (that is "
+                        "the same channel). Operator action required.\n"
+                        % (gate["key"], bo["attempt"]))
 
     # operator alert (deduped). P1 bypasses batching but not dedup.
     if f["severity"] in ("P1", "P2") and _dedup_ok(led, f, window_hours):
@@ -1354,7 +1551,8 @@ def collect_evidence(led=None):
 
 def self_test():
     import tempfile
-    print("[loop_watchdog] self-test: DRY_RUN records+plans-nothing, armed-parks, escalate offline")
+    print("[loop_watchdog] self-test: DRY_RUN records+plans-nothing, armed-parks, "
+          "escalate offline, escalation gate (dedup + refusal backoff)")
 
     storm = {"units": [{"name": "cc-app", "delta": 12, "day_restarts": 900}],
              "windows": [], "runs": [], "crons": [], "wedge": {}}
@@ -1429,6 +1627,62 @@ def self_test():
 
         led.close()
         os.environ.pop("LOOP_STATE_DIR", None)
+
+    # ---- THE ESCALATION GATE (RR-ESC-GATE-20260826) --------------------------
+    # This path runs on every tick of every box. Ungated it produced 992
+    # escalations from ONE dedup_key on a live box, against an intake whose rate
+    # limit is GLOBAL across the fleet - so one box's runaway key sheds OTHER
+    # clients' live escalations. Asserted in BOTH directions: the repeat must be
+    # HELD, and a NEW key must be delivered on the very tick the old one is
+    # still held. Proving only the holding direction is how a noisy system gets
+    # quietly turned into a silent one, which is the worse failure by far.
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+        led = Ledger()
+        _b = {"units": [], "windows": [], "runs": [], "wedge": {}}
+        _cron = lambda n: {"name": n, "declared_schedule": "@daily",
+                           "actual_fires_per_day": 300}
+        _hits = []
+
+        def _tx_ok(url, body):
+            _hits.append(json.loads(body.decode("utf-8"))["machine"]["finding_id"])
+            return True
+
+        def _tx_refuse(url, body):
+            _hits.append("refused")
+            raise RuntimeError("intake HTTP 429 (self-test): refused")
+
+        e1 = tick(dict(_b, crons=[_cron("esc-1")]), led, armed=True,
+                  escalate_transport=_tx_ok, box="box-example")
+        assert e1["escalated"] == 1 and e1["escalation_suppressed"] == 0, e1
+        # the SAME key on the next tick is held, and never reaches the transport
+        e2 = tick(dict(_b, crons=[_cron("esc-1")]), led, armed=True,
+                  escalate_transport=_tx_ok, box="box-example")
+        assert e2["escalated"] == 0 and e2["escalation_unsent"] == 0, e2
+        assert e2["escalation_suppressed"] == 1, e2
+        assert e2["escalation_suppressed_by"] == {"dedup": 1}, e2
+        assert len(_hits) == 1, "a deduped key reached the transport"
+        # a NEW key is delivered on the SAME tick the old one stays held
+        e3 = tick(dict(_b, crons=[_cron("esc-1"), _cron("esc-2")]), led, armed=True,
+                  escalate_transport=_tx_ok, box="box-example")
+        assert e3["escalated"] == 1 and e3["escalation_suppressed"] == 1, e3
+        assert len(_hits) == 2, "a NEW dedup_key was suppressed - that is silent loss"
+        # a REFUSAL backs the key off instead of re-posting it next tick, and
+        # writes NO digest: an attempt that silences its own retry is silent loss.
+        e4 = tick(dict(_b, crons=[_cron("esc-3")]), led, armed=True,
+                  escalate_transport=_tx_refuse, box="box-example")
+        assert e4["escalation_unsent"] == 1 and e4["escalated"] == 0, e4
+        _bo = led.get_backoff(ESCALATION_BACKOFF_PREFIX + "LP-A4|esc-3")
+        assert _bo and _bo["attempt"] == 1 and _bo["next_at"], _bo
+        assert led.recent_digest(ESCALATION_DIGEST_PREFIX + "LP-A4|esc-3", 24) is None
+        # and the refused finding is left OPEN, never marked escalated
+        _open = {r["dedup_key"] for r in led.open_findings()}
+        assert "LP-A4|esc-3" in _open, _open
+        led.close()
+        os.environ.pop("LOOP_STATE_DIR", None)
+    print("  escalation-gate case: PASS (a repeat is HELD and never reaches the "
+          "transport; a NEW dedup_key is delivered on that same tick; a refusal "
+          "backs off, writes no digest, and leaves the finding open)")
 
     # ---- the collect layer: a synthetic loop trajectory yields REAL evidence --
     # Regression case for the Star incident: the old collect_evidence() STUB
