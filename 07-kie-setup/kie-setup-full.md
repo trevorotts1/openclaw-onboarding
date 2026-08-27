@@ -4348,12 +4348,12 @@ Rate limits
 Not specified for createTask in this doc
 
 
-4B) Nano Banana Edit
+4B) Nano Banana (Image-to-Image / Edit)
 POST https://api.kie.ai/api/v1/jobs/createTask
 
 Model
 
-google/nano-banana-edit
+google/nano-banana
 
 Input
 
@@ -4377,7 +4377,7 @@ cURL
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "google/nano-banana-edit",
+    "model": "google/nano-banana",
     "input": {
       "prompt": "Turn this photo into a character figure...",
       "image_urls": [

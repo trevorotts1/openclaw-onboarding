@@ -1,0 +1,50 @@
+[
+  {
+    "provider": "agnes",
+    "display_name": "Agnes Image 2.1 Flash",
+    "canonical_model_id": "agnes-image-2.1-flash",
+    "aliases": [],
+    "modality": "image",
+    "tasks": ["t2i", "i2i", "multi-image"],
+    "api_family": "agnes-dedicated",
+    "create_endpoint": "https://apihub.agnes-ai.com/v1/images/generations",
+    "query_endpoint": null,
+    "auth_env": "AGNES_AI_API_KEY",
+    "vendor_hard_cap_chars": null,
+    "vendor_hard_cap_tokens": null,
+    "owner_observed_cap_chars": null,
+    "cap_status": "NOT_PUBLISHED",
+    "house_prompt_min_chars": 5000,
+    "house_prompt_target_chars": 9000,
+    "house_prompt_max_chars": 19000,
+    "house_band_status": "PENDING_ACCEPTANCE_TEST",
+    "reference_images_max": null,
+    "reference_image_max_mb": null,
+    "size_tiers": ["1K", "2K", "3K", "4K"],
+    "aspect_ratios": ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"],
+    "dimension_table": {
+      "1:1": { "1K": "1024x1024", "2K": "2048x2048", "3K": "3072x3072", "4K": "4096x4096" },
+      "3:4": { "1K": "864x1152", "2K": "1728x2304", "3K": "2592x3456", "4K": "3456x4608" },
+      "4:3": { "1K": "1152x864", "2K": "2304x1728", "3K": "3456x2592", "4K": "4608x3456" },
+      "16:9": { "1K": "1312x736", "2K": "2624x1472", "3K": "3936x2208", "4K": "5248x2944" },
+      "9:16": { "1K": "736x1312", "2K": "1472x2624", "3K": "2208x3936", "4K": "2944x5248" },
+      "2:3": { "1K": "832x1248", "2K": "1664x2496", "3K": "2496x3744", "4K": "3328x4992" },
+      "3:2": { "1K": "1248x832", "2K": "2496x1664", "3K": "3744x2496", "4K": "4992x3328" },
+      "21:9": { "1K": "1568x672", "2K": "3136x1344", "3K": "4704x2016", "4K": "6272x2688" }
+    },
+    "output_formats": ["url", "b64_json"],
+    "sync": true,
+    "active": true,
+    "last_verified_at": "2026-08-26",
+    "source_url": "https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md",
+    "known_inconsistencies": [
+      "prompt hard cap not published by vendor; legacy exact sizes accepted but may be normalized"
+    ],
+    "notes": [
+      "3K/4K tiers: RPM 1/1 (aggressive rate ceiling — treat 429 as authority)",
+      "all tiers currently $0 (promo)",
+      "synchronous endpoint: create request returns finished image immediately without polling"
+    ],
+    "plan_restriction": "token-plan approved (agnes-image-2.1-flash in Starter/Plus/Pro; 4000 images/day)"
+  }
+]

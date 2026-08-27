@@ -3,9 +3,7 @@
 #
 # Verifies the skill shipped correctly AND that its endpoint reference is
 # internally correct (right model, right endpoint, the response_format gotcha,
-# the output-dimension table). The content assertions are the ones that can go
-# RED on a real defect: corrupt agnes-image-full.md (wrong model/endpoint, drop
-# the gotcha or the dimension table) and this script exits 1.
+# the output-dimension table, machine-readable registry, scripts).
 #
 # Read-only: it never restarts the gateway, never writes credentials, and never
 # prints a secret value (it checks AGNES_AI_API_KEY presence only, as a WARNING).
@@ -42,6 +40,9 @@ assert "EXAMPLES.md present"         "[ -f \"$SKILL_DIR/EXAMPLES.md\" ]"
 assert "INSTALL.md present"          "[ -f \"$SKILL_DIR/INSTALL.md\" ]"
 assert "CORE_UPDATES.md present"     "[ -f \"$SKILL_DIR/CORE_UPDATES.md\" ]"
 assert "PREREQS.json present"        "[ -f \"$SKILL_DIR/PREREQS.json\" ]"
+assert "models.json present"         "[ -f \"$SKILL_DIR/models.json\" ]"
+assert "references present"          "[ -d \"$SKILL_DIR/references\" ]"
+assert "scripts present"             "[ -d \"$SKILL_DIR/scripts\" ]"
 assert "full reference present"      "[ -f \"$REF\" ]"
 
 # ── Content correctness of the endpoint reference (these can FIRE red) ────────
@@ -58,6 +59,16 @@ assert "reference carries the output-dimension table (16:9 2K = 2624x1472)" \
 assert "reference marks the endpoint SYNCHRONOUS" \
   "grep -qiF 'synchronous' \"$REF\""
 
+# ── Script self-tests ────────────────────────────────────────────────────────
+assert "validate_prompt.py self-test passes" \
+  "python3 \"$SKILL_DIR/scripts/validate_prompt.py\" --self-test"
+assert "validate_payload.py self-test passes" \
+  "python3 \"$SKILL_DIR/scripts/validate_payload.py\" --self-test"
+assert "normalize_alias.py self-test passes" \
+  "python3 \"$SKILL_DIR/scripts/normalize_alias.py\" --self-test"
+assert "prove_agnes_image_prompt_floor.py self-test passes" \
+  "python3 \"$SKILL_DIR/prove_agnes_image_prompt_floor.py\" --self-test"
+
 # ── PREREQS.json uses the enforceable {\"skill\":...} form, not {\"skillId\":N} ──
 assert "PREREQS.json uses enforceable skill-folder check form" \
   "grep -qF '\"skill\": \"01-teach-yourself-protocol\"' \"$SKILL_DIR/PREREQS.json\""
@@ -65,7 +76,6 @@ assert "PREREQS.json does NOT use the silently-ignored skillId form" \
   "! grep -qF 'skillId' \"$SKILL_DIR/PREREQS.json\""
 
 # ── No real credential value leaked into the reference ───────────────────────
-# The only key-like token allowed is the literal placeholder YOUR_API_KEY.
 assert "no bearer token value hardcoded in the reference" \
   "! grep -qiE 'Bearer[[:space:]]+(sk-|agnes-|[A-Za-z0-9_-]{24,})' \"$REF\" || grep -qF 'Bearer YOUR_API_KEY' \"$REF\""
 

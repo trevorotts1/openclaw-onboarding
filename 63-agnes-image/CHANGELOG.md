@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.0] - 2026-08-26 - fix: prompt policy alignment, remove invented 25K cap, add models.json registry and validators
+
+### Why
+First-party documentation for Agnes Image 2.1 Flash (`apihub.agnes-ai.com`) does NOT publish a hard prompt character limit. Earlier revisions of Skill 63 erroneously asserted that "the API accepts up to 25,000 chars" and enforced a mandatory hard rejection below 5,000 and above 19,000 characters. That 25K figure belongs to KIE GPT Image 2 (owner-observed), not Agnes. Furthermore, Spec §12 and §14 mandate machine-readable capability registries (`models.json`), structured references (`references/`), and deterministic testable validator scripts (`scripts/`).
+
+### What changed
+- **Removed Invented 25K Cap**: Clarified that vendor hard cap is `NOT_PUBLISHED`.
+- **House Prompt Band Alignment (Spec §5 & §10.5)**: Reframed 5,000–19,000 chars (~9,000 target) as a house target band, not a vendor law. Short user prompts are expanded, not hard-rejected (§5.3). Prompts above 19,000 chars trigger non-fatal advisory, not hard rejection.
+- **Machine-Readable Capability Registry**: Created `models.json` for `agnes-image-2.1-flash` with full dimension matrix (8 ratios × 4 tiers), endpoints, quotas, and sync execution flag.
+- **Structured References**: Added `references/prompt-policy.md`, `references/api-patterns.md`, and `references/qc.md`.
+- **Deterministic Validators & Selectors**:
+  - Added `scripts/validate_prompt.py` (model-aware prompt validator with `--self-test`).
+  - Added `scripts/validate_payload.py` (JSON request payload validator with `--self-test`).
+  - Added `scripts/normalize_alias.py` (alias normalizer with `--self-test`).
+  - Updated `prove_agnes_image_prompt_floor.py` to align with non-destructive prompt policy while preserving logo-I2I and style-reference quality gates.
+- **Repackaged `.skill` bundle**: Built updated `agnes-image.skill` archive containing the modern skill structure.
+
 ## [v1.1.0] - 2026-08-03 - fix: the core-file updates are now EXECUTED by `wire.sh`, not pasted as a recipe
 
 ### Why

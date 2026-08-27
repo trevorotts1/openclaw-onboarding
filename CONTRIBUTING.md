@@ -40,8 +40,9 @@ Every time a new skill folder is added, ALL of these files must be updated:
    - Any dependencies on other skills
 
 6. **update-skills.sh** (repo root — NOT `scripts/update-skills.sh`, which is a
-   retired, loud-failing shim) - Update:
-   - Skill number range in the `seq` command (e.g., `seq -w 1 31` becomes `seq -w 1 32`)
+   retired, loud-failing shim) - No edit needed: the skill directory scan uses a
+   pure `[0-9]*/` glob (no `seq` range to extend). Verify it picks up new skills
+   with `bash update-skills.sh --dry-run` (or the installed-skill listing).
 
 ### Verification After Adding
 

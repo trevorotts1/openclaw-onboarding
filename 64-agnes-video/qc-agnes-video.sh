@@ -45,6 +45,12 @@ assert "reference documents create endpoint /v1/videos" "grep -q '/v1/videos' \"
 assert "reference documents recommended poll agnesapi?video_id" "grep -q 'agnesapi?video_id' \"$REF\""
 assert "reference documents the 8n rule for num_frames" "grep -q '8n' \"$REF\""
 assert "reference documents the 441 num_frames cap" "grep -q '441' \"$REF\""
+assert "reference documents flash agnes-video-2.5-flash" "grep -q 'agnes-video-2.5-flash' \"$REF\""
+assert "router script present" "[ -f \"$SKILL_DIR/scripts/select_agnes_video_model.py\" ]"
+assert "router self-test exits 0" "python3 \"$SKILL_DIR/scripts/select_agnes_video_model.py\" --self-test >/dev/null 2>&1"
+assert "models.json present and parses" "python3 -c 'import json;json.load(open(\"$SKILL_DIR/models.json\"))'"
+assert "models.json has exactly 2 video models" "[ \"\$(python3 -c 'import json;print(len(json.load(open(\"$SKILL_DIR/models.json\"))[\"models\"]))' 2>/dev/null)\" = '2' ]"
+assert "models.json never-auto-selects full agnes-video-2.5" "grep -q 'never_auto_select\\|NEVER auto-select' \"$SKILL_DIR/models.json\""
 
 # ── Warn-only: environment / on-box concerns (never fail the build) ──
 warn_only "AGNES_AI_API_KEY set (SET/NOT-SET only; value never printed)" "[ -n \"$AGNES_AI_API_KEY\" ]"

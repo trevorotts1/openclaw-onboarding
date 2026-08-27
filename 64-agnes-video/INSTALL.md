@@ -45,7 +45,7 @@ RULE 5: CHECK YOURSELF AGAINST THE CHECKLIST WHEN DONE.
 RULE 6: REPORT WHAT YOU DID.
 
 ══════════════════════════════════════════════════════════════════
-AGNES VIDEO V2.0 — INSTALLATION GUIDE
+AGNES VIDEO (2.5 FLASH + V2.0) — INSTALLATION GUIDE
 ══════════════════════════════════════════════════════════════════
 
 This is a REFERENCE skill. It does NOT create an Agnes account or write a new
@@ -60,8 +60,8 @@ STEP 1: CONFIRM THE SKILL FILES ARE PRESENT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 1. Confirm this folder contains: SKILL.md, INSTRUCTIONS.md, EXAMPLES.md,
-   INSTALL.md, CORE_UPDATES.md, QC.md, agnes-video-full.md, and
-   qc-agnes-video.sh.
+   INSTALL.md, CORE_UPDATES.md, QC.md, agnes-video-full.md, models.json,
+   scripts/select_agnes_video_model.py, and qc-agnes-video.sh.
 
 2. Read agnes-video-full.md end to end. That is the exhaustive reference.
 
@@ -84,10 +84,17 @@ STEP 2: CONFIRM THE CREDENTIAL IS SET (SET / NOT-SET ONLY)
    NEVER echo, cat, or log the key value. SET / NOT-SET only.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3: SELF-TEST (OPTIONAL — COSTS ~ $0 CURRENTLY)
+STEP 3: SELF-TESTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-5. Create a tiny task (shortest valid clip, num_frames 81):
+5. Router self-test (offline, deterministic, 28 fixtures):
+
+     python3 scripts/select_agnes_video_model.py --self-test
+
+   Verify it prints 28/28 passed and exits 0.
+
+6. Live self-test (optional — costs ~ $0 currently). Create a tiny task on the
+   model the router picks, e.g. V2.0 shortest valid clip:
 
      curl -s -X POST https://apihub.agnes-ai.com/v1/videos \
        -H "Authorization: Bearer $AGNES_AI_API_KEY" \
@@ -96,7 +103,7 @@ STEP 3: SELF-TEST (OPTIONAL — COSTS ~ $0 CURRENTLY)
 
    Verify the response includes a `video_id` and a `status` (e.g. `queued`).
 
-6. Poll for the result (wait ~15s first), replacing the id:
+7. Poll for the result (wait ~15s first), replacing the id:
 
      curl -s --location --request GET \
        'https://apihub.agnes-ai.com/agnesapi?video_id=YOUR_VIDEO_ID' \
@@ -117,9 +124,15 @@ STEP 4: RUN THE BUNDLED QC
 STEP 5: APPLY CORE FILE UPDATES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-8. Apply only the labeled sections in CORE_UPDATES.md to AGENTS.md, TOOLS.md, and
-   MEMORY.md. Add a lean pointer to agnes-video-full.md — do NOT paste the full
-   reference into core files. Touch NO other core files.
+8. Run the installer to apply the labeled sections in CORE_UPDATES.md to
+   AGENTS.md, TOOLS.md, and MEMORY.md (idempotent, marker-based, backups
+   before writing):
+
+     bash wire.sh
+
+   Do NOT paste the blocks by hand — that was the v1.0 defect (the generic
+   merger pasted the literal recipe). If wire.sh is unavailable, apply the
+   labeled sections surgically (lean pointer only; touch NO other core files).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SETUP CHECKLIST
@@ -130,9 +143,10 @@ Before telling the user setup is complete, verify ALL of these:
 [ ] Skill folder present with all listed files
 [ ] agnes-video-full.md read in full
 [ ] AGNES_AI_API_KEY confirmed SET (value never printed)
-[ ] (optional) self-test task created and polled to a valid state
+[ ] scripts/select_agnes_video_model.py --self-test exits 0
+[ ] (optional) live self-test task created and polled to a valid state
 [ ] qc-agnes-video.sh exited 0
-[ ] CORE_UPDATES.md applied surgically (lean pointer only)
+[ ] wire.sh applied CORE_UPDATES.md surgically (lean pointer only)
 
 DO NOT tell the user setup is complete until the checklist is satisfied.
 
@@ -143,10 +157,14 @@ WHAT TO ADD TO YOUR CORE FILES
 See CORE_UPDATES.md for the exact labeled text. Summary:
 
 [ADD TO AGENTS.md]
-## Agnes Video V2.0 — Text/Image/Keyframe Video
-- Model: agnes-video-v2.0. ASYNC: POST /v1/videos to create, then poll
-  GET /agnesapi?video_id=<id>. Auth: Bearer AGNES_AI_API_KEY (referenced, never printed).
-- num_frames <= 441 and on the 8n+1 grid; trust returned size/seconds, not the request.
+## Agnes Video — Text/Image/Keyframe Video
+- Model choice: run scripts/select_agnes_video_model.py FIRST (deterministic;
+  explicit model wins; no silent switch). Models: agnes-video-2.5-flash
+  (seconds STRING 4-12, 720P only, images max 5, videos NEVER) and
+  agnes-video-v2.0 (num_frames <= 441 8n+1, frame_rate 1-60, 480p/720p/1080p).
+- ASYNC: POST /v1/videos to create, then poll GET /agnesapi?video_id=<id>
+  (Flash: &model_name=agnes-video-2.5-flash). Auth: Bearer AGNES_AI_API_KEY
+  (referenced, never printed).
 - Full reference: [MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md
 
 ---

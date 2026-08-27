@@ -1,0 +1,37 @@
+{
+  "skill": "67-kie-video",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 67."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 67."
+    },
+    {
+      "id": "skill-07-kie-setup",
+      "type": "skill",
+      "label": "Skill 07 — KIE Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Complete Skill 07 (kie-setup) before installing Skill 67: it establishes the KIE account/credential context this skill builds on."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "KIE API Key",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "KIE_API_KEY is the KIE.ai API bearer credential (Authorization: Bearer <KIE_API_KEY>). The env var NAME is repo convention — KIE's own docs show only the literal placeholder YOUR_API_KEY; no fetched page documents an env var name (see 01-kie-common.md, status UNDETERMINED). Confirm it is SET (never print the value; check ~/.openclaw/secrets/.env, openclaw.json env.vars, and ~/clawd/secrets/.env). If absent, ask the operator to add KIE_API_KEY to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Do NOT mint a new key."
+    }
+  ]
+}

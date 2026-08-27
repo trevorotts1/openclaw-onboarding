@@ -1,0 +1,204 @@
+{
+  "skill": "64-agnes-video",
+  "registry_version": "1.2.0",
+  "last_verified_at": "2026-08-26",
+  "models": [
+    {
+      "provider": "agnes",
+      "display_name": "Agnes Video 2.5 Flash",
+      "canonical_model_id": "agnes-video-2.5-flash",
+      "aliases": [
+        "agnes video flash",
+        "agnes video 2.5 flash",
+        "agnes-video-flash",
+        "agnes video 25 flash",
+        "agnes video flash 2.5"
+      ],
+      "modality": "video",
+      "tasks": [
+        "text",
+        "keyframe",
+        "reference"
+      ],
+      "api_family": "agnes-dedicated",
+      "create_endpoint": "https://apihub.agnes-ai.com/v1/videos",
+      "query_endpoint": "https://apihub.agnes-ai.com/agnesapi?video_id=<VIDEO_ID>&model_name=agnes-video-2.5-flash",
+      "query_endpoint_video_id_only": "https://apihub.agnes-ai.com/agnesapi?video_id=<VIDEO_ID>",
+      "query_endpoint_video_id_only_note": "video_id-only is valid for text mode only; keyframe/reference tasks REQUIRE &model_name=agnes-video-2.5-flash \u2014 use the consistent safe form (with model_name) always",
+      "auth_env": "AGNES_AI_API_KEY",
+      "prompt_cap_chars": null,
+      "prompt_cap_tokens": null,
+      "owner_observed_cap_chars": null,
+      "cap_status": "NOT_PUBLISHED",
+      "cap_status_note": "vendor publishes no prompt max for flash \u2014 never invent one",
+      "house_prompt_min_chars": 5000,
+      "house_prompt_target_chars": 9000,
+      "house_prompt_max_chars": 19000,
+      "house_band_status": "PENDING_ACCEPTANCE_TEST",
+      "reference_images_max": 5,
+      "reference_images_max_evidence": "vendor HTTP 400: 'images length must not exceed 5'",
+      "reference_videos_max": 0,
+      "reference_videos_max_evidence": "vendor HTTP 400: 'videos is not supported'",
+      "reference_audio_max": null,
+      "reference_audio_max_note": "flash supports audios string[] in reference mode; count not published",
+      "duration_min_seconds": 4,
+      "duration_max_seconds": 12,
+      "duration_units": "string enum",
+      "duration_note": "seconds is a STRING '4'-'12' (default '5'); NOT a numeric field",
+      "resolutions": [
+        "720P"
+      ],
+      "resolution_note": "size must be 720P (case per vendor); any other value -> HTTP 400 'size must be 720P'",
+      "aspect_ratios": [
+        "21:9",
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16"
+      ],
+      "aspect_pixel_map": {
+        "21:9": "1680x720",
+        "16:9": "1280x720",
+        "4:3": "960x720",
+        "1:1": "720x720",
+        "3:4": "720x960",
+        "9:16": "720x1280"
+      },
+      "n_max": 1,
+      "n_max_evidence": "vendor: 'Only 1 is supported; default 1'",
+      "audio_generation": true,
+      "audio_generation_note": "audios string[] accepted in reference mode; no native on-device audio synthesis published",
+      "modes": {
+        "text": "no first_frame/last_frame/images/audios/videos; prompt only",
+        "keyframe": "first_frame and/or last_frame (at least one); no images/audios/videos",
+        "reference": "at least one non-empty images or audios array; images max 5; videos NOT supported"
+      },
+      "poll_note": "poll ~1-2s initially as vendor docs allow; sane backoff on 429, do not hardcode a ceiling",
+      "sync": false,
+      "sync_note": "async create + retrieve",
+      "last_verified_at": "2026-08-26",
+      "source_urls": [
+        "https://wiki.agnes-ai.com/en/docs/agnes-video-25-flash.md",
+        "https://wiki.agnes-ai.com/en/docs/tokenplan.md",
+        "https://wiki.agnes-ai.com/en/docs/pricing.md"
+      ],
+      "plan_restriction": {
+        "token_plan_model": true,
+        "token_plan_video_seconds_per_day": 500,
+        "token_plan_note": "tokenplan.md lists agnes-video-2.5-flash (all Starter/Plus/Pro tiers identical; 500 video-sec/day)",
+        "pricing_list": "$0.025/second (720P)",
+        "pricing_current": "$0/second limited-time free promo",
+        "never_auto_select": "agnes-video-2.5 (full, non-flash): NOT in token plan, priced $0.025/$0.040/$0.055 per second at 720P/960P/2K \u2014 NEVER auto-select; only flash and v2.0 are in the token plan"
+      },
+      "known_inconsistencies": [
+        "prompt cap NOT published (cap_status NOT_PUBLISHED; never invent a number)",
+        "reference-images max MB per image NOT published",
+        "audios reference count NOT published",
+        "full agnes-video-2.5 (non-flash) shares the same size/seconds surface but is PAID and not in any token plan tier"
+      ],
+      "active": true,
+      "source_url": "https://wiki.agnes-ai.com/en/docs/agnes-video-25-flash.md"
+    },
+    {
+      "provider": "agnes",
+      "display_name": "Agnes Video V2.0",
+      "canonical_model_id": "agnes-video-v2.0",
+      "aliases": [
+        "agnes video 2.0",
+        "agnes video v2",
+        "agnes-video-v2",
+        "agnes video v20"
+      ],
+      "modality": "video",
+      "tasks": [
+        "ti2vid",
+        "keyframes",
+        "image-to-video"
+      ],
+      "api_family": "agnes-dedicated",
+      "create_endpoint": "https://apihub.agnes-ai.com/v1/videos",
+      "query_endpoint": "https://apihub.agnes-ai.com/agnesapi?video_id=<VIDEO_ID>",
+      "query_endpoint_optional": "&model_name=agnes-video-v2.0 (optional)",
+      "query_endpoint_legacy": "https://apihub.agnes-ai.com/v1/videos/<TASK_ID>",
+      "auth_env": "AGNES_AI_API_KEY",
+      "prompt_cap_chars": null,
+      "prompt_cap_tokens": null,
+      "owner_observed_cap_chars": null,
+      "cap_status": "NOT_PUBLISHED",
+      "cap_status_note": "vendor publishes no prompt max for v2.0 \u2014 never invent one",
+      "house_prompt_min_chars": 5000,
+      "house_prompt_target_chars": 9000,
+      "house_prompt_max_chars": 19000,
+      "house_band_status": "PENDING_ACCEPTANCE_TEST",
+      "reference_images_max": null,
+      "reference_images_max_note": "not stated for v2.0 \u2014 single top-level image URL for i2v; extra_body.image[] array is the keyframe workflow (no count published)",
+      "reference_videos_max": null,
+      "reference_videos_max_note": "not stated for v2.0",
+      "reference_audio_max": null,
+      "reference_audio_max_note": "not stated for v2.0",
+      "duration_min_seconds": null,
+      "duration_max_seconds": null,
+      "duration_units": "frame-driven",
+      "duration_note": "seconds = num_frames / frame_rate (exact); num_frames <= 441 AND 8n+1; frame_rate 1-60. Examples: 81/24\u22483s, 121/24\u22485s, 241/24\u224810s, 441/24\u224818s",
+      "width_default": 1152,
+      "height_default": 768,
+      "num_frames_max": 441,
+      "num_frames_rule": "8n+1 grid (81, 121, 241, 441)",
+      "frame_rate_min": 1,
+      "frame_rate_max": 60,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "resolution_note": "service normalizes width/height/aspect to the nearest standard tier; returned size/seconds/metadata.size_mapping is the source of truth (e.g. 1024x576 -> 480p/16:9 832x448)",
+      "aspect_ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "audio_generation": true,
+      "audio_generation_note": "not contradicted by vendor docs; no explicit audio field published for v2.0",
+      "n_max": null,
+      "n_max_note": "n not stated for v2.0 (flash n=1 verified; do not fabricate a v2.0 n)",
+      "modes": {
+        "ti2vid": "model + prompt [+ optional image URL string]",
+        "keyframes": "extra_body.image array + extra_body.mode 'keyframes'"
+      },
+      "sync": false,
+      "sync_note": "async create + retrieve; poll per vendor (initial ~1-2s, backoff on 429)",
+      "last_verified_at": "2026-08-26",
+      "source_urls": [
+        "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md",
+        "https://wiki.agnes-ai.com/en/docs/tokenplan.md",
+        "https://wiki.agnes-ai.com/en/docs/pricing.md"
+      ],
+      "plan_restriction": {
+        "token_plan_model": true,
+        "token_plan_video_seconds_per_day": 500,
+        "token_plan_note": "tokenplan.md lists agnes-video-v2.0 (all Starter/Plus/Pro tiers identical; 500 video-sec/day)",
+        "pricing_list": "$0.005/second",
+        "pricing_current": "$0/second (vendor: 'Video duration is currently $0 / second')",
+        "never_auto_select": "agnes-video-2.5 (full, non-flash) is separate and PAID \u2014 NEVER auto-select; only flash and v2.0 are in the token plan"
+      },
+      "known_inconsistencies": [
+        "n not stated for v2.0 (flash n=1) \u2014 left null, never fabricated",
+        "service normalizes requested dimensions \u2014 metadata.size_mapping is the source of truth, not the request",
+        "create example documents image as optional single URL while extra_body.image array is the keyframe workflow; both documented by vendor",
+        "prompt cap NOT published (cap_status NOT_PUBLISHED; never invent a number)"
+      ],
+      "active": true,
+      "source_url": "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md"
+    }
+  ],
+  "never_auto_select": [
+    {
+      "canonical_model_id": "agnes-video-2.5",
+      "reason": "full paid 2.5 (720P $0.025/s, 960P $0.040/s, 2K $0.055/s) is NOT in the token plan; tokenplan.md lists ONLY agnes-video-2.5-flash and agnes-video-v2.0",
+      "evidence": "https://wiki.agnes-ai.com/en/docs/tokenplan.md / https://wiki.agnes-ai.com/en/docs/pricing.md"
+    }
+  ]
+}

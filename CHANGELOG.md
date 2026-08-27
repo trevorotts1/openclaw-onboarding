@@ -1,3 +1,40 @@
+## [v22.0.76]  -  2026-08-26  -  fix(rescue-rangers): add missing X-Rescue-Secret header to 4 escalation examples (PR #986)
+
+Rescue Rangers escalation calls produced a sustained stream of 401s at the relay
+(unauthenticated traffic from `board-hygiene`, `persona-grounding-sweep`,
+`sweep-liveness` agent personas reading SOP 9.2 step 2 verbatim). Full-repo
+sweep of every curl example targeting `$RESCUE_RANGERS_WEBHOOK_URL`: 4 places
+still missing the header (`sop-rescue-rangers-escalation.md` SOP 9.2 step 2,
+`openclaw-maintenance-suggested-roles.md`, `sop-furnace-watch-hourly.md`,
+`06-ghl-install-pages/tools/browser_manager.sh`), each fixed by copying the
+existing correct idiom verbatim from its own file's sibling. No new pattern, no
+SOP-text rewrite, no adjacent tidying.
+
+## [v22.0.77]  -  2026-08-26  -  feat(media-skills): modernize Skill 07, upgrade 63/64, add KIE skills 66/67/68
+
+Media generation skills rebuilt end-to-end per the BlackCEO Media Skills spec:
+
+- **Skill 07 (kie-setup) v6.7.0** — narrowed to setup/router; stale model tables
+  and counts removed; routing points to the modality skills instead of duplicating
+  model data.
+- **Skill 63 (agnes-image) v1.2.0** — removed invented 25K prompt-cap claims
+  (NOT_PUBLISHED, never a fake number); added models.json registry, references/,
+  and deterministic self-testing validators (select/validate/normalize).
+- **Skill 64 (agnes-video) v1.2.0** — dual-model registry (2.5-flash + v2.0) with
+  `select_agnes_video_model.py` semantic guards; source_url traceability added.
+- **NEW Skill 66 (kie-image) v1.0.0** — 30-model registry (14 families),
+  select/validate/normalize scripts, references/, marker-based wire.sh.
+- **NEW Skill 67 (kie-video) v1.0.0** — 37-model registry, dedicated Runway/Veo
+  API families (never createTask), select/validate/normalize scripts, references/,
+  wire.sh.
+- **NEW Skill 68 (kie-audio) v1.0.0** — TTS/Suno/STT registry (10 entries; STT
+  ADVERTISED_NOT_YET_VERIFIED, dispatch disabled), wire.sh.
+- All wires marker-based, replace-in-place, idempotent (run-twice clean); two
+  repo-wide unit-gate regressions fixed (new skills' CORE_UPDATES wiring + 07
+  stale-string check).
+- All registries carry source_url + last_verified_at; NOT_PUBLISHED nulls never
+  invented; LIVE_PROBE_REQUIRED items surfaced in registry.
+
 ## [v22.0.75]  -  2026-08-25  -  fix(compat): bump commandCenter.pinnedTag to v6.0.93 so fleet-refresh ships the U55 hang root-fix + five latent-failure repairs
 
 `resolve_cc_tag` returns `pinnedTag` unconditionally, so leaving the pin at

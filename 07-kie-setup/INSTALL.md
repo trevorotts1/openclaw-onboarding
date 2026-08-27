@@ -273,42 +273,35 @@ DO NOT tell the user setup is complete until ALL tests pass.
 WHAT TO ADD TO YOUR CORE FILES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Core file updates are performed automatically and idempotently by running:
+  bash wire.sh
+
 [ADD TO AGENTS.md]
-## KIE.ai - Image and Video Generation
-- API Key stored in ~/clawd/secrets/.env as KIE_API_KEY
-- ALWAYS use KIE.ai for image generation. NEVER use DALL-E 3.
-- Primary image model: nano-banana-pro
-- Primary video model: veo3_fast (VEO 3.1 Fast)
-- Full API reference: see kie-setup-full.md in the onboarding folder
+## Media Generation Routing
+- generic image -> provider router -> Agnes Image (63) or KIE Image (66)
+- generic video -> provider router -> Agnes Video (64) or KIE Video (67)
+- KIE audio/music/TTS -> KIE Audio (68)
+- explicit model/provider wins; department manifest wins; chosen provider remembered for the task
+- validators run before API dispatch
+- detailed model tables live in skill references/, not here
+- KIE auth: Bearer token from KIE_API_KEY in secrets/.env (referenced, NEVER printed)
+- KIE generic Market: POST /api/v1/jobs/createTask -> task_id -> poll /api/v1/jobs/recordInfo (200 = accepted)
+- Full reference: [MASTER_FILES_FOLDER]/07-kie-setup/kie-setup-full.md
 
 [ADD TO TOOLS.md]
 ## KIE.ai API
-- API Key: $KIE_API_KEY (in ~/clawd/secrets/.env)
 - Base URL: https://api.kie.ai
-- Image Generation: POST /api/v1/jobs/createTask (model: nano-banana-pro)
-- Video Generation: POST /api/v1/veo/generate
-- Check Status: GET /api/v1/jobs/recordInfo?taskId=XXX
-- Check Credits: GET /api/v1/chat/credit
-- Full reference: kie-setup-full.md
+- Auth: Bearer <KIE_API_KEY> (referenced, never printed)
+- Generic Market: POST /api/v1/jobs/createTask, GET /api/v1/jobs/recordInfo?taskId=<id>
+- Dedicated APIs: Runway (/api/v1/runway/*), Veo (/api/v1/veo/*), Suno (/api/v1/*)
+- Models: consult per-modality registries in 66-kie-image, 67-kie-video, 68-kie-audio (catalog changes frequently)
+- Rate limits: 20 requests per 10s per account, 100+ concurrent tasks
+- Generated media retained 14 days; persist promptly
+- Full reference: [MASTER_FILES_FOLDER]/07-kie-setup/kie-setup-full.md
 
----
-
-## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY
-
-**During this installation, you may encounter instructions to restart the OpenClaw gateway.**
-
-**YOU ARE FORBIDDEN from triggering gateway restarts yourself.**
-
-### Correct Process
-When a gateway restart is needed:
-1. **STOP** - Do NOT execute the restart command
-2. **NOTIFY** the user: "This installation requires an OpenClaw gateway restart to complete."
-3. **INSTRUCT**: "Type `/restart` in Telegram to trigger it"
-4. **WAIT** for user action - do NOT proceed until confirmed
-
-### Forbidden Actions
-- Do NOT run `openclaw gateway restart` without explicit user permission
-- Do NOT say "I will restart the gateway now" without asking first
-- Do NOT assume the user wants the restart
-
----
+[ADD TO MEMORY.md]
+## KIE.ai API Setup — installed
+- API key in ~/.openclaw/secrets/.env as KIE_API_KEY (canonical credential, never printed)
+- Generic Market create/query endpoints and dedicated API families (Runway, Veo, Suno)
+- Modality dispatch to dedicated skills 66-kie-image, 67-kie-video, 68-kie-audio
+- Full reference: [MASTER_FILES_FOLDER]/07-kie-setup/kie-setup-full.md
