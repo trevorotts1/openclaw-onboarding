@@ -31,6 +31,7 @@ from .state import (
 )
 from .scan_roots import (
     default_config_path, format_roots_report, ok_roots, resolve_scan_roots,
+    split_primary,
 )
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,12 @@ def reconcile_sweep(
     roots = resolve_scan_roots(
         primary=scan_root, extra=extra_roots, env=env, config_path=roots_config,
     )
+    # Findings owner: the FIRST chunk of the primary root. For a single-path
+    # --scan-root this is the root itself, exactly as before; for an
+    # os.pathsep-packed primary (the live plist's SCAN_ROOT shape) the first
+    # chunk -- normally the department tree -- owns reconcile-findings.jsonl.
+    primary_chunks = split_primary(scan_root)
+    findings_owner = primary_chunks[0] if primary_chunks else Path(scan_root)
     readable = ok_roots(roots)
     print(format_roots_report(roots, "reconcile-board"), flush=True)
 
@@ -324,7 +331,7 @@ def reconcile_sweep(
     schema_mismatch_count = 0
 
     findings_lines: List[str] = []
-    findings_path = scan_root / "reconcile-findings.jsonl"
+    findings_path = findings_owner / "reconcile-findings.jsonl"
 
     for run_dir in run_dirs:
         try:

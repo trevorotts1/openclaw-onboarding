@@ -128,6 +128,28 @@ def _probe(path: Path) -> Tuple[str, str]:
         return ROOT_UNDETERMINED, f"unreadable: {exc}"
 
 
+def split_primary(primary: Optional[Path]) -> List[Path]:
+    """Split the primary scan-root on os.pathsep into individual roots.
+
+    The primary root accepts os.pathsep-packed multi-root (":" on POSIX), the
+    same shape as PRESENTATION_SCAN_ROOTS: the live launchd plist passes
+    SCAN_ROOT as one colon-joined string
+    (".../Presentations/runs:$HOME/webinar-decks"), and resolution must treat
+    that as two roots -- the operator's hotfix split it at the call sites;
+    this branch supersedes that by splitting here, where every pass shares
+    one implementation. A single-path root contains no os.pathsep and is
+    returned unchanged; empty chunks ("a::b", a trailing ":") are dropped,
+    and each chunk is ~-expanded.
+    """
+    if primary is None:
+        return []
+    return [
+        Path(chunk.strip()).expanduser()
+        for chunk in str(primary).split(os.pathsep)
+        if chunk.strip()
+    ]
+
+
 def resolve_scan_roots(
     primary: Optional[Path] = None,
     extra: Sequence[Path] = (),
@@ -141,14 +163,19 @@ def resolve_scan_roots(
     file. Order matters only for reporting and for which root owns the findings
     file; every root is scanned either way.
 
+    The primary root accepts os.pathsep-packed multi-root (":" on POSIX, the
+    shape the live launchd plist passes SCAN_ROOT in) -- see split_primary.
+
     A root is included in the returned list even when it is UNDETERMINED --
     dropping it would recreate the original defect, where a root nobody could
     read looked exactly like a root nobody configured."""
     env = os.environ if env is None else env
     candidates: List[Tuple[Path, str]] = []
 
-    if primary is not None:
-        candidates.append((Path(primary).expanduser(), "primary"))
+    # The primary root accepts os.pathsep-packed multi-root (":" on POSIX),
+    # same shape as PRESENTATION_SCAN_ROOTS -- see split_primary.
+    for chunk in split_primary(primary):
+        candidates.append((chunk, "primary"))
     for p in extra:
         candidates.append((Path(p).expanduser(), "cli"))
 

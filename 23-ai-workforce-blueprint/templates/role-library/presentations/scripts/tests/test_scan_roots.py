@@ -15,6 +15,7 @@ Covers the four behaviors the fix spec names:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
@@ -161,6 +162,160 @@ class TestResolveScanRoots:
         report = format_roots_report(roots, "watchdog")
         assert str(dep) in report and str(ghost) in report
         assert "UNDETERMINED" in report and "INCOMPLETE" in report
+
+
+class TestColonPackedPrimary:
+    """The primary scan-root accepts os.pathsep-packed multi-root.
+
+    The live launchd plist passes SCAN_ROOT as ONE colon-joined string
+    (".../Presentations/runs:$HOME/webinar-decks"). The operator's hotfix
+    split it at the call sites; this branch supersedes that by splitting in
+    resolve_scan_roots, so a colon-packed --scan-root behaves as multiple
+    roots everywhere -- and a single-path root is unchanged."""
+
+    def test_colon_packed_primary_yields_both_roots(self, tmp_path):
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"; extra.mkdir()
+        packed = os.pathsep.join([str(dep), str(extra)])
+        roots = resolve_scan_roots(primary=packed, env={}, config_path=None)
+        assert [str(r.path) for r in roots] == [str(dep), str(extra)]
+        assert all(r.origin == "primary" for r in roots)
+        assert all(r.ok for r in roots)
+
+    def test_single_path_primary_unchanged(self, tmp_path):
+        dep = tmp_path / "dep"
+        dep.mkdir()
+        roots = resolve_scan_roots(primary=dep, env={}, config_path=None)
+        assert [str(r.path) for r in roots] == [str(dep)]
+
+    def test_packed_primary_empty_chunks_dropped(self, tmp_path):
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "extra"; extra.mkdir()
+        packed = f"{os.pathsep}{dep}::{extra}{os.pathsep}"
+        roots = resolve_scan_roots(primary=packed, env={}, config_path=None)
+        assert [str(r.path) for r in roots] == [str(dep), str(extra)]
+
+    def test_packed_primary_chunk_does_not_exist_is_undetermined(self, tmp_path):
+        dep = tmp_path / "dep"; dep.mkdir()
+        ghost = tmp_path / "no-such-root"
+        packed = os.pathsep.join([str(dep), str(ghost)])
+        roots = resolve_scan_roots(primary=packed, env={}, config_path=None)
+        ok = [str(r.path) for r in ok_roots(roots)]
+        und = [str(r.path) for r in undetermined_roots(roots)]
+        assert ok == [str(dep)] and und == [str(ghost)]
+
+    def test_watchdog_scans_both_packed_roots(self, tmp_path):
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"
+        run_dep = _w(dep / "pres-run", age=40)
+        run_extra = _w(extra / "client" / "deck" / "2026-08-27", age=40)
+        packed = os.pathsep.join([str(dep), str(extra)])
+        rc, out = _run_watch(packed, scan_depth=3, enforce=True)
+        assert rc == EXIT_STALLED
+        assert str(run_dep) in out and "STALLED" in out
+        assert str(run_extra) in out, "the colon-packed second root must be scanned"
+        assert "scan roots: 2 readable" in out
+
+    def test_watchdog_packed_root_matches_two_root_calls(self, tmp_path):
+        # a colon-packed --scan-root produces the same root list the hotfix
+        # produced by looping over the chunks
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"
+        _w(dep / "a", age=40)
+        _w(extra / "b", age=40)
+        packed = os.pathsep.join([str(dep), str(extra)])
+        rc_packed, out_packed = _run_watch(packed, scan_depth=3, enforce=True)
+        rc_two, out_two = _run_watch(dep, extra_roots=(extra,),
+                                     scan_depth=3, enforce=True)
+        assert rc_packed == rc_two == EXIT_STALLED
+        assert "scan roots: 2 readable" in out_packed
+        assert "scan roots: 2 readable" in out_two
+
+
+class TestColonPackedThroughCLI:
+    """End-to-end through the real argparse entry points: the exact shape the
+    live launchd plist passes must reach every pass's own machinery."""
+
+    def test_cli_watchdog_packed_scan_root_scans_both(self, tmp_path, monkeypatch):
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"
+        run_dep = _w(dep / "pres-run", age=40)
+        run_extra = _w(extra / "client" / "deck" / "2026-08-27", age=40)
+        packed = os.pathsep.join([str(dep), str(extra)])
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
+        monkeypatch.delenv("MISSION_CONTROL_URL", raising=False)
+        from presentation_job import __main__ as pj_main
+        rc = pj_main.main(["--watchdog", "--scan-root", packed,
+                           "--scan-depth", "3", "--enforce"])
+        assert rc == EXIT_STALLED
+        # both roots scanned; findings/audit owned by the FIRST chunk
+        lines = [json.loads(l) for l in
+                 (dep / "watchdog-findings.jsonl").read_text().splitlines()
+                 if l.strip()]
+        assert any(str(run_extra) in l["run_dir"] for l in lines), \
+            "the second packed root's stalled run must be found and recorded"
+        assert any(str(run_dep) in l["run_dir"] for l in lines)
+        assert all(str(extra) in l["scan_roots"] for l in lines)
+        rec = json.loads((dep / "watchdog-scan-audit.jsonl")
+                         .read_text().splitlines()[-1])
+        assert rec["scanned"] == 2 and rec["complete"] is True
+
+    def test_cli_watchdog_single_root_unchanged(self, tmp_path, monkeypatch):
+        dep = tmp_path / "dep"
+        _w(dep / "pres-run", age=40)
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
+        monkeypatch.delenv("MISSION_CONTROL_URL", raising=False)
+        from presentation_job import __main__ as pj_main
+        rc = pj_main.main(["--watchdog", "--scan-root", str(dep),
+                           "--scan-depth", "1", "--enforce"])
+        assert rc == EXIT_STALLED
+        rec = json.loads((dep / "watchdog-scan-audit.jsonl")
+                         .read_text().splitlines()[-1])
+        assert rec["scanned"] == 1
+        assert [str(r["path"]) for r in rec["scan_roots"] if isinstance(r, dict)] \
+            or str(dep) in rec["scan_roots"]
+
+    def test_cli_reconcile_packed_scan_root_sweeps_both(self, tmp_path, monkeypatch):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_sweep import _make_state, _write_state
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"
+        _write_state(dep / "run1", _make_state(dep / "run1", deck_slug="deck-1"))
+        run_extra = extra / "client" / "deck" / "2026-08-27"
+        _write_state(run_extra, _make_state(run_extra, deck_slug="deck-extra"))
+        packed = os.pathsep.join([str(dep), str(extra)])
+        monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
+        monkeypatch.delenv("MISSION_CONTROL_URL", raising=False)
+        from presentation_job import __main__ as pj_main
+        rc = pj_main.main(["--reconcile-board", "--scan-root", packed,
+                           "--scan-depth", "3"])
+        assert rc == EXIT_OK
+        assert str(run_extra) in (dep / "reconcile-findings.jsonl").read_text(), \
+            "the second packed root's card_missing run must be recorded"
+
+    def test_cli_run_discovery_packed_runs_root_finds_both(self, tmp_path):
+        import run_discovery as rd
+        dep = tmp_path / "dep"; dep.mkdir()
+        extra = tmp_path / "webinar-decks"
+        # unregistered: state.json without a job_id
+        ghost = extra / "client" / "deck" / "2026-08-27"
+        ghost.mkdir(parents=True)
+        (ghost / "state.json").write_text(json.dumps(
+            {"schema_version": 1, "job_id": None, "run_dir": None}))
+        packed = os.pathsep.join([str(dep), str(extra)])
+        buf = io.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            rc = rd.main(["--runs-root", packed, "--scan-depth", "3"])
+        finally:
+            sys.stdout = old
+        out = buf.getvalue()
+        assert rc == 0  # fail-soft, exit 0 always
+        assert "scan roots: 2 readable" in out
+        assert str(ghost) in out and "1 unregistered run dir(s)" in out
 
 
 # ---------------------------------------------------------------------------

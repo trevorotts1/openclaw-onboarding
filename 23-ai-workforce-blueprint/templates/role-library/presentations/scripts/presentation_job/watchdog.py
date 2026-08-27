@@ -29,7 +29,7 @@ from .manifest import (
 )
 from .scan_roots import (
     default_config_path, format_roots_report, ok_roots, resolve_scan_roots,
-    undetermined_roots,
+    split_primary, undetermined_roots,
 )
 
 
@@ -99,6 +99,12 @@ def watchdog(
     roots = resolve_scan_roots(
         primary=scan_root, extra=extra_roots, env=env, config_path=roots_config,
     )
+    # Findings/audit owner: the FIRST chunk of the primary root. For a
+    # single-path --scan-root this is the root itself, exactly as before;
+    # for an os.pathsep-packed primary (the live plist's SCAN_ROOT shape)
+    # the first chunk -- normally the department tree -- owns the files.
+    primary_chunks = split_primary(scan_root)
+    findings_owner = primary_chunks[0] if primary_chunks else Path(scan_root)
     readable = ok_roots(roots)
     unreadable = undetermined_roots(roots)
     print(format_roots_report(roots, "watchdog"), flush=True)
@@ -177,7 +183,7 @@ def watchdog(
               f"{skipped_no_heartbeat} without a heartbeat, {skipped_bad_timestamp} with an "
               f"unreadable timestamp, {healthy} healthy, {n_stalled} stalled", flush=True)
 
-    findings_path = scan_root / "watchdog-findings.jsonl"
+    findings_path = findings_owner / "watchdog-findings.jsonl"
     for run_dir, pid, age, interval, threshold, source, job_id in findings:
         line = json.dumps({
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -204,7 +210,7 @@ def watchdog(
     # and the way the 2026-08-27 incident was proved was by counting run_dir
     # values per line across it. Mixing in records with no run_dir would have
     # broken the very analysis this fix exists to make possible.
-    audit_path = scan_root / "watchdog-scan-audit.jsonl"
+    audit_path = findings_owner / "watchdog-scan-audit.jsonl"
     try:
         with open(audit_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({
@@ -232,7 +238,7 @@ def watchdog(
                 f"interval source: {source})"
             )
         msg = (
-            f"Watchdog: {n_stalled} stalled job(s) in {scan_root}\n"
+            f"Watchdog: {n_stalled} stalled job(s) in {findings_owner}\n"
             + "\n".join(lines)
         )
         from .report import dispatch
