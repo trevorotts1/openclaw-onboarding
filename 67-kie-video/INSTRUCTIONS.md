@@ -90,6 +90,7 @@ Routing policy:
   - Motion Transfer (Puppeteer): `kling-3.0/motion-control`
   - Short + Cheap: `kling/v2-5-turbo-text-to-video-pro` or `bytedance/seedance-2-mini`
   - Dedicated: `runway` or `veo3` / `veo3_fast` / `veo3_lite`
+  - Compute the clip count BEFORE dispatch when the target exceeds the model max: N = ceil(target / model_max), multi-clip plan per references/models.md "Clip Planning for Long Targets".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3: EXPAND & VALIDATE THE PROMPT
@@ -118,10 +119,14 @@ Validate full payload JSON against models.json:
 
 Enforces:
 - Endpoint/family match (`kie-market` -> `createTask`, `runway-dedicated` -> `generate`, `veo-dedicated` -> `generate`).
-- Duration within supported duration window.
+- Duration against the model's duration window: range windows are errors when outside bounds (string "2-30s" or array [3, 15] shapes); discrete and comma-list windows ("5s or 10s", "4, 6, 8s") are errors when the duration is not a listed option.
 - Resolution in allowed enum.
-- Media reference counts and file sizes.
-- Runway 1080p 5s duration ceiling.
+- Media reference counts against the registry's numeric max_reference_images/videos/audios fields (and prose caps where they carry "imgs"/"vids" counts) plus file-size structural rules.
+- Veo generationType constraints: REFERENCE_2_VIDEO only on veo3_fast/veo3_lite at 8s with 1-3 image_urls; FIRST_AND_LAST_FRAMES_2_VIDEO exactly 2 image_urls; default path 1-2 image_urls.
+- Wan 2.7 family 500-character negative_prompt cap (VERIFIED).
+- Runway 1080p 5s duration ceiling (10s requires 720p).
+
+Durations above a model's maximum are surfaced by the selector as a clip-plan note (Step 2) before payload validation runs.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 5: DISPATCH & WAIT
