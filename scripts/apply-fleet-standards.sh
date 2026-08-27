@@ -1944,14 +1944,16 @@ ROUTE_HELPER_SH
   chmod 700 "$PRES_REFLEX_HELPER_PATH"
   echo "[apply-fleet-standards] stamped signed route helper → $PRES_REFLEX_HELPER_PATH (chmod 700)"
 
-  # (d) Idempotent V2 stamp with V1 auto-migration. Re-stamp when V2 is missing OR
-  #     a stray V1 co-exists; otherwise no-op (helper was still refreshed above).
-  if grep -qF "$PRES_REFLEX_V2_MARKER" "$AGENTS_FILE_EARLY" && ! grep -qF "$PRES_REFLEX_V1_MARKER" "$AGENTS_FILE_EARLY"; then
-    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 already present in $AGENTS_FILE_EARLY — no-op (helper refreshed)"
-  else
-    grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" && _strip_pres_reflex "$AGENTS_FILE_EARLY" || true
-    PRES_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_TMPL")
-    cat > "$PRES_REFLEX_TMPL" <<'PRES_REFLEX_V2'
+  # (d) Idempotent BY CONTENT (same convention as RESCUE_ESCALATION_BOXNAME_V2
+  #     below): marker PRESENCE alone is NOT sufficient — a template body
+  #     edited in place without a version bump (as happened when the chat-id
+  #     MANDATORY text below was added) left every already-V2-stamped box
+  #     frozen at the first-stamped body forever. Render the template fresh
+  #     every run, then compare it byte-for-byte against whatever is currently
+  #     stamped; re-stamp on ANY diff (including a stray V1, or no marker at
+  #     all), no-op only on a true content match.
+  PRES_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_TMPL")
+  cat > "$PRES_REFLEX_TMPL" <<'PRES_REFLEX_V2'
 <!-- PRESENTATION_ROUTING_REFLEX_V2 -->
 # ⛔ REFLEX 0 — PRESENTATION REQUESTS: ROUTE BEFORE YOU THINK (this block runs FIRST)
 
@@ -2035,12 +2037,56 @@ lost and the build fails the representation gate. The CEO's entire job for a pre
 is three words: route, ack, stop.
 <!-- END PRESENTATION_ROUTING_REFLEX_V2 -->
 PRES_REFLEX_V2
-    PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
-    RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
-    ORIGINAL_REFLEX_CONTENT="$(cat "$AGENTS_FILE_EARLY")"
-    { cat "$PRES_REFLEX_RENDERED"; printf '\n'; printf '%s' "$ORIGINAL_REFLEX_CONTENT"; } > "$AGENTS_FILE_EARLY"
-    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 stamped at absolute top of $AGENTS_FILE_EARLY"
-  fi
+  PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
+  RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
+  PRES_REFLEX_VERDICT="$(python3 - "$AGENTS_FILE_EARLY" "$PRES_REFLEX_RENDERED" <<'PRESCMP_PY'
+import os, re, sys
+
+path, rendered_path = sys.argv[1], sys.argv[2]
+txt = open(path, encoding="utf-8", errors="replace").read()
+rendered = open(rendered_path, encoding="utf-8", errors="replace").read()
+
+def block_re(ver):
+    return re.compile(
+        r"<!-- PRESENTATION_ROUTING_REFLEX_" + ver + r" -->.*?"
+        r"<!-- END PRESENTATION_ROUTING_REFLEX_" + ver + r" -->[ \t]*\r?\n?",
+        re.DOTALL)
+
+v2_re, v1_re = block_re("V2"), block_re("V1")
+m2 = v2_re.search(txt)
+has_v1 = bool(v1_re.search(txt))
+rendered_norm = rendered.rstrip("\n") + "\n"
+
+if m2 and not has_v1:
+    current_norm = m2.group(0).rstrip("\n") + "\n"
+    if current_norm == rendered_norm:
+        print("noop"); raise SystemExit(0)
+
+stripped = v1_re.sub("", txt)
+stripped = v2_re.sub("", stripped).lstrip("\n")
+out = rendered_norm + ("\n" + stripped if stripped else "")
+
+tmp = path + ".tmp-pres-reflex"
+try:
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(out)
+    os.replace(tmp, path)
+except Exception:
+    try: os.unlink(tmp)
+    except Exception: pass
+    print("error"); raise SystemExit(0)
+
+print("restamped" if m2 else ("migrated" if has_v1 else "stamped"))
+PRESCMP_PY
+)" || PRES_REFLEX_VERDICT="error"
+  case "$PRES_REFLEX_VERDICT" in
+    noop)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 already current in $AGENTS_FILE_EARLY — no-op (helper refreshed)" ;;
+    restamped|migrated|stamped)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 ($PRES_REFLEX_VERDICT — content changed) at absolute top of $AGENTS_FILE_EARLY" ;;
+    *)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 stamp FAILED for $AGENTS_FILE_EARLY (verdict=$PRES_REFLEX_VERDICT) — next roll retries" ;;
+  esac
 fi
 
 # ─── 4b-SKILL-REFLEX. Inject SKILL_INTENT_ROUTING_REFLEX_V1 (Layer C) ──────────
