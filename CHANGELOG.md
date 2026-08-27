@@ -1,3 +1,15 @@
+## [v22.0.76]  -  2026-08-26  -  fix(rescue-rangers): add missing X-Rescue-Secret header to 4 escalation examples (PR #986)
+
+Rescue Rangers escalation calls produced a sustained stream of 401s at the relay
+(unauthenticated traffic from `board-hygiene`, `persona-grounding-sweep`,
+`sweep-liveness` agent personas reading SOP 9.2 step 2 verbatim). Full-repo
+sweep of every curl example targeting `$RESCUE_RANGERS_WEBHOOK_URL`: 4 places
+still missing the header (`sop-rescue-rangers-escalation.md` SOP 9.2 step 2,
+`openclaw-maintenance-suggested-roles.md`, `sop-furnace-watch-hourly.md`,
+`06-ghl-install-pages/tools/browser_manager.sh`), each fixed by copying the
+existing correct idiom verbatim from its own file's sibling. No new pattern, no
+SOP-text rewrite, no adjacent tidying.
+
 ## [v22.0.77]  -  2026-08-26  -  feat(media-skills): modernize Skill 07, upgrade 63/64, add KIE skills 66/67/68
 
 Media generation skills rebuilt end-to-end per the BlackCEO Media Skills spec:
