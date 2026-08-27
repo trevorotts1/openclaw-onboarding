@@ -66,31 +66,58 @@ def parse_duration_seconds(dur_val):
     return None
 
 
-def validate_duration_against_window(dur_sec, window_str, errors, warnings):
-    """Check duration against duration_window_seconds string."""
-    if dur_sec is None or not window_str:
+def validate_duration_against_window(dur_sec, window, errors, warnings):
+    """Check duration against duration_window_seconds (string or [low, high] array).
+
+    Supported window shapes (verified 2026-08-27):
+      [3, 15]                    JSON array range -> bounds check (kling-3.0-omni I2V/R2V, seedance-2-mini)
+      "2-30s (or -1 auto)"       range string     -> bounds check
+      "5s or 10s ('5', '10')"    discrete or-list -> membership required (kling 2.5 turbo, runway)
+      "4, 6, 8s" / "4, 6, 8, 10s" discrete comma-list -> membership required (veo3, gemini omni)
+      windows containing "-1"    auto duration allowed for dur_sec == -1
+    """
+    if dur_sec is None or not window:
         return
-    # Common formats:
-    # "2-30s (or -1 auto)", "3-15s (1-15s/shot)", "5s or 10s ('5', '10')", "4, 6, 8, 10s", "4-15s"
-    if dur_sec == -1 and "-1" in window_str:
-        return  # auto duration allowed
-    # Discrete list e.g. "5s or 10s" or "4, 6, 8s" or "4, 6, 8, 10s"
-    discrete_nums = [float(x) for x in re.findall(r"\b(\d+)\s*s?\b", window_str) if "-" not in window_str]
-    if discrete_nums and "or" in window_str and "-" not in window_str:
-        if dur_sec not in discrete_nums:
-            warnings.append(
-                f"duration {dur_sec}s not in discrete options {discrete_nums} ({window_str})"
-            )
+    # Auto duration: only valid when the window itself documents a -1 option.
+    if isinstance(window, str) and dur_sec == -1 and "-1" in window:
         return
 
-    # Range format e.g. "2-30s" or "3-15s" or "4-15s"
-    m_range = re.search(r"(\d+)\s*-\s*(\d+)s", window_str)
+    # 1. Array window: [low, high] range (e.g. kling-3.0-omni image-to-video [3, 15]).
+    if isinstance(window, list):
+        if len(window) == 2 and all(isinstance(x, (int, float)) for x in window):
+            low, high = float(window[0]), float(window[1])
+            if dur_sec < low or dur_sec > high:
+                errors.append(
+                    f"duration {dur_sec}s outside supported range {low}s-{high}s ({window})"
+                )
+        else:
+            warnings.append(f"unrecognized duration_window_seconds shape: {window!r}")
+        return
+
+    if not isinstance(window, str):
+        warnings.append(f"unrecognized duration_window_seconds type: {type(window).__name__}")
+        return
+
+    # 2. Range string e.g. "2-30s" or "3-15s" or "4-15s" or "3-15s (1-15s/shot)".
+    m_range = re.search(r"(\d+)\s*-\s*(\d+)\s*s", window)
     if m_range:
         low, high = float(m_range.group(1)), float(m_range.group(2))
         if dur_sec < low or dur_sec > high:
             errors.append(
-                f"duration {dur_sec}s outside supported range {low}s-{high}s ({window_str})"
+                f"duration {dur_sec}s outside supported range {low}s-{high}s ({window})"
             )
+        return
+
+    # 3. Discrete enumeration e.g. "5s or 10s", "4, 6, 8s", "4, 6, 8, 10s".
+    discrete_nums = [float(x) for x in re.findall(r"\b(\d+)\s*s?\b", window)]
+    if discrete_nums:
+        if dur_sec not in discrete_nums:
+            errors.append(
+                f"duration {dur_sec}s not in supported options {discrete_nums} ({window})"
+            )
+        return
+
+    warnings.append(f"unrecognized duration_window_seconds format: {window!r}")
 
 
 def check_media_refs(model, media_dict, errors, warnings):
@@ -167,6 +194,26 @@ def check_media_refs(model, media_dict, errors, warnings):
         vid_limit = int(m_vid_cap.group(1))
         if total_vids > vid_limit:
             errors.append(f"video reference count {total_vids} exceeds limit {vid_limit} ({max_refs_str})")
+
+    # Registry-numeric check: max_reference_images/videos/audios are machine-readable
+    # integers added to models.json (2026-08-27). Prose regexes above miss limits
+    # written as "images"/"videos" (e.g. "Up to 2 images", "1-7 image references"),
+    # so the numeric fields are authoritative when present.
+    max_imgs = model.get("max_reference_images")
+    if max_imgs is not None and total_imgs > max_imgs:
+        errors.append(
+            f"image reference count {total_imgs} exceeds max_reference_images {max_imgs} for {model['canonical_model_id']}"
+        )
+    max_vids = model.get("max_reference_videos")
+    if max_vids is not None and total_vids > max_vids:
+        errors.append(
+            f"video reference count {total_vids} exceeds max_reference_videos {max_vids} for {model['canonical_model_id']}"
+        )
+    max_auds = model.get("max_reference_audios")
+    if max_auds is not None and total_auds > max_auds:
+        errors.append(
+            f"audio reference count {total_auds} exceeds max_reference_audios {max_auds} for {model['canonical_model_id']}"
+        )
 
 
 def validate(payload, model_id_override=None):
@@ -275,6 +322,17 @@ def validate(payload, model_id_override=None):
                 )
             checked["prompt_chars"] = p_len
 
+    # 1b. Negative prompt cap: Wan 2.7 family publishes a separate 500-char
+    # negative_prompt cap alongside the 5,000-char prompt cap (VERIFIED).
+    negative_prompt = inp.get("negative_prompt")
+    if isinstance(negative_prompt, str) and model_name.startswith("wan/2-7"):
+        np_len = len(negative_prompt.strip())
+        if np_len > 500:
+            errors.append(
+                f"negative_prompt is {np_len} chars; hard cap 500 for {model_name} (VERIFIED)"
+            )
+        checked["negative_prompt_chars"] = np_len
+
     # 2. Duration check
     dur = inp.get("duration")
     if dur is not None:
@@ -304,6 +362,37 @@ def validate(payload, model_id_override=None):
         dur_val = inp.get("duration")
         if str(qual).lower() in ["1080p", "1080"] and dur_val in [10, "10", "10s"]:
             errors.append("Runway 1080p quality is restricted to 5 seconds duration; 10s requires 720p")
+
+    # 4b. Veo generationType constraints (dedicated Veo API, verified 2026-08-27
+    # against references/api-patterns.md):
+    #   REFERENCE_2_VIDEO          -> model must be veo3_fast/veo3_lite (veo3 quality
+    #                                 tier does not expose it), duration must be 8s,
+    #                                 image_urls count 1-3
+    #   FIRST_AND_LAST_FRAMES_2_VIDEO -> image_urls exactly 2
+    #   default (TEXT_2_VIDEO, no generationType) -> image_urls 1-2
+    # Only enforced when the relevant fields are present in the payload.
+    if model_name in ["veo3", "veo3_fast", "veo3_lite"]:
+        gen_type = inp.get("generationType")
+        image_urls = inp.get("image_urls")
+        img_count = len(image_urls) if isinstance(image_urls, list) else None
+
+        if gen_type == "REFERENCE_2_VIDEO":
+            if model_name == "veo3":
+                errors.append(
+                    "REFERENCE_2_VIDEO is restricted to veo3_fast / veo3_lite; veo3 (quality tier) does not support it"
+                )
+            dur_val = inp.get("duration")
+            if dur_val is not None and dur_val not in [8, "8", "8s"]:
+                errors.append("REFERENCE_2_VIDEO only supports duration 8s")
+            if img_count is not None and not (1 <= img_count <= 3):
+                errors.append(f"REFERENCE_2_VIDEO requires 1-3 image_urls; got {img_count}")
+        elif gen_type == "FIRST_AND_LAST_FRAMES_2_VIDEO":
+            if img_count is not None and img_count != 2:
+                errors.append(f"FIRST_AND_LAST_FRAMES_2_VIDEO requires exactly 2 image_urls; got {img_count}")
+        else:
+            # Default / TEXT_2_VIDEO path: images allowed only as 1-2 references
+            if img_count is not None and not (1 <= img_count <= 2):
+                errors.append(f"veo generationType {gen_type or 'TEXT_2_VIDEO (default)'} allows 1-2 image_urls; got {img_count}")
 
     # 5. Media refs check
     check_media_refs(model, inp, errors, warnings)
@@ -440,6 +529,260 @@ def selftest():
             },
             False,
             "media references",
+        ),
+        # 9. Array window [3, 15]: in-range duration -> valid
+        (
+            "Kling omni I2V array window dur 5",
+            {
+                "model": "kling-3.0-omni/image-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "resolution": "1080p",
+                },
+            },
+            True,
+            None,
+        ),
+        # 10. Array window [3, 15]: above range -> error (previously crashed on list)
+        (
+            "Kling omni I2V array window dur 16",
+            {
+                "model": "kling-3.0-omni/image-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 16,
+                    "resolution": "1080p",
+                },
+            },
+            False,
+            "outside supported range 3.0s-15.0s",
+        ),
+        # 11. Discrete comma-list window: veo3 dur 8 (default) -> valid
+        (
+            "Veo3 discrete dur 8",
+            {
+                "model": "veo3",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+            },
+            True,
+            None,
+        ),
+        # 12. Discrete comma-list window: veo3 dur 12 -> error (previously silent pass)
+        (
+            "Veo3 discrete dur 12",
+            {
+                "model": "veo3",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 12,
+            },
+            False,
+            "not in supported options",
+        ),
+        # 13. Discrete or-list window: gemini omni dur 10 -> valid
+        (
+            "Gemini omni discrete dur 10",
+            {
+                "model": "gemini-omni-video",
+                "input": {"prompt": "A", "duration": 10, "resolution": "1080p"},
+            },
+            True,
+            None,
+        ),
+        # 14. Discrete or-list window: gemini omni dur 12 -> error
+        (
+            "Gemini omni discrete dur 12",
+            {
+                "model": "gemini-omni-video",
+                "input": {"prompt": "A", "duration": 12, "resolution": "1080p"},
+            },
+            False,
+            "not in supported options",
+        ),
+        # 15. Discrete or-list window: runway dur 7 -> error (previously warning-only)
+        (
+            "Runway discrete dur 7",
+            {
+                "api_family": "runway-dedicated",
+                "create_endpoint": "/api/v1/runway/generate",
+                "prompt": "A",
+                "duration": 7,
+                "quality": "720p",
+            },
+            False,
+            "not in supported options",
+        ),
+        # 16. Discrete or-list window: runway dur 10 at 720p -> valid
+        (
+            "Runway discrete dur 10 720p",
+            {
+                "api_family": "runway-dedicated",
+                "create_endpoint": "/api/v1/runway/generate",
+                "prompt": "A",
+                "duration": 10,
+                "quality": "720p",
+            },
+            True,
+            None,
+        ),
+        # 17. Kling 2.5 turbo discrete window dur 7 -> error (previously warning-only)
+        (
+            "Kling turbo discrete dur 7",
+            {
+                "model": "kling/v2-5-turbo-text-to-video-pro",
+                "input": {"prompt": "A", "duration": 7},
+            },
+            False,
+            "not in supported options",
+        ),
+        # 18. Veo REFERENCE_2_VIDEO on veo3 (quality tier) -> error
+        (
+            "Veo3 REFERENCE_2_VIDEO rejected",
+            {
+                "model": "veo3",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+                "generationType": "REFERENCE_2_VIDEO",
+                "image_urls": ["u1", "u2"],
+            },
+            False,
+            "restricted to veo3_fast / veo3_lite",
+        ),
+        # 19. Veo fast REFERENCE_2_VIDEO with 5 images -> error (1-3 allowed)
+        (
+            "Veo fast R2V 5 images",
+            {
+                "model": "veo3_fast",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+                "generationType": "REFERENCE_2_VIDEO",
+                "image_urls": ["u1", "u2", "u3", "u4", "u5"],
+            },
+            False,
+            "requires 1-3 image_urls",
+        ),
+        # 20. Veo fast REFERENCE_2_VIDEO with 3 images at 8s -> valid
+        (
+            "Veo fast R2V 3 images 8s valid",
+            {
+                "model": "veo3_fast",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+                "generationType": "REFERENCE_2_VIDEO",
+                "image_urls": ["u1", "u2", "u3"],
+            },
+            True,
+            None,
+        ),
+        # 21. Veo FIRST_AND_LAST_FRAMES with 3 images -> error (exactly 2 required)
+        (
+            "Veo first-last 3 images",
+            {
+                "model": "veo3_fast",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+                "generationType": "FIRST_AND_LAST_FRAMES_2_VIDEO",
+                "image_urls": ["u1", "u2", "u3"],
+            },
+            False,
+            "exactly 2 image_urls",
+        ),
+        # 22. Veo default path with 3 images -> error (1-2 allowed)
+        (
+            "Veo default 3 images",
+            {
+                "model": "veo3_lite",
+                "api_family": "veo3-dedicated",
+                "create_endpoint": "/api/v1/veo/generate",
+                "prompt": "A",
+                "duration": 8,
+                "image_urls": ["u1", "u2", "u3"],
+            },
+            False,
+            "allows 1-2 image_urls",
+        ),
+        # 23. Registry-numeric media cap: pixverse I2V 7 images (max 2) -> error
+        (
+            "Pixverse I2V 7 images",
+            {
+                "model": "pixverse-v6/image-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "image_urls": ["u1", "u2", "u3", "u4", "u5", "u6", "u7"],
+                },
+            },
+            False,
+            "exceeds max_reference_images 2",
+        ),
+        # 24. Registry-numeric media cap: wan 3.0 11 images (max 10) -> error
+        (
+            "Wan 3.0 11 images",
+            {
+                "model": "wan/3-0-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "image_urls": ["u%d" % i for i in range(1, 12)],
+                },
+            },
+            False,
+            "11 exceeds",
+        ),
+        # 25. Registry-numeric media cap: happyhorse 1.1 R2V 10 images (max 9) -> error
+        (
+            "Happyhorse R2V 10 images",
+            {
+                "model": "happyhorse-1-1/reference-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "image_urls": ["u%d" % i for i in range(1, 11)],
+                },
+            },
+            False,
+            "exceeds max_reference_images 9",
+        ),
+        # 26. Wan 2.7 negative_prompt over 500-char cap -> error
+        (
+            "Wan 2.7 negative prompt over cap",
+            {
+                "model": "wan/2-7-text-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "negative_prompt": "n" * 600,
+                },
+            },
+            False,
+            "negative_prompt is 600 chars; hard cap 500",
+        ),
+        # 27. Wan 2.7 negative_prompt within cap -> valid
+        (
+            "Wan 2.7 negative prompt within cap",
+            {
+                "model": "wan/2-7-text-to-video",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "negative_prompt": "n" * 400,
+                },
+            },
+            True,
+            None,
         ),
     ]
 
