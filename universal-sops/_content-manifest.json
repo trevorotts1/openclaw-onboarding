@@ -1,12 +1,12 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-25T02:02:27Z",
-  "file_count": 112,
+  "generated_at": "2026-08-27T18:35:01Z",
+  "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "8fb26b6e3c559685d17ec9f88ceede75d8423c8236c44bbc93d47c07fd8837ef",
-      "bytes": 31629
+      "sha256": "244176b4a2b418cc332df8f3d2415dcbb4d67739900081076eb883f502999f37",
+      "bytes": 32014
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
       "sha256": "ae0ea539946e23a2a0fd774d06b4e892521211e194954c412d2d14a5ff4679a6",
@@ -301,8 +301,8 @@
       "bytes": 121328
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "991516d8e11f2c5d08acf4e52a0744ef5b11817216c1e329b07335653775a0ad",
-      "bytes": 163514
+      "sha256": "29bbe74458609e0e04b7df0ea653a5335da223a1e7c9b65ab4b4654a5ecc0943",
+      "bytes": 163481
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -343,6 +343,10 @@
     "presentation-slide-craft/SOP-SLIDE-07-PRICE-LADDER-RECONCILIATION.md": {
       "sha256": "f44f538ea51ec1a58b58ba302bad3b47d32f01b3e8e5129853ddd3a2edd86448",
       "bytes": 4819
+    },
+    "presentation-slide-craft/WORKERS-TUNING-EXAMPLE.md": {
+      "sha256": "db8c49fbc049dd4ab4598795b617cc175c51d757f136a7001508c2310154abe4",
+      "bytes": 4257
     },
     "product-bio-craft/README.md": {
       "sha256": "e9776de5172089bb334c97c62f5fa49ed33956d4449f546227390ef138691943",
