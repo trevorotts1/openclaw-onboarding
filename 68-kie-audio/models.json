@@ -17,7 +17,7 @@
       "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
       "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
       "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value",
-      "ADVERTISED_NOT_YET_VERIFIED": "vendor advertises the model/limit on a marketing page but no live verification exists yet; treat as unverified until probed; never a hard-fail"
+      "ADVERTISED_NOT_YET_VERIFIED": "vendor page advertises the limit; no live call made yet; dispatch disabled until proven"
     }
   },
   "entries": [
