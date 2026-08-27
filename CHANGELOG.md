@@ -1,3 +1,5 @@
+## [v22.0.79]  -  2026-08-27  -  Media limits review fixes: 66-kie-image GPT Image 2 25,000-char operator-confirmed cap; 67-kie-video duration windows, Veo generationType enforcement, clip planning; 68-kie-audio speed guard, text caps, add_vocals validation, registry policy legend; 63-agnes-image example fixes; 07-kie-setup Veo/Suno record-info endpoints
+
 ## [v22.0.78]  -  2026-08-27  -  fix(67-kie-video): repack 67-kie-video-1.0.0.skill so embedded CORE_UPDATES.md carries the sibling-convention header format (skill-version.txt v1.0.0 -> v1.0.1)
 
 ## [v22.0.76]  -  2026-08-26  -  fix(rescue-rangers): add missing X-Rescue-Secret header to 4 escalation examples (PR #986)
