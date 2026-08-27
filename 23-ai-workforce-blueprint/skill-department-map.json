@@ -744,6 +744,36 @@
    "execution_sops": []
   },
   {
+   "skill": "66",
+   "slug": "kie-image",
+   "name": "kie-image",
+   "client_facing": false,
+   "description": "Setup/reference: KIE image generation via the KIE.ai Market API; owns model selection across 14 image families (GPT Image 2, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5, Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3, Imagen 4), payload validation against a machine-readable registry, prompt sizing against published limits, async task dispatch, and real visual QC.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
+   "skill": "67",
+   "slug": "kie-video",
+   "name": "kie-video",
+   "client_facing": false,
+   "description": "Setup/reference: KIE video generation via the KIE.ai API; owns model selection across 37 models (Wan 3.0/2.7, Kling 3.0 Omni/3.0/2.6/2.5 Turbo, ByteDance Seedance 2.5/2.0 Mini, PixVerse V6, MiniMax H3, HappyHorse 1.1/1.0, Gemini Omni Video, Runway Dedicated, Veo 3.1 Dedicated), payload validation against a machine-readable registry, prompt sizing against published limits, async task dispatch with callbacks or polling, and real visual QC.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
+   "skill": "68",
+   "slug": "kie-audio",
+   "name": "kie-audio",
+   "client_facing": false,
+   "description": "Setup/reference: KIE audio skill (TTS via generic Market createTask, Suno music/sound generation via the DEDICATED /api/v1/generate family, speech-to-text capability detection with dispatch_enabled false).",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
    "skill": "06",
    "slug": "ghl-install-pages",
    "name": "ghl-install-pages",
