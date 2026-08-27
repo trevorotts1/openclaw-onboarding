@@ -55,7 +55,7 @@ When dispatching media generation requests, use this routing architecture:
    - States: `waiting`, `queuing`, `generating`, `success`, `fail` (HTTP 200 means accepted, not complete).
 3. **Dedicated API families** — Dedicated endpoints that bypass generic `createTask`:
    - Runway: `POST /api/v1/runway/generate`, `GET /api/v1/runway/record-detail`
-   - Veo: `POST /api/v1/veo/generate`, `GET /api/v1/veo/task?taskId=XXX`
+   - Veo: `POST /api/v1/veo/generate`, `GET /api/v1/veo/record-info?taskId=XXX`
    - Suno / Music: `POST /api/v1/generate`, `GET /api/v1/record-info`
 4. **Callback vs polling policy** — Prefer Skill 46 (`callBackUrl`) in production; stepped/exponential backoff for polling (initial 2-3s delay, respect 429, never hammer).
 5. **Rate limits and retention** — 20 new requests per 10s per account; 100+ concurrent running tasks. Generated media expires after 14 days; persist immediately.

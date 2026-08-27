@@ -137,6 +137,17 @@ def check_media_refs(model, media_dict, errors, warnings):
         total_imgs += 1
     if "last_frame_url" in media_dict and media_dict["last_frame_url"]:
         total_imgs += 1
+    # Canonical PixVerse V6 transition frame fields (docs.kie.ai/market/pixverse/transition,
+    # verified 2026-08-27: first_frame_image_url / last_frame_image_url, both required).
+    # Also counts the legacy first_frame/last_frame spellings seen in older payloads.
+    if "first_frame_image_url" in media_dict and media_dict["first_frame_image_url"]:
+        total_imgs += 1
+    if "last_frame_image_url" in media_dict and media_dict["last_frame_image_url"]:
+        total_imgs += 1
+    if "first_frame" in media_dict and media_dict["first_frame"]:
+        total_imgs += 1
+    if "last_frame" in media_dict and media_dict["last_frame"]:
+        total_imgs += 1
     if "image_urls" in media_dict and isinstance(media_dict["image_urls"], list):
         total_imgs += len(media_dict["image_urls"])
     if "input_urls" in media_dict and isinstance(media_dict["input_urls"], list):
@@ -783,6 +794,39 @@ def selftest():
             },
             True,
             None,
+        ),
+        # 28. PixVerse transition: canonical doc field names, exactly 2 frames -> valid
+        (
+            "Pixverse transition canonical fields",
+            {
+                "model": "pixverse-v6/transition",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "quality": "1080p",
+                    "first_frame_image_url": "u1",
+                    "last_frame_image_url": "u2",
+                },
+            },
+            True,
+            None,
+        ),
+        # 29. PixVerse transition: 3 frames via mixed spellings -> error (max 2)
+        (
+            "Pixverse transition 3 frames",
+            {
+                "model": "pixverse-v6/transition",
+                "input": {
+                    "prompt": "A",
+                    "duration": 5,
+                    "quality": "1080p",
+                    "first_frame_image_url": "u1",
+                    "last_frame_image_url": "u2",
+                    "image_url": "u3",
+                },
+            },
+            False,
+            "exceeds max_reference_images 2",
         ),
     ]
 

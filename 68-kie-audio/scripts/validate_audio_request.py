@@ -110,6 +110,29 @@ def _txt_len(s):
     return len(s) if isinstance(s, str) else 0
 
 
+# Known-field vocabulary per route, mirrored from the 66-kie-image post-fix
+# pattern: built from the route's models.json caps / references/tts.md schemas
+# plus the universal fields this file validates. Unknown keys WARN only --
+# advisory, exit stays 0 for warning-only paths (SKILL.md exit contract).
+KNOWN_TOP_FIELDS = {"model", "input", "callBackUrl"}
+GEMINI_INPUT_FIELDS = {"temperature", "speakers", "dialogue_turns"}
+GEMINI_SPEAKER_FIELDS = {"speaker_id", "voice_name", "accent", "style", "pace"}
+GEMINI_TURN_FIELDS = {"speaker_id", "text"}
+EL_DIALOGUE_INPUT_FIELDS = {"dialogue", "stability", "language_code"}
+EL_TTS_INPUT_FIELDS = {"text", "voice", "stability", "similarity_boost", "style",
+                       "speed", "timestamps", "previous_text", "next_text",
+                       "language_code"}
+EL_DIALOGUE_ITEM_FIELDS = {"text", "voice"}
+
+def _warn_unknown_fields(obj, known, label):
+    if not isinstance(obj, dict):
+        return
+    for k in obj.keys():
+        if k not in known:
+            _warn(f"tts: unknown {label} field {k!r} not in the documented schema "
+                  "(advisory; dispatch proceeds if no hard errors)")
+
+
 # ---------------------------------------------------------------------------
 # TTS sub-domain
 # ---------------------------------------------------------------------------
@@ -198,6 +221,13 @@ def _validate_gemini_tts(p, inp):
 
 def _validate_elevenlabs_tts(p, inp):
     model = p["model"]
+    # Unknown-field advisory: warn on top-level keys the schemas do not document
+    # (verified 2026-08-27 -- typical first cause of a silent 422 on dispatch).
+    known_top = {"model", "input", "callBackUrl"}
+    unknown = [k for k in p if k not in known_top and not k.startswith("_")]
+    if unknown:
+        _warn(f"tts: unknown top-level field(s) {', '.join(sorted(unknown))} -- not in the "
+              f"documented schema for {model}; remove or rename before dispatch")
     if model == "elevenlabs/text-to-dialogue-v3":
         dialogue = inp.get("dialogue")
         if not isinstance(dialogue, list) or not dialogue:
@@ -215,6 +245,14 @@ def _validate_elevenlabs_tts(p, inp):
                  f"combined must not exceed 5000 characters.\")")
         elif combined > 4900:
             _warn(f"tts: dialogue-v3 combined {combined} chars above 4900 safe ceiling (rule B)")
+        # previous_text/next_text apply to ALL ElevenLabs models, dialogue-v3 included
+        # (same 5000-char schema max; verified 2026-08-27).
+        prev_d = _txt_len(inp.get("previous_text"))
+        nxt_d = _txt_len(inp.get("next_text"))
+        if prev_d > EL_TEXT_MAX:
+            _err(f"tts: previous_text {prev_d} chars > {EL_TEXT_MAX}")
+        if nxt_d > EL_TEXT_MAX:
+            _err(f"tts: next_text {nxt_d} chars > {EL_TEXT_MAX}")
         stab = inp.get("stability")
         if stab is not None and stab not in EL_STABILITY_ENUM:
             _err(f"tts: stability must be one of 0/0.5/1 (default 0.5), got {stab!r}")
@@ -232,8 +270,20 @@ def _validate_elevenlabs_tts(p, inp):
         if nxt > EL_TEXT_MAX:
             _err(f"tts: next_text {nxt} chars > {EL_TEXT_MAX}")
         speed = inp.get("speed")
-        if speed is not None and not (EL_SPEED_MIN <= float(speed) <= EL_SPEED_MAX):
-            _err(f"tts: speed must be {EL_SPEED_MIN}-{EL_SPEED_MAX} (default 1), got {speed!r}")
+        if speed is not None:
+            try:
+                speed_ok = EL_SPEED_MIN <= float(speed) <= EL_SPEED_MAX
+            except (TypeError, ValueError):
+                speed_ok = False
+            if not speed_ok:
+                _err(f"tts: speed must be {EL_SPEED_MIN}-{EL_SPEED_MAX} (default 1), got {speed!r}")
+        # dialogue-v3 fields apply per input.text too; non-dialogue EL models document
+        # language_code (2-char, max 500 chars on the add-language route is wrong here --
+        # the TTS schema's language field is a 2-letter code, not free text; cap the raw
+        # value at the documented input length to stay safe).
+        lang = inp.get("language_code") or inp.get("languageCode")
+        if lang is not None and _txt_len(lang) > 500:
+            _err(f"tts: language_code {_txt_len(lang)} chars > 500")
 
 
 # ---------------------------------------------------------------------------
@@ -280,11 +330,13 @@ def validate_music(p):
         validate_vocal_removal(p)
     elif op == "add-instrumental":
         validate_add_instrumental(p)
+    elif op == "add-vocals":
+        validate_add_vocals(p)
     elif op == "cover":
         validate_cover(p)
     elif op in ("mp4", "wav", "get-timestamped-lyrics"):
         validate_task_audio_ops(p, op)
-    elif op in ("upload-cover", "upload-extend", "add-vocals", "lyrics", "midi"):
+    elif op in ("upload-cover", "upload-extend", "lyrics", "midi"):
         validate_generic_op_checks(p, op)
     else:
         validate_generate(p)
@@ -477,6 +529,16 @@ def validate_add_instrumental(p):
     if p.get("tags") is not None and _txt_len(p.get("tags")) > 1000:
         _err("music: add-instrumental tags max 1000 chars")
 
+def validate_add_vocals(p):
+    # add-vocals rides the same per-field limits as add-instrumental (same
+    # audio-operations family, verified 2026-08-27 against references/).
+    if p.get("negativeTags") is not None and _txt_len(p.get("negativeTags")) > 200:
+        _err("music: add-vocals negativeTags max 200 chars")
+    if p.get("style") is not None and _txt_len(p.get("style")) > 1000:
+        _err("music: add-vocals style max 1000 chars")
+    if "audioId" not in p and "taskId" not in p:
+        _err("music: add-vocals requires taskId/audioId")
+
 
 def validate_cover(p):
     _warn("music: cover is a one-per-task generation (\"Each music task can only generate "
@@ -551,8 +613,6 @@ def main():
     if args.domain is None or args.payload is None or not args.payload.is_file():
         print("error: --domain <tts|music|stt> and --payload <file.json> required "
               "(or --self-test)", file=sys.stderr)
-        return 2
-        print("error: --payload <file.json> required (or --self-test)", file=sys.stderr)
         return 2
     p = json.loads(args.payload.read_text(encoding="utf-8"))
 
@@ -663,7 +723,44 @@ def self_test():
                 "input": {"prompt": "x"}, "callBackUrl": "https://x/cb"}
         _expect_exit(write("suno-viacreatetask.json", bad3), "music", 2)
 
-        ok = 13
+        # speed non-numeric -> exit 2 (was ValueError traceback rc=1 before the try/except)
+        bad4 = {"model": "elevenlabs/text-to-speech-multilingual-v2",
+                "callBackUrl": "https://x/cb",
+                "input": {"text": "hello", "speed": "fast"}}
+        _expect_exit(write("bad-speed-str.json", bad4), "tts", 2)
+        # speed boundary 1.2 OK
+        ok_speed = {"model": "elevenlabs/text-to-speech-multilingual-v2",
+                    "callBackUrl": "https://x/cb",
+                    "input": {"text": "hello", "speed": 1.2}}
+        _expect_exit(write("ok-speed-max.json", ok_speed), "tts", 0)
+        # unknown top-level key -> warn only, rc 0
+        unk = {"model": "elevenlabs/text-to-speech-turbo-2-5",
+               "callBackUrl": "https://x/cb", "input": {"text": "hi"},
+               "bogus_key": 1}
+        _expect_exit(write("unknown-key.json", unk), "tts", 0)
+        # previous_text 6000 chars -> exit 2 (5000 cap, applies on the non-dialogue path)
+        big_prev = {"model": "elevenlabs/text-to-speech-turbo-2-5",
+                    "callBackUrl": "https://x/cb",
+                    "input": {"text": "hi", "previous_text": "x" * 6000}}
+        _expect_exit(write("big-prev.json", big_prev), "tts", 2)
+        # add-vocals with oversized style -> exit 2
+        av1 = {"endpoint": "/api/v1/generate/add-vocals", "model": "V5",
+               "taskId": "t1", "style": "x" * 1001, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("addvoc-style.json", av1), "music", 2)
+        # add-vocals negativeTags 201 -> exit 2 (models.json:290 cap 200)
+        av1b = {"endpoint": "/api/v1/generate/add-vocals", "model": "V5",
+                "taskId": "t1", "negativeTags": "x" * 201, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("addvoc-negtags.json", av1b), "music", 2)
+        # add-vocals missing taskId/audioId -> exit 2
+        av2 = {"endpoint": "/api/v1/generate/add-vocals", "model": "V5",
+               "style": "pop", "callBackUrl": "https://x/cb"}
+        _expect_exit(write("addvoc-notask.json", av2), "music", 2)
+        # add-vocals complete -> rc 0
+        av3 = {"endpoint": "/api/v1/generate/add-vocals", "model": "V5",
+               "taskId": "t1", "callBackUrl": "https://x/cb"}
+        _expect_exit(write("addvoc-ok.json", av3), "music", 0)
+
+        ok = 21
     print(f"SELF-TEST PASS: {ok} checks green")
     return 0
 

@@ -95,7 +95,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
     "size": "1K",
     "ratio": "1:1",
     "return_base64": true
-  }'
+  }' > resp.json
 
 The image is at data[0].b64_json. Decode and save:
 
@@ -109,12 +109,16 @@ EXAMPLE 4: IMAGE-TO-IMAGE FROM A PUBLIC URL
 What we are doing: restyle an existing image while preserving its composition.
 The input image goes in extra_body.image. No tags are needed.
 
+NOTE: a reference image is attached, so the prompt MUST carry the
+style-reference-only directive verbatim (SKILL.md, mandatory when any
+reference is attached).
+
 curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "agnes-image-2.1-flash",
-    "prompt": "Transform the daytime street into a rain-soaked cyberpunk night with neon reflections, preserving the original street layout, camera angle, and building shapes",
+    "prompt": "Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text. Transform the daytime street into a rain-soaked cyberpunk night with neon reflections, preserving the original street layout, camera angle, and building shapes",
     "size": "2K",
     "ratio": "16:9",
     "extra_body": {
@@ -129,6 +133,10 @@ EXAMPLE 5: IMAGE-TO-IMAGE FROM A LOCAL FILE (DATA URI)
 
 When the source image is on your box (not a public URL), inline it as a Data URI.
 
+NOTE: a reference image is attached, so the prompt MUST carry the
+style-reference-only directive verbatim (SKILL.md, mandatory when any
+reference is attached).
+
 # Build the data URI from a local PNG:
 B64="data:image/png;base64,$(base64 -i input.png | tr -d '\n')"
 
@@ -137,13 +145,17 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{
     "model": "agnes-image-2.1-flash",
-    "prompt": "Make the object matte black while preserving the original composition",
+    "prompt": "Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text. Make the object matte black while preserving the original composition",
     "size": "1K",
     "extra_body": {
       "image": [ "'"$B64"'" ],
       "response_format": "b64_json"
     }
-  }'
+  }' > out.json
+
+The image is at out.json data[0].b64_json. Decode and save:
+
+python3 -c "import json,base64; d=json.load(open('out.json')); open('output.png','wb').write(base64.b64decode(d['data'][0]['b64_json']))"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COMMON MISTAKES TO AVOID

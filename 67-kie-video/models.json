@@ -10,6 +10,13 @@
       "min": 5000,
       "target": 9000,
       "max": 19000
+    },
+    "cap_status_legend": {
+      "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
+      "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
+      "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
+      "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
+      "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value"
     }
   },
   "models": [
@@ -669,7 +676,9 @@
       "vendor_hard_cap_chars": 5000,
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
-      "known_inconsistencies": [],
+      "known_inconsistencies": [
+        "Frame field names aligned 2026-08-27 to docs.kie.ai/market/pixverse/transition, which documents input.first_frame_image_url and input.last_frame_image_url (both required) verbatim: \"first_frame_image_url: type: string, format: uri. First frame image URL. HTTP, HTTPS, OSS; JPG/JPEG/PNG/WebP; <=20 MB.\" The registry's earlier control_fields (first_frame/last_frame) and EXAMPLES.md's earlier image_url/last_frame_url both disagreed with the docs; docs win."
+      ],
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -687,8 +696,8 @@
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch",
-        "first_frame",
-        "last_frame"
+        "first_frame_image_url",
+        "last_frame_image_url"
       ],
       "source_url": "https://docs.kie.ai/market/pixverse/transition",
       "last_verified_at": "2026-08-26",
