@@ -160,11 +160,44 @@ class TestDeadWorkerActiveRun:
         assert rc == EXIT_OK
         assert "WORKER_DEAD" in out
         assert "RESTART_WITHHELD" in out
-        kinds = [e["event"] for e in _events(root)]
-        assert "worker_dead" in kinds and "restart" not in kinds
-        # the ledger records nothing that was not attempted
-        ledger = json.loads((root / LEDGER_FILENAME).read_text())
-        assert ledger["runs"] == {}
+        # D2: report-only is READ-ONLY on the scan root -- stdout reporting
+        # still happens (asserted above) but no events file is written.
+        assert not (root / EVENTS_FILENAME).is_file()
+        # and the ledger records nothing that was not attempted (indeed, no
+        # ledger file exists at all -- a report-only pass writes nothing).
+        assert not (root / LEDGER_FILENAME).is_file()
+
+    def test_one_worker_dead_event_per_dead_run_per_pass(self, tmp_path):
+        # D1 pin: ONE worker_dead emit per dead run per pass, not two. With the
+        # duplicated emit present this fails (2 events, 2 printed lines).
+        root = tmp_path
+        _run(root / "run-once")
+        rc, out = _run_sup(root, apply=False, scan_depth=1)
+        assert rc == EXIT_OK
+        assert out.count("WORKER_DEAD") == 1, out
+        _run_sup(root, apply=True, scan_depth=1,
+                 scripts_dir=Path(_scripts_dir), backoff_seconds=0)
+        events = [e for e in _events(root) if e["event"] == "worker_dead"]
+        assert len(events) == 1, events
+
+    def test_report_only_pass_writes_nothing_under_scan_root(self, tmp_path):
+        # D2 pin: a report-only pass must leave the scanned tree byte-identical
+        # -- no new files, no changed mtimes -- even though it sees a dead run,
+        # an unreadable state, and an already-alarmed run.
+        root = tmp_path
+        rd = _run(root / "run-a")
+        (root / "corrupt").mkdir()
+        (root / "corrupt" / "state.json").write_text("{broken")
+        before = {p: (p.stat().st_mtime_ns, p.stat().st_size)
+                  for p in root.rglob("*") if p.is_file()}
+        rc, out = _run_sup(root, apply=False, scan_depth=1)
+        assert rc == EXIT_OK
+        assert "WORKER_DEAD" in out and "UNREADABLE_STATE" in out
+        after = {p: (p.stat().st_mtime_ns, p.stat().st_size)
+                 for p in root.rglob("*") if p.is_file()}
+        assert set(after) == set(before), \
+            f"report-only pass created files: {set(after) - set(before)}"
+        assert after == before, "report-only pass modified existing files"
 
     def test_no_action_on_terminal_run(self, tmp_path):
         root = tmp_path
@@ -265,16 +298,38 @@ class TestAlarmNotLoop:
             _run_sup(root, apply=True, scan_depth=1, max_restarts=3,
                      backoff_seconds=0, scripts_dir=scripts)
         assert (root / ALARM_FILENAME).is_file()
-        # worker comes back: a real held lock
+        # worker comes back: a real held lock. An --apply pass clears the
+        # budget and the alarm file (a mutation, so it needs --apply)...
         fh = _alive_lock(rd)
         try:
-            rc, out = _run_sup(root, apply=False, scan_depth=1, scripts_dir=scripts)
+            rc, out = _run_sup(root, apply=True, scan_depth=1, scripts_dir=scripts)
         finally:
             fh.close()
         assert "RECOVERED" in out
         assert not (root / ALARM_FILENAME).exists()
         ledger = json.loads((root / LEDGER_FILENAME).read_text())
         assert str(rd) not in ledger["runs"]
+
+    def test_recovery_is_report_only_read_only(self, tmp_path):
+        # D2: a report-only pass over a RECOVERED run reports it on stdout but
+        # must not clear the ledger entry or unlink the alarm file -- those are
+        # mutations of the scanned tree.
+        root = tmp_path
+        rd = _run(root / "run-back2")
+        scripts = self._scripts_missing(tmp_path)
+        for _ in range(3):
+            _run_sup(root, apply=True, scan_depth=1, max_restarts=3,
+                     backoff_seconds=0, scripts_dir=scripts)
+        assert (root / ALARM_FILENAME).is_file()
+        before = (root / LEDGER_FILENAME).read_text()
+        fh = _alive_lock(rd)
+        try:
+            rc, out = _run_sup(root, apply=False, scan_depth=1, scripts_dir=scripts)
+        finally:
+            fh.close()
+        assert "RECOVERED" in out
+        assert (root / ALARM_FILENAME).is_file()
+        assert (root / LEDGER_FILENAME).read_text() == before
 
     def test_backoff_defers_second_restart(self, tmp_path):
         root = tmp_path

@@ -157,12 +157,17 @@ def _write_ledger(scan_root: Path, runs: Dict[str, Any]) -> None:
 
 
 def _emit(scan_root: Path, event: str, run_dir: Path, detail: str,
-          extra: Optional[Dict[str, Any]] = None, notify: bool = False) -> None:
+          extra: Optional[Dict[str, Any]] = None, notify: bool = False,
+          to_disk: bool = True) -> None:
     """One death, one restart, one alarm = one printed line + one jsonl row.
 
     Silence is the whole bug this module exists to fix, so every state change
     goes to stdout (the launchd log) AND to a durable jsonl, and the loud ones
     additionally go out over PRESENTATION_NOTIFY_CMD when it is configured.
+
+    `to_disk=False` (a report-only pass) keeps the stdout line and the notify
+    but writes NOTHING -- not even the scan-root directory itself. A pass that
+    is only reporting must not leave a byte behind on the scanned tree.
     """
     record = {
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -173,13 +178,14 @@ def _emit(scan_root: Path, event: str, run_dir: Path, detail: str,
     if extra:
         record.update(extra)
     print(f"supervisor: {event.upper()} {run_dir}: {detail}", flush=True)
-    try:
-        scan_root.mkdir(parents=True, exist_ok=True)
-        with open(scan_root / EVENTS_FILENAME, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except OSError as exc:
-        print(f"supervisor: WARNING -- cannot append to {scan_root / EVENTS_FILENAME}: {exc}",
-              flush=True)
+    if to_disk:
+        try:
+            scan_root.mkdir(parents=True, exist_ok=True)
+            with open(scan_root / EVENTS_FILENAME, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            print(f"supervisor: WARNING -- cannot append to {scan_root / EVENTS_FILENAME}: {exc}",
+                  flush=True)
     if notify and os.environ.get("PRESENTATION_NOTIFY_CMD"):
         from .report import dispatch
         dispatch("supervisor", event, f"Supervisor {event}: {run_dir}\n{detail}")
@@ -194,9 +200,12 @@ def _backoff_seconds(attempts: int, base: int) -> int:
 
 
 def _raise_alarm(scan_root: Path, run_dir: Path, entry: Dict[str, Any],
-                 max_restarts: int, why: str) -> None:
+                 max_restarts: int, why: str, to_disk: bool = True) -> None:
     """Stop restarting and leave something a human will trip over. Persistent by
-    design: the file stays until the run recovers or someone clears it."""
+    design: the file stays until the run recovers or someone clears it.
+
+    `to_disk=False` (report-only pass) says it loudly on stdout but leaves no
+    alarm file -- a reporting pass may not write to the scanned tree."""
     alarm = {
         "at": utcnow(),
         "run_dir": str(run_dir),
@@ -206,16 +215,17 @@ def _raise_alarm(scan_root: Path, run_dir: Path, entry: Dict[str, Any],
         "last_error": entry.get("last_error"),
         "why": why,
     }
-    try:
-        scan_root.mkdir(parents=True, exist_ok=True)
-        (scan_root / ALARM_FILENAME).write_text(json.dumps(alarm, indent=2), encoding="utf-8")
-    except OSError as exc:
-        print(f"supervisor: WARNING -- cannot write alarm file: {exc}", flush=True)
+    if to_disk:
+        try:
+            scan_root.mkdir(parents=True, exist_ok=True)
+            (scan_root / ALARM_FILENAME).write_text(json.dumps(alarm, indent=2), encoding="utf-8")
+        except OSError as exc:
+            print(f"supervisor: WARNING -- cannot write alarm file: {exc}", flush=True)
     _emit(scan_root, "alarm", run_dir,
           f"restart budget exhausted ({entry.get('attempts', 0)}/{max_restarts}) -- "
           f"NO further restarts will be attempted for this run. {why}",
           extra={"attempts": entry.get("attempts", 0), "max_restarts": max_restarts},
-          notify=True)
+          notify=True, to_disk=to_disk)
 
 
 def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, str]:
@@ -262,6 +272,16 @@ def supervise(
     reconcile-board's --apply (Rule 3.5, warn mode before fail-closed): a pass
     that can start processes on 38 boxes gets to prove itself in the log first.
 
+    READ-ONLY CONTRACT: with `apply=False` this pass writes NOTHING to the
+    scanned tree -- no ledger, no supervisor-events.jsonl, no alarm file, no
+    restart logs, not even the scan-root directory itself (a nonexistent scan
+    root stays nonexistent; a missing ledger reads as empty silently, because
+    not writing is the point, not a failure). Reporting goes to stdout only,
+    and PRESENTATION_NOTIFY_CMD notifications still fire. The durable files
+    (ledger, jsonl, alarms) are written only under --apply. Note the ledger is
+    also what carries the restart budget across passes, so report-only passes
+    never consume or clear it.
+
     Returns EXIT_SUPERVISOR_NO_RUNS (14) when zero state.json files were found
     (UNDETERMINED -- a wrong --scan-root must never read as a healthy fleet; this
     is exactly how the 2026-08-27 death went unseen, the watchdog was pointed at a
@@ -299,7 +319,8 @@ def supervise(
         if not st:
             undetermined += 1
             _emit(scan_root, "unreadable_state", run_dir,
-                  f"{state_path} could not be parsed -- cannot tell whether this run is active")
+                  f"{state_path} could not be parsed -- cannot tell whether this run is active",
+                  to_disk=apply)
             continue
         # DONE/BLOCKED/ABANDONED are the department's terminal values -- ABANDONED
         # (FAULT #11 fix, LIVE-DECK-RUN-FAULTS.md) is the sanctioned retirement
@@ -318,24 +339,35 @@ def supervise(
             alive += 1
             # Recovery clears the budget -- otherwise a long-lived run accretes
             # attempts across days and alarms on its fourth unrelated blip.
-            prior = ledger.pop(key, None)
-            if prior and prior.get("attempts"):
-                _emit(scan_root, "recovered", run_dir,
-                      f"worker is alive again after {prior.get('attempts')} restart(s) -- "
-                      f"restart budget reset")
-                alarm_file = scan_root / ALARM_FILENAME
-                try:
-                    if alarm_file.is_file():
-                        existing = _read_json(alarm_file) or {}
-                        if existing.get("run_dir") == key:
-                            alarm_file.unlink()
-                except OSError:
-                    pass
+            # Report-only passes only LOOK: clearing the ledger entry and
+            # unlinking the alarm file are mutations of the scanned tree, so
+            # they wait for an --apply pass to confirm the recovery.
+            if apply:
+                prior = ledger.pop(key, None)
+                if prior and prior.get("attempts"):
+                    _emit(scan_root, "recovered", run_dir,
+                          f"worker is alive again after {prior.get('attempts')} restart(s) -- "
+                          f"restart budget reset")
+                    alarm_file = scan_root / ALARM_FILENAME
+                    try:
+                        if alarm_file.is_file():
+                            existing = _read_json(alarm_file) or {}
+                            if existing.get("run_dir") == key:
+                                alarm_file.unlink()
+                    except OSError:
+                        pass
+            else:
+                prior = ledger.get(key)
+                if prior and prior.get("attempts"):
+                    _emit(scan_root, "recovered", run_dir,
+                          f"worker is alive again after {prior.get('attempts')} restart(s) -- "
+                          f"restart budget would reset under --apply",
+                          to_disk=False)
             continue
 
         if verdict == UNDETERMINED:
             undetermined += 1
-            _emit(scan_root, "undetermined", run_dir, why, notify=True)
+            _emit(scan_root, "undetermined", run_dir, why, notify=True, to_disk=apply)
             continue
 
         # verdict == DEAD. Stale-abandonment guard: a run whose state has not
@@ -365,30 +397,32 @@ def supervise(
                   f"{max_idle_hours}h) -- too old to restart unrequested, "
                   f"phase {phase}, job {job_id}",
                   extra={"phase": phase, "job_id": job_id,
-                         "idle_hours": round(idle_hours, 1)})
+                         "idle_hours": round(idle_hours, 1)},
+                  to_disk=apply)
             continue
         _emit(scan_root, "worker_dead", run_dir,
               f"{why}; run is NOT terminal (phase {phase}, job {job_id})",
-              extra={"phase": phase, "job_id": job_id}, notify=True)
-        phase = st.get("current_phase", "?")
-        job_id = st.get("job_id", "?")
-        _emit(scan_root, "worker_dead", run_dir,
-              f"{why}; run is NOT terminal (phase {phase}, job {job_id})",
-              extra={"phase": phase, "job_id": job_id}, notify=True)
+              extra={"phase": phase, "job_id": job_id}, notify=True, to_disk=apply)
 
         entry = ledger.get(key) or {"attempts": 0}
         attempts = int(entry.get("attempts") or 0)
 
         if attempts >= max_restarts:
             if not entry.get("alarm_raised"):
+                # Report-only: the ledger is the only memory of "alarm_raised",
+                # so without --apply we say it on stdout but neither consume the
+                # budget nor leave the alarm file -- an --apply pass re-raises.
                 entry["alarm_raised"] = True
-                ledger[key] = entry
+                if apply:
+                    ledger[key] = entry
                 _raise_alarm(scan_root, run_dir, entry, max_restarts,
-                             "worker is still dead after the last restart attempt")
+                             "worker is still dead after the last restart attempt",
+                             to_disk=apply)
             else:
                 _emit(scan_root, "alarm_standing", run_dir,
                       f"still dead, budget still exhausted ({attempts}/{max_restarts}) -- "
-                      f"not restarting; see {scan_root / ALARM_FILENAME}")
+                      f"not restarting; see {scan_root / ALARM_FILENAME}",
+                      to_disk=apply)
             alarmed += 1
             continue
 
@@ -404,14 +438,16 @@ def supervise(
                 deferred += 1
                 _emit(scan_root, "restart_deferred", run_dir,
                       f"backoff -- {int(wait - since)}s left of a {wait}s wait after "
-                      f"attempt {attempts}/{max_restarts}")
+                      f"attempt {attempts}/{max_restarts}",
+                      to_disk=apply)
                 continue
 
         if not apply:
             reported_only += 1
             _emit(scan_root, "restart_withheld", run_dir,
                   f"would restart (attempt {attempts + 1}/{max_restarts}) but --apply "
-                  f"was not given -- report-only pass")
+                  f"was not given -- report-only pass",
+                  to_disk=apply)
             continue
 
         ok, detail = _restart(scan_root, run_dir, scripts_dir)
@@ -422,12 +458,12 @@ def supervise(
             restarted += 1
             _emit(scan_root, "restart", run_dir,
                   f"attempt {entry['attempts']}/{max_restarts} -- {detail}",
-                  extra={"attempt": entry["attempts"]}, notify=True)
+                  extra={"attempt": entry["attempts"]}, notify=True, to_disk=apply)
         else:
             entry["last_error"] = detail
             _emit(scan_root, "restart_failed", run_dir,
                   f"attempt {entry['attempts']}/{max_restarts} FAILED -- {detail}",
-                  extra={"attempt": entry["attempts"]}, notify=True)
+                  extra={"attempt": entry["attempts"]}, notify=True, to_disk=apply)
             # A failed spawn is charged to the budget on purpose: a missing or
             # unexecutable entry script would otherwise retry every 5 minutes
             # forever, which is the storm this cap exists to prevent.
@@ -439,7 +475,8 @@ def supervise(
                 alarmed += 1
         ledger[key] = entry
 
-    _write_ledger(scan_root, ledger)
+    if apply:
+        _write_ledger(scan_root, ledger)
 
     if scanned == 0:
         print("supervisor: NO state.json found -- check --scan-root and --scan-depth "
