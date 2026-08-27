@@ -465,21 +465,75 @@ def scan_transcript(turns: list, bank: dict) -> dict:
             continue
         sp_ids_seen |= {qid for qid in _match_bank_ids(turn["text"], bank) if qid.startswith("sp:")}
     if len(sp_ids_seen) >= 2:
-        first_assistant = next((t for t in turns if t["role"] == "assistant"), None)
-        if first_assistant is not None:
-            opener = first_assistant["text"].lower()
-            offers_choice = "quick" in opener and re.search(r"in.?depth|in depth", opener)
-            if not offers_choice:
-                violations.append({
-                    "code": AF_CODE,
-                    "reason": "NO-CHOICE-OPENER",
-                    "turn_index": 0,
-                    "detail": (
-                        "signature-presentation transcript detected (>=2 of the 8 Questions "
-                        "answered/asked) but the first assistant turn does not offer the "
-                        "quick-vs-in-depth interview choice first."
-                    ),
-                })
+        # CHOICE-FIRST, corrected (HOT fix 2026-08-27, live run denise-calloway
+        # trust-ledger: P-SP-INTAKE-TRACE parked BLOCKED on exactly this rule):
+        #
+        # The rule as written demanded the quick-vs-in-depth choice in the
+        # FIRST assistant turn (turn_index 0, literal). But the driver's own
+        # canonical order (deck-intake-questions.json, enforced by
+        # deck-intake-driver.py's turn-gate) is:
+        #   order 0   presentation_type  -> turn 0: "What kind of presentation
+        #                                    is this? (1) From scratch..."
+        #   order 0.6 standard_mode      -> turn 2: "Quick or in-depth? QUICK
+        #                                    asks the 12 essential questions..."
+        # and for a signature deck sp_mode ("QUICK or IN-DEPTH?") comes later
+        # still. A driver-produced, one-question-per-turn transcript can
+        # NEVER satisfy a turn-0 requirement -- the checker was auto-failing
+        # the canonical order it is paired with. The invariant the rulebook
+        # actually protects is CHOICE-FIRST = the choice is offered BEFORE
+        # any Signature 8-Question is asked, not "at literal turn 0".
+        #
+        # Detection of "asks an SP question" uses the same VERBATIM bank-prompt
+        # match the BATCH-IN-TURN exemption and the E2 regression guard trust
+        # -- NOT the loose keyword match, which fires on generic wording
+        # (live-confirmed: turn 0's "What kind of presentation is this?"
+        # keyword-matches sp:q1 on 'presentation'/'signature' while verbatim-
+        # matching only deck:presentation_type; turn 14's sales question
+        # keyword-matches sp:q7). Keyword-based position detection would make
+        # almost any early deck question look like an SP question.
+        _choice_re = re.compile(r"quick.*in.?depth|in.?depth.*quick", re.DOTALL)
+
+        def _offers_choice(text: str) -> bool:
+            lo = text.lower()
+            return "quick" in lo and bool(re.search(r"in.?depth|in depth", lo)) \
+                and bool(_choice_re.search(lo))
+
+        def _turn_verbatim_spq(text: str) -> bool:
+            return any(qid.startswith("sp:q") or qid == "sp:frame_selection"
+                       for qid in _verbatim_bank_ids(text, bank))
+
+        first_choice_turn = None
+        first_spq_turn = None
+        for idx, turn in enumerate(turns):
+            if turn["role"] != "assistant":
+                continue
+            if first_choice_turn is None and _turn_verbatim_spq(turn["text"]) is False \
+                    and _offers_choice(turn["text"]):
+                first_choice_turn = idx
+            if first_spq_turn is None and _turn_verbatim_spq(turn["text"]):
+                first_spq_turn = idx
+            if first_choice_turn is not None and first_spq_turn is not None:
+                break
+
+        if first_choice_turn is None or (
+                first_spq_turn is not None and first_choice_turn > first_spq_turn):
+            where = (f"first offered at assistant turn {first_choice_turn}"
+                     if first_choice_turn is not None
+                     else "never offered in any assistant turn")
+            violations.append({
+                "code": AF_CODE,
+                "reason": "NO-CHOICE-OPENER",
+                "turn_index": first_spq_turn if first_spq_turn is not None else 0,
+                "detail": (
+                    "signature-presentation transcript detected (>=2 of the 8 Questions "
+                    "answered/asked) but the quick-vs-in-depth interview choice was not "
+                    "offered before the first Signature 8-Question was asked "
+                    f"({where}; first verbatim 8-Question turn: {first_spq_turn}). "
+                    "The driver's canonical order (presentation_type, then "
+                    "standard_mode's Quick-or-in-depth, then the interview) is accepted; "
+                    "conducting the 8 Questions with no choice ever offered is not."
+                ),
+            })
 
     return {
         "af_code": AF_CODE,
