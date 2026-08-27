@@ -3681,6 +3681,19 @@ def _sp_adversarial_cases(spi, sps, spn):
     cases.append(("AF-SP-TYPE-MISMATCH", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
     f = spi._valid_runtime_fixture(); f["offer_token_ledger"] = []
     cases.append(("AF-SP-OFFER-UNDECLARED", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    # CONTENT-PROVENANCE (2026-08-27): an AGENT-AUTHORED answer never satisfies
+    # the gate (the visibly-marked-draft rule) — the literal live failure mode:
+    # 2 of 8 answers were authored by the system on a record that passed every
+    # structural check. `today` is pinned past PROVENANCE_GRACE_WINDOW_UNTIL so
+    # the teeth are deterministic; the within-grace PASS side is covered by the
+    # SP-GOLDEN + provenance-regression cases in test_sp_wrappers.
+    f = spi._valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["origin"] = "agent_authored"
+    cases.append(("AF-SP-PROVENANCE", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    f = spi._valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q3"].update({"confirmed_by_client": False,
+                                         "confirmation": None})
+    cases.append(("AF-SP-PROVENANCE", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
     # STRUCTURE (via _chk_sp_structure) — only sp_structure.json is read (contract is loaded).
     d = sps._valid_fixture(); d["slides"] = [s for s in d["slides"] if s["slide"] != 100]
     cases.append(("AF-SP-SLIDE-FLOOR", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
@@ -3756,7 +3769,11 @@ def test_sp_wrappers():
     # build_turn_ledger_provenance() writes (per-question turn id +
     # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
     # test_slice1_gates.py's genuine SP-intake fixture.
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(), sp_structure=sps._valid_fixture())
+    # 2026-08-27 content-provenance contract: the golden record also carries
+    # per-answer client provenance (verbatim client_text + quote-back
+    # confirmation) so it PASSes on both sides of PROVENANCE_GRACE_WINDOW_UNTIL.
+    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_provenanced(),
+                       sp_structure=sps._valid_fixture())
     for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
                  "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(gold)
@@ -3778,6 +3795,19 @@ def test_sp_wrappers():
         r = getattr(build_deck, name)(rd)
         if code not in _af_codes_in(r):
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
+
+    # (d) CONTENT-PROVENANCE regression guard (2026-08-27): a provenance-less
+    # paced record still passes WITHIN PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15)
+    # — the dated rollout cost — but the same evaluate() refuses it once pinned
+    # past the window. Pinned both sides via the prover's own evaluate(today=).
+    within = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 9, 1))
+    if within:
+        fails.append(f"SP-PROV-GRACE: a pre-provenance record must PASS inside the "
+                     f"migration window, got: {within!r}")
+    past = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 10, 1))
+    if not any("AF-SP-PROVENANCE" in str(c) for c, _m in past):
+        fails.append(f"SP-PROV-POSTGRACE: a provenance-less record must fail "
+                     f"AF-SP-PROVENANCE after the window, got: {past!r}")
 
     print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
     return fails
