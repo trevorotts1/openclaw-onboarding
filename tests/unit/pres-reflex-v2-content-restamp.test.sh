@@ -149,6 +149,11 @@ assert_rule "RULE 6 CERTIFIED ANSWERS ARE THE OWNER'S: never author, pre-fill, o
   "CERTIFIED ANSWERS ARE THE OWNER'S — during any certification or signed-record interview, NEVER offer to" \
   'to them for confirmation is allowed, but the answer that gets recorded must come from the owner.'
 
+assert_rule "RULE 7 NO ENGINE-ROOM DIGGING: status comes from state surfaces, never from reading source code" \
+  'NO ENGINE-ROOM DIGGING — NEVER read, grep, or inspect engine, repository, or application SOURCE CODE to' \
+  'answer an owner or client question. Status and facts come from the authoritative state surfaces (the' \
+  'so and escalate it to the team — performing it in front of the client is a violation even when the'
+
 CMP="$WORK/prescmp-arf.py"  # identical to afs; use either from here on
 
 # Old vs new "rendered template" fixtures -- stand in for a template body
