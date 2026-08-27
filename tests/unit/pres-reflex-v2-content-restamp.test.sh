@@ -52,6 +52,19 @@ extract() {
 extract "$ARF" "$WORK/prescmp-arf.py"
 extract "$AFS" "$WORK/prescmp-afs.py"
 
+extract_template() {
+  # extract_template <script> <outfile> -- pulls the rendered-template source
+  # from the PRES_REFLEX_V2 heredoc, excluding the shell placeholder wrapper.
+  awk '
+    /^  cat > "\$PRES_REFLEX_TMPL" <<.PRES_REFLEX_V2./ { p=1; next }
+    p && $0 == "PRES_REFLEX_V2" { exit }
+    p { print }
+  ' "$1" > "$2"
+}
+
+extract_template "$ARF" "$WORK/template-arf.md"
+extract_template "$AFS" "$WORK/template-afs.md"
+
 if [ ! -s "$WORK/prescmp-arf.py" ]; then
   echo "FATAL: could not extract PRESCMP_PY from $ARF (marker drift?)"; exit 2
 fi
@@ -68,6 +81,22 @@ if diff -q "$WORK/prescmp-arf.py" "$WORK/prescmp-afs.py" >/dev/null 2>&1; then
 else
   bad "comparators have drifted apart between the two KEEP-IN-SYNC scripts"
   diff "$WORK/prescmp-arf.py" "$WORK/prescmp-afs.py" | sed 's/^/    /'
+fi
+
+echo ""
+echo "=== AUDIENCE-LOOP TEMPLATE CHECK (REGRESSION) ==="
+if [ ! -s "$WORK/template-arf.md" ] || [ ! -s "$WORK/template-afs.md" ]; then
+  bad "could not extract one or both PRESENTATION_ROUTING_REFLEX_V2 templates"
+elif ! diff -q "$WORK/template-arf.md" "$WORK/template-afs.md" >/dev/null 2>&1; then
+  bad "PRESENTATION_ROUTING_REFLEX_V2 templates have drifted apart between the two scripts"
+  diff "$WORK/template-arf.md" "$WORK/template-afs.md" | sed 's/^/    /'
+elif grep -qF 'STEP 2 — After creating ANY content/presentation task via the Command Center API, IMMEDIATELY GET' "$WORK/template-arf.md" \
+  && grep -qF '/api/tasks/{taskId}/audience' "$WORK/template-arf.md" \
+  && grep -qF 'ask “Who is this for?” like a human would' "$WORK/template-arf.md" \
+  && grep -qF 'never go silent and never pretend it worked' "$WORK/template-arf.md"; then
+  ok "template twins are byte-identical and require the plain-language audience confirmation loop"
+else
+  bad "template twins are missing required audience-confirmation-loop instructions"
 fi
 
 CMP="$WORK/prescmp-arf.py"  # identical to afs; use either from here on
