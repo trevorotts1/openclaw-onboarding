@@ -990,11 +990,11 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
   "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
   presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
-WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order — nothing before them:
+WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
   ‼ Your VERY FIRST tool call is the STEP 1 route helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
-  exists", do NOT deliberate, do NOT message another session. Route first. Then ack. Then stop.
+  exists", do NOT deliberate, do NOT message another session. Route first. Then confirm the audience. Then ack. Then stop.
   Any tool call before the route helper is a reflex violation.
 
   STEP 1 — Route the task NOW, before any other output, by running the SIGNED route helper.
@@ -1019,7 +1019,19 @@ WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order �
       SUCCESS = the helper prints an ingest response with {"ok":true,"task_id":"…",
       "workspace_id":"presentations"} and exits 0.
 
-  STEP 2 — Send ONE short acknowledgement to the owner, e.g.:
+  STEP 2 — After creating ANY content/presentation task via the Command Center API, IMMEDIATELY GET
+  http://127.0.0.1:4000/api/tasks/{taskId}/audience. Do NOT send a bare loopback curl: this route is
+  not bypassed by middleware. Use the SAME signed helper's runtime token-resolution mechanics from
+  STEP 1 (never write, copy, or invent a secret) to resolve MC_API_TOKEN, then send
+  Authorization: Bearer <MC_API_TOKEN> on BOTH this GET and the POST below. If the response says
+  hold=true (audience not confirmed), relay the question to the owner IN THE CURRENT CHAT in plain
+  client-friendly words. Never say ICP, dispatch, persona, gate, or task IDs — ask “Who is this for?” like a human would.
+  When the owner answers, POST EXACTLY this JSON body to the same endpoint:
+  {"audienceLabel":"<their answer in their words>"}. Confirm it was accepted (expect the hold to
+  release). If the GET or POST errors, tell the owner plainly that you hit a problem confirming the
+  audience — never go silent and never pretend it worked.
+
+  STEP 3 — Send ONE short acknowledgement to the owner, e.g.:
       "On it — routing this to your Presentations department now. The Brainstorming Buddy will pick it up and start the interview."
 
   Then STOP. Your turn is over. The Presentations department owns everything after this.
@@ -1038,6 +1050,7 @@ NOT silently proceed and do NOT self-intake.
 
 HARD BANS while this reflex is active — EACH is a routing VIOLATION, no exceptions:
   ✗ Asking the owner ANY intake question (topic, title, audience, goal, existing content, length…)
+    except the mandatory plain-language audience question in STEP 2 after the Command Center reports hold=true
   ✗ Reading, quoting, or "checking" department SOPs / IDENTITY / SOUL / BUILDER-PROMPT
   ✗ Writing intake.json, slides_copy.md, slides.json, or ANY working file
   ✗ Calling build_deck.py or presentation-canonical-entry.sh
