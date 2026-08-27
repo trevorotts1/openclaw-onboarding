@@ -17,10 +17,13 @@ Output: single JSON object on stdout.
 
 import argparse
 import json
+import os
 import re
 import sys
 
 VERSION = "1.0.0"
+
+MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
 # ---------------------------------------------------------------------------
 # Minimal routing table. Full per-model limits live in models.json (the
@@ -258,6 +261,23 @@ for fam, spec in REGISTRY.items():
     for rinfo in spec["routes"].values():
         MODEL_TO_FAMILY[rinfo["canonical_model_id"]] = fam
 
+# ---------------------------------------------------------------------------
+# Registry-driven capability data (loaded lazily from models.json on first
+# use). This is capability DATA, not selector padding: the padding ban forbids
+# adding un-researched FAMILIES to REGISTRY above, never reading models.json.
+# ---------------------------------------------------------------------------
+
+_REG_BY_ID = None
+
+
+def registry_by_id():
+    global _REG_BY_ID
+    if _REG_BY_ID is None:
+        with open(MODELS_JSON_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        _REG_BY_ID = {m["canonical_model_id"]: m for m in data["models"]}
+    return _REG_BY_ID
+
 TASKS = {
     "layer decomposition": "layer-decomposition",
     "layer-decomposition": "layer-decomposition",
@@ -450,11 +470,89 @@ def _ok(model_id, reason):
     return {"valid": True, "selected_model_id": model_id, "reason": reason, "alternative": None}
 
 
+def capability_conflict(model_id, request, res):
+    """Registry-driven capability check: when the request names a resolution or
+    aspect ratio and the selected route's registry entry publishes a non-null
+    list that does not contain the requested value, return the rejection shape
+    (suggesting a same-family route that does support it when one exists)."""
+    entry = registry_by_id().get(model_id)
+    if entry is None:
+        return None
+    norm = normalize(request)
+
+    req_res = res or detect_resolution(request)
+    allowed_res = entry.get("resolutions")
+    if req_res and allowed_res:
+        wanted = {"4k": "4K", "2k": "2K", "1k": "1K"}.get(req_res, req_res)
+        if wanted not in [str(x) for x in allowed_res]:
+            alt = _same_family_alternative(entry, "resolutions", wanted)
+            return {
+                "valid": False,
+                "selected_model_id": None,
+                "reason": "%s publishes %s resolution(s) only; %s requested" % (
+                    entry["canonical_model_id"], "|".join(str(x) for x in allowed_res), wanted),
+                "alternative": alt,
+            }
+
+    ratio = detect_aspect_ratio(request)
+    allowed_ar = entry.get("aspect_ratios")
+    if ratio and allowed_ar and ratio not in [str(x) for x in allowed_ar]:
+        alt = _same_family_alternative(entry, "aspect_ratios", ratio)
+        return {
+            "valid": False,
+            "selected_model_id": None,
+            "reason": "%s publishes aspect ratios %s only; %s requested" % (
+                entry["canonical_model_id"], ", ".join(str(x) for x in allowed_ar), ratio),
+            "alternative": alt,
+        }
+    return None
+
+
+def _same_family_alternative(entry, key, wanted):
+    """Another route of the same family whose registry entry supports `wanted`, or None."""
+    fam = entry.get("family")
+    if not fam:
+        return None
+    for other in registry_by_id().values():
+        if other.get("family") == fam and other["canonical_model_id"] != entry["canonical_model_id"]:
+            if other.get(key) and wanted in [str(x) for x in other[key]]:
+                return other["canonical_model_id"]
+    return None
+
+
+RATIO_TOKENS = [
+    "21:9", "9:21", "1:8", "8:1", "16:9", "9:16", "4:5", "5:4", "3:4", "4:3",
+    "2:3", "3:2", "1:2", "2:1", "1:3", "3:1", "1:4", "4:1", "1:1",
+]
+
+NAMED_RATIOS = ["square_hd", "square", "portrait_4_3", "portrait_16_9",
+                "landscape_4_3", "landscape_16_9"]
+
+
+def detect_aspect_ratio(text):
+    """Named aspect token (square, landscape_16_9, ...) or N:N ratio in the text."""
+    norm = normalize(text)
+    for named in NAMED_RATIOS:
+        if re.search(r"(^|[\s,.!?/])" + re.escape(named) + r"($|[\s,.!?/])", norm):
+            return named
+    for ratio in RATIO_TOKENS:
+        if re.search(r"(^|[\s,.!?/])" + re.escape(ratio) + r"($|[\s,.!?/])", norm):
+            return ratio
+    return None
+
+
 def select(request):
     family, explicit_id, frag = family_from_text(request)
     if family is None:
         family = "gpt-image-2"  # owner-preferred general route (DoD 21)
     ans = choose_answer(family, request, explicit_id)
+    # registry-driven capability check applies to ALL families; explicit pins
+    # are re-checked too
+    conflict = None
+    if ans["selected_model_id"]:
+        conflict = capability_conflict(ans["selected_model_id"], request, detect_resolution(request))
+    if conflict is not None:
+        ans = conflict
     return {
         "request": request,
         "selected_model_id": ans["selected_model_id"],

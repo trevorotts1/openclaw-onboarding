@@ -199,16 +199,18 @@ def validate(payload, model_id_override=None):
         return {"valid": False, "model_id": model_name, "api_family": api_family,
                 "errors": errors, "warnings": warnings, "checked": checked}
 
-    known_fields = set(model.get("control_fields") or [])
-    if "prompt" in inp or True:
-        known_fields = known_fields | {
-            "prompt", "negative_prompt", "aspect_ratio", "resolution", "output_format",
-            "input_urls", "image_urls", "image_input", "seed", "quality", "nsfw_checker",
-            "prompt_extend", "style", "rendering_speed", "expand_prompt", "image_size",
-            "style_codes", "mask_url", "strength", "num_images", "bbox_list",
-            "enable_sequential", "thinking_mode", "n", "color_palette", "watermark",
-            "im_no", "mode", "limit", "first_image", "second_image",
-        }
+    # The literal set below is the universal cross-route union of common input
+    # fields; per-model control_fields restrict further (unknown keys warn).
+    # image_url (ideogram v3 edit/remix scalar ref) is registry control_fields
+    # on those routes but kept universal so older payloads never false-warn.
+    known_fields = set(model.get("control_fields") or []) | {
+        "prompt", "negative_prompt", "aspect_ratio", "resolution", "output_format",
+        "input_urls", "image_urls", "image_input", "image_url", "seed", "quality",
+        "nsfw_checker", "prompt_extend", "style", "rendering_speed", "expand_prompt",
+        "image_size", "style_codes", "mask_url", "strength", "num_images", "bbox_list",
+        "enable_sequential", "thinking_mode", "n", "color_palette", "watermark",
+        "im_no", "mode", "limit", "first_image", "second_image",
+    } | {"prompt", "callBackUrl"}
     unknown_in = [k for k in inp if k not in known_fields]
     if unknown_in:
         warnings.append("unknown input keys (route may ignore): %s" % ", ".join(unknown_in))
@@ -217,6 +219,29 @@ def validate(payload, model_id_override=None):
         errors.append("input missing 'prompt'")
     else:
         checked["prompt_chars"] = len(str(inp["prompt"]).strip())
+
+    # ---- prompt / negative_prompt char caps (registry-driven) --------------
+    vcap = model.get("vendor_hard_cap_chars")
+    if vcap is not None and "prompt" in inp:
+        plen = len(str(inp["prompt"]).strip())
+        if plen > vcap:
+            errors.append(
+                "prompt is %d characters; %s hard cap for %s is %d (VERIFIED)" % (
+                    plen, model_name, model.get("display_name", model_name), vcap))
+
+    if "negative_prompt" in inp:
+        neg_len = len(str(inp["negative_prompt"]).strip())
+        mid = model.get("canonical_model_id", "")
+        if mid.startswith("ideogram/v3") or mid.startswith("google/imagen4"):
+            if neg_len > 5000:
+                errors.append(
+                    "negative_prompt is %d characters; %s hard cap is 5000 (VERIFIED)" % (
+                        neg_len, mid))
+        elif mid.startswith("qwen3"):
+            if neg_len > 5000:
+                warnings.append(
+                    "negative_prompt %d chars exceeds the docs maxLength 5000 chars for %s; "
+                    "unit UNDETERMINED, advisory only, never hard-fail (rule D)" % (neg_len, mid))
 
     if model.get("canonical_model_id") == "seedream/4.5-text-to-image" and "output_format" in inp:
         warnings.append("Seedream 4.5 text-to-image exposes NO output_format field; route may ignore it")
@@ -230,8 +255,14 @@ def validate(payload, model_id_override=None):
                         "resolution and output_format may be ignored")
 
     # ---- reference images -------------------------------------------------
+    IMAGE_INPUT_TASKS = ("image-to-image", "edit", "multi-reference", "bbox-edit", "multi-image")
     ref_keys = [k for k in ("input_urls", "image_urls", "image_input") if k in inp]
     if ref_keys:
+        model_tasks = model.get("tasks") or []
+        if not any(t in IMAGE_INPUT_TASKS for t in model_tasks):
+            errors.append(
+                "%s route accepts no reference images (tasks: %s); remove the reference field" % (
+                    model_name, ", ".join(model_tasks)))
         refs = inp[ref_keys[0]]
         check_refs(model, refs, errors, warnings)
         checked["ref_key"] = ref_keys[0]

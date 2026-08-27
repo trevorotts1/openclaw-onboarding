@@ -64,6 +64,7 @@ The Agnes Image endpoint is **SYNCHRONOUS**:
 - 4th input image onward: list rate `$0.003 / image` (`max(0, count - 3) * $0.003`).
 - Currently all input reference images are `$0` during promotional pricing.
 - Maximum reference image count is **NOT PUBLISHED** by the vendor — do not invent a hard count rejection.
+- Per-file reference image size limit is **NOT PUBLISHED** by the vendor; no MB cap is enforced client-side.
 
 ---
 
