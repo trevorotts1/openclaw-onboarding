@@ -1094,7 +1094,7 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
+        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 120
