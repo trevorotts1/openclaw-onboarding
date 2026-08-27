@@ -100,6 +100,30 @@ if [ "${RECONCILE_RC}" -ne 0 ]; then
     echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures; 12=all run dirs rejected/UNDETERMINED) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
 fi
 
+# Worker-liveness supervision pass (supervisor.py, 2026-08-27): detects an
+# engine PROCESS that died mid-run behind an active (non-terminal, .job.lock
+# present) run -- the death the 2026-08-27 live deck suffered with nothing
+# noticing -- and restarts it under a bounded, exponentially-backed-off
+# budget. Report-only WITHOUT --apply (same staging discipline as
+# reconcile-board: a pass that can start processes proves itself in the log
+# first); flip to --apply once its report-only output has been watched for a
+# cycle. Exit codes are documented in state.py: 0=pass (or alarm cleared),
+# 14=zero state.json found (UNDETERMINED), 15=>=1 run exhausted its restart
+# budget and is ALARMING. Captured, not swallowed, and never fatal to the
+# run-discovery pass below -- same set -e treatment as the two passes above.
+SUPERVISE_RC=0
+python3 "${SCRIPT_DIR}/presentation_job.py" \
+    --supervise \
+    --scan-root "${SCAN_ROOT}" \
+    --scan-depth "${SCAN_DEPTH:-3}" \
+    ${PRESENTATION_SUPERVISE_APPLY:+--apply} \
+    --max-restarts "${SUPERVISOR_MAX_RESTARTS:-3}" \
+    --supervisor-backoff "${SUPERVISOR_BACKOFF_SECONDS:-60}" \
+    >> "${LOG}" 2>&1 || SUPERVISE_RC=$?
+if [ "${SUPERVISE_RC}" -ne 0 ]; then
+    echo "WARNING: supervise exited ${SUPERVISE_RC} (0=pass; 14=zero state.json found/UNDETERMINED; 15=restart budget exhausted/ALARM) -- NOT necessarily a failure, see supervisor lines above" >> "${LOG}" 2>&1
+fi
+
 # Run-discovery pass: optional component. Guarded with || true so a missing
 # run_discovery.py cannot kill the loop.
 python3 "${SCRIPT_DIR}/run_discovery.py" \
