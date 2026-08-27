@@ -360,6 +360,13 @@ deliberately, not as a precise count**, for the same reason RUN 1 stated "~48" i
 interview is conversational, not a single mechanical checkpoint. **RUN 1's "~48" is now stale — update
 any document that still says "~48" to "~52," or better, link here instead of restating either number.**
 
+**Ticket 6 (2026-08-27) added one MECHANICAL gate inside the phase-walk loop itself** (AF-INTAKE-GATE,
+`presentation_job/phases.py`'s `Engine._check_intake_gate`), distinct from both the 40 manifest phases
+and the ~12 outside-manifest scripted gates above — it does not add a phase or a script step, so it does
+not change the ~52 arithmetic. It blocks P0B-PRIORITY and every phase after it from starting unless
+`working/copy/intake.json` already exists on disk, closing the gap where a content-authoring phase could
+previously run before intake ever completed.
+
 ---
 
 ## 3. VERIFICATION METHOD
