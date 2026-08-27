@@ -17,6 +17,7 @@ Output: single JSON object on stdout.
 
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -356,9 +357,9 @@ def detect_resolution(text):
 
 
 def detect_duration(text):
-    """Detect duration in seconds if specified (e.g. 20s, 20 seconds, 30s)."""
+    """Detect duration in seconds if specified (e.g. 20s, 20 seconds, 90-second)."""
     norm = normalize(text)
-    m = re.search(r"\b(\d+)\s*(?:s|sec|seconds)\b", norm)
+    m = re.search(r"\b(\d+)\s*-?\s*(?:s\b|sec\b|secs\b|second\b|seconds\b)", norm)
     if m:
         return int(m.group(1))
     return None
@@ -577,6 +578,59 @@ def _ok(model_id, reason):
     return {"valid": True, "selected_model_id": model_id, "reason": reason, "alternative": None}
 
 
+# Module cache for registry lookups (duration_window_seconds high bounds)
+_REG_DATA = None
+_REG_BY_ID = None
+
+
+def registry_by_id():
+    """Load models.json registry for duration max lookups (stdlib json only)."""
+    global _REG_DATA, _REG_BY_ID
+    if _REG_BY_ID is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
+        with open(path, "r", encoding="utf-8") as fh:
+            _REG_DATA = json.load(fh)
+        _REG_BY_ID = {m["canonical_model_id"]: m for m in _REG_DATA["models"]}
+    return _REG_BY_ID
+
+
+def duration_max_for(model_id):
+    """Return the max supported duration (high bound) for a model, or None.
+
+    Handles both window shapes found in models.json:
+      [3, 15]             -> 15
+      "2-30s (or -1 auto)" -> 30
+      "4, 6, 8s (default 8)" -> 8 (max discrete option)
+    """
+    entry = registry_by_id().get(model_id)
+    if entry is None:
+        return None
+    window = entry.get("duration_window_seconds")
+    if isinstance(window, list) and len(window) == 2:
+        return float(window[1])
+    if isinstance(window, str):
+        m = re.search(r"(\d+)\s*-\s*(\d+)\s*s", window)
+        if m:
+            return float(m.group(2))
+        nums = [float(x) for x in re.findall(r"\b(\d+)\s*s?\b", window)]
+        if nums:
+            return max(nums)
+    return None
+
+
+def clip_plan_note(model_id, dur):
+    """Note when the detected target duration exceeds the model's max."""
+    max_dur = duration_max_for(model_id)
+    if max_dur is None or dur is None or dur <= max_dur:
+        return None
+    n = int(-(-dur // max_dur))  # ceil without importing math
+    return (
+        f"target {dur}s exceeds {model_id} max {int(max_dur) if max_dur == int(max_dur) else max_dur}s; "
+        f"plan {n} clips (N = ceil({dur}/{int(max_dur) if max_dur == int(max_dur) else max_dur})) or choose a "
+        f"longer-max model (Wan 3.0 / Seedance 2.5 reach 30s)"
+    )
+
+
 def select(request):
     family, explicit_id, frag = family_from_text(request)
     if family is None:
@@ -584,17 +638,24 @@ def select(request):
         if explicit_id is None:
             explicit_id = auto_model_id
     ans = choose_answer(family, request, explicit_id)
+
+    notes = []
+    dur = detect_duration(request)
+    note = clip_plan_note(ans["selected_model_id"], dur)
+    if note:
+        notes.append(note)
+
     return {
         "request": request,
         "selected_model_id": ans["selected_model_id"],
         "selected_family": family,
         "task": detect_task(request),
         "resolution": detect_resolution(request),
-        "duration": detect_duration(request),
+        "duration": dur,
         "compatibility": "full" if ans["valid"] else "conflict",
         "reason": ans["reason"],
         "alternative": ans["alternative"],
-        "notes": [],
+        "notes": notes,
         "valid": ans["valid"],
     }
 
@@ -687,6 +748,18 @@ SELFTEST_CASES = [
 ]
 
 
+def note_cases():
+    """Cases where an over-max target duration must produce a clip-plan note."""
+    return [
+        # "90 second" form: routed to wan/3-0-video, note with ceil(90/30)=3 clips
+        ("generate a 90 second cinematic trailer", "wan/3-0-video", "target 90s exceeds"),
+        # "90-second" hyphenated form: same detection via updated regex
+        ("90-second epic opening sequence", "wan/3-0-video", "target 90s exceeds"),
+        # 60s target on wan 3.0 (max 30s) -> 2 clips
+        ("generate a 60 second cinematic trailer", "wan/3-0-video", "plan 2 clips"),
+    ]
+
+
 def selftest():
     failures = []
     for req, exp_id, exp_valid, exp_alt in SELFTEST_CASES:
@@ -706,7 +779,23 @@ def selftest():
         for f in failures:
             print("  " + f, file=sys.stderr)
         return 1
-    print(f"select_video_model.py --self-test: {len(SELFTEST_CASES)}/{len(SELFTEST_CASES)} passed")
+
+    for req, exp_id, expect_note in note_cases():
+        res = select(req)
+        if res["selected_model_id"] != exp_id:
+            failures.append(f"FAIL note-case {req!r}: expected id={exp_id} got={res['selected_model_id']}")
+        elif not any(expect_note in n for n in res["notes"]):
+            failures.append(
+                f"FAIL note-case {req!r}: expected note containing {expect_note!r} got notes={res['notes']}"
+            )
+
+    if failures:
+        print("select_video_model.py --self-test FAILED", file=sys.stderr)
+        for f in failures:
+            print("  " + f, file=sys.stderr)
+        return 1
+    total = len(SELFTEST_CASES) + len(note_cases())
+    print(f"select_video_model.py --self-test: {total}/{total} passed")
     return 0
 
 

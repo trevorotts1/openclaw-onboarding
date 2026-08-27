@@ -115,14 +115,15 @@ curl -sS https://api.kie.ai/api/v1/jobs/createTask \
     "model": "pixverse-v6/transition",
     "input": {
       "prompt": "Smooth seamless camera dolly forward transitioning from the modern skyscraper interior to the historical garden pavilion outside.",
-      "image_url": "https://domain.com/start_frame.jpg",
-      "last_frame_url": "https://domain.com/end_frame.jpg",
+      "first_frame_image_url": "https://domain.com/start_frame.jpg",
+      "last_frame_image_url": "https://domain.com/end_frame.jpg",
+      "quality": "1080p",
       "duration": 5,
-      "resolution": "1080p",
-      "aspect_ratio": "16:9",
       "generate_audio_switch": true
     }
   }'
 
-Notes: prompt cap 5,000 chars VERIFIED; requires exactly 1 start frame + 1 last frame (<=20MB each);
-durations 1–15s (default 5); resolutions 360p/540p/720p/1080p.
+Notes: field names per docs.kie.ai/market/pixverse/transition (verified 2026-08-27):
+first_frame_image_url + last_frame_image_url (both required, <=20MB each); resolution
+field is `quality` (360p/540p/720p/1080p, default 720p) — the docs schema has no
+aspect_ratio field. Prompt cap 5,000 chars VERIFIED; durations 1–15s (default 5).

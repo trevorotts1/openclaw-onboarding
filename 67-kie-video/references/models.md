@@ -49,7 +49,20 @@ Authoritative Sources: First-party documentation from `docs.kie.ai` and `kie.ai`
 
 ---
 
-## 2. Model Selection & Routing Doctrine
+## 2. Clip Planning for Long Targets
+
+No KIE video model generates a continuous take longer than 30 seconds. When the requested target duration exceeds the routed model's maximum, do NOT stretch one prompt past the vendor limit and do NOT silently truncate the creative intent. Build a multi-clip plan:
+
+1. **Compute N = ceil(target / model_max).** Example: a 90-second trailer on `wan/3-0-video` (max 30s) becomes N = 3 clips of 30s; a 60-second piece on `kling-3.0-omni` (max 15s) becomes N = 4 clips.
+2. **Segment the narrative.** Split the prompt into N sequential scenes with continuity hooks: shared characters, recurring wardrobe/props, consistent visual language, and explicit carry-over ("continuing the shot...", "same character now...").
+3. **Optionally switch to a longer-max model first.** `wan/3-0-video` and `bytedance/seedance-2-5` reach 30s per clip and reduce N. Prefer them for long-form targets before planning many short clips.
+4. **Stitch downstream.** Concatenate the generated clips in order (single hard cuts or a transition model such as `pixverse-v6/transition` for state changes). Preserve per-clip resolutions and aspect ratios to avoid re-encoding artifacts.
+
+The selector (`select_video_model.py`) emits a note with the computed clip count whenever a detected target duration exceeds the routed model's maximum.
+
+---
+
+## 3. Model Selection & Routing Doctrine
 
 When an explicit model is specified by the user, department manifest, or workflow SOP, **that model must be honored**. When routing autonomously, apply the following capability-matched hierarchy:
 

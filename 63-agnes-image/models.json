@@ -38,7 +38,8 @@
     "last_verified_at": "2026-08-26",
     "source_url": "https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md",
     "known_inconsistencies": [
-      "prompt hard cap not published by vendor; legacy exact sizes accepted but may be normalized"
+      "prompt hard cap not published by vendor; legacy exact sizes accepted but may be normalized",
+      "reference image per-file size limit NOT PUBLISHED by the vendor; no MB cap is enforced (reference_image_max_mb stays null)"
     ],
     "notes": [
       "3K/4K tiers: RPM 1/1 (aggressive rate ceiling — treat 429 as authority)",

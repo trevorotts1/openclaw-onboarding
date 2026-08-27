@@ -10,6 +10,13 @@
       "min": 5000,
       "target": 9000,
       "max": 19000
+    },
+    "cap_status_legend": {
+      "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
+      "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
+      "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
+      "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
+      "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value"
     }
   },
   "models": [
@@ -44,6 +51,9 @@
         "1080P"
       ],
       "max_media_refs": "10 imgs (20MB), 5 vids (100MB, <=15s), 5 audios (15MB, <=15s), 1 doc/link",
+      "max_reference_images": 10,
+      "max_reference_videos": 5,
+      "max_reference_audios": 5,
       "native_audio": true,
       "control_fields": [
         "audio"
@@ -84,6 +94,9 @@
         "1080P"
       ],
       "max_media_refs": "10 imgs (20MB), 5 vids (100MB, <=15s), 5 audios (15MB, <=15s), 1 doc/link",
+      "max_reference_images": 10,
+      "max_reference_videos": 5,
+      "max_reference_audios": 5,
       "native_audio": true,
       "control_fields": [
         "audio"
@@ -125,6 +138,9 @@
         "4k"
       ],
       "max_media_refs": "Multi-elements: <=7 multi-image subjects / <=3 video characters",
+      "max_reference_images": 7,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "audio",
@@ -169,6 +185,9 @@
         "4k"
       ],
       "max_media_refs": "1 first frame OR 2 frames (first+last), <=50MB each",
+      "max_reference_images": 2,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "audio",
@@ -212,6 +231,9 @@
         "4k"
       ],
       "max_media_refs": "Exactly 1 video (<=200MB) + up to 4 images (<=50MB)",
+      "max_reference_images": 4,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "audio"
@@ -255,6 +277,9 @@
         "4k"
       ],
       "max_media_refs": "Max 7 images (no video) OR 1 video (<=200MB, audio must be false)",
+      "max_reference_images": 7,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": "Conditional (no vid: yes; vid: false)",
       "control_fields": [
         "audio"
@@ -297,6 +322,9 @@
         "4K"
       ],
       "max_media_refs": "First frame, first+last frames, <=3 kling_elements (2-4 imgs, 5-30s audio)",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "sound",
@@ -337,6 +365,9 @@
         "pro (1080p)"
       ],
       "max_media_refs": "1 driving video (3-30s, <=100MB) + 1 character image (<=10MB)",
+      "max_reference_images": 1,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/kling/motion-control-v3",
@@ -372,6 +403,9 @@
         "1080p"
       ],
       "max_media_refs": "1 video (3-30s, <=100MB) + 1 image (<=10MB)",
+      "max_reference_images": 1,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/kling/motion-control",
@@ -404,6 +438,9 @@
       "duration_window_seconds": "5s or 10s ('5', '10')",
       "resolutions": [],
       "max_media_refs": "None",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro",
@@ -436,6 +473,9 @@
       "duration_window_seconds": "5s or 10s ('5', '10')",
       "resolutions": [],
       "max_media_refs": "1 start image (<=10MB) + 1 optional tail image",
+      "max_reference_images": 2,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [
         "first_frame",
@@ -477,6 +517,9 @@
         "1080p"
       ],
       "max_media_refs": "30 imgs (30MB), 10 vids (200MB, <=30s total), 10 audios (15MB, <=30s total)",
+      "max_reference_images": 30,
+      "max_reference_videos": 10,
+      "max_reference_audios": 10,
       "native_audio": true,
       "control_fields": [
         "generate_audio"
@@ -519,6 +562,9 @@
         "720p"
       ],
       "max_media_refs": "9 imgs (30MB), 3 vids (50MB, <=15s total), 3 audios (15MB, <=15s total)",
+      "max_reference_images": 9,
+      "max_reference_videos": 3,
+      "max_reference_audios": 3,
       "native_audio": true,
       "control_fields": [
         "generate_audio"
@@ -558,6 +604,9 @@
         "1080p"
       ],
       "max_media_refs": "None",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch"
@@ -597,6 +646,9 @@
         "1080p"
       ],
       "max_media_refs": "Up to 2 images (<=20MB each)",
+      "max_reference_images": 2,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch"
@@ -624,7 +676,9 @@
       "vendor_hard_cap_chars": 5000,
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
-      "known_inconsistencies": [],
+      "known_inconsistencies": [
+        "Frame field names aligned 2026-08-27 to docs.kie.ai/market/pixverse/transition, which documents input.first_frame_image_url and input.last_frame_image_url (both required) verbatim: \"first_frame_image_url: type: string, format: uri. First frame image URL. HTTP, HTTPS, OSS; JPG/JPEG/PNG/WebP; <=20 MB.\" The registry's earlier control_fields (first_frame/last_frame) and EXAMPLES.md's earlier image_url/last_frame_url both disagreed with the docs; docs win."
+      ],
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -636,11 +690,14 @@
         "1080p"
       ],
       "max_media_refs": "Exactly 1 first image + 1 last image (<=20MB each)",
+      "max_reference_images": 2,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch",
-        "first_frame",
-        "last_frame"
+        "first_frame_image_url",
+        "last_frame_image_url"
       ],
       "source_url": "https://docs.kie.ai/market/pixverse/transition",
       "last_verified_at": "2026-08-26",
@@ -677,6 +734,9 @@
         "1080p"
       ],
       "max_media_refs": "Parent taskId XOR video_url",
+      "max_reference_images": null,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch"
@@ -716,6 +776,9 @@
         "1080p"
       ],
       "max_media_refs": "1-7 image references (subject or background)",
+      "max_reference_images": 7,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": true,
       "control_fields": [
         "generate_audio_switch"
@@ -753,6 +816,9 @@
         "2K"
       ],
       "max_media_refs": "None (adaptive ratio NOT supported)",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/minimax-h3/text-to-video",
@@ -788,6 +854,9 @@
         "2K"
       ],
       "max_media_refs": "1 image (first_frame_url OR last_frame_url, <=30MB)",
+      "max_reference_images": 1,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [
         "first_frame_url",
@@ -827,6 +896,9 @@
         "2K"
       ],
       "max_media_refs": "9 imgs (30MB), 3 vids (50MB, <=15s total), 3 audios (15MB, <=15s total)",
+      "max_reference_images": 9,
+      "max_reference_videos": 3,
+      "max_reference_audios": 3,
       "native_audio": "Audio input driving",
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/minimax-h3/reference-to-video",
@@ -862,6 +934,9 @@
         "1080p"
       ],
       "max_media_refs": "<=5 images + <=5 videos (total combined <=5), 1 voice clip (<=15MB)",
+      "max_reference_images": 5,
+      "max_reference_videos": 5,
+      "max_reference_audios": 1,
       "native_audio": "Yes (via voice/video audio)",
       "control_fields": [
         "negative_prompt"
@@ -900,6 +975,9 @@
         "1080p"
       ],
       "max_media_refs": "Exactly 1 video (2-10s, <=100MB) + 1 reference image",
+      "max_reference_images": 1,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": "Yes (audio_setting: auto/origin)",
       "control_fields": [
         "audio_setting",
@@ -937,6 +1015,9 @@
         "1080p"
       ],
       "max_media_refs": "Optional audio_url",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": 1,
       "native_audio": "Yes (custom audio URL)",
       "control_fields": [
         "audio_url",
@@ -975,6 +1056,9 @@
         "1080p"
       ],
       "max_media_refs": "First frame, first+last, video continuation, driving audio",
+      "max_reference_images": 2,
+      "max_reference_videos": 1,
+      "max_reference_audios": 1,
       "native_audio": "Yes (driving audio)",
       "control_fields": [
         "first_frame",
@@ -1016,6 +1100,10 @@
         "1080p"
       ],
       "max_media_refs": "None",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/text-to-video",
@@ -1053,6 +1141,10 @@
         "1080p"
       ],
       "max_media_refs": "Exactly 1 image (<=20MB, >=300px)",
+      "max_reference_images": 1,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/image-to-video",
@@ -1091,6 +1183,10 @@
         "1080p"
       ],
       "max_media_refs": "1-9 images (<=20MB each), referenced via [Image N]",
+      "max_reference_images": 9,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/reference-to-video",
@@ -1128,6 +1224,10 @@
         "1080p"
       ],
       "max_media_refs": "None",
+      "max_reference_images": null,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
@@ -1165,6 +1265,10 @@
         "1080p"
       ],
       "max_media_refs": "Exactly 1 image (<=10MB, >=300px)",
+      "max_reference_images": 1,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
@@ -1202,6 +1306,10 @@
         "1080p"
       ],
       "max_media_refs": "1-9 images (<=10MB each), referenced via character1, etc.",
+      "max_reference_images": 9,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": false,
       "control_fields": [],
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
@@ -1240,6 +1348,10 @@
         "1080p"
       ],
       "max_media_refs": "Exactly 1 video (3-60s, <=100MB) + 0-5 images (<=10MB)",
+      "max_reference_images": 5,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
+      "vendor_hard_cap_chars_cn": 2500,
       "native_audio": "Yes (audio_setting: auto/origin)",
       "control_fields": [
         "audio_setting"
@@ -1280,6 +1392,9 @@
         "4k"
       ],
       "max_media_refs": "Slots system: imgs <=7 (1 slot), video <=1 (2 slots), char_ids <=3 (1 slot); sum <= 7",
+      "max_reference_images": 7,
+      "max_reference_videos": 1,
+      "max_reference_audios": null,
       "native_audio": "Built-in audio track",
       "control_fields": [
         "character_ids"
@@ -1320,6 +1435,9 @@
         "1080p (5s only)"
       ],
       "max_media_refs": "1 optional imageUrl",
+      "max_reference_images": 1,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": false,
       "control_fields": [
         "imageUrl",
@@ -1361,6 +1479,9 @@
         "4K upgrade"
       ],
       "max_media_refs": "1-2 images (1-3 for REFERENCE_2_VIDEO)",
+      "max_reference_images": 3,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": "Yes (always-on background audio)",
       "control_fields": [
         "generationType"
@@ -1401,6 +1522,9 @@
         "4K upgrade"
       ],
       "max_media_refs": "1-2 images (1-3 for REFERENCE_2_VIDEO)",
+      "max_reference_images": 3,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": "Yes (always-on background audio)",
       "control_fields": [
         "generationType"
@@ -1441,6 +1565,9 @@
         "4K upgrade"
       ],
       "max_media_refs": "1-2 images (1-3 for REFERENCE_2_VIDEO)",
+      "max_reference_images": 3,
+      "max_reference_videos": null,
+      "max_reference_audios": null,
       "native_audio": "Yes (always-on background audio)",
       "control_fields": [
         "generationType"

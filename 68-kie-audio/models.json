@@ -4,6 +4,22 @@
   "provider": "kie",
   "modality": "audio",
   "verified_at": "2026-08-26",
+  "registry_policy": {
+    "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai elevenlabs/suno pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. Not-exposed values stored as null, never invented.",
+    "house_band_chars": {
+      "min": 5000,
+      "target": 9000,
+      "max": 19000
+    },
+    "cap_status_legend": {
+      "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
+      "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
+      "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
+      "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
+      "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value",
+      "ADVERTISED_NOT_YET_VERIFIED": "vendor page advertises the limit; no live call made yet; dispatch disabled until proven"
+    }
+  },
   "entries": [
     {
       "provider": "kie",
@@ -11,7 +27,10 @@
       "canonical_model_id": "google/gemini-3-1-flash-tts",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["tts", "multi-speaker-dialogue"],
+      "tasks": [
+        "tts",
+        "multi-speaker-dialogue"
+      ],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
@@ -21,13 +40,69 @@
         "temperature_min": 0,
         "temperature_max": 2,
         "temperature_default": 1,
-        "voice_enum": ["Achernar", "Achird", "Algenib", "Algieba", "Alnilam", "Aoede", "Autonoe", "Callirrhoe", "Charon", "Despina", "Enceladus", "Erinome", "Fenrir", "Gacrux", "Iapetus", "Kore", "Laomedeia", "Leda", "Orus", "Puck", "Pulcherrima", "Rasalgethi", "Sadachbia", "Sadaltager", "Schedar", "Sulafat", "Umbriel", "Vindemiatrix", "Zephyr", "Zubenelgenubi"],
-        "accent_enum": ["Neutral", "American (Gen)", "American (Valley)", "American (South)", "British (RP)", "British (Brixton)", "Transatlantic", "Australian"],
-        "style_enum": ["Vocal Smile", "Newscaster", "Whisper", "Empathetic", "Promo/Hype", "Deadpan"],
-        "pace_enum": ["Natural", "Rapid Fire", "The Drift", "Staccato"],
+        "voice_enum": [
+          "Achernar",
+          "Achird",
+          "Algenib",
+          "Algieba",
+          "Alnilam",
+          "Aoede",
+          "Autonoe",
+          "Callirrhoe",
+          "Charon",
+          "Despina",
+          "Enceladus",
+          "Erinome",
+          "Fenrir",
+          "Gacrux",
+          "Iapetus",
+          "Kore",
+          "Laomedeia",
+          "Leda",
+          "Orus",
+          "Puck",
+          "Pulcherrima",
+          "Rasalgethi",
+          "Sadachbia",
+          "Sadaltager",
+          "Schedar",
+          "Sulafat",
+          "Umbriel",
+          "Vindemiatrix",
+          "Zephyr",
+          "Zubenelgenubi"
+        ],
+        "accent_enum": [
+          "Neutral",
+          "American (Gen)",
+          "American (Valley)",
+          "American (South)",
+          "British (RP)",
+          "British (Brixton)",
+          "Transatlantic",
+          "Australian"
+        ],
+        "style_enum": [
+          "Vocal Smile",
+          "Newscaster",
+          "Whisper",
+          "Empathetic",
+          "Promo/Hype",
+          "Deadpan"
+        ],
+        "pace_enum": [
+          "Natural",
+          "Rapid Fire",
+          "The Drift",
+          "Staccato"
+        ],
         "speaker_id_format": "Speaker N"
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "per-turn 10000 cap governs per dialogue turn; combined script band per rule B per turn (~9500 safe ceiling per turn)",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -43,7 +118,10 @@
       "canonical_model_id": "google/gemini-2-5-pro-tts",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["tts", "multi-speaker-dialogue"],
+      "tasks": [
+        "tts",
+        "multi-speaker-dialogue"
+      ],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
@@ -53,13 +131,69 @@
         "temperature_min": 0,
         "temperature_max": 2,
         "temperature_default": 1,
-        "voice_enum": ["Achernar", "Achird", "Algenib", "Algieba", "Alnilam", "Aoede", "Autonoe", "Callirrhoe", "Charon", "Despina", "Enceladus", "Erinome", "Fenrir", "Gacrux", "Iapetus", "Kore", "Laomedeia", "Leda", "Orus", "Puck", "Pulcherrima", "Rasalgethi", "Sadachbia", "Sadaltager", "Schedar", "Sulafat", "Umbriel", "Vindemiatrix", "Zephyr", "Zubenelgenubi"],
-        "accent_enum": ["Neutral", "American (Gen)", "American (Valley)", "American (South)", "British (RP)", "British (Brixton)", "Transatlantic", "Australian"],
-        "style_enum": ["Vocal Smile", "Newscaster", "Whisper", "Empathetic", "Promo/Hype", "Deadpan"],
-        "pace_enum": ["Natural", "Rapid Fire", "The Drift", "Staccato"],
+        "voice_enum": [
+          "Achernar",
+          "Achird",
+          "Algenib",
+          "Algieba",
+          "Alnilam",
+          "Aoede",
+          "Autonoe",
+          "Callirrhoe",
+          "Charon",
+          "Despina",
+          "Enceladus",
+          "Erinome",
+          "Fenrir",
+          "Gacrux",
+          "Iapetus",
+          "Kore",
+          "Laomedeia",
+          "Leda",
+          "Orus",
+          "Puck",
+          "Pulcherrima",
+          "Rasalgethi",
+          "Sadachbia",
+          "Sadaltager",
+          "Schedar",
+          "Sulafat",
+          "Umbriel",
+          "Vindemiatrix",
+          "Zephyr",
+          "Zubenelgenubi"
+        ],
+        "accent_enum": [
+          "Neutral",
+          "American (Gen)",
+          "American (Valley)",
+          "American (South)",
+          "British (RP)",
+          "British (Brixton)",
+          "Transatlantic",
+          "Australian"
+        ],
+        "style_enum": [
+          "Vocal Smile",
+          "Newscaster",
+          "Whisper",
+          "Empathetic",
+          "Promo/Hype",
+          "Deadpan"
+        ],
+        "pace_enum": [
+          "Natural",
+          "Rapid Fire",
+          "The Drift",
+          "Staccato"
+        ],
         "speaker_id_format": "Speaker N"
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "per-turn 10000 cap governs per dialogue turn; combined script band per rule B per turn (~9500 safe ceiling per turn)",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -75,19 +209,30 @@
       "canonical_model_id": "elevenlabs/text-to-dialogue-v3",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["tts", "multi-speaker-dialogue"],
+      "tasks": [
+        "tts",
+        "multi-speaker-dialogue"
+      ],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
       "auth_env": "KIE_API_KEY",
       "caps": {
         "combined_text_max_chars": 5000,
-        "stability_enum": [0, 0.5, 1],
+        "stability_enum": [
+          0,
+          0.5,
+          1
+        ],
         "stability_default": 0.5,
         "default_voice": "EkK5I93UQWFDigLMpZcX",
         "language_codes_note": "enum ~72 language codes; see reference"
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "combined cap 5000 -> rule B safe ceiling 4900; house floor 5000 impossible -> do not force",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -103,7 +248,9 @@
       "canonical_model_id": "elevenlabs/text-to-speech-multilingual-v2",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["tts"],
+      "tasks": [
+        "tts"
+      ],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
@@ -127,7 +274,11 @@
         "speed_default": 1,
         "language_code_max_chars": 500
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "text cap 5000 -> rule B safe ceiling 4900; house floor 5000 impossible -> do not force",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -143,7 +294,9 @@
       "canonical_model_id": "elevenlabs/text-to-speech-turbo-2-5",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["tts"],
+      "tasks": [
+        "tts"
+      ],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
@@ -168,7 +321,11 @@
         "language_enforcement_note": "Only Turbo v2.5 and Flash v2.5 support language enforcement",
         "fail_code_on_generation_failure": "GENERATION_FAILED"
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "text cap 5000 -> rule B safe ceiling 4900; house floor 5000 impossible -> do not force",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -184,16 +341,40 @@
       "canonical_model_id": "suno-generate",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["music-generation", "song-generation"],
+      "tasks": [
+        "music-generation",
+        "song-generation"
+      ],
       "api_family": "suno-dedicated",
-      "model_enum": ["V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5"],
+      "model_enum": [
+        "V4",
+        "V4_5",
+        "V4_5PLUS",
+        "V4_5ALL",
+        "V5",
+        "V5_5"
+      ],
       "create_endpoint": "/api/v1/generate",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
       "auth_env": "KIE_API_KEY",
       "caps": {
-        "custom_prompt_max_chars": {"V4": 3000, "V4_5": 5000, "V4_5PLUS": 5000, "V4_5ALL": 5000, "V5": 5000, "V5_5": 5000},
+        "custom_prompt_max_chars": {
+          "V4": 3000,
+          "V4_5": 5000,
+          "V4_5PLUS": 5000,
+          "V4_5ALL": 5000,
+          "V5": 5000,
+          "V5_5": 5000
+        },
         "non_custom_prompt_max_chars": 3000,
-        "custom_style_max_chars": {"V4": 200, "V4_5": 1000, "V4_5PLUS": 1000, "V4_5ALL": 1000, "V5": 1000, "V5_5": 1000},
+        "custom_style_max_chars": {
+          "V4": 200,
+          "V4_5": 1000,
+          "V4_5PLUS": 1000,
+          "V4_5ALL": 1000,
+          "V5": 1000,
+          "V5_5": 1000
+        },
         "title_max_chars": 80,
         "duration": {
           "effective_conditions": "custom_mode true AND model V5_5",
@@ -201,12 +382,28 @@
           "min_seconds": 10,
           "max_seconds": 360
         },
-        "weights_range": [0, 1],
-        "vocal_gender_enum": ["m", "f"],
-        "persona_model_enum": ["style_persona", "voice_persona"],
-        "persona_model_models": ["V5", "V5_5"]
+        "weights_range": [
+          0,
+          1
+        ],
+        "vocal_gender_enum": [
+          "m",
+          "f"
+        ],
+        "persona_model_enum": [
+          "style_persona",
+          "voice_persona"
+        ],
+        "persona_model_models": [
+          "V5",
+          "V5_5"
+        ]
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "rule C (small) - 4800 safe for V4_5+, 2900 for V4 custom; house floor inapplicable",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -222,19 +419,51 @@
       "canonical_model_id": "suno-extend",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["music-extension"],
+      "tasks": [
+        "music-extension"
+      ],
       "api_family": "suno-dedicated",
-      "model_enum": ["V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5"],
+      "model_enum": [
+        "V4",
+        "V4_5",
+        "V4_5PLUS",
+        "V4_5ALL",
+        "V5",
+        "V5_5"
+      ],
       "create_endpoint": "/api/v1/generate/extend",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
       "auth_env": "KIE_API_KEY",
       "caps": {
-        "title_max_chars": {"V4": 80, "V4_5": 100, "V4_5PLUS": 100, "V4_5ALL": 80, "V5": 100, "V5_5": 100},
-        "prompt_max_chars": {"V4": 3000, "V4_5": 5000, "V4_5PLUS": 5000, "V4_5ALL": 5000, "V5": 5000, "V5_5": 5000},
-        "continueAt": {"semantics": "time point in seconds from which to start extending the music"},
-        "instrumental_true_prohibits": ["prompt", "vocalGender"]
+        "title_max_chars": {
+          "V4": 80,
+          "V4_5": 100,
+          "V4_5PLUS": 100,
+          "V4_5ALL": 80,
+          "V5": 100,
+          "V5_5": 100
+        },
+        "prompt_max_chars": {
+          "V4": 3000,
+          "V4_5": 5000,
+          "V4_5PLUS": 5000,
+          "V4_5ALL": 5000,
+          "V5": 5000,
+          "V5_5": 5000
+        },
+        "continueAt": {
+          "semantics": "time point in seconds from which to start extending the music"
+        },
+        "instrumental_true_prohibits": [
+          "prompt",
+          "vocalGender"
+        ]
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "rule C (small) - 4800 safe for V4_5+, 2900 for V4; house floor inapplicable",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -250,9 +479,14 @@
       "canonical_model_id": "suno-sounds",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["sound-effects"],
+      "tasks": [
+        "sound-effects"
+      ],
       "api_family": "suno-dedicated",
-      "model_enum": ["V5", "V5_5"],
+      "model_enum": [
+        "V5",
+        "V5_5"
+      ],
       "create_endpoint": "/api/v1/generate/sounds",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
       "auth_env": "KIE_API_KEY",
@@ -261,10 +495,40 @@
         "soundTempo_min": 1,
         "soundTempo_max": 300,
         "soundKey_default": "Any",
-        "soundKey_minor_enum": ["Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm"],
-        "soundKey_major_enum": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        "soundKey_minor_enum": [
+          "Cm",
+          "C#m",
+          "Dm",
+          "D#m",
+          "Em",
+          "Fm",
+          "F#m",
+          "Gm",
+          "G#m",
+          "Am",
+          "A#m",
+          "Bm"
+        ],
+        "soundKey_major_enum": [
+          "C",
+          "C#",
+          "D",
+          "D#",
+          "E",
+          "F",
+          "F#",
+          "G",
+          "G#",
+          "A",
+          "A#",
+          "B"
+        ]
       },
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "rule C (small) - 500 char cap; house floor inapplicable",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -278,28 +542,103 @@
       "canonical_model_id": "suno-other-operations",
       "aliases": [],
       "modality": "audio",
-      "tasks": ["upload-cover", "upload-extend", "add-instrumental", "add-vocals", "cover", "replace-section", "generate-persona", "mashup", "lyrics", "get-timestamped-lyrics", "wav", "vocal-removal", "midi", "mp4"],
+      "tasks": [
+        "upload-cover",
+        "upload-extend",
+        "add-instrumental",
+        "add-vocals",
+        "cover",
+        "replace-section",
+        "generate-persona",
+        "mashup",
+        "lyrics",
+        "get-timestamped-lyrics",
+        "wav",
+        "vocal-removal",
+        "midi",
+        "mp4"
+      ],
       "api_family": "suno-dedicated",
       "create_endpoint": "/api/v1/generate/upload-cover",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
       "auth_env": "KIE_API_KEY",
       "operations": [
-        {"operation": "upload-cover", "route": "/api/v1/generate/upload-cover", "notes": "uploadUrl audio <= 8 min; non-custom prompt limit 500"},
-        {"operation": "upload-extend", "route": "/api/v1/generate/upload-extend", "notes": "continueAt > 0 and < total duration; model must match source"},
-        {"operation": "add-instrumental", "route": "/api/v1/generate/add-instrumental", "notes": "model enum V4_5PLUS/V5/V5_5 default V4_5PLUS; negativeTags max 200, tags max 1000"},
-        {"operation": "add-vocals", "route": "/api/v1/generate/add-vocals", "notes": "negativeTags max 200, style max 1000"},
-        {"operation": "cover", "route": "/api/v1/suno/cover/generate", "notes": "taskId + callBackUrl; one cover per task (Each music task can only generate a Cover once)"},
-        {"operation": "replace-section", "route": "/api/v1/generate/replace-section", "notes": "infillStartS < infillEndS; replacement min 10 sec, max 50% of original duration"},
-        {"operation": "generate-persona", "route": "/api/v1/generate/generate-persona", "notes": "vocalEnd-vocalStart 10-30s; v3.5 not supported; once per audioId"},
-        {"operation": "mashup", "route": "/api/v1/generate/mashup", "notes": "must contain exactly 2 audio file URLs (uploadUrlList min/max 2)"},
-        {"operation": "lyrics", "route": "/api/v1/lyrics", "notes": "maximum word limit is 200 characters (verbatim page text)"},
-        {"operation": "get-timestamped-lyrics", "route": "/api/v1/generate/get-timestamped-lyrics", "notes": "taskId+audioId; instrumental returns no lyrics"},
-        {"operation": "wav", "route": "/api/v1/wav/generate", "notes": "taskId+audioId+callBackUrl; WAV 5-10x MP3 size"},
-        {"operation": "vocal-removal", "route": "/api/v1/vocal-removal/generate", "notes": "type separate_vocal (10 cr) / split_stem (50 cr, up to 12 stems) / split_stem_advanced (20 cr); audioUrl max 20MB"},
-        {"operation": "midi", "route": "/api/v1/midi/generate", "notes": "requires completed vocal separation taskId"},
-        {"operation": "mp4", "route": "/api/v1/mp4/generate", "notes": "taskId+audioId+callBackUrl; author/domainName max 50 each"}
+        {
+          "operation": "upload-cover",
+          "route": "/api/v1/generate/upload-cover",
+          "notes": "uploadUrl audio <= 8 min; non-custom prompt limit 500"
+        },
+        {
+          "operation": "upload-extend",
+          "route": "/api/v1/generate/upload-extend",
+          "notes": "continueAt > 0 and < total duration; model must match source"
+        },
+        {
+          "operation": "add-instrumental",
+          "route": "/api/v1/generate/add-instrumental",
+          "notes": "model enum V4_5PLUS/V5/V5_5 default V4_5PLUS; negativeTags max 200, tags max 1000"
+        },
+        {
+          "operation": "add-vocals",
+          "route": "/api/v1/generate/add-vocals",
+          "notes": "negativeTags max 200, style max 1000"
+        },
+        {
+          "operation": "cover",
+          "route": "/api/v1/suno/cover/generate",
+          "notes": "taskId + callBackUrl; one cover per task (Each music task can only generate a Cover once)"
+        },
+        {
+          "operation": "replace-section",
+          "route": "/api/v1/generate/replace-section",
+          "notes": "infillStartS < infillEndS; replacement min 10 sec, max 50% of original duration"
+        },
+        {
+          "operation": "generate-persona",
+          "route": "/api/v1/generate/generate-persona",
+          "notes": "vocalEnd-vocalStart 10-30s; v3.5 not supported; once per audioId"
+        },
+        {
+          "operation": "mashup",
+          "route": "/api/v1/generate/mashup",
+          "notes": "must contain exactly 2 audio file URLs (uploadUrlList min/max 2)"
+        },
+        {
+          "operation": "lyrics",
+          "route": "/api/v1/lyrics",
+          "notes": "maximum word limit is 200 characters (verbatim page text)"
+        },
+        {
+          "operation": "get-timestamped-lyrics",
+          "route": "/api/v1/generate/get-timestamped-lyrics",
+          "notes": "taskId+audioId; instrumental returns no lyrics"
+        },
+        {
+          "operation": "wav",
+          "route": "/api/v1/wav/generate",
+          "notes": "taskId+audioId+callBackUrl; WAV 5-10x MP3 size"
+        },
+        {
+          "operation": "vocal-removal",
+          "route": "/api/v1/vocal-removal/generate",
+          "notes": "type separate_vocal (10 cr) / split_stem (50 cr, up to 12 stems) / split_stem_advanced (20 cr); audioUrl max 20MB"
+        },
+        {
+          "operation": "midi",
+          "route": "/api/v1/midi/generate",
+          "notes": "requires completed vocal separation taskId"
+        },
+        {
+          "operation": "mp4",
+          "route": "/api/v1/mp4/generate",
+          "notes": "taskId+audioId+callBackUrl; author/domainName max 50 each"
+        }
       ],
-      "house_band_chars": [5000, 9000, 19000],
+      "house_band_chars": [
+        5000,
+        9000,
+        19000
+      ],
       "house_band_status": "rule C (small); per-operation caps apply (see operations notes)",
       "cap_status": "VERIFIED",
       "last_verified_at": "2026-08-26",
@@ -315,7 +654,9 @@
       "canonical_model_id": null,
       "aliases": [],
       "modality": "audio",
-      "tasks": ["stt"],
+      "tasks": [
+        "stt"
+      ],
       "api_family": null,
       "create_endpoint": null,
       "query_endpoint": null,

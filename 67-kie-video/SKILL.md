@@ -33,6 +33,7 @@ All video tasks are asynchronous: HTTP 200 from createTask or dedicated endpoint
   6. **Puppet Motion Transfer:** `kling-3.0/motion-control` (1 driving video + 1 character portrait).
   7. **Short + Cheap / Fast Turnaround:** `kling/v2-5-turbo-text-to-video-pro` or `bytedance/seedance-2-mini`.
   8. **Dedicated Providers:** `runway` (`POST /api/v1/runway/generate`) and `veo3`/`veo3_fast`/`veo3_lite` (`POST /api/v1/veo/generate`).
+  9. **Targets above 30s:** multi-clip plan per references/models.md "Clip Planning for Long Targets" (N = ceil(target/max)); no single continuous clip exceeds 30s on any KIE model.
 
 ## Mandatory Sequence: route -> select -> validate -> dispatch
 

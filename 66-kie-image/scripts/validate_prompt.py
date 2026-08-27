@@ -148,8 +148,12 @@ def validate_body(prompt, model_id, strict):
                 "prompt %d chars is at %d%% of the hard cap %d; leave headroom, target "
                 "~4,500-4,900 where cap is 5,000" % (chars, int(chars * 100 / vcap), vcap))
         elif chars < HOUSE_MIN:
-            warnings.append("prompt %d chars under house band; target ~%d (non-fatal)"
-                            % (chars, HOUSE_TARGET))
+            if vcap is not None and vcap <= 5000:
+                warnings.append("prompt %d chars under house band; target ~4,500-4,900 where cap is %d (non-fatal)"
+                                % (chars, vcap))
+            else:
+                warnings.append("prompt %d chars under house band; target ~%d (non-fatal)"
+                                % (chars, HOUSE_TARGET))
     elif rule == RULE_C:
         if chars > vcap:
             hard = vcap

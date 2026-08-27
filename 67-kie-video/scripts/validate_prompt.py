@@ -112,6 +112,19 @@ def validate_body(prompt, model_id, strict):
     warnings = []
     hard = None
 
+    # HappyHorse Chinese sub-cap: vendor documents 5,000 chars non-Chinese but
+    # 2,500 chars Chinese. When the prompt is predominantly CJK and the registry
+    # carries vendor_hard_cap_chars_cn, enforce the 2,500 Chinese cap first.
+    cn_cap = entry.get("vendor_hard_cap_chars_cn")
+    if cn_cap is not None and chars > cn_cap:
+        cjk = sum(1 for ch in prompt if "一" <= ch <= "鿿")
+        if chars > 0 and cjk / chars > 0.3:
+            hard = cn_cap
+            errors.append(
+                f"prompt is {chars} characters, predominantly Chinese; hard cap for "
+                f"{display_name} ({model_id}) is 2,500 Chinese characters (VERIFIED)"
+            )
+
     # Hard-fail on VERIFIED hard char caps (rule A/B/C) — chars > cap -> exit 2
     if vcap is not None and chars > vcap and cap_status == "VERIFIED":
         hard = vcap
@@ -247,6 +260,10 @@ def selftest():
          "x" * 30001, "bytedance/seedance-2-5", False, "A", "hard cap", None, True),
         ("unknown model fails",
          "test prompt", "not/a-real-video-model", False, None, "not in registry", None, False),
+        ("happyhorse 4000 CJK exceeds Chinese cap",
+         "好" * 4000, "happyhorse-1-1/text-to-video", False, "B", "2,500 Chinese characters", None, True),
+        ("happyhorse 4000 latin no CN cap",
+         "x" * 4000, "happyhorse-1-1/text-to-video", True, "B", None, None, False),
     ]
 
     failures = []

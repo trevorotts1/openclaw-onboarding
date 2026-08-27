@@ -5,7 +5,14 @@
   "registry_policy": {
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai market pages + kie.ai playground pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. NOT_EXPOSED/NOT_PUBLISHED is stored as null, never invented.",
     "house_band_chars": { "min": 5000, "target": 9000, "max": 19000 },
-    "owner_preferred_default": "GPT Image 2 when compatible"
+    "owner_preferred_default": "GPT Image 2 when compatible",
+    "cap_status_legend": {
+      "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
+      "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
+      "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
+      "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
+      "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value"
+    }
   },
   "models": [
     {
@@ -23,7 +30,7 @@
       "vendor_hard_cap_chars": null,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": 25000,
-      "cap_status": "OWNER_OBSERVED",
+      "cap_status": "OWNER_CONFIRMED",
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -40,10 +47,10 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-text-to-image",
       "known_inconsistencies": [
-        "Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\" — an explicit vendor-published char cap. Spec 7.4 rules the public endpoint page does NOT publish an exact hard character cap and directs storing the owner-observed ~25K figure instead. Both statements are first-party; UNDETERMINED arbiter. Stored value per spec 7.4: owner_observed_cap_chars 25000, cap_status OWNER_OBSERVED. LIVE_PROBE_REQUIRED to resolve 20,000 (docs) vs 25,000 (owner-observed).",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. cap_status OWNER_CONFIRMED; owner_observed_cap_chars 25000; vendor_hard_cap_chars stays null (vendor never published 25k). Warn-only, never hard-fail.",
         "Quality tier is expressed as resolution enum (1K/2K/4K); no separate quality field."
       ],
-      "notes": "Owner's preferred general KIE image route when compatible. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST — validators warn only."
+      "notes": "Owner's preferred general KIE image route when compatible. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
     },
     {
       "provider": "kie",
@@ -60,7 +67,7 @@
       "vendor_hard_cap_chars": null,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": 25000,
-      "cap_status": "OWNER_OBSERVED",
+      "cap_status": "OWNER_CONFIRMED",
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -77,8 +84,8 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-image-to-image",
       "known_inconsistencies": [
-        "Docs i2i page shows only maxItems: 16 for input_urls — NO MB limit and NO format list published in the docs schema. The 30MB / JPEG-PNG-WEBP-JPG values come from the kie.ai/gpt-image-2 playground page (curl 200, verbatim: \"Supported formats: JPEG, PNG, WEBP, JPG\" and \"Maximum file size: 30MB; Maximum files: 16\"). Two different first-party surfaces; both dated 2026-08-26.",
-        "Docs page text (verbatim): \"up to 20,000 characters\" conflicting with spec 7.4 not-published ruling; stored 25000 owner-observed per spec. See GPT Image 2 (Text-to-Image) entry.",
+        "Docs i2i page shows only maxItems: 16 for input_urls, NO MB limit and NO format list published in the docs schema. The 30MB / JPEG-PNG-WEBP-JPG values come from the kie.ai/gpt-image-2 playground page (curl 200, verbatim: \"Supported formats: JPEG, PNG, WEBP, JPG\" and \"Maximum file size: 30MB; Maximum files: 16\"). Two different first-party surfaces; both dated 2026-08-26.",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (verbatim): \"up to 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. See GPT Image 2 (Text-to-Image) entry.",
         "Playground verbatim: \"5:4 and 4:5 aspect ratios only support 1K images\" (i2i route)."
       ],
       "notes": "Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each."
@@ -114,7 +121,7 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/qwen3/text-to-image",
       "known_inconsistencies": [
-        "Marketing page https://kie.ai/qwen-image-3 (2026-08-26, verbatim): \"Qwen Image 3.0 API supports up to 4.5K token inputs\" — TOKENS. Docs schema says prompt maxLength 5000 CHARS. Unreconciled; likely same limit described differently. Per spec rule D: token cap, NOT a char cap — do not convert; token-aware validation only. Docs char figure (5000 maxLength) is the only documented numeric and is NOT stored as a cap per rule D.",
+        "Marketing page https://kie.ai/qwen-image-3 (2026-08-26, verbatim): \"Qwen Image 3.0 API supports up to 4.5K token inputs\", TOKENS. Docs schema says prompt maxLength 5000 CHARS. Unreconciled; likely same limit described differently. Per spec rule D: token cap, NOT a char cap, do not convert; token-aware validation only. Docs char figure (5000 maxLength) is the only documented numeric and is NOT stored as a cap per rule D.",
         "nsfw_checker default: docs pages say default false; playground says \"Defaults to true in the Playground\". Playground default vs API default differ; UNDETERMINED.",
         "image_size enum here is named image_size (not aspect_ratio), 8 values, no auto, default 16:9."
       ],
@@ -155,7 +162,7 @@
         "Marketing page names it \"Qwen-Image-3.0-Pro\" but never shows an API model field value.",
         "Same 4.5K tokens marketing vs 5000 chars docs conflict as base Qwen; token-based per rule D."
       ],
-      "notes": "Pro variant — premium Qwen route when structured/multilingual composition matters and the pin is explicit."
+      "notes": "Pro variant, premium Qwen route when structured/multilingual composition matters and the pin is explicit."
     },
     {
       "provider": "kie",
@@ -261,7 +268,7 @@
       "source_url": "https://docs.kie.ai/market/seedream/5-pro-text-to-image",
       "known_inconsistencies": [
         "Docs nav also shows an escaped variant seedream-5-pro-text-to-image (underscore) in docs HTML; canonical enum per docs JSON is seedream/5-pro-text-to-image.",
-        "Prompt cap NOT EXPOSED on any page — page shows only \"A text description of the image you want to generate\"."
+        "Prompt cap NOT EXPOSED on any page, page shows only \"A text description of the image you want to generate\"."
       ],
       "notes": "Quality tiers (page verbatim): \"Basic outputs 1K images, while High outputs 2K images.\" Single image per request; no n (count) param exposed. Strong premium controlled-generation/editing route, particularly multi-reference and complex information-rich compositions."
     },
@@ -336,7 +343,7 @@
       "known_inconsistencies": [
         "Layer Decomposition route parameters NOT extracted in research round (out of scope then); control_fields empty until a live schema fetch. LIVE_PROBE_REQUIRED before dispatch."
       ],
-      "notes": "Exists as a Model Type tab and docs route. Layer separation workflow — fetch exact schema before freezing any validator behavior."
+      "notes": "Exists as a Model Type tab and docs route. Layer separation workflow, fetch exact schema before freezing any validator behavior."
     },
     {
       "provider": "kie",
@@ -557,7 +564,7 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/google/nano-banana-2-lite",
       "known_inconsistencies": [
-        "Only 3 exposed fields (prompt, image_urls, aspect_ratio) — resolution and output_format are NOT exposed as params. README/table say 1K output only. UNDETERMINED whether the API accepts a resolution param at all. Stored resolutions: [\"1K\"] (README verbatim: \"built for fast 1K image generation\").",
+        "Only 3 exposed fields (prompt, image_urls, aspect_ratio), resolution and output_format are NOT exposed as params. README/table say 1K output only. UNDETERMINED whether the API accepts a resolution param at all. Stored resolutions: [\"1K\"] (README verbatim: \"built for fast 1K image generation\").",
         "Refs (playground verbatim): \"Supported formats: JPEG, PNG, WEBP Maximum file size: 30MB; Maximum files: 10\".",
         "Vendor identity: \"Nano Banana 2 Lite, aka Gemini 3.1 Flash-Lite Image\".",
         "Prompt cap NOT EXPOSED.",
@@ -597,10 +604,10 @@
       "source_url": "https://docs.kie.ai/market/google/pro-image-to-image",
       "known_inconsistencies": [
         "Aliases: page verbatim \"Built on the upgraded Gemini 3.0 Pro Image architecture\"; \"gemini-3-pro-image-preview\" appears in README for preview variants.",
-        "Context window: README states \"64K input and 32K output context window\" — that is a MODEL CONTEXT WINDOW, NOT a prompt char cap. Do NOT store it as a cap. UNDETERMINED as a prompt limit.",
+        "Context window: README states \"64K input and 32K output context window\", that is a MODEL CONTEXT WINDOW, NOT a prompt char cap. Do NOT store it as a cap. UNDETERMINED as a prompt limit.",
         "Refs (playground verbatim): \"Supported formats: JPEG, PNG, WEBP Maximum file size: 30MB; Maximum files: 8\" and \"supports up to 8 images\".",
         "Prompt cap NOT EXPOSED.",
-        "11-value ratio enum — NO 1:4 / 4:1 / 1:8 / 8:1 (those are NB2/NB2-Lite only)."
+        "11-value ratio enum, NO 1:4 / 4:1 / 1:8 / 8:1 (those are NB2/NB2-Lite only)."
       ],
       "notes": "Strong general/multi-reference alternative to GPT Image 2. Multi-turn editing: dialogue-style refinement instead of full regeneration; blends up to 8 reference images. KIE pricing on page: $0.09/image 1K-2K, $0.12/image 4K."
     },
@@ -632,7 +639,7 @@
       "output_formats": ["png", "jpeg"],
       "sync": false,
       "active": true,
-      "active_note": "legacy/lightweight compatibility only — prefer nano-banana-2 or nano-banana-pro when not explicitly pinned",
+      "active_note": "legacy/lightweight compatibility only, prefer nano-banana-2 or nano-banana-pro when not explicitly pinned",
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/google/nano-banana",
       "known_inconsistencies": [
@@ -675,12 +682,12 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/wan/2-7-image",
       "known_inconsistencies": [
-        "Prompt cap VERIFIED (docs verbatim): \"Text prompts for image generation. Supports both Chinese and English, with a minimum of 1 characters and a maximum of 5,000 characters.\" 1-5,000 CHARS. Because 5,000 IS the hard ceiling, do NOT force 5,000 as a minimum — target ~4,500-4,900 with headroom (spec 7.4, rule B).",
+        "Prompt cap VERIFIED (docs verbatim): \"Text prompts for image generation. Supports both Chinese and English, with a minimum of 1 characters and a maximum of 5,000 characters.\" 1-5,000 CHARS. Because 5,000 IS the hard ceiling, do NOT force 5,000 as a minimum, target ~4,500-4,900 with headroom (spec 7.4, rule B).",
         "Refs (playground verbatim): \"Supported formats: JPEG, PNG, WEBP, JPG Maximum file size: 10MB; Maximum files: 9\" plus \"Image dimensions must be at least 240 pixels in length and width.\"",
         "bbox_list (verbatim): \"Coordinates are saved as [x1, y1, x2, y2] using the original image pixel coordinates. Each image supports up to 2 boxes.\" bbox field type is string (bbox JSON-as-string).",
         "n (verbatim): \"When the gallery mode is turned off, n represents the number of generated images (1-4); when it is turned on, n represents the maximum number of images (1-12), and the actual value is determined by the model.\" enable_sequential = Gallery Mode. thinking_mode only available when Gallery Mode off and no images uploaded.",
         "4K scope wording AMBIGUITY: hint text on both routes (verbatim) \"(4K generation is available only for text-to-image in Standard Mode)\" vs README attributing 4K to the Pro variant only. UNDETERMINED standard-vs-pro naming.",
-        "8-value ratio enum — 1:8 and 8:1 present, NO auto, NO 2:3/3:2/4:5/5:4."
+        "8-value ratio enum, 1:8 and 8:1 present, NO auto, NO 2:3/3:2/4:5/5:4."
       ],
       "notes": "12-field contract. Normal n 1-4, gallery 1-12. Info-dense/multi-reference + interactive bbox edit workflow."
     },
@@ -718,7 +725,7 @@
       "known_inconsistencies": [
         "4K scope: README verbatim \"extending text-to-image output up to 4K resolution ... That 4K support applies to text-to-image only, while image editing and other image-input scenarios remain below that level.\" Pro route enum is 1K | 2K | 4K; 4K valid for T2I only.",
         "Prompt cap: same 1-5,000 chars VERIFIED wording as standard route.",
-        "Hint text on BOTH routes says \"(4K generation is available only for text-to-image in Standard Mode)\" — matches the README only if \"Standard Mode\" means Pro-T2I; UNDETERMINED."
+        "Hint text on BOTH routes says \"(4K generation is available only for text-to-image in Standard Mode)\", matches the README only if \"Standard Mode\" means Pro-T2I; UNDETERMINED."
       ],
       "notes": "Pro variant: 4K T2I. Use when the request demands 4K Wan output; standard wan/2-7-image cannot serve 4K."
     },
@@ -753,9 +760,9 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/flux2/pro-text-to-image",
       "known_inconsistencies": [
-        "PROMPT LIMIT NOT EXPOSED — docs show prompt examples only, no maxLength. Do NOT invent a cap.",
-        "RESOLUTION/ASPECT ENUMS NOT EXPOSED — docs example values only (\"aspect_ratio\": \"1:1\", \"resolution\": \"1K\", \"nsfw_checker\": false). Not a published enum.",
-        "Flux Kontext is a SEPARATE dedicated API (flux-kontext-api, /api/v1/flux/kontext/generate) — NOT FLUX.2. Do not conflate."
+        "PROMPT LIMIT NOT EXPOSED, docs show prompt examples only, no maxLength. Do NOT invent a cap.",
+        "RESOLUTION/ASPECT ENUMS NOT EXPOSED, docs example values only (\"aspect_ratio\": \"1:1\", \"resolution\": \"1K\", \"nsfw_checker\": false). Not a published enum.",
+        "Flux Kontext is a SEPARATE dedicated API (flux-kontext-api, /api/v1/flux/kontext/generate), NOT FLUX.2. Do not conflate."
       ],
       "notes": "Request shape (T2I): model, callBackUrl, input { prompt, aspect_ratio, resolution, nsfw_checker }. Creative/photorealistic alternate route when FLUX strengths fit the request."
     },
@@ -790,7 +797,7 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/flux2/pro-image-to-image",
       "known_inconsistencies": [
-        "REFERENCE COUNT/MB LIMITS NOT EXPOSED — docs examples show 2 input_urls entries only; no maxItems, no MB text on this page. The shared File Upload API section may govern; not exposed on these pages. UNDETERMINED.",
+        "REFERENCE COUNT/MB LIMITS NOT EXPOSED, docs examples show 2 input_urls entries only; no maxItems, no MB text on this page. The shared File Upload API section may govern; not exposed on these pages. UNDETERMINED.",
         "Prompt limit NOT EXPOSED."
       ],
       "notes": "I2I request shape: input { input_urls: [..], prompt, aspect_ratio, resolution, nsfw_checker }."
@@ -899,7 +906,7 @@
       "known_inconsistencies": [
         "Z-Image is its OWN KIE family. NEVER merge into Qwen (spec 13 last paragraph: an owner saying \"Z Image by Quinn\" does NOT make it Qwen).",
         "Vendor attribution inconsistent: README \"Z-Image is Tongyi-MAI's efficient image generation model\" / \"Z-Image-Turbo API by Tongyi-MAI\" vs left-nav grouping under \"Qwen\". UNDETERMINED vendor.",
-        "aspect_ratio: enum is (1:1 | 4:3 | 3:4 | 16:9 | 9:16) — NO auto. Field help text mentions auto (verbatim: \"Select 'auto' to match the first input image ratio (requires input image)\") but auto is NOT in the enum and no image input is exposed. UNDETERMINED whether auto is accepted.",
+        "aspect_ratio: enum is (1:1 | 4:3 | 3:4 | 16:9 | 9:16), NO auto. Field help text mentions auto (verbatim: \"Select 'auto' to match the first input image ratio (requires input image)\") but auto is NOT in the enum and no image input is exposed. UNDETERMINED whether auto is accepted.",
         "README step text says \"Use text prompts or upload an image\" but the playground panel exposes NO image upload control. UNDETERMINED.",
         "Prompt cap NOT EXPOSED. Playground T2I-only: 3 fields (prompt, aspect_ratio, nsfw_checker). No image_urls, no resolution, no output_format, no n."
       ],
@@ -936,9 +943,9 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/ideogram/v3-text-to-image",
       "known_inconsistencies": [
-        "Prompt cap VERIFIED (docs verbatim): \"Maximum length: 5000 characters.\" Applied to negative_prompt too (negative_prompt max 5000; \"positive prompt takes precedence\" on conflict). Spec 7.4 says \"not published\" — first-party docs DO publish 5000; research quote wins per encoding-source rule: hard cap 5000 VERIFIED. Rule B applies: target ~4,500-4,900, never force 5,000, do not approach 19,000.",
+        "Prompt cap VERIFIED (docs verbatim): \"Maximum length: 5000 characters.\" Applied to negative_prompt too (negative_prompt max 5000; \"positive prompt takes precedence\" on conflict). Spec 7.4 says \"not published\", first-party docs DO publish 5000; research quote wins per encoding-source rule: hard cap 5000 VERIFIED. Rule B applies: target ~4,500-4,900, never force 5,000, do not approach 19,000.",
         "style_codes: referenced in a note (\"Cannot be used together with style_codes\") but the field itself is NOT EXPOSED anywhere. Do NOT send style_codes.",
-        "image_size is 6 NAMED enums (square, square_hd, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9) — NO explicit pixel ratios, NO 1K/2K/4K resolution tiers published.",
+        "image_size is 6 NAMED enums (square, square_hd, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9), NO explicit pixel ratios, NO 1K/2K/4K resolution tiers published.",
         "Rendering_speed enum TURBO | BALANCED | QUALITY; style enum AUTO | GENERAL | REALISTIC | DESIGN.",
         "expand_prompt = \"MagicPrompt enhancement\"."
       ],
@@ -975,12 +982,12 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/ideogram/v3-edit",
       "known_inconsistencies": [
-        "Single image + optional mask semantics — NOT generic multi-reference. mask_url \"Needs to match the dimensions of the input image\", same types, 10.0MB max. Verbatim: \"Accepted types: image/jpeg, image/png, image/webp\" - \"Max size: 10.0MB\".",
+        "Single image + optional mask semantics, NOT generic multi-reference. mask_url \"Needs to match the dimensions of the input image\", same types, 10.0MB max. Verbatim: \"Accepted types: image/jpeg, image/png, image/webp\" - \"Max size: 10.0MB\".",
         "Remix support NOT EXPOSED on the edit route (no remix param). Editing = inpainting via mask_url only.",
         "Prompt cap 5000 VERIFIED (\"Maximum length: 5000 characters.\"). Rule B band.",
         "Resolutions/aspect ratios NOT EXPOSED on edit route."
       ],
-      "notes": "Treat edit mask as actual endpoint semantics — do NOT call it generic multi-reference composition."
+      "notes": "Treat edit mask as actual endpoint semantics, do NOT call it generic multi-reference composition."
     },
     {
       "provider": "kie",
@@ -1019,7 +1026,7 @@
         "style_codes NOT EXPOSED (same note as T2I).",
         "Prompt cap 5000 VERIFIED (\"Maximum length: 5000 characters.\"). Rule B band."
       ],
-      "notes": "Remix source strength semantics — do NOT treat as generic multi-reference."
+      "notes": "Remix source strength semantics, do NOT treat as generic multi-reference."
     },
     {
       "provider": "kie",
@@ -1052,8 +1059,8 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/google/imagen4-fast",
       "known_inconsistencies": [
-        "Prompt cap VERIFIED (docs verbatim): \"Max length: 5000 characters\"; negative_prompt same (\"A description of what to discourage in the generated images (Max length: 5000 characters)\"). Spec 7.4 says \"not published\" — docs DO publish 5000; research quote wins. Rule B band: target 4,500-4,900, never 5,000 as a floor, never approach 19,000.",
-        "NO reference-image/edit route — T2I verified only; no imagen4-image-to-image or edit page in sitemap. Do NOT invent multi-reference/edit behavior.",
+        "Prompt cap VERIFIED (docs verbatim): \"Max length: 5000 characters\"; negative_prompt same (\"A description of what to discourage in the generated images (Max length: 5000 characters)\"). Spec 7.4 says \"not published\", docs DO publish 5000; research quote wins. Rule B band: target 4,500-4,900, never 5,000 as a floor, never approach 19,000.",
+        "NO reference-image/edit route, T2I verified only; no imagen4-image-to-image or edit page in sitemap. Do NOT invent multi-reference/edit behavior.",
         "aspect_ratio default 16:9 (differs from google/imagen4 and ultra whose default is 1:1).",
         "seed integer; example creditsConsumed 8."
       ],
@@ -1091,8 +1098,8 @@
       "source_url": "https://docs.kie.ai/market/google/imagen4",
       "known_inconsistencies": [
         "Prompt/negative caps 5000 VERIFIED (\"Max length: 5000 characters\"). Rule B band.",
-        "seed is a STRING here (\"Max length: 500 characters\"), not an int — differs from imagen4-fast's integer seed.",
-        "NO reference/edit support exposed — no refs, no img2img fields.",
+        "seed is a STRING here (\"Max length: 500 characters\"), not an int, differs from imagen4-fast's integer seed.",
+        "NO reference/edit support exposed, no refs, no img2img fields.",
         "aspect_ratio default 1:1 (fast defaults 16:9)."
       ],
       "notes": "Standard tier, T2I only."
