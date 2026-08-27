@@ -57,7 +57,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
     p.add_argument("--phase", help="run exactly one phase")
     p.add_argument("--until", help="run through this phase then stop")
-    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog / --reconcile-board")
+    p.add_argument("--scan-root", type=Path, help="PRIMARY root to scan for "
+                   "--watchdog / --reconcile-board; additional roots come from "
+                   "--scan-root-extra, PRESENTATION_SCAN_ROOTS, and the scan-roots "
+                   "config file (see presentation_job/scan_roots.py)")
+    # 2026-08-27 scan-roots fix: a single --scan-root was the blind spot. Extra
+    # roots are CLI-repeatable, env (os.pathsep-separated), and config-file
+    # driven; resolution and the unreadable-root => UNDETERMINED doctrine live
+    # in scan_roots.py, shared with run_discovery.py.
+    p.add_argument("--scan-root-extra", type=Path, action="append", default=None,
+                   dest="scan_root_extras", metavar="PATH",
+                   help="additional scan root; repeatable")
+    p.add_argument("--roots-config", type=Path, default=None,
+                   help="config file listing additional roots, one path per line "
+                        "(default: <department>/config/scan-roots.conf, "
+                        "overridable with SCAN_ROOTS_CONFIG)")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
     p.add_argument("--diagnose-only", action="store_true",
                    help="with --resume: print why the job parked and exit without resuming")
@@ -544,6 +558,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             grace_multiplier=getattr(args, 'grace', 1.5),
             scan_depth=sd,
             enforce=getattr(args, 'enforce', False),
+            extra_roots=tuple(args.scan_root_extras or ()),
+            roots_config=args.roots_config,
         )
 
     if args.reconcile_board:
@@ -555,6 +571,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             scan_depth=sd,
             apply=args.apply,
             max_age_hours=args.max_age_hours,
+            extra_roots=tuple(args.scan_root_extras or ()),
+            roots_config=args.roots_config,
         )
 
     if args.apply and not args.reconcile_board:
