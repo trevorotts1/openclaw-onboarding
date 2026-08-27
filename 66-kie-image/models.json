@@ -5,7 +5,14 @@
   "registry_policy": {
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai market pages + kie.ai playground pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. NOT_EXPOSED/NOT_PUBLISHED is stored as null, never invented.",
     "house_band_chars": { "min": 5000, "target": 9000, "max": 19000 },
-    "owner_preferred_default": "GPT Image 2 when compatible"
+    "owner_preferred_default": "GPT Image 2 when compatible",
+    "cap_status_legend": {
+      "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
+      "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
+      "OWNER_CONFIRMED": "operator-confirmed live behavior; vendor docs page disagrees; warn-only, never hard-fail",
+      "NOT_PUBLISHED": "vendor publishes no cap; stored as null; no invented value",
+      "LIVE_PROBE_REQUIRED": "cap undetermined; probe before long prompts; no invented value"
+    }
   },
   "models": [
     {
@@ -23,7 +30,7 @@
       "vendor_hard_cap_chars": null,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": 25000,
-      "cap_status": "OWNER_OBSERVED",
+      "cap_status": "OWNER_CONFIRMED",
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -40,7 +47,7 @@
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-text-to-image",
       "known_inconsistencies": [
-        "Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\" — an explicit vendor-published char cap. Spec 7.4 rules the public endpoint page does NOT publish an exact hard character cap and directs storing the owner-observed ~25K figure instead. Both statements are first-party; UNDETERMINED arbiter. Stored value per spec 7.4: owner_observed_cap_chars 25000, cap_status OWNER_OBSERVED. LIVE_PROBE_REQUIRED to resolve 20,000 (docs) vs 25,000 (owner-observed).",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\" — that figure is STALE. Quoted verbatim for provenance. cap_status OWNER_CONFIRMED; owner_observed_cap_chars 25000; vendor_hard_cap_chars stays null (vendor never published 25k). Warn-only, never hard-fail.",
         "Quality tier is expressed as resolution enum (1K/2K/4K); no separate quality field."
       ],
       "notes": "Owner's preferred general KIE image route when compatible. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST — validators warn only."
@@ -60,7 +67,7 @@
       "vendor_hard_cap_chars": null,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": 25000,
-      "cap_status": "OWNER_OBSERVED",
+      "cap_status": "OWNER_CONFIRMED",
       "house_prompt_min_chars": 5000,
       "house_prompt_target_chars": 9000,
       "house_prompt_max_chars": 19000,
@@ -78,7 +85,7 @@
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-image-to-image",
       "known_inconsistencies": [
         "Docs i2i page shows only maxItems: 16 for input_urls — NO MB limit and NO format list published in the docs schema. The 30MB / JPEG-PNG-WEBP-JPG values come from the kie.ai/gpt-image-2 playground page (curl 200, verbatim: \"Supported formats: JPEG, PNG, WEBP, JPG\" and \"Maximum file size: 30MB; Maximum files: 16\"). Two different first-party surfaces; both dated 2026-08-26.",
-        "Docs page text (verbatim): \"up to 20,000 characters\" conflicting with spec 7.4 not-published ruling; stored 25000 owner-observed per spec. See GPT Image 2 (Text-to-Image) entry.",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (verbatim): \"up to 20,000 characters\" — that figure is STALE. Quoted verbatim for provenance. See GPT Image 2 (Text-to-Image) entry.",
         "Playground verbatim: \"5:4 and 4:5 aspect ratios only support 1K images\" (i2i route)."
       ],
       "notes": "Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each."

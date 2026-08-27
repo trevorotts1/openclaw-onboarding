@@ -17,7 +17,7 @@ Encoding sources (research files, verbatim quotes):
 
 | Family | Canonical model IDs | Prompt limit (status) | Max refs | Output notes |
 |---|---|---|---|---|
-| GPT Image 2 | `gpt-image-2-text-to-image`, `gpt-image-2-image-to-image` | owner-observed ~25,000 chars (`OWNER_OBSERVED`, never vendor-verified) — docs page text also says "maximum 20,000 characters" (UNDETERMINED arbiter) | 16 @ 30 MB, JPEG/PNG/WEBP/JPG | 1K/2K/4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21; auto→1K only; 1:1 cannot convert to 4K |
+| GPT Image 2 | `gpt-image-2-text-to-image`, `gpt-image-2-image-to-image` | **25,000 chars `OWNER_CONFIRMED`** (operator-confirmed 2026-08-27, authoritative; warn-only, never hard-fail) — docs page text also says "maximum 20,000 characters" but that figure is STALE | 16 @ 30 MB, JPEG/PNG/WEBP/JPG | 1K/2K/4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21; auto→1K only; 1:1 cannot convert to 4K |
 | Qwen Image 3.0 / Pro | `qwen3/text-to-image`, `qwen3-pro/text-to-image`, `qwen3/image-to-image`, `qwen3-pro/image-to-image` | 4.5K **tokens** advertised (marketing copy); docs schemas say maxLength 5000 chars. Token cap — NEVER converted to a fake char cap (spec rule D) | 3 @ 10 MB, JPEG/PNG/WEBP/BMP/GIF/TIFF | 1K/2K; ratios 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9 |
 | Seedream 5.0 Pro | `seedream/5-pro-text-to-image`, `seedream/5-pro-image-to-image`, `seedream/5-pro-layer-decomposition` | NOT PUBLISHED | 10 @ 30 MB, JPEG/PNG/WEBP | Basic=1K / High=2K; 21:9 in enum |
 | Seedream 5.0 Lite | `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image` | NOT PUBLISHED | 14 @ 30 MB, JPEG/PNG/WEBP | Basic=2K / High=3K / Ultra=4K; 21:9 in enum |
@@ -39,9 +39,10 @@ Encoding sources (research files, verbatim quotes):
 ### GPT Image 2 — preferred default when compatible (spec 7.4, 7.5)
 Owner's preferred KIE image model. Prefer for high-fidelity general generation,
 editing, product/brand images, and detailed long-form creative instructions.
-House band 5,000–19,000 chars is legal here (owner-observed cap ~25K; short
-prompts expanded, never rejected). Validators warn-only above the house max —
-the observed cap is never hard-enforced.
+Prompt cap 25,000 chars, operator-confirmed 2026-08-27 (`OWNER_CONFIRMED`);
+docs page "maximum 20,000 characters" is stale. House band 5,000–19,000 chars
+is legal here (short prompts expanded, never rejected). Validators warn-only
+above the house max — the confirmed cap is never hard-enforced.
 
 ### Qwen Image 3.0 / Pro
 Use for information-dense layouts, multilingual content, typography, structured
@@ -97,5 +98,6 @@ do not invent multi-reference support.
   (Wan 2.7: 5000 VERIFIED; Ideogram V3: 5000 VERIFIED; Imagen 4: 5000 VERIFIED).
 - Qwen caps live in `vendor_hard_cap_tokens: 4500` (rule D — never converted).
 - GPT Image 2 sits in `owner_observed_cap_chars: 25000`, cap_status
-  `OWNER_OBSERVED` — never vendor-verified, never hard-failed upon.
+  `OWNER_CONFIRMED` — operator-confirmed 2026-08-27 (vendor docs page's 20,000
+  figure is stale); warn-only, never hard-failed upon.
 - NOT_PUBLISHED families keep `null` caps; no invented numbers anywhere.
