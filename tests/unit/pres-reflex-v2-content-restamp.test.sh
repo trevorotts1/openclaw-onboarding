@@ -85,6 +85,9 @@ fi
 
 echo ""
 echo "=== AUDIENCE-LOOP + RELAY-RULE TEMPLATE CHECK (REGRESSION) ==="
+# NOTE: every assertion below is grep -qF against the EXTRACTED template body, so
+# stripping (or rewording) any single rule flips exactly that assertion to fail --
+# the check is mutation-honest, not a presence-of-file smoke test.
 if [ ! -s "$WORK/template-arf.md" ] || [ ! -s "$WORK/template-afs.md" ]; then
   bad "could not extract one or both PRESENTATION_ROUTING_REFLEX_V2 templates"
 elif ! diff -q "$WORK/template-arf.md" "$WORK/template-afs.md" >/dev/null 2>&1; then
@@ -101,6 +104,50 @@ elif grep -qF 'STEP 2 — After creating ANY content/presentation task via the C
 else
   bad "template twins are missing required audience-confirmation-loop or owner-visible-relay instructions"
 fi
+
+echo ""
+echo "=== CLIENT-FACING HONESTY RULES TEMPLATE CHECK (REGRESSION) ==="
+# MUTATION-HONEST BY CONSTRUCTION: each needle below is a verbatim -qF slice of
+# exactly ONE rule, asserted against BOTH extracted twins. Delete or reword any
+# single rule in either script and precisely that assertion fails while the rest
+# stay green -- so a green run is proof the rule text is still there, not proof
+# the file merely exists.
+assert_rule() {
+  # assert_rule <label> <needle> [needle...]
+  local label="$1"; shift
+  local needle
+  local miss=0
+  for needle in "$@"; do
+    grep -qF "$needle" "$WORK/template-arf.md" || { miss=1; echo "    missing from apply-routing-fix.sh:      $needle"; }
+    grep -qF "$needle" "$WORK/template-afs.md" || { miss=1; echo "    missing from apply-fleet-standards.sh: $needle"; }
+  done
+  if [ "$miss" -eq 0 ]; then ok "$label"; else bad "$label"; fi
+}
+
+assert_rule "RULE 1 NO-INFERENCE CONFIRM: posted audience must be the owner's own words, quoted back and confirmed" \
+  'NO-INFERENCE CONFIRM (part of STEP 2, non-negotiable)' \
+  'MUST quote back and have them confirm before you post' \
+  'NEVER post an audience you inferred, and NEVER release the hold on the owner'
+
+assert_rule "RULE 2 CLIENT-SAFE VOCABULARY: no internal words in owner-facing replies" \
+  'CLIENT-SAFE VOCABULARY — NEVER use internal words with the owner: chat ID, session, dispatch, task ID,' \
+  'gate, persona, ICP, pipeline phase codes, or tool names.'
+
+assert_rule "RULE 3 NO INVENTED TIME PROMISES: no readiness time the system state did not name" \
+  'NO INVENTED TIME PROMISES — NEVER give the owner a specific readiness time unless the system state you' \
+  'A promised time that comes and goes unmet must be acknowledged out loud,'
+
+assert_rule "RULE 4 REPORT THE REAL STATE: status comes from the read state, never from narration" \
+  'REPORT THE REAL STATE — when the owner asks for status, read the actual state (the board / the engine)' \
+  'NEVER describe a stage as underway that the state does not show.'
+
+assert_rule "RULE 5 STATUS-QUESTION EFFICIENCY: fast answer, no broad investigation for a simple ask" \
+  'STATUS-QUESTION EFFICIENCY — a status question deserves a fast answer. Check the few authoritative' \
+  'places, answer, stop. Do NOT launch a broad investigation for a simple'
+
+assert_rule "RULE 6 CERTIFIED ANSWERS ARE THE OWNER'S: never author, pre-fill, or submit their certified answer" \
+  "CERTIFIED ANSWERS ARE THE OWNER'S — during any certification or signed-record interview, NEVER offer to" \
+  'to them for confirmation is allowed, but the answer that gets recorded must come from the owner.'
 
 CMP="$WORK/prescmp-arf.py"  # identical to afs; use either from here on
 
