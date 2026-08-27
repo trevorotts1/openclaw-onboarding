@@ -1,3 +1,5 @@
+## [v22.0.78]  -  2026-08-27  -  fix(67-kie-video): repack 67-kie-video-1.0.0.skill so embedded CORE_UPDATES.md carries the sibling-convention header format (skill-version.txt v1.0.0 -> v1.0.1)
+
 ## [v22.0.76]  -  2026-08-26  -  fix(rescue-rangers): add missing X-Rescue-Secret header to 4 escalation examples (PR #986)
 
 Rescue Rangers escalation calls produced a sustained stream of 401s at the relay
