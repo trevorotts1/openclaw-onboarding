@@ -2001,10 +2001,14 @@ WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order
       "workspace_id":"presentations"} and exits 0.
 
   STEP 2 — After creating ANY content/presentation task via the Command Center API, IMMEDIATELY GET
-  /api/tasks/{taskId}/audience. If the response says hold=true (audience not confirmed), relay the
-  question to the owner IN THE CURRENT CHAT in plain client-friendly words. Never say ICP, dispatch,
-  persona, gate, or task IDs — ask “Who is this for?” like a human would. When the owner answers,
-  POST their answer to /api/tasks/{taskId}/audience and confirm it was accepted (expect the hold to
+  http://127.0.0.1:4000/api/tasks/{taskId}/audience. Do NOT send a bare loopback curl: this route is
+  not bypassed by middleware. Use the SAME signed helper's runtime token-resolution mechanics from
+  STEP 1 (never write, copy, or invent a secret) to resolve MC_API_TOKEN, then send
+  Authorization: Bearer <MC_API_TOKEN> on BOTH this GET and the POST below. If the response says
+  hold=true (audience not confirmed), relay the question to the owner IN THE CURRENT CHAT in plain
+  client-friendly words. Never say ICP, dispatch, persona, gate, or task IDs — ask “Who is this for?” like a human would.
+  When the owner answers, POST EXACTLY this JSON body to the same endpoint:
+  {"audienceLabel":"<their answer in their words>"}. Confirm it was accepted (expect the hold to
   release). If the GET or POST errors, tell the owner plainly that you hit a problem confirming the
   audience — never go silent and never pretend it worked.
 
