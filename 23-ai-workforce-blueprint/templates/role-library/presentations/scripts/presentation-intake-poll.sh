@@ -55,13 +55,36 @@ log() {
     echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" | tee -a "$LOG_FILE"
 }
 
-# Resolve the runs root
-RUNS_ROOT="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations/runs}"
+# Resolve the run roots -- run-root-agnostic (2026-08-27). The department
+# tree is only ONE place runs live; PRESENTATION_RUNS_DIRS (colon-separated)
+# adds more (e.g. ~/webinar-decks), and legacy PRESENTATION_RUNS_DIR still
+# overrides the primary root. DOCTRINE: a root that does not exist or cannot
+# be read is reported and skipped -- it is NEVER proof a run does not exist,
+# and never a failure; the poll simply finds nothing there.
+DEPT_RUNS_ROOT="${HOME}/.openclaw/workspace/departments/Presentations/runs"
+RUNS_ROOT="${PRESENTATION_RUNS_DIR:-$DEPT_RUNS_ROOT}"
 
-if [ ! -d "$RUNS_ROOT" ]; then
-    log "runs directory not found: $RUNS_ROOT"
-    exit 0
+RUNS_ROOTS=""
+if [ -n "${PRESENTATION_RUNS_DIRS:-}" ]; then
+    IFS=":" read -r -a _CFG_ROOTS <<< "${PRESENTATION_RUNS_DIRS#!}"
+    for _root in "${_CFG_ROOTS[@]}"; do
+        [ -n "${_root}" ] || continue
+        RUNS_ROOTS="${RUNS_ROOTS:+${RUNS_ROOTS}:}${_root}"
+    done
 fi
+# Primary root always included unless the config list was exclusive ("!").
+if [ "${PRESENTATION_RUNS_DIRS:-}" = "${PRESENTATION_RUNS_DIRS#!}" ]; then
+    case ":${RUNS_ROOTS}:" in
+        *":${RUNS_ROOT}:"*) ;;
+        *) RUNS_ROOTS="${RUNS_ROOT}${RUNS_ROOTS:+:${RUNS_ROOTS}}" ;;
+    esac
+fi
+
+for _root in ${RUNS_ROOTS//:/$'\n'}; do
+    if [ ! -d "$_root" ]; then
+        log "runs directory not found (skipping, NOT an error -- absence is not proof a run does not exist): $_root"
+    fi
+done
 
 LAUNCHER="$SCRIPTS_DIR/presentation_job/launcher.py"
 ENGINE_ENTRY="$SCRIPTS_DIR/presentation_job.py"
@@ -75,8 +98,19 @@ NEW_LAUNCHES=0
 SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
 
-# Walk every run directory under $RUNS_ROOT.
-find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null | while read -r run_dir; do
+# Walk every run directory under every configured runs root. One combined
+# find across roots; duplicate run dirs (a root nested in another) are
+# impossible in practice and harmless here (state.json checks are idempotent).
+_RUNS_ROOTS_FIND_ARGS=()
+for _root in ${RUNS_ROOTS//:/$'\n'}; do
+    [ -d "$_root" ] && RUNS_ROOTS_FIND_ARGS+=("$_root")
+done
+if [ "${#RUNS_ROOTS_FIND_ARGS[@]}" -eq 0 ]; then
+    log "no readable run roots; nothing to poll (UNDETERMINED, not a pass, not a failure)"
+    log "scan complete: 0 launched"
+    exit 0
+fi
+find "${RUNS_ROOTS_FIND_ARGS[@]}" -maxdepth 2 -type d -name "pres-*" 2>/dev/null | while read -r run_dir; do
     INTAKE_LEDGER="$run_dir/working/interview/intake_ledger.json"
     STATE_JSON="$run_dir/state.json"
 

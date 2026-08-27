@@ -19,7 +19,7 @@ from .phases import Engine
 from .report import dispatch
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
-from .sweep import reconcile_sweep
+from .sweep import reconcile_sweep, default_scan_roots
 from . import diagnose
 from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
@@ -57,7 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
     p.add_argument("--phase", help="run exactly one phase")
     p.add_argument("--until", help="run through this phase then stop")
-    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog / --reconcile-board")
+    p.add_argument("--scan-root", type=Path, action="append", default=None,
+                   help="root to scan for --watchdog / --reconcile-board "
+                        "(repeatable, or comma/os.pathsep-separated in one value; "
+                        "also extendable via PRESENTATION_SCAN_ROOTS) -- "
+                        "run-root-agnostic: runs may live under several roots")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
     p.add_argument("--diagnose-only", action="store_true",
                    help="with --resume: print why the job parked and exit without resuming")
@@ -522,6 +526,34 @@ def _stop_auto_dispatcher(run_dir: Path, proc: Optional[subprocess.Popen]) -> No
         pass
 
 
+def _scan_roots_from_args(args: Any) -> List[Path]:
+    """Resolve the effective scan-root list (run-root-agnostic, 2026-08-27).
+
+    --scan-root may be passed multiple times, and each value may itself pack
+    several roots separated by the OS pathsep (':' on macOS/Linux). When no
+    --scan-root is given at all, PRESENTATION_SCAN_ROOTS + the department-tree
+    default (default_scan_roots) applies. Order preserved, duplicates dropped."""
+    roots: List[Path] = []
+    sep = os.pathsep
+    for arg in (getattr(args, "scan_root", None) or []):
+        for piece in str(arg).split(sep):
+            piece = piece.strip()
+            if piece:
+                roots.append(Path(piece).expanduser())
+    seen: set = set()
+    ordered: List[Path] = []
+    for r in roots:
+        try:
+            key = r.expanduser().resolve()
+        except OSError:
+            key = r
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(r)
+    return ordered
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
@@ -531,8 +563,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "(it modifies --resume, it is not its own mode)")
 
     if args.watchdog:
-        root = (args.scan_root or args.run_dir)
-        if not root:
+        cli_roots = _scan_roots_from_args(args)
+        roots = cli_roots or (
+            [args.run_dir] if args.run_dir else default_scan_roots()
+        )
+        if not roots:
             die(EXIT_USAGE, "--watchdog needs --scan-root")
         if getattr(args, 'grace', 1.5) <= 0:
             die(EXIT_USAGE, "--grace must be > 0")
@@ -540,21 +575,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         if sd < 1:
             die(EXIT_USAGE, "--scan-depth must be >= 1")
         return _run_watchdog(
-            root.expanduser().resolve(),
+            [r.expanduser().resolve() for r in roots],
             grace_multiplier=getattr(args, 'grace', 1.5),
             scan_depth=sd,
             enforce=getattr(args, 'enforce', False),
         )
 
     if args.reconcile_board:
-        if not args.scan_root:
+        cli_roots = _scan_roots_from_args(args)
+        if not cli_roots:
             die(EXIT_USAGE, "--reconcile-board needs --scan-root")
         sd = args.scan_depth if hasattr(args, 'scan_depth') else 3
+        first, extra = cli_roots[0], cli_roots[1:]
         return reconcile_sweep(
-            args.scan_root.expanduser().resolve(),
+            first.expanduser().resolve(),
             scan_depth=sd,
             apply=args.apply,
             max_age_hours=args.max_age_hours,
+            extra_scan_roots=[r.expanduser().resolve() for r in extra],
         )
 
     if args.apply and not args.reconcile_board:

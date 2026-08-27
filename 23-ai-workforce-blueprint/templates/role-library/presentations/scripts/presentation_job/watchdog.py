@@ -40,23 +40,53 @@ def _find_state_files(scan_root: Path, depth: int):
                 yield state_path
 
 
+def _find_state_files_multi(scan_roots, depth: int):
+    """Bounded walk across MULTIPLE roots (run-root-agnostic, 2026-08-27).
+
+    DOCTRINE (binding): the roots are the union of everywhere the caller says
+    runs may live; a run found under any root is checked, and absence in every
+    root is NOT proof a run does not exist (callers keep scanned == 0 as
+    UNDETERMINED, EXIT_WATCHDOG_NO_RUNS). Dedup across roots; an unreadable
+    root contributes nothing and never ends the scan."""
+    seen: Set[Path] = set()
+    for root in scan_roots:
+        try:
+            for state_path in _find_state_files(root, depth):
+                try:
+                    resolved = state_path.resolve()
+                except OSError:
+                    resolved = state_path
+                if resolved not in seen:
+                    seen.add(resolved)
+                    yield state_path
+        except OSError:
+            # Unreadable root -- fail-soft, never fatal to the other roots.
+            continue
+
+
 def watchdog(
-    scan_root: Path,
+    scan_root,
     grace_multiplier: float = 1.5,
     scan_depth: int = 3,
     enforce: bool = False,
 ) -> int:
-    """Scan run directories under scan_root for stalled jobs.
+    """Scan run directories under one root (Path) or several roots (list of
+    Path) for stalled jobs.
 
     Returns EXIT_WATCHDOG_NO_RUNS (13) whenever scanned == 0 -- UNDETERMINED,
     regardless of --enforce. Zero state.json files found is not the same claim
     as "found jobs and none are stalled"; a wrong --scan-root, an unmounted
-    volume, or a path typo must never read the same as a healthy fleet. See
+    volume, or a path typo must never read the same as a healthy fleet. And
+    since 2026-08-27 (run-root-agnostic doctrine): absence inside every
+    scanned root is NEVER proof a run does not exist -- a run may live outside
+    every configured root (this box: ~/webinar-decks/<client>/<deck>/<date>),
+    so scanned == 0 must never block, heal, fail, or alarm on its own. See
     state.py's EXIT_WATCHDOG_NO_RUNS comment and result.py's CheckResult
     doctrine (health report: unknown is reported as unknown, never as healthy).
     Returns EXIT_STALLED (5) when enforce=True, scanned > 0, and stalls are found.
     Returns EXIT_OK (0) otherwise (warn-mode stage 1, or enforce with zero stalls).
     """
+    roots = list(scan_root) if isinstance(scan_root, (list, tuple)) else [scan_root]
     findings: list = []
     scanned = 0
     skipped_terminal = 0
@@ -64,7 +94,7 @@ def watchdog(
     skipped_bad_timestamp = 0
     healthy = 0
 
-    for state_path in _find_state_files(scan_root, scan_depth):
+    for state_path in _find_state_files_multi(roots, scan_depth):
         scanned += 1
         st = _read_json(state_path)
         if not st:
@@ -120,29 +150,48 @@ def watchdog(
 
     n_stalled = len(findings)
     if scanned == 0:
-        print("watchdog: NO state.json found -- check --scan-root and --scan-depth "
-              "-- UNDETERMINED, exiting EXIT_WATCHDOG_NO_RUNS (13), NOT a clean pass",
+        roots_str = ", ".join(str(r) for r in roots)
+        print("watchdog: NO state.json found under any of "
+              f"[{roots_str}] -- check --scan-root / PRESENTATION_SCAN_ROOTS "
+              "and --scan-depth -- UNDETERMINED, exiting EXIT_WATCHDOG_NO_RUNS "
+              "(13), NOT a clean pass -- absence inside the scanned root(s) is "
+              "never proof a run does not exist",
               flush=True)
     else:
-        print(f"watchdog: scanned {scanned} state file(s) under {scan_root} "
+        print(f"watchdog: scanned {scanned} state file(s) under "
+              f"{', '.join(str(r) for r in roots)} "
               f"(depth {scan_depth}); {skipped_terminal} terminal, {skipped_no_heartbeat} "
               f"without a heartbeat, {skipped_bad_timestamp} with an unreadable timestamp, "
               f"{healthy} healthy, {n_stalled} stalled", flush=True)
 
-    findings_path = scan_root / "watchdog-findings.jsonl"
-    for run_dir, pid, age, interval, threshold, source, job_id in findings:
-        line = json.dumps({
-            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "run_dir": str(run_dir),
-            "phase": pid,
-            "age_minutes": age,
-            "threshold_minutes": threshold,
-            "interval_minutes": interval,
-            "interval_source": source,
-            "job_id": job_id,
-        }, ensure_ascii=False)
-        with open(findings_path, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
+    # Findings land beside the first root that actually exists (multi-root,
+    # 2026-08-27): roots[0] may be missing while runs were found under a later
+    # root, and open(..., "a") would then crash the whole scan on a missing dir.
+    findings_path = None
+    for _root in roots:
+        try:
+            if _root.is_dir():
+                findings_path = _root / "watchdog-findings.jsonl"
+                break
+        except OSError:
+            continue
+    if findings_path is None and findings:
+        print("watchdog: no scannable root dir exists -- stall findings kept to "
+              "stdout only (no watchdog-findings.jsonl written)", flush=True)
+    if findings_path is not None:
+        for run_dir, pid, age, interval, threshold, source, job_id in findings:
+            line = json.dumps({
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "run_dir": str(run_dir),
+                "phase": pid,
+                "age_minutes": age,
+                "threshold_minutes": threshold,
+                "interval_minutes": interval,
+                "interval_source": source,
+                "job_id": job_id,
+            }, ensure_ascii=False)
+            with open(findings_path, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
 
     if findings and os.environ.get("PRESENTATION_NOTIFY_CMD"):
         lines = []
@@ -152,7 +201,7 @@ def watchdog(
                 f"interval source: {source})"
             )
         msg = (
-            f"Watchdog: {n_stalled} stalled job(s) in {scan_root}\n"
+            f"Watchdog: {n_stalled} stalled job(s) in {', '.join(str(r) for r in roots)}\n"
             + "\n".join(lines)
         )
         from .report import dispatch

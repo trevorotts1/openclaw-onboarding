@@ -125,6 +125,58 @@ def _find_run_dirs(scan_root: Path, scan_depth: int) -> List[Path]:
     return sorted(found)
 
 
+def _find_run_dirs_multi(scan_roots: List[Path], scan_depth: int) -> List[Path]:
+    """Find run dirs across MULTIPLE roots (run-root-agnostic, 2026-08-27).
+
+    The department tree (<ws>/departments/Presentations/runs) is only ONE place
+    runs live. Client deck runs legitimately land elsewhere (this box:
+    ~/webinar-decks/<client>/<deck>/<date>/), so the caller may pass several
+    roots. DOCTRINE (binding): the union of the roots is what is scanned, and
+    absence inside every scanned root is NOT proof a run does not exist --
+    callers must keep treating "scanned 0" as UNDETERMINED (EXIT_SWEEP_NO_RUNS),
+    never as a pass, and must never block/heal/alarm on path absence alone.
+
+    Dedup across roots (a run reachable from two roots appears once), per-root
+    depth respected, unreadable roots fail-soft to "nothing found here" (the
+    summary still names every root scanned, so a skipped root is visible)."""
+    found: Set[Path] = set()
+    for scan_root in scan_roots:
+        try:
+            found.update(_find_run_dirs(scan_root, scan_depth))
+        except OSError:
+            # Unreadable root -- fail-soft, same posture as a per-run-dir
+            # failure: this root contributes nothing, it never ends the scan.
+            continue
+    return sorted(found)
+
+
+def default_scan_roots(env: Optional[Dict[str, str]] = None) -> List[Path]:
+    """The multi-root scan list. PRESENTATION_SCAN_ROOTS (os.pathsep-separated)
+    extends or overrides the department-tree default -- a single documented
+    setting (run-root-agnostic, 2026-08-27).
+
+    Precedence:
+      1. PRESENTATION_SCAN_ROOTS set  -> those roots, plus the department tree
+         unless the value starts with '!' (exclusive: exactly those roots).
+      2. unset                        -> the department tree alone.
+
+    The department tree stays the default root either way, so an env var set
+    for one component never silently blinds the others to dept-tree runs."""
+    env = dict(os.environ if env is None else env)
+    dept = Path(env.get("HOME", str(Path.home()))) / \
+        ".openclaw/workspace/departments/Presentations/runs"
+    raw = (env.get("PRESENTATION_SCAN_ROOTS") or "").strip()
+    if not raw:
+        return [dept]
+    exclusive = raw.startswith("!")
+    if exclusive:
+        raw = raw[1:].strip()
+    roots = [Path(p).expanduser() for p in raw.split(":") if p.strip()]
+    if not exclusive and dept not in roots:
+        roots.insert(0, dept)
+    return roots
+
+
 def _classify(
     run_dir: Path,
     state: dict,
@@ -193,8 +245,10 @@ def reconcile_sweep(
     scan_depth: int = 2,
     apply: bool = False,
     max_age_hours: float = 72.0,
+    extra_scan_roots: Optional[List[Path]] = None,
 ) -> int:
-    """Scan --scan-root for jobs whose board card is missing or behind.
+    """Scan --scan-root (plus extra_scan_roots, when given) for jobs whose
+    board card is missing or behind.
 
     FAIL-SOFT: one bad run dir never ends the sweep -- the loop keeps going
     and every remaining run dir still gets classified. But "kept going" is
@@ -262,15 +316,26 @@ def reconcile_sweep(
     else:
         board_enabled = True
 
-    # --- Find run dirs ---
-    run_dirs = _find_run_dirs(scan_root, scan_depth)
+    # --- Find run dirs (multi-root: dept tree + any configured extra roots) ---
+    scan_roots = [scan_root] + [
+        r for r in (extra_scan_roots or []) if r != scan_root
+    ]
+    run_dirs = _find_run_dirs_multi(scan_roots, scan_depth)
     scanned = len(run_dirs)
 
     if scanned == 0:
+        # UNDETERMINED (binding): nothing found under ANY scanned root. This is
+        # not evidence the fleet is healthy and not evidence a given run does
+        # not exist -- a run the board knows about may live entirely outside
+        # every root scanned here (e.g. ~/webinar-decks/<client>/<deck>/<date>).
+        # Never a pass; never a trigger to block, heal, or alarm on its own.
+        roots_str = ", ".join(str(r) for r in scan_roots)
         print(
-            f"reconcile-board: UNDETERMINED -- NO state.json found under "
-            f"{scan_root} (depth {scan_depth}) -- 0 run dirs were checked, "
-            f"this is NOT a pass -- check --scan-root and --scan-depth",
+            f"reconcile-board: UNDETERMINED -- NO state.json found under any of "
+            f"[{roots_str}] (depth {scan_depth}) -- 0 run dirs were checked, "
+            f"this is NOT a pass -- absence inside the scanned root(s) is never "
+            f"proof a run does not exist -- check --scan-root / "
+            f"PRESENTATION_SCAN_ROOTS and --scan-depth",
             flush=True,
         )
         return EXIT_SWEEP_NO_RUNS
@@ -452,7 +517,7 @@ def reconcile_sweep(
     not_a_run_dir_count = counts.get("not_a_run_dir", 0)
 
     parts = [
-        f"scanned {scanned} run dir(s) under {scan_root} (depth {scan_depth})",
+        f"scanned {scanned} run dir(s) under {', '.join(str(r) for r in scan_roots)} (depth {scan_depth})",
         f"reconciled {reconciled_count} run dir(s)",
         f"card_missing: {counts.get('card_missing', 0)}",
         f"card_behind: {counts.get('card_behind', 0)}",

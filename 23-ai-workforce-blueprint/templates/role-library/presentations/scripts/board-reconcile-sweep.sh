@@ -20,15 +20,32 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="${HOME}/Library/Logs/openclaw/board-reconcile-sweep.log"
+# Run-root-agnostic (2026-08-27): the department tree is only ONE place runs
+# live (this box also runs client decks at ~/webinar-decks/<client>/<deck>/<date>/).
+# SCAN_ROOT stays the primary root; PRESENTATION_SCAN_ROOTS adds more
+# (colon-separated; prefix "!" for exclusive). Absence inside any scanned root
+# is NEVER proof a run does not exist -- the sweep reports UNDETERMINED
+# (exit 10) and never blocks/heals/fails on path absence.
 SCAN_ROOT="${SCAN_ROOT:-${HOME}/.openclaw/workspace/departments/Presentations/runs}"
 SCAN_DEPTH="${SCAN_DEPTH:-3}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-72}"
 
+EXTRA_ROOT_ARGS=""
+if [ -n "${PRESENTATION_SCAN_ROOTS:-}" ]; then
+  IFS=":" read -r -a _EXTRA_ROOTS <<< "${PRESENTATION_SCAN_ROOTS#!}"
+  for _root in "${_EXTRA_ROOTS[@]}"; do
+    [ -n "${_root}" ] || continue
+    EXTRA_ROOT_ARGS="${EXTRA_ROOT_ARGS} --scan-root ${_root}"
+  done
+fi
+
 echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep starting" >> "${LOG_FILE}"
 
+# shellcheck disable=SC2086 -- EXTRA_ROOT_ARGS is a deliberate multi-word arg list
 python3 "${SCRIPT_DIR}/presentation_job.py" \
   --reconcile-board \
   --scan-root "${SCAN_ROOT}" \
+  ${EXTRA_ROOT_ARGS} \
   --scan-depth "${SCAN_DEPTH}" \
   --max-age-hours "${MAX_AGE_HOURS}" \
   --apply \

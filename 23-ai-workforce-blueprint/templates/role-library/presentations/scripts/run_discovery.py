@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,6 +89,32 @@ def find_unregistered_runs(runs_root: str | Path) -> List[Path]:
     return unregistered
 
 
+def find_unregistered_runs_multi(runs_roots: List[str | Path]) -> List[Path]:
+    """Scan MULTIPLE roots for unregistered run dirs (run-root-agnostic,
+    2026-08-27). The department tree is only ONE place runs live; callers may
+    pass every root where runs land (this box also has
+    ~/webinar-decks/<client>/<deck>/<date>/). Dedup across roots; a root that
+    is missing or unreadable contributes nothing and never fails the scan.
+    DOCTRINE: finding nothing is UNDETERMINED -- it is never proof a run does
+    not exist, so main() prints the per-root outcome and never blocks/heals/
+    fails on absence."""
+    seen: set = set()
+    merged: List[Path] = []
+    for root in runs_roots:
+        try:
+            for run_dir in find_unregistered_runs(root):
+                try:
+                    key = run_dir.resolve()
+                except OSError:
+                    key = run_dir
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(run_dir)
+        except OSError:
+            continue
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Retroactive ingestion
 # ---------------------------------------------------------------------------
@@ -132,28 +159,78 @@ def build_parser() -> argparse.ArgumentParser:
         description="Find run directories that are not registered as jobs (MASTER-SPEC FILE 8). "
                     "Fail-soft: exit 0 always.",
     )
-    p.add_argument("--runs-root", type=Path, required=True,
-                   help="root directory holding run directories")
+    # Run-root-agnostic (2026-08-27): --runs-root is repeatable, and each value
+    # may carry several roots separated by the OS pathsep. PRESENTATION_SCAN_ROOTS
+    # (same syntax) supplies roots when the flag is absent. The department tree
+    # is the default primary root; more roots never remove it (unless the env
+    # value is exclusive with a leading '!').
+    p.add_argument("--runs-root", type=Path, action="append", default=None,
+                   help="root directory holding run directories (repeatable; "
+                        "pathsep-packed values allowed)")
     p.add_argument("--ingest", action="store_true",
                    help="retroactively register discovered runs (default: report only)")
     return p
 
 
+def _roots_from_args_and_env(args) -> List[Path]:
+    sep = os.pathsep
+    roots: List[Path] = []
+    for arg in (args.runs_root or []):
+        for piece in str(arg).split(sep):
+            piece = piece.strip()
+            if piece:
+                roots.append(Path(piece).expanduser())
+    if not roots:
+        env_raw = (os.environ.get("PRESENTATION_SCAN_ROOTS") or "").strip()
+        dept = Path(os.environ.get("HOME", str(Path.home()))) / \
+            ".openclaw/workspace/departments/Presentations/runs"
+        if env_raw:
+            exclusive = env_raw.startswith("!")
+            if exclusive:
+                env_raw = env_raw[1:].strip()
+            roots = [Path(p.strip()).expanduser()
+                     for p in env_raw.split(":") if p.strip()]
+            if not exclusive and dept not in roots:
+                roots.insert(0, dept)
+        else:
+            roots = [dept]
+    seen: set = set()
+    ordered: List[Path] = []
+    for r in roots:
+        try:
+            key = r.expanduser().resolve()
+        except OSError:
+            key = r
+        if key not in seen:
+            seen.add(key)
+            ordered.append(r)
+    return ordered
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    root = Path(args.runs_root).expanduser().resolve()
-    if not root.is_dir():
-        print(f"run_discovery: runs-root not a directory: {root}", file=sys.stderr)
-        return 0  # fail-soft: exit 0 always
+    roots = _roots_from_args_and_env(args)
+    for root in roots:
+        if not Path(root).expanduser().resolve().is_dir():
+            # NOT an error and NOT evidence a run is missing: an unreadable
+            # root is reported and skipped -- UNDETERMINED, never a verdict.
+            print(f"run_discovery: runs-root not a directory (skipped -- "
+                  f"absence is not proof a run does not exist): {root}",
+                  file=sys.stderr)
 
     try:
-        unregistered = find_unregistered_runs(root)
+        unregistered = find_unregistered_runs_multi(roots)
     except Exception as exc:  # noqa: BLE001 -- fail-soft
         print(f"run_discovery: scan failed: {exc}", file=sys.stderr)
         return 0
 
-    print(f"run_discovery: scanned {root}", flush=True)
+    print(f"run_discovery: scanned {len(roots)} root(s): "
+          + ", ".join(str(r) for r in roots), flush=True)
     print(f"run_discovery: {len(unregistered)} unregistered run dir(s)", flush=True)
+    if not unregistered:
+        print("run_discovery: NOTE -- finding no unregistered runs under the "
+              "scanned root(s) is UNDETERMINED, not proof that no run exists "
+              "(a run may live outside every scanned root)", flush=True)
     ingested = 0
     failed = 0
     for run_dir in unregistered:
