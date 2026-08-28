@@ -16,7 +16,7 @@ source of truth). Supports two interview modes:
     derive_legacy_fields(). Conditional follow-ups (recipient_name,
     signature_source, extracted_substance) auto-skip when unmet.
 
-  SIGNATURE (--signature --next / --signature --answer)
+  SIGNATURE (--signature --sig-next / --signature --sig-answer ID TEXT)
     Choice-first (QUICK vs IN-DEPTH), then the SACRED 8 Questions +
     frame-selection question ONE at a time. Answers are assembled into ONE
     atomic record per sp-8-questions.json. The turn-gate is REQUIRED --
@@ -917,8 +917,9 @@ def _load_sp_spec() -> Dict[str, Any]:
 
 
 def cmd_signature(args) -> int:
-    """SIGNATURE mode entry. With --next: return the choice-first offer
-    (QUICK vs IN-DEPTH). With --answer: record one answer. With --record:
+    """SIGNATURE mode entry. With --sig-next: return the choice-first offer
+    (QUICK vs IN-DEPTH). With --sig-answer ID TEXT: record one answer. With
+    --sig-record:
     assemble pre-gathered answers into one atomic record and run prove_sp_intake.
 
     Legacy bare --signature (no subcommand): returns a pointer to use the
@@ -948,10 +949,11 @@ def cmd_signature(args) -> int:
     # Bare --signature: pointer to turn-gate
     print(json.dumps({
         "status": "use_turn_gate",
-        "next_command": "deck-intake-driver.py --signature --next --run-dir <RUN_DIR>",
-        "message": "The signature intake is a turn-gate interview. Use --next "
-                   "to get the first question (choice-first: QUICK vs IN-DEPTH), "
-                   "then --answer to record each response. The old batch-dump "
+        "next_command": "deck-intake-driver.py --signature --sig-next --run-dir <RUN_DIR>",
+        "message": "The signature intake is a turn-gate interview. Use "
+                   "--sig-next to get the first question (choice-first: QUICK "
+                   "vs IN-DEPTH), then --sig-answer ID TEXT to record each "
+                   "response. The old batch-dump "
                    "escape hatch is removed -- a batch is AF-INTAKE-BATCH.",
     }))
     return 0
@@ -1447,7 +1449,7 @@ def _sig_plan() -> int:
         "questions": spec.get("questions", []),
         "frame_question": spec.get("frame_question", {}),
         "warning": "This is a READ-ONLY plan for inspection. The live "
-                   "interview MUST use --signature --next / --answer. "
+                   "interview MUST use --signature --sig-next / --sig-answer. "
                    "A batch dump of all questions is AF-INTAKE-BATCH.",
     }
     print(json.dumps(output, indent=2))
@@ -1613,10 +1615,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     # No mode selected
     print(json.dumps({
         "error": "No mode selected. Use one of: --next, --answer, --complete, "
-                 "--signature --next, --signature --answer, --question-set.",
+                 "--signature --sig-next, --signature --sig-answer ID TEXT, "
+                 "--question-set.",
         "usage": "deck-intake-driver.py --run-dir <DIR> [--next | --answer "
-                 "ID TEXT | --complete | --signature [--next | --answer ID TEXT "
-                 "| --record FILE] | --question-set]",
+                 "ID TEXT | --complete | --signature [--sig-next | --sig-answer "
+                 "ID TEXT | --sig-record FILE] | --question-set]",
     }))
     return 2
 
