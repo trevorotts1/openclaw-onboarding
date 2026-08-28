@@ -1,3 +1,7 @@
+## [v22.0.83]  -  2026-08-27  -  fix(presentations): worker-liveness supervision — detect dead engine, bounded restart, loud alarm (supervisor.py, report-only read-only contract) (PR #998)
+
+## [v22.0.82]  -  2026-08-27  -  fix(skill-51): signature intake gate verifies CONTENT provenance (AF-SP-PROVENANCE) — verbatim client_text + origin client + quote-back confirmation required, dated grace window; driver --sig-origin + two-leg --sig-confirm; sacred pin regenerated (PR #997)
+
 ## [v22.0.81]  -  2026-08-27  -  feat(presentations): per-phase fan-out pool for the pipeline dispatcher — bounded worker pool (fanout.py), manifest `workers` field (default 1 = unchanged behavior, all 40 shipped phases at workers=1), P4-PROMPT wired with byte-identical serial path, RunLock second-engine guard, capacity UNBOUNDED fix; +42 tests (PR #992)
 
 ## [v22.0.80]  -  2026-08-27  -  fix(presentations): AF-INTAKE-GATE blocks content phases without working/copy/intake.json; P9.6-WEBINAR-VIDEO and P8.25-WORKBOOK direct executors (RunLock canonical-entry self-kill removed); stamper idempotency converted from marker-presence to content-compare (PRs #990, #991)
