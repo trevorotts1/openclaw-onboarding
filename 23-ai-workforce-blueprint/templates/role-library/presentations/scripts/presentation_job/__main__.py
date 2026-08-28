@@ -19,6 +19,7 @@ from .phases import Engine
 from .report import dispatch
 from .scan_roots import split_primary
 from .watchdog import watchdog as _run_watchdog
+from .supervisor import supervise as _run_supervise, DEFAULT_MAX_RESTARTS, DEFAULT_BACKOFF_SECONDS
 from .board import BoardMirror
 from .sweep import reconcile_sweep
 from . import diagnose
@@ -91,6 +92,26 @@ def build_parser() -> argparse.ArgumentParser:
                    help="multiply the expected checkpoint interval by this before alarming")
     p.add_argument("--enforce", action="store_true",
                    help="exit 5 on a stall (default: report and exit 0)")
+    # Worker-liveness supervision (supervisor.py): the watchdog answers "is the
+    # HEARTBEAT stale?" -- supervisor answers "is the PROCESS that writes it
+    # alive?", detects a dead worker behind an active run, and restarts it with
+    # a bounded, backed-off budget (report-only without --apply, exactly like
+    # reconcile-board).
+    m.add_argument("--supervise", action="store_true",
+                   help="scan --scan-root for active runs whose worker process "
+                        "has died; report-only unless --apply is also given")
+    p.add_argument("--max-restarts", type=int, default=None,
+                   help="with --supervise: restart budget per run before the "
+                        "supervisor stops and raises an alarm (default: "
+                        "supervisor.DEFAULT_MAX_RESTARTS)")
+    p.add_argument("--supervisor-backoff", type=int, default=None,
+                   help="with --supervise: base seconds of exponential backoff "
+                        "between restart attempts (default: "
+                        "supervisor.DEFAULT_BACKOFF_SECONDS)")
+    p.add_argument("--max-idle-hours", type=float, default=72.0,
+                   help="with --supervise: a dead run whose state.json is older "
+                        "than this is reported but never restarted (default 72, "
+                        "the same ceiling reconcile-board uses)")
     # F07: the auto-spawn closes the fault where an agent-authored phase
     # (phases.py:_run_agent_phase) writes working/work-orders/<phase>.json and
     # then blocks polling for the artifact with NOTHING servicing that file --
@@ -588,6 +609,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             max_age_hours=args.max_age_hours,
             extra_roots=tuple(primary_roots[1:]) + tuple(args.scan_root_extras or ()),
             roots_config=args.roots_config,
+        )
+
+    if args.supervise:
+        root = (args.scan_root or args.run_dir)
+        if not root:
+            die(EXIT_USAGE, "--supervise needs --scan-root")
+        if args.max_restarts is not None and args.max_restarts < 0:
+            die(EXIT_USAGE, "--max-restarts must be >= 0")
+        if args.supervisor_backoff is not None and args.supervisor_backoff < 0:
+            die(EXIT_USAGE, "--supervisor-backoff must be >= 0")
+        sd = args.scan_depth if hasattr(args, 'scan_depth') else 3
+        if sd < 1:
+            die(EXIT_USAGE, "--scan-depth must be >= 1")
+        return _run_supervise(
+            root.expanduser().resolve(),
+            scan_depth=sd,
+            apply=args.apply,
+            max_restarts=(DEFAULT_MAX_RESTARTS if args.max_restarts is None
+                          else args.max_restarts),
+            backoff_seconds=(DEFAULT_BACKOFF_SECONDS if args.supervisor_backoff is None
+                             else args.supervisor_backoff),
+            max_idle_hours=args.max_idle_hours,
         )
 
     if args.apply and not args.reconcile_board:

@@ -46,6 +46,14 @@ EXIT_SWEEP_ALL_REJECTED = 12
 # unconditional on sweep.py's --apply) -- "I found nothing to check" is never
 # the same claim as "I checked and it's fine," in warn mode or enforce mode.
 EXIT_WATCHDOG_NO_RUNS = 13   # scanned 0 state.json files -- UNDETERMINED, not a pass
+# supervisor.py (worker liveness). Same doctrine as the two blocks above: the
+# supervisor's three outcomes are distinguishable at the exit-code level, because
+# "I found no run to supervise" and "I checked and every worker is alive" are not
+# the same claim, and "I gave up restarting and raised an alarm" must never be
+# swallowed by a 0. EXIT_SUPERVISOR_ALARM is the loud one: it means a worker died,
+# the bounded retry budget is spent, and a human has to look.
+EXIT_SUPERVISOR_NO_RUNS = 14  # scanned 0 state.json files -- UNDETERMINED, not a pass
+EXIT_SUPERVISOR_ALARM = 15    # >=1 run exhausted its restart budget -- NOT a pass
 
 STATE_FILENAME = "state.json"
 LOCK_FILENAME = ".job.lock"
@@ -81,6 +89,33 @@ def sha256_text(text: str) -> str:
 def _norm(s: str) -> str:
     return " ".join(s.lower().split())
 
+
+
+def pid_is_alive(pid: int) -> bool:
+    """True if `pid` names a process this user can at least see.
+
+    A PermissionError from os.kill(pid, 0) still means the process exists
+    (owned by someone else, or a privilege boundary) -- only
+    ProcessLookupError means the pid is genuinely free. Collapsing those two
+    into one "dead" answer is how a liveness check reports a running worker as
+    absent; `kill -0 1` on this platform returns EPERM for a very-much-alive
+    launchd, which is exactly the false negative this discrimination prevents.
+
+    Lives here, in the leaf module, because __main__ (auto-dispatch) and
+    supervisor (worker liveness) both need it and a second hand-maintained copy
+    is the divergence shape report.py's dispatch3() docstring warns about.
+    """
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _read_json(p: Path) -> Optional[Dict[str, Any]]:
