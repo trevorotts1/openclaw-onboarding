@@ -932,10 +932,15 @@ def cmd_signature(args) -> int:
         # sig_answer is a list of [question_id, text] from nargs=2
         sig_answer_val = args.sig_answer
         if isinstance(sig_answer_val, list) and len(sig_answer_val) == 2:
-            return _sig_answer(run_dir, sig_answer_val[0], sig_answer_val[1])
+            origin = getattr(args, 'sig_origin', None) or "client"
+            return _sig_answer(run_dir, sig_answer_val[0], sig_answer_val[1],
+                               origin=origin)
         else:
             print(json.dumps({"error": "--sig-answer requires ID and TEXT"}))
             return 2
+    if getattr(args, 'sig_confirm', None):
+        return _sig_confirm(run_dir, args.sig_confirm,
+                            confirmed=bool(getattr(args, 'sig_confirmed', False)))
     if getattr(args, 'sig_record_file', None):
         return _sig_record(run_dir, args.sig_record_file)
     if getattr(args, 'sig_plan', False):
@@ -1027,8 +1032,20 @@ def _emit_frame_question() -> int:
     return 0
 
 
-def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
-    """Record one signature answer and return the next question."""
+def _sig_answer(run_dir: Path, qid: str, text: str,
+                origin: str = "client") -> int:
+    """Record one signature answer and return the next question.
+
+    CONTENT-PROVENANCE contract (2026-08-27 live defect: 2 of 8 answers on a
+    passing record were AUTHORED BY THE SYSTEM): every recorded answer carries
+    the caller-declared `origin` — "client" (the text is the client's own
+    words as received) or "agent_authored" (an operator/agent drafted it).
+    An agent-authored answer is a VISIBLY-MARKED DRAFT: it is recorded with
+    confirmed_by_client=False, and prove_sp_intake.py's AF-SP-PROVENANCE gate
+    refuses it until the client confirms it via --sig-confirm. The flag is a
+    DECLARATION by the caller, not proof — the proof is the --sig-confirm
+    quote-back step, which is the only thing that can flip
+    confirmed_by_client to True (origin stays visible either way)."""
     ledger = read_intake_ledger(run_dir)
     # FAULT-21 sibling fix: capture completion state BEFORE this call flips
     # ledger["status"] back to "in_progress" below. _sig_finalize() (reached
@@ -1040,6 +1057,11 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
     already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     sp_entries = ledger.get("sp_entries", {})
 
+    if origin not in ("client", "agent_authored"):
+        print(json.dumps({"error": f"Invalid origin {origin!r}. "
+                                   f"Must be 'client' or 'agent_authored'."}))
+        return 2
+
     # Validate frame selection
     if qid == "signature_frame":
         allowed = ["rulebook", "vault", "quest", "original"]
@@ -1049,12 +1071,28 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
             return 1
 
     asked_at = datetime.now(timezone.utc).isoformat()
+    # CONTENT-PROVENANCE: the answer entry records WHO the words came from and
+    # whether the client has confirmed them. Only --sig-confirm sets
+    # confirmed_by_client=True (it is the one step that reads the answer back
+    # to the client); a fresh --sig-answer always (re)opens unconfirmed, so an
+    # edited answer can never ride a confirmation captured for older wording.
     sp_entries[qid] = {"value": text.strip(), "validated": True,
                        "source": "deck-intake-driver --signature",
+                       "origin": origin,
+                       "confirmed_by_client": False,
+                       "confirmation": None,
                        "answered_at": asked_at}
     ledger["sp_entries"] = sp_entries
     ledger["status"] = "in_progress"
     ledger["updated_at"] = asked_at
+    if origin == "agent_authored":
+        print("  NOTICE  [AGENT-AUTHORED-DRAFT] this answer was recorded with "
+              f"origin='agent_authored' (qid={qid}) -- the text was NOT typed "
+              "by the client. It is a visibly-marked draft: it will carry "
+              "confirmed_by_client=false into sp_intake.json and AF-SP-"
+              "PROVENANCE will refuse the record until the client confirms it "
+              f"via: deck-intake-driver.py --run-dir <RUN_DIR> --sig-confirm {qid}",
+              file=sys.stderr)
 
     # FIX-3-COMPLETION: the driver's own turn-gate stamp (per-question turn id +
     # asked_at/validated_at), one entry per question actually surfaced through
@@ -1093,6 +1131,71 @@ def _sig_answer(run_dir: Path, qid: str, text: str) -> int:
             print(f"  WARN  {_warning}", file=sys.stderr)
 
     return _sig_next(run_dir)
+
+
+def _sig_confirm(run_dir: Path, qid: str, confirmed: bool = False) -> int:
+    """QUOTE-BACK CONFIRMATION (2026-08-27 content-provenance contract): read
+    the recorded answer for `qid` back VERBATIM and mark it confirmed by the
+    client. The operator/agent running the driver relays the quoted text to
+    the client and re-runs this command with --confirmed once (and only once)
+    the client has actually seen and approved their own words. The no-flag
+    first leg prints the quote and exits with the answer STILL UNCONFIRMED
+    (fail-closed by construction: nothing here confirms on the client's
+    behalf — a confirmation requires a second, explicit --confirmed call).
+
+    The confirmation mode is recorded as 'quote_back'. The gate also accepts
+    'direct' (the client voiced/typed the answer themselves) which --sig-answer
+    stamps when the caller declares it; origin stays visible on every path."""
+    ledger = read_intake_ledger(run_dir)
+    sp_entries = ledger.get("sp_entries", {})
+    entry = sp_entries.get(qid)
+
+    if not isinstance(entry, dict) or "value" not in entry:
+        print(json.dumps({"error": f"No recorded answer for {qid!r} -- nothing "
+                                   f"to confirm. Use --sig-answer {qid} <text> first."}))
+        return 1
+
+    value = str(entry.get("value") or "")
+
+    if not confirmed:
+        # First leg: emit the verbatim quote-back and STOP, unconfirmed.
+        print(json.dumps({
+            "quote_back": True,
+            "question_id": qid,
+            "client_text": value,
+            "origin": entry.get("origin", "client"),
+            "confirmed_by_client": bool(entry.get("confirmed_by_client")),
+            "message": "Read this answer back to the client verbatim. Re-run with "
+                       "--confirmed ONLY after the client approves their own words: "
+                       "deck-intake-driver.py --run-dir <RUN_DIR> --sig-confirm "
+                       f"{qid} --confirmed",
+        }, indent=2))
+        return 0
+
+    entry["confirmed_by_client"] = True
+    entry["confirmation"] = "quote_back"
+    entry["confirmed_at"] = datetime.now(timezone.utc).isoformat()
+    ledger["sp_entries"] = sp_entries
+    ledger["updated_at"] = entry["confirmed_at"]
+    write_intake_ledger(run_dir, ledger)
+    if entry.get("origin") == "agent_authored":
+        print("  NOTICE  [AGENT-AUTHORED-CONFIRMED] the client confirmed the "
+              f"agent-authored draft for {qid} via quote-back. The record will "
+              "carry origin='agent_authored' with confirmed_by_client=true -- "
+              "the provenance stays visible, but NOTE: prove_sp_intake.py's "
+              "AF-SP-PROVENANCE gate still refuses an agent-authored answer. "
+              "Have the client re-answer with --sig-answer --origin client "
+              "(or accept that this record must be re-assembled from client "
+              "answers only).", file=sys.stderr)
+    print(json.dumps({
+        "confirmed": True,
+        "question_id": qid,
+        "client_text": value,
+        "origin": entry.get("origin", "client"),
+        "confirmation": "quote_back",
+        "confirmed_at": entry["confirmed_at"],
+    }, indent=2))
+    return 0
 
 
 def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
@@ -1139,6 +1242,35 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     record["answers"] = answers
     q7_offer = answers.get("q7") or ""
     record["offer_token_ledger"] = [q7_offer] if q7_offer else []
+
+    # CONTENT-PROVENANCE (2026-08-27): answer_provenance -- one entry per
+    # REQUIRED question, carried straight from the sp_entries the turn gate
+    # wrote (verbatim client_text, origin, confirmed_by_client, confirmation).
+    # NEVER fabricated here: an answer recorded before the provenance fields
+    # existed (or via a path that did not stamp them) gets an EXPLICIT
+    # unprovenanced entry, which AF-SP-PROVENANCE refuses after its dated
+    # migration window -- fail-closed, never silently attested.
+    answer_provenance: Dict[str, Any] = {}
+    for sq in spec.get("questions", []):
+        sqid = sq["id"]
+        entry = sp_entries.get(sqid, {})
+        if not isinstance(entry, dict):
+            continue
+        val = entry.get("value") or ""
+        if not val:
+            continue
+        origin = entry.get("origin")
+        confirmed = bool(entry.get("confirmed_by_client"))
+        answer_provenance[sqid] = {
+            "client_text": val,
+            "origin": origin if origin in ("client", "agent_authored") else "client",
+            "confirmed_by_client": confirmed,
+            "confirmation": entry.get("confirmation")
+                            if confirmed and entry.get("confirmation") in ("quote_back", "direct")
+                            else None,
+        }
+    if answer_provenance:
+        record["answer_provenance"] = answer_provenance
 
     # FIX-3-COMPLETION: turn_ledger_provenance -- one entry per REQUIRED question
     # (q1..q8) from the turn-gate's own log (ledger["sp_turn_log"], written by
@@ -1196,10 +1328,30 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
         for code, reason in prove_warnings:
             print(f"  WARN  [{code}] {reason}", file=sys.stderr)
 
+    # CONTENT-PROVENANCE surface (2026-08-27): unconfirmed / agent-authored
+    # answers are named HERE at finalize time, not only at build preflight --
+    # the operator assembling the record sees the exact questions and the
+    # exact remedy while the conversation is still open.
+    unconfirmed = [qid for qid, blk in answer_provenance.items()
+                   if not blk.get("confirmed_by_client")]
+    agent_authored = [qid for qid, blk in answer_provenance.items()
+                      if blk.get("origin") == "agent_authored"]
+    for qid in agent_authored:
+        print(f"  WARN  [AF-SP-PROVENANCE] {qid} is origin='agent_authored' -- the "
+              f"system authored this answer. AF-SP-PROVENANCE refuses it; the "
+              f"client must re-answer it themselves (or confirm via quote-back "
+              f"and re-answer as client).", file=sys.stderr)
+    for qid in unconfirmed:
+        print(f"  WARN  [AF-SP-PROVENANCE] {qid} is NOT confirmed by the client -- "
+              f"run: deck-intake-driver.py --run-dir {run_dir} --sig-confirm {qid} "
+              f"(then --confirmed after the client approves the verbatim quote).",
+              file=sys.stderr)
+
     # Mark ledger complete
     ledger["status"] = "complete"
     ledger["complete"] = True
     ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    ledger["answer_provenance"] = answer_provenance
     write_intake_ledger(run_dir, ledger)
 
     print(json.dumps({
@@ -1208,6 +1360,8 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
         "signature_frame": record.get("signature_frame"),
         "mode": record.get("mode"),
         "sp_intake_path": str(sp_path),
+        "unconfirmed_answers": unconfirmed,
+        "agent_authored_answers": agent_authored,
         "message": "Signature intake complete. Atomic record written. "
                    "SP intake prover passed.",
     }))
@@ -1396,6 +1550,19 @@ def build_parser() -> argparse.ArgumentParser:
     sig.add_argument("--sig-answer", dest="sig_answer", nargs=2,
                      metavar=("ID", "TEXT"),
                      help="signature: record one answer")
+    sig.add_argument("--sig-origin", dest="sig_origin",
+                     choices=["client", "agent_authored"], default=None,
+                     help="signature: declare who the --sig-answer text came from "
+                          "(default 'client'). 'agent_authored' records a "
+                          "visibly-marked draft the client must confirm via "
+                          "--sig-confirm before the record can pass AF-SP-PROVENANCE")
+    sig.add_argument("--sig-confirm", dest="sig_confirm", metavar="ID",
+                     help="signature: quote-back confirmation -- print the recorded "
+                          "answer verbatim for the client to approve (no flag), or "
+                          "mark it confirmed after the client approved (--sig-confirmed)")
+    sig.add_argument("--sig-confirmed", dest="sig_confirmed", action="store_true",
+                     help="with --sig-confirm: record the client's approval of the "
+                          "quoted answer (confirmed_by_client=true, mode=quote_back)")
     sig.add_argument("--sig-record", dest="sig_record_file", metavar="FILE",
                      help="signature: assemble pre-gathered answers from FILE "
                           "into atomic record and verify")

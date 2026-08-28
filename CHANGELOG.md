@@ -1,3 +1,13 @@
+## [v22.0.84]  -  2026-08-28  -  chore(release): version-lockstep bump for watchdog multi-root PR #999 (G3 base already carried .83)
+
+## [v22.0.83]  -  2026-08-27  -  fix(presentations): worker-liveness supervision — detect dead engine, bounded restart, loud alarm (supervisor.py, report-only read-only contract) (PR #998)
+
+## [v22.0.82]  -  2026-08-27  -  fix(skill-51): signature intake gate verifies CONTENT provenance (AF-SP-PROVENANCE) — verbatim client_text + origin client + quote-back confirmation required, dated grace window; driver --sig-origin + two-leg --sig-confirm; sacred pin regenerated (PR #997); fix(presentations): watchdog/sweep/discovery scan MULTIPLE roots, identity by marker not name (PR #999)
+
+## [v22.0.81]  -  2026-08-27  -  feat(presentations): per-phase fan-out pool for the pipeline dispatcher — bounded worker pool (fanout.py), manifest `workers` field (default 1 = unchanged behavior, all 40 shipped phases at workers=1), P4-PROMPT wired with byte-identical serial path, RunLock second-engine guard, capacity UNBOUNDED fix; +42 tests (PR #992)
+
+## [v22.0.80]  -  2026-08-27  -  fix(presentations): AF-INTAKE-GATE blocks content phases without working/copy/intake.json; P9.6-WEBINAR-VIDEO and P8.25-WORKBOOK direct executors (RunLock canonical-entry self-kill removed); stamper idempotency converted from marker-presence to content-compare (PRs #990, #991)
+
 ## [v22.0.79]  -  2026-08-27  -  Media limits review fixes: 66-kie-image GPT Image 2 25,000-char operator-confirmed cap; 67-kie-video duration windows, Veo generationType enforcement, clip planning; 68-kie-audio speed guard, text caps, add_vocals validation, registry policy legend; 63-agnes-image example fixes; 07-kie-setup Veo/Suno record-info endpoints
 
 ## [v22.0.78]  -  2026-08-27  -  fix(67-kie-video): repack 67-kie-video-1.0.0.skill so embedded CORE_UPDATES.md carries the sibling-convention header format (skill-version.txt v1.0.0 -> v1.0.1)

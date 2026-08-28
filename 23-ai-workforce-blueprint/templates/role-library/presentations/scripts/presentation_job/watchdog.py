@@ -27,6 +27,10 @@ from .state import _read_json, EXIT_OK, EXIT_STALLED, EXIT_WATCHDOG_NO_RUNS
 from .manifest import (
     PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES, MAX_HEARTBEAT_INTERVAL_MINUTES,
 )
+from .scan_roots import (
+    default_config_path, format_roots_report, ok_roots, resolve_scan_roots,
+    split_primary, undetermined_roots,
+)
 
 
 def _find_state_files(scan_root: Path, depth: int):
@@ -40,13 +44,38 @@ def _find_state_files(scan_root: Path, depth: int):
                 yield state_path
 
 
+def _find_state_files_multi(roots, depth: int):
+    """_find_state_files across every readable root, de-duplicated globally.
+
+    A run dir reachable from two configured roots (an additional root nested
+    under the department tree, say) is scanned once, not twice."""
+    seen: Set[Path] = set()
+    for root in roots:
+        for state_path in _find_state_files(root.path, depth):
+            resolved = state_path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            yield root, state_path
+
+
 def watchdog(
     scan_root: Path,
     grace_multiplier: float = 1.5,
     scan_depth: int = 3,
     enforce: bool = False,
+    extra_roots=(),
+    roots_config=None,
+    env=None,
 ) -> int:
-    """Scan run directories under scan_root for stalled jobs.
+    """Scan run directories under every configured scan root for stalled jobs.
+
+    scan_root is the PRIMARY root: it owns watchdog-findings.jsonl and heads the
+    root list. Additional roots come from extra_roots (CLI), the
+    PRESENTATION_SCAN_ROOTS env var, and roots_config -- see scan_roots.py for
+    why a single root was the 2026-08-27 blind spot. Every pass logs the roots it
+    actually searched, so a future missing root shows up in the findings log
+    instead of looking like a clean scan.
 
     Returns EXIT_WATCHDOG_NO_RUNS (13) whenever scanned == 0 -- UNDETERMINED,
     regardless of --enforce. Zero state.json files found is not the same claim
@@ -56,7 +85,30 @@ def watchdog(
     doctrine (health report: unknown is reported as unknown, never as healthy).
     Returns EXIT_STALLED (5) when enforce=True, scanned > 0, and stalls are found.
     Returns EXIT_OK (0) otherwise (warn-mode stage 1, or enforce with zero stalls).
+
+    A root that cannot be read never changes the verdict on any run: it is logged
+    as UNDETERMINED and disqualifies the pass from claiming completeness. It
+    never causes a deck to be blocked, healed, or failed -- absence from a scan
+    this pass could not perform is not evidence about that deck at all.
     """
+    if roots_config is None:
+        # Default config location: <department>/config/scan-roots.conf beside the
+        # scripts dir. Same default run_discovery.py uses; a box adds roots by
+        # writing that file, no code change.
+        roots_config = default_config_path(Path(__file__).resolve().parent.parent)
+    roots = resolve_scan_roots(
+        primary=scan_root, extra=extra_roots, env=env, config_path=roots_config,
+    )
+    # Findings/audit owner: the FIRST chunk of the primary root. For a
+    # single-path --scan-root this is the root itself, exactly as before;
+    # for an os.pathsep-packed primary (the live plist's SCAN_ROOT shape)
+    # the first chunk -- normally the department tree -- owns the files.
+    primary_chunks = split_primary(scan_root)
+    findings_owner = primary_chunks[0] if primary_chunks else Path(scan_root)
+    readable = ok_roots(roots)
+    unreadable = undetermined_roots(roots)
+    print(format_roots_report(roots, "watchdog"), flush=True)
+
     findings: list = []
     scanned = 0
     skipped_terminal = 0
@@ -64,7 +116,7 @@ def watchdog(
     skipped_bad_timestamp = 0
     healthy = 0
 
-    for state_path in _find_state_files(scan_root, scan_depth):
+    for _root, state_path in _find_state_files_multi(readable, scan_depth):
         scanned += 1
         st = _read_json(state_path)
         if not st:
@@ -119,17 +171,19 @@ def watchdog(
               f"interval source: {source})", flush=True)
 
     n_stalled = len(findings)
+    root_list = ", ".join(str(r.path) for r in readable) or "(none readable)"
     if scanned == 0:
         print("watchdog: NO state.json found -- check --scan-root and --scan-depth "
               "-- UNDETERMINED, exiting EXIT_WATCHDOG_NO_RUNS (13), NOT a clean pass",
               flush=True)
+        print(f"watchdog: roots searched: {root_list}", flush=True)
     else:
-        print(f"watchdog: scanned {scanned} state file(s) under {scan_root} "
-              f"(depth {scan_depth}); {skipped_terminal} terminal, {skipped_no_heartbeat} "
-              f"without a heartbeat, {skipped_bad_timestamp} with an unreadable timestamp, "
-              f"{healthy} healthy, {n_stalled} stalled", flush=True)
+        print(f"watchdog: scanned {scanned} state file(s) under {len(readable)} root(s) "
+              f"[{root_list}] (depth {scan_depth}); {skipped_terminal} terminal, "
+              f"{skipped_no_heartbeat} without a heartbeat, {skipped_bad_timestamp} with an "
+              f"unreadable timestamp, {healthy} healthy, {n_stalled} stalled", flush=True)
 
-    findings_path = scan_root / "watchdog-findings.jsonl"
+    findings_path = findings_owner / "watchdog-findings.jsonl"
     for run_dir, pid, age, interval, threshold, source, job_id in findings:
         line = json.dumps({
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -140,9 +194,41 @@ def watchdog(
             "interval_minutes": interval,
             "interval_source": source,
             "job_id": job_id,
+            # Which forests this pass actually searched. Without this, a findings
+            # file can only prove what WAS seen -- the 2026-08-27 incident needed
+            # it to prove what could not have been seen.
+            "scan_roots": [str(r.path) for r in readable],
+            "scan_roots_undetermined": [str(r.path) for r in unreadable],
         }, ensure_ascii=False)
         with open(findings_path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
+
+    # Coverage audit: one record on EVERY pass, stalls or not, because a clean
+    # pass that searched the wrong forest is exactly the failure that has to
+    # become greppable. Deliberately a SIBLING file, not a second record type
+    # inside watchdog-findings.jsonl: that file is a homogeneous stream of stalls
+    # and the way the 2026-08-27 incident was proved was by counting run_dir
+    # values per line across it. Mixing in records with no run_dir would have
+    # broken the very analysis this fix exists to make possible.
+    audit_path = findings_owner / "watchdog-scan-audit.jsonl"
+    try:
+        with open(audit_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "record": "scan_audit",
+                "scan_roots": [str(r.path) for r in readable],
+                "scan_roots_undetermined": [
+                    {"path": str(r.path), "origin": r.origin, "detail": r.detail}
+                    for r in unreadable
+                ],
+                "scan_depth": scan_depth,
+                "scanned": scanned,
+                "stalled": n_stalled,
+                "complete": not unreadable,
+            }, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"watchdog: WARNING could not append scan audit to {audit_path}: {exc}",
+              flush=True)
 
     if findings and os.environ.get("PRESENTATION_NOTIFY_CMD"):
         lines = []
@@ -152,7 +238,7 @@ def watchdog(
                 f"interval source: {source})"
             )
         msg = (
-            f"Watchdog: {n_stalled} stalled job(s) in {scan_root}\n"
+            f"Watchdog: {n_stalled} stalled job(s) in {findings_owner}\n"
             + "\n".join(lines)
         )
         from .report import dispatch

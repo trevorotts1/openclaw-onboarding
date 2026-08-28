@@ -1,138 +1,151 @@
 {
-  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
-  "section": "signature-presentation-intake",
-  "version": "1.0.0",
-  "deck_type": "signature_presentation",
-  "description": "The SACRED 8-Questions gate for a Trevor Otts Signature Presentation, plus the frame-selection question. DOCTRINE (Trevor's ruling -- one-question-at-a-time wins): the owner CONVERSATION is choice-first (offer a QUICK vs IN-DEPTH interview) and then asks ONE question at a time, never a wall of questions (AF-INTAKE-BATCH). The eight answers plus the chosen frame are then assembled into ONE atomic machine RECORD (working/copy/sp_intake.json) -- that assembled record is what prove_sp_intake.py validates (record_committed_atomically / mode=one_block describe the RECORD ledger being written as one atomic commit, NOT a batch of questions dumped at the owner). Prime Directive 8 is unchanged: once every answer is locked, all slides are written at one time. This file is the authoritative spec that prove_sp_intake.py loads.",
-  "delivery": {
-    "mode": "one_block",
-    "record_committed_atomically": true,
-    "asked_all_at_once": true,
-    "_alias_note": "asked_all_at_once is a DEPRECATED alias for record_committed_atomically, kept for one release (fleet-ordering safety). one_question_per_turn was REMOVED from the record layer: it describes the conversation (which is one-per-turn), never the record commit, and prove_sp_intake.py no longer checks it.",
-    "rule": "TWO LAYERS, kept distinct so they never conflict -- the 8 Questions are ASKED one at a time and RECORDED as one atomic ledger. (1) CONVERSATION LAYER (Trevor's ruling -- one-question-at-a-time wins): the front-door agent FIRST offers the quick-vs-in-depth CHOICE, then asks exactly ONE question at a time and waits for the owner's answer before sending the next -- never a batch. Dumping two or more of the 8 Questions in a single turn, or opening with no quick-vs-in-depth choice, is AF-INTAKE-BATCH (intake-conversation scoped; enforced_by qc_check -- 51-signature-presentation/scripts/intake_trace_check.py, a real deterministic transcript scanner (not just documented prose); it NEVER inspects, runs inside, or gates build_deck.py / run_signature_deck.py). (2) RECORD LAYER: once the answers are gathered one at a time, they are committed as ONE atomic intake ledger -- record_committed_atomically=true / mode=one_block describe THAT assembled record being written as a single atomic commit, which prove_sp_intake.py validates before slide authoring unlocks. These record fields are NOT a licence to dump the 8 Questions at the owner.",
-    "conversation_contract": {
-      "choice_first": true,
-      "interview_choices": ["quick", "in-depth"],
-      "one_question_per_message": true,
-      "never_a_wall_of_questions": true,
-      "choice_question": "Love this -- let's shape it together and you set the pace. I can do this two ways: a QUICK interview (about 5 key questions, one at a time) or a more IN-DEPTH one (we go a little deeper, still one question at a time). Which would you like, quick or in-depth? You can switch or stop whenever you want.",
-      "af_on_violation": "AF-INTAKE-BATCH",
-      "banned_batch_anti_pattern": "A single message that enumerates the 8 Questions (title + alternate titles + avatar pain + story + teaching topic + teaching titles + offer + anything-else) together, or the screenshot phrase 'give me whatever you have got and I will get moving.' That message offers no choice and dumps the whole batch at once -- the canonical AF-INTAKE-BATCH failure."
-    },
-    "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-driver.py signature mode",
-    "blocks_until_answered": ["P4-COPY", "all slide authoring"]
+ "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+ "section": "signature-presentation-intake",
+ "version": "1.0.0",
+ "deck_type": "signature_presentation",
+ "description": "The SACRED 8-Questions gate for a Trevor Otts Signature Presentation, plus the frame-selection question. DOCTRINE (Trevor's ruling -- one-question-at-a-time wins): the owner CONVERSATION is choice-first (offer a QUICK vs IN-DEPTH interview) and then asks ONE question at a time, never a wall of questions (AF-INTAKE-BATCH). The eight answers plus the chosen frame are then assembled into ONE atomic machine RECORD (working/copy/sp_intake.json) -- that assembled record is what prove_sp_intake.py validates (record_committed_atomically / mode=one_block describe the RECORD ledger being written as one atomic commit, NOT a batch of questions dumped at the owner). Prime Directive 8 is unchanged: once every answer is locked, all slides are written at one time. This file is the authoritative spec that prove_sp_intake.py loads.",
+ "delivery": {
+  "mode": "one_block",
+  "record_committed_atomically": true,
+  "asked_all_at_once": true,
+  "_alias_note": "asked_all_at_once is a DEPRECATED alias for record_committed_atomically, kept for one release (fleet-ordering safety). one_question_per_turn was REMOVED from the record layer: it describes the conversation (which is one-per-turn), never the record commit, and prove_sp_intake.py no longer checks it.",
+  "rule": "TWO LAYERS, kept distinct so they never conflict -- the 8 Questions are ASKED one at a time and RECORDED as one atomic ledger. (1) CONVERSATION LAYER (Trevor's ruling -- one-question-at-a-time wins): the front-door agent FIRST offers the quick-vs-in-depth CHOICE, then asks exactly ONE question at a time and waits for the owner's answer before sending the next -- never a batch. Dumping two or more of the 8 Questions in a single turn, or opening with no quick-vs-in-depth choice, is AF-INTAKE-BATCH (intake-conversation scoped; enforced_by qc_check -- 51-signature-presentation/scripts/intake_trace_check.py, a real deterministic transcript scanner (not just documented prose); it NEVER inspects, runs inside, or gates build_deck.py / run_signature_deck.py). (2) RECORD LAYER: once the answers are gathered one at a time, they are committed as ONE atomic intake ledger -- record_committed_atomically=true / mode=one_block describe THAT assembled record being written as a single atomic commit, which prove_sp_intake.py validates before slide authoring unlocks. These record fields are NOT a licence to dump the 8 Questions at the owner.",
+  "conversation_contract": {
+   "choice_first": true,
+   "interview_choices": [
+    "quick",
+    "in-depth"
+   ],
+   "one_question_per_message": true,
+   "never_a_wall_of_questions": true,
+   "choice_question": "Love this -- let's shape it together and you set the pace. I can do this two ways: a QUICK interview (about 5 key questions, one at a time) or a more IN-DEPTH one (we go a little deeper, still one question at a time). Which would you like, quick or in-depth? You can switch or stop whenever you want.",
+   "af_on_violation": "AF-INTAKE-BATCH",
+   "banned_batch_anti_pattern": "A single message that enumerates the 8 Questions (title + alternate titles + avatar pain + story + teaching topic + teaching titles + offer + anything-else) together, or the screenshot phrase 'give me whatever you have got and I will get moving.' That message offers no choice and dumps the whole batch at once -- the canonical AF-INTAKE-BATCH failure."
   },
-  "questions": [
-    {
-      "id": "q1",
-      "order": 1,
-      "prompt": "What is the title of your Signature Presentation?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q1_title"
-    },
-    {
-      "id": "q2",
-      "order": 2,
-      "prompt": "Do you want me to provide other possible titles before I start writing?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q2_alt_titles"
-    },
-    {
-      "id": "q3",
-      "order": 3,
-      "prompt": "Any specific pain points to address in the avatar section?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q3_avatar_pain_points"
-    },
-    {
-      "id": "q4",
-      "order": 4,
-      "prompt": "Key elements of your story to consider before crafting the personal-story section?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q4_story_elements"
-    },
-    {
-      "id": "q5",
-      "order": 5,
-      "prompt": "What do you want to teach in the transformational-teaching section? (e.g., \"7 Secrets to ___\", \"5 Ways to ___\", \"Mastering the ___ Protocol\", \"The ___ Blueprint to ___\")",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q5_teaching_topic"
-    },
-    {
-      "id": "q6",
-      "order": 6,
-      "prompt": "Do you want other possible titles for the transformational-teaching section?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q6_alt_teaching_titles"
-    },
-    {
-      "id": "q7",
-      "order": 7,
-      "prompt": "What product(s) will you offer at the end?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q7_offer_products",
-      "note": "The EXACT product/offer name(s) captured here become the offer-token ledger. They are FORBIDDEN in Phase 3 (prove_sp_no_pitch.py) and REQUIRED to appear in the Phase-4 pitch. A named product here that is absent from the pitch-token ledger fails AF-SP-OFFER-UNDECLARED."
-    },
-    {
-      "id": "q8",
-      "order": 8,
-      "prompt": "Anything else to consider before I start writing?",
-      "kind": "text",
-      "required": true,
-      "storeOn": "q8_anything_else"
-    }
-  ],
-  "frame_selection_question": {
-    "id": "frame_selection",
-    "order": 9,
-    "asked_in_same_block": true,
-    "additive_to_the_8": true,
-    "prompt": "Which Signature frame should carry your Transformational Teaching? (A) The Rulebook — you teach through numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule. (B) The Vault — you unlock numbered Secrets, each paired with a famous quote and its own affirmation, tied together by one running metaphor. (C) The Quest — you hand them a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto they finish in their own words. (D) The Original — we design a from-scratch frame around your own methodology. Not sure? Say 'show me' and I'll sketch your teaching topic in all three frames (one line each) before you pick.",
-    "kind": "enum",
-    "required": true,
-    "storeOn": "signature_frame",
-    "allowed_values": ["rulebook", "vault", "quest", "original"],
-    "value_labels": {
-      "rulebook": "The Rulebook",
-      "vault": "The Vault",
-      "quest": "The Quest",
-      "original": "The Original"
-    },
-    "orthogonal_to": "STYLE_SOURCE (the visual match/analyze/create branch) — the frame governs the NARRATIVE, not the visual style; a signature deck still answers the visual branch and still gets the 3-variant style preview."
+  "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-driver.py signature mode",
+  "blocks_until_answered": [
+   "P4-COPY",
+   "all slide authoring"
+  ]
+ },
+ "questions": [
+  {
+   "id": "q1",
+   "order": 1,
+   "prompt": "What is the title of your Signature Presentation?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q1_title"
   },
-  "runtime_intake_contract": {
-    "note": "Shape of working/copy/sp_intake.json that prove_sp_intake.py validates. Any violation is exit 2, fail-closed.",
-    "required_fields": {
-      "deck_type": "must equal \"signature_presentation\" (else AF-SP-TYPE-MISMATCH)",
-      "record_committed_atomically": "must be true -- a RECORD-integrity field: the assembled intake ledger was written as ONE atomic commit after the one-at-a-time conversation (else AF-SP-8Q-SPLIT). It is NOT a licence to dump the 8 Questions at the owner; the CONVERSATION is choice-first and one question at a time (see delivery.conversation_contract / AF-INTAKE-BATCH). Deprecated alias: asked_all_at_once (accepted for one release).",
-      "record_commit_ids": "single non-empty id for the atomic intake-record commit (else AF-SP-8Q-SPLIT). Deprecated alias: question_block_msg_id (accepted for one release).",
-      "answers": "object carrying non-empty q1..q8 (any missing/empty → AF-SP-8Q-MISSING)",
-      "signature_frame": "one of rulebook|vault|quest|original (else AF-SP-FRAME-UNSET)",
-      "offer_token_ledger": "array of the exact product/offer names from q7 (must be non-empty; each must also be present in the Phase-4 pitch tokens or AF-SP-OFFER-UNDECLARED)"
-    },
-    "deprecated_aliases": {
-      "asked_all_at_once": "-> record_committed_atomically (accepted for one release; the machine layer no longer teaches batching)",
-      "question_block_msg_id": "-> record_commit_ids (accepted for one release)",
-      "one_question_per_turn": "REMOVED from the record layer -- it describes the (one-per-turn) conversation, never the record commit; prove_sp_intake.py no longer checks it"
-    },
-    "optional_fields": {
-      "client_overrode_slide_floor": "boolean — set true ONLY when the client states an exact slide count that overrides the ≥100 floor; consumed by prove_sp_structure.py and surfaced on the process certificate",
-      "client_exact_slide_count": "integer — the client's explicit count when client_overrode_slide_floor is true"
-    },
-    "autofail_codes": {
-      "AF-SP-8Q-MISSING": "any of q1..q8 missing or empty (Directive 6)",
-      "AF-SP-8Q-SPLIT": "RECORD layer (deterministic, prove_sp_intake.py): the assembled intake ledger was not committed as ONE atomic ledger write -- record_committed_atomically!=true (deprecated alias asked_all_at_once!=true), or more than one record-commit id. Record-only gate; the conversation stays one question per turn. one_question_per_turn is NOT checked. This gates the machine RECORD, not the conversation.",
-      "AF-INTAKE-BATCH": "CONVERSATION layer (gated by the required preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16, fail-closed; the QC/Healer intake-trace scan, 51-signature-presentation/scripts/intake_trace_check.py, runs the same scanner out-of-band as an additional post-hoc pass): the intake conversation dumped a batch -- two or more of the 8 Questions in a single assistant turn before the owner answered, OR it opened with no quick-vs-in-depth CHOICE first. Doctrine: delivery.conversation_contract. The banned reference anti-pattern is one message enumerating all 8 Questions together with 'give me whatever you have got and I will get moving.'",
-      "AF-SP-FRAME-UNSET": "signature_frame not one of the four allowed values (frame gate)",
-      "AF-SP-TYPE-MISMATCH": "deck_type != signature_presentation vs the run manifest",
-      "AF-SP-OFFER-UNDECLARED": "a product named in q7 is absent from the pitch-token ledger"
-    }
+  {
+   "id": "q2",
+   "order": 2,
+   "prompt": "Do you want me to provide other possible titles before I start writing?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q2_alt_titles"
+  },
+  {
+   "id": "q3",
+   "order": 3,
+   "prompt": "Any specific pain points to address in the avatar section?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q3_avatar_pain_points"
+  },
+  {
+   "id": "q4",
+   "order": 4,
+   "prompt": "Key elements of your story to consider before crafting the personal-story section?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q4_story_elements"
+  },
+  {
+   "id": "q5",
+   "order": 5,
+   "prompt": "What do you want to teach in the transformational-teaching section? (e.g., \"7 Secrets to ___\", \"5 Ways to ___\", \"Mastering the ___ Protocol\", \"The ___ Blueprint to ___\")",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q5_teaching_topic"
+  },
+  {
+   "id": "q6",
+   "order": 6,
+   "prompt": "Do you want other possible titles for the transformational-teaching section?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q6_alt_teaching_titles"
+  },
+  {
+   "id": "q7",
+   "order": 7,
+   "prompt": "What product(s) will you offer at the end?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q7_offer_products",
+   "note": "The EXACT product/offer name(s) captured here become the offer-token ledger. They are FORBIDDEN in Phase 3 (prove_sp_no_pitch.py) and REQUIRED to appear in the Phase-4 pitch. A named product here that is absent from the pitch-token ledger fails AF-SP-OFFER-UNDECLARED."
+  },
+  {
+   "id": "q8",
+   "order": 8,
+   "prompt": "Anything else to consider before I start writing?",
+   "kind": "text",
+   "required": true,
+   "storeOn": "q8_anything_else"
   }
+ ],
+ "frame_selection_question": {
+  "id": "frame_selection",
+  "order": 9,
+  "asked_in_same_block": true,
+  "additive_to_the_8": true,
+  "prompt": "Which Signature frame should carry your Transformational Teaching? (A) The Rulebook — you teach through numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule. (B) The Vault — you unlock numbered Secrets, each paired with a famous quote and its own affirmation, tied together by one running metaphor. (C) The Quest — you hand them a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto they finish in their own words. (D) The Original — we design a from-scratch frame around your own methodology. Not sure? Say 'show me' and I'll sketch your teaching topic in all three frames (one line each) before you pick.",
+  "kind": "enum",
+  "required": true,
+  "storeOn": "signature_frame",
+  "allowed_values": [
+   "rulebook",
+   "vault",
+   "quest",
+   "original"
+  ],
+  "value_labels": {
+   "rulebook": "The Rulebook",
+   "vault": "The Vault",
+   "quest": "The Quest",
+   "original": "The Original"
+  },
+  "orthogonal_to": "STYLE_SOURCE (the visual match/analyze/create branch) — the frame governs the NARRATIVE, not the visual style; a signature deck still answers the visual branch and still gets the 3-variant style preview."
+ },
+ "runtime_intake_contract": {
+  "note": "Shape of working/copy/sp_intake.json that prove_sp_intake.py validates. Any violation is exit 2, fail-closed.",
+  "required_fields": {
+   "deck_type": "must equal \"signature_presentation\" (else AF-SP-TYPE-MISMATCH)",
+   "record_committed_atomically": "must be true -- a RECORD-integrity field: the assembled intake ledger was written as ONE atomic commit after the one-at-a-time conversation (else AF-SP-8Q-SPLIT). It is NOT a licence to dump the 8 Questions at the owner; the CONVERSATION is choice-first and one question at a time (see delivery.conversation_contract / AF-INTAKE-BATCH). Deprecated alias: asked_all_at_once (accepted for one release).",
+   "record_commit_ids": "single non-empty id for the atomic intake-record commit (else AF-SP-8Q-SPLIT). Deprecated alias: question_block_msg_id (accepted for one release).",
+   "answers": "object carrying non-empty q1..q8 (any missing/empty → AF-SP-8Q-MISSING)",
+   "signature_frame": "one of rulebook|vault|quest|original (else AF-SP-FRAME-UNSET)",
+   "offer_token_ledger": "array of the exact product/offer names from q7 (must be non-empty; each must also be present in the Phase-4 pitch tokens or AF-SP-OFFER-UNDECLARED)",
+   "answer_provenance": "object keyed by answered question id -- per-answer CONTENT provenance proving the text came from the client (2026-08-27 live defect: 2 of 8 answers were authored by the system on a record that passed every structural check). Each entry: client_text (the verbatim client words the committed answer was built from), origin ('client' | 'agent_authored'), confirmed_by_client (bool), confirmation ('quote_back' | 'direct'). Rules (fail-closed, AF-SP-PROVENANCE): committed answers[qid] must equal client_text (whitespace-normalized); origin='agent_authored' NEVER passes (a visibly-marked draft only); confirmed_by_client must be true with a real confirmation mode. Grandfathered through PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15) for pre-provenance driver records -- after that date a provenance-less record hard-fails."
+  },
+  "deprecated_aliases": {
+   "asked_all_at_once": "-> record_committed_atomically (accepted for one release; the machine layer no longer teaches batching)",
+   "question_block_msg_id": "-> record_commit_ids (accepted for one release)",
+   "one_question_per_turn": "REMOVED from the record layer -- it describes the (one-per-turn) conversation, never the record commit; prove_sp_intake.py no longer checks it"
+  },
+  "optional_fields": {
+   "client_overrode_slide_floor": "boolean — set true ONLY when the client states an exact slide count that overrides the ≥100 floor; consumed by prove_sp_structure.py and surfaced on the process certificate",
+   "client_exact_slide_count": "integer — the client's explicit count when client_overrode_slide_floor is true"
+  },
+  "autofail_codes": {
+   "AF-SP-8Q-MISSING": "any of q1..q8 missing or empty (Directive 6)",
+   "AF-SP-8Q-SPLIT": "RECORD layer (deterministic, prove_sp_intake.py): the assembled intake ledger was not committed as ONE atomic ledger write -- record_committed_atomically!=true (deprecated alias asked_all_at_once!=true), or more than one record-commit id. Record-only gate; the conversation stays one question per turn. one_question_per_turn is NOT checked. This gates the machine RECORD, not the conversation.",
+   "AF-INTAKE-BATCH": "CONVERSATION layer (gated by the required preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16, fail-closed; the QC/Healer intake-trace scan, 51-signature-presentation/scripts/intake_trace_check.py, runs the same scanner out-of-band as an additional post-hoc pass): the intake conversation dumped a batch -- two or more of the 8 Questions in a single assistant turn before the owner answered, OR it opened with no quick-vs-in-depth CHOICE first. Doctrine: delivery.conversation_contract. The banned reference anti-pattern is one message enumerating all 8 Questions together with 'give me whatever you have got and I will get moving.'",
+   "AF-SP-FRAME-UNSET": "signature_frame not one of the four allowed values (frame gate)",
+   "AF-SP-TYPE-MISMATCH": "deck_type != signature_presentation vs the run manifest",
+   "AF-SP-OFFER-UNDECLARED": "a product named in q7 is absent from the pitch-token ledger",
+   "AF-SP-PROVENANCE": "CONTENT layer (deterministic, prove_sp_intake.py -- the record's own answer provenance): an answered question carries no answer_provenance entry, no client_text, committed text != client_text (whitespace-normalized), origin='agent_authored' (system-authored draft -- never passes), or the client never confirmed the answer (confirmed_by_client != true, or confirmation mode not 'quote_back'/'direct'). Captured by deck-intake-driver.py --sig-answer (--origin) and the --sig-confirm / --sig-confirm --confirmed quote-back step. Record-only gate; dated migration window PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15) grandfathers pre-provenance records."
+  }
+ }
 }
