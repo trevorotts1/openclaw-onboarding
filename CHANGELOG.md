@@ -1,6 +1,8 @@
+## [v22.0.84]  -  2026-08-28  -  chore(release): version-lockstep bump for watchdog multi-root PR #999 (G3 base already carried .83)
+
 ## [v22.0.83]  -  2026-08-27  -  fix(presentations): worker-liveness supervision — detect dead engine, bounded restart, loud alarm (supervisor.py, report-only read-only contract) (PR #998)
 
-## [v22.0.82]  -  2026-08-27  -  fix(skill-51): signature intake gate verifies CONTENT provenance (AF-SP-PROVENANCE) — verbatim client_text + origin client + quote-back confirmation required, dated grace window; driver --sig-origin + two-leg --sig-confirm; sacred pin regenerated (PR #997)
+## [v22.0.82]  -  2026-08-27  -  fix(skill-51): signature intake gate verifies CONTENT provenance (AF-SP-PROVENANCE) — verbatim client_text + origin client + quote-back confirmation required, dated grace window; driver --sig-origin + two-leg --sig-confirm; sacred pin regenerated (PR #997); fix(presentations): watchdog/sweep/discovery scan MULTIPLE roots, identity by marker not name (PR #999)
 
 ## [v22.0.81]  -  2026-08-27  -  feat(presentations): per-phase fan-out pool for the pipeline dispatcher — bounded worker pool (fanout.py), manifest `workers` field (default 1 = unchanged behavior, all 40 shipped phases at workers=1), P4-PROMPT wired with byte-identical serial path, RunLock second-engine guard, capacity UNBOUNDED fix; +42 tests (PR #992)
 

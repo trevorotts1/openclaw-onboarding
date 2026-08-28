@@ -208,6 +208,7 @@ def _run_sweep(
     max_age_hours: float = 72.0,
     board_off: bool = False,
     reconcile_rc: int = 0,
+    extra_roots: tuple = (),
 ) -> tuple[int, str]:
     """Run the sweep with capture. Returns (exit_code, stdout_string)."""
     global _FAKE_BOARD_OFF, _FAKE_RECONCILE_RC, _FAKE_RECORDS
@@ -248,6 +249,7 @@ def _run_sweep(
             scan_depth=scan_depth,
             apply=apply,
             max_age_hours=max_age_hours,
+            extra_roots=extra_roots,
         )
     finally:
         _sys.stdout = old_stdout
