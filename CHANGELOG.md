@@ -1,3 +1,5 @@
+## [v22.0.85]  -  2026-08-28  -  fix(deck-intake-driver): correct signature-mode hint strings to real --sig-next/--sig-answer flags (PR #1000)
+
 ## [v22.0.84]  -  2026-08-28  -  chore(release): version-lockstep bump for watchdog multi-root PR #999 (G3 base already carried .83)
 
 ## [v22.0.83]  -  2026-08-27  -  fix(presentations): worker-liveness supervision — detect dead engine, bounded restart, loud alarm (supervisor.py, report-only read-only contract) (PR #998)
