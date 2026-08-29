@@ -16,7 +16,7 @@ recordInfo/callback waiting, and MANDATORY multi-frame visual QC (Frame 0, Midpo
 - [ ] `models.json` parses as valid JSON; exactly 37 models; no duplicate canonical_model_id;
       every entry has `source_url`, `last_verified_at`, and `cap_status`.
 - [ ] The skill package zip does NOT contain `wire.sh` (installers are not shipped in the bundle).
-- [ ] `skill-version.txt` reads `v1.0.0`.
+- [ ] `skill-version.txt` reads `v1.1.0`.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01), BYUP (Skill 02), and KIE Setup (Skill 07) are satisfied (PREREQS.json).
