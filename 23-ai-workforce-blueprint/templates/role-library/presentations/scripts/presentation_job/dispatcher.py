@@ -89,6 +89,15 @@ try:
 except ImportError:
     _bd = None  # type: ignore[assignment]
 
+# FIX 2: the parallel P4-PROMPT prompt authoring worker (same package). Same
+# defensive pattern. Consulted by the P4-PROMPT branch of dispatch_one under the
+# PRESENTATION_PROMPT_PARALLEL feature flag (default ON; =0 selects the
+# untouched serial loop below as the documented rollback path).
+try:
+    from presentation_job import parallel_prompt_worker as _ppw
+except ImportError:  # pragma: no cover - degraded envs fall back to serial
+    _ppw = None  # type: ignore[assignment]
+
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
                                                 # whole pipeline, not a second number.
@@ -1971,6 +1980,288 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
                           slide_results=slide_results)
 
 
+# ---------------------------------------------------------------------------
+# FIX 2: parallel P4-PROMPT dispatch. The dispatcher branch REMAINS the owner of
+# the phase: it selects the slides, stamps the routing (Phase A stub:
+# deepseek-direct / deepseek-v4-flash / measured capacity 8 until FIX 7/8/11
+# provide real profiles), builds prompt-wave-input.json, invokes the worker ONCE,
+# ingests the result file, emits FIX 5-style per-slide telemetry rows, and
+# advances only when every required ordinal succeeded with an on-disk SHA match
+# and a passing verify verdict. PRESENTATION_PROMPT_PARALLEL=0 selects the
+# untouched serial loop above (byte-for-byte rollback path; the serial loop
+# stays until the operator-box proof window ends).
+# ---------------------------------------------------------------------------
+def _prompt_parallel_enabled() -> bool:
+    """Default ON. The only value that disables is exactly "0" (also strip
+    quotes/whitespace so `PRESENTATION_PROMPT_PARALLEL=""` counts as unset,
+    not OFF -- an EMPTY value must never silently select the rollback path)."""
+    raw = os.environ.get("PRESENTATION_PROMPT_PARALLEL")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+
+def _prompt_routing_stamp() -> Dict[str, Any]:
+    """Phase A stub routing: fixed deepseek-direct profile with measured capacity
+    8 (see /Users/blackceomacmini/presentation-fix-tests/phase-a-routing.json).
+    FIX 7/8/11 will replace this with real resource profiles through the same
+    input schema; until then the dispatcher stamps these constants itself."""
+    return {
+        "provider": "deepseek-direct",
+        "model": DEEPSEEK_MODEL,
+        "mode": "standard",
+        "measured_capacity": 8,
+    }
+
+
+def _emit_slide_author_telemetry(run_dir: Path, rows: List[Dict[str, Any]]) -> None:
+    """FIX 5-style one-row-per-slide telemetry into
+    working/telemetry/stage-timings.jsonl (same row schema Engine._emit_stage_timing
+    writes: run_id, phase_id, wave, model_used, event, started_at, ended_at,
+    duration_s, status [, error_class]). No Engine instance exists inside the
+    dispatcher process, so the dispatcher writes the rows itself, best-effort:
+    telemetry NEVER breaks a run."""
+    try:
+        tdir = run_dir / "working" / "telemetry"
+        tdir.mkdir(parents=True, exist_ok=True)
+        with (tdir / "stage-timings.jsonl").open("a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError as exc:
+        print(f"WARN telemetry: could not write slide_author rows: {exc}",
+              flush=True)
+
+
+def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
+                                    dept_root: Path, phase_obj: Optional[Phase],
+                                    worker_id: str) -> DispatchResult:
+    """FIX 2 parallel path for P4-PROMPT. Returns the same DispatchResult the
+    serial loop returns; identical statuses so callers cannot tell them apart
+    (that is the point: the flag switches IMPLEMENTATION, not CONTRACT)."""
+    phase_id = "P4-PROMPT"
+    if _ppw is None:
+        reason = ("parallel prompt worker module unavailable -- falling back to "
+                  "the serial P4-PROMPT loop")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
+                                      phase_obj=phase_obj, worker_id=worker_id)
+
+    n = _prompt_slide_count(run_dir)
+    if n is None:
+        reason = ("cannot determine slide count yet -- neither working/copy/"
+                  "slides.json nor working/copy/arc_allocation.json (with a "
+                  "slots/allocation/slides array) is present/readable")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    # --- normalize slides from the SAME source the serial loop + verifier use
+    slides_payload: List[Dict[str, Any]] = []
+    try:
+        for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
+            p = run_dir / rel
+            if not p.is_file():
+                continue
+            obj = json.loads(p.read_text(encoding="utf-8"))
+            raw_slides = obj if isinstance(obj, list) else (
+                obj.get("slides") if isinstance(obj, dict) else None)
+            if isinstance(raw_slides, list) and raw_slides:
+                for s in raw_slides:
+                    if not isinstance(s, dict):
+                        continue
+                    ordinal = s.get("slide")
+                    if not isinstance(ordinal, int):
+                        continue
+                    slides_payload.append({
+                        "slide_id": f"slide-{ordinal:02d}",
+                        "ordinal": ordinal,
+                        "copy": [str(c) for c in (s.get("copy") or [])
+                                 if isinstance(c, str)],
+                        "archetype": str(s.get("archetype") or ""),
+                        "research_anchors": [str(a) for a in
+                                             (s.get("research_anchors") or [])],
+                        "design_tokens": s.get("design_tokens") or {},
+                        "negative_requirements": [str(ngr) for ngr in
+                                                  (s.get("negative_requirements")
+                                                   or [])],
+                    })
+                break
+    except (OSError, json.JSONDecodeError):
+        slides_payload = []
+    if not slides_payload:
+        reason = ("P4-PROMPT parallel dispatch could not normalize any slide "
+                  "payloads from slides.json/arc_allocation.json")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    slides_payload = [s for s in slides_payload if 1 <= s["ordinal"] <= n]
+    if not slides_payload:
+        reason = "P4-PROMPT parallel dispatch: no in-range ordinals after normalization"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    # --- build prompt-wave-input.json (schema_version 1) stamped routing
+    routing = _prompt_routing_stamp()
+    wave_input = {
+        "schema_version": 1,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "phase_id": phase_id,
+        "routing": routing,
+        "prompt_constraints": {
+            "min_chars": 9000,
+            "max_chars": 18000,
+            "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
+        },
+        "slides": slides_payload,
+    }
+    input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_text(json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
+                          encoding="utf-8")
+
+    # --- invoke the worker ONCE. An unhandled WorkerUsageError (exit-2 class:
+    # bad input/paths/schema) is a dispatcher bug, so it surfaces as a phase
+    # error -- never silently falls back to the serial loop and re-spends.
+    started_iso = utcnow()
+    started_t = time.monotonic()
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
+        "input": str(input_path), "slides": len(slides_payload),
+        "routing": routing,
+    })
+    try:
+        exit_code, result_doc = _ppw.run_worker(wave_input)
+    except _ppw.WorkerUsageError as exc:
+        reason = f"parallel prompt worker rejected the wave input: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    except Exception as exc:  # noqa: BLE001 -- phase must fail loudly, named
+        reason = f"parallel prompt worker crashed: {type(exc).__name__}: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
+                                      phase_obj=phase_obj, worker_id=worker_id)
+    duration_total = round(time.monotonic() - started_t, 3)
+
+    # --- ingest the result file + emit FIX 5-style per-slide telemetry rows
+    result_path = run_dir / "working" / "checkpoints" / "prompt-worker-results.json"
+    try:
+        doc = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        doc = result_doc  # in-memory copy is authoritative if the file vanished
+    slide_rows = doc.get("slides") or []
+    telemetry_rows = []
+    for row in slide_rows:
+        telemetry_rows.append({
+            "run_id": run_dir.name,
+            "phase_id": phase_id,
+            "wave": doc.get("wave_count", 1),
+            "model_used": row.get("model_used") or routing["model"],
+            "event": "slide_author",
+            "started_at": row.get("started_at") or started_iso,
+            "ended_at": row.get("ended_at") or utcnow(),
+            "duration_s": row.get("duration_s"),
+            "status": row.get("status"),
+            "error_class": row.get("error_class"),
+        })
+    _emit_slide_author_telemetry(run_dir, telemetry_rows)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1,
+        "status": "parallel_wave_finished", "worker_exit_code": exit_code,
+        "succeeded": doc.get("succeeded_count"), "failed": doc.get("failed_count"),
+        "wave_count": doc.get("wave_count"), "duration_s": duration_total,
+        "seam": doc.get("provider_seam"),
+    })
+
+    # --- advance only when EVERY required ordinal succeeded with an on-disk
+    # SHA match AND a passing verify verdict.
+    succeeded: Dict[int, Dict[str, Any]] = {}
+    failed_reasons: List[str] = []
+    for row in slide_rows:
+        try:
+            ordinal = int(row["ordinal"])
+        except (TypeError, ValueError):
+            continue
+        if row.get("status") == "succeeded":
+            succeeded[ordinal] = row
+        else:
+            failed_reasons.append(
+                f"slide {ordinal}: {row.get('error_class') or 'failed'} -- "
+                f"{row.get('error_message') or 'no error detail'}")
+    sha_mismatches: List[str] = []
+    verify_failures: List[str] = []
+    for ordinal, row in sorted(succeeded.items()):
+        target = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}-prompt.txt"
+        candidates = [target,
+                      run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"]
+        disk = next((c for c in candidates if c.is_file()), None)
+        if disk is None:
+            sha_mismatches.append(f"slide {ordinal}: no prompt file on disk")
+            continue
+        actual = _ppw._sha256_file(disk)
+        if row.get("prompt_sha256") and actual != row["prompt_sha256"]:
+            sha_mismatches.append(f"slide {ordinal}: sha256 mismatch on {disk.name}")
+            continue
+        v_ok, v_reasons = _verify_single_prompt(run_dir, ordinal)
+        if not v_ok:
+            verify_failures.append(f"slide {ordinal}: {'; '.join(v_reasons)[:200]}")
+
+    if not failed_reasons and not sha_mismatches and not verify_failures \
+            and all(o in succeeded for o in range(1, n + 1)):
+        ok, reasons = _verify(phase_id, run_dir)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 1,
+            "status": "verified" if ok else "failed", "verifier_ok": ok,
+            "verifier_reasons": reasons,
+            "parallel": True,
+        })
+        if ok:
+            return DispatchResult(phase_id, "ok", len(slide_rows), [],
+                                  "working/prompts/",
+                                  slide_results=[
+                                      {"slide_id": f"slide-{o:02d}",
+                                       "ordinal": o, "status": "succeeded",
+                                       "error": None,
+                                       "prompt_sha256": succeeded[o].get("prompt_sha256")}
+                                      for o in sorted(succeeded)])
+        return DispatchResult(phase_id, "exhausted", len(slide_rows), reasons,
+                              "working/prompts/",
+                              slide_results=[
+                                  {"slide_id": f"slide-{o:02d}", "ordinal": o,
+                                   "status": "succeeded", "error": None}
+                                  for o in sorted(succeeded)])
+
+    # partial / failed: name every unmet ordinal, phase fails AFTER all slides
+    final_reasons = list(failed_reasons) + [f"sha: {m}" for m in sha_mismatches] + \
+        [f"verify: {v}" for v in verify_failures]
+    for o in range(1, n + 1):
+        if o not in succeeded:
+            if not any(r.startswith(f"slide {o}:") for r in final_reasons):
+                final_reasons.append(f"slide {o}: not succeeded in result document")
+    failed_slides = [f"slide-{o:02d}" for o in range(1, n + 1) if o not in succeeded]
+    succeeded_slides = [f"slide-{o:02d}" for o in sorted(succeeded)]
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1, "status": "phase_exhausted",
+        "failed_slides": failed_slides, "succeeded_slides": succeeded_slides,
+        "parallel": True,
+        "note": "parallel wave finished with unresolved slides; phase fails "
+                "only after every slide's outcome is recorded",
+    })
+    return DispatchResult(phase_id, "exhausted", len(slide_rows), final_reasons,
+                          "working/prompts/",
+                          slide_results=[
+                              {"slide_id": f"slide-{o:02d}", "ordinal": o,
+                               "status": "succeeded" if o in succeeded else "failed",
+                               "error": None if o in succeeded else "parallel wave failed"}
+                              for o in range(1, n + 1)])
+
+
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                   dept_root: Path, phase_obj: Optional[Phase],
                   worker_id: str) -> DispatchResult:
@@ -1995,6 +2286,13 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # it to its own dedicated per-slide loop before the single-target machinery
     # ever runs.
     if phase_id == "P4-PROMPT":
+        # FIX 2: PRESENTATION_PROMPT_PARALLEL (default ON) routes to the parallel
+        # worker. The flag value "0" selects the untouched serial loop below --
+        # the documented rollback path, byte-for-byte identical to pre-FIX-2.
+        if _prompt_parallel_enabled():
+            return _dispatch_prompt_phase_parallel(
+                run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+                worker_id=worker_id)
         return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
                                       phase_obj=phase_obj, worker_id=worker_id)
 
