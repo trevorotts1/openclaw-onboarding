@@ -1,3 +1,40 @@
+## [v22.0.86]  -  2026-08-31  -  Presentation Department rev2 batch 1 (28 fixes)
+
+### Why
+
+QC fabrication / silent-failure class defects in the Presentation Department engine are closed. The batch kills several classes: a fabricated capacity stamp written by the dispatcher (FIX 6), missing-import and missing-binary paths that aborted runs with a confusing error instead of a loud failure (FIX 17, FIX 37), a first-failed-slide abort that destroyed the rest of a deck (FIX 3), hardcoded/stale model IDs (FIX 13), web research running on a mocked no-op transport (FIX 19), non-consented model additions (FIX 10), direct api.telegram.org calls bypassing the gateway (FIX 23), an intake HMAC key committed in source (FIX 29), a SKILL.md pointing at the wrong engine entry (FIX 31, reconciled two canonical-entry copies), non-self-issuable signoff and un-gated CC-API status writes in move-task.py (FIX 26), and an intake questionnaire bloated to 58 questions (FIX 30, cut to 23 merged turns with driver derivation).
+
+### What changed
+
+- FIX 1: wave scheduler wired behind PRESENTATION_WAVE_EXECUTION (phase A)
+- FIX 2: parallel prompt worker + dispatcher integration (phase A)
+- FIX 3: stop first failed slide aborting all remaining (phase A)
+- FIX 4: P4-RENDER real script executor + repair: executor argv + nonce-minting dispatch (phase A)
+- FIX 5: per-stage timing telemetry (phase A)
+- FIX 6: delete fabricated capacity stamp — override written only by interview/explicit operator action (waves)
+- FIX 7: model routing by client profile — model_router.py + dispatcher call sites (waves)
+- FIX 8: per-client resource profile store, ask-once lock-in, redaction contract (waves)
+- FIX 9: per-provider live probes — OpenRouter/Ollama-Cloud/Agnes key-presence + cheap models inventory, 9Router local lineup (waves)
+- FIX 10: model gap-analysis + consent add/suggest in resource_profile (waves)
+- FIX 12: credit preflight gates declared-mode launches (waves)
+- FIX 13: central versioned model catalog — kill hardcoded/stale model IDs (waves)
+- FIX 15: wire slide_craft into build_deck preflight as blocking gate (phase C)
+- FIX 16: wire image-grounding-steward + representation-casting-director QC sub-verifiers (waves)
+- FIX 17: phase_verifiers ImportError aborts the run fail-closed (waves)
+- FIX 18: resolve 13 human-judgement craft rules 5/6/2 disposition (waves)
+- FIX 19: research phase gets real web access (waves)
+- FIX 23: gateway-only notification compliance — presentation-notify.py routes through openclaw message send, never direct api.telegram.org (waves)
+- FIX 26: non-self-issuable signoff + gated CC-API status writes (waves)
+- FIX 29: move intake HMAC key to secrets store — key_id+signed_at envelope, 14x24h rotation window; store-backed signing in both named drivers + provision fixture key records (waves)
+- FIX 30: intake 58 -> 23 merged turns + driver derives (waves)
+- FIX 31: point SKILL.md at the real engine entry; reconcile canonical-entry copies (waves)
+- FIX 37: poller counter survives subshell + reconcile error path reachable (waves)
+- fix(67-kie-video): QC.md version expectation v1.0.0 -> v1.1.0 (aligns with skill-version.txt after media-limits repack)
+
+### Risk
+
+Low. Each fix received per-fix opus QC, 15/15 pass on this set; Phase A + QCB1 + QCC gates green. Batch 2 (lanes 11, 20, 22, 24, 27, 32, 33, 36, 38) still landing.
+
 ## [v22.0.85]  -  2026-08-28  -  fix(deck-intake-driver): correct signature-mode hint strings to real --sig-next/--sig-answer flags (PR #1000)
 
 ## [v22.0.84]  -  2026-08-28  -  chore(release): version-lockstep bump for watchdog multi-root PR #999 (G3 base already carried .83)
