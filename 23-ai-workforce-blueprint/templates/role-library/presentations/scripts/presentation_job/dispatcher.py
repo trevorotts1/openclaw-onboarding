@@ -2801,13 +2801,16 @@ def resolve_dept_root(scripts_dir: Path) -> Path:
     return scripts_dir.parent
 
 
-# ---------------------------------------------------------------------------
-# Capacity (spec S6.2) -- reuse capacity.py's probe()/override, never a
-# hardcoded dispatcher-local constant. Declares deepseek-direct's
-# self-throttle (100, per this task's instruction) idempotently: creates the
-# override file ONLY if absent; an existing operator declaration is read and
-# honoured, never silently overwritten.
-# ---------------------------------------------------------------------------
+# FIX 6 (presentation rev2): the auto-stamp that unconditionally wrote
+# capacity_override.json = {provider: deepseek-direct, max_concurrent: 100}
+# before every dispatch was DELETED. That fabricated declaration resolved
+# capacity.probe() to MEASURED=100 and masked the real detected tier (and the
+# PARK/interview path) on every box. The override file is now written ONLY by
+# the detection/interview flow (resource_profile.record_plan_answer ->
+# capacity.persist_plan_answer) or an explicit operator action
+# (--declare-capacity); with no override present, resolve_max_workers()
+# reports the DETECTED tier (e.g. ollama-cloud / $20/month -> 3), never a
+# fabricated 100.
 def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100) -> None:
     try:
         sys.path.insert(0, str(dept_root / "scripts"))
@@ -2915,7 +2918,8 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     worker_id = worker_id or f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
     scripts_dir = resolve_scripts_dir_for_run(run_dir)
     dept_root = resolve_dept_root(scripts_dir)
-    ensure_capacity_override(dept_root)
+    # FIX 6: no auto-stamp here -- with no override file, resolve_max_workers()
+    # below returns the real DETECTED tier from capacity.probe().
     workers = resolve_max_workers(dept_root, max_workers)
     # Orphan guard: a single-phase invocation (`presentation_job.py --resume --phase X`,
     # the operator/manual-targeting path -- see __main__.py's _spawn_dispatcher_if_
@@ -3004,8 +3008,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"seconds between sweeps (default {SWEEP_INTERVAL_S})")
     p.add_argument("--max-workers", type=int, default=None,
                    help="cap concurrent DeepSeek dispatches this process runs; default "
-                        "resolves from capacity.py's probe() (deepseek-direct = declared "
-                        "ceiling, see --declare-capacity)")
+                        "resolves from capacity.py's probe() -- the DETECTED tier "
+                        "(no capacity_override.json is fabricated; --declare-capacity "
+                        "writes one explicitly)")
     p.add_argument("--max-lifetime-minutes", type=float, default=360.0,
                    help="safety ceiling on how long --watch runs before exiting on its own "
                         "(default 360 = 6h for --run-dir; --scan-root uses 24h internally "
@@ -3025,10 +3030,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         run_dir = args.run_dir.expanduser().resolve()
         scripts_dir = resolve_scripts_dir_for_run(run_dir)
         dept_root = resolve_dept_root(scripts_dir)
+        # FIX 6: the override file is written only when an operator explicitly
+        # passes --declare-capacity (or by the detection/interview flow); the
+        # unconditional auto-stamp is gone so capacity.probe() reports the
+        # DETECTED tier instead of a fabricated deepseek-direct/100.
         if args.declare_capacity is not None:
             ensure_capacity_override(dept_root, max_concurrent=args.declare_capacity)
-        else:
-            ensure_capacity_override(dept_root)
         workers = resolve_max_workers(dept_root, args.max_workers)
         if not watch:
             worker_id = f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
