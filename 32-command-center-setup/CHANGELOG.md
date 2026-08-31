@@ -1,5 +1,17 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.57 — 2026-08-31 — FIX 26: non-self-issuable signoff + gated CC-API status writes (scripts/move-task.py)
+
+- `move-task.py` can no longer self-issue a signoff: any status write that would
+  mark a task complete/signed-off is gated behind a non-self-issuable signoff path,
+  so a task never records its own QC verdict.
+- All Command Center status transitions now go through gated API writes from
+  `move-task.py`, instead of the previous non-gated `status` writes that let the
+  worker task move itself.
+- New unit coverage (`tests/unit/move-task-persona-lifecycle.test.sh`) proves the
+  persona-lifecycle contract: self-signoff is refused, gated writes land, and a
+  non-gated write fails closed.
+
 ## v12.9.52 — 2026-08-04 — qc-command-center-setup.sh's unbounded `find $HOME` no longer hangs a routine roll
 
 Two unconditional `find $HOME /data -maxdepth 4 ...` scans (checkout dir + package.json)
