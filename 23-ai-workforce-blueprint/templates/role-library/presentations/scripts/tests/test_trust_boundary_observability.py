@@ -357,7 +357,7 @@ class TestPreflightFamily:
         s = summaries[0]
         assert s.kind == obs.PREFLIGHT_SUMMARY_PREFIX
         assert s.run_dir == str(root)
-        assert "entries=60" in s.detail
+        assert "entries=62" in s.detail
         assert "divergences=0" in s.detail
         assert s.would_have_blocked is False
 
