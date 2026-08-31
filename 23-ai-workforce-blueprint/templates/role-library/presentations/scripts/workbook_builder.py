@@ -101,8 +101,41 @@ from typing import Any, Dict, List, Optional
 CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 POLL_URL   = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
-MODEL_T2I = "gpt-image-2-text-to-image"
-MODEL_I2I = "gpt-image-2-image-to-image"
+# ---------------------------------------------------------------------------
+# FIX 13 — no literal image model IDs in this helper. They resolve from the
+# central versioned catalog (presentation_job/model_catalog.py beside the
+# canonical renderer). PRESENTATION_MODEL_CATALOG=0 restores the exact
+# pre-FIX-13 gpt-image-2-* literals via the catalog's rollback table; an
+# unloadable catalog FAILS CLOSED rather than guessing an id on a paid call.
+# ---------------------------------------------------------------------------
+def _load_model_catalog():
+    import importlib
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here,                                                          # role-library copy (same dir)
+        here.parent / "role-library" / "presentations" / "scripts",    # presentation-render copy
+        here.parent.parent / "role-library" / "presentations" / "scripts",
+    ]
+    for cand in candidates:
+        if (cand / "presentation_job" / "model_catalog.py").is_file():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            return importlib.import_module("presentation_job.model_catalog")
+    raise RuntimeError(
+        "FIX 13: presentation_job/model_catalog.py not reachable from "
+        f"{Path(__file__).resolve()} — refusing to guess model ids.")
+
+
+_model_catalog = _load_model_catalog()
+
+
+def _image_models() -> "tuple":
+    """(MODEL_T2I, MODEL_I2I) re-resolved from the LIVE catalog on every call,
+    so an operator bump changes the next submit without editing code."""
+    t = _model_catalog.image_mode_table()
+    return t["MODEL_T2I"], t["MODEL_I2I"]
+
+MODEL_T2I, MODEL_I2I = _image_models()  # catalog-resolved import-time snapshot
 
 ASPECT_RATIO = "3:4"
 RESOLUTION   = "2K"
@@ -634,7 +667,8 @@ def _assert_prompt_band(prompt: str, page_id: str) -> None:
 def submit_page(page: dict, api_key: str) -> str:
     """Submit ONE workbook page to createTask; return taskId."""
     mode = str(page.get("mode", "i2i")).lower()
-    model = MODEL_I2I if mode == "i2i" else MODEL_T2I
+    _model_t2i, _model_i2i = _image_models()  # catalog-live, per submit
+    model = _model_i2i if mode == "i2i" else _model_t2i
     prompt = page["prompt"]
     urls = page.get("input_urls") or []
 

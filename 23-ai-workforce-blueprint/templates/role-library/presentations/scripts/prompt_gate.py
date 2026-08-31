@@ -57,14 +57,33 @@ import difflib
 import os
 import re
 import struct
+import sys
 from pathlib import Path
 from typing import List, Optional
 
+# FIX 13 — model pins resolve from the central catalog (presentation_job/
+# model_catalog.py), NOT from literals here. Bootstrap is the same pattern
+# kie_generate.py uses to import THIS module: put the scripts dir on sys.path
+# (it already is whenever build_deck imports prompt_gate) so the sibling
+# package resolves from any caller cwd. Fail-closed: a broken catalog aborts
+# the gate rather than enforcing a stale model id.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from presentation_job import model_catalog as _model_catalog  # noqa: E402
+
+
+def _image_models() -> "tuple":
+    """(t2i, i2i) live ids — re-read per call so a catalog bump is honored."""
+    t = _model_catalog.image_mode_table()
+    return t["MODEL_T2I"], t["MODEL_I2I"]
+
+
 # ---------------------------------------------------------------------------
-# MODEL / ASPECT / RESOLUTION PINS  (must match build_deck.py + kie_generate.py)
+# MODEL / ASPECT / RESOLUTION PINS  (catalog aliases; must match build_deck.py
+# + kie_generate.py — all three resolve from the SAME model_catalog.json now)
 # ---------------------------------------------------------------------------
-MODEL_T2I = "gpt-image-2-text-to-image"
-MODEL_I2I = "gpt-image-2-image-to-image"  # OFFICIAL-LOGO mode: composites the REAL logo via input_urls
+MODEL_T2I, MODEL_I2I = _image_models()
 ASPECT_RATIO = "16:9"
 RESOLUTION = "2K"
 
@@ -440,8 +459,11 @@ def check_mode_consistency(model: str, input_urls, logo_bearing: bool = False,
         (a text-to-image call ignores the references and invents its own mark).
       * a slide flagged logo-bearing with EMPTY input_urls => hard fail (the canonical
         invented-logo defect: T2I on a logo slide invents a new mark each render).
-    No-op when there are no references and the slide is not logo-bearing."""
+    No-op when there are no references and the slide is not logo-bearing.
+    FIX 13: the expected i2i id is re-read from the catalog per call — a
+    catalog bump changes what this gate accepts with no code edit."""
     who = f"slide {slide_id}: " if slide_id is not None else ""
+    MODEL_I2I = _image_models()[1]  # catalog-live; shadows the module pin for this call
     has_inputs = bool(input_urls)
     if has_inputs and model != MODEL_I2I:
         raise PromptGateError(

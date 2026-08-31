@@ -75,6 +75,7 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_OWN_SCRIPTS_DIR))
 
 from presentation_job.manifest import Manifest, Phase, resolve_manifest  # noqa: E402
+from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 13
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
@@ -120,7 +121,11 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # thinking is genuinely engaged and not silently dropped.
 # ---------------------------------------------------------------------------
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+# FIX 13: no literal model id in this code path. The "fast" authoring class
+# resolves from the central versioned catalog (text.fast alias); operator
+# bump changes what the NEXT call sends without editing this file. The
+# base URL stays pinned here — it is endpoint config, not a model id.
+DEEPSEEK_MODEL = _model_catalog.model_id("text.fast")
 DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # CONFIRMED LIVE (not guessed): DeepSeek's native endpoint bills reasoning tokens
 # AND the final content tokens out of the SAME max_tokens budget --

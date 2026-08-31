@@ -1,0 +1,59 @@
+{
+  "catalog_version": "1.0.0",
+  "updated": "2026-08-31",
+  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code.",
+  "aliases": {
+    "image.t2i": {
+      "provider": "kie",
+      "model": "gpt-image-2-text-to-image",
+      "family": "gpt-image",
+      "prefer_latest": true,
+      "verified_live": "2026-06-16",
+      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+    },
+    "image.i2i": {
+      "provider": "kie",
+      "model": "gpt-image-2-image-to-image",
+      "family": "gpt-image",
+      "prefer_latest": true,
+      "verified_live": "2026-06-16",
+      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+    },
+    "image.fallback": {
+      "provider": "kie",
+      "model": "gpt-image-2-text-to-image",
+      "family": "gpt-image",
+      "prefer_latest": false,
+      "verified_live": "2026-06-16",
+      "note": "Prior healthy gpt-image-2 alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves — see 'retired'.",
+      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+    },
+    "text.strong": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
+      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+    },
+    "text.fast": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "note": "Cheap/fast mechanical text and independent judge (FIX 7).",
+      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+    },
+    "text.judge": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "note": "Independent cheap text judge class; router may re-point to a profile-owned model (FIX 7/FIX 14).",
+      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+    },
+    "vision.ocr": {
+      "provider": "ollama_cloud",
+      "model": "glm-ocr",
+      "note": "Vision + OCR class (FIX 7 P-TYPO-QC / P-IMAGE-QC row).",
+      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+    }
+  },
+  "retired": {
+    "nano-banana-2": "Retired fallback (FIX 13). Resolving any alias to a retired ID is a hard error; image.fallback now names the prior healthy gpt-image-2 alias."
+  }
+}

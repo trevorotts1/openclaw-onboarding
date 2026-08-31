@@ -208,17 +208,33 @@ from pathlib import Path
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
+from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
-# Constants — the ONLY allowed KIE.ai endpoints/model (verified live 2026-06-16)
+# Constants — the ONLY allowed KIE.ai endpoints (verified live 2026-06-16).
+# Model IDs: FIX 13 — NO literal here. The render models resolve from the
+# central versioned catalog (presentation_job/model_catalog.py +
+# model_catalog.json; operator bump via PRESENTATION_MODEL_CATALOG_DIR,
+# rollback via PRESENTATION_MODEL_CATALOG=0). Re-resolved per submit so a
+# catalog bump changes the NEXT render with no code edit.
 # ---------------------------------------------------------------------------
 
 CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 POLL_URL   = "https://api.kie.ai/api/v1/jobs/recordInfo"
-MODEL_T2I  = "gpt-image-2-text-to-image"
-MODEL_I2I  = "gpt-image-2-image-to-image"  # OFFICIAL-LOGO mode: KIE composites the REAL logo via input_urls (image-to-image), NOT a flat overlay or AI wordmark
+
+
+def _resolve_image_models():
+    """FIX 13 alias -> live catalog ids for the two render classes.
+    image.t2i = plain text-to-image; image.i2i = OFFICIAL-LOGO mode (KIE composites
+    the REAL logo via input_urls, image-to-image, NOT a flat overlay or wordmark).
+    Fail-closed: a catalog problem aborts the render rather than guessing an id."""
+    table = _model_catalog.image_mode_table()
+    return table["MODEL_T2I"], table["MODEL_I2I"]
+
+
+MODEL_T2I, MODEL_I2I = _resolve_image_models()
 
 ASPECT_RATIO = "16:9"
 RESOLUTION   = "2K"
@@ -1546,11 +1562,13 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
     prompt = _ensure_english_pin(prompt)
 
     # OFFICIAL-LOGO mode = IMAGE-TO-IMAGE: pass the real logo URL as input_urls so
-    # KIE (gpt-image-2-image-to-image) composites the ACTUAL logo into the slide
-    # (the verified technique). No logo_url -> plain text-to-image.
+    # KIE composites the ACTUAL logo into the slide (the verified technique).
+    # No logo_url -> plain text-to-image. FIX 13: re-resolve the alias per submit so
+    # a catalog bump changes what renders WITHOUT editing this pipeline code.
+    model_t2i, model_i2i = _resolve_image_models()
     if logo_url:
         payload = {
-            "model": MODEL_I2I,
+            "model": model_i2i,
             "input": {
                 "prompt": prompt,
                 "input_urls": [logo_url],
@@ -1560,7 +1578,7 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
         }
     else:
         payload = {
-            "model": MODEL_T2I,
+            "model": model_t2i,
             "input": {
                 "prompt": prompt,
                 "aspect_ratio": ASPECT_RATIO,
@@ -12204,7 +12222,10 @@ def main():
     # when a logo URL is composited via input_urls, else text-to-image. The same
     # model_used value flows into the process manifest + the final JSON summary,
     # so the audit trail never claims t2i for an i2i logo-composite run.
-    model_used = MODEL_I2I if logo_url else MODEL_T2I
+    # FIX 13: resolve from the catalog (same source submit_task reads), never a
+    # literal, so the manifest names the model the catalog actually points at.
+    _t2i_used, _i2i_used = _resolve_image_models()
+    model_used = _i2i_used if logo_url else _t2i_used
     print(f"endpoint:    {CREATE_URL}  model={model_used}\n", flush=True)
 
     rendered = []
