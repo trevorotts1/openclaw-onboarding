@@ -1,5 +1,5 @@
 {
-  "manifest_version": 51,
+  "manifest_version": 52,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -3447,13 +3447,13 @@
     },
     {
       "id": "image-grounding-steward",
-      "owns_phase": null,
-      "description": "Brief-grounding owner for the visual layer (\"The Witness\"): scores whether people-or-scene-bearing imagery depicts a concrete moment from the client's specific content, or generic on-brand stock. Custom BlackCEO addition (SOP-PRES-CUSTOM-09 through 12); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
+      "owns_phase": "P-IMAGE-QC",
+      "description": "Brief-grounding owner for the visual layer (\"The Witness\"): scores whether people-or-scene-bearing imagery depicts a concrete moment from the client's specific content, or generic on-brand stock. Custom BlackCEO addition (SOP-PRES-CUSTOM-09 through 12). FIX 16 (presentation rev2): owns P-IMAGE-QC; phase_verifiers.py aggregates a required image_grounding sub-verdict at PHASE_VERIFIERS for P-IMAGE-QC, comparing every people-or-scene-bearing render to its client-specific research/copy anchor and failing missing/generic grounding; a missing sub-verdict parks for human vision review instead of passing."
     },
     {
       "id": "representation-casting-director",
-      "owns_phase": null,
-      "description": "Per-client representation owner (\"The Mirror\"): enforces that the deck-wide cast matches the client's captured REPRESENTATION_MIX at prompt, image, and final-deck stages, with no invented demographic default. Custom BlackCEO addition (SOP-PRES-CUSTOM-05 through 08); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
+      "owns_phase": "P-PROMPT-QC",
+      "description": "Per-client representation owner (\"The Mirror\"): enforces that the deck-wide cast matches the client's captured REPRESENTATION_MIX at prompt, image, and final-deck stages, with no invented demographic default. Custom BlackCEO addition (SOP-PRES-CUSTOM-05 through 08). FIX 16 (presentation rev2): owns P-PROMPT-QC; phase_verifiers.py aggregates a required representation_casting sub-verdict at PHASE_VERIFIERS for P-PROMPT-QC, checking prompt-level cast targets against intake.json.representation_mix (no invented demographic default); P-IMAGE-QC performs the observed-render parity check."
     }
   ]
 }
