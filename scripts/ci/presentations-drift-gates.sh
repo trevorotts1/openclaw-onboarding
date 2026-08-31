@@ -398,11 +398,128 @@ PYEOF
 fi
 
 # ---------------------------------------------------------------------------
+# GATE 5 (FIX 32) — manifest-COPY drift detector, live.
+# The broken state this gate exists for was measured on the operator box
+# 2026-08-31: the repo cluster copy (v52, sha 8507f9d1...) and the materialized
+# department copy (v51, sha 6140fb52...) differed while EVERY per-copy provenance
+# check passed on both -- each copy was internally consistent, the two copies
+# disagreed, and nothing compared them. manifest_version cannot catch the class:
+# the live drift happened without a version bump. In CI there is no materialized
+# department, so this gate PROVES THE DETECTOR instead of comparing the
+# (absent) second copy:
+#   (a) a scratch one-field change at the SAME manifest_version, made via the
+#       repo manifest, MUST produce an M1 drift item from sync_check.py --json;
+#   (b) a byte-level REFORMAT (same JSON content) must NOT produce one
+#       (canonical-JSON hashing: whitespace/key-order is not content);
+#   (c) the identical copy must NOT produce one.
+# A regression that blinds the copy detector (M1 removed, flag defaulting to
+# skip, hashing degraded to byte-compare) fails (a) or (b) and blocks the merge.
+# On a real box the same M1 check runs at launch: sync_check --json feeds
+# presentation-canonical-entry.sh GATE 3, and M1 carries class "render_path",
+# so copy drift FAILS CLOSED at the door (exit 7), not silently.
+# Rollback: PRESENTATION_MANIFEST_COPY_DRIFT=0 documents the skip everywhere it
+# is honored -- the disabled path prints the skip, it never reports a silent pass.
+echo
+echo "== GATE 5: manifest-copy drift detector (FIX 32 -- one-field change trips, identical/reformat pass) =="
+GATE5_TMP="$(mktemp -d)"
+GATE5_RC=0
+if MANIFEST="$MANIFEST" SCRIPTS_DIR="$SCRIPTS_DIR" GATE5_TMP="$GATE5_TMP" python3 - <<'PYEOF' 2>&1
+import copy
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+manifest_path = Path(os.environ["MANIFEST"])
+scripts_dir = Path(os.environ["SCRIPTS_DIR"])
+tmp = Path(os.environ["GATE5_TMP"])
+
+sync_check = scripts_dir / "sync_check.py"
+
+def run_sync(env_peer):
+    env = dict(os.environ)
+    env["PRESENTATION_MANIFEST_COPY"] = str(env_peer)
+    proc = subprocess.run(
+        [sys.executable, str(sync_check), "--json"],
+        capture_output=True, text=True, timeout=180, env=env,
+    )
+    try:
+        parsed = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        print(f"GATE5_FAIL: sync_check.py --json did not emit JSON (rc={proc.returncode}):")
+        print(proc.stdout[-800:])
+        print(proc.stderr[-800:])
+        sys.exit(2)
+    m1 = [d for d in parsed.get("drift", []) if d.get("check") == "M1"]
+    return m1
+
+failures = []
+base = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+# (a) one-field change at the SAME manifest_version -> MUST trip M1.
+drifted = copy.deepcopy(base)
+assert drifted["manifest_version"] == base["manifest_version"]
+drifted["phases"][0]["label"] = str(drifted["phases"][0].get("label", "")) + " [GATE5 probe one-field]"
+peer_drift = tmp / "peer-one-field" / "PIPELINE-MANIFEST.json"
+peer_drift.parent.mkdir(parents=True)
+peer_drift.write_text(json.dumps(drifted, indent=2) + "\n", encoding="utf-8")
+m1 = run_sync(peer_drift)
+if not m1:
+    failures.append(
+        f"(a) one-field change at manifest_version={base['manifest_version']} produced NO "
+        f"M1 drift item -- the copy detector is blind to exactly the drift class "
+        f"(same version, different content) FIX 32 exists to catch.")
+else:
+    print(f"GATE5_TRIP_OK: one-field change -> {len(m1)} M1 item(s).")
+
+# (b) byte-level reformat only (same JSON content) -> must NOT trip M1.
+peer_reformat = tmp / "peer-reformat" / "PIPELINE-MANIFEST.json"
+peer_reformat.parent.mkdir(parents=True)
+peer_reformat.write_text(json.dumps(base, indent=4), encoding="utf-8")
+m1 = run_sync(peer_reformat)
+if m1:
+    failures.append("(b) a pure byte-level reformat tripped M1 -- canonical-JSON "
+                    "hashing is broken; whitespace/key-order is not content drift.")
+else:
+    print("GATE5_REFORMAT_OK: reformat-only copy produced no M1 item.")
+
+# (c) identical copy -> must NOT trip M1.
+peer_ident = tmp / "peer-identical" / "PIPELINE-MANIFEST.json"
+peer_ident.parent.mkdir(parents=True)
+peer_ident.write_bytes(manifest_path.read_bytes())
+m1 = run_sync(peer_ident)
+if m1:
+    failures.append("(c) a byte-identical copy tripped M1 -- false positive.")
+else:
+    print("GATE5_IDENTICAL_OK: identical copy produced no M1 item.")
+
+if failures:
+    print("GATE5_FAIL: manifest-copy drift detector regression:")
+    for f in failures:
+        print(f"  - {f}")
+    sys.exit(1)
+print("GATE5_PASS: M1 catches one-field same-version changes and passes "
+      "identical/reformatted copies.")
+sys.exit(0)
+PYEOF
+then
+  :
+else
+  GATE5_RC=$?
+fi
+if [ "$GATE5_RC" -ne 0 ]; then
+  echo "GATE 5 FAILED: the FIX-32 manifest-copy drift detector regressed -- see GATE5_FAIL above." >&2
+  FAILED=1
+fi
+rm -rf "$GATE5_TMP"
+
+# ---------------------------------------------------------------------------
 echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector)."
 exit 0
