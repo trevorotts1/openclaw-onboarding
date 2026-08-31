@@ -104,6 +104,14 @@ try:
 except ImportError:  # pragma: no cover - pre-FIX-7 trees route nothing new
     _model_router = None  # type: ignore[assignment]
 
+# FIX 19: the real web-search/fetch capability for P-0.5-RESEARCH (Brave-primary,
+# bounded fetch, retrieval ledger). Same defensive pattern as the imports above:
+# a tree that predates the module routes nothing new.
+try:
+    from presentation_job import research_web as _research_web
+except ImportError:  # pragma: no cover - pre-FIX-19 trees keep the old behavior
+    _research_web = None  # type: ignore[assignment]
+
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
                                                 # whole pipeline, not a second number.
@@ -288,17 +296,15 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "between its heading and the next '## ' heading. Write at least 3-5 sentences or "
         "list items of REAL content in each of G, H, I, K, L specifically.\n"
         "5. Cite at least 8 distinct http(s):// URLs across the whole document, covering "
-        "AT LEAST 6 DISTINCT REGISTERED DOMAINS (not the same domain repeated). Use REAL, "
-        "well-known, authoritative public organizations and their real domains -- for "
-        "example (adapt to the actual topic, do not invent fictional sources): Harvard "
-        "Business Review (hbr.org), McKinsey & Company (mckinsey.com), Gartner "
-        "(gartner.com), Forrester (forrester.com), Pew Research Center "
-        "(pewresearch.org), the U.S. Bureau of Labor Statistics (bls.gov), Statista "
-        "(statista.com), Deloitte (deloitte.com), Forbes (forbes.com), MIT Sloan "
-        "Management Review (sloanreview.mit.edu), the World Economic Forum (weforum.org), "
-        "Salesforce Research (salesforce.com). NEVER use localhost, example.com, bare IP "
-        "addresses, or any .local/.internal/.test/.invalid domain -- those are mechanically "
-        "excluded and will fail the gate outright.\n"
+        "AT LEAST 6 DISTINCT REGISTERED DOMAINS (not the same domain repeated). FIX 19: "
+        "you have REAL web retrieval for this phase -- every URL you cite MUST come from "
+        "the RETRIEVED SOURCES section supplied in the prompt (the engine actually "
+        "fetched each page and recorded it in the retrieval ledger). Cite those exact "
+        "canonical URLs, each with the supporting quote/stat you found there. NEVER "
+        "invent a URL, NEVER cite a well-known organization's domain hoping one exists, "
+        "and NEVER use localhost, example.com, bare IP addresses, or any "
+        ".local/.internal/.test/.invalid domain -- a citation that is not in the "
+        "retrieval ledger fails the gate outright.\n"
         "6. Categories G, H, and I specifically must EACH contain at least one of those "
         "cited URLs inline (not just listed once elsewhere in the document).\n"
         "7. Write categories B, D, E, F, J too (the SOP requires all twelve for a complete "
@@ -2549,6 +2555,233 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
                               for o in range(1, n + 1)])
 
 
+# ---------------------------------------------------------------------------
+# FIX 19 -- P-0.5-RESEARCH gets real web access.
+#
+# ROOT CAUSE (Codex-confirmed; fix-spec FIX 19): the research phase was a no-web
+# DeepSeek call TOLD to emit research_complete:true + 8 URLs. Nothing was ever
+# retrieved -- the brief invented plausible-looking hbr.org/mckinsey.com sources
+# that never resolve, and the engine's gates counted URL strings.
+#
+# The contract now:
+#   1. BRAVE-primary search gating BRAVE_SEARCH_API_KEY. Key absence / auth
+#      failure / exhausted quota PARKS the phase with a configuration error.
+#      Never falls back to a no-web model claiming research.
+#   2. Retrieval is bounded: 12 unique fetched URLs per deck max, ONE network
+#      fetch per canonical URL (repeated citations reuse the cached response),
+#      public http(s) only, redirects <= 2, body <= 2 MB, timeout 15 s. The
+#      13th unique URL is refused WITHOUT a fetch.
+#   3. Every fetched source lands in working/research/retrieval_ledger.jsonl
+#      (query, canonical URL, retrieval time, HTTP status, content hash,
+#      extraction length, citation anchors -- never the key, never full text).
+#      FIX 20 consumes this ledger.
+#   4. The synthesis prompt embeds ONLY actually-retrieved source material
+#      beside the usual SOP/contract, and the artifact contract now requires
+#      sources drawn from the retrieval ledger -- a brief URL not present in
+#      the ledger cannot be produced from fabrication.
+#   5. PRESENTATION_RESEARCH_WEB_FETCH=0 (operator kill-switch) parks the
+#      phase -- it never restores the old no-web path.
+#
+# The synthesis model transport resolves through dispatch_complete (FIX 7), so
+# the profile still owns WHICH long-context model writes the brief.
+# ---------------------------------------------------------------------------
+def _intake_topic(run_dir: Path) -> str:
+    """The deck topic from the intake artifact. Reads only; never invents."""
+    for rel in ("working/copy/intake.json",
+                "working/interview/intake_transcript.json"):
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for key in ("topic", "deck_topic", "presentation_topic", "subject"):
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return ""
+
+
+def _research_source_context(result: Dict[str, Any], limit: int = 1600) -> str:
+    """One ledger-cited source block for the synthesis prompt: canonical URL,
+    title, and the page's own extracted text (truncated) -- the material the
+    brief may cite."""
+    row = result.get("row") or {}
+    url = str(row.get("canonical_url") or result.get("url") or "")
+    title = str(result.get("title") or "")
+    body = str(row.get("extracted") or "")[:limit]
+    return (f"### SOURCE {url}\nTITLE: {title}\n"
+            f"EXTRACTED PAGE TEXT:\n{body}\n")
+
+
+def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
+                             dept_root: Path, phase_obj: Optional[Phase],
+                             worker_id: str) -> DispatchResult:
+    """P-0.5-RESEARCH: Brave-primary retrieval + routed long-context synthesis.
+
+    Returns statuses shared with the generic loop: ok / exhausted / error.
+    RoutingUnavailable and ResearchWebError both PARK the phase (statuses
+    error/exhausted with the real, operator-actionable reason) -- the phase
+    never silently degrades to a no-web dispatch that would fabricate sources.
+    """
+    phase_id = "P-0.5-RESEARCH"
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    if _research_web is None:
+        reason = ("presentation_job.research_web unavailable -- P-0.5-RESEARCH "
+                  "parks: research requires real retrieved sources, and the "
+                  "no-web fallback this module replaced may never return.")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    topic = _intake_topic(run_dir)
+
+    # ---- retrieval (Brave-primary, bounded, ledgered) ---------------------
+    retrieval_started = time.time()
+    retrieval: Optional[Dict[str, Any]] = None
+    try:
+        retrieval = _research_web.run_research_retrieval(run_dir, topic=topic)
+    except _research_web.ResearchWebError as exc:
+        reason = f"ResearchWebError: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason, "topic": topic})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    except Exception as exc:  # noqa: BLE001 -- retrieval faults park, never crash
+        reason = f"retrieval failed: {type(exc).__name__}: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    fetcher = retrieval["fetcher"]
+
+    # Usable sources: fetched OK (HTTP 200) with substance to quote.
+    usable: List[Dict[str, Any]] = []
+    for src in retrieval["sources"]:
+        canon = _research_web.canonical_url(src["url"])
+        row = fetcher.cache.get(canon) or {}
+        if row.get("status") == 200 and len(row.get("extracted") or "") >= \
+                _research_web.MIN_EXTRACT_CHARS:
+            usable.append({**src, "row": row})
+
+    if not usable:
+        reason = ("no usable retrieved sources (every candidate was refused, "
+                  "non-200, or under the extraction floor) -- P-0.5-RESEARCH "
+                  "parks: a brief with zero actually-retrieved sources is the "
+                  "fabrication this fix removes")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason, "refusals": fetcher.refusals[:6]})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    sources_ctx = "\n\n".join(_research_source_context(s) for s in usable)
+    ok_urls = "\n".join(
+        f"- {s['row']['canonical_url']} -- {_research_web.registered_domain(s['row']['canonical_url'])}"
+        for s in usable)
+
+    # ---- routed synthesis --------------------------------------------------
+    patterns = resolve_target_paths("P-0.5-RESEARCH", order, phase_obj, run_dir)
+    target = _first_concrete_path(patterns, run_dir)
+    if target is None:
+        reason = ("cannot resolve a concrete write target from "
+                  f"produces_artifact={patterns!r}")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    ok, reasons = _verify("P-0.5-RESEARCH", run_dir)
+    prior_reasons: Optional[List[str]] = reasons if reasons else None
+    last_reasons: List[str] = reasons
+
+    for attempt in range(1, DISPATCH_RETRY_CAP + 1):
+        try:
+            system_prompt, user_prompt = compose_prompt(
+                phase_id="P-0.5-RESEARCH", owning_role=owning_role,
+                dept_root=dept_root, run_dir=run_dir, order=order,
+                attempt=attempt, prior_reasons=prior_reasons)
+        except RoleSOPNotFound as exc:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "error",
+                "reason": f"RoleSOPNotFound: {exc}"})
+            return DispatchResult(phase_id, "error", attempt, [str(exc)])
+
+        # The retrieval bundle rides the user prompt; the source block sits
+        # BEFORE the verbatim contract restatement (compose_prompt always
+        # terminates the prompt with the contract, so recency ordering holds).
+        user_prompt = (
+            "=== RETRIEVED SOURCES (the ONLY citable material for this brief -- "
+            "cite these exact canonical URLs; every citation must come from this "
+            "Retrieval Ledger, which the engine recorded by ACTUALLY fetching "
+            "each page; inventing any URL outside this list is fabrication and "
+            "fails the gate) ===\n"
+            + sources_ctx +
+            "\n=== USABLE SOURCE URLS (canonical, with registered domains) ===\n"
+            + ok_urls + "\n\n" + user_prompt
+        )
+
+        route_dict: Dict[str, Any] = {}
+        try:
+            content, usage, route_dict = dispatch_complete(
+                system_prompt, user_prompt, phase_id="P-0.5-RESEARCH",
+                run_dir=run_dir)
+        except RoutingUnavailable as exc:
+            reason = f"RoutingUnavailable: {exc}"
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "routing_unavailable", "reason": reason})
+            return DispatchResult(phase_id, "error", attempt, [reason])
+        except DeepSeekCallError as exc:
+            last_reasons = [f"Model call failed: {exc}"]
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "call_failed", "reason": str(exc)})
+            if attempt < DISPATCH_RETRY_CAP:
+                time.sleep(min(30, 5 * attempt))
+                continue
+            break
+
+        payload = _clean_payload(content)
+        if not payload.strip():
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "empty_completion", "usage": usage})
+            last_reasons = ["completion returned empty"]
+            if attempt < DISPATCH_RETRY_CAP:
+                continue
+            break
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
+        tmp_path.write_text(payload, encoding="utf-8")
+        os.replace(tmp_path, target)
+
+        verifier_ok, verifier_reasons = _verify("P-0.5-RESEARCH", run_dir)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": attempt,
+            "status": "verified" if verifier_ok else "failed",
+            "verifier_ok": verifier_ok, "verifier_reasons": verifier_reasons,
+            "model": route_dict.get("model") or DEEPSEEK_MODEL,
+            "provider": route_dict.get("provider") or "deepseek-direct",
+            "target": str(target.relative_to(run_dir)), "usage": usage,
+            "retrieved_sources": len(usable),
+            "network_fetches": retrieval.get("network_fetches", 0),
+        })
+        if verifier_ok:
+            return DispatchResult(phase_id, "ok", attempt, [],
+                                  str(target.relative_to(run_dir)))
+        last_reasons = verifier_reasons
+        prior_reasons = verifier_reasons
+
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "status": "exhausted",
+        "final_reasons": last_reasons})
+    return DispatchResult(phase_id, "exhausted", DISPATCH_RETRY_CAP,
+                          last_reasons, str(target.relative_to(run_dir)))
+
+
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                   dept_root: Path, phase_obj: Optional[Phase],
                   worker_id: str) -> DispatchResult:
@@ -2582,6 +2815,15 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 worker_id=worker_id)
         return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
                                       phase_obj=phase_obj, worker_id=worker_id)
+
+    # FIX 19: P-0.5-RESEARCH owns its own retrieval + synthesis pipeline (Brave
+    # primary, bounded fetch, retrieval ledger). The generic loop below speaks
+    # only "model, write one file" -- exactly the no-web fabrication this fix
+    # removes -- so the phase branches here before that machinery ever runs.
+    if phase_id == "P-0.5-RESEARCH":
+        return _dispatch_research_phase(
+            run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+            worker_id=worker_id)
 
     # Idempotent pre-check: a prior sweep (or the interview process, or an
     # earlier real run) may have already produced a passing artifact.
