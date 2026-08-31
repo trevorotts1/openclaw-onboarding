@@ -128,6 +128,22 @@ EXIT_MODE_INVALID = 10
 MODE_AUTOFAIL_CODE = "AF-MODE-INVALID"
 
 
+#: FIX 33 (presentation rev2 waves): dispatch() refuses when the Step 0 OCR
+#: verify-then-branch probe cannot prove the OCR stack functional under the
+#: EXACT pipeline interpreter (AF-OCR-ENGINE-MISSING) -- joins the -1..-7
+#: refusal family. Nothing spawned. The probe + receipt live in
+#: presentation_job/ocr_verify (single source, the same module preflight_deps
+#: reports from); the hard-stop is armed by PRESENTATION_OCR_VERIFY
+#: (default ON, =0 = documented rollback to the pre-fix no-launch-check
+#: behavior).
+DISPATCH_OCR_REFUSED = -8
+
+#: CLI exit code for DISPATCH_OCR_REFUSED.
+EXIT_OCR_ENGINE_MISSING = 9
+
+OCR_AUTOFAIL_CODE = "AF-OCR-ENGINE-MISSING"
+
+
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
 #: to proceed AT, not a ceiling this account was proven to support. Checking
@@ -348,6 +364,83 @@ def notify_gate(run_path: Path) -> bool:
           f"{NOTIFY_AUTOFAIL_CODE}: {result['reason']}", file=sys.stderr)
     print(json.dumps(payload, indent=2), file=sys.stderr)
     return False
+
+
+def ocr_launch_gate(run_path: Path) -> bool:
+    """FIX 33 OCR LAUNCH GATE -- Step 0 verify-then-branch, invoked from
+    dispatch() before any process exists.
+
+    Runs the read-only, 5-minute-timeboxed OCR probe (ocr_verify.run_step0_
+    probe) through the EXACT interpreter the canonical entry resolves for the
+    pipeline, writes the redacted receipt into <run_dir>/working/checkpoints/,
+    and refuses launch unless the probe measured BRANCH A (pytesseract
+    importable + tesseract binary + version + REAL one-line fixture OCR all
+    pass under THAT interpreter). A Branch B / unmeasured result is a hard
+    launch refusal naming the exact failed layer -- the deck must never render
+    (and never spend) on a box whose postflight OCR-readback gate can then
+    never pass.
+
+    The probe result is RECEIPT-BINDING: the receipt names the interpreter it
+    measured, and the launch check compares it against the interpreter that
+    is about to be spawned -- a DIFFERENT interpreter selected later fails
+    launch; it never borrows a green receipt minted under another one.
+
+    PRESENTATION_OCR_VERIFY=0 is the documented rollback: it restores the
+    pre-fix behavior (no launch-time OCR check at all -- the legacy warn-mode
+    preflight_deps probe remains available on its own).
+    """
+    try:
+        try:
+            from . import ocr_verify
+        except ImportError:
+            import ocr_verify
+    except ImportError:  # broken install: never fail-open silently
+        print("launcher: WARNING ocr_verify unavailable -- cannot run the "
+              "FIX 33 Step 0 OCR probe", file=sys.stderr)
+        return True
+    if not ocr_verify.verify_enabled():
+        print("launcher: PRESENTATION_OCR_VERIFY=0 -- Step 0 OCR launch gate "
+              "disabled (documented rollback; pre-fix behavior)", file=sys.stderr)
+        return True
+
+    receipt = ocr_verify.run_step0_probe(scripts_dir=resolve_scripts_dir())
+    ocr_verify.write_receipt(receipt, Path(run_path) / "working" / "checkpoints")
+
+    if receipt.get("branch") != "A":
+        layers = ocr_verify.failed_layers(receipt) or ["probe could not measure"]
+        print(f"launcher: REFUSING to dispatch {run_path} -- "
+              f"{OCR_AUTOFAIL_CODE}: OCR Step 0 did not verify Branch A under "
+              f"the pipeline interpreter {receipt.get('interpreter')}.",
+              file=sys.stderr)
+        print("launcher: failed layer(s):", file=sys.stderr)
+        for layer in layers:
+            print(f"  - {layer}", file=sys.stderr)
+        print("launcher: receipt written to "
+              f"{Path(run_path) / 'working' / 'checkpoints' / ocr_verify.RECEIPT_NAME}",
+              file=sys.stderr)
+        return False
+
+    # RECEIPT BINDING: the green receipt is only valid for the interpreter it
+    # measured. A different interpreter about to run the pipeline must not
+    # borrow it (spec, Branch A last sentence).
+    spawn_interp = sys.executable or "python3"
+    if not ocr_verify.interpreter_binding_ok(receipt, interpreter=spawn_interp):
+        print(f"launcher: REFUSING to dispatch {run_path} -- "
+              f"{OCR_AUTOFAIL_CODE}: the Step 0 green receipt was measured under "
+              f"{receipt.get('interpreter')} but the launch interpreter is "
+              f"{spawn_interp}. A different interpreter never borrows a green "
+              f"receipt; re-run the probe under the interpreter that will "
+              f"actually run the pipeline.", file=sys.stderr)
+        return False
+
+    # One-line smoke, recorded: interpreter + tesseract version + fixture OCR ok.
+    print(f"launcher: OCR Step 0 (FIX 33) BRANCH A verified under "
+          f"{receipt.get('interpreter')} -- pytesseract importable, tesseract "
+          f"{receipt.get('tesseract_version')}, one-line fixture OCR passed "
+          f"(no install mutation; receipt "
+          f"{Path(run_path) / 'working' / 'checkpoints' / ocr_verify.RECEIPT_NAME})",
+          file=sys.stderr)
+    return True
 
 
 def _refuse_unmeasured_capacity(result: dict, run_path: Path) -> int:
@@ -621,6 +714,16 @@ def dispatch(
     # the documented rollback to the pre-fix warn-and-continue behavior.
     if not notify_gate(run_path):
         return DISPATCH_NOTIFY_REFUSED
+
+    # FIX 33 OCR GATE -- Step 0 verify-then-branch, before the capacity probe,
+    # before argv is built, before any process exists. A box whose OCR stack
+    # cannot be proven functional under the EXACT pipeline interpreter is a
+    # hard launch refusal (AF-OCR-ENGINE-MISSING): the postflight OCR-readback
+    # gate would block every close anyway, so refusing at launch is the
+    # minute-zero refusal MASTER-SPEC 7.4 asks for -- before any paid
+    # generation. PRESENTATION_OCR_VERIFY=0 is the documented rollback.
+    if not ocr_launch_gate(run_path):
+        return DISPATCH_OCR_REFUSED
 
     # THE GATE. Measure before launching -- before argv is built, before any
     # process exists. A run that cannot be sized is a run that does not start.
@@ -971,6 +1074,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_NOTIFY_UNCONFIGURED
         if rc == DISPATCH_MODE_INVALID:
             return EXIT_MODE_INVALID
+        if rc == DISPATCH_OCR_REFUSED:
+            return EXIT_OCR_ENGINE_MISSING
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel,
@@ -991,6 +1096,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_NOTIFY_UNCONFIGURED
     if pid == DISPATCH_MODE_INVALID:
         return EXIT_MODE_INVALID
+    if pid == DISPATCH_OCR_REFUSED:
+        return EXIT_OCR_ENGINE_MISSING
     return 0 if pid > 0 else 1
 
 
