@@ -13,14 +13,41 @@ LOG="${1:-${LOG:-/dev/null}}"
 # paths from committed files). Install must substitute the real run root.
 SCAN_ROOT="${SCAN_ROOT:-<SCAN_ROOT>}"
 
-# U14: PRESENTATION_NOTIFY_CMD is warn-not-crash by design (report.py, watchdog.py)
-# so an unset transport fails silently everywhere else -- the operator/director
-# never hear progress, blocked, or done, and stall findings below never leave
-# this box. This script runs unattended via launchd with NO environment (see
-# header), so this log is the only place that silence can surface. Loud, not
-# fatal: matches the existing warn-mode idiom below, does not add set -e risk.
+# FIX 22 (presentation rev2 waves): an unset PRESENTATION_NOTIFY_CMD is a
+# hard configuration error at launch, not a warning. The U14 warn-mode idiom
+# this block replaced is exactly what let a stalled job sit silently on a box:
+# the watchdog pass ran, found the stall, and its finding could never leave.
+# Fail-closed is the DEFAULT (PRESENTATION_NOTIFY_FAIL_CLOSED unset or any
+# value other than "0"): log the AF-NOTIFY-UNCONFIGURED payload carrying the
+# NOT_READY_NOTIFY marker (the string FIX 39's pre-roll gate keys on) and
+# exit 4 BEFORE any pass runs -- exit 4 is distinct from the watchdog pass's
+# own 5/13 and reconcile-board's 10-12. PRESENTATION_NOTIFY_FAIL_CLOSED=0 is
+# the documented EMERGENCY rollback: it restores the pre-fix warn-and-continue
+# line below for one hour per the rollout doctrine, does NOT restore direct
+# Telegram (FIX 23 owns the transport), and does NOT suppress FIX 21
+# SYSTEM-block notifications.
+NOTIFY_FAIL_CLOSED="${PRESENTATION_NOTIFY_FAIL_CLOSED:-1}"
 if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
+    if [ "${NOTIFY_FAIL_CLOSED}" != "0" ]; then
+        echo "AF-NOTIFY-UNCONFIGURED: PRESENTATION_NOTIFY_CMD is unset -- refusing to run the watchdog pass (fail-closed)" >> "${LOG}" 2>&1
+        echo "NOT_READY_NOTIFY: watchdog stall notifications and job progress/blocked/done messages cannot leave this box. Set PRESENTATION_NOTIFY_CMD (e.g. to presentation-notify.py) or set PRESENTATION_NOTIFY_FAIL_CLOSED=0 for the documented emergency rollback." >> "${LOG}" 2>&1
+        exit 4
+    fi
     echo "WARNING: PRESENTATION_NOTIFY_CMD is unset; watchdog stall notifications and job progress/blocked/done messages will not be delivered" >> "${LOG}" 2>&1
+elif [ "${NOTIFY_FAIL_CLOSED}" != "0" ] && \
+     [ -f "${SCRIPT_DIR}/presentation_job/notify_preflight.py" ]; then
+    # Set but possibly unusable (unparseable argv / empty after tokenising):
+    # single-source the structural verdict through notify_preflight -- the
+    # same module the launcher's notify_gate and FIX 39's pre-roll gate use --
+    # so "what counts as configured" cannot drift between sh and python. The
+    # CLI's fail-closed exit is 8; any nonzero here is a refusal. If the
+    # module itself cannot run, behave as configured (same as the launcher's
+    # missing-module path): warn-and-continue, never fail-open silently.
+    if ! python3 "${SCRIPT_DIR}/presentation_job/notify_preflight.py" >> "${LOG}" 2>&1; then
+        echo "AF-NOTIFY-UNCONFIGURED: PRESENTATION_NOTIFY_CMD is set but unusable -- refusing to run the watchdog pass (fail-closed)" >> "${LOG}" 2>&1
+        echo "NOT_READY_NOTIFY: fix the transport command, or set PRESENTATION_NOTIFY_FAIL_CLOSED=0 for the documented emergency rollback." >> "${LOG}" 2>&1
+        exit 4
+    fi
 fi
 
 # Main watchdog pass. Warn mode by default (no --enforce): scans for stalled
