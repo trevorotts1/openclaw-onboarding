@@ -27,6 +27,41 @@ from verifier_registry import both_directions, run_gate, write_fixture  # noqa: 
 import slice1_gate_verifiers as s1  # noqa: E402
 import build_deck as bd  # noqa: E402
 
+# FIX 29: the turn-ledger HMAC key lives in the secrets store, not in source.
+# Any fixture that carries a genuine paced provenance stamp
+# (spi._valid_runtime_fixture_paced) needs a provisioned record to SIGN and
+# later VERIFY against. Mirror the prover module's own self_test convention:
+# a throwaway per-process record generated from os.urandom at runtime. No key
+# material ever enters source or any artifact. The window straddles the real
+# clock (started 7d ago, cutoff 7d out) so the box behaves like a live
+# mid-migration deployment.
+import base64
+import datetime as _dt
+import hashlib
+import os
+
+
+@pytest.fixture(autouse=True)
+def _sp_turn_ledger_test_keys(monkeypatch):
+    """Provision a per-test throwaway rotation record for the SP prover."""
+    started = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
+    expires = started + _dt.timedelta(hours=14 * 24)
+
+    def _iso(t):
+        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    for var in ("PRESENTATION_SP_TURN_LEDGER_KEYS_FILE",
+                "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY",
+                "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID",
+                "PRESENTATION_SP_TURN_LEDGER_ROTATION"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY",
+                       base64.b64encode(os.urandom(32)).decode("ascii"))
+    monkeypatch.setenv("PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID",
+                       "sp-tl-current-" + hashlib.sha256(os.urandom(8)).hexdigest()[:12])
+    monkeypatch.setenv("PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT", _iso(started))
+    monkeypatch.setenv("PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT", _iso(expires))
+
 
 def _fresh(tmp_path: pathlib.Path, name: str = "run") -> Path:
     rd = Path(tmp_path) / name

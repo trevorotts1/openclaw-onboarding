@@ -1680,8 +1680,17 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
                     for t in turn_log if t.get("question_id") in req_ids]
     prove_sp_intake_mod = _import_skill51_module("prove_sp_intake")
     if ledger_turns and prove_sp_intake_mod is not None:
-        sig = prove_sp_intake_mod._sign_turn_ledger(ledger_turns, record["deck_type"], commit_id)
-        record["turn_ledger_provenance"] = {"turns": ledger_turns, "signature": sig}
+        # FIX 29: prefer the one-time envelope API so this record carries
+        # key_id + signed_at INSIDE the authenticated payload, signed with the
+        # CURRENT rotation key from the secrets store. The store-backed 3-arg
+        # shim remains the fallback for a pre-FIX-29 sibling checkout.
+        signer = getattr(prove_sp_intake_mod, "sign_turn_ledger", None)
+        if signer is not None:
+            record["turn_ledger_provenance"] = signer(
+                ledger_turns, record["deck_type"], commit_id)
+        else:
+            sig = prove_sp_intake_mod._sign_turn_ledger(ledger_turns, record["deck_type"], commit_id)
+            record["turn_ledger_provenance"] = {"turns": ledger_turns, "signature": sig}
 
     # Write sp_intake.json atomically
     sp_dest = run_dir / "working" / "copy"

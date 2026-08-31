@@ -30,6 +30,9 @@ import os
 import subprocess
 import sys
 import tempfile
+import base64
+import hashlib
+import datetime as _dt
 import unittest.mock as _mock
 from pathlib import Path
 
@@ -3756,12 +3759,49 @@ def test_sp_wrappers():
     # build_turn_ledger_provenance() writes (per-question turn id +
     # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
     # test_slice1_gates.py's genuine SP-intake fixture.
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(), sp_structure=sps._valid_fixture())
-    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
-                 "_chk_sp_intake_trace"):
-        r = getattr(build_deck, name)(gold)
-        if r != "":
-            fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
+    # FIX 29: the paced fixture SIGNS with (and the wrappers later VERIFY
+    # against) the turn-ledger rotation record from the secrets store —
+    # provision a throwaway per-process record the same way the prover
+    # module's own self_test does (os.urandom at runtime; no key material
+    # enters source or artifacts; the window straddles the real clock:
+    # started 7d ago, cutoff 7d out). Restored before the adversarial part
+    # so the rest of the suite sees exactly the env it saw before.
+    _tl_env = ("PRESENTATION_SP_TURN_LEDGER_KEYS_FILE",
+               "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY",
+               "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID",
+               "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY",
+               "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID",
+               "PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT",
+               "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT",
+               "PRESENTATION_SP_TURN_LEDGER_ROTATION")
+    _saved = {k: os.environ.get(k) for k in _tl_env}
+    _started = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
+    for _k in _tl_env:
+        os.environ.pop(_k, None)
+    os.environ["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"] = \
+        base64.b64encode(os.urandom(32)).decode("ascii")
+    os.environ["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"] = \
+        "sp-tl-current-" + hashlib.sha256(os.urandom(8)).hexdigest()[:12]
+    os.environ["PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"] = \
+        _started.strftime("%Y-%m-%dT%H:%M:%SZ")
+    os.environ["PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT"] = \
+        (_started + _dt.timedelta(hours=14 * 24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    spi._rotation_state = None
+    try:
+        gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_paced(),
+                           sp_structure=sps._valid_fixture())
+        for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                     "_chk_sp_intake_trace"):
+            r = getattr(build_deck, name)(gold)
+            if r != "":
+                fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
+    finally:
+        for _k, _v in _saved.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+        spi._rotation_state = None
 
     # (b) DEFER — a NON-signature deck is a no-op for all three wrappers even with garbage
     #     SP artifacts present (they are never read; the deck_type switch defers first).
