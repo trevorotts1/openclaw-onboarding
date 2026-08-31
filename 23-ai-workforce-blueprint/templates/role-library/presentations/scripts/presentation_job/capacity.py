@@ -971,6 +971,57 @@ def detect(config_dir: Optional[Path] = None) -> dict:
             "override_path": str(path), "trail": trail, "notes": []}
 
 
+def resource_profile_surface(config_dir: Optional[Path] = None,
+                             resolution: Optional[dict] = None) -> dict:
+    """FIX 8: the capacity probe's read-only view of the per-client resource
+    profile (resource_profile.py's store). Returns a redacted summary of the
+    persisted client picture -- providers, plan tiers, ceilings, the
+    ask-once lock state and any intake question still owed -- WITHOUT ever
+    reading or emitting a credential, and WITHOUT changing detection: this
+    is a surfaced mirror, not a third detection source. `resolution` (the
+    detect() result, when available) feeds the pending-question evaluation
+    so a provider caught PARKing surfaces its one-time question even before
+    the profile has ever heard of it. Never raises; the probe must keep
+    working on a box with no profile, a flag-disabled profile, or a corrupt
+    one. Import is lazy so this module never depends on the profile module
+    at import time (launcher.py's dual-import posture keeps working either
+    way)."""
+    surface = {"profile_enabled": True, "profile_path": None,
+               "providers": [], "pending_questions": []}
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # direct file run from presentation_job/
+            import resource_profile as _rp  # type: ignore[no-redef]
+    except ImportError:
+        surface["profile_enabled"] = False
+        return surface
+    if not _rp.flag_enabled():
+        surface["profile_enabled"] = False
+        return surface
+    try:
+        path = _rp.profile_path(config_dir)
+        surface["profile_path"] = str(path)
+        profile = _rp.load_profile(config_dir)
+        if profile.get("error"):
+            surface["profile_error"] = profile["error"]
+        summary = _rp.redacted_summary(profile)
+        surface["providers"] = summary.get("providers", [])
+        detection = None
+        if isinstance(resolution, dict):
+            provider = resolution.get("provider")
+            if isinstance(provider, str) and provider.strip():
+                detection = {"provider": provider,
+                             "detected": resolution["status"] != "UNDETERMINED"}
+        pending = _rp.pending_questions(profile=profile, detection=detection)
+        surface["pending_questions"] = pending
+        surface["pending_intake_ids"] = sorted(
+            {q.get("id") for q in pending})
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["profile_error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+
 def probe(config_dir: Optional[Path] = None) -> dict:
     """The main entry point. Read-only; never mutates anything, never exits.
 
@@ -1005,6 +1056,8 @@ def probe(config_dir: Optional[Path] = None) -> dict:
         "notes": resolution.get("notes", []),
         "working_concurrent": working if ok else "UNMEASURED",
         "working_concurrent_method": method,
+        "resource_profile": resource_profile_surface(config_dir,
+                                                     resolution=resolution),
     }
     return result
 
