@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import shlex
@@ -7,6 +9,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -45,6 +49,119 @@ def _wave_execution_enabled() -> bool:
     if raw is None:
         return True
     return raw.strip().strip("'\"") != "0"
+
+# ---------------------------------------------------------------------------
+# FIX 5 (emitter): mirror stage-timing rows to the Command Center ingest route.
+#
+# PRESENTATION_TELEMETRY_CC: default ON (=1). =0 disables the CC mirror POST
+# entirely (the durable working/telemetry/stage-timings.jsonl file is still
+# written — the file is the source of truth, the POST is only a mirror).
+# Value semantics match _wave_execution_enabled: strips quotes/whitespace, so
+# "" counts as unset (ON), and only exactly "0" selects OFF.
+#
+# Env used (all optional; resolver mirrors cc_board.board_config):
+#   COMMAND_CENTER_URL | MISSION_CONTROL_URL   CC base URL (unset -> mirror off)
+#   CC_API_TOKEN | MC_API_TOKEN                CC bearer token (required by CC
+#                                              middleware Gate B for /api/*)
+#   WEBHOOK_SECRET | CC_WEBHOOK_SECRET         HMAC-SHA256 signing secret for
+#                                              x-webhook-signature. If unset the
+#                                              POST is SKIPPED with one warning
+#                                              line — never sent unsigned, and
+#                                              never allowed to break a run.
+#
+# Endpoint: POST {base}/api/presentations/stage-timings (route in the CC repo,
+# src/app/api/presentations/stage-timings/route.ts). Envelope and signing
+# mirror that route's validator byte-for-byte:
+#   body    = {"rows":[...]}  (StageTimingBatchSchema: 1..1000 rows)
+#   auth    = x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, raw_body) hex
+#   limits  = 64KB body cap (the route 413s bigger; we chunk at 100 rows so a
+#             batch can never approach it)
+# The route is in WEBHOOK_SECRET_ROUTES: middleware Gate A 503s the box when
+# WEBHOOK_SECRET is unset, and Gate B requires the Bearer token — both are
+# satisfied by the envs above.
+# ---------------------------------------------------------------------------
+_CC_TELEMETRY_MAX_ROWS = 100          # chunk size: stays far under the 64KB cap
+_CC_TELEMETRY_CONNECT_TIMEOUT_S = 5   # socket timeout: fail fast, never hang a run
+
+def _telemetry_mirror_enabled() -> bool:
+    """FIX 5 emitter flag — default ON; exactly "0" disables the CC mirror POST."""
+    raw = os.environ.get("PRESENTATION_TELEMETRY_CC")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+# One-time latch: when CC is configured (base set) but WEBHOOK_SECRET is unset,
+# the mirror is disabled with exactly ONE warning line per process — never a
+# per-row spam, never an unsigned POST, never an exception.
+_CC_TELEMETRY_SECRET_WARNED = [False]
+
+def _telemetry_mirror_config() -> Optional[Dict[str, str]]:
+    """Resolve base URL / bearer / secret the same way cc_board.board_config()
+    does. Returns None (mirror disabled) when the base URL is unset (a box with
+    no CC configured — clean silent no-op) OR when the HMAC secret is unset
+    (fail-soft: one warning line, then skip — an unsigned write to an
+    authenticated route is never attempted). Never raises."""
+    base = (os.environ.get("COMMAND_CENTER_URL") or
+            os.environ.get("MISSION_CONTROL_URL") or "").strip().rstrip("/")
+    token = (os.environ.get("CC_API_TOKEN") or
+             os.environ.get("MC_API_TOKEN") or "").strip()
+    secret = (os.environ.get("WEBHOOK_SECRET") or
+              os.environ.get("CC_WEBHOOK_SECRET") or "").strip()
+    if not base:
+        return None
+    if not secret:
+        if not _CC_TELEMETRY_SECRET_WARNED[0]:
+            _CC_TELEMETRY_SECRET_WARNED[0] = True
+            print("WARN telemetry: CC stage-timings mirror disabled — "
+                  "WEBHOOK_SECRET/CC_WEBHOOK_SECRET unset (unsupported "
+                  "unsigned write never attempted)", flush=True)
+        return None
+    return {"base_url": base, "token": token, "secret": secret}
+
+def _post_stage_timings_cc(rows: List[Dict[str, Any]]) -> None:
+    """FIX 5 (emitter): POST stage-timing rows to the CC ingest route.
+
+    Called after each batch append to working/telemetry/stage-timings.jsonl —
+    the jsonl file stays the durable source of truth; this POST is a mirror
+    for CC-side history. BEST-EFFORT by contract (same invariant as the jsonl
+    writer): a telemetry POST can never abort a presentation run. Every exit
+    path degrades to at most ONE printed warning line; nothing is raised.
+
+    Failure modes covered: flag off, config unset (base or secret), URL
+    construction errors, urllib/OS/ValueError on the request itself.
+    """
+    if not _telemetry_mirror_enabled():
+        return
+    if not rows:
+        return
+    cfg = _telemetry_mirror_config()
+    if cfg is None:
+        return
+    url = f"{cfg['base_url']}/api/presentations/stage-timings"
+    try:
+        for i in range(0, len(rows), _CC_TELEMETRY_MAX_ROWS):
+            chunk = rows[i:i + _CC_TELEMETRY_MAX_ROWS]
+            raw_body = json.dumps({"rows": chunk}, separators=(",", ":")).encode("utf-8")
+            headers = {"Content-Type": "application/json",
+                       "Accept": "application/json"}
+            if cfg["token"]:
+                headers["Authorization"] = f"Bearer {cfg['token']}"
+            headers["x-webhook-signature"] = hmac.new(
+                cfg["secret"].encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+            req = urllib.request.Request(url, data=raw_body, headers=headers,
+                                         method="POST")
+            try:
+                with urllib.request.urlopen(req,
+                                            timeout=_CC_TELEMETRY_CONNECT_TIMEOUT_S) as resp:
+                    status = resp.getcode()
+                if status >= 300:
+                    print(f"WARN telemetry: CC stage-timings POST failed "
+                          f"(status {status})", flush=True)
+            except urllib.error.HTTPError as exc:  # 4xx/5xx — read body for context
+                print(f"WARN telemetry: CC stage-timings POST failed "
+                      f"(status {exc.code})", flush=True)
+    except Exception as exc:  # noqa: BLE001 — telemetry must NEVER break a run
+        print(f"WARN telemetry: CC stage-timings POST failed: {exc}", flush=True)
 
 
 # FIX 1 (Phase A stub capacity probe): fixed deepseek-direct profile with
@@ -165,6 +282,12 @@ class Engine:
         # the guarded call sites re-enter each other (run_phase -> _checkpoint
         # -> _phase_state; run_phase -> report -> store.save).
         self._state_lock = threading.RLock()
+        # FIX 5 (emitter): rows accepted into the durable jsonl that are still
+        # waiting to be mirrored to the CC ingest route. Flushed (under the
+        # state lock) by _emit_stage_timing at 100-row boundaries and on the
+        # run_summary row; also flushed on every early run() exit and on a
+        # phase crash so completed-phase telemetry is never stranded.
+        self._telemetry_cc_pending: List[Dict[str, Any]] = []
 
     # -- Option B child cards -----------------------------------------------
     def _child_card_meta(self, phase: Phase) -> Tuple[str, str]:
@@ -439,6 +562,9 @@ class Engine:
 
         Best-effort: telemetry must NEVER break a run. On write failure the row is
         dropped with a printed warning (visible in engine output, not silent).
+        A row successfully appended to the jsonl is ALSO queued for the CC mirror
+        POST (_post_stage_timings_cc) — the file remains the durable source of
+        truth, the POST is only a mirror; queue flush failures never raise.
         """
         try:
             tdir = self._telemetry_dir()
@@ -447,6 +573,21 @@ class Engine:
                 fh.write(json.dumps(record, sort_keys=True) + "\n")
         except OSError as exc:
             print(f"WARN telemetry: could not write stage timing: {exc}", flush=True)
+            return
+        with self._state_lock:
+            self._telemetry_cc_pending.append(record)
+            if len(self._telemetry_cc_pending) >= 100:
+                self._flush_telemetry_cc()
+
+    def _flush_telemetry_cc(self) -> None:
+        """FIX 5 (emitter): drain the pending CC mirror queue as one batched POST
+        (or several 100-row chunks). Expected to be called holding the state lock;
+        the POST itself is fire-and-forget so a slow/unreachable CC never blocks
+        the phase loop past the socket timeout. Never raises."""
+        rows = list(self._telemetry_cc_pending)
+        self._telemetry_cc_pending = []
+        if rows:
+            _post_stage_timings_cc(rows)
 
     def run_phase_timed(self, phase: Phase, wave: int = 0) -> int:
         """FIX 5: telemetry wrapper around run_phase.
@@ -473,6 +614,11 @@ class Engine:
                 "status": "crashed",
                 "error_class": type(exc).__name__,
             })
+            with self._state_lock:
+                # FIX 5 (emitter): a crashing phase is THIS process's last
+                # chance to flush completed-phase telemetry — drain the mirror
+                # queue on the way out (best-effort, cannot mask the crash).
+                self._flush_telemetry_cc()
             raise
         self._emit_stage_timing({
             "run_id": self.run_dir.name,
@@ -1111,10 +1257,17 @@ class Engine:
                     continue
                 rc = _run_wave(wave_no, members)
                 if rc != EXIT_OK:
+                    with self._state_lock:
+                        # FIX 5 (emitter): a failed wave skips the run summary,
+                        # so drain the mirror queue before leaving the run.
+                        self._flush_telemetry_cc()
                     return rc
             for p in extra:
                 rc = self.run_phase_timed(p, wave=len(plan["waves"]) + 1)
                 if rc != EXIT_OK:
+                    with self._state_lock:
+                        # FIX 5 (emitter): same early-exit drain as the wave fail.
+                        self._flush_telemetry_cc()
                     return rc
         else:
             # PRESENTATION_WAVE_EXECUTION=0 rollback path: the pre-fix serial
@@ -1122,6 +1275,9 @@ class Engine:
             for p in phases:
                 rc = self.run_phase_timed(p, wave=0)
                 if rc != EXIT_OK:
+                    with self._state_lock:
+                        # FIX 5 (emitter): same early-exit drain as the wave fail.
+                        self._flush_telemetry_cc()
                     return rc
 
         # FIX 5: one-line run summary (total wall-clock, slowest phases).
@@ -1160,6 +1316,10 @@ class Engine:
                 "generated_at": utcnow(),
             }
             self._emit_stage_timing(summary)
+            with self._state_lock:
+                # FIX 5 (emitter): the summary is the LAST row of a run, so any
+                # pending mirror rows are drained with it (best-effort).
+                self._flush_telemetry_cc()
             slow_str = ", ".join(f"{pid} {d:.0f}s" for pid, d in slowest)
             print(f"RUN SUMMARY: total {total:.0f}s | phases executed: {len(exits)} | "
                   f"slowest: {slow_str}", flush=True)
