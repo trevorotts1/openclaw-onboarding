@@ -29,6 +29,10 @@ from .state import (
     EXIT_SWEEP_HAD_FAILURES,
     EXIT_SWEEP_ALL_REJECTED,
 )
+from .scan_roots import (
+    default_config_path, format_roots_report, ok_roots, resolve_scan_roots,
+    split_primary,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,14 +191,32 @@ def _classify(
 # ---------------------------------------------------------------------------
 
 
+def _find_run_dirs_multi(roots, scan_depth: int) -> List[Path]:
+    """_find_run_dirs across every readable root, de-duplicated globally."""
+    found: Set[Path] = set()
+    for root in roots:
+        found.update(_find_run_dirs(root.path, scan_depth))
+    return sorted(found)
+
+
 def reconcile_sweep(
     scan_root: Path,
     *,
     scan_depth: int = 2,
     apply: bool = False,
     max_age_hours: float = 72.0,
+    extra_roots=(),
+    roots_config=None,
+    env=None,
 ) -> int:
-    """Scan --scan-root for jobs whose board card is missing or behind.
+    """Scan every configured scan root for jobs whose board card is missing or behind.
+
+    scan_root is the PRIMARY root: it owns reconcile-findings.jsonl and heads the
+    root list. Additional roots come from extra_roots, PRESENTATION_SCAN_ROOTS,
+    and roots_config -- see scan_roots.py for why one root was a blind spot. A
+    root that cannot be read is logged UNDETERMINED and never lets this sweep
+    claim it checked everything; it never causes a card to be patched or a deck
+    to be failed.
 
     FAIL-SOFT: one bad run dir never ends the sweep -- the loop keeps going
     and every remaining run dir still gets classified. But "kept going" is
@@ -262,14 +284,31 @@ def reconcile_sweep(
     else:
         board_enabled = True
 
-    # --- Find run dirs ---
-    run_dirs = _find_run_dirs(scan_root, scan_depth)
+    # --- Resolve scan roots and find run dirs ---
+    if roots_config is None:
+        # Default config location: <department>/config/scan-roots.conf beside the
+        # scripts dir -- same default as watchdog() and run_discovery.py.
+        roots_config = default_config_path(Path(__file__).resolve().parent.parent)
+    roots = resolve_scan_roots(
+        primary=scan_root, extra=extra_roots, env=env, config_path=roots_config,
+    )
+    # Findings owner: the FIRST chunk of the primary root. For a single-path
+    # --scan-root this is the root itself, exactly as before; for an
+    # os.pathsep-packed primary (the live plist's SCAN_ROOT shape) the first
+    # chunk -- normally the department tree -- owns reconcile-findings.jsonl.
+    primary_chunks = split_primary(scan_root)
+    findings_owner = primary_chunks[0] if primary_chunks else Path(scan_root)
+    readable = ok_roots(roots)
+    print(format_roots_report(roots, "reconcile-board"), flush=True)
+
+    run_dirs = _find_run_dirs_multi(readable, scan_depth)
     scanned = len(run_dirs)
 
     if scanned == 0:
+        root_list = ", ".join(str(r.path) for r in readable) or "(none readable)"
         print(
             f"reconcile-board: UNDETERMINED -- NO state.json found under "
-            f"{scan_root} (depth {scan_depth}) -- 0 run dirs were checked, "
+            f"{root_list} (depth {scan_depth}) -- 0 run dirs were checked, "
             f"this is NOT a pass -- check --scan-root and --scan-depth",
             flush=True,
         )
@@ -292,7 +331,7 @@ def reconcile_sweep(
     schema_mismatch_count = 0
 
     findings_lines: List[str] = []
-    findings_path = scan_root / "reconcile-findings.jsonl"
+    findings_path = findings_owner / "reconcile-findings.jsonl"
 
     for run_dir in run_dirs:
         try:
@@ -451,8 +490,12 @@ def reconcile_sweep(
     )
     not_a_run_dir_count = counts.get("not_a_run_dir", 0)
 
+    # Summary names every root searched, not just the primary -- same reason the
+    # roots report above prints unconditionally: "scanned N" must never imply a
+    # forest it did not walk.
+    all_roots_list = ", ".join(str(r.path) for r in roots) or "(none)"
     parts = [
-        f"scanned {scanned} run dir(s) under {scan_root} (depth {scan_depth})",
+        f"scanned {scanned} run dir(s) under {all_roots_list} (depth {scan_depth})",
         f"reconciled {reconciled_count} run dir(s)",
         f"card_missing: {counts.get('card_missing', 0)}",
         f"card_behind: {counts.get('card_behind', 0)}",

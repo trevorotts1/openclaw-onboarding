@@ -11,6 +11,7 @@ prover golden fixtures, the signed intake-transcript envelope), so the two
 directions agree with the legacy engine's own coverage.
 """
 
+import datetime as _dt
 import json
 import pathlib
 import sys
@@ -376,8 +377,12 @@ def _pair_sp(prover_kind):
             # "GK-23-fixtureA-driver-paced" must-PASS case, built to mirror
             # exactly what deck-intake-driver.py's build_turn_ledger_provenance()
             # writes (per-question turn id + asked_at/validated_at, HMAC-signed).
+            # 2026-08-27 content-provenance contract: the genuine record ALSO
+            # carries per-answer client provenance (verbatim client_text +
+            # quote-back confirmation), so it PASSes on both sides of
+            # PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15) too.
             write_fixture(rd, "working/copy/sp_intake.json",
-                          spi._valid_runtime_fixture_paced())
+                          spi._valid_runtime_fixture_provenanced())
     elif prover_kind == "structure":
         def fabricate(rd):
             _signature_intake(rd)
@@ -606,6 +611,89 @@ def test_slice1_sp_intake_both_directions(tmp_path):
     assert any("AF-SP-8Q-MISSING" in r and "q7" in r for r in f_reasons), f_reasons
     g_ok, g_reasons = res["genuine"]
     assert g_ok, f"genuine sp_intake must PASS, got {g_reasons}"
+
+# ---------------------------------------------------------------------------
+# 2026-08-27 content-provenance contract (AF-SP-PROVENANCE) — the record's
+# answers must provably be the client's own words. The literal live failure:
+# 2 of 8 answers were AUTHORED BY THE SYSTEM on a record that passed every
+# structural check. Both directions through the SAME evaluate() the engine
+# wrapper calls, with `today` pinned past PROVENANCE_GRACE_WINDOW_UNTIL
+# (2026-09-15) so the teeth are deterministic, not calendar-dependent.
+# ---------------------------------------------------------------------------
+_PROV_POST_WINDOW = {"today": _dt.date(2026, 10, 1)}
+
+def test_slice1_sp_provenance_client_answer_passes():
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    fails = spi.evaluate(spi._valid_runtime_fixture_provenanced(),
+                         today=_PROV_POST_WINDOW["today"])
+    assert fails == [], fails
+
+def test_slice1_sp_provenance_agent_authored_refused():
+    """An agent-authored answer (origin='agent_authored') NEVER satisfies the
+    gate, even with matching client_text — the visibly-marked-draft rule."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    f = spi._valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["origin"] = "agent_authored"
+    fails = spi.evaluate(f, today=_PROV_POST_WINDOW["today"])
+    assert any("AF-SP-PROVENANCE" in str(c) for c, _m in fails), fails
+    assert any("agent_authored" in m for _c, m in fails), fails
+
+def test_slice1_sp_provenance_unconfirmed_refused():
+    """An answer the client never confirmed (confirmed_by_client=false) is
+    refused with the exact remedy named."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    f = spi._valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q3"].update({"confirmed_by_client": False,
+                                         "confirmation": None})
+    fails = spi.evaluate(f, today=_PROV_POST_WINDOW["today"])
+    assert any("AF-SP-PROVENANCE" in str(c) for c, _m in fails), fails
+
+def test_slice1_sp_provenance_quote_back_confirmed_passes_marked():
+    """A quote-back-confirmed answer passes AND is visibly marked confirmed
+    (confirmation='quote_back', confirmed_by_client=true)."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    f = spi._valid_runtime_fixture_provenanced()
+    assert f["answer_provenance"]["q6"]["confirmed_by_client"] is True
+    assert f["answer_provenance"]["q6"]["confirmation"] == "quote_back"
+    fails = spi.evaluate(f, today=_PROV_POST_WINDOW["today"])
+    assert fails == [], fails
+
+def test_slice1_sp_provenance_text_mismatch_refused():
+    """The committed answer was edited after the client's words were captured —
+    the exact way a system-authored answer sneaks in on top of real text."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    f = spi._valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["client_text"] = "the client's actual words"
+    fails = spi.evaluate(f, today=_PROV_POST_WINDOW["today"])
+    assert any("does not match its recorded client_text" in m for _c, m in fails), fails
+
+def test_slice1_sp_provenance_within_grace_still_passes():
+    """REGRESSION GUARD: a pre-provenance driver record (paced stamp, no
+    answer_provenance) still passes INSIDE the migration window — the dated
+    rollout cost, same shape as GRACE_WINDOW_UNTIL."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    fails = spi.evaluate(spi._valid_runtime_fixture_paced(), today=_dt.date(2026, 9, 1))
+    assert fails == [], fails
+
+def test_slice1_sp_provenance_absent_post_grace_fails():
+    """After PROVENANCE_GRACE_WINDOW_UNTIL a provenance-less record hard-fails."""
+    spi = bd._sp_prover("prove_sp_intake")
+    if spi is None:
+        pytest.skip("SP provers not co-located")
+    fails = spi.evaluate(spi._valid_runtime_fixture_paced(), today=_PROV_POST_WINDOW["today"])
+    assert any("AF-SP-PROVENANCE" in str(c) for c, _m in fails), fails
 
 
 def test_slice1_sp_structure_both_directions(tmp_path):
