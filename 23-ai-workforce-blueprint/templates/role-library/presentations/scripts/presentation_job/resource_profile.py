@@ -555,6 +555,102 @@ def apply_probe_refresh(detection: Dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# FIX 9: provider probe storage (wired inventory into the profile)
+# ---------------------------------------------------------------------------
+def store_provider_probes(probe_result: Dict[str, Any],
+                          profile: Optional[Dict[str, Any]] = None,
+                          config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Persist FIX 9's provider inventory into the profile.
+
+    `probe_result` is capacity.probe_providers()' dict: {"probes": {provider:
+    {present, key_source, probed, http_status, models, ...}},
+    "ninerouter": {"providers": {prefix: {"label","models"}}}}.
+
+    What lands per provider entry (all redacted by the write path):
+      detected / detected_at   -- the probe ran
+      presence                 -- bool (key present; never the value, never
+                                  the source path -- named to survive the
+                                  redaction contract's secret-key rule)
+      wired_models             -- the exact unlocked model ids from the
+                                  list/models call (sorted); kept across runs
+                                  when a later probe cannot resolve them
+                                  (absence of a reading is never deletion)
+      probed_at                -- last successful inventory stamp
+      probe_error              -- the last failure reason, names never values
+    The 9Router lineup lands under `providers["_9router"]` -- its per-node
+    model lineups are the "which models does 9Router have wired locally"
+    answer (non-secret columns only, per the capacity probe's contract).
+
+    Ask-once contract untouched: this refreshes DETECTABLE fields only, never
+    plan tiers, never locks. Skipped entirely (stores nothing) when the flag
+    is off -- the documented rollback."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    if prof.get("error") and not prof.get("providers"):
+        prof = new_profile()
+    if not flag_enabled():
+        return prof
+    probes = probe_result.get("probes") if isinstance(probe_result, dict) else None
+    if isinstance(probes, dict):
+        for provider_id, verdict in probes.items():
+            if not isinstance(verdict, dict):
+                continue
+            fields: Dict[str, Any] = {
+                "detected": bool(verdict.get("present") or
+                                 verdict.get("models")),
+            }
+            if verdict.get("probed") is not None:
+                fields["probe_attempted"] = bool(verdict.get("probed"))
+            # NOTE the field name: `presence`, not `key_present` -- the write
+            # path's redact_record() drops any secret-named key, and "key_*"
+            # IS a secret-named key by the binding regex. The profile records
+            # presence-of-key as `presence`; the capacity.py probe_verdicts
+            # keep `present` (a boolean assertion, never a value).
+            fields["presence"] = bool(verdict.get("present"))
+            if verdict.get("probed"):
+                fields["probe_http_status"] = verdict.get("http_status")
+            if verdict.get("models"):
+                fields["wired_models"] = sorted(verdict["models"])
+                fields["probed_at"] = probe_result.get("probed_at")
+                # a successful reading replaces any stale inventory error
+                fields.pop("probe_error", None)
+            elif verdict.get("models_error"):
+                fields["probe_error"] = str(verdict["models_error"])
+                existing = get_provider(prof, provider_id) or {}
+                if existing.get("wired_models"):
+                    # keep the last good inventory -- an unresolvable call is
+                    # never evidence the models disappeared
+                    fields["wired_models"] = existing["wired_models"]
+            entry = upsert_provider(prof, provider_id, **fields)
+            entry.setdefault("provider", provider_id)
+    lineup = probe_result.get("ninerouter") if isinstance(probe_result, dict) else None
+    if isinstance(lineup, dict) and lineup.get("hit"):
+        nine = {}
+        for prefix, info in (lineup.get("providers") or {}).items():
+            nine[prefix] = {"label": info.get("label"),
+                            "models": sorted(info.get("models") or [])}
+        profile_entry = upsert_provider(prof, "_9router_lineup",
+                                        detected=True,
+                                        wired=nine,
+                                        total_models=lineup.get("total_models", 0),
+                                        probed_at=probe_result.get("probed_at"))
+        _ = profile_entry
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return prof
+
+def wired_models(provider: str,
+                 profile: Optional[Dict[str, Any]] = None,
+                 config_dir: Optional[Path] = None) -> List[str]:
+    """The stored wired model ids for one provider (FIX 7/FIX 10/FIX 13's
+    read side). Empty list when absent -- an absent inventory is never
+    claimed as 'nothing wired' by this accessor; callers that must
+    distinguish stale/never-probed consult get_provider() themselves."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    entry = get_provider(prof, provider)
+    models = (entry or {}).get("wired_models")
+    return sorted(models) if isinstance(models, list) else []
+
+# ---------------------------------------------------------------------------
 # Intake-surface helper (the ONE question, FIX 30 shape)
 # ---------------------------------------------------------------------------
 def intake_question(detection: Optional[Dict[str, Any]] = None,
