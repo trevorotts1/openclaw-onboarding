@@ -50,7 +50,7 @@ def _wave_execution_enabled() -> bool:
 
 # FIX 1 (Phase A stub capacity probe): fixed deepseek-direct profile with
 # measured capacity 8, mirroring dispatcher._prompt_routing_stamp() and
-# /Users/blackceomacmini/presentation-fix-tests/phase-a-routing.json.
+# the phase-a routing fixture (repo-relative path, see fix ledger).
 # FIX 7/8/11 will replace this with real resource profiles through the same
 # dict schema (status/provider/plan/available); until then the engine stamps
 # these constants so the plan is built from a measured width, never an

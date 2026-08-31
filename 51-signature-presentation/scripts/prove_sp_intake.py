@@ -110,8 +110,8 @@
 # ROLLBACK (=1 default is not a flag flip away): this fix intentionally keeps
 # NO legacy key material in source, so there is no in-code rollback flag. The
 # documented =0-style rollback path is to restore the pre-fix copy from
-# /Users/blackceomacmini/presentation-fix-tests/backups/phase-b/
-# prove_sp_intake.pre-FIX29 (see the fix ledger); a provisioned rotation
+# the phase-b backup dir (repo-relative, see the fix ledger);
+# a provisioned rotation
 # record in the store is inert for the restored file and needs no cleanup.
 # =============================================================================
 """Fail-closed deterministic prover for the Signature Presentation intake gate."""
