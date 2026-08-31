@@ -745,7 +745,7 @@
       "heartbeat_minutes": 60,
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --run-dir {run_dir}"
+        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json {run_dir}/out.pptx --run-dir {run_dir} --out {run_dir}/working/deliverables"
       },
       "verifier": "phase_verifiers.verify"
     },

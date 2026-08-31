@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shlex
 import subprocess
 import sys
@@ -660,6 +661,45 @@ class Engine:
             print(f"DRY-RUN {phase.id}: {' '.join(argv)}", flush=True)
             return EXIT_OK
 
+        ps = self._phase_state(phase.id)
+
+        # FIX 4 (presentation rev2 phase A): canonical front-door nonce provisioning.
+        # executors whose kind is "script" run build_deck.py, whose front-door guard
+        # (AF-CANONICAL-RENDER-BYPASS) demands BOTH the canonical-entry nonce file
+        # ({run_dir}/working/checkpoints/.canonical-entry-nonce) AND the matching
+        # OC_DECK_ENTRY_NONCE environment value. The standalone canonical entry
+        # (presentation-canonical-entry.sh) mints these; the engine dispatch never
+        # did, so every engine-spawned script phase exited 2 at the front door.
+        # Mint per-run here: run_with_cleanup is invoked with env=None, so the child
+        # inherits this process environment — setting it here is the delivery path.
+        # The run_dir may not have a checkpoints dir yet on a fresh run; create it.
+        checkpoints_dir = self.run_dir / "working" / "checkpoints"
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        nonce = secrets.token_hex(32)
+        nonce_file = checkpoints_dir / ".canonical-entry-nonce"
+        umask = os.umask(0o077)
+        try:
+            nonce_file.write_text(nonce)
+        finally:
+            os.umask(umask)
+        os.chmod(nonce_file, 0o600)
+        os.environ["OC_DECK_ENTRY_NONCE"] = nonce
+
+        try:
+            return self._run_script_phase_locked(phase, argv, checkpoints_dir, nonce_file)
+        finally:
+            # FIX 4 cleanup: the nonce is per-invocation. Remove the file and the env
+            # var on EVERY exit path (success return, heal exhaustion, rung 3, block,
+            # exception), so a later run can never reuse (or leak) this front-door
+            # nonce.
+            try:
+                nonce_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            os.environ.pop("OC_DECK_ENTRY_NONCE", None)
+        raise AssertionError("unreachable")
+
+    def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file) -> int:
         ps = self._phase_state(phase.id)
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
