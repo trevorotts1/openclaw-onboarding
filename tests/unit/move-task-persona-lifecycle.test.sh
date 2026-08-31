@@ -47,6 +47,28 @@ sys.exit(0)
 PY
 export MOVE_TASK_SELECTOR="$STUB"
 
+# ── Stub CC-API transport (FIX 26): move-task.py no longer writes tasks.status
+# directly — transitions go through the signed CC API. The gate stays ON here;
+# only the transport is local (MOVE_TASK_API_STUB). The stub receives the fully
+# built + HMAC-signed request on stdin and applies payload.status to the fixture
+# DB — so "the API was dialed with a status payload" is itself under test.
+APISTUB="$SB/cc-api-stub.py"
+cat > "$APISTUB" <<'PY'
+import json, os, sqlite3, sys, urllib.parse
+req = json.load(sys.stdin)
+try:
+    payload = json.loads(req.get("body") or "{}")
+    tid = urllib.parse.unquote(req["url"].rstrip("/").split("/")[-1])
+    con = sqlite3.connect(os.environ["MT_TEST_DB"], timeout=10)
+    con.execute("UPDATE tasks SET status=? WHERE id=?", (payload.get("status"), tid))
+    con.commit(); con.close()
+    print(json.dumps({"status": 200, "body": "{}"}))
+except Exception as e:
+    print(json.dumps({"status": 500, "body": json.dumps({"error": str(e)})}))
+PY
+export MOVE_TASK_API_STUB="$APISTUB"
+export COMMAND_CENTER_URL="http://cc.test.local"   # stubbed above — never dialed
+
 # ── DB builders ──────────────────────────────────────────────────────────────
 # mk_db <path> <persona_aware:0|1>  → tasks table (+ one task 't1' naked, backlog)
 mk_db() {
@@ -94,7 +116,7 @@ except Exception:
     print("0")
 PY
 }
-mv_move() { python3 "$MOVE" --db "$1" move --task t1 --to "$2" "${@:3}"; }
+mv_move() { MT_TEST_DB="$1" python3 "$MOVE" --db "$1" move --task t1 --to "$2" "${@:3}"; }
 
 echo "== F4.4 Persona-Gate lifecycle =="
 
