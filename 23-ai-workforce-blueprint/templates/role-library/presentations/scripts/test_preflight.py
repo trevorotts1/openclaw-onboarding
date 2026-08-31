@@ -4899,6 +4899,39 @@ def emit_af_coverage():
          "width": 30, "height": 8, "line_num": 1})
     record("AF-TYPE-SIZE-MEASURED", _r_size)
 
+    # AF-SLIDE-CRAFT-LOADER — _chk_slide_craft is fail-closed on import: a broken or
+    # missing slide_craft.py next to the run must abort, never silently skip the ten
+    # FIX 15 deterministic craft checks. Proven by un-importing the module (the same
+    # mechanism a missing/deleted file produces) and asserting the LOADER code fires.
+    _rd_sc = Path(tempfile.mkdtemp(prefix="deck_sc_loader_probe_"))
+    (_rd_sc / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    _saved_sc = sys.modules.get("slide_craft")
+    sys.modules["slide_craft"] = None
+    try:
+        record("AF-SLIDE-CRAFT-LOADER", build_deck._chk_slide_craft(_rd_sc))
+    finally:
+        if _saved_sc is None:
+            sys.modules.pop("slide_craft", None)
+        else:
+            sys.modules["slide_craft"] = _saved_sc
+
+    # AF-CRAFT-JUDGEMENT-LOADER — the FIX 18 disposition module (craft_judgement.py,
+    # AF-HOOK-2/7, AF-OBI-6, AF-DEN-3/6) is fail-closed in the same gate: an import
+    # failure must abort, never downgrade the 5/6/2 enforcement to a no-op. Same
+    # un-import probe technique, with slide_craft left intact so the first import
+    # leg passes and only the judgement-loader leg trips.
+    _rd_cj = Path(tempfile.mkdtemp(prefix="deck_cj_loader_probe_"))
+    (_rd_cj / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    _saved_cj = sys.modules.get("craft_judgement")
+    sys.modules["craft_judgement"] = None
+    try:
+        record("AF-CRAFT-JUDGEMENT-LOADER", build_deck._chk_slide_craft(_rd_cj))
+    finally:
+        if _saved_cj is None:
+            sys.modules.pop("craft_judgement", None)
+        else:
+            sys.modules["craft_judgement"] = _saved_cj
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
