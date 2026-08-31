@@ -78,7 +78,10 @@ before this fix.
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
+from pathlib import Path
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
@@ -276,6 +279,357 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 
 
 # ---------------------------------------------------------------------------
+# FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
+# ---------------------------------------------------------------------------
+# DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
+# concurrent tasks -- even when DeepSeek advertises 500 / 2,500. It is never
+# raised by provider advertising, never "learned", and only revisited through
+# an explicit config revision with Trevor approval, gated on a REAL 7-day
+# wall-clock operator-box stability window (>=95% of eligible Ultra runs
+# complete without concurrency-caused retry exhaustion, zero safety gates
+# bypassed, telemetry complete). Standard and Economy derive from the
+# MEASURED client capacity/cost policy and may never exceed the same
+# client/provider ceiling. Nothing here touches the network: ceilings come
+# from the client's resource profile (FIX 8 ceiling fields), the
+# conservative floor, and the human-ratified constant below.
+
+MODE_FLAG_ENV = "PRESENTATION_MODES"
+MODE_FLAG_DEFAULT = "1"
+
+#: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
+ULTRA_OPERATOR_CEILING = 100
+
+#: capacity.DEFAULT_CONSERVATIVE -- the floor a run proceeds AT when nothing
+#: was measured. A mode never claims a higher width than the box was proven
+#: to (or did) carry.
+DEFAULT_CONSERVATIVE_FLOOR = 3
+
+#: parallel_prompt_worker.DEFAULT_MAX_WORKERS; Standard on an
+#: unmeasured-but-UNBOUNDED client stays the 8-wide worker default.
+STANDARD_WORKER_DEFAULT = 8
+
+MODES: Tuple[str, ...] = ("ultra", "standard", "economy")
+
+#: Capability classes Economy legally re-points to the cheap fast model
+#: FIRST (the original candidates stay behind it as fallbacks). Anything not
+#: named here keeps its original candidate list in EVERY mode -- the
+#: modality doctrine (reasoning/long-synthesis/vision/image classes never
+#: drop to Flash) holds by construction: those classes simply do not appear
+#: in this map.
+ECONOMY_FLASH_REPOINT: Dict[str, List[Dict[str, Any]]] = {
+    "authoring": [{"alias": "deepseek-v4-flash"}],
+    "prompt_authoring": [{"alias": "deepseek-v4-flash"}],
+}
+
+
+def modes_enabled() -> bool:
+    """True unless the operator exported PRESENTATION_MODES=0.
+
+    Default ON per the rev2 rollback doctrine. `=0` is the documented
+    rollback: every FIX 11 seam goes inert -- resolve_route() stops
+    stamping mode concurrency and stops the Economy re-mix, and the
+    launcher writes no .mode-plan.json sidecar and declares no
+    PRESENTATION_MODE env for the engine."""
+    raw = os.environ.get(MODE_FLAG_ENV, MODE_FLAG_DEFAULT)
+    return raw.strip().strip("'\"") != "0"
+
+
+def normalize_mode(mode: str) -> str:
+    """Normalize one mode name into the FIX 11 vocabulary.
+
+    Anything not ultra/standard/economy raises ValueError -- an unknown
+    mode is never silently coerced into a cheaper or more expensive one."""
+    want = str(mode or "").strip().lower()
+    if want not in MODES:
+        raise ValueError(
+            f"unknown mode {mode!r} -- FIX 11 modes are {', '.join(MODES)}")
+    return want
+
+
+def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
+    """The client's measured concurrency ceiling, read from the profile.
+
+    Returns a positive int (a real measured ceiling), the string "UNBOUNDED"
+    (a bring-your-own/unlimited client -- never coerced to a number), or
+    None (nothing measured). Same semantics as capacity.available_or_none:
+    a malformed value reads as unmeasured, never as evidence for a higher
+    width. The strictest measured ceiling wins when several providers
+    carry one."""
+    if not profile:
+        return None
+    values: List[Any] = []
+    for entry in (profile.get("providers") or {}).values():
+        if isinstance(entry, dict):
+            values.append(entry.get("concurrency_ceiling"))
+    ints = [v for v in values if isinstance(v, int)
+            and not isinstance(v, bool) and v > 0]
+    if ints:
+        return min(ints)
+    if any(v == "UNBOUNDED" for v in values):
+        return "UNBOUNDED"
+    return None
+
+
+def mode_concurrency(mode: str, *,
+                     profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """FIX 11 concurrency selection for one mode against one client profile.
+
+    Hard ceilings: Ultra NEVER exceeds ULTRA_OPERATOR_CEILING (100) or a
+    lower measured client ceiling, whichever is smaller -- DeepSeek
+    advertising 500/2,500 changes nothing. An unmeasured client proceeds at
+    the conservative floor (3), never at the full operator ceiling. Standard
+    and Economy derive from the measured capacity and never exceed the same
+    ceiling. Unknown mode -> ValueError."""
+    m = normalize_mode(mode)
+    measured = measured_client_ceiling(profile)
+    operator = ULTRA_OPERATOR_CEILING
+
+    if m == "ultra":
+        if measured is None:
+            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
+                "client ceiling unmeasured: proceed at the conservative "
+                f"floor, never the operator ceiling {operator} -- measure "
+                "first, then scale")
+        elif measured == "UNBOUNDED":
+            choose, reason = operator, (
+                f"client is UNBOUNDED: the operator ceiling {operator} "
+                "applies exactly (provider-advertised 500/2500 never "
+                "raises it)")
+        else:
+            choose, reason = min(operator, int(measured)), (
+                f"min(operator ceiling {operator}, measured client ceiling "
+                f"{measured}) -- Ultra never exceeds either")
+    elif m == "standard":
+        if measured is None:
+            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
+                "client ceiling unmeasured: standard at the conservative "
+                "floor 3")
+        elif measured == "UNBOUNDED":
+            choose, reason = STANDARD_WORKER_DEFAULT, (
+                "client is UNBOUNDED: standard stays the worker default "
+                f"{STANDARD_WORKER_DEFAULT}")
+        else:
+            choose, reason = min(STANDARD_WORKER_DEFAULT, int(measured)), (
+                f"derived from the measured client ceiling {measured}, "
+                f"capped at the worker default {STANDARD_WORKER_DEFAULT}")
+    else:  # economy; normalize_mode already rejected anything unknown
+        if measured is None:
+            choose, reason = 1, (
+                "client ceiling unmeasured: economy runs single-file")
+        elif measured == "UNBOUNDED":
+            choose, reason = 2, (
+                "client is UNBOUNDED: economy stays a modest width "
+                "(cost policy, not capacity)")
+        else:
+            choose, reason = max(1, int(measured) // 3), (
+                f"derived from the measured client ceiling {measured} "
+                "(a third of it, >= 1) -- never above the same ceiling")
+
+    return {
+        "mode": m,
+        "concurrency": int(choose),
+        "measured_ceiling": measured,
+        "operator_ceiling": operator,
+        "reason": reason,
+    }
+
+
+def _mode_candidates(capability: str, mode: str) -> List[Dict[str, Any]]:
+    """Mode-aware ordered candidate list for one capability class.
+
+    Economy re-points ECONOMY_FLASH_REPOINT classes to the cheap fast model
+    first; every other class keeps its original list in every mode. Flag
+    OFF or a non-Economy mode returns the base list untouched."""
+    base = CAPABILITY_CANDIDATES.get(capability, [])
+    if modes_enabled() and mode == "economy" \
+            and capability in ECONOMY_FLASH_REPOINT:
+        merged: List[Dict[str, Any]] = list(ECONOMY_FLASH_REPOINT[capability])
+        for cand in base:
+            if all(c.get("alias") != cand.get("alias") for c in merged):
+                merged.append(dict(cand))
+        return merged
+    return base
+
+
+def read_fix5_wall_clock(last_run_dir: Optional[Path]) -> Optional[float]:
+    """Sum the measured phase duration_s from FIX 5 stage-timings rows.
+
+    The ETA basis is the LAST COMPLETED RUN's real measured wall-clock from
+    working/telemetry/stage-timings.jsonl (FIX 5) -- never a guessed
+    constant. Returns None when nothing measured."""
+    if not last_run_dir:
+        return None
+    path = Path(last_run_dir) / "working" / "telemetry" / "stage-timings.jsonl"
+    if not path.is_file():
+        return None
+    total = 0.0
+    seen = False
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            dur = row.get("duration_s")
+            if isinstance(dur, (int, float)) and not isinstance(dur, bool):
+                total += float(dur)
+                seen = True
+    except OSError:
+        return None
+    return total if seen else None
+
+
+def mode_plan(mode: str, *,
+              profile: Optional[Dict[str, Any]] = None,
+              last_run_dir: Optional[Path] = None,
+              plan_calls: Optional[Dict[str, int]] = None,
+              estimate_usd: Optional[float] = None) -> Dict[str, Any]:
+    """The honest-ETA + cost plan a mode launch presents at intake.
+
+    FIX 11: "given the profile + measured per-phase costs (FIX 5), present
+    three modes with honest ETA + cost." ETA = FIX 5 measured wall-clock of
+    the last completed run (basis names it; None states unmeasured instead
+    of guessing). Cost = the FIX 12 preflight estimate priced off the
+    FIX 13 catalog (basis names it; None states unpriced). Concurrency =
+    mode_concurrency()'s measured-capacity decision."""
+    m = normalize_mode(mode)
+    conc = mode_concurrency(m, profile=profile)
+    wall = read_fix5_wall_clock(last_run_dir)
+    eta = {
+        "duration_s": wall,
+        "basis": ("fix5-stage-timings: measured wall-clock of the last "
+                  "completed run" if wall is not None else
+                  "unmeasured: no FIX 5 stage-timings for a last completed "
+                  "run -- stated as unmeasured, not guessed"),
+        "plan_calls": dict(plan_calls) if plan_calls else {},
+    }
+    cost = {
+        "total_estimate_usd": (float(estimate_usd)
+                               if isinstance(estimate_usd, (int, float))
+                               and not isinstance(estimate_usd, bool)
+                               else None),
+        "basis": ("fix12-credit-preflight: catalog-priced estimate"
+                  if estimate_usd is not None else
+                  "unpriced: no FIX 12 verdict was supplied"),
+    }
+    return {
+        "mode": m,
+        "concurrency": conc,
+        "eta": eta,
+        "cost": cost,
+        "flag": {"env": MODE_FLAG_ENV, "rollback": f"{MODE_FLAG_ENV}=0"},
+    }
+
+
+def _parse_window_ts(row: Dict[str, Any]) -> Optional[datetime]:
+    raw = row.get("ts") or row.get("started_at") or row.get("ended_at")
+    if isinstance(raw, datetime):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def stability_window(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Evaluate the FIX 11 ceiling-change stability window.
+
+    The window qualifies ONLY when, across >= 7 REAL elapsed days (the
+    timestamp span of ordinary wall-clock -- accelerated/compressed fixture
+    time can never produce it), >=95% of eligible Ultra runs complete
+    WITHOUT concurrency-caused retry exhaustion, ZERO safety gates are
+    bypassed, and telemetry is complete (every Ultra row carries its
+    timestamp, mode and status).
+
+    A qualifying window may PROPOSE a ceiling-change config revision and can
+    never APPLY one: this function mutates nothing, the proposal record
+    carries applied=False and requires='Trevor approval', and the operator
+    ceiling constant is left untouched. A window below any threshold -- or
+    shorter than 7 real days -- cannot unlock a proposal at all.
+
+    Row contract (best-effort, never a network call): each row names its
+    run (run_id), carries a parseable timestamp (ts/started_at/ended_at),
+    mode, status ("complete" = completed successfully; "retry_exhausted" =
+    a concurrency-caused retry exhaustion) and gates_bypassed (default 0).
+    """
+    all_rows = [r for r in (rows or []) if isinstance(r, dict)]
+    tele_complete = True
+    elig: List[Dict[str, Any]] = []
+    gates_bypassed = 0
+    for r in all_rows:
+        if not r.get("mode") or not r.get("status"):
+            tele_complete = False
+            continue
+        if str(r.get("mode")) != "ultra":
+            continue
+        if _parse_window_ts(r) is None:
+            tele_complete = False
+            continue
+        bypassed = r.get("gates_bypassed") or 0
+        try:
+            bypassed = int(bypassed)
+        except (TypeError, ValueError):
+            bypassed = 1
+        gates_bypassed += bypassed
+        elig.append(r)
+
+    eligible = False
+    success_rate = 0.0
+    span_days = 0.0
+    n = len(elig)
+    if n and tele_complete and gates_bypassed == 0:
+        times = sorted(_parse_window_ts(r) for r in elig)
+        span_days = (times[-1] - times[0]).total_seconds() / 86400.0
+        completes = sum(1 for r in elig
+                        if str(r.get("status")) == "complete")
+        success_rate = completes / n
+        if span_days >= 7.0 and success_rate >= 0.95:
+            eligible = True
+
+    result: Dict[str, Any] = {
+        "eligible": eligible,
+        "runs": n,
+        "success_rate": round(success_rate, 4),
+        "span_days": round(span_days, 4),
+        "gates_bypassed": gates_bypassed,
+        "telemetry_complete": tele_complete,
+        "operator_ceiling": ULTRA_OPERATOR_CEILING,
+        "thresholds": {"min_days": 7, "min_success_rate": 0.95,
+                       "max_gates_bypassed": 0},
+    }
+    proposal = None
+    if eligible:
+        suggestion = max(
+            ULTRA_OPERATOR_CEILING, (result["operator_ceiling"]))
+        proposal = {
+            "applied": False,  # this function can never apply a ceiling change
+            "requires": "Trevor approval: an explicit config revision, "
+                        "never a learned or provider-advertised increase",
+            "current_operator_ceiling": ULTRA_OPERATOR_CEILING,
+            "suggested_revision_review": (
+                "revisit (do not auto-raise) the 100-concurrent ceiling "
+                "after a qualifying 7-day window; any change is a separate "
+                "operator-approved config revision"),
+            "evidence": {
+                "runs": n,
+                "success_rate": result["success_rate"],
+                "span_days": result["span_days"],
+                "gates_bypassed": gates_bypassed,
+            },
+            "suggested_ceiling_for_review_only": suggestion,
+        }
+    result["proposal"] = proposal
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Profile eligibility (client-owned + consented + catalog health)
 # ---------------------------------------------------------------------------
 def _providers_of(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -388,6 +742,11 @@ def resolve_route(phase_id: str, *,
         return decision
     decision["router"] = "model_router"
 
+    if modes_enabled():
+        mode = normalize_mode(decision.get("mode", "standard"))
+    else:
+        mode = str(decision.get("mode") or "standard")
+
     capability = decision["capability"]
     if capability == "mechanical":
         decision.update({
@@ -432,11 +791,13 @@ def resolve_route(phase_id: str, *,
         })
         return decision
     decision["profile_state"] = "has_providers"
+    if modes_enabled():
+        decision["mode_concurrency"] = mode_concurrency(mode, profile=profile)
 
     candidates: List[Dict[str, Any]] = []
     route: Optional[Dict[str, str]] = None
     reason = ""
-    for cand in CAPABILITY_CANDIDATES.get(capability, []):
+    for cand in _mode_candidates(capability, mode):
         alias = str(cand.get("alias") or "")
         alias_def = resolve_alias(alias)
         row: Dict[str, Any] = {"alias": alias, **alias_def}

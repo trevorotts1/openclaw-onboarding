@@ -97,7 +97,36 @@ EXIT_CREDIT_REFUSED = 7
 #: BEFORE any spend, never mid-run discovery of an empty account.
 CREDIT_AUTOFAIL_CODE = "AF-CREDIT-PREFLIGHT"
 
+#: FIX 22 (presentation rev2 waves): dispatch() refuses when the notify
+#: transport is unconfigured (AF-NOTIFY-UNCONFIGURED) -- joins the -1..-6
+#: refusal family. Nothing spawned. An unset transport means job
+#: progress/blocked/done messages and watchdog stall findings can never
+#: leave the box: fail-closed at launch, not warn-and-continue. The shared
+#: structural check lives in notify_preflight (also the FIX 39 pre-roll
+#: gate interface); the hard-stop is armed by
+#: PRESENTATION_NOTIFY_FAIL_CLOSED (default ON, =0 = documented rollback to
+#: the pre-fix warn-and-continue behavior).
+DISPATCH_NOTIFY_REFUSED = -7
+
+#: CLI exit code for DISPATCH_NOTIFY_REFUSED.
+EXIT_NOTIFY_UNCONFIGURED = 8
+
+NOTIFY_AUTOFAIL_CODE = "AF-NOTIFY-UNCONFIGURED"
+
 CAPACITY_AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
+
+#: FIX 11 (presentation rev2 waves): dispatch() refuses an unknown declared
+#: mode before any gate runs and before any process exists
+#: (AF-MODE-INVALID) -- joins the -1..-8 refusal family. Nothing spawned.
+#: PRESENTATION_MODES=0 (documented rollback) leaves the whole FIX 11 mode
+#: surface inert: no validation refusal, no .mode-plan.json, no mode env.
+DISPATCH_MODE_INVALID = -9
+
+#: CLI exit code for DISPATCH_MODE_INVALID.
+EXIT_MODE_INVALID = 10
+
+MODE_AUTOFAIL_CODE = "AF-MODE-INVALID"
+
 
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
@@ -271,6 +300,54 @@ def capacity_gate() -> Tuple[Optional[int], dict]:
             "available": None,
             "notes": [f"capacity probe could not run: {exc.__class__.__name__}: {exc}"],
         }
+
+
+def notify_gate(run_path: Path) -> bool:
+    """FIX 22 (presentation rev2 waves): the notify-transport preflight.
+
+    An unset/unusable PRESENTATION_NOTIFY_CMD means job progress/blocked/done
+    messages and watchdog stall findings can NEVER leave this box -- the
+    exact silence the U14 comment in presentation-watchdog.sh documented and
+    then tolerated. Under PRESENTATION_NOTIFY_FAIL_CLOSED (default ON) an
+    unconfigured transport is a hard configuration error at launch, not a
+    warning: print the AF-NOTIFY-UNCONFIGURED payload (marker NOT_READY_NOTIFY,
+    the same string FIX 39's pre-roll gate keys on) and return False so
+    dispatch() refuses BEFORE any process is spawned.
+
+    =0 (the documented emergency kill-switch) restores the pre-fix
+    warn-and-continue behavior: a loud WARNING to stderr, then True. It does
+    NOT restore direct Telegram (FIX 23 owns the transport) and does NOT
+    suppress FIX 21 SYSTEM-block notifications -- only the launch hard-stop
+    is disabled.
+
+    The structural check itself is single-sourced in notify_preflight
+    (presentation_job.notify_preflight.check_notify_config) -- the same
+    module the FIX 39 pre-roll gate runs as a CLI -- so "what counts as
+    configured" can never drift between the launcher and the rollout check.
+    """
+    try:
+        try:
+            from . import notify_preflight
+        except ImportError:
+            import notify_preflight
+    except ImportError:  # broken install: behave as configured, never fail-open silently
+        print("launcher: WARNING notify_preflight unavailable -- cannot check "
+              "the notify transport", file=sys.stderr)
+        return True
+    result = notify_preflight.check_notify_config()
+    if result["ready"]:
+        return True
+    payload = notify_preflight.refusal_payload()
+    payload["run_dir"] = str(run_path)
+    if not result["fail_closed"]:
+        print(f"launcher: WARNING {notify_preflight.NOTIFY_CMD_ENV} is unset or "
+              f"unusable -- notifications will not be delivered "
+              f"(PRESENTATION_NOTIFY_FAIL_CLOSED=0: warn-only mode)", file=sys.stderr)
+        return True
+    print(f"launcher: REFUSING to dispatch {run_path} -- "
+          f"{NOTIFY_AUTOFAIL_CODE}: {result['reason']}", file=sys.stderr)
+    print(json.dumps(payload, indent=2), file=sys.stderr)
+    return False
 
 
 def _refuse_unmeasured_capacity(result: dict, run_path: Path) -> int:
@@ -486,7 +563,9 @@ def dispatch(
         refused (AF-CAPACITY-UNMEASURED, nothing spawned), -5 when deck_type
         does not resolve (AF-DECK-TYPE-UNKNOWN, nothing spawned), -6 when
         the FIX 12 credit preflight blocked a declared mode
-        (AF-CREDIT-PREFLIGHT, nothing spawned).
+        (AF-CREDIT-PREFLIGHT, nothing spawned), -7 when the notify transport
+        is unconfigured (AF-NOTIFY-UNCONFIGURED, FIX 22 fail-closed,
+        nothing spawned).
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -511,6 +590,37 @@ def dispatch(
         return -1
 
     run_path = Path(run_dir).expanduser().resolve()
+
+    # FIX 11 MODE GATE -- an unknown declared mode is refused here, before
+    # any gate, before the sidecar, before any process exists. An unknown
+    # mode is never silently coerced into a cheaper or more expensive one.
+    # PRESENTATION_MODES=0 (documented rollback) leaves the surface inert.
+    mode_env: Optional[dict] = None
+    _router = None
+    if mode is not None:
+        try:
+            try:
+                from . import model_router as _router
+            except ImportError:
+                import model_router as _router  # type: ignore[no-redef]
+        except ImportError:
+            _router = None
+        if _router is not None and _router.modes_enabled():
+            try:
+                mode = _router.normalize_mode(mode)
+            except ValueError as exc:
+                print(f"launcher: REFUSING to dispatch {run_path} -- "
+                      f"{MODE_AUTOFAIL_CODE}: {exc}", file=sys.stderr)
+                return DISPATCH_MODE_INVALID
+
+    # FIX 22 NOTIFY GATE -- before the capacity probe, before argv is built,
+    # before any process exists. An unset/unusable PRESENTATION_NOTIFY_CMD is
+    # a hard configuration error at launch (fail-closed default): a job
+    # whose progress/blocked/done messages and stall findings can never
+    # leave this box must not start. PRESENTATION_NOTIFY_FAIL_CLOSED=0 is
+    # the documented rollback to the pre-fix warn-and-continue behavior.
+    if not notify_gate(run_path):
+        return DISPATCH_NOTIFY_REFUSED
 
     # THE GATE. Measure before launching -- before argv is built, before any
     # process exists. A run that cannot be sized is a run that does not start.
@@ -596,6 +706,31 @@ def dispatch(
                   f"(balances: {', '.join(parts) or 'none'})",
                   flush=True)
 
+    # FIX 11 MODE PLAN -- the declared mode is stamped as an honest launch
+    # plan: concurrency from the measured client ceiling (Ultra never above
+    # the 100-task operator ceiling), ETA from FIX 5 measured wall-clock,
+    # cost from the FIX 12 catalog-priced verdict. Written AFTER every
+    # refusal gate, so a refused launch never leaves a sidecar. The engine
+    # inherits the declared mode through PRESENTATION_MODE.
+    # PRESENTATION_MODES=0 skips the whole block (pre-fix behavior).
+    if mode is not None and _router is not None and _router.modes_enabled():
+        est = None
+        if isinstance(verdict, dict):
+            est = verdict.get("total_estimate_usd")
+        plan = _router.mode_plan(mode, plan_calls=plan_calls,
+                                 estimate_usd=est)
+        plan["run_dir"] = str(run_path)
+        sidecar = run_path / ".mode-plan.json"
+        tmp_plan = sidecar.with_suffix(".json.tmp")
+        tmp_plan.write_text(json.dumps(plan, indent=2, sort_keys=True),
+                            encoding="utf-8")
+        os.replace(tmp_plan, sidecar)
+        mode_env = dict(os.environ, PRESENTATION_MODE=mode)
+        _conc = plan.get("concurrency") or {}
+        print(f"launcher: mode {mode} plan stamped -- concurrency "
+              f"{_conc.get('concurrency')} ({_conc.get('reason')})",
+              flush=True)
+
     argv = [
         sys.executable or "python3",
         str(engine_entry),
@@ -652,6 +787,7 @@ def dispatch(
                 stderr=stderr_path.open("a", encoding="utf-8"),
                 start_new_session=True,  # new process group for orphan-free timeout
                 close_fds=True,
+                env=mode_env,  # FIX 11: engine inherits the declared mode
             )
         except OSError as exc:
             print(f"launcher: could not start engine: {exc}", file=sys.stderr)
@@ -687,7 +823,8 @@ def dispatch(
     else:
         # Synchronous -- run in foreground (for testing / debugging).
         try:
-            proc = subprocess.run(argv, shell=False, cwd=str(scripts), check=False)
+            proc = subprocess.run(argv, shell=False, cwd=str(scripts),
+                                  check=False, env=mode_env)
         except OSError as exc:
             print(f"launcher: could not start engine: {exc}", file=sys.stderr)
             return -1
@@ -703,6 +840,7 @@ def dispatch_new(
     deck_type: str,
     background: bool = True,
     requested_parallel: Optional[int] = None,
+    mode: Optional[str] = None,
 ) -> int:
     """Convenience wrapper: launch a new engine job.
 
@@ -735,11 +873,13 @@ def dispatch_new(
             pass
 
     return dispatch(run_dir, client=client, deck_type=deck_type, resume=False,
-                    background=background, requested_parallel=requested_parallel)
+                    background=background, requested_parallel=requested_parallel,
+                    mode=mode)
 
 
 def dispatch_resume(run_dir: str, background: bool = True,
-                    requested_parallel: Optional[int] = None) -> int:
+                    requested_parallel: Optional[int] = None,
+                    mode: Optional[str] = None) -> int:
     """Convenience wrapper: resume a parked engine job.
 
     Returns PID on success, -1 on failure.
@@ -752,7 +892,7 @@ def dispatch_resume(run_dir: str, background: bool = True,
         print(f"launcher: engine already running for {run_path}", flush=True)
         return -2
     return dispatch(run_dir, resume=True, background=background,
-                    requested_parallel=requested_parallel)
+                    requested_parallel=requested_parallel, mode=mode)
 
 
 # ---------------------------------------------------------------------------
@@ -787,6 +927,14 @@ def main(argv: Optional[list] = None) -> int:
                         "conservative floor (3) is refused (AF-CAPACITY-UNMEASURED). "
                         "Omit (the default) to run at whatever capacity.probe() "
                         "measures, floor included.")
+    p.add_argument("--mode", default=None,
+                   help="declare the FIX 11 mode (ultra/standard/economy). "
+                        "Selects measured-capacity concurrency, stamps the "
+                        "honest ETA+cost plan as .mode-plan.json in the run "
+                        "dir, and hands the engine PRESENTATION_MODE. An "
+                        "unknown mode refuses the launch "
+                        "(AF-MODE-INVALID). PRESENTATION_MODES=0 leaves the "
+                        "surface inert.")
 
     args = p.parse_args(argv)
     run_path = args.run_dir.expanduser().resolve()
@@ -805,32 +953,44 @@ def main(argv: Optional[list] = None) -> int:
         # Sync mode: dispatch returns the engine's own exit code (0 == ok), or a
         # negative sentinel when the launcher itself refused before spawning.
         rc = dispatch_resume(str(run_path), background=False,
-                             requested_parallel=args.requested_parallel) if args.resume else \
+                             requested_parallel=args.requested_parallel,
+                             mode=args.mode) if args.resume else \
             dispatch_new(str(run_path),
                          client=args.client or "operator",
                          deck_type=args.deck_type or "standard",
                          background=False,
-                         requested_parallel=args.requested_parallel)
+                         requested_parallel=args.requested_parallel,
+                         mode=args.mode)
         if rc == DISPATCH_CAPACITY_REFUSED:
             return EXIT_CAPACITY_UNMEASURED
         if rc == DISPATCH_UNKNOWN_DECK_TYPE:
             return EXIT_UNKNOWN_DECK_TYPE
         if rc == DISPATCH_CREDIT_REFUSED:
             return EXIT_CREDIT_REFUSED
+        if rc == DISPATCH_NOTIFY_REFUSED:
+            return EXIT_NOTIFY_UNCONFIGURED
+        if rc == DISPATCH_MODE_INVALID:
+            return EXIT_MODE_INVALID
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
-                          requested_parallel=args.requested_parallel) if args.resume else \
+                          requested_parallel=args.requested_parallel,
+                          mode=args.mode) if args.resume else \
         dispatch_new(str(run_path),
                      client=args.client or "operator",
                      deck_type=args.deck_type or "standard",
                      background=True,
-                     requested_parallel=args.requested_parallel)
+                     requested_parallel=args.requested_parallel,
+                     mode=args.mode)
     if pid == DISPATCH_CAPACITY_REFUSED:
         return EXIT_CAPACITY_UNMEASURED
     if pid == DISPATCH_UNKNOWN_DECK_TYPE:
         return EXIT_UNKNOWN_DECK_TYPE
     if pid == DISPATCH_CREDIT_REFUSED:
         return EXIT_CREDIT_REFUSED
+    if pid == DISPATCH_NOTIFY_REFUSED:
+        return EXIT_NOTIFY_UNCONFIGURED
+    if pid == DISPATCH_MODE_INVALID:
+        return EXIT_MODE_INVALID
     return 0 if pid > 0 else 1
 
 
