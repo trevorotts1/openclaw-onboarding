@@ -381,6 +381,64 @@ class Engine:
         return bad
 
     # -- executors --------------------------------------------------------
+    def _telemetry_dir(self) -> Path:
+        """FIX 5: durable per-stage timing telemetry location."""
+        return self.run_dir / "working" / "telemetry"
+
+    def _emit_stage_timing(self, record: Dict[str, Any]) -> None:
+        """FIX 5: append one stage-timing row to working/telemetry/stage-timings.jsonl.
+
+        Best-effort: telemetry must NEVER break a run. On write failure the row is
+        dropped with a printed warning (visible in engine output, not silent).
+        """
+        try:
+            tdir = self._telemetry_dir()
+            tdir.mkdir(parents=True, exist_ok=True)
+            with (tdir / "stage-timings.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, sort_keys=True) + "\n")
+        except OSError as exc:
+            print(f"WARN telemetry: could not write stage timing: {exc}", flush=True)
+
+    def run_phase_timed(self, phase: Phase, wave: int = 0) -> int:
+        """FIX 5: telemetry wrapper around run_phase.
+
+        Emits ONE phase_exit row per run_phase call covering every exit path
+        (done, blocked, gate-blocked, crash escape) with duration measured on
+        time.monotonic(). Telemetry never alters the return code, and never
+        raises: a telemetry failure must not be able to break a run.
+        """
+        started_t = time.monotonic()
+        started_iso = utcnow()
+        try:
+            rc = self.run_phase(phase)
+        except BaseException as exc:
+            self._emit_stage_timing({
+                "run_id": self.run_dir.name,
+                "phase_id": phase.id,
+                "wave": wave,
+                "model_used": None,
+                "event": "phase_exit",
+                "started_at": started_iso,
+                "ended_at": utcnow(),
+                "duration_s": round(time.monotonic() - started_t, 3),
+                "status": "crashed",
+                "error_class": type(exc).__name__,
+            })
+            raise
+        self._emit_stage_timing({
+            "run_id": self.run_dir.name,
+            "phase_id": phase.id,
+            "wave": wave,
+            "model_used": None,
+            "event": "phase_exit",
+            "started_at": started_iso,
+            "ended_at": utcnow(),
+            "duration_s": round(time.monotonic() - started_t, 3),
+            "status": {EXIT_OK: "done"}.get(rc, f"nonzero_rc_{rc}"),
+            "return_code": rc,
+        })
+        return rc
+
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
         if ps.get("status") == "done":
@@ -927,14 +985,53 @@ class Engine:
             description = intake.get("description") or ""
             self.board.open_card(deck_slug, title, description)
 
+        run_started_t = time.monotonic()
         for p in phases:
-            rc = self.run_phase(p)
+            rc = self.run_phase_timed(p, wave=0)
             if rc != EXIT_OK:
                 return rc
+
+        # FIX 5: one-line run summary (total wall-clock, slowest phases).
+        self._emit_run_summary(run_started_t)
 
         if only:
             return EXIT_OK
         return self.close()
+
+    def _emit_run_summary(self, run_started_t: float) -> None:
+        """FIX 5: emit a run-level summary -- total wall clock + slowest 3 phases.
+
+        Reads back the run's own stage-timings rows (event=phase_exit only) so
+        blocks/crashes are visible too. Best-effort, never raises.
+        """
+        try:
+            rows = []
+            tf = self._telemetry_dir() / "stage-timings.jsonl"
+            if tf.exists():
+                with tf.open("r", encoding="utf-8") as fh:
+                    rows = [json.loads(line) for line in fh if line.strip()]
+            exits = [r for r in rows if r.get("event") == "phase_exit"]
+            by_phase: Dict[str, float] = {}
+            for r in exits:
+                pid = r.get("phase_id")
+                if pid:
+                    by_phase[pid] = by_phase.get(pid, 0.0) + float(r.get("duration_s") or 0.0)
+            slowest = sorted(by_phase.items(), key=lambda kv: kv[1], reverse=True)[:3]
+            total = time.monotonic() - run_started_t
+            summary = {
+                "run_id": self.run_dir.name,
+                "event": "run_summary",
+                "total_wall_s": round(total, 3),
+                "phase_count": len(exits),
+                "slowest_3": [{"phase_id": pid, "duration_s": round(d, 3)} for pid, d in slowest],
+                "generated_at": utcnow(),
+            }
+            self._emit_stage_timing(summary)
+            slow_str = ", ".join(f"{pid} {d:.0f}s" for pid, d in slowest)
+            print(f"RUN SUMMARY: total {total:.0f}s | phases executed: {len(exits)} | "
+                  f"slowest: {slow_str}", flush=True)
+        except Exception as exc:  # noqa: BLE001 telemetry must never break a run
+            print(f"WARN telemetry: run summary failed: {exc}", flush=True)
 
     def _mint_process_certificate(self) -> dict:
         """U067 -- WORK-ITEM-05: Mint PROCESS-CERTIFICATE inside engine close().
