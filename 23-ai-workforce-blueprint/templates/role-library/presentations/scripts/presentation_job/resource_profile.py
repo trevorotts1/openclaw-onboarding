@@ -661,4 +661,508 @@ def intake_question(detection: Optional[Dict[str, Any]] = None,
     pend = pending_questions(detection=detection, config_dir=config_dir)
     if not pend:
         return None
-    return pend[0]
+
+
+# ---------------------------------------------------------------------------
+# FIX 10: model gap-analysis + consent-based add/suggest
+# ---------------------------------------------------------------------------
+# WHAT THIS IS
+# ------------
+# The system used to never notice that a client who owns Ollama/OpenRouter
+# may lack GLM 5.3 / GLM 5.3 Flash / DeepSeek V4 Flash 0731-class models for
+# presentation work. This section compares the profile's wired inventory
+# (FIX 9 probes -> apply_probe_refresh/store_provider_probes) against a
+# RECOMMENDED SET for presentation workloads and produces one of two
+# outcomes per gap, exactly as the spec binds it:
+#
+#   ADD      -- where the platform ALLOWS the addition (a detected, present,
+#               bring-your-own-key provider can carry the model) AND STANDING
+#               CONSENT exists (consent.add_models, recorded once through
+#               record_model_consent). The addition is recorded in
+#               profile["model_additions"] as status "added_pending_probe"
+#               and flagged for a re-probe; confirm_added_models() flips it
+#               to "confirmed" when a later probe refresh shows the model
+#               wired.
+#   SUGGEST  -- anything else (no standing consent, no provider that can
+#               carry it, or an operator-provisioning-only platform). A
+#               plain-language suggestion record -- what it unlocks and its
+#               cost -- lands in profile["model_suggestions"], and
+#               approve_model_suggestion() adds it ON APPROVAL only.
+#
+# BINDING: this NEVER rewrites client configuration. An "add" here is a
+# durable, consent-backed INTENT RECORD inside the (secrets-adjacent)
+# profile plus a re-probe request; rows carry config_written: False as
+# proof the writer never touched provider config. Actual wiring happens
+# through the operator's provisioning flow only.
+#
+# CATALOG INTERFACE (FIX 13 dependency): recommended entries are expressed
+# as catalog ALIASES, not literal provider model ids -- FIX 13 forbids
+# literal model IDs in dept code paths, and its aliases feed this matcher.
+# Pass FIX 13's catalog into analyze_model_gaps(catalog=...) as any of:
+#   - a callable alias -> iterable of match patterns,
+#   - an object exposing resolve_alias(alias) -> iterable,
+#   - a dict {alias: [pattern, ...]} (optionally under an "aliases" key).
+# When no catalog is passed, an optional import of a sibling `model_catalog`
+# module (FIX 13's landing spot) is attempted; if it is absent -- FIX 13 may
+# land after this fix -- each recommendation's built-in matching metadata is
+# used. That metadata is matching-only: it never sends a model id anywhere.
+#
+# Rollout flag: PRESENTATION_MODEL_GAP=1 default ON; =0 is the documented
+# rollback -- analyze_model_gaps() returns [], record/apply/approve/confirm
+# calls are refused no-ops, and nothing in this section writes anything.
+
+GAP_FLAG_ENV = "PRESENTATION_MODEL_GAP"
+GAP_FLAG_DEFAULT = "1"
+
+#: The recommended set for presentation workloads (spec FIX 10: the GLM 5.3
+#: / GLM 5.3 Flash / DeepSeek V4 Flash 0731 class, "etc." -- extend through
+#: the catalog, not by editing matcher code). `alias` is the FIX 13 catalog
+#: key; `patterns` are normalized-shape match metadata for wired-id
+#: inventories; `excludes` stops a more specific sibling from falsely
+#: covering a less specific alias (a box with only GLM 5.3 Flash wired must
+#: still see a GLM 5.3 gap). `unlocks`/`cost` are the plain-language halves
+#: of a suggestion record.
+RECOMMENDED_PRESENTATION_MODELS: List[Dict[str, Any]] = [
+    {
+        "alias": "glm-5.3",
+        "label": "GLM 5.3",
+        "providers": ("openrouter", "ollama-cloud"),
+        "patterns": ("glm-5.3", "glm5.3"),
+        "excludes": ("flash", "lite", "air"),
+        "unlocks": ("strong long-form reasoning for deck narrative and "
+                    "research synthesis -- sharper section arguments and "
+                    "speaker tracks"),
+        "cost": ("usage-billed (per-token on OpenRouter; a full deck costs "
+                 "a few dollars at typical pricing)"),
+    },
+    {
+        "alias": "glm-5.3-flash",
+        "label": "GLM 5.3 Flash",
+        "providers": ("openrouter", "ollama-cloud"),
+        "patterns": ("glm-5.3-flash", "glm5.3flash", "glm-5.3f"),
+        "excludes": (),
+        "unlocks": ("fast first-draft slide copy and layout variants at low "
+                    "cost -- the throughput model for per-slide waves"),
+        "cost": ("usage-billed at flash-tier rates (well under a dollar per "
+                 "slide batch at typical pricing)"),
+    },
+    {
+        "alias": "deepseek-v4-flash-0731",
+        "label": "DeepSeek V4 Flash (0731)",
+        "providers": ("deepseek-direct", "openrouter", "ollama-cloud"),
+        "patterns": ("deepseek-v4-flash", "deepseekv4flash"),
+        "excludes": ("pro", "reasoner"),
+        "unlocks": ("the department's workhorse authoring tier -- parallel "
+                    "slide waves and QC passes run fastest and cheapest on "
+                    "it"),
+        "cost": ("usage-billed on the client's own DeepSeek/OpenRouter "
+                 "account (no extra platform fee)"),
+    },
+]
+
+#: Provider ids where an addition can be applied by wiring the model into
+#: the client's OWN account (the BYOK-class providers FIX 9 resolves). Any
+#: other provider is operator-provisioning-only -> suggest, never add.
+_ADD_APPLICABLE_PROVIDERS = ("openrouter", "ollama-cloud", "deepseek-direct")
+
+
+def gap_flag_enabled() -> bool:
+    """True unless the operator exported PRESENTATION_MODEL_GAP=0 (the
+    documented rollback for this section; see the header comment)."""
+    return os.environ.get(GAP_FLAG_ENV, GAP_FLAG_DEFAULT) != "0"
+
+
+def _norm_model_id(text: Any) -> str:
+    """Normalization for model-id matching: lowercase, every non-alphanumeric
+    run collapsed to a single dash. 'zai/glm-5.3-flash:free', 'GLM 5.3 Flash'
+    and 'glm_5_3_flash' all land on one comparable shape."""
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+
+
+def _catalog_alias_resolver(catalog: Any):
+    """Coerce FIX 13's catalog (any of the accepted shapes above, or None)
+    into a callable alias -> tuple of match patterns, or None when no
+    catalog is reachable. With no argument, an optional sibling
+    `model_catalog` import is attempted (FIX 13's landing spot); its absence
+    is normal -- this fix lands in the same wave and must import cleanly
+    either way."""
+    resolve = None
+    if catalog is not None:
+        if callable(catalog):
+            resolve = catalog
+        elif hasattr(catalog, "resolve_alias"):
+            resolve = catalog.resolve_alias
+        elif isinstance(catalog, dict):
+            table = catalog.get("aliases") if "aliases" in catalog else catalog
+            def resolve(alias, _t=table):  # noqa: ANN001,E306
+                v = _t.get(alias) if isinstance(_t, dict) else None
+                if isinstance(v, str):
+                    return (v,)
+                return tuple(v or ())
+    else:
+        try:
+            try:
+                from . import model_catalog as _mc  # package-relative
+            except ImportError:
+                import model_catalog as _mc  # type: ignore[no-redef]
+            if hasattr(_mc, "resolve_alias"):
+                resolve = _mc.resolve_alias
+        except ImportError:
+            resolve = None
+    if resolve is None:
+        return None
+
+    def _wrapped(alias):  # noqa: ANN001
+        try:
+            v = resolve(alias)
+        except Exception:  # noqa: BLE001 -- a broken alias row must not kill gap analysis
+            return None
+        if not v:
+            return None
+        if isinstance(v, str):
+            return (v,)
+        return tuple(v)
+    return _wrapped
+
+
+def recommended_models() -> List[Dict[str, Any]]:
+    """The recommended presentation model set (copies; callers never mutate
+    the module table)."""
+    return [dict(r, providers=tuple(r["providers"]),
+                 patterns=tuple(r["patterns"]),
+                 excludes=tuple(r.get("excludes") or ()))
+            for r in RECOMMENDED_PRESENTATION_MODELS]
+
+
+def _wired_covers(wired_norm: List[str], patterns_norm: List[str],
+                  excludes_norm: List[str]) -> bool:
+    """True when a wired id matches a catalog pattern (containment either
+    way on the normalized shapes -- provider ids, display labels and
+    catalog aliases are written differently: 'glm-5-3-flash' covers
+    'zai-glm-5-3-flash-free' and vice versa) AND is not excluded. The
+    exclusion half is what stops 'GLM 5.3 Flash' from posing as base
+    'GLM 5.3' coverage."""
+    for w in wired_norm:
+        if any(x and x in w for x in excludes_norm):
+            continue
+        for p in patterns_norm:
+            if not p:
+                continue
+            # p-in-w is the normal direction (a catalog fragment inside a
+            # longer provider id). w-in-p is allowed only for substantial
+            # wired ids -- a bare "glm-5" must NOT pose as covering the
+            # "glm-5.3" alias just because it is a substring of it.
+            if p in w or (len(w) >= 8 and w in p):
+                return True
+    return False
+
+
+def _provider_present(prof: Dict[str, Any], provider_id: str) -> bool:
+    """Whether FIX 9's probes found this provider on the box: the entry is
+    stored, detected, and (when recorded) presence is not False.
+    Deliberately conservative -- a provider never probed is NOT present,
+    and absence of evidence is never evidence a platform can carry an
+    addition."""
+    entry = get_provider(prof, provider_id)
+    if not entry:
+        return False
+    if entry.get("presence") is False:
+        return False
+    return bool(entry.get("detected"))
+
+
+def record_model_consent(granted: bool, source: str = "intake",
+                         profile: Optional[Dict[str, Any]] = None,
+                         config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Record the client's STANDING consent (or refusal) for adding
+    recommended presentation models. The refusal is persisted too -- a
+    refusal is an answer, not an absence, and gap-analysis treats the two
+    differently: an unanswered consent only ever suggests; a refusal only
+    ever suggests; only a granted answer unlocks the add path."""
+    if not gap_flag_enabled():
+        return profile if profile is not None else load_profile(config_dir)
+    prof = profile if profile is not None else load_profile(config_dir)
+    consent = prof.setdefault("consent", {})
+    consent["add_models"] = bool(granted)
+    consent["add_models_source"] = str(source)
+    consent["add_models_answered_at"] = _now()
+    save_profile(prof, config_dir)
+    return prof
+
+
+def has_model_add_consent(profile: Optional[Dict[str, Any]] = None,
+                          config_dir: Optional[Path] = None) -> Optional[bool]:
+    """True / False / None: consent given, consent refused, or never asked.
+    None means the intake still owes the question -- callers surface it as a
+    pending consent turn, never assume it."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    v = (prof.get("consent") or {}).get("add_models")
+    return None if v is None else bool(v)
+
+
+def _addition_rows(prof: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [r for r in (prof.get("model_additions") or []) if isinstance(r, dict)]
+
+
+def _suggestion_rows(prof: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [r for r in (prof.get("model_suggestions") or []) if isinstance(r, dict)]
+
+
+def _record_addition(prof: Dict[str, Any], *, alias: str, label: str,
+                     providers: List[str], approved_by: str) -> Dict[str, Any]:
+    """Create one addition intent row (never provider config). Idempotent
+    per alias: a pending or confirmed row for the alias is returned as-is."""
+    additions = prof.setdefault("model_additions", [])
+    for row in additions:
+        if isinstance(row, dict) and row.get("alias") == alias:
+            return row
+    row = {
+        "alias": alias,
+        "label": label,
+        "providers": list(providers),
+        "status": "added_pending_probe",
+        "approved_by": str(approved_by),
+        "approved_at": _now(),
+        "reprobe_required": True,
+        "config_written": False,
+    }
+    additions.append(row)
+    # the suggestion for this alias, if open, is now closed by the add
+    prof["model_suggestions"] = [s for s in _suggestion_rows(prof)
+                                 if s.get("alias") != alias]
+    return row
+
+
+def analyze_model_gaps(profile: Optional[Dict[str, Any]] = None,
+                       catalog: Any = None,
+                       config_dir: Optional[Path] = None,
+                       persist: bool = True) -> List[Dict[str, Any]]:
+    """Compare the profile's wired inventory to the recommended presentation
+    set; return one record per gap. With persist=True (and no profile
+    object handed in) the outcomes are written back to the profile store:
+    suggestions into model_suggestions, and -- when standing consent plus a
+    present add-applicable platform say so -- addition intents into
+    model_additions with their suggestion closed.
+
+    Per recommendation:
+      already wired (any provider, exclusion-checked)   -> skipped
+      platform allows + standing consent True           -> action "add"
+      everything else                                   -> action "suggest"
+
+    An older "suggest" record whose consent has since been granted is
+    re-classified to "add" here -- consent flipping is exactly what the
+    standing-consent half of the spec means to act on. Nothing in this
+    function ever writes client configuration.
+    """
+    prof = profile if profile is not None else load_profile(config_dir)
+    if prof.get("error") and not prof.get("providers"):
+        prof = new_profile()
+    records: List[Dict[str, Any]] = []
+    if not gap_flag_enabled():
+        return records
+    resolve = _catalog_alias_resolver(catalog)
+    all_norm: List[str] = []
+    for entry in (prof.get("providers") or {}).values():
+        if isinstance(entry, dict) and isinstance(entry.get("wired_models"), list):
+            all_norm.extend(_norm_model_id(m) for m in entry["wired_models"])
+    open_add = {r.get("alias"): r for r in _addition_rows(prof)}
+    open_sug = {r.get("alias"): r for r in _suggestion_rows(prof)}
+    consent = has_model_add_consent(profile=prof)
+    changed = False
+    for rec in recommended_models():
+        alias = rec["alias"]
+        patterns = list(rec["patterns"])
+        if resolve:
+            extra = resolve(alias)
+            if extra:
+                patterns = list(extra)
+            # an unresolvable alias keeps the built-in matching metadata: a
+            # catalog that cannot answer is never evidence of a gap and
+            # never evidence of a match -- matching falls back, it does not
+            # invent either.
+        patterns_norm = [_norm_model_id(p) for p in patterns]
+        excludes_norm = [_norm_model_id(x) for x in rec["excludes"]]
+        if alias in open_add:
+            continue  # an addition intent already exists (pending/confirmed)
+        if _wired_covers(all_norm, patterns_norm, excludes_norm):
+            continue  # satisfied somewhere -- not a gap
+        providers_ok = [p for p in rec["providers"] if _provider_present(prof, p)]
+        addable = (consent is True
+                   and any(p in _ADD_APPLICABLE_PROVIDERS for p in providers_ok))
+        record: Dict[str, Any] = {
+            "alias": alias,
+            "label": rec["label"],
+            "evaluated_at": _now(),
+            "providers_available": providers_ok,
+            "consent_add_models": consent,
+            "action": "add" if addable else "suggest",
+            "what_it_unlocks": rec["unlocks"],
+            "cost": rec["cost"],
+        }
+        record["suggestion_text"] = (
+            f"You don't have {rec['label']} wired. {rec['unlocks']}. "
+            f"Cost: {rec['cost']}. "
+            + ("You gave standing consent to add recommended models: it is "
+               "recorded for addition and the next probe will confirm it."
+               if addable else
+               "If you want it, approve the suggestion and it will be added "
+               "and re-probed.")
+        )
+        if addable:
+            row = _record_addition(
+                prof, alias=alias, label=rec["label"],
+                providers=[p for p in providers_ok
+                           if p in _ADD_APPLICABLE_PROVIDERS],
+                approved_by=f"standing consent ({(prof.get('consent') or {}).get('add_models_source', 'recorded')})")
+            record["addition"] = dict(row)
+            open_add[alias] = row
+            changed = True
+        elif alias not in open_sug:
+            if persist:
+                prof.setdefault("model_suggestions", []).append(record)
+                open_sug[alias] = record
+                changed = True
+        records.append(redact_record(record))
+    if persist and changed and profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return records
+
+
+def apply_model_additions(alias: Optional[str] = None,
+                          approved_by: str = "client approval",
+                          profile: Optional[Dict[str, Any]] = None,
+                          catalog: Any = None,
+                          config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """The explicit approval entry: record addition intents now for gap
+    aliases the analysis says are add-eligible (optionally narrowed to one
+    alias), carrying WHO approved. Requires standing consent -- without it
+    there is nothing "add where standing consent exists" to act on, and
+    this raises rather than inventing consent. NEVER touches client
+    configuration: rows are intent records with config_written False."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    if not gap_flag_enabled():
+        return []
+    if has_model_add_consent(profile=prof) is not True:
+        raise PermissionError(
+            "refusing to add models: no standing consent on this profile "
+            "(consent.add_models is not True); record_model_consent() must "
+            "carry an explicit client answer first")
+    # re-evaluate with the approval recorded as the audit source
+    analyze_model_gaps(profile=prof, catalog=catalog, persist=True)
+    applied: List[Dict[str, Any]] = []
+    for row in _addition_rows(prof):
+        if row.get("status") != "added_pending_probe":
+            continue
+        if alias is not None and row.get("alias") != alias:
+            continue
+        row["approved_at"] = _now()
+        row["approved_by"] = f"{row.get('approved_by', 'standing consent')} + {approved_by}"
+        applied.append(redact_record(dict(row)))
+    if applied and profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return applied
+
+
+def approve_model_suggestion(alias: str, approved_by: str = "client",
+                             profile: Optional[Dict[str, Any]] = None,
+                             catalog: Any = None,
+                             config_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """On approval of ONE suggestion: add it (the spec's "add on approval").
+    The approval covers that alias only -- it never flips the standing
+    consent flag. A suggestion whose platform is NOT present cannot be
+    wired into the client's own account at all: approving it records an
+    operator-provisioning hand-off row instead of pretending an add was
+    possible. Returns the addition row, or None when no such suggestion is
+    open."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    if not gap_flag_enabled():
+        return None
+    sug = next((r for r in _suggestion_rows(prof) if r.get("alias") == alias), None)
+    if sug is None:
+        return None
+    prof["model_suggestions"] = [s for s in _suggestion_rows(prof)
+                                 if s.get("alias") != alias]
+    present_ok = [p for p in (sug.get("providers_available") or [])
+                  if p in _ADD_APPLICABLE_PROVIDERS]
+    if not present_ok:
+        row = {
+            "alias": alias, "label": sug.get("label"),
+            "providers": [],
+            "status": "approved_needs_provisioning",
+            "approved_by": str(approved_by), "approved_at": _now(),
+            "reprobe_required": True, "config_written": False,
+            "note": ("approved, but no detected account can carry this "
+                     "model -- operator provisioning required"),
+        }
+        prof.setdefault("model_additions", []).append(row)
+    else:
+        row = _record_addition(prof, alias=alias,
+                               label=sug.get("label") or alias,
+                               providers=present_ok,
+                               approved_by=f"approval of suggestion ({approved_by})")
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return redact_record(dict(row))
+
+
+def confirm_added_models(probe_result: Optional[Dict[str, Any]] = None,
+                         detection: Optional[Dict[str, Any]] = None,
+                         catalog: Any = None,
+                         profile: Optional[Dict[str, Any]] = None,
+                         config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """The re-probe half of the add path: after FIX 9 probes run again,
+    flip "added_pending_probe" rows to "confirmed" once the fresh inventory
+    shows the alias wired (accepts the raw probe_providers() result, a
+    single apply_probe_refresh-style detection dict, or the already-
+    refreshed profile -- all three update the same store first). Returns
+    the rows that are now confirmed."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    if not gap_flag_enabled():
+        return []
+    if probe_result is not None:
+        prof = store_provider_probes(probe_result, profile=prof)
+    if detection is not None:
+        prof = apply_probe_refresh(detection, profile=prof)
+    resolve = _catalog_alias_resolver(catalog)
+    all_norm: List[str] = []
+    for entry in (prof.get("providers") or {}).values():
+        if isinstance(entry, dict) and isinstance(entry.get("wired_models"), list):
+            all_norm.extend(_norm_model_id(m) for m in entry["wired_models"])
+    confirmed: List[Dict[str, Any]] = []
+    for row in _addition_rows(prof):
+        if row.get("status") not in ("added_pending_probe",
+                                     "approved_needs_provisioning"):
+            continue
+        rec = next((r for r in RECOMMENDED_PRESENTATION_MODELS
+                    if r["alias"] == row.get("alias")), None)
+        if rec is None:
+            continue
+        patterns = list(rec["patterns"])
+        if resolve:
+            patterns = list(resolve(rec["alias"]) or patterns)
+        excludes = [_norm_model_id(x) for x in (rec.get("excludes") or ())]
+        # a needs-provisioning row confirms only when a model showed up on
+        # a provider it previously had none of -- same matcher, either way
+        if _wired_covers(all_norm, [_norm_model_id(p) for p in patterns],
+                         excludes):
+            row["status"] = "confirmed"
+            row["confirmed_at"] = _now()
+            row["reprobe_required"] = False
+            confirmed.append(redact_record(dict(row)))
+    if confirmed and profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return confirmed
+
+
+def open_gap_records(profile: Optional[Dict[str, Any]] = None,
+                     config_dir: Optional[Path] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """The intake/notification surface for FIX 10: every open suggestion
+    and every addition still awaiting its re-probe, so the agent can ask
+    once in plain language instead of inventing a second interview."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    return {
+        "suggestions": [r for r in _suggestion_rows(prof)
+                        if isinstance(r, dict)],
+        "additions_pending_probe": [r for r in _addition_rows(prof)
+                                    if r.get("reprobe_required")],
+    }
