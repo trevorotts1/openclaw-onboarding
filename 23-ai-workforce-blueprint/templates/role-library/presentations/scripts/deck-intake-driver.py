@@ -10,11 +10,24 @@ Reads its question schema from intake/deck-intake-questions.json (the canonical
 source of truth). Supports two interview modes:
 
   STANDARD  (--next / --answer / --complete)
-    One question per turn, machine-paced. The presentation_type picker runs
-    first; its answer derives all four legacy axis fields (deck_type,
-    creation_mode, presentation_mode, audience_mode) automatically via
-    derive_legacy_fields(). Conditional follow-ups (recipient_name,
-    signature_source, extracted_substance) auto-skip when unmet.
+    FIX 30 / schema v1.8.0: TWENTY-THREE numbered conversational turns
+    (Trevor ruling, binding), down from 58 one-per-turn rows. Each turn row
+    (kind "merged") may return several legacy subfields; every answer folds
+    into one ledger entry per legacy question id -- captured, derived, or
+    explicitly skipped with its documented default (never null) -- so every
+    downstream consumer (build_deck mandatory-field gates, the waiver
+    provenance contract, the interview-app payload aliases) sees exactly the
+    legacy fields it has always seen. The presentation_type branch is turn 1;
+    its answer derives all four legacy axis fields (deck_type, creation_mode,
+    presentation_mode, audience_mode) automatically via derive_legacy_fields().
+    Conditional subfields (recipient_name, signature_source,
+    extracted_substance) auto-skip when unmet. ROLLBACK:
+    PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-physical-rows
+    interview (alias rows re-enter the sequence); the bank itself keeps the
+    exact pre-FIX-30 legacy rows verbatim as "alias" rows for that path.
+    The drift driver copy (23-ai-workforce-blueprint/scripts/deck-intake-
+    driver.py) is deliberately UNAFFECTED: it is a separate signature-mode
+    instrument with its own bank consumption path.
 
   SIGNATURE (--signature --next / --signature --answer)
     Choice-first (QUICK vs IN-DEPTH), then the SACRED 8 Questions +
@@ -32,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +59,21 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 DEPT_ROOT = SCRIPTS_DIR.parent
 INTAKE_DIR = DEPT_ROOT / "intake"
 QUESTIONS_PATH = INTAKE_DIR / "deck-intake-questions.json"
+
+# ---------------------------------------------------------------------------
+# FIX 30: PRESENTATION_INTAKE_V2 -- merged-turn ask-sequence flag.
+# DEFAULT ON. ON  -> get_questions() filters out the bank's "alias" rows, so
+#                    the ask sequence is the 23 numbered merged turns.
+# OFF (0/off/false/no in the env) -> every physical row is returned and asked
+#                    one per turn: the pre-FIX-30 legacy interview, byte-for-
+#                    byte the same rows the old v1.7.0 bank carried.
+# Paired contract: intake/deck-intake-questions.json v1.8.0 (subfields on turn
+# rows + verbatim legacy alias rows). With an older alias-less bank the filter
+# is a no-op and behavior is the old one regardless of the flag.
+# ---------------------------------------------------------------------------
+def intake_v2_enabled() -> bool:
+    raw = (os.environ.get("PRESENTATION_INTAKE_V2") or "on").strip().lower()
+    return raw not in ("0", "off", "false", "no")
 
 # ---------------------------------------------------------------------------
 # legacy_field_mapping -- the canonical derivation table.
@@ -140,8 +169,15 @@ def load_question_schema() -> Dict[str, Any]:
 
 
 def get_questions(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Extract the ordered question list from the schema."""
-    questions = schema.get("questions", [])
+    """Extract the ordered question list from the schema.
+
+    FIX 30: while PRESENTATION_INTAKE_V2 is on (the default) the bank's
+    alias rows are filtered out of the ask sequence -- the 23 merged turn
+    rows carry the interview. Flag off: every row returns (legacy behavior).
+    """
+    questions = list(schema.get("questions", []))
+    if intake_v2_enabled():
+        questions = [q for q in questions if not q.get("alias")]
     questions.sort(key=lambda q: q.get("order", 999))
     return questions
 
@@ -434,13 +470,20 @@ def cmd_next(args) -> int:
     # derive_legacy_fields() (or into should_ask()'s conditional_on/ask_if
     # comparisons via _first_unanswered) crashed cmd_next with a ValueError on
     # every bare --next call once presentation_type had been recorded.
-    answers = {k: (v.get("value") if isinstance(v, dict) else v)
-               for k, v in entries.items()
-               if not k.startswith("_")}
+    answers = _answer_view(entries)
 
-    # If presentation_type is answered, auto-derive legacy fields
+    # FIX 30: pitchless sessions skip rows 11-15 with documented defaults.
+    if apply_pitchless_skips(entries, schema, answers):
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        answers = _answer_view(entries)
+
+    # If presentation_type is answered, auto-derive legacy fields.
+    # FIX 30 fail-soft: a merged deck_type_source turn may store raw prose
+    # that matches no legal type; --next must still surface the next question
+    # (the interviewer re-prompts), while cmd_complete keeps the loud gate.
     ptype = answers.get("presentation_type")
-    if ptype:
+    if ptype in LEGAL_PRESENTATION_TYPES:
         try:
             sig_src = answers.get("signature_source")
             derived = derive_legacy_fields(ptype, signature_source=sig_src)
@@ -462,6 +505,378 @@ def cmd_next(args) -> int:
     return _emit_question(next_q, answers)
 
 
+# ---------------------------------------------------------------------------
+# FIX 30 -- merged-turn derive logic.
+# One numbered conversational turn may return several legacy subfields.
+# derive_structured_answer() splits a free-text turn answer into
+# {legacy_key: value} covering every subfield of the turn row (captured,
+# derived, or the documented default/skip value -- never null), per the
+# bank's "subfields" annotations. The 23-turn ceiling (Trevor ruling) is a
+# property of the merged ask sequence (get_questions + intake_v2_enabled),
+# never of parsing.
+#
+# Parsing contract (mirrored in the bank prompts): unlabelled prose routes
+# to the row's FIRST subfield in full (never dropped); lines of the form
+# "<legacy id or storeOn>: value" fill named subfields exactly once, in
+# declaration order. A subfield captured explicitly is kept even if its
+# conditional_on is unmet (client words are never discarded); an UNCAPTURED
+# subfield with an unmet condition records its documented default/derived/
+# none_value, and only a fully undocumentable skip leaves the marker entry.
+# ---------------------------------------------------------------------------
+_PITCHLESS_RE = re.compile(r"no\s+pitch|pitchless|without\s+(a\s+)?pitch", re.I)
+_INT_RE = re.compile(r"(\d+)")
+_WPM_RE = re.compile(r"(\d{2,4})\s*w(?:ords)?[\s-]*p(?:m|er\s?min)", re.I)
+_MIN_RE = re.compile(r"(\d{1,3})\s*(?:minutes|minute|mins|m)\b", re.I)
+_H_RE = re.compile(r"(\d{1,2})\s*(?:hours|hour|hrs|hr)\b", re.I)
+_SLIDES_RE = re.compile(r"(\d{1,4})\s*slides?\b", re.I)
+
+def derive_target_talk_minutes(duration_min: Any) -> Optional[int]:
+    """Turn-7 (duration_and_slide_count) -> flat intake root
+    target_talk_minutes. build_deck._chk_intake requires a positive NUMBER
+    here; nothing wrote it before FIX 30 because the pre-v1.8 bank never
+    asked duration in QUICK mode. Returns None when there is no usable
+    duration so the caller can fall back to the documented default."""
+    try:
+        d = int(float(str(duration_min).strip()))
+    except (TypeError, ValueError):
+        return None
+    return d if 5 <= d <= 600 else None
+
+def derive_slide_count_from_duration(duration_min: Any) -> Optional[int]:
+    """Blank slide count is DERIVED, not null: ~0.8 slides per talk minute
+    (the engine's enforced SLIDES_PER_MINUTE floor is 1.3; 0.8 is the
+    conservative planning target well clear of it)."""
+    try:
+        d = int(float(str(duration_min).strip()))
+    except (TypeError, ValueError):
+        return None
+    if not (1 <= d <= 600):
+        return None
+    return max(1, int(round(d * 0.8)))
+
+def pitchless_session(derived: Dict[str, Any]) -> bool:
+    """Q4 (goal_cta_feeling) decides: a session with no sell has no pitch.
+    Group-2 rows (11-15) are skipped-with-defaults when the client says so."""
+    blob = " ".join(str(derived.get(k) or "")
+                    for k in ("goal", "cta_action", "target_feeling"))
+    return bool(_PITCHLESS_RE.search(blob))
+
+def _answer_view(entries: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten ledger entries to a {key: value} answers view. Structured
+    parent entries (value is a dict of subfields) additionally merge their
+    subfields so conditional_on/ask_if checks against legacy ids keep
+    working."""
+    answers: Dict[str, Any] = {}
+    for k, v in entries.items():
+        if k.startswith("_"):
+            continue
+        val = v.get("value") if isinstance(v, dict) else v
+        answers[k] = val
+        if isinstance(val, dict):
+            for sk, sv in val.items():
+                answers.setdefault(sk, sv)
+    return answers
+
+def _enum_match(text: str, allowed: List[str]) -> Optional[str]:
+    lowered = (text or "").strip().lower()
+    for v in allowed:
+        if str(v).lower() == lowered:
+            return v
+    for v in allowed:
+        toks = str(v).replace("_", " ").lower().split()
+        if toks and all(t in lowered for t in toks):
+            return v
+    return None
+
+def _yes_or_no(text: str) -> Optional[str]:
+    lowered = (text or "").strip().lower()
+    if re.match(r"^(y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
+        return "yes"
+    if re.match(r"^(n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
+        return "no"
+    return None
+
+_PACE_WPM = {"default": 130, "medium": 140, "fast": 155}
+
+def _truthy_value(cval: Any) -> bool:
+    if isinstance(cval, bool):
+        return cval
+    if cval is None:
+        return False
+    return str(cval).strip().lower() not in ("", "no", "false", "none", "0")
+
+def _condition_met(cond: Dict[str, Any], answers: Dict[str, Any]) -> bool:
+    cid = cond.get("id", "")
+    cval = answers.get(cid)
+    if "equals" in cond:
+        return str(cval if cval is not None else "") == str(cond["equals"])
+    if "in" in cond:
+        return cval in cond.get("in", [])
+    if "truthy" in cond:
+        return _truthy_value(cval)
+    return True
+
+# "<label>: value" anywhere in the answer. Left boundary: start or
+# sentence-ish punctuation/whitespace; the key must name a subfield of the
+# CURRENT row (checked in the caller) so arbitrary colons in prose survive.
+_SUBFIELD_LABEL_RE = re.compile(
+    r"(?:(?<=^)|(?<=[\s.,;:!?]))([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s*[=:]\s*")
+
+def _claim_labels(qdef: Dict[str, Any], raw: str):
+    """Scan one merged-turn answer for "<legacy id or storeOn>: value" labels
+    (anywhere in the text, not only at line starts -- clients type them
+    inline). Each subfield claims its label exactly once, first occurrence
+    wins; a label's value runs to the next CLAIMED label's start. Returns
+    (values_by_key, prose_head) where prose_head is the text before the first
+    claimed label (or the whole answer when nothing is claimed)."""
+    sub = qdef.get("subfields") or {}
+    variants: Dict[str, str] = {}
+    for k in sub:
+        variants[k.lower()] = k
+        variants[str(sub[k].get("storeOn", "")).lower()] = k
+    claims: List[List[int]] = []  # [key, value_start, match_start]
+    seen: set = set()
+    for m in _SUBFIELD_LABEL_RE.finditer(raw or ""):
+        key = variants.get(m.group(1).strip().lower().replace(" ", "_"))
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        claims.append([key, m.end(), m.start()])
+    values: Dict[str, str] = {}
+    for i, item in enumerate(claims):
+        end = claims[i + 1][2] if i + 1 < len(claims) else len(raw or "")
+        values[item[0]] = (raw or "")[item[1]:end].strip()
+    head = (raw or "")[:claims[0][2]].strip() if claims else (raw or "").strip()
+    return values, head
+
+def labeled_subfield_values(qdef: Dict[str, Any], text: str) -> Dict[str, str]:
+    """Just the labeled {key: value} map of a merged-turn answer."""
+    return _claim_labels(qdef, text)[0]
+
+def derive_structured_answer(qdef: Dict[str, Any], text: str,
+                             prior: Dict[str, Any]) -> Dict[str, Any]:
+    """Split one merged-turn answer into {legacy_key: value}.
+
+    Every declared subfield gets a value unless it is a conditionally-
+    inapplicable field with NO documented default/derived/none value --
+    those return as a SKIP marker instead (the caller writes a skipped
+    entry, never a null answer)."""
+    sub = qdef.get("subfields") or {}
+    raw = (text or "").strip()
+    keys = list(sub.keys())
+    labeled, prose_head = _claim_labels(qdef, raw)
+    captured: Dict[str, str] = {k: v for k, v in labeled.items() if v != ""}
+
+    merged = dict(prior)
+    merged.update(captured)
+
+    # Unlabeled prose routes to the FIRST subfield in declaration order that
+    # is neither already claimed nor blocked by an unmet conditional_on (the
+    # audience row must not hand its head prose to a skipped recipient_name).
+    first = keys[0] if keys else None
+    if prose_head and first:
+        target = None
+        for k in keys:
+            if k in captured:
+                continue
+            cond = (sub[k] or {}).get("conditional_on")
+            if cond and not _condition_met(cond, merged):
+                continue
+            target = k
+            break
+        if target is None:
+            target = first if first not in captured else None
+        if target is not None:
+            captured[target] = prose_head or raw
+            merged[target] = captured[target]
+    out: Dict[str, Any] = {}
+    skipped: List[str] = []
+
+    def _skip_or_default(k: str, ann: Dict[str, Any]) -> None:
+        if "default" in ann:
+            out[k] = ann["default"]
+        elif ann.get("no_note"):
+            out[k] = "no note."
+        elif "none_value" in ann:
+            out[k] = ann["none_value"]
+        elif "conservative_value" in ann:
+            out[k] = ann["conservative_value"]
+        elif "derived" in ann or k == "target_wpm":
+            pass  # handled by the per-field derivations below
+        else:
+            skipped.append(k)
+
+    for k in keys:
+        ann = sub[k]
+        cond = ann.get("conditional_on")
+        val = captured.get(k)
+        if val is None and cond and not _condition_met(cond, merged):
+            _skip_or_default(k, ann)
+            if k not in out:
+                continue
+            merged[k] = out[k]
+            continue
+        if val is None:
+            if "default" in ann:
+                val = str(ann["default"])
+            elif k == "target_wpm" or "derived" in ann:
+                val = ""
+            else:
+                _skip_or_default(k, ann)
+                if k in out:
+                    merged[k] = out[k]
+                continue
+        # typed coercions
+        if ann.get("boolish"):
+            b = _yes_or_no(val)
+            out[k] = b if b is not None else (val.strip() or str(ann.get("default", "yes")))
+            merged[k] = out[k]
+            continue
+        if ann.get("enum"):
+            e = _enum_match(val, ann["enum"])
+            out[k] = e if e is not None else val.strip()
+            merged[k] = out[k]
+            continue
+        if ann.get("kind") == "boolean":
+            b = _yes_or_no(val)
+            if b == "yes":
+                out[k] = True
+            elif b == "no":
+                out[k] = False
+            elif val.strip().lower() in ("free", "open", "access is free"):
+                out[k] = True
+            elif isinstance(ann.get("default"), bool):
+                out[k] = ann["default"]
+            else:
+                out[k] = bool(val.strip())
+            merged[k] = out[k]
+            continue
+        if ann.get("kind") == "integer" or k in ("duration_min", "target_wpm", "vip_spots"):
+            nums = [int(x) for x in _INT_RE.findall(val)]
+            if k == "target_wpm":
+                wp = _WPM_RE.search(val)
+                cand = [n for n in ([int(wp.group(1))] if wp else []) + nums if 60 <= n <= 400]
+                if cand:
+                    out[k] = cand[0]
+                else:
+                    pace = str(merged.get("speech_speed_preference") or "default").lower()
+                    out[k] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+                merged[k] = out[k]
+                continue
+            if k == "duration_min":
+                mins = list(nums)
+                hm = _H_RE.search(val)
+                if hm:
+                    mins.insert(0, int(hm.group(1)) * 60)
+                mm = _MIN_RE.search(val)
+                if mm:
+                    mins.insert(0, int(mm.group(1)))
+                cand = [n for n in mins if 1 <= n <= 600]
+                out[k] = cand[0] if cand else int(ann.get("default", 30))
+                merged[k] = out[k]
+                continue
+            out[k] = nums[0] if nums else ann.get("default", 0)
+            merged[k] = out[k]
+            continue
+        out[k] = val.strip()
+        merged[k] = out[k]
+
+    # ---- documented per-turn derivations (spec FIX 30) ----
+    if "slide_count" in sub and "slide_count" not in captured:
+        sm = _SLIDES_RE.search(captured.get(first or "", ""))
+        if sm:
+            out["slide_count"] = sm.group(1) + " (client-stated)"
+        else:
+            sc = derive_slide_count_from_duration(out.get("duration_min"))
+            out["slide_count"] = str(sc) if sc is not None else "duration math decides"
+        merged["slide_count"] = out["slide_count"]
+    if "access_free" in sub and "access_free" not in captured:
+        ev = str(out.get("event_price") or "").strip().lower()
+        if any(t in ev for t in ("free", "no cost", "no charge")) or ev in ("", "none"):
+            out["access_free"] = True
+        elif "$" in ev or re.search(r"\d", ev):
+            out["access_free"] = False
+        else:
+            out["access_free"] = _yes_or_no(ev) == "no"
+        merged["access_free"] = out["access_free"]
+    if "target_wpm" in sub and "target_wpm" not in captured:
+        pace = str(out.get("speech_speed_preference") or merged.get("speech_speed_preference") or "default").lower()
+        out["target_wpm"] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+        merged["target_wpm"] = out["target_wpm"]
+    if "deliverable_set" in sub and "deliverable_set" not in captured:
+        parts = ["deck"]
+        if str(out.get("want_teleprompter", "yes")).lower().startswith("y"):
+            parts.append("teleprompter")
+        if str(out.get("want_speech_script", "yes")).lower().startswith("y"):
+            parts.append("speech script")
+        if str(out.get("want_audio_deliverable", "yes")).lower().startswith("y"):
+            parts.append("audio deliverable")
+        out["deliverable_set"] = ", ".join(parts) if len(parts) > 1 else "deck-only"
+        merged["deliverable_set"] = out["deliverable_set"]
+    result = dict(out)
+    if skipped:
+        result["__skipped__"] = skipped
+    return result
+
+# ---- FIX 30 wiring helpers ----
+def validate_labeled_enums(qdef: Dict[str, Any], text: str) -> Optional[str]:
+    """An explicitly labeled answer for an enum subfield must resolve to one of
+    the enum values (exact or keyword-containment) BEFORE anything is written;
+    prose routed to the first subfield is matched leniently by the engine."""
+    values = labeled_subfield_values(qdef, text)
+    for k, ann in (qdef.get("subfields") or {}).items():
+        allowed = ann.get("enum")
+        if not allowed or k not in values:
+            continue
+        val = values[k]
+        if _enum_match(val, allowed) is None:
+            return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
+    return None
+
+def _skip_default_value(ann: Dict[str, Any]) -> Any:
+    if "default" in ann:
+        return ann["default"]
+    if ann.get("no_note"):
+        return "no note."
+    if "none_value" in ann:
+        return ann["none_value"]
+    if "conservative_value" in ann:
+        return ann["conservative_value"]
+    return ""
+
+def apply_pitchless_skips(entries: Dict[str, Any],
+                          schema: Dict[str, Any],
+                          answers: Dict[str, Any]) -> bool:
+    """FIX 30 / spec rows 11-15: a session with no pitch skips the five group-2
+    turns. A skip writes each subfield's documented default/none value with a
+    skipped marker -- never null. Returns True when entries changed."""
+    if not pitchless_session(answers):
+        return False
+    now = datetime.now(timezone.utc).isoformat()
+    store_target = schema.get("storeTarget") or {}
+    changed = False
+    for q in schema.get("questions", []):
+        if not q.get("pitchless_skip") or q["id"] in entries:
+            continue
+        vals: Dict[str, Any] = {}
+        for k, ann in (q.get("subfields") or {}).items():
+            v = _skip_default_value(ann)
+            vals[k] = v
+            rec = {"value": v, "validated": False, "skipped": True,
+                   "skip_reason": "pitchless session: rows 11-15 not applicable",
+                   "source": "deck-intake-driver", "answered_at": now,
+                   "normalized": v, "answer": str(v)}
+            entries[k] = rec
+            so = str(ann.get("storeOn") or "")
+            if so in store_target and so != k:
+                entries[so] = rec
+        entries[q["id"]] = {"value": vals, "validated": False, "skipped": True,
+                            "skip_reason": "pitchless session: rows 11-15 not applicable",
+                            "source": "deck-intake-driver", "answered_at": now,
+                            "normalized": vals, "answer": "skipped (pitchless)"}
+        changed = True
+    return changed
+
 def cmd_answer(args) -> int:
     """Record one answer and return the next question."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -470,9 +885,14 @@ def cmd_answer(args) -> int:
     schema = load_question_schema()
     questions = get_questions(schema)
 
-    # Find the question definition
+    # Find the question definition. FIX 30: resolve against the FULL physical
+    # row list (turn rows AND alias rows) so an alias id stays answerable even
+    # while the flag filters it out of the ask sequence (the anti-fab test
+    # drives --answer presentation_type / named_methodology / time_to_result
+    # with V2 on; those rows are aliases).
+    all_rows = list(schema.get("questions", []))
     qdef = None
-    for q in questions:
+    for q in all_rows:
         if q["id"] == qid:
             qdef = q
             break
@@ -480,7 +900,7 @@ def cmd_answer(args) -> int:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
 
-    # Validate enum values
+    # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
     if allowed and text.strip() not in allowed:
         print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
@@ -503,6 +923,73 @@ def cmd_answer(args) -> int:
                          "answered_at": datetime.now(timezone.utc).isoformat()}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
+
+    # FIX 30: merged-turn answer -- split into legacy subfield records, each
+    # with the SAME shape the drift-side waiver builder reads (validated +
+    # normalized + answer), then apply the legacy special handlers.
+    structured_intake_writes: Dict[str, Any] = {}
+    if qdef.get("subfields"):
+        err = validate_labeled_enums(qdef, text)
+        if err:
+            print(json.dumps({"error": err}))
+            return 1
+        prior = _answer_view(entries)
+        derived = derive_structured_answer(qdef, text, prior)
+        skipped_keys = derived.pop("__skipped__", [])
+        now_iso = datetime.now(timezone.utc).isoformat()
+        store_target = schema.get("storeTarget") or {}
+        for k, v in derived.items():
+            rec = {"value": v, "validated": True, "source": "deck-intake-driver",
+                   "answered_at": now_iso, "normalized": v, "answer": str(v)}
+            entries[k] = rec
+            so = str((qdef["subfields"].get(k) or {}).get("storeOn") or "")
+            if so in store_target and so != k:
+                entries[so] = rec
+        for k in skipped_keys:
+            rec = {"value": "", "validated": False, "skipped": True,
+                   "skip_reason": "no value given and no documented default",
+                   "source": "deck-intake-driver", "answered_at": now_iso,
+                   "normalized": "", "answer": ""}
+            entries[k] = rec
+        # Parent record keyed by the turn id, holding the full split. FIX 30:
+        # when the turn's id IS one of its own subfield ids (resource_plan,
+        # proof_assets, visual_mix), the subfield loop above already wrote the
+        # scalar record there -- keep it scalar; consumers read a plain value.
+        if qid not in derived:
+            parent = {k: derived.get(k, "") for k in (qdef["subfields"] or {})}
+            entries[qid] = {"value": parent, "validated": True,
+                            "source": "deck-intake-driver",
+                            "answered_at": now_iso,
+                            "normalized": parent, "answer": text.strip()}
+        # presentation_type special (mirrors the legacy plain-row handler)
+        ptype = derived.get("presentation_type")
+        if ptype in LEGAL_PRESENTATION_TYPES:
+            try:
+                dl = derive_legacy_fields(
+                    ptype,
+                    signature_source=derived.get("signature_source")
+                    if ptype == "signature" else None)
+            except ValueError as exc:
+                print(json.dumps({"error": str(exc)}))
+                return 1
+            structured_intake_writes.update(dl)
+            structured_intake_writes["presentation_type"] = ptype
+        elif ptype is not None and str(ptype).strip():
+            # prose that resolved to no legal type: do NOT silently derive a
+            # wrong deck_type; cmd_complete keeps its own loud gate.
+            pass
+        # duration -> flat root target_talk_minutes (build_deck._chk_intake)
+        ttm = derive_target_talk_minutes(derived.get("duration_min"))
+        if ttm:
+            structured_intake_writes["target_talk_minutes"] = ttm
+        # client-STATED slide count -> client_requested_slide_count. A
+        # duration-derived count must NOT set it (craft_judgement treats
+        # presence as client-fixed).
+        sc_raw = derived.get("slide_count")
+        sc_m = re.search(r"\d+", str(sc_raw or ""))
+        if sc_m and ("(client-stated)" in str(sc_raw)
+                     or re.search(r"slide[_ ]?count\s*[:=]", text, re.I)):
+            structured_intake_writes["client_requested_slide_count"] = int(sc_m.group(0))
 
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":
@@ -541,6 +1028,14 @@ def cmd_answer(args) -> int:
     ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
     write_intake_ledger(run_dir, ledger)
 
+    # FIX 30: structured-turn intake.json writes (deck_type derivation,
+    # target_talk_minutes, client-stated slide count), applied AFTER the
+    # ledger persisted so a rejection above can never half-write.
+    if structured_intake_writes:
+        intake = read_intake_json(run_dir)
+        intake.update(structured_intake_writes)
+        write_intake_json(run_dir, intake)
+
     # FAULT-21 fix: append to the RAW turn log (never the signed envelope file
     # directly -- see write_intake_transcript()'s docstring above). Two turns
     # per answer (assistant prompt + owner answer), the SAME {"role","text",
@@ -573,9 +1068,11 @@ def cmd_answer(args) -> int:
             print(f"  WARN  {warning}", file=sys.stderr)
 
     # Return next question (or complete signal)
-    answers = {k: (v.get("value") if isinstance(v, dict) else v)
-               for k, v in entries.items()
-               if not k.startswith("_")}
+    answers = _answer_view(entries)
+    if apply_pitchless_skips(entries, schema, answers):
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        answers = _answer_view(entries)
     next_q = _first_unanswered(questions, answers)
     if next_q is None:
         payload = {"status": "complete",
@@ -644,6 +1141,36 @@ def cmd_complete(args) -> int:
             if val is not None:
                 intake[store_key] = val
 
+    # FIX 30: mirror every captured field into its bank-declared storeTarget
+    # location (pre_presentation_capture.* / deck_brief.*). build_deck.py's
+    # _intake_provenance_gate reads the SIX mandatory fields from
+    # intake.json.pre_presentation_capture, and the pre-FIX-30 chat driver
+    # never wrote them (only the interview-app bridge writer did) -- so a
+    # driver-run intake failed the gate on a fully-answered interview. This
+    # mirrors using the SAME storeTarget table the merged turns annotate, so
+    # the chat driver and the app writer now produce the same record shape.
+    # Only under the V2 flag: PRESENTATION_INTAKE_V2=0 restores the exact
+    # pre-FIX-30 behavior, capture-absence included.
+    store_target = {}
+    if intake_v2_enabled():
+        store_target = load_question_schema().get("storeTarget") or {}
+    for field, path in store_target.items():
+        entry = entries.get(field)
+        if not isinstance(entry, dict):
+            continue
+        val = entry.get("value")
+        if val is None:
+            continue
+        parts = path.split(".")
+        node = intake
+        for p in parts[:-1]:
+            nxt = node.get(p)
+            if not isinstance(nxt, dict):
+                nxt = {}
+                node[p] = nxt
+            node = nxt
+        node[parts[-1]] = val
+
     # Ensure deck_type is set (should already be from derive_legacy_fields)
     if not intake.get("deck_type"):
         ptype = intake.get("presentation_type") or \
@@ -651,7 +1178,11 @@ def cmd_complete(args) -> int:
                  if isinstance(entries.get("presentation_type"), dict) else
                  entries.get("presentation_type"))
         if ptype:
-            derived = derive_legacy_fields(ptype)
+            try:
+                derived = derive_legacy_fields(ptype)
+            except ValueError as exc:
+                print(json.dumps({"error": str(exc)}))
+                return 1
             intake.update(derived)
         else:
             print(json.dumps({"error": "presentation_type was never answered. "

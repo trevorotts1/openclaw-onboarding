@@ -1,1129 +1,1176 @@
 {
- "$schema": "https://openclaw.ai/schemas/interview-section/v1",
- "section": "deck-intake",
- "version": "1.7.0",
- "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere \u2014 edit here. ONE CANONICAL TYPE-PICKER (order 0, id 'presentation_type') replaces the old binary deck_type question and is the single answer that decides all four legacy axis fields (deck_type, creation_mode, presentation_mode, audience_mode) \u2014 see 'legacy_field_mapping' below; the ONE place that mapping table is applied in code is derive_legacy_fields() in deck-intake-driver.py. On presentation_type=='signature' the driver asks ONE conditional follow-up ('signature_source', order 0.5) then switches to SIGNATURE mode: choice-first (QUICK vs IN-DEPTH), then it asks the SACRED 8 Questions + frame-selection question ONE at a time and waits for each answer (never a batch -- dumping them is AF-INTAKE-BATCH), and assembles the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B (scratch vs augment) is NEVER asked here \u2014 it stays derived from whether source assets exist, per director-of-presentations.md SOP 9.3. The picker (+ its conditional follow-up) runs BEFORE the standard one-question-per-turn capture below \u2014 for ALL FOUR presentation_type values, signature included: the SACRED-8 (gated by its own separate sp_mode picker inside --signature) is a DIFFERENT question set from this file's standard pre-presentation capture, and a signature run gets both. ALSO (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" now lives here as real driver questions \u2014 every client question flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. Two conditional-skip schemas coexist and are applied by ONE reconciled pass (deck-intake-driver.py:auto_skip_all_conditionals): the type-picker follow-ups (recipient_name/signature_source) carry a `conditional_on` {id,equals} block, and the migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block; unmet conditions are auto-skipped (never surfaced, never block --complete). ALSO (v1.4.0) the STANDARD track now offers the SAME choice-first QUICK vs IN-DEPTH fork the SIGNATURE track already had via sp_mode -- a new 'standard_mode' question (order 0.6, asked right after the type-picker) using the identical allowed_values vocabulary ['QUICK','IN-DEPTH']. QUICK narrows the standard interview to the 12 curated questions (matching intake/interview-app/build_questions_payload.py's DEFAULT_CURATED as closely as this file's own question set allows -- its 12th id, image_links, is an app-only UI capture question with no canonical counterpart here) plus the always-on presentation_type router and the presentation_type-gated required fields (recipient_name / extracted_substance / signature_source) that a build cannot run without. IN-DEPTH asks every one of the questions below, unchanged. No question was deleted or renamed to build this fork: every non-curated question below simply gained one more gate -- an `ask_if` {question_id:'standard_mode', equals:'IN-DEPTH'} on questions that had no existing ask_if, or a `conditional_on` {id:'standard_mode', equals:'IN-DEPTH'} on questions that already used ask_if for something else (both blocks are evaluated independently by should_ask() in deck-intake-driver.py -- already-true behavior, not new code). FIX-STDMODE-SIGNATURE (v1.5.0): v1.4.0 shipped standard_mode with its OWN `conditional_on` restricted to the three non-signature presentation_type values. That meant a signature run's standard_mode entry was never asked -- auto_skip_conditionals marked it validated+skipped ('not applicable') -- and every downstream `ask_if {question_id:'standard_mode', equals:'IN-DEPTH'}` then read that skip as a real 'not IN-DEPTH' answer and auto-skipped too: a signature deck's standard capture silently collapsed from its full question set to the 12-question QUICK curated set, with no picker ever offered and no way to opt back in (root cause: an ABSENT value silently became a fewer-questions decision). Fixed by deleting standard_mode's `conditional_on` entirely rather than special-casing presentation_type=='signature' onto it: standard_mode is now unconditionally the second question of every run (right after presentation_type, or after that type's own order<1 follow-up), for all four presentation_type values, so the 'never answered' state that produced the silent collapse can no longer occur for ANY type -- the fix closes the missing-value class, not just this one instance of it. FIX-PITCH-ANTI-FAB (v1.6.0): pitch_engines_check.chk_branded_method and chk_time_to_result read intake.named_methodology and intake.time_to_result DIRECTLY off working/copy/intake.json's root -- deliberate anti-fabrication design so a copywriter can never invent a method name or a delivery timeline, only the client can supply them -- but this file never asked for either, so AF-NO-BRANDED-METHOD and AF-NO-TIME-TO-RESULT auto-failed EVERY deck, unconditionally, forever, with no copy re-authoring able to clear them (root cause: the anti-fabrication gate existed with no matching capture question). Fixed by adding two new unconditional, always-on, required+block_gate questions with no ask_if -- 'named_methodology' (order 17.5, right after offer_name) and 'time_to_result' (order 33.5, right after transformation_promise) -- so both fields are asked in QUICK and IN-DEPTH alike, matching the same always-on pattern already used by offer_name/final_price/transformation_promise (the checks run at Phase 1Q/6 regardless of standard_mode, so the capture cannot be gated behind IN-DEPTH-only). Both questions' help text explicitly invites an honest 'no named method' / 'it varies' answer rather than forcing an invention, preserving the anti-fabrication intent into the interview itself, not just the gate. FIX 8/RESOURCE-PROFILE (v1.7.0): the ONE ask-once plan-tier question ('resource_plan', order 0.7, right after standard_mode) folds into this bank so the interview can capture -- exactly once per client, then locked -- the plan/tier for any provider whose concurrency cannot be detected automatically. It is required:false and block_gate:false because the machine gate (ask only when the probe's detection is incomplete, then never again) lives in scripts/presentation_job/resource_profile.py: capacity.probe()['resource_profile']['pending_intake_ids'] lists 'resource_plan' while a structural cap-table provider (ollama-cloud) sits PARKED with an unknown plan; record_plan_answer() locks the answer (interview log plus the capacity_override.json projection) and pending_questions() returns empty forever after, so a fully detected client and an already locked client are never re-interviewed -- probe refresh updates detected fields without unsettling the lock. The prompt's '[redacted detected summary]' is produced by resource_profile.redacted_summary() -- provider names, plan tiers and detected/unknown ONLY, never a credential, endpoint or key-presence claim. The profile store itself lives OUTSIDE this repo (under ~/.openclaw/state/presentation/) and is never printed verbatim -- the FIX 9 redaction contract depends on this entry never soliciting credential material either.",
- "legacy_field_mapping": {
-  "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
-  "from_scratch": {
-   "deck_type": "webinar",
-   "creation_mode": "from_scratch",
-   "presentation_mode": "general",
-   "audience_mode": "STANDARD"
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "deck-intake",
+  "version": "1.8.0",
+  "description": "Deck intake v1.8.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
+  "legacy_field_mapping": {
+    "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
+    "from_scratch": {
+      "deck_type": "webinar",
+      "creation_mode": "from_scratch",
+      "presentation_mode": "general",
+      "audience_mode": "STANDARD"
+    },
+    "content_personal": {
+      "deck_type": "webinar",
+      "creation_mode": "content_personal",
+      "presentation_mode": "one-person",
+      "audience_mode": "PERSONAL",
+      "requires": [
+        "recipient_name",
+        "extracted_substance"
+      ]
+    },
+    "content_general": {
+      "deck_type": "webinar",
+      "creation_mode": "content_general",
+      "presentation_mode": "general",
+      "audience_mode": "GENERAL",
+      "requires": [
+        "extracted_substance"
+      ]
+    },
+    "signature": {
+      "deck_type": "signature_presentation",
+      "creation_mode": "from_scratch",
+      "presentation_mode": "general",
+      "audience_mode": "STANDARD",
+      "note": "creation_mode defaults to from_scratch; overridden to content_personal/content_general by the signature_source follow-up when the client is converting existing material into the signature talk. Never left unset (AF-MODE-UNSET)."
+    }
   },
-  "content_personal": {
-   "deck_type": "webinar",
-   "creation_mode": "content_personal",
-   "presentation_mode": "one-person",
-   "audience_mode": "PERSONAL",
-   "requires": [
-    "recipient_name",
-    "extracted_substance"
-   ]
+  "storeTarget": {
+    "PRESENTATION_TYPE": "pre_presentation_capture.PRESENTATION_TYPE",
+    "SIGNATURE_SOURCE": "pre_presentation_capture.SIGNATURE_SOURCE",
+    "RECIPIENT_NAME": "pre_presentation_capture.RECIPIENT_NAME",
+    "EXTRACTED_SUBSTANCE": "pre_presentation_capture.EXTRACTED_SUBSTANCE",
+    "DECK_TYPE": "pre_presentation_capture.DECK_TYPE",
+    "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
+    "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
+    "GROUNDED_CONTENT": "pre_presentation_capture.GROUNDED_CONTENT",
+    "VISUAL_MIX": "pre_presentation_capture.VISUAL_MIX",
+    "DARK_OK": "pre_presentation_capture.DARK_OK",
+    "HOOK_SEED": "pre_presentation_capture.HOOK_SEED",
+    "DELIVERABLE_SET": "pre_presentation_capture.DELIVERABLE_SET",
+    "WANT_AUDIO_DEMO": "pre_presentation_capture.WANT_AUDIO_DEMO",
+    "TARGET_WPM": "pre_presentation_capture.TARGET_WPM",
+    "STYLE_SOURCE": "pre_presentation_capture.STYLE_SOURCE",
+    "GOAL": "deck_brief.GOAL",
+    "CTA_ACTION": "deck_brief.CTA_ACTION",
+    "EVENT_PRICE": "deck_brief.EVENT_PRICE",
+    "ACCESS_FREE": "deck_brief.ACCESS_FREE",
+    "TARGET_FEELING": "deck_brief.TARGET_FEELING",
+    "TONE": "deck_brief.TONE",
+    "OFFER_NAME": "deck_brief.OFFER_NAME",
+    "NAMED_METHODOLOGY": "deck_brief.NAMED_METHODOLOGY",
+    "OFFER_STACK": "deck_brief.OFFER_STACK",
+    "FINAL_PRICE": "deck_brief.FINAL_PRICE",
+    "PRICE_MODE": "deck_brief.PRICE_MODE",
+    "DURATION_MIN": "deck_brief.DURATION_MIN",
+    "AUDIENCE": "deck_brief.AUDIENCE",
+    "BRAND_PRIMARY": "deck_brief.BRAND_PRIMARY",
+    "LOGO_ON_SLIDES": "deck_brief.LOGO_ON_SLIDES",
+    "PRICE_ANCHOR": "deck_brief.PRICE_ANCHOR",
+    "PAYMENT_PLAN": "deck_brief.PAYMENT_PLAN",
+    "VIP_TIER": "deck_brief.VIP_TIER",
+    "VIP_PRICE": "deck_brief.VIP_PRICE",
+    "VIP_SPOTS": "deck_brief.VIP_SPOTS",
+    "PRIMARY_OBJECTION": "deck_brief.PRIMARY_OBJECTION",
+    "PROOF_ASSETS": "deck_brief.PROOF_ASSETS",
+    "STYLE_PREFS": "deck_brief.STYLE_PREFS",
+    "TRANSFORMATION_PROMISE": "deck_brief.TRANSFORMATION_PROMISE",
+    "TIME_TO_RESULT": "deck_brief.TIME_TO_RESULT",
+    "SLIDE_COUNT": "deck_brief.SLIDE_COUNT",
+    "DELIVERY_DESTINATIONS": "deck_brief.DELIVERY_DESTINATIONS",
+    "DEADLINE": "deck_brief.DEADLINE",
+    "CLIENT_NOTES": "deck_brief.CLIENT_NOTES",
+    "WANT_TELEPROMPTER": "pre_presentation_capture.WANT_TELEPROMPTER",
+    "TELEPROMPTER_DECLINED_REASON": "pre_presentation_capture.TELEPROMPTER_DECLINED_REASON",
+    "WANT_SPEECH_SCRIPT": "pre_presentation_capture.WANT_SPEECH_SCRIPT",
+    "SPEECH_SCRIPT_DECLINED_REASON": "pre_presentation_capture.SPEECH_SCRIPT_DECLINED_REASON",
+    "WANT_GHL_UPLOAD": "pre_presentation_capture.WANT_GHL_UPLOAD",
+    "GHL_UPLOAD_DECLINED_REASON": "pre_presentation_capture.GHL_UPLOAD_DECLINED_REASON",
+    "WANT_AUDIO_DELIVERABLE": "pre_presentation_capture.WANT_AUDIO_DELIVERABLE",
+    "AUDIO_DECLINED_REASON": "pre_presentation_capture.AUDIO_DECLINED_REASON",
+    "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
+    "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
+    "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
+    "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+    "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
+    "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN"
   },
-  "content_general": {
-   "deck_type": "webinar",
-   "creation_mode": "content_general",
-   "presentation_mode": "general",
-   "audience_mode": "GENERAL",
-   "requires": [
-    "extracted_substance"
-   ]
+  "session_budget": {
+    "max_turns": 23,
+    "max_minutes": 25
   },
-  "signature": {
-   "deck_type": "signature_presentation",
-   "creation_mode": "from_scratch",
-   "presentation_mode": "general",
-   "audience_mode": "STANDARD",
-   "note": "creation_mode defaults to from_scratch; overridden to content_personal/content_general by the signature_source follow-up when the client is converting existing material into the signature talk. Never left unset (AF-MODE-UNSET)."
+  "questions": [
+    {
+      "id": "deck_type_source",
+      "section": "deck-intake",
+      "order": 0.5,
+      "kind": "merged",
+      "prompt": "What are we building: from scratch, from your content for one person, from your content for a broader audience, or a 4-phase Signature Presentation? If content-based, name/share the source and give the one core idea the audience must retain.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "presentation_type": {
+          "storeOn": "PRESENTATION_TYPE",
+          "enum": [
+            "from_scratch",
+            "content_personal",
+            "content_general",
+            "signature"
+          ],
+          "note": "branch keyword decides; legacy deck_type/creation_mode/presentation_mode/audience_mode derive from it via the standard mapping"
+        },
+        "signature_source": {
+          "storeOn": "SIGNATURE_SOURCE",
+          "enum": [
+            "from_scratch",
+            "existing_content"
+          ],
+          "default": "from_scratch",
+          "conditional_on": {
+            "id": "presentation_type",
+            "equals": "signature"
+          }
+        },
+        "extracted_substance": {
+          "storeOn": "EXTRACTED_SUBSTANCE",
+          "conditional_on": {
+            "id": "presentation_type",
+            "in": [
+              "content_personal",
+              "content_general"
+            ]
+          },
+          "none_value": ""
+        }
+      }
+    },
+    {
+      "id": "audience_recipient_cast",
+      "section": "deck-intake",
+      "order": 1,
+      "kind": "merged",
+      "prompt": "Who is this for? Name the recipient if it is one person; otherwise describe the room (industry, situation, pain point, gender/cultural mix) and give the image-cast percentages you want, including 'no people' if applicable.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "recipient_name": {
+          "storeOn": "RECIPIENT_NAME",
+          "conditional_on": {
+            "id": "presentation_type",
+            "equals": "content_personal"
+          }
+        },
+        "audience": {
+          "storeOn": "AUDIENCE"
+        },
+        "audience_composition_note": {
+          "storeOn": "AUDIENCE_COMPOSITION_NOTE"
+        },
+        "representation_mix": {
+          "storeOn": "REPRESENTATION_MIX"
+        }
+      }
+    },
+    {
+      "id": "grounding_and_method",
+      "section": "deck-intake",
+      "order": 2,
+      "kind": "merged",
+      "prompt": "What specific book, program, message, framework, or named method is this deck grounded in? Give its name and a one-line description; say 'no named method' if there isn't one.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "grounded_content": {
+          "storeOn": "GROUNDED_CONTENT"
+        },
+        "named_methodology": {
+          "storeOn": "NAMED_METHODOLOGY",
+          "none_value": "no named method"
+        }
+      }
+    },
+    {
+      "id": "goal_cta_feeling",
+      "section": "deck-intake",
+      "order": 3,
+      "kind": "merged",
+      "prompt": "In one response: what is the presentation for, what exact action should people take at the end, and how should they feel when they leave?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "goal": {
+          "storeOn": "GOAL"
+        },
+        "cta_action": {
+          "storeOn": "CTA_ACTION"
+        },
+        "target_feeling": {
+          "storeOn": "TARGET_FEELING"
+        }
+      }
+    },
+    {
+      "id": "promise_objection_timing",
+      "section": "deck-intake",
+      "order": 4,
+      "kind": "merged",
+      "prompt": "Describe the honest before-and-after transformation, the #1 reason people may say no, and the real timeframe to see the result.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "transformation_promise": {
+          "storeOn": "TRANSFORMATION_PROMISE"
+        },
+        "primary_objection": {
+          "storeOn": "PRIMARY_OBJECTION"
+        },
+        "time_to_result": {
+          "storeOn": "TIME_TO_RESULT"
+        }
+      }
+    },
+    {
+      "id": "hook_and_tone",
+      "section": "deck-intake",
+      "order": 5,
+      "kind": "merged",
+      "prompt": "What line should they leave humming, if you have one, and what tone should carry it: inspirational, tough love, challenger, teacher, storyteller, high energy, calm premium, or a two-tone blend?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "hook_seed": {
+          "storeOn": "HOOK_SEED",
+          "none_value": "propose (never canonized as a client line)"
+        },
+        "tone": {
+          "storeOn": "TONE"
+        }
+      }
+    },
+    {
+      "id": "duration_and_slide_count",
+      "section": "deck-intake",
+      "order": 6,
+      "kind": "merged",
+      "prompt": "How long should the talk run, and do you have a hard slide-count target or should duration math decide?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "duration_min": {
+          "storeOn": "DURATION_MIN",
+          "kind": "integer"
+        },
+        "slide_count": {
+          "storeOn": "SLIDE_COUNT",
+          "derived": "duration_math",
+          "note": "blank slide count derived from duration: max(1, round(duration_min * 0.8)) at ~1.25 slides/minute"
+        }
+      }
+    },
+    {
+      "id": "deadline_and_notes",
+      "section": "deck-intake",
+      "order": 7,
+      "kind": "merged",
+      "prompt": "When must this be live, and is there anything else that could change the build?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "deadline": {
+          "storeOn": "DEADLINE"
+        },
+        "client_notes": {
+          "storeOn": "CLIENT_NOTES"
+        }
+      }
+    },
+    {
+      "id": "interview_depth",
+      "section": "deck-intake",
+      "order": 8,
+      "kind": "merged",
+      "prompt": "Choose QUICK for essential defaults or IN-DEPTH for maximum control.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "standard_mode": {
+          "storeOn": "STANDARD_MODE",
+          "enum": [
+            "QUICK",
+            "IN-DEPTH"
+          ],
+          "default": "QUICK",
+          "note": "answer selects later optional detail; never changes the 23-turn ceiling"
+        }
+      }
+    },
+    {
+      "id": "resource_plan",
+      "section": "deck-intake",
+      "order": 9,
+      "kind": "merged",
+      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.'",
+      "required": false,
+      "block_gate": false,
+      "subfields": {
+        "resource_plan": {
+          "storeOn": "RESOURCE_PLAN",
+          "conservative_value": "use conservative default",
+          "note": "FIX 8: asked once when probe data is incomplete, then locked via resource_profile.is_plan_locked; never re-asked"
+        }
+      },
+      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only.",
+      "resolverHint": "Feeds resource_profile.record_plan_answer/provider/plan -> capacity.persist_plan_answer() projects the locked ceiling into capacity_override.json, and scripts/presentation_job/resource_profile.py stores the locked profile (never in-repo, never printed verbatim -- redaction contract). ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock."
+    },
+    {
+      "id": "offer_and_stack",
+      "section": "deck-intake",
+      "order": 10,
+      "kind": "merged",
+      "prompt": "Name the offer this deck sells and lay out the stack (what the buyer actually gets, in their words).",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "offer_name": {
+          "storeOn": "OFFER_NAME"
+        },
+        "offer_stack": {
+          "storeOn": "OFFER_STACK"
+        }
+      },
+      "pitchless_skip": true
+    },
+    {
+      "id": "event_access",
+      "section": "deck-intake",
+      "order": 11,
+      "kind": "merged",
+      "prompt": "Is there an event price, or is access free?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "event_price": {
+          "storeOn": "EVENT_PRICE"
+        },
+        "access_free": {
+          "storeOn": "ACCESS_FREE",
+          "kind": "boolean",
+          "derived": "event_price",
+          "required": false,
+          "note": "derived from event_price on the same turn, then confirmed"
+        }
+      },
+      "pitchless_skip": true
+    },
+    {
+      "id": "price_structure",
+      "section": "deck-intake",
+      "order": 12,
+      "kind": "merged",
+      "prompt": "Is the price a straight number or a drop (anchor then reveal)? Give the final price and the anchor if it drops.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "price_mode": {
+          "storeOn": "PRICE_MODE",
+          "enum": [
+            "drop",
+            "straight"
+          ]
+        },
+        "final_price": {
+          "storeOn": "FINAL_PRICE"
+        },
+        "price_anchor": {
+          "storeOn": "PRICE_ANCHOR",
+          "conditional_on": {
+            "id": "price_mode",
+            "equals": "drop"
+          },
+          "none_value": ""
+        }
+      },
+      "pitchless_skip": true
+    },
+    {
+      "id": "payment_and_vip",
+      "section": "deck-intake",
+      "order": 13,
+      "kind": "merged",
+      "prompt": "Any payment plan? Any VIP tier (what it includes, its price, how many spots)?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "payment_plan": {
+          "storeOn": "PAYMENT_PLAN"
+        },
+        "vip_tier": {
+          "storeOn": "VIP_TIER",
+          "kind": "boolean",
+          "default": false
+        },
+        "vip_price": {
+          "storeOn": "VIP_PRICE",
+          "conditional_on": {
+            "id": "vip_tier",
+            "truthy": true
+          },
+          "none_value": ""
+        },
+        "vip_spots": {
+          "storeOn": "VIP_SPOTS",
+          "kind": "integer",
+          "conditional_on": {
+            "id": "vip_tier",
+            "truthy": true
+          },
+          "none_value": ""
+        }
+      },
+      "pitchless_skip": true
+    },
+    {
+      "id": "proof_assets",
+      "section": "deck-intake",
+      "order": 14,
+      "kind": "merged",
+      "prompt": "What proof goes in: results, testimonials, screenshots, receipts? Paste or name the assets you want used.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "proof_assets": {
+          "storeOn": "PROOF_ASSETS"
+        }
+      },
+      "pitchless_skip": true
+    },
+    {
+      "id": "style_and_brand",
+      "section": "deck-intake",
+      "order": 15,
+      "kind": "merged",
+      "prompt": "Style: fresh clean-white default, or match brand? Give the primary brand color/logo source, any style preferences, and say if dark slides are OK.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "style_source": {
+          "storeOn": "STYLE_SOURCE",
+          "default": "create-new"
+        },
+        "style_prefs": {
+          "storeOn": "STYLE_PREFS",
+          "default": "fresh clean-white"
+        },
+        "brand_primary": {
+          "storeOn": "BRAND_PRIMARY"
+        },
+        "dark_ok": {
+          "storeOn": "DARK_OK",
+          "kind": "boolean",
+          "default": false
+        }
+      }
+    },
+    {
+      "id": "visual_mix",
+      "section": "deck-intake",
+      "order": 16,
+      "kind": "merged",
+      "prompt": "How should visuals mix people, product, and text on slides? (Cast demographics follow your answer above.)",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "visual_mix": {
+          "storeOn": "VISUAL_MIX",
+          "default": "mix"
+        }
+      }
+    },
+    {
+      "id": "logo_placement",
+      "section": "deck-intake",
+      "order": 17,
+      "kind": "merged",
+      "prompt": "Where does the logo go? Blank means cover and closing slide only.",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "logo_on_slides": {
+          "storeOn": "LOGO_ON_SLIDES",
+          "kind": "boolean",
+          "default": false,
+          "none_value": "cover/close only"
+        }
+      }
+    },
+    {
+      "id": "core_deliverables",
+      "section": "deck-intake",
+      "order": 18,
+      "kind": "merged",
+      "prompt": "Core deliverables check: deck, teleprompter, speech script, audio deliverable. Say no to any you don't want (reasons are captured in one later turn).",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "deliverable_set": {
+          "storeOn": "DELIVERABLE_SET",
+          "derived": "checkboxes",
+          "default": "deck-only"
+        },
+        "want_teleprompter": {
+          "storeOn": "WANT_TELEPROMPTER",
+          "boolish": true,
+          "default": "yes"
+        },
+        "want_speech_script": {
+          "storeOn": "WANT_SPEECH_SCRIPT",
+          "boolish": true,
+          "default": "yes"
+        },
+        "want_audio_deliverable": {
+          "storeOn": "WANT_AUDIO_DELIVERABLE",
+          "boolish": true,
+          "default": "yes"
+        }
+      }
+    },
+    {
+      "id": "delivery_and_ghl",
+      "section": "deck-intake",
+      "order": 19,
+      "kind": "merged",
+      "prompt": "Where should I deliver the finished deck, and do you want it uploaded into GoHighLevel?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "delivery_destinations": {
+          "storeOn": "DELIVERY_DESTINATIONS"
+        },
+        "want_ghl_upload": {
+          "storeOn": "WANT_GHL_UPLOAD",
+          "boolish": true,
+          "default": "yes"
+        }
+      }
+    },
+    {
+      "id": "growth_assets",
+      "section": "deck-intake",
+      "order": 20,
+      "kind": "merged",
+      "prompt": "Do you want the sales/checkout page and a VSL page built alongside the deck?",
+      "required": true,
+      "block_gate": true,
+      "subfields": {
+        "want_sales_checkout": {
+          "storeOn": "WANT_SALES_CHECKOUT",
+          "boolish": true,
+          "default": "yes"
+        },
+        "want_vsl_page": {
+          "storeOn": "WANT_VSL_PAGE",
+          "boolish": true,
+          "default": "no"
+        }
+      }
+    },
+    {
+      "id": "audio_settings",
+      "section": "deck-intake",
+      "order": 21,
+      "kind": "merged",
+      "prompt": "Want an audio demo of the talk? Pick a pace: default, medium, or fast (or give a words-per-minute target).",
+      "required": false,
+      "block_gate": false,
+      "subfields": {
+        "want_audio_demo": {
+          "storeOn": "WANT_AUDIO_DEMO",
+          "kind": "boolean",
+          "default": false,
+          "conditional_inline": true
+        },
+        "speech_speed_preference": {
+          "storeOn": "intake.json",
+          "key": "speech_speed_preference",
+          "enum": [
+            "default",
+            "medium",
+            "fast"
+          ],
+          "default": "default"
+        },
+        "target_wpm": {
+          "storeOn": "TARGET_WPM",
+          "kind": "integer",
+          "derived": "speech_speed_preference",
+          "default": 140,
+          "note": "blank WPM derives: default=130, medium=140, fast=155"
+        }
+      }
+    },
+    {
+      "id": "decline_context",
+      "section": "deck-intake",
+      "order": 22,
+      "kind": "merged",
+      "prompt": "For anything you said no to above (teleprompter, speech script, GHL upload, audio deliverable, sales/checkout, VSL page), give the reason in one sentence each, or say 'no note' per item.",
+      "required": false,
+      "block_gate": false,
+      "subfields": {
+        "teleprompter_declined_reason": {
+          "storeOn": "TELEPROMPTER_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_teleprompter",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "speech_script_declined_reason": {
+          "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_speech_script",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "ghl_upload_declined_reason": {
+          "storeOn": "GHL_UPLOAD_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_ghl_upload",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "audio_declined_reason": {
+          "storeOn": "AUDIO_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_audio_deliverable",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "sales_checkout_declined_reason": {
+          "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_sales_checkout",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "vsl_page_declined_reason": {
+          "storeOn": "VSL_PAGE_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_vsl_page",
+            "equals": "no"
+          },
+          "no_note": true
+        }
+      }
+    },
+    {
+      "id": "presentation_type",
+      "section": "deck-intake",
+      "order": 0.0,
+      "prompt": "What kind of presentation is this? (1) From scratch -- we brainstorm and build it new. (2) From your content -- personal: turn something you already have (deck/video/transcript) into a presentation for ONE specific person. (3) From your content -- general: turn existing content into a presentation for a room/mass audience. (4) Signature Presentation -- the 4-phase, 100+-slide signature talk (The Rulebook / The Vault / The Quest / The Original).",
+      "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. There is no default: this question must be answered by the client -- an unanswered or unrecognized answer must never be treated as 'from_scratch' or any other type. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "enum",
+      "storeOn": "PRESENTATION_TYPE",
+      "allowed_values": [
+        "from_scratch",
+        "content_personal",
+        "content_general",
+        "signature"
+      ],
+      "value_labels": {
+        "from_scratch": "From scratch -- brainstorm and build new",
+        "content_personal": "From your content -- personal (one specific recipient)",
+        "content_general": "From your content -- general (room/mass audience)",
+        "signature": "Signature Presentation (4-phase, 100+ slides)"
+      },
+      "required": true,
+      "block_gate": false,
+      "resolverHint": "No default: if the owner says 'no preference' or does not answer, do NOT guess -- re-ask, or escalate to the operator. Landmine closed (2026-08-18): this question used to carry a JSON `default: from_scratch` that a required:false flip (or any consumer treating absence as approval) could silently re-arm, producing a webinar for every client who never actually answered. An absent or unrecognized presentation_type answer must fail closed -- see UngroundedDeckTypeError in intake_writer.py and _normalize_enum_value in deck-intake-driver.py, both of which now refuse to fabricate a value here. The driver derives deck_type, creation_mode, presentation_mode, and audience_mode from this ONE answer via derive_legacy_fields() (deck-intake-driver.py) the moment it is validated -- never ask those four as separate questions. 'content_personal' additionally requires recipient_name (asked immediately after, order 0.3) and extracted_substance before build (per _chk_mode); 'content_general' requires extracted_substance. 'signature': the driver asks ONE conditional follow-up ('signature_source', order 0.5: is this built from existing content?), sets deck_type:signature_presentation in working/copy/intake.json, and routes to the Signature Presentation Architect / brainstorming-buddy-presentations SIGNATURE mode, which is choice-first (QUICK vs IN-DEPTH) and then asks the SACRED 8 Questions + the frame-selection question ONE at a time -- never a batch (dumping them is AF-INTAKE-BATCH) -- assembling the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B is NEVER asked -- it stays derived from whether source assets exist (director-of-presentations.md SOP 9.3). This question runs BEFORE the standard one-question-per-turn capture below; every question below behaves exactly as today regardless of presentation_type.",
+      "alias": true
+    },
+    {
+      "id": "extracted_substance",
+      "section": "deck-intake",
+      "order": 0.51,
+      "prompt": "You said this deck comes from material you already have. In your own words, what is the ONE core idea in that material that the audience must walk away with?",
+      "help": "Asked only for the two CONTENT modes (content_personal / content_general). This is the SUBSTANCE the deck is extracted FROM -- build_deck.py's AF-MODE-UNSET gate refuses a content-mode deck that has none (SOP-MODE-00, P22-P29). It is the client's own words, never the assistant's summary. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "EXTRACTED_SUBSTANCE",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "presentation_type",
+        "in": [
+          "content_personal",
+          "content_general"
+        ]
+      },
+      "resolverHint": "Ask ONLY when presentation_type is content_personal or content_general; auto-skipped for from_scratch and signature. The validated answer is lifted verbatim into working/copy/intake.json.extracted_substance by _apply_type_picker_derivation -- never paraphrased, never defaulted. There is no default: an empty answer must be re-asked.",
+      "alias": true
+    },
+    {
+      "id": "signature_source",
+      "section": "deck-intake",
+      "order": 0.52,
+      "prompt": "Is this Signature Presentation built from existing content you already have (a deck, video, or transcript), or are we building it from scratch with you?",
+      "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "enum",
+      "storeOn": "SIGNATURE_SOURCE",
+      "allowed_values": [
+        "from_scratch",
+        "existing_content"
+      ],
+      "value_labels": {
+        "from_scratch": "Building it from scratch with you",
+        "existing_content": "Converting existing content I already have"
+      },
+      "required": true,
+      "block_gate": false,
+      "default": "from_scratch",
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "signature"
+      },
+      "resolverHint": "Ask only when presentation_type=='signature'. Default if unanswered: from_scratch. On 'existing_content': the driver asks the SAME content_personal-vs-content_general follow-up implicitly via the normal signature 8-Questions flow; until that is known, creation_mode is set to content_general (the safer default -- never left unset per AF-MODE-UNSET) and corrected once the signature intake clarifies the audience. On 'from_scratch': creation_mode stays from_scratch (the signature default).",
+      "alias": true
+    },
+    {
+      "id": "recipient_name",
+      "section": "deck-intake",
+      "order": 1.01,
+      "prompt": "Who is this presentation for -- what is their name?",
+      "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types. [FIX 30 alias row: captured inside merged turn 2; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "RECIPIENT_NAME",
+      "required": true,
+      "block_gate": false,
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "content_personal"
+      },
+      "resolverHint": "Ask only when presentation_type=='content_personal'. If the owner cannot name a single recipient, flag recipient_name_uncaptured:true and confirm with the operator before build -- PERSONAL is the named mode and _chk_intake blocks an empty recipient_name.",
+      "alias": true
+    },
+    {
+      "id": "audience",
+      "section": "deck-intake",
+      "order": 1.02,
+      "prompt": "Beyond who's in the room (already captured), any additional specifics about this audience -- industry, income level, the pain point that brought them here?",
+      "help": "REPRESENTATION_MIX already captured the composition; do not re-ask the percentage question here. [FIX 30 alias row: captured inside merged turn 2; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "AUDIENCE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+      "alias": true
+    },
+    {
+      "id": "named_methodology",
+      "section": "deck-intake",
+      "order": 2.01,
+      "prompt": "Do you have a named methodology, framework, or system you deliver this through -- what is it called, in your own words?",
+      "help": "The BRANDED METHOD name that may appear on a NAMED_METHOD beat -- client-supplied ONLY, never invented by the copywriter. If you do not have a named method, say so plainly (e.g. 'no formal name, we just do X') rather than inventing one on the spot -- an honest 'no' is still a real answer and routes method-naming back to the owner for approval instead of a fabricated one shipping unapproved. [FIX 30 alias row: captured inside merged turn 3; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "NAMED_METHODOLOGY",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Feeds pitch_engines_check.chk_branded_method (AF-NO-BRANDED-METHOD / AF-METHOD-FABRICATED) -- the ONLY source of a client-supplied method name; a NAMED_METHOD beat may not appear on a slide without this answer or an owner_approved:true record in method_name_approval.json.",
+      "alias": true
+    },
+    {
+      "id": "goal",
+      "section": "deck-intake",
+      "order": 3.01,
+      "prompt": "In one line, what is this presentation FOR -- what do you want people to do at the end?",
+      "help": "This is the core objective the whole deck is built to serve (buy / book / join / enroll / something else). [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "GOAL",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). No default; hand back to owner if unclear.",
+      "alias": true
+    },
+    {
+      "id": "cta_action",
+      "section": "deck-intake",
+      "order": 3.02,
+      "prompt": "What is the exact call-to-action -- the specific verb and next step you want them to take?",
+      "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide's action language. [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "CTA_ACTION",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+      "alias": true
+    },
+    {
+      "id": "target_feeling",
+      "section": "deck-intake",
+      "order": 3.03,
+      "prompt": "How should they feel walking away from this presentation?",
+      "help": "The emotional target the whole arc is tuned toward (e.g. empowered, urgent, hopeful, challenged). [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "TARGET_FEELING",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+      "alias": true
+    },
+    {
+      "id": "transformation_promise",
+      "section": "deck-intake",
+      "order": 4.01,
+      "prompt": "What's the before-and-after this offer delivers -- who are they before, and who are they after?",
+      "kind": "text",
+      "storeOn": "TRANSFORMATION_PROMISE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). May be pre-seeded from a content-to-presentation source brief (owner-confirmed, not re-interviewed).",
+      "alias": true,
+      "help": " [FIX 30 alias row: captured inside merged turn 5; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]"
+    },
+    {
+      "id": "time_to_result",
+      "section": "deck-intake",
+      "order": 4.02,
+      "prompt": "How long does it typically take a client to see this result once they start -- the real, honest timeframe?",
+      "help": "Sources the deck's EXPECTATION beat (e.g. '8 weeks to final, a shift in 2') -- client-supplied ONLY, never fabricated by the copywriter. State the true delivery timeframe in your own words, including 'it varies, typically N weeks' if that is the honest answer -- never invent a faster number to sound more impressive. [FIX 30 alias row: captured inside merged turn 5; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "TIME_TO_RESULT",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Feeds pitch_engines_check.chk_time_to_result (AF-NO-TIME-TO-RESULT) -- the deck's EXPECTATION beat must carry a duration token (day/week/month/session) sourced from this answer, never fabricated.",
+      "alias": true
+    },
+    {
+      "id": "tone",
+      "section": "deck-intake",
+      "order": 5.01,
+      "prompt": "Pick a tone -- Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium. You can also blend two.",
+      "help": "One of the seven named styles, or a blend of two. [FIX 30 alias row: captured inside merged turn 6; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "TONE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). May be pre-seeded from a content-to-presentation source brief's tone_detected (owner-overridable).",
+      "alias": true
+    },
+    {
+      "id": "client_notes",
+      "section": "deck-intake",
+      "order": 7.01,
+      "prompt": "Anything else important I should know before I start writing?",
+      "kind": "text",
+      "storeOn": "CLIENT_NOTES",
+      "required": false,
+      "block_gate": false,
+      "alias": true,
+      "help": " [FIX 30 alias row: captured inside merged turn 8; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]"
+    },
+    {
+      "id": "offer_name",
+      "section": "deck-intake",
+      "order": 10.01,
+      "prompt": "What are you SELLING at the end -- the exact name of the product or offer?",
+      "help": "The OFFER sold at the end -- SEPARATE from the event/access price already captured. Never invented. [FIX 30 alias row: captured inside merged turn 11; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "OFFER_NAME",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
+      "alias": true
+    },
+    {
+      "id": "final_price",
+      "section": "deck-intake",
+      "order": 12.01,
+      "prompt": "What is the final price of the offer?",
+      "help": "The OFFER price ONLY -- NEVER copied or inferred from event_price/access_free. Set 0 only on the owner's EXPLICIT confirmation there is no paid offer (free_only_close). [FIX 30 alias row: captured inside merged turn 13; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "FINAL_PRICE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Two-prices guard: hand back rather than default. If the owner confirms a free-only close, mark free_only_close:true for sign-off.",
+      "alias": true
+    },
+    {
+      "id": "brand_primary",
+      "section": "deck-intake",
+      "order": 15.01,
+      "prompt": "Any brand colors or a logo you want on the slides?",
+      "help": "Skip if already on file for this client. [FIX 30 alias row: captured inside merged turn 16; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "storeOn": "BRAND_PRIMARY",
+      "required": false,
+      "block_gate": false,
+      "alias": true
+    },
+    {
+      "id": "want_sales_checkout",
+      "section": "deck-intake",
+      "order": 20.01,
+      "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no)",
+      "help": "Default YES. The sales page + checkout page is a standard upsell deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, build the sales page and checkout page",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "WANT_SALES_CHECKOUT",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'no' gates OUT the sales+checkout branch (deck-only or VSL-only run); a 'yes' enables the P-U-SALES-* / P-U-CHECKOUT-* / P-U-FORM-CHECKOUT phases.",
+      "alias": true
+    },
+    {
+      "id": "want_vsl_page",
+      "section": "deck-intake",
+      "order": 20.02,
+      "prompt": "Would you like a VSL page, a video sales letter page, to go along with this? (yes / no)",
+      "help": "Default NO -- a VSL page requires the video to exist (see the VSL video dependency: the VSL page references the hosted webinar/video, so a video must be produced before the page build). Default stays 'no' unless the owner explicitly opts in. A 'yes' is a fail-closed gate; a 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the VSL branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, build the VSL page",
+        "no": "No thank you"
+      },
+      "default": "no",
+      "storeOn": "WANT_VSL_PAGE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'no' (video must exist for a VSL page). Only an explicit 'yes' opens the VSL branch; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' enables the P-U-VSL-* phases which wait on the video (V1) before the page build.",
+      "alias": true
+    },
+    {
+      "id": "speech_speed_preference",
+      "section": "deck-intake",
+      "order": 21.01,
+      "prompt": "At what pace should we record the audio narration? Choose: default (our recommended setting), medium, or fast.",
+      "help": "Maps to Fish prosody.speed: default = 1.25 (recommended), medium = 1.3, fast = 1.33. Default if no preference: 1.25. [FIX 30 alias row: captured inside merged turn 22; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "allowed_values": [
+        "default",
+        "medium",
+        "fast"
+      ],
+      "value_labels": {
+        "default": "Default pace (prosody.speed 1.25)",
+        "medium": "Medium pace (prosody.speed 1.3)",
+        "fast": "Fast pace (prosody.speed 1.33)"
+      },
+      "default": "default",
+      "storeOn": "intake.json",
+      "key": "speech_speed_preference",
+      "alias": true
+    },
+    {
+      "id": "teleprompter_declined_reason",
+      "section": "deck-intake",
+      "order": 22.01,
+      "prompt": "Understood -- no teleprompter. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_teleprompter is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "TELEPROMPTER_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_teleprompter",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_teleprompter is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "alias": true
+    },
+    {
+      "id": "speech_script_declined_reason",
+      "section": "deck-intake",
+      "order": 22.02,
+      "prompt": "Understood -- no speech script. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_speech_script is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_speech_script",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_speech_script is 'yes'. When asked, it BLOCKS --complete.",
+      "alias": true
+    },
+    {
+      "id": "ghl_upload_declined_reason",
+      "section": "deck-intake",
+      "order": 22.03,
+      "prompt": "Understood -- no GHL upload. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_ghl_upload is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "GHL_UPLOAD_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_ghl_upload",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_ghl_upload is 'yes'. When asked, it BLOCKS --complete.",
+      "alias": true
+    },
+    {
+      "id": "audio_declined_reason",
+      "section": "deck-intake",
+      "order": 22.04,
+      "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "AUDIO_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_audio_deliverable",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_audio_deliverable is 'yes'. When asked, it BLOCKS --complete.",
+      "alias": true
+    },
+    {
+      "id": "sales_checkout_declined_reason",
+      "section": "deck-intake",
+      "order": 22.05,
+      "prompt": "Understood -- no sales page or checkout page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_sales_checkout is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_sales_checkout",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_sales_checkout is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "alias": true
+    },
+    {
+      "id": "vsl_page_declined_reason",
+      "section": "deck-intake",
+      "order": 22.06,
+      "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "VSL_PAGE_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_vsl_page",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "alias": true
+    }
+  ],
+  "waiver_field_mapping": {
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "teleprompter": {
+      "toggle": "want_teleprompter",
+      "reason": "teleprompter_declined_reason"
+    },
+    "script": {
+      "toggle": "want_speech_script",
+      "reason": "speech_script_declined_reason"
+    },
+    "ghl_upload": {
+      "toggle": "want_ghl_upload",
+      "reason": "ghl_upload_declined_reason"
+    },
+    "audio": {
+      "toggle": "want_audio_deliverable",
+      "reason": "audio_declined_reason"
+    },
+    "sales_checkout": {
+      "toggle": "want_sales_checkout",
+      "reason": "sales_checkout_declined_reason"
+    },
+    "vsl_page": {
+      "toggle": "want_vsl_page",
+      "reason": "vsl_page_declined_reason"
+    }
+  },
+  "intake_v2": {
+    "flag_env": "PRESENTATION_INTAKE_V2",
+    "default": "on",
+    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 19 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
+    "mapping": {
+      "presentation_type": "captured:turn 1 (presentation_type)",
+      "recipient_name": "conditional:turn 2 (asked when branch=content_personal)",
+      "extracted_substance": "conditional:turn 1 (asked when branch is content_*)",
+      "signature_source": "conditional:turn 1 (asked when branch=signature)",
+      "standard_mode": "captured:turn 9 (standard_mode)",
+      "resource_plan": "captured:turn 10 (NEW FIX 8 field, ask-once then locked)",
+      "representation_mix": "captured:turn 2 (representation_mix)",
+      "audience_composition_note": "captured:turn 2 (audience_composition_note)",
+      "grounded_content": "captured:turn 3 (grounded_content)",
+      "visual_mix": "captured:turn 17 (visual_mix)",
+      "dark_ok": "captured:turn 16 (dark_ok)",
+      "hook_seed": "captured:turn 6 (hook_seed)",
+      "deliverable_set": "derived:turn 19 (from the four checkboxes)",
+      "want_teleprompter": "captured:turn 19 (want_teleprompter)",
+      "teleprompter_declined_reason": "captured:turn 23 (teleprompter_declined_reason)",
+      "want_speech_script": "captured:turn 19 (want_speech_script)",
+      "speech_script_declined_reason": "captured:turn 23 (speech_script_declined_reason)",
+      "want_ghl_upload": "captured:turn 20 (want_ghl_upload)",
+      "ghl_upload_declined_reason": "captured:turn 23 (ghl_upload_declined_reason)",
+      "want_audio_deliverable": "captured:turn 19 (want_audio_deliverable)",
+      "audio_declined_reason": "captured:turn 23 (audio_declined_reason)",
+      "speech_speed_preference": "captured:turn 22 (speech_speed_preference)",
+      "want_sales_checkout": "captured:turn 21 (want_sales_checkout)",
+      "sales_checkout_declined_reason": "captured:turn 23 (sales_checkout_declined_reason)",
+      "want_vsl_page": "captured:turn 21 (want_vsl_page)",
+      "vsl_page_declined_reason": "captured:turn 23 (vsl_page_declined_reason)",
+      "want_audio_demo": "conditional:turn 22 (asked only when audio wanted)",
+      "target_wpm": "derived:turn 22 (from speech_speed_preference)",
+      "style_source": "captured:turn 16 (style_source)",
+      "goal": "captured:turn 4 (goal)",
+      "cta_action": "captured:turn 4 (cta_action)",
+      "event_price": "captured:turn 12 (event_price)",
+      "access_free": "derived:turn 12 (from event_price, confirmed same turn)",
+      "target_feeling": "captured:turn 4 (target_feeling)",
+      "tone": "captured:turn 6 (tone)",
+      "offer_name": "captured:turn 11 (offer_name)",
+      "named_methodology": "captured:turn 3 (named_methodology)",
+      "offer_stack": "captured:turn 11 (offer_stack)",
+      "price_mode": "captured:turn 13 (price_mode)",
+      "final_price": "captured:turn 13 (final_price)",
+      "duration_min": "captured:turn 7 (duration_min)",
+      "audience": "captured:turn 2 (audience)",
+      "brand_primary": "captured:turn 16 (brand_primary)",
+      "logo_on_slides": "captured:turn 18 (logo_on_slides)",
+      "price_anchor": "conditional:turn 13 (asked when price_mode=drop, else none_value)",
+      "payment_plan": "captured:turn 14 (payment_plan)",
+      "vip_tier": "captured:turn 14 (vip_tier)",
+      "vip_price": "conditional:turn 14 (VIP defaulted when no)",
+      "vip_spots": "conditional:turn 14 (VIP defaulted when no)",
+      "primary_objection": "captured:turn 5 (primary_objection)",
+      "proof_assets": "captured:turn 15 (proof_assets)",
+      "style_prefs": "captured:turn 16 (style_prefs)",
+      "transformation_promise": "captured:turn 5 (transformation_promise)",
+      "time_to_result": "captured:turn 5 (time_to_result)",
+      "slide_count": "derived:turn 7 (duration math)",
+      "delivery_destinations": "captured:turn 20 (delivery_destinations)",
+      "deadline": "captured:turn 8 (deadline)",
+      "client_notes": "captured:turn 8 (client_notes)"
+    }
   }
- },
- "storeTarget": {
-  "PRESENTATION_TYPE": "pre_presentation_capture.PRESENTATION_TYPE",
-  "SIGNATURE_SOURCE": "pre_presentation_capture.SIGNATURE_SOURCE",
-  "RECIPIENT_NAME": "pre_presentation_capture.RECIPIENT_NAME",
-  "EXTRACTED_SUBSTANCE": "pre_presentation_capture.EXTRACTED_SUBSTANCE",
-  "DECK_TYPE": "pre_presentation_capture.DECK_TYPE",
-  "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
-  "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
-  "GROUNDED_CONTENT": "pre_presentation_capture.GROUNDED_CONTENT",
-  "VISUAL_MIX": "pre_presentation_capture.VISUAL_MIX",
-  "DARK_OK": "pre_presentation_capture.DARK_OK",
-  "HOOK_SEED": "pre_presentation_capture.HOOK_SEED",
-  "DELIVERABLE_SET": "pre_presentation_capture.DELIVERABLE_SET",
-  "WANT_AUDIO_DEMO": "pre_presentation_capture.WANT_AUDIO_DEMO",
-  "TARGET_WPM": "pre_presentation_capture.TARGET_WPM",
-  "STYLE_SOURCE": "pre_presentation_capture.STYLE_SOURCE",
-  "GOAL": "deck_brief.GOAL",
-  "CTA_ACTION": "deck_brief.CTA_ACTION",
-  "EVENT_PRICE": "deck_brief.EVENT_PRICE",
-  "ACCESS_FREE": "deck_brief.ACCESS_FREE",
-  "TARGET_FEELING": "deck_brief.TARGET_FEELING",
-  "TONE": "deck_brief.TONE",
-  "OFFER_NAME": "deck_brief.OFFER_NAME",
-  "NAMED_METHODOLOGY": "deck_brief.NAMED_METHODOLOGY",
-  "OFFER_STACK": "deck_brief.OFFER_STACK",
-  "FINAL_PRICE": "deck_brief.FINAL_PRICE",
-  "PRICE_MODE": "deck_brief.PRICE_MODE",
-  "DURATION_MIN": "deck_brief.DURATION_MIN",
-  "AUDIENCE": "deck_brief.AUDIENCE",
-  "BRAND_PRIMARY": "deck_brief.BRAND_PRIMARY",
-  "LOGO_ON_SLIDES": "deck_brief.LOGO_ON_SLIDES",
-  "PRICE_ANCHOR": "deck_brief.PRICE_ANCHOR",
-  "PAYMENT_PLAN": "deck_brief.PAYMENT_PLAN",
-  "VIP_TIER": "deck_brief.VIP_TIER",
-  "VIP_PRICE": "deck_brief.VIP_PRICE",
-  "VIP_SPOTS": "deck_brief.VIP_SPOTS",
-  "PRIMARY_OBJECTION": "deck_brief.PRIMARY_OBJECTION",
-  "PROOF_ASSETS": "deck_brief.PROOF_ASSETS",
-  "STYLE_PREFS": "deck_brief.STYLE_PREFS",
-  "TRANSFORMATION_PROMISE": "deck_brief.TRANSFORMATION_PROMISE",
-  "TIME_TO_RESULT": "deck_brief.TIME_TO_RESULT",
-  "SLIDE_COUNT": "deck_brief.SLIDE_COUNT",
-  "DELIVERY_DESTINATIONS": "deck_brief.DELIVERY_DESTINATIONS",
-  "DEADLINE": "deck_brief.DEADLINE",
-  "CLIENT_NOTES": "deck_brief.CLIENT_NOTES",
-  "WANT_TELEPROMPTER": "pre_presentation_capture.WANT_TELEPROMPTER",
-  "TELEPROMPTER_DECLINED_REASON": "pre_presentation_capture.TELEPROMPTER_DECLINED_REASON",
-  "WANT_SPEECH_SCRIPT": "pre_presentation_capture.WANT_SPEECH_SCRIPT",
-  "SPEECH_SCRIPT_DECLINED_REASON": "pre_presentation_capture.SPEECH_SCRIPT_DECLINED_REASON",
-  "WANT_GHL_UPLOAD": "pre_presentation_capture.WANT_GHL_UPLOAD",
-  "GHL_UPLOAD_DECLINED_REASON": "pre_presentation_capture.GHL_UPLOAD_DECLINED_REASON",
-  "WANT_AUDIO_DELIVERABLE": "pre_presentation_capture.WANT_AUDIO_DELIVERABLE",
-  "AUDIO_DECLINED_REASON": "pre_presentation_capture.AUDIO_DECLINED_REASON",
-  "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
-  "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
-  "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
-  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
-  "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
-  "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN"
- },
- "session_budget": {
-  "max_turns": 44,
-  "max_minutes": 45
- },
- "questions": [
-  {
-   "id": "presentation_type",
-   "section": "deck-intake",
-   "order": 0,
-   "prompt": "What kind of presentation is this? (1) From scratch -- we brainstorm and build it new. (2) From your content -- personal: turn something you already have (deck/video/transcript) into a presentation for ONE specific person. (3) From your content -- general: turn existing content into a presentation for a room/mass audience. (4) Signature Presentation -- the 4-phase, 100+-slide signature talk (The Rulebook / The Vault / The Quest / The Original).",
-   "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. There is no default: this question must be answered by the client -- an unanswered or unrecognized answer must never be treated as 'from_scratch' or any other type.",
-   "kind": "enum",
-   "storeOn": "PRESENTATION_TYPE",
-   "allowed_values": [
-    "from_scratch",
-    "content_personal",
-    "content_general",
-    "signature"
-   ],
-   "value_labels": {
-    "from_scratch": "From scratch -- brainstorm and build new",
-    "content_personal": "From your content -- personal (one specific recipient)",
-    "content_general": "From your content -- general (room/mass audience)",
-    "signature": "Signature Presentation (4-phase, 100+ slides)"
-   },
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "No default: if the owner says 'no preference' or does not answer, do NOT guess -- re-ask, or escalate to the operator. Landmine closed (2026-08-18): this question used to carry a JSON `default: from_scratch` that a required:false flip (or any consumer treating absence as approval) could silently re-arm, producing a webinar for every client who never actually answered. An absent or unrecognized presentation_type answer must fail closed -- see UngroundedDeckTypeError in intake_writer.py and _normalize_enum_value in deck-intake-driver.py, both of which now refuse to fabricate a value here. The driver derives deck_type, creation_mode, presentation_mode, and audience_mode from this ONE answer via derive_legacy_fields() (deck-intake-driver.py) the moment it is validated -- never ask those four as separate questions. 'content_personal' additionally requires recipient_name (asked immediately after, order 0.3) and extracted_substance before build (per _chk_mode); 'content_general' requires extracted_substance. 'signature': the driver asks ONE conditional follow-up ('signature_source', order 0.5: is this built from existing content?), sets deck_type:signature_presentation in working/copy/intake.json, and routes to the Signature Presentation Architect / brainstorming-buddy-presentations SIGNATURE mode, which is choice-first (QUICK vs IN-DEPTH) and then asks the SACRED 8 Questions + the frame-selection question ONE at a time -- never a batch (dumping them is AF-INTAKE-BATCH) -- assembling the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B is NEVER asked -- it stays derived from whether source assets exist (director-of-presentations.md SOP 9.3). This question runs BEFORE the standard one-question-per-turn capture below; every question below behaves exactly as today regardless of presentation_type."
-  },
-  {
-   "id": "recipient_name",
-   "section": "deck-intake",
-   "order": 0.3,
-   "prompt": "Who is this presentation for -- what is their name?",
-   "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types.",
-   "kind": "text",
-   "storeOn": "RECIPIENT_NAME",
-   "required": true,
-   "block_gate": false,
-   "conditional_on": {
-    "id": "presentation_type",
-    "equals": "content_personal"
-   },
-   "resolverHint": "Ask only when presentation_type=='content_personal'. If the owner cannot name a single recipient, flag recipient_name_uncaptured:true and confirm with the operator before build -- PERSONAL is the named mode and _chk_intake blocks an empty recipient_name."
-  },
-  {
-   "id": "extracted_substance",
-   "section": "deck-intake",
-   "order": 0.4,
-   "prompt": "You said this deck comes from material you already have. In your own words, what is the ONE core idea in that material that the audience must walk away with?",
-   "help": "Asked only for the two CONTENT modes (content_personal / content_general). This is the SUBSTANCE the deck is extracted FROM -- build_deck.py's AF-MODE-UNSET gate refuses a content-mode deck that has none (SOP-MODE-00, P22-P29). It is the client's own words, never the assistant's summary.",
-   "kind": "text",
-   "storeOn": "EXTRACTED_SUBSTANCE",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "presentation_type",
-    "in": [
-     "content_personal",
-     "content_general"
-    ]
-   },
-   "resolverHint": "Ask ONLY when presentation_type is content_personal or content_general; auto-skipped for from_scratch and signature. The validated answer is lifted verbatim into working/copy/intake.json.extracted_substance by _apply_type_picker_derivation -- never paraphrased, never defaulted. There is no default: an empty answer must be re-asked."
-  },
-  {
-   "id": "signature_source",
-   "section": "deck-intake",
-   "order": 0.5,
-   "prompt": "Is this Signature Presentation built from existing content you already have (a deck, video, or transcript), or are we building it from scratch with you?",
-   "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types.",
-   "kind": "enum",
-   "storeOn": "SIGNATURE_SOURCE",
-   "allowed_values": [
-    "from_scratch",
-    "existing_content"
-   ],
-   "value_labels": {
-    "from_scratch": "Building it from scratch with you",
-    "existing_content": "Converting existing content I already have"
-   },
-   "required": true,
-   "block_gate": false,
-   "default": "from_scratch",
-   "conditional_on": {
-    "id": "presentation_type",
-    "equals": "signature"
-   },
-   "resolverHint": "Ask only when presentation_type=='signature'. Default if unanswered: from_scratch. On 'existing_content': the driver asks the SAME content_personal-vs-content_general follow-up implicitly via the normal signature 8-Questions flow; until that is known, creation_mode is set to content_general (the safer default -- never left unset per AF-MODE-UNSET) and corrected once the signature intake clarifies the audience. On 'from_scratch': creation_mode stays from_scratch (the signature default)."
-  },
-  {
-   "id": "standard_mode",
-   "section": "deck-intake",
-   "order": 0.6,
-   "prompt": "Quick or in-depth? QUICK asks the 12 essential questions and gets you moving fast. IN-DEPTH asks the full expanded interview for maximum precision and control over every detail.",
-   "help": "Mirrors the signature flow's choice-first QUICK vs IN-DEPTH picker (deck-intake-driver.py sp_mode) -- same vocabulary, same idea, applied to the standard pre-presentation capture (this file). Asked for EVERY presentation_type, signature included (FIX-STDMODE-SIGNATURE, v1.5.0): this file's standard capture is a SEPARATE question set from the SACRED-8 (sp_mode gates only that, inside --signature); a signature run needs its own explicit answer here just like the other three types, or its 41 non-curated questions silently vanish. QUICK leaves every non-curated question gated out for this run; IN-DEPTH asks everything, in the same order, exactly as before this field existed. Default if unanswered: QUICK -- the lean 12-question path is the standard default this project exists to make the norm.",
-   "kind": "enum",
-   "storeOn": "STANDARD_MODE",
-   "allowed_values": [
-    "QUICK",
-    "IN-DEPTH"
-   ],
-   "value_labels": {
-    "QUICK": "QUICK -- 12 essential questions",
-    "IN-DEPTH": "IN-DEPTH -- full expanded interview (all questions)"
-   },
-   "required": true,
-   "block_gate": false,
-   "default": "QUICK",
-   "resolverHint": "Ask for ALL FOUR presentation_type values, including signature (v1.5.0 fix -- previously gated to the three non-signature values via conditional_on, which meant a signature run's standard_mode entry was auto-skipped as not-applicable by auto_skip_conditionals, and that skip -- not a real answer -- was then read as 'not IN-DEPTH' by every downstream ask_if gate, silently collapsing 41 questions to 12: a missing value silently became a delete-29-questions decision. Removing the conditional_on closes that class of bug outright instead of special-casing presentation_type=='signature' -- standard_mode is now simply always asked, for every valid enum value, before any downstream question with an ask_if on it can be reached. This question is UNRELATED to sp_mode, which still separately governs only the SACRED-8 inside --signature and is untouched.) Default if unanswered: QUICK. On QUICK, every question below whose ask_if references standard_mode=='IN-DEPTH' auto-skips (never surfaced, never blocks --complete -- same auto-skip contract as every other conditional in this file). On IN-DEPTH, those gates all pass and the full interview runs exactly as it did before this field existed."
-  },
-  {
-   "id": "resource_plan",
-   "section": "deck-intake",
-   "order": 0.7,
-   "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.'",
-   "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only.",
-   "kind": "text",
-   "storeOn": "RESOURCE_PLAN",
-   "required": false,
-   "block_gate": false,
-   "resolverHint": "Feeds resource_profile.record_plan_answer/provider/plan -> capacity.persist_plan_answer() projects the locked ceiling into capacity_override.json, and scripts/presentation_job/resource_profile.py stores the locked profile (never in-repo, never printed verbatim -- redaction contract). ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock."
-  },
-  {
-   "id": "representation_mix",
-   "section": "deck-intake",
-   "order": 1,
-   "prompt": "Who will be in the seats watching this -- and how should the people in the images break down? Give me percentages. For example: 70% African-American women, 20% mixed race, 10% men. Or: 100% women, diverse. Or: no people at all.",
-   "help": "This sets the audience-representation mandate for every image in the deck. If you have no preference or are unsure, say 'no people at all' and we will flag it \u2014 a racial or gender default is never assumed.",
-   "kind": "text",
-   "storeOn": "REPRESENTATION_MIX",
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "If owner cannot or will not answer: set representation_uncaptured:true, flag the operator, and proceed. A racial or gender default is NEVER invented. The deck generates with NO PEOPLE.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "audience_composition_note",
-   "section": "deck-intake",
-   "order": 2,
-   "prompt": "In plain words, who is this audience? For example: all women, multicultural Black + white + Hispanic professionals, mixed gender diverse.",
-   "help": "A single plain-language sentence that names the audience composition. This seeds the audience-engine. May be derived from the representation_mix answer without re-asking if the answer is already clear.",
-   "kind": "text",
-   "storeOn": "AUDIENCE_COMPOSITION_NOTE",
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "Derive from representation_mix if the owner just answered it and the answer is unambiguous. Ask fresh if representation_mix was flagged uncaptured.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "grounded_content",
-   "section": "deck-intake",
-   "order": 3,
-   "prompt": "What is the specific book, program, method, or message this deck is built around? I need the name and a one-line description so every image is grounded in YOUR content, not generic inspiration.",
-   "help": "Examples: 'my book, The Momentum Method \u2014 a 5-step system for compounding small wins' or 'the Aligned Leader program \u2014 three pillars of authentic authority'. If you do not have a final name yet, describe it and we will mark it provisional.",
-   "kind": "text",
-   "storeOn": "GROUNDED_CONTENT",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "If the owner does not have a name yet: capture whatever they describe and mark grounded_content_provisional:true. The build CANNOT start with a blank GROUNDED_CONTENT; block handoff and ask once more if still empty at lock.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "visual_mix",
-   "section": "deck-intake",
-   "order": 4,
-   "prompt": "Should the slides be people-heavy, some people, typography-led, or a mix?",
-   "help": "People-heavy = most slides show real people in scenes. Some people = a balance of people and concept shots. Typography-led = mostly text-based dramatic slides. Mix = variety across all three. Default if no preference: mix.",
-   "kind": "text",
-   "storeOn": "VISUAL_MIX",
-   "required": true,
-   "block_gate": false,
-   "default": "mix",
-   "resolverHint": "Default if owner says 'no preference' or does not answer: 'mix'. Mark visual_mix_defaulted:true.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "dark_ok",
-   "section": "deck-intake",
-   "order": 5,
-   "prompt": "Default is a clean white base -- the standard that makes premium decks pop. Do you specifically want any dark-styled slides?",
-   "help": "The proven gold standard eliminated all black backgrounds. White base is the safe, premium default. Only say yes if you have a specific creative vision for dark slides.",
-   "kind": "boolean",
-   "storeOn": "DARK_OK",
-   "required": true,
-   "block_gate": false,
-   "default": false,
-   "resolverHint": "Default if owner does not answer: false. Only set to true on EXPLICIT owner request.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "hook_seed",
-   "section": "deck-intake",
-   "order": 6,
-   "prompt": "Is there one line you already say all the time -- the phrase you want them humming when they leave? The hook the whole deck will be built around.",
-   "help": "This is the core promise line \u2014 the thing your audience will repeat to themselves and others after your presentation. If you do not have one yet, say 'not sure' and the Hook Strategist will derive one during the build.",
-   "kind": "text",
-   "storeOn": "HOOK_SEED",
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "If none: mark hook_seed_missing:true. The Hook Strategist derives one from the offer at build time; note this in brief.json so the Director triggers the Hook Lab.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "deliverable_set",
-   "section": "deck-intake",
-   "order": 7,
-   "prompt": "Beyond the slide deck itself, what else do you want? I can also produce a presenter's GUIDE (a branded at-a-glance run-of-show), a full word-for-word SPEECH script, and even an AUDIO demo of the talk. Pick one: deck only / +guide / +guide+speech / +audio.",
-   "help": "Deck only = just the PowerPoint. +guide = deck + a printed/PDF presenter guide. +guide+speech = both plus a full speech script. +audio = all of that plus an audio demo in a chosen voice. Default if no preference: deck-only.",
-   "kind": "text",
-   "storeOn": "DELIVERABLE_SET",
-   "required": true,
-   "block_gate": false,
-   "default": "deck-only",
-   "resolverHint": "Default if owner says 'just the deck' or 'no preference': deck-only. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21 (audio) based on this value.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_teleprompter",
-   "section": "deck-intake",
-   "order": 7.1,
-   "prompt": "I'll build you a presenter TELEPROMPTER \u2014 a scrolling web app you can run on a second screen while you speak. Do you want it? (yes / no)",
-   "help": "Default YES. The teleprompter is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, build the teleprompter",
-    "no": "No thank you"
-   },
-   "default": "yes",
-   "storeOn": "WANT_TELEPROMPTER",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "teleprompter_declined_reason",
-   "section": "deck-intake",
-   "order": 7.11,
-   "prompt": "Understood -- no teleprompter. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_teleprompter is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "TELEPROMPTER_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_teleprompter",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_teleprompter is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_speech_script",
-   "section": "deck-intake",
-   "order": 7.2,
-   "prompt": "I'll write you a full word-for-word SPEECH SCRIPT you can deliver from the stage or record. Do you want it? (yes / no)",
-   "help": "Default YES. The speech script is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, write the speech script",
-    "no": "No thank you"
-   },
-   "default": "yes",
-   "storeOn": "WANT_SPEECH_SCRIPT",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "speech_script_declined_reason",
-   "section": "deck-intake",
-   "order": 7.21,
-   "prompt": "Understood -- no speech script. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_speech_script is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_speech_script",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_speech_script is 'yes'. When asked, it BLOCKS --complete.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_ghl_upload",
-   "section": "deck-intake",
-   "order": 7.3,
-   "prompt": "I can upload the finished deck directly to your GoHighLevel account. Do you want the GHL upload? (yes / no)",
-   "help": "Default YES. The GHL upload is a standard delivery destination and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, upload to GHL",
-    "no": "No thank you"
-   },
-   "default": "yes",
-   "storeOn": "WANT_GHL_UPLOAD",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "ghl_upload_declined_reason",
-   "section": "deck-intake",
-   "order": 7.31,
-   "prompt": "Understood -- no GHL upload. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_ghl_upload is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "GHL_UPLOAD_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_ghl_upload",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_ghl_upload is 'yes'. When asked, it BLOCKS --complete.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_audio_deliverable",
-   "section": "deck-intake",
-   "order": 7.4,
-   "prompt": "I'll produce an AUDIO demo of your talk in your chosen voice. Do you want the audio deliverable? (yes / no)",
-   "help": "Default YES. The audio deliverable is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, build the audio demo",
-    "no": "No thank you"
-   },
-   "default": "yes",
-   "storeOn": "WANT_AUDIO_DELIVERABLE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "audio_declined_reason",
-   "section": "deck-intake",
-   "order": 7.41,
-   "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "AUDIO_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_audio_deliverable",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_audio_deliverable is 'yes'. When asked, it BLOCKS --complete.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "speech_speed_preference",
-   "section": "deck-intake",
-   "order": 7.5,
-   "prompt": "At what pace should we record the audio narration? Choose: default (our recommended setting), medium, or fast.",
-   "help": "Maps to Fish prosody.speed: default = 1.25 (recommended), medium = 1.3, fast = 1.33. Default if no preference: 1.25.",
-   "kind": "text",
-   "allowed_values": [
-    "default",
-    "medium",
-    "fast"
-   ],
-   "value_labels": {
-    "default": "Default pace (prosody.speed 1.25)",
-    "medium": "Medium pace (prosody.speed 1.3)",
-    "fast": "Fast pace (prosody.speed 1.33)"
-   },
-   "default": "default",
-   "storeOn": "intake.json",
-   "key": "speech_speed_preference"
-  },
-  {
-   "id": "want_sales_checkout",
-   "section": "deck-intake",
-   "order": 7.6,
-   "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no)",
-   "help": "Default YES. The sales page + checkout page is a standard upsell deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, build the sales page and checkout page",
-    "no": "No thank you"
-   },
-   "default": "yes",
-   "storeOn": "WANT_SALES_CHECKOUT",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'no' gates OUT the sales+checkout branch (deck-only or VSL-only run); a 'yes' enables the P-U-SALES-* / P-U-CHECKOUT-* / P-U-FORM-CHECKOUT phases."
-  },
-  {
-   "id": "sales_checkout_declined_reason",
-   "section": "deck-intake",
-   "order": 7.61,
-   "prompt": "Understood -- no sales page or checkout page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_sales_checkout is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_sales_checkout",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_sales_checkout is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_vsl_page",
-   "section": "deck-intake",
-   "order": 7.7,
-   "prompt": "Would you like a VSL page, a video sales letter page, to go along with this? (yes / no)",
-   "help": "Default NO -- a VSL page requires the video to exist (see the VSL video dependency: the VSL page references the hosted webinar/video, so a video must be produced before the page build). Default stays 'no' unless the owner explicitly opts in. A 'yes' is a fail-closed gate; a 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the VSL branch entirely.",
-   "kind": "text",
-   "allowed_values": [
-    "yes",
-    "no"
-   ],
-   "value_labels": {
-    "yes": "Yes, build the VSL page",
-    "no": "No thank you"
-   },
-   "default": "no",
-   "storeOn": "WANT_VSL_PAGE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Default 'no' (video must exist for a VSL page). Only an explicit 'yes' opens the VSL branch; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' enables the P-U-VSL-* phases which wait on the video (V1) before the page build."
-  },
-  {
-   "id": "vsl_page_declined_reason",
-   "section": "deck-intake",
-   "order": 7.71,
-   "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
-   "kind": "text",
-   "storeOn": "VSL_PAGE_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
-   "conditional_on": {
-    "id": "want_vsl_page",
-    "equals": "no"
-   },
-   "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "want_audio_demo",
-   "section": "deck-intake",
-   "order": 8,
-   "prompt": "For the audio demo, what voice or persona should it use -- your own cloned voice, a warm female narrator, a high-energy male host, or something else?",
-   "help": "Ask only if DELIVERABLE_SET is '+audio'; otherwise default false. A voice is never defaulted silently if '+audio' is chosen but no voice is specified.",
-   "kind": "text",
-   "storeOn": "WANT_AUDIO_DEMO",
-   "required": false,
-   "block_gate": false,
-   "default": false,
-   "ask_if": {
-    "question_id": "deliverable_set",
-    "contains": "audio"
-   },
-   "resolverHint": "Ask only if DELIVERABLE_SET includes '+audio'. If '+audio' but no voice named: set WANT_AUDIO_DEMO:true and audio_voice_unset:true. Default when not '+audio': WANT_AUDIO_DEMO:false.",
-   "conditional_on": {
-    "id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "target_wpm",
-   "section": "deck-intake",
-   "order": 9,
-   "prompt": "How fast should the spoken pace feel -- standard (about 140 words a minute, the most credible pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?",
-   "help": "Ask only if DELIVERABLE_SET includes a speech ('+guide+speech' or '+audio'). The presentation-speech constant is 140 WPM; never silently default to 150.",
-   "kind": "integer",
-   "storeOn": "TARGET_WPM",
-   "required": false,
-   "ask_if": {
-    "question_id": "deliverable_set",
-    "contains_any": [
-     "speech",
-     "audio"
-    ]
-   },
-   "block_gate": false,
-   "default": 140,
-   "resolverHint": "Ask only if DELIVERABLE_SET includes a speech. Default if owner says 'you decide' or not asked: 140. Mark target_wpm_defaulted:true when defaulted.",
-   "conditional_on": {
-    "id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "style_source",
-   "section": "deck-intake",
-   "order": 10,
-   "prompt": "Do you have an existing deck or visual style you want matched, a reference deck I should analyze, or should we CREATE a fresh signature style for you?",
-   "help": "Match-existing = we replicate your current look. Analyze-reference = you share a deck or brand for us to study. Create-new = Brand Steward builds a fresh STYLE BLOCK. Default if no preference: create-new.",
-   "kind": "text",
-   "storeOn": "STYLE_SOURCE",
-   "required": false,
-   "block_gate": false,
-   "default": "create-new",
-   "resolverHint": "On match-existing or analyze-reference: the Brand Steward submits the reference to the Graphics Design Intelligence Unit Style Analyst for a PPT-tier style card. On create-new: Brand Steward builds STYLE BLOCK fresh. Default when unanswered: create-new with style_source_defaulted:true.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "goal",
-   "section": "deck-intake",
-   "order": 11,
-   "prompt": "In one line, what is this presentation FOR -- what do you want people to do at the end?",
-   "help": "This is the core objective the whole deck is built to serve (buy / book / join / enroll / something else).",
-   "kind": "text",
-   "storeOn": "GOAL",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). No default; hand back to owner if unclear.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "cta_action",
-   "section": "deck-intake",
-   "order": 12,
-   "prompt": "What is the exact call-to-action -- the specific verb and next step you want them to take?",
-   "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide's action language.",
-   "kind": "text",
-   "storeOn": "CTA_ACTION",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1)."
-  },
-  {
-   "id": "event_price",
-   "section": "deck-intake",
-   "order": 13,
-   "prompt": "Is the event itself -- the webinar, workshop, or challenge -- free or paid to ATTEND? If paid, what does a seat cost?",
-   "help": "TWO-PRICES RULE: this is the price to ATTEND, NOT the offer price sold at the end (final_price, asked separately). Never conflate the two.",
-   "kind": "text",
-   "storeOn": "EVENT_PRICE",
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "Ask once; NEVER inferred from FINAL_PRICE. A free event does not imply a free offer.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "access_free",
-   "section": "deck-intake",
-   "order": 14,
-   "prompt": "Just to confirm -- is attending the event completely free, or is there a cost to attend?",
-   "help": "Derive from event_price when the owner already gave an unambiguous number/'free' answer; only ask fresh if event_price was vague.",
-   "kind": "boolean",
-   "storeOn": "ACCESS_FREE",
-   "required": true,
-   "block_gate": false,
-   "resolverHint": "May be derived from event_price without re-asking when unambiguous.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "target_feeling",
-   "section": "deck-intake",
-   "order": 15,
-   "prompt": "How should they feel walking away from this presentation?",
-   "help": "The emotional target the whole arc is tuned toward (e.g. empowered, urgent, hopeful, challenged).",
-   "kind": "text",
-   "storeOn": "TARGET_FEELING",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "tone",
-   "section": "deck-intake",
-   "order": 16,
-   "prompt": "Pick a tone -- Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium. You can also blend two.",
-   "help": "One of the seven named styles, or a blend of two.",
-   "kind": "text",
-   "storeOn": "TONE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). May be pre-seeded from a content-to-presentation source brief's tone_detected (owner-overridable)."
-  },
-  {
-   "id": "offer_name",
-   "section": "deck-intake",
-   "order": 17,
-   "prompt": "What are you SELLING at the end -- the exact name of the product or offer?",
-   "help": "The OFFER sold at the end -- SEPARATE from the event/access price already captured. Never invented.",
-   "kind": "text",
-   "storeOn": "OFFER_NAME",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1)."
-  },
-  {
-   "id": "named_methodology",
-   "section": "deck-intake",
-   "order": 17.5,
-   "prompt": "Do you have a named methodology, framework, or system you deliver this through -- what is it called, in your own words?",
-   "help": "The BRANDED METHOD name that may appear on a NAMED_METHOD beat -- client-supplied ONLY, never invented by the copywriter. If you do not have a named method, say so plainly (e.g. 'no formal name, we just do X') rather than inventing one on the spot -- an honest 'no' is still a real answer and routes method-naming back to the owner for approval instead of a fabricated one shipping unapproved.",
-   "kind": "text",
-   "storeOn": "NAMED_METHODOLOGY",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Feeds pitch_engines_check.chk_branded_method (AF-NO-BRANDED-METHOD / AF-METHOD-FABRICATED) -- the ONLY source of a client-supplied method name; a NAMED_METHOD beat may not appear on a slide without this answer or an owner_approved:true record in method_name_approval.json."
-  },
-  {
-   "id": "offer_stack",
-   "section": "deck-intake",
-   "order": 18,
-   "prompt": "What's included in that offer -- the full stack of what they get?",
-   "help": "Every component of the offer (bonuses, modules, coaching calls, etc).",
-   "kind": "text",
-   "storeOn": "OFFER_STACK",
-   "required": false,
-   "block_gate": false,
-   "resolverHint": "Optional detail beyond offer_name; skip if the owner already gave the full stack when naming the offer.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "price_mode",
-   "section": "deck-intake",
-   "order": 19,
-   "prompt": "Is the final price a gradual price DROP through the pitch, or a straight, single price shown once?",
-   "help": "Pick: drop / straight.",
-   "kind": "enum",
-   "storeOn": "PRICE_MODE",
-   "allowed_values": [
-    "drop",
-    "straight"
-   ],
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). Drives whether price_anchor is asked next.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "final_price",
-   "section": "deck-intake",
-   "order": 20,
-   "prompt": "What is the final price of the offer?",
-   "help": "The OFFER price ONLY -- NEVER copied or inferred from event_price/access_free. Set 0 only on the owner's EXPLICIT confirmation there is no paid offer (free_only_close).",
-   "kind": "text",
-   "storeOn": "FINAL_PRICE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Two-prices guard: hand back rather than default. If the owner confirms a free-only close, mark free_only_close:true for sign-off."
-  },
-  {
-   "id": "duration_min",
-   "section": "deck-intake",
-   "order": 21,
-   "prompt": "How many minutes should this presentation run -- 10, 15, 30, 45, 60, or 90?",
-   "help": "Drives the slide-count math (duration target vs source slide count).",
-   "kind": "integer",
-   "storeOn": "DURATION_MIN",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1).",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "audience",
-   "section": "deck-intake",
-   "order": 22,
-   "prompt": "Beyond who's in the room (already captured), any additional specifics about this audience -- industry, income level, the pain point that brought them here?",
-   "help": "REPRESENTATION_MIX already captured the composition; do not re-ask the percentage question here.",
-   "kind": "text",
-   "storeOn": "AUDIENCE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1)."
-  },
-  {
-   "id": "brand_primary",
-   "section": "deck-intake",
-   "order": 23,
-   "prompt": "Any brand colors or a logo you want on the slides?",
-   "help": "Skip if already on file for this client.",
-   "kind": "text",
-   "storeOn": "BRAND_PRIMARY",
-   "required": false,
-   "block_gate": false
-  },
-  {
-   "id": "logo_on_slides",
-   "section": "deck-intake",
-   "order": 24,
-   "prompt": "Should the logo appear on every slide, or just the cover/close?",
-   "kind": "boolean",
-   "storeOn": "LOGO_ON_SLIDES",
-   "required": false,
-   "block_gate": false,
-   "default": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "price_anchor",
-   "section": "deck-intake",
-   "order": 25,
-   "prompt": "What is the anchor value you want to show before the drop -- the 'worth $X' number (should be at least 3x the final price)?",
-   "help": "Only asked when price_mode is 'drop'.",
-   "kind": "text",
-   "storeOn": "PRICE_ANCHOR",
-   "required": true,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "price_mode",
-    "equals": "drop"
-   },
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation when PRICE_MODE=drop; auto-skipped on 'straight'.",
-   "conditional_on": {
-    "id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "payment_plan",
-   "section": "deck-intake",
-   "order": 26,
-   "prompt": "Is there a payment-plan option for this offer, and if so what are the terms?",
-   "kind": "text",
-   "storeOn": "PAYMENT_PLAN",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "vip_tier",
-   "section": "deck-intake",
-   "order": 27,
-   "prompt": "Do you want a VIP or premium tier offered alongside the main offer?",
-   "kind": "boolean",
-   "storeOn": "VIP_TIER",
-   "required": false,
-   "block_gate": false,
-   "default": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "vip_price",
-   "section": "deck-intake",
-   "order": 28,
-   "prompt": "What does the VIP tier cost, and what does it include beyond the main offer?",
-   "kind": "text",
-   "storeOn": "VIP_PRICE",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "vip_tier",
-    "truthy": true
-   },
-   "conditional_on": {
-    "id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "vip_spots",
-   "section": "deck-intake",
-   "order": 29,
-   "prompt": "How many real VIP spots are available?",
-   "help": "A real, honest number -- never invented scarcity.",
-   "kind": "integer",
-   "storeOn": "VIP_SPOTS",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "vip_tier",
-    "truthy": true
-   },
-   "conditional_on": {
-    "id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "primary_objection",
-   "section": "deck-intake",
-   "order": 30,
-   "prompt": "What's the #1 reason people say no to this offer?",
-   "kind": "text",
-   "storeOn": "PRIMARY_OBJECTION",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "proof_assets",
-   "section": "deck-intake",
-   "order": 31,
-   "prompt": "What proof do you have -- testimonials, screenshots, press logos, before/after numbers? List what you can send now.",
-   "kind": "text",
-   "storeOn": "PROOF_ASSETS",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "style_prefs",
-   "section": "deck-intake",
-   "order": 32,
-   "prompt": "Any decks or brands you admire that I should draw style inspiration from?",
-   "kind": "text",
-   "storeOn": "STYLE_PREFS",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "transformation_promise",
-   "section": "deck-intake",
-   "order": 33,
-   "prompt": "What's the before-and-after this offer delivers -- who are they before, and who are they after?",
-   "kind": "text",
-   "storeOn": "TRANSFORMATION_PROMISE",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). May be pre-seeded from a content-to-presentation source brief (owner-confirmed, not re-interviewed)."
-  },
-  {
-   "id": "time_to_result",
-   "section": "deck-intake",
-   "order": 33.5,
-   "prompt": "How long does it typically take a client to see this result once they start -- the real, honest timeframe?",
-   "help": "Sources the deck's EXPECTATION beat (e.g. '8 weeks to final, a shift in 2') -- client-supplied ONLY, never fabricated by the copywriter. State the true delivery timeframe in your own words, including 'it varies, typically N weeks' if that is the honest answer -- never invent a faster number to sound more impressive.",
-   "kind": "text",
-   "storeOn": "TIME_TO_RESULT",
-   "required": true,
-   "block_gate": true,
-   "resolverHint": "Feeds pitch_engines_check.chk_time_to_result (AF-NO-TIME-TO-RESULT) -- the deck's EXPECTATION beat must carry a duration token (day/week/month/session) sourced from this answer, never fabricated."
-  },
-  {
-   "id": "slide_count",
-   "section": "deck-intake",
-   "order": 34,
-   "prompt": "Do you have a target slide count in mind, or should the duration math decide?",
-   "kind": "text",
-   "storeOn": "SLIDE_COUNT",
-   "required": false,
-   "block_gate": false,
-   "resolverHint": "When the client states an explicit count, it is honored EXACTLY -- never floored, capped, or changed.",
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "delivery_destinations",
-   "section": "deck-intake",
-   "order": 35,
-   "prompt": "Where should the final deck go -- GoHighLevel, Google Drive, a local download, or somewhere else?",
-   "kind": "text",
-   "storeOn": "DELIVERY_DESTINATIONS",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "deadline",
-   "section": "deck-intake",
-   "order": 36,
-   "prompt": "When do you need this live?",
-   "kind": "text",
-   "storeOn": "DEADLINE",
-   "required": false,
-   "block_gate": false,
-   "ask_if": {
-    "question_id": "standard_mode",
-    "equals": "IN-DEPTH"
-   }
-  },
-  {
-   "id": "client_notes",
-   "section": "deck-intake",
-   "order": 37,
-   "prompt": "Anything else important I should know before I start writing?",
-   "kind": "text",
-   "storeOn": "CLIENT_NOTES",
-   "required": false,
-   "block_gate": false
-  }
- ],
- "waiver_field_mapping": {
-  "_comment": "U026 \u2014 the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT \u2014 a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
-  "teleprompter": {
-   "toggle": "want_teleprompter",
-   "reason": "teleprompter_declined_reason"
-  },
-  "script": {
-   "toggle": "want_speech_script",
-   "reason": "speech_script_declined_reason"
-  },
-  "ghl_upload": {
-   "toggle": "want_ghl_upload",
-   "reason": "ghl_upload_declined_reason"
-  },
-  "audio": {
-   "toggle": "want_audio_deliverable",
-   "reason": "audio_declined_reason"
-  },
-  "sales_checkout": {
-   "toggle": "want_sales_checkout",
-   "reason": "sales_checkout_declined_reason"
-  },
-  "vsl_page": {
-   "toggle": "want_vsl_page",
-   "reason": "vsl_page_declined_reason"
-  }
- }
 }
