@@ -34,6 +34,8 @@ at build_deck.py:7505 and the remaining entries never run.
 """
 
 import difflib
+import os
+import sys
 import json
 import re
 from pathlib import Path
@@ -92,6 +94,7 @@ DEN_DROP_TAGS = ("DROP", "DROP1", "DROP2", "DROP3")
 
 ENFORCE_ENV = "PRESENTATION_SLIDE_CRAFT_ENFORCE"
 PROVENANCE_REL = "working/qc/slide_craft.json"
+WAIVER_REL = "working/checkpoints/slide_craft_waivers.json"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -212,6 +215,188 @@ def _write_provenance(run_dir, payload):
         dest.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
     except Exception:
         pass
+
+
+# ── Waiver file reader (one rule / one run / named slides, per FIX 15) ───────
+
+# The ten deterministic codes enforced by FIX 15 (DEFAULT RULING: enforce all ten,
+# retire none). Map check function name -> the AF code it reports.
+CHECK_RULE_CODES = {
+    "check_obi_text_blocks": "AF-OBI-1",
+    "check_obi_headline_words": "AF-OBI-2",
+    "check_aud_meta_tokens": "AF-AUD-4",
+    "check_aud_credentials": "AF-AUD-5",
+    "check_aud_placeholder_render": "AF-AUD-6",
+    "check_hook_verbatim": "AF-HOOK-5",
+    "check_den_ladder_gaps": "AF-DEN-1",
+    "check_den_anchor_depth": "AF-DEN-2",
+    "check_den_stack_before_drop": "AF-DEN-4",
+    "check_den_repitch_block": "AF-DEN-7",
+}
+
+
+def _load_waivers(run_dir):
+    """Return {af_code: {"slides": set, "all_slides": bool}} from WAIVER_REL, or {} per
+    invalid record. Waivers are scoped ONE RULE / ONE RUN / NAMED SLIDES:
+
+    - The file lives inside the run dir, so its scope is exactly this run — there is no
+      cross-run and no environment-wide waiver, and ENFORCE_ENV=0 is NOT honored as a
+      production escape (see run_all_checks).
+    - Each record: {"af_code": "AF-OBI-1", "slides": [3, 7], "approved_by": "...",
+      "reason": "..."} — slides are named slide ordinals. "ALL" is accepted in the
+      slides list ONLY for AF-DEN-4, whose ORDER-only finding has no slide attribution.
+    - A record missing af_code, approved_by, reason, or slides is INVALID and ignored:
+      a malformed waiver never silences a gate (fail-closed).
+
+    Malformed JSON or a non-list document yields {} — same fail-closed direction."""
+    p = run_dir / WAIVER_REL
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, list):
+        return {}
+    waivers = {}
+    for rec in data:
+        if not isinstance(rec, dict):
+            continue
+        code = str(rec.get("af_code", "")).strip().upper()
+        if code not in CHECK_RULE_CODES.values():
+            continue
+        if not str(rec.get("approved_by", "")).strip():
+            continue
+        if not str(rec.get("reason", "")).strip():
+            continue
+        slides = rec.get("slides")
+        if not isinstance(slides, list) or not slides:
+            continue
+        ordinals = set()
+        all_slides = False
+        for s in slides:
+            if s == "ALL" and code == "AF-DEN-4":
+                all_slides = True
+                continue
+            try:
+                n = int(s)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                ordinals.add(n)
+        if not ordinals and not all_slides:
+            continue
+        entry = waivers.setdefault(code, {"slides": set(), "all_slides": False})
+        entry["slides"].update(ordinals)
+        entry["all_slides"] = entry["all_slides"] or all_slides
+    return waivers
+
+
+def _finding_slides(record):
+    """Slide ordinals a provenance record attributes its findings to. {} / unknown
+    shape -> empty set, which makes any waiver inapplicable (fail-closed): an
+    unattributable finding can only be waived via the explicit AF-DEN-4 ALL path."""
+    if not isinstance(record, dict):
+        return set()
+    offs = record.get("offenders")
+    slides = set()
+    if isinstance(offs, list):
+        for o in offs:
+            if isinstance(o, (list, tuple)) and o:
+                first = o[0]
+                # Per-slide rules lead with the ordinal; AUD-6 leads with a sidecar
+                # filename "slide-NN.ocr.json"; DEN-1 leads with a beat slide and its
+                # second element is the next beat slide.
+                if isinstance(first, int):
+                    slides.add(first)
+                    if len(o) > 2 and isinstance(o[1], int):
+                        slides.add(o[1])
+                elif isinstance(first, str):
+                    m = re.match(r"slide-(\d+)", first)
+                    if m:
+                        slides.add(int(m.group(1)))
+            elif isinstance(o, int):
+                slides.add(o)
+    for key in ("anchor_slide", "final_slide"):
+        v = record.get(key)
+        if isinstance(v, int) and v > 0:
+            slides.add(v)
+    return slides
+
+
+# ── Enforcer aggregator (called by build_deck preflight — FIX 15 wiring) ─────
+
+def enforce_active():
+    """FIX 15: enforcement is DEFAULT-ON and there is no global ENFORCE=0 production
+    escape. ENFORCE_ENV is READ (the historic dead-env defect) and accepted values are
+    '1'/'true'/'yes'/'on' (explicit ON, same behavior as the default) and anything else
+    including '0' is REFUSED with a loud note — '0' does NOT disarm the gate; the only
+    documented bypass is an owner-token waiver (WAIVER_REL) scoped to one rule, one run,
+    named slides."""
+    raw = (os.environ.get(ENFORCE_ENV) or "").strip().lower()
+    if raw in ("", "1", "true", "yes", "on"):
+        return True
+    if raw == "0":
+        try:
+            print(f"{ENFORCE_ENV}=0 REFUSED: slide-craft enforcement has no global "
+                  f"bypass (FIX 15). Waive one rule for named slides via "
+                  f"{WAIVER_REL} instead.", file=sys.stderr)
+        except Exception:
+            pass
+    return True
+
+
+def run_all_checks(run_dir, slides_path=None):
+    """Run all ten deterministic craft checks; return (all_pass, blocking_reasons).
+
+    A check that returns "" DEFERS (pass — missing input is owned upstream). A
+    non-empty return is a FAILED rule. Every check fires regardless of earlier
+    failures — no early-exit — so one pass names every defect.
+
+    Waivers: WAIVER_REL entries are applied ONLY when the waiver's named slides
+    cover EVERY slide the provenance attributes to that rule's finding (or, for
+    AF-DEN-4's unattributable ORDER finding only, the explicit "ALL"). A waived
+    reason is reported as waived but does not block. Malformed or under-scoped
+    waivers fail closed (the finding still blocks).
+
+    all_pass=True only when no blocking reason survives. This is the call path
+    build_deck.py's PREFLIGHT_REQUIRED gate uses; it cannot be skipped by an env
+    flag (enforce_active() refuses ENFORCE=0)."""
+    waivers = _load_waivers(run_dir)
+    blocking = []
+    waived = []
+    for fn in _enforcers():
+        reason = fn(run_dir, slides_path)
+        if not reason:
+            continue
+        code = CHECK_RULE_CODES.get(fn.__name__, "?")
+        prov = _read_provenance_entry(run_dir, fn.__name__)
+        entry = waivers.get(code)
+        if entry:
+            offenders = _finding_slides(prov)
+            if entry["all_slides"] and not offenders:
+                waived.append(f"{code} (waived for the whole deck): {reason}")
+                continue
+            if offenders and offenders <= entry["slides"]:
+                names = ", ".join(str(s) for s in sorted(offenders))
+                waived.append(f"{code} (waived for slide(s) {names}): {reason}")
+                continue
+        blocking.append(reason)
+    _write_provenance(run_dir, {"slide_craft_enforcement": {
+        "blocking": len(blocking), "waived": len(waived),
+        "waived_detail": waived, "reasons": blocking}})
+    return (len(blocking) == 0), blocking
+
+
+def _read_provenance_entry(run_dir, key):
+    """Best-effort read of one provenance record written during this pass."""
+    try:
+        data = json.loads((run_dir / PROVENANCE_REL).read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data.get(key) or {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        pass
+    return {}
 
 
 # ── Enforcers ────────────────────────────────────────────────────────────────
@@ -613,3 +798,21 @@ def check_den_repitch_block(run_dir, slides_path=None):
         "deferred": False, "findings": 0,
         "post_final": post, "final_slide": final_slide, "total_slides": total}})
     return ""
+
+
+# ── Ordered enforcer list (FIX 15 — defined here so every name resolves) ─────
+
+def _enforcers():
+    """Ordered list so the most actionable defects appear first."""
+    return [
+        check_obi_text_blocks,
+        check_obi_headline_words,
+        check_aud_meta_tokens,
+        check_aud_credentials,
+        check_aud_placeholder_render,
+        check_hook_verbatim,
+        check_den_ladder_gaps,
+        check_den_anchor_depth,
+        check_den_stack_before_drop,
+        check_den_repitch_block,
+    ]

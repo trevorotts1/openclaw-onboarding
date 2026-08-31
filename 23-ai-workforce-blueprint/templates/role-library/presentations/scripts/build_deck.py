@@ -208,17 +208,33 @@ from pathlib import Path
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
+from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
-# Constants — the ONLY allowed KIE.ai endpoints/model (verified live 2026-06-16)
+# Constants — the ONLY allowed KIE.ai endpoints (verified live 2026-06-16).
+# Model IDs: FIX 13 — NO literal here. The render models resolve from the
+# central versioned catalog (presentation_job/model_catalog.py +
+# model_catalog.json; operator bump via PRESENTATION_MODEL_CATALOG_DIR,
+# rollback via PRESENTATION_MODEL_CATALOG=0). Re-resolved per submit so a
+# catalog bump changes the NEXT render with no code edit.
 # ---------------------------------------------------------------------------
 
 CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 POLL_URL   = "https://api.kie.ai/api/v1/jobs/recordInfo"
-MODEL_T2I  = "gpt-image-2-text-to-image"
-MODEL_I2I  = "gpt-image-2-image-to-image"  # OFFICIAL-LOGO mode: KIE composites the REAL logo via input_urls (image-to-image), NOT a flat overlay or AI wordmark
+
+
+def _resolve_image_models():
+    """FIX 13 alias -> live catalog ids for the two render classes.
+    image.t2i = plain text-to-image; image.i2i = OFFICIAL-LOGO mode (KIE composites
+    the REAL logo via input_urls, image-to-image, NOT a flat overlay or wordmark).
+    Fail-closed: a catalog problem aborts the render rather than guessing an id."""
+    table = _model_catalog.image_mode_table()
+    return table["MODEL_T2I"], table["MODEL_I2I"]
+
+
+MODEL_T2I, MODEL_I2I = _resolve_image_models()
 
 ASPECT_RATIO = "16:9"
 RESOLUTION   = "2K"
@@ -1546,11 +1562,13 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
     prompt = _ensure_english_pin(prompt)
 
     # OFFICIAL-LOGO mode = IMAGE-TO-IMAGE: pass the real logo URL as input_urls so
-    # KIE (gpt-image-2-image-to-image) composites the ACTUAL logo into the slide
-    # (the verified technique). No logo_url -> plain text-to-image.
+    # KIE composites the ACTUAL logo into the slide (the verified technique).
+    # No logo_url -> plain text-to-image. FIX 13: re-resolve the alias per submit so
+    # a catalog bump changes what renders WITHOUT editing this pipeline code.
+    model_t2i, model_i2i = _resolve_image_models()
     if logo_url:
         payload = {
-            "model": MODEL_I2I,
+            "model": model_i2i,
             "input": {
                 "prompt": prompt,
                 "input_urls": [logo_url],
@@ -1560,7 +1578,7 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
         }
     else:
         payload = {
-            "model": MODEL_T2I,
+            "model": model_t2i,
             "input": {
                 "prompt": prompt,
                 "aspect_ratio": ASPECT_RATIO,
@@ -9308,6 +9326,76 @@ def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                 + " — fail-closed (a signature deck cannot skip the claim gate).")
 
 
+# FIX 15 — SLIDE-CRAFT GATE (AF-OBI-1/2, AF-AUD-4/5/6, AF-HOOK-5, AF-DEN-1/2/4/7).
+# slide_craft.py's ten deterministic craft checks existed but were dead code: no
+# preflight entry, no phase verifier, nothing called them. This wires them into
+# PREFLIGHT_REQUIRED as a blocking, run-dir-scoped gate. Enforcement is
+# DEFAULT-ON with NO global escape hatch — slide_craft.enforce_active() refuses
+# PRESENTATION_SLIDE_CRAFT_ENFORCE=0. The only documented bypass is an
+# owner-token waiver: working/checkpoints/slide_craft_waivers.json inside THIS
+# run dir (one rule / one run / named slides; a record without approved_by +
+# reason is invalid and fails closed). Mirrors the _owner_skip_approved waiver
+# doctrine used by the other gates, scoped per-slide rather than per-gate.
+#
+# Fail-closed on import error: a broken or missing slide_craft.py must abort the
+# render, never silently skip the craft checks (that is how the checks were dead
+# in the first place). Each check DEFERS ("") on missing upstream input — the
+# owner of that input (copy phase) gates its presence elsewhere — so this entry
+# cannot false-block a deck that never had the input to begin with.
+def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """FIX 15 + FIX 18 — run all deterministic slide-craft checks; blocking.
+
+    FIX 15's ten arithmetic determinism checks live in slide_craft.py. FIX 18's
+    five newly-enforced craft-judgement checks (AF-HOOK-2, AF-HOOK-7, AF-OBI-6,
+    AF-DEN-3, AF-DEN-6) live in craft_judgement.py and join the same gate under
+    the SAME owner-token waiver discipline (working/checkpoints/
+    slide_craft_waivers.json), so the FIX 18 disposition never becomes a weaker
+    path than FIX 15's. Both imports fail closed."""
+    reasons = []
+    try:
+        import slide_craft
+    except ImportError as exc:
+        return ("AF-SLIDE-CRAFT-LOADER: slide_craft.py is not importable next to "
+                "build_deck.py (" + repr(exc) + ") — fail-closed; the ten "
+                "deterministic craft checks (AF-OBI-1/2, AF-AUD-4/5/6, AF-HOOK-5, "
+                "AF-DEN-1/2/4/7) cannot be skipped.")
+    try:
+        all_pass, blocking = slide_craft.run_all_checks(run_dir, slides_path)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("AF-SLIDE-CRAFT-LOADER: slide_craft.run_all_checks raised "
+                + repr(exc) + " — fail-closed.")
+    if not (all_pass or not blocking):
+        reasons.append("FIX 15 deterministic: " + str(len(blocking)) + " rule(s) — "
+                       + " | ".join(blocking) +
+                       " — owner-token waiver: working/checkpoints/"
+                       "slide_craft_waivers.json (one rule / one run / named "
+                       "slides; see slide_craft.py docstring).")
+    # FIX 18 — the five craft-judgement enforcement checks (AF-HOOK-2, AF-HOOK-7,
+    # AF-OBI-6, AF-DEN-3, AF-DEN-6). craft_judgement.py imports slide_craft's
+    # loaders itself, so an ImportError here means the fix is unwired/broken —
+    # fail-closed, same direction as the FIX 17 directive.
+    try:
+        import craft_judgement
+    except ImportError as exc:
+        return ("AF-CRAFT-JUDGEMENT-LOADER: craft_judgement.py is not importable "
+                "next to build_deck.py (" + repr(exc) + ") — fail-closed; the FIX 18 "
+                "5/6/2 disposition module cannot be skipped (AF-HOOK-2, AF-HOOK-7, "
+                "AF-OBI-6, AF-DEN-3, AF-DEN-6).")
+    try:
+        cj_pass, cj_blocking = craft_judgement.run_all_checks(run_dir, slides_path)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("AF-CRAFT-JUDGEMENT-LOADER: craft_judgement.run_all_checks raised "
+                + repr(exc) + " — fail-closed.")
+    if cj_pass or not cj_blocking:
+        cj_blocking = []
+    if cj_blocking:
+        reasons.append("FIX 18 craft-judgement (enforced): " +
+                       " | ".join(cj_blocking))
+    if not reasons:
+        return ""
+    return ("slide-craft gate: " + str(len(reasons)) + " craft gate failure(s) — "
+            + " | ".join(reasons))
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -9836,6 +9924,19 @@ PREFLIGHT_REQUIRED = [
      "unless intake.json deck_type == signature_presentation.",
      "Phase 4.15 — QC Specialist (Signature Presentations) (P-SP-P3-HYGIENE, prove_sp_no_pitch)",
      _chk_sp_no_pitch),
+    # FIX 15 — SLIDE-CRAFT GATE: ten deterministic craft rules enforced.
+    # FIX 18 — five craft-judgement rules joined the same gate (AF-HOOK-2,
+    # AF-HOOK-7, AF-OBI-6, AF-DEN-3, AF-DEN-6) under the same waiver discipline;
+    # six further rules warn with named-reviewer dispositions and two
+    # (AF-OBI-4 / AF-OBI) stay human via run_signature_deck attest_phase.
+    # ENFORCEMENT IS DEFAULT-ON, NO GLOBAL ESCAPE HATCH (enforce_active refuses
+    # ENFORCE=0). Skippable only through owner-token waiver inside the run dir.
+    (None,
+     "slide-craft gate — 15 deterministic craft rules (AF-OBI-1/2, AF-AUD-4/5/6, "
+     "AF-HOOK-5, AF-DEN-1/2/4/7 from FIX 15; AF-HOOK-2/7, AF-OBI-6, AF-DEN-3/6 "
+     "from FIX 18). DEFAULT-ON, waiver-only bypass.",
+     "Slide-Craft Enforcer (slide_craft.py FIX 15 + craft_judgement.py FIX 18)",
+     _chk_slide_craft),
 ]
 
 
@@ -12121,7 +12222,10 @@ def main():
     # when a logo URL is composited via input_urls, else text-to-image. The same
     # model_used value flows into the process manifest + the final JSON summary,
     # so the audit trail never claims t2i for an i2i logo-composite run.
-    model_used = MODEL_I2I if logo_url else MODEL_T2I
+    # FIX 13: resolve from the catalog (same source submit_task reads), never a
+    # literal, so the manifest names the model the catalog actually points at.
+    _t2i_used, _i2i_used = _resolve_image_models()
+    model_used = _i2i_used if logo_url else _t2i_used
     print(f"endpoint:    {CREATE_URL}  model={model_used}\n", flush=True)
 
     rendered = []

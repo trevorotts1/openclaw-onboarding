@@ -76,7 +76,7 @@ SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
 
 # Walk every run directory under $RUNS_ROOT.
-find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null | while read -r run_dir; do
+while IFS= read -r run_dir; do
     INTAKE_LEDGER="$run_dir/working/interview/intake_ledger.json"
     STATE_JSON="$run_dir/state.json"
 
@@ -219,7 +219,12 @@ if os.path.isfile(sp):
             log "  WARNING: engine --new succeeded but state.json not found -- engine not launched"
         fi
     fi
-done
+done < <(find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null)
+
+# FIX 37: emit poller-telemetry event (consuming FIX 5 telemetry infra)
+TELEMETRY_DIR="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations}/telemetry"
+mkdir -p "$TELEMETRY_DIR"
+printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"skipped_running":%d,"skipped_no_intake":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE"     >> "$TELEMETRY_DIR/events.jsonl"
 
 log "scan complete: $NEW_LAUNCHES launched"
 exit 0

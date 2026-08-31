@@ -75,6 +75,7 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_OWN_SCRIPTS_DIR))
 
 from presentation_job.manifest import Manifest, Phase, resolve_manifest  # noqa: E402
+from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 13
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
@@ -89,6 +90,28 @@ try:
     import build_deck as _bd
 except ImportError:
     _bd = None  # type: ignore[assignment]
+
+# FIX 2: the parallel P4-PROMPT prompt authoring worker (same package). Same
+# defensive pattern. Consulted by the P4-PROMPT branch of dispatch_one under the
+# PRESENTATION_PROMPT_PARALLEL feature flag (default ON; =0 selects the
+# untouched serial loop below as the documented rollback path).
+try:
+    from presentation_job import parallel_prompt_worker as _ppw
+except ImportError:  # pragma: no cover - degraded envs fall back to serial
+    _ppw = None  # type: ignore[assignment]
+
+try:
+    from presentation_job import model_router as _model_router
+except ImportError:  # pragma: no cover - pre-FIX-7 trees route nothing new
+    _model_router = None  # type: ignore[assignment]
+
+# FIX 19: the real web-search/fetch capability for P-0.5-RESEARCH (Brave-primary,
+# bounded fetch, retrieval ledger). Same defensive pattern as the imports above:
+# a tree that predates the module routes nothing new.
+try:
+    from presentation_job import research_web as _research_web
+except ImportError:  # pragma: no cover - pre-FIX-19 trees keep the old behavior
+    _research_web = None  # type: ignore[assignment]
 
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
@@ -107,7 +130,11 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # thinking is genuinely engaged and not silently dropped.
 # ---------------------------------------------------------------------------
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+# FIX 13: no literal model id in this code path. The "fast" authoring class
+# resolves from the central versioned catalog (text.fast alias); operator
+# bump changes what the NEXT call sends without editing this file. The
+# base URL stays pinned here — it is endpoint config, not a model id.
+DEEPSEEK_MODEL = _model_catalog.model_id("text.fast")
 DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # CONFIRMED LIVE (not guessed): DeepSeek's native endpoint bills reasoning tokens
 # AND the final content tokens out of the SAME max_tokens budget --
@@ -150,9 +177,9 @@ DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; t
 # reasons land a phase here (spec S3.1 Strategies B/C):
 #
 #   render     -- the phase's own verifier proves REAL KIE.ai image bytes must
-#                 exist (P4-RENDER, P-STYLE-PREVIEW). A text model cannot emit
-#                 a PNG. Route: build_deck.py's real render path (future work,
-#                 not this module -- see module docstring "Strategy B").
+#                 exist (P-STYLE-PREVIEW). A text model cannot emit
+#                 a PNG. Route: build_deck.py's real render path via the
+#                 manifest script executor (P4-RENDER now has one; FIX 4).
 #   assembly   -- P8-ASSEMBLE/P9.5-NOTES-SYNC are mechanical PPTX-container
 #                 operations (zip a already-rendered PNGs, or reopen a PPTX to
 #                 inject notes), not authored prose -- confirmed by reading
@@ -173,9 +200,6 @@ DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; t
 #                 a guaranteed, correctly-fail-closed rejection.
 # ---------------------------------------------------------------------------
 DECLINE_PHASES: Dict[str, str] = {
-    "P4-RENDER": "render: verifier (canonical_render_guard.check_image_qc) proves real "
-                 "KIE.ai PNG bytes exist. Route to build_deck.py's deterministic render "
-                 "path, never to a text completion.",
     "P-STYLE-PREVIEW": "render: build_deck._chk_style_preview (a later precondition check) "
                         "proves the manifest must reference 9 real KIE renders (3 style x 3 "
                         "slides) plus an owner-approved pick. A manifest DeepSeek invents "
@@ -273,17 +297,15 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "between its heading and the next '## ' heading. Write at least 3-5 sentences or "
         "list items of REAL content in each of G, H, I, K, L specifically.\n"
         "5. Cite at least 8 distinct http(s):// URLs across the whole document, covering "
-        "AT LEAST 6 DISTINCT REGISTERED DOMAINS (not the same domain repeated). Use REAL, "
-        "well-known, authoritative public organizations and their real domains -- for "
-        "example (adapt to the actual topic, do not invent fictional sources): Harvard "
-        "Business Review (hbr.org), McKinsey & Company (mckinsey.com), Gartner "
-        "(gartner.com), Forrester (forrester.com), Pew Research Center "
-        "(pewresearch.org), the U.S. Bureau of Labor Statistics (bls.gov), Statista "
-        "(statista.com), Deloitte (deloitte.com), Forbes (forbes.com), MIT Sloan "
-        "Management Review (sloanreview.mit.edu), the World Economic Forum (weforum.org), "
-        "Salesforce Research (salesforce.com). NEVER use localhost, example.com, bare IP "
-        "addresses, or any .local/.internal/.test/.invalid domain -- those are mechanically "
-        "excluded and will fail the gate outright.\n"
+        "AT LEAST 6 DISTINCT REGISTERED DOMAINS (not the same domain repeated). FIX 19: "
+        "you have REAL web retrieval for this phase -- every URL you cite MUST come from "
+        "the RETRIEVED SOURCES section supplied in the prompt (the engine actually "
+        "fetched each page and recorded it in the retrieval ledger). Cite those exact "
+        "canonical URLs, each with the supporting quote/stat you found there. NEVER "
+        "invent a URL, NEVER cite a well-known organization's domain hoping one exists, "
+        "and NEVER use localhost, example.com, bare IP addresses, or any "
+        ".local/.internal/.test/.invalid domain -- a citation that is not in the "
+        "retrieval ledger fails the gate outright.\n"
         "6. Categories G, H, and I specifically must EACH contain at least one of those "
         "cited URLs inline (not just listed once elsewhere in the document).\n"
         "7. Write categories B, D, E, F, J too (the SOP requires all twelve for a complete "
@@ -1191,6 +1213,242 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
             time.sleep(min(30, 3 * (2 ** (attempt - 1))))
     raise last_exc or DeepSeekCallError("deepseek_complete: exhausted retries")
 
+# ---------------------------------------------------------------------------
+# FIX 7 -- profile-driven model routing. The transports stay HERE (this module
+# owns credentials and HTTP, as before); the DECISION lives in model_router
+# (pure, credential-free selection over the client resource profile). Every
+# completion the dispatcher issues goes through dispatch_complete, which
+# resolves the route, picks the transport, and emits the FIX 5 routing
+# telemetry row {phase_id, requested_alias, selected_provider, selected_model,
+# reason} best-effort (telemetry NEVER breaks a run).
+#
+# PRESENTATION_MODEL_ROUTER=0 (rollback): the router reports "disabled" and
+# dispatch_complete takes the untouched pre-FIX-7 path -- deepseek_complete
+# with the module's own constants --
+# every call site byte-for-byte equivalent to before this fix.
+# ---------------------------------------------------------------------------
+class RoutingUnavailable(RuntimeError):
+    """No client-owned, consented route for the phase's required capability
+    (model_router resolved route=None). Fail-closed: park the phase, never
+    fabricate a route to a provider the client does not own."""
+
+
+class _RouteContext:
+    """Per-call mutable record of what dispatch_complete resolved, so callers
+    can stamp sidecars/telemetry with the ACTUAL model used instead of the
+    pre-FIX-7 constant."""
+
+    __slots__ = ("provider", "model", "reason", "requested_alias", "router")
+
+    def __init__(self) -> None:
+        self.provider: Optional[str] = None
+        self.model: Optional[str] = None
+        self.reason: str = ""
+        self.requested_alias: Optional[str] = None
+        self.router: str = "model_router"
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {"provider": self.provider, "model": self.model,
+                "reason": self.reason, "requested_alias": self.requested_alias,
+                "router": self.router}
+
+
+def _emit_model_route_telemetry(run_dir: Optional[Path], ctx: _RouteContext,
+                                phase_id: str) -> None:
+    """FIX 5 row for one routing decision. Best-effort: never raises."""
+    if run_dir is None:
+        return
+    try:
+        row = {
+            "run_id": run_dir.name,
+            "phase_id": phase_id,
+            "wave": 1,
+            "model_used": ctx.model,
+            "event": "model_route",
+            # the FIX 7 payload, top-level exactly as the fix spec shapes it
+            "requested_alias": ctx.requested_alias,
+            "selected_provider": ctx.provider,
+            "selected_model": ctx.model,
+            "reason": ctx.reason,
+            "router": ctx.router,
+            "started_at": utcnow(),
+            "ended_at": utcnow(),
+            "duration_s": None,
+            "status": "routed" if ctx.model else "unrouted",
+        }
+        _emit_slide_author_telemetry(run_dir, [row])
+    except Exception as exc:  # noqa: BLE001 -- telemetry NEVER breaks a run
+        print(f"WARN telemetry: model_route row failed: {exc}", flush=True)
+
+
+def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
+                            provider: str, model: str,
+                            max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
+                            retries: int = 3,
+                            run_dir: Optional[Path] = None) -> Tuple[str, Dict[str, Any]]:
+    """OpenAI-compatible chat-completions transport for NON-DeepSeek client-owned
+    providers (openrouter, ollama-cloud text classes, ...). Mirrors
+    deepseek_complete's retry/timeout semantics. Credentials resolve per
+    provider from the environment the Engine already exported; a key value is
+    never printed, never logged, never included in any telemetry row."""
+    key_name = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "ollama-cloud": "OLLAMA_CLOUD_API_KEY",
+        "agnes": "AGNES_API_KEY",
+    }.get(provider, f"{provider.upper().replace('-', '_')}_API_KEY")
+    key = os.environ.get(key_name) or ""
+    if not key:
+        # Do NOT route a provider we cannot authenticate to: fall back to a
+        # clear, non-spammy error surfaced through the normal DeepSeekCallError
+        # retry path the call sites already handle.
+        raise DeepSeekCallError(
+            f"{key_name} not set in environment -- cannot dispatch to "
+            f"provider {provider} (model {model})")
+    base_urls = {
+        "openrouter": "https://openrouter.ai/api/v1",
+        "ollama-cloud": "https://ollama.com/v1",
+        "agnes": "https://api.agnes.ai/v1",
+    }
+    base = base_urls.get(provider) or os.environ.get(
+        f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL", "")
+    if not base:
+        raise DeepSeekCallError(
+            f"no base URL known for provider {provider} -- set "
+            f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": max_tokens,
+    "temperature": DEEPSEEK_TEMPERATURE,
+    }
+    data = json.dumps(body).encode("utf-8")
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, retries + 1):
+        req = urllib.request.Request(
+            f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
+                raw = resp.read().decode("utf-8")
+            obj = json.loads(raw)
+            choice = (obj.get("choices") or [{}])[0]
+            content = ((choice.get("message") or {}).get("content")) or ""
+            usage = obj.get("usage") or {}
+            return content, usage
+        except urllib.error.HTTPError as exc:
+            payload = ""
+            try:
+                payload = exc.read().decode("utf-8", errors="replace")[:2000]
+            except Exception:  # noqa: BLE001
+                pass
+            if exc.code == 429 or exc.code >= 500:
+                last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
+            else:
+                raise DeepSeekCallError(
+                    f"HTTP {exc.code} (non-transient): {payload}") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
+                OSError) as exc:
+            last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+        if attempt < retries:
+            time.sleep(min(30, 3 * (2 ** (attempt - 1))))
+    raise last_exc or DeepSeekCallError(
+        f"{provider}/chat/completions: exhausted retries")
+
+
+def dispatch_complete(system_prompt: str, user_prompt: str, *,
+                      phase_id: str,
+                      run_dir: Optional[Path] = None,
+                      max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
+                      retries: int = 3) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+    """THE routed completion entrypoint: every dispatcher LLM call site goes
+    through here. Returns (content, usage, route_dict) where route_dict carries
+    {provider, model, reason, requested_alias, router} for sidecar/telemetry
+    stamping.
+
+    Selection (model_router.resolve_route): required capability -> client-owned
+    consented providers -> catalog health -> mode budget -> fallback list.
+    route=None (no eligible client-owned route) raises RoutingUnavailable --
+    park/fail-closed, never a fabricated model. PRESENTATION_MODEL_ROUTER=0
+    (rollback) selects the pre-FIX-7 DeepSeek-direct path exactly."""
+    ctx = _RouteContext()
+    decision: Optional[Dict[str, Any]] = None
+    if _model_router is not None:
+        try:
+            decision = _model_router.resolve_route(phase_id)
+        except Exception as exc:  # noqa: BLE001 -- a broken router never
+                                  # hard-crashes a run: fall back to DeepSeek
+            decision = {"router": f"error: {exc}", "route": None, "reason": str(exc)}
+
+    route = (decision or {}).get("route") or None
+    router_id = str((decision or {}).get("router") or "")
+    profile_state = str((decision or {}).get("profile_state") or "")
+    if route is None and router_id != "disabled":
+        if profile_state == "has_providers":
+            # The client OWNS providers yet none satisfies this phase's
+            # required capability (e.g. a vision/OCR phase with no OCR owner,
+            # or only unconsented/unwired candidates): fail-closed PARK. A
+            # fabrication here would spend a provider the client does not own
+            # on a model that cannot hold the artifact.
+            ctx.router = router_id or "model_router"
+            ctx.reason = str((decision or {}).get("reason") or "no eligible route")
+            ctx.requested_alias = (decision or {}).get("requested_alias")
+            _emit_model_route_telemetry(run_dir, ctx, phase_id)
+            raise RoutingUnavailable(
+                f"phase {phase_id}: no eligible client-owned route -- "
+                f"{(decision or {}).get('reason')}")
+        # profile_state in ("absent", "", "mechanical", ...) -- no client-owned
+        # provider evidence exists yet: keep the dispatcher's pre-FIX-7
+        # default (DeepSeek-direct) rather than stranding runs on a profile
+        # that simply has not been captured yet.
+        ctx.router = router_id or "model_router"
+        ctx.provider = "deepseek-direct"
+        ctx.model = DEEPSEEK_MODEL
+        ctx.requested_alias = (decision or {}).get("requested_alias") \
+            or "deepseek-v4-flash"
+        ctx.reason = str((decision or {}).get("reason")
+                         or "no profile route; dispatcher default DeepSeek-direct")
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        _emit_model_route_telemetry(run_dir, ctx, phase_id)
+        return content, usage, ctx.as_dict()
+    if router_id == "disabled":
+        # PRESENTATION_MODEL_ROUTER=0 rollback: the untouched pre-FIX-7 path,
+        # no model_route telemetry row (it predates the routing event).
+        ctx.router = "disabled"
+        ctx.provider = "deepseek-direct"
+        ctx.model = DEEPSEEK_MODEL
+        ctx.requested_alias = None
+        ctx.reason = str((decision or {}).get("reason") or "router disabled")
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        return content, usage, ctx.as_dict()
+
+    ctx.provider = str(route.get("provider") or "")
+    ctx.model = str(route.get("model") or "")
+    ctx.requested_alias = (decision or {}).get("requested_alias")
+    ctx.reason = str((decision or {}).get("reason") or "")
+    ctx.router = router_id or "model_router"
+
+    if ctx.provider == "deepseek-direct":
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        # usage/model provenance stays honest even though the native endpoint
+        # pins its own served id (deepseek_complete carries DEEPSEEK_MODEL);
+        # the ROUTE (what routing selected) is what callers stamp.
+        _emit_model_route_telemetry(run_dir, ctx, phase_id)
+        return content, usage, ctx.as_dict()
+
+    content, usage = _openai_compat_complete(
+        system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
+        max_tokens=max_tokens, retries=retries, run_dir=run_dir)
+    _emit_model_route_telemetry(run_dir, ctx, phase_id)
+    return content, usage, ctx.as_dict()
+
 
 # ---------------------------------------------------------------------------
 # Role-SOP resolution (spec S4.1). Portable across BOTH tree layouts this
@@ -1582,12 +1840,15 @@ def _first_concrete_path(patterns: List[str], run_dir: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 class DispatchResult:
     def __init__(self, phase_id: str, status: str, attempts: int,
-                 reasons: Optional[List[str]] = None, target: Optional[str] = None):
+                 reasons: Optional[List[str]] = None, target: Optional[str] = None,
+                 slide_results: Optional[List[Dict[str, Any]]] = None):
         self.phase_id = phase_id
         self.status = status  # "ok" | "exhausted" | "declined" | "skipped_satisfied" | "error"
         self.attempts = attempts
         self.reasons = reasons or []
         self.target = target
+        # Per-slide result list consumable by FIX 2: [{slide_id, ordinal, status, error}, ...]
+        self.slide_results = slide_results or []
 
     def __repr__(self) -> str:
         return f"DispatchResult({self.phase_id}, {self.status}, attempts={self.attempts})"
@@ -1817,12 +2078,18 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
     prompts_dir = run_dir / "working" / "prompts"
     total_attempts = 0
     final_reasons: List[str] = []
+    slide_results: List[Dict[str, Any]] = []
 
     for ordinal in work_ordinals:
         target = prompts_dir / f"slide-{ordinal:02d}.txt"
         ok, reasons = _verify_single_prompt(run_dir, ordinal)
         if ok and target.is_file():
-            continue  # this slide already clears its own gate -- skip, no spend
+            # this slide already clears its own gate -- skip, no spend
+            slide_results.append({
+                "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+                "status": "succeeded", "error": None,
+                "skipped_already_ok": True})
+            continue
 
         slide_order = dict(order)
         slide_order["produces_artifact"] = [f"working/prompts/slide-{ordinal:02d}.txt"]
@@ -1845,7 +2112,13 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt, "slide": ordinal,
                     "status": "error", "reason": f"RoleSOPNotFound: {exc}"})
-                return DispatchResult(phase_id, "error", total_attempts, [str(exc)])
+                # FIX 3: used to abort the WHOLE phase here. A missing SOP is
+                # raised before any provider call (zero spend) and fails every
+                # slide identically, but the phase result must still name every
+                # unresolved slide, so record it through the shared per-slide
+                # failure path below and move on to the next ordinal.
+                last_reasons = [f"RoleSOPNotFound: {exc}"]
+                break
 
             # Per-slide scoping instruction, prepended so ONE role SOP + ONE
             # contract serves every slide -- this text names exactly which slide
@@ -1859,10 +2132,23 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
+            # FIX 7: routed completion -- the profile decides the transport
+            # (DeepSeek-direct stays the default + one option among many).
+            route_dict: Dict[str, Any] = {}
             try:
-                content, usage = deepseek_complete(system_prompt, user_prompt)
+                content, usage, route_dict = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id,
+                    run_dir=run_dir)
+            except RoutingUnavailable as exc:
+                # no client-owned model can serve this phase: park the slide
+                # honestly (fail-closed), never fabricate a route.
+                last_reasons = [f"RoutingUnavailable: {exc}"]
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "routing_unavailable", "reason": str(exc)})
+                break
             except DeepSeekCallError as exc:
-                last_reasons = [f"DeepSeek call failed: {exc}"]
+                last_reasons = [f"Model call failed: {exc}"]
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt, "slide": ordinal,
                     "status": "call_failed", "reason": str(exc)})
@@ -1891,7 +2177,9 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": attempt, "slide": ordinal,
                 "status": "verified" if v_ok else "failed", "verifier_ok": v_ok,
-                "verifier_reasons": v_reasons, "model": DEEPSEEK_MODEL,
+                "verifier_reasons": v_reasons,
+                "model": route_dict.get("model") or DEEPSEEK_MODEL,
+                "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
                 slide_ok = True
@@ -1899,17 +2187,52 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
             last_reasons = v_reasons
             prior_reasons = v_reasons
 
-        if not slide_ok:
-            final_reasons = [f"slide {ordinal}: {r}" for r in last_reasons]
-            _append_sidecar(run_dir, phase_id, {
-                "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "slide": ordinal,
-                "status": "exhausted", "final_reasons": last_reasons})
-            # Stop at the first slide that cannot be authored -- never burn spend
-            # on later slides while an earlier one is broken. The next sweep call
-            # resumes exactly here (every already-good slide is skipped instantly
-            # by the ok-and-exists check above; nothing already written is lost
-            # or re-spent).
-            return DispatchResult(phase_id, "exhausted", total_attempts, final_reasons)
+        if slide_ok:
+            slide_results.append({
+                "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+                "status": "succeeded", "error": None})
+            continue
+
+        # FIX 3: this slide exhausted its own retry budget -- record the failure
+        # and KEEP GOING through the remaining slides. The old behavior
+        # returned here on the first exhausted slide, silently discarding every
+        # later slide's chance to author. The phase now fails only AFTER every
+        # slide got its own full retry behavior, and the failure report names
+        # exactly which slides failed (never a bare "phase aborted"). The
+        # resume property is unchanged: every already-good slide is still
+        # skipped instantly by the ok-and-exists check above, and nothing
+        # already written is lost or re-spent.
+        exhausted_reasons = [f"slide {ordinal}: {r}" for r in last_reasons]
+        final_reasons.extend(exhausted_reasons)
+        slide_results.append({
+            "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+            "status": "failed", "error": "; ".join(exhausted_reasons)})
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "slide": ordinal,
+            "status": "exhausted", "final_reasons": last_reasons})
+
+    # FIX 3: every ordinal THIS CALL owns has now been through its own full
+    # retry budget -- a failed slide no longer cuts the loop short. If any
+    # slide is still unresolved, the phase fails HERE, after every slide got
+    # its chance, and the report names exactly which slides failed (plus the
+    # per-slide result list consumed by FIX 2). Successful slides authored in
+    # this pass are kept on disk and never re-spent by the next sweep call.
+    if final_reasons:
+        failed_slides = [s["slide_id"] for s in slide_results
+                         if s["status"] == "failed"]
+        succeeded_slides = [s["slide_id"] for s in slide_results
+                            if s["status"] == "succeeded"]
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": total_attempts,
+            "status": "phase_exhausted",
+            "failed_slides": failed_slides,
+            "succeeded_slides": succeeded_slides,
+            "note": "all owned slides attempted; phase fails for the named "
+                    "slides only",
+        })
+        return DispatchResult(phase_id, "exhausted", total_attempts,
+                              final_reasons, "working/prompts/",
+                              slide_results=slide_results)
 
     # Every ordinal THIS CALL owns cleared its own gate. The real whole-phase
     # verify() also folds in the deck-level writing-engine backstop and
@@ -1929,7 +2252,8 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                     "verify() deferred to a full-sweep call",
         })
         return DispatchResult(phase_id, "ok", total_attempts, [],
-                              "working/prompts/ (subset)")
+                              "working/prompts/ (subset)",
+                              slide_results=slide_results)
 
     ok, reasons = _verify(phase_id, run_dir)
     _append_sidecar(run_dir, phase_id, {
@@ -1938,8 +2262,545 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
         "verifier_reasons": reasons,
     })
     if ok:
-        return DispatchResult(phase_id, "ok", total_attempts, [], "working/prompts/")
-    return DispatchResult(phase_id, "exhausted", total_attempts, reasons)
+        return DispatchResult(phase_id, "ok", total_attempts, [], "working/prompts/",
+                              slide_results=slide_results)
+    return DispatchResult(phase_id, "exhausted", total_attempts, reasons,
+                          slide_results=slide_results)
+
+
+# ---------------------------------------------------------------------------
+# FIX 2: parallel P4-PROMPT dispatch. The dispatcher branch REMAINS the owner of
+# the phase: it selects the slides, stamps the routing (Phase A stub:
+# deepseek-direct / deepseek-v4-flash / measured capacity 8 until FIX 7/8/11
+# provide real profiles), builds prompt-wave-input.json, invokes the worker ONCE,
+# ingests the result file, emits FIX 5-style per-slide telemetry rows, and
+# advances only when every required ordinal succeeded with an on-disk SHA match
+# and a passing verify verdict. PRESENTATION_PROMPT_PARALLEL=0 selects the
+# untouched serial loop above (byte-for-byte rollback path; the serial loop
+# stays until the operator-box proof window ends).
+# ---------------------------------------------------------------------------
+def _prompt_parallel_enabled() -> bool:
+    """Default ON. The only value that disables is exactly "0" (also strip
+    quotes/whitespace so `PRESENTATION_PROMPT_PARALLEL=""` counts as unset,
+    not OFF -- an EMPTY value must never silently select the rollback path)."""
+    raw = os.environ.get("PRESENTATION_PROMPT_PARALLEL")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+
+def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """FIX 7 profile-driven routing stamp for the P4-PROMPT wave input.
+    Resolves the route through model_router.resolve_route (the client resource
+    profile decides), falling back to the pre-FIX-7 DeepSeek-direct stamp when
+    the router is absent/flagged off/profile not yet captured. The wave input
+    shape is unchanged; only the VALUES become profile-truth. (The Phase A
+    measured_capacity=8 stamp was a hardcoded fabrication -- FIX 6 removes that
+    fiction; this stamp carries routing truth only.)"""
+    stamp: Dict[str, Any] = {
+        "provider": "deepseek-direct",
+        "model": DEEPSEEK_MODEL,
+        "router": "disabled",
+        "mode": "standard",
+         "measured_capacity": 8,
+    }
+    if _model_router is None:
+        return stamp
+    try:
+        decision = _model_router.resolve_route("P4-PROMPT",
+                                               mode="standard")
+        route = (decision or {}).get("route")
+        if decision.get("profile_state") == "has_providers" and route:
+            stamp.update({
+                "provider": str(route.get("provider")),
+                "model": str(route.get("model")),
+                "router": str(decision.get("router") or "model_router"),
+                "route_reason": decision.get("reason"),
+                "requested_alias": decision.get("requested_alias"),
+            })
+            stamp.pop("measured_capacity", None)
+    except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
+        try:
+            _append_sidecar(run_dir, "P4-PROMPT", {
+                "status": "routing_stamp_error", "reason": f"{type(exc).__name__}: {exc}"})
+        except Exception:  # noqa: BLE001
+            pass
+    return stamp
+
+
+def _emit_slide_author_telemetry(run_dir: Path, rows: List[Dict[str, Any]]) -> None:
+    """FIX 5-style one-row-per-slide telemetry into
+    working/telemetry/stage-timings.jsonl (same row schema Engine._emit_stage_timing
+    writes: run_id, phase_id, wave, model_used, event, started_at, ended_at,
+    duration_s, status [, error_class]). No Engine instance exists inside the
+    dispatcher process, so the dispatcher writes the rows itself, best-effort:
+    telemetry NEVER breaks a run."""
+    try:
+        tdir = run_dir / "working" / "telemetry"
+        tdir.mkdir(parents=True, exist_ok=True)
+        with (tdir / "stage-timings.jsonl").open("a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError as exc:
+        print(f"WARN telemetry: could not write slide_author rows: {exc}",
+              flush=True)
+
+
+def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
+                                    dept_root: Path, phase_obj: Optional[Phase],
+                                    worker_id: str) -> DispatchResult:
+    """FIX 2 parallel path for P4-PROMPT. Returns the same DispatchResult the
+    serial loop returns; identical statuses so callers cannot tell them apart
+    (that is the point: the flag switches IMPLEMENTATION, not CONTRACT)."""
+    phase_id = "P4-PROMPT"
+    if _ppw is None:
+        reason = ("parallel prompt worker module unavailable -- falling back to "
+                  "the serial P4-PROMPT loop")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
+                                      phase_obj=phase_obj, worker_id=worker_id)
+
+    n = _prompt_slide_count(run_dir)
+    if n is None:
+        reason = ("cannot determine slide count yet -- neither working/copy/"
+                  "slides.json nor working/copy/arc_allocation.json (with a "
+                  "slots/allocation/slides array) is present/readable")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    # --- normalize slides from the SAME source the serial loop + verifier use
+    slides_payload: List[Dict[str, Any]] = []
+    try:
+        for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
+            p = run_dir / rel
+            if not p.is_file():
+                continue
+            obj = json.loads(p.read_text(encoding="utf-8"))
+            raw_slides = obj if isinstance(obj, list) else (
+                obj.get("slides") if isinstance(obj, dict) else None)
+            if isinstance(raw_slides, list) and raw_slides:
+                for s in raw_slides:
+                    if not isinstance(s, dict):
+                        continue
+                    ordinal = s.get("slide")
+                    if not isinstance(ordinal, int):
+                        continue
+                    slides_payload.append({
+                        "slide_id": f"slide-{ordinal:02d}",
+                        "ordinal": ordinal,
+                        "copy": [str(c) for c in (s.get("copy") or [])
+                                 if isinstance(c, str)],
+                        "archetype": str(s.get("archetype") or ""),
+                        "research_anchors": [str(a) for a in
+                                             (s.get("research_anchors") or [])],
+                        "design_tokens": s.get("design_tokens") or {},
+                        "negative_requirements": [str(ngr) for ngr in
+                                                  (s.get("negative_requirements")
+                                                   or [])],
+                    })
+                break
+    except (OSError, json.JSONDecodeError):
+        slides_payload = []
+    if not slides_payload:
+        reason = ("P4-PROMPT parallel dispatch could not normalize any slide "
+                  "payloads from slides.json/arc_allocation.json")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    slides_payload = [s for s in slides_payload if 1 <= s["ordinal"] <= n]
+    if not slides_payload:
+        reason = "P4-PROMPT parallel dispatch: no in-range ordinals after normalization"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    # --- build prompt-wave-input.json (schema_version 1) stamped routing
+    routing = _prompt_routing_stamp(run_dir=run_dir)
+    wave_input = {
+        "schema_version": 1,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "phase_id": phase_id,
+        "routing": routing,
+        "prompt_constraints": {
+            "min_chars": 9000,
+            "max_chars": 18000,
+            "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
+        },
+        "slides": slides_payload,
+    }
+    input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_text(json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
+                          encoding="utf-8")
+
+    # --- invoke the worker ONCE. An unhandled WorkerUsageError (exit-2 class:
+    # bad input/paths/schema) is a dispatcher bug, so it surfaces as a phase
+    # error -- never silently falls back to the serial loop and re-spends.
+    started_iso = utcnow()
+    started_t = time.monotonic()
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
+        "input": str(input_path), "slides": len(slides_payload),
+        "routing": routing,
+    })
+    try:
+        exit_code, result_doc = _ppw.run_worker(wave_input)
+    except _ppw.WorkerUsageError as exc:
+        reason = f"parallel prompt worker rejected the wave input: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    except Exception as exc:  # noqa: BLE001 -- phase must fail loudly, named
+        reason = f"parallel prompt worker crashed: {type(exc).__name__}: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
+                                      phase_obj=phase_obj, worker_id=worker_id)
+    duration_total = round(time.monotonic() - started_t, 3)
+
+    # --- ingest the result file + emit FIX 5-style per-slide telemetry rows
+    result_path = run_dir / "working" / "checkpoints" / "prompt-worker-results.json"
+    try:
+        doc = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        doc = result_doc  # in-memory copy is authoritative if the file vanished
+    slide_rows = doc.get("slides") or []
+    telemetry_rows = []
+    for row in slide_rows:
+        telemetry_rows.append({
+            "run_id": run_dir.name,
+            "phase_id": phase_id,
+            "wave": doc.get("wave_count", 1),
+            "model_used": row.get("model_used") or routing["model"],
+            "event": "slide_author",
+            "started_at": row.get("started_at") or started_iso,
+            "ended_at": row.get("ended_at") or utcnow(),
+            "duration_s": row.get("duration_s"),
+            "status": row.get("status"),
+            "error_class": row.get("error_class"),
+        })
+    _emit_slide_author_telemetry(run_dir, telemetry_rows)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1,
+        "status": "parallel_wave_finished", "worker_exit_code": exit_code,
+        "succeeded": doc.get("succeeded_count"), "failed": doc.get("failed_count"),
+        "wave_count": doc.get("wave_count"), "duration_s": duration_total,
+        "seam": doc.get("provider_seam"),
+    })
+
+    # --- advance only when EVERY required ordinal succeeded with an on-disk
+    # SHA match AND a passing verify verdict.
+    succeeded: Dict[int, Dict[str, Any]] = {}
+    failed_reasons: List[str] = []
+    for row in slide_rows:
+        try:
+            ordinal = int(row["ordinal"])
+        except (TypeError, ValueError):
+            continue
+        if row.get("status") == "succeeded":
+            succeeded[ordinal] = row
+        else:
+            failed_reasons.append(
+                f"slide {ordinal}: {row.get('error_class') or 'failed'} -- "
+                f"{row.get('error_message') or 'no error detail'}")
+    sha_mismatches: List[str] = []
+    verify_failures: List[str] = []
+    for ordinal, row in sorted(succeeded.items()):
+        target = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}-prompt.txt"
+        candidates = [target,
+                      run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"]
+        disk = next((c for c in candidates if c.is_file()), None)
+        if disk is None:
+            sha_mismatches.append(f"slide {ordinal}: no prompt file on disk")
+            continue
+        actual = _ppw._sha256_file(disk)
+        if row.get("prompt_sha256") and actual != row["prompt_sha256"]:
+            sha_mismatches.append(f"slide {ordinal}: sha256 mismatch on {disk.name}")
+            continue
+        v_ok, v_reasons = _verify_single_prompt(run_dir, ordinal)
+        if not v_ok:
+            verify_failures.append(f"slide {ordinal}: {'; '.join(v_reasons)[:200]}")
+
+    if not failed_reasons and not sha_mismatches and not verify_failures \
+            and all(o in succeeded for o in range(1, n + 1)):
+        ok, reasons = _verify(phase_id, run_dir)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 1,
+            "status": "verified" if ok else "failed", "verifier_ok": ok,
+            "verifier_reasons": reasons,
+            "parallel": True,
+        })
+        if ok:
+            return DispatchResult(phase_id, "ok", len(slide_rows), [],
+                                  "working/prompts/",
+                                  slide_results=[
+                                      {"slide_id": f"slide-{o:02d}",
+                                       "ordinal": o, "status": "succeeded",
+                                       "error": None,
+                                       "prompt_sha256": succeeded[o].get("prompt_sha256")}
+                                      for o in sorted(succeeded)])
+        return DispatchResult(phase_id, "exhausted", len(slide_rows), reasons,
+                              "working/prompts/",
+                              slide_results=[
+                                  {"slide_id": f"slide-{o:02d}", "ordinal": o,
+                                   "status": "succeeded", "error": None}
+                                  for o in sorted(succeeded)])
+
+    # partial / failed: name every unmet ordinal, phase fails AFTER all slides
+    final_reasons = list(failed_reasons) + [f"sha: {m}" for m in sha_mismatches] + \
+        [f"verify: {v}" for v in verify_failures]
+    for o in range(1, n + 1):
+        if o not in succeeded:
+            if not any(r.startswith(f"slide {o}:") for r in final_reasons):
+                final_reasons.append(f"slide {o}: not succeeded in result document")
+    failed_slides = [f"slide-{o:02d}" for o in range(1, n + 1) if o not in succeeded]
+    succeeded_slides = [f"slide-{o:02d}" for o in sorted(succeeded)]
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 1, "status": "phase_exhausted",
+        "failed_slides": failed_slides, "succeeded_slides": succeeded_slides,
+        "parallel": True,
+        "note": "parallel wave finished with unresolved slides; phase fails "
+                "only after every slide's outcome is recorded",
+    })
+    return DispatchResult(phase_id, "exhausted", len(slide_rows), final_reasons,
+                          "working/prompts/",
+                          slide_results=[
+                              {"slide_id": f"slide-{o:02d}", "ordinal": o,
+                               "status": "succeeded" if o in succeeded else "failed",
+                               "error": None if o in succeeded else "parallel wave failed"}
+                              for o in range(1, n + 1)])
+
+
+# ---------------------------------------------------------------------------
+# FIX 19 -- P-0.5-RESEARCH gets real web access.
+#
+# ROOT CAUSE (Codex-confirmed; fix-spec FIX 19): the research phase was a no-web
+# DeepSeek call TOLD to emit research_complete:true + 8 URLs. Nothing was ever
+# retrieved -- the brief invented plausible-looking hbr.org/mckinsey.com sources
+# that never resolve, and the engine's gates counted URL strings.
+#
+# The contract now:
+#   1. BRAVE-primary search gating BRAVE_SEARCH_API_KEY. Key absence / auth
+#      failure / exhausted quota PARKS the phase with a configuration error.
+#      Never falls back to a no-web model claiming research.
+#   2. Retrieval is bounded: 12 unique fetched URLs per deck max, ONE network
+#      fetch per canonical URL (repeated citations reuse the cached response),
+#      public http(s) only, redirects <= 2, body <= 2 MB, timeout 15 s. The
+#      13th unique URL is refused WITHOUT a fetch.
+#   3. Every fetched source lands in working/research/retrieval_ledger.jsonl
+#      (query, canonical URL, retrieval time, HTTP status, content hash,
+#      extraction length, citation anchors -- never the key, never full text).
+#      FIX 20 consumes this ledger.
+#   4. The synthesis prompt embeds ONLY actually-retrieved source material
+#      beside the usual SOP/contract, and the artifact contract now requires
+#      sources drawn from the retrieval ledger -- a brief URL not present in
+#      the ledger cannot be produced from fabrication.
+#   5. PRESENTATION_RESEARCH_WEB_FETCH=0 (operator kill-switch) parks the
+#      phase -- it never restores the old no-web path.
+#
+# The synthesis model transport resolves through dispatch_complete (FIX 7), so
+# the profile still owns WHICH long-context model writes the brief.
+# ---------------------------------------------------------------------------
+def _intake_topic(run_dir: Path) -> str:
+    """The deck topic from the intake artifact. Reads only; never invents."""
+    for rel in ("working/copy/intake.json",
+                "working/interview/intake_transcript.json"):
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for key in ("topic", "deck_topic", "presentation_topic", "subject"):
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return ""
+
+
+def _research_source_context(result: Dict[str, Any], limit: int = 1600) -> str:
+    """One ledger-cited source block for the synthesis prompt: canonical URL,
+    title, and the page's own extracted text (truncated) -- the material the
+    brief may cite."""
+    row = result.get("row") or {}
+    url = str(row.get("canonical_url") or result.get("url") or "")
+    title = str(result.get("title") or "")
+    body = str(row.get("extracted") or "")[:limit]
+    return (f"### SOURCE {url}\nTITLE: {title}\n"
+            f"EXTRACTED PAGE TEXT:\n{body}\n")
+
+
+def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
+                             dept_root: Path, phase_obj: Optional[Phase],
+                             worker_id: str) -> DispatchResult:
+    """P-0.5-RESEARCH: Brave-primary retrieval + routed long-context synthesis.
+
+    Returns statuses shared with the generic loop: ok / exhausted / error.
+    RoutingUnavailable and ResearchWebError both PARK the phase (statuses
+    error/exhausted with the real, operator-actionable reason) -- the phase
+    never silently degrades to a no-web dispatch that would fabricate sources.
+    """
+    phase_id = "P-0.5-RESEARCH"
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    if _research_web is None:
+        reason = ("presentation_job.research_web unavailable -- P-0.5-RESEARCH "
+                  "parks: research requires real retrieved sources, and the "
+                  "no-web fallback this module replaced may never return.")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    topic = _intake_topic(run_dir)
+
+    # ---- retrieval (Brave-primary, bounded, ledgered) ---------------------
+    retrieval_started = time.time()
+    retrieval: Optional[Dict[str, Any]] = None
+    try:
+        retrieval = _research_web.run_research_retrieval(run_dir, topic=topic)
+    except _research_web.ResearchWebError as exc:
+        reason = f"ResearchWebError: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason, "topic": topic})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    except Exception as exc:  # noqa: BLE001 -- retrieval faults park, never crash
+        reason = f"retrieval failed: {type(exc).__name__}: {exc}"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+    fetcher = retrieval["fetcher"]
+
+    # Usable sources: fetched OK (HTTP 200) with substance to quote.
+    usable: List[Dict[str, Any]] = []
+    for src in retrieval["sources"]:
+        canon = _research_web.canonical_url(src["url"])
+        row = fetcher.cache.get(canon) or {}
+        if row.get("status") == 200 and len(row.get("extracted") or "") >= \
+                _research_web.MIN_EXTRACT_CHARS:
+            usable.append({**src, "row": row})
+
+    if not usable:
+        reason = ("no usable retrieved sources (every candidate was refused, "
+                  "non-200, or under the extraction floor) -- P-0.5-RESEARCH "
+                  "parks: a brief with zero actually-retrieved sources is the "
+                  "fabrication this fix removes")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "parked",
+            "reason": reason, "refusals": fetcher.refusals[:6]})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    sources_ctx = "\n\n".join(_research_source_context(s) for s in usable)
+    ok_urls = "\n".join(
+        f"- {s['row']['canonical_url']} -- {_research_web.registered_domain(s['row']['canonical_url'])}"
+        for s in usable)
+
+    # ---- routed synthesis --------------------------------------------------
+    patterns = resolve_target_paths("P-0.5-RESEARCH", order, phase_obj, run_dir)
+    target = _first_concrete_path(patterns, run_dir)
+    if target is None:
+        reason = ("cannot resolve a concrete write target from "
+                  f"produces_artifact={patterns!r}")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    ok, reasons = _verify("P-0.5-RESEARCH", run_dir)
+    prior_reasons: Optional[List[str]] = reasons if reasons else None
+    last_reasons: List[str] = reasons
+
+    for attempt in range(1, DISPATCH_RETRY_CAP + 1):
+        try:
+            system_prompt, user_prompt = compose_prompt(
+                phase_id="P-0.5-RESEARCH", owning_role=owning_role,
+                dept_root=dept_root, run_dir=run_dir, order=order,
+                attempt=attempt, prior_reasons=prior_reasons)
+        except RoleSOPNotFound as exc:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "error",
+                "reason": f"RoleSOPNotFound: {exc}"})
+            return DispatchResult(phase_id, "error", attempt, [str(exc)])
+
+        # The retrieval bundle rides the user prompt; the source block sits
+        # BEFORE the verbatim contract restatement (compose_prompt always
+        # terminates the prompt with the contract, so recency ordering holds).
+        user_prompt = (
+            "=== RETRIEVED SOURCES (the ONLY citable material for this brief -- "
+            "cite these exact canonical URLs; every citation must come from this "
+            "Retrieval Ledger, which the engine recorded by ACTUALLY fetching "
+            "each page; inventing any URL outside this list is fabrication and "
+            "fails the gate) ===\n"
+            + sources_ctx +
+            "\n=== USABLE SOURCE URLS (canonical, with registered domains) ===\n"
+            + ok_urls + "\n\n" + user_prompt
+        )
+
+        route_dict: Dict[str, Any] = {}
+        try:
+            content, usage, route_dict = dispatch_complete(
+                system_prompt, user_prompt, phase_id="P-0.5-RESEARCH",
+                run_dir=run_dir)
+        except RoutingUnavailable as exc:
+            reason = f"RoutingUnavailable: {exc}"
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "routing_unavailable", "reason": reason})
+            return DispatchResult(phase_id, "error", attempt, [reason])
+        except DeepSeekCallError as exc:
+            last_reasons = [f"Model call failed: {exc}"]
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "call_failed", "reason": str(exc)})
+            if attempt < DISPATCH_RETRY_CAP:
+                time.sleep(min(30, 5 * attempt))
+                continue
+            break
+
+        payload = _clean_payload(content)
+        if not payload.strip():
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "empty_completion", "usage": usage})
+            last_reasons = ["completion returned empty"]
+            if attempt < DISPATCH_RETRY_CAP:
+                continue
+            break
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
+        tmp_path.write_text(payload, encoding="utf-8")
+        os.replace(tmp_path, target)
+
+        verifier_ok, verifier_reasons = _verify("P-0.5-RESEARCH", run_dir)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": attempt,
+            "status": "verified" if verifier_ok else "failed",
+            "verifier_ok": verifier_ok, "verifier_reasons": verifier_reasons,
+            "model": route_dict.get("model") or DEEPSEEK_MODEL,
+            "provider": route_dict.get("provider") or "deepseek-direct",
+            "target": str(target.relative_to(run_dir)), "usage": usage,
+            "retrieved_sources": len(usable),
+            "network_fetches": retrieval.get("network_fetches", 0),
+        })
+        if verifier_ok:
+            return DispatchResult(phase_id, "ok", attempt, [],
+                                  str(target.relative_to(run_dir)))
+        last_reasons = verifier_reasons
+        prior_reasons = verifier_reasons
+
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "status": "exhausted",
+        "final_reasons": last_reasons})
+    return DispatchResult(phase_id, "exhausted", DISPATCH_RETRY_CAP,
+                          last_reasons, str(target.relative_to(run_dir)))
 
 
 def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
@@ -2183,8 +3044,24 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # it to its own dedicated per-slide loop before the single-target machinery
     # ever runs.
     if phase_id == "P4-PROMPT":
+        # FIX 2: PRESENTATION_PROMPT_PARALLEL (default ON) routes to the parallel
+        # worker. The flag value "0" selects the untouched serial loop below --
+        # the documented rollback path, byte-for-byte identical to pre-FIX-2.
+        if _prompt_parallel_enabled():
+            return _dispatch_prompt_phase_parallel(
+                run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+                worker_id=worker_id)
         return _dispatch_prompt_phase(run_dir, order, dept_root=dept_root,
                                       phase_obj=phase_obj, worker_id=worker_id)
+
+    # FIX 19: P-0.5-RESEARCH owns its own retrieval + synthesis pipeline (Brave
+    # primary, bounded fetch, retrieval ledger). The generic loop below speaks
+    # only "model, write one file" -- exactly the no-web fabrication this fix
+    # removes -- so the phase branches here before that machinery ever runs.
+    if phase_id == "P-0.5-RESEARCH":
+        return _dispatch_research_phase(
+            run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+            worker_id=worker_id)
 
     # Idempotent pre-check: a prior sweep (or the interview process, or an
     # earlier real run) may have already produced a passing artifact.
@@ -2244,10 +3121,21 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             })
             return DispatchResult(phase_id, "error", attempt, [str(exc)])
 
+        # FIX 7: routed completion (profile-selected transport; DeepSeek
+        # remains the default when the profile has no eligible owner yet).
+        route_dict2: Dict[str, Any] = {}
         try:
-            content, usage = deepseek_complete(system_prompt, user_prompt)
+            content, usage, route_dict2 = dispatch_complete(
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+        except RoutingUnavailable as exc:
+            reason = f"RoutingUnavailable: {exc}"
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "routing_unavailable",
+                "reason": reason,
+            })
+            return DispatchResult(phase_id, "error", attempt, [reason])
         except DeepSeekCallError as exc:
-            last_reasons = [f"DeepSeek call failed: {exc}"]
+            last_reasons = [f"Model call failed: {exc}"]
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": attempt, "status": "call_failed",
                 "reason": str(exc),
@@ -2285,7 +3173,9 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": attempt, "status": "verified" if verifier_ok else "failed",
             "verifier_ok": verifier_ok, "verifier_reasons": verifier_reasons,
-            "model": DEEPSEEK_MODEL, "target": str(target.relative_to(run_dir)),
+            "model": route_dict2.get("model") or DEEPSEEK_MODEL,
+            "provider": route_dict2.get("provider") or "deepseek-direct",
+            "target": str(target.relative_to(run_dir)),
             "usage": usage,
         })
         if verifier_ok:
@@ -2396,13 +3286,16 @@ def resolve_dept_root(scripts_dir: Path) -> Path:
     return scripts_dir.parent
 
 
-# ---------------------------------------------------------------------------
-# Capacity (spec S6.2) -- reuse capacity.py's probe()/override, never a
-# hardcoded dispatcher-local constant. Declares deepseek-direct's
-# self-throttle (100, per this task's instruction) idempotently: creates the
-# override file ONLY if absent; an existing operator declaration is read and
-# honoured, never silently overwritten.
-# ---------------------------------------------------------------------------
+# FIX 6 (presentation rev2): the auto-stamp that unconditionally wrote
+# capacity_override.json = {provider: deepseek-direct, max_concurrent: 100}
+# before every dispatch was DELETED. That fabricated declaration resolved
+# capacity.probe() to MEASURED=100 and masked the real detected tier (and the
+# PARK/interview path) on every box. The override file is now written ONLY by
+# the detection/interview flow (resource_profile.record_plan_answer ->
+# capacity.persist_plan_answer) or an explicit operator action
+# (--declare-capacity); with no override present, resolve_max_workers()
+# reports the DETECTED tier (e.g. ollama-cloud / $20/month -> 3), never a
+# fabricated 100.
 def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100) -> None:
     try:
         sys.path.insert(0, str(dept_root / "scripts"))
@@ -2532,7 +3425,8 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     worker_id = worker_id or f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
     scripts_dir = resolve_scripts_dir_for_run(run_dir)
     dept_root = resolve_dept_root(scripts_dir)
-    ensure_capacity_override(dept_root)
+    # FIX 6: no auto-stamp here -- with no override file, resolve_max_workers()
+    # below returns the real DETECTED tier from capacity.probe().
     workers = resolve_max_workers(dept_root, max_workers)
     # Orphan guard: a single-phase invocation (`presentation_job.py --resume --phase X`,
     # the operator/manual-targeting path -- see __main__.py's _spawn_dispatcher_if_
@@ -2621,8 +3515,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"seconds between sweeps (default {SWEEP_INTERVAL_S})")
     p.add_argument("--max-workers", type=int, default=None,
                    help="cap concurrent DeepSeek dispatches this process runs; default "
-                        "resolves from capacity.py's probe() (deepseek-direct = declared "
-                        "ceiling, see --declare-capacity)")
+                        "resolves from capacity.py's probe() -- the DETECTED tier "
+                        "(no capacity_override.json is fabricated; --declare-capacity "
+                        "writes one explicitly)")
     p.add_argument("--max-lifetime-minutes", type=float, default=360.0,
                    help="safety ceiling on how long --watch runs before exiting on its own "
                         "(default 360 = 6h for --run-dir; --scan-root uses 24h internally "
@@ -2642,10 +3537,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         run_dir = args.run_dir.expanduser().resolve()
         scripts_dir = resolve_scripts_dir_for_run(run_dir)
         dept_root = resolve_dept_root(scripts_dir)
+        # FIX 6: the override file is written only when an operator explicitly
+        # passes --declare-capacity (or by the detection/interview flow); the
+        # unconditional auto-stamp is gone so capacity.probe() reports the
+        # DETECTED tier instead of a fabricated deepseek-direct/100.
         if args.declare_capacity is not None:
             ensure_capacity_override(dept_root, max_concurrent=args.declare_capacity)
-        else:
-            ensure_capacity_override(dept_root)
         workers = resolve_max_workers(dept_root, args.max_workers)
         if not watch:
             worker_id = f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"

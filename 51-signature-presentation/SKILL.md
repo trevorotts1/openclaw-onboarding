@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
-description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
-version: 1.1.7
+description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
+version: 1.1.8
 ---
 
 # Signature Presentation (Skill 51)
@@ -123,17 +123,34 @@ or deliver anything itself:
 ```
 bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
     --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+# resume an interrupted engine job instead of starting fresh (no --slides needed):
+bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
+    --run-dir <RUN_DIR> --resume
 ```
 
-That entry runs the department's fail-closed gates and then `run_signature_deck.py` → `build_deck.py`
-(kie.ai gpt-image-2 only; every word baked into the image; zero native on-slide text; the full
-phase-attestation chain). Writing and running your own per-deck driver — `python3 working/*.py` — is
-the **ungoverned path and is FORBIDDEN** (`AF-CANONICAL-RENDER-BYPASS` / `AF-LOCAL-CANVAS`). All
-rendering, PPTX assembly, speech/guide/audio, delivery, and the Command Center Kanban card belong to
-the engine; this skill only adds the sacred-method gates on top.
+That entry is the department's **engine entry** — the single-sourced
+`presentation-canonical-entry.sh` (canonical source:
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/`; the
+`23-ai-workforce-blueprint/scripts/` copy install.sh deploys is a byte-identical generated
+mirror — never edit the mirror). It runs the six fail-closed gates (GATE 0 intake ledger,
+GATE 0b signed intake transcript, GATE 1 deps, GATE 1b GHL module co-location, GATE 2
+bypass-scan, GATE 3 version/hash pin), then resolves `working/interview/intake_ledger.json`
+through `presentation_job/resolve_intake.py` and dispatches **`presentation_job.py` — the
+mechanical full-manifest engine** (every `PIPELINE-MANIFEST.json` phase walked in order,
+nothing skippable, fail-closed gates at close()). An engine that is installed but refuses the
+job is a **blocking failure (exit 9, `ENGINE DISPATCH FAILED`) — never a silent downgrade**;
+`run_signature_deck.py` runs ONLY as a loudly announced fallback when the engine component is
+genuinely absent from the box, and that fallback is recorded in
+`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai gpt-image-2 only; every
+word baked into the image; zero native on-slide text) is done by the engine's render phases
+through `build_deck.py`. Writing and running your own per-deck driver — `python3 working/*.py`
+— is the **ungoverned path and is FORBIDDEN** (`AF-CANONICAL-RENDER-BYPASS` /
+`AF-LOCAL-CANVAS`). All rendering, PPTX assembly, speech/guide/audio, delivery, and the
+Command Center Kanban card belong to the engine; this skill only adds the sacred-method gates
+on top.
 
 **What the engine gives us for free (no new code):** the 9,000–18,000-char rich-prompt floor,
-phase-skip impossibility (`run_signature_deck.py`), the delivery-blocking process certificate
+phase-skip impossibility (the `presentation_job.py` mechanical manifest walk), the delivery-blocking process certificate
 (`prove-deck.py`), and the full existing auto-fail battery (hook, one-big-idea, density, typography,
 logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-method rules and install
 as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless

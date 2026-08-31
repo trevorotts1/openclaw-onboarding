@@ -17,15 +17,42 @@ Subcommands:
   move    --task <id> --to <status> [--by <agent_id>] [--note "..."]
             Transition tasks.status. Refuses → Complete unless the card is in
             Review AND a Devil's Advocate sign-off with verdict=pass exists.
-  signoff --task <id> [--role devils-advocate] [--by <agent_id>]
-          [--verdict pass|fail|indeterminate] [--note "..."]
+  signoff --task <id> [--role devils-advocate] [--by <agent_id>] --verdict
+          pass|fail|indeterminate [--note "..."]
             Record a sign-off for a task (idempotent upsert on task_id+role).
+            --verdict has NO default (FIX 26): omitting it is a usage error, never
+            an implicit pass. The signing actor may NOT be the task's builder —
+            builder identity is read from the task's own builder record
+            (tasks.created_by_agent_id / tasks.assigned_agent_id), never from a
+            CLI flag, so a builder can never self-approve its own card.
   status  --task <id>
             Print the task's current status + whether a passing DA sign-off exists.
 
 DB resolution: shared-utils/resolve_db.find_dashboard_db() (Mac
 ~/projects/command-center first, then VPS /data/projects/command-center). Pass
 --db to override. Schema-tolerant + idempotent: safe to re-run.
+
+Gated-API status writes (FIX 26, spec rev 3 — default ON):
+  tasks.status is NEVER written by this script any more. Every status change is
+  applied by the Command Center API — PATCH /api/tasks/<id> — with the same
+  auth every signed board producer uses: Bearer CC_API_TOKEN/MC_API_TOKEN plus
+  an x-webhook-signature HMAC-SHA256 (WEBHOOK_SECRET/CC_WEBHOOK_SECRET) over the
+  exact request bytes. The API re-enforces the shared transition gates (FIX 25)
+  and the independent-QC/self-grade guards server-side. If no CC API is
+  configured, or the API refuses, or it is unreachable, this command FAILS
+  CLOSED with the API's error — it never falls back to writing the database
+  directly. Only the script's own audit/sign-off bookkeeping (task_status_audit,
+  task_signoffs) and the persona heal stay local.
+  ROLLBACK (documented, deliberate): MOVE_TASK_GATED_API=0 restores the legacy
+  direct-sqlite transition path. The flag is a switch, not a fallback: with the
+  flag ON there is no sqlite status write on any code path.
+  Target-status mapping for the API: 'complete' (this tool's canonical name) is
+  sent as 'done' (the board's terminal status); every other token is sent
+  verbatim. --by, when it is a UUID, is sent as updated_by_agent_id so the
+  server's own guards can see the actor.
+  Testing seam (local only, no network): MOVE_TASK_API_STUB=<script> routes the
+  signed request through a local stub transport instead of urllib — the request
+  is still built + HMAC-signed byte-for-byte identically.
 
 Persona-Gate (F4.4, persona-aware boards only — migration 016+ `tasks.persona_id`):
   - INTO In Progress → warn-and-heal: if the card is persona-"naked" (no assigned
@@ -40,12 +67,17 @@ Exit codes:
   0  transition applied / sign-off recorded / status printed
   2  transition BLOCKED by the Done-Gate (Review→Complete without a DA sign-off,
      or an attempt to jump to Complete without passing through Review), OR by the
-     Persona-Gate (a naked card into Review with no --allow-no-persona override)
-  1  error (task not found, DB missing, bad args)
+     Persona-Gate (a naked card into Review with no --allow-no-persona override),
+     OR by the sign-off independence gate (the task's builder cannot sign off on
+     its own task — FIX 26)
+  1  error (task not found, DB missing, bad args, CC API gate refused, or the
+     gated API is unreachable/unconfigured and the transition failed closed)
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -53,6 +85,9 @@ import secrets
 import sqlite3
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -174,6 +209,157 @@ def _audit(db, task_id, frm, to, actor, gate, note):
         "VALUES (?,?,?,?,?,?,?,?)",
         (secrets.token_hex(8), task_id, frm, to, actor or "", gate, note or "", _now_iso()),
     )
+
+
+# ─── FIX 26: builder identity + gated CC-API status writes ─────────────────
+# Two rules from spec rev 3:
+#   (1) A sign-off actor must differ from the task's BUILDER. Builder identity
+#       is read from the task's own builder record (created_by_agent_id /
+#       assigned_agent_id — the same pair the CC PATCH route's INDEPENDENT-QC
+#       guard treats as "the task's own builder"), NEVER from a CLI flag.
+#   (2) Status changes route through the gated CC API and fail closed. Raw
+#       direct-sqlite UPDATEs of tasks.status are gone from this script; the
+#       only documented way back to them is the deliberate rollback flag
+#       MOVE_TASK_GATED_API=0 below — that is a switch an operator sets, not a
+#       fallback this script takes when the API is down.
+
+_GATE_OFF_VALUES = ("0", "false", "no", "off")
+
+
+def _gated_api_on() -> bool:
+    """FIX 26 gate: default ON. MOVE_TASK_GATED_API=0 is the documented rollback."""
+    return (os.environ.get("MOVE_TASK_GATED_API", "1").strip().lower()
+            not in _GATE_OFF_VALUES)
+
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                      r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _builder_ids(db, task_id: str, cols) -> set:
+    """The task's builder identity from its own record (schema-tolerant)."""
+    ids = set()
+    for col in ("created_by_agent_id", "assigned_agent_id"):
+        v = _task_field(db, task_id, cols, col)
+        if v is not None and str(v).strip():
+            ids.add(str(v).strip())
+    return ids
+
+
+def _api_config():
+    """Same env contract the board consumers (cc_board.py) use. None => disabled."""
+    base = (os.environ.get("COMMAND_CENTER_URL")
+            or os.environ.get("MISSION_CONTROL_URL") or "").rstrip("/")
+    if not base:
+        return None
+    return {
+        "base": base,
+        "token": os.environ.get("CC_API_TOKEN") or os.environ.get("MC_API_TOKEN") or "",
+        "secret": os.environ.get("WEBHOOK_SECRET") or os.environ.get("CC_WEBHOOK_SECRET") or "",
+        "timeout": float(os.environ.get("CC_BOARD_TIMEOUT", "15")),
+    }
+
+
+def _sign(secret: str, raw_body: bytes) -> str | None:
+    if not secret:
+        return None
+    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+
+def _patch_task_status(task_id: str, payload: dict, cfg) -> tuple[int, str]:
+    """PATCH /api/tasks/<id> with Bearer + HMAC headers over the EXACT bytes.
+    Returns (http_status, body_text); http_status 0 means transport-level failure.
+    MOVE_TASK_API_STUB=<script> swaps only the transport (local testing seam) —
+    the request is built and signed identically either way."""
+    url = f"{cfg['base']}/api/tasks/{urllib.parse.quote(str(task_id), safe='')}"
+    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if cfg["token"]:
+        headers["Authorization"] = f"Bearer {cfg['token']}"
+    sig = _sign(cfg["secret"], raw_body)
+    if sig is not None:
+        headers["x-webhook-signature"] = sig
+    stub = os.environ.get("MOVE_TASK_API_STUB")
+    if stub:
+        try:
+            proc = subprocess.run(
+                [sys.executable or "python3", stub],
+                input=json.dumps({"method": "PATCH", "url": url,
+                                  "headers": headers, "body": raw_body.decode("utf-8")}),
+                capture_output=True, text=True, timeout=cfg["timeout"] + 10,
+            )
+        except Exception as exc:  # noqa: BLE001 — fail closed, like the transport
+            return 0, f"stub transport failed: {exc}"
+        try:
+            res = json.loads(proc.stdout)
+            return int(res.get("status", 0)), str(res.get("body", ""))
+        except Exception:
+            return 0, f"stub transport produced no valid response: {proc.stdout.strip()[:200]!r}"
+    req = urllib.request.Request(url, data=raw_body, headers=headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
+            return resp.getcode(), resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 — unreachable is a refusal, not a fallback
+        return 0, f"{type(exc).__name__}: {exc}"
+
+
+def _apply_status_transition(db, args, cur: str, to_c: str) -> int:
+    """Apply the move. Gated API (FIX 26, default): the CC API is the ONLY way
+    tasks.status changes; failure here fails closed with the API's error.
+    MOVE_TASK_GATED_API=0 is the documented rollback to the legacy local write."""
+    if _gated_api_on():
+        cfg = _api_config()
+        if not cfg:
+            print(
+                "[move-task] ERROR (gated API): no Command Center API configured "
+                "(set COMMAND_CENTER_URL/MISSION_CONTROL_URL, CC_API_TOKEN/MC_API_TOKEN, "
+                "WEBHOOK_SECRET/CC_WEBHOOK_SECRET). Failing closed — move-task.py does "
+                "NOT write tasks.status directly. "
+                "Documented rollback: MOVE_TASK_GATED_API=0 restores the legacy local path.",
+                file=sys.stderr,
+            )
+            _audit(db, args.task, cur, args.to, args.by, "failed-closed-no-api", args.note)
+            db.commit()
+            return 1
+        api_status = "done" if to_c == "complete" else args.to
+        payload: dict = {"status": api_status}
+        if args.by and _UUID_RE.match(args.by.strip()):
+            payload["updated_by_agent_id"] = args.by.strip()
+        if args.note:
+            payload["note"] = args.note[:2000]
+        code, body = _patch_task_status(args.task, payload, cfg)
+        if 200 <= code < 300:
+            gate = "review-to-complete-passed" if to_c == "complete" else "transition"
+            _audit(db, args.task, cur, args.to, args.by, gate, args.note)
+            db.commit()
+            print(f"[move-task] OK: task {args.task} {cur!r} -> {args.to!r} (via CC API, HTTP {code})")
+            return 0
+        _audit(db, args.task, cur, args.to, args.by,
+               "blocked-by-cc-api" if code else "failed-closed-api-unreachable",
+               (f"HTTP {code}: " if code else "") + body[:400])
+        db.commit()
+        print(
+            f"[move-task] ERROR (gated API): CC API refused/did not apply task "
+            f"{args.task} -> {args.to!r}"
+            + (f" (HTTP {code})" if code else " (API unreachable)")
+            + f". Failing closed — no direct database write was attempted.\n  {body[:600]}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # ---- Documented rollback (MOVE_TASK_GATED_API=0): legacy direct write ----
+    cols = _task_cols(db)
+    if "updated_at" in cols:
+        db.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", (args.to, _now_iso(), args.task))
+    else:
+        db.execute("UPDATE tasks SET status = ? WHERE id = ?", (args.to, args.task))
+    gate = "review-to-complete-passed" if to_c == "complete" else "transition"
+    _audit(db, args.task, cur, args.to, args.by, gate, args.note)
+    db.commit()
+    print(f"[move-task] OK: task {args.task} {cur!r} -> {args.to!r} (legacy local write, gated API disabled)")
+    return 0
 
 
 # ─── F4.4: persona lifecycle precondition ───────────────────────────────────
@@ -395,24 +581,33 @@ def cmd_move(db, args) -> int:
     if gate_rc is not None:
         return gate_rc
 
-    # ---- Apply the transition (schema-tolerant) ----
-    if "updated_at" in cols:
-        db.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", (args.to, _now_iso(), args.task))
-    else:
-        db.execute("UPDATE tasks SET status = ? WHERE id = ?", (args.to, args.task))
-    gate = "review-to-complete-passed" if to_c == "complete" else "transition"
-    _audit(db, args.task, cur, args.to, args.by, gate, args.note)
-    db.commit()
-    print(f"[move-task] OK: task {args.task} {cur!r} -> {args.to!r}")
-    return 0
+    # ---- Apply the transition via the gated CC API (FIX 26; =0 rollback) ----
+    return _apply_status_transition(db, args, cur, to_c)
 
 
 def cmd_signoff(db, args) -> int:
     _ensure_tables(db)
-    row, _ = _get_task(db, args.task)
+    row, cols = _get_task(db, args.task)
     if row is None:
         print(f"[move-task] ERROR: task id {args.task!r} not found", file=sys.stderr)
         return 1
+    # FIX 26: a sign-off is only worth what its independence buys. The actor may
+    # not be the task's builder; builder identity comes from the task's own
+    # builder record, not from any CLI flag (a flag value could only ever name a
+    # different person, never disprove who built the card).
+    actor = (args.by or "").strip()
+    builders = _builder_ids(db, args.task, cols)
+    if actor and actor in builders:
+        print(
+            f"[move-task] BLOCKED (sign-off independence): agent {actor!r} is the "
+            f"builder of task {args.task} (created_by/assigned on the task record) and "
+            f"cannot sign off on its own work. A separate reviewer — the department "
+            f"Devil's Advocate — must issue this sign-off.",
+            file=sys.stderr,
+        )
+        _audit(db, args.task, row[1] or "", None, actor, "blocked-self-signoff", args.note)
+        db.commit()
+        return 2
     role = args.role or DA_ROLE
     now = _now_iso()
     # Idempotent upsert on (task_id, role_type) without requiring SQLite 3.24 UPSERT.
@@ -462,7 +657,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--task", required=True)
     s.add_argument("--role", default=DA_ROLE, help=f"role_type (default {DA_ROLE})")
     s.add_argument("--by", default="", help="signing agent id")
-    s.add_argument("--verdict", default="pass", choices=["pass", "fail", "indeterminate"])
+    # FIX 26: no default. A missing --verdict is a usage error, never a pass.
+    s.add_argument("--verdict", required=True, choices=["pass", "fail", "indeterminate"])
     s.add_argument("--note", default="")
 
     st = sub.add_parser("status", help="show a task's status + DA sign-off state")
