@@ -98,6 +98,11 @@ try:
 except ImportError:  # pragma: no cover - degraded envs fall back to serial
     _ppw = None  # type: ignore[assignment]
 
+try:
+    from presentation_job import model_router as _model_router
+except ImportError:  # pragma: no cover - pre-FIX-7 trees route nothing new
+    _model_router = None  # type: ignore[assignment]
+
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
                                                 # whole pipeline, not a second number.
@@ -1196,6 +1201,242 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
             time.sleep(min(30, 3 * (2 ** (attempt - 1))))
     raise last_exc or DeepSeekCallError("deepseek_complete: exhausted retries")
 
+# ---------------------------------------------------------------------------
+# FIX 7 -- profile-driven model routing. The transports stay HERE (this module
+# owns credentials and HTTP, as before); the DECISION lives in model_router
+# (pure, credential-free selection over the client resource profile). Every
+# completion the dispatcher issues goes through dispatch_complete, which
+# resolves the route, picks the transport, and emits the FIX 5 routing
+# telemetry row {phase_id, requested_alias, selected_provider, selected_model,
+# reason} best-effort (telemetry NEVER breaks a run).
+#
+# PRESENTATION_MODEL_ROUTER=0 (rollback): the router reports "disabled" and
+# dispatch_complete takes the untouched pre-FIX-7 path -- deepseek_complete
+# with the module's own constants --
+# every call site byte-for-byte equivalent to before this fix.
+# ---------------------------------------------------------------------------
+class RoutingUnavailable(RuntimeError):
+    """No client-owned, consented route for the phase's required capability
+    (model_router resolved route=None). Fail-closed: park the phase, never
+    fabricate a route to a provider the client does not own."""
+
+
+class _RouteContext:
+    """Per-call mutable record of what dispatch_complete resolved, so callers
+    can stamp sidecars/telemetry with the ACTUAL model used instead of the
+    pre-FIX-7 constant."""
+
+    __slots__ = ("provider", "model", "reason", "requested_alias", "router")
+
+    def __init__(self) -> None:
+        self.provider: Optional[str] = None
+        self.model: Optional[str] = None
+        self.reason: str = ""
+        self.requested_alias: Optional[str] = None
+        self.router: str = "model_router"
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {"provider": self.provider, "model": self.model,
+                "reason": self.reason, "requested_alias": self.requested_alias,
+                "router": self.router}
+
+
+def _emit_model_route_telemetry(run_dir: Optional[Path], ctx: _RouteContext,
+                                phase_id: str) -> None:
+    """FIX 5 row for one routing decision. Best-effort: never raises."""
+    if run_dir is None:
+        return
+    try:
+        row = {
+            "run_id": run_dir.name,
+            "phase_id": phase_id,
+            "wave": 1,
+            "model_used": ctx.model,
+            "event": "model_route",
+            # the FIX 7 payload, top-level exactly as the fix spec shapes it
+            "requested_alias": ctx.requested_alias,
+            "selected_provider": ctx.provider,
+            "selected_model": ctx.model,
+            "reason": ctx.reason,
+            "router": ctx.router,
+            "started_at": utcnow(),
+            "ended_at": utcnow(),
+            "duration_s": None,
+            "status": "routed" if ctx.model else "unrouted",
+        }
+        _emit_slide_author_telemetry(run_dir, [row])
+    except Exception as exc:  # noqa: BLE001 -- telemetry NEVER breaks a run
+        print(f"WARN telemetry: model_route row failed: {exc}", flush=True)
+
+
+def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
+                            provider: str, model: str,
+                            max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
+                            retries: int = 3,
+                            run_dir: Optional[Path] = None) -> Tuple[str, Dict[str, Any]]:
+    """OpenAI-compatible chat-completions transport for NON-DeepSeek client-owned
+    providers (openrouter, ollama-cloud text classes, ...). Mirrors
+    deepseek_complete's retry/timeout semantics. Credentials resolve per
+    provider from the environment the Engine already exported; a key value is
+    never printed, never logged, never included in any telemetry row."""
+    key_name = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "ollama-cloud": "OLLAMA_CLOUD_API_KEY",
+        "agnes": "AGNES_API_KEY",
+    }.get(provider, f"{provider.upper().replace('-', '_')}_API_KEY")
+    key = os.environ.get(key_name) or ""
+    if not key:
+        # Do NOT route a provider we cannot authenticate to: fall back to a
+        # clear, non-spammy error surfaced through the normal DeepSeekCallError
+        # retry path the call sites already handle.
+        raise DeepSeekCallError(
+            f"{key_name} not set in environment -- cannot dispatch to "
+            f"provider {provider} (model {model})")
+    base_urls = {
+        "openrouter": "https://openrouter.ai/api/v1",
+        "ollama-cloud": "https://ollama.com/v1",
+        "agnes": "https://api.agnes.ai/v1",
+    }
+    base = base_urls.get(provider) or os.environ.get(
+        f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL", "")
+    if not base:
+        raise DeepSeekCallError(
+            f"no base URL known for provider {provider} -- set "
+            f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": max_tokens,
+    "temperature": DEEPSEEK_TEMPERATURE,
+    }
+    data = json.dumps(body).encode("utf-8")
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, retries + 1):
+        req = urllib.request.Request(
+            f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
+                raw = resp.read().decode("utf-8")
+            obj = json.loads(raw)
+            choice = (obj.get("choices") or [{}])[0]
+            content = ((choice.get("message") or {}).get("content")) or ""
+            usage = obj.get("usage") or {}
+            return content, usage
+        except urllib.error.HTTPError as exc:
+            payload = ""
+            try:
+                payload = exc.read().decode("utf-8", errors="replace")[:2000]
+            except Exception:  # noqa: BLE001
+                pass
+            if exc.code == 429 or exc.code >= 500:
+                last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
+            else:
+                raise DeepSeekCallError(
+                    f"HTTP {exc.code} (non-transient): {payload}") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
+                OSError) as exc:
+            last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+        if attempt < retries:
+            time.sleep(min(30, 3 * (2 ** (attempt - 1))))
+    raise last_exc or DeepSeekCallError(
+        f"{provider}/chat/completions: exhausted retries")
+
+
+def dispatch_complete(system_prompt: str, user_prompt: str, *,
+                      phase_id: str,
+                      run_dir: Optional[Path] = None,
+                      max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
+                      retries: int = 3) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+    """THE routed completion entrypoint: every dispatcher LLM call site goes
+    through here. Returns (content, usage, route_dict) where route_dict carries
+    {provider, model, reason, requested_alias, router} for sidecar/telemetry
+    stamping.
+
+    Selection (model_router.resolve_route): required capability -> client-owned
+    consented providers -> catalog health -> mode budget -> fallback list.
+    route=None (no eligible client-owned route) raises RoutingUnavailable --
+    park/fail-closed, never a fabricated model. PRESENTATION_MODEL_ROUTER=0
+    (rollback) selects the pre-FIX-7 DeepSeek-direct path exactly."""
+    ctx = _RouteContext()
+    decision: Optional[Dict[str, Any]] = None
+    if _model_router is not None:
+        try:
+            decision = _model_router.resolve_route(phase_id)
+        except Exception as exc:  # noqa: BLE001 -- a broken router never
+                                  # hard-crashes a run: fall back to DeepSeek
+            decision = {"router": f"error: {exc}", "route": None, "reason": str(exc)}
+
+    route = (decision or {}).get("route") or None
+    router_id = str((decision or {}).get("router") or "")
+    profile_state = str((decision or {}).get("profile_state") or "")
+    if route is None and router_id != "disabled":
+        if profile_state == "has_providers":
+            # The client OWNS providers yet none satisfies this phase's
+            # required capability (e.g. a vision/OCR phase with no OCR owner,
+            # or only unconsented/unwired candidates): fail-closed PARK. A
+            # fabrication here would spend a provider the client does not own
+            # on a model that cannot hold the artifact.
+            ctx.router = router_id or "model_router"
+            ctx.reason = str((decision or {}).get("reason") or "no eligible route")
+            ctx.requested_alias = (decision or {}).get("requested_alias")
+            _emit_model_route_telemetry(run_dir, ctx, phase_id)
+            raise RoutingUnavailable(
+                f"phase {phase_id}: no eligible client-owned route -- "
+                f"{(decision or {}).get('reason')}")
+        # profile_state in ("absent", "", "mechanical", ...) -- no client-owned
+        # provider evidence exists yet: keep the dispatcher's pre-FIX-7
+        # default (DeepSeek-direct) rather than stranding runs on a profile
+        # that simply has not been captured yet.
+        ctx.router = router_id or "model_router"
+        ctx.provider = "deepseek-direct"
+        ctx.model = DEEPSEEK_MODEL
+        ctx.requested_alias = (decision or {}).get("requested_alias") \
+            or "deepseek-v4-flash"
+        ctx.reason = str((decision or {}).get("reason")
+                         or "no profile route; dispatcher default DeepSeek-direct")
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        _emit_model_route_telemetry(run_dir, ctx, phase_id)
+        return content, usage, ctx.as_dict()
+    if router_id == "disabled":
+        # PRESENTATION_MODEL_ROUTER=0 rollback: the untouched pre-FIX-7 path,
+        # no model_route telemetry row (it predates the routing event).
+        ctx.router = "disabled"
+        ctx.provider = "deepseek-direct"
+        ctx.model = DEEPSEEK_MODEL
+        ctx.requested_alias = None
+        ctx.reason = str((decision or {}).get("reason") or "router disabled")
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        return content, usage, ctx.as_dict()
+
+    ctx.provider = str(route.get("provider") or "")
+    ctx.model = str(route.get("model") or "")
+    ctx.requested_alias = (decision or {}).get("requested_alias")
+    ctx.reason = str((decision or {}).get("reason") or "")
+    ctx.router = router_id or "model_router"
+
+    if ctx.provider == "deepseek-direct":
+        content, usage = deepseek_complete(system_prompt, user_prompt,
+                                           max_tokens=max_tokens, retries=retries)
+        # usage/model provenance stays honest even though the native endpoint
+        # pins its own served id (deepseek_complete carries DEEPSEEK_MODEL);
+        # the ROUTE (what routing selected) is what callers stamp.
+        _emit_model_route_telemetry(run_dir, ctx, phase_id)
+        return content, usage, ctx.as_dict()
+
+    content, usage = _openai_compat_complete(
+        system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
+        max_tokens=max_tokens, retries=retries, run_dir=run_dir)
+    _emit_model_route_telemetry(run_dir, ctx, phase_id)
+    return content, usage, ctx.as_dict()
+
 
 # ---------------------------------------------------------------------------
 # Role-SOP resolution (spec S4.1). Portable across BOTH tree layouts this
@@ -1859,10 +2100,23 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
+            # FIX 7: routed completion -- the profile decides the transport
+            # (DeepSeek-direct stays the default + one option among many).
+            route_dict: Dict[str, Any] = {}
             try:
-                content, usage = deepseek_complete(system_prompt, user_prompt)
+                content, usage, route_dict = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id,
+                    run_dir=run_dir)
+            except RoutingUnavailable as exc:
+                # no client-owned model can serve this phase: park the slide
+                # honestly (fail-closed), never fabricate a route.
+                last_reasons = [f"RoutingUnavailable: {exc}"]
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "routing_unavailable", "reason": str(exc)})
+                break
             except DeepSeekCallError as exc:
-                last_reasons = [f"DeepSeek call failed: {exc}"]
+                last_reasons = [f"Model call failed: {exc}"]
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt, "slide": ordinal,
                     "status": "call_failed", "reason": str(exc)})
@@ -1891,7 +2145,9 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": attempt, "slide": ordinal,
                 "status": "verified" if v_ok else "failed", "verifier_ok": v_ok,
-                "verifier_reasons": v_reasons, "model": DEEPSEEK_MODEL,
+                "verifier_reasons": v_reasons,
+                "model": route_dict.get("model") or DEEPSEEK_MODEL,
+                "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
                 slide_ok = True
@@ -2001,17 +2257,43 @@ def _prompt_parallel_enabled() -> bool:
     return raw.strip().strip("'\"") != "0"
 
 
-def _prompt_routing_stamp() -> Dict[str, Any]:
-    """Phase A stub routing: fixed deepseek-direct profile with measured capacity
-    8 (see /Users/blackceomacmini/presentation-fix-tests/phase-a-routing.json).
-    FIX 7/8/11 will replace this with real resource profiles through the same
-    input schema; until then the dispatcher stamps these constants itself."""
-    return {
+def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """FIX 7 profile-driven routing stamp for the P4-PROMPT wave input.
+    Resolves the route through model_router.resolve_route (the client resource
+    profile decides), falling back to the pre-FIX-7 DeepSeek-direct stamp when
+    the router is absent/flagged off/profile not yet captured. The wave input
+    shape is unchanged; only the VALUES become profile-truth. (The Phase A
+    measured_capacity=8 stamp was a hardcoded fabrication -- FIX 6 removes that
+    fiction; this stamp carries routing truth only.)"""
+    stamp: Dict[str, Any] = {
         "provider": "deepseek-direct",
         "model": DEEPSEEK_MODEL,
+        "router": "disabled",
         "mode": "standard",
-        "measured_capacity": 8,
+         "measured_capacity": 8,
     }
+    if _model_router is None:
+        return stamp
+    try:
+        decision = _model_router.resolve_route("P4-PROMPT",
+                                               mode="standard")
+        route = (decision or {}).get("route")
+        if decision.get("profile_state") == "has_providers" and route:
+            stamp.update({
+                "provider": str(route.get("provider")),
+                "model": str(route.get("model")),
+                "router": str(decision.get("router") or "model_router"),
+                "route_reason": decision.get("reason"),
+                "requested_alias": decision.get("requested_alias"),
+            })
+            stamp.pop("measured_capacity", None)
+    except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
+        try:
+            _append_sidecar(run_dir, "P4-PROMPT", {
+                "status": "routing_stamp_error", "reason": f"{type(exc).__name__}: {exc}"})
+        except Exception:  # noqa: BLE001
+            pass
+    return stamp
 
 
 def _emit_slide_author_telemetry(run_dir: Path, rows: List[Dict[str, Any]]) -> None:
@@ -2105,7 +2387,7 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         return DispatchResult(phase_id, "error", 0, [reason])
 
     # --- build prompt-wave-input.json (schema_version 1) stamped routing
-    routing = _prompt_routing_stamp()
+    routing = _prompt_routing_stamp(run_dir=run_dir)
     wave_input = {
         "schema_version": 1,
         "run_id": run_dir.name,
@@ -2354,10 +2636,21 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             })
             return DispatchResult(phase_id, "error", attempt, [str(exc)])
 
+        # FIX 7: routed completion (profile-selected transport; DeepSeek
+        # remains the default when the profile has no eligible owner yet).
+        route_dict2: Dict[str, Any] = {}
         try:
-            content, usage = deepseek_complete(system_prompt, user_prompt)
+            content, usage, route_dict2 = dispatch_complete(
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+        except RoutingUnavailable as exc:
+            reason = f"RoutingUnavailable: {exc}"
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "routing_unavailable",
+                "reason": reason,
+            })
+            return DispatchResult(phase_id, "error", attempt, [reason])
         except DeepSeekCallError as exc:
-            last_reasons = [f"DeepSeek call failed: {exc}"]
+            last_reasons = [f"Model call failed: {exc}"]
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": attempt, "status": "call_failed",
                 "reason": str(exc),
@@ -2395,7 +2688,9 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": attempt, "status": "verified" if verifier_ok else "failed",
             "verifier_ok": verifier_ok, "verifier_reasons": verifier_reasons,
-            "model": DEEPSEEK_MODEL, "target": str(target.relative_to(run_dir)),
+            "model": route_dict2.get("model") or DEEPSEEK_MODEL,
+            "provider": route_dict2.get("provider") or "deepseek-direct",
+            "target": str(target.relative_to(run_dir)),
             "usage": usage,
         })
         if verifier_ok:

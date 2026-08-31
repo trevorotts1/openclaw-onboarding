@@ -441,9 +441,13 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
         f"prompt. Output ONLY that one slide's complete prompt body (9,000 to "
         f"18,000 characters) -- no slide-number header, no preamble, no other "
         f"slide's content.\n\n" + user_prompt)
-    content, _usage = dispatcher.deepseek_complete(
-        system_prompt, user_prompt)
-    return dispatcher._clean_payload(content)
+    # FIX 7: routed completion. The worker owns NO transport: it asks the
+    # dispatcher's dispatch_complete, which resolves the route from the
+    # client resource profile (DeepSeek-direct stays the default/rollback
+    # path) and returns (content, usage, route_dict).
+    _content, _usage, _route = dispatcher.dispatch_complete(
+        system_prompt, user_prompt, phase_id=PHASE_ID, run_dir=run_dir)
+    return dispatcher._clean_payload(_content)
 
 
 def _dept_root_from(run_dir: Path) -> Path:
