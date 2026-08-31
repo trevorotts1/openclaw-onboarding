@@ -149,9 +149,9 @@ DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; t
 # reasons land a phase here (spec S3.1 Strategies B/C):
 #
 #   render     -- the phase's own verifier proves REAL KIE.ai image bytes must
-#                 exist (P4-RENDER, P-STYLE-PREVIEW). A text model cannot emit
-#                 a PNG. Route: build_deck.py's real render path (future work,
-#                 not this module -- see module docstring "Strategy B").
+#                 exist (P-STYLE-PREVIEW). A text model cannot emit
+#                 a PNG. Route: build_deck.py's real render path via the
+#                 manifest script executor (P4-RENDER now has one; FIX 4).
 #   assembly   -- P8-ASSEMBLE/P9.5-NOTES-SYNC are mechanical PPTX-container
 #                 operations (zip a already-rendered PNGs, or reopen a PPTX to
 #                 inject notes), not authored prose -- confirmed by reading
@@ -172,9 +172,6 @@ DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; t
 #                 a guaranteed, correctly-fail-closed rejection.
 # ---------------------------------------------------------------------------
 DECLINE_PHASES: Dict[str, str] = {
-    "P4-RENDER": "render: verifier (canonical_render_guard.check_image_qc) proves real "
-                 "KIE.ai PNG bytes exist. Route to build_deck.py's deterministic render "
-                 "path, never to a text completion.",
     "P-STYLE-PREVIEW": "render: build_deck._chk_style_preview (a later precondition check) "
                         "proves the manifest must reference 9 real KIE renders (3 style x 3 "
                         "slides) plus an owner-approved pick. A manifest DeepSeek invents "

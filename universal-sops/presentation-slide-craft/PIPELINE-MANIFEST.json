@@ -744,7 +744,8 @@
       "long_running": true,
       "heartbeat_minutes": 60,
       "executor": {
-        "kind": "agent"
+        "kind": "script",
+        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify"
     },
