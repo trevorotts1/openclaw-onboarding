@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test_gate_read_audit.py — unit tests for presentation_job/gate_read_audit.py,
-the fix for the PREFLIGHT_REQUIRED "83% blind spot": 50 of 60 gates in
+the fix for the PREFLIGHT_REQUIRED "83% blind spot": 51 of 62 gates in
 build_deck.PREFLIGHT_REQUIRED carry rel=None (run-dir-scoped: no single
 declared file), so any snapshot mechanism keyed off that static `rel` has
 NO file to snapshot for those 50 and is mathematically incapable of ever
@@ -167,11 +167,11 @@ class BeforeAfterCountTest(unittest.TestCase):
 
     def test_before_after_capability_counts(self):
         total = len(bd.PREFLIGHT_REQUIRED)
-        self.assertEqual(total, 60)
+        self.assertEqual(total, 62)
         before_capable = sum(1 for rel, *_ in bd.PREFLIGHT_REQUIRED if rel is not None)
         before_blind = total - before_capable
         self.assertEqual(before_capable, 10)
-        self.assertEqual(before_blind, 50)
+        self.assertEqual(before_blind, 52)
 
         run_dir = tp.make_workdir(True)
         try:

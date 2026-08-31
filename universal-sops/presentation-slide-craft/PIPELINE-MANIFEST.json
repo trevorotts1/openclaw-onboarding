@@ -127,6 +127,11 @@
           "required": true,
           "checker": "_chk_claims_without_citation",
           "label": "claims-without-citation (slide copy claim markers must have a cited research pack; AF-RESEARCH-UNCITED)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_citation_validated",
+          "label": "citation validation (every cited URL GET-fetched under the FIX 19 bounded policy; AF-RESEARCH-UNCITED)"
         }
       ],
       "required_brief_categories": [
@@ -1445,7 +1450,8 @@
       "py_symbol": "_chk_research_cited",
       "secondary_py_symbols": [
         "_chk_claims_without_citation",
-        "MIN_CITED_SOURCES"
+        "MIN_CITED_SOURCES",
+        "_chk_citation_validated"
       ]
     },
     {

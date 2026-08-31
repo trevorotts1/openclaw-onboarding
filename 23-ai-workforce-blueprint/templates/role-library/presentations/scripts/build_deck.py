@@ -212,6 +212,15 @@ from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases,
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, quote
 
+# FIX 20 citation-validation gate (lazy import: only needed when a run dir
+# actually carries the FIX 19 research artifacts; a bare/legacy run dir must
+# never require this module to preflight).
+try:
+    from presentation_job import citation_validator as _citation_validator
+except Exception:  # noqa: BLE001 -- gate defers if the module cannot import
+    _citation_validator = None  # type: ignore[assignment]
+
+
 # ---------------------------------------------------------------------------
 # Constants — the ONLY allowed KIE.ai endpoints (verified live 2026-06-16).
 # Model IDs: FIX 13 — NO literal here. The render models resolve from the
@@ -4413,6 +4422,86 @@ def _chk_claims_without_citation(run_dir: Path) -> str:
             f"research pack. Re-run Phase -0.5 and add real cited sources before render."
         )
     return ""
+
+
+def _chk_citation_validated(run_dir: Path) -> str:
+    """CITATION-VALIDATION gate (AF-RESEARCH-UNCITED, fail-loud) -- FIX 20.
+
+    The writeup's BROKEN: the pre-FIX-20 citation gate (_chk_research_cited)
+    counted URL STRINGS in the research pack and never fetched a single one,
+    so a brief full of fabricated non-resolving URLs passed preflight. This
+    gate is the validation half: it GET-fetches every required citation under
+    FIX 19's bounded public-network policy (HEAD alone is insufficient) and
+    fails the brief unless every required citation returns HTTP 200 and
+    >= 200 extracted RELEVANT characters matching its citation anchor by the
+    exact-phrase (>= 8 normalized words) / >= 60%-token test. Cache by
+    canonical URL + content hash; record one validation row per citation;
+    fail on fabricated, unreachable, irrelevant, private-network, over-cap,
+    or content-mismatched sources.
+
+    CONDITIONAL (defer semantics -- mirrors _chk_research_map's pre-copy
+    defer so the shared make_workdir() "full modern pipeline" fixture -- which
+    is deliberately authored WITHOUT a FIX 19 retrieval ledger and with the
+    stat-01..stat-10 map anchors -- keeps passing preflight unchanged):
+
+      1. No citation set at all (no research map source_url fields AND no
+         brief URLs) -> return "" (nothing to validate; _chk_research_cited /
+         _chk_research_brief own absence).
+      2. Map/brief declare URL-bearing citations but the run dir carries NO
+         FIX 19 retrieval ledger -> return "" (pre-FIX-19 run dir: defer;
+         the ledger marks the new pipeline and a legacy fixture must keep
+         passing preflight unchanged).
+
+    Once an actual citation set exists under the FIX 19 ledger, every
+    citation is fetched + evaluated and the gate FAILS LOUD on the verdict
+    above. The full per-citation record lands in
+    working/research/citation_validation.json (one row per citation, cache +
+    content hash visible in it).
+
+    Rollback: PRESENTATION_CITATION_VALIDATION=0 disables this gate entirely
+    (documented =0 path; default unset/ON -- see
+    presentation_job.citation_validator.citation_validation_enabled).
+    """
+    if not _citation_validator:
+        return ""  # module unavailable -> defer (report-only doctrine)
+
+    if not _citation_validator.citation_validation_enabled():
+        # Documented rollback path: the skip is PRINTED, never a silent pass
+        # (same idiom as the M1 drift flag).
+        print("  (citation-validation DISABLED: PRESENTATION_CITATION_VALIDATION=0 "
+              "--- cited URLs are NOT fetched; fabricated-URL briefs can pass "
+              "preflight)", file=sys.stderr)
+        return ""
+
+    try:
+        inventory = _citation_validator.load_citation_inventory(run_dir)
+    except Exception:  # noqa: BLE001 -- inventory fault is a defer, never a crash
+        return ""
+    citations = inventory["citations"]
+    if not citations:
+        return ""  # no URL-bearing citations to validate; nothing declared
+
+    ledger = run_dir / "working" / "research" / _citation_validator._rw.LEDGER_NAME
+    if not ledger.is_file():
+        # Pre-FIX-19 run dir (no retrieval ledger): defer. The legacy fixture
+        # shape must keep passing preflight unchanged; the FIX 19 ledger marks
+        # the new pipeline this gate validates.
+        return ""
+
+    try:
+        # Single validation pass per gate call: check_citations builds its own
+        # BoundedFetcher, so a second validate would re-fetch every URL.
+        return _citation_validator.check_citations(run_dir)
+    except Exception as exc:  # noqa: BLE001 -- a validator fault is UNDERMINED:
+        # the gate refuses to pass a brief whose citations it could not
+        # validate rather than silently skipping the fetch.
+        return (
+            f"AF-RESEARCH-UNCITED: citation validation could not complete "
+            f"({type(exc).__name__}: {exc}) -- the gate refuses to pass a brief "
+            f"whose citations it could not validate. Re-run Phase -0.5 (Deep "
+            f"Research Specialist) so the FIX 19 retrieval ledger is present and "
+            f"every cited URL has been fetched at least once."
+        )
 
 
 def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
@@ -9425,6 +9514,25 @@ PREFLIGHT_REQUIRED = [
      "claims-without-citation — slide copy claim markers must have a cited research pack",
      "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-UNCITED)",
      _chk_claims_without_citation),
+    # FIX 20 — CITATION-VALIDATION (AF-RESEARCH-UNCITED). The pre-FIX-20
+    # citation gate counted URL STRINGS (see _chk_research_cited above) and
+    # never fetched a single one, so a brief full of fabricated non-resolving
+    # URLs passed preflight. This gate GET-fetches every required citation under
+    # FIX 19's bounded public-network policy (HEAD alone is insufficient) and
+    # fails the brief unless every citation returns HTTP 200 with >= 200
+    # relevant extracted chars + a matching anchor (exact-phrase >= 8 words /
+    # >= 60% token), one validation row per citation in
+    # working/research/citation_validation.json. Run-dir-scoped (None
+    # sentinel): needs research_map.json + briefs + the FIX 19 retrieval
+    # ledger. CONDITIONAL: defers on a pre-FIX-19 run dir (no retrieval
+    # ledger) so the shared make_workdir() fixture and any legacy run dir keep
+    # passing preflight unchanged. Rollback: PRESENTATION_CITATION_VALIDATION=0.
+    (None,
+     "citation validation — every cited URL GET-fetched under the FIX 19 bounded "
+     "policy (HTTP 200 + >= 200 relevant extracted chars + anchor match by "
+     "exact-phrase >= 8 words or >= 60% token), one row per citation",
+     "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-UNCITED)",
+     _chk_citation_validated),
     # RESEARCH-WEAVE / BREADTH gate (AF-RESEARCH-WEAVE). Research must be woven ACROSS
     # the deck, not funnelled to one proof slide. CONDITIONAL: defers until copy exists,
     # then requires working/research/research_map.json mapping research items to >=60%
@@ -10238,8 +10346,8 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
         pass
 
     # ---------------------------------------------------------------------
-    # BLIND-SPOT SHADOW READ-AUDIT (report-only). 50 of PREFLIGHT_REQUIRED's
-    # 60 gates carry rel=None (run-dir-scoped: the check needs more than one
+    # BLIND-SPOT SHADOW READ-AUDIT (report-only). 51 of PREFLIGHT_REQUIRED's
+    # 62 gates carry rel=None (FIX 20's citation-validation gate added a 52nd) (run-dir-scoped: the check needs more than one
     # file, or the exact file depends on run-time content), so any
     # snapshot-by-declared-rel mechanism has NO file to snapshot for those 50
     # and is mathematically incapable of ever registering a divergence for
