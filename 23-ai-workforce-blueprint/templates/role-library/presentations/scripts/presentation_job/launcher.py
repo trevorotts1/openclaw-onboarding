@@ -83,6 +83,20 @@ DISPATCH_UNKNOWN_DECK_TYPE = -5
 #: CLI exit code for DISPATCH_UNKNOWN_DECK_TYPE.
 EXIT_UNKNOWN_DECK_TYPE = 6
 
+#: FIX 12: dispatch() refuses when the credit preflight blocks a declared mode
+#: (AF-CREDIT-PREFLIGHT) -- joins the -1..-5 refusal family. Nothing spawned.
+#: mode=None (the default for every caller today) never triggers this gate:
+#: FIX 12 prices a MODE launch; a plain un-moded run keeps its pre-fix path.
+DISPATCH_CREDIT_REFUSED = -6
+
+#: CLI exit code for DISPATCH_CREDIT_REFUSED.
+EXIT_CREDIT_REFUSED = 7
+
+#: FIX 12 autofail code: the credit preflight blocked a declared mode launch
+#: (low balance / cost_unknown rate / unestimable call counts) -- refuse
+#: BEFORE any spend, never mid-run discovery of an empty account.
+CREDIT_AUTOFAIL_CODE = "AF-CREDIT-PREFLIGHT"
+
 CAPACITY_AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
 
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
@@ -421,6 +435,10 @@ def dispatch(
     until: Optional[str] = None,
     background: bool = True,
     requested_parallel: Optional[int] = None,
+    mode: Optional[str] = None,
+    balances: Optional[dict] = None,
+    plan_calls: Optional[dict] = None,
+    last_run_dir: Optional[str] = None,
 ) -> int:
     """Launch the presentation engine.
 
@@ -443,11 +461,32 @@ def dispatch(
                     it is never checked against a real MEASURED ceiling --
                     execution_plan.py already waves a wide request down to
                     a measured ceiling instead of refusing it.
+        mode: FIX 12. The mode being launched ("ultra"/"standard"/"economy"
+                    -- FIX 11 owns the vocabulary). Declaring one runs the
+                    credit preflight before argv is built: the phase plan's
+                    routes are priced from the FIX 13 catalog unit_costs
+                    and checked against `balances` per provider; a blocked
+                    verdict (low balance, cost_unknown rate, unestimable
+                    calls) refuses with AF-CREDIT-PREFLIGHT and NOTHING is
+                    spawned. None (every current caller) skips the gate --
+                    FIX 12 prices mode launches; PRESENTATION_CREDIT_PREFLIGHT=0
+                    is the documented rollback (no gate, pre-fix behavior).
+        balances: {provider: usd} credit balances. None -> read
+                    $PRESENTATION_CREDIT_BALANCES_FILE (the surface a live
+                    balance probe writes).
+        plan_calls: The plan's own per-phase slide/task counts
+                    ({phase_id: n}) -- the estimation fallback when no FIX 5
+                    measured call history exists.
+        last_run_dir: Where to read FIX 5 measured per-phase call counts
+                    (working/telemetry/stage-timings.jsonl). Defaults to
+                    run_dir.
 
     Returns:
         PID on success (int > 0), -1 on failure, -4 when the capacity gate
         refused (AF-CAPACITY-UNMEASURED, nothing spawned), -5 when deck_type
-        does not resolve (AF-DECK-TYPE-UNKNOWN, nothing spawned).
+        does not resolve (AF-DECK-TYPE-UNKNOWN, nothing spawned), -6 when
+        the FIX 12 credit preflight blocked a declared mode
+        (AF-CREDIT-PREFLIGHT, nothing spawned). -7 when the notify transport
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -498,6 +537,64 @@ def dispatch(
               f"(provider {capacity_result.get('provider')}, plan "
               f"{capacity_result.get('plan')}, source "
               f"{capacity_result.get('detection_source')})", flush=True)
+
+    # FIX 12 CREDIT GATE -- before argv is built, before any process exists.
+    # A declared mode launch is priced against the balances on every provider
+    # the phase plan will use; a blocked verdict refuses with
+    # AF-CREDIT-PREFLIGHT and NOTHING is spawned. mode=None (every current
+    # caller) skips the gate -- FIX 12 prices mode launches; an un-moded run
+    # keeps its pre-fix path, and the =0 flag is the documented rollback.
+    if mode is not None:
+        try:
+            try:
+                from . import credit_preflight
+            except ImportError:
+                import credit_preflight
+        except ImportError:
+            credit_preflight = None  # type: ignore[assignment]
+        verdict = None
+        if credit_preflight is not None:
+            verdict = credit_preflight.launcher_gate(
+                run_path, mode, balances=balances,
+                plan_calls=plan_calls, last_run_dir=last_run_dir)
+        if verdict is not None and "skipped" not in verdict:
+            if verdict.get("verdict") == "blocked":
+                blocking = "; ".join(
+                    f"[{b.get('code')}] {b.get('detail')}"
+                    for b in verdict.get("blocking", []))
+                downgrade = verdict.get("downgrade_to")
+                detail = (f"mode {mode} credit preflight BLOCKED -- "
+                          f"estimated ${verdict.get('total_estimate_usd', 0):.2f} "
+                          f"across "
+                          f"{', '.join(p.get('provider', '?') for p in verdict.get('per_provider', [])) or 'no provider'}. "
+                          f"{blocking}. "
+                          + (f"Downgrade to '{downgrade}' may fit; "
+                             f"re-preflight it. "
+                             if downgrade else "No cheaper mode available. "))
+                payload = {
+                    "code": CREDIT_AUTOFAIL_CODE,
+                    "mode": mode,
+                    "verdict": verdict,
+                    "run_dir": str(run_path),
+                    "detail": detail,
+                }
+                print(f"launcher: REFUSING to dispatch {run_path} -- "
+                      f"{CREDIT_AUTOFAIL_CODE}: {detail}", file=sys.stderr)
+                print(json.dumps(payload, indent=2), file=sys.stderr)
+                credit_preflight.notify_verdict(verdict)
+                return DISPATCH_CREDIT_REFUSED
+            # proceed: unverified balances are recorded + notified inside the
+            # verdict (sidecar + operator ping); the launch continues loudly.
+            credit_preflight.notify_verdict(verdict)
+            parts = []
+            for p in verdict.get("per_provider", []):
+                bal = p.get("balance")
+                bal_s = f"${bal}" if bal is not None else "UNVERIFIED"
+                parts.append(f"{p.get('provider')}={bal_s}")
+            print(f"launcher: credit preflight PASSED for mode {mode} -- "
+                  f"estimated ${verdict.get('total_estimate_usd', 0):.2f} "
+                  f"(balances: {', '.join(parts) or 'none'})",
+                  flush=True)
 
     argv = [
         sys.executable or "python3",
