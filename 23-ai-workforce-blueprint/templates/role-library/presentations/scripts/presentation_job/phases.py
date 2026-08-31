@@ -36,6 +36,13 @@ except ImportError:  # pragma: no cover — module ships beside presentation_job
 class PhaseExecutorContractError(RuntimeError):
     """U069: a phase's executor.cmd is not a parseable argument vector."""
 
+# FIX 17: named error for a substance-verifier IMPORT failure. The engine must
+# fail CLOSED: a phase that can never be substance-verified may never reach its
+# done attestation, so the run aborts (raised out of run_phase) instead of the
+# old warn-and-skip that advanced every phase unverified.
+class VerifierImportError(RuntimeError):
+    """FIX 17: phase_verifiers could not be imported -- the run aborts, unverified."""
+
 
 # ---------------------------------------------------------------------------
 # B2b (fix/engine-client-report-unformatted -- MASTER-WORK-ORDER-20260818 Wave
@@ -540,9 +547,21 @@ class Engine:
                             f"substance check failed: {'; '.join(verifier_notes)}. "
                             "An owner_skip_approval token for this phase is required to "
                             "advance it to done.")
-            except ImportError:
-                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
-                                          "substance check skipped")
+            except ImportError as exc:
+                # FIX 17 (fail-closed): the OLD behaviour here warned and SKIPPED the
+                # substance check, then fell through to the status="done" checkpoint
+                # below -- attesting a phase whose substance was never verified. An
+                # unavailable verifier aborts the run instead: the raise propagates
+                # through run_phase_timed (telemetry records the crash) and run(),
+                # and the done checkpoint below is never reached, so no attestation
+                # is minted.
+                self.report.event(
+                    "phase.verifier_unavailable",
+                    f"{phase.id}: phase_verifiers not importable -- aborting before "
+                    f"any attestation is minted ({exc})")
+                raise VerifierImportError(
+                    f"substance verifier import failed for {phase.id}: {exc} "
+                    "(FIX 17: the run aborts instead of advancing unverified)") from exc
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
                              artifacts=sorted(shas.keys()),
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
