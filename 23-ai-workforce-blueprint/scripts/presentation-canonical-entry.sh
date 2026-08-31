@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh
+# presentation-canonical-entry.sh — SINGLE SOURCE (FIX 31, presentation rev2 waves).
+# The runtime/deployed copy at 23-ai-workforce-blueprint/scripts/presentation-canonical-
+# entry.sh — the path install.sh / update-skills.sh co-locate and SKILL.md names — is a
+# BYTE-IDENTICAL GENERATED MIRROR of this file. Edit ONLY here, then re-cp the mirror;
+# the two must never diverge (pre-FIX-31 the mirror carried only the legacy
+# run_signature_deck.py dispatch, so following SKILL.md on a deployed box skipped the
+# mechanical engine walk entirely). The department template materialization into
+# $OC_WORKSPACE/departments/Presentations/scripts copies this same file.
 #
 # THE ONE SANCTIONED COMMAND TO BUILD A PRESENTATIONS DECK.
 # ============================================================================
@@ -52,6 +59,10 @@
 #   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
+#   9  — ENGINE DISPATCH FAILED: the 36-phase engine is installed but refused the
+#        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
+#        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
+#        (See engine_fail() / fix/deck-type-routing-bypass.)
 #   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
 # ============================================================================
 
@@ -61,6 +72,29 @@ PROG="presentation-canonical-entry.sh"
 
 die() { echo "FATAL [$PROG]: $*" >&2; exit 2; }
 note() { echo "=== [$PROG] $* ==="; }
+
+# fix/deck-type-routing-bypass: defined here (not down by the fallback's nonce
+# handshake, where it used to live) because the engine-dispatch path ALSO
+# calls this function, and it does so earlier in the script than the
+# fallback's own handshake block. A function must be defined before its first
+# call in bash -- it is NOT hoisted -- so leaving this definition below the
+# engine path's call site meant `_mint_nonce: command not found` on EVERY
+# successful engine dispatch (any presentation_type, not just the two the
+# alias bug mis-routed), which then always died at "could not mint the
+# front-door nonce" before a single phase ran. Reproduced against the real
+# engine: state.json is created (job + 36-phase manifest pinned) and the very
+# next line fails this way. One definition, used by both the engine path and
+# the legacy-fallback path below.
+_mint_nonce() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
+    fi
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32 2>/dev/null && return 0
+    fi
+    LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 64
+    echo
+}
 
 usage() {
     cat >&2 <<EOF
@@ -95,7 +129,7 @@ EOF
 # ---------------------------------------------------------------------------
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
-PLAN=0 ADHOC=0
+PLAN=0 ADHOC=0 RESUME=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir)     RUN_DIR="${2:-}"; shift 2 ;;
@@ -105,6 +139,7 @@ while [ $# -gt 0 ]; do
         --platform)    PLATFORM="${2:-}"; shift 2 ;;
         --scripts-dir) SCRIPTS_DIR="${2:-}"; SCRIPTS_DIR_STATED=1; shift 2 ;;
         --plan)        PLAN=1; shift ;;
+        --resume) RESUME=1; shift ;;
         --adhoc)       ADHOC=1; shift ;;
         -h|--help)     usage ;;
         *) die "unknown argument: $1 (run with --help)" ;;
@@ -114,7 +149,7 @@ done
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-if [ "$PLAN" -eq 0 ]; then
+if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
     [ -n "$OUT" ] || die "--out is required to build a deck"
@@ -486,7 +521,7 @@ print('%d' % len(raw.strip()))
 check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
-# GATE 1 — DEPS CHECK (the runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
+# GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
 # FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
@@ -816,24 +851,184 @@ head. Re-sync the canonical build_deck.py / run_signature_deck.py to the fleet-p
 fi
 
 # ===========================================================================
-# All gates passed — hand off to the CANONICAL ORCHESTRATOR.
-# run_signature_deck.py enforces the phase-attestation chain and calls build_deck.py
-# for the render. We never call build_deck.py directly and never touch its path.
+# WORK-ITEM-02: All gates passed -- dispatch through the PRESENTATION ENGINE.
+#
+# BEFORE (the old path): hand off to run_signature_deck.py, which dispatched only
+#   2 of ~20+ phases (P4-RENDER and P9.5-NOTES-SYNC). Every other phase was an
+#   agent invitation with no mechanical executor.
+#
+# AFTER (this change): dispatch through presentation_job.py (the engine), which
+#   walks ALL 36 manifest phases in order, refuses to skip, runs 6 fail-closed
+#   gates in close(), and posts progress to the CC board at every phase boundary.
+#   The engine has 18 modules + 552 passing tests and was built between
+#   2026-07-25 and 2026-08-07 -- it was simply never wired until now.
+#
+# fix/deck-type-routing-bypass: this block used to build the engine's --new
+# intake JSON with its OWN inline copy of the deck-type "legal" set -- one
+# that accidentally listed "standard" and "signature_presentation" (the two
+# values that need translating) as members of ITS OWN legal set, so the
+# alias remap that would have fixed them never ran. That mismatched intake
+# then made the engine's REAL (narrower) check reject it, `--new` failed,
+# and this script fell through to the FALLBACK below WHILE REPORTING SUCCESS
+# (2 of 36 phases, close() never called, all 6 fail-closed gates skipped).
+# The same block also string-interpolated ledger-controlled values (client
+# name) directly into python SOURCE text -- a client name containing a
+# single quote broke the literal, the SyntaxError was swallowed by
+# `2>/dev/null || true`, and the door fell through the exact same way. Both
+# holes are closed by replacing this block with ONE call to the shared
+# resolver (presentation_job/resolve_intake.py), which shares its deck-type
+# vocabulary with the engine, the poll, and the launcher (see vocab.py) and
+# never formats untrusted content into source -- ledger values are read with
+# json.load() and written with json.dump(), full stop.
+#
+# The old run_signature_deck.py call is retained as FALLBACK -- but ONLY for
+# when the engine component itself is missing from this box (ENGINE_ENTRY
+# does not exist). That is an "not installed here" case and announces itself
+# loudly + records that it ran (see the `else` branch below). If the engine
+# IS present and refuses the job for ANY reason, that is now a blocking
+# failure (engine_fail, exit 9) -- it NEVER falls through to the legacy
+# runner while reporting success. A downgrade the operator cannot see is
+# the disease this rewrite exists to cure.
 # ===========================================================================
-note "ALL GATES PASSED — dispatching the canonical orchestrator (run_signature_deck.py)"
-cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
+ENGINE_ENTRY="$SCRIPTS_DIR/presentation_job.py"
+RESOLVE_INTAKE="$SCRIPTS_DIR/presentation_job/resolve_intake.py"
+INTAKE_LEDGER="$RUN_DIR/working/interview/intake_ledger.json"
+
+# engine_fail: the engine is PRESENT but refused the job. Loud, blocking,
+# distinct from gate_fail() above (no owner-skip -- there is no rational
+# "skip" for a nonsensical deck type or a broken engine job; the fix is to
+# correct the intake and re-run, not to route around this check).
+engine_fail() {
+    local code="$1" exitcode="$2"; shift 2
+    echo >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
+    echo "presentation_job.py (the 36-phase engine) is installed on this box but" >&2
+    echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
+    echo "the legacy 2-of-36-phase runner, and it is never reported as success." >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    exit "$exitcode"
+}
+
 if [ "$PLAN" -eq 1 ]; then
-    cmd+=(--plan)
-    [ -n "$SLIDES" ] && cmd+=(--slides "$SLIDES")
-else
-    cmd+=(--slides "$SLIDES" --out "$OUT" --phase "$PHASE")
+    # --plan is read-only inspection: show what WOULD run, don't launch.
+    note "ALL GATES PASSED -- plan mode: engine WOULD be dispatched"
+    echo "  Manifest phases: $(python3 -c "
+import json
+m = json.load(open('$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json'))
+print(len(m.get('phases', [])))
+" 2>/dev/null || echo '?')"
+    if [ "$RESUME" -eq 0 ]; then
+    echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
+    fi
+    echo "  Then:       python3 $ENGINE_ENTRY --run --run-dir $RUN_DIR"
+    echo "  All phases walked mechanically. 6 fail-closed gates at close()."
+    exit 0
 fi
+
+if [ -f "$ENGINE_ENTRY" ] && command -v python3 >/dev/null 2>&1; then
+    note "ALL GATES PASSED -- dispatching the presentation engine (all 36 phases, mechanical)"
+
+    # Step 1: Resolve the intake ledger into the engine's --new intake JSON
+    # through the ONE shared resolver (single-sourced deck-type vocabulary,
+    # zero string-interpolation of ledger content into python source -- see
+    # presentation_job/resolve_intake.py and vocab.py). An unresolvable
+    # deck type is a loud, blocking failure -- never caught and defaulted.
+    _ENGINE_INTAKE_TMP="$RUN_DIR/working/checkpoints/.engine-intake.json"
+    mkdir -p "$(dirname "$_ENGINE_INTAKE_TMP")"
+    if [ ! -f "$RESOLVE_INTAKE" ]; then
+        engine_fail "AF-ENGINE-COMPONENT-MISSING" 9 "presentation_job.py is present at \
+$ENGINE_ENTRY but its resolver $RESOLVE_INTAKE is not -- this is a broken/partial \
+engine install, not a genuinely absent one, so this does NOT fall back to \
+run_signature_deck.py. Re-sync the Presentations department."
+    fi
+    _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
+        --out "$_ENGINE_INTAKE_TMP" --source canonical-entry 2>&1)"
+    _RESOLVE_RC=$?
+    if [ "$_RESOLVE_RC" -ne 0 ]; then
+        engine_fail "AF-DECK-TYPE-UNKNOWN" 9 "$INTAKE_LEDGER did not resolve to a legal \
+presentation_type: $_RESOLVE_OUT"
+    fi
+    note "$_RESOLVE_OUT"
+
+    # Step 2: Create the engine job (state.json).
+    # This is idempotent -- if state.json already exists, the engine refuses to overwrite.
+    _CREATE_OUT="$(python3 "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
+    _CREATE_RC=$?
+    if [ "$_CREATE_RC" -ne 0 ]; then
+        # state.json may already exist from a prior run -- that's OK, reuse it.
+        # Any OTHER --new failure, with the engine PRESENT, is now a BLOCKING
+        # failure -- it no longer falls through to the legacy runner.
+        if [ -f "$RUN_DIR/state.json" ]; then
+            note "Engine state already exists in $RUN_DIR (reusing existing job)"
+        else
+            engine_fail "AF-ENGINE-NEW-FAILED" 9 "presentation_job.py --new exited \
+$_CREATE_RC and wrote no state.json:
+$_CREATE_OUT"
+        fi
+    fi
+
+    # Step 3: Run the engine. This walks all 36 manifest phases, refuses to skip,
+    # runs 6 fail-closed gates in close(), and posts progress to the CC board.
+    # Returns the engine's exit code directly to the caller.
+    note "Engine run starting -- 36 phases, all mechanically enforced"
+    _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
+
+    # Re-apply the front-door nonce + env so the render phases still gate correctly
+    NONCE_DIR="$RUN_DIR/working/checkpoints"
+    NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
+    mkdir -p "$NONCE_DIR"
+    OC_DECK_ENTRY_NONCE="$(_mint_nonce)"
+    [ -n "$OC_DECK_ENTRY_NONCE" ] || die "could not mint the front-door nonce"
+    ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
+    chmod 600 "$NONCE_FILE" 2>/dev/null || true
+    export OC_DECK_ENTRY_NONCE
+    export OC_DECK_CANONICAL_ENTRY=1
+    export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
+    # F16 — U047 Rule 3.5 staging is OVER: canonical runs enforce the three
+    # pixel-level gates (AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED)
+    # by default; only an explicit PRESENTATION_SLIDE_GEOMETRY_ENFORCE=0 opts out.
+    export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
+    trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+
+    note "run: ${_ENGINE_RUN_CMD[*]}"
+    "${_ENGINE_RUN_CMD[@]}"
+    _ENGINE_RC=$?
+    rm -f "$NONCE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
+    exit "$_ENGINE_RC"
+else
+    # The engine component is genuinely absent from this box -- the ONE
+    # legitimate reason to fall back. Announce it unmistakably (not a
+    # one-line `note`) and record that it ran, so a fleet of boxes quietly
+    # running the 2-of-36 legacy path is visible, never just archived.
+    echo "!! [$PROG] ================================================================" >&2
+    echo "!! [$PROG] ANNOUNCED FALLBACK: presentation_job.py NOT FOUND at" >&2
+    echo "!! [$PROG]   $ENGINE_ENTRY" >&2
+    echo "!! [$PROG] The mechanical 36-phase engine is not installed on this box." >&2
+    echo "!! [$PROG] Falling back to the LEGACY run_signature_deck.py runner --" >&2
+    echo "!! [$PROG] 2 of ~20 phases. This is NOT a full build. Install/update the" >&2
+    echo "!! [$PROG] Presentations department to get the mechanical engine." >&2
+    echo "!! [$PROG] ================================================================" >&2
+    _FALLBACK_RECORD="$RUN_DIR/working/checkpoints/.fallback-legacy-runner-used"
+    mkdir -p "$(dirname "$_FALLBACK_RECORD")" 2>/dev/null || true
+    printf '%s reason=engine_component_missing engine_entry=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ENGINE_ENTRY" >> "$_FALLBACK_RECORD" 2>/dev/null || true
+fi
+
+# ===========================================================================
+# FALLBACK: the old 2-of-20 path. Runs only when the engine is unavailable.
+# ===========================================================================
+note "FALLBACK: dispatching the legacy orchestrator (run_signature_deck.py -- 2 of ~20 phases)"
+cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
+cmd+=(--slides "$SLIDES" --out "$OUT" --phase "$PHASE")
 [ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
 [ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)
 note "run: ${cmd[*]}"
 
 # ===========================================================================
-# FRONT-DOOR NONCE HANDSHAKE — required by run_signature_deck.py and build_deck.py.
+# FRONT-DOOR NONCE HANDSHAKE (FALLBACK PATH) -- required by run_signature_deck.py
+# and build_deck.py. Also used by the engine path above when state.json exists.
+# ===========================================================================
 # They both exit 2 unless the exported OC_DECK_ENTRY_NONCE matches the run-scoped
 # 0600 file this script mints below. This SUPERSEDES the retired
 # OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which shipped in
@@ -845,16 +1040,8 @@ NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
 mkdir -p "$NONCE_DIR"
 
-_mint_nonce() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
-    fi
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -hex 32 2>/dev/null && return 0
-    fi
-    LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 64
-    echo
-}
+# _mint_nonce is defined near the top of this script (shared with the engine
+# dispatch path above).
 OC_DECK_ENTRY_NONCE="$(_mint_nonce)"
 [ -n "$OC_DECK_ENTRY_NONCE" ] || die "could not mint the front-door nonce (no python3/openssl/urandom available). Refusing to build."
 
