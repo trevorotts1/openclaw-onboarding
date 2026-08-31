@@ -73,8 +73,41 @@ from typing import Optional
 CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 POLL_URL   = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
-MODEL_I2I  = "gpt-image-2-image-to-image"
-MODEL_T2I  = "gpt-image-2-text-to-image"
+# ---------------------------------------------------------------------------
+# FIX 13 — no literal image model IDs in this helper. They resolve from the
+# central versioned catalog (presentation_job/model_catalog.py beside the
+# canonical renderer). PRESENTATION_MODEL_CATALOG=0 restores the exact
+# pre-FIX-13 gpt-image-2-* literals via the catalog's rollback table; an
+# unloadable catalog FAILS CLOSED rather than guessing an id on a paid call.
+# ---------------------------------------------------------------------------
+def _load_model_catalog():
+    import importlib
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here,                                                          # role-library copy (same dir)
+        here.parent / "role-library" / "presentations" / "scripts",    # presentation-render copy
+        here.parent.parent / "role-library" / "presentations" / "scripts",
+    ]
+    for cand in candidates:
+        if (cand / "presentation_job" / "model_catalog.py").is_file():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            return importlib.import_module("presentation_job.model_catalog")
+    raise RuntimeError(
+        "FIX 13: presentation_job/model_catalog.py not reachable from "
+        f"{Path(__file__).resolve()} — refusing to guess model ids.")
+
+
+_model_catalog = _load_model_catalog()
+
+
+def _image_models() -> "tuple":
+    """(MODEL_T2I, MODEL_I2I) re-resolved from the LIVE catalog on every call,
+    so an operator bump changes the next submit without editing code."""
+    t = _model_catalog.image_mode_table()
+    return t["MODEL_T2I"], t["MODEL_I2I"]
+
+MODEL_T2I, MODEL_I2I = _image_models()  # catalog-resolved import-time snapshot
 
 ASPECT_RATIO = "16:9"
 RESOLUTION   = "2K"
@@ -252,10 +285,11 @@ def _expected_ratio_and_minwidth(slide: dict):
 def _submit_slide(slide: dict, api_key: str) -> str:
     """Submit one slide to createTask; return taskId."""
     mode = slide.get("mode", "i2i").lower()
+    _model_t2i, _model_i2i = _image_models()  # catalog-live, per submit
     if mode == "i2i":
-        model = MODEL_I2I
+        model = _model_i2i
     elif mode == "t2i":
-        model = MODEL_T2I
+        model = _model_t2i
     else:
         raise ValueError(f"Slide {slide['slide']}: unknown mode '{mode}'. Use 'i2i' or 't2i'.")
 

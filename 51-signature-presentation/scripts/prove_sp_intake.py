@@ -63,6 +63,56 @@
 # USAGE:
 #   python3 prove_sp_intake.py [intake.json] [--json]
 #   python3 prove_sp_intake.py --self-test
+#   python3 prove_sp_intake.py --rotation-status
+#
+# -----------------------------------------------------------------------------
+# FIX 29 — the turn-ledger HMAC key lives in the SECRETS STORE, not in source.
+# The former published TURN_LEDGER_KEY constant is REMOVED from this file. Keys
+# are provisioned (values live ONLY in the secrets store; never in code, repo,
+# logs, or fixtures) as a rotation record:
+#
+#   PRESENTATION_SP_TURN_LEDGER_KEYS_FILE   — path to the rotation-record JSON,
+#       or the discrete variables below (file wins when both are set):
+#   PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY       (secret value — never logged)
+#   PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID    (id only)
+#   PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY      (secret value, optional)
+#   PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID   (id only)
+#   PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT       (ISO-8601 UTC)
+#   PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT   (= started + 14×24h)
+#
+#   See sp-turn-ledger-keys.template.json next to this script for the record
+#   shape and provisioning runbook. The verifier NEVER prints a key value —
+#   only key IDs and sha256 fingerprints.
+#
+# The signed envelope now carries key_id + signed_at, both INSIDE the HMAC
+# payload (so they cannot be swapped or stripped without invalidating it):
+#   turn_ledger_provenance = {turns, signature, key_id, signed_at}
+# The one-time signer entry point is sign_turn_ledger() (the materialized
+# role-library driver calls it); it signs with the CURRENT key only — a signer
+# NEVER signs with the previous key.
+#
+# Migration window (14 × 24 hours from a persisted rotation_started_at):
+#   * envelopes signed with the previous key (or legacy key_id-less envelopes)
+#     verify ONLY while now < previous_key_expires_at; each old-key acceptance
+#     emits an audit event (key ID + envelope timestamp, NO key bytes) and
+#     bumps old_key_acceptance_count() — rotation is complete only when every
+#     active signer stamps the current ID and the verifier's old-key
+#     acceptance count has reached zero BEFORE the cutoff.
+#   * after previous_key_expires_at (to the second) old-key verification
+#     stops automatically and fails closed; remove the old secret from the
+#     store after recording the cutoff proof.
+#   * missing current key, unknown key ID, absent timestamp, or a rotation
+#     clock moving backward is a launch/configuration failure — surfaced as a
+#     fail-closed AF-SP-INTAKE-UNPACED "configuration failure" (verifier
+#     failures can never degrade open; phase_verifiers.py consumes this module's
+#     verdict and implements NO independent secret copy).
+#
+# ROLLBACK (=1 default is not a flag flip away): this fix intentionally keeps
+# NO legacy key material in source, so there is no in-code rollback flag. The
+# documented =0-style rollback path is to restore the pre-fix copy from
+# the phase-b backup dir (repo-relative, see the fix ledger);
+# a provisioned rotation
+# record in the store is inert for the restored file and needs no cleanup.
 # =============================================================================
 """Fail-closed deterministic prover for the Signature Presentation intake gate."""
 
@@ -70,8 +120,9 @@ import argparse
 import hashlib
 import hmac
 import json
+import os
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # ---- exit codes -------------------------------------------------------------
@@ -89,14 +140,211 @@ AF_UNPACED = "AF-SP-INTAKE-UNPACED"
 AF_PROVENANCE = "AF-SP-PROVENANCE"
 
 # ---- GK-23 / D18 — turn-ledger provenance (record-layer pacing gate) --------
-# See deck-intake-driver.py's matching comment block for the full threat-model
-# note. TURN_LEDGER_KEY MUST match that file byte-for-byte — it is a published
-# integrity key (not a secrecy boundary: evaluate() takes only the assembled
-# dict, exactly like every other call site here including build_deck.py's
-# _sp_delegate, so no out-of-band secret channel exists to thread a per-run
-# secret through). It binds the turn array + deck_type + commit id together so
-# the block cannot be edited piecemeal without invalidating the signature.
-TURN_LEDGER_KEY = b"skill51-sp-intake-turn-ledger-provenance-v1"
+# FIX 29: the HMAC key previously lived in source (a published constant in this
+# file and the drivers). It is now LOADED FROM THE SECRETS STORE as a versioned
+# rotation record — see the FIX 29 header block at the top of this file and
+# sp-turn-ledger-keys.template.json next to this script for the provisioning
+# runbook. Signers (deck-intake-driver.py and its materialized role-library
+# copy call sign_turn_ledger()/the 3-arg _sign_turn_ledger() shim) sign with
+# the CURRENT key only; this verifier accepts the current and (within the
+# migration window) the previous key. NO key bytes ever appear here, in repo
+# files, logs, or fixtures — only IDs and sha256 fingerprints.
+
+# The migration window is exactly 14 × 24 hours from the persisted
+# rotation_started_at (previous_key_expires_at = started + window).
+MIGRATION_WINDOW_HOURS = 14 * 24
+
+# Rollback flag — defaults ON ("1"). Setting it to "0" in the environment puts
+# the verifier back to the pre-FIX-29 *acceptance* posture for legacy
+# key_id-less envelopes already in circulation (current-key verify regardless
+# of rotation state). It does NOT restore the removed published constant — the
+# source copy of the key is gone by design; the file-level rollback is the
+# pre-fix backup recorded in the fix ledger.
+ROTATION_ENV = "PRESENTATION_SP_TURN_LEDGER_ROTATION"
+
+_KEYS_FILE_ENV = "PRESENTATION_SP_TURN_LEDGER_KEYS_FILE"
+_CURRENT_KEY_ENV = "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"
+_CURRENT_KEY_ID_ENV = "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"
+_PREVIOUS_KEY_ENV = "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY"
+_PREVIOUS_KEY_ID_ENV = "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID"
+_ROTATION_STARTED_ENV = "PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"
+_EXPIRES_ENV = "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT"
+
+# Injected key record for deterministic tests (--self-test builds one from
+# os.urandom at runtime; no key material is ever written into source).
+_TEST_KEY_RECORD = None
+_test_now = None  # injectable verification clock for tests (datetime, UTC)
+
+
+class KeyConfigError(Exception):
+    """Raised when the key rotation record is unusable — missing current key,
+    unknown/absent IDs, or a rotation clock moving backward. Surfaced to
+    callers as a fail-closed configuration failure (never degrade open)."""
+
+
+def _now_utc():
+    """Verification clock. Injectable for tests; real clock otherwise."""
+    if _test_now is not None:
+        return _test_now
+    return datetime.now(timezone.utc)
+
+
+def _parse_iso_utc(value):
+    """Parse an ISO-8601 timestamp into an aware UTC datetime. None on junk."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        raw = value.strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def rotation_status():
+    """Operator diagnostic (--rotation-status): key IDs + fingerprints + window
+    state. NEVER prints a key value — IDs and sha256 fingerprints only."""
+    try:
+        record = load_key_record()
+    except KeyConfigError as exc:
+        return {"status": "CONFIGURATION_FAILURE", "detail": str(exc)}
+    now = _now_utc()
+    window_open = _previous_key_in_window(record)
+    return {
+        "status": "OK",
+        "current_key_id": record["current_key_id"],
+        "current_key_fingerprint": _key_fingerprint(record["current_key"]),
+        "previous_key_id": record["previous_key_id"],
+        "previous_key_fingerprint": (
+            _key_fingerprint(record["previous_key"])
+            if record["previous_key"] is not None else None),
+        "rotation_started_at": record["rotation_started_at"].isoformat(),
+        "previous_key_expires_at": record["previous_key_expires_at"].isoformat(),
+        "migration_window_open": window_open,
+        "now": now.isoformat(),
+        "old_key_acceptances_this_process": old_key_acceptance_count(),
+    }
+
+def _key_fingerprint(key_value):
+    """First 12 hex chars of the sha256 of the key bytes — a stable ID-safe
+    fingerprint for logs/proofs that carries NO key bytes."""
+    return hashlib.sha256(key_value).hexdigest()[:12]
+
+
+def load_key_record(force=False):
+    """Load the versioned turn-ledger key record from the secrets store.
+
+    Precedence: the JSON file at $PRESENTATION_SP_TURN_LEDGER_KEYS_FILE (the
+    persisted rotation record — canonical), else the discrete env variables.
+    The record is re-validated on every load: rotation_started_at must be a
+    real timestamp, previous_key_expires_at (explicit or started+14×24h) must
+    be strictly after started, and the verification clock must not be earlier
+    than rotation_started_at (a rotation clock moving backward is a
+    launch/configuration failure). Raises KeyConfigError on any of that.
+    """
+    global _rotation_state
+    if _rotation_state is not None and not force:
+        return _rotation_state
+
+    file_path = os.environ.get(_KEYS_FILE_ENV)
+    if file_path:
+        try:
+            raw = Path(file_path).read_text(encoding="utf-8")
+            record = json.loads(raw)
+        except (OSError, ValueError) as exc:
+            raise KeyConfigError(
+                "keys file %s unreadable/invalid: %s" % (file_path, exc))
+        if not isinstance(record, dict):
+            raise KeyConfigError("keys file %s is not a JSON object" % file_path)
+    else:
+        record = {
+            "current_key": os.environ.get(_CURRENT_KEY_ENV, ""),
+            "current_key_id": os.environ.get(_CURRENT_KEY_ID_ENV, ""),
+            "previous_key": os.environ.get(_PREVIOUS_KEY_ENV),
+            "previous_key_id": os.environ.get(_PREVIOUS_KEY_ID_ENV),
+            "rotation_started_at": os.environ.get(_ROTATION_STARTED_ENV),
+            "previous_key_expires_at": os.environ.get(_EXPIRES_ENV),
+        }
+
+    current_material = record.get("current_key")
+    current_id = record.get("current_key_id")
+    if not current_material or not _nonempty_str(current_id):
+        raise KeyConfigError(
+            "configuration failure: no current turn-ledger key provisioned "
+            "(set %s or %s + %s)" % (_KEYS_FILE_ENV, _CURRENT_KEY_ENV,
+                                     _CURRENT_KEY_ID_ENV))
+    if not isinstance(current_material, bytes):
+        current_material = str(current_material).encode("utf-8")
+
+    previous_material = record.get("previous_key")
+    previous_id = record.get("previous_key_id")
+    if previous_material and not _nonempty_str(previous_id or ""):
+        raise KeyConfigError("configuration failure: previous key is provisioned "
+                             "without an id")
+    if previous_material and not isinstance(previous_material, bytes):
+        previous_material = str(previous_material).encode("utf-8")
+
+    started_raw = record.get("rotation_started_at")
+    started = _parse_iso_utc(started_raw)
+    if started is None:
+        raise KeyConfigError(
+            "configuration failure: rotation_started_at missing or not ISO-8601 "
+            "(got %r)" % (started_raw,))
+    expires_raw = record.get("previous_key_expires_at")
+    if expires_raw:
+        expires = _parse_iso_utc(expires_raw)
+        if expires is None:
+            raise KeyConfigError(
+                "configuration failure: previous_key_expires_at not ISO-8601 "
+                "(got %r)" % (expires_raw,))
+    else:
+        expires = started + timedelta(hours=MIGRATION_WINDOW_HOURS)
+    if expires <= started:
+        raise KeyConfigError(
+            "configuration failure: rotation clock moved backward — "
+            "previous_key_expires_at (%s) is not after rotation_started_at (%s)"
+            % (expires.isoformat(), started.isoformat()))
+    now = _now_utc()
+    if now < started:
+        raise KeyConfigError(
+            "configuration failure: rotation clock moved backward — verification "
+            "clock (%s) is earlier than rotation_started_at (%s)"
+            % (now.isoformat(), started.isoformat()))
+
+    _rotation_state = {
+        "current_key": current_material,
+        "current_key_id": current_id.strip(),
+        "previous_key": previous_material,
+        "previous_key_id": (previous_id or "").strip() or None,
+        "rotation_started_at": started,
+        "previous_key_expires_at": expires,
+    }
+    return _rotation_state
+
+
+# Module-level state: cached rotation record + old-key acceptance audit trail.
+_rotation_state = None
+_old_key_acceptances = []  # list of {"key_id", "signed_at", "at"} — NO key bytes
+
+
+def old_key_acceptance_count():
+    """How many envelopes this verifier has accepted under the previous key
+    since process start. Rotation is complete only when every active signer
+    stamps the current ID and this count reaches zero before the cutoff."""
+    return len(_old_key_acceptances)
+
+
+def _previous_key_in_window(record):
+    """True while the previous-key migration window is open — exactly 14 × 24h
+    from the persisted rotation_started_at, checked against the verification
+    clock (so it closes AUTOMATICALLY at the cutoff, fail-closed)."""
+    now = _now_utc()
+    return (record["previous_key"] is not None
+            and record["rotation_started_at"] <= now < record["previous_key_expires_at"])
 
 # GK-D3-ratified migration window (Recommendation A's accepted cost: "one
 # migration window for pre-stamp records"). A runtime record with NO
@@ -382,15 +630,154 @@ def _evaluate_answer_provenance(intake, today=None):
 
 
 # ---- turn-ledger provenance (AF-SP-INTAKE-UNPACED, GK-23 / D18) -------------
-def _canonical_turns_payload(turns, deck_type, commit_id):
-    """Must match deck-intake-driver.py's _canonical_turns_payload() exactly."""
+def _canonical_turns_payload(turns, deck_type, commit_id, key_id=None, signed_at=None):
+    """The HMAC payload. When key_id/signed_at are present they sit INSIDE the
+    authenticated payload (cannot be swapped or stripped without invalidating
+    the signature). Legacy signer calls omit both, producing the byte-identical
+    pre-FIX-29 payload. Matches deck-intake-driver.py's sort_keys JSON dict."""
     payload = {"deck_type": deck_type, "record_commit_ids": commit_id, "turns": turns}
+    if key_id is not None:
+        payload["key_id"] = key_id
+    if signed_at is not None:
+        payload["signed_at"] = signed_at
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
+def _sign_turn_ledger(turns, deck_type, commit_id, key_id=None, signed_at=None,
+                      key_value=None):
+    """Sign with the CURRENT secrets-store key by default (a signer NEVER
+    signs with the previous key). The 3-positional-arg form is preserved for
+    the materialized role-library driver's call site; the named args exist for
+    the self-test fixtures and proof harness. Returns the hex digest."""
+    if key_value is None:
+        key_value = load_key_record()["current_key"]
+    return hmac.new(key_value, _canonical_turns_payload(turns, deck_type, commit_id,
+                                                        key_id=key_id, signed_at=signed_at),
+                    hashlib.sha256).hexdigest()
 
-def _sign_turn_ledger(turns, deck_type, commit_id):
-    return hmac.new(TURN_LEDGER_KEY, _canonical_turns_payload(turns, deck_type, commit_id),
-                     hashlib.sha256).hexdigest()
+def sign_turn_ledger(ledger_turns, deck_type, commit_id):
+    """FIX 29 one-time signer entry point: returns the FULL new-shape envelope
+    {"turns", "signature", "key_id", "signed_at"} signed with the CURRENT key
+    only — a signer NEVER signs with the previous key."""
+    record = load_key_record()
+    signed_at = _now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+    signature = _sign_turn_ledger(ledger_turns, deck_type, commit_id,
+                                  key_id=record["current_key_id"], signed_at=signed_at)
+    return {
+        "turns": ledger_turns,
+        "signature": signature,
+        "key_id": record["current_key_id"],
+        "signed_at": signed_at,
+    }
+
+def _audit_old_key_acceptance(key_id, envelope_signed_at):
+    """FIX 29 old-key acceptance audit event: key ID + envelope timestamp only,
+    NEVER key bytes. Written to stderr and retained for
+    old_key_acceptance_count() (rotation-complete criterion)."""
+    event = {
+        "key_id": key_id if key_id is not None else "?",
+        "signed_at": envelope_signed_at if envelope_signed_at is not None else "",
+        "at": _now_utc().isoformat(),
+    }
+    _old_key_acceptances.append(event)
+    sys.stderr.write(
+        "SP-INTAKE-KEY-AUDIT key_id=%s signed_at=%s accepted_at=%s "
+        "(old-key migration acceptance; no key material in this event)\n"
+        % (event["key_id"], event["signed_at"], event["at"]))
+
+def _verify_turn_ledger_signature(prov, turns, deck_type, commit_id):
+    """FIX 29 verifier policy. Returns (fail_tuple_or_None, accepted_key_id).
+
+    * key_id present -> must be the current or previous provisioned ID and
+      carry a parseable signed_at. Previous-key matches verify ONLY inside the
+      14 x 24h migration window (audited + counted); after the cutoff they
+      fail closed automatically. UNKNOWN key id, missing fields, or an
+      unparseable signed_at is a configuration failure (fail-closed).
+    * key_id absent (legacy pre-rotation envelope) -> verifies against the
+      previous key inside the window (audited), or — rollback posture
+      (ROTATION_ENV="0") — against the current key regardless of rotation
+      state; after the cutoff a legacy envelope fails closed.
+    No key bytes are ever returned, printed, or stored."""
+    try:
+        record = load_key_record()
+    except KeyConfigError as exc:
+        # A launch/configuration failure (missing current key, unknown id,
+        # backward rotation clock) must NEVER degrade open — return the
+        # fail-closed code instead of raising out of evaluate().
+        return ((AF_UNPACED, "configuration failure: %s" % (exc,)), None)
+    sig = prov.get("signature")
+    key_id = prov.get("key_id")
+    signed_at_raw = prov.get("signed_at")
+    rollback = os.environ.get(ROTATION_ENV, "1").strip() != "0"
+
+    envelope_signed_at = None
+    if key_id is not None or signed_at_raw is not None:
+        # New-shape envelope: BOTH fields are required (an absent timestamp is
+        # a configuration failure, fail-closed) and the timestamp must parse.
+        if not _nonempty_str(key_id or "") or not _nonempty_str(signed_at_raw or ""):
+            return ((AF_UNPACED,
+                     "turn_ledger_provenance carries an incomplete FIX-29 envelope — both "
+                     "key_id and signed_at are required (a missing field is a configuration "
+                     "failure, fail-closed)"), None)
+        envelope_signed_at = _parse_iso_utc(signed_at_raw)
+        if envelope_signed_at is None:
+            return ((AF_UNPACED,
+                     "turn_ledger_provenance.signed_at %r is not ISO-8601 — configuration "
+                     "failure, fail-closed" % (signed_at_raw,)), None)
+
+    candidates = []  # (audit_key_id_or_None, key_bytes, is_old_key)
+    if key_id is not None:
+        if key_id == record["current_key_id"]:
+            candidates.append((key_id, record["current_key"], False))
+        elif key_id == record["previous_key_id"]:
+            if record["previous_key"] is None:
+                return ((AF_UNPACED,
+                         "configuration failure: envelope key_id %r is the previous key id but "
+                         "no previous key is provisioned" % (key_id,)), None)
+            if _previous_key_in_window(record):
+                candidates.append((key_id, record["previous_key"], True))
+            else:
+                return ((AF_UNPACED,
+                         "envelope key_id %r is the previous (old) key id and the %d-hour "
+                         "migration window closed at %s — old-key verification has stopped "
+                         "(fail-closed); re-sign through deck-intake-driver.py"
+                         % (key_id, MIGRATION_WINDOW_HOURS,
+                            record["previous_key_expires_at"].isoformat())), None)
+        else:
+            return ((AF_UNPACED,
+                     "configuration failure: unknown turn_ledger_provenance key_id %r — not the "
+                     "current or previous provisioned key id" % (key_id,)), None)
+    else:
+        # Legacy key_id-less envelope: previous key inside the window only;
+        # either provisioned key under the documented rollback posture.
+        if _previous_key_in_window(record):
+            candidates.append((record["previous_key_id"], record["previous_key"], True))
+        if rollback:
+            candidates.append((None, record["current_key"], False))
+        if not candidates:
+            return ((AF_UNPACED,
+                     "legacy turn_ledger_provenance (no key_id) arrived after the migration "
+                     "window closed at %s — every envelope must now carry the current key id "
+                     "(fail-closed)" % record["previous_key_expires_at"].isoformat()), None)
+
+    if not _nonempty_str(sig or ""):
+        return ((AF_UNPACED, "turn_ledger_provenance has no signature"), None)
+
+    for cand_id, key_bytes, is_old in candidates:
+        expected = hmac.new(
+            key_bytes,
+            _canonical_turns_payload(turns, deck_type, commit_id,
+                                     key_id=key_id,
+                                     signed_at=None if key_id is None else signed_at_raw),
+            hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, sig):
+            if is_old:
+                _audit_old_key_acceptance(
+                    cand_id, envelope_signed_at.isoformat()
+                    if envelope_signed_at is not None else None)
+            return (None, cand_id)
+    return ((AF_UNPACED,
+             "turn_ledger_provenance.signature does not match its recomputed digest — "
+             "the block was tampered or copied from a different record"), None)
 
 
 def _evaluate_turn_pacing(intake, today=None):
@@ -471,15 +858,10 @@ def _evaluate_turn_pacing(intake, today=None):
     if fails:
         return fails
 
-    sig = prov.get("signature")
-    if not _nonempty_str(sig):
-        fails.append((AF_UNPACED, "turn_ledger_provenance has no signature"))
-    else:
-        expected = _sign_turn_ledger(turns, intake.get("deck_type"), _resolve_commit_ids(intake))
-        if not hmac.compare_digest(expected, sig):
-            fails.append((AF_UNPACED,
-                          "turn_ledger_provenance.signature does not match its recomputed digest — "
-                          "the block was tampered or copied from a different record"))
+    sig_fail, _accepted_key_id = _verify_turn_ledger_signature(
+        prov, turns, intake.get("deck_type"), _resolve_commit_ids(intake))
+    if sig_fail is not None:
+        fails.append(sig_fail)
     return fails
 
 
@@ -668,10 +1050,16 @@ def _valid_spec_fixture():
     }
 
 
-def _valid_turn_ledger_provenance(deck_type, commit_id, question_ids=None):
-    """Build a well-formed turn_ledger_provenance block exactly the way the
-    driver would (strictly-ascending turn ids, one per question, in order) —
-    used to prove the record-layer PASS side of AF-SP-INTAKE-UNPACED."""
+def _valid_turn_ledger_provenance(deck_type, commit_id, question_ids=None,
+                                  key_id=None, signed_at=None, key_value=None,
+                                  mode="current"):
+    """Build a well-formed turn_ledger_provenance block the way the driver
+    would (strictly-ascending turn ids, one per question, in order). mode:
+    "current" (FIX 29 new shape, current key), "legacy" (pre-rotation shape,
+    envelope signed under the previous/legacy key via key_value), used to
+    prove both sides of the FIX 29 migration window. NO key material appears
+    in the returned block — only the signature and (for new shape) key_id +
+    signed_at."""
     ids = list(question_ids) if question_ids is not None else list(REQUIRED_QUESTIONS)
     turns = [
         {
@@ -682,7 +1070,21 @@ def _valid_turn_ledger_provenance(deck_type, commit_id, question_ids=None):
         }
         for i, qid in enumerate(ids)
     ]
-    return {"turns": turns, "signature": _sign_turn_ledger(turns, deck_type, commit_id)}
+    if mode == "current":
+        record = load_key_record()
+        use_key_id = key_id if key_id is not None else record["current_key_id"]
+        use_at = signed_at if signed_at is not None else "2026-07-15T13:00:00Z"
+        sig = _sign_turn_ledger(turns, deck_type, commit_id, key_id=use_key_id,
+                                signed_at=use_at,
+                                key_value=key_value if key_value is not None
+                                else record["current_key"])
+        return {"turns": turns, "signature": sig, "key_id": use_key_id, "signed_at": use_at}
+    if mode == "legacy":
+        record = load_key_record()
+        use_key = key_value if key_value is not None else record["previous_key"]
+        sig = _sign_turn_ledger(turns, deck_type, commit_id, key_value=use_key)
+        return {"turns": turns, "signature": sig}
+    raise ValueError("unknown mode %r" % (mode,))
 
 
 def _valid_runtime_fixture_paced():
@@ -723,6 +1125,36 @@ def self_test():
     """Construct a VALID fixture (assert PASS) and each VIOLATION fixture
     (assert NONZERO). Returns 0 iff every assertion holds, else 1."""
     ok = True
+
+    # ---- FIX 29 setup: a throwaway per-process test rotation record, derived
+    # from os.urandom at runtime. NO key material ever enters the source or any
+    # artifact — the harness only ever sees IDs and fingerprints.
+    global _TEST_KEY_RECORD, _test_now, _rotation_state
+    import base64
+    _cur_key = base64.b64encode(os.urandom(32)).decode("ascii")
+    _prev_key = base64.b64encode(os.urandom(32)).decode("ascii")
+    _cur_id = "sp-tl-current-" + hashlib.sha256(b"cur").hexdigest()[:8]
+    _prev_id = "sp-tl-previous-" + hashlib.sha256(b"prev").hexdigest()[:8]
+    _TEST_KEY_RECORD = {
+        "current_key": _cur_key,
+        "current_key_id": _cur_id,
+        "previous_key": _prev_key,
+        "previous_key_id": _prev_id,
+        "rotation_started_at": "2026-07-14T00:00:00Z",
+        # 14 x 24h window: started 2026-07-14 -> cutoff 2026-07-28.
+        "previous_key_expires_at": "2026-07-28T00:00:00Z",
+    }
+    for var in (_CURRENT_KEY_ENV, _CURRENT_KEY_ID_ENV, _PREVIOUS_KEY_ENV,
+                _PREVIOUS_KEY_ID_ENV, _ROTATION_STARTED_ENV, _EXPIRES_ENV):
+        os.environ.pop(var, None)
+    os.environ[_CURRENT_KEY_ENV] = _cur_key
+    os.environ[_CURRENT_KEY_ID_ENV] = _cur_id
+    os.environ[_PREVIOUS_KEY_ENV] = _prev_key
+    os.environ[_PREVIOUS_KEY_ID_ENV] = _prev_id
+    os.environ[_ROTATION_STARTED_ENV] = "2026-07-14T00:00:00Z"
+    os.environ[_EXPIRES_ENV] = "2026-07-28T00:00:00Z"
+    _rotation_state = None  # force a fresh load with the test record
+    _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)  # inside the window
 
     def check_pass(name, fixture, today=None):
         nonlocal ok
@@ -894,6 +1326,119 @@ def self_test():
     ]
     check_fail("unpaced-missing-turn-for-answered-q", f, AF_UNPACED)
 
+    # ---- FIX 29 — key out of the secrets store (no plaintext in source) -------
+    print("== self-test: FIX 29 versioned-key rotation envelope ==")
+
+    # 14) CURRENT-key envelope (new shape: key_id + signed_at inside the HMAC)
+    #     verifies inside the migration window. Also proves the one-time signer
+    #     sign_turn_ledger() emits the full new-shape envelope with the
+    #     CURRENT key id stamped (a signer never signs with the previous key).
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = sign_turn_ledger(
+        _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"],
+        f["deck_type"], f["record_commit_ids"])
+    assert f["turn_ledger_provenance"]["key_id"] == _cur_id, (
+        "signer must stamp the CURRENT key id")
+    check_pass("fix29-current-key-envelope", f)
+
+    # 15) LEGACY envelope signed under the PREVIOUS key verifies inside the
+    #     window, and the acceptance emits the audit event (stderr line
+    #     SP-INTAKE-KEY-AUDIT with the key ID + envelope timestamp, no bytes).
+    before = old_key_acceptance_count()
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"], mode="legacy")
+    check_pass("fix29-previous-key-within-window", f)
+    assert old_key_acceptance_count() == before + 1, "old-key audit not counted"
+
+    # 15b) legacy KEY-ID-LESS envelope signed under the pre-rotation key
+    #      (now the previous key) verifies inside the window — the pre-rotation
+    #      fleet shape.
+    f = _valid_runtime_fixture()
+    _legacy_turns = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"]
+    f["turn_ledger_provenance"] = {
+        "turns": _legacy_turns,
+        "signature": _sign_turn_ledger(_legacy_turns, f["deck_type"],
+                                       f["record_commit_ids"],
+                                       key_value=_prev_key.encode("utf-8")),
+    }
+    check_pass("fix29-legacy-envelope-within-window", f)
+
+    # 16) ONE SECOND AFTER THE CUTOFF the previous-key envelope fails closed.
+    _test_now = datetime(2026, 7, 28, 0, 0, 1, tzinfo=timezone.utc)
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"], mode="legacy")
+    check_fail("fix29-old-key-rejected-after-cutoff", f, AF_UNPACED)
+
+    # 16b) the CURRENT-key envelope still verifies one second after the cutoff.
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"])
+    check_pass("fix29-current-key-still-passes-after-cutoff", f)
+
+    # 16c) a legacy key_id-less envelope after the cutoff also fails closed —
+    #      every envelope must carry its key id once the window has shut.
+    f = _valid_runtime_fixture()
+    _legacy_turns = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"]
+    f["turn_ledger_provenance"] = {
+        "turns": _legacy_turns,
+        "signature": _sign_turn_ledger(_legacy_turns, f["deck_type"],
+                                       f["record_commit_ids"],
+                                       key_value=_prev_key.encode("utf-8")),
+    }
+    check_fail("fix29-legacy-shape-after-cutoff", f, AF_UNPACED)
+    #     signature mismatch.
+    _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"], key_id="sp-tl-someone-elses-key")
+    check_fail("fix29-unknown-key-id", f, AF_UNPACED)
+
+    # 18) new-shape envelope missing signed_at is a configuration failure
+    #     (absent timestamp never degrades open).
+    _rotation_state = None
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"])
+    del f["turn_ledger_provenance"]["signed_at"]
+    check_fail("fix29-missing-signed-at", f, AF_UNPACED)
+
+    # 19) a rotation clock moving backward (now earlier than
+    #     rotation_started_at) is a launch/configuration failure: the verifier
+    #     must FAIL CLOSED, never pass the record through.
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
+        f["deck_type"], f["record_commit_ids"])
+    _rotation_state = None
+    _test_now = datetime(2026, 7, 13, 23, 59, 59, tzinfo=timezone.utc)
+    check_fail("fix29-rotation-clock-backward", f, AF_UNPACED)
+
+    # 20) missing current key entirely = launch failure, fail closed.
+    import sys as _sys
+    _saved_env = {k: os.environ.get(k) for k in (_CURRENT_KEY_ENV, _CURRENT_KEY_ID_ENV,
+                                                 _PREVIOUS_KEY_ENV, _PREVIOUS_KEY_ID_ENV,
+                                                 _ROTATION_STARTED_ENV, _EXPIRES_ENV)}
+    _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)  # in-window
+    _nokey_fixture = _valid_runtime_fixture_paced()  # envelope built while keys cached
+    for k in _saved_env:
+        os.environ.pop(k, None)
+    _rotation_state = None
+    failures = evaluate(_nokey_fixture)
+    assert any("no current turn-ledger key" in m for _, m in failures), (
+        "missing-current-key must fail closed: %r" % (failures,))
+    ok = ok and True
+    print("  [PASS] VIOLATION %-18s -> missing current key fails closed"
+          % "fix29-no-current-key")
+    for k, v in _saved_env.items():
+        if v is not None:
+            os.environ[k] = v
+    _rotation_state = None
+    # restore the in-window clock and cached state for any later cases
+    _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
+    assert evaluate(_valid_runtime_fixture_paced()) == [], (
+        "post-restore current-key pass expected")
+
     # ---- 2026-08-27 live defect — AF-SP-PROVENANCE (content provenance:
     # every answer must provably be the client's own words). The literal live
     # failure mode: q6/q8 were AUTHORED BY THE SYSTEM on a record whose
@@ -994,6 +1539,9 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--self-test", dest="self_test", action="store_true",
                         help="Run built-in VALID + VIOLATION fixtures and exit.")
+    parser.add_argument("--rotation-status", dest="rotation_status", action="store_true",
+                        help="Print the provisioned key rotation state (IDs + fingerprints + "
+                             "14 x 24h window) as JSON — never a key value.")
     parser.add_argument("--as-of", dest="as_of", metavar="YYYY-MM-DD",
                         help="Override 'today' for the dated grace windows "
                              "(AF-SP-INTAKE-UNPACED GK-23/D18 and AF-SP-PROVENANCE). "
@@ -1002,6 +1550,10 @@ def main(argv=None):
 
     if args.self_test:
         return self_test()
+    if getattr(args, "rotation_status", False):
+        status = rotation_status()
+        print(json.dumps(status, indent=2, sort_keys=True))
+        return EXIT_PASS if status.get("status") == "OK" else EXIT_USAGE
     return prove(args.intake, as_json=args.json, as_of=args.as_of)
 
 

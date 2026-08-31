@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import shlex
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .capacity import CapacityUnmeasured, autofail_payload, refusal_message
+from .execution_plan import build_execution_plan
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
     ENTRY_COMMAND,
@@ -30,11 +36,47 @@ try:
 except ImportError:  # pragma: no cover — module ships beside presentation_job
     run_with_cleanup = None
 
+
+def _wave_execution_enabled() -> bool:
+    """FIX 1: default ON. The only value that disables is exactly "0" (also
+    strip quotes/whitespace so `PRESENTATION_WAVE_EXECUTION=""` counts as
+    unset, not OFF — an EMPTY value must never silently select the rollback
+    path). =0 restores the exact pre-fix serial engine loop."""
+    raw = os.environ.get("PRESENTATION_WAVE_EXECUTION")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+
+# FIX 1 (Phase A stub capacity probe): fixed deepseek-direct profile with
+# measured capacity 8, mirroring dispatcher._prompt_routing_stamp() and
+# the phase-a routing fixture (repo-relative path, see fix ledger).
+# FIX 7/8/11 will replace this with real resource profiles through the same
+# dict schema (status/provider/plan/available); until then the engine stamps
+# these constants so the plan is built from a measured width, never an
+# unmeasured one (CapacityUnmeasured must stay loud, not papered over).
+_PHASE_A_CAPACITY_PROBE = {
+    "status": "MEASURED",
+    "provider": "deepseek-direct",
+    "plan": "phase-a-stub",
+    "available": 8,
+    "dispatchable": 8,
+    "probe_mode": "stub",
+    "model": "deepseek-v4-flash",
+}
+
 # ---------------------------------------------------------------------------
 # U069: named error for unparseable executor.cmd.
 # ---------------------------------------------------------------------------
 class PhaseExecutorContractError(RuntimeError):
     """U069: a phase's executor.cmd is not a parseable argument vector."""
+
+# FIX 17: named error for a substance-verifier IMPORT failure. The engine must
+# fail CLOSED: a phase that can never be substance-verified may never reach its
+# done attestation, so the run aborts (raised out of run_phase) instead of the
+# old warn-and-skip that advanced every phase unverified.
+class VerifierImportError(RuntimeError):
+    """FIX 17: phase_verifiers could not be imported -- the run aborts, unverified."""
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +166,12 @@ class Engine:
         except Exception:
             self.report.event("warn", "board init failed — running without board mirror")
             self.board = None
+        # FIX 1: wave execution runs independent phases concurrently, so every
+        # mutation of the shared run state (self.state, store.save, report,
+        # board mirror) is guarded by this engine-level lock. RLock, because
+        # the guarded call sites re-enter each other (run_phase -> _checkpoint
+        # -> _phase_state; run_phase -> report -> store.save).
+        self._state_lock = threading.RLock()
 
     # -- Option B child cards -----------------------------------------------
     def _child_card_meta(self, phase: Phase) -> Tuple[str, str]:
@@ -136,42 +184,44 @@ class Engine:
 
     # -- state helpers ----------------------------------------------------
     def _phase_state(self, pid: str) -> Dict[str, Any]:
-        for ps in self.state.setdefault("phases", []):
-            if ps["id"] == pid:
-                return ps
-        ps = {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
-              "attempts": 0, "heal_events": [], "attested_at": None}
-        self.state["phases"].append(ps)
-        return ps
+        with self._state_lock:
+            for ps in self.state.setdefault("phases", []):
+                if ps["id"] == pid:
+                    return ps
+            ps = {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
+                  "attempts": 0, "heal_events": [], "attested_at": None}
+            self.state["phases"].append(ps)
+            return ps
 
     def _checkpoint(self, pid: str, **fields: Any) -> None:
         """Invariant 3: called BEFORE an expensive call, and again after success."""
-        ps = self._phase_state(pid)
-        ps.update(fields)
-        hb = self.state.setdefault("heartbeat", {})
-        hb["last_checkpoint_at"] = utcnow()
-        hb["current_phase"] = pid
-        # The watchdog is read-only and must not resolve a manifest (Super Spec 8.3). The engine,
-        # which already has the pinned Phase, writes the two numbers the watchdog needs.
-        try:
-            ph = self.manifest.phase_or_none(pid)
-        except AttributeError:
-            ph = None
-        if ph is not None:
-            hb["interval_minutes"] = ph.heartbeat_interval_minutes
-            hb["budget_minutes"] = ph.budget_minutes
-            hb["interval_source"] = ("manifest_heartbeat_minutes" if ph.heartbeat_minutes
-                                     else "phase_budget_fallback")
-        self.store.save(self.state)
-        # FIX-20 (D19): checkpoint phase state to disk so a compaction that
-        # drops in-memory history cannot lose it. Best-effort — a working-set
-        # checkpoint failure must never block the phase loop (mirrors the
-        # invariant-1 fail-soft discipline of the board mirror).
-        try:
-            from . import workingset
-            workingset.checkpoint_phase(self.run_dir, pid, self.state, self.store)
-        except Exception:  # noqa: BLE001
-            pass
+        with self._state_lock:
+            ps = self._phase_state(pid)
+            ps.update(fields)
+            hb = self.state.setdefault("heartbeat", {})
+            hb["last_checkpoint_at"] = utcnow()
+            hb["current_phase"] = pid
+            # The watchdog is read-only and must not resolve a manifest (Super Spec 8.3). The engine,
+            # which already has the pinned Phase, writes the two numbers the watchdog needs.
+            try:
+                ph = self.manifest.phase_or_none(pid)
+            except AttributeError:
+                ph = None
+            if ph is not None:
+                hb["interval_minutes"] = ph.heartbeat_interval_minutes
+                hb["budget_minutes"] = ph.budget_minutes
+                hb["interval_source"] = ("manifest_heartbeat_minutes" if ph.heartbeat_minutes
+                                         else "phase_budget_fallback")
+            self.store.save(self.state)
+            # FIX-20 (D19): checkpoint phase state to disk so a compaction that
+            # drops in-memory history cannot lose it. Best-effort — a working-set
+            # checkpoint failure must never block the phase loop (mirrors the
+            # invariant-1 fail-soft discipline of the board mirror).
+            try:
+                from . import workingset
+                workingset.checkpoint_phase(self.run_dir, pid, self.state, self.store)
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- fix/run-slides: converter routing ---------------------------------
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P-CONVERTER
@@ -387,53 +437,118 @@ class Engine:
         return bad
 
     # -- executors --------------------------------------------------------
+    def _telemetry_dir(self) -> Path:
+        """FIX 5: durable per-stage timing telemetry location."""
+        return self.run_dir / "working" / "telemetry"
+
+    def _emit_stage_timing(self, record: Dict[str, Any]) -> None:
+        """FIX 5: append one stage-timing row to working/telemetry/stage-timings.jsonl.
+
+        Best-effort: telemetry must NEVER break a run. On write failure the row is
+        dropped with a printed warning (visible in engine output, not silent).
+        """
+        try:
+            tdir = self._telemetry_dir()
+            tdir.mkdir(parents=True, exist_ok=True)
+            with (tdir / "stage-timings.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, sort_keys=True) + "\n")
+        except OSError as exc:
+            print(f"WARN telemetry: could not write stage timing: {exc}", flush=True)
+
+    def run_phase_timed(self, phase: Phase, wave: int = 0) -> int:
+        """FIX 5: telemetry wrapper around run_phase.
+
+        Emits ONE phase_exit row per run_phase call covering every exit path
+        (done, blocked, gate-blocked, crash escape) with duration measured on
+        time.monotonic(). Telemetry never alters the return code, and never
+        raises: a telemetry failure must not be able to break a run.
+        """
+        started_t = time.monotonic()
+        started_iso = utcnow()
+        try:
+            rc = self.run_phase(phase)
+        except BaseException as exc:
+            self._emit_stage_timing({
+                "run_id": self.run_dir.name,
+                "phase_id": phase.id,
+                "wave": wave,
+                "model_used": None,
+                "event": "phase_exit",
+                "started_at": started_iso,
+                "ended_at": utcnow(),
+                "duration_s": round(time.monotonic() - started_t, 3),
+                "status": "crashed",
+                "error_class": type(exc).__name__,
+            })
+            raise
+        self._emit_stage_timing({
+            "run_id": self.run_dir.name,
+            "phase_id": phase.id,
+            "wave": wave,
+            "model_used": None,
+            "event": "phase_exit",
+            "started_at": started_iso,
+            "ended_at": utcnow(),
+            "duration_s": round(time.monotonic() - started_t, 3),
+            "status": {EXIT_OK: "done"}.get(rc, f"nonzero_rc_{rc}"),
+            "return_code": rc,
+        })
+        return rc
+
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
-        if ps.get("status") == "done":
-            bad = self._revalidate_banked(phase, ps)
-            if not bad:
-                print(f"SKIP {phase.id}: already done, {len(ps.get('artifacts', []))} artifact(s) "
-                      f"re-validated (resuming reuses banked work)", flush=True)
-                return EXIT_OK
-            self.report.event(
-                "phase.banked_invalid",
-                f"{phase.id} was marked done but {len(bad)} banked artifact(s) no longer validate: "
-                + "; ".join(bad) + " -- re-running this phase.")
-            self._checkpoint(phase.id, status="pending", banked_invalid=bad)
+        with self._state_lock:
+            if ps.get("status") == "done":
+                bad = self._revalidate_banked(phase, ps)
+                if not bad:
+                    print(f"SKIP {phase.id}: already done, {len(ps.get('artifacts', []))} artifact(s) "
+                          f"re-validated (resuming reuses banked work)", flush=True)
+                    return EXIT_OK
+                self.report.event(
+                    "phase.banked_invalid",
+                    f"{phase.id} was marked done but {len(bad)} banked artifact(s) no longer validate: "
+                    + "; ".join(bad) + " -- re-running this phase.")
+                self._checkpoint(phase.id, status="pending", banked_invalid=bad)
 
-        gate_rc = self._check_intake_gate(phase)
-        if gate_rc is not None:
-            return gate_rc
+            gate_rc = self._check_intake_gate(phase)
+            if gate_rc is not None:
+                return gate_rc
 
-        self.state["current_phase"] = phase.id
-        self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
-        self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
+            self.state["current_phase"] = phase.id
+            self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
+            self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
 
-        start_msg = self._render_client_report_msg(phase, "start")
-        self.report.to_requester("progress", start_msg)
+            start_msg = self._render_client_report_msg(phase, "start")
+            self.report.to_requester("progress", start_msg)
 
         try:
             persona.resolve_for_phase(self.run_dir, phase.id)
         except (RuntimeError, TimeoutError) as exc:
             return self._block(phase, f"persona governance: {exc}")
 
-        if phase.id == "P4-RENDER" and self.board:
-            self.board.mark_in_progress()
+        with self._state_lock:
+            if phase.id == "P4-RENDER" and self.board:
+                self.board.mark_in_progress()
 
         if phase.executor_kind == "script":
             rc = self._run_script_phase(phase)
         elif phase.executor_kind == "agent":
             rc = self._run_agent_phase(phase)
         else:
-            self.report.event("phase.no_executor",
-                              f"{phase.id} declares no executor. This is an install-time error "
-                              "once fix A3 is enforced; blocking rather than skipping.")
+            with self._state_lock:
+                self.report.event("phase.no_executor",
+                                  f"{phase.id} declares no executor. This is an install-time error "
+                                  "once fix A3 is enforced; blocking rather than skipping.")
             return self._block(phase, "no executor is defined for this phase")
 
         if rc == EXIT_OK:
             ok, missing = self._artifacts_present(phase)
             if not ok:
-                rc2 = heal.rung2_regenerate(self, phase, f"missing {', '.join(missing)}")
+                with self._state_lock:
+                    # heal internals record events + checkpoints — held under
+                    # the engine lock; a rare regeneration serializes its wave
+                    # rather than risk a torn state save.
+                    rc2 = heal.rung2_regenerate(self, phase, f"missing {', '.join(missing)}")
                 if rc2 != EXIT_OK:
                     return self._block(phase, f"produced no artifact after "
                                               f"{heal.HEAL_CAP_REGENERATE} regeneration attempt(s): "
@@ -479,37 +594,52 @@ class Engine:
                         phase.id, verifier_notes, self.run_dir)
                     if token is not None:
                         verifier_skipped = token
-                        self.report.event(
-                            "phase.verifier_skipped",
-                            f"{phase.id}: substance check failed ({'; '.join(verifier_notes)}) "
-                            f"but an owner_skip_approval token ({token.get('gate') or token.get('phase_id')}) "
-                            f"recorded by {token.get('approved_by')} authorizes the skip")
+                        with self._state_lock:
+                            self.report.event(
+                                "phase.verifier_skipped",
+                                f"{phase.id}: substance check failed ({'; '.join(verifier_notes)}) "
+                                f"but an owner_skip_approval token ({token.get('gate') or token.get('phase_id')}) "
+                                f"recorded by {token.get('approved_by')} authorizes the skip")
                     else:
-                        self.report.event("phase.verifier_block",
-                                          f"{phase.id}: {'; '.join(verifier_notes)}")
+                        with self._state_lock:
+                            self.report.event("phase.verifier_block",
+                                              f"{phase.id}: {'; '.join(verifier_notes)}")
                         return self._block(
                             phase,
                             f"substance check failed: {'; '.join(verifier_notes)}. "
                             "An owner_skip_approval token for this phase is required to "
                             "advance it to done.")
-            except ImportError:
-                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
-                                          "substance check skipped")
+            except ImportError as exc:
+                # FIX 17 (fail-closed): the OLD behaviour here warned and SKIPPED the
+                # substance check, then fell through to the status="done" checkpoint
+                # below -- attesting a phase whose substance was never verified. An
+                # unavailable verifier aborts the run instead: the raise propagates
+                # through run_phase_timed (telemetry records the crash) and run(),
+                # and the done checkpoint below is never reached, so no attestation
+                # is minted.
+                self.report.event(
+                    "phase.verifier_unavailable",
+                    f"{phase.id}: phase_verifiers not importable -- aborting before "
+                    f"any attestation is minted ({exc})")
+                raise VerifierImportError(
+                    f"substance verifier import failed for {phase.id}: {exc} "
+                    "(FIX 17: the run aborts instead of advancing unverified)") from exc
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
                              artifacts=sorted(shas.keys()),
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
                              owner_skip_approval=verifier_skipped)
             done_msg = self._render_client_report_msg(phase, "done")
-            self.report.to_requester("progress", done_msg)
-            if self.board:
-                self.board.phase_progress(phase.id, done_msg)
-                # Option B: the phase's verifier has already passed by this point
-                # (a failing verifier returns via _block() above, never reaching
-                # here) -- so this phase's FIRST progress report both mints its
-                # child card (idempotent, see BoardMirror.child_report) and closes
-                # it 'done' in the same call.
-                title, description = self._child_card_meta(phase)
-                self.board.child_report(phase.id, title, description, "done", done_msg)
+            with self._state_lock:
+                self.report.to_requester("progress", done_msg)
+                if self.board:
+                    self.board.phase_progress(phase.id, done_msg)
+                    # Option B: the phase's verifier has already passed by this point
+                    # (a failing verifier returns via _block() above, never reaching
+                    # here) -- so this phase's FIRST progress report both mints its
+                    # child card (idempotent, see BoardMirror.child_report) and closes
+                    # it 'done' in the same call.
+                    title, description = self._child_card_meta(phase)
+                    self.board.child_report(phase.id, title, description, "done", done_msg)
         return rc
 
     def _intake_gate_applies(self, phase: Phase) -> bool:
@@ -623,6 +753,45 @@ class Engine:
 
         ps = self._phase_state(phase.id)
 
+        # FIX 4 (presentation rev2 phase A): canonical front-door nonce provisioning.
+        # executors whose kind is "script" run build_deck.py, whose front-door guard
+        # (AF-CANONICAL-RENDER-BYPASS) demands BOTH the canonical-entry nonce file
+        # ({run_dir}/working/checkpoints/.canonical-entry-nonce) AND the matching
+        # OC_DECK_ENTRY_NONCE environment value. The standalone canonical entry
+        # (presentation-canonical-entry.sh) mints these; the engine dispatch never
+        # did, so every engine-spawned script phase exited 2 at the front door.
+        # Mint per-run here: run_with_cleanup is invoked with env=None, so the child
+        # inherits this process environment — setting it here is the delivery path.
+        # The run_dir may not have a checkpoints dir yet on a fresh run; create it.
+        checkpoints_dir = self.run_dir / "working" / "checkpoints"
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        nonce = secrets.token_hex(32)
+        nonce_file = checkpoints_dir / ".canonical-entry-nonce"
+        umask = os.umask(0o077)
+        try:
+            nonce_file.write_text(nonce)
+        finally:
+            os.umask(umask)
+        os.chmod(nonce_file, 0o600)
+        os.environ["OC_DECK_ENTRY_NONCE"] = nonce
+
+        try:
+            return self._run_script_phase_locked(phase, argv, checkpoints_dir, nonce_file)
+        finally:
+            # FIX 4 cleanup: the nonce is per-invocation. Remove the file and the env
+            # var on EVERY exit path (success return, heal exhaustion, rung 3, block,
+            # exception), so a later run can never reuse (or leak) this front-door
+            # nonce.
+            try:
+                nonce_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            os.environ.pop("OC_DECK_ENTRY_NONCE", None)
+        raise AssertionError("unreachable")
+
+    def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file) -> int:
+        ps = self._phase_state(phase.id)
+
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
         self._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
@@ -655,22 +824,25 @@ class Engine:
             except OSError as exc:
                 reason = f"could not start: {exc}"
 
-            record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
-            # ANNOUNCE BEFORE RETRYING (invariant 6).
-            self.report.to_requester(
-                "blocked",
-                f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
-                f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
-                phase_id=phase.id, reason=reason)
+            with self._state_lock:
+                record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
+                # ANNOUNCE BEFORE RETRYING (invariant 6).
+                self.report.to_requester(
+                    "blocked",
+                    f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
+                    f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
+                    phase_id=phase.id, reason=reason)
             if attempt < heal.HEAL_CAP_TRANSIENT:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
 
         # Rung 3: alternate route -- MECHANISM ONLY, NO CLIENT POLICY
-        rc3 = heal.rung3_alt_route(self, phase)
+        with self._state_lock:
+            rc3 = heal.rung3_alt_route(self, phase)
         if rc3 == EXIT_OK:
             _r3 = 3
-            heal.record_heal_event(self.state, phase.id, self.store, ps,
-                                   rung=_r3, attempt=1, reason="alternate route")
+            with self._state_lock:
+                heal.record_heal_event(self.state, phase.id, self.store, ps,
+                                       rung=_r3, attempt=1, reason="alternate route")
             return EXIT_OK
 
         return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
@@ -797,26 +969,27 @@ class Engine:
         now_ts = time.time()
         claim_live = claim_path.is_file() and (now_ts - claim_path.stat().st_mtime) < stale_after
         wo_live = wo_path.is_file() and (now_ts - wo_path.stat().st_mtime) < stale_after
-        if claim_live or wo_live:
-            self.report.event(
-                "phase.work_order_reused",
-                f"{phase.id}: {'a dispatcher holds a live claim on' if claim_live else 'a work order is already outstanding for'} "
-                f"working/work-orders/{phase.id}.json — waiting on it instead of "
-                "reissuing a new one (FAULT-09: two components must not act on one "
-                "phase with no coordination).")
-        else:
-            order = {
-                "phase": phase.id, "owning_role": phase.owning_role,
-                "produces_artifact": phase.produces_artifact,
-                "verifier": phase.verifier,
-                "budget_minutes": phase.budget_minutes,
-                "issued_at": utcnow(),
-            }
-            wo_path.write_text(json.dumps(order, indent=2), encoding="utf-8")
-            self.report.event("phase.work_order",
-                              f"{phase.id} is agent-authored. Work order written to "
-                              f"working/work-orders/{phase.id}.json. Waiting for "
-                              f"{', '.join(phase.produces_artifact)}.")
+        with self._state_lock:
+            if claim_live or wo_live:
+                self.report.event(
+                    "phase.work_order_reused",
+                    f"{phase.id}: {'a dispatcher holds a live claim on' if claim_live else 'a work order is already outstanding for'} "
+                    f"working/work-orders/{phase.id}.json — waiting on it instead of "
+                    "reissuing a new one (FAULT-09: two components must not act on one "
+                    "phase with no coordination).")
+            else:
+                order = {
+                    "phase": phase.id, "owning_role": phase.owning_role,
+                    "produces_artifact": phase.produces_artifact,
+                    "verifier": phase.verifier,
+                    "budget_minutes": phase.budget_minutes,
+                    "issued_at": utcnow(),
+                }
+                wo_path.write_text(json.dumps(order, indent=2), encoding="utf-8")
+                self.report.event("phase.work_order",
+                                  f"{phase.id} is agent-authored. Work order written to "
+                                  f"working/work-orders/{phase.id}.json. Waiting for "
+                                  f"{', '.join(phase.produces_artifact)}.")
         if self.dry_run:
             return EXIT_OK
 
@@ -860,10 +1033,11 @@ class Engine:
             remaining = deadline - now
             if not announced_half and remaining < (phase.budget_minutes * 60) / 2:
                 announced_half = True
-                self.report.to_requester(
-                    "progress",
-                    f"Still waiting on {phase.id} ({phase.owning_role}). "
-                    f"About {int(remaining/60)} minutes before I flag it.")
+                with self._state_lock:
+                    self.report.to_requester(
+                        "progress",
+                        f"Still waiting on {phase.id} ({phase.owning_role}). "
+                        f"About {int(remaining/60)} minutes before I flag it.")
             if now - last_cp >= checkpoint_every:
                 last_cp = now
                 self._checkpoint(phase.id, status="running",
@@ -885,36 +1059,37 @@ class Engine:
         """Park resumable. Never die, never restart from scratch (decision #5)."""
         # Count banked artifacts BEFORE checkpointing, so the current
         # phase is still "done" when we look for done phases.
-        banked, lost = [], []
-        for ps_ in self.state.get("phases", []):
-            if ps_.get("status") != "done":
-                continue
-            for a in (ps_.get("artifacts") or []):
-                ok, _why = validate_artifact(self.run_dir, a, self.manifest,
-                                             recorded_sha=(ps_.get("sha256") or {}).get(a))
-                (banked if ok else lost).append(a)
-        self._checkpoint(phase.id, status="blocked", blocked_reason=reason)
-        self.state["terminal"] = "BLOCKED"
-        self.state["blocked"] = {"phase": phase.id, "reason": reason, "at": utcnow()}
-        self.store.save(self.state)
-        if self.board:
-            self.board.mark_blocked(phase.id, reason)
-            # Option B: a gate failure on a phase that never reached its own
-            # progress report (the success-path child_report call above) still
-            # needs a child card -- child_report mints one on demand (idempotent,
-            # same as the success path) and closes it 'blocked' with the reason.
-            title, description = self._child_card_meta(phase)
-            self.board.child_report(phase.id, title, description, "blocked", reason)
-        safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
-                   "-- nothing you sent us is lost."
-        if not lost:
-            safe_msg = f"{len(banked)} file(s) already produced are saved -- nothing is lost."
-        self.report.to_requester(
-            "blocked",
-            f"Your presentation is paused at {phase.id}. {reason} "
-            f"{safe_msg} "
-            "We have been told and are looking at it.",
-            phase_id=phase.id, reason=reason)
+        with self._state_lock:
+            banked, lost = [], []
+            for ps_ in self.state.get("phases", []):
+                if ps_.get("status") != "done":
+                    continue
+                for a in (ps_.get("artifacts") or []):
+                    ok, _why = validate_artifact(self.run_dir, a, self.manifest,
+                                                 recorded_sha=(ps_.get("sha256") or {}).get(a))
+                    (banked if ok else lost).append(a)
+            self._checkpoint(phase.id, status="blocked", blocked_reason=reason)
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {"phase": phase.id, "reason": reason, "at": utcnow()}
+            self.store.save(self.state)
+            if self.board:
+                self.board.mark_blocked(phase.id, reason)
+                # Option B: a gate failure on a phase that never reached its own
+                # progress report (the success-path child_report call above) still
+                # needs a child card -- child_report mints one on demand (idempotent,
+                # same as the success path) and closes it 'blocked' with the reason.
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description, "blocked", reason)
+            safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
+                       "-- nothing you sent us is lost."
+            if not lost:
+                safe_msg = f"{len(banked)} file(s) already produced are saved -- nothing is lost."
+            self.report.to_requester(
+                "blocked",
+                f"Your presentation is paused at {phase.id}. {reason} "
+                f"{safe_msg} "
+                "We have been told and are looking at it.",
+                phase_id=phase.id, reason=reason)
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
         print(f"  reason   : {reason}", file=sys.stderr)
@@ -998,14 +1173,109 @@ class Engine:
             description = intake.get("description") or ""
             self.board.open_card(deck_slug, title, description)
 
-        for p in phases:
-            rc = self.run_phase(p)
-            if rc != EXIT_OK:
-                return rc
+        run_started_t = time.monotonic()
+        # FIX 1: wave execution behind PRESENTATION_WAVE_EXECUTION (default ON).
+        # =0 selects the exact pre-fix serial loop (documented rollback). Flag ON:
+        # the plan is built through the SAME build_execution_plan the department
+        # CLI serves (reuse-as-is boundary) from the pinned manifest path; the
+        # probe dict is the Phase A stub (see _PHASE_A_CAPACITY_PROBE). Only
+        # phases the DAG marks independent share a wave — independence is never
+        # invented here. A wave runs bounded by the measured capacity; every
+        # future of a wave joins before a failure rc is returned, so a blocking
+        # phase never abandons its wave-mates mid-flight.
+        if _wave_execution_enabled():
+            try:
+                plan = build_execution_plan(self.manifest.path, _PHASE_A_CAPACITY_PROBE)
+            except CapacityUnmeasured as exc:
+                # Same loud refusal as execution_plan's own CLI: refuse, never
+                # substitute an unmeasured width (Master-Spec file 9 AUTOFAIL).
+                print(f"CAPACITY AUTOFAIL: {exc}", file=sys.stderr)
+                print(json.dumps(autofail_payload(_PHASE_A_CAPACITY_PROBE), indent=2),
+                      file=sys.stderr)
+                return EXIT_GATE_BLOCKED
+            by_id = {p.id: p for p in phases}
+            planned_ids = [pid for wave in plan["waves"] for pid in wave]
+            wave_phases = [[by_id[pid] for pid in wave if pid in by_id]
+                           for wave in plan["waves"]]
+            # Phases the operator selected (`only`/`until`/converter routing)
+            # that the plan's waves never named still run — serially, appended
+            # after the waves, in manifest order. A selected phase is never
+            # dropped just because a subset selection didn't intersect a wave.
+            extra = [p for p in phases if p.id not in planned_ids]
+
+            def _run_wave(wave_no: int, members: List[Phase]) -> int:
+                available = plan["available"]
+                if not isinstance(available, int) or isinstance(available, bool):
+                    # UNBOUNDED (a real measurement): no ceiling to enforce —
+                    # the width is the wave size, never the sentinel literal.
+                    available = len(members)
+                width = max(1, min(len(members), available))
+                with ThreadPoolExecutor(max_workers=width) as pool:
+                    # list() joins EVERY future before returning, so all wave
+                    # members finish (telemetry included) before we fail on rc.
+                    rcs = list(pool.map(lambda m: self.run_phase_timed(m, wave=wave_no),
+                                        members))
+                return next((rc for rc in rcs if rc != EXIT_OK), EXIT_OK)
+
+            for wave_no, members in enumerate(wave_phases, 1):
+                if not members:
+                    continue
+                rc = _run_wave(wave_no, members)
+                if rc != EXIT_OK:
+                    return rc
+            for p in extra:
+                rc = self.run_phase_timed(p, wave=len(plan["waves"]) + 1)
+                if rc != EXIT_OK:
+                    return rc
+        else:
+            # PRESENTATION_WAVE_EXECUTION=0 rollback path: the pre-fix serial
+            # loop, byte-for-byte (every phase wave=0).
+            for p in phases:
+                rc = self.run_phase_timed(p, wave=0)
+                if rc != EXIT_OK:
+                    return rc
+
+        # FIX 5: one-line run summary (total wall-clock, slowest phases).
+        self._emit_run_summary(run_started_t)
 
         if only:
             return EXIT_OK
         return self.close()
+
+    def _emit_run_summary(self, run_started_t: float) -> None:
+        """FIX 5: emit a run-level summary -- total wall clock + slowest 3 phases.
+
+        Reads back the run's own stage-timings rows (event=phase_exit only) so
+        blocks/crashes are visible too. Best-effort, never raises.
+        """
+        try:
+            rows = []
+            tf = self._telemetry_dir() / "stage-timings.jsonl"
+            if tf.exists():
+                with tf.open("r", encoding="utf-8") as fh:
+                    rows = [json.loads(line) for line in fh if line.strip()]
+            exits = [r for r in rows if r.get("event") == "phase_exit"]
+            by_phase: Dict[str, float] = {}
+            for r in exits:
+                pid = r.get("phase_id")
+                if pid:
+                    by_phase[pid] = by_phase.get(pid, 0.0) + float(r.get("duration_s") or 0.0)
+            slowest = sorted(by_phase.items(), key=lambda kv: kv[1], reverse=True)[:3]
+            total = time.monotonic() - run_started_t
+            summary = {
+                "run_id": self.run_dir.name,
+                "event": "run_summary",
+                "total_wall_s": round(total, 3),
+                "phase_count": len(exits),
+                "slowest_3": [{"phase_id": pid, "duration_s": round(d, 3)} for pid, d in slowest],
+                "generated_at": utcnow(),
+            }
+            self._emit_stage_timing(summary)
+            slow_str = ", ".join(f"{pid} {d:.0f}s" for pid, d in slowest)
+            print(f"RUN SUMMARY: total {total:.0f}s | phases executed: {len(exits)} | "
+                  f"slowest: {slow_str}", flush=True)
+        except Exception as exc:  # noqa: BLE001 telemetry must never break a run
+            print(f"WARN telemetry: run summary failed: {exc}", flush=True)
 
     def _mint_process_certificate(self) -> dict:
         """U067 -- WORK-ITEM-05: Mint PROCESS-CERTIFICATE inside engine close().

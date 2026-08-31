@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh
+# presentation-canonical-entry.sh — SINGLE SOURCE (FIX 31, presentation rev2 waves).
+# The runtime/deployed copy at 23-ai-workforce-blueprint/scripts/presentation-canonical-
+# entry.sh — the path install.sh / update-skills.sh co-locate and SKILL.md names — is a
+# BYTE-IDENTICAL GENERATED MIRROR of this file. Edit ONLY here, then re-cp the mirror;
+# the two must never diverge (pre-FIX-31 the mirror carried only the legacy
+# run_signature_deck.py dispatch, so following SKILL.md on a deployed box skipped the
+# mechanical engine walk entirely). The department template materialization into
+# $OC_WORKSPACE/departments/Presentations/scripts copies this same file.
 #
 # THE ONE SANCTIONED COMMAND TO BUILD A PRESENTATIONS DECK.
 # ============================================================================
@@ -21,8 +28,8 @@
 # This script closes that gap. It is the SINGLE governed entry point. Before it
 # hands off to the canonical orchestrator it runs three fail-closed gates:
 #
-#   1. DEPS CHECK      — the four runtime deps (soffice, pdftoppm, reportlab,
-#                        python-pptx) must be present, or the build refuses to
+#   1. DEPS CHECK      — the runtime deps (soffice, pdftoppm, reportlab,
+#                        python-pptx, pypdf) must be present, or the build refuses to
 #                        start (exit 6, PRESENTATION_DEPS_MISSING). Mirrors the
 #                        qc-completeness.sh dep gate so a deck cannot half-build.
 #   2. BYPASS-SCAN     — refuse if any HAND-ROLLED renderer/assembler exists in
@@ -516,7 +523,7 @@ check_intake_trace "$RUN_DIR"
 # ===========================================================================
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx)"
+note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
 # FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
 # function (`QC_SKIP_PRESENTATION_DEPS=1 -> return 0`) was a live process-skip
 # vector — any agent could export it, sail past GATE 1, burn the full Kie render
@@ -543,6 +550,15 @@ deps_check() {
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
             || missing+=("python(reportlab+python-pptx)")
+        # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
+        # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
+        # the AcroForm fields + /NeedAppearances survived before it may upload). It is
+        # NOT gated by the pdf_export/guide phase's own checks, so it must be gated
+        # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
+        # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
+        # deps).
+        python3 -c "import pypdf" >/dev/null 2>&1 \
+            || missing+=("python(pypdf)")
     else
         missing+=("python3")
     fi
@@ -555,7 +571,7 @@ deps_check() {
     command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
     command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
     if [ "${#missing[@]}" -gt 0 ]; then
-        # FIX-PRES-09(iv): event-shaped reassert. On a VPS the four deps do not
+        # FIX-PRES-09(iv): event-shaped reassert. On a VPS the runtime deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
         # cron, self-heal HERE on the GATE-1 failure path — run the idempotent
         # reassert script ONCE, then re-check, before failing the run.
@@ -571,7 +587,7 @@ deps_check() {
         echo "PRESENTATION_DEPS_MISSING: ${missing[*]}" >&2
         return 6
     fi
-    echo "  OK: all four runtime deps present"
+    echo "  OK: all runtime deps present"
     return 0
 }
 deps_check || {
@@ -652,7 +668,7 @@ run_dir = os.path.realpath(os.environ["RUN_DIR"])
 scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
 CANON = {"build_deck.py", "run_signature_deck.py", "build_teleprompter.py",
          "kie_generate.py", "presentation-canonical-entry.sh",
-         "build_webinar_video.py"}
+         "build_webinar_video.py", "workbook_builder.py"}
 
 # Slide canvas at the 16:9 2K deck dimensions: Image.new(...2048...1152...)
 re_canvas = re.compile(r"Image\.new\s*\([^)]*\b2048\b[^)]*\b1152\b", re.S)

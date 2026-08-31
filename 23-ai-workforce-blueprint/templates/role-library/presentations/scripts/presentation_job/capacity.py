@@ -132,6 +132,35 @@ not produce a number", and the dispatch path fails closed with
 AF-CAPACITY-UNMEASURED.
 
 Exit codes (CLI): 0 success, 3 probe could not produce a number, 2 usage.
+
+FIX 9 -- per-provider live probes (presentation rev2 Phase B)
+-------------------------------------------------------------
+Capacity detection answers "HOW WIDE can this client run at once". It never
+answered "WHAT does this client actually own" -- which provider keys exist
+(presence only, never values), which exact models are unlocked on each one,
+and which models 9Router has wired locally. FIX 9 adds that inventory:
+
+  * `PROVIDER_PROBE_DEFS` names each probeable provider (openrouter,
+    ollama-cloud, deepseek-direct, agnes), the env keys that carry its
+    credential and its cheap `GET /models` endpoint.
+  * `probe_one_provider()` resolves key presence (env first, then the
+    secrets env files BY NAME ONLY -- the value is read into the Bearer
+    header transport and never anywhere else), then runs the models call
+    through an injectable transport (proofs/tests always inject a stub; the
+    default transport is the only thing that touches the network).
+  * `detect_9router_lineup()` reads the 9Router's LOCAL database -- the
+    already-established non-secret columns (providerNodes.prefix/baseUrl,
+    the kv `...|llm` wired-model rows, combos) and NEVER apiKeys or
+    providerConnections.data.
+  * `probe_providers(...)` is the FIX 9 entry point; `persist=True` stores
+    the inventory into the resource profile (resource_profile.py's
+    store_provider_probes). `capacity.probe()` itself stays read-only: it
+    surfaces presence + lineup under `provider_probes`, never a models call.
+
+Rollout flag: PRESENTATION_PROVIDER_PROBES (default ON; documented =0
+rollback below). Credentials never appear in any result, report, or log --
+each probe reports `presence: "yes"/"no"` and `key_source` (the env NAME or
+file path), never a key value.
 """
 
 from __future__ import annotations
@@ -144,6 +173,8 @@ import re
 import sqlite3
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -326,6 +357,363 @@ def json_default(obj):
         return "UNBOUNDED"
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
+
+# ---------------------------------------------------------------------------
+# FIX 9: per-provider live probes (key presence + a cheap list/models call)
+# ---------------------------------------------------------------------------
+PROBE_FLAG_ENV = "PRESENTATION_PROVIDER_PROBES"
+PROBE_FLAG_DEFAULT = "1"
+
+def probe_flag_enabled() -> bool:
+    """True unless the operator exported PRESENTATION_PROVIDER_PROBES=0.
+
+    Default ON per the rev2 rollback doctrine. `=0` is the documented
+    rollback for FIX 9's behavior change: probe_providers() returns an empty
+    dict without touching the network or the profile, capacity.probe()'s
+    `provider_probes` surface reads {"flag": "disabled"}, and nothing else
+    in the detection chain changes."""
+    return os.environ.get(PROBE_FLAG_ENV, PROBE_FLAG_DEFAULT) != "0"
+
+#: Per-provider probe definitions. Each names the env keys that may carry the
+#: credential (checked IN ORDER), the secrets env files consulted for that
+#: key NAME (values are never emitted), and the cheapest possible
+#: inventory call: `GET {base}/models` on the same OpenAI-compatible base the
+#: department's own transports already use. No completion call, no credit
+#: call, no balance query -- list/models is the spec's "cheap list/models
+#: call".
+PROVIDER_PROBE_DEFS = {
+    "openrouter": {
+        "label": "OpenRouter",
+        "env_keys": ("OPENROUTER_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "OPENROUTER_API_KEY"),
+                         ("~/.openclaw/.env", "OPENROUTER_API_KEY")),
+        "models_url": "https://openrouter.ai/api/v1/models",
+        # OpenRouter /models is public; the Bearer header is still sent when
+        # a key resolves so the key-present path is exercised end to end.
+        "auth_required_for_models": False,
+    },
+    "ollama-cloud": {
+        "label": "Ollama Cloud",
+        "env_keys": ("OLLAMA_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "OLLAMA_API_KEY"),
+                         ("~/.openclaw/.env", "OLLAMA_API_KEY")),
+        "models_url": "https://ollama.com/v1/models",
+        "auth_required_for_models": True,
+    },
+    "deepseek-direct": {
+        "label": "DeepSeek Direct",
+        "env_keys": ("DEEPSEEK_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "DEEPSEEK_API_KEY"),
+                         ("~/.openclaw/.env", "DEEPSEEK_API_KEY")),
+        "models_url": "https://api.deepseek.com/models",
+        "auth_required_for_models": True,
+    },
+    "agnes": {
+        "label": "Agnes",
+        "env_keys": ("AGNES_AI_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "AGNES_AI_API_KEY"),
+                         ("~/.openclaw/.env", "AGNES_AI_API_KEY")),
+        "models_url": "https://apihub.agnes-ai.com/v1/models",
+        "auth_required_for_models": True,
+    },
+}
+
+#: Where key VALUES may be read from when the environment does not already
+#: carry them. Same files the department's own loaders (dispatcher's
+#: _load_deepseek_key, build_deck's KIE loader) already read. The VALUE is
+#: forwarded ONLY into the Authorization header transport and never placed
+#: in any result, report, log, profile or exception message.
+SECRETS_ENV_FILES = (("~/.openclaw/secrets/.env",), ("~/.openclaw/.env",))
+
+def probe_transport(url: str, key: Optional[str] = None,
+                    timeout: float = 8.0) -> Tuple[int, bytes]:
+    """THE injectable network transport (single seam; proofs/tests inject a
+    stub and never touch the network). Returns (http_status, body_bytes).
+    The bearer key, when one resolved, goes ONLY into the Authorization
+    header -- it is never returned, logged, or raised. urllib is the stdlib
+    default; no third-party HTTP dependency."""
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("Accept", "application/json")
+    if key:
+        request.add_header("Authorization", f"Bearer {key}")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read()
+        except Exception:  # noqa: BLE001 -- error body is best-effort
+            body = b""
+        return exc.code, body
+    except Exception as exc:  # noqa: BLE001 -- transport failure is a verdict
+        return 0, str(exc).encode("utf-8", "replace")
+
+def _extract_model_ids(payload: bytes) -> Tuple[list, Optional[str]]:
+    """Pull the wired model ids out of a `GET /models` body.
+
+    OpenAI-compatible providers return {"data": [{"id": ...}, ...]}. Some
+    return a bare list. Anything unparseable becomes ([], reason) so the
+    probe reports honestly instead of inventing an inventory. Non-string ids
+    are coerced via str(); nothing else in the item is kept (some providers
+    attach per-model pricing/metadata blobs -- out of scope and untrusted)."""
+    try:
+        parsed = json.loads(payload.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return [], "models body not JSON"
+    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+        items = parsed["data"]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        return [], "models body shape unrecognized"
+    ids = []
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.append(item["id"])
+        elif isinstance(item, str):
+            ids.append(item)
+    return ids, None
+
+def _read_secret_value(env_key: str) -> Optional[str]:
+    """Resolve a credential for `probe_one_provider`, in order:
+
+      1. an already-exported environment variable (the normal case for a
+         dispatch run -- the Engine inherits the sourced secrets env);
+      2. the department's secrets env files, matched BY KEY NAME.
+
+    The VALUE is returned for the Authorization header only. Every caller
+    that surfaces anything to a human uses presence/key_source, never this.
+    Returns None when no source has the key name."""
+    value = (os.environ.get(env_key) or "").strip()
+    if value:
+        return value
+    for spec in PROVIDER_PROBE_DEFS.values():
+        if env_key not in spec["env_keys"]:
+            continue
+        for file_spec, file_key in spec["secret_files"]:
+            path = Path(os.path.expanduser(file_spec))
+            try:
+                if not path.is_file():
+                    continue
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith(f"{file_key}="):
+                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if candidate:
+                            return candidate
+            except OSError:
+                continue
+    return None
+
+def probe_one_provider(provider: str,
+                       transport: Optional[callable] = None,
+                       env: Optional[dict] = None) -> dict:
+    """One cheap live probe of one provider. Returns the FIX 9 verdict:
+
+        provider            normalized provider id (PROVIDER_PROBE_DEFS key)
+        present             bool -- key FOUND in env or the secrets env files
+        key_source          where the key NAME was found ("env:NAME" or the
+                            file path) -- never the value
+        probed              bool -- a models call was actually attempted
+        http_status         the transport's status (0 = transport failure)
+        models              sorted wired model ids (may be [] when not probed
+                            or the call failed -- never invented)
+        models_error        why models is [] (absent on success)
+        ok                  bool -- present AND probed AND models resolved
+
+    Never raises. Never puts the key value, or any response body fragment
+    beyond model ids, in the verdict. `env` lets proofs simulate presence
+    without touching os.environ."""
+    if provider not in PROVIDER_PROBE_DEFS:
+        return {"provider": provider, "present": False, "key_source": None,
+                "probed": False, "http_status": None, "models": [],
+                "models_error": "unknown provider", "ok": False}
+    spec = PROVIDER_PROBE_DEFS[provider]
+    env_keys = spec["env_keys"]
+    env_view = os.environ if env is None else env
+
+    present = False
+    key_source = None
+    key_value = None
+    for name in env_keys:
+        candidate = str((env_view.get(name) or "")).strip()
+        if candidate:
+            present, key_source, key_value = True, f"env:{name}", candidate
+            break
+    key_env = os.environ if env is None else env
+    if not present:
+        # secrets files: presence read by NAME from the files; the value is
+        # loaded only for the header. (Uses the real fs -- env= only fakes
+        # the process environment, matching dispatcher's loader posture.)
+        for name in env_keys:
+            resolved = _read_secret_value(name)
+            if resolved:
+                present, key_source, key_value = True, (
+                    "secrets-env-files"), resolved
+                break
+
+    result = {"provider": provider, "present": present,
+              "key_source": key_source if present else None,
+              "probed": False, "http_status": None, "models": [],
+              "models_error": None, "ok": False}
+
+    should_probe = spec["auth_required_for_models"] is False or present
+    if not should_probe:
+        result["models_error"] = "no key present -- models call skipped"
+        return result
+
+    transport = transport or probe_transport
+    try:
+        status, body = transport(spec["models_url"], key_value)
+    except Exception as exc:  # noqa: BLE001 -- a broken stub must not kill the probe
+        result.update({"probed": True, "http_status": 0,
+                       "models_error": f"transport failure: "
+                                       f"{exc.__class__.__name__}"})
+        return result
+    result["probed"] = True
+    result["http_status"] = status
+    if status == 200:
+        ids, error = _extract_model_ids(body)
+        if error:
+            result["models_error"] = error
+        else:
+            result["models"] = sorted(ids)
+            result["ok"] = True
+    elif status == 401 or status == 403:
+        result["models_error"] = ("key present but rejected by provider "
+                                  f"(HTTP {status})")
+    elif status == 0:
+        detail = body.decode("utf-8", "replace")[:120]
+        result["models_error"] = f"transport failure: {detail}"
+    else:
+        result["models_error"] = f"HTTP {status} from models endpoint"
+    return result
+
+def _ninerouter_lineup(db_path: Optional[Path] = None) -> dict:
+    """Read the 9Router's LOCAL model lineup -- the non-secret columns only.
+
+    Reads three things, all already-established non-secret surfaces:
+      * providerNodes.data's prefix/baseUrl (which provider namespaces exist);
+      * the kv rows keyed `{providerAlias}|{modelId}|llm` (what 9Router has
+        WIRED per provider node -- the local lineup the operator sees);
+      * combos.name/models (primary route listings, also read by the
+        capacity detection chain).
+    NEVER apiKeys, NEVER providerConnections.data (both carry credentials).
+    Returns {"hit", "detail", "providers": {prefix: {"label", "models"}},
+    "total_models"}."""
+    path = Path(db_path) if db_path else NINEROUTER_DB
+    out = {"hit": False, "detail": "", "providers": {}, "total_models": 0}
+    if not path.is_file():
+        out["detail"] = f"no 9Router database at {path}"
+        return out
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error as exc:
+        out["detail"] = f"9Router database unreadable: {exc.__class__.__name__}"
+        return out
+    try:
+        cur = con.cursor()
+        nodes = {}
+        try:
+            for data in cur.execute("select data from providerNodes"):
+                try:
+                    node = json.loads(data[0] or "{}")
+                except ValueError:
+                    continue
+                prefix = node.get("prefix")
+                if isinstance(prefix, str) and prefix:
+                    nodes[prefix] = {"label": node.get("name") or prefix,
+                                     "baseUrl": node.get("baseUrl"), "models": []}
+        except sqlite3.Error:
+            pass
+        wired = {}
+        try:
+            for key, in cur.execute("select key from kv where key like '%|llm'"):
+                parts = key.split("|")
+                if len(parts) < 3:
+                    continue
+                alias, model_id = parts[0], parts[1]
+                wired.setdefault(alias, []).append("|".join(parts[1:-1]))
+        except sqlite3.Error:
+            pass
+        # Map each node's alias onto its prefix when possible; node ids are
+        # uuid-ish aliases, so ALSO fall back to the prefix rows that carry
+        # their own models. The lineup is whatever 9Router has wired.
+        providers = {}
+        combined = dict(nodes)
+        for alias, models in wired.items():
+            if alias in combined:
+                combined[alias]["models"].extend(models)
+            else:
+                combined[alias] = {"label": alias, "baseUrl": None,
+                                   "models": list(models)}
+        for prefix, info in combined.items():
+            models = sorted(dict.fromkeys(info["models"]))
+            providers[prefix] = {"label": info["label"], "models": models}
+            out["total_models"] += len(models)
+        out["providers"] = providers
+        out["hit"] = bool(providers)
+        out["detail"] = (f"9Router lineup read from {path}: "
+                         f"{len(providers)} provider aliases, "
+                         f"{out['total_models']} wired models"
+                         if out["hit"] else f"no wired models in {path}")
+        return out
+    finally:
+        con.close()
+
+def detect_9router_lineup(db_path: Optional[Path] = None) -> dict:
+    """Public FIX 9 entry for the 9Router local lineup (never any secret
+    table). See _ninerouter_lineup()."""
+    return _ninerouter_lineup(db_path)
+
+def probe_providers(providers: Optional[list] = None,
+                    transport: Optional[callable] = None,
+                    db_path: Optional[Path] = None,
+                    persist: bool = False,
+                    config_dir: Optional[Path] = None) -> dict:
+    """FIX 9 entry point: probe providers + read the 9Router lineup.
+
+    With persist=True the inventory lands in the resource profile
+    (resource_profile.store_provider_probes) under `wired_models` and
+    `key_present` per provider, redacted by the profile's write path. With
+    persist=False (the default) nothing is stored -- capacity.probe() stays
+    read-only and calls this fresh. Returns:
+
+        {"flag": "1"|"0", "probes": {provider: verdict}, "ninerouter": ...,
+         "probed_at": iso}
+    """
+    if not probe_flag_enabled():
+        return {"flag": "0", "probes": {}, "ninerouter":
+                {"hit": False, "detail": "provider probes disabled by "
+                 f"{PROBE_FLAG_ENV}=0", "providers": {}, "total_models": 0},
+                "probed_at": datetime.datetime.now().astimezone().isoformat()}
+    wanted = providers or sorted(PROVIDER_PROBE_DEFS)
+    probes = {}
+    for provider in wanted:
+        if provider not in PROVIDER_PROBE_DEFS:
+            probes[provider] = {"provider": provider, "present": False,
+                                "key_source": None, "probed": False,
+                                "http_status": None, "models": [],
+                                "models_error": "unknown provider", "ok": False}
+            continue
+        probes[provider] = probe_one_provider(provider, transport=transport)
+    lineup = _ninerouter_lineup(db_path)
+    result = {
+        "flag": "1",
+        "probes": probes,
+        "ninerouter": lineup,
+        "probed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    if persist:
+        try:
+            try:
+                from . import resource_profile as _rp
+            except ImportError:
+                import resource_profile as _rp  # type: ignore[no-redef]
+            _rp.store_provider_probes(result, config_dir=config_dir)
+        except Exception as exc:  # noqa: BLE001 -- never break the probe path
+            result["persist_error"] = f"{exc.__class__.__name__}: {exc}"
+    return result
 
 # ---------------------------------------------------------------------------
 # Credential safety
@@ -971,6 +1359,97 @@ def detect(config_dir: Optional[Path] = None) -> dict:
             "override_path": str(path), "trail": trail, "notes": []}
 
 
+def resource_profile_surface(config_dir: Optional[Path] = None,
+                             resolution: Optional[dict] = None) -> dict:
+    """FIX 8: the capacity probe's read-only view of the per-client resource
+    profile (resource_profile.py's store). Returns a redacted summary of the
+    persisted client picture -- providers, plan tiers, ceilings, the
+    ask-once lock state and any intake question still owed -- WITHOUT ever
+    reading or emitting a credential, and WITHOUT changing detection: this
+    is a surfaced mirror, not a third detection source. `resolution` (the
+    detect() result, when available) feeds the pending-question evaluation
+    so a provider caught PARKing surfaces its one-time question even before
+    the profile has ever heard of it. Never raises; the probe must keep
+    working on a box with no profile, a flag-disabled profile, or a corrupt
+    one. Import is lazy so this module never depends on the profile module
+    at import time (launcher.py's dual-import posture keeps working either
+    way)."""
+    surface = {"profile_enabled": True, "profile_path": None,
+               "providers": [], "pending_questions": []}
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # direct file run from presentation_job/
+            import resource_profile as _rp  # type: ignore[no-redef]
+    except ImportError:
+        surface["profile_enabled"] = False
+        return surface
+    if not _rp.flag_enabled():
+        surface["profile_enabled"] = False
+        return surface
+    try:
+        path = _rp.profile_path(config_dir)
+        surface["profile_path"] = str(path)
+        profile = _rp.load_profile(config_dir)
+        if profile.get("error"):
+            surface["profile_error"] = profile["error"]
+        summary = _rp.redacted_summary(profile)
+        surface["providers"] = summary.get("providers", [])
+        detection = None
+        if isinstance(resolution, dict):
+            provider = resolution.get("provider")
+            if isinstance(provider, str) and provider.strip():
+                detection = {"provider": provider,
+                             "detected": resolution["status"] != "UNDETERMINED"}
+        pending = _rp.pending_questions(profile=profile, detection=detection)
+        surface["pending_questions"] = pending
+        surface["pending_intake_ids"] = sorted(
+            {q.get("id") for q in pending})
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["profile_error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+
+def provider_probes_surface(transport: Optional[callable] = None) -> dict:
+    """FIX 9 surface on capacity.probe(): a REDACTED summary of the provider
+    inventory -- per provider {present, key_source, probed, ok, model_count}
+    -- plus the 9Router wired lineups. NEVER carries a key value, NEVER makes
+    a models call itself unless the transport is the live default and the
+    flag is on: this surface exists so the FIX 30 intake and the report can
+    say what the box owns without moving the storage to this path (storing
+    stays with probe_providers(persist=True) / the profile). Errors never
+    break the capacity probe."""
+    surface: dict = {"flag": None, "providers": [], "ninerouter": None}
+    try:
+        if not probe_flag_enabled():
+            surface["flag"] = "0"
+            surface["detail"] = (f"provider probes disabled by {PROBE_FLAG_ENV}=0")
+            return surface
+        surface["flag"] = "1"
+        probes = probe_providers(transport=transport)
+        for provider, verdict in (probes.get("probes") or {}).items():
+            surface["providers"].append({
+                "provider": provider,
+                "present": bool(verdict.get("present")),
+                "key_source": verdict.get("key_source"),
+                "probed": bool(verdict.get("probed")),
+                "ok": bool(verdict.get("ok")),
+                "model_count": len(verdict.get("models") or []),
+            })
+        lineup = probes.get("ninerouter") or {}
+        surface["ninerouter"] = {
+            "hit": bool(lineup.get("hit")),
+            "total_models": lineup.get("total_models", 0),
+            "providers": {prefix: {"label": info.get("label"),
+                                   "models": info.get("models", [])}
+                          for prefix, info in
+                          (lineup.get("providers") or {}).items()},
+            "detail": lineup.get("detail", ""),
+        }
+    except Exception as exc:  # noqa: BLE001 -- never break the capacity probe
+        surface["error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
 def probe(config_dir: Optional[Path] = None) -> dict:
     """The main entry point. Read-only; never mutates anything, never exits.
 
@@ -1005,6 +1484,9 @@ def probe(config_dir: Optional[Path] = None) -> dict:
         "notes": resolution.get("notes", []),
         "working_concurrent": working if ok else "UNMEASURED",
         "working_concurrent_method": method,
+        "resource_profile": resource_profile_surface(config_dir,
+                                                     resolution=resolution),
+        "provider_probes": provider_probes_surface(),
     }
     return result
 
@@ -1128,6 +1610,22 @@ def format_report(result: dict) -> str:
     ]
     for note in result.get("notes") or []:
         lines.append(f"Note: {note}")
+    probes = result.get("provider_probes") or {}
+    if probes.get("providers"):
+        lines.append("Provider inventory (FIX 9 -- key presence, never a value):")
+        for entry in probes["providers"]:
+            lines.append(
+                f"  {entry.get('provider')}: key present: "
+                f"{'yes' if entry.get('present') else 'no'}"
+                f"{'' if entry.get('present') else ''}"
+                + (f" (source {entry.get('key_source')})" if entry.get("key_source") else "")
+                + (f", {entry.get('model_count')} models unlocked"
+                   if entry.get("probed") and entry.get("ok") else
+                   ", models call not resolved" if entry.get("present") else ""))
+    nine = probes.get("ninerouter") or {}
+    if nine.get("hit"):
+        lines.append(f"9Router lineup: {nine.get('total_models')} wired models "
+                     f"across {len(nine.get('providers') or {})} provider aliases")
     lines.append("Detection trail:")
     for entry in result.get("detection_trail", []):
         lines.append(f"  ({entry.get('step')}) {entry.get('source')}: "

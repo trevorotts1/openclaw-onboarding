@@ -460,6 +460,23 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         print("FATAL: " + _qc_floor + " Refusing to attest phase " + phase_id + ".",
               file=sys.stderr)
         sys.exit(2)
+    # FIX 18 — the two HUMAN craft rows (AF-OBI-4 value-trio / AF-OBI dimension)
+    # cannot attest on a relevant QC phase until an independent human reviewer has
+    # filed pass/fail verdicts in working/qc/human_craft_verdicts.json. Fail-closed
+    # in every direction; never presented as measured automation.
+    try:
+        import craft_judgement
+    except ImportError as exc:
+        print("FATAL: AF-CRAFT-JUDGEMENT-LOADER: craft_judgement.py is not "
+              "importable next to run_signature_deck.py (" + repr(exc) + ") — "
+              "fail-closed (FIX 18 human-verdict gate cannot be skipped).",
+              file=sys.stderr)
+        sys.exit(2)
+    _human_blocker = craft_judgement.attestation_blocker(run_dir, phase_id)
+    if _human_blocker:
+        print("FATAL: " + _human_blocker + " Refusing to attest phase " + phase_id
+              + ".", file=sys.stderr)
+        sys.exit(2)
     p = _process_manifest_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     obj = _load_process_manifest(run_dir)

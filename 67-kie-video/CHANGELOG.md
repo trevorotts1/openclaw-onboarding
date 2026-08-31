@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.1.1] - 2026-08-31 - fix: QC.md version expectation matches skill-version.txt after media-limits repack
+
+- `QC.md` checklist no longer asserts `skill-version.txt` reads `v1.0.0` (it
+  has been `v1.1.0` since the media-limits repack); the expectation is now
+  `v1.1.1`, matching the current `skill-version.txt`.
+
+---
+
 ## [v1.0.0] - 2026-08-26 - feat: new KIE Video skill (Skill 67) — model selection, validation, async dispatch, and multi-frame visual QC for KIE.ai video families
 
 ### Added

@@ -47,8 +47,6 @@ Dependency-free: stdlib only (json, os, pathlib, datetime, argparse, sys, tempfi
 
 import argparse
 import datetime
-import hashlib
-import hmac
 import json
 import os
 import pathlib
@@ -272,34 +270,70 @@ def _now() -> str:
 # strictly ascending, every answered required question present), and verifies
 # an embedded HMAC digest.
 #
-# THREAT MODEL, stated honestly: this is a deterministic, stdlib-only, no-
-# network, no-secrets-infrastructure prover (same constraint every other
-# prove_sp_*.py in this skill operates under) whose evaluate(intake) is called
-# with ONLY the assembled JSON dict from several independent call sites,
-# including build_deck.py's `_sp_delegate("intake", run_dir)` (a single
-# positional argument, no side channel). There is nowhere to thread a per-run
-# secret to every verifier, so TURN_LEDGER_KEY below is a published integrity
-# key, NOT a secrecy boundary: it binds the turn array + deck_type + commit id
-# together so the block cannot be edited piecemeal (e.g. copy-pasted from a
-# different record) without invalidating the signature, and it forces anyone
-# faking a record to reproduce the ENTIRE strictly-ordered, one-turn-per-
-# question structure by hand — meaningfully harder than flipping one boolean.
-# It does not, and cannot, stop a source-literate adversary; no prover in this
-# fleet's threat model claims to. MUST match TURN_LEDGER_KEY in
-# 51-signature-presentation/scripts/prove_sp_intake.py byte-for-byte.
-TURN_LEDGER_KEY = b"skill51-sp-intake-turn-ledger-provenance-v1"
+# THREAT MODEL, stated honestly: evaluate(intake) is called with ONLY the
+# assembled JSON dict from several independent call sites, including
+# build_deck.py's `_sp_delegate("intake", run_dir)` (a single positional
+# argument, no side channel). FIX 29 moved the signing key OUT of source: key
+# material lives only in the secrets store
+# (PRESENTATION_SP_TURN_LEDGER_KEYS_FILE / PRESENTATION_SP_TURN_LEDGER_* env),
+# the verifier module (51-signature-presentation/scripts/prove_sp_intake.py)
+# owns loading it, and this driver is a SIGNER only — it delegates every
+# signature through that module, so new envelopes carry key_id + signed_at
+# INSIDE the authenticated HMAC payload and are stamped with the CURRENT
+# rotation key only (a signer never signs with the previous key). The
+# published TURN_LEDGER_KEY constant that used to live here is removed:
+# forging a block now requires the live secret, not a repo read. The signature
+# still binds the turn array + deck_type + commit id together so the block
+# cannot be edited piecemeal (e.g. copy-pasted from a different record)
+# without invalidating it. Missing key record / unlocatable prover module
+# fails CLOSED at the call site (launch/configuration failure), never
+# degrade open.
 
+_SP_PROVER_MODULE = None  # lazily-imported prove_sp_intake.py (the key owner)
 
-def _canonical_turns_payload(turns: list, deck_type, commit_id) -> bytes:
-    """Deterministic serialization the driver signs and the prover re-verifies.
-    Must match prove_sp_intake.py's _canonical_turns_payload() exactly."""
-    payload = {"deck_type": deck_type, "record_commit_ids": commit_id, "turns": turns}
-    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+def _sp_prover_module():
+    """Import prove_sp_intake.py by resolved path (mirrors
+    _load_sp_transcript_checker below). Returns the module, or None when it
+    cannot be located/imported — callers MUST fail closed in that case: after
+    FIX 29 there is no repo copy of the key to sign with."""
+    global _SP_PROVER_MODULE
+    if _SP_PROVER_MODULE is not None:
+        return _SP_PROVER_MODULE
+    cand = find_sp_prover()
+    if cand is None:
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("prove_sp_intake_signer", cand)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+    except Exception:  # noqa: BLE001 — a broken prover must fail closed, not self-sign
+        return None
+    _SP_PROVER_MODULE = m
+    return m
 
+def _is_key_config_error(exc: BaseException) -> bool:
+    """True when a signer call failed on KEY CONFIGURATION (prover module's
+    KeyConfigError) or because the prover module could not be located (our
+    RuntimeError). Duck-typed on the class name: the prover is imported lazily
+    by path, so its exception classes are not importable at module top."""
+    return type(exc).__name__ in ("KeyConfigError", "RuntimeError")
 
 def _sign_turn_ledger(turns: list, deck_type, commit_id) -> str:
-    return hmac.new(TURN_LEDGER_KEY, _canonical_turns_payload(turns, deck_type, commit_id),
-                     hashlib.sha256).hexdigest()
+    """Back-compat helper: return only the HMAC hex via the verifier module's
+    store-backed shim (current key only). The real stamping path is
+    build_turn_ledger_provenance(); this stays for any external caller that
+    only wants the digest."""
+    m = _sp_prover_module()
+    if m is None:
+        raise RuntimeError(
+            "AF-SP-KEY-SOURCE-MISSING: prove_sp_intake.py is not co-located and "
+            "FIX 29 removed the published signing key from this driver, so a "
+            "turn-ledger signature can only be produced through the verifier "
+            "module's secrets-store key record. Fail-closed — nothing is signed "
+            "with a repo constant.")
+    return m._sign_turn_ledger(turns, deck_type, commit_id)
+
 
 
 def build_turn_ledger_provenance(entries: dict, question_ids: list, deck_type, commit_id) -> Optional[dict]:
@@ -329,7 +363,22 @@ def build_turn_ledger_provenance(entries: dict, question_ids: list, deck_type, c
         })
     if not turns:
         return None
-    return {"turns": turns, "signature": _sign_turn_ledger(turns, deck_type, commit_id)}
+    # FIX 29: produce the envelope through the verifier module so every new
+    # record carries key_id + signed_at inside the authenticated payload,
+    # signed with the CURRENT rotation key. KeyConfigError (missing/invalid
+    # secrets record) propagates on purpose — the caller gates fail closed.
+    m = _sp_prover_module()
+    if m is None:
+        raise RuntimeError(
+            "AF-SP-KEY-SOURCE-MISSING: prove_sp_intake.py not co-located; FIX 29 "
+            "removed the repo copy of the signing key, so provenance stamping "
+            "must route through the verifier module. Fail-closed.")
+    signer = getattr(m, "sign_turn_ledger", None)
+    if signer is not None:
+        return signer(turns, deck_type, commit_id)
+    # Pre-FIX-29 sibling checkout (no envelope API yet): fall back to the
+    # store-backed 3-arg shim so the current key still signs it.
+    return {"turns": turns, "signature": m._sign_turn_ledger(turns, deck_type, commit_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -1033,8 +1082,21 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
         intake_p = run_dir / INTAKE_JSON_REL
         if intake_p.exists():
             existing_intake = json.loads(intake_p.read_text(encoding="utf-8"))
-        provenance = build_turn_ledger_provenance(
-            entries, std_ids, existing_intake.get("deck_type"), None)
+        try:
+            provenance = build_turn_ledger_provenance(
+                entries, std_ids, existing_intake.get("deck_type"), None)
+        except Exception as exc:  # noqa: BLE001 — key config gate for THIS stamp only
+            # FIX 29: the store-less signer raises KeyConfigError/RuntimeError.
+            # This standard-flow stamp is not consumed by any current prover gate
+            # ("fail-soft: never blocks --complete" above), so a missing key
+            # record here warns loudly but does not block — the SIGNATURE path
+            # (_sp_finalize), which the prover DOES gate, fails closed instead.
+            if _is_key_config_error(exc):
+                print(f"[deck-intake-driver] WARNING: standard-flow turn-ledger "
+                      f"stamp skipped — {type(exc).__name__}: {exc}", file=sys.stderr)
+                provenance = None
+            else:
+                raise
         if provenance is not None:
             merge_intake_json(run_dir, {"turn_ledger_provenance": provenance})
     except (OSError, json.JSONDecodeError):
@@ -1824,8 +1886,31 @@ def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
     # walked set (interview_choice, q1..q8, frame_selection) in canonical
     # order, matching sp_ordered_questions(spec).
     sp_question_ids = [q["id"] for q in sp_ordered_questions(spec)]
-    provenance = build_turn_ledger_provenance(
-        entries, sp_question_ids, intake.get("deck_type"), intake.get("record_commit_ids"))
+    try:
+        provenance = build_turn_ledger_provenance(
+            entries, sp_question_ids, intake.get("deck_type"), intake.get("record_commit_ids"))
+    except Exception as exc:  # noqa: BLE001 — must be a structured fail-closed, not a traceback
+        # FIX 29: missing current key / unlocatable prover is a
+        # LAUNCH/CONFIGURATION FAILURE. The signature gate never degrades
+        # open: report it exactly like a prover rejection (rc 3) so callers
+        # see passed=False + the reason, with NO sp_intake.json written.
+        if not _is_key_config_error(exc):
+            raise
+        return {
+            "status": "signature_intake_rejected",
+            "passed": False,
+            "prover_rc": 3,
+            "gate": "AF-SP-8Q-SPLIT (prove_sp_intake.py)",
+            "intake_path": str(run_dir / "working" / "copy" / "sp_intake.json"),
+            "signature_frame": intake.get("signature_frame"),
+            "prover_output": (f"{type(exc).__name__}: {exc} — configuration "
+                              "failure: turn-ledger key record unavailable; "
+                              "fail-closed, never degrade open."),
+            "message": ("Signature intake could not be stamped: the FIX 29 "
+                        "turn-ledger key record is not provisioned "
+                        "(PRESENTATION_SP_TURN_LEDGER_KEYS_FILE). Nothing was "
+                        "committed as verified."),
+        }
     if provenance is not None:
         intake["turn_ledger_provenance"] = provenance
 
@@ -2150,8 +2235,22 @@ def signature_selftest() -> bool:
               "asked_at": f"2026-07-15T12:{i:02d}:00", "validated_at": f"2026-07-15T12:{i:02d}:30"}
         for i, qid in enumerate(SP_REQUIRED_QUESTIONS)
     }
-    valid_provenance = build_turn_ledger_provenance(
-        valid_entries, list(SP_REQUIRED_QUESTIONS), "signature_presentation", "blk_sig_selftest")
+    # FIX 29: the builder now routes through the secrets-store rotation record;
+    # on an unprovisioned box it raises KeyConfigError. SKIP tests 2-5 (keep the
+    # prior ok posture) instead of FAIL — this selftest gates the DRIVER wiring,
+    # not this box's secrets store.
+    try:
+        valid_provenance = build_turn_ledger_provenance(
+            valid_entries, list(SP_REQUIRED_QUESTIONS), "signature_presentation", "blk_sig_selftest")
+    except Exception as exc:  # noqa: BLE001 — KeyConfigError/RuntimeError = config gate
+        if type(exc).__name__ in ("KeyConfigError", "RuntimeError"):
+            print(f"[sig-selftest] SKIP: tests 2-5 skipped — turn-ledger key record "
+                  f"unavailable ({type(exc).__name__}: {exc}). Provision "
+                  "PRESENTATION_SP_TURN_LEDGER_KEYS_FILE to exercise the store-backed signer.",
+                  file=sys.stderr)
+            print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
+            return ok
+        raise
 
     rc, out = _assemble_and_prove(valid, valid_provenance)
     step2 = rc == 0

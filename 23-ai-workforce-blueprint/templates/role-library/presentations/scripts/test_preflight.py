@@ -30,6 +30,9 @@ import os
 import subprocess
 import sys
 import tempfile
+import base64
+import hashlib
+import datetime as _dt
 import unittest.mock as _mock
 from pathlib import Path
 
@@ -3562,6 +3565,58 @@ def test_doctrine_gates_fire_and_pass():
 # emit_af_coverage). The valid fixtures come from the Skill-51 provers themselves
 # (via build_deck's loader), so the tests exercise the SAME contract the wrappers do.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# FIX 29: the turn-ledger HMAC key lives in the secrets store, not in source.
+# Any fixture that carries a genuine signed provenance stamp
+# (spi._valid_runtime_fixture_paced / _provenanced) needs a provisioned
+# rotation record to SIGN and later VERIFY against. Mirror the prover module's
+# own self_test convention (and test_slice1_gates.py's autouse fixture): a
+# throwaway per-process record generated from os.urandom at runtime; no key
+# material enters source or artifacts; the window straddles the real clock
+# (started 7d ago, cutoff 7d out) so the box behaves like a live mid-migration
+# deployment. Both test_sp_wrappers and emit_af_coverage exercise signed
+# fixtures, so both must hold the record while they build them.
+# ---------------------------------------------------------------------------
+_TL_ENV = ("PRESENTATION_SP_TURN_LEDGER_KEYS_FILE",
+           "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY",
+           "PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID",
+           "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY",
+           "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID",
+           "PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT",
+           "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT",
+           "PRESENTATION_SP_TURN_LEDGER_ROTATION")
+
+@contextlib.contextmanager
+def _sp_turn_ledger_keys():
+    """Provision a throwaway per-process FIX 29 rotation record; restore the
+    caller's env (and the prover's rotation cache) on exit."""
+    saved = {k: os.environ.get(k) for k in _TL_ENV}
+    started = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
+    for k in _TL_ENV:
+        os.environ.pop(k, None)
+    os.environ["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"] = \
+        base64.b64encode(os.urandom(32)).decode("ascii")
+    os.environ["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"] = \
+        "sp-tl-current-" + hashlib.sha256(os.urandom(8)).hexdigest()[:12]
+    os.environ["PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"] = \
+        started.strftime("%Y-%m-%dT%H:%M:%SZ")
+    os.environ["PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT"] = \
+        (started + _dt.timedelta(hours=14 * 24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    spi = _sp_provers()[0]
+    if spi is not None:
+        spi._rotation_state = None
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        if spi is not None:
+            spi._rotation_state = None
+
+
 def _sp_provers():
     """Return (intake, structure, no_pitch) Skill-51 prover modules, or (None,None,None)."""
     return (build_deck._sp_prover("prove_sp_intake"),
@@ -3769,45 +3824,54 @@ def test_sp_wrappers():
     # build_turn_ledger_provenance() writes (per-question turn id +
     # asked_at/validated_at, HMAC-signed). Mirrors PR #929's fix to
     # test_slice1_gates.py's genuine SP-intake fixture.
-    # 2026-08-27 content-provenance contract: the golden record also carries
+    # FIX 29: the paced fixture SIGNS with (and the wrappers later VERIFY
+    # against) the turn-ledger rotation record from the secrets store.
+    # 2026-08-27 content-provenance contract: the golden record ALSO carries
     # per-answer client provenance (verbatim client_text + quote-back
     # confirmation) so it PASSes on both sides of PROVENANCE_GRACE_WINDOW_UNTIL.
-    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_provenanced(),
-                       sp_structure=sps._valid_fixture())
-    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
-                 "_chk_sp_intake_trace"):
-        r = getattr(build_deck, name)(gold)
-        if r != "":
-            fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
+    # _sp_turn_ledger_keys() provisions a throwaway per-process record the same
+    # way the prover module's own self_test does (os.urandom at runtime; no key
+    # material enters source or artifacts; the window straddles the real clock:
+    # started 7d ago, cutoff 7d out). The WHOLE (a)-(d) block runs under it because
+    # the adversarials + (d) build paced/provenanced fixtures too; on exit the
+    # caller's env (and the prover's rotation cache) are restored exactly.
+    with _sp_turn_ledger_keys():
+        gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture_provenanced(),
+                           sp_structure=sps._valid_fixture())
+        for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                     "_chk_sp_intake_trace"):
+            r = getattr(build_deck, name)(gold)
+            if r != "":
+                fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
 
-    # (b) DEFER — a NON-signature deck is a no-op for all three wrappers even with garbage
-    #     SP artifacts present (they are never read; the deck_type switch defers first).
-    nonsig = _sp_run_dir(signature=False, sp_intake={"garbage": True},
-                         sp_structure={"garbage": True}, transcript="batched")
-    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
-                 "_chk_sp_intake_trace"):
-        r = getattr(build_deck, name)(nonsig)
-        if r != "":
-            fails.append(f"SP-DEFER: {name} must DEFER (return '') for a non-signature deck, got: {r!r}")
+        # (b) DEFER — a NON-signature deck is a no-op for all three wrappers even with garbage
+        #     SP artifacts present (they are never read; the deck_type switch defers first).
+        nonsig = _sp_run_dir(signature=False, sp_intake={"garbage": True},
+                             sp_structure={"garbage": True}, transcript="batched")
+        for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                     "_chk_sp_intake_trace"):
+            r = getattr(build_deck, name)(nonsig)
+            if r != "":
+                fails.append(f"SP-DEFER: {name} must DEFER (return '') for a non-signature deck, got: {r!r}")
 
-    # (c) ADVERSARIAL — one deliberately-failing fixture per AF-SP code.
-    for code, name, rd in _sp_adversarial_cases(spi, sps, spn):
-        r = getattr(build_deck, name)(rd)
-        if code not in _af_codes_in(r):
-            fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
+        # (c) ADVERSARIAL — one deliberately-failing fixture per AF-SP code.
+        for code, name, rd in _sp_adversarial_cases(spi, sps, spn):
+            r = getattr(build_deck, name)(rd)
+            if code not in _af_codes_in(r):
+                fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
-    # (d) CONTENT-PROVENANCE regression guard (2026-08-27): a provenance-less
-    # paced record still passes WITHIN PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15)
-    # — the dated rollout cost — but the same evaluate() refuses it once pinned
-    # past the window. Pinned both sides via the prover's own evaluate(today=).
-    within = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 9, 1))
-    if within:
-        fails.append(f"SP-PROV-GRACE: a pre-provenance record must PASS inside the "
-                     f"migration window, got: {within!r}")
-    past = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 10, 1))
-    if not any("AF-SP-PROVENANCE" in str(c) for c, _m in past):
-        fails.append(f"SP-PROV-POSTGRACE: a provenance-less record must fail "
-                     f"AF-SP-PROVENANCE after the window, got: {past!r}")
+        # (d) CONTENT-PROVENANCE regression guard (2026-08-27): a provenance-less
+        # paced record still passes WITHIN PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15)
+        # — the dated rollout cost — but the same evaluate() refuses it once pinned
+        # past the window. Pinned both sides via the prover's own evaluate(today=).
+        within = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 9, 1))
+        if within:
+            fails.append(f"SP-PROV-GRACE: a pre-provenance record must PASS inside the "
+                         f"migration window, got: {within!r}")
+        past = spi.evaluate(spi._valid_runtime_fixture_paced(), today=spi.date(2026, 10, 1))
+        if not any("AF-SP-PROVENANCE" in str(c) for c, _m in past):
+            fails.append(f"SP-PROV-POSTGRACE: a provenance-less record must fail "
+                         f"AF-SP-PROVENANCE after the window, got: {past!r}")
 
     print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
     return fails
@@ -4764,8 +4828,13 @@ def emit_af_coverage():
     # fixture per code trips its build_deck._chk_sp_* wrapper (Guard-A negative coverage).
     _spi, _sps, _spn = _sp_provers()
     if _spi and _sps and _spn:
-        for _code, _name, _rd in _sp_adversarial_cases(_spi, _sps, _spn):
-            record(_code, getattr(build_deck, _name)(_rd))
+        # FIX 29: the provenance fixtures in _sp_adversarial_cases() are
+        # SIGNED against the secrets-store rotation record, so the coverage
+        # pass needs the throwaway per-process record too (same convention as
+        # test_sp_wrappers / test_slice1_gates).
+        with _sp_turn_ledger_keys():
+            for _code, _name, _rd in _sp_adversarial_cases(_spi, _sps, _spn):
+                record(_code, getattr(build_deck, _name)(_rd))
 
     # ---- Guard A closure (gate_integrity_check.py) — five previously-untested /
     # dead-symbol build_deck-enforced gates. ----
@@ -4829,6 +4898,39 @@ def emit_af_coverage():
         {"text": "tiny", "conf": 95.0, "left": 500, "top": 500,
          "width": 30, "height": 8, "line_num": 1})
     record("AF-TYPE-SIZE-MEASURED", _r_size)
+
+    # AF-SLIDE-CRAFT-LOADER — _chk_slide_craft is fail-closed on import: a broken or
+    # missing slide_craft.py next to the run must abort, never silently skip the ten
+    # FIX 15 deterministic craft checks. Proven by un-importing the module (the same
+    # mechanism a missing/deleted file produces) and asserting the LOADER code fires.
+    _rd_sc = Path(tempfile.mkdtemp(prefix="deck_sc_loader_probe_"))
+    (_rd_sc / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    _saved_sc = sys.modules.get("slide_craft")
+    sys.modules["slide_craft"] = None
+    try:
+        record("AF-SLIDE-CRAFT-LOADER", build_deck._chk_slide_craft(_rd_sc))
+    finally:
+        if _saved_sc is None:
+            sys.modules.pop("slide_craft", None)
+        else:
+            sys.modules["slide_craft"] = _saved_sc
+
+    # AF-CRAFT-JUDGEMENT-LOADER — the FIX 18 disposition module (craft_judgement.py,
+    # AF-HOOK-2/7, AF-OBI-6, AF-DEN-3/6) is fail-closed in the same gate: an import
+    # failure must abort, never downgrade the 5/6/2 enforcement to a no-op. Same
+    # un-import probe technique, with slide_craft left intact so the first import
+    # leg passes and only the judgement-loader leg trips.
+    _rd_cj = Path(tempfile.mkdtemp(prefix="deck_cj_loader_probe_"))
+    (_rd_cj / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    _saved_cj = sys.modules.get("craft_judgement")
+    sys.modules["craft_judgement"] = None
+    try:
+        record("AF-CRAFT-JUDGEMENT-LOADER", build_deck._chk_slide_craft(_rd_cj))
+    finally:
+        if _saved_cj is None:
+            sys.modules.pop("craft_judgement", None)
+        else:
+            sys.modules["craft_judgement"] = _saved_cj
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)

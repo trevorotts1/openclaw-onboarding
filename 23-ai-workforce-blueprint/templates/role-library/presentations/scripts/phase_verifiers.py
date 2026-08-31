@@ -553,6 +553,416 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, ["NOTE: canonical_render_guard image-QC unavailable — filesystem-only check (pass)"]
 
 
+# ---------------------------------------------------------------------------
+# FIX 16 (presentation rev2) — image-grounding-steward + representation-casting-director
+# ---------------------------------------------------------------------------
+# PIPELINE-MANIFEST.json declared both roles ("owns_phase": null on both) —
+# declared-but-unwired. The DEFAULT RULING wires them:
+#   * image-grounding-steward      -> owns P-IMAGE-QC
+#   * representation-casting-director -> owns P-PROMPT-QC
+# At the PHASE_VERIFIERS wiring point below, each phase verifier is AGGREGATED
+# (via _merge) with its role's REQUIRED sub-verifier:
+#   * "image_grounding"         sub-verdict inside working/qc/image_qc_report.json
+#   * "representation_casting"  sub-verdict inside working/qc/prompt_qc_report.json
+# Both sub-verdicts must be present before attestation; a MISSING sub-verdict
+# parks for human vision review instead of passing (there is no automated vision
+# route in this tree — the park IS the operative production behavior). Only an
+# explicit test/CI context (_degraded_allowed) may NOTE-pass the parked state.
+# Rollback: set PRESENTATION_FIX16_QC_WIRING=0 — the registry then carries the
+# pre-fix objects exactly (P-IMAGE-QC -> _verify_render, P-PROMPT-QC -> the raw
+# _verify_qc_report gate) and no sub-verdict is required. Default is ON.
+# ---------------------------------------------------------------------------
+
+FIX16_ROLLBACK_FLAG = "PRESENTATION_FIX16_QC_WIRING"
+
+
+def _fix16_wiring_enabled() -> bool:
+    """FIX 16 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-fix registry objects exactly (documented rollback path)."""
+    return os.environ.get(FIX16_ROLLBACK_FLAG) != "0"
+
+
+# Environment/scene markers that indicate a render PROMPTS FOR people or a
+# lived-in scene — those renders must be grounded in client-specific research.
+_FIX16_SCENE_MARKERS = (
+    "people", "person", "team", "customer", "client", "founder", "presenter",
+    "audience", "operator", "staff", "member", "office", "workspace",
+    "environment", "street", "city", "shop", "meeting", "handshake",
+    "character", "portrait", "photo", "photograph", "crowd", "employee",
+)
+# Scene descriptors exempt from the grounding requirement (nothing to ground).
+_FIX16_SCENE_EXEMPT_MARKERS = (
+    "abstract", "gradient", "typography", "type only", "text only",
+    "geometry", "geometric", "diagram", "chart", "graph", "icon",
+    "logo", "flat card", "flat-card", "solid background", "no people",
+    "no photography", "texture", "pattern",
+)
+
+
+def _fix16_scene_bears_people_or_env(prompt_text: str) -> bool:
+    """FIX 16: True when the render prompt describes people or a lived-in
+    environment (the render must be grounded). Pure abstract / typographic /
+    chart slides are exempt."""
+    lc = (prompt_text or "").lower()
+    if not lc:
+        return False
+    # Word-boundary match: "photograph" must NOT match the "graph" alias of
+    # chart-exemption, and "no people" must outrank "people" when both appear.
+    if any(re.search(r"(?<![a-z])" + re.escape(tok) + r"(?![a-z])", lc)
+           for tok in _FIX16_SCENE_EXEMPT_MARKERS):
+        # An explicit abstract/typography-only slide has nothing to ground.
+        return False
+    return any(re.search(r"(?<![a-z])" + re.escape(tok) + r"(?![a-z])", lc)
+               for tok in _FIX16_SCENE_MARKERS)
+
+
+def _fix16_research_ground_anchors(run_dir: Path) -> dict:
+    """FIX 16: {slide_ordinal: [anchor, ...]} from the research-to-slide map.
+    Exempt slides (hook/pure-type) carry no anchors by design and never force a
+    grounding verdict. Returns {} when no map can be read (AF-RESEARCH-WEAVE /
+    P-3.5-RESEARCH-MAP own that absence)."""
+    path = run_dir / "working" / "research" / "research_map.json"
+    obj = _read_json(path)
+    if not isinstance(obj, dict):
+        return {}
+    slides = obj.get("slides")
+    if not isinstance(slides, list):
+        return {}
+    out: dict = {}
+    for s in slides:
+        if not isinstance(s, dict) or s.get("exempt"):
+            continue
+        ordinal = s.get("slide")
+        if not isinstance(ordinal, int):
+            continue
+        anchors = []
+        for a in (s.get("assigned") or []):
+            if not isinstance(a, dict):
+                continue
+            tok = a.get("anchor")
+            if isinstance(tok, str) and tok.strip():
+                anchors.append(tok.strip())
+        if anchors:
+            out[ordinal] = anchors
+    return out
+
+
+def _fix16_representation_mix(run_dir: Path) -> Optional[dict]:
+    """FIX 16: intake.json's REPRESENTATION_MIX capture, or None when the client
+    declined capture / it is absent. A declination or absence is the P0A-INTAKE
+    gate's owning case — the casting check DEFERS on it (never invents a mix)."""
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        obj = _read_json(run_dir / rel)
+        if not isinstance(obj, dict):
+            continue
+        capture = obj.get("pre_presentation_capture")
+        capture = capture if isinstance(capture, dict) else {}
+        raw = capture.get("representation_mix", obj.get("representation_mix"))
+        # Decline flags, at either level (mirrors build_deck._flag_true).
+        for src in (obj, capture):
+            for flag in ("representation_uncaptured", "audience_composition_uncaptured"):
+                v = src.get(flag)
+                if v is True or (isinstance(v, str) and v.strip().lower() in ("true", "yes", "1", "y")):
+                    return None
+        if isinstance(raw, dict) and raw:
+            return raw
+        if isinstance(raw, str) and raw.strip():
+            return {"mix": raw.strip()}
+        return None
+    return None
+
+
+def _fix16_load_prompt_texts(run_dir: Path) -> dict:
+    """FIX 16: {ordinal: prompt_text} from working/prompts/slide-<n>.txt.
+    Returns {} when no prompts exist yet (P4-PROMPT owns absence)."""
+    out: dict = {}
+    pdir = run_dir / "working" / "prompts"
+    if pdir.is_dir():
+        for p in sorted(pdir.glob("slide-*.txt")):
+            parts = p.stem.split("-")
+            try:
+                ordinal = int(parts[1])
+            except (IndexError, ValueError):
+                continue
+            txt = _read_text(p)
+            if txt is not None:
+                out[ordinal] = txt
+    if not out:
+        return {}
+    return out
+
+
+def _fix16_check_grounding_tokens(prompt_or_copy: str, anchors) -> bool:
+    """FIX 16: at least one research anchor token must actually appear in the
+    prompt/copy text (case-insensitive verbatim token, AF-RESEARCH-REACHES-RENDER
+    semantics). Generic scene wording with no token = ungrounded."""
+    lc = (prompt_or_copy or "").lower()
+    for tok in anchors_iter(anchors):
+        if tok.lower() in lc:
+            return True
+    return False
+
+
+def anchors_iter(anchors):
+    for a in (anchors or []):
+        if isinstance(a, str) and a.strip():
+            yield a.strip()
+
+
+def _verify_image_grounding(run_dir: Path) -> Tuple[bool, List[str]]:
+    """image-grounding-steward sub-verifier at P-IMAGE-QC (FIX 16).
+
+    Two checks plus a REQUIRED sub-verdict:
+      1. SCENE GROUNDING — every people/scene-bearing render prompt must carry at
+         least one client-specific research anchor token (generic/unanchored
+         scene = FAIL; pure abstract/typography = exempt).
+      2. OBSERVED-RENDER PARITY — the anchor tokens must also appear in the
+         slides.json copy the renderer bakes verbatim (same semantics as
+         AF-RESEARCH-REACHES-RENDER), so prompt claims cannot outrun the pixels.
+      3. REQUIRED SUB-VERDICT — working/qc/image_qc_report.json must carry an
+         explicit {"pass": true, "reviewed_by": <independent identity>} block
+         under "image_grounding". A MISSING image_grounding sub-verdict PARKS
+         the run for human vision review: it FAILS with AF-IMAGE-GROUNDING-PARK
+         naming the park path. NOTE-pass only under _degraded_allowed."""
+    reasons: List[str] = []
+    # --- 1+2. scene grounding / render parity ---
+    prompts = _fix16_load_prompt_texts(run_dir)
+    render_copy = _bd_fn("_load_slide_copy_map")
+    copy_map = render_copy(run_dir) if render_copy is not None else {}
+    if copy_map and isinstance(render_copy, bool) is False:
+        pass  # map loaded (dict)
+    copy_map = copy_map if isinstance(copy_map, dict) else {}
+
+    def _copy_text(ordinal: int) -> str:
+        vals = copy_map.get(ordinal)
+        if vals is None:
+            return ""
+        if isinstance(vals, list):
+            return " ".join(str(v) for v in vals)
+        return str(vals)
+
+    if prompts:
+        anchors_by_slide = _fix16_research_ground_anchors(run_dir)
+        if anchors_by_slide:
+            forbidden = _bd_fn("FORBIDDEN_DEMOGRAPHIC_DEFAULTS") or []
+            for ordinal, text in sorted(prompts.items()):
+                if not _fix16_scene_bears_people_or_env(text):
+                    continue
+                anchors = anchors_by_slide.get(ordinal) or []
+                if not anchors:
+                    reasons.append(
+                        "AF-IMAGE-GROUNDING: slide "
+                        f"{ordinal:02d} prompts for people/scene but carries NO "
+                        "research anchor in research_map.json — "
+                        "image-grounding-steward requires client-specific grounding, "
+                        "not a generic scene. Assign a grounded research item to the "
+                        "slide or mark it exempt (pure abstract/typography).")
+                    continue
+                joined = text + " \n" + _copy_text(ordinal)
+                if not _fix16_check_grounding_tokens(joined, anchors):
+                    reasons.append(
+                        f"AF-IMAGE-GROUNDING: slide {ordinal:02d} is research-mapped "
+                        f"but NEITHER its prompt nor its render copy carries the "
+                        f"assigned anchor token — observed-render parity fails "
+                        "(the pixels carry no client research).")
+            blob = " ".join(str(t) for t in prompts.values()).lower() + " " + \
+                " ".join(str(_copy_text(o)) for o in copy_map).lower()
+            for tok in forbidden:
+                if isinstance(tok, str) and tok and tok.lower() in blob:
+                    reasons.append(
+                        "AF-IMAGE-GROUNDING: prompt/copy contains the invented "
+                        f"demographic default {tok!r} — image-grounding-steward "
+                        "forbids defaulting a scene's people from a generic "
+                        "demographic stereotype (AF-DEMO-DEFAULT).")
+    # --- 3. REQUIRED image_grounding sub-verdict in the image-QC report ---
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    report = _read_json(report_path) if report_path.is_file() else None
+    verdict = report.get("image_grounding") if isinstance(report, dict) else None
+    if not isinstance(verdict, dict):
+        if not _degraded_allowed(run_dir):
+            return False, reasons + [
+                "AF-IMAGE-GROUNDING-PARK: the image-QC report carries NO "
+                "image_grounding sub-verdict — image-grounding-steward (owns "
+                "P-IMAGE-QC, FIX 16) has not rendered its verdict. There is no "
+                "automated vision route in the scripts tree, so the deck PARKS FOR "
+                "HUMAN VISION REVIEW: park at working/qc/human-review/ "
+                "(image-grounding-steward review queue) and record the verdict in "
+                "image_qc_report.json under image_grounding={pass, reviewed_by} "
+                "before attesting P-IMAGE-QC."]
+        return True, ["NOTE: image_grounding sub-verdict absent — parked for human "
+                      "vision review (test/CI degraded NOTE pass)"] + reasons
+    if verdict.get("pass") is not True:
+        return False, reasons + [
+            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict marks pass!=true — "
+            "grounding failed; per image-grounding-steward the run parks for human "
+            "vision review."]
+    reviewer = verdict.get("reviewed_by")
+    if not (isinstance(reviewer, str) and reviewer.strip()):
+        return False, reasons + [
+            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict names no reviewed_by "
+            "identity — who performed the grounding review is unprovenance'd; "
+            "parking for human vision review."]
+    if verdict.get("reviewed_by") and _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
+        ident = reviewer.strip().lower()
+        if ident in _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
+            return False, reasons + [
+                "AF-IMAGE-GROUNDING: image_grounding.reviewed_by is a builder/self "
+                f"identity ({reviewer!r}) — a self-cleared grounding verdict cannot "
+                "pass. Park for independent human vision review."]
+    return (not reasons), reasons
+
+
+def _verify_representation_casting(run_dir: Path) -> Tuple[bool, List[str]]:
+    """representation-casting-director sub-verifier at P-PROMPT-QC (FIX 16).
+
+    Checks PROMPT-LEVEL cast targets against intake.json's captured
+    REPRESENTATION_MIX:
+      1. DEFER (pass) when the client declined capture / the mix is absent —
+         P0A-INTAKE owns absence; casting never invents a mix.
+      2. Every people/scene-bearing prompt's cast targets must not contain an
+         invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS).
+      3. REQUIRED SUB-VERDICT — working/qc/prompt_qc_report.json must carry
+         {"pass": true, "reviewed_by": <independent identity>} under
+         "representation_casting". A MISSING sub-verdict PARKS for human review
+         (AF-CASTING-PARK); NOTE-pass only under _degraded_allowed. Observed-render
+         parity for the same mix is performed at P-IMAGE-QC by the steward."""
+    reasons: List[str] = []
+    prompts = _fix16_load_prompt_texts(run_dir)
+    mix = _fix16_representation_mix(run_dir)
+    if prompts and mix is None:
+        # Declined/absent mix: the P0A-INTAKE gate owns capture absence. Casting
+        # still refuses invented defaults even without a mix.
+        blob = " ".join(str(t) for t in prompts.values()).lower()
+        forbidden = _bd_fn("FORBIDDEN_DEMOGRAPHIC_DEFAULTS") or []
+        for tok in forbidden:
+            if isinstance(tok, str) and tok and tok.lower() in blob:
+                reasons.append(
+                    "AF-CASTING: prompt contains the invented demographic default "
+                    f"{tok!r} while the client's representation mix is uncaptured — "
+                    "representation-casting-director forbids defaulting a cast "
+                    "(AF-DEMO-DEFAULT).")
+        # No mix + no default token = gate defers (P0A-INTAKE owns capture absence);
+        # fall through to the REQUIRED sub-verdict check below.
+    if prompts and mix is not None:
+        blob = " ".join(str(t) for t in prompts.values()).lower()
+        cast_blob = ""
+        for k, v in mix.items():
+            cast_blob += " " + str(k).lower() + " " + str(v).lower()
+        cast_blob = cast_blob + " " + " ".join(
+            str(item).lower() for item in (mix.get("segments") if isinstance(mix.get("segments"), list) else []) if isinstance(item, str))
+        forbidden = _bd_fn("FORBIDDEN_DEMOGRAPHIC_DEFAULTS") or []
+        for tok in forbidden:
+            if isinstance(tok, str) and tok and tok.lower() in blob:
+                reasons.append(
+                    "AF-CASTING: prompt contains the invented demographic default "
+                    f"{tok!r} — representation-casting-director requires cast targets "
+                    "drawn from intake.representation_mix (AF-DEMO-DEFAULT).")
+        # Castable representation tokens named in the mix must appear in the prompts
+        # that depict people (parity between declared mix and prompt-level casting).
+        people_slides = [o for o, t in prompts.items()
+                         if _fix16_scene_bears_people_or_env(t)]
+        mix_tokens = []
+        for token in re.findall(r"[a-z][a-z\-/]{2,}", mix.get("mix", "") if isinstance(mix.get("mix"), str) else "") or []:
+            mix_tokens.append(token)
+        for item in (mix.get("segments") if isinstance(mix.get("segments"), list) else []):
+            if isinstance(item, str):
+                mix_tokens.extend(re.findall(r"[a-z][a-z\-/]{2,}", item.lower()))
+        mix_tokens = [tk for tk in dict.fromkeys(mix_tokens)
+                      if len(tk) >= 4 and tk not in
+                      ("the", "and", "mix", "representation", "note", "audience",
+                       "client", "cast", "with", "from", "segment", "segments")]
+        if people_slides and mix_tokens:
+            covered = any(tk in " ".join(prompts[o].lower() for o in people_slides)
+                          for tk in mix_tokens)
+            if not covered:
+                reasons.append(
+                    "AF-CASTING-MIX-PARITY: the representation mix declares "
+                    f"cast targets ({', '.join(mix_tokens[:10])}) but NO people-bearing "
+                    "prompt names any declared cast target — the prompt-level casting "
+                    "does not reflect the client's mix. Align prompt cast descriptions "
+                    "with intake.representation_mix (representation-casting-director, "
+                    "FIX 16).")
+    # REQUIRED representation_casting sub-verdict in the prompt-QC report — checked
+    # even when prompts are absent: the verdicts gate ATTESTATION, not convenience.
+    report_path = run_dir / "working" / "qc" / "prompt_qc_report.json"
+    report = _read_json(report_path) if report_path.is_file() else None
+    verdict = report.get("representation_casting") if isinstance(report, dict) else None
+    if not isinstance(verdict, dict):
+        if not _degraded_allowed(run_dir):
+            return False, reasons + [
+                "AF-CASTING-PARK: the prompt-QC report carries NO representation_casting "
+                "sub-verdict — representation-casting-director (owns P-PROMPT-QC, "
+                "FIX 16) has not recorded its cast-parity review. Park the run for "
+                "human review at working/qc/human-review/ (casting review queue) and "
+                "record the verdict in prompt_qc_report.json under "
+                "representation_casting={pass, reviewed_by} before attesting "
+                "P-PROMPT-QC."]
+        return True, ["NOTE: representation_casting sub-verdict absent — parked for "
+                      "human review (test/CI degraded NOTE pass)"] + reasons
+    if verdict.get("pass") is not True:
+        return False, reasons + [
+            "AF-CASTING: the representation_casting sub-verdict marks pass!=true — "
+            "casting parity failed; park for human review."]
+    reviewer = verdict.get("reviewed_by")
+    if not (isinstance(reviewer, str) and reviewer.strip()):
+        return False, reasons + [
+            "AF-CASTING: the representation_casting sub-verdict names no reviewed_by "
+            "identity — park for independent human review."]
+    forb_ids = _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES")
+    if forb_ids and reviewer.strip().lower() in forb_ids:
+        return False, reasons + [
+            "AF-CASTING: representation_casting.reviewed_by is a builder/self identity "
+            f"({reviewer!r}) — park for independent human review."]
+    return (not reasons), reasons
+
+
+def _fix16_aggregate(base_verifier: Callable, sub_verifier: Callable) -> Callable:
+    """FIX 16: combine a base phase verifier with its mandated role sub-verifier.
+    ok = base AND sub; reasons concatenated (order: sub first — the FIX 16
+    park/grounding reasons are the ones the operator reads)."""
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        ok_sub, r_sub = sub_verifier(run_dir)
+        ok_base, r_base = base_verifier(run_dir)
+        ok, reasons = _merge([(ok_base, r_base), (ok_sub, r_sub)])
+        return ok, reasons
+    return _v
+
+
+def _fix16_get_verifier(phase_id: str) -> Callable:
+    """Resolve the FIX 16-regulated registry entry AT the PHASE_VERIFIERS wiring
+    point (called from the registry dict itself, so parity between
+    PIPELINE-MANIFEST.json owns_phase assignments and this registry is
+    self-evident and cannot drift):
+
+        P-IMAGE-QC:   _verify_render
+              -> _fix16_aggregate(_verify_render, _verify_image_grounding)
+        P-PROMPT-QC:  _verify_qc_report(...)
+              -> _fix16_aggregate(raw prompt-qc gate, _verify_representation_casting)
+
+    P4-RENDER keeps the raw _verify_render object. PRESENTATION_FIX16_QC_WIRING=0
+    restores the pre-fix registry objects exactly (documented rollback)."""
+    if phase_id == "P-IMAGE-QC":
+        if not _fix16_wiring_enabled():
+            return _verify_render
+        return _fix16_aggregate(_verify_render, _verify_image_grounding)
+    if phase_id == "P-PROMPT-QC":
+        if not _fix16_wiring_enabled():
+            return _verify_qc_report(
+                "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC")
+        prompt_gate = _verify_qc_report(
+            "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC")
+        return _fix16_aggregate(prompt_gate, _verify_representation_casting)
+    raise KeyError(phase_id)
+
+
+def _fix16_apply(pv_registry: dict) -> dict:
+    """Backward-compat wrapper: returns the registry (wiring now happens at the
+    registry literal itself via _fix16_get_verifier). Idempotent."""
+    if _fix16_wiring_enabled():
+        pv_registry["P-IMAGE-QC"] = _fix16_get_verifier("P-IMAGE-QC")
+        pv_registry["P-PROMPT-QC"] = _fix16_get_verifier("P-PROMPT-QC")
+    return pv_registry
+
 def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
     """P8-ASSEMBLE: build_deck.check_deck_harmony (arc + visual consistency).
     Falls back to filesystem PPTX existence + size check when unavailable.
@@ -2105,14 +2515,16 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # see the _verify_qc_report docstring above for the live rubber-stamp this
     # caused: a report honestly recording average=1.0/pass=false still flipped
     # state.json done=true).
-    "P-PROMPT-QC":        _verify_qc_report(
-        "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC"),
+    # FIX 16 (presentation rev2): representation-casting-director owns P-PROMPT-QC -
+    # aggregated with the required representation_casting sub-verifier at the
+    # wiring point (see _fix16_get_verifier; rollback flag doc there).
+    "P-PROMPT-QC":        _fix16_get_verifier("P-PROMPT-QC"),
     # Phase 4.85  Style Preview
     "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
     # Phase 4.9   Deterministic Render
     "P4-RENDER":          _verify_render,
     # Phase 4.95  Image QC
-    "P-IMAGE-QC":         _verify_render,
+    "P-IMAGE-QC":         _fix16_get_verifier("P-IMAGE-QC"),
     # Phase 7.5   Priority-Shift Ship Gate
     # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
     # pattern (verifier_registry.priority_shift_verifier, gate "qc:priority_shift"):
@@ -2403,6 +2815,85 @@ def _selftest() -> None:
                 f"T9: SIMULATED rejection reason must contain 'SIMULATED', "
                 f"got reasons={reasons}"
             )
+
+    # T10 (FIX 16): BOTH mandated QC sub-verifiers are wired at the registry
+    # wiring point, and a run WITHOUT the sub-verdicts parks (fails) in a
+    # production context — with a valid QC report, no env markers, and no
+    # .test-context marker.
+    t10rd = None
+    try:
+        import tempfile as _tf
+        _t10tmp = _tf.TemporaryDirectory(prefix="phase_verifiers_selftest_fix16_")
+        t10rd = Path(_t10tmp.name)
+        # A production-looking run dir: valid-shape image-QC + prompt-QC reports,
+        # a render PNG, and NO sub-verdict blocks, NO degraded markers.
+        qdir = t10rd / "working" / "qc"
+        qdir.mkdir(parents=True, exist_ok=True)
+        (t10rd / "renders").mkdir(parents=True, exist_ok=True)
+        (t10rd / "renders" / "slide-01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)
+        (qdir / "image_qc_report.json").write_text(json.dumps({
+            "gate": "Phase Image-QC", "average": 9.1, "pass": True,
+            "qc_independence": {"graded_by": "qc-specialist-image-presentations",
+                                 "independent": True}}))
+        (qdir / "prompt_qc_report.json").write_text(json.dumps({
+            "gate": "Phase Prompt-QC", "average": 9.1, "pass": True,
+            "qc_independence": {"graded_by": "qc-specialist-prompt-presentations",
+                                 "independent": True}}))
+        # P-IMAGE-QC must PARK (fail closed) with the park code when the
+        # image_grounding sub-verdict is missing and no test/CI marker exists.
+        ok_i, reasons_i = verify("P-IMAGE-QC", t10rd)
+        if ok_i:
+            fails.append("T10: P-IMAGE-QC without an image_grounding sub-verdict "
+                         "must PARK (fail) in production, got ok=True")
+        if not any("AF-IMAGE-GROUNDING-PARK" in r for r in reasons_i):
+            fails.append(f"T10: missing image_grounding must name AF-IMAGE-GROUNDING-PARK, got {reasons_i}")
+        # But P4-RENDER (same _verify_render base) must NOT demand the sub-verdict.
+        env_backup = {k: os.environ.get(k) for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST")}
+        for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST"):
+            os.environ.pop(k, None)
+        try:
+            ok_r, _ = verify("P4-RENDER", t10rd)
+            if ok_r:
+                fails.append("T10: P4-RENDER in production with no PNG-QC route should fail closed, got ok=True")
+        finally:
+            for k, v in env_backup.items():
+                if v is not None:
+                    os.environ[k] = v
+        # With the .test-context marker the parked state NOTE-passes (degraded path).
+        (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
+        ok_i2, _ = verify("P-IMAGE-QC", t10rd)
+        if not ok_i2:
+            fails.append("T10: parked P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
+        # Sub-verdict present with pass:true + reviewed_by => the FIX 16 layer passes.
+        (qdir / "image_qc_report.json").write_text(json.dumps({
+            "gate": "Phase Image-QC", "average": 9.1, "pass": True,
+            "qc_independence": {"graded_by": "qc-specialist-image-presentations",
+                                 "independent": True},
+            "image_grounding": {"pass": True,
+                                 "reviewed_by": "image-grounding-steward"},
+            "slides": []}))
+        (qdir / "prompt_qc_report.json").write_text(json.dumps({
+            "gate": "Phase Prompt-QC", "average": 9.1, "pass": True,
+            "qc_independence": {"graded_by": "qc-specialist-prompt-presentations",
+                                 "independent": True},
+            "representation_casting": {"pass": True,
+                                        "reviewed_by": "representation-casting-director"},
+            "slides": []}))
+        ok_i3, reasons_i3 = verify("P-IMAGE-QC", t10rd)
+        if not ok_i3:
+            fails.append(f"T10: P-IMAGE-QC with valid image_grounding sub-verdict must pass (degraded ctx), got {reasons_i3}")
+        ok_p3, reasons_p3 = verify("P-PROMPT-QC", t10rd)
+        if not ok_p3:
+            fails.append(f"T10: P-PROMPT-QC with valid representation_casting sub-verdict must pass (degraded ctx), got {reasons_p3}")
+        # Registry wiring identity: the two entries are aggregates, P4-RENDER is not.
+        if PHASE_VERIFIERS["P4-RENDER"] is _verify_render and \
+           PHASE_VERIFIERS["P-IMAGE-QC"] is _verify_render:
+            fails.append("T10: P-IMAGE-QC must be an aggregate distinct from raw _verify_render (FIX 16)")
+    finally:
+        if t10rd is not None:
+            import shutil as _sh
+            _sh.rmtree(t10rd, ignore_errors=True)
 
     if fails:
         for f in fails:

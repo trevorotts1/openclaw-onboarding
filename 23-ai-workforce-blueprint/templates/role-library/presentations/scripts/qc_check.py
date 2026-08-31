@@ -108,6 +108,58 @@ def load_qc_check_codes(manifest_path: Path) -> List[Dict[str, Any]]:
 # ============================================================================
 
 # ---------------------------------------------------------------------------
+# FIX 18 — the six WARNING-code heuristics (AF-AUD-1, AF-AUD-2, AF-AUD-3,
+# AF-OBI-3, AF-OBI-5, AF-DEN-8). A heuristic may WARN; it may never claim a
+# deterministic auto-fail. Findings come back with level="warning" so
+# run_all's exit-code arithmetic ignores them; a valid per-rule disposition in
+# working/qc/craft-warning-dispositions.json (run-scoped, named slides, named
+# reviewer, owner signature — validated by craft_judgement.load_dispositions)
+# removes a rule/slide pair from the list. Den-8 is warning-only while a
+# client-requested slide count overrides density floors (SOP-SLIDE-04 §5.0).
+# ---------------------------------------------------------------------------
+
+_CRAFT_WARNING_CODES = None
+
+
+def _craft_warning_codes() -> set:
+    global _CRAFT_WARNING_CODES
+    if _CRAFT_WARNING_CODES is None:
+        import craft_judgement as _cj
+        _CRAFT_WARNING_CODES = set(_cj.WARNING_CODES)
+    return _CRAFT_WARNING_CODES
+
+
+def _run_craft_warning_checks(run_dir: str,
+                              codes: List[Dict]) -> List[Dict[str, Any]]:
+    """Heuristic findings for the six warning codes, disposition-filtered,
+    level="warning". Never contributes to exit_code=1 (see run_all)."""
+    warnings = _craft_warning_codes()
+    wanted = {c["code"] for c in codes if c.get("code") in warnings}
+    if not wanted:
+        return []
+    try:
+        import craft_judgement as _cj
+        found = _cj.compute_warnings(Path(run_dir))
+    except Exception as exc:  # noqa: BLE001 — a broken warning pass warns louder,
+        # it must never crash the mechanical scan (warnings are advisory).
+        print(f"NOTE: FIX 18 warning computation failed: {exc!r}", file=sys.stderr)
+        return []
+    out: List[Dict[str, Any]] = []
+    for rec in found:
+        code = rec.get("rule_code")
+        if code not in wanted:
+            continue
+        out.append({
+            "code": code,
+            "level": "warning",
+            "slide_index": (rec.get("slide_ids") or [None])[0],
+            "evidence": "; ".join(str(e) for e in rec.get("evidence", []))[:300],
+            "warning": True,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Hook-doctrine checks (AF-HOOK-1..7)
 # ---------------------------------------------------------------------------
 
@@ -850,18 +902,46 @@ def run_mechanical_checks(run_dir: str,
         print("NOTE: no unenforced qc_check codes found in manifest.", file=sys.stderr)
         return []
 
-    # Separate codes into:
-    # (a) those with a check_script already declared (delegate)
-    # (b) truly unenforced (scan here)
+    # FIX 18 — the 13 human-judgement craft rows are DISPOSITIONED, not
+    # exit-1 scanner fodder, per MASTER-QC-AUTOFAIL-RULESET.md's 5/6/2 ruling:
+    #   - 5 ENFORCED codes (AF-HOOK-2, AF-HOOK-7, AF-OBI-6, AF-DEN-3, AF-DEN-6)
+    #     own deterministic checks in craft_judgement.py and are gated at the
+    #     build_deck preflight — qc_check must NOT double-fire them as
+    #     character-pattern exit-1s (its declared-evidence checks are stronger
+    #     than these heuristics, and double-source truth hides failures).
+    #   - 6 WARNING codes (AF-AUD-1, AF-AUD-2, AF-AUD-3, AF-OBI-3, AF-OBI-5,
+    #     AF-DEN-8) may only WARN: they ride in the report as "warning"
+    #     severities and hold QC only until corrected or acknowledged via
+    #     working/qc/craft-warning-dispositions.json. They never set exit_code=1.
+    #   - 2 HUMAN codes (AF-OBI-4, AF-OBI) are never machine-fired here at all
+    #     (no keyword proxy exists); they gate run_signature_deck.attest_phase.
+    import craft_judgement as _cj
+    fix18_enforced = set(_cj.ENFORCED_CODES)
+    fix18_warning = set(_cj.WARNING_CODES)
+    fix18_human = set(_cj.HUMAN_CODES)
+
     delegated: Dict[str, List[Dict]] = defaultdict(list)
     local: List[Dict] = []
+    warnings_only: List[Dict] = []
     for c in all_codes:
         if c.get("check_script"):
             delegated[c["check_script"]].append(c)
-        else:
-            local.append(c)
+            continue
+        code = c.get("code")
+        if code in fix18_enforced or code in fix18_human:
+            continue  # owned by craft_judgement (enforce | human-attest gate)
+        if code in fix18_warning:
+            warnings_only.append(c)
+            continue
+        local.append(c)
 
     findings: List[Dict[str, Any]] = []
+
+    # FIX 18 — warning-code scan: heuristic findings, downgraded to level
+    # "warning" (never exit-1), then filtered against valid dispositions.
+    if warnings_only:
+        warn_findings = _run_craft_warning_checks(run_dir, warnings_only)
+        findings.extend(warn_findings)
 
     # ---- Read the run's data files once ----
     copy_text = _read_slides_copy(run_dir)
@@ -873,22 +953,30 @@ def run_mechanical_checks(run_dir: str,
         # Hook doctrine
         hook_codes = [c for c in local if c["code"].startswith("AF-HOOK-")]
         if hook_codes:
-            findings.extend(check_hook_doctrine(run_dir, intake, copy_text, hook_codes))
+            findings.extend(
+                f for f in check_hook_doctrine(run_dir, intake, copy_text, hook_codes)
+                if f.get("code") not in fix18_enforced and f.get("code") not in fix18_human)
 
         # Audience-facing
         aud_codes = [c for c in local if c["code"].startswith("AF-AUD-") or c["code"] == "AF-PLACEHOLDER"]
         if aud_codes:
-            findings.extend(check_audience_facing(run_dir, copy_text, aud_codes))
+            findings.extend(
+                f for f in check_audience_facing(run_dir, copy_text, aud_codes)
+                if f.get("code") not in fix18_enforced and f.get("code") not in fix18_human)
 
         # Density
         den_codes = [c for c in local if c["code"].startswith("AF-DEN-")]
         if den_codes:
-            findings.extend(check_density(run_dir, copy_text, den_codes))
+            findings.extend(
+                f for f in check_density(run_dir, copy_text, den_codes)
+                if f.get("code") not in fix18_enforced and f.get("code") not in fix18_human)
 
         # OBI (AF-OBI-1..6 + AF-OBI)
         obi_codes = [c for c in local if c["code"].startswith("AF-OBI-") or c["code"] == "AF-OBI"]
         if obi_codes:
-            findings.extend(check_obi(run_dir, copy_text, obi_codes))
+            findings.extend(
+                f for f in check_obi(run_dir, copy_text, obi_codes)
+                if f.get("code") not in fix18_enforced and f.get("code") not in fix18_human)
 
         # AF-C2
         c2_codes = [c for c in local if c["code"] == "AF-C2"]
@@ -1197,8 +1285,14 @@ def run_all(run_dir: str, manifest_path: Optional[str] = None) -> Dict[str, Any]
     # Cross-check
     false_negatives = cross_check_qc_reports(str(run_path))
 
+    # FIX 18 — level=="warning" findings are advisory: they ride in the report
+    # (so the QC Specialist sees them and can disposition them) but they never
+    # set exit_code=1. A WARNING code that still fires means: correct the deck,
+    # or acknowledge it via working/qc/craft-warning-dispositions.json.
     all_violations = mechanical_violations + false_negatives
-    exit_code = 0 if len(all_violations) == 0 else 1
+    blocking_violations = [v for v in all_violations if v.get("level") != "warning"]
+    warning_violations = [v for v in all_violations if v.get("level") == "warning"]
+    exit_code = 0 if len(blocking_violations) == 0 else 1
 
     return {
         "schema": "qc_check_report/v1",
@@ -1211,6 +1305,8 @@ def run_all(run_dir: str, manifest_path: Optional[str] = None) -> Dict[str, Any]
                                          and not c.get("py_symbol")),
         "mechanical_violations": mechanical_violations,
         "false_negatives": false_negatives,
+        "blocking_violations": blocking_violations,
+        "warning_violations": warning_violations,
         "total_violations": len(all_violations),
         "exit_code": exit_code,
         "pass": exit_code == 0,
@@ -1229,12 +1325,33 @@ def _print_report(report: Dict[str, Any]) -> None:
     mechanical = report["mechanical_violations"]
     fn = report["false_negatives"]
 
+    warn = report.get("warning_violations", [])
+    if warn:
+        print(f"  FIX 18 craft warnings ({len(warn)}) — advisory, exit-neutral; "
+              f"correct or acknowledge via working/qc/"
+              f"craft-warning-dispositions.json:")
+        by_code_w = defaultdict(list)
+        for v in warn:
+            by_code_w[v["code"]].append(v)
+        for code in sorted(by_code_w):
+            items = by_code_w[code]
+            print(f"    [{code}] ({len(items)} instance(s)):")
+            for item in items[:3]:
+                extra = ""
+                if item.get("slide_index"):
+                    extra = f" slide={item['slide_index']}"
+                print(f"      - {item['evidence'][:140]}{extra}")
+            if len(items) > 3:
+                print(f"      ... and {len(items) - 3} more")
     if report["pass"]:
-        print("PASS -- zero violations found.")
-        print(f"  mechanical checks: {len(mechanical)} violations")
+        print("PASS -- zero blocking violations found.")
+        print(f"  mechanical checks: {len(mechanical)} findings "
+              f"({len(warn)} advisory)")
         print(f"  false-negative cross-check: {len(fn)} violations")
     else:
-        print(f"FAIL -- {report['total_violations']} violation(s) found:")
+        blk = report.get("blocking_violations", report["total_violations"])
+        print(f"FAIL -- {len(blk) if isinstance(blk, list) else blk} blocking "
+              f"violation(s) found (warnings are exit-neutral):")
         if mechanical:
             print(f"\n  Mechanical violations ({len(mechanical)}):")
             # Group by code

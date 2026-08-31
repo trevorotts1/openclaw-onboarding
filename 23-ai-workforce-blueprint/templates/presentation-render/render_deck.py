@@ -57,24 +57,53 @@ path. There is no black scrim. See AF-BAKED auto-fail in QC gate.
 
 import json
 import os
+import sys
 import time
 import threading
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 # ---------------------------------------------------------------------------
-# CONSTANTS
+# FIX 13 — no literal model IDs in this (retired) path either. The approved
+# render class and the failure-fallback resolve from the central versioned
+# catalog (presentation_job/model_catalog.py beside the canonical renderer).
+# PRESENTATION_MODEL_CATALOG=0 restores the exact pre-FIX-13 literals via the
+# catalog module's rollback table. A catalog that cannot be loaded fails
+# CLOSED here too — this module must never silently render on a guessed id.
 # ---------------------------------------------------------------------------
 
-APPROVED_MODELS = [
-    "gpt-image-2-text-to-image",
-    "gpt-image-2-image-to-image",
-]
+def _load_model_catalog():
+    scripts_dir = (Path(__file__).resolve().parent.parent
+                   / "role-library" / "presentations" / "scripts")
+    if (scripts_dir / "presentation_job" / "model_catalog.py").is_file():
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+    import presentation_job.model_catalog as mc  # fail-closed if absent/unparseable
+    return mc
+
+
+_model_catalog = _load_model_catalog()
+
+# Approved list resolved per validation call from the live catalog, so an
+# operator bump changes what passes WITHOUT editing pipeline code.
+def approved_models() -> List[str]:
+    return _model_catalog.approved_image_models()
+
+
+APPROVED_MODELS = approved_models()
 
 # FALLBACK_MODEL fires ONLY on a hard API failure of the primary.
 # It is NEVER the silent primary. Every invocation is MANDATORY-LOGGED to render_manifest.json.
-FALLBACK_MODEL = "nano-banana-2"
+# FIX 13: the stale literal here was "nano-banana-2" — retired in the catalog;
+# the image.fallback alias now names the prior healthy gpt-image-2 id and is
+# re-resolved at fallback time.
+def fallback_model() -> str:
+    return _model_catalog.model_id("image.fallback")
+
+
+FALLBACK_MODEL = fallback_model()
 
 # Char-count band reconciled to the live QC gate (qc-specialist-presentations.md
 # AF-P1/AF-P2, v12.7.1+): soft minimum 5,000, hard maximum 18,000 (a 2,000-char
@@ -138,11 +167,14 @@ _bucket = _TokenBucket(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW)
 # ---------------------------------------------------------------------------
 
 def _validate_model(model: str) -> None:
-    """Hard check: model must be in the approved list."""
-    if model not in APPROVED_MODELS:
+    """Hard check: model must be in the approved list.
+    FIX 13: the approved list is re-read from the live catalog on every call,
+    so a catalog bump takes effect without editing (or even restarting) code."""
+    approved = approved_models()
+    if model not in approved:
         raise ValueError(
             f"AF-MODEL-SOVEREIGNTY: model '{model}' is not approved for client presentations. "
-            f"Approved: gpt-image-2-text-to-image, gpt-image-2-image-to-image. "
+            f"Approved (per catalog): {', '.join(approved)}. "
             f"A fallback may fire ONLY on a hard API failure and MUST be logged."
         )
 
@@ -307,8 +339,9 @@ def render_deck(slides: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Di
         If any model or prompt validation fails. These are hard blocks -- no slides are
         submitted until ALL validations pass.
     """
-    # Resolve config
-    model = config.get("model", "gpt-image-2-text-to-image")
+    # Resolve config — FIX 13: default primary resolves from the live catalog
+    # alias, never a literal pinned in this call site.
+    model = config.get("model", _model_catalog.model_id("image.t2i"))
     client_slug = config.get("client_slug", "unknown")
     api_key = config.get("kie_api_key", "")
     workspace_dir = config.get("workspace_dir", ".")
@@ -366,25 +399,28 @@ def render_deck(slides: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Di
 
         # Fallback path -- ONLY on hard API failure of primary
         if result_urls is None:
+            # FIX 13: re-resolve the fallback alias at fire time so the catalog,
+            # not a literal frozen in code, decides which model engages.
+            fallback_id = fallback_model()
             fallback_reason = (
                 f"Primary model {model} returned no task_id or failed polling."
             )
             print(
                 f"[FALLBACK EVENT] Primary model {model} failed for slide {slide_id}. "
-                f"Engaging fallback: {FALLBACK_MODEL}. "
+                f"Engaging fallback: {fallback_id}. "
                 f"This event is MANDATORY-LOGGED."
             )
             manifest_entry["fallback"] = True
             manifest_entry["fallback_reason"] = fallback_reason
-            manifest_entry["fallback_model"] = FALLBACK_MODEL
+            manifest_entry["fallback_model"] = fallback_id
             manifest_entry["fallback_at"] = datetime.now(timezone.utc).isoformat()
 
-            fallback_task_id = _submit_task(slide_id, prompt, FALLBACK_MODEL, api_key)
+            fallback_task_id = _submit_task(slide_id, prompt, fallback_id, api_key)
             if fallback_task_id is not None:
                 manifest_entry["fallback_task_id"] = fallback_task_id
                 result_urls = _poll_task(fallback_task_id, api_key)
                 if result_urls is not None:
-                    manifest_entry["model_used"] = FALLBACK_MODEL
+                    manifest_entry["model_used"] = fallback_id
                     manifest_entry["task_id"] = fallback_task_id
 
         # Download result
