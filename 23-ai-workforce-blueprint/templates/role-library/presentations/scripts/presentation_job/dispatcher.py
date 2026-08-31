@@ -1581,12 +1581,15 @@ def _first_concrete_path(patterns: List[str], run_dir: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 class DispatchResult:
     def __init__(self, phase_id: str, status: str, attempts: int,
-                 reasons: Optional[List[str]] = None, target: Optional[str] = None):
+                 reasons: Optional[List[str]] = None, target: Optional[str] = None,
+                 slide_results: Optional[List[Dict[str, Any]]] = None):
         self.phase_id = phase_id
         self.status = status  # "ok" | "exhausted" | "declined" | "skipped_satisfied" | "error"
         self.attempts = attempts
         self.reasons = reasons or []
         self.target = target
+        # Per-slide result list consumable by FIX 2: [{slide_id, ordinal, status, error}, ...]
+        self.slide_results = slide_results or []
 
     def __repr__(self) -> str:
         return f"DispatchResult({self.phase_id}, {self.status}, attempts={self.attempts})"
@@ -1796,12 +1799,18 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
     prompts_dir = run_dir / "working" / "prompts"
     total_attempts = 0
     final_reasons: List[str] = []
+    slide_results: List[Dict[str, Any]] = []
 
     for ordinal in work_ordinals:
         target = prompts_dir / f"slide-{ordinal:02d}.txt"
         ok, reasons = _verify_single_prompt(run_dir, ordinal)
         if ok and target.is_file():
-            continue  # this slide already clears its own gate -- skip, no spend
+            # this slide already clears its own gate -- skip, no spend
+            slide_results.append({
+                "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+                "status": "succeeded", "error": None,
+                "skipped_already_ok": True})
+            continue
 
         slide_order = dict(order)
         slide_order["produces_artifact"] = [f"working/prompts/slide-{ordinal:02d}.txt"]
@@ -1824,7 +1833,13 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt, "slide": ordinal,
                     "status": "error", "reason": f"RoleSOPNotFound: {exc}"})
-                return DispatchResult(phase_id, "error", total_attempts, [str(exc)])
+                # FIX 3: used to abort the WHOLE phase here. A missing SOP is
+                # raised before any provider call (zero spend) and fails every
+                # slide identically, but the phase result must still name every
+                # unresolved slide, so record it through the shared per-slide
+                # failure path below and move on to the next ordinal.
+                last_reasons = [f"RoleSOPNotFound: {exc}"]
+                break
 
             # Per-slide scoping instruction, prepended so ONE role SOP + ONE
             # contract serves every slide -- this text names exactly which slide
@@ -1878,17 +1893,52 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
             last_reasons = v_reasons
             prior_reasons = v_reasons
 
-        if not slide_ok:
-            final_reasons = [f"slide {ordinal}: {r}" for r in last_reasons]
-            _append_sidecar(run_dir, phase_id, {
-                "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "slide": ordinal,
-                "status": "exhausted", "final_reasons": last_reasons})
-            # Stop at the first slide that cannot be authored -- never burn spend
-            # on later slides while an earlier one is broken. The next sweep call
-            # resumes exactly here (every already-good slide is skipped instantly
-            # by the ok-and-exists check above; nothing already written is lost
-            # or re-spent).
-            return DispatchResult(phase_id, "exhausted", total_attempts, final_reasons)
+        if slide_ok:
+            slide_results.append({
+                "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+                "status": "succeeded", "error": None})
+            continue
+
+        # FIX 3: this slide exhausted its own retry budget -- record the failure
+        # and KEEP GOING through the remaining slides. The old behavior
+        # returned here on the first exhausted slide, silently discarding every
+        # later slide's chance to author. The phase now fails only AFTER every
+        # slide got its own full retry behavior, and the failure report names
+        # exactly which slides failed (never a bare "phase aborted"). The
+        # resume property is unchanged: every already-good slide is still
+        # skipped instantly by the ok-and-exists check above, and nothing
+        # already written is lost or re-spent.
+        exhausted_reasons = [f"slide {ordinal}: {r}" for r in last_reasons]
+        final_reasons.extend(exhausted_reasons)
+        slide_results.append({
+            "slide_id": f"slide-{ordinal:02d}", "ordinal": ordinal,
+            "status": "failed", "error": "; ".join(exhausted_reasons)})
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "slide": ordinal,
+            "status": "exhausted", "final_reasons": last_reasons})
+
+    # FIX 3: every ordinal THIS CALL owns has now been through its own full
+    # retry budget -- a failed slide no longer cuts the loop short. If any
+    # slide is still unresolved, the phase fails HERE, after every slide got
+    # its chance, and the report names exactly which slides failed (plus the
+    # per-slide result list consumed by FIX 2). Successful slides authored in
+    # this pass are kept on disk and never re-spent by the next sweep call.
+    if final_reasons:
+        failed_slides = [s["slide_id"] for s in slide_results
+                         if s["status"] == "failed"]
+        succeeded_slides = [s["slide_id"] for s in slide_results
+                            if s["status"] == "succeeded"]
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": total_attempts,
+            "status": "phase_exhausted",
+            "failed_slides": failed_slides,
+            "succeeded_slides": succeeded_slides,
+            "note": "all owned slides attempted; phase fails for the named "
+                    "slides only",
+        })
+        return DispatchResult(phase_id, "exhausted", total_attempts,
+                              final_reasons, "working/prompts/",
+                              slide_results=slide_results)
 
     # Every ordinal THIS CALL owns cleared its own gate. The real whole-phase
     # verify() also folds in the deck-level writing-engine backstop and
@@ -1908,7 +1958,8 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
                     "verify() deferred to a full-sweep call",
         })
         return DispatchResult(phase_id, "ok", total_attempts, [],
-                              "working/prompts/ (subset)")
+                              "working/prompts/ (subset)",
+                              slide_results=slide_results)
 
     ok, reasons = _verify(phase_id, run_dir)
     _append_sidecar(run_dir, phase_id, {
@@ -1917,8 +1968,10 @@ def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: P
         "verifier_reasons": reasons,
     })
     if ok:
-        return DispatchResult(phase_id, "ok", total_attempts, [], "working/prompts/")
-    return DispatchResult(phase_id, "exhausted", total_attempts, reasons)
+        return DispatchResult(phase_id, "ok", total_attempts, [], "working/prompts/",
+                              slide_results=slide_results)
+    return DispatchResult(phase_id, "exhausted", total_attempts, reasons,
+                          slide_results=slide_results)
 
 
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
