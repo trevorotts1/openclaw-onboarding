@@ -9308,6 +9308,43 @@ def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                 + " — fail-closed (a signature deck cannot skip the claim gate).")
 
 
+# FIX 15 — SLIDE-CRAFT GATE (AF-OBI-1/2, AF-AUD-4/5/6, AF-HOOK-5, AF-DEN-1/2/4/7).
+# slide_craft.py's ten deterministic craft checks existed but were dead code: no
+# preflight entry, no phase verifier, nothing called them. This wires them into
+# PREFLIGHT_REQUIRED as a blocking, run-dir-scoped gate. Enforcement is
+# DEFAULT-ON with NO global escape hatch — slide_craft.enforce_active() refuses
+# PRESENTATION_SLIDE_CRAFT_ENFORCE=0. The only documented bypass is an
+# owner-token waiver: working/checkpoints/slide_craft_waivers.json inside THIS
+# run dir (one rule / one run / named slides; a record without approved_by +
+# reason is invalid and fails closed). Mirrors the _owner_skip_approved waiver
+# doctrine used by the other gates, scoped per-slide rather than per-gate.
+#
+# Fail-closed on import error: a broken or missing slide_craft.py must abort the
+# render, never silently skip the craft checks (that is how the checks were dead
+# in the first place). Each check DEFERS ("") on missing upstream input — the
+# owner of that input (copy phase) gates its presence elsewhere — so this entry
+# cannot false-block a deck that never had the input to begin with.
+def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """FIX 15 — run all ten deterministic slide-craft checks; blocking."""
+    try:
+        import slide_craft
+    except ImportError as exc:
+        return ("AF-SLIDE-CRAFT-LOADER: slide_craft.py is not importable next to "
+                "build_deck.py (" + repr(exc) + ") — fail-closed; the ten "
+                "deterministic craft checks (AF-OBI-1/2, AF-AUD-4/5/6, AF-HOOK-5, "
+                "AF-DEN-1/2/4/7) cannot be skipped.")
+    try:
+        all_pass, blocking = slide_craft.run_all_checks(run_dir, slides_path)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("AF-SLIDE-CRAFT-LOADER: slide_craft.run_all_checks raised "
+                + repr(exc) + " — fail-closed.")
+    if all_pass or not blocking:
+        return ""
+    return ("slide-craft gate: " + str(len(blocking)) + " deterministic craft "
+            "rule(s) FAILED — " + " | ".join(blocking) +
+            " — owner-token waiver: working/checkpoints/slide_craft_waivers.json "
+            "(one rule / one run / named slides; see slide_craft.py docstring).")
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -9836,6 +9873,14 @@ PREFLIGHT_REQUIRED = [
      "unless intake.json deck_type == signature_presentation.",
      "Phase 4.15 — QC Specialist (Signature Presentations) (P-SP-P3-HYGIENE, prove_sp_no_pitch)",
      _chk_sp_no_pitch),
+    # FIX 15 — SLIDE-CRAFT GATE: ten deterministic craft rules enforced.
+    # ENFORCEMENT IS DEFAULT-ON, NO GLOBAL ESCAPE HATCH (enforce_active refuses
+    # ENFORCE=0). Skippable only through owner-token waiver inside the run dir.
+    (None,
+     "slide-craft gate — 10 deterministic craft rules (AF-OBI-1/2, AF-AUD-4/5/6, "
+     "AF-HOOK-5, AF-DEN-1/2/4/7). DEFAULT-ON, waiver-only bypass.",
+     "Slide-Craft Enforcer (slide_craft.py FIX 15)",
+     _chk_slide_craft),
 ]
 
 
