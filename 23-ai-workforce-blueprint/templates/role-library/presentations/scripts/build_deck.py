@@ -9325,7 +9325,15 @@ def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 # owner of that input (copy phase) gates its presence elsewhere — so this entry
 # cannot false-block a deck that never had the input to begin with.
 def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """FIX 15 — run all ten deterministic slide-craft checks; blocking."""
+    """FIX 15 + FIX 18 — run all deterministic slide-craft checks; blocking.
+
+    FIX 15's ten arithmetic determinism checks live in slide_craft.py. FIX 18's
+    five newly-enforced craft-judgement checks (AF-HOOK-2, AF-HOOK-7, AF-OBI-6,
+    AF-DEN-3, AF-DEN-6) live in craft_judgement.py and join the same gate under
+    the SAME owner-token waiver discipline (working/checkpoints/
+    slide_craft_waivers.json), so the FIX 18 disposition never becomes a weaker
+    path than FIX 15's. Both imports fail closed."""
+    reasons = []
     try:
         import slide_craft
     except ImportError as exc:
@@ -9338,12 +9346,37 @@ def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
         return ("AF-SLIDE-CRAFT-LOADER: slide_craft.run_all_checks raised "
                 + repr(exc) + " — fail-closed.")
-    if all_pass or not blocking:
+    if not (all_pass or not blocking):
+        reasons.append("FIX 15 deterministic: " + str(len(blocking)) + " rule(s) — "
+                       + " | ".join(blocking) +
+                       " — owner-token waiver: working/checkpoints/"
+                       "slide_craft_waivers.json (one rule / one run / named "
+                       "slides; see slide_craft.py docstring).")
+    # FIX 18 — the five craft-judgement enforcement checks (AF-HOOK-2, AF-HOOK-7,
+    # AF-OBI-6, AF-DEN-3, AF-DEN-6). craft_judgement.py imports slide_craft's
+    # loaders itself, so an ImportError here means the fix is unwired/broken —
+    # fail-closed, same direction as the FIX 17 directive.
+    try:
+        import craft_judgement
+    except ImportError as exc:
+        return ("AF-CRAFT-JUDGEMENT-LOADER: craft_judgement.py is not importable "
+                "next to build_deck.py (" + repr(exc) + ") — fail-closed; the FIX 18 "
+                "5/6/2 disposition module cannot be skipped (AF-HOOK-2, AF-HOOK-7, "
+                "AF-OBI-6, AF-DEN-3, AF-DEN-6).")
+    try:
+        cj_pass, cj_blocking = craft_judgement.run_all_checks(run_dir, slides_path)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("AF-CRAFT-JUDGEMENT-LOADER: craft_judgement.run_all_checks raised "
+                + repr(exc) + " — fail-closed.")
+    if cj_pass or not cj_blocking:
+        cj_blocking = []
+    if cj_blocking:
+        reasons.append("FIX 18 craft-judgement (enforced): " +
+                       " | ".join(cj_blocking))
+    if not reasons:
         return ""
-    return ("slide-craft gate: " + str(len(blocking)) + " deterministic craft "
-            "rule(s) FAILED — " + " | ".join(blocking) +
-            " — owner-token waiver: working/checkpoints/slide_craft_waivers.json "
-            "(one rule / one run / named slides; see slide_craft.py docstring).")
+    return ("slide-craft gate: " + str(len(reasons)) + " craft gate failure(s) — "
+            + " | ".join(reasons))
 
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
@@ -9874,12 +9907,17 @@ PREFLIGHT_REQUIRED = [
      "Phase 4.15 — QC Specialist (Signature Presentations) (P-SP-P3-HYGIENE, prove_sp_no_pitch)",
      _chk_sp_no_pitch),
     # FIX 15 — SLIDE-CRAFT GATE: ten deterministic craft rules enforced.
+    # FIX 18 — five craft-judgement rules joined the same gate (AF-HOOK-2,
+    # AF-HOOK-7, AF-OBI-6, AF-DEN-3, AF-DEN-6) under the same waiver discipline;
+    # six further rules warn with named-reviewer dispositions and two
+    # (AF-OBI-4 / AF-OBI) stay human via run_signature_deck attest_phase.
     # ENFORCEMENT IS DEFAULT-ON, NO GLOBAL ESCAPE HATCH (enforce_active refuses
     # ENFORCE=0). Skippable only through owner-token waiver inside the run dir.
     (None,
-     "slide-craft gate — 10 deterministic craft rules (AF-OBI-1/2, AF-AUD-4/5/6, "
-     "AF-HOOK-5, AF-DEN-1/2/4/7). DEFAULT-ON, waiver-only bypass.",
-     "Slide-Craft Enforcer (slide_craft.py FIX 15)",
+     "slide-craft gate — 15 deterministic craft rules (AF-OBI-1/2, AF-AUD-4/5/6, "
+     "AF-HOOK-5, AF-DEN-1/2/4/7 from FIX 15; AF-HOOK-2/7, AF-OBI-6, AF-DEN-3/6 "
+     "from FIX 18). DEFAULT-ON, waiver-only bypass.",
+     "Slide-Craft Enforcer (slide_craft.py FIX 15 + craft_judgement.py FIX 18)",
      _chk_slide_craft),
 ]
 
