@@ -486,7 +486,7 @@ def dispatch(
         refused (AF-CAPACITY-UNMEASURED, nothing spawned), -5 when deck_type
         does not resolve (AF-DECK-TYPE-UNKNOWN, nothing spawned), -6 when
         the FIX 12 credit preflight blocked a declared mode
-        (AF-CREDIT-PREFLIGHT, nothing spawned). -7 when the notify transport
+        (AF-CREDIT-PREFLIGHT, nothing spawned).
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -815,6 +815,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_CAPACITY_UNMEASURED
         if rc == DISPATCH_UNKNOWN_DECK_TYPE:
             return EXIT_UNKNOWN_DECK_TYPE
+        if rc == DISPATCH_CREDIT_REFUSED:
+            return EXIT_CREDIT_REFUSED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel) if args.resume else \
@@ -827,6 +829,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_CAPACITY_UNMEASURED
     if pid == DISPATCH_UNKNOWN_DECK_TYPE:
         return EXIT_UNKNOWN_DECK_TYPE
+    if pid == DISPATCH_CREDIT_REFUSED:
+        return EXIT_CREDIT_REFUSED
     return 0 if pid > 0 else 1
 
 
