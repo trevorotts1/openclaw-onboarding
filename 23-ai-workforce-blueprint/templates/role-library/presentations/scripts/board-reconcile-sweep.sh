@@ -26,17 +26,25 @@ MAX_AGE_HOURS="${MAX_AGE_HOURS:-72}"
 
 echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep starting" >> "${LOG_FILE}"
 
+# FIX 37: use || to capture exit code despite set -e; the old pattern
+# placed rc=$? after the python call, so set -e killed the script before
+# reaching the error-reporting branch.
 python3 "${SCRIPT_DIR}/presentation_job.py" \
   --reconcile-board \
   --scan-root "${SCAN_ROOT}" \
   --scan-depth "${SCAN_DEPTH}" \
   --max-age-hours "${MAX_AGE_HOURS}" \
   --apply \
-  >> "${LOG_FILE}" 2>&1
+  >> "${LOG_FILE}" 2>&1 && rc=0 || rc=$?
 
-rc=$?
 if [ $rc -ne 0 ]; then
   echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep exited non-zero (exit $rc)" >> "${LOG_FILE}"
+  # FIX 37: emit error event to telemetry (consuming FIX 5 telemetry infra)
+  TELEMETRY_DIR="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations}/telemetry"
+  mkdir -p "$TELEMETRY_DIR"
+  printf '{"event":"reconcile_error","generated_at":"%s","exit_code":%d,"scan_root":"%s"}\n' \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$rc" "${SCAN_ROOT}" \
+      >> "$TELEMETRY_DIR/events.jsonl"
 fi
 
 echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep complete (exit $rc)" >> "${LOG_FILE}"
