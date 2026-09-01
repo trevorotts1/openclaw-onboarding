@@ -296,7 +296,7 @@ class TestIntakeDepthVocabulary:
         assert "ultra|standard|economy" in src
         assert "PRESENTATION_INTAKE_DEPTH" in src
         # and the usage documents the axis separation
-        assert "A DIFFERENT axis from run-mode" in src
+        assert "never interchangeable and never share a flag name" in src
 
     def test_depth_threaded_to_resolve(self):
         src = ENTRY.read_text(encoding="utf-8")
@@ -367,9 +367,15 @@ class TestRegistryParity:
 # (5) manifest-derived displayed phase count
 # ===========================================================================
 class TestManifestDerivedPhaseCount:
-    def test_canonical_manifest_has_40_phases(self):
+    def test_canonical_manifest_has_coherent_phase_count(self):
         m = json.loads(MANIFEST.read_text())
-        assert len(m["phases"]) == 40
+        # FIX 36(5): the count is DERIVED from the manifest, never hardcoded.
+        # The merged fleet reality is 55 phases (40 engine + 15 P-U); the count
+        # contract lives in tests/test_client_step_count.py — this test only
+        # asserts the manifest is self-coherent, so a future phase add/subtract
+        # cannot stale-pin this file.
+        phases = m["phases"]
+        assert len(phases) == len({p["id"] for p in phases}), "phase ids must be unique"
         assert m["manifest_version"] == 54
 
     def test_entry_script_derives_count_from_manifest(self):
@@ -377,7 +383,7 @@ class TestManifestDerivedPhaseCount:
         it from PIPELINE-MANIFEST.json (both the dept sops/ copy and the
         cluster universal-sops copy) at runtime."""
         src = ENTRY.read_text(encoding="utf-8")
-        assert "MANIFEST_PHASES" in src
+        assert "_PHASE_COUNT" in src
         assert "PIPELINE-MANIFEST.json" in src
         assert "len(m.get('phases', []))" in src
 
@@ -389,8 +395,8 @@ class TestManifestDerivedPhaseCount:
 
     def test_displayed_lines_use_the_variable(self):
         src = ENTRY.read_text(encoding="utf-8")
-        assert "Manifest phases: $MANIFEST_PHASES" in src
-        assert "all $MANIFEST_PHASES manifest phases" in src
+        assert "Manifest phases: $_PHASE_COUNT" in src
+        assert "all $_PHASE_COUNT manifest phases" in src
 
 
 if __name__ == "__main__":

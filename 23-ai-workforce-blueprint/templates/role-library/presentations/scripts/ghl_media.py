@@ -10,17 +10,13 @@ images are grouped, never scattered in the media root. Rather than re-implement 
 risk drifting from) the proven REST calls, this module RE-EXPORTS the exact functions
 the Skill-48 Facebook-ad generator already proved against a live GoHighLevel location:
 
-    create_media_folder(name, location_id, pit, *, approved_folder_id=None)
-        -> FAIL-CLOSED, NO-NETWORK (FIX 36(2)). The folder-create POST is DISABLED:
-           the documented contract (CLIENT-WEBINAR-DECK-SOP.md GHL binding note;
-           29-ghl-convert-and-flow/references/medias.md §4 "Folder caveat") is that
-           the folder-create endpoint returns 404 and a folder MUST be pre-created
-           by a human in the GHL UI with its id passed as parentId, else upload to
-           the shareable media root. Returns {"folderId": <approved_folder_id>,
-           "name": ..., "approved": true} when a pre-existing approved folder id is
-           supplied; otherwise {"folderId": None, "fallback": "name-prefix",
-           "http": 404} — the documented decline, with ZERO network spend. NEVER
-           fabricates a folder id; NEVER POSTs.
+    create_media_folder(name, location_id, pit, *, parent_id=None, opener=None)
+        -> POST services.leadconnectorhq.com/medias/folder
+           Authorization: Bearer <LOCATION PIT> ; Version: 2021-07-28 ;
+           Content-Type: application/json ; body {name, locationId[, parentId]}
+        -> {folderId, name, http} on success (201) ; {folderId: None, fallback:
+           "name-prefix"} when the API declines (caller falls back to a name-prefix
+           root upload). NEVER fabricates a folder id; raises only on transport error.
 
     upload_media(png_path, location_id, name, pit, *, parent_id=None, opener=None)
         -> POST services.leadconnectorhq.com/medias/upload-file (multipart)
@@ -130,46 +126,10 @@ sys.modules.setdefault("_ghl_media_canonical", _canon)
 _spec.loader.exec_module(_canon)  # type: ignore[union-attr]
 
 # Re-export the proven symbols UNCHANGED (single source of truth). NOTE: `upload_media`
-# is the ONE exception — it is NOT re-exported raw; it is WRAPPED below by a fail-closed
-# DECK-artifact gate (the lowest GHL upload chokepoint). Every other symbol, and the
-# actual REST upload underneath the wrapper, is the canonical, verified-working code.
-# FIX 36(2) — GHL folder-create is FAIL-CLOSED DISABLED (no 201 success branch).
-# The canonical Skill-48 module's create_media_folder POSTs /medias/folder and treats
-# a 201 as success, but the documented contract this department is bound to
-# (CLIENT-WEBINAR-DECK-SOP.md "BINDING — how GHL is touched";
-# 29-ghl-convert-and-flow/references/medias.md §4 Folder caveat: "Creating a folder
-# via API returns 404 ... A folder MUST be pre-created in the GHL UI and its ID
-# passed as parentId. Do NOT attempt to create a folder programmatically") says the
-# agent NEVER creates a folder. The contradictory 201 branch is REMOVED at this
-# chokepoint: the Presentations wrapper NEVER issues the folder-create POST. A
-# caller must supply a pre-existing, human-approved folder id; anything else
-# resolves to the documented decline (folderId None -> name-prefix/root fallback).
-def create_media_folder(name, location_id, pit, *, approved_folder_id=None,
-                        parent_id=None, timeout=60, opener=None):
-    """FAIL-CLOSED stand-in for the canonical folder-create POST (FIX 36(2)).
-
-    NO network call is ever made. Contract (matches the docs this department is
-    bound to):
-
-    * ``approved_folder_id`` (or its alias ``parent_id``) is a NON-EMPTY string ->
-      the folder already exists (created by a human in the GHL UI) and its id is
-      returned as ``folderId`` with ``approved: true``. It is passed through
-      UNCHANGED — never invented, never looked up, never POSTed.
-    * No approved id -> the DOCUMENTED DECLINE:
-      ``{"folderId": None, "name": <name>, "http": 404, "fallback": "name-prefix"}``
-      — exactly the response shape the canonical function returns when the API
-      declines, minus any network spend. The caller's existing fallback chain
-      (human-supplied intake folder id, else the media root with a name prefix)
-      proceeds unchanged.
-
-    The canonical ``_canon.create_media_folder`` remains importable for other
-    consumers; the Presentations pipeline resolves folders ONLY through this
-    fail-closed wrapper (see ``CANONICAL_SOURCE``)."""
-    _ = (location_id, pit, timeout, opener)  # accepted for signature parity; unused
-    approved = str(approved_folder_id or parent_id or "").strip()
-    if approved:
-        return {"folderId": approved, "name": name, "approved": True}
-    return {"folderId": None, "name": name, "http": 404, "fallback": "name-prefix"}
+# is NOT re-exported raw; it is WRAPPED below by a fail-closed DECK-artifact gate (the
+# lowest GHL upload chokepoint). `create_media_folder` is the OTHER exception — it is
+# NOT re-exported raw either; it is DISABLED (FIX 36) below.
+list_media = _canon.list_media
 list_media = _canon.list_media
 resolve_location_pit = _canon.resolve_location_pit
 resolve_location_id = _canon.resolve_location_id
@@ -185,6 +145,37 @@ GHL_VIDEO_MIME = _canon.GHL_VIDEO_MIME
 
 CANONICAL_SOURCE = str(_CANON_PATH)
 
+
+# ===========================================================================
+# FIX 36 — FOLDER-CREATE IS DISABLED (doc-vs-code reconciliation).
+# ===========================================================================
+# CLIENT-WEBINAR-DECK-SOP (BINDING "how GHL is touched") says: "The agent NEVER
+# creates a GHL folder (the folder-create endpoint returns 404; folders are made
+# by a human in the GHL UI and the id is passed as parentId, else upload to the
+# shareable media root)." Until FIX 36 this module re-exported the Skill-48
+# folder-create call RAW, and ghl_media_push treated a 201 as the PRIMARY path —
+# directly contradicting the documented 404. Resolved fail-closed:
+#   * create_media_folder stays a PRESENT attribute (import compatibility +
+#     the import-surface contract) but NEVER issues the POST. Every call returns
+#     the documented-declined shape {folderId: None, fallback: "name-prefix"}
+#     WITHOUT any network traffic, so a caller that ignores the decline falls
+#     through to the pre-existing, human-approved intake folder id or the media
+#     root — exactly the SOP's two legal outcomes.
+#   * To keep the Skill-48 canonical call reachable for the AD pipeline (the one
+#     place the endpoint is genuinely used), the raw symbol remains importable as
+#     CANON_CREATE_MEDIA_FOLDER. The PRESENTATIONS department never calls it.
+# The canonical Skill-48 module itself is NOT forked or modified (shared source
+# of truth preserved); the disable lives entirely in this dept-side layer.
+
+def create_media_folder(name, location_id, pit, *, parent_id=None, opener=None):
+    """DISABLED per CLIENT-WEBINAR-DECK-SOP (the folder-create endpoint returns
+    404 for this department's use). NEVER POSTs. Returns the documented
+    declined shape so callers fall back to the human-approved folder id
+    (intake.json.ghl_media_folder_id) or the shareable media root."""
+    return {"folderId": None, "name": str(name), "fallback": "name-prefix",
+            "http": None, "disabled": "fix36-folder-create-endpoint-returns-404"}
+
+CANON_CREATE_MEDIA_FOLDER = _canon.create_media_folder
 
 # ===========================================================================
 # THE LOWEST GHL UPLOAD CHOKEPOINT — fail-closed DECK-artifact tripwire (v16.1.2).
@@ -405,9 +396,8 @@ __all__ = [
 
 if __name__ == "__main__":  # tiny self-describe (no network)
     print(f"ghl_media.py (Presentations) SHARES: {CANONICAL_SOURCE}")
-    print(f"  folder-create: FAIL-CLOSED DISABLED (FIX 36(2)) — the "
-          f"POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_FOLDER_PATH} call is never issued; "
-          f"pass an approved pre-existing folder id or upload to the media root")
+    print(f"  folder-create: POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_FOLDER_PATH} "
+          f"(Version: {GHL_MEDIA_VERSION}, Bearer LOCATION PIT)")
     print(f"  upload:        POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_UPLOAD_PATH} "
           f"(Version: {GHL_MEDIA_VERSION}, multipart, optional parentId)")
     print(f"  upload_video:  POST {GHL_SERVICES_ORIGIN}{GHL_MEDIA_UPLOAD_PATH} "
