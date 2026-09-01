@@ -27,6 +27,21 @@ SCAN_ROOT="${SCAN_ROOT:-<SCAN_ROOT>}"
 # Telegram (FIX 23 owns the transport), and does NOT suppress FIX 21
 # SYSTEM-block notifications.
 NOTIFY_FAIL_CLOSED="${PRESENTATION_NOTIFY_FAIL_CLOSED:-1}"
+
+# 2026-08-27 scan-roots fix: one scan root was the blind spot -- a client deck
+# built outside the department tree was invisible to all three passes below.
+# EXTRA scan roots now come from configuration, never a hardcode:
+#   - PRESENTATION_SCAN_ROOTS: os.pathsep-separated additional roots, and/or
+#   - a config file (SCAN_ROOTS_CONFIG, default <department>/config/scan-roots.conf)
+#     with one absolute path per line (#-comments allowed).
+# The python passes resolve and log the full root list every run; a root that
+# cannot be read is reported UNDETERMINED, never treated as "no runs here".
+# A box adds roots by editing its own config file -- no code change.
+ROOTS_FLAGS=""
+if [ -n "${SCAN_ROOTS_CONFIG:-}" ]; then
+    ROOTS_FLAGS="--roots-config ${SCAN_ROOTS_CONFIG}"
+fi
+
 if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
     if [ "${NOTIFY_FAIL_CLOSED}" != "0" ]; then
         echo "AF-NOTIFY-UNCONFIGURED: PRESENTATION_NOTIFY_CMD is unset -- refusing to run the watchdog pass (fail-closed)" >> "${LOG}" 2>&1
@@ -77,6 +92,7 @@ if [ -n "${TIMEOUT_BIN}" ]; then
     "${TIMEOUT_BIN}" 300 python3 "${SCRIPT_DIR}/presentation_job.py" \
         --watchdog \
         --scan-root "${SCAN_ROOT}" \
+        ${ROOTS_FLAGS} \
         --grace "${GRACE:-1.5}" \
         --scan-depth "${SCAN_DEPTH:-3}" \
         >> "${LOG}" 2>&1 || WATCHDOG_RC=$?
@@ -84,6 +100,7 @@ else
     python3 "${SCRIPT_DIR}/presentation_job.py" \
         --watchdog \
         --scan-root "${SCAN_ROOT}" \
+        ${ROOTS_FLAGS} \
         --grace "${GRACE:-1.5}" \
         --scan-depth "${SCAN_DEPTH:-3}" \
         >> "${LOG}" 2>&1 || WATCHDOG_RC=$?
@@ -122,13 +139,42 @@ RECONCILE_RC=0
 python3 "${SCRIPT_DIR}/presentation_job.py" \
     --reconcile-board \
     --scan-root "${SCAN_ROOT}" \
+    ${ROOTS_FLAGS} \
     >> "${LOG}" 2>&1 || RECONCILE_RC=$?
 if [ "${RECONCILE_RC}" -ne 0 ]; then
     echo "WARNING: reconcile-board exited ${RECONCILE_RC} (0=pass; 10=zero run dirs/UNDETERMINED; 11=run dir failures; 12=all run dirs rejected/UNDETERMINED) -- NOT a pass, see reconcile-board lines above" >> "${LOG}" 2>&1
 fi
 
+# Worker-liveness supervision pass (supervisor.py, 2026-08-27): detects an
+# engine PROCESS that died mid-run behind an active (non-terminal, .job.lock
+# present) run -- the death the 2026-08-27 live deck suffered with nothing
+# noticing -- and restarts it under a bounded, exponentially-backed-off
+# budget. Report-only WITHOUT --apply (same staging discipline as
+# reconcile-board: a pass that can start processes proves itself in the log
+# first); flip to --apply once its report-only output has been watched for a
+# cycle. Exit codes are documented in state.py: 0=pass (or alarm cleared),
+# 14=zero state.json found (UNDETERMINED), 15=>=1 run exhausted its restart
+# budget and is ALARMING. Captured, not swallowed, and never fatal to the
+# run-discovery pass below -- same set -e treatment as the two passes above.
+SUPERVISE_RC=0
+python3 "${SCRIPT_DIR}/presentation_job.py" \
+    --supervise \
+    --scan-root "${SCAN_ROOT}" \
+    --scan-depth "${SCAN_DEPTH:-3}" \
+    ${PRESENTATION_SUPERVISE_APPLY:+--apply} \
+    --max-restarts "${SUPERVISOR_MAX_RESTARTS:-3}" \
+    --supervisor-backoff "${SUPERVISOR_BACKOFF_SECONDS:-60}" \
+    >> "${LOG}" 2>&1 || SUPERVISE_RC=$?
+if [ "${SUPERVISE_RC}" -ne 0 ]; then
+    echo "WARNING: supervise exited ${SUPERVISE_RC} (0=pass; 14=zero state.json found/UNDETERMINED; 15=restart budget exhausted/ALARM) -- NOT necessarily a failure, see supervisor lines above" >> "${LOG}" 2>&1
+fi
+
 # Run-discovery pass: optional component. Guarded with || true so a missing
-# run_discovery.py cannot kill the loop.
+# run_discovery.py cannot kill the loop. It resolves the same root list as the
+# two passes above (SCAN_ROOT + PRESENTATION_SCAN_ROOTS + the config file) and
+# walks each root to --scan-depth, so a run three levels down is found too.
 python3 "${SCRIPT_DIR}/run_discovery.py" \
     --runs-root "${SCAN_ROOT}" \
+    ${ROOTS_FLAGS} \
+    --scan-depth "${SCAN_DEPTH:-3}" \
     >> "${LOG}" 2>&1 || true

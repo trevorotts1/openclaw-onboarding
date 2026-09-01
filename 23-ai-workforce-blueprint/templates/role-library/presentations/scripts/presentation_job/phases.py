@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import shlex
 import subprocess
 import sys
@@ -166,7 +167,7 @@ def _post_stage_timings_cc(rows: List[Dict[str, Any]]) -> None:
 
 # FIX 1 (Phase A stub capacity probe): fixed deepseek-direct profile with
 # measured capacity 8, mirroring dispatcher._prompt_routing_stamp() and
-# /Users/blackceomacmini/presentation-fix-tests/phase-a-routing.json.
+# the phase-a routing fixture (repo-relative path, see fix ledger).
 # FIX 7/8/11 will replace this with real resource profiles through the same
 # dict schema (status/provider/plan/available); until then the engine stamps
 # these constants so the plan is built from a measured width, never an
@@ -244,6 +245,12 @@ _SALES_CHECKOUT_ONLY_PHASE_IDS = frozenset({
     "P-U-SALES-BUILD", "P-U-CHECKOUT-BUILD", "P-U-FORM-CHECKOUT",
 })
 _VSL_ONLY_PHASE_IDS = frozenset({"P-U-VSL-BUILD"})
+# AF-INTAKE-GATE (Ticket 6, presentation department fix campaign, 2026-08-27):
+# the artifact every content-authoring phase downstream ultimately depends on.
+# See Engine._intake_gate_applies / Engine._check_intake_gate below -- a run
+# that reaches a content phase before this file exists on disk was building
+# on no client data at all, which is the defect this gate closes.
+_INTAKE_ARTIFACT = "working/copy/intake.json"
 
 
 class _SafeFormatDict(dict):
@@ -649,6 +656,10 @@ class Engine:
                     + "; ".join(bad) + " -- re-running this phase.")
                 self._checkpoint(phase.id, status="pending", banked_invalid=bad)
 
+            gate_rc = self._check_intake_gate(phase)
+            if gate_rc is not None:
+                return gate_rc
+
             self.state["current_phase"] = phase.id
             self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
             self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
@@ -777,6 +788,67 @@ class Engine:
                     self.board.child_report(phase.id, title, description, "done", done_msg)
         return rc
 
+    def _intake_gate_applies(self, phase: Phase) -> bool:
+        """AF-INTAKE-GATE (Ticket 6): does `phase` need working/copy/intake.json
+        to already exist before it is allowed to start?
+
+        A manifest that declares no phase producing intake.json at all does not
+        model the intake concept -- most existing tests build narrow, single- or
+        few-phase synthetic manifests to exercise unrelated behavior (checkpoint
+        persistence, working-set measurement, ...) and never write intake.json;
+        the gate is a deliberate no-op there, never a false block.
+
+        Within a manifest that DOES declare an intake producer, a phase is
+        exempt only if it IS a declared producer itself (P0A-INTAKE / P-CONVERTER
+        / P-SP-CLAIM all (re)write this same file -- gating them would deadlock
+        the pipeline against its own intake step) or if its own order sits at or
+        before the LATEST declared producer's order (P-0.5-RESEARCH, order -0.5,
+        runs before P0A-INTAKE, order 0.1, in the standard from-scratch walk --
+        every routing variant this manifest declares puts every producer at or
+        below order 0.14, so <= that ceiling is the whole "Phase 0" cluster).
+        Every phase past that ceiling reads intake.json's content directly or
+        depends on a downstream artifact that does, so it is gated for real.
+        """
+        producer_orders = [p.order for p in self.manifest.phases
+                            if _INTAKE_ARTIFACT in p.produces_artifact]
+        if not producer_orders:
+            return False
+        if _INTAKE_ARTIFACT in phase.produces_artifact:
+            return False
+        return phase.order > max(producer_orders)
+
+    def _check_intake_gate(self, phase: Phase) -> Optional[int]:
+        """AF-INTAKE-GATE (Ticket 6): fail-closed pre-check run before any phase
+        this manifest doesn't exempt (see _intake_gate_applies) is allowed to
+        start. Refuses to author content -- priority-shift spec, arc allocation,
+        slide copy, renders, deliverables, all of it -- without a completed
+        client intake on disk. Returns a block exit code on failure, None when
+        the gate passes (or does not apply) and the caller should proceed."""
+        if not self._intake_gate_applies(phase):
+            return None
+        intake_path = self.run_dir / "working" / "copy" / "intake.json"
+        if not intake_path.is_file():
+            return self._block(
+                phase,
+                "AF-INTAKE-GATE: working/copy/intake.json missing — client "
+                "intake (Phase 0) has not completed; refusing to author "
+                "content without client data.")
+        try:
+            intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return self._block(
+                phase,
+                f"AF-INTAKE-GATE: working/copy/intake.json is unreadable or "
+                f"not valid JSON ({exc}) — client intake (Phase 0) has not "
+                "completed; refusing to author content without client data.")
+        if not intake:
+            return self._block(
+                phase,
+                "AF-INTAKE-GATE: working/copy/intake.json is empty — client "
+                "intake (Phase 0) has not completed; refusing to author "
+                "content without client data.")
+        return None
+
     def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
         """U069: tokenise FIRST, substitute SECOND.
 
@@ -825,6 +897,45 @@ class Engine:
             print(f"DRY-RUN {phase.id}: {' '.join(argv)}", flush=True)
             return EXIT_OK
 
+        ps = self._phase_state(phase.id)
+
+        # FIX 4 (presentation rev2 phase A): canonical front-door nonce provisioning.
+        # executors whose kind is "script" run build_deck.py, whose front-door guard
+        # (AF-CANONICAL-RENDER-BYPASS) demands BOTH the canonical-entry nonce file
+        # ({run_dir}/working/checkpoints/.canonical-entry-nonce) AND the matching
+        # OC_DECK_ENTRY_NONCE environment value. The standalone canonical entry
+        # (presentation-canonical-entry.sh) mints these; the engine dispatch never
+        # did, so every engine-spawned script phase exited 2 at the front door.
+        # Mint per-run here: run_with_cleanup is invoked with env=None, so the child
+        # inherits this process environment — setting it here is the delivery path.
+        # The run_dir may not have a checkpoints dir yet on a fresh run; create it.
+        checkpoints_dir = self.run_dir / "working" / "checkpoints"
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        nonce = secrets.token_hex(32)
+        nonce_file = checkpoints_dir / ".canonical-entry-nonce"
+        umask = os.umask(0o077)
+        try:
+            nonce_file.write_text(nonce)
+        finally:
+            os.umask(umask)
+        os.chmod(nonce_file, 0o600)
+        os.environ["OC_DECK_ENTRY_NONCE"] = nonce
+
+        try:
+            return self._run_script_phase_locked(phase, argv, checkpoints_dir, nonce_file)
+        finally:
+            # FIX 4 cleanup: the nonce is per-invocation. Remove the file and the env
+            # var on EVERY exit path (success return, heal exhaustion, rung 3, block,
+            # exception), so a later run can never reuse (or leak) this front-door
+            # nonce.
+            try:
+                nonce_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            os.environ.pop("OC_DECK_ENTRY_NONCE", None)
+        raise AssertionError("unreachable")
+
+    def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file) -> int:
         ps = self._phase_state(phase.id)
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.

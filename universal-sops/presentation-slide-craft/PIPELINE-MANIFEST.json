@@ -1,5 +1,5 @@
 {
-  "manifest_version": 52,
+  "manifest_version": 54,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -750,7 +750,7 @@
       "heartbeat_minutes": 60,
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --run-dir {run_dir}"
+        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json {run_dir}/out.pptx --run-dir {run_dir} --out {run_dir}/working/deliverables"
       },
       "verifier": "phase_verifiers.verify"
     },
@@ -885,7 +885,7 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
+        "cmd": "python3 scripts/workbook_builder.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 30
@@ -1100,7 +1100,7 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "bash scripts/presentation-canonical-entry.sh --resume --run-dir {run_dir}"
+        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 120
@@ -1450,8 +1450,7 @@
       "py_symbol": "_chk_research_cited",
       "secondary_py_symbols": [
         "_chk_claims_without_citation",
-        "MIN_CITED_SOURCES",
-        "_chk_citation_validated"
+        "MIN_CITED_SOURCES"
       ]
     },
     {
@@ -3299,6 +3298,24 @@
       "enforced_by": "vsl_builder",
       "py_symbol": null,
       "check_script": "scripts/vsl_builder.py::verify_video_dependency,verify_push_receipt"
+    },
+    {
+      "code": "AF-SLIDE-CRAFT-LOADER",
+      "stage": "Preflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "slide_craft.py is not importable next to the run, or slide_craft.run_all_checks raised (FIX 15 slide-craft enforcer loader)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_slide_craft"
+    },
+    {
+      "code": "AF-CRAFT-JUDGEMENT-LOADER",
+      "stage": "Preflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "craft_judgement.py is not importable next to the run, or craft_judgement.run_all_checks raised (FIX 18 craft-judgement human-rule disposition loader)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_slide_craft"
     }
   ],
   "roles": [

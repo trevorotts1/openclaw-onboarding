@@ -55,13 +55,33 @@ def test_workbook_phase_declared_in_manifest():
     ph = phases["P8.25-WORKBOOK"]
     assert ph["order"] == 8.25
     assert ph["executor"]["kind"] == "script"
-    # D4 (canonical-entry routing, manifest v45): the workbook phase runs through
-    # the canonical entry script (--resume --run-dir {run_dir}), NOT by invoking
-    # workbook_builder.py directly — the canonical entry is the single sanctioned
-    # door, and the entry's phase dispatch hands off to the builder by phase id.
+    # L-11 twin fix (Ticket 7 follow-up, fix/presentation-intake-gate-20260827,
+    # 2026-08-27): D4's premise above ("the entry's phase dispatch hands off to
+    # the builder by phase id") does not match presentation-canonical-entry.sh's
+    # actual code -- it has no --phase-targeted dispatch on this path at all (its
+    # one --phase flag/PHASE var, default P4-RENDER, is read only by the FALLBACK
+    # legacy run_signature_deck.py branch, never by "Step 3: Run the engine").
+    # Re-invoking it here relaunched a FULL engine (`python3 presentation_job.py
+    # --run --run-dir {run_dir}`) while the Engine dispatching this very phase was
+    # still inside `with RunLock(run_dir):` for its whole engine.run() call
+    # (presentation_job/__main__.py:582) -- RunLock is a non-blocking exclusive
+    # flock (presentation_job/state.py:148-168), so the relaunched engine always
+    # died immediately with EXIT_LOCK_HELD (dispatcher.py's own module docstring
+    # independently documents this exact hazard). P8.25-WORKBOOK could never
+    # complete via the old executor.cmd. Fixed to call workbook_builder.py
+    # directly, matching every other script-kind phase in this manifest (the
+    # same fix already applied to P9.6-WEBINAR-VIDEO's identical defect earlier
+    # on this branch) -- safe because OC_DECK_ENTRY_NONCE is minted once by the
+    # ORIGINAL top-level canonical-entry.sh invocation and inherited by the whole
+    # descendant process tree (no `env=` override anywhere in the dispatch
+    # chain), so workbook_builder.py's own _verify_entry_nonce() still passes
+    # exactly as before, and a genuinely hand-rolled invocation still fails
+    # closed (AF-CANONICAL-RENDER-BYPASS) unchanged -- see
+    # tests/test_l11_webinar_executor_no_recursion.py for the full proof.
     cmd = ph["executor"]["cmd"]
-    assert "presentation-canonical-entry.sh" in cmd, cmd
-    assert "--resume" in cmd and "--run-dir" in cmd, cmd
+    assert cmd == "python3 scripts/workbook_builder.py --run-dir {run_dir}", cmd
+    assert "presentation-canonical-entry.sh" not in cmd, cmd
+    assert "--run-dir" in cmd, cmd
     assert ph["verifier"] == "phase_verifiers.verify"
     # owning_role must be a real role stem (sync_check A6 would fail otherwise).
     assert ph["owning_role"] == "pptx-assembly-specialist"

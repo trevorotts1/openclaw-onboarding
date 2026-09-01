@@ -169,6 +169,11 @@ good the render is. Doctrine home:
 and `51-signature-presentation/intake/sp-8-questions.json` (`delivery.conversation_contract`:
 `choice_first` + `one_question_per_message` + `af_on_violation: AF-INTAKE-BATCH`).
 
+**"No deck is written until the brief is gathered" is now MECHANICAL, not just doctrine**
+(AF-INTAKE-GATE, Ticket 6, 2026-08-27): `presentation_job/phases.py`'s `Engine._check_intake_gate` /
+`_intake_gate_applies` block every phase past the intake cluster (P0B-PRIORITY onward) from even
+starting unless `working/copy/intake.json` already exists on disk and parses as non-empty JSON.
+
 ---
 
 ## 1. PURPOSE

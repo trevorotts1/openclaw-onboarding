@@ -21,6 +21,13 @@
 #     record-integrity fact after the one-at-a-time conversation, NOT a licence
 #     to dump the 8 Questions at the owner.
 #   * A Signature frame is SET to one of: rulebook | vault | quest | original.
+#   * Every answer carries CONTENT provenance proving the text came from the
+#     client (answer_provenance: verbatim client_text + a client confirmation,
+#     captured by the driver's --sig-answer / --sig-confirm quote-back step).
+#     This closes the 2026-08-27 live defect: a record whose answers were
+#     AUTHORED BY THE SYSTEM passed every structural check above. After the
+#     PROVENANCE_GRACE_WINDOW_UNTIL migration window a provenance-less or
+#     unconfirmed answer hard-fails AF-SP-PROVENANCE — fail-closed.
 #
 # It reads the intake JSON. By default it reads the section spec at
 #   <skill>/intake/sp-8-questions.json
@@ -44,6 +51,9 @@
 #   AF-SP-FRAME-UNSET  — signature_frame not one of the four allowed values
 #   AF-SP-TYPE-MISMATCH— deck_type != signature_presentation
 #   AF-SP-OFFER-UNDECLARED — q7's offer(s) not carried into the offer_token_ledger
+#   AF-SP-PROVENANCE — an answer lacks content provenance: no answer_provenance
+#       entry, no client_text, committed text != client_text, origin
+#       'agent_authored', or the client never confirmed it (quote-back/direct)
 #
 # EXIT CODES:
 #   0  PASS  — intake gate satisfied; slide authoring may unlock
@@ -100,8 +110,8 @@
 # ROLLBACK (=1 default is not a flag flip away): this fix intentionally keeps
 # NO legacy key material in source, so there is no in-code rollback flag. The
 # documented =0-style rollback path is to restore the pre-fix copy from
-# /Users/blackceomacmini/presentation-fix-tests/backups/phase-b/
-# prove_sp_intake.pre-FIX29 (see the fix ledger); a provisioned rotation
+# the phase-b backup dir (repo-relative, see the fix ledger);
+# a provisioned rotation
 # record in the store is inert for the restored file and needs no cleanup.
 # =============================================================================
 """Fail-closed deterministic prover for the Signature Presentation intake gate."""
@@ -127,6 +137,7 @@ AF_FRAME = "AF-SP-FRAME-UNSET"
 AF_TYPE = "AF-SP-TYPE-MISMATCH"
 AF_OFFER = "AF-SP-OFFER-UNDECLARED"
 AF_UNPACED = "AF-SP-INTAKE-UNPACED"
+AF_PROVENANCE = "AF-SP-PROVENANCE"
 
 # ---- GK-23 / D18 — turn-ledger provenance (record-layer pacing gate) --------
 # FIX 29: the HMAC key previously lived in source (a published constant in this
@@ -343,6 +354,18 @@ def _previous_key_in_window(record):
 # driver's turn-ledger stamp (do not silently extend the date in place).
 GRACE_WINDOW_UNTIL = date(2026, 8, 15)
 
+# ---- CONTENT-PROVENANCE migration window (2026-08-27 live defect) ------------
+# A runtime record carrying a valid turn-ledger stamp but NO per-answer
+# content provenance (answer_provenance with client_text + confirmation) is
+# grandfathered through this date; after it, a provenance-less record
+# hard-fails AF-SP-PROVENANCE too. REMOVE this exception in a dated follow-up
+# line item once the fleet has rolled the driver's quote-back stamp (do not
+# silently extend the date in place). Chosen so every record assembled by the
+# pre-provenance driver during the rollout window still builds, while the
+# teeth are deterministically provable on both sides of the cutoff via
+# --as-of / the `today` injection — same pattern as GRACE_WINDOW_UNTIL above.
+PROVENANCE_GRACE_WINDOW_UNTIL = date(2026, 9, 15)
+
 # ---- contract constants -----------------------------------------------------
 DECK_TYPE = "signature_presentation"
 ALLOWED_FRAMES = ("rulebook", "vault", "quest", "original")
@@ -482,6 +505,128 @@ def _missing_questions(intake):
             if isinstance(item, dict):
                 defined[item.get("id")] = item.get("prompt")
     return [q for q in REQUIRED_QUESTIONS if not _nonempty_str(defined.get(q))]
+
+
+# ---- CONTENT provenance (AF-SP-PROVENANCE, 2026-08-27 live defect) ----------
+# The 2026-08-27 live run (rec_20260827T221120131024, signature 8cb0cd7d…)
+# proved the gate above verifies STRUCTURE, not CONTENT FIDELITY: q6 and q8
+# were AUTHORED BY THE SYSTEM (never typed by the client, never asked as
+# phrased), yet the record passed 8/8 with a valid turn-ledger HMAC — because
+# the driver's --sig-answer accepts text from ANY caller and stamps the
+# transcript's owner turn itself. Structure cannot tell those answers apart
+# from real ones. The only thing that can is a per-answer record of the
+# CLIENT'S OWN WORDS, captured at answer time and confirmed back to the
+# client before the record commits.
+#
+# Contract (written by deck-intake-driver.py's _sig_answer/--sig-confirm):
+#   answer_provenance: {
+#     "<qid>": {
+#       "client_text":        <verbatim client words for this answer>,
+#       "origin":             "client" | "agent_authored",
+#       "confirmed_by_client": true|false,
+#       "confirmation":       "quote_back" | "direct" | None,
+#     }, ... }
+#
+# RULES (all fail-closed):
+#   * committed answer text must equal client_text (whitespace-normalized)
+#     — an answer the client did not at least see verbatim cannot ride their
+#     name into the deck;
+#   * origin "agent_authored" NEVER passes — an operator/agent may pre-fill
+#     an answer only as a visibly-marked DRAFT, and it can never satisfy
+#     this gate as a client answer;
+#   * confirmed_by_client must be True with confirmation "quote_back" or
+#     "direct" — an unconfirmed answer is surfaced by name, not waved
+#     through.
+def _ws_normalized(value):
+    """Whitespace-normalized text for byte-for-byte quote comparison: all
+    whitespace runs collapse to one space, ends trimmed. Case is PRESERVED
+    (the client's capitalization is part of their words)."""
+    if not isinstance(value, str):
+        return None
+    return " ".join(value.split())
+
+
+def _evaluate_answer_provenance(intake, today=None):
+    """AF-SP-PROVENANCE — refuses an intake record whose answers cannot show
+    they came from the client. Returns a list of (code, message) failures.
+
+    Only meaningful for a RUNTIME record (carries an `answers` dict) — the
+    static sp-8-questions.json spec/contract shape has no answers object and
+    is exempt, exactly like _evaluate_turn_pacing. `today` is an injectable
+    override (default: real date) so the dated migration window is
+    deterministically testable on both sides of its cutoff."""
+    if not isinstance(intake.get("answers"), dict):
+        return []
+
+    as_of = today or date.today()
+    prov = intake.get("answer_provenance")
+
+    if prov is None:
+        if as_of <= PROVENANCE_GRACE_WINDOW_UNTIL:
+            return []  # pre-provenance driver record: grandfathered (accepted rollout cost)
+        return [(AF_PROVENANCE,
+                 "intake record carries no answer_provenance — per-answer client provenance "
+                 "(client_text + confirmed_by_client, captured by deck-intake-driver.py's "
+                 "--sig-answer/--sig-confirm quote-back step) is required after the %s migration "
+                 "window closed; answers without provenance cannot be shown to be the client's "
+                 "own words." % PROVENANCE_GRACE_WINDOW_UNTIL.isoformat())]
+
+    if not isinstance(prov, dict):
+        return [(AF_PROVENANCE,
+                 "answer_provenance is present but not a JSON object (got %s)"
+                 % type(prov).__name__)]
+
+    answers = intake.get("answers") or {}
+    fails = []
+    for qid in REQUIRED_QUESTIONS:
+        answer_text = answers.get(qid)
+        if not _answered(answer_text):
+            continue  # completeness is AF-SP-8Q-MISSING's job, not this gate's
+        block = prov.get(qid)
+        if not isinstance(block, dict):
+            fails.append((AF_PROVENANCE,
+                           "%s carries no answer_provenance entry — there is no record that this "
+                           "answer is the client's own words (fail-closed)." % qid))
+            continue
+        client_text = block.get("client_text")
+        if not _nonempty_str(client_text):
+            fails.append((AF_PROVENANCE,
+                           "%s answer_provenance carries no client_text — the verbatim client "
+                           "words the answer was built from are missing (fail-closed)." % qid))
+            continue
+        if _ws_normalized(client_text) != _ws_normalized(answer_text):
+            fails.append((AF_PROVENANCE,
+                           "%s committed answer does not match its recorded client_text — the "
+                           "answer was edited after the client's words were captured (fail-closed)."
+                           % qid))
+            continue
+        origin = block.get("origin")
+        if origin == "agent_authored":
+            fails.append((AF_PROVENANCE,
+                           "%s answer is marked origin='agent_authored' — the system authored it, "
+                           "not the client. An agent-authored answer is a visibly-marked draft "
+                           "only and can never satisfy the gate." % qid))
+            continue
+        if origin not in (None, "client"):
+            fails.append((AF_PROVENANCE,
+                           "%s answer_provenance.origin is %r, expected 'client' (or the older "
+                           "shape with origin absent)." % (qid, origin)))
+            continue
+        if block.get("confirmed_by_client") is not True:
+            fails.append((AF_PROVENANCE,
+                           "%s answer is NOT confirmed by the client (confirmed_by_client is %r) — "
+                           "run deck-intake-driver.py --sig-confirm %s to read the answer back and "
+                           "record the client's confirmation before committing." % (
+                               qid, block.get("confirmed_by_client"), qid)))
+            continue
+        confirmation = block.get("confirmation")
+        if confirmation not in ("quote_back", "direct"):
+            fails.append((AF_PROVENANCE,
+                           "%s confirmed but confirmation mode is %r — must be 'quote_back' (the "
+                           "driver read the answer back verbatim and the client confirmed it) or "
+                           "'direct' (the client typed/voiced the answer themselves)." % (
+                               qid, confirmation)))
+    return fails
 
 
 # ---- turn-ledger provenance (AF-SP-INTAKE-UNPACED, GK-23 / D18) -------------
@@ -806,6 +951,11 @@ def evaluate(intake, today=None):
     # --- one-question-at-a-time UNFAKEABLE record-layer gate (AF-SP-INTAKE-UNPACED) ---
     failures.extend(_evaluate_turn_pacing(intake, today=today))
 
+    # --- CONTENT provenance: answers must provably be the client's own words
+    # (AF-SP-PROVENANCE) — the 2026-08-27 live defect: 2 of 8 answers were
+    # authored by the system on a record that passed every structural check.
+    failures.extend(_evaluate_answer_provenance(intake, today=today))
+
     return failures
 
 
@@ -946,6 +1096,31 @@ def _valid_runtime_fixture_paced():
     return f
 
 
+def _valid_answer_provenance(answers):
+    """Build a well-formed answer_provenance block exactly the way the driver
+    would (verbatim client_text per answered question, confirmed quote-back) —
+    used to prove the record-layer PASS side of AF-SP-PROVENANCE."""
+    return {
+        qid: {
+            "client_text": text,
+            "origin": "client",
+            "confirmed_by_client": True,
+            "confirmation": "quote_back",
+        }
+        for qid, text in (answers or {}).items()
+        if _answered(text)
+    }
+
+
+def _valid_runtime_fixture_provenanced():
+    """The full genuine record (2026-08-27 contract): driver-paced turn ledger
+    PLUS per-answer client provenance (verbatim client_text, quote-back
+    confirmed). Must PASS every gate including AF-SP-PROVENANCE at any date."""
+    f = _valid_runtime_fixture_paced()
+    f["answer_provenance"] = _valid_answer_provenance(f["answers"])
+    return f
+
+
 def self_test():
     """Construct a VALID fixture (assert PASS) and each VIOLATION fixture
     (assert NONZERO). Returns 0 iff every assertion holds, else 1."""
@@ -1004,7 +1179,12 @@ def self_test():
     # GK-23/D18: the bare record has been ungrandfathered since GRACE_WINDOW_UNTIL
     # (2026-08-15) — a genuine must-PASS runtime record needs the driver-paced
     # turn_ledger_provenance stamp, same as every other "must PASS" fixture below.
-    check_pass("runtime-record", _valid_runtime_fixture_paced())
+    # 2026-08-27 content-provenance contract: the full genuine record ALSO carries
+    # per-answer client provenance (verbatim client_text + quote-back confirmation),
+    # so it must PASS on both sides of PROVENANCE_GRACE_WINDOW_UNTIL.
+    check_pass("runtime-record", _valid_runtime_fixture_provenanced())
+    check_pass("runtime-record-post-prov-grace",
+               _valid_runtime_fixture_provenanced(), today=date(2026, 10, 1))
     check_pass("spec-contract", _valid_spec_fixture())
 
     print("== self-test: VIOLATION fixtures (must FAIL / exit nonzero) ==")
@@ -1023,8 +1203,9 @@ def self_test():
     # 2) one_question_per_turn is NO LONGER a violation — it describes the
     #    (correct) conversation, not the record. A record that carries it True
     #    but is committed atomically must PASS: the record-only gate ignores it.
-    #    GK-23/D18: must-PASS, so it needs the driver-paced provenance stamp too.
-    f = _valid_runtime_fixture_paced(); f["one_question_per_turn"] = True
+    #    GK-23/D18: must-PASS, so it needs the driver-paced provenance stamp too
+    #    (and the 2026-08-27 content-provenance contract on top).
+    f = _valid_runtime_fixture_provenanced(); f["one_question_per_turn"] = True
     check_pass("per-turn-ignored", f)
 
     # 3) split record — more than one atomic record-commit id
@@ -1043,7 +1224,7 @@ def self_test():
     # 3c) the REAL live shape: top-level mode is the DEPTH value ("IN-DEPTH"),
     # delivery.mode is the COMMIT value ("one_block") -- must PASS (this is
     # exactly the regression fixture that was wrongly AUTOFAILing on the live box).
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["mode"] = "IN-DEPTH"
     f["delivery"] = {"mode": "one_block", "record_committed_atomically": True,
                       "asked_all_at_once": True}
@@ -1064,7 +1245,7 @@ def self_test():
     # mode="one_block" and NO delivery object at all must still PASS --
     # _resolve_mode falls back to the top-level field only when delivery.mode
     # is absent.
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["mode"] = "one_block"
     assert "delivery" not in f
     check_pass("mode-top-level-only-backcompat", f)
@@ -1074,7 +1255,7 @@ def self_test():
     # other atomic-commit fields (record_committed_atomically, record_commit_ids)
     # alone decide the outcome, exactly as before this fix (no field to read ==
     # no opinion from this specific check).
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     assert "mode" not in f and "delivery" not in f
     check_pass("mode-absent-entirely-unaffected", f)
 
@@ -1258,6 +1439,88 @@ def self_test():
     assert evaluate(_valid_runtime_fixture_paced()) == [], (
         "post-restore current-key pass expected")
 
+    # ---- 2026-08-27 live defect — AF-SP-PROVENANCE (content provenance:
+    # every answer must provably be the client's own words). The literal live
+    # failure mode: q6/q8 were AUTHORED BY THE SYSTEM on a record whose
+    # structural checks (8/8 present, frame set, turns signed, atomic commit)
+    # all passed. These fixtures prove the gate now tells them apart.
+    print("== self-test: content provenance (AF-SP-PROVENANCE) ==")
+
+    # 14) a genuinely client-provided, quote-back-confirmed answer PASSES —
+    # at ANY date (today pinned past the migration window to prove the full
+    # contract carries teeth, not just the grace-window grandfather).
+    check_pass("provenance-client-quote-back-passes",
+               _valid_runtime_fixture_provenanced(), today=date(2026, 10, 1))
+
+    # 15) the client typed/voiced the answer themselves ('direct' confirmation)
+    # — passes identically to the quote-back path.
+    f = _valid_runtime_fixture_provenanced()
+    for blk in f["answer_provenance"].values():
+        blk["confirmation"] = "direct"
+    check_pass("provenance-client-direct-passes", f, today=date(2026, 10, 1))
+
+    # 16) an AGENT-AUTHORED answer (origin='agent_authored') is REFUSED even
+    # when its client_text matches and someone set confirmed_by_client=True —
+    # an agent-authored answer is a visibly-marked draft only, never a client
+    # answer. This is the literal 2026-08-27 live failure mode.
+    f = _valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["origin"] = "agent_authored"
+    check_fail("provenance-agent-authored-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 17) an agent-authored DRAFT without confirmation — the other half of the
+    # live failure mode: the operator types an answer on the client's behalf
+    # and nothing confirms it. Must be refused and named.
+    f = _valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q8"].update({"origin": "agent_authored",
+                                         "confirmed_by_client": False,
+                                         "confirmation": None})
+    check_fail("provenance-unconfirmed-draft-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 18) an unconfirmed CLIENT answer — text matches, origin client, but the
+    # quote-back confirmation never happened. Refused with the exact remedy
+    # (run --sig-confirm).
+    f = _valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q3"]["confirmed_by_client"] = False
+    f["answer_provenance"]["q3"]["confirmation"] = None
+    check_fail("provenance-unconfirmed-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 19) the committed answer was EDITED after the client's words were
+    # captured (client_text no longer matches answers[qid]) — the exact way a
+    # system-authored answer would sneak in on top of real client text.
+    f = _valid_runtime_fixture_provenanced()
+    f["answers"]["q6"] = "Settled -- The Trust Ledger Protocol is the name, no alternates"
+    f["answer_provenance"]["q6"]["client_text"] = "yes use the protocol name"
+    check_fail("provenance-text-mismatch-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 20) an answered question with NO provenance entry at all — no record
+    # that the answer is the client's words.
+    f = _valid_runtime_fixture_provenanced()
+    del f["answer_provenance"]["q6"]
+    check_fail("provenance-missing-entry-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 21) the WHOLE provenance block absent, pinned PAST the migration window
+    # — hard-fails (the pre-provenance driver's shape after the rollout ends).
+    check_fail("provenance-absent-post-grace-refused", _valid_runtime_fixture_paced(),
+               AF_PROVENANCE, today=date(2026, 10, 1))
+
+    # 22) REGRESSION GUARD: the SAME provenance-less record still PASSES
+    # *within* the migration window — pre-provenance driver records keep
+    # building during the fleet rollout (accepted, dated cost).
+    check_pass("provenance-absent-within-grace-passes", _valid_runtime_fixture_paced(),
+               today=date(2026, 9, 1))
+
+    # 23) whitespace-insensitive quote comparison: the client's words with a
+    # double space / newline normalization still match (case IS preserved).
+    f = _valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["client_text"] = "  no\n "
+    check_pass("provenance-whitespace-normalized-match", f, today=date(2026, 10, 1))
+
+    # 24) confirmation mode must be a real mode — 'confirmed_by_client': true
+    # with no recorded HOW is not evidence.
+    f = _valid_runtime_fixture_provenanced()
+    f["answer_provenance"]["q6"]["confirmation"] = "operator-eyeballed-it"
+    check_fail("provenance-bogus-confirmation-mode-refused", f, AF_PROVENANCE, today=date(2026, 10, 1))
+
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -1280,8 +1543,9 @@ def main(argv=None):
                         help="Print the provisioned key rotation state (IDs + fingerprints + "
                              "14 x 24h window) as JSON — never a key value.")
     parser.add_argument("--as-of", dest="as_of", metavar="YYYY-MM-DD",
-                        help="Override 'today' for the AF-SP-INTAKE-UNPACED dated grace window "
-                             "(GK-23/D18). Evidence/proof runs only — omit for real enforcement.")
+                        help="Override 'today' for the dated grace windows "
+                             "(AF-SP-INTAKE-UNPACED GK-23/D18 and AF-SP-PROVENANCE). "
+                             "Evidence/proof runs only — omit for real enforcement.")
     args = parser.parse_args(argv)
 
     if args.self_test:

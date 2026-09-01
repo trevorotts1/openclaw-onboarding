@@ -24,6 +24,15 @@ SCAN_ROOT="${SCAN_ROOT:-${HOME}/.openclaw/workspace/departments/Presentations/ru
 SCAN_DEPTH="${SCAN_DEPTH:-3}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-72}"
 
+# 2026-08-27 scan-roots fix: additional scan roots come from configuration,
+# never a hardcode -- SCAN_ROOTS_CONFIG (config file, one path per line) and/or
+# PRESENTATION_SCAN_ROOTS (os.pathsep-separated). resolution + UNDETERMINED
+# doctrine live in presentation_job/scan_roots.py.
+ROOTS_FLAGS=""
+if [ -n "${SCAN_ROOTS_CONFIG:-}" ]; then
+  ROOTS_FLAGS="--roots-config ${SCAN_ROOTS_CONFIG}"
+fi
+
 echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep starting" >> "${LOG_FILE}"
 
 # FIX 37: use || to capture exit code despite set -e; the old pattern
@@ -32,6 +41,7 @@ echo "[$(date '+%Y-%m-%dT%H:%M:%S')] board-reconcile-sweep starting" >> "${LOG_F
 python3 "${SCRIPT_DIR}/presentation_job.py" \
   --reconcile-board \
   --scan-root "${SCAN_ROOT}" \
+  ${ROOTS_FLAGS:-} \
   --scan-depth "${SCAN_DEPTH}" \
   --max-age-hours "${MAX_AGE_HOURS}" \
   --apply \

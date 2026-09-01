@@ -175,6 +175,17 @@ class Phase:
     # this directory context at resolution time so the fillable resolves to the
     # directory the builder actually writes to. Set by Manifest._parse_phases.
     _dir_context: Optional[str] = None
+    # PARALLEL-PIPELINE-SPEC Ticket 3 (2026-08-27): optional per-phase fan-out
+    # ceiling. Absent or 1 => the LITERAL existing serial dispatch path,
+    # untouched -- not "a pool of size one" (dispatcher.py branches on
+    # `phase.workers <= 1` before ever importing fanout.py). Every phase in
+    # every shipped manifest declares this field ABSENT as of v22.0.81: the
+    # feature is opt-in per phase, per box, and fleet-wide behavior on
+    # upgrade day is byte-for-byte identical to v22.0.80. Validated at parse
+    # time in Manifest._parse_phases -- a non-positive-int value refuses the
+    # whole manifest with EXIT_MANIFEST_MISMATCH rather than silently
+    # coercing to 1 (capacity.py's own defect class, capacity.py:601-612).
+    workers: int = 1
 
     @property
     def budget_minutes(self) -> int:
@@ -276,6 +287,7 @@ class Manifest:
             ex = p.get("executor") or {}
             patterns = _split_artifact_patterns(_as_list(p.get("produces_artifact")))
             dir_context = _common_dir_prefix(patterns)
+            workers = _parse_workers_field(p)
             out.append(Phase(
                 id=p["id"],
                 order=float(p.get("order", 0)),
@@ -299,6 +311,7 @@ class Manifest:
                 heartbeat_minutes=p.get("heartbeat_minutes"),
                 long_running=bool(p.get("long_running")),
                 converter_path=bool(p.get("converter_path")),
+                workers=workers,
             ))
         out.sort(key=lambda x: x.order)
         return out
@@ -348,6 +361,28 @@ class Manifest:
             if p.id == phase_id:
                 return p
         return None
+
+
+def _parse_workers_field(p: Dict[str, Any]) -> int:
+    """PARALLEL-PIPELINE-SPEC Ticket 3, S3.2: `workers` is absent (=> 1) or a
+    positive int. A typo'd `"workers": "50"` (string), `0`, a negative int,
+    or a float like `1.5` must NOT silently become 1 -- silent coercion of a
+    capacity number is exactly the defect class capacity.py was written to
+    eliminate (capacity.py:601-612). Refuse the whole manifest with
+    EXIT_MANIFEST_MISMATCH (state.py:23) instead."""
+    if "workers" not in p or p["workers"] is None:
+        return 1
+    raw = p["workers"]
+    # bool is a subclass of int in Python -- explicitly reject it so
+    # `"workers": true` cannot silently parse as 1.
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        die(EXIT_MANIFEST_MISMATCH,
+            f"phase {p.get('id')!r}: workers must be a positive int, got {raw!r} "
+            f"({type(raw).__name__})")
+    if raw < 1:
+        die(EXIT_MANIFEST_MISMATCH,
+            f"phase {p.get('id')!r}: workers must be a positive int, got {raw!r}")
+    return raw
 
 
 def _as_list(v: Any) -> List[str]:
@@ -502,7 +537,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # the P-CONVERTER / P-SP-* pattern); P-U-VSL-BUILD ordered 8.93, strictly after
 # P9.6-WEBINAR-VIDEO (8.92), on which it depends. Phase count 36 -> 40. MIN follows to 51
 # in the same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 52  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 54  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

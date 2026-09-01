@@ -1944,14 +1944,16 @@ ROUTE_HELPER_SH
   chmod 700 "$PRES_REFLEX_HELPER_PATH"
   echo "[apply-fleet-standards] stamped signed route helper → $PRES_REFLEX_HELPER_PATH (chmod 700)"
 
-  # (d) Idempotent V2 stamp with V1 auto-migration. Re-stamp when V2 is missing OR
-  #     a stray V1 co-exists; otherwise no-op (helper was still refreshed above).
-  if grep -qF "$PRES_REFLEX_V2_MARKER" "$AGENTS_FILE_EARLY" && ! grep -qF "$PRES_REFLEX_V1_MARKER" "$AGENTS_FILE_EARLY"; then
-    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 already present in $AGENTS_FILE_EARLY — no-op (helper refreshed)"
-  else
-    grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" && _strip_pres_reflex "$AGENTS_FILE_EARLY" || true
-    PRES_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_TMPL")
-    cat > "$PRES_REFLEX_TMPL" <<'PRES_REFLEX_V2'
+  # (d) Idempotent BY CONTENT (same convention as RESCUE_ESCALATION_BOXNAME_V2
+  #     below): marker PRESENCE alone is NOT sufficient — a template body
+  #     edited in place without a version bump (as happened when the chat-id
+  #     MANDATORY text below was added) left every already-V2-stamped box
+  #     frozen at the first-stamped body forever. Render the template fresh
+  #     every run, then compare it byte-for-byte against whatever is currently
+  #     stamped; re-stamp on ANY diff (including a stray V1, or no marker at
+  #     all), no-op only on a true content match.
+  PRES_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_TMPL")
+  cat > "$PRES_REFLEX_TMPL" <<'PRES_REFLEX_V2'
 <!-- PRESENTATION_ROUTING_REFLEX_V2 -->
 # ⛔ REFLEX 0 — PRESENTATION REQUESTS: ROUTE BEFORE YOU THINK (this block runs FIRST)
 
@@ -1969,11 +1971,11 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
   "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
   presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
-WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order — nothing before them:
+WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
   ‼ Your VERY FIRST tool call is the STEP 1 route helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
-  exists", do NOT deliberate, do NOT message another session. Route first. Then ack. Then stop.
+  exists", do NOT deliberate, do NOT message another session. Route first. Then confirm the audience. Then ack. Then stop.
   Any tool call before the route helper is a reflex violation.
 
   STEP 1 — Route the task NOW, before any other output, by running the SIGNED route helper.
@@ -1998,10 +2000,64 @@ WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order �
       SUCCESS = the helper prints an ingest response with {"ok":true,"task_id":"…",
       "workspace_id":"presentations"} and exits 0.
 
-  STEP 2 — Send ONE short acknowledgement to the owner, e.g.:
+  STEP 2 — After creating ANY content/presentation task via the Command Center API, IMMEDIATELY GET
+  http://127.0.0.1:4000/api/tasks/{taskId}/audience. Do NOT send a bare loopback curl: this route is
+  not bypassed by middleware. Use the SAME signed helper's runtime token-resolution mechanics from
+  STEP 1 (never write, copy, or invent a secret) to resolve MC_API_TOKEN, then send
+  Authorization: Bearer <MC_API_TOKEN> on BOTH this GET and the POST below. If the response says
+  hold=true (audience not confirmed), relay the question to the owner IN THE CURRENT CHAT in plain
+  client-friendly words. Never say ICP, dispatch, persona, gate, or task IDs — ask “Who is this for?” like a human would.
+  When the owner answers, POST EXACTLY this JSON body to the same endpoint:
+  {"audienceLabel":"<their answer in their words>"}. Confirm it was accepted (expect the hold to
+  release). If the GET or POST errors, tell the owner plainly that you hit a problem confirming the
+  audience — never go silent and never pretend it worked.
+
+  NO-INFERENCE CONFIRM (part of STEP 2, non-negotiable) — the audience you POST must be something the
+  owner SAID. It is either their direct reply to your question, or their own earlier words, which you
+  MUST quote back and have them confirm before you post ("You mentioned this is for X — should I lock
+  that in?"). NEVER post an audience you inferred, and NEVER release the hold on the owner's behalf. A
+  guess that happens to be correct is still a violation: the owner has to see it and say yes first.
+
+  STEP 3 — Send ONE short acknowledgement to the owner, e.g.:
       "On it — routing this to your Presentations department now. The Brainstorming Buddy will pick it up and start the interview."
 
   Then STOP. Your turn is over. The Presentations department owns everything after this.
+
+  RELAY RULE — Content that arrives in your session as an [Inter-session message] (sessions_send from a
+  department agent) is INVISIBLE to the owner — it exists only in your own transcript. NEVER tell the owner
+  something “was sent,” “is in your chat,” or “was delivered” based on an inter-session arrival. When a
+  department hands you finished content for the owner, you MUST reproduce that content in full in YOUR OWN
+  next reply to the owner — that reply is the delivery. If the content is too large for one reply, deliver it
+  in clearly-numbered parts, all of them. Only after you have pasted it yourself may you call it delivered.
+  Never summarize in place of delivering unless the owner asked for a summary.
+
+  CLIENT-SAFE VOCABULARY — NEVER use internal words with the owner: chat ID, session, dispatch, task ID,
+  gate, persona, ICP, pipeline phase codes, or tool names. Say it the way a human would — "our system",
+  "the team", "who is this for". Internal vocabulary leaking into an owner-facing reply is a violation
+  even when every fact in that reply is correct.
+
+  NO INVENTED TIME PROMISES — NEVER give the owner a specific readiness time unless the system state you
+  just read names one. If the owner asks for timing, give them what you verified, or say plainly that you
+  will check and report back. A promised time that comes and goes unmet must be acknowledged out loud,
+  never papered over with a fresh guess.
+
+  REPORT THE REAL STATE — when the owner asks for status, read the actual state (the board / the engine)
+  and report what it says. NEVER describe a stage as underway that the state does not show. If the state
+  shows the work still sitting at intake, tell the owner it is still at intake.
+
+  STATUS-QUESTION EFFICIENCY — a status question deserves a fast answer. Check the few authoritative
+  places, answer, stop. Do NOT launch a broad investigation for a simple "how's it going" — a long silence
+  or a timeout with no reply is a worse answer than a short one.
+
+  CERTIFIED ANSWERS ARE THE OWNER'S — during any certification or signed-record interview, NEVER offer to
+  author, pre-fill, or submit an answer on the owner's behalf. Quoting the owner's own earlier words back
+  to them for confirmation is allowed, but the answer that gets recorded must come from the owner.
+
+  NO ENGINE-ROOM DIGGING — NEVER read, grep, or inspect engine, repository, or application SOURCE CODE to
+  answer an owner or client question. Status and facts come from the authoritative state surfaces (the
+  board / the engine state), never from the code. If a question needs source inspection to answer, say
+  so and escalate it to the team — performing it in front of the client is a violation even when the
+  answer turns out to be correct.
 
 ESCALATION FALLBACK — if the helper FAILS (prints an ESCALATE_TO_OPERATOR line / exits non-zero
 after its retries), you do NOT fall back to doing intake yourself, you do NOT retry forever, and
@@ -2017,6 +2073,7 @@ NOT silently proceed and do NOT self-intake.
 
 HARD BANS while this reflex is active — EACH is a routing VIOLATION, no exceptions:
   ✗ Asking the owner ANY intake question (topic, title, audience, goal, existing content, length…)
+    except the mandatory plain-language audience question in STEP 2 after the Command Center reports hold=true
   ✗ Reading, quoting, or "checking" department SOPs / IDENTITY / SOUL / BUILDER-PROMPT
   ✗ Writing intake.json, slides_copy.md, slides.json, or ANY working file
   ✗ Calling build_deck.py or presentation-canonical-entry.sh
@@ -2035,12 +2092,56 @@ lost and the build fails the representation gate. The CEO's entire job for a pre
 is three words: route, ack, stop.
 <!-- END PRESENTATION_ROUTING_REFLEX_V2 -->
 PRES_REFLEX_V2
-    PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
-    RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
-    ORIGINAL_REFLEX_CONTENT="$(cat "$AGENTS_FILE_EARLY")"
-    { cat "$PRES_REFLEX_RENDERED"; printf '\n'; printf '%s' "$ORIGINAL_REFLEX_CONTENT"; } > "$AGENTS_FILE_EARLY"
-    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 stamped at absolute top of $AGENTS_FILE_EARLY"
-  fi
+  PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
+  RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
+  PRES_REFLEX_VERDICT="$(python3 - "$AGENTS_FILE_EARLY" "$PRES_REFLEX_RENDERED" <<'PRESCMP_PY'
+import os, re, sys
+
+path, rendered_path = sys.argv[1], sys.argv[2]
+txt = open(path, encoding="utf-8", errors="replace").read()
+rendered = open(rendered_path, encoding="utf-8", errors="replace").read()
+
+def block_re(ver):
+    return re.compile(
+        r"<!-- PRESENTATION_ROUTING_REFLEX_" + ver + r" -->.*?"
+        r"<!-- END PRESENTATION_ROUTING_REFLEX_" + ver + r" -->[ \t]*\r?\n?",
+        re.DOTALL)
+
+v2_re, v1_re = block_re("V2"), block_re("V1")
+m2 = v2_re.search(txt)
+has_v1 = bool(v1_re.search(txt))
+rendered_norm = rendered.rstrip("\n") + "\n"
+
+if m2 and not has_v1:
+    current_norm = m2.group(0).rstrip("\n") + "\n"
+    if current_norm == rendered_norm:
+        print("noop"); raise SystemExit(0)
+
+stripped = v1_re.sub("", txt)
+stripped = v2_re.sub("", stripped).lstrip("\n")
+out = rendered_norm + ("\n" + stripped if stripped else "")
+
+tmp = path + ".tmp-pres-reflex"
+try:
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(out)
+    os.replace(tmp, path)
+except Exception:
+    try: os.unlink(tmp)
+    except Exception: pass
+    print("error"); raise SystemExit(0)
+
+print("restamped" if m2 else ("migrated" if has_v1 else "stamped"))
+PRESCMP_PY
+)" || PRES_REFLEX_VERDICT="error"
+  case "$PRES_REFLEX_VERDICT" in
+    noop)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 already current in $AGENTS_FILE_EARLY — no-op (helper refreshed)" ;;
+    restamped|migrated|stamped)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 ($PRES_REFLEX_VERDICT — content changed) at absolute top of $AGENTS_FILE_EARLY" ;;
+    *)
+      echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 stamp FAILED for $AGENTS_FILE_EARLY (verdict=$PRES_REFLEX_VERDICT) — next roll retries" ;;
+  esac
 fi
 
 # ─── 4b-SKILL-REFLEX. Inject SKILL_INTENT_ROUTING_REFLEX_V1 (Layer C) ──────────

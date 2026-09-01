@@ -656,3 +656,72 @@ def test_malformed_override_still_refuses_end_to_end(monkeypatch, tmp_path):
                            background=False)
     assert rc == launcher.DISPATCH_CAPACITY_REFUSED
     assert not marker.is_file(), "the engine must not have run"
+
+
+# ---------------------------------------------------------------------------
+# PARALLEL-PIPELINE-SPEC Ticket 2: dispatcher.resolve_max_workers' UNBOUNDED
+# fallthrough bug.
+# ---------------------------------------------------------------------------
+def test_resolve_max_workers_unbounded_does_not_collapse_to_default_eight(
+        monkeypatch, tmp_path):
+    """S0.6: `capacity._Unbounded.__int__` raises TypeError ON PURPOSE, so the
+    OLD `isinstance(available, int)` check was False for every UNBOUNDED
+    (NO_CAP_PROVIDERS) measurement and silently fell through to
+    DEFAULT_MAX_WORKERS = 8. A deepseek-direct override with NO
+    max_concurrent declared (=> available is UNBOUNDED, capacity.py:556) must
+    resolve to the caller's unit_count instead -- proven here by reading a
+    REAL override file through the REAL capacity.probe(), not a stub."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+
+    from presentation_job import dispatcher
+
+    result = dispatcher.resolve_max_workers(tmp_path, None, unit_count=25)
+    assert result == 25
+    assert result != dispatcher.DEFAULT_MAX_WORKERS
+
+
+def test_resolve_max_workers_unbounded_without_unit_count_falls_back_to_default(
+        monkeypatch, tmp_path):
+    """When the caller has no unit count to bound against (unit_count=None),
+    the fallback is still the pre-existing conservative DEFAULT_MAX_WORKERS
+    (=8) -- an honest "I don't know how wide to go", not a crash, and not a
+    silently-wrong number either since it is the SAME constant the pre-fix
+    code already used as its floor."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+
+    from presentation_job import dispatcher
+
+    result = dispatcher.resolve_max_workers(tmp_path, None)
+    assert result == dispatcher.DEFAULT_MAX_WORKERS
+
+
+def test_resolve_max_workers_measured_ceiling_still_honored(monkeypatch, tmp_path):
+    """Regression guard: a genuinely MEASURED (non-unbounded) int ceiling
+    must still be returned as-is -- Ticket 2 only changes the UNBOUNDED
+    branch, never the measured-int branch."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "ollama-cloud", "plan": "$20/month"}), encoding="utf-8")
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+
+    from presentation_job import dispatcher
+
+    result = dispatcher.resolve_max_workers(tmp_path, None, unit_count=50)
+    assert result == 3  # CAP_TABLE[("ollama-cloud", "$20/month")]
+
+
+def test_resolve_max_workers_explicit_requested_always_wins(tmp_path):
+    from presentation_job import dispatcher
+    assert dispatcher.resolve_max_workers(tmp_path, 12, unit_count=999) == 12

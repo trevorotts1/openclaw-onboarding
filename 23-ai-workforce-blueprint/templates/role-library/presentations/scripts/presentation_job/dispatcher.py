@@ -79,6 +79,7 @@ from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
+from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
 
 # Defensive import of build_deck (top-level scripts_dir module) -- mirrors
 # phase_verifiers.py's own `try: import build_deck as _bd` pattern exactly (same
@@ -2020,6 +2021,26 @@ def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]
 def _dispatch_prompt_phase(run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
                            phase_obj: Optional[Phase], worker_id: str,
                            ordinals: Optional[List[int]] = None) -> DispatchResult:
+    """PARALLEL-PIPELINE-SPEC Ticket 4 (2026-08-27): branches on
+    `phase.workers` BEFORE any fan-out machinery is even reached. Absent or
+    `1` => the LITERAL existing serial path (_dispatch_prompt_phase_serial,
+    below, completely untouched) -- not "a pool of size one". This is the
+    property that makes the whole feature safe to ship at `workers: 1`
+    fleet-wide (spec S3.1): a phase that has never been fan-out-enabled
+    cannot regress, because it never even imports the branch that changed."""
+    phase_workers = phase_obj.workers if phase_obj else 1
+    if phase_workers <= 1:
+        return _dispatch_prompt_phase_serial(
+            run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+            worker_id=worker_id, ordinals=ordinals)
+    return _dispatch_prompt_phase_fanout(
+        run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+        worker_id=worker_id, ordinals=ordinals, phase_workers=phase_workers)
+
+
+def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
+                           phase_obj: Optional[Phase], worker_id: str,
+                           ordinals: Optional[List[int]] = None) -> DispatchResult:
     """P4-PROMPT's dedicated multi-file dispatch loop -- see the module comment
     above for the root cause this replaces. Never marks anything done, never
     touches state.json (same invariant as dispatch_one).
@@ -2782,6 +2803,223 @@ def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
                           last_reasons, str(target.relative_to(run_dir)))
 
 
+def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
+                       worker_id: str, n: int, owning_role: str,
+                       phase_id: str) -> "callable":
+    """PARALLEL-PIPELINE-SPEC Ticket 4: a fanout.py worker_fn for exactly one
+    slide ordinal. The body below is the SAME per-slide logic
+    _dispatch_prompt_phase_serial's own loop iteration runs (same compose_prompt
+    call, same DeepSeek call, same DISPATCH_RETRY_CAP internal retry loop, same
+    atomic os.replace write, same _verify_single_prompt gate, same sidecar
+    records) -- extracted so it can be handed to fanout.run_units, with ONE
+    deliberate behavioral change from the serial version: on exhaustion this
+    returns a UnitResult instead of returning a DispatchResult and stopping
+    every other ordinal. Fan-out never fail-fasts (spec S2.4): by the time an
+    earlier slide's exhaustion would be noticed, later slides are already in
+    flight and already billed, so cancelling them saves nothing and throws
+    away completed work."""
+    prompts_dir = run_dir / "working" / "prompts"
+
+    def _worker(unit: fanout.Unit) -> fanout.UnitResult:
+        ordinal = unit.payload["ordinal"]
+        target = prompts_dir / f"slide-{ordinal:02d}.txt"
+
+        slide_order = dict(order)
+        slide_order["produces_artifact"] = [f"working/prompts/slide-{ordinal:02d}.txt"]
+        slide_order["_prompt_slide_ordinal"] = ordinal
+        slide_order["_prompt_slide_total"] = n
+
+        ok0, reasons0 = _verify_single_prompt(run_dir, ordinal)
+        prior_reasons: Optional[List[str]] = reasons0 if reasons0 else None
+        last_reasons: List[str] = reasons0
+        attempts_used = 0
+
+        for attempt in range(1, DISPATCH_RETRY_CAP + 1):
+            attempts_used = attempt
+            try:
+                system_prompt, user_prompt = compose_prompt(
+                    phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                    run_dir=run_dir, order=slide_order, attempt=attempt,
+                    prior_reasons=prior_reasons,
+                )
+            except RoleSOPNotFound as exc:
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "error", "reason": f"RoleSOPNotFound: {exc}"})
+                return fanout.UnitResult(key=unit.key, status="failed", attempts=attempts_used,
+                                         reasons=[f"RoleSOPNotFound: {exc}"])
+
+            user_prompt = (
+                f"=== THIS CALL AUTHORS EXACTLY ONE FILE: SLIDE {ordinal} OF {n} ===\n"
+                f"Find slide {ordinal}'s block in slides_copy.md above (the line "
+                f"reading exactly `SLIDE {ordinal}`) and author ONLY its rich "
+                f"image-generation prompt. Output ONLY that one slide's complete "
+                f"9,000-18,000-char prompt body -- no slide-number header, no "
+                f"preamble, no other slide's content.\n\n" + user_prompt
+            )
+
+            try:
+                content, usage = deepseek_complete(system_prompt, user_prompt)
+            except DeepSeekCallError as exc:
+                last_reasons = [f"DeepSeek call failed: {exc}"]
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "call_failed", "reason": str(exc)})
+                if attempt < DISPATCH_RETRY_CAP:
+                    time.sleep(min(30, 5 * attempt))
+                    continue
+                break
+
+            payload = _clean_payload(content)
+            if not payload.strip():
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "empty_completion", "usage": usage})
+                last_reasons = ["DeepSeek returned an empty completion"]
+                if attempt < DISPATCH_RETRY_CAP:
+                    continue
+                break
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = target.with_suffix(
+                target.suffix + f".partial-{os.getpid()}-{attempt}")
+            tmp_path.write_text(payload, encoding="utf-8")
+            os.replace(tmp_path, target)
+
+            v_ok, v_reasons = _verify_single_prompt(run_dir, ordinal)
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                "status": "verified" if v_ok else "failed", "verifier_ok": v_ok,
+                "verifier_reasons": v_reasons, "model": DEEPSEEK_MODEL,
+                "target": str(target.relative_to(run_dir)), "usage": usage})
+            if v_ok:
+                return fanout.UnitResult(key=unit.key, status="ok", attempts=attempts_used,
+                                         target=str(target.relative_to(run_dir)))
+            last_reasons = v_reasons
+            prior_reasons = v_reasons
+
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": DISPATCH_RETRY_CAP, "slide": ordinal,
+            "status": "exhausted", "final_reasons": last_reasons})
+        return fanout.UnitResult(key=unit.key, status="failed", attempts=attempts_used,
+                                 reasons=[f"slide {ordinal}: {r}" for r in last_reasons])
+
+    return _worker
+
+
+def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
+                                  phase_obj: Optional[Phase], worker_id: str,
+                                  ordinals: Optional[List[int]],
+                                  phase_workers: int) -> DispatchResult:
+    """The fan-out path for P4-PROMPT (Ticket 4). Only reachable when the
+    manifest declares `workers > 1` for this phase -- see _dispatch_prompt_phase.
+
+    Partial-failure semantics per spec S2.4: no fail-fast, no cancellation --
+    every submitted slide runs to its own conclusion even after others fail.
+    The phase-level `_verify()` (the SAME authoritative check the serial path
+    and the Engine's own poll loop both use) only runs when every dispatched
+    slide came back "ok" -- mirroring the serial path's own behavior of never
+    running the whole-phase verify on a call it already knows is incomplete."""
+    phase_id = "P4-PROMPT"
+    n = _prompt_slide_count(run_dir)
+    if n is None:
+        reason = ("cannot determine slide count yet -- neither working/copy/"
+                  "slides.json nor working/copy/arc_allocation.json (with a "
+                  "slots/allocation/slides array) is present/readable")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    is_full_sweep = ordinals is None
+    work_ordinals = list(range(1, n + 1)) if is_full_sweep else list(ordinals)
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    # Skip already-good slides BEFORE submitting -- identical short-circuit to
+    # the serial loop's own `if ok and target.is_file(): continue`, computed
+    # up front so the pool only ever spends on real remaining work (this is
+    # also what makes fan-out compose with --resume for free: a re-run after
+    # a partial failure only re-submits the ordinals that actually failed).
+    prompts_dir = run_dir / "working" / "prompts"
+    pending_ordinals: List[int] = []
+    results: List[fanout.UnitResult] = []
+    for ordinal in work_ordinals:
+        target = prompts_dir / f"slide-{ordinal:02d}.txt"
+        ok0, _reasons0 = _verify_single_prompt(run_dir, ordinal)
+        if ok0 and target.is_file():
+            results.append(fanout.UnitResult(
+                key=f"slide-{ordinal:02d}", status="ok", attempts=0,
+                target=str(target.relative_to(run_dir))))
+        else:
+            pending_ordinals.append(ordinal)
+
+    effective_workers = phase_workers
+    if pending_ordinals:
+        units = [fanout.Unit(key=f"slide-{ordinal:02d}", payload={"ordinal": ordinal})
+                 for ordinal in pending_ordinals]
+        worker_fn = _make_slide_worker(
+            run_dir=run_dir, order=order, dept_root=dept_root, worker_id=worker_id,
+            n=n, owning_role=owning_role, phase_id=phase_id)
+
+        env_key = "PRESENTATION_PHASE_WORKERS_" + re.sub(r"[^A-Za-z0-9]+", "_", phase_id).strip("_")
+        effective_workers = fanout.resolve_effective_workers(
+            phase_workers, len(units), env_var=env_key)
+
+        deadline_s: Optional[float] = None
+        if phase_obj is not None:
+            try:
+                deadline_s = float(phase_obj.budget_minutes * 60)
+            except Exception:  # noqa: BLE001 -- budget_minutes is best-effort here
+                deadline_s = None
+
+        pending_results = fanout.run_units(
+            units, worker_fn, workers=effective_workers, run_dir=run_dir,
+            phase_id=phase_id, per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S,
+            retry_cap=1,  # the worker above already owns its own internal retry loop
+            deadline_s=deadline_s,
+        )
+        results.extend(pending_results)
+
+    # Re-sort into ordinal order -- `results` may have skipped-good slides
+    # (appended first, above) interleaved with pool results out of ordinal
+    # order; downstream sidecar/aggregate reporting reads more cleanly sorted.
+    results.sort(key=lambda r: r.key)
+
+    total_attempts = sum(r.attempts for r in results)
+    failed = [r for r in results if r.status != "ok"]
+
+    if failed:
+        final_reasons: List[str] = []
+        for r in failed:
+            final_reasons.extend(r.reasons)
+        status = "error" if any("RoleSOPNotFound" in r for r in final_reasons) else "exhausted"
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": total_attempts, "status": status,
+            "failed_slides": [r.key for r in failed], "reasons": final_reasons,
+            "workers": effective_workers,
+        })
+        return DispatchResult(phase_id, status, total_attempts, final_reasons)
+
+    if not is_full_sweep:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": total_attempts,
+            "status": "subset_ok", "ordinals": work_ordinals, "workers": effective_workers,
+            "note": "partial-range fan-out worker finished its subset; whole-phase "
+                    "verify() deferred to a full-sweep call",
+        })
+        return DispatchResult(phase_id, "ok", total_attempts, [],
+                              "working/prompts/ (subset)")
+
+    ok, reasons = _verify(phase_id, run_dir)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": total_attempts,
+        "status": "verified" if ok else "failed", "verifier_ok": ok,
+        "verifier_reasons": reasons, "workers": effective_workers,
+    })
+    if ok:
+        return DispatchResult(phase_id, "ok", total_attempts, [], "working/prompts/")
+    return DispatchResult(phase_id, "exhausted", total_attempts, reasons)
+
+
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                   dept_root: Path, phase_obj: Optional[Phase],
                   worker_id: str) -> DispatchResult:
@@ -3075,7 +3313,25 @@ def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100) -> N
     os.replace(tmp, path)
 
 
-def resolve_max_workers(dept_root: Path, requested: Optional[int]) -> int:
+def resolve_max_workers(dept_root: Path, requested: Optional[int],
+                         *, unit_count: Optional[int] = None) -> int:
+    """Ticket 2 (PARALLEL-PIPELINE-SPEC S0.6): `capacity.probe()['available']` is
+    either a positive int (a measured CAP_TABLE ceiling) or the UNBOUNDED
+    sentinel (a NO_CAP_PROVIDERS hit, e.g. deepseek-direct/openrouter --
+    capacity.py's `_Unbounded.__int__` raises TypeError ON PURPOSE so nothing
+    can silently treat it as a count). The old `isinstance(available, int)`
+    check is therefore False for EVERY unbounded account, and fell through to
+    DEFAULT_MAX_WORKERS = 8 -- silently collapsing "no structural ceiling" to
+    "8" any time ensure_capacity_override() had not already pre-written an
+    int override first (dispatcher.py:2275's watch_run_dir path masked this in
+    practice; the --once path with a pre-existing provider-only override did
+    not). Branch on is_unbounded() BEFORE the isinstance(int) test: an
+    unbounded account resolves to `unit_count` (dispatch as wide as the ready
+    work allows, per cap_wave_width's own contract, execution_plan.py:155-176)
+    when the caller knows it, else DEFAULT_MAX_WORKERS as the pre-existing
+    conservative fallback (still far better than a wrong "8" is a real
+    honest choice for an unmeasured audience).
+    """
     if requested is not None:
         return max(1, requested)
     try:
@@ -3083,6 +3339,10 @@ def resolve_max_workers(dept_root: Path, requested: Optional[int]) -> int:
         from presentation_job import capacity as _capacity
         result = _capacity.probe()
         available = result.get("available")
+        if _capacity.is_unbounded(available):
+            if isinstance(unit_count, int) and unit_count > 0:
+                return unit_count
+            return DEFAULT_MAX_WORKERS
         if isinstance(available, int) and available > 0:
             return available
     except Exception:  # noqa: BLE001 -- capacity probing is best-effort; never block dispatch

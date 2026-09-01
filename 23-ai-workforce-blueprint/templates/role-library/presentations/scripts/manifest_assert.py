@@ -52,7 +52,7 @@ from typing import Dict, List, Optional, Tuple
 # their AF-U-* autofails, promised by intake/upsell-questions.json. Phase count 36 -> 40.
 # Mirrors the MIN_MANIFEST_VERSION bump in presentation_job/manifest.py (bumped together,
 # per that module's own comment) so this standalone assert tool never carries a stale floor.
-MIN_MANIFEST_VERSION = 52
+MIN_MANIFEST_VERSION = 54
 MIN_MANIFEST_PHASES = 40
 MIN_AF_SP_CODES = 16
 
