@@ -269,7 +269,13 @@ def _resolve_host_ip(host: str) -> Optional[str]:
 def _host_and_ip_safe(url: str) -> bool:
     """DNS-level re-check: the HOSTNAME must not resolve to a private/link-local
     address (SSRF guard beyond the literal-IP check). Local-only proofs pass a
-    stub fetch_transport and never hit this path."""
+    stub fetch_transport and never hit this path.
+
+    FIX 19 audit: the spec's "freshly resolved address at fetch time (per fetch
+    AND per redirect hop, never a reused resolution)" is enforced by CALLING
+    this at every hop of _policy_fetch -- each call re-resolves DNS (the lookup
+    is never cached here), so a hostname that rebinds to an internal address
+    after an earlier hop is refused."""
     host = (urllib.parse.urlsplit(url).hostname or "").rstrip(".")
     if not host:
         return False
@@ -289,10 +295,71 @@ def _host_and_ip_safe(url: str) -> bool:
         parsed.is_loopback is False
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that NEVER follows: any 3xx response raises the
+    HTTPError upward instead. Subclassing HTTPRedirectHandler (and passing the
+    instance to build_opener) is what removes the stock auto-follow behavior --
+    build_opener skips its default redirect handler when a subclass instance is
+    supplied, so this instance is the only redirect handler in the chain."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # urllib's contract: a 3xx with no redirect_request result ends the
+        # chain; raising surfaces the response AS an HTTPError the manual
+        # loop in _policy_fetch catches and re-checks.
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+def _fetch_one_hop(url: str) -> Any:
+    """ONE HTTP round trip with redirects DISABLED -- the transport primitive
+    that makes the manual redirect loop real.
+
+    FIX 19 audit root cause: the pre-audit hop loop called stock
+    urllib.request.urlopen(), whose default HTTPRedirectHandler silently
+    follows 3xx responses itself. The manual redirect cap and the per-hop
+    public-URL recheck never executed -- the first redirect was followed
+    transparently by the opener before the loop saw it. Here the
+    _NoRedirect handler (the ONLY redirect handler in the opener) raises on
+    every 3xx, so each hop is one visible, policy-checked request."""
+    opener = urllib.request.build_opener(_NoRedirect(),
+                                         urllib.request.HTTPSHandler())
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (presentations research fetch)",
+                 "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5"},
+    )
+    return opener.open(req, timeout=FETCH_TIMEOUT_S)
+
+
+def _read_capped_body(opened: Any) -> str:
+    """Read the response body under MAX_BODY_BYTES. A body exceeding the cap
+    raises ResearchWebError rather than silently truncating (the truncated
+    tail could legitimately hold the anchor text a passing verdict would
+    otherwise claim)."""
+    body = b""
+    while True:
+        chunk = opened.read(65536)
+        if not chunk:
+            break
+        if isinstance(chunk, str):  # defensive: str-yielding stubs in proofs
+            chunk = chunk.encode("utf-8", errors="replace")
+        body += chunk
+        if len(body) > MAX_BODY_BYTES:
+            raise ResearchWebError(
+                f"response body exceeds MAX_BODY_BYTES ({MAX_BODY_BYTES}) "
+                f"-- refused, never truncated")
+    return body.decode("utf-8", errors="replace")
+
+
 def _policy_fetch(url: str) -> Tuple[int, str, str]:
     """The default fetch transport. Returns (final_status, final_canonical_url,
     body_text). Raises ResearchWebError on any policy refusal -- never returns
-    a private-network body."""
+    a private-network body.
+
+    The redirect loop is a REAL manual loop: _fetch_one_hop disables urllib's
+    auto-redirect handling, so every 3xx hop re-enters this loop body and is
+    re-checked against the public-URL policy + a FRESH DNS resolution
+    (_host_and_ip_safe) before the next request. Redirects are capped at
+    MAX_REDIRECTS; hop 3 raises rather than passing."""
     if not _is_public_http_url(url):
         raise ResearchWebError(
             f"refused: {url!r} is not a public http(s) target")
@@ -305,28 +372,22 @@ def _policy_fetch(url: str) -> Tuple[int, str, str]:
         if not _is_public_http_url(current):
             raise ResearchWebError(
                 f"redirect target refused: {current!r} is not public http(s)")
-        parsed = urllib.parse.urlsplit(current)
-        req = urllib.request.Request(
-            urllib.parse.urlunsplit(parsed),
-            headers={"User-Agent": "Mozilla/5.0 (presentations research fetch)",
-                     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5"},
-        )
+        # Fresh DNS resolution at EVERY hop -- the spec's rebind guard.
+        if not _host_and_ip_safe(current):
+            raise ResearchWebError(
+                f"refused: host for {current!r} does not resolve to a public "
+                f"address (re-checked at fetch time)")
         opened: Any = None
         try:
-            opened = urllib.request.urlopen(req, timeout=FETCH_TIMEOUT_S)
-            body = b""
-            while len(body) <= MAX_BODY_BYTES:
-                chunk = opened.read(65536)
-                if not chunk:
-                    break
-                body += chunk
+            opened = _fetch_one_hop(urllib.parse.urlunsplit(
+                urllib.parse.urlsplit(current)))
+            body = _read_capped_body(opened)
             status = int(opened.getcode() or 0)
             # 200-only policy (per FIX 20's binding contract): the gate requires
             # HTTP 200; non-200 final statuses refuse here, never pass.
             if status != 200:
                 raise ResearchWebError(f"HTTP {status} (non-200) at {current}")
-            final_body = body[:MAX_BODY_BYTES].decode("utf-8", errors="replace")
-            return 200, canonical_url(current), final_body
+            return 200, canonical_url(current), body
         except urllib.error.HTTPError as exc:
             if exc.code in (301, 302, 303, 307, 308):
                 redirects += 1
@@ -637,7 +698,7 @@ def run_research_retrieval(run_dir: Path, *, topic: str,
     PARK the phase on missing key / flag-off / exhausted quota (fail-closed,
     never a no-web fallback). On success returns:
       {sources: [{url, title, description}], fetcher, ledger_path, queries}
-    and writes working/research/retrieval_ledger.json (the FIX 20 input).
+    and writes working/research/retrieval_ledger.jsonl (the FIX 20 input).
     """
     if not web_fetch_enabled():
         raise ResearchWebError(
