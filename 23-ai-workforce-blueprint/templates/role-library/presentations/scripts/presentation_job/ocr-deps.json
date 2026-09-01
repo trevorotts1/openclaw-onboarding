@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0.0",
+  "updated": "2026-08-31",
+  "source": "FIX 33 Step 0 verify-then-branch probe (presentation_job/ocr_verify.py). Branch A on the operator box 2026-08-31: the pipeline interpreter's OCR stack measured present and FUNCTIONAL (real one-line fixture OCR passed). No install mutation. These are the observed compatible versions pinned for the portable bundle (FIX 38 packaging) — pins are checked against the live probe at launch; drift is reported, and only the real fixture OCR decides pass/fail.",
+  "branch": "A",
+  "ocr": {
+    "pytesseract_package": "pytesseract",
+    "pytesseract_version": "0.3.13",
+    "pillow_package": "Pillow",
+    "pillow_version": "11.3.0",
+    "tesseract_binary": "tesseract",
+    "tesseract_major_version": "5",
+    "tesseract_observed_version": "5.5.2",
+    "python_version": "3.14",
+    "install_policy": "Branch B only: install into the pipeline's dedicated venv (never global Python) and point PRESENTATION_PIPELINE_INTERPRETER at that venv's interpreter; provision the native tesseract binary with an explicit path on PATH.",
+    "receipt_binding": "A Step 0 receipt names the interpreter it measured. A different interpreter selected later FAILS launch; it never borrows the receipt."
+  }
+}

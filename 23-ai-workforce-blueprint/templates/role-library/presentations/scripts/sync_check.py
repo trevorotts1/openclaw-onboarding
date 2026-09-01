@@ -41,9 +41,13 @@ DRIFT CLASS (FIX-23(a)) — every drift item in the `--json` output carries a `c
     "A5/A6"       — library-only. Undeclared roles / owning_role -> missing .md.
                     Does NOT change render correctness. GATE 3 PROCEEDS (evented),
                     so library maintenance debt can never brick the sanctioned door.
-    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, V*). The actual
+    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, M*, V*). The actual
                     renderer has drifted from the manifest/ruleset. GATE 3 FAILS
                     CLOSED (AF-CANONICAL-RENDER-BYPASS / exit 7), exactly as before.
+                    M* (FIX 32) additionally covers manifest-COPY drift: the
+                    resolved manifest and its peer copy (materialized department)
+                    differ in canonical-JSON content — the engine would run a
+                    different manifest than the repo declares.
 
 EXIT CODES:
     0 — in sync.
@@ -73,6 +77,7 @@ GATES IT RUNS AT (none optional — see SOP-SLIDE-06-EXTENSION-AND-SYNC):
 
 import ast
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -107,6 +112,25 @@ TEST_PREFLIGHT = HERE / "test_preflight.py"
 
 _REPO_ROOT = find_repo_root(HERE)
 _CLUSTER_REPO = (_REPO_ROOT / "universal-sops" / "presentation-slide-craft") if _REPO_ROOT else None
+
+
+# FIX 32 — cluster-copy peer candidates for the "installed" (deployed department)
+# provenance. Order mirrors install.sh u001 placement (which materializes FROM
+# the cluster copy) and qc_aggregate.py's known-good resolver discipline:
+#   1. find_repo_root walk-up (a repo checkout on the box)
+#   2. $OC_SKILLS_DIR (default ~/.openclaw/skills) — the canonical Mac skills
+#      dir discover_skills_dir() returns first
+#   3. ~/openclaw-onboarding — discover_skills_dir()'s last-resort clone
+def _cluster_peer_candidates():
+    cands = []
+    if _CLUSTER_REPO is not None:
+        cands.append(_CLUSTER_REPO / "PIPELINE-MANIFEST.json")  # type: ignore[union-attr]
+    skills_dir = os.environ.get("OC_SKILLS_DIR", os.path.expanduser("~/.openclaw/skills"))
+    cands.append(Path(skills_dir) / "universal-sops" / "presentation-slide-craft"
+                 / "PIPELINE-MANIFEST.json")
+    cands.append(Path.home() / "openclaw-onboarding" / "universal-sops"
+                 / "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+    return cands
 
 # The RETIRED render module (templates/presentation-render/render_deck.py). It is no
 # longer the canonical renderer, but sync_check still AST-asserts that its
@@ -564,6 +588,161 @@ def value_checks(manifest_text):
                     f"PROMPT_CHAR_CEILING={ceiling}. Reconcile the manifest prose to {ceiling}.")
     return drift
 
+# ---------------------------------------------------------------------------
+# FIX 32 — (M) MANIFEST-COPY DRIFT. Real content-hash comparison of the two
+# PIPELINE-MANIFEST.json copies (repo cluster vs materialized department).
+# ---------------------------------------------------------------------------
+# BROKEN (verified 2026-08-31 on this box): repo cluster copy = v52 sha
+# 8507f9d1...; materialized department copy = v51 sha 6140fb52... — same
+# version number claim on the v51 side is internally consistent (its own
+# MANIFEST-SOURCE.txt hash matches its own file), so every per-copy provenance
+# check passed on BOTH copies while the two copies disagreed. Nothing compared
+# them; a one-field change to either copy was invisible. manifest_version can
+# never catch this class: the drift we measured occurred WITHOUT a version bump.
+#
+# WHAT THIS CHECK DOES: canonical-JSON content sha of the resolved manifest
+# (the declared truth this whole script already checks everything against)
+# vs the peer copy. Canonical hashing (sorted keys, no insignificant
+# whitespace) means a pure byte-level reformat is NOT drift; any value change
+# is. The version numbers are reported side by side, never used to decide.
+#
+# PEER RESOLUTION (explicit, never a guess — mirrors resolve_scripts_dir
+# discipline in presentation-canonical-entry.sh). The peer is the OTHER copy
+# of the manifest — the one the resolved manifest is NOT:
+#   1. $PRESENTATION_MANIFEST_COPY    — caller states the peer copy path
+#   2. resolved provenance "installed" (a deployed department copy, i.e. the
+#      launch path): peer = the REPO/CLUSTER copy this department copy was
+#      placed from, resolved in this order:
+#        a. find_repo_root walk-up to universal-sops/presentation-slide-craft
+#        b. $OC_SKILLS_DIR (default ~/.openclaw/skills)/universal-sops/
+#           presentation-slide-craft — the canonical skills location that
+#           install.sh's u001 placement copies FROM
+#        c. ~/openclaw-onboarding/universal-sops/presentation-slide-craft
+#           (install.sh discover_skills_dir last-resort clone)
+#      A deployed box whose dept copy was installed from ANY of these locations
+#      gets a real second copy to compare. A box with none (a standalone client
+#      install, no repo clone on disk) reports the skip honestly — there is
+#      genuinely nothing to drift against.
+#   3. resolved provenance "cluster"/"legacy" (running from a repo checkout):
+#      peer = the materialized department copy — $OPENCLAW_WORKSPACE (default
+#      ~/.openclaw/workspace)/departments/Presentations/sops/PIPELINE-MANIFEST.json.
+#      Repo-only CI with no materialized department: skip, reported (nothing to
+#      compare on a single-copy checkout).
+#
+# SELF-COMPARE GUARD: a peer candidate that equals the resolved MANIFEST is
+# NEVER compared — comparing a file with itself hashes equal, reports no drift,
+# and "verifies" nothing. A default that could resolve to MANIFEST is the exact
+# silent-failure class this check exists to kill; the guarded path prints the
+# skip (stderr / "skipped" in --json), never a false pass. (This was a real
+# defect in the first rev of FIX 32: the launch path ran from the deployed
+# department scripts dir, MANIFEST resolved to the department copy via
+# MANIFEST-SOURCE.txt, and the peer default was the SAME department copy —
+# self-compare, M1 dead on every deployed box.)
+#
+# ROLLBACK FLAG (documented =0 path): PRESENTATION_MANIFEST_COPY_DRIFT=0
+# disables the comparison. The disabled path PRINTS the skip (to stderr in the
+# human report / as a "skipped" field in --json) — it never silently pretends
+# an unverified copy was verified. Default is unset/1 = ON.
+#
+# CLASS: M1 drift is render_path — the manifest the engine would actually run
+# is not the manifest this repo declares, so GATE 3 of
+# presentation-canonical-entry.sh (which consumes this script's --json exit
+# code) fails closed at launch, exactly as for A1-A4/B*/E*/V* drift.
+# ---------------------------------------------------------------------------
+
+def copy_drift_checks(manifest) -> list:
+    """M1: canonical-JSON content hash of the resolved manifest vs the peer
+    copy. Returns a list of drift dicts (check 'M1', class 'render_path')."""
+    drift = []
+
+    def add(item, detail):
+        drift.append({"check": "M1", "item": item, "detail": detail,
+                      "class": "render_path"})
+
+    flag = os.environ.get("PRESENTATION_MANIFEST_COPY_DRIFT", "1").strip()
+    if flag == "0":
+        # Documented rollback path: print the skip, never a silent pass.
+        print("  (M1 skipped: PRESENTATION_MANIFEST_COPY_DRIFT=0 — manifest-copy "
+              "comparison DISABLED by rollback flag; the peer manifest copy is "
+              "UNVERIFIED for this run)", file=sys.stderr)
+        return drift
+
+    peer = os.environ.get("PRESENTATION_MANIFEST_COPY", "").strip()
+    peer_source = "PRESENTATION_MANIFEST_COPY"
+    if not peer:
+        # Provenance-aware default: the peer is the copy the resolved manifest
+        # is NOT. "installed" = deployed department copy -> peer = repo/cluster
+        # copy (find_repo_root walk-up, then $OC_SKILLS_DIR, then the ~/openclaw-
+        # onboarding clone — the three places install.sh places it FROM).
+        # "cluster"/"legacy" = repo checkout -> peer = materialized department.
+        if MANIFEST_PROVENANCE == "installed":
+            workspace_peer = ""  # never: the installed copy IS the dept copy
+            for cand in _cluster_peer_candidates():
+                if cand.is_file():
+                    peer = str(cand)
+                    peer_source = f"repo/cluster copy ({cand.name} at {cand.parent.parent})"
+                    break
+            if not peer:
+                # No repo/cluster copy reachable on this box — nothing to
+                # compare against. Honest skip, never a false pass.
+                print(f"  (M1 skipped: resolved manifest is the installed "
+                      f"department copy [{MANIFEST}] but NO repo/cluster copy found "
+                      f"(no walk-up repo, no $OC_SKILLS_DIR cluster, no "
+                      f"~/openclaw-onboarding clone) — single-copy deploy, "
+                      f"nothing to compare)", file=sys.stderr)
+                return drift
+        else:
+            workspace = os.environ.get(
+                "OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+            peer = os.path.join(workspace, "departments", "Presentations", "sops",
+                                "PIPELINE-MANIFEST.json")
+            peer_source = "materialized department default"
+
+    peer_path = Path(peer)
+    # SELF-COMPARE GUARD — never hash one file against itself. When MANIFEST is
+    # "installed" (the dept copy), any default that resolves HERE is the exact
+    # silent no-op class; report the skip, never a false pass.
+    try:
+        if peer_path.resolve() == Path(MANIFEST).resolve():
+            print(f"  (M1 skipped: peer copy {peer_path} [{peer_source}] is the SAME "
+                  f"file as the resolved manifest {MANIFEST} — comparing a file "
+                  f"with itself would verify nothing; a real second copy must be "
+                  f"named via PRESENTATION_MANIFEST_COPY or the repo must be "
+                  f"reachable)", file=sys.stderr)
+            return drift
+    except OSError:
+        pass  # unreadable path falls through to the is_file() skip below
+    if not peer_path.is_file():
+        # No second copy exists at the resolved location (repo-only CI checkout,
+        # or a repo-side run with no materialized department). Report the skip
+        # in the human path; this is not drift — there is nothing to drift
+        # against. On a deployed box, provenance-aware resolution above always
+        # lands on a real second copy (or reports an honest single-copy skip).
+        print(f"  (M1 skipped: no peer manifest copy at {peer_path} "
+              f"[{peer_source}] — single-copy checkout, nothing to compare)",
+              file=sys.stderr)
+        return drift
+
+    from manifest_source import compare_manifest_copies  # noqa: PLC0415 — same package dir
+    result = compare_manifest_copies(str(MANIFEST), str(peer_path))
+    if result["drift"]:
+        add(
+            "PIPELINE-MANIFEST.json copies",
+            f"MANIFEST COPY DRIFT — the resolved manifest and its peer copy hold "
+            f"different content at the canonical-JSON level. repo copy "
+            f"({MANIFEST}) content_sha256={result['primary_sha256']} "
+            f"(manifest_version={result['primary_version']!r}); peer copy "
+            f"({peer_path}, source: {peer_source}) content_sha256="
+            f"{result['peer_sha256']} (manifest_version={result['peer_version']!r}). "
+            f"The version field CANNOT detect this (same_version_number="
+            f"{result['same_version_number']}): a one-field content edit leaves the "
+            f"version untouched. Reconcile the copies — reinstall the canonical "
+            f"manifest into the peer location (and restamp that copy's "
+            f"MANIFEST-SOURCE.txt), or bring the repo copy back to the peer's "
+            f"content — then re-run this check. Rollback flag (documents the "
+            f"skip, never hides it): PRESENTATION_MANIFEST_COPY_DRIFT=0.")
+    return drift
+
 
 def warn_checks(manifest):
     """W1 — the STEP CONTRACT, in warn-mode (Rule 3.5 stage 1).
@@ -911,6 +1090,7 @@ def report_human(drift, warnings, manifest, explain):
     c = [d for d in drift if d["check"].startswith("C")]
     d_items = [x for x in drift if x["check"].startswith("D")]
     e = [d for d in drift if d["check"].startswith("E")]
+    m = [d for d in drift if d["check"].startswith("M")]
     v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
     if a:
@@ -939,6 +1119,12 @@ def report_human(drift, warnings, manifest, explain):
               "phases E2 and heartbeat_minutes on EVERY phase E3):",
               file=sys.stderr)
         for d in e:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if m:
+        print("\n(M) MANIFEST-COPY DRIFT — the resolved manifest and its peer copy "
+              "(materialized department / $PRESENTATION_MANIFEST_COPY) hold different "
+              "content at the canonical-JSON level (FIX 32):", file=sys.stderr)
+        for d in m:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if v:
         print("\n(V) VALUE DRIFT — the names match but the NUMBERS do not (the cited "
@@ -1106,6 +1292,11 @@ def main():
     drift = run_checks(manifest, bd, ruleset_codes, role_stems, sop_files)
     # (V) value-level drift — the cited NUMBER must equal the code constant.
     drift += value_checks(MANIFEST.read_text())
+    # (M) manifest-COPY drift (FIX 32) — canonical-JSON content hash of this
+    # resolved manifest vs the peer copy (materialized department default or
+    # $PRESENTATION_MANIFEST_COPY). Skips (reported, never silent) on a
+    # single-copy checkout or the documented =0 rollback flag.
+    drift += copy_drift_checks(manifest)
     # (W) warn-mode. SEPARATE list. Never merged into `drift` — see warn_checks().
     warnings = warn_checks(manifest)
 

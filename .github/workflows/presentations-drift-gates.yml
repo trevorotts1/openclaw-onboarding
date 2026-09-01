@@ -35,6 +35,15 @@ name: presentations-drift-gates
 #            PIPELINE-MANIFEST.json. Added after both docs were found describing an
 #            obsolete 21-step / 12-phase scheme that matched none of the (then) 36
 #            live phases, unnoticed for months because nothing checked it.
+#   GATE 5 - manifest-copy drift detector (FIX 32): proves the detector that
+#            compares the two PIPELINE-MANIFEST.json copies (repo cluster vs
+#            materialized department) by canonical-JSON content sha. A scratch
+#            one-field change at the SAME manifest_version must trip M1 in
+#            sync_check.py --json; a byte-level reformat and an identical copy
+#            must not. The live broken state (2026-08-31): repo v52 vs
+#            materialized v51, every per-copy provenance check green on both.
+#            At launch the same M1 check runs inside presentation-canonical-entry.sh
+#            GATE 3 (sync_check --json) and fails closed (class render_path).
 #
 # This job's path filter deliberately covers the exact files each gate reads,
 # since none of those files are in presentations-lockstep.yml's trigger list
@@ -59,6 +68,9 @@ on:
       # GATE 3 targets -- the fourth canon consumer (deliverables.py and curate.py
       # are already covered by the presentation_job/** glob above)
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/self_audit.py"
+      # GATE 5 targets -- the FIX-32 manifest-copy drift detector + its resolver
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/manifest_source.py"
       # GATE 2 targets -- all three manifest hash registries
       - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
       - "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt"

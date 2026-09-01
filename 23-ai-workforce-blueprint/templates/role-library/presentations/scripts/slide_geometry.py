@@ -243,8 +243,42 @@ def _load_system_words() -> Optional[set]:
     return None
 
 
+def _copy_to_text(value) -> str:
+    """Coerce slide-copy of any schema shape to a single string (LATENT-FIX 2026-08-31).
+
+    build_deck's slides.schema.json mandates copy = list[str]; check_spelling
+    historically treated it as a plain string, so any in-range slide ordinal crashed
+    with AttributeError("'list' object has no attribute 'lower'"). Rules:
+      - str returned as-is;
+      - list joined with " ", keeping its string items; dict-shaped items contribute
+        their "text" field when present (tolerated, not schema-mandated);
+      - a bare dict contributes its "text" field when present;
+      - every other shape degrades to "" so the checker reports per-slide results
+        instead of crashing (or silently passing/failing) the whole deck.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                txt = item.get("text")
+                if isinstance(txt, str):
+                    parts.append(txt)
+        return " ".join(parts)
+    if isinstance(value, dict):
+        txt = value.get("text")
+        return txt if isinstance(txt, str) else ""
+    return ""
+
 def _normalise(text: str) -> str:
-    """Normalise a string to lowercase alphanumerics for substring comparison."""
+    """Normalise a string to lowercase alphanumerics for substring comparison.
+    Non-string shapes (schema-mandated list copy, dict copy, None) are coerced via
+    _copy_to_text; unknown shapes degrade to "" — never a crash."""
+    if not isinstance(text, str):
+        text = _copy_to_text(text)
     return _NON_ALNUM.sub("", text.lower())
 
 
@@ -418,14 +452,14 @@ def check_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         if slide_index is not None and 0 <= slide_index < len(slides_copy):
             slide_obj = slides_copy[slide_index]
             if isinstance(slide_obj, dict):
-                approved_blob = slide_obj.get("copy", "")
+                approved_blob = _copy_to_text(slide_obj.get("copy", ""))
             elif isinstance(slide_obj, str):
                 approved_blob = slide_obj
         elif len(slides_copy) == 1 and renders:
             # Single-copy fallback: use the first slide's copy
             slide_obj = slides_copy[0]
             if isinstance(slide_obj, dict):
-                approved_blob = slide_obj.get("copy", "")
+                approved_blob = _copy_to_text(slide_obj.get("copy", ""))
             elif isinstance(slide_obj, str):
                 approved_blob = slide_obj
 

@@ -1,7 +1,7 @@
 """presentation_job/preflight_shadow.py — trust-boundary Phase 1, surface A.
 
 Report-only shadow instrumentation for the ONE dispatch loop that invokes all
-53 `_chk_*` gates (plus 7 non-`_chk_`-named checks — 60 entries total) that
+49 `_chk_*` gates (plus 13 non-`_chk_`-named checks — 62 entries total) that
 guard `build_deck.py`'s render/assembly: the
 `for rel, label, phase, check in PREFLIGHT_REQUIRED:` loop inside
 `run_preflight()` (`build_deck.py:9795`, dispatching `PREFLIGHT_REQUIRED`,
@@ -12,7 +12,7 @@ WHAT THIS IS: a generic, gate-agnostic wrapper. It has ZERO knowledge of what
 any individual `_chk_*` gate means — it only knows the shape every entry in
 PREFLIGHT_REQUIRED already shares: a resolved artifact path (or the whole run
 dir, for the handful of run-dir-scoped checks) and a legacy pass/fail
-verdict. What it adds, for every one of the 60 entries, for free, with ZERO
+verdict. What it adds, for every one of the 62 entries, for free, with ZERO
 edits to any gate body:
 
   1. A TOCTOU integrity check: hash+mtime the resolved path ONCE, up front,
@@ -334,8 +334,8 @@ class PreflightShadowContext:
     through every record() call in the loop, discarded (or passed to
     close_run() for a summary line) when the loop ends. Holds the admission-
     time ("seal") snapshot for every entry, keyed by gate label. Labels are
-    verified unique across all 60 PREFLIGHT_REQUIRED entries as of this
-    writing (60 entries, 60 unique labels — checked directly against the
+    verified unique across all 62 PREFLIGHT_REQUIRED entries as of this
+    writing (62 entries, 62 unique labels — checked directly against the
     live list, not assumed); a future duplicate label would degrade to the
     second entry's seal overwriting the first's in this dict — never a
     crash, at worst a slightly stale seal for one of the two, still strictly

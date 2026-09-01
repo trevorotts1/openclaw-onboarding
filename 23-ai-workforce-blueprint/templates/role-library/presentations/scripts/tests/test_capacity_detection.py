@@ -422,6 +422,15 @@ def test_dispatch_refuses_when_capacity_is_unmeasured(monkeypatch, tmp_path):
                         lambda *a, **k: spawned.append(a) or pytest.fail("spawned!"))
     monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
     (tmp_path / "presentation_job.py").write_text("", encoding="utf-8")
+    # FIX 22: declare the transport so the capacity refusal is what fires.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
+    # FIX 33: the Step 0 OCR launch probe spawns a real interpreter subprocess
+    # (ocr_verify's subprocess.run, outside launcher.subprocess) BEFORE the
+    # capacity gate -- this test's assertion is "no engine spawn on refusal",
+    # so use the documented PRESENTATION_OCR_VERIFY=0 rollback to keep the
+    # probe out of the spawn-capture scope. OCR behavior itself is covered by
+    # test_preflight.py / the FIX 33 proofs.
+    monkeypatch.setenv("PRESENTATION_OCR_VERIFY", "0")
     rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard")
     assert rc == launcher.DISPATCH_CAPACITY_REFUSED
     assert rc != 0
@@ -457,6 +466,13 @@ def test_dispatch_refuses_a_parked_client_box(monkeypatch, tmp_path):
     # capacity.measure_working_concurrent shells out to `ps`; stub it so the
     # Popen guard below can only ever fire on an ENGINE spawn.
     monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
+    # FIX 22: declare the transport so the PARKED refusal is what fires.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
+    # FIX 33: the Step 0 OCR launch probe spawns a real subprocess outside the
+    # Popen guard's scope before the capacity gate; disable it via the
+    # documented rollback so "no engine spawn on PARKED refusal" stays the
+    # assertion under test.
+    monkeypatch.setenv("PRESENTATION_OCR_VERIFY", "0")
     monkeypatch.setattr(launcher.subprocess, "Popen",
                         lambda *a, **k: pytest.fail("spawned despite PARKED capacity"))
     rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard")
@@ -480,6 +496,10 @@ def _stub_engine(tmp_path, monkeypatch):
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    # FIX 22: dispatch() refuses before any spawn when the notify transport is
+    # unconfigured (PRESENTATION_NOTIFY_FAIL_CLOSED default ON). These tests
+    # assert on CAPACITY behavior, so declare a transport.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
     monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
     monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
     marker = tmp_path / "engine_ran.marker"
@@ -572,6 +592,9 @@ def test_measured_box_ignores_requested_parallel_and_dispatches_at_real_ceiling(
     (cfg / capacity.OVERRIDE_FILENAME).write_text(
         json.dumps({"provider": "ollama-cloud", "plan": "$100/month"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    # FIX 22: declare the transport so the measured-ceiling dispatch (not the
+    # notify refusal) is what these tests exercise.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
     monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
     monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
     marker = tmp_path / "engine_ran.marker"
@@ -601,6 +624,9 @@ def test_deepseek_unbounded_ignores_requested_parallel_and_dispatches(
     (cfg / capacity.OVERRIDE_FILENAME).write_text(
         json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    # FIX 22: declare the transport so the unbounded-dispatch acceptance
+    # (not the notify refusal) is what this test exercises.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
     monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
     monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
     marker = tmp_path / "engine_ran.marker"

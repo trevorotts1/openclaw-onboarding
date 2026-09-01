@@ -537,7 +537,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # the P-CONVERTER / P-SP-* pattern); P-U-VSL-BUILD ordered 8.93, strictly after
 # P9.6-WEBINAR-VIDEO (8.92), on which it depends. Phase count 36 -> 40. MIN follows to 51
 # in the same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 51  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 54  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

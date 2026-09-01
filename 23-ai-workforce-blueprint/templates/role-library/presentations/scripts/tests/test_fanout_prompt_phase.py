@@ -90,7 +90,7 @@ def test_workers_1_and_workers_n_produce_identical_file_sets(tmp_path, monkeypat
 
     calls_serial = []
 
-    def stub_complete_serial(system_prompt, user_prompt):
+    def stub_complete_serial(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         calls_serial.append(ordinal)
         return f"slide-{ordinal}-content-OK", {"prompt_tokens": 10, "completion_tokens": 10}
@@ -103,7 +103,7 @@ def test_workers_1_and_workers_n_produce_identical_file_sets(tmp_path, monkeypat
     assert result_serial.status == "ok"
     serial_files = sorted(p.name for p in (run_dir_serial / "working" / "prompts").glob("*.txt"))
 
-    def stub_complete_parallel(system_prompt, user_prompt):
+    def stub_complete_parallel(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         return f"slide-{ordinal}-content-OK", {"prompt_tokens": 10, "completion_tokens": 10}
 
@@ -129,7 +129,7 @@ def test_three_failures_leave_rest_verified_and_name_the_failures(tmp_path, monk
     _stub_verify_by_content_marker(monkeypatch)
     call_count = {"n": 0}
 
-    def stub_complete(system_prompt, user_prompt):
+    def stub_complete(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         call_count["n"] += 1
         if ordinal in failing:
@@ -167,7 +167,7 @@ def test_resume_after_failure_only_recalls_stub_for_failed_ordinals(tmp_path, mo
     _stub_compose_prompt(monkeypatch)
     _stub_verify_by_content_marker(monkeypatch)
 
-    def stub_complete_first_run(system_prompt, user_prompt):
+    def stub_complete_first_run(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         if ordinal in failing:
             return f"slide-{ordinal}-content-BAD", {"prompt_tokens": 10, "completion_tokens": 10}
@@ -184,7 +184,7 @@ def test_resume_after_failure_only_recalls_stub_for_failed_ordinals(tmp_path, mo
     # the 3 that failed) succeeds on its very first call this time.
     resume_calls = []
 
-    def stub_complete_resume(system_prompt, user_prompt):
+    def stub_complete_resume(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         resume_calls.append(ordinal)
         return f"slide-{ordinal}-content-OK", {"prompt_tokens": 10, "completion_tokens": 10}
@@ -212,7 +212,7 @@ def test_never_exceeds_manifest_workers_concurrent_calls(tmp_path, monkeypatch):
     max_seen = {"n": 0}
     lock = threading.Lock()
 
-    def stub_complete(system_prompt, user_prompt):
+    def stub_complete(system_prompt, user_prompt, **kwargs):
         ordinal = _extract_ordinal(user_prompt)
         with lock:
             active["n"] += 1
