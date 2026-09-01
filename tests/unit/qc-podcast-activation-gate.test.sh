@@ -62,7 +62,8 @@ make_tree() {
     printf '#!/usr/bin/env bash\nexit 0\n' \
       > "$root/58-podcast-production-engine/scripts/register-podcast-hook.sh"
     printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' \
-      > "$root/58-podcast-production-engine/scripts/webhook/intake_handler.py"    printf '#!/usr/bin/env bash\nexit 0\n' \
+      > "$root/58-podcast-production-engine/scripts/webhook/intake_handler.py"
+    printf '#!/usr/bin/env bash\nexit 0\n' \
       > "$root/58-podcast-production-engine/scripts/install-podcast-department.sh"
   fi
 }
@@ -70,7 +71,9 @@ make_tree() {
 # Run the guard with ALL box-state seams pinned to the sandbox (hermetic).
 # The two intake secrets are unset at script top so B5 is deterministic
 # regardless of the host environment (tests that need them set export them
-# explicitly on the run_guard call).run_guard() {  # $@ = extra guard args
+# explicitly on the run_guard call).
+
+run_guard() {  # $@ = extra guard args
   PODCAST_CRONTAB_BIN="$WORK/bin/false-crontab" \
   PODCAST_LAUNCHD_DIR="$WORK/launchd" \
   OPENCLAW_CONFIG="$WORK/openclaw.json" \
