@@ -59,7 +59,7 @@
 #   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
-#   9  — ENGINE DISPATCH FAILED: the manifest-phase engine is installed but refused the
+#   9  — ENGINE DISPATCH FAILED: the 36-phase engine is installed but refused the
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
 #        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
 #        (See engine_fail() / fix/deck-type-routing-bypass.)
@@ -82,7 +82,7 @@ note() { echo "=== [$PROG] $* ==="; }
 # successful engine dispatch (any presentation_type, not just the two the
 # alias bug mis-routed), which then always died at "could not mint the
 # front-door nonce" before a single phase ran. Reproduced against the real
-# engine: state.json is created (job + manifest pinned) and the very
+# engine: state.json is created (job + 36-phase manifest pinned) and the very
 # next line fails this way. One definition, used by both the engine path and
 # the legacy-fallback path below.
 _mint_nonce() {
@@ -111,13 +111,19 @@ REQUIRED:
 OPTIONS:
   --phase ID          canonical phase to dispatch (default: P4-RENDER)
   --platform mac|vps  box-type override (default: auto-detect)
+  --intake-depth quick|in-depth
+                      intake interview depth (FIX 30's standard_mode: the
+                      deck-intake-questions.json order-8 question, stored as
+                      pre_presentation_capture.STANDARD_MODE). Default: quick.
+                      May also be set via PRESENTATION_INTAKE_DEPTH. This is
+                      the INTERVIEW-DEPTH axis ONLY — it selects how much
+                      optional detail the intake asks for and never changes
+                      the 23-turn ceiling. It is deliberately distinct from
+                      the run-mode flag, whose vocabulary is only
+                      Ultra|Standard|Economy (FIX 11) — the two axes are
+                      never interchangeable and never share a flag name.
   --scripts-dir DIR   location of build_deck.py / run_signature_deck.py
                       (default: auto-detect; or set \$SCRIPTS_DIR)
-  --intake-depth quick|in-depth
-                      the intake interview depth (the interview_depth
-                      question's standard_mode; env PRESENTATION_INTAKE_DEPTH).
-                      A DIFFERENT axis from run-mode --mode Ultra|Standard|
-                      Economy -- never reuse --mode for this.
   --plan              print the canonical phase plan and exit (gates still run)
   --adhoc             owner-authorized + logged escape (refused without the record)
   -h | --help         this help
@@ -135,13 +141,11 @@ EOF
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
 PLAN=0 ADHOC=0 RESUME=0
-# FIX 36(3) — intake-depth axis, deliberately SEPARATE from the run-mode axis.
-# Run mode (FIX 38/FIX 11) is --mode Ultra|Standard|Economy (env
-# PRESENTATION_MODE). Intake depth (the interview_depth question's
-# standard_mode subfield) is THIS flag: --intake-depth quick|in-depth (env
-# PRESENTATION_INTAKE_DEPTH). The two vocabularies must never share a flag.
+# FIX 36(3) — intake-depth (FIX 30's standard_mode). The interview-depth axis:
+# quick|in-depth, stored as pre_presentation_capture.STANDARD_MODE. NEVER the
+# run-mode axis (Ultra|Standard|Economy, FIX 11) and never a --mode flag —
+# one vocabulary per axis, no reuse.
 INTAKE_DEPTH="${PRESENTATION_INTAKE_DEPTH:-}"
-INTAKE_DEPTH_STATED="${INTAKE_DEPTH:+1}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir)     RUN_DIR="${2:-}"; shift 2 ;;
@@ -149,9 +153,8 @@ while [ $# -gt 0 ]; do
         --out)         OUT="${2:-}"; shift 2 ;;
         --phase)       PHASE="${2:-}"; shift 2 ;;
         --platform)    PLATFORM="${2:-}"; shift 2 ;;
+        --intake-depth) INTAKE_DEPTH="${2:-}"; shift 2 ;;
         --scripts-dir) SCRIPTS_DIR="${2:-}"; SCRIPTS_DIR_STATED=1; shift 2 ;;
-        --intake-depth)
-            INTAKE_DEPTH="${2:-}"; INTAKE_DEPTH_STATED=1; shift 2 ;;
         --plan)        PLAN=1; shift ;;
         --resume) RESUME=1; shift ;;
         --adhoc)       ADHOC=1; shift ;;
@@ -159,28 +162,6 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument: $1 (run with --help)" ;;
     esac
 done
-
-# FIX 36(3) — validate the intake-depth vocabulary HERE, loudly, before any
-# gate runs. Legal values are exactly quick|in-depth (case-insensitive). A
-# run-mode value (Ultra/Standard/Economy) passed to this flag is the exact
-# collision the spec forbids: refuse it with the message naming both axes.
-case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]' | tr '_' '-')" in
-    ""|quick|in-depth|indepth) ;;
-    ultra|standard|economy)
-        die "--intake-depth $INTAKE_DEPTH is a RUN-MODE value. Run mode is \
---mode Ultra|Standard|Economy (env PRESENTATION_MODE); intake depth is \
---intake-depth quick|in-depth (env PRESENTATION_INTAKE_DEPTH). The two axes \
-are separate by design and must never share a flag." ;;
-    *)
-        die "--intake-depth must be quick|in-depth (got '$INTAKE_DEPTH'). \
-Run-mode --mode Ultra|Standard|Economy is a different axis." ;;
-esac
-# Normalize to the canonical capitalization the engine contract speaks.
-case "$INTAKE_DEPTH" in
-    "") : ;;
-    *d*|*D*) INTAKE_DEPTH="in-depth" ;;
-    *)       INTAKE_DEPTH="quick" ;;
-esac
 
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
@@ -190,6 +171,34 @@ if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
     [ -n "$OUT" ] || die "--out is required to build a deck"
 fi
+
+# ---------------------------------------------------------------------------
+# FIX 36(3) — intake-depth validation. Vocabulary is EXACTLY the FIX 30
+# standard_mode enum (deck-intake-questions.json order 8, subfield
+# standard_mode: QUICK|IN-DEPTH, default QUICK). Accepts the documented
+# lowercase CLI spellings (quick|in-depth) case-insensitively and normalizes
+# to the schema's stored form. Anything else refuses LOUDLY — never silently
+# coerced, never defaulted past a real typo. Distinct from the run-mode axis
+# (Ultra|Standard|Economy): an intake-depth value from that vocabulary is
+# refused with a message naming the collision, never accepted as either.
+# ---------------------------------------------------------------------------
+case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')" in
+    "")          INTAKE_DEPTH="QUICK" ;;
+    quick)       INTAKE_DEPTH="QUICK" ;;
+    in-depth)    INTAKE_DEPTH="IN-DEPTH" ;;
+    in_depth)    INTAKE_DEPTH="IN-DEPTH" ;;   # tolerated shell-friendly spelling
+    ultra|standard|economy)
+        die "--intake-depth got run-mode vocabulary '$INTAKE_DEPTH'. The intake-depth \
+axis (FIX 30's standard_mode) accepts ONLY quick|in-depth; the run-mode axis \
+(FIX 11) is Ultra|Standard|Economy and is deliberately a DIFFERENT flag. The \
+two vocabularies are never interchangeable."
+        ;;
+    *)
+        die "--intake-depth: invalid value '$INTAKE_DEPTH'. Allowed: quick|in-depth \
+(env PRESENTATION_INTAKE_DEPTH). Default: quick."
+        ;;
+esac
+note "intake-depth (FIX 30 standard_mode): $INTAKE_DEPTH"
 
 # ---------------------------------------------------------------------------
 # FIX-23(b) — CANONICAL-ENTRY ATTEMPT CAP (loop-breaker; Error 4/5 residual).
@@ -271,6 +280,65 @@ carries its own manifest and is not the governed department. Use \
 esac
 
 PROC_MANIFEST="$RUN_DIR/working/checkpoints/process_manifest.json"
+
+# ---------------------------------------------------------------------------
+# FIX 36(3) — stamp_intake_depth: persist the resolved intake-depth into
+# working/copy/intake.json's pre_presentation_capture.STANDARD_MODE (the exact
+# storeTarget deck-intake-questions.json order-8 declares for FIX 30's
+# standard_mode subfield). working/copy/intake.json is the durable per-deck
+# file the engine's resolver and every downstream reader consult, and it is
+# read-modify-written here so an answer captured during the interview is never
+# clobbered — the CLI/env flag is an OVERRIDE the owner states explicitly, and
+# it wins, with the prior value recorded in the audit note. Failure to write
+# is logged but never blocks the build (the depth axis tunes optional detail,
+# not a quality gate).
+# ---------------------------------------------------------------------------
+stamp_intake_depth() {
+    local depth="$1"
+    command -v python3 >/dev/null 2>&1 || { note "intake-depth not stamped (no python3)"; return 0; }
+    DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" python3 - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
+import json, os, time
+p = os.environ["INTAKE_COPY"]
+depth = os.environ["DEPTH"]
+obj = {}
+try:
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            obj = loaded
+except Exception as exc:  # noqa: BLE001
+    print(f"  [intake-depth] could not read {p} ({exc}) — starting a fresh capture block")
+cap = obj.get("pre_presentation_capture")
+if not isinstance(cap, dict):
+    cap = {}
+prior = cap.get("STANDARD_MODE")
+cap["STANDARD_MODE"] = depth
+obj["pre_presentation_capture"] = cap
+try:
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2)
+    os.replace(tmp, p)
+    audit = obj.get("depth_audit")
+    if not isinstance(audit, list):
+        audit = []
+    audit.append({"field": "pre_presentation_capture.STANDARD_MODE",
+                  "value": depth, "prior": prior,
+                  "source": "canonical-entry --intake-depth/PRESENTATION_INTAKE_DEPTH",
+                  "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+    obj["depth_audit"] = audit
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2)
+    os.replace(tmp, p)
+    print(f"  [intake-depth] pre_presentation_capture.STANDARD_MODE={depth}"
+          f" (prior: {prior!r}) -> {p}")
+except Exception as exc:  # noqa: BLE001
+    print(f"  [intake-depth] stamp failed ({exc}) — non-fatal, build proceeds")
+PY
+}
+stamp_intake_depth "$INTAKE_DEPTH"
 
 # ---------------------------------------------------------------------------
 # owner_skip_approval — a gate is skippable ONLY by a logged owner token.
@@ -894,8 +962,7 @@ fi
 #   agent invitation with no mechanical executor.
 #
 # AFTER (this change): dispatch through presentation_job.py (the engine), which
-#   walks ALL manifest phases in order (count derived from the canonical
-#   PIPELINE-MANIFEST.json), refuses to skip, runs 6 fail-closed
+#   walks ALL 36 manifest phases in order, refuses to skip, runs 6 fail-closed
 #   gates in close(), and posts progress to the CC board at every phase boundary.
 #   The engine has 18 modules + 552 passing tests and was built between
 #   2026-07-25 and 2026-08-07 -- it was simply never wired until now.
@@ -907,7 +974,7 @@ fi
 # alias remap that would have fixed them never ran. That mismatched intake
 # then made the engine's REAL (narrower) check reject it, `--new` failed,
 # and this script fell through to the FALLBACK below WHILE REPORTING SUCCESS
-# (2 legacy phases only, close() never called, all 6 fail-closed gates skipped).
+# (2 of 36 phases, close() never called, all 6 fail-closed gates skipped).
 # The same block also string-interpolated ledger-controlled values (client
 # name) directly into python SOURCE text -- a client name containing a
 # single quote broke the literal, the SyntaxError was swallowed by
@@ -940,42 +1007,39 @@ engine_fail() {
     echo >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
-    echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
+    echo "presentation_job.py (the 36-phase engine) is installed on this box but" >&2
     echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
-    echo "the legacy runner, and it is never reported as success." >&2
+    echo "the legacy 2-of-36-phase runner, and it is never reported as success." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
 
-# ---------------------------------------------------------------------------
-# FIX 36(5) — the displayed phase count is DERIVED from the canonical
-# PIPELINE-MANIFEST.json, never a stale hardcoded number. Resolution mirrors
-# manifest_source.resolve_manifest(): the installed dept copy (sops/ with
-# MANIFEST-SOURCE.txt), the cluster copy walked up from SCRIPTS_DIR, then the
-# installed sops/ file itself. A missing/unparseable manifest prints '?'
-# (loud absence, not a fabricated number).
-# ---------------------------------------------------------------------------
-MANIFEST_PHASES() {
-    for _mc in "$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json" \
-               "$(cd "$SCRIPTS_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"; do
-        [ -n "$_mc" ] || continue
-        [ -f "$_mc" ] || continue
-        python3 -c "
-import json
-m = json.load(open('$_mc'))
-print(len(m.get('phases', [])))
-" 2>/dev/null && return 0
-    done
-    echo '?'
-}
-MANIFEST_PHASES="$(MANIFEST_PHASES)"
-
 if [ "$PLAN" -eq 1 ]; then
     # --plan is read-only inspection: show what WOULD run, don't launch.
     note "ALL GATES PASSED -- plan mode: engine WOULD be dispatched"
-    # FIX 36(5): the phase count comes from the canonical manifest, never a
-    # hardcoded number.
-    echo "  Manifest phases: $MANIFEST_PHASES"
+    # FIX 36(5): count derives from the canonical manifest (sops/ sibling,
+    # then the cluster copy — the same order manifest_source.resolve_manifest
+    # documents), never from a stale hardcoded number.
+    _PLAN_MANIFEST="$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json"
+    if [ ! -f "$_PLAN_MANIFEST" ]; then
+        _PLAN_MANIFEST="$(python3 - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
+import sys
+from pathlib import Path
+here = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(here))
+try:
+    from manifest_source import resolve_manifest
+    print(resolve_manifest(here)[0])
+except Exception:
+    pass
+PY
+)"
+    fi
+    echo "  Manifest phases: $(python3 -c "
+import json
+m = json.load(open('$_PLAN_MANIFEST'))
+print(len(m.get('phases', [])))
+" 2>/dev/null || echo '?')"
     if [ "$RESUME" -eq 0 ]; then
     echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
     fi
@@ -985,7 +1049,32 @@ if [ "$PLAN" -eq 1 ]; then
 fi
 
 if [ -f "$ENGINE_ENTRY" ] && command -v python3 >/dev/null 2>&1; then
-    note "ALL GATES PASSED -- dispatching the presentation engine (all $MANIFEST_PHASES manifest phases, mechanical)"
+    # FIX 36(5) — the DISPLAYED phase count is derived from the canonical
+    # manifest (never a stale hardcoded number). Reuses the same resolution
+    # order sync_check/manifest_source.py documents: sops/ sibling first,
+    # then the cluster copy, so a partial install never displays a '?'-or-
+    # stale count silently.
+    _MANIFEST_FOR_COUNT="$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json"
+    if [ ! -f "$_MANIFEST_FOR_COUNT" ]; then
+        _MANIFEST_FOR_COUNT="$(python3 - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
+import sys
+from pathlib import Path
+here = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(here))
+try:
+    from manifest_source import resolve_manifest
+    print(resolve_manifest(here)[0])
+except Exception:
+    pass
+PY
+)"
+    fi
+    _PHASE_COUNT="$(python3 -c "
+import json
+m = json.load(open('$_MANIFEST_FOR_COUNT'))
+print(len(m.get('phases', [])))
+" 2>/dev/null || echo '?')"
+    note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
     # through the ONE shared resolver (single-sourced deck-type vocabulary,
@@ -1000,16 +1089,9 @@ $ENGINE_ENTRY but its resolver $RESOLVE_INTAKE is not -- this is a broken/partia
 engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
-    _RESOLVE_DEPTH_ARGS=""
-    if [ -n "$INTAKE_DEPTH" ]; then
-        _RESOLVE_DEPTH_ARGS="--intake-depth $INTAKE_DEPTH"
-    fi
     _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
-        --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"
+        --out "$_ENGINE_INTAKE_TMP" --source canonical-entry 2>&1)"
     _RESOLVE_RC=$?
-    if [ "$_RESOLVE_RC" -eq 5 ]; then
-        engine_fail "AF-INTAKE-DEPTH-INVALID" 9 "$_RESOLVE_OUT"
-    fi
     if [ "$_RESOLVE_RC" -ne 0 ]; then
         engine_fail "AF-DECK-TYPE-UNKNOWN" 9 "$INTAKE_LEDGER did not resolve to a legal \
 presentation_type: $_RESOLVE_OUT"
@@ -1033,11 +1115,10 @@ $_CREATE_OUT"
         fi
     fi
 
-    # Step 3: Run the engine. This walks every manifest phase (count derived
-    # from PIPELINE-MANIFEST.json, never a hardcoded number), refuses to skip,
+    # Step 3: Run the engine. This walks every manifest phase, refuses to skip,
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
     # Returns the engine's exit code directly to the caller.
-    note "Engine run starting -- $MANIFEST_PHASES manifest phases, all mechanically enforced"
+    note "Engine run starting -- $_PHASE_COUNT manifest phases, all mechanically enforced"
     _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
@@ -1066,11 +1147,11 @@ else
     # The engine component is genuinely absent from this box -- the ONE
     # legitimate reason to fall back. Announce it unmistakably (not a
     # one-line `note`) and record that it ran, so a fleet of boxes quietly
-    # running the legacy 2-phase path is visible, never just archived.
+    # running the 2-of-36 legacy path is visible, never just archived.
     echo "!! [$PROG] ================================================================" >&2
     echo "!! [$PROG] ANNOUNCED FALLBACK: presentation_job.py NOT FOUND at" >&2
     echo "!! [$PROG]   $ENGINE_ENTRY" >&2
-    echo "!! [$PROG] The mechanical manifest-phase engine is not installed on this box." >&2
+    echo "!! [$PROG] The mechanical 36-phase engine is not installed on this box." >&2
     echo "!! [$PROG] Falling back to the LEGACY run_signature_deck.py runner --" >&2
     echo "!! [$PROG] 2 of ~20 phases. This is NOT a full build. Install/update the" >&2
     echo "!! [$PROG] Presentations department to get the mechanical engine." >&2
