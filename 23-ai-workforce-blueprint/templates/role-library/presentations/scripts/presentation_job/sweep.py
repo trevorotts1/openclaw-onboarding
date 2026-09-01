@@ -626,3 +626,30 @@ def reconcile_sweep(
         return EXIT_SWEEP_ALL_REJECTED
 
     return EXIT_OK
+
+
+def default_scan_roots(env: Optional[Dict[str, str]] = None) -> List[Path]:
+    """The multi-root scan list. PRESENTATION_SCAN_ROOTS (os.pathsep-separated)
+    extends or overrides the department-tree default -- a single documented
+    setting (run-root-agnostic, 2026-08-27).
+
+    Precedence:
+      1. PRESENTATION_SCAN_ROOTS set  -> those roots, plus the department tree
+         unless the value starts with '!' (exclusive: exactly those roots).
+      2. unset                        -> the department tree alone.
+
+    The department tree stays the default root either way, so an env var set
+    for one component never silently blinds the others to dept-tree runs."""
+    env = dict(os.environ if env is None else env)
+    dept = Path(env.get("HOME", str(Path.home()))) / \
+        ".openclaw/workspace/departments/Presentations/runs"
+    raw = (env.get("PRESENTATION_SCAN_ROOTS") or "").strip()
+    if not raw:
+        return [dept]
+    exclusive = raw.startswith("!")
+    if exclusive:
+        raw = raw[1:].strip()
+    roots = [Path(p).expanduser() for p in raw.split(":") if p.strip()]
+    if not exclusive and dept not in roots:
+        roots.insert(0, dept)
+    return roots
