@@ -14,6 +14,9 @@
 #   non-empty reply was extracted. Everything else acks `failed`. Ambiguous is
 #   never fixed. A box that stays silent leaves its ticket non-terminal so the
 #   SLA machinery pages a human.
+#   v1.3.0: an exit-0 non-empty reply whose TEXT says the job was not done
+#   (escalation/deferral language) is not a delivery — it acks `failed` with
+#   fail_reason `escalation_language` and carries a reply_excerpt of the text.
 #
 # ROLL-SAFETY:
 #   * The script lives in the repo-managed skills tree; a roll OVERWRITES it.
@@ -35,7 +38,7 @@
 #   spamming logs. It runs every 2 minutes on 38 machines forever.
 #
 # RECEIVER_VERSION: reported in every claim and ack (fleet version visibility).
-RECEIVER_VERSION="1.2.0"
+RECEIVER_VERSION="1.3.0"
 
 # ---------------------------------------------------------------------------
 # OpenClaw root resolution. <root>/secrets/.env holds enrollment credentials.
@@ -195,6 +198,27 @@ _sleep_jitter() {
 # ---------------------------------------------------------------------------
 _json_str() {
     printf '%s' "$1" | tr -d '"' | tr -d '\\' | tr -d '\n\r\t'
+}
+
+# ---------------------------------------------------------------------------
+# v1.3.0 honesty helpers.
+#
+# _is_escalation <text> — returns 0 when the reply TEXT says the job was not
+# done (escalation / deferral language). Case-insensitive; the apostrophe in
+# "don't" is matched as a single-character wildcard so the pattern survives
+# shell quoting. A well-formed turn whose text defers to a human is not a
+# delivery (see the VERDICT RULE below).
+# ---------------------------------------------------------------------------
+_is_escalation() {
+    printf '%s' "$1" | grep -iE 'could not|unable to|human intervention|i don.t have|needs human|failed to' >/dev/null 2>&1
+}
+
+# _bounded_excerpt <text> — the first 500 bytes with line breaks flattened to
+# spaces, so the excerpt is a single-line JSON-safe string (the caller still
+# runs it through _json_str before interpolating it into the body).
+# ---------------------------------------------------------------------------
+_bounded_excerpt() {
+    printf '%s' "$1" | tr '\n\r\t' '   ' | cut -c1-500
 }
 
 # ---------------------------------------------------------------------------
@@ -424,17 +448,22 @@ print(t)
 }
 
 # ---------------------------------------------------------------------------
-# _ack <verdict> <exit_code> <reply_chars> <fail_reason> [elapsed_s]
+# _ack <verdict> <exit_code> <reply_chars> <fail_reason> [elapsed_s] [excerpt]
 #
 # Builds the ack body and posts it. Always uses _post (token via header file).
 # The ack carries the box slug, the opaque echo of instruction/idempotency keys,
-# and the verdict per §6.2/§6.3 (elapsed_s is part of that canonical shape;
-# defaults to 0 for the no-agent-turn paths — dry_run, empty payload — where
-# no elapsed time was honestly incurred). A delivered ack has fail_reason null.
-# A failed ack whose reason is not one of the canonical enum values is NOT sent
-# (a failed ack without an honest reason is itself a lie). A failed ack that
-# cannot be POSTed (network) is simply silent — the lease lapses and the
-# instruction is re-handed, which the done-file dedups against.
+# and the verdict per §6.2/§6.3 (elapsed_s is only meaningful for live agent
+# turns; it defaults to 0 for the no-agent-turn paths — dry_run, empty payload).
+# A delivered ack has fail_reason null. A failed ack whose reason is not one of
+# the canonical enum values is NOT sent (a failed ack without an honest reason
+# is itself a lie). A failed ack that cannot be POSTed (network) is simply
+# silent — the lease lapses and the instruction is re-handed, which the
+# done-file dedups against.
+#
+# v1.3.0: an optional 6th argument carries a bounded excerpt of the reply text.
+# It rides in the `reply_excerpt` field on every ack that has text to show
+# (delivered or failed), so the RR-07 operator ledger can read what the agent
+# actually said instead of only its length.
 # ---------------------------------------------------------------------------
 _ack() {
     _ack_verdict="$1"
@@ -442,13 +471,14 @@ _ack() {
     _ack_chars="$3"
     _ack_reason="$4"
     _ack_elapsed="${5:-0}"
+    _ack_excerpt="${6:-}"
     case "$_ack_elapsed" in
         ''|*[!0-9]*) _ack_elapsed=0 ;;
     esac
 
     # fail-closed reason validation.
     case "$_ack_reason" in
-        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run)
+        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|escalation_language)
             _fr_json="\"$(_json_str "$_ack_reason")\""
             ;;
         "")
@@ -463,7 +493,12 @@ _ack() {
             ;;
     esac
 
-    _ack_body="{\"action\":\"ack\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\",\"idempotency_key\":\"$(_json_str "$IDEMPOTENCY_KEY")\",\"verdict\":\"$(_json_str "$_ack_verdict")\",\"exit_code\":$_ack_exit,\"reply_chars\":$_ack_chars,\"fail_reason\":$_fr_json,\"elapsed_s\":$_ack_elapsed,\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\"}"
+    _excerpt_json=""
+    if [ -n "$_ack_excerpt" ]; then
+        _excerpt_json=",\"reply_excerpt\":\"$(_json_str "$_ack_excerpt")\""
+    fi
+
+    _ack_body="{\"action\":\"ack\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\",\"idempotency_key\":\"$(_json_str "$IDEMPOTENCY_KEY")\",\"verdict\":\"$(_json_str "$_ack_verdict")\",\"exit_code\":$_ack_exit,\"reply_chars\":$_ack_chars,\"fail_reason\":$_fr_json,\"elapsed_s\":$_ack_elapsed${_excerpt_json},\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\"}"
 
     _ack_out=$(_post "$_ack_body") || true
     _log "ack verdict=$_ack_verdict exit=$_ack_exit chars=$_ack_chars reason=$_ack_reason elapsed=${_ack_elapsed}s"
@@ -662,12 +697,24 @@ REPLY_CHARS=$(printf '%s' "$REPLY_TRIM" | wc -c 2>/dev/null | tr -dc '0-9')
 
 # ---------------------------------------------------------------------------
 # VERDICT RULE (§6.3) — ambiguous ⇒ NOT fixed.
-#   delivered  <=>  AGENT_RC == 0 AND REPLY_CHARS > 0
+#   delivered  <=>  AGENT_RC == 0 AND REPLY_CHARS > 0 AND the reply is not an
+#                   escalation/deferral text (v1.3.0).
 #   else failed, with the most specific honest fail_reason.
+# An exit-0 turn whose text says the job was not done is NOT a delivery: it
+# acks failed/escalation_language so RR-07 pages a human instead of closing
+# the ticket as coached-and-done.
 # ---------------------------------------------------------------------------
+REPLY_EXCERPT=""
+if [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
+    REPLY_EXCERPT=$(_bounded_excerpt "$REPLY_TRIM")
+fi
+
 VERDICT="failed"
 FAIL_REASON="failed_nonzero_exit"
-if [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
+if [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null && _is_escalation "$REPLY_TRIM"; then
+    VERDICT="failed"
+    FAIL_REASON="escalation_language"
+elif [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
     VERDICT="delivered"
     FAIL_REASON=""
 elif [ "$AGENT_RC" -eq 0 ]; then
@@ -678,7 +725,7 @@ fi
 
 # Persist the verdict to the done-file FIRST (crash-safe dedup), then ack.
 _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed"
-_ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed"
+_ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
 
 _log "delivery instruction=$INSTRUCTION_ID verdict=$VERDICT exit=$AGENT_RC chars=$REPLY_CHARS elapsed=${_elapsed}s reason=$FAIL_REASON"
 

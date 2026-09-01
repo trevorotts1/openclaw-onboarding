@@ -27,6 +27,11 @@ pre-proven local delivery command, and acks the verdict.
 - `delivered` ONLY when the delivery command exited 0 AND a non-empty reply was
   extracted.
 - everything else acks `failed`. Ambiguous is never fixed.
+- receiver v1.3.0: an exit-0 non-empty reply whose text matches
+  escalation/deferral language ("could not", "unable to", "human intervention",
+  "I don't have", "needs human", "failed to") acks `failed` with
+  fail_reason `escalation_language` and a `reply_excerpt` of the text — a
+  turn that says it failed is a failure, never a delivery.
 - a box that stays silent leaves its ticket non-terminal — the fleet SLA sweep
   re-pages it. Silence is never success.
 
