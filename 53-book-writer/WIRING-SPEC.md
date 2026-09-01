@@ -183,3 +183,44 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
   4x3x3 offer book — the Book version of the Avatar Alchemist."*
 - Section-8 "Tools You Use" bullet in relevant role files points to `53-book-writer/SKILL.md` +
   `book-writer-entry.sh`.
+
+---
+
+## 9. Mini-app engine wiring (U01–U18, U20) — the write-back isolation train
+
+The mini-app (`53-book-writer/mini-app/`) is the SELF-SERVE intake surface for a Book Writer
+run: a client opens a universal link, answers the intake (typed / uploaded / recorded), and the
+answers stage at the edge; the box that OWNS the run then polls the staged answers, transcribes
+any media, and writes each answer to the client's own GHL sub-account. Every row below matches
+what is ACTUALLY in the repo (paths verified on `ma/integ-base` @ d87aacde).
+
+### Universal link + phase configs (U01/U02/U03/U05)
+
+| Row | What it wires | Where |
+|---|---|---|
+| Universal link | `GET /<slug>/<phase>?tk=<token>` serves the SPA + phase config. Token validated against the KV binding row (`binding:<token>`, the SOLE authority); bad/expired/replayed/misfit token → 401 (no config, no form); order enforcement only serves a phase the run state allows. | `mini-app/worker/src/index.js` |
+| SPA renderer | Warm single-page intake UI (`pages/index.html` + `pages/app.js` + per-widget modules) with the phase config injected via `SPA_INJECT_TEMPLATE`. | `mini-app/pages/`, `mini-app/worker/src/lib.js` |
+| Phase configs | U01 `gen_phase_config.py` derives `mini-app/configs/P0-INTAKE-{full,4x3x3}.json` + `GATE-{1,2,3,4,433}.json` from `intake/intake-schema.json` + the manifest. Each carries `questions[]` and the `submit` block (custom_field_map / tags / raw_json_note) that drives the write-back. | `mini-app/configs/`, `mini-app/scripts/gen_phase_config.py` |
+| Answer staging | `POST /api/answers?tk=` re-validates the binding, normalizes at the ONE boundary, enforces the per-step consumed counter (replay → 409), stages to per-client KV (`answer:<client>:<run>:<phase>:<qid>`), returns a receipt + done page. Injected destination fields are IGNORED. | `mini-app/worker/src/answers.js` |
+| Save & resume | `POST /api/save` + `GET /api/save/resume` + reminder; reload resumes at the next-unanswered question. | `mini-app/worker/src/save.js` |
+
+### Box ingest + GHL write-back (U12/U13/U15) — where an answer lands
+
+| Row | What it wires | Where |
+|---|---|---|
+| Box ingest poller | The box that OWNS the run polls the Worker job registry (`GET /api/media/:answerId`), pulls completed media, hands it to the transcription engine, and stages the output for the write-back. Fail-closed: a done job with empty text is never trusted; a worker failure is surfaced (exit 2); a REQUIRED capability absent → `AF-BW-MA-CAPABILITY` hard-fail. | `mini-app/box/ingest_poller.py` |
+| Capability probe | Per-box probe (preflight.sh mirror) writes `capability-map.json` (honest booleans only). | `mini-app/box/capability_probe.py`, `mini-app/box/capability-map.json` |
+| Media transcription | Transcription engine the poller hands done media jobs to. | `mini-app/bridge/media_textractor.py` |
+| GHL write-back | Turns ONE staged answer `{binding, answer}` into a GHL contact write on the CLIENT's sub-account via the Skill 44 contact rails (`services.leadconnectorhq.com/contacts/`, Bearer LOCATION-PIT, `Version: 2021-07-28`, `locationId` in body), mirrored to a durable LOCAL LEDGER MIRROR (`answers/<run>/<step>.jsonl`). GHL is a mirror, never the only copy. | `mini-app/box/ghl_writeback.py` |
+| Isolation locks | POSSESSION (KV binding row present, else refused), BINDING (client_id + location_id derive ONLY from the binding row; injected destination ignored), CREDENTIAL + WHITELIST (`GOHIGHLEVEL_ALLOWED_LOCATION_IDS` must contain the bound location; empty = refuse all). Location-PIT from the canonical 11-alias env set — never the operator's key, never a literal. | `mini-app/box/ghl_writeback.py` |
+
+### Board seam (U16) + e2e (U18) + integration artifacts (U20)
+
+| Row | What it wires | Where |
+|---|---|---|
+| MC board seam | The ONE seam that wires a mini-app run's lifecycle onto the Command Center: `begin_run` opens ONE card on the marketing tasks lane (`department_slug=marketing` — the RESOLVED real seeded slug); `card_advance` per-answer heartbeat; `complete_run` → `review` NEVER `done` (review → done is the independent QC scorer's exclusive move); `block_run` → `blocked` on a gate failure. FAIL-SOFT: a board outage is logged, the run continues, and a LOCAL phase→board-receipt mapping is recorded on EVERY call. NO new CC endpoint, NO schema change (uses only `POST /api/tasks/ingest` + `GET/PATCH /api/tasks/{id}`). | `mini-app/board/mc_seam.py` |
+| Playwright e2e | Headless T1–T10 suite over the REAL SPA + REAL Worker modules + a stub GHL that records every write keyed by `location_id`. T10 proves browser-level isolation (alpha answers never reach beta's location). Offline only — the stub GHL is the only transport. | `mini-app/e2e/` (harness `server.mjs`, fixtures `index.mjs`, `tests/`) |
+| CC-compat note | `mini-app/integration/cc-compat.json` — the truthful statement of what the mini-app adds to the Command Center (the mc_board seam, fail-soft, NO new CC endpoint) + the grep-able proof. | `mini-app/integration/cc-compat.json` |
+| Live two-fake-client smoke | `mini-app/integration/live_smoke.py` — stub-first offline battery (two fake clients, injected-destination negative, unpossessed refusal, U15 regression, lint) + a `--live` path against two disposable GHL TEST locations that requires operator-supplied `MA_LIVE_*` env and otherwise reports SKIPPED honestly. Never a client feed. | `mini-app/integration/live_smoke.py` |
+
+**Verify gate:** `verify.sh --mini-app` runs the isolation prover (`prove_mini_app_isolation.py --self-test`), the worker node tests (`self-test.mjs`), the offline live-smoke battery, and fails closed if any is red.

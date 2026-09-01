@@ -1,5 +1,3 @@
-# Changelog — Skill 53 (book-writer)
-
 ## 1.3.1 — F4.3 na_autopick wired; forbidden self-pick prose removed (tone-core GO fixes)
 
 - **na_autopick resolver WIRED into the runtime**: `run_book_writer.py` now resolves every
@@ -43,6 +41,26 @@
 
 - Ships `examples/golden-marcus-halloway/delivery/Marcus_Halloway-Book/30_Day_Challenge-Marcus_Halloway.md` —
   a complete authored delivery example for the 30-Day Challenge stage.
+## 1.3.0 — Mini-app engine: universal book-writer client-question app (20 units)
+
+- **One hosted engine** on Cloudflare (`bookwriter.zerohumanworkforce.com`): a universal link renders ANY
+  book-writer phase from a config schema — no per-moment app builds.
+- **Schema-driven phase configs** derived from the intake-schema + gates: P0-INTAKE (full + 4x3x3),
+  GATE-1 title, GATE-2 outline, GATE-3/4 revisions, GATE-433 handoff (7 configs, one engine).
+- **Warm low-overwhelm SPA**: design tokens + SVG illustrations, 1–2 questions per screen, progress rail
+  ("Question 1 of 16"), welcome/completion screens, "why we ask" whispers, celebration copy, editable
+  transcript + answer-your-way tabs, save & resume, recorder/upload widgets (audio/video/pdf/txt).
+- **Box-side ingestion**: ingest poller + capability probe, provider-neutral transcription (Whisper),
+  zero Anthropic model ids anywhere (AF-BW-MA-ANTHROPIC gate holds).
+- **Routing + isolation**: job state machine with intake assembly gate; GHL write-back on the box
+  (Skill 44 rails, three-lock per-client isolation); mc_board marketing seam (fail-soft, NO new CC
+  endpoint — grep-proven).
+- **Proof**: two-fake-client isolation prover (7/7 cases + 4 mutation tests, HARD GATE) + Playwright
+  e2e battery (17/17 headless) + worker regression 130/130.
+- **Integration**: deploy/rollback/config-flip (`deploy.sh`, zone-landmine guard — never
+  `CLOUDFLARE_ZONE_ID` for *.zerohumanworkforce.com), CC-compat + skill wiring, `verify.sh` mini-app gate.
+
+# Changelog — Skill 53 (book-writer)
 
 ## 1.2.0 — BUG-3: the 22 non-tone authoring-stage prompt triplets now ship; the authoring layer is complete
 

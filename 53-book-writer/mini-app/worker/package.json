@@ -1,0 +1,20 @@
+{
+  "name": "book-writer-mini-app-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Book Writer mini-app Cloudflare Worker — dumb-relay media upload (U04) + answers (U03) + SPA (U02/U03/U05). Holds ZERO client PITs.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test src/media.test.mjs src/answers.test.mjs src/job.test.mjs",
+    "self-test": "node src/media.js --self-test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": ">=3.60.0"
+  }
+}

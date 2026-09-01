@@ -15,11 +15,13 @@
 #   6. shared_tone_core manifest key present
 #   7. no-Anthropic + no-client-name + no-absolute-path scans over shipped files
 #   8. version routing                        (version=book accepted; version=brand parks/handoff)
+#   11. mini-app gate (U20)                   (isolation prover + worker node --test + live smoke)
 #
 # Sections 2 + 4 are GATED on the presence of the Wave-2 golden prose + Agent D's
 # assembled certificate; until then they print a TODO and do not fail the gate.
 #
-# Usage:  bash 53-book-writer/verify.sh
+# Usage:  bash 53-book-writer/verify.sh            (full gate)
+#         bash 53-book-writer/verify.sh --mini-app (mini-app gate ONLY — the U20 gate)
 # Exit:   0 = all runnable checks passed;  nonzero = at least one check failed.
 # ==============================================================================
 set -uo pipefail
@@ -40,6 +42,18 @@ SCRIPTS="$SKILL_DIR/scripts"
 EX="$SKILL_DIR/examples/golden-marcus-halloway"
 EBV="$EX/broken-variants"
 PY="${PYTHON:-python3}"
+NODE="${NODE:-node}"
+
+# MODE selection: full (default) runs every section including the mini-app gate;
+# --mini-app runs ONLY the mini-app gate (isolation prover + worker node --test
+# + offline live-smoke battery) and exits — the U20 gate used by the gauntlet.
+MODE="full"
+if [ "${1:-}" = "--mini-app" ]; then
+    MODE="mini-app"
+elif [ $# -gt 0 ]; then
+    printf '  [USAGE] unknown arg: %s (supported: --mini-app)\n' "$1" >&2
+    exit 3
+fi
 
 fails=0
 run() {
@@ -54,6 +68,37 @@ run() {
         fails=$((fails + 1))
     fi
 }
+
+# ---------------------------------------------------------------------------
+# U20 mini-app gate — the mini-app's own self-verification battery. Runs the
+# U17 isolation prover (the hard two-fake-client gate) + the worker node --test
+# suite + the U20 offline live-smoke battery. FAILS CLOSED: any red section
+# increments `fails` and the gate (and therefore verify.sh) exits non-zero.
+# ---------------------------------------------------------------------------
+run_mini_app_gate() {
+    local MA="$SKILL_DIR/mini-app"
+    echo "-- 11) mini-app gate (U17 isolation prover + worker node --test + live smoke) --"
+    run "prove_mini_app_isolation.py --self-test" "$PY" "$MA/prove/prove_mini_app_isolation.py" --self-test
+    if command -v "$NODE" >/dev/null 2>&1; then
+        run "worker node --test (self-test.mjs)" "$NODE" "$MA/worker/self-test.mjs" --quiet
+    else
+        printf '  [FAIL] node not found on PATH (%s) — worker self-test cannot run (fail-closed)\n' "$NODE"
+        fails=$((fails + 1))
+    fi
+    run "live_smoke.py --self-test (offline battery)" "$PY" "$MA/integration/live_smoke.py" --self-test
+}
+
+if [ "$MODE" = "mini-app" ]; then
+    echo "== Skill 53 (Book Writer Engine) :: verify.sh --mini-app =="
+    run_mini_app_gate
+    echo "=================================================="
+    if [ "$fails" -eq 0 ]; then
+        echo "RESULT: PASS — mini-app isolation prover + worker self-test + live smoke all green."
+        exit 0
+    fi
+    echo "RESULT: FAIL — $fails mini-app check(s) failed."
+    exit 1
+fi
 
 echo "== Skill 53 (Book Writer Engine) :: verify.sh =="
 
@@ -115,11 +160,19 @@ abspath = re.compile("/" + "Users/" + "|/home/[a-z]")
 # DETECTION / FIXTURE files legitimately contain example ids + abspaths as their
 # whole purpose (the no-Anthropic prover, the broken-variant generator + its result
 # ledger, and this scanner). Allowlisted like 55's scan ignores its own ban logic.
+# The mini-app pages/bridge DETECTION fixtures (U09/U13/U18) carry the same role:
+# verifyNoAnthropic / scanForbiddenIds / recheck_resolved_model are DETECTORS whose
+# self-tests feed them concrete example ids to prove the detector hard-fails them
+# (never a silent fallback) — the ids exist so the detector can be proven, exactly
+# like prove_bw_noanthropic.py.
 DETECT_ALLOW = {"prove_bw_noanthropic.py", "make_broken.py",
-                "REJECTION-RESULTS.json", "verify.sh", "test_mc_board_reconcile.py"}
+                "REJECTION-RESULTS.json", "verify.sh", "test_mc_board_reconcile.py",
+                "media_textractor.py", "recorder.js", "README-U09-RECORDER.md",
+                "recorder.test.mjs", "welcome.js", "editable-transcript.js",
+                "complete.js"}
 hits = []
 for root, dirs, files in os.walk(skill):
-    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "node_modules")]
     for fn in files:
         if fn in DETECT_ALLOW:
             continue
@@ -243,6 +296,8 @@ echo "-- 10) Command Center department-slug regression --"
 run "test_department_slug.py" "$PY" "$SCRIPTS/test_department_slug.py"
 run "test_cc_contract.py" "$PY" "$SCRIPTS/test_cc_contract.py"
 run "test_mc_board_reconcile.py" "$PY" "$SCRIPTS/test_mc_board_reconcile.py"
+
+run_mini_app_gate
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
