@@ -55,7 +55,12 @@
 #
 # NO NEW CC ENDPOINT: the seam ONLY calls mc_board's existing routes
 # (POST /api/tasks/ingest, GET/PATCH /api/tasks/{id}) — cc-compat preserved
-# (master-plan section 6). No Anthropic ids anywhere. No real ids — every
+# (master-plan section 6). AUTH PARITY: this module hand-crafts NO request
+# itself — every write-back is delegated to the vendored mc_board client
+# (_load_board() -> importlib.import_module("mc_board")), which injects
+# `Authorization: Bearer $MC_API_TOKEN` on PATCH /api/tasks/{id} (never on
+# /api/tasks/ingest — HMAC-signed, not Bearer; $OPENCLAW_GATEWAY_TOKEN would
+# 401 this API). No Anthropic ids anywhere. No real ids — every
 # fixture/client value below is a placeholder.
 #
 # EXIT CODES (self-test):
