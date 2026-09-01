@@ -46,6 +46,7 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -170,6 +171,21 @@ DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; t
                                 # ceiling (declared 100 for deepseek-direct) is resolved
                                 # from capacity.py at runtime -- see resolve_max_workers().
 
+# --- Repeat suppression / backoff (see the dispatch-ledger section below) ----
+# Delay before re-dispatching a phase that just produced the SAME outcome
+# again: BASE * MULTIPLIER**(repeat-1), clamped at CAP. At the live-observed
+# SWEEP_INTERVAL_S=10 that turns 360 identical records/hour into ~11/hour once
+# the cap is reached, WITHOUT slowing the first observation of anything new
+# (repeat 0 => zero delay, always).
+DISPATCH_BACKOFF_BASE_S = 30.0
+DISPATCH_BACKOFF_MULTIPLIER = 2.0
+DISPATCH_BACKOFF_CAP_S = 900.0
+# Consecutive IDENTICAL failing outcomes (error/exhausted) for one (phase, run)
+# before the phase is parked BLOCKED with a visible on-disk reason instead of
+# being re-dispatched forever. 8 identical failures at the backoff schedule
+# above is ~32 minutes of real retrying -- past any transient.
+DISPATCH_REPEAT_CEILING = 8
+
 
 # ---------------------------------------------------------------------------
 # Phases this module explicitly DECLINES to author via a text completion --
@@ -265,6 +281,16 @@ ARTIFACT_TARGET_OVERRIDE: Dict[str, List[str]] = {
     ],
     "P-SP-CLAIM": ["working/copy/sp_claims.json"],
 }
+
+# Outcomes that mean "this dispatch failed and would fail again the same way".
+# Only these can drive a phase to the BLOCKED retry ceiling; a benign repeat
+# (already-satisfied / already-done) backs off but is never parked as a fault.
+# "declined" is deliberately IN this set: a DECLINE_PHASES entry is a permanent
+# verdict about what this module will never author (live-proven: 494 identical
+# declines for P-SP-INTAKE in one run -- re-logging that forever is not a
+# decision, it is a stuck record). Parking it writes a VISIBLE marker file and
+# still auto-un-parks the moment the work order is reissued or state changes.
+_FAILING_STATUSES = frozenset({"error", "exhausted", "declined"})
 
 # ---------------------------------------------------------------------------
 # Per-phase artifact contracts -- the EXACT, mechanical requirements each
@@ -3351,6 +3377,256 @@ def resolve_max_workers(dept_root: Path, requested: Optional[int],
 
 
 # ---------------------------------------------------------------------------
+# The dispatch ledger (FIX 2026-08-27) -- the CROSS-TICK memory this module
+# never had. Diagnosed from a live run's own sidecar logs, not from theory:
+# /Users/.../trust-ledger/2026-08-27/working/work-orders/.
+#
+# THE DEFECT, in two symptoms with one cause:
+#
+#   (a) 494 byte-identical `"status": "declined"` records (382KB) for
+#       P-SP-INTAKE in a single run.
+#   (b) 497 records for P-0.5-RESEARCH, every one of them
+#       `"status": "already_done_in_state"`, ~every 10s for the run's life.
+#
+# CAUSE: sweep_run_dir() re-enumerates working/work-orders/*.json every
+# SWEEP_INTERVAL_S and re-dispatches EVERY order file it finds. Nothing ever
+# removes or marks a work order once its phase reaches a terminal outcome, so
+# a phase that is `done` in state.json -- or one this module permanently
+# DECLINES (DECLINE_PHASES is a module-level constant; membership cannot
+# change while the process lives) -- is re-claimed, re-dispatched, re-declined
+# and re-logged on every tick until the run ends.
+#
+# WHY NO BACKOFF EVER ENGAGED: DISPATCH_RETRY_CAP bounds retries *inside* one
+# dispatch_one() call. Each sweep tick calls dispatch_one() FRESH, with zero
+# knowledge of any prior tick, so there was no cross-tick attempt count to
+# back off on and no ceiling on re-entry. (The `"attempt": 0` on every one of
+# those records is NOT a counter that failed to increment -- it is a hardcoded
+# literal meaning "no model call was made on this tick". The real per-call
+# counter increments correctly; the same live log's first line is
+# `"attempt": 1, "status": "verified"`. What was missing was persistence
+# ACROSS calls, which is what this ledger adds.)
+#
+# ANTI-STARVATION (the property that matters most here): suppression is keyed
+# on an outcome SIGNATURE, never on the phase alone. A different status, a
+# different reason, or any movement in the two things that can change this
+# phase's outcome -- its work-order file (the Engine rewrites it only when it
+# genuinely wants the phase run again; phases.py FAULT-09b explicitly refuses
+# to rewrite a live one) and the phase's own status in state.json -- resets
+# the counter to zero and re-dispatches on the very next tick with NO delay.
+# Deduplication here removes redundant repeats of an outcome already recorded.
+# It can never delay the first observation of a new one.
+#
+# Ledger files live in a DOT-SUBDIRECTORY of work-orders/ on purpose:
+# sweep_run_dir globs "*.json" in that directory and treats every match as a
+# phase id, so a sibling <phase>.dispatch-state.json would be dispatched as a
+# phantom phase named "<phase>.dispatch-state". The existing .claim and
+# .dispatcher-log.jsonl conventions dodge that glob the same way.
+# ---------------------------------------------------------------------------
+_LEDGER_DIRNAME = ".dispatch-state"
+
+
+def _ledger_path(run_dir: Path, phase_id: str) -> Path:
+    return run_dir / "working" / "work-orders" / _LEDGER_DIRNAME / f"{phase_id}.json"
+
+
+def _blocked_marker_path(run_dir: Path, phase_id: str) -> Path:
+    """Deliberately NOT *.json and NOT hidden: this file is the loud, visible
+    'a human needs to look at this' signal, and it must survive an `ls` while
+    staying out of sweep_run_dir's own *.json phase glob."""
+    return run_dir / "working" / "work-orders" / f"{phase_id}.dispatch-blocked.txt"
+
+
+def _read_ledger(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    try:
+        obj = json.loads(_ledger_path(run_dir, phase_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _write_ledger(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> None:
+    path = _ledger_path(run_dir, phase_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".json.partial-{os.getpid()}")
+    tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)  # atomic: a concurrent reader never sees a torn ledger
+
+
+def _outcome_signature(status: str, reasons: Optional[List[str]] = None) -> str:
+    """What makes two outcomes 'the same outcome'. Status plus reasons, never
+    the timestamp or the worker id -- those are exactly the two fields that
+    made 494 identical declines look superficially unique."""
+    body = "|".join(str(r) for r in (reasons or []))
+    return f"{status}::{hashlib.sha256(body.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _dispatch_revision(run_dir: Path, phase_id: str,
+                       order_file: Optional[Path] = None) -> str:
+    """A cheap witness of everything that could change this phase's outcome.
+
+    Two stats, no parsing beyond one small state.json read:
+      * the work-order file's mtime+size -- the Engine writes it only when it
+        actually wants this phase dispatched again (phases.py:800 refuses to
+        clobber a live one), so a change here is a genuine new request;
+      * this phase's OWN status string in state.json -- deliberately not the
+        whole file's mtime, which churns whenever ANY other phase advances and
+        would break every backoff window in the run for no reason.
+    """
+    of = order_file or (run_dir / "working" / "work-orders" / f"{phase_id}.json")
+    try:
+        st = of.stat()
+        wo = f"{st.st_mtime_ns}:{st.st_size}"
+    except OSError:
+        wo = "absent"
+    status = "unknown"
+    try:
+        state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+        for ps in state.get("phases", []):
+            if ps.get("id") == phase_id:
+                status = str(ps.get("status"))
+                break
+    except (OSError, json.JSONDecodeError):
+        pass
+    return f"wo={wo}|state={status}"
+
+
+def _backoff_delay_s(repeat: int) -> float:
+    """repeat is the number of times this outcome has recurred AFTER its first
+    observation. repeat<=0 (a new or changed outcome) is always zero delay."""
+    if repeat <= 0:
+        return 0.0
+    return min(DISPATCH_BACKOFF_CAP_S,
+               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+
+
+def should_dispatch(run_dir: Path, phase_id: str, *,
+                    order_file: Optional[Path] = None,
+                    now: Optional[float] = None) -> Tuple[bool, str]:
+    """The gate sweep_run_dir consults BEFORE claiming a phase. Returns
+    (True, "") to dispatch, or (False, why) to skip this tick.
+
+    Skipping happens on exactly one condition -- an unexpired backoff window
+    whose world has NOT moved. Anything else dispatches."""
+    led = _read_ledger(run_dir, phase_id)
+    if not led:
+        return True, ""
+    eligible_at = led.get("next_eligible_at_epoch")
+    if not isinstance(eligible_at, (int, float)):
+        return True, ""
+    now = time.time() if now is None else now
+    if now >= eligible_at:
+        return True, ""
+    if _dispatch_revision(run_dir, phase_id, order_file) != led.get("revision"):
+        # ANTI-STARVATION: the work order was reissued or this phase's own
+        # state changed. Whatever we backed off from is no longer the same
+        # situation -- dispatch immediately, no matter how deep the backoff.
+        return True, ""
+    return False, (f"backoff: {led.get('consecutive', 0)} consecutive "
+                   f"'{led.get('status')}' outcomes, next eligible in "
+                   f"{eligible_at - now:.0f}s")
+
+
+def record_outcome(run_dir: Path, phase_id: str, status: str,
+                   reasons: Optional[List[str]] = None, *, worker_id: str,
+                   order_file: Optional[Path] = None,
+                   now: Optional[float] = None) -> Dict[str, Any]:
+    """Fold one dispatch outcome into the ledger and decide whether it earns a
+    sidecar record. Returns the new ledger entry.
+
+    A sidecar line is written when the outcome is NEW (different signature, or
+    a changed world) -- never for a byte-identical repeat of something already
+    on the log. `observation` is the cross-tick counter the old records lacked
+    entirely: it persists in the ledger and increments on every tick, so the
+    one emitted record still reports honestly how many times this was seen."""
+    now = time.time() if now is None else now
+    led = _read_ledger(run_dir, phase_id)
+    sig = _outcome_signature(status, reasons)
+    rev = _dispatch_revision(run_dir, phase_id, order_file)
+
+    same = bool(led) and led.get("signature") == sig and led.get("revision") == rev
+    consecutive = (int(led.get("consecutive") or 0) + 1) if same else 1
+    observations = int(led.get("observations") or 0) + 1
+    # repeat 0 == first sighting of this outcome => next tick is eligible with
+    # no delay at all. Backoff only ever grows on a genuine identical repeat.
+    delay = _backoff_delay_s(consecutive - 1)
+
+    entry: Dict[str, Any] = {
+        "phase_id": phase_id,
+        "status": status,
+        "signature": sig,
+        "revision": rev,
+        "consecutive": consecutive,
+        "observations": observations,
+        "reasons": list(reasons or []),
+        "first_seen_at": led.get("first_seen_at") if same else utcnow(),
+        "last_seen_at": utcnow(),
+        "backoff_s": delay,
+        "next_eligible_at_epoch": now + delay,
+        "blocked": False,
+        "blocked_reason": None,
+        "worker": worker_id,
+    }
+
+    if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
+        entry["blocked"] = True
+        entry["blocked_reason"] = (
+            f"{consecutive} consecutive identical '{status}' dispatch outcomes for "
+            f"{phase_id} (retry ceiling DISPATCH_REPEAT_CEILING={DISPATCH_REPEAT_CEILING}). "
+            f"Last reasons: {reasons or []}")
+        entry["blocked_at"] = utcnow()
+        # Parked, never dropped: re-dispatch resumes the moment the Engine
+        # reissues the work order or this phase's state changes (should_dispatch's
+        # revision check), so a real fix upstream un-parks it automatically.
+        entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
+
+    _write_ledger(run_dir, phase_id, entry)
+
+    if not same:
+        record: Dict[str, Any] = {
+            "worker": worker_id, "attempt": 0, "status": status,
+            "observation": observations, "consecutive": consecutive,
+        }
+        if reasons:
+            record["reason"] = reasons[0] if len(reasons) == 1 else list(reasons)
+        _append_sidecar(run_dir, phase_id, record)
+
+    if entry["blocked"] and not led.get("blocked"):
+        _park_blocked(run_dir, phase_id, entry, worker_id=worker_id)
+
+    return entry
+
+
+def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
+                  worker_id: str) -> None:
+    """Fail LOUD. Three independent, non-silenceable signals: a plain-text
+    marker file a human will see in an `ls` of work-orders/, a distinct
+    sidecar status no other outcome uses, and stderr."""
+    reason = entry.get("blocked_reason") or "retry ceiling reached"
+    marker = _blocked_marker_path(run_dir, phase_id)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        "DISPATCH BLOCKED -- NEEDS ATTENTION\n"
+        f"phase:       {phase_id}\n"
+        f"blocked_at:  {entry.get('blocked_at')}\n"
+        f"worker:      {worker_id}\n"
+        f"status:      {entry.get('status')}\n"
+        f"consecutive: {entry.get('consecutive')} identical outcomes\n"
+        f"reason:      {reason}\n"
+        "\nThis phase stopped being re-dispatched after the retry ceiling. It was NOT\n"
+        "marked done and NOT silently dropped. Dispatch resumes automatically if the\n"
+        "Engine reissues the work order or this phase's state.json status changes.\n"
+        f"Ledger: working/work-orders/{_LEDGER_DIRNAME}/{phase_id}.json\n",
+        encoding="utf-8")
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 0, "status": "blocked_retry_ceiling",
+        "reason": reason, "consecutive": entry.get("consecutive"),
+        "observation": entry.get("observations"),
+    })
+    print(f"[dispatcher {worker_id}] BLOCKED {phase_id}: {reason} "
+          f"(marker: {marker})", file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
 # One sweep over one run dir's work-orders directory.
 # ---------------------------------------------------------------------------
 def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[DispatchResult]:
@@ -3373,6 +3649,30 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
             order = json.loads(of.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+
+        # TERMINAL SHORT-CIRCUIT (FIX 2026-08-27). Both predicates below are
+        # settled facts, not work: DECLINE_PHASES is a module constant, and a
+        # phase `done` in state.json is monotonic. dispatch_one() already
+        # returned early on both -- but only AFTER the sweep had paid for a
+        # claim-file create, a manifest lookup, a thread-pool submit and a
+        # claim-file unlink, every tick, forever. Deciding it here costs one
+        # dict lookup and one small json read, and skips the round-trip
+        # entirely. The predicates are still re-evaluated EVERY tick, so a
+        # phase that genuinely stops being done is picked straight back up;
+        # only the redundant repeat record is suppressed (record_outcome).
+        if phase_id in DECLINE_PHASES:
+            record_outcome(run_dir, phase_id, "declined", [DECLINE_PHASES[phase_id]],
+                           worker_id=worker_id, order_file=of)
+            continue
+        if _phase_already_done(run_dir, phase_id):
+            record_outcome(run_dir, phase_id, "already_done_in_state",
+                           worker_id=worker_id, order_file=of)
+            continue
+
+        may, why = should_dispatch(run_dir, phase_id, order_file=of)
+        if not may:
+            continue
+
         if not try_claim(run_dir, phase_id, worker_id):
             continue
         claimed_here.append(phase_id)
@@ -3405,6 +3705,11 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
                     "worker": worker_id, "attempt": 0, "status": "error",
                     "reason": f"dispatch_one raised {exc!r}",
                 })
+                # A crashing dispatch_one IS a failing outcome: fold it into the
+                # ledger too, or a phase whose dispatch_one always raises would
+                # loop forever outside every backoff/ceiling mechanism.
+                record_outcome(run_dir, phase_id, "error", [f"dispatch_one raised {exc!r}"],
+                               worker_id=worker_id)
                 results.append(DispatchResult(phase_id, "error", 0, [repr(exc)]))
             finally:
                 release_claim(run_dir, phase_id)
