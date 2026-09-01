@@ -104,10 +104,31 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ## Pipeline Sequence (phase order)
 
-> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (v51, 40 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number `run_signature_deck.py` sorts phases on — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
+> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 54, 55 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number `run_signature_deck.py` sorts phases on — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
 >
 > **Before phase order -1:** the Brainstorming Buddy (`brainstorming-buddy-presentations`, and, for a first-time owner, First-Time Onboarding `first-time-onboarding-presentations` first) hold the pre-manifest brainstorm that locks `working/brainstorm/presentations/<slug>/brief.json` and hands it to the Director. Neither step is a `phases[]` entry — the machine-checked, manifest-governed pipeline begins at intake.
 >
+
+### Upsell (P-U) phases — Wave D (manifest v54, added by the presentation rev2 batch)
+
+The 15 P-U upsell phases below complete the 55-phase manifest. Each is CONDITIONAL (defer per its own preflight; a decline is a logged client waiver, never silence):
+
+- **`P-U-SALES-COPY`** (order 3.6) — . Full contract: look it up in the manifest.
+- **`P-U-CHECKOUT-COPY`** (order 3.7) — . Full contract: look it up in the manifest.
+- **`P-U-VSL-RESEARCH`** (order 3.8) — . Full contract: look it up in the manifest.
+- **`P-U-VSL-COPY`** (order 3.9) — . Full contract: look it up in the manifest.
+- **`P-U-DESIGN-SALES`** (order 4.2) — . Full contract: look it up in the manifest.
+- **`P-U-DESIGN-CHECKOUT`** (order 4.3) — . Full contract: look it up in the manifest.
+- **`P-U-DESIGN-VSL`** (order 4.4) — . Full contract: look it up in the manifest.
+- **`P-U-HTML-SALES`** (order 5.2) — . Full contract: look it up in the manifest.
+- **`P-U-HTML-CHECKOUT`** (order 5.3) — . Full contract: look it up in the manifest.
+- **`P-U-HTML-VSL`** (order 5.4) — . Full contract: look it up in the manifest.
+- **`P-U-FORM-GATE`** (order 5.6) — . Full contract: look it up in the manifest.
+- **`P-U-GHL-SALES`** (order 6.2) — . Full contract: look it up in the manifest.
+- **`P-U-GHL-VSL`** (order 6.4) — . Full contract: look it up in the manifest.
+- **`P-U-COLLATERAL`** (order 8.8) — . Full contract: look it up in the manifest.
+- **`P-U-QC`** (order 9.05) — . Full contract: look it up in the manifest.
+
 > **Conditional phases (do not assume every phase ran on every deck):** `P-CONVERTER` runs ONLY on the content-first path (Zoom/video/doc source) and DEFERS otherwise. `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P-SP-STRUCTURE`, and `P-SP-P3-HYGIENE` DEFER (return empty, no-op) unless `intake.json` declares `deck_type: signature_presentation` — they exist only for the Trevor Otts Signature Presentation type. `P-SP-CLAIM` is the exception among the signature-named gates: it runs on EVERY deck (never defers) as the router that fails closed if signature signals appear without the declaration. `P-SPEECH-QC` defers when no speech QC report exists (i.e., when the run's `DELIVERABLE_SET` did not put a speech in scope). **`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, and `P-U-FORM-CHECKOUT`** (Wave C, manifest v51) DEFER unless the client elects the sales+checkout upsell (`intake/upsell-questions.json` `want_sales_checkout`, default YES; a decline is a logged client waiver, never silence). **`P-U-VSL-BUILD`** DEFERS unless the client elects the VSL upsell (`want_vsl_page`, default NO, opt-in only) and only ever runs after `P9.6-WEBINAR-VIDEO`. Every other phase below runs on every standard deck.
 >
 > **Executed counts (out of 40 enforced):** the count now depends on BOTH deck type AND the two upsell elections — see `DEPARTMENT-COUNTS-CANONICAL.md` for the full mechanically-derived table (deck type x sales/checkout x VSL). With both upsells unelected/unknown and no signature/content-conversion signals: **31 on a standard from-scratch deck, 35 on a signature deck, 32 on a content-conversion deck** (the pre-Wave-C baseline, unchanged when the upsells are declined). Do not restate the full matrix here — `DEPARTMENT-COUNTS-CANONICAL.md` is the single source; link to it.
