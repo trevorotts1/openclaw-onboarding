@@ -26,7 +26,13 @@ svc = re.compile(r"googleapis\.com|hooks\.slack\.com|chat\.postMessage|api\.airt
                  re.IGNORECASE)
 hits = []
 for root, dirs, files in os.walk(skill):
-    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+    # mini-app/ is its own delivery subsystem (U15 GHL write-back on the Skill 44
+    # rails, by design) with its own HARD isolation gate —
+    # mini-app/prove/prove_mini_app_isolation.py (two-fake-client in-process stub,
+    # nothing can land on another client's location). The core-engine local-only
+    # invariant below covers the book engine proper; the mini-app tree is not part
+    # of that claim and is excluded from this walk.
+    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "mini-app")]
     for fn in files:
         if fn in ALLOW or not fn.endswith((".py", ".sh")):
             continue
