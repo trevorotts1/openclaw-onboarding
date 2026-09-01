@@ -558,7 +558,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-CHECKOUT-COPY",
@@ -576,7 +577,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-VSL-RESEARCH",
@@ -594,7 +596,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
     },
     {
       "id": "P-U-VSL-COPY",
@@ -612,7 +615,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P4-COPY",
@@ -732,7 +736,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P1Q-COPY-QC",
@@ -801,7 +806,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-DESIGN-VSL",
@@ -819,7 +825,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "PF-DESIGN",
@@ -1049,7 +1056,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-HTML-CHECKOUT",
@@ -1067,7 +1075,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-HTML-VSL",
@@ -1085,7 +1094,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-FORM-GATE",
@@ -1103,7 +1113,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-GHL-SALES",
@@ -1121,7 +1132,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-GHL-VSL",
@@ -1139,7 +1151,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-SHIFT-QC",
@@ -1513,7 +1526,7 @@
         "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
+      "heartbeat_minutes": 20
     },
     {
       "id": "P-U-COLLATERAL",
@@ -1531,7 +1544,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P9.2-GHL-UPLOAD",
@@ -1670,7 +1684,8 @@
       "executor": {
         "kind": "agent"
       },
-      "verifier": "phase_verifiers.verify"
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     }
   ],
   "autofails": [
