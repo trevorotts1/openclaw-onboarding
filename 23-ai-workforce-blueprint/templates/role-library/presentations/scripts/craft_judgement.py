@@ -56,6 +56,7 @@ import difflib
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 # ── The disposition registry (exactly 13 unique codes, three disjoint buckets)
@@ -87,6 +88,23 @@ HUMAN_VERDICT_PHASES = frozenset({
     "P1Q-COPY-QC",        # -> working/qc/copy_qc_report.json
     "P-PROMPT-QC",        # -> working/qc/prompt_qc_report.json
 })
+
+# FIX 18 repair — the WARNING bucket also holds. Each triggered warning records
+# a PENDING HOLD against the applicable QC phase (the phase that owns the check:
+# all six warning codes run at the copy stage — Phase 1Q and its re-verifications
+# at Phase 5/6 — per the ruleset's stage column, so their owning QC phase is
+# P1Q-COPY-QC), persisted in working/qc/craft-warnings.json. The phase cannot
+# attest while a hold is pending UNLESS the warning is individually acknowledged
+# (a valid per-rule/per-slide disposition record — the same disposition file the
+# ack escape hatch already uses). The hold state is DERIVED at attestation time:
+# the pending-hold snapshot is only what compute_warnings currently reports as
+# unacknowledged, so a later valid disposition clears its hold with no extra
+# bookkeeping and a repair/rerun clears the finding naturally.
+WARNING_HOLDS_REL = Path("working") / "qc" / "craft-warnings.json"
+# The QC phase that owns all six warning codes (ruleset §3 item 1 — Phase 1Q
+# runs RULE 2 + Section 2 on slides_copy.md + arc_allocation.json; Phase 5/6
+# re-verify the same rules on the rendered face under the same code names).
+WARNING_OWNER_PHASE = "P1Q-COPY-QC"
 
 # SOP-SLIDE-04 §3 DEN-6: Wall of Wins sits 4-6 slides before the offer.
 DEN_WOW_MIN_GAP = 4
@@ -187,6 +205,64 @@ def _flag_active():
     raw = (os.environ.get(FEATURE_FLAG_ENV) or "").strip().lower()
     return raw not in ("0", "false", "off")
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# WARNING HOLDS — the pending-hold ledger (working/qc/craft-warnings.json)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _write_hold_state(run_dir, holds):
+    """Persist the pending-hold snapshot. `holds` is the list of dicts that
+    compute_warnings returned this pass (the UNACKNOWLEDGED warnings); a later
+    pass overwrites — the ledger is always a truthful snapshot of what still
+    holds, never a stale accumulation. Write is best-effort (hold enforcement
+    never depends on the file: warning_hold_blocker recomputes the holds
+    directly), so a full disk cannot turn a hold off."""
+    try:
+        p = Path(run_dir) / WARNING_HOLDS_REL
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({
+            "pending_holds": holds,
+            "owner_phase": WARNING_OWNER_PHASE,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }, indent=2, default=str), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — hold enforcement is computed, not stored
+        pass
+
+def _normalize_hold(rec):
+    """One pending-hold record: {rule_code, slide_ids, evidence, phase_id}."""
+    if not isinstance(rec, dict):
+        return None
+    code = str(rec.get("rule_code", "")).strip().upper()
+    if code not in WARNING_CODES:
+        return None
+    ids = [int(s) for s in (rec.get("slide_ids") or [])
+           if isinstance(s, int) and s > 0] or [None]
+    return {
+        "rule_code": code,
+        "slide_ids": ids,
+        "evidence": [str(e) for e in (rec.get("evidence") or [])][:4],
+        "phase_id": WARNING_OWNER_PHASE,
+    }
+
+def _reflect_holds(run_dir, warnings):
+    """Write the pending-hold snapshot for one compute_warnings pass. Mutates
+    run state only; returns the normalized holds."""
+    holds = []
+    for rec in warnings:
+        h = _normalize_hold(rec)
+        if h is not None:
+            holds.append(h)
+        else:
+            # A warning record that cannot normalize (e.g. the
+            # AF-CRAFT-WARN-ERROR catch-all) still holds — fail closed.
+            holds.append({
+                "rule_code": str(rec.get("rule_code", "AF-CRAFT-WARN-ERROR")),
+                "slide_ids": [None],
+                "evidence": [str(e) for e in (rec.get("evidence") or [])][:4],
+                "phase_id": WARNING_OWNER_PHASE,
+            })
+    _write_hold_state(run_dir, holds)
+    return holds
 
 def _provenance(run_dir, payload):
     if _WRITE_PROVENANCE is not None:
@@ -671,12 +747,14 @@ def _warning_findings(run_dir, slides_path=None):
     slots = _arc_slots(run_dir)
     if slots:
         counts = {}
+        sec_slides = {}
         for slot in slots:
             if not isinstance(slot.get("slide"), int):
                 continue
             for canonical in DEN8_SECTION_FLOORS:
                 if _sections_match(slot, canonical):
                     counts[canonical] = counts.get(canonical, 0) + 1
+                    sec_slides.setdefault(canonical, []).append(slot["slide"])
                     break
         intake = _INTAKE(run_dir) if _INTAKE else {}
         client_fixed = bool((intake or {}).get("client_requested_slide_count"))
@@ -685,7 +763,12 @@ def _warning_findings(run_dir, slides_path=None):
             if n is None or n == 0:
                 continue
             if n < floor and not client_fixed:
-                out.append({"rule_code": "AF-DEN-8", "slide_ids": [],
+                # The hold is per-warning: attribute the SECTION'S OWN slide
+                # ordinals so an individual ack can name exactly this warning
+                # (a disposition whose slide_ids cover the section's slides
+                # clears exactly this hold — never a deck-wide blanket ack).
+                ids = sorted(sec_slides.get(sec, []))
+                out.append({"rule_code": "AF-DEN-8", "slide_ids": ids,
                             "evidence": [f"arc section {sec!r} spans {n} slot(s), "
                                          f"below the {floor}-slide floor heuristic"],
                             "warning_only_count": n, "warning_only_floor": floor})
@@ -712,8 +795,14 @@ def compute_warnings(run_dir, slides_path=None):
         if ids and ack.get(code) and set(ids) <= ack[code]:
             continue
         surviving.append(rec)
+    # FIX 18 repair: reflect the still-unacknowledged warnings as pending holds
+    # on the owning QC phase (working/qc/craft-warnings.json). This is what the
+    # phase-attestation gate reads; it is DERIVED from the same ack filtering
+    # above, so a valid per-rule disposition clears its hold with no extra state.
+    _reflect_holds(run_dir, surviving)
     _provenance(run_dir, {"compute_warnings": {
-        "findings": len(findings), "unacknowledged": len(surviving)}})
+        "findings": len(findings), "unacknowledged": len(surviving),
+        "hold_phase": WARNING_OWNER_PHASE}})
     return surviving
 
 
@@ -858,6 +947,52 @@ def attestation_blocker(run_dir, phase_id):
         parts.append("AF-OBI-HUMAN-VERDICT: independent reviewer FAILed " +
                      "; ".join(failing) + " — correct the deck before attesting.")
     return " | ".join(parts)
+
+def warning_hold_blocker(run_dir, phase_id):
+    """Return "" (clear) or a non-empty AF message BLOCKING an attestation for
+    phase_id because WARNINGS hold the phase: compute_warnings reports still-
+    UNACKNOWLEDGED warning findings (AF-AUD-1/2/3, AF-OBI-3/5, AF-DEN-8) whose
+    triggers fired on this run. A pending warning holds the owning QC phase
+    until it is corrected OR individually acknowledged by a valid per-rule /
+    per-slide disposition record in working/qc/craft-warning-dispositions.json
+    (the same record shape compute_warnings already honors — a record covering
+    the exact rule_code + slide_ids clears exactly that hold, never a blanket
+    ack). Mirrors attestation_blocker: fail-closed in every direction (a broken
+    warnings computation keeps the hold), named-code message, never a raise.
+
+    The hold state is recomputed rather than read from the ledger: the phase
+    attestation must reflect the CURRENT ack state, so a disposition filed
+    between the last compute and this attestation clears the hold correctly."""
+    if phase_id != WARNING_OWNER_PHASE or not _flag_active():
+        return ""
+    try:
+        warnings = compute_warnings(run_dir)
+    except Exception as exc:  # noqa: BLE001 — fail closed: never attest on doubt
+        return ("AF-WARNING-HOLD: the craft warning computation itself failed "
+                f"({exc!r}) — refusing to attest {phase_id} on an unverifiable "
+                "warning state (fail-closed).")
+    if not warnings:
+        return ""
+    lines = []
+    for rec in warnings:
+        code = str(rec.get("rule_code", "AF-CRAFT-WARN-ERROR"))
+        ids = rec.get("slide_ids") or []
+        ev = "; ".join(str(e) for e in (rec.get("evidence") or []))[:120]
+        if not ids:
+            scope = "deck-level (no single slide attributed)"
+        elif len(ids) == 1:
+            scope = f"slide {ids[0]}"
+        else:
+            scope = "slides " + ", ".join(str(i) for i in ids)
+        lines.append(f"{code} on {scope}: {ev}")
+    return ("AF-WARNING-HOLD: " + phase_id + " cannot attest — " +
+            str(len(lines)) + " unacknowledged craft warning(s) still pending: " +
+            " | ".join(lines) + ". Correct each, or record an individual "
+            "acknowledgement (exact rule_code + slide_ids, independent reviewer, "
+            "owner signature) in " + str(DISPOSITIONS_REL) +
+            " — one disposition covers ONE rule and its named slides, and a "
+            "record for a different code or slide never clears this hold. "
+            "Resumable: ack + re-run the phase.")
 
 
 # ══════════════════════════════════════════════════════════════════════════

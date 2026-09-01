@@ -477,6 +477,19 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         print("FATAL: " + _human_blocker + " Refusing to attest phase " + phase_id
               + ".", file=sys.stderr)
         sys.exit(2)
+    # FIX 18 (repair, warning bucket) — the six WARNING rows (AF-AUD-1/2/3,
+    # AF-OBI-3/5, AF-DEN-8) hold the QC phase that owns them (P1Q-COPY-QC)
+    # until every pending warning is corrected OR individually acknowledged by
+    # a valid per-rule/per-slide disposition record in
+    # working/qc/craft-warning-dispositions.json. Same posture as the human
+    # gate above: named-code block, fail-closed, non-crash, resumable after
+    # ack + re-run. The mechanical scan (qc_check) stays exit-neutral; the
+    # hold lives here at attestation time (spec third bucket).
+    _warn_blocker = craft_judgement.warning_hold_blocker(run_dir, phase_id)
+    if _warn_blocker:
+        print("FATAL: " + _warn_blocker + " Refusing to attest phase " + phase_id
+              + ".", file=sys.stderr)
+        sys.exit(2)
     p = _process_manifest_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     obj = _load_process_manifest(run_dir)
