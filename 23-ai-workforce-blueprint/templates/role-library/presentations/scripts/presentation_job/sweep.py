@@ -195,7 +195,8 @@ def _find_run_dirs_multi(roots, scan_depth: int) -> List[Path]:
     """_find_run_dirs across every readable root, de-duplicated globally."""
     found: Set[Path] = set()
     for root in roots:
-        found.update(_find_run_dirs(root.path, scan_depth))
+        root_path = getattr(root, 'path', root)
+        found.update(_find_run_dirs(root_path, scan_depth))
     return sorted(found)
 
 
@@ -206,6 +207,7 @@ def reconcile_sweep(
     apply: bool = False,
     max_age_hours: float = 72.0,
     extra_roots=(),
+    extra_scan_roots=None,  # run-root-agnostic test-contract alias for extra_roots
     roots_config=None,
     env=None,
 ) -> int:
@@ -290,7 +292,7 @@ def reconcile_sweep(
         # scripts dir -- same default as watchdog() and run_discovery.py.
         roots_config = default_config_path(Path(__file__).resolve().parent.parent)
     roots = resolve_scan_roots(
-        primary=scan_root, extra=extra_roots, env=env, config_path=roots_config,
+        primary=scan_root, extra=list(extra_roots) + list(extra_scan_roots or ()), env=env, config_path=roots_config,
     )
     # Findings owner: the FIRST chunk of the primary root. For a single-path
     # --scan-root this is the root itself, exactly as before; for an
@@ -309,7 +311,8 @@ def reconcile_sweep(
         print(
             f"reconcile-board: UNDETERMINED -- NO state.json found under "
             f"{root_list} (depth {scan_depth}) -- 0 run dirs were checked, "
-            f"this is NOT a pass -- check --scan-root and --scan-depth",
+            f"this is NOT a pass -- check --scan-root and --scan-depth -- "
+            f"absence inside the scanned root(s) is never proof a run does not exist",
             flush=True,
         )
         return EXIT_SWEEP_NO_RUNS
