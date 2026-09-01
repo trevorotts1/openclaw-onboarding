@@ -71,6 +71,12 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     # existing qc_generator_guard.py sweep, write one JSON file); no agent authoring,
     # no render, no network call.
     "P-QC-AGGREGATE": 10,
+    # Presentation Upsell (P-U-*) budgets — DESIGN-OPUS.md §10.1. These optional
+    # phases are defers_unless-gated on the intake answers; deck-only runs never
+    # reach them. DESIGN-* 60, HTML-* 30, GHL-* 60, FORM-* 30, VSL-RESEARCH 15,
+    # COLLATERAL 20, QC 30, copy phases 20 (the DEFAULT_PHASE_BUDGET_MINUTES floor;
+    # listed explicitly because test_budget_covers_all_canonical_phases requires
+    # every canonical manifest id to have a PHASE_BUDGET_MINUTES entry).
     # Upsell branch (Wave C unit C1, manifest_version 51) -- copy + kie.ai page design +
     # HTML + ghl_rest_canvas.py funnel/step push per phase; conditional, DEFERS in seconds
     # when the client did not elect the branch, so these budgets bound the ELECTED path only.
@@ -78,6 +84,21 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-U-CHECKOUT-BUILD": 30,
     "P-U-FORM-CHECKOUT": 20,       # form/payment-field wiring only, no new page design
     "P-U-VSL-BUILD": 30,           # video-adjacent (references P9.6's mp4); no video encode of its own
+    "P-U-SALES-COPY": 20,
+    "P-U-CHECKOUT-COPY": 20,
+    "P-U-VSL-COPY": 20,
+    "P-U-DESIGN-SALES": 60,
+    "P-U-DESIGN-CHECKOUT": 60,
+    "P-U-DESIGN-VSL": 60,
+    "P-U-HTML-SALES": 30,
+    "P-U-HTML-CHECKOUT": 30,
+    "P-U-HTML-VSL": 30,
+    "P-U-GHL-SALES": 60,
+    "P-U-GHL-VSL": 60,
+    "P-U-FORM-GATE": 30,
+    "P-U-VSL-RESEARCH": 15,
+    "P-U-COLLATERAL": 20,
+    "P-U-QC": 30,
 }
 
 # ---------------------------------------------------------------------------
@@ -186,6 +207,7 @@ class Phase:
     # whole manifest with EXIT_MANIFEST_MISMATCH rather than silently
     # coercing to 1 (capacity.py's own defect class, capacity.py:601-612).
     workers: int = 1
+    defers_unless: Optional[str] = None   # DESIGN-OPUS.md §4 — optional-phase gate
 
     @property
     def budget_minutes(self) -> int:
@@ -312,6 +334,7 @@ class Manifest:
                 long_running=bool(p.get("long_running")),
                 converter_path=bool(p.get("converter_path")),
                 workers=workers,
+                defers_unless=p.get("defers_unless"),
             ))
         out.sort(key=lambda x: x.order)
         return out
@@ -542,6 +565,10 @@ MIN_MANIFEST_VERSION = 54  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
 MIN_MANIFEST_PHASES = 40
+    # (44 = PRESENTATION UPSELL 2026-08-07: 16 optional P-U-* phases gated by
+    #  defers_unless on intake.want_sales_checkout / intake.want_vsl_page. Deck-only
+    #  runs (both no) execute the identical manifest as today — zero extra phases.)
+MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""

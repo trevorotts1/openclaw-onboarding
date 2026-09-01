@@ -114,6 +114,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
+from presentation_job.defers import load_intake, phase_is_deferred
 
 # FIX-21 (D21): run_with_cleanup dispatches the build_deck.py render/notes-sync and
 # manifest executors in a NEW PROCESS GROUP and, on timeout, kills the WHOLE group
@@ -999,6 +1000,9 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         return  # idempotent — already declared on a prior phase run
 
     slug = _deck_slug(run_dir)
+    # DESIGN-OPUS.md §4.2 — deferred (defers_unless-gated-out) phases are NOT
+    # declared as steps: a deck-only run's step contract is identical to today's.
+    deferred = _deferred_phase_ids(run_dir, phases)
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
     steps = [
         {
@@ -1008,6 +1012,7 @@ def declare_plan(run_dir: Path, phases: list) -> None:
             "owning_role": ph.get("owning_role", ""),
         }
         for ph in ordered
+        if ph["id"] not in deferred
     ]
 
     # CLIENT-FACING (display only — `steps`/`total` above stay the full 36 for
@@ -1139,9 +1144,11 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
     if target is None:
         return ""  # unknown phase — check_phase_preconditions handles the error
     target_order = target.get("order", 0)
+    deferred = _deferred_phase_ids(run_dir, phases)
     prior_attested = {
         pid for pid in _attested_phase_ids(run_dir)
-        if pid in by_id and by_id[pid].get("order", 0) < target_order
+        if pid in by_id and pid not in deferred
+        and by_id[pid].get("order", 0) < target_order
     }
     if not prior_attested:
         return ""
@@ -1466,7 +1473,13 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     if target is None:
         return f"AF-PHASE-SKIPPED: unknown phase id {target_phase_id!r} (not in manifest)."
     target_order = target.get("order", 0)
-    prior = sorted([ph for ph in phases if ph.get("order", 0) < target_order],
+    # DESIGN-OPUS.md §4.2 — a defers_unless-gated phase that is NOT satisfied by
+    # the intake answers is deferred (never surfaced, never a prerequisite). It is
+    # excluded from the prior-phase walk so a deck-only run never hard-aborts on a
+    # missing optional P-U-* phase.
+    deferred = _deferred_phase_ids(run_dir, phases)
+    prior = sorted([ph for ph in phases
+                    if ph.get("order", 0) < target_order and ph["id"] not in deferred],
                    key=lambda p: p.get("order", 0))
     prior_ids = [ph["id"] for ph in prior]
     # FIX-1 (AF-FORGED-APPROVAL): validate skip-record AUTHENTICITY FIRST, before
@@ -1657,8 +1670,27 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
 # ---------------------------------------------------------------------------
 # Plan printing
 # ---------------------------------------------------------------------------
+def _load_run_intake(run_dir: Path) -> dict:
+    """Load the run's intake answers (working/copy/intake.json) for defers_unless
+    gating. Best-effort — an absent/unparseable intake record returns {} and the
+    gate then resolves to the questions' defaults (see presentation_job/defers.py)."""
+    try:
+        return load_intake(run_dir)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _deferred_phase_ids(run_dir: Path, phases: list) -> set:
+    """Return the set of phase ids whose defers_unless gate is NOT satisfied by
+    the run's intake answers (DESIGN-OPUS.md §4.2). Deck-only runs (Q1=no, Q2=no)
+    defer all 16 P-U-* phases; the deck core is unchanged."""
+    intake = _load_run_intake(run_dir)
+    return {p["id"] for p in phases if phase_is_deferred(p, intake)}
+
+
 def print_plan(run_dir: Path, phases: list) -> None:
     attested = _attested_phase_ids(run_dir)
+    deferred = _deferred_phase_ids(run_dir, phases)
     forged = None
     try:
         approvals = load_skip_approvals(run_dir)
@@ -1674,7 +1706,9 @@ def print_plan(run_dir: Path, phases: list) -> None:
     print("=== SIGNATURE-DECK PHASE PLAN (manifest order) ===")
     for ph in ordered:
         pid = ph["id"]
-        if pid in attested:
+        if pid in deferred:
+            state = "DEFERRED"
+        elif pid in attested:
             state = "ATTESTED"
         elif pid in approvals:
             state = "SKIP(owner-authorized)"
@@ -1694,6 +1728,7 @@ def _next_required_phase(run_dir: Path, phases: list):
     precondition gate walks, so the phase --next names is exactly the phase the next
     --phase call is allowed to attest."""
     attested = _attested_phase_ids(run_dir)
+    deferred = _deferred_phase_ids(run_dir, phases)
     try:
         approvals = set(load_skip_approvals(run_dir).keys())
     except ForgedApprovalError as _fae:
@@ -1705,7 +1740,7 @@ def _next_required_phase(run_dir: Path, phases: list):
     total = len(ordered)
     for i, ph in enumerate(ordered):
         pid = ph["id"]
-        if pid in attested or pid in approvals:
+        if pid in deferred or pid in attested or pid in approvals:
             continue
         return ph, i + 1, total
     return None, total, total

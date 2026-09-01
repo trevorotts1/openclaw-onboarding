@@ -100,6 +100,39 @@
   ],
   "phases": [
     {
+      "id": "P-CONVERTER",
+      "order": -1,
+      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
+      "owning_role": "content-to-presentation-architect",
+      "sop_refs": [
+        "content-to-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-CONVERTER-PARITY",
+        "AF-CONVERTER-NO-INVENT"
+      ],
+      "preflight": null,
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_converter_no_invent",
+          "label": "converter extracts, never invents (every numeric/statistical figure in the source brief traces to the raw source; AF-CONVERTER-NO-INVENT). DEFERS unless both a source brief and the raw source text are present."
+        }
+      ],
+      "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
+      "converter_path": true,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
+    },
+    {
       "id": "P-0.5-RESEARCH",
       "order": -0.5,
       "name": "Deep Research",
@@ -220,39 +253,6 @@
       "verifier": "phase_verifiers.verify"
     },
     {
-      "id": "P-CONVERTER",
-      "order": -1,
-      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
-      "owning_role": "content-to-presentation-architect",
-      "sop_refs": [
-        "content-to-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/intake.json",
-      "gate_codes": [
-        "AF-CONVERTER-PARITY",
-        "AF-CONVERTER-NO-INVENT"
-      ],
-      "preflight": null,
-      "additional_preflights": [
-        {
-          "required": true,
-          "checker": "_chk_converter_no_invent",
-          "label": "converter extracts, never invents (every numeric/statistical figure in the source brief traces to the raw source; AF-CONVERTER-NO-INVENT). DEFERS unless both a source brief and the raw source text are present."
-        }
-      ],
-      "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
-      "converter_path": true,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
-    },
-    {
       "id": "P0A-INTAKE",
       "order": 0.1,
       "name": "Intake / Interview Confirm",
@@ -306,6 +306,91 @@
           "label": "pitch_included captured (intake.json carries an explicit boolean pitch_included; AF-PITCH-FLAG-UNSET)"
         }
       ],
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
+    },
+    {
+      "id": "P-SP-CLAIM",
+      "order": 0.14,
+      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-SP-TYPE-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_claim",
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10
+    },
+    {
+      "id": "P-SP-INTAKE",
+      "order": 0.15,
+      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_intake.json",
+      "gate_codes": [
+        "AF-SP-8Q-MISSING",
+        "AF-SP-8Q-SPLIT",
+        "AF-SP-FRAME-UNSET",
+        "AF-SP-TYPE-MISMATCH",
+        "AF-SP-OFFER-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake",
+        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
+    },
+    {
+      "id": "P-SP-INTAKE-TRACE",
+      "order": 0.16,
+      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/interview/intake_transcript.json",
+      "gate_codes": [
+        "AF-INTAKE-BATCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake_trace",
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
+      },
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
@@ -383,115 +468,6 @@
       "heartbeat_minutes": 30
     },
     {
-      "id": "P-STYLE-PREVIEW",
-      "order": 4.85,
-      "name": "Approved 3-Style Preview (9 samples → owner gateway sign-off, before full render)",
-      "owning_role": "slide-image-creator",
-      "sop_refs": [
-        "slide-image-creator-sops.md"
-      ],
-      "produces_artifact": "working/style-preview/style_samples_manifest.json",
-      "gate_codes": [
-        "AF-STYLE-UNPICKED",
-        "AF-STYLE-DOUBLECHARGE"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_style_preview",
-        "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --sample --run-dir {run_dir}"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 45
-    },
-    {
-      "id": "P-SHIFT-QC",
-      "order": 7.5,
-      "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
-      "owning_role": "qc-specialist-presentations",
-      "sop_refs": [
-        "qc-specialist-presentations-sops.md",
-        "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md"
-      ],
-      "produces_artifact": "working/qc/priority_shift_report.json",
-      "gate_codes": [
-        "AF-PRIORITY-SHIFT",
-        "AF-NO-SALIENCE-APEX"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_priority_shift_ledger",
-        "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20
-    },
-    {
-      "id": "P1Q-COPY-QC",
-      "order": 4.2,
-      "name": "Copy QC (Phase 1Q) — sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
-      "owning_role": "qc-specialist-presentations",
-      "sop_refs": [
-        "qc-specialist-presentations-sops.md"
-      ],
-      "produces_artifact": "working/qc/copy_qc_report.json",
-      "gate_codes": [
-        "AF-HOOK-1",
-        "AF-HOOK-2",
-        "AF-HOOK-3",
-        "AF-HOOK-4",
-        "AF-HOOK-5",
-        "AF-HOOK-7",
-        "AF-AUD-1",
-        "AF-AUD-2",
-        "AF-AUD-3",
-        "AF-AUD-4",
-        "AF-AUD-5",
-        "AF-OBI-1",
-        "AF-OBI-2",
-        "AF-OBI-3",
-        "AF-OBI-4",
-        "AF-OBI-5",
-        "AF-DEN-1",
-        "AF-DEN-2",
-        "AF-DEN-3",
-        "AF-DEN-4",
-        "AF-DEN-5",
-        "AF-DEN-6",
-        "AF-DEN-7",
-        "AF-DEN-8",
-        "AF-QC-INDEPENDENCE"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_copy_qc",
-        "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered, independent-reviewer provenance)"
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20
-    },
-    {
       "id": "P3-ARC",
       "order": 3,
       "name": "Converting Arc Allocation",
@@ -567,6 +543,78 @@
       "verifier": "phase_verifiers.verify"
     },
     {
+      "id": "P-U-SALES-COPY",
+      "order": 3.6,
+      "name": "Upsell Sales Page Copy (8-section main structure)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/sales.fragment.md + working/upsell/copy/copy_ledger.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-CHECKOUT-COPY",
+      "order": 3.7,
+      "name": "Upsell Checkout Page Copy (lean order-form structure)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/checkout.fragment.md",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-VSL-RESEARCH",
+      "order": 3.8,
+      "name": "Upsell VSL Research (length, hook-to-reveal timing, gating practice)",
+      "owning_role": "deep-research-specialist-presentations",
+      "produces_artifact": "working/upsell/vsl-research.md",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-VSL-COPY",
+      "order": 3.9,
+      "name": "Upsell VSL Page Copy (headline, body, CTA)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/vsl.fragment.md",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
       "id": "P4-COPY",
       "order": 4,
       "name": "Slide Copy",
@@ -605,6 +653,173 @@
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 30
+    },
+    {
+      "id": "P-SP-STRUCTURE",
+      "order": 4.1,
+      "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-SLIDE-FLOOR",
+        "AF-SP-PHASE-RANGE",
+        "AF-SP-PHASE-ORDER",
+        "AF-SP-PHASE-LABEL",
+        "AF-SP-IMG-SUGGESTION",
+        "AF-SP-CASESTUDY-CAP",
+        "AF-SP-TEACH-STEPS",
+        "AF-SP-HOOK",
+        "AF-SP-QUADRANT"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_structure",
+        "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
+    },
+    {
+      "id": "P-SP-P3-HYGIENE",
+      "order": 4.15,
+      "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
+      "owning_role": "qc-specialist-signature-presentations",
+      "sop_refs": [
+        "qc-specialist-signature-presentations-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-P3-PITCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_no_pitch",
+        "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
+    },
+    {
+      "id": "P-U-DESIGN-SALES",
+      "order": 4.2,
+      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/sales.design.txt + design/sales-design.png",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P1Q-COPY-QC",
+      "order": 4.2,
+      "name": "Copy QC (Phase 1Q) — sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "qc-specialist-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/copy_qc_report.json",
+      "gate_codes": [
+        "AF-HOOK-1",
+        "AF-HOOK-2",
+        "AF-HOOK-3",
+        "AF-HOOK-4",
+        "AF-HOOK-5",
+        "AF-HOOK-7",
+        "AF-AUD-1",
+        "AF-AUD-2",
+        "AF-AUD-3",
+        "AF-AUD-4",
+        "AF-AUD-5",
+        "AF-OBI-1",
+        "AF-OBI-2",
+        "AF-OBI-3",
+        "AF-OBI-4",
+        "AF-OBI-5",
+        "AF-DEN-1",
+        "AF-DEN-2",
+        "AF-DEN-3",
+        "AF-DEN-4",
+        "AF-DEN-5",
+        "AF-DEN-6",
+        "AF-DEN-7",
+        "AF-DEN-8",
+        "AF-QC-INDEPENDENCE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_copy_qc",
+        "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered, independent-reviewer provenance)"
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
+    },
+    {
+      "id": "P-U-DESIGN-CHECKOUT",
+      "order": 4.3,
+      "name": "Upsell Checkout Page Design (includes order/payment form design)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/checkout.design.txt + design/checkout-design.png",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-DESIGN-VSL",
+      "order": 4.4,
+      "name": "Upsell VSL Page Design (includes email/phone gate form design)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/vsl.design.txt + design/vsl-design.png",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "PF-DESIGN",
@@ -714,6 +929,35 @@
       "heartbeat_minutes": 20
     },
     {
+      "id": "P-STYLE-PREVIEW",
+      "order": 4.85,
+      "name": "Approved 3-Style Preview (9 samples → owner gateway sign-off, before full render)",
+      "owning_role": "slide-image-creator",
+      "sop_refs": [
+        "slide-image-creator-sops.md"
+      ],
+      "produces_artifact": "working/style-preview/style_samples_manifest.json",
+      "gate_codes": [
+        "AF-STYLE-UNPICKED",
+        "AF-STYLE-DOUBLECHARGE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_style_preview",
+        "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --sample --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 45
+    },
+    {
       "id": "P4-RENDER",
       "order": 4.9,
       "name": "Deterministic Render (build_deck.py — this script)",
@@ -788,6 +1032,143 @@
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 30
+    },
+    {
+      "id": "P-U-HTML-SALES",
+      "order": 5.2,
+      "name": "Upsell Sales Page HTML (mirrors design; GHL code-block ready)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/sales.fragment.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-HTML-CHECKOUT",
+      "order": 5.3,
+      "name": "Upsell Checkout Page HTML (mirrors design; SKILL44_WIDGET form embed)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/checkout.fragment.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-HTML-VSL",
+      "order": 5.4,
+      "name": "Upsell VSL Page HTML (mirrors design; gate overlay with Skill-44 form embed)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/vsl.fragment.html",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-FORM-GATE",
+      "order": 5.6,
+      "name": "Upsell VSL Email/Phone Gate Form + Workflow (Skill 44)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "ecosystem/gate-form.json + workflows/gate-workflow.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-GHL-SALES",
+      "order": 6.2,
+      "name": "Upsell Sales + Checkout GHL Funnel Build (Skill 6)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "build_receipt.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-GHL-VSL",
+      "order": 6.4,
+      "name": "Upsell VSL GHL Funnel Build (Skill 6; gate form SKILL44_WIDGET)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "build_receipt.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SHIFT-QC",
+      "order": 7.5,
+      "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "qc-specialist-presentations-sops.md",
+        "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md"
+      ],
+      "produces_artifact": "working/qc/priority_shift_report.json",
+      "gate_codes": [
+        "AF-PRIORITY-SHIFT",
+        "AF-NO-SALIENCE-APEX"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_priority_shift_ledger",
+        "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20
     },
     {
       "id": "P8-ASSEMBLE",
@@ -1060,249 +1441,6 @@
       "heartbeat_minutes": 15
     },
     {
-      "id": "P9.2-GHL-UPLOAD",
-      "order": 8.9,
-      "name": "GHL Media Library Upload",
-      "owning_role": "media-librarian-ghl-updater",
-      "sop_refs": [
-        "media-librarian-ghl-updater-sops.md"
-      ],
-      "produces_artifact": "working/checkpoints/media_library.json",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
-    },
-    {
-      "id": "P9.6-WEBINAR-VIDEO",
-      "order": 8.92,
-      "name": "Webinar Video Build (ffmpeg Ken Burns + xfade slideshow; GHL v3 500MB video upload)",
-      "owning_role": "media-librarian-ghl-updater",
-      "sop_refs": [
-        "media-librarian-ghl-updater-sops.md"
-      ],
-      "produces_artifact": "working/delivery/{deck_slug}-WEBINAR.mp4",
-      "gate_codes": [
-        "AF-WEBINAR-SIZE"
-      ],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 120
-    },
-    {
-      "id": "P7-TELEPROMPTER",
-      "order": 8.95,
-      "name": "Presenter Teleprompter HTML",
-      "owning_role": "presenters-speech-writer",
-      "sop_refs": [
-        "presenters-speech-writer-sops.md"
-      ],
-      "produces_artifact": "working/deliverables/presenter-teleprompter.html",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 10
-    },
-    {
-      "id": "P9-DELIVER",
-      "order": 9,
-      "name": "Delivery Interlock + Postflight Completeness Gate",
-      "owning_role": "delivery-concierge",
-      "sop_refs": [
-        "delivery-concierge-sops.md"
-      ],
-      "produces_artifact": "working/delivery/PRESENTER-AUDIO.mp3",
-      "gate_codes": [
-        "AF-BUNDLE-COMPLETE",
-        "AF-DELIVER",
-        "AF-DH1",
-        "AF-DELIVERY-COMPLETE",
-        "AF-I14"
-      ],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
-    },
-    {
-      "id": "P-SP-CLAIM",
-      "order": 0.14,
-      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/intake.json",
-      "gate_codes": [
-        "AF-SP-TYPE-UNDECLARED"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_claim",
-        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 10
-    },
-    {
-      "id": "P-SP-INTAKE",
-      "order": 0.15,
-      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_intake.json",
-      "gate_codes": [
-        "AF-SP-8Q-MISSING",
-        "AF-SP-8Q-SPLIT",
-        "AF-SP-FRAME-UNSET",
-        "AF-SP-TYPE-MISMATCH",
-        "AF-SP-OFFER-UNDECLARED"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_intake",
-        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
-    },
-    {
-      "id": "P-SP-INTAKE-TRACE",
-      "order": 0.16,
-      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/interview/intake_transcript.json",
-      "gate_codes": [
-        "AF-INTAKE-BATCH"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_intake_trace",
-        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 15
-    },
-    {
-      "id": "P-SP-STRUCTURE",
-      "order": 4.1,
-      "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_structure.json",
-      "gate_codes": [
-        "AF-SP-SLIDE-FLOOR",
-        "AF-SP-PHASE-RANGE",
-        "AF-SP-PHASE-ORDER",
-        "AF-SP-PHASE-LABEL",
-        "AF-SP-IMG-SUGGESTION",
-        "AF-SP-CASESTUDY-CAP",
-        "AF-SP-TEACH-STEPS",
-        "AF-SP-HOOK",
-        "AF-SP-QUADRANT"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_structure",
-        "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30
-    },
-    {
-      "id": "P-SP-P3-HYGIENE",
-      "order": 4.15,
-      "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
-      "owning_role": "qc-specialist-signature-presentations",
-      "sop_refs": [
-        "qc-specialist-signature-presentations-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_structure.json",
-      "gate_codes": [
-        "AF-SP-P3-PITCH"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_no_pitch",
-        "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20
-    },
-    {
       "id": "P-U-SALES-BUILD",
       "order": 8.75,
       "name": "Upsell Sales Page Build (copy -> kie design -> HTML -> GHL funnel push)",
@@ -1365,7 +1503,7 @@
         "AF-U-FORM-CHECKOUT"
       ],
       "preflight": null,
-      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py by both C1 and, independently, C5's SOP audit): P-U-FORM-CHECKOUT has NO dedicated implementation anywhere yet -- upsell-questions.json names it as its own id family distinct from P-U-CHECKOUT-*, but no script wires the checkout page's payment/lead-capture FORM fields as a separate build step; there is no working/upsell/checkout_form.json and no design note beyond SALES-CHECKOUT-BUILDER-SOP.md SS4's proposal. This phase currently re-invokes sales_checkout_builder.py with --skip-design (no kie.ai spend) as an interim placeholder that re-verifies the SAME build_receipt.json P-U-SALES-BUILD produced, so the phase/gate/step-count entry the intake app already promised the client exists and is DEFERS-correct -- it does not yet independently prove a payment/lead form was wired. A follow-up unit must implement the real form/payment-field wiring (see SALES-CHECKOUT-BUILDER-SOP.md SS4 'THE CHECKOUT FORM') and update this phase's executor + AF-U-FORM-CHECKOUT check accordingly. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76).",
+      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py by both C1 and, independently, C5's SOP audit): P-U-FORM-CHECKOUT has NO dedicated implementation anywhere yet -- upsell-questions.json names it as its own id family distinct from P-U-CHECKOUT-*, but no script wires the checkout page's payment/lead-capture FORM fields as a separate build step; there is no working/upsell/checkout_form.json and no design note beyond SALES-CHECKOUT-BUILDER-SOP.md SS4's proposal. This phase currently re-invokes sales_checkout_builder.py with --skip-design (no kie.ai spend) as an interim placeholder that re-verifies the SAME build_receipt.json P-U-SALES-BUILD produced, so the phase/gate/step-count entry the intake app already promised the client exists and is DEFERS-correct -- it does not yet independently prove a payment/lead form was wired. A follow-up unit must implement the real form/payment-field wiring (see SALES-CHECKOUT-BUILDER-SOP.md SS4 'THE CHECKOUT FORM') and update this phase's executor + AF-U-FORM-CHECKOUT check accordingly. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76). MERGE-NOTE 2026-09-01: merge/apicur-train's parallel DESIGN-OPUS proposal for this id (order 5.5, Skill-44 SKILL44_WIDGET seam, ecosystem/checkout-form.json) was superseded by this wired 8.77 placeholder entry; nothing consumed the 5.5 design (verified 2026-09-01 full-repo grep).",
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
@@ -1376,6 +1514,70 @@
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 15
+    },
+    {
+      "id": "P-U-COLLATERAL",
+      "order": 8.8,
+      "name": "Upsell Collateral Backup (delivery/<SLUG>-FINAL/upsell/*)",
+      "owning_role": "delivery-concierge",
+      "produces_artifact": "delivery/{deck_slug}-FINAL/upsell/*",
+      "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P9.2-GHL-UPLOAD",
+      "order": 8.9,
+      "name": "GHL Media Library Upload",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/media_library.json",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 15
+    },
+    {
+      "id": "P9.6-WEBINAR-VIDEO",
+      "order": 8.92,
+      "name": "Webinar Video Build (ffmpeg Ken Burns + xfade slideshow; GHL v3 500MB video upload)",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/delivery/{deck_slug}-WEBINAR.mp4",
+      "gate_codes": [
+        "AF-WEBINAR-SIZE"
+      ],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 120
     },
     {
       "id": "P-U-VSL-BUILD",
@@ -1401,6 +1603,74 @@
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20
+    },
+    {
+      "id": "P7-TELEPROMPTER",
+      "order": 8.95,
+      "name": "Presenter Teleprompter HTML",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/presenter-teleprompter.html",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10
+    },
+    {
+      "id": "P9-DELIVER",
+      "order": 9,
+      "name": "Delivery Interlock + Postflight Completeness Gate",
+      "owning_role": "delivery-concierge",
+      "sop_refs": [
+        "delivery-concierge-sops.md"
+      ],
+      "produces_artifact": "working/delivery/PRESENTER-AUDIO.mp3",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE",
+        "AF-DELIVER",
+        "AF-DH1",
+        "AF-DELIVERY-COMPLETE",
+        "AF-I14"
+      ],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 30
+    },
+    {
+      "id": "P-U-QC",
+      "order": 9.05,
+      "name": "Upsell QC + Playwright Verify (brand, logo, mirror, band, copy)",
+      "owning_role": "qc-specialist-presentations",
+      "produces_artifact": "qc/upsell-scorecard.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     }
   ],
   "autofails": [
