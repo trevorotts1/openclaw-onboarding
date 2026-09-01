@@ -40,7 +40,6 @@ trap 'rm -rf "$WORK"' EXIT
 
 # --- act-6 note: sandboxed gate copy ------------------------------------------
 # qc-podcast.sh now ends with the act-6 activation-layer health gate, which is
-<<<<<<< HEAD
 # FATAL while the activation-layer branches (hook registration, the
 # deterministic intake handler, department installer) have not merged into
 # this tree. This test is about the Podbean credential probe, not activation,
@@ -53,21 +52,7 @@ SANDBOX_GATE="$WORK/gate/qc-podcast.sh"
 mkdir -p "$WORK/gate/scripts/webhook"
 cp "$GATE" "$SANDBOX_GATE"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/register-podcast-hook.sh"
-printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' > "$WORK/gate/scripts/webhook/intake_handler.py"
-=======
-# FATAL while the activation-layer branches (hook registration, controller,
-# department installer) have not merged into this tree. This test is about the
-# Podbean credential probe, not activation, so it runs a sandboxed COPY of the
-# gate with the three activation files present: the activation section then
-# reports a non-fatal WARN (the guard script itself is absent from the copy)
-# and the credential probe alone decides the exit code, exactly as before.
-SANDBOX_GATE="$WORK/gate/qc-podcast.sh"
-mkdir -p "$WORK/gate/scripts"
-cp "$GATE" "$SANDBOX_GATE"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/register-podcast-hook.sh"
-printf 'import sys\nif "--help" in sys.argv:\n    sys.exit(0)\nsys.exit(0)\n' > "$WORK/gate/scripts/podcast_controller.py"
->>>>>>> feat/podcast-act-6-qc-gate
-printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/install-podcast-department.sh"
+printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' > "$WORK/gate/scripts/webhook/intake_handler.py"printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/install-podcast-department.sh"
 
 # --- hermetic environment ----------------------------------------------------
 # HOME points at a temp tree so resolve_platform_paths resolves SECRETS_ENV
@@ -100,12 +85,8 @@ chmod +x "$WORK/bin/curl"
 run_gate() {  # $1 = mock mode (accept | reject); echoes the gate's exit code
   echo "$1" > "$WORK/mode"
   : > "$WORK/curl-args.log"
-<<<<<<< HEAD
   env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
-      -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
-=======
->>>>>>> feat/podcast-act-6-qc-gate
-  HOME="$WORK/home" \
+      -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \  HOME="$WORK/home" \
   PATH="$WORK/bin:$PATH" \
   PODBEAN_PODCAST_ID="test-channel-id" \
   PODBEAN_CLIENT_ID="test-client-id" \
