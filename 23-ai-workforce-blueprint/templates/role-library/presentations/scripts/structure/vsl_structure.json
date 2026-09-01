@@ -1,0 +1,40 @@
+{
+  "$schema": "https://openclaw.ai/schemas/presentations-vsl-structure/v1",
+  "structure": "vsl-page-with-email-phone-gate",
+  "structure_version": "1.0.0",
+  "skill": "23-ai-workforce-blueprint (presentations upsell)",
+  "note": "The SACRED VSL (video sales letter) page structure for the presentations upsell (GAUNTLET-LOOP DESIGN-OPUS §6.1-6.5, §10.3). Sections are checked IN ORDER. The email/phone gate is the structural heart: a Skill-44 form embed (never a static HTML mock) with email + first name + cell phone, ALL required, and an adaptive placement timestamp in the [3:00, 8:00] band (closer to 8:00, after the first big revelation). The prover MEASURES the declared HTML/video-metadata ledger and ignores any self-report.",
+  "stage": "vsl",
+
+  "variants_required": ["a", "b"],
+  "section_count": 5,
+
+  "gate_band": {"min_seconds": 180, "max_seconds": 480, "unit": "seconds"},
+  "gate_placement_rule": "gate_time = clamp(R + 20s, 3*60, 8*60); if R unknown or D < 180s, default min(0.9*D, 480) but never below 180 and never above D-10s.",
+  "gate_timeout_defaulted_ok": true,
+
+  "gate_fields": {
+    "note": "The gate form MUST collect all three, each REQUIRED. Custom GHL fields zhc_vsl_email / zhc_vsl_first_name / zhc_vsl_phone.",
+    "required": [
+      {"id": "email",      "aliases": ["email", "e-mail", "email address"]},
+      {"id": "first_name", "aliases": ["first name", "first-name", "fname"]},
+      {"id": "cell_phone", "aliases": ["cell phone", "phone", "mobile", "cell", "sms"]}
+    ]
+  },
+
+  "section_band_note": "word_min is the SACRED per-section stripped-word floor (FIX-XC-04c pattern). The prover MEASURES stripped section copy and IGNORES any self-report; under-band = HARD MISS (AF-PRES-VSL-SECTION-BAND).",
+
+  "sections": [
+    {"order": 1, "id": "hero-video",    "word_min": 10, "aliases": ["hero", "hero with video player", "video player", "video hero", "above the fold"]},
+    {"order": 2, "id": "gate-overlay",  "word_min": 10, "aliases": ["gate", "gate overlay", "email gate", "email phone gate", "lead gate", "overlay"]},
+    {"order": 3, "id": "offer-recap",   "word_min": 20, "aliases": ["offer recap", "offer summary", "recap", "what you get", "value recap"]},
+    {"order": 4, "id": "final-cta",     "word_min": 12, "aliases": ["final cta", "final call to action", "cta", "call to action", "closing cta"]},
+    {"order": 5, "id": "brand-footer",  "word_min": 10, "aliases": ["footer", "brand footer", "brand", "privacy", "legal"]}
+  ],
+
+  "video_player_required": true,
+  "gate_form_required": true,
+  "gate_must_pause_video": true,
+  "gate_must_resume_on_submit": true,
+  "privacy_line_required": true
+}
