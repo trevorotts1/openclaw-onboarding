@@ -4024,6 +4024,50 @@ u004_assert_doctrine_provenance() {
   echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
 }
 
+# U009: u009_presentations_sync_check
+#   FIX 36(1) deploy preflight -- SOP-SLIDE-06 Section 3 gate 3 ("EVERY
+#   ONBOARDING UPDATE: the skills-updater runs sync_check.py as a deploy
+#   preflight ... A drifted stack is never deployed -- the updater aborts with
+#   the drift report, so a half-updated stack never reaches a client box").
+#   Until this function nothing in the updater ever ran sync_check.py; the
+#   claim was doc-only (CI ran it, but a drifted stack still SHIPPED when the
+#   roll started from a box whose checkout predated the CI wiring).
+#
+#   Runs sync_check.py FROM THE SKILLS DIR the updater is about to deploy from
+#   (not from some other checkout), so it measures exactly the stack this run
+#   would materialize. Exit 0 = in sync (deploy proceeds); exit 4 = lockstep
+#   drift (ABORTS the update -- the half-updated stack never reaches a box);
+#   exit 2 = sync_check could not run (missing input -- also an abort, per the
+#   SOP). OPENCLAW_SYNC_CHECK_GATE=0 turns the gate into warn-mode (logged,
+#   non-fatal) -- the documented rollback, never a silent skip.
+u009_presentations_sync_check() {
+  local _sync_check="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+  if [ ! -f "$_sync_check" ]; then
+    echo "  [U009] presentations sync_check SKIPPED (sync_check.py not found at $_sync_check)" >&2
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  [U009] presentations sync_check SKIPPED (python3 unavailable)" >&2
+    return 0
+  fi
+  echo "  [U009] presentations sync_check (SOP-SLIDE-06 deploy preflight)..."
+  local _sync_rc=0
+  python3 "$_sync_check" || _sync_rc=$?
+  if [ "$_sync_rc" -eq 0 ]; then
+    echo "  [U009] sync_check: in sync -- renderer, ruleset, manifest, roles, and SOPs agree."
+    return 0
+  fi
+  if [ "${OPENCLAW_SYNC_CHECK_GATE:-1}" = "1" ]; then
+    echo "" >&2
+    echo "  [U009] FATAL: presentations lockstep drift (sync_check exit $_sync_rc) -- UPDATE ABORTED." >&2
+    echo "         A half-updated Presentations stack is never deployed (SOP-SLIDE-06 §3 gate 3)." >&2
+    echo "         Fix the drift named above, then re-run the updater. Set OPENCLAW_SYNC_CHECK_GATE=0 to downgrade to warn-mode." >&2
+    return 1
+  fi
+  echo "  [U009] WARN: sync_check drift (exit $_sync_rc) ignored (OPENCLAW_SYNC_CHECK_GATE=0) -- deploying anyway" >&2
+  return 0
+}
+
   # ── CC CURRENCY PROBE ────────────────────────────────────────────────────
   # WHY THIS EXISTS. The CONTENT RECHECK below `exit 0`s whenever the skills
   # stamp AND skills content are current -- roughly 3,100 lines BEFORE the
@@ -7253,6 +7297,11 @@ else:
   # U004 -- Assert department doctrine provenance (warn-mode).
   # Non-fatal; logged through $LOG_FILE.
   u004_assert_doctrine_provenance
+
+  # U009 -- FIX 36(1): run sync_check.py as the deploy preflight (SOP-SLIDE-06
+  # §3 gate 3). A drifted Presentations stack ABORTS the update before any
+  # materialization; OPENCLAW_SYNC_CHECK_GATE=0 downgrades to warn-mode.
+  u009_presentations_sync_check
 
   # ----------------------------------------------------------
   # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21). Canonical DELETIONS reach the

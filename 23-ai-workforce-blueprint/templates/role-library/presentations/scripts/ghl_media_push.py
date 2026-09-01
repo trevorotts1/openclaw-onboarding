@@ -2,17 +2,20 @@
 """ghl_media_push.py — host a deck's approved images + final deliverables in GHL,
 AND enforce the HARD closeout gate that no deck ships without that upload.
 
-The Media Librarian's mechanical upload half. Per the VERIFIED-WORKING Skill-48
-pattern (ghl_media.create_media_folder, POST /medias/folder, Version 2021-07-28,
-client LOCATION PIT), it:
+The Media Librarian's mechanical upload half. It:
 
-  1. CREATES a named per-deck media folder ("DECK <deck-slug>") so the slide images
-     are grouped under the deck, never scattered in the media root. Folder-create is
-     the PRIMARY path (it returns 201 against a correctly-scoped client LOCATION PIT).
-  2. If the API DECLINES folder-create (returns no folder id), falls back to (a) a
-     human-supplied folder id from intake.json.ghl_media_folder_id, else (b) the
-     media ROOT with a "<deck-slug> — " name PREFIX so the images stay grouped by
-     name. Either way `ghl_folder_id` is recorded ("root" is a valid passing value).
+  1. RESOLVES the per-deck media destination FAIL-CLOSED (FIX 36(2), the documented
+     contract — CLIENT-WEBINAR-DECK-SOP.md binding note;
+     29-ghl-convert-and-flow/references/medias.md §4 "Folder caveat": folder-create
+     via API returns 404; the agent NEVER creates a folder): a PRE-EXISTING,
+     human-approved folder id from intake.json.ghl_media_folder_id is accepted as
+     the destination; with no approved id the uploads go to the shareable media
+     ROOT with a "<deck-slug> — " name PREFIX so the images stay grouped by name.
+     Either way `ghl_folder_id` is recorded ("root" is a valid passing value).
+     NO folder-create POST is ever issued.
+  2. Uploads each approved PNG (+ the final PPTX/PDF when given) via
+     ghl_media.upload_media (POST /medias/upload-file, multipart, parentId), recording
+     the public storage.googleapis.com URL + fileId per file to media_library.json.
   3. Uploads each approved PNG (+ the final PPTX/PDF when given) via
      ghl_media.upload_media (POST /medias/upload-file, multipart, parentId), recording
      the public storage.googleapis.com URL + fileId per file to media_library.json.
@@ -193,14 +196,18 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     pit = ghl_media.resolve_location_pit()        # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()  # client's location id
 
-    # 1) PRIMARY: create the per-deck media folder via the verified POST /medias/folder.
-    folder = ghl_media.create_media_folder(f"DECK {slug}", location_id, pit, opener=opener)
-    parent_id = folder.get("folderId")
-    # 2) FALLBACK chain when the API declined folder-create.
-    if not parent_id:
-        human_folder = str(intake.get("ghl_media_folder_id") or "").strip()
-        if human_folder:
-            parent_id = human_folder
+    # 1) PRIMARY (FIX 36(2) — documented contract): the folder-create POST is DISABLED
+    #    (the endpoint returns 404 per 29-ghl-convert-and-flow/references/medias.md §4
+    #    and CLIENT-WEBINAR-DECK-SOP.md's binding note; the agent NEVER creates a
+    #    folder). The wrapper resolves the destination FAIL-CLOSED: a pre-existing,
+    #    human-approved folder id (from intake.json.ghl_media_folder_id) is accepted
+    #    as-is; anything else returns the documented decline and we upload to the
+    #    shareable media root with a "<deck-slug> — " name prefix.
+    approved = str(intake.get("ghl_media_folder_id") or "").strip()
+    folder = ghl_media.create_media_folder(f"DECK {slug}", location_id, pit,
+                                           approved_folder_id=approved)
+    parent_id = folder.get("folderId") or None
+    # 2) FALLBACK when no pre-existing approved folder id exists: media ROOT.
     name_prefix = "" if parent_id else f"{slug} — "
     ghl_folder_id = parent_id or "root"
 
@@ -245,7 +252,10 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
         "deck_slug": slug,
         "ghl_folder_id": ghl_folder_id,
         "ghl_folder_name": folder.get("name") or ledger.get("ghl_folder_name") or f"DECK {slug}",
-        "ghl_folder_created_via_api": bool(folder.get("folderId")),
+        # FIX 36(2): the API folder-create branch is removed — a folder id here is
+        # always a PRE-EXISTING, human-approved one, never an API creation.
+        "ghl_folder_created_via_api": False,
+        "ghl_folder_approved_preexisting": bool(parent_id),
         "uploaded": uploaded,
         "upload_count": len(uploaded),
         "slides": slides,
@@ -379,7 +389,8 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
     if not folder:
         reasons.append(
             f"{GHL_UPLOAD_GATE}: ghl_folder_id is null/empty — the per-deck GHL media "
-            "folder was never resolved (create_media_folder, or the 'root' fallback).")
+            "folder was never resolved (an approved pre-existing folder id, or the "
+            "'root' fallback).")
 
     # (2) per-slide PNG uploads, each with a real ghl_media_id.
     slides = _collect_slide_uploads(media)
@@ -680,9 +691,9 @@ def _selftest() -> int:
     import os as _os
 
     def _mock_ghl_opener(req, timeout):
-        # One mock for BOTH the folder-create POST and the upload POST: carries the fields
-        # each canonical parser reads (id/folderId for the folder; fileId/url for the
-        # upload), so create_media_folder() and upload_media() both succeed offline.
+        # Mock for the upload POST (FIX 36(2): folder-create issues NO POST at all —
+        # the fail-closed wrapper resolves offline). Carries the fields the canonical
+        # parser reads (fileId/url) so upload_media() succeeds offline.
         class _R:
             def getcode(self):
                 return 200

@@ -244,4 +244,27 @@ if [ "$VERSION" != "$CHANGELOG_VERSION" ]; then
 fi
 
 echo "Version check passed: $VERSION"
+
+# ── 10. Presentations lockstep (sync_check.py — SOP-SLIDE-06 §3 gate 2) ─────
+# SOP-SLIDE-06 §3 gate 2 claims "PRE-COMMIT / CI ... runs sync_check.py and is
+# blocked on drift" — but until this gate nothing local ever ran sync_check at
+# commit time (only CI did, via presentations-lockstep.yml). Any commit touching
+# a Presentations lockstep input (the manifest, build_deck.py, the MASTER
+# ruleset, a role/SOP .md, or any presentations script) now runs sync_check.py
+# LOCALLY and blocks the commit on drift (exit 4) or on an unrunnable check
+# (exit 2). Read-only commits (docs outside the presentation cluster) skip it —
+# the hook must stay fast for the 99% case.
+SYNC_CHECK="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+if [ -f "$SYNC_CHECK" ] && command -v python3 >/dev/null 2>&1; then
+  if git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -qE \
+      '^(universal-sops/presentation-slide-craft/|23-ai-workforce-blueprint/templates/role-library/presentations/)'; then
+    echo "Pre-commit QC: running sync_check.py (presentations lockstep)..."
+    if ! python3 "$SYNC_CHECK"; then
+      echo ""
+      echo "PRE-COMMIT BLOCKED: sync_check.py reported presentations lockstep drift (exit $? — 4=drift, 2=unrunnable input)."
+      echo "Fix the drift named above (SOP-SLIDE-06 §1 four mandatory steps), then re-commit."
+      exit 1
+    fi
+  fi
+fi
 echo "Pre-commit QC: all gates passed."
