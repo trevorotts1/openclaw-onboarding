@@ -447,6 +447,23 @@ class Engine:
             elif ph.id in _VSL_ONLY_PHASE_IDS:
                 if shape["vsl_known"] and not shape["wants_vsl"]:
                     continue  # positively known decline: no-ops
+            else:
+                # defers_unless-gated optional phase (DESIGN-OPUS §4, merged
+                # 2026-09-01): visible ONLY when this run's intake proves the
+                # gate open. Fail-safe: no intake record or unevaluable gate
+                # keeps the phase visible (unknown widens).
+                gate = getattr(ph, "defers_unless", None)
+                if gate:
+                    intake = self.state.get("intake") if isinstance(self.state, dict) else None
+                    if not isinstance(intake, dict) or not intake:
+                        intake = load_intake(self.run_dir)
+                    if intake:
+                        from .defers import evaluate_defers_unless
+                        try:
+                            if not evaluate_defers_unless(gate, intake):
+                                continue  # provably deferred by intake
+                        except Exception:
+                            pass  # cannot prove closed -> keep visible
             visible.append(ph)
         return visible
 

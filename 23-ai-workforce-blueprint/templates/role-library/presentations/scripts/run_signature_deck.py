@@ -1001,8 +1001,47 @@ def _client_visible_phases(run_dir: Path, phases: list) -> list:
         elif pid in _VSL_ONLY_PHASE_IDS:
             if shape["vsl_known"] and not shape["wants_vsl"]:
                 continue  # positively known decline: no-ops
+        else:
+            # defers_unless-gated optional phase (DESIGN-OPUS §4, merged
+            # 2026-09-01): client-visible ONLY when the intake answers prove
+            # the gate open. Fail-safe mirrors the docstring contract above:
+            # when the intake record is absent or the gate cannot be
+            # evaluated, the phase stays visible (unknown widens).
+            gate = ph.get("defers_unless") if isinstance(ph, dict) else getattr(ph, "defers_unless", None)
+            if gate:
+                intake = _intake_record_for(run_dir)
+                if intake is not None:
+                    from presentation_job.defers import evaluate_defers_unless
+                    try:
+                        if not evaluate_defers_unless(gate, intake):
+                            continue  # provably deferred by this run's intake
+                    except Exception:
+                        pass  # cannot prove it closed -> keep visible
         visible.append(ph)
     return visible
+
+
+def _intake_record_for(run_dir: Path) -> dict | None:
+    """Load the run's intake record for defers evaluation (display-only).
+    Tries state.json's intake first, then working/copy/intake.json (the
+    deck-intake-driver store). Returns None when neither is readable — the
+    caller then fails safe (phase stays client-visible)."""
+    try:
+        st = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+        intake = st.get("intake")
+        if isinstance(intake, dict) and intake:
+            return intake
+    except Exception:
+        pass
+    for cand in (run_dir / "working" / "copy" / "intake.json",
+                 run_dir / "working" / "intake.json"):
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data:
+                return data
+        except Exception:
+            continue
+    return None
 
 
 def _client_phase_index(run_dir: Path, phase_id: str, phases: list) -> tuple:
