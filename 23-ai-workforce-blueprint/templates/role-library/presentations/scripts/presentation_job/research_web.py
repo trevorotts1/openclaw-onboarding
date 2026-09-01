@@ -559,7 +559,23 @@ class BoundedFetcher:
             self._record(row)
             return row
         extracted = extract_text(body)
-        content_hash = hashlib.sha256(body.encode("utf-8", errors="replace")).hexdigest()
+        # F31 (SMOKE-1, 2026-09-01): content_sha256 is the CONTENT-CHANGE signal the
+        # FIX 19/20 mismatch verdict compares against — it must measure the article
+        # text, not the per-request chrome around it. Live pages embed volatile
+        # per-request noise (visitor/read counters, rotating ad/telemetry script
+        # blobs, cache-busters) in BOTH the raw body and the extracted text; a raw
+        # sha over that noise can never match its own retrieval record on the next
+        # fetch, so dynamic-content hosts fail "content-mismatch" on every run and
+        # the gate is permanently unpassable for them (proven twice in-process on
+        # articos.com / numberanalytics.com — one-byte live-counter flips). Normalize
+        # per-request noise BEFORE hashing: hash the extracted text with every digit
+        # run collapsed to a single placeholder. Real evidence (stats, dates, dollar
+        # figures) stays inside longer alphanumeric tokens and is untouched; only
+        # standalone counter spans are neutralized. Anchors are still evaluated on
+        # the UN-normalized text, so anchor verification loses no precision.
+        canonical_content = re.sub(r"\d+", "#", extracted)
+        content_hash = hashlib.sha256(
+            canonical_content.encode("utf-8", errors="replace")).hexdigest()
         row = {
             "url": url,
             "canonical_url": final_canon or canon,

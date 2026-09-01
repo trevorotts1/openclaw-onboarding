@@ -240,8 +240,16 @@ def validate_citations(
             resolve_cache[canon] = fetched
         verdict: Dict[str, Any]
         sha = str(fetched.get("content_sha256", "") or "")
-        if fetched.get("status") == 200 and sha and canon in ledger_hashes \
-                and ledger_hashes[canon] != sha:
+        # F31 (SMOKE-1, 2026-09-01): the content-mismatch branch guards ANCHORED
+        # evidence — "the page this quote was taken from no longer carries it." An
+        # ANCHOR-LESS citation asserts only reachability + relevance floor; for those,
+        # per-request page chrome (rotating hero headlines, live visitor counters —
+        # proven on articos.com: the 86% quote survived 4/4 fetches while the page
+        # chrome rotated) changes the hash on every fetch, making the branch fire on
+        # every run and the gate permanently unpassable. Scope the branch to
+        # anchor-bearing citations, exactly what it exists to protect.
+        if c["anchor"] and fetched.get("status") == 200 and sha \
+                and canon in ledger_hashes and ledger_hashes[canon] != sha:
             verdict = {
                 "anchor": c["anchor"],
                 "supported": False,
