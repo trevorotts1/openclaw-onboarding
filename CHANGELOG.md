@@ -1,3 +1,12 @@
+## [v22.0.88]  -  2026-09-01  -  batch/unmerged-sweep-20260901: 49 unmerged branches + Phase C (FIX 17-29) + Phase D (FIX 30-39) presentation-dept integration
+
+### Why
+
+Closes the 49-branch unmerged backlog and lands Phases C and D of PRESENTATION-DEPT-FIX-SPEC (FIX 17-29, FIX 30-39) in one integration. Destructive FIX 34/35 and FIX 14 remain home-gated: implemented, but wired only behind Trevor's explicit GO on the CC main repo (PRs #279/#280) — no execution without it. Suite: 1407 passed / 2 skipped / 0 failed.
+
+### What changed
+
+
 ## [v22.0.87]  -  2026-08-31  -  Presentation Department rev2 batch 2 (remaining lanes + engine repairs)
 
 ### Why

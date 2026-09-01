@@ -1,6 +1,6 @@
 # Changelog — Anthology Writer (Skill 54)
 
-## 1.4.9 — 2026-08-25 — tone-core GO fixes: doctrine docs match deterministic resolver
+## 1.4.10 — 2026-08-25 — tone-core GO fixes: doctrine docs match deterministic resolver
 
 - `intake/aw-intake-template.md` + `REPAIRS.md` G1 no longer describe prompt-level
   "auto-pick a real, well-known figure" — they now name the shared deterministic F4.3
