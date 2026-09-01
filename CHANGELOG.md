@@ -1,3 +1,30 @@
+## [v22.0.87]  -  2026-08-31  -  Presentation Department rev2 batch 2 (remaining lanes + engine repairs)
+
+### Why
+
+Closes the remaining batch-2 lanes deferred at v22.0.86 ("Batch 2 (lanes 11, 20, 22, 24, 27, 32, 33, 36, 38) still landing"). The engine-side defect classes closed in this batch: resource-profile drift between launcher and engine (FIX 32 drift detector), stall windows in the dispatcher loop (FIX 24), unset notification transport silently proceeding to launch (FIX 22, now fail-closed at launch), OCR dependency failures failing late with no repair path (FIX 33 verify-then-fix preflight), and the CC ingest of per-stage telemetry never wired to the engine emitter (FIX 5 emitter). Also fixes a pre-existing latent test break: the fanout prompt-phase stubs still had the pre-FIX-7 two-argument signature, so `test_workers_1_and_workers_n_produce_identical_file_sets` failed on pristine v22.0.86 main (proven in a throwaway clone; CI never runs the full presentation pytest suite).
+
+### What changed
+
+- FIX 11: Ultra/Standard/Economy modes with time+cost estimates (waves)
+- FIX 20: citation gate on final assembly — unsourced claim rows hold at P1Q-COPY-QC with AF-WARNING-HOLD, non-crash, resumable; disposition contract matches spec
+- FIX 22: unset notify transport = fail-closed at launch (launcher lane)
+- FIX 24: stall windows in dispatcher loop closed (breakout lane wf_fbaf1a22)
+- FIX 27: operator notification route for stalled runs — rate-limited, gateway-only
+- FIX 32: resource-profile drift detector — launcher/engine parity, universal-sops manifest regenerated (SYNC-CHECK ALL PASS, checksum 31)
+- FIX 33: OCR dependency verify-then-fix protocol — preflight_deps.py + venv/interpreter resolution (launcher lane wf_63299ac9)
+- FIX 36: engine-side per-stage telemetry emitter — phases.py CC mirror POST (lane 36)
+- FIX 38: CC CI U55 test:unit failures → runner routing + FIX 25 evidence-gate test updates
+- FIX 14: waves-engine ledger discipline closeout (QCB1/QCC gates)
+- fix(presentations): fanout test stubs accept dispatch_complete kwargs (pre-existing latent break, proven on pristine v22.0.86 main)
+- watchdog.sh conflict resolved as true union: FIX 22 fail-closed + main's scan-roots/supervisor passes (bash -n green)
+- PIPELINE-MANIFEST rebuilt as v54 = v53 loader codes + main's proven executor forms + FIX 20 citation gate (sha a505e8c7... restamped, both floor mirrors MIN_MANIFEST_VERSION = 54); live peer copy updated, sync_check IN SYNC
+- ruleset carries both sides (loader rows + AF-WARNING-HOLD language, checksum 31 holds); universal-sops manifest regenerated and committed
+
+### Risk
+
+Low. Full presentation pytest suite on the merged tree: 1224 passed, 2 skipped, 0 failed. The one initial failure (test_fanout_prompt_phase) was proven pre-existing on pristine v22.0.86 main and is fixed here. Repo-wide node suite: 2256 tests, failures all traced to concurrent-run shared-state, non-merge-caused. Each batch-2 lane received per-fix opus QC; credit-exit-map and slide-geometry independently verified pass.
+
 ## [v22.0.86]  -  2026-08-31  -  Presentation Department rev2 batch 1 (28 fixes)
 
 ### Why
