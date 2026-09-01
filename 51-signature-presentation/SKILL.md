@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: 1.1.8
+version: 1.1.9
 ---
 
 # Signature Presentation (Skill 51)
@@ -10,7 +10,8 @@ The methodology layer for the Trevor Otts **"How To Create A Signature Presentat
 4-phase, minimum-100-slide signature talk — added to the Presentations department as a new
 governed **deck type** (`deck_type: signature_presentation`). This skill owns the *IP and the
 gates*; the department engine owns *execution*. It never builds a deck itself and never forks
-`build_deck.py`.
+`build_deck.py`. `433_Deck_Data.json` — the 4x3x3 offer-book deck-data artifact — is produced by
+Skill 53 (Book Writer) and consumed here as the offer-deck data source.
 
 > The method captured in `MASTERDOC.md` is **SACRED** — never floored, reordered, or
 > reinterpreted. Every rule below is machine-enforced by a fail-closed prover, never advisory.

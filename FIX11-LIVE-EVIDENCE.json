@@ -1,0 +1,39 @@
+{
+  "test": "FIX-11 GHL media upload QC gate — OPERATOR account only",
+  "date_utc": "2026-08-06",
+  "account": "operator GHL BlackCEO LLC",
+  "location_prefix": "Mct54",
+  "credential": "operator's own GOHIGHLEVEL_API_KEY (LOCATION PIT) — value never printed",
+  "gate": "upload_media(test deck) returns success AND deck appears in read-only listing",
+  "result": "PASS",
+  "upload": {
+    "endpoint": "POST services.leadconnectorhq.com/medias/upload-file",
+    "http": 201,
+    "fileId": "6a7508774d2efd6430658281",
+    "name": "fix11-qc-governed-deck — demo-deck-FINAL.pptx",
+    "public_url_prefix": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/",
+    "boundary_gate": "PASS (clean kie-baked governed run dir)",
+    "ua_fix": "browser User-Agent required — bare urllib UA 403s with Cloudflare error 1010"
+  },
+  "list_back": {
+    "endpoint": "GET services.leadconnectorhq.com/medias/files?locationId=...&type=file",
+    "http": 200,
+    "deck_present": true,
+    "matched_id": "6a7508774d2efd6430658281",
+    "matched_name": "fix11-qc-governed-deck — demo-deck-FINAL.pptx",
+    "library_count_after_upload": 2590,
+    "library_count_before_upload": 2589,
+    "read_only": true
+  },
+  "tests": {
+    "test_ghl_media_list.py": "10 passed",
+    "upload_gate+delivery_guard+gates+waivers+producers": "93 passed",
+    "ghl_media_push selftest": "PASS 19 cases",
+    "delivery_gate selftest": "PASS 18 cases"
+  },
+  "pre_existing_not_caused_by_fix": [
+    "test_client_package manifest-hash drift (fails on pristine HEAD too; FIX-23(c) scope)",
+    "operator-box GOHIGHLEVEL_LOCATION_ID vs GOHIGHLEVEL_API_KEY location mismatch (env drift)",
+    "create_media_folder needs altId/altType on current GHL API -> root fallback (valid per gate)"
+  ]
+}

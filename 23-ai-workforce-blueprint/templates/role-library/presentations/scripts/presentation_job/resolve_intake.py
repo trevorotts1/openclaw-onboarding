@@ -76,6 +76,12 @@ class MissingRequester(RuntimeError):
     UnknownPresentationType -- never catch it to fabricate a chat_id or to
     write an intake anyway. See main()'s EXIT CODES doc (exit 4)."""
 
+class UnknownIntakeDepth(ValueError):
+    """FIX 36(3): an explicit --intake-depth / PRESENTATION_INTAKE_DEPTH value
+    outside the QUICK|IN-DEPTH vocabulary. Loud, blocking, exit 5 — never
+    silently mapped to QUICK. Distinct from run-mode --mode (Ultra|Standard|
+    Economy), which is a different axis and is never accepted here."""
+
 
 # The four upsell fields intake/upsell-questions.json's storeTarget maps
 # under pre_presentation_capture (WANT_SALES_CHECKOUT / its declined-reason
@@ -141,6 +147,88 @@ def _read_json_dict(path: Path) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# FIX 36(3) — intake-depth vocabulary (QUICK vs IN-DEPTH).
+#
+# The interview_depth question (deck-intake-questions.json Q9, subfield
+# standard_mode) records the client's chosen intake depth. Its vocabulary is
+# deliberately DIFFERENT from (and must never collide with) FIX 38's run-mode
+# vocabulary (--mode / PRESENTATION_MODE = Ultra|Standard|Economy only):
+#
+#   intake depth (this file)  : --intake-depth quick|in-depth, env
+#                               PRESENTATION_INTAKE_DEPTH, ledger field
+#                               interview_depth / STANDARD_MODE
+#   run mode (FIX 38/11)      : --mode Ultra|Standard|Economy, env
+#                               PRESENTATION_MODE
+#
+# Never reuse --mode for both meanings. Resolution order, never fabricating:
+#   1. explicit --intake-depth CLI value (canonical entry passes what the
+#      operator/caller stated),
+#   2. env PRESENTATION_INTAKE_DEPTH,
+#   3. the ledger's interview_depth entry (the real driver writes the
+#      client's QUICK/IN-DEPTH answer there),
+#   4. working/copy/intake.json's standard_mode / interview_depth fields
+#      (upstream dispatch steps stamp the derived value there),
+#   5. the question's own schema default: QUICK.
+# The resolved value is emitted as intake["standard_mode"] — the subfield
+# name the engine's standard_mode contract already speaks.
+INTAKE_DEPTH_ENV = "PRESENTATION_INTAKE_DEPTH"
+INTAKE_DEPTH_LEGAL = ("quick", "in-depth")
+_INTAKE_DEPTH_LEDGER_KEYS = ("interview_depth", "standard_mode", "STANDARD_MODE")
+
+def _resolve_intake_depth(explicit: Optional[str], entries: dict,
+                          intake_copy: dict) -> str:
+    """Return the deck's intake depth ('QUICK' or 'IN-DEPTH'); never None.
+
+    Every source is normalized case-insensitively (a ledger value of
+    'in depth'/'In-Depth'/'IN DEPTH' is the same IN-DEPTH answer); a value
+    that is PRESENT but not in the vocabulary is a loud AF-INTAKE-DEPTH-
+    INVALID refusal (via UnknownIntakeDepth), never a silent QUICK fallback
+    -- this is what keeps run-mode vocabulary (ultra|standard|economy) from
+    ever leaking into the intake-depth axis."""
+    def _canon(val) -> Optional[str]:
+        if val is None:
+            return None
+        s = str(val).strip().lower().replace("_", "-").replace(" ", "-")
+        if s == "indepth":
+            s = "in-depth"
+        return s if s in INTAKE_DEPTH_LEGAL else None
+
+    def _legal_or_raise(stage: str, val) -> Optional[str]:
+        canon = _canon(val)
+        if val is not None and canon is None:
+            raise UnknownIntakeDepth(
+                f"intake depth {stage} {val!r} is not a legal depth; the "
+                f"vocabulary is exactly quick|in-depth (env {INTAKE_DEPTH_ENV}). "
+                "Run-mode --mode (Ultra|Standard|Economy) is a DIFFERENT axis "
+                "and is never accepted here.")
+        return canon
+
+    for cand in (
+        _legal_or_raise("--intake-depth", explicit),
+        _legal_or_raise(f"env {INTAKE_DEPTH_ENV}", os.environ.get(INTAKE_DEPTH_ENV)),
+        _legal_or_raise(
+            "ledger interview_depth",
+            _entry_raw_value(entries, _INTAKE_DEPTH_LEDGER_KEYS[0])
+            or _entry_raw_value(entries, _INTAKE_DEPTH_LEDGER_KEYS[1])
+            or _entry_raw_value(entries, _INTAKE_DEPTH_LEDGER_KEYS[2])),
+        _legal_or_raise("intake.json standard_mode",
+                        intake_copy.get("standard_mode")),
+        _legal_or_raise("intake.json interview_depth",
+                        intake_copy.get("interview_depth")),
+        _legal_or_raise(
+            "intake.json pre_presentation_capture.standard_mode",
+            (intake_copy.get("pre_presentation_capture") or {})
+            .get("standard_mode") if isinstance(
+                intake_copy.get("pre_presentation_capture"), dict) else None),
+        "quick",  # the question schema's documented default
+    ):
+        if cand:
+            return "IN-DEPTH" if cand == "in-depth" else "QUICK"
+    # Unreachable: the tuple always ends with the schema default. Kept only so
+    # a future edit cannot fall through to None.
+    raise ValueError("intake-depth resolution fell through -- never happens")
+
 def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
     """FAULT-05 fix -- resolve the client's upsell answers (sales+checkout
     page, VSL page, and their verbatim declined-reason waivers) into the
@@ -191,9 +279,12 @@ def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
     return capture
 
 
-def resolve(ledger_path: Path, source: str) -> dict:
+def resolve(ledger_path: Path, source: str,
+            intake_depth: Optional[str] = None) -> dict:
     """Read the intake ledger and return the engine's --new intake dict.
 
+    ``intake_depth`` is FIX 36(3)'s explicit --intake-depth value from the
+    caller (None = not stated; env/ledger/schema-default then decide).
     Raises UnknownPresentationType if the ledger's presentation_type/deck_type
     value does not resolve through vocab.normalize_presentation_type(). Never
     defaults it -- an absent or garbled value is exactly the case that must
@@ -354,6 +445,21 @@ def resolve(ledger_path: Path, source: str) -> dict:
     if capture:
         intake["pre_presentation_capture"] = capture
 
+    # FIX 36(3): intake depth (QUICK|IN-DEPTH) — resolved explicitly, never
+    # silently defaulted: the schema default only applies when the question
+    # was genuinely never answered anywhere. An explicit caller value that is
+    # not in the vocabulary raises (loud AF-INTAKE-DEPTH-INVALID via main()).
+    if intake_depth is not None and str(intake_depth).strip().lower().replace(
+            "_", "-").replace(" ", "-").replace("indepth", "in-depth") \
+            not in ("quick", "in-depth"):
+        raise UnknownIntakeDepth(
+            f"--intake-depth {intake_depth!r} is not a legal depth; the vocabulary "
+            f"is exactly quick|in-depth (env {INTAKE_DEPTH_ENV}). Run-mode --mode "
+            "(Ultra|Standard|Economy) is a DIFFERENT axis and is never accepted here."
+        )
+    intake["standard_mode"] = _resolve_intake_depth(
+        intake_depth, entries, intake_copy)
+
     return intake
 
 
@@ -365,16 +471,26 @@ def main(argv=None) -> int:
                    help="path to write the engine's --new intake JSON")
     p.add_argument("--source", default="resolve-intake",
                    help="tag recorded in intake.source (which caller ran this)")
+    p.add_argument("--intake-depth", default=None, choices=list(INTAKE_DEPTH_LEGAL),
+                   help="FIX 36(3): the deck's intake depth, quick|in-depth "
+                        "(the interview_depth question's standard_mode). "
+                        "Distinct from run-mode --mode (Ultra|Standard|Economy) "
+                        "-- never reuse --mode for this axis. Falls back to env "
+                        f"{INTAKE_DEPTH_ENV}, then the ledger's interview_depth "
+                        "answer, then the schema default QUICK.")
     args = p.parse_args(argv)
 
     try:
-        intake = resolve(args.ledger, args.source)
+        intake = resolve(args.ledger, args.source, intake_depth=args.intake_depth)
     except UnknownPresentationType as exc:
         print(f"AF-DECK-TYPE-UNKNOWN: {exc}", file=sys.stderr)
         return 3
     except MissingRequester as exc:
         print(f"AF-REQUESTER-MISSING: {exc}", file=sys.stderr)
         return 4
+    except UnknownIntakeDepth as exc:
+        print(f"AF-INTAKE-DEPTH-INVALID: {exc}", file=sys.stderr)
+        return 5
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     tmp = args.out.with_suffix(args.out.suffix + ".tmp")

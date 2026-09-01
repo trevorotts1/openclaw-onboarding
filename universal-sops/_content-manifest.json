@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-01T00:14:59Z",
+  "generated_at": "2026-09-01T11:32:07Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -301,8 +301,8 @@
       "bytes": 127005
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "a505e8c7eaec339f93ce1e3d0ee51c0adf60ccf3f33af03d4d0ef3699674c25a",
-      "bytes": 165030
+      "sha256": "c21fe068530981c8975d6c7daad834a3d976fdee824ccb94e5e96bbe16f6901a",
+      "bytes": 175408
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -313,8 +313,8 @@
       "bytes": 5940
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
-      "sha256": "282cfb078b937cc4ff83133b3550df66cab0b99adddc73b2769a26a0243c1427",
-      "bytes": 6076
+      "sha256": "280fa4c6580fc10124955c3800b83d3951e88c858c4a580e803a14ac383e60a0",
+      "bytes": 18645
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
       "sha256": "dd78c4ac60982523e4f1f219c3219627b2ec38036174fb056e31d79c68f56771",
@@ -333,8 +333,8 @@
       "bytes": 11397
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "573b1bc72d2dd622ae0ffbf3acc5ad3988b274f2a615155fe87aa07e6eda2846",
-      "bytes": 13660
+      "sha256": "9eca5e05a4757be250516fb6edc59a7ef36e9d744a73792fb9e7070de3467648",
+      "bytes": 13944
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",

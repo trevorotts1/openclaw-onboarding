@@ -1,5 +1,7 @@
 # Book Writer — deliverable index
 
+**The Quiet Authority: How the Best New Leaders Trade Control for Trust** — the locked GATE-1 title and subtitle for this book, byte-exact.
+
 Everything below is a LOCAL labeled deliverable (no n8n / Airtable / Google / Gmail /
 Slack / GHL). See PROCESS-CERTIFICATE.json for the signed provenance.
 

@@ -2,18 +2,19 @@
 """ghl_media_push.py — host a deck's approved images + final deliverables in GHL,
 AND enforce the HARD closeout gate that no deck ships without that upload.
 
-The Media Librarian's mechanical upload half. Per the VERIFIED-WORKING Skill-48
-pattern (ghl_media.create_media_folder, POST /medias/folder, Version 2021-07-28,
-client LOCATION PIT), it:
+The Media Librarian's mechanical upload half. Per the BINDING GHL-touch rule in
+CLIENT-WEBINAR-DECK-SOP (POST /medias/upload-file, Version 2021-07-28, client
+LOCATION PIT), it:
 
-  1. CREATES a named per-deck media folder ("DECK <deck-slug>") so the slide images
-     are grouped under the deck, never scattered in the media root. Folder-create is
-     the PRIMARY path (it returns 201 against a correctly-scoped client LOCATION PIT).
-  2. If the API DECLINES folder-create (returns no folder id), falls back to (a) a
-     human-supplied folder id from intake.json.ghl_media_folder_id, else (b) the
-     media ROOT with a "<deck-slug> — " name PREFIX so the images stay grouped by
-     name. Either way `ghl_folder_id` is recorded ("root" is a valid passing value).
-  3. Uploads each approved PNG (+ the final PPTX/PDF when given) via
+  1. RESOLVES the per-deck media folder — FIX 36: FOLDER-CREATE IS DISABLED. The
+     folder-create endpoint returns 404 for this department (the SOP is binding);
+     the old 201 "primary path" branch is REMOVED. The folder is never created by
+     the agent: the upload targets (a) the HUMAN-APPROVED folder id from
+     intake.json.ghl_media_folder_id (a pre-existing folder made by a person in
+     the GHL UI), else (b) the shareable media ROOT with a "<deck-slug> — " name
+     PREFIX so the images stay grouped by name. Either way `ghl_folder_id` is
+     recorded ("root" is a valid passing value).
+  2. Uploads each approved PNG (+ the final PPTX/PDF when given) via
      ghl_media.upload_media (POST /medias/upload-file, multipart, parentId), recording
      the public storage.googleapis.com URL + fileId per file to media_library.json.
 
@@ -193,14 +194,11 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     pit = ghl_media.resolve_location_pit()        # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()  # client's location id
 
-    # 1) PRIMARY: create the per-deck media folder via the verified POST /medias/folder.
-    folder = ghl_media.create_media_folder(f"DECK {slug}", location_id, pit, opener=opener)
-    parent_id = folder.get("folderId")
-    # 2) FALLBACK chain when the API declined folder-create.
-    if not parent_id:
-        human_folder = str(intake.get("ghl_media_folder_id") or "").strip()
-        if human_folder:
-            parent_id = human_folder
+    # 1) FOLDER RESOLUTION — FIX 36: NEVER create a folder (the folder-create endpoint
+    # returns 404 per the SOP; the former 201 "primary path" branch is removed).
+    # Only a PRE-EXISTING, human-approved folder id from intake is accepted; else the
+    # shareable media root with a name prefix. No network call for the folder at all.
+    parent_id = str(intake.get("ghl_media_folder_id") or "").strip() or None
     name_prefix = "" if parent_id else f"{slug} — "
     ghl_folder_id = parent_id or "root"
 
@@ -244,8 +242,10 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     out = {
         "deck_slug": slug,
         "ghl_folder_id": ghl_folder_id,
-        "ghl_folder_name": folder.get("name") or ledger.get("ghl_folder_name") or f"DECK {slug}",
-        "ghl_folder_created_via_api": bool(folder.get("folderId")),
+        # FIX 36: the agent never creates folders — the folder is pre-existing
+        # (human-approved intake id) or the root, so created_via_api is always False.
+        "ghl_folder_name": ledger.get("ghl_folder_name") or f"DECK {slug}",
+        "ghl_folder_created_via_api": False,
         "uploaded": uploaded,
         "upload_count": len(uploaded),
         "slides": slides,
@@ -379,7 +379,8 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
     if not folder:
         reasons.append(
             f"{GHL_UPLOAD_GATE}: ghl_folder_id is null/empty — the per-deck GHL media "
-            "folder was never resolved (create_media_folder, or the 'root' fallback).")
+            "folder was never resolved (the human-approved intake ghl_media_folder_id, "
+            "or the 'root' fallback; the agent never creates folders — FIX 36).")
 
     # (2) per-slide PNG uploads, each with a real ghl_media_id.
     slides = _collect_slide_uploads(media)
@@ -680,9 +681,9 @@ def _selftest() -> int:
     import os as _os
 
     def _mock_ghl_opener(req, timeout):
-        # One mock for BOTH the folder-create POST and the upload POST: carries the fields
-        # each canonical parser reads (id/folderId for the folder; fileId/url for the
-        # upload), so create_media_folder() and upload_media() both succeed offline.
+        # Mock for the upload POST (FIX 36: no folder-create POST is ever issued; the
+        # push path resolves the folder from the pre-existing intake id or the root).
+        # Carries the fields the canonical upload parser reads (fileId/url).
         class _R:
             def getcode(self):
                 return 200
@@ -743,8 +744,8 @@ def _selftest() -> int:
         deck = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
         delivery_gate._write_render_manifest(base, ["kie-aaa"])
         saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
-        _os.environ["GHL_API_KEY"] = "pit-fixture"
-        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        _os.environ["GHL_API_KEY"] = "pit-" + "a" * 40  # 40+ chars: not a doc placeholder
+        _os.environ["GHL_LOCATION_ID"] = "loc-" + "a" * 40
         out = None
         try:
             out = push_deck_media(base, [], extra_files=[str(deck)], opener=_mock_ghl_opener)
@@ -786,7 +787,7 @@ def _selftest() -> int:
         deck_pdf = pkg / "demo-deck-FINAL.pdf"
         deck_pdf.write_bytes(b"%PDF-1.7\n" + b"\x00" * 128)  # real %PDF header (image-only: no fonts/text ops)
         for nm in ("demo-deck-FINAL.pptx", "PRESENTER-GUIDE.pdf", "PRESENTERS-SPEECH.pdf",
-                   "PRESENTER-AUDIO.mp3"):
+                   "PRESENTER-AUDIO.mp3", "demo-deck-WEBINAR.mp4"):
             (pkg / nm).write_bytes(b"x" * 1024)
         (base / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (base / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps(
@@ -800,8 +801,8 @@ def _selftest() -> int:
         (base / "working" / "teleprompter" / "teleprompter.html").write_text("<html></html>")
         (pkg / "presenter-teleprompter.html").write_text("<html></html>")
         saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
-        _os.environ["GHL_API_KEY"] = "pit-fixture"
-        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        _os.environ["GHL_API_KEY"] = "pit-" + "a" * 40  # 40+ chars: not a doc placeholder
+        _os.environ["GHL_LOCATION_ID"] = "loc-" + "a" * 40
         out = None
         try:
             out = push_deck_media(base, [], extra_files=[str(deck_pdf)], opener=_mock_ghl_opener)
@@ -831,8 +832,8 @@ def _selftest() -> int:
         deck_pdf = base / "delivery" / "demo-deck-FINAL" / "demo-deck-FINAL.pdf"
         deck_pdf.write_bytes(b"%PDF-1.7\n" + b"\x00" * 128)  # real %PDF header (image-only)
         saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
-        _os.environ["GHL_API_KEY"] = "pit-fixture"
-        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        _os.environ["GHL_API_KEY"] = "pit-" + "a" * 40  # 40+ chars: not a doc placeholder
+        _os.environ["GHL_LOCATION_ID"] = "loc-" + "a" * 40
         out = None
         try:
             out = push_deck_media(base, [], extra_files=[str(deck_pptx), str(deck_pdf)],

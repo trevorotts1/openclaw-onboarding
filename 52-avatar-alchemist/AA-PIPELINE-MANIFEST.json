@@ -106,7 +106,8 @@
       "count": 40
     },
     "book": {
-      "route": "avatar-alchemist-book",
+      "route": "53-book-writer",
+      "handoff": "53-book-writer",
       "skill_number": 53,
       "on_absent": "park",
       "park_error": "book-skill-not-available",

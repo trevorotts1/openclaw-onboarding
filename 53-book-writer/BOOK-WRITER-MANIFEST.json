@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "skill": "book-writer",
   "skill_number": 53,
-  "skill_version": "1.3.1",
+  "skill_version": "1.4.0",
   "human_name": "Book Writer \u2014 Ghostwriting Engine (Avatar Alchemist, BOOK version)",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Book Writer pipeline (the BOOK version of the Avatar Alchemist). The deterministic assembler/certifier run_book_writer.py walks phases[] IN ORDER (P0->P8) with NO phase skips. Each phase declares produces_artifact + its gate_codes (AF-BK-*). Every AF-BK-* below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/ (py_symbol names the deciding function). Editing this file is step (i) of any Book Writer change: add the gate, add the AF code here with its trigger, add the checker, add the golden + broken-variant fixture. Anthology is the SEPARATE sibling Skill 54 and is NOT part of this pipeline.",
   "design_law": "Enforcement, not description. Every SACRED book count/floor is MEASURED on the STRIPPED text (markdown + whitespace removed) of the artifact \u2014 a model's self-reported chapter or word count is NEVER trusted, so a whitespace-padding attack cannot fake a floor. Locked title/subtitle immutability, verbatim personal-story placement, and sequential chapter-batch continuity are PROVEN, not requested. Client runtime resolves every tier (HEAVY/MID/FORMATTER/RESEARCHER/IMAGE) to the CLIENT's own providers via model-map.json \u2014 NEVER Anthropic/claude-* ids or operator keys. The provider-neutral gates are stdlib Python that run identically on every box.",
@@ -296,6 +296,14 @@
       "py_symbol": "evaluate"
     },
     {
+      "code": "AF-BK-AVATAR-MISSING",
+      "stage": "P1-AVATAR",
+      "level": "run",
+      "trigger": "avatar dossier missing or under minimum word count (run/artifacts/01-avatar.md must exist with at least 500 stripped words)",
+      "enforced_by": "prove_bw_avatar",
+      "py_symbol": "evaluate"
+    },
+    {
       "code": "AF-BK-TITLE-LOCK",
       "stage": "P3-TITLES-GATE",
       "level": "manuscript",
@@ -355,7 +363,7 @@
       "code": "AF-BK-433-COUNTS",
       "stage": "P7-QC",
       "level": "4x3x3",
-      "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes AND not exactly 30 program titles",
+      "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes OR not exactly 30 program titles",
       "enforced_by": "prove_bw_433",
       "py_symbol": "evaluate"
     },
@@ -430,6 +438,30 @@
       "trigger": "a hand-rolled external uploader/notifier (Google Drive / Slack / Gmail / n8n / Airtable / GHL) is present in the run directory, bypassing the local-labeled-deliverable handoff",
       "enforced_by": "scripts/prove_bw_process.py",
       "py_symbol": "bypass_scan"
+    },
+    {
+      "code": "AF-BK-ACCEPT-UNREADABLE",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "the forwarded intake cannot be read or parsed (invalid UTF-8, malformed JSON, or not a JSON object)",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
+    },
+    {
+      "code": "AF-BK-ACCEPT-WRONG-VERSION",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "the forwarded intake is not version=book; a brand intake belongs to Skill 52 and is refused by the book pipeline",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
+    },
+    {
+      "code": "AF-BK-ACCEPT-REJECTED",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "this skill's own intake gate (prove_bw_intake, handoff mode) refused the forwarded payload; the underlying AF-BK-* codes are carried through",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
     }
   ],
   "stages": [
@@ -816,5 +848,10 @@
       "floors": {}
     }
   ],
-  "stages_note": "Tone stages 04-08 are the shared tone core (byte-identical to shared-utils/tone-writing-core, proved by verify_tone_core_sync.py). Stage 09 is intentionally unused (the source primary-goal extract is folded into the avatar phase). Stages 41-45 run only in mode 4x3x3. Stage 23 (cover image) and 19/20 (revision rounds) are optional/degradable; the cover-prompt .md and the manuscript always deliver."
+  "stages_note": "Tone stages 04-08 are the shared tone core (byte-identical to shared-utils/tone-writing-core, proved by verify_tone_core_sync.py). Stage 09 is intentionally unused (the source primary-goal extract is folded into the avatar phase). Stages 41-45 run only in mode 4x3x3. Stage 23 (cover image) and 19/20 (revision rounds) are optional/degradable; the cover-prompt .md and the manuscript always deliver.",
+  "changelog": {
+    "1.4.0": "Mini-app engine: universal book-writer client-question app (20 units U01-U20) — Cloudflare universal links, phase-config engine, warm 1-2-question SPA, box-side ingestion + GHL write-back, per-client isolation proven, Playwright e2e green. Merged from merge/apicur-train train.",
+    "1.3.1": "F4.3 na_autopick wired; forbidden self-pick prose removed (tone-core GO fixes)",
+    "1.3.0": "Mini-app engine: universal book-writer client-question app (20 units) — Cloudflare universal links, phase-config engine, warm 1-2-question SPA, box-side ingestion + GHL write-back, per-client isolation proven, Playwright e2e green."
+  }
 }

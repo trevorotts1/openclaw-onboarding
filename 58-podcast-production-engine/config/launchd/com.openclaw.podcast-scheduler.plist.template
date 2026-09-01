@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  58-PODCAST-PRODUCTION-ENGINE :: PODCAST SCHEDULER LAUNCHD TEMPLATE (act-4)
+
+  THE CONTROLLER IS THE PROCESSOR; THE SCHEDULER IS ITS HEARTBEAT.
+
+  macOS heartbeat for podcast_controller.py. install-podcast-scheduler.sh
+  renders this template (substituting PODCAST_SCHEDULER_RUNNER_PATH), loads
+  it into the user launchd domain, and verifies it; re-running is idempotent.
+
+  One tick every 300 seconds (5 minutes): the runner sources the podcast env
+  and runs podcast_controller.py once. This is ONE entry PER BOX, not per
+  client: guard-cron-inventory.py's per-client once-daily law governs openclaw
+  client crons only, and this box-level tick is recognized by the label
+  podcast-scheduler (the runner is excluded from the per-client census by
+  name; it never registers an openclaw cron job and has no delivery mode).
+
+  Placeholders (replaced at install time by install-podcast-scheduler.sh):
+    PODCAST_SCHEDULER_RUNNER_PATH   absolute path to podcast_scheduler_runner.sh
+    PODCAST_SCHEDULER_HOME          runtime user's HOME (log destination)
+  Env knobs the runner honors (set via EnvironmentVariables if needed):
+    PODCAST_ENV_FILE, PODCAST_CONTROLLER_PATH, PODCAST_SCHEDULER_LOG,
+    PODCAST_SCHEDULER_DRY_RUN
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.podcast-scheduler</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>PODCAST_SCHEDULER_RUNNER_PATH</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>PODCAST_SCHEDULER_HOME/.openclaw/podcast-scheduler.log</string>
+  <key>StandardErrorPath</key>
+  <string>PODCAST_SCHEDULER_HOME/.openclaw/podcast-scheduler.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

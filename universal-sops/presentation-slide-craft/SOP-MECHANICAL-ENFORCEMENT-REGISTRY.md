@@ -73,6 +73,26 @@ This document replaces the scattered "PENDING Agent W3" notes across 6+ SOPs wit
 | SOP-PHILOSOPHY-00 | Pure doctrine; no enforcement surface. |
 | SOP-VISION-01 | References existing live gates; declares no new gate. |
 
+### 3.4 Doctrine aliases (declared parent codes, machine-enforced via manifest successors)
+
+Six codes below appear in this registry's older tables but have NO
+PIPELINE-MANIFEST.autofails entry under that exact name. They are NOT
+unregistered gates: each is a parent/alias name whose enforcement lives under
+the named manifest successors, per MASTER-QC-AUTOFAIL-RULESET.md's own
+reconciliation notes (its "how the OLD rules map to the LIVE gates" table,
+lines 15-27). FIX 36(4) requires them DECLARED here rather than left silent —
+a code that looks machine-enforced but is not is exactly the drift this
+registry exists to kill.
+
+| AF Code | Status | Manifest successor(s) | Authority |
+|---|---|---|---|
+| AF-C7 (gradual-drop choreography) | DOCTRINE ALIAS | AF-DEN-1..8 + copy QC c17 (ladder integrity) + c19 (Wall of Wins framing) + c23 (re-pitch) + c24 (close density and Wall spacing); the SPREAD/EARNED+BUILT-UP/ADDS-value/FINAL-below-ladder sub-conditions are enforced by the Offer Price Strategist SOP 9.1/9.2/9.9 gates | MASTER-QC-AUTOFAIL-RULESET.md Section 2 reconciliation row |
+| AF-DENSITY (DEN-1..8) | DOCTRINE ALIAS | AF-DEN-1..8 (all 8 present in PIPELINE-MANIFEST.autofails, enforced_by qc_check) | MASTER-QC-AUTOFAIL-RULESET.md Section 2 reconciliation row ("Maps onto AF-C7 + c17 + c19 + c23 + c24") |
+| AF-SYNC (lockstep broken) | DOCTRINE ALIAS | emitted directly by sync_check.py on any lockstep drift (the Phase 1Q gate itself); it is sync_check's own banner code, not a manifest autofail entry | sync_check.py drift banner |
+| AF-F7 (logo identity drift) | DOCTRINE ALIAS | manifest successors: AF-BRAND-CONSISTENCY (palette-level drift, check_brand_consistency) and the locked-asset intake gates (AF-ASSET-QUESTION-MISSING, AF-MANIFEST-UNREFERENCED); the AF-P15 write-time guard and AF-I4 render-integrity clause remain QC-doctrine rows in qc-specialist-presentations.md, not manifest autofail entries | qc-specialist-presentations.md AF-P15/AF-I4 rows ("the cross-slide logo-IDENTITY-drift check is AF-F7") |
+| AF-NO-FORMULA (formula slide requirement) | DOCTRINE ALIAS | AF-OBI-4 (value-trio-on-one-slide; its failure message mandates the formula slide) + AF-OBI-1..6 one-big-idea battery, in PIPELINE-MANIFEST.autofails | MASTER-QC-AUTOFAIL-RULESET.md AF-OBI-4 failure text |
+| AF-SP-* family (SIGPRES) | FAMILY ROW | all 16 concrete AF-SP-<NAME> codes are in PIPELINE-MANIFEST.autofails and wired via prove_sp_*.py provers; this row is the family prefix, never itself an entry | SOP-SIGPRES-00..06 |
+
 ---
 
 ## 4. HOW TO REGISTER A DOCTRINE-ONLY GATE
@@ -90,7 +110,209 @@ After all four steps, update this registry: change the state from DOCTRINE-ONLY 
 
 ## 5. VERIFICATION
 
-This registry is NOT checked by sync_check.py (it is a documentation artifact, not a code artifact). It is the operator's and Director's reference for which gates are mechanically enforced vs doctrine-only. Stale entries here (a gate registered but this doc still says DOCTRINE-ONLY) are human-detectable, not machine-detectable.
+This registry IS machine-checked as of FIX 36(4) (2026-09-01):
+
+1. **Parity test** — `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix36_registry_parity.py` fails on any manifest-enforced AF code absent from this document (including FIX 15/18's AF-SLIDE-CRAFT-LOADER / AF-CRAFT-JUDGEMENT-LOADER), on any appendix code the manifest no longer declares, and on any alias code not declared in section 3.4.
+2. **Machine-checked appendix (section 6)** — generated from PIPELINE-MANIFEST.json by `23-ai-workforce-blueprint/scripts/gen_registry_parity.py`; the parity test re-derives it in --dry-run mode and requires a byte-for-byte match. If you change the manifest's autofails[], regenerate the appendix — the test fails otherwise.
+3. **Lockstep (manifest ↔ build_deck ↔ ruleset §5 ↔ preflight)** — remains sync_check.py's A-series checks, unchanged.
+
+Stale entries here are now MACHINE-detectable, not human-detectable.
+
+---
+
+## 6. MACHINE-CHECKED PARITY APPENDIX
+
+Every PIPELINE-MANIFEST.autofails entry (enforced_by, py_symbol), generated —
+never hand-edited. Regenerate:
+`python3 23-ai-workforce-blueprint/scripts/gen_registry_parity.py`
+
+<!-- BEGIN MACHINE-CHECKED PARITY TABLE -->
+| AF code | enforced_by | py_symbol |
+|---|---|---|
+| `AF-AGENT-ENV-MISSING` | runner | - |
+| `AF-AGENT-ENV-UNKNOWN` | runner | - |
+| `AF-AGENT-ENV-UNMANAGED` | runner | - |
+| `AF-ASSET-QUESTION-MISSING` | build_deck | _chk_asset_question |
+| `AF-AUD-1` | qc_check | - |
+| `AF-AUD-2` | qc_check | - |
+| `AF-AUD-3` | qc_check | - |
+| `AF-AUD-4` | qc_check | - |
+| `AF-AUD-5` | qc_check | - |
+| `AF-AUD-6` | qc_check | - |
+| `AF-BAKED` | closeout_gate | - |
+| `AF-BRAND-CONSISTENCY` | build_deck | check_brand_consistency |
+| `AF-BUNDLE-COMPLETE` | build_deck | run_postflight_gate |
+| `AF-BUNDLE-INCOMPLETE` | fix_bundle_complete | - |
+| `AF-C2` | qc_check | - |
+| `AF-CADENCE` | qc_check | - |
+| `AF-CANONICAL-RENDER-BYPASS` | build_deck | check_canonical_render_path |
+| `AF-CAPACITY-UNMEASURED` | launcher | - |
+| `AF-CC-UNREGISTERED` | build_deck | _chk_cc_registered |
+| `AF-CC-UNVERIFIED` | build_deck | _chk_cc_registered |
+| `AF-CONVERTER-NO-INVENT` | build_deck | _chk_converter_no_invent |
+| `AF-CONVERTER-PARITY` | closeout_gate | - |
+| `AF-COPY` | build_deck | _engine_problem_to_def |
+| `AF-COPY-BAND` | build_deck | _chk_copy_density |
+| `AF-COPY-QC` | build_deck | _qc_report_substance_problems |
+| `AF-COVERAGE-1` | build_deck | _chk_coverage |
+| `AF-CRAFT-JUDGEMENT-LOADER` | build_deck | _chk_slide_craft |
+| `AF-CREATIVITY` | build_deck | _chk_creativity |
+| `AF-DARK-SLIDE` | build_deck | _chk_no_dark_slides |
+| `AF-DECK-TYPE-UNSET` | build_deck | _chk_deck_type |
+| `AF-DELIVER` | closeout_gate | - |
+| `AF-DELIVERY-COMPLETE` | closeout_gate | - |
+| `AF-DEN-1` | qc_check | - |
+| `AF-DEN-2` | qc_check | - |
+| `AF-DEN-3` | qc_check | - |
+| `AF-DEN-4` | qc_check | - |
+| `AF-DEN-5` | qc_check | - |
+| `AF-DEN-6` | qc_check | - |
+| `AF-DEN-7` | qc_check | - |
+| `AF-DEN-8` | qc_check | - |
+| `AF-DH1` | closeout_gate | - |
+| `AF-EMPTY-NOTES-PANE` | build_deck | _chk_notes_pane |
+| `AF-EXCELLENCE` | build_deck | check_prompt_excellence |
+| `AF-FACE-PROMPT-MISSING` | qc_check | - |
+| `AF-FONT-FLOOR` | build_deck | check_font_floor |
+| `AF-FORGED-APPROVAL` | build_deck | check_phase_preconditions |
+| `AF-GUARANTEE-GENERIC` | qc_check | - |
+| `AF-HAIR-INAUTHENTIC` | qc_check | - |
+| `AF-HARMONY` | build_deck | check_deck_harmony |
+| `AF-HOOK` | build_deck | check_intelligence_engines_prompt |
+| `AF-HOOK-1` | qc_check | - |
+| `AF-HOOK-2` | qc_check | - |
+| `AF-HOOK-3` | qc_check | - |
+| `AF-HOOK-4` | qc_check | - |
+| `AF-HOOK-5` | qc_check | - |
+| `AF-HOOK-6` | agent | - |
+| `AF-HOOK-7` | qc_check | - |
+| `AF-HOOK-IMG-MISSING` | qc_check | - |
+| `AF-HOOK-OVERSTAMP` | qc_check | - |
+| `AF-I14` | build_deck | _chk_kie_baked |
+| `AF-IMAGE-QC` | build_deck | _chk_image_qc |
+| `AF-IMAGE-QC-RAN` | build_deck | check_image_qc_present |
+| `AF-IMAGE-QC-VISION` | build_deck | check_image_qc_vision |
+| `AF-INTAKE-BATCH` | build_deck | _chk_sp_intake_trace |
+| `AF-INTELLIGENCE` | build_deck | _engine_name_for_code |
+| `AF-INTELLIGENCE-COPY` | build_deck | check_intelligence_engines_copy |
+| `AF-INTELLIGENCE-ENGINES` | build_deck | check_intelligence_engines_prompt |
+| `AF-KIE-AUTH` | build_deck | _preflight_kie_auth |
+| `AF-KIE-BALANCE` | build_deck | kie_balance_preflight |
+| `AF-LIGHT-PROMPT-MISSING` | qc_check | - |
+| `AF-LOCAL-CANVAS` | build_deck | check_canonical_render_path |
+| `AF-MANIFEST-UNREFERENCED` | build_deck | _chk_assets_manifest |
+| `AF-METHOD-FABRICATED` | qc_check | - |
+| `AF-MODE-UNSET` | build_deck | _chk_mode |
+| `AF-MODEL-SOVEREIGNTY` | closeout_gate | - |
+| `AF-NARRATIVE-HARMONY` | qc_check | - |
+| `AF-NO-BEFORE-AFTER` | build_deck | _chk_persuasion_beats |
+| `AF-NO-BRANDED-METHOD` | qc_check | - |
+| `AF-NO-CHOICE` | build_deck | _chk_persuasion_beats |
+| `AF-NO-COMPARISON` | build_deck | _chk_persuasion_beats |
+| `AF-NO-COST-OF-INACTION` | qc_check | - |
+| `AF-NO-EXPERT-PROOF` | build_deck | _chk_persuasion_beats |
+| `AF-NO-FELT-STAKES` | qc_check | - |
+| `AF-NO-FORK` | build_deck | _chk_persuasion_beats |
+| `AF-NO-HOOK-REFRAIN` | qc_check | - |
+| `AF-NO-MEASURABLE-RESULTS` | build_deck | _chk_persuasion_beats |
+| `AF-NO-PRIORITY-STACK` | build_deck | _chk_priority_stack |
+| `AF-NO-PROBLEM` | build_deck | _chk_persuasion_beats |
+| `AF-NO-RECAP` | qc_check | - |
+| `AF-NO-RERANK` | build_deck | _chk_rerank |
+| `AF-NO-RUN-DIR` | delivery_gate | - |
+| `AF-NO-SALIENCE-APEX` | build_deck | _chk_salience_apex |
+| `AF-NO-SHIFT` | build_deck | _chk_priority_shift |
+| `AF-NO-TIME-TO-RESULT` | qc_check | - |
+| `AF-NO-TRIGGER` | build_deck | _chk_trigger |
+| `AF-NO-VILLAIN` | qc_check | - |
+| `AF-NOT-KIE-RENDERED` | delivery_gate | - |
+| `AF-OBI` | qc_check | - |
+| `AF-OBI-1` | qc_check | - |
+| `AF-OBI-2` | qc_check | - |
+| `AF-OBI-3` | qc_check | - |
+| `AF-OBI-4` | qc_check | - |
+| `AF-OBI-5` | qc_check | - |
+| `AF-OBI-6` | qc_check | - |
+| `AF-OCR-ENGINE-MISSING` | build_deck | ocr_engine_preflight |
+| `AF-OCR-READBACK` | build_deck | check_ocr_readback |
+| `AF-OVERLAY-DELIVERED` | build_deck | _chk_no_overlay |
+| `AF-P-DENSITY` | build_deck | _prompt_density_problems |
+| `AF-P-STRUCT` | build_deck | REQUIRED_STRUCTURAL_BLOCKS |
+| `AF-P-VERBATIM` | build_deck | _verbatim_copy_problems |
+| `AF-P1` | build_deck | _chk_rich_prompts |
+| `AF-P13` | build_deck | _negative_block_class_problems |
+| `AF-P14` | build_deck | _spelling_lock_present |
+| `AF-P2` | build_deck | PROMPT_CHAR_CEILING |
+| `AF-PACKAGE-CLEAN` | build_deck | check_package_cleanliness |
+| `AF-PEAK-END` | build_deck | _chk_peak_end |
+| `AF-PHASE-REPORT-DONE` | runner | - |
+| `AF-PHASE-REPORT-MISSING` | runner | - |
+| `AF-PHASE-REPORT-START` | runner | - |
+| `AF-PHASE-SKIPPED` | runner | - |
+| `AF-PITCH-ENGINE` | build_deck | check_pitch_engines |
+| `AF-PITCH-FLAG-UNSET` | build_deck | _chk_pitch_flag |
+| `AF-PITCH-LEAK` | build_deck | _chk_pitch_leak |
+| `AF-PITCH-MISSING` | build_deck | _chk_pitch |
+| `AF-PLACEHOLDER` | qc_check | - |
+| `AF-PRICE-BEFORE-PROMISE` | qc_check | - |
+| `AF-PRIORITY-SHIFT` | build_deck | _chk_priority_shift_ledger |
+| `AF-PROCESS-INTEGRITY` | runner | - |
+| `AF-PROCLAMATION-HEDGE` | build_deck | _chk_proclamation_hedge |
+| `AF-PROMPT-DUP-FILE` | build_deck | _canonical_prompt_dir_problems |
+| `AF-PROMPT-FLOOR` | build_deck | PROMPT_CHAR_FLOOR |
+| `AF-PROMPT-NAME` | build_deck | _canonical_prompt_dir_problems |
+| `AF-PROMPT-QC` | build_deck | _chk_prompt_qc |
+| `AF-QC-INDEPENDENCE` | build_deck | _chk_copy_qc |
+| `AF-QC-PLACEHOLDER` | build_deck | check_qc_phase_report_real |
+| `AF-QC-SKIP` | build_deck | UNSKIPPABLE_QC_PHASES |
+| `AF-R3` | build_deck | FORBIDDEN_DEMOGRAPHIC_DEFAULTS |
+| `AF-RENDERER` | closeout_gate | - |
+| `AF-RESEARCH-GATE` | build_deck | _chk_research_brief |
+| `AF-RESEARCH-REACHES-RENDER` | build_deck | _chk_research_reaches_render |
+| `AF-RESEARCH-UNCITED` | build_deck | _chk_research_cited |
+| `AF-RESEARCH-WEAVE` | build_deck | _chk_research_map |
+| `AF-SCRATCH-PARSE-SKIPPED` | build_deck | _chk_scratch_parse |
+| `AF-SLIDE-COUNT-EXACT` | build_deck | _chk_slide_count_exact |
+| `AF-SLIDE-COUNT-FLOOR` | build_deck | _chk_slide_count_floor |
+| `AF-SLIDE-CRAFT-LOADER` | build_deck | _chk_slide_craft |
+| `AF-SP-8Q-MISSING` | build_deck | _chk_sp_intake |
+| `AF-SP-8Q-SPLIT` | build_deck | _chk_sp_intake |
+| `AF-SP-CASESTUDY-CAP` | build_deck | _chk_sp_structure |
+| `AF-SP-FRAME-UNSET` | build_deck | _chk_sp_intake |
+| `AF-SP-HOOK` | build_deck | _chk_sp_structure |
+| `AF-SP-IMG-SUGGESTION` | build_deck | _chk_sp_structure |
+| `AF-SP-OFFER-UNDECLARED` | build_deck | _chk_sp_intake |
+| `AF-SP-P3-PITCH` | build_deck | _chk_sp_no_pitch |
+| `AF-SP-PHASE-LABEL` | build_deck | _chk_sp_structure |
+| `AF-SP-PHASE-ORDER` | build_deck | _chk_sp_structure |
+| `AF-SP-PHASE-RANGE` | build_deck | _chk_sp_structure |
+| `AF-SP-QUADRANT` | build_deck | _chk_sp_structure |
+| `AF-SP-SLIDE-FLOOR` | build_deck | _chk_sp_structure |
+| `AF-SP-TEACH-STEPS` | build_deck | _chk_sp_structure |
+| `AF-SP-TYPE-MISMATCH` | build_deck | _chk_sp_intake |
+| `AF-SP-TYPE-UNDECLARED` | build_deck | _chk_sp_claim |
+| `AF-SPEECH-HOOK-COUNT` | qc_check | - |
+| `AF-SPEECH-QC` | build_deck | _chk_speech_qc |
+| `AF-SPEECH-SHORT` | build_deck | _chk_speech_length |
+| `AF-SPELLING` | build_deck | _chk_spelling |
+| `AF-STYLE-DOUBLECHARGE` | build_deck | _chk_style_preview |
+| `AF-STYLE-UNPICKED` | build_deck | _chk_style_preview |
+| `AF-TEXT-OVERFLOW` | build_deck | _chk_text_fits |
+| `AF-TOOL-SCHEMA-LOOP` | runner | - |
+| `AF-TYPE-SIZE-MEASURED` | build_deck | _chk_type_size |
+| `AF-TYPOGRAPHY-QC` | build_deck | _chk_typography_qc |
+| `AF-U-CHECKOUT-BUILD` | sales_checkout_builder | - |
+| `AF-U-FORM-CHECKOUT` | sales_checkout_builder | - |
+| `AF-U-SALES-BUILD` | sales_checkout_builder | - |
+| `AF-U-VSL-BUILD` | vsl_builder | - |
+| `AF-VISUAL-VARIETY` | build_deck | check_visual_variety |
+| `AF-WEBINAR-INTRO` | synthesize_full_speech | - |
+| `AF-WEBINAR-SIZE` | build_webinar_video | - |
+| `AF-WORKBOOK-BOTH` | phase_verifiers | - |
+| `AF-WORKBOOK-EMPTY` | workbook_builder | - |
+| `AF-WORKBOOK-PROMPT-NO-CONTENT` | workbook_builder | - |
+| `AF-WORLD-SCALE` | qc_check | - |
+<!-- END MACHINE-CHECKED PARITY TABLE -->
 
 ---
 

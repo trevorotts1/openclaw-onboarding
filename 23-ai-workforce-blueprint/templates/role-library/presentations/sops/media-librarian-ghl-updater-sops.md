@@ -207,8 +207,11 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 > `GHL_API_KEY`; location id `GOHIGHLEVEL_LOCATION_ID` (preferred) / `GHL_LOCATION_ID`):
 > (1) **CREATE the per-deck folder** `ghl_media.create_media_folder(name, location_id, pit)`
 > -> `POST https://services.leadconnectorhq.com/medias/folder` (Version: 2021-07-28,
-> JSON `{name, locationId[, parentId]}`) — the SAME call Skill-48 VERIFIED returns 201; the
-> system makes the folder by software. (2) **UPLOAD** `ghl_media.upload_media(...)` ->
+> JSON `{name, locationId[, parentId]}`) — **FAIL-CLOSED as of FIX 36(2)**: the folder-create
+> POST is NEVER issued. A folder MUST be pre-created by a human in the GHL UI (its id passed
+> as `approved_folder_id`) or the tool returns the documented decline (`{"folderId": None,
+> "http": 404, "fallback": "name-prefix"}`) and the upload proceeds to the media **root** with
+> a name prefix. (2) **UPLOAD** `ghl_media.upload_media(...)` ->
 > `POST .../medias/upload-file` (Version: 2021-07-28, multipart; `file` + `locationId` +
 > `name` + `hosted=false` + `parentId=<folderId>`). FALLBACK only when create genuinely
 > declines: human-supplied folder id, else media **root**. Driving the GHL UI in a browser
@@ -224,7 +227,7 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 
 **Steps (Resolve the GHL media destination -- run once per deck run; CREATE the folder BY SOFTWARE):**
 1. If media_library.json still has `ghl_folder_id: null`, resolve the destination (or just run `scripts/ghl_media_push.py`, which does this + the uploads):
-   a. **CREATE the per-deck folder (PRIMARY):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` (POST `/medias/folder`, Version 2021-07-28, LOCATION PIT). On success set `ghl_folder_id` to the returned `folderId`; it is passed as `parentId` on every upload.
+   a. **CREATE the per-deck folder (FAIL-CLOSED, FIX 36(2)):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` — NO network call. With an `approved_folder_id` (a folder a human pre-created in the GHL UI) it returns that id with `approved: true`; set `ghl_folder_id` to it and pass it as `parentId` on every upload. Without one it returns the documented decline (`{"folderId": None, "http": 404, "fallback": "name-prefix"}`) — proceed to step c (media root + name prefix). The folder-create POST is never issued by this pipeline.
    b. **If create DECLINES** AND a human supplied `ghl_media_folder_id` in intake.json: use that id as `parentId`.
    c. **Else:** omit `parentId` and upload to the shareable GHL media **root**; set `ghl_folder_id: "root"` (a PASSING value), prefixing each upload `name` with `"<deck-slug> — "`.
    d. **Never drive the GHL web UI in a browser** -- folder-create is the REST API (step a), not UI automation.

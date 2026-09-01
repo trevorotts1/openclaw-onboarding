@@ -2617,6 +2617,96 @@ PHASE_VERIFIERS: dict[str, Callable] = {
 }
 
 
+
+
+# ---------------------------------------------------------------------------
+# P-U-* DESIGN-OPUS optional-branch phases (merged 2026-09-01) — substance
+# verifiers. Shared contract: a provably-deferred gate (intake proves the
+# branch not elected) is a PASS with a NOTE; when the branch IS elected, every
+# declared artifact must exist under the run dir and be non-empty — a missing/
+# empty artifact is a hard FAIL (same vacuous-pass defect class B3 fixed).
+# ---------------------------------------------------------------------------
+
+def _pu_artifact_paths(run_dir: Path, artifacts: List[str]) -> List[Path]:
+    """Resolve a phase's declared produces_artifact list under the run dir.
+    Handles the manifest's 'a + b' multi-artifact spelling and the
+    working/upsell/... root convention."""
+    out: List[Path] = []
+    for art in artifacts:
+        art = art.strip()
+        if not art:
+            continue
+        # Wildcard tail (COLLATERAL's 'delivery/{deck_slug}-FINAL/upsell/*'):
+        # verify the directory exists and is non-empty instead.
+        if art.endswith("/*"):
+            base = run_dir / "working" / "upsell" / art[:-2]
+            if base.is_dir() and any(base.iterdir()):
+                out.append(base)
+            continue
+        for prefix in (Path("working") / "upsell", Path(".")):
+            cand = run_dir / prefix / art
+            if cand.is_file():
+                out.append(cand)
+                break
+    return out
+
+
+def _make_pu_verifier(phase_id: str, artifacts: List[str]):
+    def _verify(run_dir: Path) -> Tuple[bool, List[str]]:
+        from presentation_job.defers import evaluate_defers_unless, load_intake
+        import json as _json
+        # Gate state: manifest entry drives the same evaluate the planner uses.
+        gate = None
+        try:
+            man = _json.loads((Path(__file__).resolve().parent.parent /
+                               ".." / ".." / ".." / ".." / ".." / "universal-sops" /
+                               "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+                              .read_text(encoding="utf-8"))
+            gate = next((ph.get("defers_unless") for ph in man["phases"]
+                         if ph["id"] == phase_id), None)
+        except Exception:
+            gate = None
+        intake = load_intake(run_dir)
+        if gate and intake and not evaluate_defers_unless(gate, intake):
+            return True, [f"NOTE: {phase_id} deferred -- defers_unless not "
+                          f"satisfied by this run's intake answers"]
+        paths = _pu_artifact_paths(run_dir, artifacts)
+        missing = [str(a) for a in artifacts if a not in
+                   [str(x.relative_to(run_dir)) if x.is_relative_to(run_dir) else str(x)
+                    for x in paths]]
+        if not paths:
+            return False, [f"AF-U-{phase_id}: none of the declared artifacts "
+                           f"({', '.join(artifacts)}) exist under the run dir -- "
+                           f"the phase ran but produced nothing provable"]
+        empty = [str(x) for x in paths
+                 if x.is_file() and x.stat().st_size == 0]
+        if empty:
+            return False, [f"AF-U-{phase_id}: empty artifact(s): {', '.join(empty)}"]
+        return True, []
+    _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
+    return _verify
+
+
+for _pid, _arts in (
+    ("P-U-SALES-COPY",     ["copy/sales.fragment.md", "copy/copy_ledger.json"]),
+    ("P-U-CHECKOUT-COPY",  ["copy/checkout.fragment.md"]),
+    ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
+    ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
+    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
+    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
+    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
+    ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
+    ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
+    ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
+    ("P-U-FORM-GATE",      ["ecosystem/gate-form.json", "workflows/gate-workflow.json"]),
+    ("P-U-GHL-SALES",      ["build_receipt.json"]),
+    ("P-U-GHL-VSL",        ["build_receipt.json"]),
+    ("P-U-COLLATERAL",     ["delivery/upsell/*"]),
+    ("P-U-QC",             ["qc/upsell-scorecard.json"]),
+):
+    PHASE_VERIFIERS[_pid] = _make_pu_verifier(_pid, _arts)
+
+
 # ---------------------------------------------------------------------------
 # Public entry point (called by run_signature_deck.py)
 # ---------------------------------------------------------------------------

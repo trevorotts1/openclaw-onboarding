@@ -1,7 +1,7 @@
 ---
 name: avatar-alchemist
 description: Turns one completed brand-intake interview into the full brand-intelligence package — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, Facebook Ads with 13 ad sets, Booking Bots, Landing/Hero) → 16 named deliverables (37 documents), delivered as labeled markdown in ~/Downloads. Fully local: no n8n, no Airtable, no Google Drive, no Slack/Gmail — the client's own model providers only, never Anthropic. A Book/Brand version selector runs FIRST: version=brand runs this 40-stage pipeline; version=book routes to the separate Avatar Alchemist Book skill (53) or parks fail-closed "book-skill-not-available". Every process rule is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed provenance certificate. Trigger with "run avatar alchemist", "brand intelligence package", "build my avatar documents", or "avatar alchemist for <brand>".
-version: 1.5.4
+version: 1.5.5
 ---
 
 # Avatar Alchemist — Brand Intelligence Engine (Skill 52)
@@ -143,6 +143,18 @@ single-sourced here, and a missing/tampered/version-drifted prompt fails Skill 5
 closed rather than authoring from stale IP. This is a per-contributor subset of this skill's
 own generator set (three of the 40 stages), not the full brand-intelligence package, and it
 never runs the version=book route.
+
+## Relationship to Book Writer (Skill 53) — cross-linked, NEVER merged
+
+This skill (52, Avatar Alchemist) is the **BRAND** version of the Avatar Alchemist; Skill 53 (Book
+Writer) is the **BOOK** version. The shared **Book/Brand selector (Q0)** routes `version=book` to
+Skill 53 and `version=brand` here — an explicit, receipted hand-off, **never a silent cross-version
+fallback** in either direction. Both skills bake a lockstep copy of the shared avatar/tone IP at
+`shared-utils/tone-writing-core/` and prove it with `verify_tone_core_sync.py`, so the blended tone
+stays consistent across brand and book output; **a change to those shared prompts in either skill
+MUST flag the sibling for review.** On the `version=book` route, Skill 53's intake-accept
+(`scripts/bw_intake_accept.py`) issues the `book-intake-accept/v1` receipt that proves the accepted
+handoff — fail-closed, no receipt means no book run. Do not merge the two skills.
 
 ## Relationship to Product Bio (Skill 55) — cross-linked, NEVER merged
 

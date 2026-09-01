@@ -52,8 +52,7 @@ SANDBOX_GATE="$WORK/gate/qc-podcast.sh"
 mkdir -p "$WORK/gate/scripts/webhook"
 cp "$GATE" "$SANDBOX_GATE"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/register-podcast-hook.sh"
-printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' > "$WORK/gate/scripts/webhook/intake_handler.py"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/install-podcast-department.sh"
+printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' > "$WORK/gate/scripts/webhook/intake_handler.py"printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/install-podcast-department.sh"
 
 # --- hermetic environment ----------------------------------------------------
 # HOME points at a temp tree so resolve_platform_paths resolves SECRETS_ENV
@@ -87,8 +86,7 @@ run_gate() {  # $1 = mock mode (accept | reject); echoes the gate's exit code
   echo "$1" > "$WORK/mode"
   : > "$WORK/curl-args.log"
   env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
-      -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
-  HOME="$WORK/home" \
+      -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \  HOME="$WORK/home" \
   PATH="$WORK/bin:$PATH" \
   PODBEAN_PODCAST_ID="test-channel-id" \
   PODBEAN_CLIENT_ID="test-client-id" \

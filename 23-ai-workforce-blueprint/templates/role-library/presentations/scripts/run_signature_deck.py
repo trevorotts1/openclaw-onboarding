@@ -114,6 +114,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
+from presentation_job.defers import load_intake, phase_is_deferred
 
 # FIX-21 (D21): run_with_cleanup dispatches the build_deck.py render/notes-sync and
 # manifest executors in a NEW PROCESS GROUP and, on timeout, kills the WHOLE group
@@ -596,6 +597,58 @@ def _resolve_owner_route() -> tuple:
     return (channel, target) if target else (None, None)
 
 
+def _extract_gateway_msg_id(raw: str) -> str:
+    """Extract the confirmed gateway message id from an `openclaw message send
+    --json` response.
+
+    The gateway CLI (register.message) renders a successful send with a camelCase
+    TOP-LEVEL `messageId` (e.g. `{"action":"send",...,"messageId":"64828",
+    "payload":{...}}`), falling back to a nested `result.messageId` inside the
+    payload; it never emits a snake_case `message_id`. Prior to this fix the
+    parser looked up `message_id`, which the gateway never emits, so the whole
+    raw JSON blob was stored in gateway_msg_id instead of the clean confirmed id.
+
+    This parser reads, in order: top-level `messageId`, then the same key nested
+    under `result`/`payload`/arbitrary sub-dicts (the shapes the gateway
+    produces, e.g. `payload.result.messageId`), then the legacy snake_case
+    aliases (`message_id`, `msg_id`) for older gateways. A JSON that yields no id
+    returns the raw string unchanged (best-effort: the evidence is preserved; the
+    send itself already succeeded, rc == 0)."""
+    if not raw:
+        return raw
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 — non-JSON output: keep the raw evidence.
+        return raw
+    if not isinstance(obj, dict):
+        return raw
+
+    # Walk the parsed object, preferring the camelCase key at every dict level so
+    # both the top-level `messageId` and nested `payload.result.messageId` shapes
+    # resolve. The key preference order is always messageId -> message_id -> msg_id.
+    def _walk(node):
+        if isinstance(node, dict):
+            for key in ("messageId", "message_id", "msg_id"):
+                val = node.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    return str(val)
+            for value in node.values():
+                found = _walk(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _walk(item)
+                if found is not None:
+                    return found
+        return None
+
+    found = _walk(obj)
+    return found if found is not None else raw
+
+
 def _send_owner_message(text: str) -> tuple:
     """Best-effort send via `openclaw message send` (NEVER the Telegram API directly).
     Uses the correct CLI flags (-m / --channel / -t) and an env-resolved target.
@@ -618,10 +671,7 @@ def _send_owner_message(text: str) -> tuple:
             print(f"[client_report] openclaw message send rc={proc.returncode}: "
                   f"{(proc.stderr or raw)[:200]}", file=sys.stderr)
             return raw, False
-        try:
-            msg_id = json.loads(raw).get("message_id") or raw
-        except Exception:  # noqa: BLE001
-            msg_id = raw
+        msg_id = _extract_gateway_msg_id(raw)
         return msg_id, True
     except Exception as exc:  # noqa: BLE001
         print(f"[client_report] send failed: {exc}", file=sys.stderr)
@@ -951,8 +1001,47 @@ def _client_visible_phases(run_dir: Path, phases: list) -> list:
         elif pid in _VSL_ONLY_PHASE_IDS:
             if shape["vsl_known"] and not shape["wants_vsl"]:
                 continue  # positively known decline: no-ops
+        else:
+            # defers_unless-gated optional phase (DESIGN-OPUS §4, merged
+            # 2026-09-01): client-visible ONLY when the intake answers prove
+            # the gate open. Fail-safe mirrors the docstring contract above:
+            # when the intake record is absent or the gate cannot be
+            # evaluated, the phase stays visible (unknown widens).
+            gate = ph.get("defers_unless") if isinstance(ph, dict) else getattr(ph, "defers_unless", None)
+            if gate:
+                intake = _intake_record_for(run_dir)
+                if intake is not None:
+                    from presentation_job.defers import evaluate_defers_unless
+                    try:
+                        if not evaluate_defers_unless(gate, intake):
+                            continue  # provably deferred by this run's intake
+                    except Exception:
+                        pass  # cannot prove it closed -> keep visible
         visible.append(ph)
     return visible
+
+
+def _intake_record_for(run_dir: Path) -> dict | None:
+    """Load the run's intake record for defers evaluation (display-only).
+    Tries state.json's intake first, then working/copy/intake.json (the
+    deck-intake-driver store). Returns None when neither is readable — the
+    caller then fails safe (phase stays client-visible)."""
+    try:
+        st = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+        intake = st.get("intake")
+        if isinstance(intake, dict) and intake:
+            return intake
+    except Exception:
+        pass
+    for cand in (run_dir / "working" / "copy" / "intake.json",
+                 run_dir / "working" / "intake.json"):
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data:
+                return data
+        except Exception:
+            continue
+    return None
 
 
 def _client_phase_index(run_dir: Path, phase_id: str, phases: list) -> tuple:
@@ -999,6 +1088,9 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         return  # idempotent — already declared on a prior phase run
 
     slug = _deck_slug(run_dir)
+    # DESIGN-OPUS.md §4.2 — deferred (defers_unless-gated-out) phases are NOT
+    # declared as steps: a deck-only run's step contract is identical to today's.
+    deferred = _deferred_phase_ids(run_dir, phases)
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
     steps = [
         {
@@ -1008,6 +1100,7 @@ def declare_plan(run_dir: Path, phases: list) -> None:
             "owning_role": ph.get("owning_role", ""),
         }
         for ph in ordered
+        if ph["id"] not in deferred
     ]
 
     # CLIENT-FACING (display only — `steps`/`total` above stay the full 36 for
@@ -1139,9 +1232,11 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
     if target is None:
         return ""  # unknown phase — check_phase_preconditions handles the error
     target_order = target.get("order", 0)
+    deferred = _deferred_phase_ids(run_dir, phases)
     prior_attested = {
         pid for pid in _attested_phase_ids(run_dir)
-        if pid in by_id and by_id[pid].get("order", 0) < target_order
+        if pid in by_id and pid not in deferred
+        and by_id[pid].get("order", 0) < target_order
     }
     if not prior_attested:
         return ""
@@ -1466,7 +1561,13 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     if target is None:
         return f"AF-PHASE-SKIPPED: unknown phase id {target_phase_id!r} (not in manifest)."
     target_order = target.get("order", 0)
-    prior = sorted([ph for ph in phases if ph.get("order", 0) < target_order],
+    # DESIGN-OPUS.md §4.2 — a defers_unless-gated phase that is NOT satisfied by
+    # the intake answers is deferred (never surfaced, never a prerequisite). It is
+    # excluded from the prior-phase walk so a deck-only run never hard-aborts on a
+    # missing optional P-U-* phase.
+    deferred = _deferred_phase_ids(run_dir, phases)
+    prior = sorted([ph for ph in phases
+                    if ph.get("order", 0) < target_order and ph["id"] not in deferred],
                    key=lambda p: p.get("order", 0))
     prior_ids = [ph["id"] for ph in prior]
     # FIX-1 (AF-FORGED-APPROVAL): validate skip-record AUTHENTICITY FIRST, before
@@ -1657,8 +1758,27 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
 # ---------------------------------------------------------------------------
 # Plan printing
 # ---------------------------------------------------------------------------
+def _load_run_intake(run_dir: Path) -> dict:
+    """Load the run's intake answers (working/copy/intake.json) for defers_unless
+    gating. Best-effort — an absent/unparseable intake record returns {} and the
+    gate then resolves to the questions' defaults (see presentation_job/defers.py)."""
+    try:
+        return load_intake(run_dir)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _deferred_phase_ids(run_dir: Path, phases: list) -> set:
+    """Return the set of phase ids whose defers_unless gate is NOT satisfied by
+    the run's intake answers (DESIGN-OPUS.md §4.2). Deck-only runs (Q1=no, Q2=no)
+    defer all 16 P-U-* phases; the deck core is unchanged."""
+    intake = _load_run_intake(run_dir)
+    return {p["id"] for p in phases if phase_is_deferred(p, intake)}
+
+
 def print_plan(run_dir: Path, phases: list) -> None:
     attested = _attested_phase_ids(run_dir)
+    deferred = _deferred_phase_ids(run_dir, phases)
     forged = None
     try:
         approvals = load_skip_approvals(run_dir)
@@ -1674,7 +1794,9 @@ def print_plan(run_dir: Path, phases: list) -> None:
     print("=== SIGNATURE-DECK PHASE PLAN (manifest order) ===")
     for ph in ordered:
         pid = ph["id"]
-        if pid in attested:
+        if pid in deferred:
+            state = "DEFERRED"
+        elif pid in attested:
             state = "ATTESTED"
         elif pid in approvals:
             state = "SKIP(owner-authorized)"
@@ -1694,6 +1816,7 @@ def _next_required_phase(run_dir: Path, phases: list):
     precondition gate walks, so the phase --next names is exactly the phase the next
     --phase call is allowed to attest."""
     attested = _attested_phase_ids(run_dir)
+    deferred = _deferred_phase_ids(run_dir, phases)
     try:
         approvals = set(load_skip_approvals(run_dir).keys())
     except ForgedApprovalError as _fae:
@@ -1705,7 +1828,7 @@ def _next_required_phase(run_dir: Path, phases: list):
     total = len(ordered)
     for i, ph in enumerate(ordered):
         pid = ph["id"]
-        if pid in attested or pid in approvals:
+        if pid in deferred or pid in attested or pid in approvals:
             continue
         return ph, i + 1, total
     return None, total, total

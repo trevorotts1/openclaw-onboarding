@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -308,3 +309,64 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def find_unregistered_runs_multi(runs_roots: List["str | Path"]) -> List[Path]:
+    """Scan MULTIPLE roots for unregistered run dirs (run-root-agnostic,
+    2026-08-27). Dedup across roots; a root that is missing or unreadable
+    contributes nothing and never fails the scan. DOCTRINE: finding nothing is
+    UNDETERMINED -- never proof a run does not exist."""
+    seen: set = set()
+    merged: List[Path] = []
+    for root in runs_roots:
+        try:
+            for run_dir in find_unregistered_runs(root):
+                try:
+                    key = run_dir.resolve()
+                except OSError:
+                    key = run_dir
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(run_dir)
+        except OSError:
+            continue
+    return merged
+
+
+def _roots_from_args_and_env(args) -> List[Path]:
+    """Resolve the scan-root list from CLI args and PRESENTATION_SCAN_ROOTS
+    (run-root-agnostic, 2026-08-27). Precedence: --runs-root (os.pathsep
+    packed) > PRESENTATION_SCAN_ROOTS (!-prefixed = exclusive) > department
+    tree default. Dedup, order-stable."""
+    sep = os.pathsep
+    roots: List[Path] = []
+    for arg in (getattr(args, "runs_root", None) or []):
+        for piece in str(arg).split(sep):
+            piece = piece.strip()
+            if piece:
+                roots.append(Path(piece).expanduser())
+    if not roots:
+        env_raw = (os.environ.get("PRESENTATION_SCAN_ROOTS") or "").strip()
+        dept = Path(os.environ.get("HOME", str(Path.home()))) / \
+            ".openclaw/workspace/departments/Presentations/runs"
+        if env_raw:
+            exclusive = env_raw.startswith("!")
+            if exclusive:
+                env_raw = env_raw[1:].strip()
+            roots = [Path(p.strip()).expanduser()
+                     for p in env_raw.split(":") if p.strip()]
+            if not exclusive and dept not in roots:
+                roots.insert(0, dept)
+        else:
+            roots = [dept]
+    seen: set = set()
+    ordered: List[Path] = []
+    for r in roots:
+        try:
+            key = r.expanduser().resolve()
+        except OSError:
+            key = r
+        if key not in seen:
+            seen.add(key)
+            ordered.append(r)
+    return ordered

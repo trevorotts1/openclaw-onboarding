@@ -15,15 +15,13 @@
 # podcast_scheduler.py anywhere in the contract. B4 verifies the route
 # BINDING SHAPE (controllerId + sessionKey podcast:intake:<slug>), B5
 # verifies the intake env secrets presence and the no-poller doctrine.
-#
-# This suite proves, hermetically (temp trees, no network, no box state read
+## This suite proves, hermetically (temp trees, no network, no box state read
 # or written):
 #
 #   1. guard --self-test passes
 #   2. --repo-only exits 0 when the three activation files are present and
 #      exits 2 when any one is missing (the CI/merge gate surface); the
-#      no-longer-required controller file is never in the missing list
-#   3. on-box findings are non-fatal WARNs on an unprovisioned box (exit 0)
+#      no-longer-required controller file is never in the missing list#   3. on-box findings are non-fatal WARNs on an unprovisioned box (exit 0)
 #      but FATAL when the box is provisioned ($PODCAST_ACTIVATION_PROVISIONED=1
 #      or a client slug configured) or --strict is passed
 #   4. qc-podcast.sh integration: the gate FAILs the whole install QC (exit 1)
@@ -32,8 +30,7 @@
 #   5. route binding shape: B4 finds podcast-intake-<slug> with sessionKey and
 #      controllerId in the box config map and reports a FAIL for a configured
 #      slug with no route or a wrong binding; B5 reports the intake secrets
-#      SET/NOT-SET and flags a poller cron
-#   6. conventions: bash -n / py_compile clean, zero em dashes in both files
+#      SET/NOT-SET and flags a poller cron#   6. conventions: bash -n / py_compile clean, zero em dashes in both files
 #
 # Exit 0 = all checks pass. Exit 1 = one or more failed.
 
@@ -75,6 +72,7 @@ make_tree() {
 # The two intake secrets are unset at script top so B5 is deterministic
 # regardless of the host environment (tests that need them set export them
 # explicitly on the run_guard call).
+
 run_guard() {  # $@ = extra guard args
   PODCAST_CRONTAB_BIN="$WORK/bin/false-crontab" \
   PODCAST_LAUNCHD_DIR="$WORK/launchd" \
@@ -91,7 +89,6 @@ chmod +x "$WORK/bin/false-crontab"
 # cron, never the box crontab.
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/bin/clean-crontab"
 chmod +x "$WORK/bin/clean-crontab"
-
 # --- 0. syntax + conventions ----------------------------------------------
 echo "--- conventions ---"
 if bash -n "$GATE" 2>/dev/null; then pass "qc-podcast.sh bash -n clean"; else fail "qc-podcast.sh bash -n"; fi
@@ -132,7 +129,6 @@ if grep -q "podcast_controller.py" "$WORK/ro-bare.log"; then
 else
   pass "the excluded controller daemon is not in the missing list (no-daemon contract)"
 fi
-
 # --- 3. severity model on a fake box ------------------------------------------
 echo "--- severity model (fake box) ---"
 mkdir -p "$WORK/tree-full/agents/dept-podcast"
@@ -177,8 +173,7 @@ cat > "$WORK/openclaw.json" <<'JSON'
       "enabled": true,
       "sessionKey": "podcast:intake:WRONG-SESSION",
       "controllerId": "webhooks/podcast-intake-zeta-corp"
-    },
-    "some-other-route": { "enabled": true }
+    },    "some-other-route": { "enabled": true }
   } } } } }
 }
 JSON
@@ -244,7 +239,6 @@ python3 "$GUARD" "${BOX_ARGS[@]}" > "$WORK/b5-poller.log" 2>&1 || true
 grep -q "POLLER FOUND" "$WORK/b5-poller.log" \
   && pass "B5 flags a poller cron (no-daemon doctrine)" \
   || { fail "B5 did not flag the poller cron"; sed 's/^/    /' "$WORK/b5-poller.log"; }
-
 # --- 5. qc-podcast.sh integration ----------------------------------------------
 echo "--- qc-podcast.sh integration ---"
 # 5a. THIS branch (activation files absent from the build): the whole install
@@ -257,8 +251,7 @@ mkdir -p "$WORK/home/.openclaw/skills/58-podcast-production-engine"
 QC_BARE_RC=0
 env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
     -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
-  HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
-  PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
+  HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \  PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
   bash "$GATE" > "$WORK/qc-bare.log" 2>&1 || QC_BARE_RC=$?
 [ "$QC_BARE_RC" -eq 1 ] && pass "qc-podcast.sh exits 1 while activation layer absent" \
   || { fail "qc-podcast.sh exit with absent layer (rc=$QC_BARE_RC)"; sed 's/^/    /' "$WORK/qc-bare.log"; }
@@ -278,8 +271,7 @@ make_tree "$WORK/merged" "yes"
 QC_MERGED_RC=0
 env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
     -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
-  HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
-  PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
+  HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \  PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
   bash "$WORK/merged/58-podcast-production-engine/qc-podcast.sh" \
   > "$WORK/qc-merged.log" 2>&1 || QC_MERGED_RC=$?
 [ "$QC_MERGED_RC" -eq 0 ] && pass "qc-podcast.sh exits 0 once activation files are present (post-merge simulation)" \

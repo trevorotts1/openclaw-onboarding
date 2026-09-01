@@ -68,6 +68,12 @@ def watchdog(
     roots_config=None,
     env=None,
 ) -> int:
+    # run-root-agnostic back-compat: a LIST/tuple passed as scan_root means
+    # "these are the roots" (test contract, 2026-08-27); first is primary.
+    if isinstance(scan_root, (list, tuple)):
+        roots = [Path(r) for r in scan_root]
+        scan_root, extra_roots = roots[0], list(roots[1:]) + list(extra_roots)
+
     """Scan run directories under every configured scan root for stalled jobs.
 
     scan_root is the PRIMARY root: it owns watchdog-findings.jsonl and heads the
@@ -184,6 +190,14 @@ def watchdog(
               f"unreadable timestamp, {healthy} healthy, {n_stalled} stalled", flush=True)
 
     findings_path = findings_owner / "watchdog-findings.jsonl"
+    # The findings owner may be an env/arg-supplied root that does not exist
+    # yet on a pristine box (or in a hermetic test); the alarm channel must
+    # never die because the directory was never created (run-root-agnostic,
+    # 2026-08-27).
+    try:
+        findings_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     for run_dir, pid, age, interval, threshold, source, job_id in findings:
         line = json.dumps({
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -197,8 +211,8 @@ def watchdog(
             # Which forests this pass actually searched. Without this, a findings
             # file can only prove what WAS seen -- the 2026-08-27 incident needed
             # it to prove what could not have been seen.
-            "scan_roots": [str(r.path) for r in readable],
-            "scan_roots_undetermined": [str(r.path) for r in unreadable],
+            "scan_roots": [str(getattr(r, "path", r)) for r in readable],
+            "scan_roots_undetermined": [str(getattr(r, "path", r)) for r in unreadable],
         }, ensure_ascii=False)
         with open(findings_path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
@@ -216,7 +230,7 @@ def watchdog(
             fh.write(json.dumps({
                 "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "record": "scan_audit",
-                "scan_roots": [str(r.path) for r in readable],
+                "scan_roots": [str(getattr(r, "path", r)) for r in readable],
                 "scan_roots_undetermined": [
                     {"path": str(r.path), "origin": r.origin, "detail": r.detail}
                     for r in unreadable
