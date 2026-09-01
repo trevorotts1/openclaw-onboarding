@@ -296,6 +296,14 @@
       "py_symbol": "evaluate"
     },
     {
+      "code": "AF-BK-AVATAR-MISSING",
+      "stage": "P1-AVATAR",
+      "level": "run",
+      "trigger": "avatar dossier missing or under minimum word count (run/artifacts/01-avatar.md must exist with at least 500 stripped words)",
+      "enforced_by": "prove_bw_avatar",
+      "py_symbol": "evaluate"
+    },
+    {
       "code": "AF-BK-TITLE-LOCK",
       "stage": "P3-TITLES-GATE",
       "level": "manuscript",
@@ -355,7 +363,7 @@
       "code": "AF-BK-433-COUNTS",
       "stage": "P7-QC",
       "level": "4x3x3",
-      "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes AND not exactly 30 program titles",
+      "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes OR not exactly 30 program titles",
       "enforced_by": "prove_bw_433",
       "py_symbol": "evaluate"
     },
@@ -430,6 +438,30 @@
       "trigger": "a hand-rolled external uploader/notifier (Google Drive / Slack / Gmail / n8n / Airtable / GHL) is present in the run directory, bypassing the local-labeled-deliverable handoff",
       "enforced_by": "scripts/prove_bw_process.py",
       "py_symbol": "bypass_scan"
+    },
+    {
+      "code": "AF-BK-ACCEPT-UNREADABLE",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "the forwarded intake cannot be read or parsed (invalid UTF-8, malformed JSON, or not a JSON object)",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
+    },
+    {
+      "code": "AF-BK-ACCEPT-WRONG-VERSION",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "the forwarded intake is not version=book; a brand intake belongs to Skill 52 and is refused by the book pipeline",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
+    },
+    {
+      "code": "AF-BK-ACCEPT-REJECTED",
+      "stage": "entry",
+      "level": "intake",
+      "trigger": "this skill's own intake gate (prove_bw_intake, handoff mode) refused the forwarded payload; the underlying AF-BK-* codes are carried through",
+      "enforced_by": "bw_intake_accept",
+      "py_symbol": "decide"
     }
   ],
   "stages": [

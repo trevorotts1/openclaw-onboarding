@@ -1,6 +1,6 @@
 {
   "pinned": {
-    "AA-PIPELINE-MANIFEST.json": "e336f7d431968d31a46cc35c294a1d95f39cefbc5dafa6ab00255a49fa35c708",
+    "AA-PIPELINE-MANIFEST.json": "88297fa4f23de9cca27a0a246008ca50774e61dd7314ce45e662de134b475fdf",
     "AVATAR-MANIFEST.json": "5789acead98e47f9f78a09f701190f79f8a12f8eb887ee7d010c6430419a2995",
     "scripts/aa_intake_gate.py": "af54c97ffaf6e9ac1d9eb8dabc8830368d3aecd405a8360424f71fffa2dd1255",
     "scripts/aa_build_check.py": "e2053a0c3702a769bd4484dd34771f84fbd33ffca90f1e165363f7175e92905f",

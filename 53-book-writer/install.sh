@@ -38,8 +38,8 @@ chmod_all() {
 # of files MUST match prove_bw_process.ENFORCE_FILES exactly.
 ENFORCE_REL=(
     "run_book_writer.py" "scripts/_bw_common.py"
-    "scripts/prove_bw_intake.py" "scripts/prove_bw_titlelock.py"
-    "scripts/prove_bw_stories.py" "scripts/prove_bw_chapters.py"
+    "scripts/prove_bw_intake.py" "scripts/prove_bw_avatar.py"
+    "scripts/prove_bw_titlelock.py" "scripts/prove_bw_stories.py" "scripts/prove_bw_chapters.py"
     "scripts/prove_bw_continuity.py" "scripts/prove_bw_tone.py"
     "scripts/prove_bw_challenge.py" "scripts/prove_bw_433.py"
     "scripts/prove_bw_placeholder.py" "scripts/prove_bw_noanthropic.py"

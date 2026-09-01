@@ -71,8 +71,17 @@ print("all tone stage prompt dirs present; %d stages declared." % len(man.get("s
 sys.exit(0)
 PY
 
-# the full self-verification gate (self-tests + tone sync + broken-variants + scans + routing)
+# the full self-verification gate (self-tests + avatar gate + tone sync + broken-variants + scans + routing)
 step "verify.sh" bash "$SELF_DIR/verify.sh"
+
+# avatar prover: golden run-dir PASS + missing-artifact fail-closed reject
+step "avatar prover (golden run-dir PASS)" "$PY" "$SELF_DIR/scripts/prove_bw_avatar.py" --run-dir "$SELF_DIR/examples/golden-marcus-halloway/run"
+echo "-- avatar prover (missing artifact AUTOFAIL) --"
+if "$PY" "$SELF_DIR/scripts/prove_bw_avatar.py" --run-dir "$SELF_DIR/examples/golden-marcus-halloway" >/dev/null 2>&1; then
+    echo "  [FAIL] avatar prover PASSED a run dir without the artifact (must fail-closed)"; fails=$((fails+1))
+else
+    echo "  [PASS]"
+fi
 
 # zero external services
 step "verify-deps.sh" bash "$SELF_DIR/verify-deps.sh"
