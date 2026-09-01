@@ -8,6 +8,7 @@
 # 58-podcast-production-engine/scripts/guard-activation-health.py, wired into
 # 58-podcast-production-engine/qc-podcast.sh.
 #
+<<<<<<< HEAD
 # Contract (act-8 gate alignment): the activation layer is NO-DAEMON. The
 # three build files are register-podcast-hook.sh, webhook/intake_handler.py
 # (the deterministic first step of the route's controllerId runbook), and
@@ -16,23 +17,34 @@
 # BINDING SHAPE (controllerId + sessionKey podcast:intake:<slug>), B5
 # verifies the intake env secrets presence and the no-poller doctrine.
 #
+=======
+>>>>>>> feat/podcast-act-6-qc-gate
 # This suite proves, hermetically (temp trees, no network, no box state read
 # or written):
 #
 #   1. guard --self-test passes
 #   2. --repo-only exits 0 when the three activation files are present and
+<<<<<<< HEAD
 #      exits 2 when any one is missing (the CI/merge gate surface); the
 #      no-longer-required controller file is never in the missing list
+=======
+#      exits 2 when any one is missing (the CI/merge gate surface)
+>>>>>>> feat/podcast-act-6-qc-gate
 #   3. on-box findings are non-fatal WARNs on an unprovisioned box (exit 0)
 #      but FATAL when the box is provisioned ($PODCAST_ACTIVATION_PROVISIONED=1
 #      or a client slug configured) or --strict is passed
 #   4. qc-podcast.sh integration: the gate FAILs the whole install QC (exit 1)
 #      when the activation files are absent from the build, and PASSES (exit 0)
 #      once the files are present (post-merge simulation)
+<<<<<<< HEAD
 #   5. route binding shape: B4 finds podcast-intake-<slug> with sessionKey and
 #      controllerId in the box config map and reports a FAIL for a configured
 #      slug with no route or a wrong binding; B5 reports the intake secrets
 #      SET/NOT-SET and flags a poller cron
+=======
+#   5. route-id scan finds podcast-intake-<slug> in the box config map and
+#      reports a FAIL for a configured slug with no route
+>>>>>>> feat/podcast-act-6-qc-gate
 #   6. conventions: bash -n / py_compile clean, zero em dashes in both files
 #
 # Exit 0 = all checks pass. Exit 1 = one or more failed.
@@ -60,21 +72,33 @@ trap 'rm -rf "$WORK"' EXIT
 # Build a fake repo tree: $1 = root dir, $2 = with-activation (yes|no).
 make_tree() {
   local root="$1" with_act="$2"
+<<<<<<< HEAD
   mkdir -p "$root/58-podcast-production-engine/scripts/webhook"
   if [ "$with_act" = "yes" ]; then
     printf '#!/usr/bin/env bash\nexit 0\n' \
       > "$root/58-podcast-production-engine/scripts/register-podcast-hook.sh"
     printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' \
       > "$root/58-podcast-production-engine/scripts/webhook/intake_handler.py"
+=======
+  mkdir -p "$root/58-podcast-production-engine/scripts"
+  if [ "$with_act" = "yes" ]; then
+    printf '#!/usr/bin/env bash\nexit 0\n' \
+      > "$root/58-podcast-production-engine/scripts/register-podcast-hook.sh"
+    printf 'import sys\nif "--help" in sys.argv:\n    sys.exit(0)\nsys.exit(0)\n' \
+      > "$root/58-podcast-production-engine/scripts/podcast_controller.py"
+>>>>>>> feat/podcast-act-6-qc-gate
     printf '#!/usr/bin/env bash\nexit 0\n' \
       > "$root/58-podcast-production-engine/scripts/install-podcast-department.sh"
   fi
 }
 
 # Run the guard with ALL box-state seams pinned to the sandbox (hermetic).
+<<<<<<< HEAD
 # The two intake secrets are unset at script top so B5 is deterministic
 # regardless of the host environment (tests that need them set export them
 # explicitly on the run_guard call).
+=======
+>>>>>>> feat/podcast-act-6-qc-gate
 run_guard() {  # $@ = extra guard args
   PODCAST_CRONTAB_BIN="$WORK/bin/false-crontab" \
   PODCAST_LAUNCHD_DIR="$WORK/launchd" \
@@ -82,6 +106,7 @@ run_guard() {  # $@ = extra guard args
   HOME="$WORK/home" \
   python3 "$GUARD" "$@"
 }
+<<<<<<< HEAD
 unset PODCAST_INTAKE_HOOK_SECRET PODCAST_INTAKE_INBOUND_SECRET 2>/dev/null || true
 mkdir -p "$WORK/bin" "$WORK/home"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$WORK/bin/false-crontab"
@@ -91,6 +116,11 @@ chmod +x "$WORK/bin/false-crontab"
 # cron, never the box crontab.
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/bin/clean-crontab"
 chmod +x "$WORK/bin/clean-crontab"
+=======
+mkdir -p "$WORK/bin" "$WORK/home"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$WORK/bin/false-crontab"
+chmod +x "$WORK/bin/false-crontab"
+>>>>>>> feat/podcast-act-6-qc-gate
 
 # --- 0. syntax + conventions ----------------------------------------------
 echo "--- conventions ---"
@@ -124,6 +154,7 @@ run_guard --repo-only --repo-root "$WORK/tree-bare" > "$WORK/ro-bare.log" 2>&1 |
 grep -q "register-podcast-hook.sh" "$WORK/ro-bare.log" \
   && pass "missing-file finding names register-podcast-hook.sh" \
   || fail "missing-file finding does not name the script"
+<<<<<<< HEAD
 grep -q "intake_handler.py" "$WORK/ro-bare.log" \
   && pass "missing-file finding names webhook/intake_handler.py" \
   || fail "missing-file finding does not name the intake handler"
@@ -132,6 +163,11 @@ if grep -q "podcast_controller.py" "$WORK/ro-bare.log"; then
 else
   pass "the excluded controller daemon is not in the missing list (no-daemon contract)"
 fi
+=======
+grep -q "podcast_controller.py" "$WORK/ro-bare.log" \
+  && pass "missing-file finding names podcast_controller.py" \
+  || fail "missing-file finding does not name the controller"
+>>>>>>> feat/podcast-act-6-qc-gate
 
 # --- 3. severity model on a fake box ------------------------------------------
 echo "--- severity model (fake box) ---"
@@ -163,6 +199,7 @@ run_guard --strict "${BOX_ARGS[@]}" > "$WORK/sev-strict.log" 2>&1 || SEV_STRICT_
 [ "$SEV_STRICT_RC" -eq 2 ] && pass "--strict: on-box findings are FATAL, exit 2" \
   || { fail "--strict severity (rc=$SEV_STRICT_RC)"; sed 's/^/    /' "$WORK/sev-strict.log"; }
 
+<<<<<<< HEAD
 # --- 4. route binding shape check (B4) ----------------------------------------
 echo "--- route binding shape (B4) ---"
 cat > "$WORK/openclaw.json" <<'JSON'
@@ -178,6 +215,14 @@ cat > "$WORK/openclaw.json" <<'JSON'
       "sessionKey": "podcast:intake:WRONG-SESSION",
       "controllerId": "webhooks/podcast-intake-zeta-corp"
     },
+=======
+# --- 4. route registration check (B4) -----------------------------------------
+echo "--- route registration (B4) ---"
+cat > "$WORK/openclaw.json" <<'JSON'
+{
+  "plugins": { "entries": { "webhooks": { "config": { "routes": {
+    "podcast-intake-acme-media": { "enabled": true, "sessionKey": "podcast:intake:acme-media" },
+>>>>>>> feat/podcast-act-6-qc-gate
     "some-other-route": { "enabled": true }
   } } } } }
 }
@@ -185,6 +230,7 @@ JSON
 ROUTE_HIT_RC=0
 run_guard "${BOX_ARGS[@]}" --client-slug acme-media > "$WORK/route-hit.log" 2>&1 || ROUTE_HIT_RC=$?
 grep -q "\[PASS\] B4" "$WORK/route-hit.log" \
+<<<<<<< HEAD
   && pass "B4 PASS when the route carries the right binding shape" \
   || { fail "B4 with correctly bound route (rc=$ROUTE_HIT_RC)"; sed 's/^/    /' "$WORK/route-hit.log"; }
 # A configured slug with no route: FAIL (and fatal, because a slug = provisioned)
@@ -244,6 +290,18 @@ python3 "$GUARD" "${BOX_ARGS[@]}" > "$WORK/b5-poller.log" 2>&1 || true
 grep -q "POLLER FOUND" "$WORK/b5-poller.log" \
   && pass "B5 flags a poller cron (no-daemon doctrine)" \
   || { fail "B5 did not flag the poller cron"; sed 's/^/    /' "$WORK/b5-poller.log"; }
+=======
+  && pass "B4 PASS when route podcast-intake-<slug> is registered" \
+  || { fail "B4 with registered route (rc=$ROUTE_HIT_RC)"; sed 's/^/    /' "$WORK/route-hit.log"; }
+# A configured slug with no route: FAIL (and fatal, because a slug = provisioned)
+ROUTE_MISS_RC=0
+run_guard "${BOX_ARGS[@]}" --client-slug zeta-corp > "$WORK/route-miss.log" 2>&1 || ROUTE_MISS_RC=$?
+[ "$ROUTE_MISS_RC" -eq 2 ] && pass "B4 FAIL (fatal) when a configured slug has no route" \
+  || { fail "B4 missing route severity (rc=$ROUTE_MISS_RC)"; sed 's/^/    /' "$WORK/route-miss.log"; }
+grep -q "zeta-corp" "$WORK/route-miss.log" \
+  && pass "B4 finding names the unregistered slug" \
+  || fail "B4 finding does not name the slug"
+>>>>>>> feat/podcast-act-6-qc-gate
 
 # --- 5. qc-podcast.sh integration ----------------------------------------------
 echo "--- qc-podcast.sh integration ---"
@@ -255,9 +313,13 @@ echo "--- qc-podcast.sh integration ---"
 # strings; the gate only checks presence.
 mkdir -p "$WORK/home/.openclaw/skills/58-podcast-production-engine"
 QC_BARE_RC=0
+<<<<<<< HEAD
 env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
     -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
   HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
+=======
+HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
+>>>>>>> feat/podcast-act-6-qc-gate
   PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
   bash "$GATE" > "$WORK/qc-bare.log" 2>&1 || QC_BARE_RC=$?
 [ "$QC_BARE_RC" -eq 1 ] && pass "qc-podcast.sh exits 1 while activation layer absent" \
@@ -276,9 +338,13 @@ mkdir -p "$WORK/merged"
 cp -R "$REPO_ROOT/58-podcast-production-engine" "$WORK/merged/58-podcast-production-engine"
 make_tree "$WORK/merged" "yes"
 QC_MERGED_RC=0
+<<<<<<< HEAD
 env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
     -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
   HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
+=======
+HOME="$WORK/home" QC_N8N_PROBE_MODE=warn \
+>>>>>>> feat/podcast-act-6-qc-gate
   PODBEAN_PODCAST_ID="sandbox-channel-id" PODBEAN_PUBLISH_TOKEN="sandbox-proxy-token" \
   bash "$WORK/merged/58-podcast-production-engine/qc-podcast.sh" \
   > "$WORK/qc-merged.log" 2>&1 || QC_MERGED_RC=$?
