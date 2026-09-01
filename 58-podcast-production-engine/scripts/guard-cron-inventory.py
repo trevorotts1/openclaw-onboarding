@@ -34,6 +34,18 @@
 #     the per-client exactly-one count is proven authoritatively in INVENTORY
 #     mode at provisioning. Pass --min-one to require at least one.
 #
+#   BOX-LEVEL SCHEDULER RECOGNITION (act-4). The podcast production controller
+#     is driven by ONE OS-level box heartbeat (config/cron.d/podcast-scheduler,
+#     the launchd agent com.openclaw.podcast-scheduler, or a single user
+#     crontab line), registered under the name podcast-scheduler. That tick is
+#     ONE entry PER BOX, not one per client, and carries no openclaw delivery
+#     mode, so it is EXCLUDED from the per-client census (and from the churn
+#     sweep): the per-client once-daily law continues to bind every openclaw
+#     client cron, and a departed client still leaves ZERO client crons
+#     behind; the box-level tick is removed only when the engine leaves the
+#     box (SOP-PODCAST-03 Step 7). Inventory mode reports the excluded count
+#     in extra.scheduler_recognized so an auditor can see it was seen.
+#
 # No secret is ever printed: a finding names the cron by name/class only.
 #
 # EXIT: 0 PASS / 2 AUTOFAIL / 3 USAGE-IO / 6 DEPS-MISSING (live mode, no CLI).
@@ -75,6 +87,11 @@ _SELF = Path(__file__).resolve()
 # A cron belongs to this skill's namespace when its name/command carries the
 # podcast token. Configurable via --namespace-regex.
 _DEFAULT_NAMESPACE = r"(?i)podcast"
+# Box-level production scheduler tick (act-4): ONE OS entry per box that runs
+# podcast_controller.py --once. Recognized by name/id only; it is excluded
+# from the per-client census, never from the heartbeat/poller/announce checks
+# on any OTHER entry.
+_BOX_SCHEDULER_RE = re.compile(r"(?i)\bpodcast[-_ ]?scheduler\b")
 _HEARTBEAT_RE = re.compile(r"(?i)heart[\s_-]?beat")
 _POLLER_RE = re.compile(
     r"(?i)(poller|polling|\bpoll\b|drain(?:er|[-_ ]?loop)?|watcher|per[-_ ]?job|queue[-_ ]?(?:poll|watch))")
@@ -257,6 +274,20 @@ def entry_is_heartbeat(entry):
     return bool(_HEARTBEAT_RE.search(_text_of(entry)))
 
 
+def entry_is_box_scheduler(entry):
+    """Box-level production scheduler tick (act-4): recognized by its name/id
+    only (podcast-scheduler). One such entry per box is lawful and is excluded
+    from the per-client census; a poller- or announce-shaped entry is never
+    exempted by a name alone."""
+    if entry_is_poller(entry) or entry_announces(entry):
+        return False
+    text = entry_name(entry)
+    ident = entry.get("id")
+    if isinstance(ident, str):
+        text = text + " " + ident
+    return bool(_BOX_SCHEDULER_RE.search(text))
+
+
 def entry_is_poller(entry):
     kind = str(entry.get("kind") or entry.get("type") or "").lower()
     if kind in ("poller", "watcher"):
@@ -302,6 +333,12 @@ def audit_inventory(entries, ns_re, client_re, sweep=False, roster=None,
 
     pod = [e for e in entries if in_namespace(e, ns_re) and not entry_is_heartbeat(e)]
 
+    # Box-level scheduler recognition (act-4): ONE entry per box, name
+    # podcast-scheduler. Excluded from the per-client census and the sweep
+    # (never from the heartbeat/poller/announce checks on other entries).
+    sched_n = sum(1 for e in pod if entry_is_box_scheduler(e))
+    pod = [e for e in pod if not entry_is_box_scheduler(e)]
+
     # Poller / per-job watcher.
     for e in pod:
         if entry_is_poller(e):
@@ -318,7 +355,12 @@ def audit_inventory(entries, ns_re, client_re, sweep=False, roster=None,
         if entry_announces(e):
             findings.append((AF_ANNOUNCE, "delivery-announces-into-chat:%s" % entry_name(e)))
 
-    # Per-client exactly one (recurring, non-poller) podcast cron.
+    # More than one box-level scheduler tick per inventory is a furnace: the
+    # heartbeat is ONE entry per box. (by_client already excludes them.)
+    if sched_n > 1:
+        findings.append((AF_SECOND_CRON, "more-than-one-box-scheduler-tick:%d" % sched_n))
+
+    # Per-client exactly one (recurring, non-poller, non-box-scheduler) podcast cron.
     by_client = {}
     for e in pod:
         if entry_is_poller(e):
@@ -346,7 +388,7 @@ def audit_inventory(entries, ns_re, client_re, sweep=False, roster=None,
                 if c not in roster_set:
                     findings.append((AF_ORPHAN, "orphan-cron-client-not-in-roster:%s%s" % (c, names)))
 
-    return findings
+    return findings, sched_n
 
 
 # --------------------------------------------------------------------------- #
@@ -617,11 +659,12 @@ def main(argv=None):
                 print("FATAL: cannot read/parse heartbeat config: %s" % type(exc).__name__, file=sys.stderr)
                 return EXIT_USAGE
 
-        findings = audit_inventory(entries, ns_re, client_re, sweep=args.sweep, roster=roster,
+        findings, sched_n = audit_inventory(entries, ns_re, client_re, sweep=args.sweep, roster=roster,
                                    only_client=args.client, heartbeat_skills=hb_skills)
         pod_n = len([e for e in entries if in_namespace(e, ns_re)])
         return _emit(findings, args.json, "inventory",
                      extra={"entries_total": len(entries), "podcast_entries": pod_n,
+                            "scheduler_recognized": sched_n,
                             "sweep": args.sweep, "roster_size": len(roster) if roster else 0})
 
     # STATIC mode (default)
@@ -666,39 +709,65 @@ def self_test():
         {"name": "podcast-smoke-test-boba", "schedule": "18 6 * * *", "delivery": "silent", "client": "boba"},
         {"name": "social-media-weekly-theme", "schedule": "0 8 * * 6", "client": "acme"},
     ]
-    check("clean-passes", audit_inventory(clean, ns, cre) == [])
+    f_clean, sched_clean = audit_inventory(clean, ns, cre)
+    check("clean-passes", f_clean == [])
+    check("clean-no-scheduler-seen", sched_clean == 0)
 
     def has(f, needle):
         return any(needle in cl for _, cl in f)
 
     print("== self-test: inventory - forbidden shapes caught ==")
     two = clean + [{"name": "podcast-extra-acme", "schedule": "0 12 * * *", "delivery": "silent", "client": "acme"}]
-    check("second-cron", has(audit_inventory(two, ns, cre), "podcast-crons:acme"))
+    check("second-cron", has(audit_inventory(two, ns, cre)[0], "podcast-crons:acme"))
     subd = [{"name": "podcast-smoke-test-acme", "schedule": "*/10 * * * *", "delivery": "silent", "client": "acme"}]
-    check("sub-daily", has(audit_inventory(subd, ns, cre), "sub-daily-schedule"))
+    check("sub-daily", has(audit_inventory(subd, ns, cre)[0], "sub-daily-schedule"))
     hb = [{"name": "agent-heartbeat", "kind": "heartbeat", "skills": ["podcast", "email"], "schedule": "0 * * * *"}]
-    check("heartbeat-ref", has(audit_inventory(hb, ns, cre), "heartbeat-entry-references-podcast"))
+    check("heartbeat-ref", has(audit_inventory(hb, ns, cre)[0], "heartbeat-entry-references-podcast"))
     poll = [{"name": "podcast-queue-poller-acme", "schedule": "*/5 * * * *", "client": "acme"}]
-    check("poller", has(audit_inventory(poll, ns, cre), "queue-poller-or-watcher"))
+    check("poller", has(audit_inventory(poll, ns, cre)[0], "queue-poller-or-watcher"))
     ann = [{"name": "podcast-smoke-test-acme", "schedule": "12 6 * * *", "delivery": "announce", "client": "acme"}]
-    check("announce", has(audit_inventory(ann, ns, cre), "delivery-announces-into-chat"))
+    check("announce", has(audit_inventory(ann, ns, cre)[0], "delivery-announces-into-chat"))
+
+    print("== self-test: inventory - box scheduler recognition (act-4) ==")
+    sched_entry = {"name": "podcast-scheduler", "schedule": "*/5 * * * *",
+                   "command": "podcast_scheduler_runner.sh --once"}
+    with_sched = clean + [sched_entry]
+    f_s, n_s = audit_inventory(with_sched, ns, cre)
+    check("scheduler-tick-recognized", n_s == 1 and f_s == [])
+    f_s2, n_s2 = audit_inventory(with_sched, ns, cre, only_client="acme")
+    check("scheduler-excluded-from-client-census", n_s2 == 1 and f_s2 == [])
+    f_s3, n_s3 = audit_inventory(with_sched, ns, cre, sweep=True, roster=["acme", "boba"])
+    check("scheduler-not-an-orphan-on-sweep", n_s3 == 1
+          and not has(f_s3, "orphan-cron"))
+    dup_tick = clean + [sched_entry, dict(sched_entry)]
+    f_s4, n_s4 = audit_inventory(dup_tick, ns, cre)
+    check("two-ticks-are-a-furnace", n_s4 == 2 and has(f_s4, "more-than-one-box-scheduler-tick"))
+    # The name alone never exempts a poller- or announce-shaped entry.
+    poll_named = {"name": "podcast-scheduler", "kind": "poller",
+                  "schedule": "*/5 * * * *", "client": "acme"}
+    check("poller-shaped-tick-never-exempted",
+          has(audit_inventory(clean + [poll_named], ns, cre)[0], "queue-poller-or-watcher"))
+    ann_named = {"name": "podcast-scheduler", "schedule": "*/5 * * * *",
+                 "delivery": "announce", "client": "acme"}
+    check("announce-shaped-tick-never-exempted",
+          has(audit_inventory(clean + [ann_named], ns, cre)[0], "delivery-announces-into-chat"))
 
     print("== self-test: inventory - churn sweep ==")
     sweep_in = [
         {"name": "podcast-smoke-test-acme", "schedule": "12 6 * * *", "delivery": "silent", "client": "acme"},
         {"name": "podcast-smoke-test-gone", "schedule": "12 6 * * *", "delivery": "silent", "client": "gone"},
     ]
-    check("orphan-flagged", has(audit_inventory(sweep_in, ns, cre, sweep=True, roster=["acme", "boba"]), "orphan-cron-client-not-in-roster:gone"))
+    check("orphan-flagged", has(audit_inventory(sweep_in, ns, cre, sweep=True, roster=["acme", "boba"])[0], "orphan-cron-client-not-in-roster:gone"))
     check("no-orphan-when-all-in-roster",
-          not has(audit_inventory(sweep_in, ns, cre, sweep=True, roster=["acme", "gone"]), "orphan-cron"))
+          not has(audit_inventory(sweep_in, ns, cre, sweep=True, roster=["acme", "gone"])[0], "orphan-cron"))
 
     print("== self-test: inventory - heartbeat config ==")
     hbcfg = [{"name": "main-heartbeat", "skills": ["podcast-production-engine"], "agents": []}]
-    check("heartbeat-config-listed", has(audit_inventory([], ns, cre, heartbeat_skills=hbcfg), "heartbeat-config-lists-podcast"))
+    check("heartbeat-config-listed", has(audit_inventory([], ns, cre, heartbeat_skills=hbcfg)[0], "heartbeat-config-lists-podcast"))
 
     print("== self-test: inventory - --client scoping ==")
-    check("missing-client", has(audit_inventory(clean, ns, cre, only_client="ghost"), "client-has-no-recurring-podcast-cron:ghost"))
-    check("present-client-ok", not has(audit_inventory(clean, ns, cre, only_client="acme"), "client-has"))
+    check("missing-client", has(audit_inventory(clean, ns, cre, only_client="ghost")[0], "client-has-no-recurring-podcast-cron:ghost"))
+    check("present-client-ok", not has(audit_inventory(clean, ns, cre, only_client="acme")[0], "client-has"))
 
     print("== self-test: static registration scan ==")
     import tempfile
