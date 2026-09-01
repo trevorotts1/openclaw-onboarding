@@ -126,10 +126,10 @@ sys.modules.setdefault("_ghl_media_canonical", _canon)
 _spec.loader.exec_module(_canon)  # type: ignore[union-attr]
 
 # Re-export the proven symbols UNCHANGED (single source of truth). NOTE: `upload_media`
-# is the ONE exception — it is NOT re-exported raw; it is WRAPPED below by a fail-closed
-# DECK-artifact gate (the lowest GHL upload chokepoint). Every other symbol, and the
-# actual REST upload underneath the wrapper, is the canonical, verified-working code.
-create_media_folder = _canon.create_media_folder
+# is NOT re-exported raw; it is WRAPPED below by a fail-closed DECK-artifact gate (the
+# lowest GHL upload chokepoint). `create_media_folder` is the OTHER exception — it is
+# NOT re-exported raw either; it is DISABLED (FIX 36) below.
+list_media = _canon.list_media
 list_media = _canon.list_media
 resolve_location_pit = _canon.resolve_location_pit
 resolve_location_id = _canon.resolve_location_id
@@ -145,6 +145,37 @@ GHL_VIDEO_MIME = _canon.GHL_VIDEO_MIME
 
 CANONICAL_SOURCE = str(_CANON_PATH)
 
+
+# ===========================================================================
+# FIX 36 — FOLDER-CREATE IS DISABLED (doc-vs-code reconciliation).
+# ===========================================================================
+# CLIENT-WEBINAR-DECK-SOP (BINDING "how GHL is touched") says: "The agent NEVER
+# creates a GHL folder (the folder-create endpoint returns 404; folders are made
+# by a human in the GHL UI and the id is passed as parentId, else upload to the
+# shareable media root)." Until FIX 36 this module re-exported the Skill-48
+# folder-create call RAW, and ghl_media_push treated a 201 as the PRIMARY path —
+# directly contradicting the documented 404. Resolved fail-closed:
+#   * create_media_folder stays a PRESENT attribute (import compatibility +
+#     the import-surface contract) but NEVER issues the POST. Every call returns
+#     the documented-declined shape {folderId: None, fallback: "name-prefix"}
+#     WITHOUT any network traffic, so a caller that ignores the decline falls
+#     through to the pre-existing, human-approved intake folder id or the media
+#     root — exactly the SOP's two legal outcomes.
+#   * To keep the Skill-48 canonical call reachable for the AD pipeline (the one
+#     place the endpoint is genuinely used), the raw symbol remains importable as
+#     CANON_CREATE_MEDIA_FOLDER. The PRESENTATIONS department never calls it.
+# The canonical Skill-48 module itself is NOT forked or modified (shared source
+# of truth preserved); the disable lives entirely in this dept-side layer.
+
+def create_media_folder(name, location_id, pit, *, parent_id=None, opener=None):
+    """DISABLED per CLIENT-WEBINAR-DECK-SOP (the folder-create endpoint returns
+    404 for this department's use). NEVER POSTs. Returns the documented
+    declined shape so callers fall back to the human-approved folder id
+    (intake.json.ghl_media_folder_id) or the shareable media root."""
+    return {"folderId": None, "name": str(name), "fallback": "name-prefix",
+            "http": None, "disabled": "fix36-folder-create-endpoint-returns-404"}
+
+CANON_CREATE_MEDIA_FOLDER = _canon.create_media_folder
 
 # ===========================================================================
 # THE LOWEST GHL UPLOAD CHOKEPOINT — fail-closed DECK-artifact tripwire (v16.1.2).

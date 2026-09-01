@@ -16,6 +16,9 @@
 #   9. universal-sops content-manifest freshness (sha256 lockstep) — on staged
 #      universal-sops/** changes
 #   5. Version consistency (version / install.sh / CHANGELOG.md)
+#  10. Presentations SOP lockstep (SOP-SLIDE-06 gate 2 / FIX 36 — sync_check.py
+#      blocks on drift when a Presentations role .md, dept sops/, the manifest, or
+#      build_deck.py is staged; exit 4 drift and exit 2 cannot-run both block)
 #   8. Full env dump guard (pm2 jlist/prettylist/--json) — WARN-MODE only (Rule 3.5 stage 1)
 
 # ── 0. Locate repo root ──────────────────────────────────────────────────────
@@ -219,6 +222,39 @@ if [ -f "scripts/hash-universal-sops-manifest.py" ]; then
       echo "  scripts/hash-universal-sops-manifest.py && git add universal-sops/_content-manifest.json"
       exit 1
     fi
+  fi
+fi
+
+# ── 10. Presentations SOP lockstep (SOP-SLIDE-06 gate 2 — FIX 36) ─────────────
+# SOP-SLIDE-06-EXTENSION-AND-SYNC.md §3 gate 2: "any commit touching a Presentations
+# role .md, a sops/*.md, the manifest, or build_deck.py runs sync_check.py and is
+# blocked on drift." The CI half of this gate is live in
+# .github/workflows/presentations-drift-gates.yml (GATE 3/GATE 5 targets); this is the
+# LOCAL pre-commit half, so drift is caught before the push, not after. Exit codes
+# (sync_check.py contract): 0 = in sync; 4 = drift (block); 2 = cannot run (block —
+# a broken checker must never wave a commit through).
+SYNC_TRIGGER='^(23-ai-workforce-blueprint/templates/role-library/presentations/.*\.md$|23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sops/|23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck\.py$|universal-sops/presentation-slide-craft/)'
+if git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -Eq "$SYNC_TRIGGER"; then
+  SYNC_SCRIPT="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+  if [ -f "$SYNC_SCRIPT" ]; then
+    SYNC_RC=0
+    python3 "$SYNC_SCRIPT" --json > /tmp/precommit-sync-check.json 2>/tmp/precommit-sync-check.err || SYNC_RC=$?
+    if [ "$SYNC_RC" -ne 0 ]; then
+      if [ "$SYNC_RC" -eq 4 ]; then
+        echo ""
+        echo "PRE-COMMIT BLOCKED: Presentations SOP/code lockstep DRIFT (sync_check.py exit 4):"
+        python3 -c "import json;d=json.load(open('/tmp/precommit-sync-check.json'));[print(f\"  - {x.get('check')} | {x.get('item')} | {x.get('detail')}\") for x in d.get('drift',[])]" 2>/dev/null || cat /tmp/precommit-sync-check.err
+        echo "Fix by running the documented EXTENSION-SOP sync steps, then re-stage."
+      else
+        echo ""
+        echo "PRE-COMMIT BLOCKED: sync_check.py could not run (exit $SYNC_RC) — fail-closed."
+        cat /tmp/precommit-sync-check.err 2>/dev/null
+      fi
+      rm -f /tmp/precommit-sync-check.json /tmp/precommit-sync-check.err
+      exit 1
+    fi
+    rm -f /tmp/precommit-sync-check.json /tmp/precommit-sync-check.err
+    echo "Presentations lockstep check passed (sync_check.py: 0 drift)."
   fi
 fi
 
