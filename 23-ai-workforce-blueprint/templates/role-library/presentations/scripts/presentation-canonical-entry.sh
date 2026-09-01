@@ -59,7 +59,7 @@
 #   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
-#   9  — ENGINE DISPATCH FAILED: the 36-phase engine is installed but refused the
+#   9  — ENGINE DISPATCH FAILED: the manifest-phase engine is installed but refused the
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
 #        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
 #        (See engine_fail() / fix/deck-type-routing-bypass.)
@@ -82,7 +82,7 @@ note() { echo "=== [$PROG] $* ==="; }
 # successful engine dispatch (any presentation_type, not just the two the
 # alias bug mis-routed), which then always died at "could not mint the
 # front-door nonce" before a single phase ran. Reproduced against the real
-# engine: state.json is created (job + 36-phase manifest pinned) and the very
+# engine: state.json is created (job + manifest pinned) and the very
 # next line fails this way. One definition, used by both the engine path and
 # the legacy-fallback path below.
 _mint_nonce() {
@@ -113,6 +113,11 @@ OPTIONS:
   --platform mac|vps  box-type override (default: auto-detect)
   --scripts-dir DIR   location of build_deck.py / run_signature_deck.py
                       (default: auto-detect; or set \$SCRIPTS_DIR)
+  --intake-depth quick|in-depth
+                      the intake interview depth (the interview_depth
+                      question's standard_mode; env PRESENTATION_INTAKE_DEPTH).
+                      A DIFFERENT axis from run-mode --mode Ultra|Standard|
+                      Economy -- never reuse --mode for this.
   --plan              print the canonical phase plan and exit (gates still run)
   --adhoc             owner-authorized + logged escape (refused without the record)
   -h | --help         this help
@@ -130,6 +135,13 @@ EOF
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
 PLAN=0 ADHOC=0 RESUME=0
+# FIX 36(3) — intake-depth axis, deliberately SEPARATE from the run-mode axis.
+# Run mode (FIX 38/FIX 11) is --mode Ultra|Standard|Economy (env
+# PRESENTATION_MODE). Intake depth (the interview_depth question's
+# standard_mode subfield) is THIS flag: --intake-depth quick|in-depth (env
+# PRESENTATION_INTAKE_DEPTH). The two vocabularies must never share a flag.
+INTAKE_DEPTH="${PRESENTATION_INTAKE_DEPTH:-}"
+INTAKE_DEPTH_STATED="${INTAKE_DEPTH:+1}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir)     RUN_DIR="${2:-}"; shift 2 ;;
@@ -138,6 +150,8 @@ while [ $# -gt 0 ]; do
         --phase)       PHASE="${2:-}"; shift 2 ;;
         --platform)    PLATFORM="${2:-}"; shift 2 ;;
         --scripts-dir) SCRIPTS_DIR="${2:-}"; SCRIPTS_DIR_STATED=1; shift 2 ;;
+        --intake-depth)
+            INTAKE_DEPTH="${2:-}"; INTAKE_DEPTH_STATED=1; shift 2 ;;
         --plan)        PLAN=1; shift ;;
         --resume) RESUME=1; shift ;;
         --adhoc)       ADHOC=1; shift ;;
@@ -145,6 +159,28 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument: $1 (run with --help)" ;;
     esac
 done
+
+# FIX 36(3) — validate the intake-depth vocabulary HERE, loudly, before any
+# gate runs. Legal values are exactly quick|in-depth (case-insensitive). A
+# run-mode value (Ultra/Standard/Economy) passed to this flag is the exact
+# collision the spec forbids: refuse it with the message naming both axes.
+case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]' | tr '_' '-')" in
+    ""|quick|in-depth|indepth) ;;
+    ultra|standard|economy)
+        die "--intake-depth $INTAKE_DEPTH is a RUN-MODE value. Run mode is \
+--mode Ultra|Standard|Economy (env PRESENTATION_MODE); intake depth is \
+--intake-depth quick|in-depth (env PRESENTATION_INTAKE_DEPTH). The two axes \
+are separate by design and must never share a flag." ;;
+    *)
+        die "--intake-depth must be quick|in-depth (got '$INTAKE_DEPTH'). \
+Run-mode --mode Ultra|Standard|Economy is a different axis." ;;
+esac
+# Normalize to the canonical capitalization the engine contract speaks.
+case "$INTAKE_DEPTH" in
+    "") : ;;
+    *d*|*D*) INTAKE_DEPTH="in-depth" ;;
+    *)       INTAKE_DEPTH="quick" ;;
+esac
 
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
@@ -858,7 +894,8 @@ fi
 #   agent invitation with no mechanical executor.
 #
 # AFTER (this change): dispatch through presentation_job.py (the engine), which
-#   walks ALL 36 manifest phases in order, refuses to skip, runs 6 fail-closed
+#   walks ALL manifest phases in order (count derived from the canonical
+#   PIPELINE-MANIFEST.json), refuses to skip, runs 6 fail-closed
 #   gates in close(), and posts progress to the CC board at every phase boundary.
 #   The engine has 18 modules + 552 passing tests and was built between
 #   2026-07-25 and 2026-08-07 -- it was simply never wired until now.
@@ -870,7 +907,7 @@ fi
 # alias remap that would have fixed them never ran. That mismatched intake
 # then made the engine's REAL (narrower) check reject it, `--new` failed,
 # and this script fell through to the FALLBACK below WHILE REPORTING SUCCESS
-# (2 of 36 phases, close() never called, all 6 fail-closed gates skipped).
+# (2 legacy phases only, close() never called, all 6 fail-closed gates skipped).
 # The same block also string-interpolated ledger-controlled values (client
 # name) directly into python SOURCE text -- a client name containing a
 # single quote broke the literal, the SyntaxError was swallowed by
@@ -903,21 +940,42 @@ engine_fail() {
     echo >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
-    echo "presentation_job.py (the 36-phase engine) is installed on this box but" >&2
+    echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
     echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
-    echo "the legacy 2-of-36-phase runner, and it is never reported as success." >&2
+    echo "the legacy runner, and it is never reported as success." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
 
+# ---------------------------------------------------------------------------
+# FIX 36(5) — the displayed phase count is DERIVED from the canonical
+# PIPELINE-MANIFEST.json, never a stale hardcoded number. Resolution mirrors
+# manifest_source.resolve_manifest(): the installed dept copy (sops/ with
+# MANIFEST-SOURCE.txt), the cluster copy walked up from SCRIPTS_DIR, then the
+# installed sops/ file itself. A missing/unparseable manifest prints '?'
+# (loud absence, not a fabricated number).
+# ---------------------------------------------------------------------------
+MANIFEST_PHASES() {
+    for _mc in "$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json" \
+               "$(cd "$SCRIPTS_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"; do
+        [ -n "$_mc" ] || continue
+        [ -f "$_mc" ] || continue
+        python3 -c "
+import json
+m = json.load(open('$_mc'))
+print(len(m.get('phases', [])))
+" 2>/dev/null && return 0
+    done
+    echo '?'
+}
+MANIFEST_PHASES="$(MANIFEST_PHASES)"
+
 if [ "$PLAN" -eq 1 ]; then
     # --plan is read-only inspection: show what WOULD run, don't launch.
     note "ALL GATES PASSED -- plan mode: engine WOULD be dispatched"
-    echo "  Manifest phases: $(python3 -c "
-import json
-m = json.load(open('$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json'))
-print(len(m.get('phases', [])))
-" 2>/dev/null || echo '?')"
+    # FIX 36(5): the phase count comes from the canonical manifest, never a
+    # hardcoded number.
+    echo "  Manifest phases: $MANIFEST_PHASES"
     if [ "$RESUME" -eq 0 ]; then
     echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
     fi
@@ -927,7 +985,7 @@ print(len(m.get('phases', [])))
 fi
 
 if [ -f "$ENGINE_ENTRY" ] && command -v python3 >/dev/null 2>&1; then
-    note "ALL GATES PASSED -- dispatching the presentation engine (all 36 phases, mechanical)"
+    note "ALL GATES PASSED -- dispatching the presentation engine (all $MANIFEST_PHASES manifest phases, mechanical)"
 
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
     # through the ONE shared resolver (single-sourced deck-type vocabulary,
@@ -942,9 +1000,16 @@ $ENGINE_ENTRY but its resolver $RESOLVE_INTAKE is not -- this is a broken/partia
 engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
+    _RESOLVE_DEPTH_ARGS=""
+    if [ -n "$INTAKE_DEPTH" ]; then
+        _RESOLVE_DEPTH_ARGS="--intake-depth $INTAKE_DEPTH"
+    fi
     _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
-        --out "$_ENGINE_INTAKE_TMP" --source canonical-entry 2>&1)"
+        --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"
     _RESOLVE_RC=$?
+    if [ "$_RESOLVE_RC" -eq 5 ]; then
+        engine_fail "AF-INTAKE-DEPTH-INVALID" 9 "$_RESOLVE_OUT"
+    fi
     if [ "$_RESOLVE_RC" -ne 0 ]; then
         engine_fail "AF-DECK-TYPE-UNKNOWN" 9 "$INTAKE_LEDGER did not resolve to a legal \
 presentation_type: $_RESOLVE_OUT"
@@ -968,10 +1033,11 @@ $_CREATE_OUT"
         fi
     fi
 
-    # Step 3: Run the engine. This walks all 36 manifest phases, refuses to skip,
+    # Step 3: Run the engine. This walks every manifest phase (count derived
+    # from PIPELINE-MANIFEST.json, never a hardcoded number), refuses to skip,
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
     # Returns the engine's exit code directly to the caller.
-    note "Engine run starting -- 36 phases, all mechanically enforced"
+    note "Engine run starting -- $MANIFEST_PHASES manifest phases, all mechanically enforced"
     _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
@@ -1000,11 +1066,11 @@ else
     # The engine component is genuinely absent from this box -- the ONE
     # legitimate reason to fall back. Announce it unmistakably (not a
     # one-line `note`) and record that it ran, so a fleet of boxes quietly
-    # running the 2-of-36 legacy path is visible, never just archived.
+    # running the legacy 2-phase path is visible, never just archived.
     echo "!! [$PROG] ================================================================" >&2
     echo "!! [$PROG] ANNOUNCED FALLBACK: presentation_job.py NOT FOUND at" >&2
     echo "!! [$PROG]   $ENGINE_ENTRY" >&2
-    echo "!! [$PROG] The mechanical 36-phase engine is not installed on this box." >&2
+    echo "!! [$PROG] The mechanical manifest-phase engine is not installed on this box." >&2
     echo "!! [$PROG] Falling back to the LEGACY run_signature_deck.py runner --" >&2
     echo "!! [$PROG] 2 of ~20 phases. This is NOT a full build. Install/update the" >&2
     echo "!! [$PROG] Presentations department to get the mechanical engine." >&2
