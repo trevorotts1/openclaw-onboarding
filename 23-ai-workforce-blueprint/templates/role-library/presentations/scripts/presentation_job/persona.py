@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-BLEND_TIMEOUT_S = 30          # HALF of persona_for_job's own default subprocess timeout
+BLEND_TIMEOUT_S = 90          # REVISED 2026-09-01 (SMOKE-1 F18): 30s blocked a legitimate cold call
                                # (shared-utils/persona_for_job.py:425, "timeout: int = 60"; neither
                                # persona-selector-v2.py's 20s/120s subprocess timeouts nor
                                # persona_for_job.py carry a 30s value anywhere — checked, re-checked

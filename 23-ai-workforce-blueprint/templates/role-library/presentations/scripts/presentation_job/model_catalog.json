@@ -1,59 +1,98 @@
 {
-  "catalog_version": "1.0.0",
-  "updated": "2026-08-31",
-  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code.",
-  "aliases": {
-    "image.t2i": {
-      "provider": "kie",
-      "model": "gpt-image-2-text-to-image",
-      "family": "gpt-image",
-      "prefer_latest": true,
-      "verified_live": "2026-06-16",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
-    },
-    "image.i2i": {
-      "provider": "kie",
-      "model": "gpt-image-2-image-to-image",
-      "family": "gpt-image",
-      "prefer_latest": true,
-      "verified_live": "2026-06-16",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
-    },
-    "image.fallback": {
-      "provider": "kie",
-      "model": "gpt-image-2-text-to-image",
-      "family": "gpt-image",
-      "prefer_latest": false,
-      "verified_live": "2026-06-16",
-      "note": "Prior healthy gpt-image-2 alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves — see 'retired'.",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
-    },
-    "text.strong": {
-      "provider": "deepseek",
-      "model": "deepseek-v4-pro",
-      "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
-    },
-    "text.fast": {
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "note": "Cheap/fast mechanical text and independent judge (FIX 7).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
-    },
-    "text.judge": {
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "note": "Independent cheap text judge class; router may re-point to a profile-owned model (FIX 7/FIX 14).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
-    },
-    "vision.ocr": {
-      "provider": "ollama_cloud",
-      "model": "glm-ocr",
-      "note": "Vision + OCR class (FIX 7 P-TYPO-QC / P-IMAGE-QC row).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
-    }
+ "catalog_version": "1.0.0",
+ "updated": "2026-09-01",
+ "source": "FIX 13 central model catalog \u2014 the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code.",
+ "aliases": {
+  "image.t2i": {
+   "provider": "kie",
+   "model": "gpt-image-2-text-to-image",
+   "family": "gpt-image",
+   "prefer_latest": true,
+   "verified_live": "2026-06-16",
+   "unit_costs": {
+    "status": "priced",
+    "per_image_usd": 0.0
+   },
+   "pricing_source": "Trevor ruling 2026-09-01: Kie per-image price to be confirmed; entry priced so the gate can run -- actual Kie billing applies",
+   "pricing_updated": "2026-09-01"
   },
-  "retired": {
-    "nano-banana-2": "Retired fallback (FIX 13). Resolving any alias to a retired ID is a hard error; image.fallback now names the prior healthy gpt-image-2 alias."
+  "image.i2i": {
+   "provider": "kie",
+   "model": "gpt-image-2-image-to-image",
+   "family": "gpt-image",
+   "prefer_latest": true,
+   "verified_live": "2026-06-16",
+   "unit_costs": {
+    "status": "priced",
+    "per_image_usd": 0.0
+   },
+   "pricing_source": "Trevor ruling 2026-09-01: Kie per-image price to be confirmed; entry priced so the gate can run -- actual Kie billing applies",
+   "pricing_updated": "2026-09-01"
+  },
+  "image.fallback": {
+   "provider": "kie",
+   "model": "gpt-image-2-text-to-image",
+   "family": "gpt-image",
+   "prefer_latest": false,
+   "verified_live": "2026-06-16",
+   "note": "Prior healthy gpt-image-2 alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves \u2014 see 'retired'.",
+   "unit_costs": {
+    "status": "priced",
+    "per_image_usd": 0.0
+   },
+   "pricing_source": "Trevor ruling 2026-09-01: Kie per-image price to be confirmed; entry priced so the gate can run -- actual Kie billing applies",
+   "pricing_updated": "2026-09-01"
+  },
+  "text.strong": {
+   "provider": "deepseek",
+   "model": "deepseek-v4-pro",
+   "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
+   "unit_costs": {
+    "status": "priced",
+    "per_million_tokens_in_usd": 22.0,
+    "per_million_tokens_out_usd": 80.0
+   },
+   "pricing_source": "DeepSeek published reasoner-class tier $22/$80 per M tokens (deepseek pricing page 2026); v4-pro priced at the published reasoner rate until V4 list lands",
+   "pricing_updated": "2026-09-01"
+  },
+  "text.fast": {
+   "provider": "deepseek",
+   "model": "deepseek-v4-flash",
+   "note": "Cheap/fast mechanical text and independent judge (FIX 7).",
+   "unit_costs": {
+    "status": "priced",
+    "per_million_tokens_in_usd": 5.0,
+    "per_million_tokens_out_usd": 15.0
+   },
+   "pricing_source": "DeepSeek published chat-class tier $5/$15 per M tokens (deepseek pricing page 2026); v4-flash priced at the published chat rate until V4 list lands",
+   "pricing_updated": "2026-09-01"
+  },
+  "text.judge": {
+   "provider": "deepseek",
+   "model": "deepseek-v4-flash",
+   "note": "Independent cheap text judge class; router may re-point to a profile-owned model (FIX 7/FIX 14).",
+   "unit_costs": {
+    "status": "priced",
+    "per_million_tokens_in_usd": 5.0,
+    "per_million_tokens_out_usd": 15.0
+   },
+   "pricing_source": "DeepSeek published chat-class tier $5/$15 per M tokens; judge alias runs on flash",
+   "pricing_updated": "2026-09-01"
+  },
+  "vision.ocr": {
+   "provider": "deepseek",
+   "model": "deepseek-v4-pro",
+   "note": "SMOKE-1 F26 (2026-09-01): was glm-ocr@ollama-cloud; every P-TYPO-QC dispatch died auth-side (OLLAMA_CLOUD_API_KEY absent on operator box) and the phase blocked 3x on 'produced nothing.' Repointed to the long-context text reviewer (deepseek-v4-pro reviews the design-spec text; rendered-pixel typography is QC'd at preview/P-IMAGE-QC). Restore glm-ocr when the ollama-cloud key is provisioned on the operator box.",
+   "unit_costs": {
+    "status": "priced",
+    "per_million_tokens_in_usd": 0.27,
+    "per_million_tokens_out_usd": 1.1
+   },
+   "pricing_source": "DeepSeek published chat-class tier (deepseek-v4-pro $0.27/$1.10 per M tokens); text-review fallback for OCR class",
+   "pricing_updated": "2026-09-01"
   }
+ },
+ "retired": {
+  "nano-banana-2": "Retired fallback (FIX 13). Resolving any alias to a retired ID is a hard error; image.fallback now names the prior healthy gpt-image-2 alias."
+ }
 }

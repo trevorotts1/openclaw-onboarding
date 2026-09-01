@@ -2344,7 +2344,27 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 "route_reason": decision.get("reason"),
                 "requested_alias": decision.get("requested_alias"),
             })
-            stamp.pop("measured_capacity", None)
+            # SMOKE-1 F20 (live run SMOKE-1, 2026-09-01): popping measured_capacity
+            # made the wave input carry None, and parallel_prompt_worker's usage
+            # validation hard-rejects it ("must be a positive integer") — every
+            # profile-resolved run error-looped before authoring a single prompt.
+            # Carry the MEASURED capacity instead of a fabrication OR a None: read
+            # the mode-plan sidecar the launcher writes (concurrency), fall back to
+            # the engine default only when it is unreadable.
+            _cap: Optional[int] = None
+            if run_dir is not None:
+                try:
+                    plan = json.loads((Path(run_dir) / ".mode-plan.json").read_text())
+                    c = plan.get("concurrency")
+                    if isinstance(c, dict):  # live sidecar shape: {concurrency: 500, ...}
+                        c = c.get("concurrency")
+                    if c is None:
+                        c = plan.get("measured_capacity")
+                    if isinstance(c, int) and not isinstance(c, bool) and c >= 1:
+                        _cap = c
+                except Exception:  # noqa: BLE001 — sidecar absence is non-fatal
+                    _cap = None
+            stamp["measured_capacity"] = _cap if _cap is not None else 8
     except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
         try:
             _append_sidecar(run_dir, "P4-PROMPT", {
@@ -2397,6 +2417,24 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         return DispatchResult(phase_id, "error", 0, [reason])
 
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+    # SMOKE-1 F21 (2026-09-01): the engine-side sweep can hand this builder an
+    # order/phase pair that both resolve empty, so wave_input.owning_role was None
+    # and every slide call defaulted to "Presentation Manager (Deck Author)" —
+    # RoleSOPNotFound x12, zero spend on real work. Last-resort fallback: read the
+    # owning_role straight out of the pinned PIPELINE-MANIFEST.
+    if not owning_role:
+        try:
+            _man = _json_load_manifest_fallback()
+            owning_role = next((ph.get("owning_role") for ph in _man.get("phases", [])
+                                if ph.get("id") == phase_id), "") or ""
+        except Exception:  # noqa: BLE001 — manifest absence must not crash the sweep
+            owning_role = ""
+    if not owning_role:
+        reason = ("P4-PROMPT parallel dispatch: owning_role unresolvable "
+                  "(order, phase_obj, and manifest all empty)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
 
     # --- normalize slides from the SAME source the serial loop + verifier use
     slides_payload: List[Dict[str, Any]] = []
@@ -2452,6 +2490,7 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         "run_dir": str(run_dir),
         "phase_id": phase_id,
         "routing": routing,
+        "owning_role": owning_role,
         "prompt_constraints": {
             "min_chars": 9000,
             "max_chars": 18000,
@@ -3307,6 +3346,27 @@ def resolve_scripts_dir_for_run(run_dir: Path) -> Path:
         pass
     return _OWN_SCRIPTS_DIR
 
+
+def _json_load_manifest_fallback() -> Dict[str, Any]:
+    """Load the pinned PIPELINE-MANIFEST.json for phase-definition fallbacks.
+    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then the
+    universal-sops repo copy two conventions up from this module. Raises on
+    absence — callers degrade, never crash the sweep."""
+    from pathlib import Path as _P
+    import json as _json
+    candidates = []
+    env_path = os.environ.get("PRESENTATION_MANIFEST")
+    if env_path:
+        candidates.append(_P(env_path))
+    candidates.append(_P.home() / "openclaw-onboarding" / "universal-sops" /
+                      "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+    for c in candidates:
+        try:
+            if c.is_file():
+                return _json.loads(c.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            continue
+    raise FileNotFoundError("no PIPELINE-MANIFEST.json resolvable for phase fallback")
 
 def resolve_dept_root(scripts_dir: Path) -> Path:
     return scripts_dir.parent

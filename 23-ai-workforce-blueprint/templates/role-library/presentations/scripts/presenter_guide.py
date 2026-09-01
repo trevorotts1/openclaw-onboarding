@@ -520,7 +520,12 @@ class PresenterGuide:
             # 51,200-byte / 34-slide reference is retained as MIN_BYTES_ABSOLUTE
             # to catch empty/garbled guides regardless of slide count.
             _n_slides = len(getattr(self, "slides", []) or []) or 1
-            floor = max(MIN_BYTES_PER_SLIDE * _n_slides, MIN_BYTES_ABSOLUTE)
+            # SMOKE-1 calibration fix (2026-09-01): max() let the 34-slide
+            # reference's ABSOLUTE floor (51,200) dominate small decks — a
+            # rich, font-floor-passing 12-slide guide (~19-20KB) could never
+            # pass regardless of copy quality. The per-slide floor IS the
+            # content floor for any deck size.
+            floor = MIN_BYTES_PER_SLIDE * _n_slides
         if size < floor:
             print(f"[FATAL] {Path(out_path).name} is {size} bytes, below {floor:,}-byte floor", file=sys.stderr)
             sys.exit(3)

@@ -254,6 +254,11 @@ def validate_input(data: Any, source: str) -> Dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
         "run_dir": run_dir,
+        # SMOKE-1 F20b: pass the owning_role through — validate_input's rebuilt
+        # dict is a whitelist and silently dropped the field the dispatcher added,
+        # so the worker always fell back to the literal "Presentation Manager
+        # (Deck Author)" and RoleSOPNotFound'd every slide.
+        "owning_role": data.get("owning_role"),
         "phase_id": PHASE_ID,
         "routing": {
             "provider": routing["provider"],

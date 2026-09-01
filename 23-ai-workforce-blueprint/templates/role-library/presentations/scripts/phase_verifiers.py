@@ -519,25 +519,31 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
 
 
 def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P4-RENDER / P-IMAGE-QC: canonical_render_guard image-QC (AF-IMAGE-QC-VISION).
-    Falls back to filesystem PNG existence check when the guard is unavailable."""
-    if _crg is not None:
+    """P4-RENDER / P-IMAGE-QC: build_deck.check_image_qc_vision (AF-IMAGE-QC-VISION).
+    SMOKE-1 F28 (2026-09-01): this verifier previously looked for
+    canonical_render_guard.check_image_qc / check_rendered_images — neither name has
+    ever existed, so the gate resolved to _crg!=None but fn=None on EVERY call and
+    fell through to the bare PNG-existence fallback, refusing to attest real renders
+    (AF-IMAGE-QC-MISSING). The real gate is build_deck.check_image_qc_vision (the
+    same module canonical_render_guard._FIX2_SYMBOLS already points at). Resolve it
+    via _bd_fn; fall back to the guard only if build_deck is unavailable."""
+    fn = None
+    if _bd is not None:
+        fn = _bd_fn("check_image_qc_vision")
+    if fn is None and _crg is not None:
         fn = getattr(_crg, "check_image_qc", None) or getattr(_crg, "check_rendered_images", None)
-        if fn is not None:
-            try:
-                result = fn(run_dir)
-                if not _checker_pass(result):
-                    return False, [f"AF-IMAGE-QC-VISION: {result}"]
-                return True, []
-            except Exception as exc:  # noqa: BLE001
-                # F03: the vision measurer crashed — falling through to a bare
-                # PNG-existence check in production would attest renders that no
-                # gate ever actually measured. Fail closed unless test/CI.
-                if not _degraded_allowed(run_dir):
-                    return False, [
-                        f"AF-IMAGE-QC-CRASH: canonical_render_guard image-QC raised "
-                        f"{exc!r} — the render image-QC did not run; failing closed "
-                        "(test/CI marker absent)"]
+    if fn is not None:
+        try:
+            result = fn(run_dir)
+            if not _checker_pass(result):
+                return False, [f"AF-IMAGE-QC-VISION: {result}"]
+            return True, []
+        except Exception as exc:  # noqa: BLE001
+            if not _degraded_allowed(run_dir):
+                return False, [
+                    f"AF-IMAGE-QC-CRASH: image-QC gate raised "
+                    f"{exc!r} — the render image-QC did not run; failing closed "
+                    "(test/CI marker absent)"]
 
     # Filesystem fallback: at least one render PNG must exist.
     hits = list(run_dir.glob("renders/slide-*.png"))
@@ -2671,13 +2677,31 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
             return True, [f"NOTE: {phase_id} deferred -- defers_unless not "
                           f"satisfied by this run's intake answers"]
         paths = _pu_artifact_paths(run_dir, artifacts)
-        missing = [str(a) for a in artifacts if a not in
-                   [str(x.relative_to(run_dir)) if x.is_relative_to(run_dir) else str(x)
-                    for x in paths]]
+        # F16 follow-up: declared paths are written under the working/upsell root
+        # convention but declared relative to it ('copy/sales.fragment.md'), so the
+        # on-disk relpath ('working/upsell/copy/sales.fragment.md') never string-
+        # equals the declaration. Compare by declared-suffix instead of equality.
+        resolved_suffixes = set()
+        for x in paths:
+            try:
+                resolved_suffixes.add(str(x.relative_to(run_dir)))
+            except ValueError:
+                resolved_suffixes.add(str(x))
+        missing = [str(a) for a in artifacts
+                   if not any(str(r).endswith(str(a)) for r in resolved_suffixes)]
         if not paths:
             return False, [f"AF-U-{phase_id}: none of the declared artifacts "
                            f"({', '.join(artifacts)}) exist under the run dir -- "
                            f"the phase ran but produced nothing provable"]
+        # SMOKE-1 F16 (live run pj_8fa53071c9df, 2026-09-01): `missing` was computed
+        # and then never consulted, so a multi-artifact phase whose FIRST artifact
+        # existed verified True forever while the second (copy_ledger.json) was
+        # never written — the dispatcher logged already_satisfied every ~60s and
+        # the engine deadlocked to budget expiry. A declared artifact that is
+        # missing is a hard FAIL, exactly the vacuous-pass class B3 closed.
+        if missing:
+            return False, [f"AF-U-{phase_id}: declared artifact(s) missing: "
+                           f"{', '.join(missing)}"]
         empty = [str(x) for x in paths
                  if x.is_file() and x.stat().st_size == 0]
         if empty:

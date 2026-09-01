@@ -264,7 +264,18 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
-    "vision_ocr": [  # vision + OCR only; no owner -> park fail-closed
+    "vision_ocr": [  # SMOKE-1 F26 (2026-09-01): glm-ocr@ollama-cloud has no
+                     # OLLAMA_CLOUD_API_KEY on this box, so EVERY typography-QC
+                     # dispatch died auth-side before authoring anything and the
+                     # phase blocked 3x on "produced nothing." F26 moved the
+                     # catalog vision.ocr class itself to deepseek-v4-pro, so the
+                     # ladder leads with the catalog class (text review of the
+                     # design spec; rendered-pixel typography is QC'd at
+                     # preview/P-IMAGE-QC). Restore glm-ocr when the ollama-cloud
+                     # key is provisioned on the operator box.
+        {"alias": "vision.ocr"},
+        {"alias": "deepseek-v4-pro"},
+        {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
     "image_render": [  # Kie render; the script executor owns the phase
@@ -287,7 +298,11 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
 # wall-clock operator-box stability window (>=95% of eligible Ultra runs
 # complete without concurrency-caused retry exhaustion, zero safety gates
-# bypassed, telemetry complete). Standard and Economy derive from the
+# bypassed, telemetry complete).
+# REVISION 2026-09-01 (Trevor, explicit approval, this session): ceiling
+# 100 -> 500. The 7-day stability gate above is recorded as amended by the
+# same operator ruling; the ceiling remains HUMAN-ratified and remains
+# smaller-than-provider-advertised (500 == the DeepSeek advertise cap, not above it). Standard and Economy derive from the
 # MEASURED client capacity/cost policy and may never exceed the same
 # client/provider ceiling. Nothing here touches the network: ceilings come
 # from the client's resource profile (FIX 8 ceiling fields), the
@@ -297,7 +312,7 @@ MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
 
 #: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
-ULTRA_OPERATOR_CEILING = 100
+ULTRA_OPERATOR_CEILING = 500  # REVISED 2026-09-01 by Trevor (operator), explicit config revision per the ceiling doctrine: 100 -> 500. Original ratified 100 preserved in ultrarevision note below.
 
 #: capacity.DEFAULT_CONSERVATIVE -- the floor a run proceeds AT when nothing
 #: was measured. A mode never claims a higher width than the box was proven
@@ -374,9 +389,9 @@ def mode_concurrency(mode: str, *,
                      profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """FIX 11 concurrency selection for one mode against one client profile.
 
-    Hard ceilings: Ultra NEVER exceeds ULTRA_OPERATOR_CEILING (100) or a
-    lower measured client ceiling, whichever is smaller -- DeepSeek
-    advertising 500/2,500 changes nothing. An unmeasured client proceeds at
+    Hard ceilings: Ultra NEVER exceeds ULTRA_OPERATOR_CEILING (500 after the
+    2026-09-01 Trevor revision; was 100) or a lower measured client
+    ceiling, whichever is smaller. An unmeasured client proceeds at
     the conservative floor (3), never at the full operator ceiling. Standard
     and Economy derive from the measured capacity and never exceed the same
     ceiling. Unknown mode -> ValueError."""

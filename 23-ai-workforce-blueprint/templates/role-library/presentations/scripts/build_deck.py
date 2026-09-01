@@ -11757,7 +11757,18 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
               "slide ordinals (cover / data / people).", file=sys.stderr)
         return 2
 
-    slides = json.loads(Path(slides_path).read_text())
+    _deck = json.loads(Path(slides_path).read_text())
+    # SMOKE-1 F28 (2026-09-01): slides.json is the DECK dict {deck_title, ..., slides:[...]}
+    # but this line iterated the top-level dict, so by_ord was keyed by deck keys and every
+    # representative-slide lookup died "representative slide 1 is not in slides.json" (exit 2).
+    if isinstance(_deck, dict) and isinstance(_deck.get("slides"), list):
+        slides = _deck["slides"]
+    elif isinstance(_deck, list):
+        slides = _deck
+    else:
+        print("FATAL --sample: slides.json is neither a deck dict nor a slide list.",
+              file=sys.stderr)
+        return 2
     by_ord = {s["slide"]: s for s in slides if isinstance(s, dict) and "slide" in s}
     out_dir = run_dir / "working" / "style-preview"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -12159,8 +12170,15 @@ def main():
         print(f"FATAL: slides.json is not valid JSON: {exc}", file=sys.stderr)
         sys.exit(2)
 
+    # SMOKE-1 F29 (2026-09-01): slides.json is the DECK dict {deck_title, ..., slides:[...]}.
+    # Unwrap the slide list (same fix class as the --sample path at ~11761). Scene field:
+    # the rich prompt files carry scene content authoritatively (load_rich_prompt owns
+    # composition), so a slide without a literal "scene" key is tolerated as empty rather
+    # than failing the legacy schema check.
+    if isinstance(slides, dict) and isinstance(slides.get("slides"), list):
+        slides = slides["slides"]
     if not isinstance(slides, list) or not slides:
-        print("FATAL: slides.json must be a non-empty JSON array.", file=sys.stderr)
+        print("FATAL: slides.json must be a non-empty JSON array (or deck dict with a slides list).", file=sys.stderr)
         sys.exit(2)
 
     # Basic schema validation (deterministic, fail loud).
@@ -12169,7 +12187,7 @@ def main():
         if not isinstance(s, dict):
             print("FATAL: every slide must be an object.", file=sys.stderr)
             sys.exit(2)
-        for req in ("slide", "scene", "copy"):
+        for req in ("slide", "copy"):
             if req not in s:
                 print(f"FATAL: slide missing required field '{req}': {json.dumps(s)}", file=sys.stderr)
                 sys.exit(2)

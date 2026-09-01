@@ -751,6 +751,18 @@ def dispatch(
               f"{capacity_result.get('plan')}, source "
               f"{capacity_result.get('detection_source')})", flush=True)
 
+    # REVISED 2026-09-01 (smoke-1): the CLI carries no --plan-calls; the
+    # intake bridge is expected to supply counts. Until that bridge lands,
+    # read them from working/copy/plan-calls.json in the run dir when the
+    # file exists ({phase_id: n}). Absent file -> None (pre-revision path).
+    if plan_calls is None:
+        try:
+            _pc_path = run_path / "working" / "copy" / "plan-calls.json"
+            if _pc_path.is_file():
+                plan_calls = json.loads(_pc_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            plan_calls = None
+
     # FIX 12 CREDIT GATE -- before argv is built, before any process exists.
     # A declared mode launch is priced against the balances on every provider
     # the phase plan will use; a blocked verdict refuses with
@@ -820,7 +832,16 @@ def dispatch(
         est = None
         if isinstance(verdict, dict):
             est = verdict.get("total_estimate_usd")
-        plan = _router.mode_plan(mode, plan_calls=plan_calls,
+        # REVISED 2026-09-01 (Trevor ruling): pass the live resource
+        # profile so the concurrency decision reads the recorded
+        # ceiling -- without it mode_concurrency saw profile=None and
+        # stamped the conservative floor even for a measured client.
+        try:
+            from .resource_profile import load_profile as _lp
+        except ImportError:
+            from resource_profile import load_profile as _lp
+        plan = _router.mode_plan(mode, profile=_lp(),
+                                 plan_calls=plan_calls,
                                  estimate_usd=est)
         plan["run_dir"] = str(run_path)
         sidecar = run_path / ".mode-plan.json"
