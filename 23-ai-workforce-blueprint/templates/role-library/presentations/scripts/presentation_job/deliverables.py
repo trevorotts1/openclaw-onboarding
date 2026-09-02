@@ -380,3 +380,144 @@ DELIVERABLES_GATED_SEPARATELY = {
 def _expand_filename(template: str, deck_slug: str) -> str:
     """Expand a {deck_slug}-templated filename for a specific deck_slug."""
     return template.replace("{deck_slug}", deck_slug)
+
+
+# ---------------------------------------------------------------------------
+# W02-B4 (MASTER Part 8 FIX 3/4 wiring): deliverables.py imports BOTH sibling
+# single-source modules so no consumer ever has to find them on its own:
+#
+#   * deliverable_floors.guide_floor(n)  — THE one scaled presenter-guide floor
+#     (max(1600*n, 12000)). The guide_pdf entry above keeps its raw reference
+#     min_bytes (51_200) only because tests/test_deliverables_single_source.py
+#     pins DELIVERABLE_AUDIT_SPEC byte-for-byte against build_deck.py's
+#     DELIVERABLES_REQUIRED and PIPELINE-MANIFEST.json; the RUNTIME floor for a
+#     specific deck is guide_floor(slide_count), re-exported here.
+#
+#   * deliverable_paths.CANONICAL_PATHS  — THE one key -> canonical run-dir
+#     relative path map (MASTER Part 8 FIX 4). Re-exported under the same names
+#     the paths module defines, so `from presentation_job.deliverables import
+#     deliverable_path` resolves without importing the sibling directly.
+#
+# Both are guarded imports: if a sibling module has not landed yet (a fresh
+# box mid-fleet-roll), deliverables.py itself must still import — the gates it
+# feeds degrade to their pre-FIX behavior rather than crashing every run.
+# ---------------------------------------------------------------------------
+try:  # pragma: no cover - import wiring, exercised by tests
+    from presentation_job.deliverable_floors import (  # noqa: F401
+        BYTES_PER_SLIDE,
+        MIN_BYTES_ABSOLUTE,
+        guide_floor,
+        guide_floor_min,
+        # FIX 103 (MASTER Part 8): the remaining deck-size floors + the one
+        # slide-count reader, re-exported here so every bundle/QC gate can
+        # resolve the whole floor family from the module it already imports.
+        PDF_BYTES_PER_SLIDE,
+        PDF_FLOOR_ABSOLUTE,
+        pdf_floor,
+        qc_verdict_floor,
+        slide_count,
+    )
+except ImportError:  # pragma: no cover - fresh-box fallback
+    guide_floor = None
+    guide_floor_min = None
+    BYTES_PER_SLIDE = None
+    MIN_BYTES_ABSOLUTE = None
+    PDF_BYTES_PER_SLIDE = None
+    PDF_FLOOR_ABSOLUTE = None
+    pdf_floor = None
+    qc_verdict_floor = None
+    slide_count = None
+
+try:  # pragma: no cover - import wiring, exercised by tests
+    from presentation_job.deliverable_paths import (  # noqa: F401
+        CANONICAL_PATHS,
+        deliverable_path,
+    )
+except ImportError:  # pragma: no cover - fresh-box fallback
+    CANONICAL_PATHS = None
+    deliverable_path = None
+
+
+def scaled_guide_floor(n_slides):
+    """The runtime presenter-guide floor for an n-slide deck, from THE single
+    source (deliverable_floors.guide_floor). Raises RuntimeError when the
+    floors module is unavailable — a caller that cannot compute the real floor
+    must not silently fall back to the raw reference value, because the
+    51_200 reference is exactly what made 12-slide decks structurally
+    unpassable (F36/F43d)."""
+    if guide_floor is None:
+        raise RuntimeError(
+            "presentation_job.deliverable_floors is unavailable — the scaled "
+            "guide floor cannot be computed. Restore the module (fleet roll "
+            "incomplete); refusing to fall back to the raw 51_200 reference "
+            "value that broke short decks.")
+    return guide_floor(n_slides)
+
+
+def scaled_pdf_floor(n_slides):
+    """FIX 103: the runtime bundle-PDF floor for an n-slide deck, from THE
+    single source (deliverable_floors.pdf_floor = max(1506*n, 8192)). Raises
+    RuntimeError when the floors module is unavailable — the flat 51_200
+    reference made every deck under ~34 slides structurally unpassable, so a
+    caller that cannot scale must fail loud, not regress to it."""
+    if pdf_floor is None:
+        raise RuntimeError(
+            "presentation_job.deliverable_floors is unavailable — the scaled "
+            "PDF floor cannot be computed. Restore the module (fleet roll "
+            "incomplete); refusing to fall back to the raw 51_200 reference "
+            "value that broke short decks.")
+    return pdf_floor(n_slides)
+
+
+def scaled_qc_verdict_floor(n_slides):
+    """FIX 103 / Fix 6: the runtime per-slide QC verdict floor for an n-slide
+    deck, from THE single source (deliverable_floors.qc_verdict_floor =
+    min(20, n)). A floor above the deck's slide count is unpassable without
+    fabrication. Raises RuntimeError when the floors module is unavailable."""
+    if qc_verdict_floor is None:
+        raise RuntimeError(
+            "presentation_job.deliverable_floors is unavailable — the scaled "
+            "QC verdict floor cannot be computed. Restore the module (fleet "
+            "roll incomplete); refusing to fall back to the flat 20-slide "
+            "reference floor that demanded fabricated verdicts.")
+    return qc_verdict_floor(n_slides)
+
+
+def deck_slide_count(run_dir):
+    """FIX 103: THIS deck's slide count, read by THE single source
+    (deliverable_floors.slide_count) from the run dir's slides.json /
+    arc_allocation.json — never a constant. Returns 0 when undeterminable
+    (the caller decides its fallback; the helper never invents a number)."""
+    if slide_count is None:
+        raise RuntimeError(
+            "presentation_job.deliverable_floors is unavailable — the deck "
+            "slide count cannot be read. Restore the module (fleet roll "
+            "incomplete); refusing to guess a slide count from a constant.")
+    return slide_count(run_dir)
+
+
+__all__ = [
+    "DELIVERABLE_AUDIT_SPEC",
+    "REQUIRED_DELIVERABLES",
+    "REQUIRED_KEYS",
+    "DELIVERABLE_COUNT",
+    "BUNDLE_COMPLETE_FILENAME",
+    "AF_BUNDLE_INCOMPLETE",
+    "DELIVERABLES_GATED_SEPARATELY",
+    "BYTES_PER_SLIDE",
+    "MIN_BYTES_ABSOLUTE",
+    "guide_floor",
+    "guide_floor_min",
+    "scaled_guide_floor",
+    # FIX 103: the remaining floor family + the slide-count reader.
+    "PDF_BYTES_PER_SLIDE",
+    "PDF_FLOOR_ABSOLUTE",
+    "pdf_floor",
+    "qc_verdict_floor",
+    "slide_count",
+    "scaled_pdf_floor",
+    "scaled_qc_verdict_floor",
+    "deck_slide_count",
+    "CANONICAL_PATHS",
+    "deliverable_path",
+]

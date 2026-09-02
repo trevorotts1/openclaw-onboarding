@@ -58,6 +58,44 @@ except ImportError as exc:
         "worthless. Restore presentation_job/deliverables.py alongside this script."
     ) from exc
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): every deck-size floor scales by
+# slide count, from ONE helper. The F49 inline scaler below used to re-derive
+# max(min_bytes * n // 34, 8192) with its own slide-count walk — a divergent
+# copy of the floor formula (the 34 and 51,200 both come from the reference
+# deck). It now delegates to deliverable_floors.pdf_floor(n) (== max(1506*n,
+# 8192); 1506*34 == 51,204 reproduces the reference floor) and reads the slide
+# count via deliverable_floors.slide_count(run_dir), which reads slides.json
+# and never a constant. The import is guarded: if the floors module is absent
+# the audit falls back to the F49 formula exactly, so behaviour never changes
+# on a mid-fleet-roll box.
+try:
+    from presentation_job.deliverable_floors import pdf_floor, slide_count  # noqa: F401
+except ImportError:  # pragma: no cover — merge-order safety only
+    def pdf_floor(n_slides: int) -> int:
+        """Local fallback identical to deliverable_floors.pdf_floor (F49 formula)."""
+        try:
+            _n = int(n_slides)
+        except (TypeError, ValueError):
+            _n = 0
+        return max(1506 * max(_n, 0), 8192)
+
+    def slide_count(run_dir) -> int:  # noqa: F811 — fallback, same contract
+        """Local fallback identical to deliverable_floors.slide_count:
+        the F49 walker over working/copy/slides.json (+ parent walk)."""
+        root = os.path.dirname(os.path.abspath(str(run_dir))) if run_dir else ""
+        for cand in (os.path.join(root, "working", "copy", "slides.json"),
+                     os.path.join(root, "..", "working", "copy", "slides.json")):
+            try:
+                with open(cand, encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, list):
+                    return len(data)
+                if isinstance(data, dict) and isinstance(data.get("slides"), list):
+                    return len(data["slides"])
+            except Exception:  # noqa: BLE001
+                continue
+        return 0
+
 # The runtime audit list is derived from the single source of truth.
 # The 'filename' field is the flat-folder name (standardized_dest).
 DELIVERABLE_AUDIT_LIST = [

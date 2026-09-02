@@ -151,7 +151,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Write the Slides (Words First, One Big Idea)
 
-**When to run:** Phase 1 -- after arc_allocation.json is received and STYLE BLOCK is confirmed.
+**When to run:** Phase 1 -- after arc_allocation.json is received and STYLE BLOCK is confirmed. Phase 1 runs as a fanout dispatch: the Slide Copywriter and the Offer Price Strategist are parallel agents fanned out by the Director at order 4 (see 00-START-HERE.md P4-COPY, "concurrent: offer-price-strategist"), and the fanout size is governed by the governor -- `max_concurrent_agents` / `writer_agents_recommended` in `working/checkpoints/capacity_plan.json` (capacity-reliability-engineer.md Step 0.5).
 
 **Inputs:**
 - working/copy/intake.json

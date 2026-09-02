@@ -120,9 +120,13 @@ runtime:
    > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK
    > or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter.
    > No garbled, misspelled, or invented text.
-3. Calls KIE.ai (`gpt-image-2-text-to-image`, 16:9, 2K) via the ONLY verified live recipe:
+3. Calls KIE.ai at 16:9 / 2K resolution via the ONLY verified live recipe:
    `POST /api/v1/jobs/createTask` → `GET /api/v1/jobs/recordInfo?taskId=<id>` →
    parse `data.resultJson` (a JSON string) → `resultUrls[0]`. It refuses the dead endpoint.
+   The model id is NEVER a literal here — `build_deck.py` resolves both render classes
+   (text-to-image, and image-to-image for the OFFICIAL-LOGO composite) from the central
+   versioned catalog per submit, so a catalog bump changes the next render without a code
+   edit.
 4. Downloads each result UNAUTHENTICATED to `<renders_dir>/slide-NN.png` and VERIFIES PNG
    magic bytes + non-zero size. Retries a failing slide up to 3×.
 5. Assembles all slide PNGs into a 16:9 `.pptx` (10 × 5.625 in), ONE full-bleed picture per
@@ -169,10 +173,18 @@ Authoritative schema: `slides.schema.json` (render-template directory). Each ele
 - `logo` — optional brand wordmark (rendered as text). Omit if none.
 - `layout` — optional placement hint. Omit for a safe default.
 
-The deterministic pipeline uses `mode: "t2i"` only (text-to-image). The script does not pass
-logo image files. (The separate `kie_generate.py` helper supports image-to-image logo
-placement for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE for
-`build_deck.py` and you do not invoke it for a standard deterministic deck build.)
+The deterministic pipeline renders each slide as **text-to-image by default** — a slide
+with no official logo is a plain t2i generation. When the deck has an OFFICIAL logo,
+`build_deck.py` switches that render to **image-to-image**: pass `--logo <URL>` (or set
+`brand.logo_image_path` in `working/copy/intake.json` to a URL) and the real logo rides
+`input_urls` into the SAME single generation (`gpt-image-2-image-to-image` class, model
+resolved from the catalog), so KIE composites the actual mark — no AI wordmark. A LOCAL
+PNG logo is different: the render stays t2i and `assemble_pptx` composites the exact PNG
+onto every slide at assembly time (top-right, ~13% of slide width). You never pass logo
+image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
+no per-slide `mode` choice for a deck build. (The separate `kie_generate.py` helper runs
+standalone i2i jobs for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE
+for `build_deck.py` and you do not invoke it for a standard deterministic deck build.)
 
 ---
 

@@ -28,6 +28,13 @@ working/checkpoints/process_manifest.json under "owner_skip_approval" (or
 "owner_skip_approvals"). A gate is NEVER skipped silently and NEVER by an agent's
 own choice. A malformed or owner_approved:false token authorizes nothing.
 
+FIX 32 — no agent may mint an approval: a token authorizes NOTHING until
+presentation_job.approvals.verify() proves it — schema {gate, approved_by,
+owner_msg_id, reason >= 8 chars, granted_at tz-aware, not T00:00:00} AND the
+owner_msg_id resolved against the owner oracle. ANY token without a verified id
+is rejected with AF-FORGED-APPROVAL, and when the approvals module is unavailable
+every token is unverified (fail-closed).
+
 SHARED CONTRACT (with Fix 2 in build_deck.py and Fix 9):
   * The canonical render path is build_deck.py / run_signature_deck.py ONLY.
   * New auto-fail codes (exact strings):
@@ -224,13 +231,35 @@ def load_owner_skip_approvals(run_dir: Path) -> dict:
     the auto-fail code or phase_id it covers. Anything malformed authorizes nothing.
 
     Accepts both a single object under "owner_skip_approval" and a list under
-    "owner_skip_approval" / "owner_skip_approvals"."""
+    "owner_skip_approval" / "owner_skip_approvals".
+
+    MASTER Part 8 Fix 32: a well-shaped token is NOT accepted on the strength of
+    its own fields. Every token claiming owner authority (approved_by set) is
+    verified through approvals.verify — its owner_msg_id must resolve to a REAL
+    owner-authored message in Command Center (the cc_board oracle). A token with
+    NO owner_msg_id, an unresolvable id, or an UNDETERMINED oracle authorizes
+    NOTHING (fail-closed): it is dropped from the returned index and an
+    AF-FORGED-APPROVAL reason is printed to stderr, so callers treat the finding
+    as blocking. Verification is lazy-imported so the guard keeps its
+    import-free hardening stance; if the approvals module is absent, every
+    approved_by-bearing token fails closed (never open)."""
     obj = _load_process_manifest(run_dir)
     raw = obj.get("owner_skip_approval", obj.get("owner_skip_approvals", []))
     if isinstance(raw, dict):
         raw = [raw]
     if not isinstance(raw, list):
         return {}
+    _verify = None
+    try:
+        try:
+            from .approvals import verify as _verify  # type: ignore[no-redef]
+        except ImportError:
+            try:
+                from approvals import verify as _verify  # type: ignore[no-redef]
+            except ImportError:
+                from presentation_job.approvals import verify as _verify  # type: ignore[no-redef]
+    except Exception:  # noqa: BLE001 — module absent: fail closed below
+        _verify = None
     out = {}
     for rec in raw:
         if not isinstance(rec, dict):
@@ -240,8 +269,79 @@ def load_owner_skip_approvals(run_dir: Path) -> dict:
         if (approved and gate
                 and str(rec.get("approved_by", "")).strip()
                 and str(rec.get("reason", "")).strip()):
+            if _verify is not None:
+                try:
+                    _verify(rec, Path(run_dir))
+                except Exception as exc:  # noqa: BLE001 — forged / undetermined
+                    print(
+                        f"[load_owner_skip_approvals] REJECTED owner_skip_approval "
+                        f"token for gate {str(gate)!r}: {exc} — the token "
+                        f"authorizes NOTHING.",
+                        file=sys.stderr, flush=True)
+                    continue
+            else:
+                print(
+                    f"[load_owner_skip_approvals] REJECTED owner_skip_approval "
+                    f"token for gate {str(gate)!r}: approvals.verify unavailable "
+                    "(AF-FORGED-APPROVAL fail-closed) — the token authorizes "
+                    "NOTHING.",
+                    file=sys.stderr, flush=True)
+                continue
             out[str(gate)] = rec
     return out
+
+
+def load_forged_owner_skip_approvals(run_dir: Path) -> list:
+    """Fix 32: return one AF-FORGED-APPROVAL reason string for EVERY
+    owner_skip_approval token in process_manifest.json that claims owner
+    authority but could NOT be proven authentic (no owner_msg_id, an id the
+    oracle cannot resolve, or approvals.verify unavailable). An empty list
+    means the guard never proved any token, so nothing forged is on record.
+
+    load_owner_skip_approvals drops unverified tokens (fail-closed) and prints
+    to stderr; a printed line alone is not a BLOCK — this surface lets the
+    guard checkpoints carry the rejection as a fatal reason so a forged token
+    hard-stops the run (AF-FORGED-APPROVAL), matching Fix 32's required
+    behavior: reject, not merely ignore."""
+    reasons = []
+    try:
+        try:
+            from .approvals import verify as _verify  # type: ignore[no-redef]
+        except ImportError:
+            try:
+                from approvals import verify as _verify  # type: ignore[no-redef]
+            except ImportError:
+                from presentation_job.approvals import verify as _verify  # type: ignore[no-redef]
+    except Exception:  # noqa: BLE001 — module absent: every token unproven
+        _verify = None
+    obj = _load_process_manifest(run_dir)
+    raw = obj.get("owner_skip_approval", obj.get("owner_skip_approvals", []))
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return reasons
+    for rec in raw:
+        if not isinstance(rec, dict):
+            continue
+        approved = rec.get("owner_approved") is True or rec.get("approved") is True
+        gate = rec.get("gate") or rec.get("af_code") or rec.get("phase_id") or "?"
+        if not (approved and str(rec.get("approved_by", "")).strip()
+                and str(rec.get("reason", "")).strip()):
+            continue
+        if _verify is None:
+            reasons.append(
+                "AF-FORGED-APPROVAL: owner_skip_approval token for gate "
+                f"{str(gate)!r} is NOT VERIFIED — approvals.verify is "
+                "unavailable, so its owner authority cannot be proven. A token "
+                "without a verified id authorizes NOTHING (fail-closed).")
+            continue
+        try:
+            _verify(rec, Path(run_dir))
+        except Exception as exc:  # noqa: BLE001 — forged / undetermined
+            reasons.append(
+                "AF-FORGED-APPROVAL: owner_skip_approval token for gate "
+                f"{str(gate)!r} rejected — {exc}")
+    return reasons
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +469,12 @@ def run_fix2_checks(run_dir: Path, slides_path=None) -> list:
             "pass silently. Fix the engine import before delivering.") from exc
     owner_skips = load_owner_skip_approvals(run_dir)
     for sym, af_code in _FIX2_SYMBOLS:
-        fn = getattr(bd, sym, None)
+        # FIX 107: plain bound-dict probe — deliberately NOT getattr(bd, sym, None).
+        # A verifier module must not carry a None-fallback symbol probe: the
+        # fallback shape is what let the render gate sit fail-closed for its
+        # whole life. A missing key is a real drift and is named below (same
+        # fail-closed RuntimeError as before — only the probe changed).
+        fn = bd.__dict__.get(sym)
         if not callable(fn):
             # U023 step 3: fail-CLOSED. Reaching here means build_deck no longer
             # exports a name this guard's contract requires (build_deck.py:604-609).
@@ -438,11 +543,28 @@ def guard_pre_render(run_dir: Path) -> str:
     renderers/assemblers (or every finding is covered by a logged
     owner_skip_approval). Otherwise return a fatal AF message that the caller MUST
     treat as a hard abort. This is the gate that blocks `python3 working/phase4_*.py`
-    style bypasses BEFORE a single image is rendered."""
+    style bypasses BEFORE a single image is rendered. Fix 32: a process_manifest
+    owner_skip_approval token that approvals.verify cannot prove authentic is
+    itself a fatal AF-FORGED-APPROVAL block — never a silent stderr note."""
     findings = scan_run_dir(run_dir)
     owner_skips = load_owner_skip_approvals(run_dir)
     blocking, waived = _format_findings(findings, owner_skips)
     qc_gen_reason = _qc_generator_block(run_dir)  # Guard C (fix-8): ungoverned QC generators.
+    forged = load_forged_owner_skip_approvals(run_dir)  # Fix 32 — unverified tokens BLOCK.
+    if forged:
+        lines = [
+            "CANONICAL RENDER GUARD — PRE-RENDER BLOCK (AF-FORGED-APPROVAL).",
+            "An owner_skip_approval token in process_manifest.json could NOT be "
+            "proven authentic. A token without a verified id authorizes NOTHING "
+            "— the render is refused.",
+            "",
+        ]
+        for r in forged:
+            lines.append(f"  {r}")
+        if qc_gen_reason:
+            lines.append("")
+            lines.append(qc_gen_reason)
+        return "\n".join(lines)
     if not blocking:
         if waived:
             print("=== CANONICAL-RENDER-GUARD (pre-render): "
@@ -489,6 +611,12 @@ def guard_pre_delivery(run_dir: Path, phases: list, slides_path=None,
     Otherwise return a fatal AF message. Delivery MUST be refused on a non-empty
     return. This is what makes 'Done' impossible to fake."""
     problems = []
+
+    # (0) Fix 32 — an owner_skip_approval token approvals.verify cannot prove
+    # authentic is itself a fatal finding: the guard REFUSES with
+    # AF-FORGED-APPROVAL rather than silently ignoring the token.
+    for r in load_forged_owner_skip_approvals(run_dir):
+        problems.append(f"  {r}")
 
     # (1) hand-rolled renderer scan (same as pre-render — defense in depth at delivery).
     findings = scan_run_dir(run_dir)

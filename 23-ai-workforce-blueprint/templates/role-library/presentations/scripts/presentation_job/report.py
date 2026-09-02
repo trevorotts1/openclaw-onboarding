@@ -28,6 +28,60 @@ def _parse_minutes(ts: str) -> float:
         return 0.0
 
 
+#: FIX 64 (MASTER Part 8): the subsystem alert names callers pass in place of
+#: a real chat id -- watchdog.py (dispatch("watchdog", "stall", ...)),
+#: supervisor.py (dispatch("supervisor", event, ...)) and launcher.py's
+#: capacity path (dispatch("capacity", "capacity_undetermined", ...)). These
+#: are LABELS naming the subsystem raising the alert, never Telegram targets:
+#: a raw "watchdog" chat id is not a chat, and a transport that does not
+#: resolve it either drops the alert silently (the exact silence FIX 22
+#: exists to kill) or, worse, resolves it to garbage on the far side.
+KNOWN_SUBSYSTEM_IDS = ("watchdog", "supervisor", "capacity")
+
+#: The operator chat env var the transports already read as their fallback
+#: (presentation-notify.py's exit-4 contract; the retired
+#: tools/presentation-notify.sh read the same variable). FIX 64 resolves the
+#: subsystem label to this real chat id INSIDE dispatch3 -- the single choke
+#: point every transport-boundary call already flows through -- so the
+#: payload's chat_id is a deliverable target by the time any transport sees
+#: it, and no transport has to grow its own resolution logic.
+OWNER_CHAT_ID_ENV = "OWNER_CHAT_ID"
+
+
+def resolve_subsystem_chat(chat_id: str, env: Optional[Dict[str, str]] = None) -> str:
+    """FIX 64: map a known subsystem alert label to the operator chat id.
+
+    A chat_id in KNOWN_SUBSYSTEM_IDS is a label, not a target -- resolve it
+    to OWNER_CHAT_ID (env-provided; kept verbatim when unset so an
+    unconfigured box degrades to today's behaviour, never to a fabricated
+    id). Any other chat_id -- real requester ids, numeric operator ids --
+    passes through untouched. Test seams env=None means os.environ, matching
+    the rest of this module.
+    """
+    source = os.environ if env is None else env
+    if chat_id in KNOWN_SUBSYSTEM_IDS:
+        return (source.get(OWNER_CHAT_ID_ENV) or "").strip() or chat_id
+    return chat_id
+
+#: FIX 64 (W14a-B3): a numeric Telegram chat id (optionally signed --
+#: negative for groups, including the -100... supergroup prefix) is a
+#: deliverable gateway target. Anything non-numeric reaching dispatch3
+#: UNRESOLVED is a label the gateway cannot deliver to; the payload must
+#: carry the label so the transport boundary (presentation-notify.py's
+#: resolve_chat_id_for_transport) can still try the operator fallback, but
+#: the send itself would land nowhere.
+_NUMERIC_CHAT_ID_PREFIX = "-"
+
+def is_numeric_chat_id(chat_id: str) -> bool:
+    """FIX 64: True only for a numeric (optionally signed) Telegram chat id.
+    A subsystem label is never numeric."""
+    raw = str(chat_id or "").strip()
+    if not raw:
+        return False
+    body = raw[1:] if raw.startswith(_NUMERIC_CHAT_ID_PREFIX) else raw
+    return body.isdigit()
+
+
 def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     """Transport boundary, three-valued. This is the ONLY implementation of the
     PRESENTATION_NOTIFY_CMD dispatch path anywhere in this package -- dispatch()
@@ -36,6 +90,14 @@ def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     exactly how U069 shipped with a live shell-injection hole: the class method
     got the tokenise-first fix and a module-level twin did not, so watchdog.py
     (which imports the dispatch path directly) stayed exploitable.
+
+    FIX 64 (MASTER Part 8): the chat_id reaching this boundary is RESOLVED
+    before dispatch -- a known subsystem label (watchdog/supervisor/capacity)
+    is swapped for OWNER_CHAT_ID by resolve_subsystem_chat() so a stall alert
+    lands in the operator chat instead of dying on a literal "watchdog"
+    target. Unresolvable (env unset) keeps the label verbatim: the transport
+    still runs, and a stub in a test still observes the unresolved label --
+    never a silently dropped send, never an invented id.
 
     CheckResult.PASS         -- the notify command ran and exited 0. CONFIRMED delivery.
     CheckResult.FAIL         -- PRESENTATION_NOTIFY_CMD is unset. A known, stable fact
@@ -51,6 +113,21 @@ def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
     if not cmd:
         return CheckResult.FAIL
+    chat_id = resolve_subsystem_chat(chat_id)
+    # FIX 64 (W14a-B3): resolution can keep the label verbatim when
+    # OWNER_CHAT_ID is unset (never a fabricated id). That is correct --
+    # the transport boundary (presentation-notify.py) re-checks and, if IT
+    # also cannot resolve a numeric operator id, exits 4 (undeliverable,
+    # queued for --sweep-undeliverable) so the alert retries instead of
+    # dying silently. Log the unresolved-label shape here so the run log
+    # says why the transport returned 4 -- loud, not silent.
+    if not is_numeric_chat_id(chat_id):
+        print(f"notify: chat_id {chat_id!r} is a subsystem label, not a "
+              "numeric Telegram chat id -- handing it to the transport "
+              "unresolved so it can attempt the operator fallback "
+              "(transport exits 4 and the message is queued for "
+              "--sweep-undeliverable when that fallback also fails)",
+              flush=True)
     # U069: tokenise, refuse on unparseable, shell=False.
     try:
         argv = shlex.split(cmd)

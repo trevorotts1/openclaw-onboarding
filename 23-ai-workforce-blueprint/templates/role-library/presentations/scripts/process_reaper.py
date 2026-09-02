@@ -27,6 +27,16 @@ THIS MODULE PROVIDES (deterministic, NO-AI, no network):
        STRAYs (SIGTERM -> SIGKILL), and writes BEFORE/AFTER process-table evidence to a
        JSON file. This is the reaper the watchdog / operator runs.
 
+FIX 34 — INTAKE IS SEALED, AND THE REAPER LEAVES IT SEALED
+  After the engine's --new consumed `working/copy/intake.json`, the launcher
+  (presentation_job/launcher.py, Fix 34 block) seals it 0444. A stray that
+  "repairs" that mode back to 0644 would reopen the exact rewrite-mid-run hole
+  Fix 34 closed, so the reaper NEVER chmods any file: it kills processes only,
+  and reap_strays() records the intake's seal state in its evidence so an
+  unsealed intake next to a reaped stray is visible, not silently re-writable.
+  Intake data changes go through the launcher's amendment channel
+  (working/copy/intake_amendments.jsonl), never a chmod.
+
 EVIDENCE PROTOCOL
   The QC gate for FIX-21 requires "process-table listing before/after (python psutil,
   not grep)". list_processes() prefers psutil (best-quality: status, create_time, cwd,
@@ -51,6 +61,15 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # Canonical engine scripts. A process is build-SHAPED when its command line names
 # one of these (or is a find/locate probing for one of them).
+#
+# FIX 19 (MASTER Part 8): the dispatcher and the prompt workers were invisible
+# to this set — only the dispatcher *pid* was ever signalled on stop, so orphan
+# `work_order_dispatcher.py --watch` processes and standalone
+# `python -m presentation_job.parallel_prompt_worker` runs survived an engine
+# kill and kept rewriting intake. Both argv shapes are now build-shaped and
+# flow through the same run-dir-liveness oracle below: an orphan whose run dir
+# is terminal/stale (or unresolvable) classifies STRAY and is reaped, children
+# included (reap_strays kills the whole descendant tree).
 # ---------------------------------------------------------------------------
 CANONICAL_ENGINE_SCRIPTS = frozenset({
     "build_deck.py",
@@ -58,6 +77,18 @@ CANONICAL_ENGINE_SCRIPTS = frozenset({
     "presentation_job.py",
     "build_teleprompter.py",
     "presentation-watchdog.sh",
+    "work_order_dispatcher.py",          # FIX 19: standalone dispatcher entry
+    "parallel_prompt_worker.py",         # FIX 19: wrapper-name match (module form below)
+})
+
+# FIX 19: the `-m` invocation forms. `python3 -m presentation_job.dispatcher`
+# and `python3 -m presentation_job.parallel_prompt_worker` never carry a *.py
+# token, so the basename set above cannot see them; the module token itself is
+# matched instead (argv token exactly, never a substring of the joined string —
+# the D21 rule).
+DISPATCHER_WORKER_MODULE_TOKENS = frozenset({
+    "presentation_job.dispatcher",
+    "presentation_job.parallel_prompt_worker",
 })
 
 # Tools whose presence in a cmdline marks a "scanning for build" stray even when they
@@ -243,8 +274,12 @@ def list_processes() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 def _extract_run_dir(proc: Dict[str, Any]) -> Optional[Path]:
     """The run dir a build process belongs to. Engine invocations ALWAYS pass
-    `--run-dir <path>`; resolve that from the cmdline first. Fall back to cwd only if
-    the cwd itself IS a run dir (contains state.json). Never guesses."""
+    `--run-dir <path>`; resolve that from the cmdline first. FIX 19: prompt-wave
+    workers are invoked with `--input <run_dir>/working/checkpoints/*-wave-input.json`
+    instead of --run-dir, so the wave-input path is resolved back to its run dir
+    (only when the resolved candidate really looks like a run dir — anchored, never
+    guessed). Fall back to cwd only if the cwd itself IS a run dir (contains
+    state.json)."""
     cl = proc.get("cmdline") or []
     for i, tok in enumerate(cl):
         if tok == "--run-dir" and i + 1 < len(cl):
@@ -254,6 +289,31 @@ def _extract_run_dir(proc: Dict[str, Any]) -> Optional[Path]:
         if tok.startswith("--run-dir="):
             p = Path(tok.split("=", 1)[1]).expanduser()
             return p.resolve() if p.exists() else p
+    # FIX 19: `--input <run_dir>/working/checkpoints/<x>-wave-input.json` — the
+    # dispatcher/worker spawn shape. Resolved only when the candidate directory
+    # carries a state.json or a working/ subdir, so a coincidental --input path
+    # elsewhere in the tree is never promoted to a run dir.
+    for i, tok in enumerate(cl):
+        raw = None
+        if tok == "--input" and i + 1 < len(cl):
+            raw = cl[i + 1]
+        elif tok.startswith("--input="):
+            raw = tok.split("=", 1)[1]
+        if not raw:
+            continue
+        p = Path(raw).expanduser()
+        if "working" not in p.parts:
+            continue
+        try:
+            widx = p.parts.index("working")
+        except ValueError:  # pragma: no cover — guarded above
+            continue
+        if widx < 2:
+            continue  # "/working/..." with no run dir above it
+        cand = Path(*p.parts[:widx])
+        cand = cand.expanduser()
+        if (cand / "state.json").is_file() or (cand / "working").is_dir():
+            return cand.resolve()
     cwd = proc.get("cwd")
     if cwd:
         p = Path(cwd)
@@ -333,10 +393,18 @@ def _is_build_shaped(proc: Dict[str, Any]) -> bool:
     script. NEVER a substring match on the joined command string — a shell wrapper
     whose inline history merely mentions build_deck.py is a shell, not a build, and
     must not be reaped (a name-substring filter is exactly the D21 blind spot that
-    made strays look healthy)."""
+    made strays look healthy).
+
+    FIX 19: the dispatcher and prompt workers are build-shaped in BOTH their argv
+    forms — a `work_order_dispatcher.py` / `parallel_prompt_worker.py` script
+    token, and the `-m presentation_job.dispatcher` /
+    `-m presentation_job.parallel_prompt_worker` module token. Matched as whole
+    argv tokens only, never substrings."""
     cl = proc.get("cmdline") or []
     basenames = {t.split("/")[-1] for t in cl if t}
     if basenames & CANONICAL_ENGINE_SCRIPTS:
+        return True
+    if {t for t in cl if t} & DISPATCHER_WORKER_MODULE_TOKENS:
         return True
     exe = (cl[0].split("/")[-1] if cl else "")
     if exe in SCAN_TOOLS:
@@ -451,6 +519,25 @@ def _safe_table() -> List[Dict[str, Any]]:
         return []
 
 
+def _intake_seal_evidence(scan_root: Path) -> Dict[str, Any]:
+    """FIX 34 evidence: the seal state of the run dir's working/copy/intake.json
+    when scan_root IS (or contains) that run dir. Read-only — mode is reported,
+    never changed. `sealed` mirrors launcher.INTAKE_SEAL_MODE (0444 == the
+    -r--r--r-- the QC proof stats for). Absent intake -> {"present": False}."""
+    intake = Path(scan_root) / "working" / "copy" / "intake.json"
+    if not intake.is_file():
+        return {"present": False}
+    import stat as _stat
+    mode_bits = intake.stat().st_mode & 0o777
+    return {
+        "present": True,
+        "path": str(intake),
+        "mode": oct(mode_bits),
+        "mode_string": _stat.filemode(intake.stat().st_mode),
+        "sealed": mode_bits == 0o444,
+    }
+
+
 def reap_strays(scan_root: Path,
                 grace_multiplier: float = DEFAULT_HEARTBEAT_GRACE_MULTIPLIER,
                 kill_grace: int = KILL_GRACE_SECONDS,
@@ -487,6 +574,7 @@ def reap_strays(scan_root: Path,
         "scan_root": str(scan_root),
         "grace_multiplier": grace_multiplier,
         "dry_run": dry_run,
+        "intake_seal": _intake_seal_evidence(scan_root),
         "before_table": before,
         "strays": [{"pid": r["pid"], "cmdline_str": r.get("cmdline_str", ""),
                     "class_detail": r.get("class_detail", "")} for r in strays],

@@ -23,7 +23,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 >    the gate. NEVER drive the GHL UI in a browser.
 > 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
 >    `ghl_media_id` and `ghl_upload_status: "complete"`.
-> 3. **Final PPTX upload** (SOP 9.6) — the assembled deck is uploaded with
+> 3. **Final PPTX upload** (recorded by the Delivery Concierge, ROLE-13, at its SOP 9.2 —
+>    see SOP 9.6 below for the migrated ownership) — the assembled deck is uploaded with
 >    `pptx_ghl_media_id` recorded.
 >
 > **The closeout gate is MECHANICAL, not doctrine-only.** Run
@@ -325,59 +326,27 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 
 ---
 
-### SOP 9.6 -- Final Deck Delivery
+### SOP 9.6 -- Final Deck Delivery (MIGRATED to ROLE-13 Delivery Concierge)
 
-**When to run:** After final Phase 6 QC passes (working/qc/final_deck_qc.md score >= 8.5).
+**Status:** MIGRATED. Final deck delivery is owned by the Delivery Concierge (ROLE-13, `presentations/delivery-concierge.md`, whose SOPs absorb this procedure). ROLE-13 exists in the department roster (00-START-HERE.md, Role Roster) and `PIPELINE-MANIFEST.json` assigns `P9-DELIVER` to `delivery-concierge`. This role does NOT deliver the final deck. The full upload/verify/notify procedure (package assembly, destination resolution, the final PPTX GHL upload recording `pptx_ghl_media_id`, destination ground-truth verification, the `openclaw message send` notification) lives in the Delivery Concierge's SOPs 9.0-9.4, including the `AF-DH1` hygiene whitelist and the `working/qc/final_deck_qc.json` delivery interlock.
 
-Note: if a ROLE-13 Delivery Concierge role is added to this department in a future revision, this SOP migrates there and this role hands off to ROLE-13 after QC passes. Until that role exists, this role owns delivery.
+**What this role still owns:** the media-library and GHL upload records delivery consumes (SOPs 9.1-9.5 above), plus the GHL upload closeout gate (SOP 9.8 below): `python3 scripts/ghl_media_push.py --gate --run-dir <run_dir>` / `AF-DELIVERY-COMPLETE`.
 
-**Inputs:**
-- output/[DECK_SLUG].pptx (the QC-passed assembled deck)
-- working/qc/final_deck_qc.md (final QC score, must be >= 8.5)
-- intake.json (client box type: Mac vs. other)
-- media_library.json (GHL folder name and ghl_folder_id)
-- GHL credentials from client's env stores
+**When it triggers:** After final Phase 6 QC passes (`working/qc/final_deck_qc.json` present with `pass: true` and `qc_score >= 8.5`).
 
-**Steps:**
-
-1. Confirm the final QC score is >= 8.5. Do not deliver a deck that has not passed final QC.
-
-2. Determine delivery path (the unified, folder-aware Mac path matches the builder's bundle dir):
-   a. **Mac client (Mac mini or MacBook):** the client package lands in `~/Downloads/<client-slug>-<deck-slug>/` (the SAME predictable location `build_deck.py` writes to).
-      - Verify the assembled deck: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx` must show the file with a non-zero size.
-      - Record the exact path.
-   b. **Non-Mac or environment unclear:** do NOT assume a delivery location. Ask the client explicitly: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Then deliver to their stated destination. Record the destination.
-
-3. Upload the final PPTX to the client's GHL media library (REQUIRED, not optional for GHL-enabled clients; via `POST /medias/upload-file` -- see the BINDING note in SOP 9.3; LOCATION PIT, optional `parentId`, never a folder-create call):
-   - Upload to the same GHL destination used for the slide images (`parentId=ghl_folder_id` when it is a real folder id; omit `parentId` when it is `"root"`).
-   - Remote name (`name`): `[Deck Title] FINAL v<N>.pptx`.
-   - Record the returned GHL media_id (`fileId`) and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
-   - The deck is NOT delivered until `pptx_ghl_media_id` is recorded (or a logged
-     `owner_skip_approval` token in `process_manifest.json` authorizes the skip, under
-     which the `has_ghl: false` carve-out applies and `ghl_delivery_skipped: true` is set).
-     The mechanical closeout gate `scripts/ghl_media_push.py --gate` (AF-DELIVERY-COMPLETE)
-     reads exactly these records. A self-report without the recorded media_id is not ground truth.
-
-4. Verify every destination before reporting done:
-   - Mac download: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx` (non-empty file must exist).
-   - GHL: call the GHL API to confirm the PPTX file exists by its media_id (`fileId`). A self-report without an API confirmation is not ground truth.
-   - Additional destinations (Drive, email, etc.): confirm via the relevant API or service before reporting.
-
-5. Send a delivery notification via `openclaw message send` (never raw Telegram API):
-   - Include every verified destination path or URL.
-   - Include the final QC score.
-   - Example message: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx on your Mac, (2) GHL media library as '[REMOTE_NAME]'. Both locations confirmed."
-
-6. Update media_library.json: add `"delivery_complete": true, "delivery_verified_at": "ISO timestamp", "delivery_destinations": [{"type": "...", "path_or_url": "...", "verified": true}]`.
+**Steps (this role's part of the hand-off):**
+1. Confirm the delivery pass-artifact `working/qc/final_deck_qc.json` exists on disk with `pass: true` and `qc_score >= 8.5`. If absent or failing, halt and notify the QC Specialist.
+2. Confirm media_library.json is complete: `ghl_folder_id` (a real folder id or `"root"`), `ghl_folder_name`, `version_number`, and per-slide `ghl_media_id` records from SOP 9.3.
+3. Hand off to the Delivery Concierge (ROLE-13): the QC-passed deck plus media_library.json. The Delivery Concierge assembles the clean package (its SOP 9.0), resolves destinations (its SOP 9.1), uploads to every destination including the final PPTX GHL upload recording `pptx_ghl_media_id` (its SOP 9.2), verifies every destination (its SOP 9.4), and sends the delivery notification via `openclaw message send` (its SOP 9.3).
+4. Support re-uploads on request: if the Delivery Concierge reports a missing or unverified file in GHL, retry the affected upload via SOP 9.3 and report back.
 
 **Outputs:**
-- PPTX at every confirmed delivery destination
-- media_library.json updated with delivery_complete and all destination records
-- Delivery notification sent via openclaw message send
+- Complete media_library.json (upload records ready for delivery consumption)
+- Hand-off to the Delivery Concierge (ROLE-13) recorded to the Director
 
-**Hand to:** Director of Presentations (run complete); client (via the delivery notification)
+**Hand to:** Delivery Concierge (ROLE-13) -- final deck delivery; Director of Presentations (run closeout happens after the Delivery Concierge verifies every destination)
 
-**Failure mode:** If any delivery destination fails verification: do not mark delivery_complete = true. Notify the Director: "Delivery incomplete: [destination] could not be verified. [Specific error]. Local PPTX is at output/[DECK_SLUG].pptx. Awaiting resolution." Never send a "done" message when a destination is unverified.
+**Failure mode:** If any GHL record this role owns is missing or failed (SOP 9.3 `ghl_upload_status: "failed"`): resolve it BEFORE the hand-off, or notify the Director with the specific gap list. Never hand off an incomplete media_library.json as if it were complete -- a "ready for delivery" claim without verified upload records is a lie.
 
 ---
 

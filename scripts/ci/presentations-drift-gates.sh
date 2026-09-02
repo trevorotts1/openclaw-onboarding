@@ -354,9 +354,28 @@ import sys
 
 repo_root = pathlib.Path(".")
 manifest_path = pathlib.Path(os.environ["MANIFEST_PATH"])
-docs = [
+# FIX 83: GATE 4 covers ALL FIVE count-restating docs, in two modes:
+#   full-id  -- registry-style docs that restate the complete phase-id list:
+#               every manifest id must appear backtick-quoted, or the doc's
+#               list has drifted.
+#   count    -- snapshot-count docs that restate the phase COUNT (the
+#               "generated line"): the stated number must equal
+#               len(manifest.phases). WORKERS-TUNING-EXAMPLE.md is count-mode
+#               only: it is a per-phase tuning table that names its own subset
+#               of ids, so the full-id check would demand a phase registry a
+#               tuning table never promised to carry.
+docs_full_id = [
     "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md",
     "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md",
+]
+# FIX 83 count-parity: a doc's "generated line" count literal must equal
+# len(manifest.phases). Each row: (path, the exact literal prefix that begins
+# the generated-line sentence, a marker proving the line is the generated one).
+docs_count = [
+    ("universal-sops/presentation-slide-craft/WORKERS-TUNING-EXAMPLE.md",
+     "the count at this snapshot was "),
 ]
 
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -366,7 +385,9 @@ if not ids:
     sys.exit(2)
 
 failures = []
-for doc_rel in docs:
+import re as _re
+
+for doc_rel in docs_full_id:
     doc_path = repo_root / doc_rel
     if not doc_path.exists():
         failures.append(f"{doc_rel}: FILE NOT FOUND")
@@ -378,6 +399,36 @@ for doc_rel in docs:
     else:
         print(f"GATE4_DOC_OK: {doc_rel} names all {len(ids)} manifest phase ids.")
 
+# Generated lines wrap across source lines, so the anchor is matched against
+# whitespace-collapsed text ("the count at\nthis snapshot was 55" still hits).
+_ws = _re.compile(r"\s+")
+for doc_rel, count_prefix in docs_count:
+    doc_path = repo_root / doc_rel
+    if not doc_path.exists():
+        failures.append(f"{doc_rel}: FILE NOT FOUND")
+        continue
+    flat = _ws.sub(" ", doc_path.read_text(encoding="utf-8"))
+    anchor = _ws.sub(" ", count_prefix).strip()
+    idx = flat.find(anchor)
+    if idx == -1:
+        failures.append(
+            f"{doc_rel}: generated-line anchor {count_prefix!r} not found -- "
+            "the generated line was removed or reworded without restamping GATE 4"
+        )
+        continue
+    m = _re.match(r"\s*(\d+)", flat[idx + len(anchor):])
+    if not m:
+        failures.append(f"{doc_rel}: no count literal after the generated-line anchor")
+        continue
+    stated = int(m.group(1))
+    if stated != len(ids):
+        failures.append(
+            f"{doc_rel}: generated line states {stated} phases but "
+            f"len(manifest.phases) is {len(ids)} -- restamp the generated line"
+        )
+    else:
+        print(f"GATE4_COUNT_OK: {doc_rel} generated line states {stated} == len(manifest.phases).")
+
 if failures:
     print("GATE4_FAIL: a doc's phase-id list has drifted from PIPELINE-MANIFEST.json phases[] "
           "(missing id = doc describes fewer phases than the manifest actually runs):")
@@ -385,7 +436,7 @@ if failures:
         print(f"  - {f}")
     sys.exit(1)
 
-print(f"GATE4_PASS: both docs name all {len(ids)} current manifest phase ids.")
+print(f"GATE4_PASS: all five count-restating docs hold lockstep with the manifest ({len(docs_full_id)} full-id docs name all {len(ids)} ids; {len(docs_count)} generated-line doc(s) match len(manifest.phases)).")
 sys.exit(0)
 PYEOF
 )" || GATE4_RC=$?

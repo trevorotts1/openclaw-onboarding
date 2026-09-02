@@ -11,7 +11,8 @@ Two failure modes hit production on 2026-06-16:
 This harness fixes both and adds:
   A. Up-front word budgeting  — computes total word target = DURATION_MIN * WPM and
      distributes PER-SLIDE word budgets weighted by slide type before any generation call.
-  B. Per-slide disk checkpointing  — each finished slide is written to working/speech/slide-NN.txt
+  B. Per-slide disk checkpointing  — each finished slide is written to {workdir}/slide-NN.txt
+     (the run workdir, per the manifest: working/presenter-speech/)
      the moment it's done. A crash resumes from speech_ledger.json (pending|written|verified);
      only missing/under-budget slides are regenerated.
   C. Transient-error resilience  — every API call is wrapped in retry-with-exponential-backoff+jitter.
@@ -34,8 +35,8 @@ USAGE (REAL MODE — requires OLLAMA_API_KEY, or OPENROUTER_API_KEY)
       --intake  working/copy/intake.json \
       --slides  working/copy/slides_copy.md \
       --arc     working/copy/arc_allocation.json \
-      --out     working/presenter-speech/speech.md \
-      --workdir working/speech \
+      --out     working/deliverables/PRESENTERS-SPEECH.md \
+      --workdir working/presenter-speech \
       [--research-map working/research/research_map.json] \
       [--model glm-5.2:cloud] [--fallback-model minimax-m3:cloud] \
       [--wpm 130] [--max-expand-rounds 3] [--dry-run]

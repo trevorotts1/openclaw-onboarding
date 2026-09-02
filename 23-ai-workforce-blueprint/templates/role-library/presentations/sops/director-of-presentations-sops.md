@@ -257,7 +257,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/approval_record.json
 - working/copy/presenter_notes.json
 
-**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY (the last mile — see SOP 9.6B): dispatch the Delivery Concierge (ROLE-13).**
+**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-29), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY (the last mile — see SOP 9.6B): dispatch the Delivery Concierge (ROLE-13).**
 
 **Failure mode:** If the operator requests changes to the copy, send the copy back to the Slide Copywriter with the exact change instructions. Re-run Phase 1Q QC after changes. Present the revised copy to the owner again. Do not skip the re-QC step even for minor changes.
 

@@ -27,7 +27,7 @@ You own four things:
 3. The REHEARSAL PACK: a single-page run sheet that puts the hook lines, section transitions, the three Secrets in one sentence each, the ladder cues, and the full CTA script on one page the owner can glance at from a chair.
 4. The REHEARSAL GATE: the formal scheduling and sign-off step that marks the deck webinar-ready. No deck is declared webinar-ready until the owner has run it aloud at least once -- ideally in a live present-it-to-me session with you.
 
-You work in final position in the pipeline. The deck has been assembled, QC-passed, and delivered. The Slide Copywriter produced the PRESENTER NOTE fields. The PPTX Assembly Specialist embedded them as speaker notes. You expand those notes into a full talk track, arm the owner with objection answers and a one-page run sheet, and then hold the rehearsal gate. Your output hands off to ROLE-13 (PPTX Assembly Specialist) as a delivery confirmation that the presenter-coach phase is complete and the deck is cleared for the live room.
+You work in final position in the pipeline. The deck has been assembled, QC-passed, and delivered. The Slide Copywriter produced the PRESENTER NOTE fields. The PPTX Assembly Specialist embedded them as speaker notes. You expand those notes into a full talk track, arm the owner with objection answers and a one-page run sheet, and then hold the rehearsal gate. Your output hands off to ROLE-13 (Delivery Concierge) -- the rehearsal_gate.json PASS or CONDITIONAL PASS is the delivery confirmation that the presenter-coach phase is complete and the deck is cleared for the live room, and the Concierge carries it into the final-mile delivery and the live -> record -> live cadence (SOP 9.5).
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
@@ -67,7 +67,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 3. Read working/copy/intake.json. Pull: DURATION_MIN, TONE, HOOK, GOAL, CTA_ACTION, TARGET_FEELING, OFFER_STACK, FINAL_PRICE, VIP_TIER, VIP_PRICE, PRICE_MODE, and the three Secrets (derive from the arc_allocation.json section names).
 4. Read working/copy/arc_allocation.json. Pull the section structure and the ladder positions (ANCHOR, BUILDUP, DROP1, DROP2, DROP3, FINAL slide numbers).
 5. Read the Devil's Advocate kill list if it exists at working/qc/devils_advocate_kill_list.md (it is produced by the Devil's Advocate -- Presentations specialist). This is one of the two sources for SOP 9.2.
-6. Run SOP 9.1 (Talk Track), SOP 9.2 (Q&A Objection Prep), SOP 9.3 (Rehearsal Pack), and SOP 9.4 (Rehearsal Gate) in that order. SOPs 9.1, 9.2, and 9.3 can be run concurrently once the source documents are confirmed; SOP 9.4 blocks on all three.
+6. Run SOP 9.1 (Talk Track), SOP 9.2 (Q&A Objection Prep), SOP 9.3 (Rehearsal Pack), and SOP 9.4 (Rehearsal Gate) in that order. SOPs 9.1 and 9.2 can run concurrently once the source documents are confirmed; SOP 9.3 depends on both of them -- it synthesizes talk_track.md and qa_objection_prep.md into the run sheet, so it does not start until SOP 9.1 and SOP 9.2 are complete (see SOP 9.3 "When to run"); SOP 9.4 blocks on all three.
 7. Write all output files to working/presenter-coach/.
 8. When SOP 9.4 is complete and the rehearsal gate is cleared, notify the Director of Presentations and update the run ledger.
 
@@ -196,7 +196,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/presenter-coach/talk_track.md (one entry per slide, full timed narration)
 - working/presenter-coach/timing_model.json (per-section time budgets)
 
-**Hand to:** SOP 9.3 (Rehearsal Pack) -- the talk track is the source for the hook lines and transition cues in the run sheet.
+**Hand to:** SOP 9.3 (Rehearsal Pack) -- the talk track is the source for the hook lines and transition cues in the run sheet. SOP 9.3 does not begin until this SOP (9.1) and SOP 9.2 are both complete; the run sheet synthesizes both documents.
 
 **Failure mode:** If the PRESENTER NOTE field on any slide is blank or too vague to expand (fewer than 10 words), do not fabricate a talk track. Flag that slide with [INCOMPLETE PRESENTER NOTE: requires Slide Copywriter revision] in the talk_track.md entry and log the gap in working/presenter-coach/gaps.md. Notify the Director immediately. The Director routes the gap back to the Slide Copywriter. Do not deliver a talk track with unflagged blanks.
 
@@ -251,7 +251,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Outputs:**
 - working/presenter-coach/qa_objection_prep.md (10 questions + strong answers + anchor lines + coaching notes)
 
-**Hand to:** SOP 9.3 (Rehearsal Pack) -- the 10 questions are drilled in the rehearsal session and the most critical anchor lines are referenced in the run sheet.
+**Hand to:** SOP 9.3 (Rehearsal Pack) -- the 10 questions are drilled in the rehearsal session and the most critical anchor lines are referenced in the run sheet. SOP 9.3 does not begin until this SOP (9.2) and SOP 9.1 are both complete.
 
 **Failure mode:** If the Devil's Advocate kill list does not exist and the intake primary_objection field is blank, the Q&A prep cannot be fully sourced. Flag this: produce the best 7 questions derivable from the OFFER_STACK and AUDIENCE fields, note the 3 unfilled slots as [REQUIRES: owner to identify top objections before webinar], and notify the Director. Do not skip the SOP -- deliver what you have with clear flags.
 
@@ -382,7 +382,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/presenter-coach/rehearsal_notes.md (per-session coaching notes from the live run)
 - working/checkpoints/run_ledger.json updated with presenter-coach phase status
 
-**Hand to:** ROLE-13 (PPTX Assembly Specialist) -- a PASS or CONDITIONAL PASS on the rehearsal gate is the final confirmation that the presenter-coach phase is complete and the deck is cleared for the live room. The gate record is the delivery receipt. No further work returns to this role unless the owner schedules a second run or a post-webinar debrief.
+**Hand to:** ROLE-13 (Delivery Concierge) -- a PASS or CONDITIONAL PASS on the rehearsal gate is the final confirmation that the presenter-coach phase is complete and the deck is cleared for the live room. The gate record is the delivery receipt the Concierge uses for the last-mile delivery and the recording cadence (SOP 9.5). No further work returns to this role unless the owner schedules a second run or a post-webinar debrief.
 
 **Failure mode:** If the owner does not respond to the scheduling message within 48 hours, send one follow-up. If still no response after 72 hours total, log `gate_status: "owner_unresponsive"` in rehearsal_gate.json and escalate to the Director with the timestamp trail. The gate cannot be waived by silence. The Director and operator decide whether to proceed at risk.
 
@@ -400,7 +400,7 @@ After SOP 9.1: every slide has a talk-track entry with TIME BUDGET, CUMULATIVE T
 After SOP 9.2: exactly 10 questions present, each with a strong answer, an anchor line, and a coaching note. Anchor lines are declarative (no questions). Tone matches intake TONE. Zero fabricated proof.
 
 ### Gate 4 -- Rehearsal Pack Fit
-After SOP 9.3: rehearsal pack fits on one page (letter/A4, 12pt, standard margins). All mandatory elements present: HOOK, three Secrets (one sentence each), six transition cues, full ladder cue sequence, CTA script with join URL, top 3 objection anchors.
+After SOP 9.3 (which itself requires SOP 9.1 AND SOP 9.2 complete -- see the SOP 9.3 "When to run"): rehearsal pack fits on one page (letter/A4, 12pt, standard margins). All mandatory elements present: HOOK, three Secrets (one sentence each), six transition cues, full ladder cue sequence, CTA script with join URL, top 3 objection anchors. Gate 4 cannot run until Gate 2 and Gate 3 have both passed.
 
 ### Gate 5 -- Rehearsal Gate
 After SOP 9.4: rehearsal_gate.json exists with gate_status of "passed" or "conditional_pass", confidence_score >= 7 (or drill notes delivered for conditional), and run_ledger.json updated to webinar_ready: true (or "conditional").
@@ -411,12 +411,12 @@ After SOP 9.4: rehearsal_gate.json exists with gate_status of "passed" or "condi
 
 ### You receive work from:
 - Director of Presentations -- initiates the presenter-coach phase after Phase 6 (PPTX assembly) is complete and QC-passed.
-- PPTX Assembly Specialist (ROLE-13) -- confirms the PPTX with speaker notes is in the verified delivery location.
+- PPTX Assembly Specialist (ROLE-08) -- confirms the PPTX with speaker notes is in the verified delivery location.
 - Devil's Advocate -- Presentations -- provides working/qc/devils_advocate_kill_list.md as the objection source for SOP 9.2 (if the file exists).
 - Slide Copywriter -- indirectly: the PRESENTER NOTE fields in slides_copy.md are the raw material for the talk track.
 
 ### You hand work off to:
-- ROLE-13 (PPTX Assembly Specialist) -- receives the rehearsal_gate.json PASS or CONDITIONAL PASS as the final delivery confirmation. This closes the presenter-coach loop for the run.
+- ROLE-13 (Delivery Concierge) -- receives the rehearsal_gate.json PASS or CONDITIONAL PASS as the final delivery confirmation. This closes the presenter-coach loop for the run; the Concierge carries the gate record into the last-mile delivery and the recording handoff (SOP 9.5).
 - Director of Presentations -- receives the gate completion notification via Telegram (openclaw message send). Receives gate FAIL notifications with drill notes.
 - Slide Copywriter -- receives flagged [INCOMPLETE PRESENTER NOTE] items if blank notes are discovered in SOP 9.1. The Director routes these; you do not dispatch directly.
 
@@ -561,7 +561,7 @@ If the owner wants a second run before going live, run SOP 9.4 again. On the sec
 
 This role is the final specialist in the pipeline. It hands off to:
 
-1. **ROLE-13 (PPTX Assembly Specialist)** -- receives working/presenter-coach/rehearsal_gate.json as the delivery confirmation that the deck is cleared for the live room. The gate record closes the run.
+1. **ROLE-13 (Delivery Concierge)** -- receives working/presenter-coach/rehearsal_gate.json as the delivery confirmation that the deck is cleared for the live room. The gate record closes the run; the Concierge uses it for the last-mile delivery and the live -> record -> live cadence (SOP 9.5).
 2. **Director of Presentations** -- receives completion notification and gate status via openclaw message send.
 
 The Director of Presentations is the spawn authority for this role. Dispatch command:

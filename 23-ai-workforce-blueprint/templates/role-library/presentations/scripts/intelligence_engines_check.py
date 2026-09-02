@@ -221,6 +221,14 @@ def _has_any(text_lc, tokens):
     return any(t.lower() in text_lc for t in tokens)
 
 
+# FIX 35 — the footer/band cue vocabulary the AF-HOOK placement scan watches.
+# The old ±140-char context window substring-matched these four phrases; the
+# negation-aware scan (scan_negation_aware) now consumes the same vocabulary so
+# a PROHIBITED placement ("no footer band on any slide", "never a footer stamp")
+# no longer counts as a placement. Same four phrases as the legacy scan.
+_FOOTER_CUE_TOKENS = ("footer", "bottom band", "lower band", "bottom strip")
+
+
 # --------------------------------------------------------------------------- #
 # Prompt-side engines (Facial / Lighting / World / Representation hair).
 # Only people/scene slides are gated. A prompt that declares no PEOPLE element
@@ -331,7 +339,28 @@ def _check_hook_image(run_dir, problems):
       AF-HOOK-IMG-MISSING  (DECK)  hook baked on <3 slides (refrain not established)
       AF-HOOK-4            (slide) hook baked >=2x on a single slide (per-slide stamp)
       AF-HOOK              (slide) hook baked into a FOOTER / bottom band (never a stamp)
-    Defers (clean) when no prompts exist yet or no canonical hook is declared."""
+    Defers (clean) when no prompts exist yet or no canonical hook is declared.
+    FIX 35: the footer-cue context scan is negation-aware (see the scan below)."""
+    # FIX 35: negation-aware footer-cue scan imports presentation_job.scanners the
+    # same way build_deck's gates do (normal import first, path-based fallback);
+    # on failure _scanners stays None and the legacy context-window scan runs —
+    # the check keeps its pre-FIX-35 teeth rather than going blind.
+    try:
+        from presentation_job import scanners as _scanners_mod
+    except Exception:
+        _scanners_mod = None
+    if _scanners_mod is None:
+        try:
+            import sys as _sys
+            _pkg = str(Path(__file__).resolve().parent / "presentation_job")
+            _parent = str(Path(__file__).resolve().parent)
+            if _pkg not in _sys.path:
+                _sys.path.insert(0, _pkg)
+            if _parent not in _sys.path:
+                _sys.path.insert(0, _parent)
+            from presentation_job import scanners as _scanners_mod
+        except Exception:
+            _scanners_mod = None
     prompts_dir = run_dir / "prompts"
     if not prompts_dir.is_dir():
         return  # pre-prompt phase — defer
@@ -352,11 +381,22 @@ def _check_hook_image(run_dir, problems):
                 "detail": f"the canonical hook is baked {count}x into the prompt for "
                           f"{slide}. A single slide carries the refrain at most once "
                           "(per-slide over-stamp; the Hook is a suppressor)."})
-        # footer-band / bottom-stamp scan: hook adjacent to a footer cue
+        # footer-band / bottom-stamp scan: hook adjacent to a footer cue.
+        # FIX 35: the footer-cue scan is NEGATION-AWARE. A prompt that PROHIBITS
+        # the placement ("no footer band on any slide", "never a footer stamp")
+        # is not a footer placement; the old ±140-char context window counted
+        # the cue inside a negation and mis-fired AF-HOOK. The hook hit itself
+        # and the cue words sit in the same sentence, so the negation window
+        # (NEGATION_WINDOW_TOKENS after a negator, same sentence) suppresses the
+        # cue exactly when it is a prohibition; a cue outside a negated span
+        # still fires. Falls back to the legacy window scan when the scanners
+        # module cannot be imported (the check keeps its pre-FIX-35 teeth).
         for m in re.finditer(re.escape(h), text_lc):
             ctx = text_lc[max(0, m.start() - 140): m.start() + len(h) + 140]
-            if "footer" in ctx or "bottom band" in ctx or "lower band" in ctx \
-                    or "bottom strip" in ctx:
+            cue_hits = _scanners_mod.scan_negation_aware(ctx, _FOOTER_CUE_TOKENS) \
+                if _scanners_mod is not None else [
+                    (t, ctx.find(t)) for t in _FOOTER_CUE_TOKENS if t in ctx]
+            if cue_hits:
                 problems.append({
                     "code": "AF-HOOK", "slide": slide, "phase": "Phase Prompt-QC",
                     "detail": f"{slide} bakes the canonical hook into a FOOTER / bottom "

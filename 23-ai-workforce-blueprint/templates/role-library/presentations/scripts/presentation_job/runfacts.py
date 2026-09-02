@@ -56,6 +56,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -69,6 +70,293 @@ ENFORCE_ENV = "PRES_TRUST_BOUNDARY_ENFORCE"
 DIVERGENCE_PREFIX = "TRUST-BOUNDARY-DIVERGENCE"
 FINDING_PREFIX = "TRUST-BOUNDARY-SEAL-FINDING"
 ERROR_PREFIX = "TRUST-BOUNDARY-SHADOW-ERROR"
+
+# ---------------------------------------------------------------------------
+# FIX 109 — intake provenance (the trust root).
+#
+# intake.json is the seed every downstream gate reads (contrast floor, deck
+# tier, brand, slide count). Only the intake phase and the owner's approval
+# path may write it, and EVERY sanctioned write must append one row to
+# working/checkpoints/intake.provenance.jsonl carrying
+#   {writer_phase, writer_pid, ts, sha_before, sha_after}
+# so the engine can refuse any phase that starts while the file's CURRENT
+# sha256 has no provenance row (an out-of-band shell edit), and can
+# invalidate the banked artifacts of every phase whose manifest `consumes[]`
+# includes intake.json when the intake changes (so consumers re-run instead
+# of failing later on stale artifacts).
+#
+# The refusal string is AF-INTAKE-PROVENANCE and always names the sha.
+# ---------------------------------------------------------------------------
+INTAKE_ARTIFACT = "working/copy/intake.json"
+INTAKE_PROVENANCE_REL = "working/checkpoints/intake.provenance.jsonl"
+AF_INTAKE_PROVENANCE = "AF-INTAKE-PROVENANCE"
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _iso_now() -> str:
+    """Same clock format state.py's utcnow() uses (attested_at comparisons are
+    lexical between two values produced by this one format, in one tz)."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def current_intake_sha(run_dir) -> Optional[str]:
+    """sha256 of the run's live working/copy/intake.json, or None when absent."""
+    p = Path(run_dir) / INTAKE_ARTIFACT
+    if not p.is_file():
+        return None
+    return _sha256_file(p)
+
+
+def load_intake_provenance(run_dir) -> list:
+    """Every provenance row on disk, oldest first. Tolerates absence and
+    corruption (a torn/corrupt row is skipped, never a crash): this log is the
+    refuse/allow oracle, so reading it must never itself fail a run."""
+    p = Path(run_dir) / INTAKE_PROVENANCE_REL
+    rows: list = []
+    if not p.is_file():
+        return rows
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return rows
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("sha_after"):
+            rows.append(row)
+    return rows
+
+
+def append_intake_provenance(run_dir, writer_phase: str, *, previous_sha: Optional[str] = None,
+                             note: str = "") -> dict:
+    """Append ONE provenance row for a sanctioned intake.json write.
+
+    MUST be called immediately AFTER the atomic write lands: sha_after is
+    computed from the file as it exists on disk right now, sha_before is the
+    caller's captured pre-write sha (None/"" for a first creation). The row is
+    fsynced and the log line is one JSON object — one row per write, with
+    writer_phase, writer_pid, ts, sha_before, sha_after. Raises OSError only if
+    the log itself cannot be written: a sanctioned write with no row must be
+    visible to the caller, because the engine will refuse every phase until a
+    row exists."""
+    run_dir = Path(run_dir)
+    sha_after = current_intake_sha(run_dir)
+    if sha_after is None:
+        raise OSError(
+            f"{AF_INTAKE_PROVENANCE}: cannot append a provenance row — "
+            f"{INTAKE_ARTIFACT} is not on disk in {run_dir}")
+    row = {
+        "writer_phase": str(writer_phase),
+        "writer_pid": os.getpid(),
+        "ts": _iso_now(),
+        "sha_before": previous_sha or "",
+        "sha_after": sha_after,
+    }
+    if note:
+        row["note"] = str(note)[:400]
+    log_path = run_dir / INTAKE_PROVENANCE_REL
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(row, sort_keys=True) + "\n"
+    fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    return row
+
+
+def intake_sha_has_provenance(run_dir) -> Tuple[bool, str]:
+    """The FIX 109 refusal oracle: does the CURRENT intake sha have a row?
+
+    Returns (ok, reason). reason names the sha when refusing — the engine's
+    refusal message is required to name the sha (QC proof). A run with no
+    intake.json yet passes (the intake phase itself must be able to run); a
+    run with no provenance log at all passes ONLY until the log exists — once
+    any provenance row exists the regime is active for this run and the
+    current sha must appear as some row's sha_after."""
+    run_dir = Path(run_dir)
+    sha = current_intake_sha(run_dir)
+    if sha is None:
+        return True, "no intake.json yet — provenance check not applicable"
+    rows = load_intake_provenance(run_dir)
+    if not rows:
+        return True, "no provenance log yet — pre-FIX-109 run, regime not active"
+    for row in rows:
+        if row.get("sha_after") == sha:
+            return True, (f"intake sha {sha[:12]}... provenanced by "
+                          f"{row.get('writer_phase')!r} pid {row.get('writer_pid')} at {row.get('ts')}")
+    return False, (
+        f"{AF_INTAKE_PROVENANCE}: current {INTAKE_ARTIFACT} sha256={sha} has no row in "
+        f"{INTAKE_PROVENANCE_REL} ({len(rows)} provenanced write(s) on record, none end at this "
+        "sha). The file was modified out-of-band — every phase is refused until the intake is "
+        "re-written through the approval path (resolve_intake.py / the intake phase), which "
+        "appends the missing row.")
+
+
+def _consumes_entry_is_intake(c: str, intake_artifact: str = INTAKE_ARTIFACT) -> bool:
+    """True iff one manifest `consumes[]` entry names THE intake artifact.
+
+    FIX 109 (consumer-precision): a bare `.endswith("intake.json")` tail match
+    also hits `working/copy/sp_intake.json` -- a DIFFERENT artifact with its
+    own producer (P-SP-INTAKE-TRACE consumes it) and a completely different
+    lifecycle. Invalidating a phase over an artifact that did not change is
+    exactly the staleness-by-name mistake this fix exists to kill, so the
+    match is segment-boundary exact instead:
+      * exact relative-path match (the real manifest's shape: the entry is
+        literally `working/copy/intake.json`), or
+      * a glob whose FINAL path segment resolves to intake.json -- the
+        segment before any `*` must end at a `/` boundary, so
+        `working/*/intake.json` and `working/**/intake.json` match while
+        `working/copy/sp_intake.json` never does.
+    """
+    c = str(c)
+    if c == intake_artifact:
+        return True
+    tail = c.rstrip("*")
+    if not tail.endswith("intake.json"):
+        return False
+    # The stem left after stripping the trailing glob chars must end its own
+    # path segment: "working/*/intake.json" -> "working/*/intake.json" (the
+    # char before intake.json is '/'), while "sp_intake.json" -> the char
+    # before "intake.json" is '_', not a segment boundary.
+    if tail == "intake.json":
+        return True
+    return tail.endswith("/intake.json")
+
+
+def intake_consumers(manifest_phases: list, intake_artifact: str = INTAKE_ARTIFACT) -> list:
+    """Phase ids whose manifest `consumes[]` includes the intake artifact
+    (Fix 8's consumes[]): exact rel match, or a pattern whose final path
+    SEGMENT names intake.json (never `sp_intake.json` -- FIX 109 precision).
+    manifest_phases is the manifest's raw phases list (dicts)."""
+    out: list = []
+    for p in (manifest_phases or []):
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("id")
+        if not pid:
+            continue
+        for c in (p.get("consumes") or []):
+            if _consumes_entry_is_intake(c, intake_artifact):
+                out.append(pid)
+                break
+    return out
+
+
+def _manifest_phases_raw(manifest_path) -> Optional[list]:
+    p = Path(manifest_path) if manifest_path else None
+    if p is None or not p.is_file():
+        return None
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if isinstance(raw, dict) and isinstance(raw.get("phases"), list):
+        return raw["phases"]
+    return None
+
+
+def invalidate_intake_consumers(run_dir, manifest_path=None, *, intake_changed_at: str = "",
+                                reason: str = "") -> list:
+    """FIX 109 consumer invalidation. Banked artifacts of every DONE phase
+    whose consumes[] includes intake.json are invalid the moment the intake
+    changes after that phase banked (attested_at < intake_changed_at): reset
+    those phases to pending in state.json so the engine re-runs them instead
+    of failing later on stale artifacts. state.json is rewritten atomically;
+    attempts/heal_events survive. Returns the invalidated phase ids."""
+    run_dir = Path(run_dir)
+    state_path = run_dir / "state.json"
+    if not state_path.is_file():
+        return []
+    phases_raw = _manifest_phases_raw(manifest_path)
+    if phases_raw is None:
+        return []
+    consumers = set(intake_consumers(phases_raw))
+    if not consumers:
+        return []
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(state, dict):
+        return []
+    invalidated: list = []
+    changed = False
+    for ps in state.get("phases", []):
+        if not isinstance(ps, dict) or ps.get("id") not in consumers:
+            continue
+        if ps.get("status") != "done":
+            continue
+        attested = str(ps.get("attested_at") or "")
+        if intake_changed_at and attested and attested >= intake_changed_at:
+            continue  # banked AFTER the intake change — still fresh
+        why = (reason or "intake.json changed after this phase banked")
+        ps["status"] = "pending"
+        ps["intake_invalidated"] = {"reason": why, "intake_changed_at": intake_changed_at}
+        ps["artifacts"] = []
+        ps["sha256"] = {}
+        invalidated.append(ps["id"])
+        changed = True
+    if not changed:
+        return invalidated
+    # Atomic rewrite, same pattern as StateStore.save: temp file in the run
+    # dir, fsync, os.replace. A torn state.json is worse than no invalidation.
+    try:
+        fd, tmp = tempfile.mkstemp(dir=str(run_dir), prefix=".state-", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(state, indent=2, ensure_ascii=False))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, state_path)
+    except OSError:
+        return []
+    return invalidated
+
+
+def check_intake_provenance(run_dir, manifest_path=None) -> Tuple[bool, str, list]:
+    """THE pre-phase provenance check + consumer invalidation, one call.
+
+      1. Current intake sha has no provenance row -> (False, refusal naming
+         the sha, []) — every phase must refuse.
+      2. Provenance OK but the intake changed after some consuming phase
+         banked -> those banked phases are invalidated (status reset to
+         pending in state.json) and returned, so they re-run instead of
+         failing later on artifacts built from the old intake.
+
+    Callers (engine phase loop, preflight, the shell doors) treat ok=False as
+    a hard block; the refusal string always names the sha (QC proof)."""
+    run_dir = Path(run_dir)
+    ok, why = intake_sha_has_provenance(run_dir)
+    if not ok:
+        return False, why, []
+    rows = load_intake_provenance(run_dir)
+    if not rows:
+        return True, why, []
+    last = rows[-1]
+    invalidated = invalidate_intake_consumers(
+        run_dir, manifest_path, intake_changed_at=str(last.get("ts") or ""),
+        reason=(f"{AF_INTAKE_PROVENANCE}: intake.json re-written by "
+                f"{last.get('writer_phase')!r} (pid {last.get('writer_pid')}) at "
+                f"{last.get('ts')} — banked artifacts built from the previous "
+                f"intake sha are invalidated and their phases re-run"))
+    return True, why, invalidated
 
 # Reserved for the standalone `python3 -m presentation_job.runfacts --verify`
 # CLI added alongside this module, and for a future enforcing build_deck.py to

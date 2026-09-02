@@ -1,0 +1,140 @@
+# providers.yaml -- per-provider governor config. [FIX 14]
+# Shape per provider: {rps, burst, max_inflight, daily_cap, poll_counts_toward_rps}
+#   rps                     sustained acquisitions per second (token refill)
+#   burst                   token-bucket capacity == max allowed in any
+#                           rolling 10 s window at full rate
+#   max_inflight            concurrent acquisitions ceiling
+#   daily_cap               acquisitions per UTC day; 0 = unlimited
+#   poll_counts_toward_rps  false lets poll GETs bypass the rate bucket
+#   ramp_floor / ramp_rps   optional: initial (cautious) values for providers
+#                           with an unpublished, tier-based cap; a first
+#                           report_429 halves the rate and the governor
+#                           recovers on report_ok -- the ramp behaviour the
+#                           Part 7 "start N-M, ramp on 429" rows ask for
+# Values below are the verified Part 7 ceilings [R12]; the governor reads the
+# resource profile for plan tier overrides (ollama 3/10 by plan) and merges
+# them over these defaults. Unknown providers and any provider missing here
+# fall back to `defaults`.
+
+defaults:
+  rps: 1.0
+  burst: 10
+  max_inflight: 50
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+kie:
+  # Part 7: 20 new tasks per 10 s -> 2 submits/s; ~100+ running -> 100 in
+  # flight; poll GETs counted in the same window; 429 dropped not queued.
+  rps: 2.0
+  burst: 20
+  max_inflight: 100
+  daily_cap: 5000
+  # polls count toward the rate bucket (Part 7: poll GETs counted in the
+  # same 10 s window as submits)
+  poll_counts_toward_rps: true
+
+deepseek:
+  # Part 7: DeepSeek direct, account-wide concurrency: Pro 500, Flash 2500.
+  # rps is the acquisition limiter: the pro tier supports 400 text units and
+  # flash 2000; the per-model split lives in model_catalog/route stamps, the
+  # governor holds the shared account bucket at the pro-safe number and the
+  # dispatcher's own per-model caps stay under it.
+  rps: 5.0
+  burst: 20
+  max_inflight: 400
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+openai:
+  rps: 1.0
+  burst: 10
+  max_inflight: 50
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+openrouter:
+  # Part 7: no published paid cap; free 20 RPM; "start 20-50, ramp on 429".
+  # rps 2.0 keeps a 20-token rolling-10s start inside the window cap while
+  # max_inflight 50 lets the burst ramp; a forced 429 halves the next
+  # minute's rate and report_ok recovers it.
+  rps: 2.0
+  burst: 20
+  max_inflight: 50
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+anthropic:
+  rps: 1.0
+  burst: 10
+  max_inflight: 50
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+ollama:
+  # Part 7: Pro 3, Max 10 -- over-cap queues, no session or weekly limits
+  # since 2026-08-31. The YAML default keeps the free-floor 3; the resource
+  # profile plan tier ($20/month -> 3, $100/month -> 10 via PLAN_TIER_RPS)
+  # overrides rps and max_inflight when present.
+  rps: 3.0
+  burst: 10
+  max_inflight: 3
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+gemini:
+  rps: 1.0
+  burst: 10
+  max_inflight: 25
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+elevenlabs:
+  rps: 0.5
+  burst: 5
+  max_inflight: 10
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+fish:
+  rps: 1.0
+  burst: 10
+  max_inflight: 20
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+ghl:
+  rps: 2.0
+  burst: 20
+  max_inflight: 25
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+agnes:
+  # Part 7: Starter 1500 req/5 h ~ 0.083 req/s sustained; text 1000 RPM;
+  # image 100 RPM at 1K, 80 at 2K. Quota-based, no published concurrency.
+  # ~5 sustained text units (Starter) / ~25 (Plus) -> rps kept conservative,
+  # in-flight capped at the Plus sustained row; daily_cap 4000 images.
+  rps: 0.5
+  burst: 10
+  max_inflight: 25
+  daily_cap: 4000
+  poll_counts_toward_rps: true
+
+zai:
+  # Part 7: Z.ai direct (GLM 5.3 Flash) -- unpublished, tier-based:
+  # "start 5-10, ramp on 429". Conservative floor with ramp semantics
+  # (report_429 halves; report_ok recovers). 1M context, 128K output.
+  rps: 0.5
+  burst: 10
+  max_inflight: 10
+  daily_cap: 0
+  poll_counts_toward_rps: true
+
+# Part 7 rate-limit derivations (verified [R12]):
+#   kie          20 new tasks / 10 s = 2 rps; window cap = burst 20; ~100+ running -> max_inflight 100
+#   deepseek     Pro 500 / Flash 2500 account-wide concurrent; text units Pro 400, Flash 2000 -> shared bucket max_inflight 400
+#   openrouter   free 20 RPM paid unpublished -> start 20-50 ramp on 429 (window 20, inflight 50)
+#   ollama       Pro 3 / Max 10 by plan (profile tier overrides rps + max_inflight)
+#   agnes        ~5 sustained Starter / ~25 Plus; image 80/min at 2K; 4000 images/day
+#   zai          unpublished tier-based -> start 5-10 ramp on 429

@@ -172,9 +172,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 
 ---
 
-### SOP 9.3 -- The Fish-Tagged Deliverable (shipped; tagging handoff to ROLE-21)
+### SOP 9.3 -- The Fish-Tagged Deliverable (shipped; tagging handoff to ROLE-29)
 
-**Purpose:** Produce `PRESENTERS-SPEECH-FISH-TAGGED.md` — the SAME words as the pure speech with inline Fish Audio expression tags ADDED — as BOTH a shipped owner-facing deliverable AND the audio source. ROLE-21 applies the tags; this role owns the deliverable.
+**Purpose:** Produce `PRESENTERS-SPEECH-FISH-TAGGED.md` — the SAME words as the pure speech with inline Fish Audio expression tags ADDED — as BOTH a shipped owner-facing deliverable AND the audio source. ROLE-29 applies the tags; this role owns the deliverable.
 
 **The hard rule:** The Fish-tagged markdown is **word-for-word identical** to PRESENTERS-SPEECH.md; only Fish tags are added, never a word changed, reordered, added, or removed. Existing pacing cues are preserved. Default **S2/S2-Pro square-bracket, open-domain**; S1 fallback is the fixed named tag set in `(parentheses)`. The owner receives this file (it ships) so they can re-render/re-voice; it is also the audio source for SOP 9.4. The pure PDF/Notion stays clean.
 
@@ -183,8 +183,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 **Inputs:** PRESENTERS-SPEECH.md, intake.json TONE, the per-stage emotional arc (Section 9A), FISH-AUDIO-TAGS-MASTER.md, FISH-AUDIO-STRATEGIC-PLAN.md, the selected TTS tier (from SOP 9.4 step 1).
 
 **Steps:**
-1. Tell ROLE-21 which TTS tier is the target (default Fish S2-pro brackets) and point them at FISH-AUDIO-TAGS-MASTER.md + FISH-AUDIO-STRATEGIC-PLAN.md for valid markers and density.
-2. Hand PRESENTERS-SPEECH.md plus the TONE, the per-stage tag plan, and the density rules to ROLE-21. ROLE-21 returns working/presenter-speech/PRESENTERS-SPEECH-FISH-TAGGED.md with tags applied per stage.
+1. Tell ROLE-29 which TTS tier is the target (default Fish S2-pro brackets) and point them at FISH-AUDIO-TAGS-MASTER.md + FISH-AUDIO-STRATEGIC-PLAN.md for valid markers and density.
+2. Hand PRESENTERS-SPEECH.md plus the TONE, the per-stage tag plan, and the density rules to ROLE-29. ROLE-29 returns working/presenter-speech/PRESENTERS-SPEECH-FISH-TAGGED.md with tags applied per stage.
 3. Confirm the tagged file preserves EVERY word of the clean script (tags added, words unchanged), the hook refrains verbatim, the per-slide contract preserved, and tags use the syntax valid for the chosen tier. Run a word-for-word diff (strip all brackets/parens/owner-prompts/metadata from both; remaining words identical per slide).
 4. Ship PRESENTERS-SPEECH-FISH-TAGGED.md to the owner alongside the pure speech and the PDF (SOP 9.5), AND use it as the audio source (SOP 9.4).
 

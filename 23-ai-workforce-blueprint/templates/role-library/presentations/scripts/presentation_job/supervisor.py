@@ -73,6 +73,12 @@ from .watchdog import _find_state_files
 DEFAULT_MAX_RESTARTS = 3
 DEFAULT_BACKOFF_SECONDS = 60
 
+# FIX 18: the supervisor holds the run lease only for the moment of the restart
+# (acquire -> spawn -> release). 300 s is several heartbeats of headroom over
+# that window, long enough that a crashed supervisor cannot leave the run
+# locked for more than the lease's own TTL expiry machinery handles.
+RESTART_LEASE_TTL_SECONDS = 300
+
 LEDGER_FILENAME = "supervisor-restarts.json"
 EVENTS_FILENAME = "supervisor-events.jsonl"
 ALARM_FILENAME = "SUPERVISOR-ALARM.json"
@@ -228,8 +234,57 @@ def _raise_alarm(scan_root: Path, run_dir: Path, entry: Dict[str, Any],
           notify=True, to_disk=to_disk)
 
 
+def _acquire_restart_lease(run_dir: Path) -> Tuple[Optional[object], Optional[str]]:
+    """FIX 18: the supervisor is one of the lease's named callers ("callers: the
+    door, `supervisor._restart`, ..."), so a restart may not spawn a second
+    engine over a run another holder still owns. Acquire the run's lease HERE,
+    before the spawn; the freshly resumed engine's own `__main__` acquire
+    (which refuses to run without a lease it holds) then races nothing, because
+    this holder has already won and hands the run over by releasing after the
+    spawn returns.
+
+    Guarded import on purpose: lease.py ships with the engine half of FIX 18
+    (W10a B1). If it is absent this module still supervises -- a restart then
+    proceeds WITHOUT a lease and says so in the return detail, exactly the
+    degrade-loudly discipline _write_ledger uses when it cannot persist. Returns
+    (lease, None) on success or (None, why) on refusal; (lease=None, why=None)
+    means "no lease module -- restart unleased" and is NOT a refusal.
+    """
+    try:
+        from . import lease as lease_mod
+    except ImportError as exc:
+        return None, f"(unleased: lease module unavailable: {exc})"
+    holder = {
+        "pid": os.getpid(),
+        "host": os.uname().nodename,
+        "session": "supervisor",
+        "purpose": "supervisor.restart",
+    }
+    try:
+        acquired = lease_mod.acquire(run_dir, holder,
+                                     ttl_s=RESTART_LEASE_TTL_SECONDS)
+    except Exception as exc:  # noqa: BLE001 -- lease trouble must not kill the supervise pass
+        return None, f"(unleased: lease acquire raised {type(exc).__name__}: {exc})"
+    if acquired is None:
+        current = None
+        try:
+            current = lease_mod.read(run_dir)
+        except Exception:  # noqa: BLE001 -- a read failure must not hide the refusal
+            pass
+        holder_desc = json.dumps(current, sort_keys=True) if current else \
+            f"an unreadable lease at {run_dir / 'working' / '.lease.json'}"
+        return None, f"restart refused: lease held by {holder_desc}"
+    return acquired, None
+
+
 def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, str]:
     """Spawn `presentation_job.py --resume --run-dir <run_dir>`, detached.
+
+    FIX 18: acquires the run lease FIRST (see _acquire_restart_lease) and
+    releases it after the spawn returns. If another holder owns the lease, no
+    engine is spawned -- the restart is refused without charging the budget, so
+    a single dead-worker flap cannot burn the whole restart budget against a
+    healthy holder.
 
     start_new_session=True is load-bearing: this runs under a launchd
     StartInterval job that exits as soon as the shell script returns, and a child
@@ -240,6 +295,27 @@ def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, s
     entry_script = scripts_dir / "presentation_job.py"
     if not entry_script.is_file():
         return False, f"entry script missing: {entry_script}"
+    lease, refuse_why = _acquire_restart_lease(run_dir)
+    if refuse_why and lease is None and refuse_why.startswith("restart refused"):
+        # Held by someone else. Not a spawn failure, not a budget event: the run
+        # has an owner, which is the lease doing its job. A later pass retries
+        # if the holder's lease expires or the holder dies.
+        return False, refuse_why
+    # Release BEFORE spawning, deliberately: the resumed engine's own __main__
+    # acquire is the hand-off, and a lease still held by THIS pid at the moment
+    # the child starts would refuse the child (same-host live pid, unexpired
+    # lease => takeover denied) -- then this process exits under launchd, its
+    # pid dies, and the child's takeover would have to wait out the whole TTL.
+    # Releasing first makes the hand-over immediate and race-free in the
+    # direction that matters: the acquire above already proved no other holder.
+    handed_off = ""
+    if lease is not None:
+        try:
+            from . import lease as lease_mod
+            lease_mod.release(lease)
+            handed_off = "; lease acquired, verified unowned, released for the engine"
+        except Exception as exc:  # noqa: BLE001 -- a failed release must not abort the spawn
+            handed_off = f"; lease release failed ({type(exc).__name__}: {exc})"
     log_dir = scan_root / RESTART_LOG_DIRNAME
     argv = [sys.executable, str(entry_script), "--resume", "--run-dir", str(run_dir)]
     try:
@@ -253,7 +329,8 @@ def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, s
                                     start_new_session=True)
     except OSError as exc:
         return False, f"spawn failed: {exc}"
-    return True, f"spawned pid {proc.pid} ({' '.join(argv)}); output -> {log_path}"
+    return True, (f"spawned pid {proc.pid} ({' '.join(argv)}); output -> {log_path}"
+                  f"{refuse_why or ''}{handed_off}")
 
 
 def supervise(
@@ -307,6 +384,7 @@ def supervise(
     dead = 0
     restarted = 0
     deferred = 0
+    refused = 0
     alarmed = 0
     reported_only = 0
     stale_abandoned = 0
@@ -404,6 +482,31 @@ def supervise(
               f"{why}; run is NOT terminal (phase {phase}, job {job_id})",
               extra={"phase": phase, "job_id": job_id}, notify=True, to_disk=apply)
 
+        # FIX 18: the lease verdict outranks the flock verdict here. If the run
+        # carries a live, unexpired lease, SOMEBODY owns it right now -- even
+        # though the .job.lock flock is free -- and spawning a second engine
+        # over it is exactly the concurrent-resume fault the lease exists to
+        # close. Checked BEFORE the budget/backoff machinery (and before
+        # report-only withholding, so a report-only pass still names the
+        # holder) so a healthy holder never burns restart budget: this is not
+        # a death, it is an owner.
+        try:
+            from . import lease as lease_mod
+        except ImportError:
+            lease_mod = None
+        if lease_mod is not None:
+            lease_doc = lease_mod.read(run_dir)
+            if lease_doc is not None and not lease_mod._expired(lease_doc) \
+                    and lease_mod._holder_is_live(lease_doc) \
+                    and lease_doc.get("pid") != os.getpid():
+                refused += 1
+                _emit(scan_root, "restart_refused_by_lease", run_dir,
+                      f"worker looks dead by flock but a live lease stands: "
+                      f"{lease_mod.describe_holder(run_dir)} -- NOT restarting, "
+                      f"no budget charged",
+                      to_disk=apply)
+                continue
+
         entry = ledger.get(key) or {"attempts": 0}
         attempts = int(entry.get("attempts") or 0)
 
@@ -441,14 +544,6 @@ def supervise(
                       f"attempt {attempts}/{max_restarts}",
                       to_disk=apply)
                 continue
-
-        if not apply:
-            reported_only += 1
-            _emit(scan_root, "restart_withheld", run_dir,
-                  f"would restart (attempt {attempts + 1}/{max_restarts}) but --apply "
-                  f"was not given -- report-only pass",
-                  to_disk=apply)
-            continue
 
         ok, detail = _restart(scan_root, run_dir, scripts_dir)
         entry["attempts"] = attempts + 1
@@ -489,6 +584,7 @@ def supervise(
           f"{alive} alive, {undetermined} undetermined, {dead} dead "
           f"({stale_abandoned} too old to restart, cap {max_idle_hours}h) "
           f"-- {restarted} restarted, {deferred} deferred by backoff, "
+          f"{refused} refused by a live lease, "
           f"{reported_only} withheld (report-only), {alarmed} alarming", flush=True)
 
     return EXIT_SUPERVISOR_ALARM if alarmed else EXIT_OK

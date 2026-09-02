@@ -8,6 +8,11 @@ prompt is Layer-A→Layer-B in agent-executable form; if it ever contradicts tha
 document on the *shape of the process*, that document wins and this prompt is the one
 to fix.
 
+**Master SOP (one line, declared once):** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`,
+declared in the doctrine home's header (Fix 94). Every "master SOP" citation in this
+department resolves there via the doctrine's §4 crosswalk; this prompt never cites a
+bare "master SOP Section N".
+
 ## THE TWO-LAYER MODEL — READ THIS BEFORE YOU DO ANYTHING
 
 A deck is built by **ONE pipeline with TWO layers**, always in this order:

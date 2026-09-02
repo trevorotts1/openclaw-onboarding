@@ -456,8 +456,48 @@ def check_obi_headline_words(run_dir, slides_path=None):
     return reason
 
 
+def _scanners_35():
+    """FIX 35 — presentation_job.scanners (negation-aware keyword scanning), or
+    None. Imported lazily so slide_craft keeps loading standalone; on failure the
+    AF-AUD token scans fall back to the legacy substring scan (the gate keeps its
+    pre-FIX-35 teeth rather than going blind)."""
+    try:
+        from presentation_job import scanners as _scanners_mod
+        return _scanners_mod
+    except Exception:
+        try:
+            import sys as _sys
+            _pkg = str(Path(__file__).resolve().parent / "presentation_job")
+            _parent = str(Path(__file__).resolve().parent)
+            if _pkg not in _sys.path:
+                _sys.path.insert(0, _pkg)
+            if _parent not in _sys.path:
+                _sys.path.insert(0, _parent)
+            from presentation_job import scanners as _scanners_mod
+            return _scanners_mod
+        except Exception:
+            return None
+
+
+def _aud_token_hits_35(block, tokens):
+    """FIX 35 — negation-aware token hits in ONE copy block.
+
+    A token that sits within NEGATION_WINDOW_TOKENS tokens after a negator in the
+    same sentence ("this is NOT a webinar", "she is NOT licensed") is a disclaimer,
+    not the defect the AF-AUD rule names, so it is suppressed. A token outside a
+    negated span still fires — the gate cannot get weaker than the old substring
+    scan. Falls back to the legacy substring scan when the scanners module cannot
+    be imported. Returns the list of tokens that survive."""
+    surviving_tokens = [tok for tok, _off in _scanners_35().scan_negation_aware(
+        str(block), tokens)] if _scanners_35() is not None else [
+        tok for tok in tokens if tok.lower() in str(block).lower()]
+    return surviving_tokens
+
+
 def check_aud_meta_tokens(run_dir, slides_path=None):
-    """AF-AUD-4 — no AUD_META_TOKENS substring appears in any copy block."""
+    """AF-AUD-4 — no AUD_META_TOKENS substring appears in any copy block.
+    FIX 35: the token scan is negation-aware (a prohibition of the technique is
+    not the technique; see _aud_token_hits_35)."""
     sl = _slides(run_dir, slides_path)
     if not sl:
         _write_provenance(run_dir, {"check_aud_meta_tokens": {
@@ -466,10 +506,8 @@ def check_aud_meta_tokens(run_dir, slides_path=None):
     findings = []
     for ordinal in sorted(sl):
         for i, block in enumerate(sl[ordinal]):
-            block_lower = str(block).lower()
-            for token in AUD_META_TOKENS:
-                if token in block_lower:
-                    findings.append((ordinal, i, token))
+            for token in _aud_token_hits_35(block, AUD_META_TOKENS):
+                findings.append((ordinal, i, token))
     if not findings:
         _write_provenance(run_dir, {"check_aud_meta_tokens": {
             "deferred": False, "findings": 0, "total_slides": len(sl)}})
@@ -484,7 +522,10 @@ def check_aud_meta_tokens(run_dir, slides_path=None):
 
 
 def check_aud_credentials(run_dir, slides_path=None):
-    """AF-AUD-5 — no AUD_CREDENTIAL_TOKENS in NON-HEADLINE blocks (copy[1:])."""
+    """AF-AUD-5 — no AUD_CREDENTIAL_TOKENS in NON-HEADLINE blocks (copy[1:]).
+    FIX 35: the token scan is negation-aware (a disclaimer such as 'not licensed'
+    or 'never treat her advice as certified' is not a credential dump; see
+    _aud_token_hits_35)."""
     sl = _slides(run_dir, slides_path)
     if not sl:
         _write_provenance(run_dir, {"check_aud_credentials": {
@@ -494,10 +535,8 @@ def check_aud_credentials(run_dir, slides_path=None):
     for ordinal in sorted(sl):
         blocks = sl[ordinal]
         for i in range(1, len(blocks)):
-            block_lower = str(blocks[i]).lower()
-            for token in AUD_CREDENTIAL_TOKENS:
-                if token in block_lower:
-                    findings.append((ordinal, i, token))
+            for token in _aud_token_hits_35(blocks[i], AUD_CREDENTIAL_TOKENS):
+                findings.append((ordinal, i, token))
     if not findings:
         _write_provenance(run_dir, {"check_aud_credentials": {
             "deferred": False, "findings": 0, "total_slides": len(sl)}})

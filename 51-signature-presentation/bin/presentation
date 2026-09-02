@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# bin/presentation — the ONE invocable entry for the signature-presentation
+# skill on ANY host (Claude Code, claude-nine, Codex, docker exec -u node).
+# FIX 69 (Master Part 8): package the department as an invocable skill with
+# host adapters. This wrapper:
+#   1. resolves itself regardless of the caller's cwd (absolute from $0);
+#   2. resolves the dept scripts dir via oc_paths when importable, else the
+#      platform-aware fallback chain (/data/.openclaw for docker/vps, then
+#      ~/.openclaw/workspace) — the SAME resolution the canonical door does;
+#   3. sources the platform secrets env with `set -a` (export-safe per FIX 72)
+#      from the first candidate that exists, and never prints a value;
+#   4. REFUSES if the Presentations department is not materialized
+#      (fail-closed, same posture as presentation-canonical-entry.sh);
+#   5. exports a FILE-QUEUE notify transport (working/outbox.jsonl) when the
+#      openclaw gateway CLI is absent AND PRESENTATION_NOTIFY_CMD is unset,
+#      so the fail-closed notify gate (notify_preflight.py) passes and the
+#      host shell relays the queued rows;
+#   6. execs the canonical door with pass-through args and propagates its
+#      exit code. No gate is ever skipped; there is no second render path.
+#
+# EXIT CODES (this wrapper adds only 60/61; door codes propagate):
+#   60 — secrets env not found (never guess a key; nothing was printed)
+#   61 — Presentations department not materialized
+#   (2/3/4/5/6/7/8/9 propagate from presentation-canonical-entry.sh)
+
+set -uo pipefail
+PROG="bin/presentation (skill 51)"
+
+note() { echo "=== [$PROG] $* ===" >&2; }
+die() { echo "FATAL [$PROG]: $*" >&2; exit "${2:-2}"; }
+
+# --- 1. absolute self-location (works from any cwd, incl. docker exec) ------
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SKILL_DIR="$(dirname "$SELF")"
+
+# --- 2. platform resolution -------------------------------------------------
+# OPENCLAW_PLATFORM wins when the operator pinned it; else /data/.openclaw is
+# the docker/vps marker (Fix 68 contract), else $HOME/.openclaw (mac).
+if [ -d /data/.openclaw ]; then
+    OC_ROOT="/data/.openclaw"
+    PLATFORM="${OPENCLAW_PLATFORM:-docker}"
+else
+    OC_ROOT="${HOME}/.openclaw"
+    PLATFORM="${OPENCLAW_PLATFORM:-mac}"
+fi
+OC_WORKSPACE="${OPENCLAW_WORKSPACE:-$OC_ROOT/workspace}"
+
+# oc_paths (Fix 68) is the authority when the engine package is importable;
+# the shell fallback chain below is byte-equivalent for the two supported
+# layouts. Try python3 quietly; on any failure keep the shell default. The
+# emitted candidate list is CAPTURED and becomes the primary secrets search
+# order (a probe whose output is discarded proves nothing — FIX 69 requires
+# the door to resolve the dept dir via oc_paths when it can).
+OC_PATHS_CANDIDATES=""
+if command -v python3 >/dev/null 2>&1; then
+    OC_PATHS_CANDIDATES="$(_OC_ROOT="$OC_ROOT" python3 - "$OC_ROOT" <<'PYEOF' 2>/dev/null
+import os, sys
+root = os.environ["_OC_ROOT"]
+try:
+    sys.path.insert(0, os.path.join(root, "workspace", "departments",
+                                    "Presentations", "scripts"))
+    import presentation_job.oc_paths as p  # noqa: F401  (Fix 68 authority)
+    cands = p.secrets_env_candidates()
+    print("\n".join(str(c) for c in cands))
+except Exception:
+    sys.exit(1)
+PYEOF
+)" || OC_PATHS_CANDIDATES=""
+    [ -n "$OC_PATHS_CANDIDATES" ] && note "oc_paths secrets order: $(printf '%s' "$OC_PATHS_CANDIDATES" | tr '\n' ' ')"
+fi
+
+# --- 3. secrets: source first existing candidate, set -a, print nothing -----
+# Never print a secret value. Source with set -a so every child (python3,
+# reportlab pipeline, notify transport) sees the keys (FIX 72 export-safe).
+# Order: oc_paths candidates (Fix 68 authority) first, then the platform
+# shell fallbacks; the first file that EXISTS wins. Names are echoed, never
+# values.
+SECRETS_LOADED=0
+_SECRETS_CANDIDATES=""
+if [ -n "$OC_PATHS_CANDIDATES" ]; then
+    _SECRETS_CANDIDATES="$(printf '%s' "$OC_PATHS_CANDIDATES" | tr '\n' ' ') "
+fi
+_SECRETS_CANDIDATES="${_SECRETS_CANDIDATES}$OC_ROOT/secrets/.env $HOME/.openclaw/secrets/.env"
+for _cand in $_SECRETS_CANDIDATES; do
+    if [ -f "$_cand" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        . "$_cand"
+        set +a
+        SECRETS_LOADED=1
+        note "secrets sourced (set -a): $_cand"
+        break
+    fi
+done
+[ "$SECRETS_LOADED" -eq 1 ] || die "no secrets env found (tried: $_SECRETS_CANDIDATES). Skill 07/05 must provision it first; refusing to run keyless." 60
+
+# --- 4. dept materialization gate (fail-closed) ------------------------------
+DEPT_SCRIPTS="$OC_WORKSPACE/departments/Presentations/scripts"
+if [ ! -f "$DEPT_SCRIPTS/build_deck.py" ] || [ ! -f "$DEPT_SCRIPTS/run_signature_deck.py" ]; then
+    die "Presentations department not materialized at $DEPT_SCRIPTS (no build_deck.py + run_signature_deck.py). Run Skill 23 (AI Workforce Blueprint) to materialize it, or pass --scripts-dir explicitly to the door. Refusing — there is no ungoverned fallback." 61
+fi
+note "dept scripts: $DEPT_SCRIPTS (platform=$PLATFORM)"
+
+# --- 5. notify transport: file-queue fallback (the FIX 69 adapter) ----------
+# When the openclaw gateway CLI is ABSENT from PATH and PRESENTATION_NOTIFY_CMD
+# is unset, the fail-closed notify gate would refuse every launch (exit 8,
+# NOT_READY_NOTIFY). Export a file-queue transport instead: the transport is
+# presentation-outbox-queue.py, which appends the notify JSON row to
+# <run-dir>/working/outbox.jsonl; the host (Claude Code / claude-nine / Codex
+# session) relays those rows. PRESENTATION_NOTIFY_CMD remains the override.
+OUTBOX_QUEUE="$SKILL_DIR/bin/presentation-outbox-queue"
+if ! command -v openclaw >/dev/null 2>&1; then
+    if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
+        if [ -f "$OUTBOX_QUEUE" ]; then
+            export PRESENTATION_NOTIFY_CMD="$OUTBOX_QUEUE"
+            note "openclaw absent from PATH: file-queue notify transport exported (PRESENTATION_NOTIFY_CMD=$PRESENTATION_NOTIFY_CMD)"
+        else
+            note "openclaw absent and no outbox queue helper found — notify gate may refuse (NOT_READY_NOTIFY)"
+        fi
+    else
+        # An override is honored only if its first token resolves — a stale
+        # value (e.g. a retired tools/ script) is the same silence the
+        # fail-closed gate exists to kill, so it is ignored in favor of the
+        # file-queue transport.
+        _nc_first=""
+        for _t in ${PRESENTATION_NOTIFY_CMD}; do _nc_first="$_t"; break; done
+        if [ -n "$_nc_first" ] && command -v "$_nc_first" >/dev/null 2>&1; then
+            note "PRESENTATION_NOTIFY_CMD override honored (openclaw absent)"
+        elif [ -f "$OUTBOX_QUEUE" ]; then
+            export PRESENTATION_NOTIFY_CMD="$OUTBOX_QUEUE"
+            note "PRESENTATION_NOTIFY_CMD points at an unresolvable command; file-queue notify transport exported instead (PRESENTATION_NOTIFY_CMD=$PRESENTATION_NOTIFY_CMD)"
+        else
+            note "PRESENTATION_NOTIFY_CMD unresolvable and no outbox queue helper found — notify gate may refuse (NOT_READY_NOTIFY)"
+        fi
+    fi
+fi
+
+# --- 6. export the run dir for the file-queue transport ---------------------
+# The outbox transport resolves <run-dir>/working/outbox.jsonl; pass the run
+# dir (and the outbox path) through the env so the transport never guesses.
+# The door accepts ONLY the "--run-dir DIR" form, so an "--run-dir=DIR"
+# invocation is normalized to that form before exec (the wrapper is a
+# pass-through, never a mutator of anything else).
+_presolve_run_dir() {
+    _prev=""
+    for _a in "$@"; do
+        case "$_a" in
+            --run-dir)   _prev="--run-dir" ;;
+            --run-dir=*) printf '%s' "${_a#--run-dir=}"; return 0 ;;
+            *)  if [ "$_prev" = "--run-dir" ]; then printf '%s' "$_a"; return 0; fi
+                _prev="" ;;
+        esac
+    done
+    return 1
+}
+if PRESENTATION_RUN_DIR="$(_presolve_run_dir "$@")"; then
+    export PRESENTATION_RUN_DIR
+    note "file-queue outbox: $PRESENTATION_RUN_DIR/working/outbox.jsonl"
+else
+    unset PRESENTATION_RUN_DIR
+fi
+
+# Normalize "--run-dir=DIR" to the door's "--run-dir DIR" form (argv rebuild).
+_newargs=""
+_have_newargs=0
+for _a in "$@"; do
+    case "$_a" in
+        --run-dir=*)
+            if [ "$_have_newargs" -eq 0 ]; then
+                _newargs="--run-dir ${_a#--run-dir=}"
+                _have_newargs=1
+            else
+                _newargs="$_newargs --run-dir ${_a#--run-dir=}"
+            fi
+            ;;
+        *)
+            if [ "$_have_newargs" -eq 0 ]; then
+                _newargs="$_a"
+                _have_newargs=1
+            else
+                _newargs="$_newargs|$_a"
+            fi
+            ;;
+    esac
+done
+
+# --- 7. exec the canonical door, pass through args and exit code ------------
+DOOR="$DEPT_SCRIPTS/presentation-canonical-entry.sh"
+[ -f "$DOOR" ] || die "canonical door not found at $DOOR" 61
+if [ "$_have_newargs" -eq 1 ]; then
+    # Re-split the rebuilt argv (paths may contain no IFS chars in the
+    # supported usage; the door's own parsing is the same split). The run-dir
+    # normalization is the ONLY transformation this wrapper makes.
+    # shellcheck disable=SC2086
+    note "dispatching canonical door: $DOOR $(printf '%s' "$_newargs" | tr '|' ' ')"
+    # shellcheck disable=SC2086
+    exec bash "$DOOR" $(printf '%s' "$_newargs" | tr '|' ' ')
+else
+    note "dispatching canonical door: $DOOR $*"
+    exec bash "$DOOR" "$@"
+fi

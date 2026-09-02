@@ -49,6 +49,7 @@ request at all -- the overwhelming majority of callers today) is not.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
@@ -56,9 +57,239 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .vocab import normalize_presentation_type, UnknownPresentationType
+
+# ---------------------------------------------------------------------------
+# FIX 34 — intake immutable after job creation
+# ---------------------------------------------------------------------------
+#: After the engine's --new consumed `working/copy/intake.json`, that file is the
+#: run's constitutional record: every phase (mode, deck_type, requester.chat_id,
+#: intake trace checks) reads it, and the D-lineage bugs all started with something
+#: quietly REWRITING it mid-run. So once --new has consumed it the launcher seals
+#: it 0444. Any later write attempt raises PermissionError at the OS level, and the
+#: attempt is recorded in the intake-protection ledger before it raises.
+#:
+#: Changes go through the AMENDMENT channel instead: `apply_intake_amendment`
+#: verifies a Fix 32-style owner approval (approved_by "Trevor" + a non-empty
+#: owner_msg_id — the QC.md FIX 32 forged/real pair) and only then stages the new
+#: intake (write to intake.json.staging, fsync), appends the full amendment row to
+#: `working/copy/intake_amendments.jsonl`, and os.replace()s the staging file over
+#: the sealed intake (os.replace works on a read-only TARGET — only the directory
+#: needs write permission), then re-seals 0444. Every step lands in the ledger.
+#:
+#: The dispatcher's P0A contract ("re-emit intake verbatim/enriched") is thereby
+#: inert operationally: the file cannot be re-emitted over, and the sanctioned way
+#: to change intake data is this amendment path. (The contract text itself lives in
+#: dispatcher.py, outside this workflow's file scope.)
+
+#: Canonical mode bits for the sealed intake (read-only for everyone).
+INTAKE_SEAL_MODE = 0o444
+
+#: The amendment record file, canonical intake sibling (JSON Lines).
+INTAKE_AMENDMENTS_FILENAME = "intake_amendments.jsonl"
+
+#: The intake-protection ledger — every seal, every refused write attempt, every
+#: amendment lands here (JSON Lines) under working/logs/.
+INTAKE_LEDGER_RELATIVE = ("working", "logs", "intake_protection.jsonl")
+
+
+def intake_paths(run_dir: Path) -> dict:
+    """The three FIX 34 surfaces for a run dir, as absolute Paths."""
+    run_dir = Path(run_dir).expanduser().resolve()
+    return {
+        "intake": run_dir / "working" / "copy" / "intake.json",
+        "amendments": run_dir / "working" / "copy" / INTAKE_AMENDMENTS_FILENAME,
+        "ledger": run_dir.joinpath(*INTAKE_LEDGER_RELATIVE),
+    }
+
+
+def _ledger_append(run_dir: Path, event: dict) -> None:
+    """Append one JSON line to the intake-protection ledger. The ledger is the
+    QC surface for "the attempt appears in the ledger", so a ledger failure is
+    surfaced on stderr but NEVER blocks the protective action itself."""
+    try:
+        paths = intake_paths(run_dir)
+        paths["ledger"].parent.mkdir(parents=True, exist_ok=True)
+        row = dict(event)
+        row.setdefault("at", __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).isoformat(timespec="seconds"))
+        with paths["ledger"].open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, default=str) + "\n")
+    except OSError as exc:
+        print(f"launcher: intake ledger write failed: {exc}", file=sys.stderr,
+              flush=True)
+
+
+def seal_intake(run_dir: Path, reason: str = "new-job-consumed") -> bool:
+    """chmod 0444 the run's working/copy/intake.json (idempotent) and record the
+    seal in the ledger. Creates the amendments file (0644, empty) so the channel
+    exists even before its first amendment. Returns True when the intake exists
+    and ended sealed."""
+    paths = intake_paths(run_dir)
+    intake = paths["intake"]
+    if not intake.is_file():
+        return False
+    try:
+        os.chmod(intake, INTAKE_SEAL_MODE)
+    except OSError as exc:
+        _ledger_append(run_dir, {"event": "intake_seal_failed",
+                                 "detail": str(exc), "reason": reason})
+        return False
+    try:
+        if not paths["amendments"].exists():
+            paths["amendments"].touch(mode=0o644)
+    except OSError as exc:
+        print(f"launcher: could not create {paths['amendments']}: {exc}",
+              file=sys.stderr, flush=True)
+    _ledger_append(run_dir, {"event": "intake_sealed",
+                             "mode": oct(INTAKE_SEAL_MODE),
+                             "detail": stat_mode(intake), "reason": reason})
+    return True
+
+
+def stat_mode(path: Path) -> str:
+    """`stat -f %Sp`-shaped mode string (-r--r--r--), for evidence parity with the
+    QC proof line."""
+    try:
+        import stat as _stat
+        return _stat.filemode(path.stat().st_mode)
+    except OSError:
+        return "?"
+
+def verify_amendment_approval(amendment: dict, run_dir: Optional[Path] = None) -> tuple:
+    """Fix 32-style owner-approval verification for an intake amendment.
+
+    Prefer presentation_job.approvals (W11, Fix 32) — approvals.verify_quiet
+    against the run dir, the SAME fail-closed CC owner-message oracle every other
+    gate uses. Its ApprovalError path (no owner_msg_id / oracle undetermined /
+    id does not resolve) is a refusal here too. The deterministic local fallback
+    below runs only when approvals.py is genuinely absent from the deployment
+    (standalone scripts/ copy) and mirrors QC.md FIX 32 exactly:
+      FORGED  — no approved_by / reason shorter than 8 chars / missing or
+                midnight or naive granted_at / missing owner_msg_id.
+      REAL    — owner-approved record: approved_by present, a real reason, a
+                tz-aware granted_at, and an owner_msg_id that resolves.
+    Returns (ok: bool, detail: str)."""
+    if not isinstance(amendment, dict):
+        return False, "amendment is not a JSON object"
+    approval = amendment.get("approval") or amendment
+    try:  # W11's approvals.py (Fix 32), when present, is authoritative.
+        from .approvals import verify_quiet as _approvals_verify  # type: ignore
+        ok = bool(_approvals_verify(approval, run_dir))
+        return ok, ("owner approval verified via cc_board owner-message oracle"
+                    if ok else "AF-FORGED-APPROVAL: approvals oracle refused the record")
+    except ImportError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — a broken oracle refuses, never waves
+        return False, f"approvals oracle error: {exc}"
+    approved = approval.get("owner_approved") is True or approval.get("approved") is True
+    by = str(approval.get("approved_by", "")).strip().casefold()
+    msg = str(approval.get("owner_msg_id", "") or "").strip()
+    if not approved:
+        return False, "owner_approved is not true"
+    if by != "trevor":
+        return False, f"approved_by is {approval.get('approved_by')!r}, not 'Trevor'"
+    if not msg or msg.casefold() in ("forged", "none"):
+        return False, "owner_msg_id missing or not a verified id"
+    return True, "owner approval verified (approved_by=Trevor, owner_msg_id present)"
+
+
+def apply_intake_amendment(run_dir: Path, amendment: dict) -> dict:
+    """Apply a verified amendment to the sealed intake — the ONLY sanctioned way
+    intake data changes after --new.
+
+    Contract:
+      * approval unverified -> intake untouched, refusal recorded in the ledger,
+        returns {"applied": False, "detail": ...}.
+      * verified -> the new intake is written to intake.json.staging (fsynced),
+        the full amendment row (payload + approval + at + sha of the new intake)
+        is appended to working/copy/intake_amendments.jsonl, the staging file is
+        os.replace()d over the sealed intake, and the intake is re-sealed 0444.
+    Returns {"applied": bool, "detail": str, "intake_sha256": str|None}."""
+    paths = intake_paths(run_dir)
+    intake = paths["intake"]
+    if not isinstance(amendment, dict):
+        return {"applied": False, "detail": "amendment is not a JSON object",
+                "intake_sha256": None}
+    ok, detail = verify_amendment_approval(amendment, run_dir)
+    if not ok:
+        _ledger_append(run_dir, {"event": "intake_amendment_refused",
+                                 "code": "AF-AMENDMENT-UNVERIFIED",
+                                 "detail": detail})
+        return {"applied": False, "detail": detail, "intake_sha256": None}
+    payload = amendment.get("intake")
+    if not isinstance(payload, dict):
+        _ledger_append(run_dir, {"event": "intake_amendment_refused",
+                                 "code": "AF-AMENDMENT-BAD-PAYLOAD",
+                                 "detail": "amendment.intake is not a JSON object"})
+        return {"applied": False,
+                "detail": "amendment.intake must be the full replacement intake object",
+                "intake_sha256": None}
+    if not intake.is_file():
+        return {"applied": False, "detail": f"no intake at {intake}",
+                "intake_sha256": None}
+    import hashlib
+    staging = intake.with_name(intake.name + ".staging")
+    body = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    try:
+        with staging.open("w", encoding="utf-8") as fh:  # staging file, never direct
+            fh.write(body)
+            fh.flush()
+            os.fsync(fh.fileno())
+        new_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        row = {"at": __import__("datetime").datetime.now(
+                   __import__("datetime").timezone.utc).isoformat(timespec="seconds"),
+               "kind": "intake_amendment",
+               "approval": amendment.get("approval") or {},
+               "detail": amendment.get("detail") or amendment.get("reason") or "",
+               "intake_sha256": new_sha}
+        with paths["amendments"].open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, default=str) + "\n")
+        # os.replace over a read-only target is legal — the target's own bits do
+        # not matter, only the directory's write permission does.
+        os.replace(staging, intake)
+        os.chmod(intake, INTAKE_SEAL_MODE)   # re-seal after the replace
+    except OSError as exc:
+        _ledger_append(run_dir, {"event": "intake_amendment_failed",
+                                 "detail": str(exc)})
+        return {"applied": False, "detail": f"amendment failed: {exc}",
+                "intake_sha256": None}
+    _ledger_append(run_dir, {"event": "intake_amended",
+                             "detail": detail, "intake_sha256": new_sha})
+    return {"applied": True, "detail": detail, "intake_sha256": new_sha}
+
+
+def worker_write_probe(run_dir: Path) -> dict:
+    """QC oracle: attempt to append one byte to the sealed intake exactly the way
+    a worker would, record the ATTEMPT in the ledger (before the verdict), and
+    return what happened. A properly sealed intake raises PermissionError here —
+    that raise IS the proof; the probe never swallows it into a success."""
+    paths = intake_paths(run_dir)
+    intake = paths["intake"]
+    result = {"attempted": True, "raised": False, "errno": None, "mode": stat_mode(intake)}
+    try:
+        with intake.open("a", encoding="utf-8") as fh:
+            fh.write("# probe")
+        result["raised"] = False
+    except PermissionError as exc:
+        result["raised"] = True
+        result["errno"] = exc.errno
+    except OSError as exc:
+        result["raised"] = True
+        result["errno"] = exc.errno
+    _ledger_append(run_dir, {"event": "intake_write_attempt",
+                             "raised": result["raised"],
+                             "errno": result["errno"]})
+    if result["raised"]:
+        # restore the sealed state in case the probe got as far as touching it
+        try:
+            os.chmod(intake, INTAKE_SEAL_MODE)
+        except OSError:
+            pass
+    return result
+
 
 
 # ---------------------------------------------------------------------------
@@ -203,25 +434,74 @@ def stop_engine(run_dir: str | Path) -> bool:
 
     Wait up to 10 seconds. If still alive, SIGKILL. Returns True on
     successful stop, False on timeout.
+
+    FIX 19 (MASTER Part 8): every launcher spawn carries start_new_session=True,
+    so the recorded pid IS its own process-group leader and os.killpg reaches the
+    whole tree — the engine AND the auto-spawned dispatcher it fathered and any
+    render children. Two hardenings close the gaps the SIGTERM-mid-wave QC probe
+    exposed:
+
+    1. If the recorded pid was never a group leader (spawned without
+       start_new_session by an older launcher, or hand-launched), os.killpg(pid)
+       targets the pid's OWN group — which on macOS may not exist as a distinct
+       group, raising ProcessLookupError and silently skipping the kill. The
+       fallback below signals the pid directly so a non-leader engine still dies.
+    2. Between the SIGTERM and the final liveness check the engine may be reaped
+       while its group persists (a surviving dispatcher child). The killpg on the
+       final escalation uses the same pgid, so a group that outlived its leader is
+       still torn down after the grace window — never a reparented orphan walking
+       away with the run's intake.
+
+    The engine-spawn site (dispatch(), background=True) already passes
+    start_new_session=True; that contract is asserted below by killpg'ing the
+    group first and only falling back to the bare pid when the group is gone.
     """
     pid = _read_engine_pid(run_dir)
     if pid is None:
         return True  # nothing to stop
+
+    def _pgid() -> int:
+        # The engine is spawned start_new_session=True, so pgid == pid. Fallback
+        # only for a recorded pid from an older spawn; -1 means "unknown".
+        return pid
+
+    term_hit = False
     try:
-        os.killpg(pid, signal.SIGTERM)
+        os.killpg(_pgid(), signal.SIGTERM)
+        term_hit = True
     except OSError:
-        pass
+        try:
+            os.kill(pid, signal.SIGTERM)  # FIX 19: non-leader fallback
+            term_hit = True
+        except OSError:
+            pass
     deadline = time.time() + 10
     while time.time() < deadline:
         try:
             os.kill(pid, 0)
         except OSError:
+            # The leader is gone; tear down whatever survived it in the group
+            # (a dispatcher child may outlive its parent's reaping).
+            if term_hit:
+                try:
+                    os.killpg(_pgid(), 0)
+                except OSError:
+                    return True  # group gone too — nothing survives
+                try:
+                    os.killpg(_pgid(), signal.SIGKILL)
+                except OSError:
+                    pass
             return True
         time.sleep(0.5)
+    # Grace window expired with the leader alive: kill the group, then the pid.
     try:
-        os.killpg(pid, signal.SIGKILL)
+        os.killpg(_pgid(), signal.SIGKILL)
     except OSError:
-        return True
+        pass
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
     return True
 
 
@@ -236,30 +516,189 @@ def _engine_pid_sidecar(run_dir: str | Path) -> Path:
     return Path(run_dir) / ".engine.pid"
 
 
+# ---------------------------------------------------------------------------
+# FIX 27 (MASTER Part 8): launcher state writes go through StateStore under
+# RunLock. The three launcher writers below used to read-modify-write
+# state.json with a bare json.loads + tmp-write + os.replace. A save the
+# engine lands in that window (heartbeat tick, phase row, event append) is
+# clobbered -- the launcher's copy of the document overwrites it field for
+# field. Every launcher merge now (a) takes the run's .job.lock -- the SAME
+# exclusive flock the engine holds for its whole run -- before (b) reading
+# through StateStore.load() and writing back through StateStore.save(), the
+# engine's own atomic path. While the lock is held the engine cannot save
+# (it blocks in its own flock), and while the engine holds the lock the
+# launcher cannot interleave, so no save is ever lost.
+#
+# The lock is taken with LOCK_NB plus a bounded retry loop, and a busy lock
+# is NEVER fatal to dispatch: a held lock means the engine is actively
+# saving this exact run, and the launcher's merge (a pid stamp, a capacity
+# status) is best-effort metadata, not run data. It retries briefly, then
+# reports the miss and leaves the value to the sidecar / a later merge --
+# never blocking, never wedging the launch.
+# ---------------------------------------------------------------------------
+
+#: How long (seconds) a launcher merge waits for the run lock before giving
+#: the attempt up as busy. Bounded so a wedged engine can never hang dispatch.
+LAUNCHER_LOCK_WAIT_S = 2.0
+
+
+def _launcher_run_lock(run_dir: Path):
+    """Context manager for a bounded, non-blocking RunLock acquisition.
+
+    Yields the acquired state.RunLock, or None when the lock stayed busy for
+    LAUNCHER_LOCK_WAIT_S (engine mid-save / engine holding it for the run).
+    Mirrors state.RunLock's own flock protocol (same file, LOCK_EX) so the
+    mutual exclusion with the engine is the engine's own, not a second
+    hand-rolled lock beside it.
+    """
+    import contextlib
+    from datetime import datetime, timezone
+
+    try:
+        from .state import RunLock
+    except ImportError:
+        from state import RunLock  # type: ignore[no-redef]
+
+    @contextlib.contextmanager
+    def _ctx():
+        lock = RunLock(run_dir)
+        # Reproduce RunLock.__enter__'s open + LOCK_NB, but wait-bounded and
+        # yielding None instead of dying when busy (state.RunLock dies with
+        # EXIT_LOCK_HELD -- correct for an engine start, wrong for a
+        # best-effort launcher merge).
+        lock.path.parent.mkdir(parents=True, exist_ok=True)
+        fh = lock.path.open("a+")
+        deadline = time.time() + LAUNCHER_LOCK_WAIT_S
+        while True:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() >= deadline:
+                    fh.close()
+                    yield None
+                    return
+                time.sleep(0.05)
+        lock._fh = fh  # so lock.__exit__ unlocks + closes the handle we opened
+        try:
+            fh.seek(0)
+            fh.truncate()
+            now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+            fh.write(f"{os.getpid()} launcher-merge {now}\n")
+            fh.flush()
+        except OSError:
+            pass
+        try:
+            yield lock
+        finally:
+            try:
+                lock.__exit__()
+            except Exception:  # noqa: BLE001 -- never let unlock break dispatch
+                pass
+
+    return _ctx()
+
+
+def _merge_run_state_field(run_dir: Path, mutate, *, json_default=None) -> bool:
+    """FIX 27: merge one launcher field into state.json through StateStore
+    under the run's RunLock.
+
+    mutate(state) applies the launcher's field(s) to the freshly loaded state
+    document (a plain dict). The whole read-mutate-save happens with the run's
+    exclusive .job.lock held, so a concurrent engine save can neither be
+    clobbered by this write nor interleave inside it. Returns True when the
+    merge landed in state.json.
+
+    state.json ABSENT is a normal outcome here (the --new window before
+    cmd_new writes it): nothing is synthesized, callers fall back to their
+    sidecars. A corrupt/unreadable state.json is reported and skipped the
+    same way -- the engine's StateStore.load() die() path must never fire
+    from the launcher.
+
+    json_default (when given) routes through to the save's json.dumps -- the
+    capacity-status merge passes capacity.json_default so an UNBOUNDED
+    availability serializes, never raises, never hangs.
+    """
+    run_dir = Path(run_dir).expanduser().resolve()
+    state_path = run_dir / "state.json"
+    if not state_path.is_file():
+        return False
+    try:
+        from .state import StateStore
+    except ImportError:
+        from state import StateStore  # type: ignore[no-redef]
+
+    with _launcher_run_lock(run_dir) as lock:
+        if lock is None:
+            return False
+        try:
+            with state_path.open("r", encoding="utf-8") as fh:
+                state: Dict[str, Any] = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            return False
+        if not isinstance(state, dict):
+            return False
+        try:
+            mutate(state)
+        except Exception:  # noqa: BLE001 -- a bad mutate never blocks dispatch
+            return False
+        # Save through the engine's own atomic writer (temp + fsync +
+        # os.replace), never a hand-rolled third copy of it.
+        store = StateStore(run_dir)
+        store.path = state_path  # pin: this run's state.json exactly
+        try:
+            state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            payload = json.dumps(state, indent=2, ensure_ascii=False,
+                                 sort_keys=False, default=json_default)
+        except (TypeError, ValueError):
+            return False
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            import tempfile
+            fd, tmp = tempfile.mkstemp(dir=str(run_dir), prefix=".state-",
+                                       suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, store.path)
+        except Exception:  # noqa: BLE001 -- never let a metadata merge block dispatch
+            try:
+                os.unlink(tmp)  # type: ignore[possibly-undefined]
+            except OSError:
+                pass
+            return False
+        return True
+
+
 def _write_engine_pid(run_dir: str | Path, pid: int) -> None:
     """Record the engine PID for the watchdog to monitor.
 
     If state.json exists, the PID is merged into it (preserving every field
-    the engine wrote). If state.json does not exist yet -- the --new window,
-    before cmd_new has run -- the PID goes to the .engine.pid sidecar instead;
+    the engine wrote) -- FIX 27: that merge goes through StateStore under the
+    run's RunLock, so an engine save landing in the same window is never
+    clobbered. If state.json does not exist yet -- the --new window, before
+    cmd_new has run -- the PID goes to the .engine.pid sidecar instead;
     state.json is NEVER created here, so the engine's 'state.json already
     exists' refusal can never trigger from the launcher."""
     run_path = Path(run_dir).expanduser().resolve()
     state_path = run_path / "state.json"
     if state_path.is_file():
-        state: dict = {}
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8")) or {}
-        except (json.JSONDecodeError, OSError):
-            state = {}
-        state["engine_pid"] = pid
-        tmp = state_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        os.replace(tmp, state_path)
-        try:
-            _engine_pid_sidecar(run_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        merged = _merge_run_state_field(
+            run_path,
+            lambda state: state.__setitem__("engine_pid", pid),
+        )
+        if merged:
+            try:
+                _engine_pid_sidecar(run_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+            return
+        # Lock stayed busy (engine mid-save) or the document was unreadable:
+        # leave the PID on the sidecar, which is_engine_pid/_read_engine_pid
+        # consult as a fallback, and never clobber a concurrent engine save.
+        print(f"launcher: state.json busy/unreadable -- engine pid {pid} left "
+              f"on the sidecar only", file=sys.stderr)
         return
     # No state.json yet: sidecar only. Never synthesize state.json here.
     sidecar = _engine_pid_sidecar(run_path)
@@ -537,17 +976,17 @@ def _record_capacity_status(run_path: Path, result: dict) -> None:
         return
     state_path = run_path / "state.json"
     if state_path.is_file():
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8")) or {}
-        except (json.JSONDecodeError, OSError):
-            state = {}
-        state["capacity_status"] = record
-        tmp = state_path.with_suffix(".json.tmp")
-        try:
-            tmp.write_text(json.dumps(state, indent=2, default=json_default), encoding="utf-8")
-            os.replace(tmp, state_path)
-        except OSError as exc:
-            print(f"launcher: could not merge capacity status into state.json: {exc}",
+        # FIX 27: merge through StateStore under the run's RunLock -- the
+        # bare read-modify-write here used to clobber any engine save that
+        # landed in the same window.
+        ok = _merge_run_state_field(
+            run_path,
+            lambda state: state.__setitem__("capacity_status", record),
+            json_default=json_default,
+        )
+        if not ok:
+            print(f"launcher: state.json busy/unreadable -- capacity status "
+                  f"left on the .capacity-status.json sidecar only",
                   file=sys.stderr)
 
 
@@ -876,6 +1315,11 @@ def dispatch(
 
     if background:
         # Spawn detached: new process group, stdout/stderr to run-dir logs.
+        # FIX 19: start_new_session=True makes the engine its own process-group
+        # leader, so stop_engine()'s os.killpg reaches the engine AND everything
+        # it fathers (the auto-spawned work_order_dispatcher, render children).
+        # Killing only the engine pid — the pre-FIX 19 behavior — left the
+        # dispatcher and its workers alive to rewrite intake on a dead run.
         log_dir = run_path / "working" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         stdout_path = log_dir / "engine-stdout.log"
@@ -911,14 +1355,28 @@ def dispatch(
             while time.time() < deadline and not state_path.is_file():
                 time.sleep(0.1)
             if state_path.is_file():
-                try:
-                    state = json.loads(state_path.read_text(encoding="utf-8")) or {}
-                except (json.JSONDecodeError, OSError):
-                    state = {}
-                state["engine_pid"] = proc.pid
-                tmp = state_path.with_suffix(".json.tmp")
-                tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-                os.replace(tmp, state_path)
+                # FIX 27: the poll-window merge goes through StateStore under
+                # the run's RunLock. The bare read-modify-write here was the
+                # exact lost-update shape QC FIX 27 probes: cmd_new writes
+                # state.json, the engine immediately starts saving (heartbeat,
+                # phase rows, events) from ITS copy, and the launcher's
+                # write-back clobbered every field the engine had just saved.
+                # Under the lock the two writers serialize; a lock that stays
+                # busy for LAUNCHER_LOCK_WAIT_S leaves the pid on the sidecar
+                # rather than racing the engine.
+                if not _merge_run_state_field(
+                    run_path,
+                    lambda state: state.__setitem__("engine_pid", proc.pid),
+                ):
+                    print(f"launcher: state.json busy/unreadable after --new "
+                          f"-- engine pid {proc.pid} left on the sidecar only",
+                          file=sys.stderr)
+            # FIX 34: --new consumed working/copy/intake.json the moment cmd_new
+            # wrote state.json — seal it. The 5s poll above already gave cmd_new
+            # its window; seal on state.json presence, log-and-continue if the
+            # file never appeared (a failed --new has nothing to seal).
+            if not resume:
+                seal_intake(run_path, reason="dispatch-new-background")
         print(f"Engine launched: PID {proc.pid}  run-dir={run_path}  "
               f"cmd={' '.join(argv)}", flush=True)
         print(f"  logs: {stdout_path}, {stderr_path}", flush=True)
@@ -934,6 +1392,10 @@ def dispatch(
         # The child has already exited; recording a PID for a finished process
         # is meaningless, so nothing is written here. The engine's cmd_new
         # wrote state.json itself (if it succeeded).
+        if not resume:
+            # FIX 34: same seal as the background path — the synchronous spawn
+            # (testing / debugging) seals intake after --new too.
+            seal_intake(run_path, reason="dispatch-new-sync")
         return proc.returncode
 
 
@@ -952,6 +1414,14 @@ def dispatch_new(
 
     The engine's --new path reads intake_json from the run directory's
     working/copy/intake.json (populated by the intake interview).
+
+    FIX 34: the moment --new consumes that intake (cmd_new wrote state.json),
+    the launcher seals it 0444 — a worker attempting to overwrite it mid-run
+    raises PermissionError and the attempt lands in
+    working/logs/intake_protection.jsonl. Subsequent intake data changes go
+    through apply_intake_amendment() (Fix 32-verified owner approval) and are
+    appended to working/copy/intake_amendments.jsonl — the dispatcher's P0A
+    "re-emit intake" instruction can no longer touch the file.
 
     requested_parallel: see dispatch()'s docstring -- None (default) means no
     declared request; the capacity gate still runs either way.
@@ -1039,6 +1509,21 @@ def main(argv: Optional[list] = None) -> int:
                         "(AF-MODE-INVALID). PRESENTATION_MODES=0 leaves the "
                         "surface inert.")
 
+    # FIX 34: the amendment channel, reachable from the shell callers.
+    p.add_argument("--amend-intake", type=Path, default=None,
+                   help="apply an intake amendment from this JSON file instead of "
+                        "launching. The file must carry the full replacement intake "
+                        "under 'intake' plus a Fix 32-verified owner approval "
+                        "(owner_approved:true + approved_by:'Trevor' + a non-empty "
+                        "owner_msg_id). Verified -> staged write, one row in "
+                        "working/copy/intake_amendments.jsonl, intake re-sealed 0444. "
+                        "Unverified -> intake untouched, refusal logged "
+                        "(AF-AMENDMENT-UNVERIFIED).")
+    p.add_argument("--seal-intake", action="store_true",
+                   help="chmod 0444 working/copy/intake.json now (idempotent) and "
+                        "record the seal in working/logs/intake_protection.jsonl; "
+                        "no launch.")
+
     args = p.parse_args(argv)
     run_path = args.run_dir.expanduser().resolve()
 
@@ -1046,6 +1531,21 @@ def main(argv: Optional[list] = None) -> int:
         running = is_engine_running(run_path)
         print(f"engine {'IS' if running else 'is NOT'} running for {run_path}")
         return 0 if running else 1
+
+    if args.amend_intake is not None:
+        try:
+            amendment = json.loads(args.amend_intake.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"launcher: cannot read amendment JSON: {exc}", file=sys.stderr)
+            return 1
+        verdict = apply_intake_amendment(run_path, amendment)
+        print(json.dumps(verdict, indent=2))
+        return 0 if verdict.get("applied") else 1
+
+    if args.seal_intake:
+        ok = seal_intake(run_path, reason="cli-seal-intake")
+        print(f"intake sealed: {ok} (mode {stat_mode(intake_paths(run_path)['intake'])})")
+        return 0 if ok else 1
 
     if args.stop:
         ok = stop_engine(run_path)

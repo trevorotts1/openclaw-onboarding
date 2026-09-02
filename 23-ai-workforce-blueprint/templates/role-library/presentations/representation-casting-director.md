@@ -3,6 +3,7 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** Director of Presentations
 **Role type:** specialist
+**Role number:** ROLE-32
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
 **Version:** 1.0
 **Last updated:** 2026-06-14

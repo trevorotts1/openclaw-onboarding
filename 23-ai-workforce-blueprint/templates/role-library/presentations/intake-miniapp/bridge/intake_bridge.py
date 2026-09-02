@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Box-side bridge between the hosted intake mini-app and deck-intake-driver.py.
+"""Box-side bridge between the hosted intake mini-app and deck-intake-turngate.py.
 
 The mini-app is a FRONT-END to the existing intake state machine, not a second
 one. This bridge:
@@ -7,7 +7,7 @@ one. This bridge:
   mint  -> POST /api/sessions (box-authenticated) and print the capability link
            the box speaks to the client in chat.
   sync  -> poll GET /api/sessions/<token>/answers?since=<cursor> and REPLAY each
-           new answer through deck-intake-driver.py --answer <id> "<text>" then
+           new answer through deck-intake-turngate.py --answer <id> "<text>" then
            --next, so working/interview/intake_ledger.json, the provers, Gate 0
            and presentation-canonical-entry.sh's GATE 0 are all UNCHANGED (the intake-ledger check was relocated from the retired deck-build-guard.sh, U025). On completion it runs
            --complete (standard) or assembles the record and runs
@@ -38,16 +38,16 @@ SP_QUESTIONS = [f"q{i}" for i in range(1, 9)]
 
 
 def _driver_path(explicit: str | None) -> pathlib.Path:
-    """Locate deck-intake-driver.py: explicit override, else walk up from here."""
+    """Locate deck-intake-turngate.py: explicit override, else walk up from here."""
     if explicit:
         return pathlib.Path(explicit).expanduser().resolve()
     here = pathlib.Path(__file__).resolve()
     for parent in here.parents:
-        cand = parent / "23-ai-workforce-blueprint" / "scripts" / "deck-intake-driver.py"
+        cand = parent / "23-ai-workforce-blueprint" / "scripts" / "deck-intake-turngate.py"
         if cand.is_file():
             return cand
     # Fall back to the conventional relative location; caller errors if missing.
-    return (here.parents[2] / "scripts" / "deck-intake-driver.py").resolve()
+    return (here.parents[2] / "scripts" / "deck-intake-turngate.py").resolve()
 
 
 # ---- pure command builders (unit-tested offline) ----------------------------
@@ -157,7 +157,7 @@ def _run_driver(cmd: list[str]) -> tuple[int, str]:
 def cmd_sync(args) -> int:
     driver = str(_driver_path(args.driver))
     if not pathlib.Path(driver).is_file():
-        print(f"error: deck-intake-driver.py not found at {driver}", file=sys.stderr)
+        print(f"error: deck-intake-turngate.py not found at {driver}", file=sys.stderr)
         return 2
     run_dir = str(pathlib.Path(args.run_dir).expanduser().resolve())
     base = args.worker_url.rstrip("/") + f"/api/sessions/{args.token}/answers"
@@ -227,12 +227,12 @@ def main(argv: list[str]) -> int:
     m.add_argument("--ttl-days", type=float, default=None)
     m.set_defaults(func=cmd_mint)
 
-    s = sub.add_parser("sync", help="poll answers and replay them through deck-intake-driver.py")
+    s = sub.add_parser("sync", help="poll answers and replay them through deck-intake-turngate.py")
     s.add_argument("--worker-url", required=True)
     s.add_argument("--token", required=True)
     s.add_argument("--run-dir", required=True)
     s.add_argument("--question-set", choices=["standard", "signature"], default="standard")
-    s.add_argument("--driver", default=None, help="override path to deck-intake-driver.py")
+    s.add_argument("--driver", default=None, help="override path to deck-intake-turngate.py")
     s.add_argument("--since", type=int, default=0)
     s.add_argument("--poll-interval", type=float, default=45.0)
     s.add_argument("--max-seconds", type=float, default=7 * 24 * 3600)

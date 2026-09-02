@@ -27,7 +27,7 @@ Five sub-items, each matching the spec's numbered list:
       symbol fails the test.
   (5) DISPLAYED phase count is DERIVED from the canonical manifest, not the
       stale hardcoded "36": the canonical entry script computes it from
-      PIPELINE-MANIFEST.json (manifest_version 54 -> 40 phases) and the
+      PIPELINE-MANIFEST.json (manifest_version 55 -> 55 phases) and the
       hardcoded literal is gone.
 
 Flat file inside tests/, manages its own import path -- matching every
@@ -376,7 +376,7 @@ class TestManifestDerivedPhaseCount:
         # cannot stale-pin this file.
         phases = m["phases"]
         assert len(phases) == len({p["id"] for p in phases}), "phase ids must be unique"
-        assert m["manifest_version"] == 54
+        assert m["manifest_version"] == 55  # FIX 83: floor and manifest move together (U019 step 8)
 
     def test_entry_script_derives_count_from_manifest(self):
         """No stale hardcoded '36' for the displayed count; the script computes

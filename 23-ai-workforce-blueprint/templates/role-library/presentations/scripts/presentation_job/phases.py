@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shlex
 import subprocess
@@ -16,6 +17,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# FIX 11: the engine consults the real capacity probe (module + its refusal
+# helpers) instead of a hand-stamped stub dict.
+from . import capacity as _capacity
 from .capacity import CapacityUnmeasured, autofail_payload, refusal_message
 from .execution_plan import build_execution_plan
 from .state import (
@@ -33,11 +37,48 @@ from . import heal
 from . import persona
 from . import curate as _curate
 
+
+def _deliverable_specs():
+    """FIX 7 (W06b-B4): the ten-deliverable whitelist from deliverables.py
+    (the single source of truth). Returns [] when the module cannot be
+    imported -- board registration is fail-soft by contract and can never
+    block a run."""
+    try:
+        from .deliverables import DELIVERABLE_AUDIT_SPEC
+        return DELIVERABLE_AUDIT_SPEC
+    except Exception:  # noqa: BLE001 -- registration never blocks a run
+        return []
+
+
 # F54b (SMOKE-1, 2026-09-01): serializes each script phase's nonce
 # mint -> child -> unlink critical section (see _run_script_phase). Module-level so
 # ALL Job instances in this process — one engine process dispatches every wave
 # sibling — share the same mutual exclusion.
+# FIX 25 (MASTER Part 8): the lock stays for the umask-protected mint, but the
+# FILE is now PER PHASE (.nonce-<sanitized phase id>) instead of one shared
+# run-scoped path, so sibling script phases in one wave no longer overwrite
+# each other's nonce and the exec critical section need not serialize the
+# whole wave.
 _NONCE_LOCK = threading.Lock()
+
+# FIX 25 (MASTER Part 8): sanitize a manifest phase id into a safe nonce-file
+# basename segment. Mirrors build_deck._entry_nonce_phase_file's own sanitizer
+# byte-for-byte so the engine's minted name and the guard's derived name can
+# never diverge. Falls back to the empty string on a malformed id, which the
+# caller treats as "no per-phase file" (legacy run-scoped handshake).
+def _nonce_phase_token(phase_id: str) -> str:
+    try:
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
+    except Exception:  # noqa: BLE001 — never let a malformed id break dispatch
+        safe = ""
+    return safe
+
+
+def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
+    """FIX 25: run-scoped PER-PHASE nonce file
+    <run_dir>/working/checkpoints/.nonce-<sanitized phase id>."""
+    return (Path(run_dir) / "working" / "checkpoints"
+            / f".nonce-{_nonce_phase_token(phase_id)}")
 # FIX-21 (D21): run_with_cleanup spawns the phase exec in a NEW PROCESS GROUP and, on
 # budget expiry, kills the WHOLE group (SIGTERM -> SIGKILL) so a timed-out phase leaves
 # no orphaned grandchildren (the D21 zombie path). Direct-child-only `subprocess.run`
@@ -46,6 +87,47 @@ try:
     from process_reaper import run_with_cleanup
 except ImportError:  # pragma: no cover — module ships beside presentation_job
     run_with_cleanup = None
+
+
+# ---------------------------------------------------------------------------
+# FIX 9a (MASTER Part 8 Fix 9): the per-unit status enum -- the ONLY values a
+# phase record in state.json's "phases" list may carry. QC FIX 9 proof binds
+# one of them by name: a unit the stub provider fails must end with
+# state.phases['<id>'].status == 'quarantined' while every other phase
+# reaches done and state.terminal stays None until the end-of-run park.
+#
+#   pending -> running -> done | deferred | quarantined | blocked
+#                       (| failed  -- normalized by run() for a unit that
+#                                    died without parking its own status;
+#                        | obsolete -- repin FIX 20, set in __main__.py)
+#
+# quarantined: unit-level failure (substance FAIL, budget or regeneration
+#   exhausted). The wave-mates and every downstream wave still run; run()
+#   parks the RUN exactly once at the end, with the failed_units ledger row
+#   naming the unit.
+# blocked: operator/gate park (intake gate, executor wiring) -- resumable.
+# ---------------------------------------------------------------------------
+PHASE_STATUS_PENDING = "pending"
+PHASE_STATUS_RUNNING = "running"
+PHASE_STATUS_DONE = "done"
+PHASE_STATUS_DEFERRED = "deferred"
+PHASE_STATUS_QUARANTINED = "quarantined"
+PHASE_STATUS_BLOCKED = "blocked"
+PHASE_STATUS_FAILED = "failed"
+PHASE_STATUS_OBSOLETE = "obsolete"
+
+PHASE_STATUSES = (
+    PHASE_STATUS_PENDING,
+    PHASE_STATUS_RUNNING,
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_DEFERRED,
+    PHASE_STATUS_QUARANTINED,
+    PHASE_STATUS_BLOCKED,
+    PHASE_STATUS_FAILED,
+    PHASE_STATUS_OBSOLETE,
+)
+assert len(PHASE_STATUSES) == len(set(PHASE_STATUSES)), \
+    "duplicate value in the per-unit status enum"
 
 
 def _wave_execution_enabled() -> bool:
@@ -172,22 +254,20 @@ def _post_stage_timings_cc(rows: List[Dict[str, Any]]) -> None:
         print(f"WARN telemetry: CC stage-timings POST failed: {exc}", flush=True)
 
 
-# FIX 1 (Phase A stub capacity probe): fixed deepseek-direct profile with
-# measured capacity 8, mirroring dispatcher._prompt_routing_stamp() and
-# the phase-a routing fixture (repo-relative path, see fix ledger).
-# FIX 7/8/11 will replace this with real resource profiles through the same
-# dict schema (status/provider/plan/available); until then the engine stamps
-# these constants so the plan is built from a measured width, never an
-# unmeasured one (CapacityUnmeasured must stay loud, not papered over).
-_PHASE_A_CAPACITY_PROBE = {
-    "status": "MEASURED",
-    "provider": "deepseek-direct",
-    "plan": "phase-a-stub",
-    "available": 8,
-    "dispatchable": 8,
-    "probe_mode": "stub",
-    "model": "deepseek-v4-flash",
-}
+# FIX 11 (real capacity width, stub deleted): the engine no longer carries a
+# hand-stamped capacity probe. The old `_PHASE_A_CAPACITY_PROBE` constant --
+# a fabricated deepseek-direct/available=8 dict -- was the exact defect this
+# fix removes: whatever capacity_override.json declared (say 100) or whatever
+# the box actually measured, the engine's wave plan was pinned to 8, so a
+# 12-independent-phase manifest could never run wider than 8 and telemetry
+# never showed more than 8 overlapping phase_exit intervals. The probe the
+# engine passes to build_execution_plan is now the REAL capacity.probe()
+# result (capacity.py), which reads capacity_override.json first, then
+# 9Router/OpenClaw detection, then the cap table / PARK / conservative
+# fallback. Unmeasured stays loud: a probe that produces no dispatchable
+# number raises CapacityUnmeasured and the run refuses with
+# AF-CAPACITY-UNMEASURED (same refusal execution_plan's CLI serves) -- it is
+# never papered over with a constant.
 
 # ---------------------------------------------------------------------------
 # U069: named error for unparseable executor.cmd.
@@ -302,6 +382,9 @@ class Engine:
         # run_summary row; also flushed on every early run() exit and on a
         # phase crash so completed-phase telemetry is never stranded.
         self._telemetry_cc_pending: List[Dict[str, Any]] = []
+        # FIX 25 (MASTER Part 8): the per-phase nonce file minted by the most
+        # recent _script_nonce_env call; None once consumed/cleared.
+        self._script_nonce_file: Optional[Path] = None
 
     # -- Option B child cards -----------------------------------------------
     def _child_card_meta(self, phase: Phase) -> Tuple[str, str]:
@@ -318,8 +401,9 @@ class Engine:
             for ps in self.state.setdefault("phases", []):
                 if ps["id"] == pid:
                     return ps
-            ps = {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
-                  "attempts": 0, "heal_events": [], "attested_at": None}
+            ps = {"id": pid, "status": PHASE_STATUS_PENDING, "artifacts": [],
+                  "sha256": {}, "attempts": 0, "heal_events": [],
+                  "attested_at": None}
             self.state["phases"].append(ps)
             return ps
 
@@ -347,9 +431,17 @@ class Engine:
             # drops in-memory history cannot lose it. Best-effort — a working-set
             # checkpoint failure must never block the phase loop (mirrors the
             # invariant-1 fail-soft discipline of the board mirror).
+            # FIX 26 (MASTER Part 8): stat-only by default. A checkpoint that
+            # reads every PNG's bytes on a 40-slide dir blew the 100 ms bar
+            # inside P4-RENDER; the measurement is now stat-based (size +
+            # mtime), and the real byte read happens ONLY on a phase-completion
+            # checkpoint (fields["status"] == "done") where attestation needs
+            # it. This keeps the hot loop under budget by construction.
             try:
                 from . import workingset
-                workingset.checkpoint_phase(self.run_dir, pid, self.state, self.store)
+                workingset.checkpoint_phase(
+                    self.run_dir, pid, self.state, self.store,
+                    hash_on_completion=bool(fields.get("status") == "done"))
             except Exception:  # noqa: BLE001
                 pass
 
@@ -548,7 +640,7 @@ class Engine:
                   "converter_path:true (\"Content-first path only\"); not "
                   "applicable to this deck, so it was never dispatched")
         self.report.event("phase.routed_around", f"{phase.id}: {reason}")
-        self._checkpoint(phase.id, status="done", attested_at=utcnow(),
+        self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
                          artifacts=[], sha256={}, verifier_ok=None,
                          verifier_notes=[f"NOTE: {reason}"],
                          owner_skip_approval=None, routed_around=True,
@@ -556,28 +648,46 @@ class Engine:
 
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
-        missing = []
         # U01-R2 (QC FAIL 6.46): the phase's raw produces_artifact may carry
         # {deck_slug}/{run_dir} tokens (P8.25-WORKBOOK declares
         # 'working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf').
         # Resolve EVERY pattern through phase.resolve_artifact_patterns(run_dir) BEFORE
         # globbing/existence checks -- the literal token path never exists on disk and
         # previously hard-blocked the phase despite real workbook PDFs being present.
+        #
+        # FIX 107 — ONE artifact resolver for engine and verifiers. This engine-side
+        # check used to hand-mirror the verifier's resolver (the F60 working/upsell
+        # retry was a copy of _pu_artifact_paths logic) and the two copies DRIFTED:
+        # the mirror handled files only, so the P-U-COLLATERAL dir-glob pattern
+        # ('delivery/upsell/*') sat "missing" engine-side while the very same
+        # pattern resolved and PASSED in the verifier — the final phase waiting
+        # forever on its own PASS, again. phase_verifiers.artifact_path() is now
+        # the single resolution rule (same ordering: literal run-dir path first,
+        # then the working/upsell/ convention; '/*' resolves to the non-empty
+        # upsell dir), and both sides go through it. The engine keeps ONLY the
+        # token substitution and 'a + b' splitting, which belong to the manifest
+        # spelling, not to path resolution.
+        try:
+            import phase_verifiers
+        except ImportError:  # degraded CI context: no verifier module beside the runner
+            phase_verifiers = None  # type: ignore[assignment]
+        missing: List[str] = []
         for rel in phase.resolve_artifact_patterns(self.run_dir):
-            matches = list(self.run_dir.glob(rel)) if any(c in rel for c in "*?[") \
-                else ([self.run_dir / rel] if (self.run_dir / rel).exists() else [])
-            if not matches:
-                # F60 (SMOKE-1, 2026-09-01): P-U-QC's artifact lives under
-                # working/upsell/ (its verifier's _pu_artifact_paths resolves
-                # 'qc/upsell-scorecard.json' via the working/upsell prefix), but
-                # _artifacts_present checked only the literal run_dir/<rel>.
-                # The engine was waiting forever at the FINAL phase while its
-                # own verifier said PASS. Mirror _pu_artifact_paths: when the
-                # literal path is absent, try run_dir/working/upsell/<rel>.
-                up = self.run_dir / "working" / "upsell" / rel
-                if up.is_file():
+            # Manifest 'a + b' multi-artifact spelling (same expansion the
+            # verifier's _pu_artifact_paths applies).
+            parts = [p.strip() for p in rel.split(" + ")] if " + " in rel else [rel]
+            for part in parts:
+                if phase_verifiers is not None:
+                    if phase_verifiers.artifact_path(self.run_dir, part) is not None:
+                        continue
+                    missing.append(part)
                     continue
-                missing.append(rel)
+                # Degraded fallback (verifier module absent): literal path, then
+                # the working/upsell/ convention — never a silent pass.
+                if (self.run_dir / part).exists() \
+                        or (self.run_dir / "working" / "upsell" / part).is_file():
+                    continue
+                missing.append(part)
         return (not missing), missing
 
     def _phase_is_gate_declined(self, phase: Phase) -> bool:
@@ -694,7 +804,7 @@ class Engine:
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
         with self._state_lock:
-            if ps.get("status") == "done":
+            if ps.get("status") == PHASE_STATUS_DONE:
                 bad = self._revalidate_banked(phase, ps)
                 if not bad:
                     print(f"SKIP {phase.id}: already done, {len(ps.get('artifacts', []))} artifact(s) "
@@ -704,7 +814,7 @@ class Engine:
                     "phase.banked_invalid",
                     f"{phase.id} was marked done but {len(bad)} banked artifact(s) no longer validate: "
                     + "; ".join(bad) + " -- re-running this phase.")
-                self._checkpoint(phase.id, status="pending", banked_invalid=bad)
+                self._checkpoint(phase.id, status=PHASE_STATUS_PENDING, banked_invalid=bad)
 
             gate_rc = self._check_intake_gate(phase)
             if gate_rc is not None:
@@ -712,7 +822,8 @@ class Engine:
 
             self.state["current_phase"] = phase.id
             self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
-            self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
+            self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
+                             attempts=ps.get("attempts", 0) + 1)
 
             start_msg = self._render_client_report_msg(phase, "start")
             self.report.to_requester("progress", start_msg)
@@ -720,7 +831,7 @@ class Engine:
         try:
             persona.resolve_for_phase(self.run_dir, phase.id)
         except (RuntimeError, TimeoutError) as exc:
-            return self._block(phase, f"persona governance: {exc}")
+            return self._fail_unit(phase, f"persona governance: {exc}")
 
         with self._state_lock:
             if phase.id == "P4-RENDER" and self.board:
@@ -758,7 +869,7 @@ class Engine:
                 # this phase is deferred-by-design, not missing a product.
                 if self._phase_is_gate_declined(phase):
                     with self._state_lock:
-                        self._checkpoint(phase.id, status="deferred",
+                        self._checkpoint(phase.id, status=PHASE_STATUS_DEFERRED,
                                          deferred_reason=(
                                              "decline-gated (WANT_VSL_PAGE / "
                                              "WANT_SALES_CHECKOUT = no) — conditional "
@@ -776,15 +887,31 @@ class Engine:
                     # heal internals record events + checkpoints — held under
                     # the engine lock; a rare regeneration serializes its wave
                     # rather than risk a torn state save.
-                    rc2 = heal.rung2_regenerate(self, phase, f"missing {', '.join(missing)}")
+                    # FIX 10: classify first. A PROVIDER error at the
+                    # artifact-presence stage (the executor died on a provider
+                    # refusal) takes the alternate-provider rung; everything
+                    # else (missing input / transient) takes the regenerate
+                    # rung as before.
+                    miss_reason = f"missing {', '.join(missing)}"
+                    if heal.classify_failure(miss_reason) == heal.FAILURE_PROVIDER_ERROR:
+                        rc2 = heal.rung2_provider_failover(
+                            self, phase, miss_reason,
+                            child_env=self._script_nonce_env(phase))
+                    else:
+                        heal._ledger(self, phase=phase.id, rung=2, attempt=0,
+                                     failure_class=heal.classify_failure(miss_reason),
+                                     reason=miss_reason, route_change=False,
+                                     outcome="rung2_regenerate")
+                        rc2 = heal.rung2_regenerate(self, phase, miss_reason,
+                                                    child_env=self._script_nonce_env(phase))
                 if rc2 != EXIT_OK:
-                    return self._block(phase, f"produced no artifact after "
-                                              f"{heal.HEAL_CAP_REGENERATE} regeneration attempt(s): "
-                                              f"missing {', '.join(missing)}")
+                    return self._fail_unit(phase, f"produced no artifact after "
+                                                  f"{heal.HEAL_CAP_REGENERATE} regeneration attempt(s): "
+                                                  f"missing {', '.join(missing)}")
                 ok, missing = self._artifacts_present(phase)
                 if not ok:
-                    return self._block(phase, f"regeneration reported success but produced "
-                                              f"nothing: missing {', '.join(missing)}")
+                    return self._fail_unit(phase, f"regeneration reported success but produced "
+                                                  f"nothing: missing {', '.join(missing)}")
             shas = {}
             # U01-R2: resolve tokens before globbing -- same rule as _artifacts_present,
             # so the banked sha256 list covers the RESOLVED files, never the literal
@@ -832,7 +959,33 @@ class Engine:
                         with self._state_lock:
                             self.report.event("phase.verifier_block",
                                               f"{phase.id}: {'; '.join(verifier_notes)}")
-                        return self._block(
+                        # FIX 10: the verifier's message IS the heal reason.
+                        # Record it on the phase record (last_verifier_notes)
+                        # so the regeneration and any human reading state.json
+                        # see exactly what substance failed, ledger the class,
+                        # then take the regenerate rung ONCE with the notes
+                        # appended; a second substance failure quarantines.
+                        sub_reason = (f"substance check failed: "
+                                      f"{'; '.join(verifier_notes)}.")
+                        with self._state_lock:
+                            ps = self._phase_state(phase.id)
+                            ps["last_verifier_notes"] = list(verifier_notes or [])
+                            heal._ledger(self, phase=phase.id, rung=2, attempt=0,
+                                         failure_class=heal.classify_failure(sub_reason),
+                                         reason=sub_reason, route_change=False,
+                                         outcome="rung2_regenerate")
+                        if not ps.get("verifier_regen_done"):
+                            with self._state_lock:
+                                self._checkpoint(phase.id,
+                                                 verifier_regen_done=True)
+                            rc2 = heal.rung2_regenerate(
+                                self, phase, sub_reason,
+                                child_env=(self._script_nonce_env(phase)
+                                           if phase.executor_kind == "script"
+                                           else None))
+                            if rc2 == EXIT_OK:
+                                return self.run_phase(phase)
+                        return self._fail_unit(
                             phase,
                             f"substance check failed: {'; '.join(verifier_notes)}. "
                             "An owner_skip_approval token for this phase is required to "
@@ -852,8 +1005,8 @@ class Engine:
                 raise VerifierImportError(
                     f"substance verifier import failed for {phase.id}: {exc} "
                     "(FIX 17: the run aborts instead of advancing unverified)") from exc
-            self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
-                             artifacts=sorted(shas.keys()),
+            self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
+                             sha256=shas, artifacts=sorted(shas.keys()),
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
                              owner_skip_approval=verifier_skipped)
             done_msg = self._render_client_report_msg(phase, "done")
@@ -931,6 +1084,7 @@ class Engine:
                 "content without client data.")
         return None
 
+
     def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
         """U069: tokenise FIRST, substitute SECOND.
 
@@ -970,11 +1124,55 @@ class Engine:
                 else tok
                 for tok in tokens]
 
+    # -- FIX 25: per-phase front-door nonce minting -------------------------
+    def _script_nonce_env(self, phase: Phase) -> Optional[Dict[str, str]]:
+        """Mint (or return the live) per-phase front-door nonce env.
+
+        FIX 25 (MASTER Part 8): returns the env dict a script-phase child needs
+        to pass build_deck's front door — OC_DECK_ENTRY_NONCE plus, for a
+        non-empty sanitized phase token, OC_DECK_ENTRY_NONCE_FILE naming THIS
+        phase's own .nonce-<id> file (which this helper also writes, 0600). A
+        phase whose id sanitizes to empty stays on the legacy run-scoped
+        handshake (OC_DECK_ENTRY_NONCE_FILE unset) so `_verify_entry_nonce`
+        falls back to .canonical-entry-nonce untouched.
+
+        Each call mints a FRESH nonce over the previous file: attempt 1's file
+        is unlinked by _run_script_phase's finally, but a rung2 regenerate
+        re-executes the same guarded script and must mint its own rather than
+        reuse a consumed (deleted) one.
+        """
+        phase_token = _nonce_phase_token(phase.id)
+        nonce = secrets.token_hex(32)
+        nonce_file = _entry_nonce_phase_file(self.run_dir, phase.id)
+        with _NONCE_LOCK:
+            umask = os.umask(0o077)
+            try:
+                nonce_file.write_text(nonce)
+            finally:
+                os.umask(umask)
+            os.chmod(nonce_file, 0o600)
+        child_env = dict(os.environ)
+        child_env["OC_DECK_ENTRY_NONCE"] = nonce
+        if phase_token:
+            child_env["OC_DECK_ENTRY_NONCE_FILE"] = phase_token
+        self._script_nonce_file = nonce_file
+        return child_env
+
+    def _clear_script_nonce(self) -> None:
+        """Remove the engine's remembered per-phase nonce file if one is live."""
+        try:
+            self._script_nonce_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        except AttributeError:
+            pass
+        self._script_nonce_file = None
+
     def _run_script_phase(self, phase: Phase) -> int:
         # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
         argv = self._build_executor_argv(phase.executor_cmd, phase.id)
         if not argv:
-            return self._block(phase, "executor kind is 'script' but no cmd is declared")
+            return self._fail_unit(phase, "executor kind is 'script' but no cmd is declared")
         if self.dry_run:
             print(f"DRY-RUN {phase.id}: {' '.join(argv)}", flush=True)
             return EXIT_OK
@@ -983,62 +1181,47 @@ class Engine:
 
         # FIX 4 (presentation rev2 phase A): canonical front-door nonce provisioning.
         # executors whose kind is "script" run build_deck.py, whose front-door guard
-        # (AF-CANONICAL-RENDER-BYPASS) demands BOTH the canonical-entry nonce file
+        # (AF-CANONICAL-RENDER-BYPASS) demands BOTH the nonce file
         # ({run_dir}/working/checkpoints/.canonical-entry-nonce) AND the matching
         # OC_DECK_ENTRY_NONCE environment value. The standalone canonical entry
         # (presentation-canonical-entry.sh) mints these; the engine dispatch never
         # did, so every engine-spawned script phase exited 2 at the front door.
-        # Mint per-run here: run_with_cleanup is invoked with env=None, so the child
-        # inherits this process environment — setting it here is the delivery path.
         # The run_dir may not have a checkpoints dir yet on a fresh run; create it.
         checkpoints_dir = self.run_dir / "working" / "checkpoints"
         checkpoints_dir.mkdir(parents=True, exist_ok=True)
-        nonce = secrets.token_hex(32)
-        nonce_file = checkpoints_dir / ".canonical-entry-nonce"
 
-        # F54b (SMOKE-1, 2026-09-01): F54 fixed env delivery, but the nonce FILE is
-        # still ONE shared run-scoped path, and script phases in the same wave run
-        # concurrently (ThreadPoolExecutor, execution_plan width) — sibling B mints
-        # its own nonce over A's file, and whichever sibling unlinks FIRST leaves
-        # the other's child with env-nonce present + file missing/mismatched ->
-        # exit 2 AF-CANONICAL-RENDER-BYPASS (run61 P9.6 attempt 3, 21:51:10). The
-        # consumers (build_deck/build_webinar_video) MUST NOT accept an env-supplied
-        # path — that would let a model point the guard at a file it wrote itself —
-        # so the fix cannot be a per-invocation filename. Serialize the whole
-        # mint -> child -> unlink critical section on a module-level lock: siblings
-        # queue, and every child sees exactly the nonce it was spawned with. The
-        # lock wraps only script executors; LLM/gate phases never touch it.
-        with _NONCE_LOCK:
-            umask = os.umask(0o077)
-            try:
-                nonce_file.write_text(nonce)
-            finally:
-                os.umask(umask)
-            os.chmod(nonce_file, 0o600)
+        # FIX 25 (MASTER Part 8): the nonce FILE is PER PHASE —
+        # working/checkpoints/.nonce-<sanitized phase id> — not one shared
+        # run-scoped path. F54b's single shared file forced every script phase in
+        # a wave through the serialized mint -> child -> unlink critical section
+        # because sibling B minted its nonce OVER A's file (run61 P9.6 attempt 3).
+        # With a per-phase file there is no cross-sibling overwrite, so phases run
+        # concurrently and the _NONCE_LOCK critical section shrinks to the 0600
+        # mint itself. build_deck._verify_entry_nonce prefers
+        # OC_DECK_ENTRY_NONCE_FILE and confines the value to THIS run's
+        # checkpoints dir with a .nonce-* basename (phase-id form or confined
+        # path form) — the consumer side of this contract is already merged.
+        child_env = self._script_nonce_env(phase)
+        nonce_file = (None if child_env is None
+                      else _entry_nonce_phase_file(self.run_dir, phase.id))
 
-            # F54 (2026-09-01): the nonce is delivered via a PER-INVOCATION env dict
-            # passed to run_with_cleanup(env=...), NOT by mutating os.environ. The
-            # old delivery path (os.environ[...] = nonce; pop on exit) raced whenever
-            # two script phases ran in the same wave: phase B's finally-block popped
-            # the shared variable while phase A's child was still mid-flight.
-            # child_env inherits this process's full environment plus this phase's
-            # own nonce; the file side is serialized by _NONCE_LOCK above.
-            child_env = dict(os.environ)
-            child_env["OC_DECK_ENTRY_NONCE"] = nonce
-
-            try:
-                return self._run_script_phase_locked(phase, argv, checkpoints_dir,
-                                                     nonce_file, child_env)
-            finally:
-                # FIX 4 cleanup: the nonce is per-invocation. Remove the file on EVERY
-                # exit path (success return, heal exhaustion, rung 3, block, exception),
-                # so a later run can never reuse (or leak) this front-door nonce — still
-                # under _NONCE_LOCK so no other sibling is mid-flight against it.
+        try:
+            return self._run_script_phase_locked(phase, argv, checkpoints_dir,
+                                                 nonce_file, child_env)
+        finally:
+            # FIX 4 cleanup: the nonce is per-invocation. Remove the file on EVERY
+            # exit path (success return, heal exhaustion, rung 3, block, exception),
+            # so a later run can never reuse (or leak) this front-door nonce.
+            # FIX 25: this file is THIS phase's own — a concurrent sibling's
+            # per-phase file is a different path, so unlinking here can no longer
+            # destroy a sibling's in-flight handshake. If run_phase then fires a
+            # rung2 regeneration, _script_nonce_env mints a FRESH file for it.
+            if nonce_file is not None:
                 try:
                     nonce_file.unlink(missing_ok=True)
                 except OSError:
                     pass
-        raise AssertionError("unreachable")
+            self._clear_script_nonce()
 
     def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file,
                                  child_env: Optional[dict] = None) -> int:
@@ -1091,9 +1274,26 @@ class Engine:
             if attempt < heal.HEAL_CAP_TRANSIENT:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
 
+        # FIX 10: class-dispatch the exhaustion. The reason from the LAST
+        # rung-1 attempt is classified: a PROVIDER error takes the
+        # alternate-provider rung (cap x1, ledger records route_change with
+        # both providers -- the QC FIX 10 proof row), any other class falls
+        # through to the alternate-route rung (cap x1) exactly as before.
+        last_reason = reason  # always bound: HEAL_CAP_TRANSIENT >= 1 attempt ran
+        if heal.classify_failure(last_reason) == heal.FAILURE_PROVIDER_ERROR:
+            with self._state_lock:
+                rc_pf = heal.rung2_provider_failover(self, phase, last_reason,
+                                                     child_env=child_env)
+            if rc_pf == EXIT_OK:
+                return EXIT_OK
+            return self._fail_unit(
+                phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} "
+                       f"transient attempt(s) and {heal.HEAL_CAP_PROVIDER} "
+                       f"alternate-provider failover(s): {last_reason}")
+
         # Rung 3: alternate route -- MECHANISM ONLY, NO CLIENT POLICY
         with self._state_lock:
-            rc3 = heal.rung3_alt_route(self, phase)
+            rc3 = heal.rung3_alt_route(self, phase, child_env=child_env)
         if rc3 == EXIT_OK:
             _r3 = 3
             with self._state_lock:
@@ -1101,7 +1301,7 @@ class Engine:
                                        rung=_r3, attempt=1, reason="alternate route")
             return EXIT_OK
 
-        return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
+        return self._fail_unit(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
 
     # -- FAULT-16 / FAULT-09 helpers -----------------------------------------
     def _phase_glob_patterns(self, phase: Phase) -> List[str]:
@@ -1133,6 +1333,58 @@ class Engine:
                 except OSError:
                     continue
         return latest
+
+    def _sidecar_pending(self, phase_id: str) -> bool:
+        """FIX 21: for an EXACT-path agent phase, bare on-disk presence is not
+        completion while the dispatcher is still mid-flight on that order --
+        the dispatcher writes the artifact, runs its own substance verifier,
+        and RETRIES when it fails (attempt 1 failed, attempt 2 can pass). The
+        engine's old path trusted presence alone and could exit the poll loop
+        the same second attempt 1 landed, kill the dispatcher mid-retry, and
+        park the phase BLOCKED on artifact the dispatcher itself was about to
+        fix. The dispatcher's own sidecar log
+        (working/work-orders/<phase_id>.dispatcher-log.jsonl, appended by
+        dispatcher._append_sidecar -- the engine never writes it) is the
+        coordination point: it carries one row per dispatch attempt with a
+        `status` field (`verified` = attempt passed its verifier;
+        `exhausted`/`declined`/`already_satisfied`/`already_done_in_state`/
+        `phase_exhausted` = the dispatcher has finished with this order either
+        way; everything else -- call_failed, empty_completion, failed, error,
+        routing_unavailable, parked, ... -- means the order is still LIVE and
+        a later attempt may land). Returns True while a sidecar exists whose
+        LATEST status row is not yet settled, so the
+        poll loop keeps its identical wait cadence within the phase budget
+        instead of trusting presence. Read-only and best-effort: a missing,
+        unreadable, or empty sidecar returns False -- an engine-restart
+        re-entry (or a pre-sidecar run) keeps the FALSE-BLOCK tiebreaker
+        path (verifier PASS accepts a complete inherited artifact), so no
+        phase that is genuinely done can ever hang on this."""
+        log = self.run_dir / "working" / "work-orders" / f"{phase_id}.dispatcher-log.jsonl"
+        try:
+            if not log.is_file():
+                return False
+            last: Optional[Dict[str, Any]] = None
+            with log.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(row, dict) and "status" in row:
+                        last = row
+            if last is None:
+                return False
+            # Terminal settle states: the dispatcher is done either way.
+            if last.get("status") in ("verified", "exhausted", "declined",
+                                      "already_satisfied", "already_done_in_state",
+                                      "phase_exhausted"):
+                return False
+            return True
+        except OSError:
+            return False
 
     def _run_agent_phase(self, phase: Phase) -> int:
         """
@@ -1260,12 +1512,27 @@ class Engine:
         while time.time() < deadline:
             ok, _ = self._artifacts_present(phase)
             last_present = last_present or ok
-            if ok and glob_patterns:
+            if ok and (glob_patterns or self._sidecar_pending(phase.id)):
                 # FAULT-16: bare presence is not completion for a multi-file
                 # glob -- something NEWER than this dispatch's own baseline
                 # (a new file, or an existing one rewritten) is still the
                 # cheap fast path that trusts presence outright.
-                if not (self._glob_progress_marker(glob_patterns) > baseline_progress):
+                # FIX 21: for an EXACT path (no glob), _sidecar_pending() says
+                # the dispatcher is still mid-retry on this order (its sidecar's
+                # latest attempt row is not yet `verified`) -- presence alone
+                # must not complete the phase while attempt 2 may still fix
+                # attempt 1's failure. And a pending sidecar also OVERRIDES the
+                # verifier tiebreaker below: a stale artifact left by attempt 1
+                # can pass the verifier, yet attempt 2 is about to REPLACE that
+                # file -- accepting it would re-create exactly the race this
+                # fix removes. The verifier is only ever a TIEBREAKER when NO
+                # sidecar row is pending (engine-restart re-entry, which
+                # _sidecar_pending() itself excludes); while a row IS pending
+                # the loop keeps its identical wait cadence within the phase
+                # budget instead of completing and killing the dispatcher
+                # mid-retry.
+                if not glob_patterns or not (
+                        self._glob_progress_marker(glob_patterns) > baseline_progress):
                     # FALSE-BLOCK fix (PF-DESIGN, run pres-wave-e-v3-1787240658,
                     # 2026-08-20): presence with NO new mtime is ambiguous -- a
                     # stale partial from an earlier blocked attempt (FAULT-16:
@@ -1282,7 +1549,14 @@ class Engine:
                     except Exception as exc:  # fail closed: treat as not-yet-complete
                         v_ok, v_notes = False, [f"verifier error: {exc}"]
                     last_verify_notes = list(v_notes or [])
-                    ok = v_ok
+                    # FIX 21: a pending dispatcher sidecar wins over the
+                    # verifier tiebreaker -- the phase may not complete while
+                    # the dispatcher is mid-flight on this order. Keep waiting
+                    # (notes captured for the timeout message) until the
+                    # sidecar settles (verified/exhausted => _sidecar_pending
+                    # goes False and presence completes) or the budget expires.
+                    if self._sidecar_pending(phase.id):
+                        ok = False
             if ok:
                 return EXIT_OK
             now = time.time()
@@ -1296,35 +1570,88 @@ class Engine:
                         f"About {int(remaining/60)} minutes before I flag it.")
             if now - last_cp >= checkpoint_every:
                 last_cp = now
-                self._checkpoint(phase.id, status="running",
+                self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
                                  waiting_for=list(phase.produces_artifact),
                                  waited_seconds=int(now - started_at))
             time.sleep(15)
         if last_present:
-            return self._block(
+            return self._fail_unit(
                 phase,
                 f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
                 f"substance verification for {phase.budget_minutes} minutes: "
                 f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
-        return self._block(
+        return self._fail_unit(
             phase,
             f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
             f"Expected: {', '.join(phase.produces_artifact)}")
 
+    def _fail_unit(self, phase: Phase, reason: str) -> int:
+        """FIX 9a (MASTER Part 8 Fix 9): quarantine ONE unit, park nothing.
+
+        Replaces the old unit-level _block() park for execution failures.
+        The failing phase's record becomes status='quarantined' (the QC FIX 9
+        enum value) with its failure reason; terminal is NEVER set here and
+        state["blocked"] is never written here, so the dispatcher keeps
+        running every still-runnable wave and run() parks the run exactly
+        ONCE at the end with the failed_units ledger row naming this unit.
+        Resume treats a quarantined unit exactly like a blocked one: it is
+        not 'done', so the next run re-enters it.
+
+        FIX 10: OWNER-DECISION failures are the exception — they classify to
+        FAILURE_OWNER_DECISION (waiver / owner-skip-approval / gate decline
+        vocabulary) and route to _block() instead: park and notify, never
+        auto-heal, never quarantine a decision only the client can make."""
+        if heal.classify_failure(reason) == heal.FAILURE_OWNER_DECISION:
+            with self._state_lock:
+                heal._ledger(self, phase=phase.id, rung=None, attempt=0,
+                             failure_class=heal.FAILURE_OWNER_DECISION,
+                             reason=reason, route_change=False,
+                             outcome="park_and_notify")
+            return self._block(phase, reason)
+        with self._state_lock:
+            self._checkpoint(phase.id, status=PHASE_STATUS_QUARANTINED,
+                             quarantined_reason=reason, quarantined_at=utcnow())
+            self.report.event(
+                "phase.quarantined",
+                f"{phase.id}: unit quarantined (run continues past it): {reason}")
+            if self.board:
+                # Option B, same mint-on-demand contract as the old _block
+                # path: a unit that never reached its own progress report
+                # still gets its child card, closed 'blocked' with the reason
+                # (the CC board's own status vocabulary has no quarantine).
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description,
+                                        "blocked", reason)
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"QUARANTINED UNIT {phase.id}", file=sys.stderr)
+        print(f"  reason   : {reason}", file=sys.stderr)
+        print(f"  owner    : {phase.owning_role}", file=sys.stderr)
+        print(f"  expected : {', '.join(phase.produces_artifact) or '(none declared)'}",
+              file=sys.stderr)
+        print("  note     : the run continues — this unit is recorded in the "
+              "failed-units ledger at the end", file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+
     def _block(self, phase: Phase, reason: str) -> int:
-        """Park resumable. Never die, never restart from scratch (decision #5)."""
+        """Park resumable. Never die, never restart from scratch (decision #5).
+
+        FIX 9a: this is now the OPERATOR/GATE park only (intake gate, missing
+        executor wiring). Unit-level execution failures go through _fail_unit
+        (status='quarantined', run continues) instead of parking the whole
+        run mid-flight."""
         # Count banked artifacts BEFORE checkpointing, so the current
         # phase is still "done" when we look for done phases.
         with self._state_lock:
             banked, lost = [], []
             for ps_ in self.state.get("phases", []):
-                if ps_.get("status") != "done":
+                if ps_.get("status") != PHASE_STATUS_DONE:
                     continue
                 for a in (ps_.get("artifacts") or []):
                     ok, _why = validate_artifact(self.run_dir, a, self.manifest,
                                                  recorded_sha=(ps_.get("sha256") or {}).get(a))
                     (banked if ok else lost).append(a)
-            self._checkpoint(phase.id, status="blocked", blocked_reason=reason)
+            self._checkpoint(phase.id, status=PHASE_STATUS_BLOCKED, blocked_reason=reason)
             self.state["terminal"] = "BLOCKED"
             self.state["blocked"] = {"phase": phase.id, "reason": reason, "at": utcnow()}
             self.store.save(self.state)
@@ -1421,10 +1748,11 @@ class Engine:
                 if p.id not in deferred_ids:
                     continue
                 ps = self._phase_state(p.id)
-                if ps.get("status") in ("done", "deferred"):
+                if ps.get("status") in (PHASE_STATUS_DONE, PHASE_STATUS_DEFERRED):
                     continue
                 self._checkpoint(
-                    p.id, status="deferred", deferred_reason=f"defers_unless: {p.defers_unless or ''}")
+                    p.id, status=PHASE_STATUS_DEFERRED,
+                    deferred_reason=f"defers_unless: {p.defers_unless or ''}")
                 self.report.event(
                     "phase.deferred",
                     f"{p.id} deferred — defers_unless ({p.defers_unless or ''}) "
@@ -1460,19 +1788,22 @@ class Engine:
         # =0 selects the exact pre-fix serial loop (documented rollback). Flag ON:
         # the plan is built through the SAME build_execution_plan the department
         # CLI serves (reuse-as-is boundary) from the pinned manifest path; the
-        # probe dict is the Phase A stub (see _PHASE_A_CAPACITY_PROBE). Only
+        # probe is the REAL capacity.probe() result — capacity_override.json is
+        # honoured first (FIX 11: a declared max_concurrent drives the width),
+        # then 9Router/OpenClaw detection, then the cap table. Only
         # phases the DAG marks independent share a wave — independence is never
         # invented here. A wave runs bounded by the measured capacity; every
         # future of a wave joins before a failure rc is returned, so a blocking
         # phase never abandons its wave-mates mid-flight.
         if _wave_execution_enabled():
+            capacity_probe = _capacity.probe()
             try:
-                plan = build_execution_plan(self.manifest.path, _PHASE_A_CAPACITY_PROBE)
+                plan = build_execution_plan(self.manifest.path, capacity_probe)
             except CapacityUnmeasured as exc:
                 # Same loud refusal as execution_plan's own CLI: refuse, never
                 # substitute an unmeasured width (Master-Spec file 9 AUTOFAIL).
                 print(f"CAPACITY AUTOFAIL: {exc}", file=sys.stderr)
-                print(json.dumps(autofail_payload(_PHASE_A_CAPACITY_PROBE), indent=2),
+                print(json.dumps(autofail_payload(capacity_probe), indent=2),
                       file=sys.stderr)
                 return EXIT_GATE_BLOCKED
             by_id = {p.id: p for p in phases}
@@ -1485,7 +1816,14 @@ class Engine:
             # dropped just because a subset selection didn't intersect a wave.
             extra = [p for p in phases if p.id not in planned_ids]
 
-            def _run_wave(wave_no: int, members: List[Phase]) -> int:
+            # FIX 9b (MASTER Part 8 Fix 9): one failing unit no longer stops the
+            # run. _run_wave COLLECTS every result — all wave members are joined
+            # (list(pool.map) already guarantees that) and ALL their exit codes
+            # are returned, not just the first non-OK. run() records the failed
+            # rcs, keeps going while anything is runnable, and parks once at the
+            # end if any unit failed. Proof contract (QC.md FIX 9): a forced
+            # failure in one leaf phase leaves every other phase done.
+            def _run_wave(wave_no: int, members: List[Phase]) -> List[int]:
                 available = plan["available"]
                 if not isinstance(available, int) or isinstance(available, bool):
                     # UNBOUNDED (a real measurement): no ceiling to enforce —
@@ -1494,28 +1832,86 @@ class Engine:
                 width = max(1, min(len(members), available))
                 with ThreadPoolExecutor(max_workers=width) as pool:
                     # list() joins EVERY future before returning, so all wave
-                    # members finish (telemetry included) before we fail on rc.
-                    rcs = list(pool.map(lambda m: self.run_phase_timed(m, wave=wave_no),
-                                        members))
-                return next((rc for rc in rcs if rc != EXIT_OK), EXIT_OK)
+                    # members finish (telemetry included) before we look at rcs.
+                    # FIX 9b containment: run_phase_timed re-raises on a member
+                    # crash, and pool.map propagates the FIRST exception,
+                    # discarding every wave-mate's result and ending run() while
+                    # downstream waves are still runnable. Each member therefore
+                    # runs inside its own try/except: a crash is contained to
+                    # that unit and surfaces as its failed rc; every wave-mate's
+                    # rc is still collected and every downstream wave still runs.
+                    def _member_rc(m: Phase) -> int:
+                        try:
+                            return self.run_phase_timed(m, wave=wave_no)
+                        except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                            return getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                    return list(pool.map(_member_rc, members))
 
+            failed_rcs: List[Tuple[str, int]] = []
             for wave_no, members in enumerate(wave_phases, 1):
                 if not members:
                     continue
-                rc = _run_wave(wave_no, members)
-                if rc != EXIT_OK:
-                    with self._state_lock:
-                        # FIX 5 (emitter): a failed wave skips the run summary,
-                        # so drain the mirror queue before leaving the run.
-                        self._flush_telemetry_cc()
-                    return rc
+                # Per-unit results, in wave-member order. A non-OK rc from one
+                # unit (the phase quarantined itself via _fail_unit or parked
+                # via _block) is recorded — the rest of the wave already ran
+                # to completion and every DOWNSTREAM wave still runs while it
+                # is runnable.
+                for m, rc in zip(members, _run_wave(wave_no, members)):
+                    if rc != EXIT_OK:
+                        failed_rcs.append((m.id, rc))
             for p in extra:
-                rc = self.run_phase_timed(p, wave=len(plan["waves"]) + 1)
+                # FIX 9b containment: same per-unit crash guard as _run_wave so
+                # an extra (selected-but-unplanned) phase that crashes records
+                # its rc instead of aborting the run with waves still runnable.
+                try:
+                    rc = self.run_phase_timed(p, wave=len(plan["waves"]) + 1)
+                except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                    rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
                 if rc != EXIT_OK:
-                    with self._state_lock:
-                        # FIX 5 (emitter): same early-exit drain as the wave fail.
-                        self._flush_telemetry_cc()
-                    return rc
+                    failed_rcs.append((p.id, rc))
+            if failed_rcs:
+                # FIX 9b: park ONCE for the whole run, after every runnable
+                # phase has been given its chance. No mid-run early exits.
+                with self._state_lock:
+                    # FIX 5 (emitter): a parked run skips the run summary,
+                    # so drain the mirror queue before leaving.
+                    self._flush_telemetry_cc()
+                    self.state.setdefault("failed_units", []).extend(
+                        {"phase": pid, "rc": rc} for pid, rc in failed_rcs)
+                    if self.state.get("terminal") is None:
+                        self.state["terminal"] = "BLOCKED"
+                        self.state["blocked"] = {
+                            "phase": failed_rcs[0][0],
+                            "reason": (
+                                f"{len(failed_rcs)} unit(s) failed after all runnable "
+                                f"phases ran: " + ", ".join(
+                                    f"{pid} (rc {rc})" for pid, rc in failed_rcs)),
+                            "at": utcnow(),
+                            "units": [pid for pid, _ in failed_rcs],
+                        }
+                    self.store.save(self.state)
+                for pid, rc in failed_rcs:
+                    ps = self._phase_state(pid)
+                    if ps.get("status") in (PHASE_STATUS_RUNNING,
+                                            PHASE_STATUS_PENDING):
+                        # The unit parked itself below (blocked/quarantined/failed
+                        # status from _fail_unit); only normalize a unit that died
+                        # without recording its own terminal state.
+                        with self._state_lock:
+                            self._checkpoint(
+                                pid, status=PHASE_STATUS_FAILED, failed_rc=rc,
+                                failed_reason=f"phase exited rc={rc} without parking")
+                first_pid, first_rc = failed_rcs[0]
+                print("\n" + "=" * 72, file=sys.stderr)
+                print(f"PARKED at {first_pid} (+{len(failed_rcs) - 1} other failed unit(s))",
+                      file=sys.stderr)
+                for pid, rc in failed_rcs:
+                    print(f"  failed unit: {pid} rc={rc}", file=sys.stderr)
+                print("\n  continue with:", file=sys.stderr)
+                print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
+                      file=sys.stderr)
+                print("=" * 72 + "\n", file=sys.stderr)
+                return failed_rcs[0][1]
         else:
             # PRESENTATION_WAVE_EXECUTION=0 rollback path: the pre-fix serial
             # loop, byte-for-byte (every phase wave=0).
@@ -1587,13 +1983,19 @@ class Engine:
         manifest_sha = self.state.get('manifest_sha256', '')[:12]
 
         # 1. Collect attestation records -- every phase that reached status 'done'
-        attested = [p for p in phases if p.get('status') == 'done']
+        attested = [p for p in phases if p.get('status') == PHASE_STATUS_DONE]
         all_phase_ids = [p.get('id') for p in phases]
 
         # 2. Verify no gaps
         manifest_phase_ids = [p.id for p in self.manifest.phases]
         unentered = [pid for pid in manifest_phase_ids if pid not in all_phase_ids]
-        incomplete = [p.get('id') for p in phases if p.get('status') not in ('done', 'blocked')]
+        # FIX 20: an obsolete row is a phase REMOVED from the manifest at
+        # repin, not a gap in this run — it must not read as incomplete and
+        # brick the close gate for a job whose manifest legitimately changed.
+        incomplete = [p.get('id') for p in phases
+                      if p.get('status') not in (PHASE_STATUS_DONE,
+                                                 PHASE_STATUS_BLOCKED,
+                                                 PHASE_STATUS_OBSOLETE)]
 
         # 3. Check substance verification
         substance_unverified = [
@@ -1778,6 +2180,137 @@ class Engine:
             return False, f"self-audit exited {r.returncode}", output
         return True, "", output
 
+    # FIX 7 (W06b-B4) -- make done reachable from the engine: close() itself
+    # registers the run's deliverables and the PROCESS-CERTIFICATE on the
+    # parent card, then PATCHes it to review with process_certificate_sha so
+    # the board-side QC scorer has everything it needs to promote
+    # review->done with NO human PATCH.
+    #
+    # WHY THIS LIVES HERE (not in board.py): board.py's mark_review() goes
+    # through cc_board.patch_phase, which reads the certificate sha ONLY from
+    # delivery/*-FINAL/PROCESS-CERTIFICATE.json (the prove-deck/runner path).
+    # The ENGINE mints its own certificate at
+    # working/checkpoints/PROCESS-CERTIFICATE.json (_mint_process_certificate),
+    # so on engine runs the review PATCH went out with NO
+    # process_certificate_sha and the CC-side registration gate (F14) held
+    # every engine-owned card in review forever -- zero done, ever.
+    #
+    # Everything below is FAIL-SOFT by the same contract as every other board
+    # advance: the board is a VIEW; a board outage, a missing token, or a
+    # rejected row can never block the build (Invariant 1). Any failure falls
+    # back to the pre-existing mark_review() path so the movement receipt
+    # still records the attempt.
+    def _board_register_close(self) -> bool:
+        """Register the ten deliverables + the engine certificate on the
+        parent card and PATCH it to review with process_certificate_sha.
+
+        Returns True ONLY when the explicit review PATCH landed (HTTP 200);
+        every other outcome returns False and the caller falls back to
+        board.mark_review(). Never raises.
+        """
+        try:
+            import cc_board as _cc_board
+        except ImportError:
+            return False
+        cfg = _cc_board.board_config(os.environ)
+        if cfg is None:
+            return False
+
+        # task_id: the same dual source BoardMirror uses.
+        task_id = (self.state.get("board") or {}).get("task_id")
+        if not task_id:
+            manifest = _cc_board._read_manifest(self.run_dir)
+            cc_task_id = manifest.get("cc_task_id")
+            task_id = str(cc_task_id) if cc_task_id else None
+        if not task_id:
+            return False
+
+        # Certificate sha: the ENGINE-minted certificate first (this is the
+        # engine path), the delivery/*-FINAL runner certificate second.
+        cert_sha = ((self.state.get("process_certificate") or {})
+                    .get("sha256"))
+        if not cert_sha:
+            cert_sha = _cc_board._read_certificate_sha(self.run_dir)
+        if not cert_sha:
+            self.report.event(
+                "board.cert_sha_missing",
+                "close(): no PROCESS-CERTIFICATE sha in state or delivery/; "
+                "registering deliverables but skipping the cert-bearing PATCH")
+            return False
+
+        registered = 0
+        for spec in _deliverable_specs():
+            dest = spec.get("standardized_dest") or ""
+            if not dest:
+                continue
+            fpath = self.run_dir / "deliverables" / dest
+            if not fpath.is_file():
+                # Deliverable gated separately (workbook, webinar audio) or
+                # not produced this run: registration is per-file, skip
+                # silently -- the flat folder was already gate-verified by
+                # curate() and the self-audit before this point.
+                continue
+            payload = {
+                "deliverable_type": "file",
+                "title": dest,
+                "path": str(fpath.resolve()),
+                "description": json.dumps({
+                    "key": spec.get("key"),
+                    "label": spec.get("label"),
+                    "run_dir": str(self.run_dir),
+                }, separators=(",", ":")),
+            }
+            url = f"{cfg['base_url']}/api/tasks/{task_id}/deliverables"
+            try:
+                st, body = _cc_board._request("POST", url, payload, cfg)
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                self.report.event(
+                    "board.error",
+                    f"register_deliverable {dest}: {type(exc).__name__}: {exc}")
+                continue
+            if 200 <= st < 300:
+                registered += 1
+            else:
+                self.report.event(
+                    "board.error",
+                    f"register_deliverable {dest} non-2xx (HTTP {st}); "
+                    "build continues.")
+
+        # The cert-bearing terminal PATCH: status review + the sha the
+        # no-skip done gate reads. Same endpoint cc_board.patch_phase uses
+        # for cert-bearing transitions (review/done).
+        patch_payload = {
+            "phase_id": "TERMINAL",
+            "status": "review",
+            "process_certificate_sha": cert_sha,
+            "note": "Engine close: deliverables registered, "
+                    f"{registered} on the card; process certificate attached.",
+        }
+        patch_url = f"{cfg['base_url']}/api/tasks/{task_id}"
+        try:
+            st, body = _cc_board._request("PATCH", patch_url, patch_payload, cfg)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            self.report.event(
+                "board.error",
+                f"close review PATCH failed: {type(exc).__name__}: {exc}")
+            return False
+        _cc_board._record_movement(self.run_dir, {
+            "phase_id": "TERMINAL", "kind": "status", "target": "review",
+            "endpoint": "PATCH /api/tasks/{id}", "http_status": st,
+            "ok": st == 200,
+            "detail": ("OK (engine-registered, "
+                       f"{registered} deliverables)" if st == 200
+                       else str(body)[:300]),
+        })
+        if st == 200:
+            self.report.event(
+                "board.review_registered",
+                f"parent card {task_id} -> review with "
+                f"process_certificate_sha={cert_sha[:12]}... and "
+                f"{registered} deliverable(s) registered")
+            return True
+        return False
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
 
@@ -1854,6 +2387,16 @@ class Engine:
                 # WORK-ITEM-13: assemble flat deliverables/ folder.
                 try:
                     _curate.curate(self.run_dir)
+                except _curate.CurateAlreadyRan:
+                    # F50/FIX 106 (SMOKE-1): the regate path re-enters the same
+                    # curation the main close path already ran — curate refuses a
+                    # second pass by design (duplicate-file safety), and a prior
+                    # curation with the full deliverable set present IS the
+                    # close-time end state. Treat it as success (mirrors the main
+                    # path's catch below) so close() stays idempotent: close
+                    # called twice returns success both times instead of crashing
+                    # the re-gate branch on CurateAlreadyRan.
+                    pass
                 except _curate.AFBundleIncomplete as exc:
                     self.state["terminal"] = "BLOCKED"
                     self.state["blocked"] = {
@@ -1886,8 +2429,9 @@ class Engine:
                         f"Self-audit failed before handoff — {audit_reason}")
                     print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
-                if self.board:
-                    self.board.mark_review()
+                if not self._board_register_close():
+                    if self.board:
+                        self.board.mark_review()
                 self.state["terminal"] = "DONE"
                 self.state["completed_at"] = utcnow()
                 self.store.save(self.state)
@@ -1960,8 +2504,9 @@ class Engine:
                 f"Self-audit failed before handoff — {audit_reason}")
             print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
-        if self.board:
-            self.board.mark_review()
+        if not self._board_register_close():
+            if self.board:
+                self.board.mark_review()
         self.state["terminal"] = "DONE"
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)

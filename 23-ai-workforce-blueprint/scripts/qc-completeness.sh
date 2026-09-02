@@ -128,22 +128,119 @@ log "============================================"
 # (P8.25-WORKBOOK) adds pypdf — workbook_builder.py reads the assembled PDF back with
 # pypdf to prove the AcroForm fields + /NeedAppearances survived. Both mirror the
 # GATE-1 dep check in presentation-canonical-entry.sh.
+# FIX 70 (W20b-B3): the dep LIST itself is no longer hardcoded here — it is read
+# from ONE canon file, presentations/scripts/presentation-deps.json (repo checkout,
+# then the role-library copy, then the materialized department copy). A dep the
+# canon adds (pypdf, ffmpeg, ffprobe, tesseract …) is enforced by this gate the
+# moment it lands in the JSON, on every consumer at once. If the canon is absent
+# or unparsable, the gate falls back to the pre-FIX-70 hardcoded checks below and
+# says so — an unreadable canon is never a silent clean pass.
 if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
   _PRES_DEPS_MISSING=""
+  _PRES_DEPS_CANON=""
+  _PRES_PY3=""
+  for _cand in "$SKILL_DIR/presentations/scripts/presentation-deps.json" \
+               "$SKILL_DIR/templates/role-library/presentations/scripts/presentation-deps.json" \
+               "$(python3 "$SCRIPT_DIR/_qc_get.py" departments_dir </dev/null 2>/dev/null | tail -1 || true)/Presentations/scripts/presentation-deps.json"; do
+    [ -n "$_cand" ] && [ -r "$_cand" ] && { _PRES_DEPS_CANON="$_cand"; break; }
+  done
+  if [ -n "$_PRES_DEPS_CANON" ] && command -v python3 >/dev/null 2>&1; then
+    # Canon-driven gate: check every dep named in the JSON. Kind binary ->
+    # command -v; kind python_import -> import_spec inside the SAME interpreter
+    # the pipeline runs (FIX 71 venv). Unknown kind -> report, never skip.
+    while IFS='|' read -r _dep_name _dep_kind _dep_spec; do
+      [ -z "$_dep_name" ] && continue
+      case "$_dep_kind" in
+        __canon__)
+          _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} __CANON_UNPARSABLE__(${_dep_spec})"
+          ;;
+        binary)
+          command -v "$_dep_spec" >/dev/null 2>&1 \
+            || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ${_dep_name}(${_dep_spec}; see ${_PRES_DEPS_CANON})"
+          ;;
+        python_import)
+          if [ -z "${_PRES_PY3:-}" ] && [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+            _PRES_PY3="${PRESENTATION_PIPELINE_INTERPRETER}"
+          elif [ -z "${_PRES_PY3:-}" ]; then
+            for _cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+              if [ -x "$_cand" ]; then _PRES_PY3="$_cand"; break; fi
+            done
+          fi
+          [ -z "${_PRES_PY3:-}" ] && _PRES_PY3="python3"
+          "$_PRES_PY3" -c "import ${_dep_spec}" >/dev/null 2>&1 \
+            || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(${_dep_spec} in the department venv; fix: ${_PRES_PY3} -m pip install ${_dep_spec})"
+          ;;
+        *)
+          _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ${_dep_name}(unknown kind ${_dep_kind} in canon)"
+          ;;
+      esac
+    done < <(python3 - "$_PRES_DEPS_CANON" <<'PYEOF'
+import json, sys
+try:
+    canon = json.load(open(sys.argv[1]))
+except Exception as exc:
+    print(f"__CANON_UNPARSABLE__|__canon__|{sys.argv[1]}: {exc}")
+    sys.exit(0)
+for dep in canon.get("deps", []):
+    name = dep.get("name", "")
+    kind = dep.get("kind", "")
+    if kind == "binary":
+        spec = dep.get("binary_name", "") or name
+        print(f"{name}|binary|{spec}")
+    elif kind == "python_import":
+        print(f"{name}|python_import|{dep.get('import_spec', '')}")
+    else:
+        print(f"{name}|{kind}|")
+PYEOF
+)
+  else
+    log "presentation-deps canon NOT resolved (checked SKILL_DIR/presentations/scripts, role-library copy, materialized dept) — falling back to pre-FIX-70 hardcoded checks"
+  fi
   command -v soffice  >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} soffice(libreoffice-impress)"
   command -v pdftoppm >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} pdftoppm(poppler-utils)"
-  python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx)"
-  python3 -c "import pypdf" >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(pypdf)"
+  # FIX 71 (W20b-B4): the four Python deps live in the DEPARTMENT VENV
+  # ($OC_CONFIG/.venv-presentations), not in the system interpreter. Resolve the
+  # venv python: PRESENTATION_PIPELINE_INTERPRETER (exported by update-skills.sh's
+  # converge step and persisted as an export line in the box secrets env) wins;
+  # else the platform-appropriate .venv-presentations on disk. Bare python3 stays
+  # the LAST fallback so a pre-venv box still reports honestly instead of crashing.
+  _PRES_PY3=""
+  if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+    _PRES_PY3="${PRESENTATION_PIPELINE_INTERPRETER}"
+  else
+    for _cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+      if [ -x "$_cand" ]; then _PRES_PY3="$_cand"; break; fi
+    done
+    if [ -z "$_PRES_PY3" ] && [ -n "${OC_SECRETS_ENV:-}" ] && [ -r "${OC_SECRETS_ENV}" ]; then
+      _pip="$(grep -E '^export PRESENTATION_PIPELINE_INTERPRETER=' "${OC_SECRETS_ENV}" 2>/dev/null | tail -1 | sed -E 's/^export PRESENTATION_PIPELINE_INTERPRETER=?["'"'"' ]*([^"'"'"']*)["'"'"' ]*$/\1/')"
+      [ -n "$_pip" ] && [ -x "$_pip" ] && _PRES_PY3="$_pip"
+    fi
+  fi
+  [ -z "$_PRES_PY3" ] && _PRES_PY3="python3"
+  log "presentation deps interpreter: ${_PRES_PY3}"
+  if [ "$_PRES_PY3" = "python3" ] && ! command -v python3 >/dev/null 2>&1; then
+    _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python3(no venv at ${PRESENTATION_PIPELINE_INTERPRETER:-~/.openclaw/.venv-presentations}; create it with python3 -m venv and pip install reportlab python-pptx pypdf)"
+  else
+    "$_PRES_PY3" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 \
+      || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx+pypdf in the department venv; fix: ${_PRES_PY3} -m pip install reportlab python-pptx pypdf)"
+  fi
   command -v ffmpeg  >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ffmpeg(webinar video render; brew install ffmpeg)"
   command -v ffprobe >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ffprobe(webinar video probe; part of ffmpeg)"
+  # FIX 70 (W20b-B3): tesseract is in the canon (ocr_verify.py + build_deck.py
+  # in-loop OCR readback drive it via pytesseract). Kept as a hardcoded check TOO
+  # so the gate still enforces it on a box whose canon file went missing.
+  command -v tesseract >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} tesseract(OCR readback; brew install tesseract / apt install tesseract-ocr)"
+  "$_PRES_PY3" -c "import pytesseract" >/dev/null 2>&1 \
+    || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(pytesseract in the department venv; fix: ${_PRES_PY3} -m pip install pytesseract)"
   if [ -n "$_PRES_DEPS_MISSING" ]; then
     log "PRESENTATION_DEPS_MISSING — missing:${_PRES_DEPS_MISSING}"
     log "  The Skill 23 presentation pipeline cannot run. Re-run install.sh Step 6.5,"
     log "  or on a VPS run: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
-    printf '{"status":"PRESENTATION_DEPS_MISSING","ts":"%s","missing":"%s"}\n' "$TS" "${_PRES_DEPS_MISSING# }" > "$JSON_FILE"
+    log "  FIX 71 venv one-liner: python3 -m venv $HOME/.openclaw/.venv-presentations && $HOME/.openclaw/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf   (VPS: use /data/.openclaw/.venv-presentations)"
+    printf '{"status":"PRESENTATION_DEPS_MISSING","ts":"%s","missing":"%s","interpreter":"%s"}\n' "$TS" "${_PRES_DEPS_MISSING# }" "$_PRES_PY3" > "$JSON_FILE"
     exit 6
   fi
-  log "presentation deps OK: soffice + pdftoppm + reportlab + python-pptx + pypdf + ffmpeg/ffprobe all present"
+  log "presentation deps OK: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present${_PRES_DEPS_CANON:+ (canon: ${_PRES_DEPS_CANON})}"
 else
   # FIX-PRES-01 (mirror): the presentation-deps bypass is honored here (this is a
   # fleet-wide read-only QC gate — a non-presentation install legitimately skips

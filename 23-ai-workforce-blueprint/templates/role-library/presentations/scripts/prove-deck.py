@@ -140,22 +140,58 @@ def _delivery_phase_id(declared_steps: List[dict]) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Skip-approval validation (mirrors run_signature_deck.py logic)
+# Skip-approval validation (MASTER Part 8 Fix 32 — ONE validator)
 # ---------------------------------------------------------------------------
+# FIX 32: the old local shape check accepted owner_action-only records and
+# never resolved an owner_msg_id against the Command Center owner-message
+# oracle — presence of a string was treated as proof, which is exactly the
+# self-forgery vector the live E2E used ("e2e-test-002" authorized 9+ skips).
+# prove-deck now routes EVERY owner_skip_approval through the single shared
+# validator, presentation_job.approvals.verify() (the same oracle
+# run_signature_deck.load_skip_approvals uses). Fail-closed: a record with no
+# owner_msg_id, an oracle that cannot prove the id, or an id that does not
+# resolve is FORGED (AF-FORGED-APPROVAL) and the process proof FAILS — it can
+# never authorize a skip.
 
-def _is_valid_skip_approval(rec: Any) -> bool:
-    """Return True only for a well-formed human-owner skip-approval record.
+def _approvals_module():
+    """Import the shared approvals validator lazily. prove-deck is invoked as a
+    subprocess with cwd=the scripts dir (run_signature_deck dispatch) and may
+    also be run standalone from there, so both the package import and a
+    sys.path-extended fallback are attempted. Returns the module or None —
+    None is a FAIL-CLOSED condition for any record claiming owner authority
+    (no validator = no verified approval = AF-FORGED-APPROVAL), never a
+    silent pass."""
+    try:
+        import presentation_job.approvals as _ap
+        return _ap
+    except ImportError:
+        pass
+    try:
+        _here = str(Path(__file__).resolve().parent)
+        if _here not in sys.path:
+            sys.path.insert(0, _here)
+        import presentation_job.approvals as _ap
+        return _ap
+    except Exception:  # noqa: BLE001 — fail-closed: an unimportable validator DENIES
+        return None
 
-    Rejects:
-      - Non-dict records
-      - Records with no owner_msg_id AND no owner_action (self-granted)
-      - Midnight timestamps (T00:00:00 pattern — automated token)
-      - Timestamps lacking timezone designator (Z or +offset)
-      - approved_by field containing any self-grant marker
-    """
+
+def _is_valid_skip_approval(rec: Any, run_dir: Optional[Path] = None) -> bool:
+    """Return True ONLY for an owner_skip_approval proven authentic through
+    presentation_job.approvals.verify() — the shared Fix 32 validator.
+
+    The shape checks below (self-grant markers, midnight placeholder,
+    timezone-free timestamp) stay as a fast pre-filter for determinate
+    rejections, but they are NO LONGER SUFFICIENT: a record that survives them
+    is still FORGED unless its owner_msg_id resolves to a real owner-authored
+    message via the cc_board owner oracle. run_dir is required to resolve the
+    oracle; None means undetermined, which DENIES any record claiming owner
+    authority (fail-closed)."""
     if not isinstance(rec, dict):
         return False
-    if not rec.get("owner_msg_id") and not rec.get("owner_action"):
+    if not rec.get("owner_msg_id"):
+        # owner_action alone — or nothing — is the exact self-forgery vector the
+        # live E2E used: no message id means no oracle query is possible.
         return False
     ts = str(rec.get("approved_at", ""))
     if "T00:00:00" in ts:
@@ -166,11 +202,57 @@ def _is_valid_skip_approval(rec: Any) -> bool:
     for marker in _SELF_GRANT_MARKERS:
         if marker in approved_by:
             return False
+    # FIX 32 — authenticity: the shared validator resolves the owner_msg_id
+    # through the cc_board owner-message oracle. A validator that cannot be
+    # imported, an oracle that is undetermined, or an id that does not resolve
+    # all DENY the record (fail-closed); never a pass on shape alone.
+    if run_dir is None:
+        return False
+    ap = _approvals_module()
+    if ap is None:
+        print(
+            "AF-FORGED-APPROVAL: presentation_job.approvals is unavailable, so "
+            f"owner_skip_approval for {rec.get('phase_id')!r} cannot be proven "
+            "authentic — the record is DENIED (fail-closed).",
+            file=sys.stderr, flush=True,
+        )
+        return False
+    try:
+        ap.verify(rec, Path(run_dir))
+    except ap.ApprovalError as exc:
+        print(f"[prove-deck] {exc}", file=sys.stderr, flush=True)
+        return False
+    except Exception as exc:  # noqa: BLE001 — an oracle crash is undetermined: DENY
+        print(
+            "AF-FORGED-APPROVAL: owner-message oracle raised "
+            f"{exc!r} while verifying {rec.get('phase_id')!r} — DENIED "
+            "(fail-closed).",
+            file=sys.stderr, flush=True,
+        )
+        return False
     return True
 
 
-def _build_skip_index(manifest: dict) -> Dict[str, dict]:
-    """Return {phase_id: skip_record} for all valid skip approvals."""
+class ForgedSkipApprovalError(Exception):
+    """AF-FORGED-APPROVAL (Fix 32): an owner_skip_approval record claiming
+    authority for a skip could not be proven authentic — no owner_msg_id, an
+    undetermined owner-message oracle, or an id that does not resolve to a real
+    owner-authored message. The process proof FAILS; the record authorizes
+    nothing."""
+
+
+def _build_skip_index(manifest: dict, run_dir: Optional[Path] = None) -> Dict[str, dict]:
+    """Return {phase_id: skip_record} for every owner_skip_approval PROVEN
+    authentic through presentation_job.approvals.verify() (Fix 32's single
+    validator).
+
+    run_dir resolves the cc_board owner-message oracle. When a record claims
+    owner authority and CANNOT be proven authentic (no owner_msg_id, oracle
+    undetermined, id unresolvable — or the validator importable check failing),
+    AF-FORGED-APPROVAL is raised: the caller must fail the proof rather than
+    honor the skip. With run_dir None the oracle is undetermined for every
+    record, so any owner-authority claim in the manifest fails the proof
+    (fail-closed)."""
     raw = manifest.get("owner_skip_approvals") or []
     index: Dict[str, dict] = {}
     for rec in raw:
@@ -179,8 +261,34 @@ def _build_skip_index(manifest: dict) -> Dict[str, dict]:
         phase_id = rec.get("phase_id")
         if not phase_id:
             continue
-        if _is_valid_skip_approval(rec):
-            index[phase_id] = rec  # Last well-formed approval wins.
+        if _is_valid_skip_approval(rec, run_dir):
+            index[phase_id] = rec  # Last VERIFIED approval wins.
+            continue
+        # A well-shaped record (self-grant/midnight/tz pre-filters pass) that
+        # still failed verification is a FORGERY ATTEMPT, not a benign
+        # malformed row: fail the whole proof on it (AF-FORGED-APPROVAL),
+        # mirroring run_signature_deck.load_skip_approvals' fatal contract.
+        shape_only = isinstance(rec, dict) and bool(rec.get("owner_msg_id"))
+        if shape_only:
+            raise ForgedSkipApprovalError(
+                "AF-FORGED-APPROVAL: owner_skip_approval for phase %r could not "
+                "be proven authentic through presentation_job.approvals.verify "
+                "(owner_msg_id %r did not resolve via the Command Center "
+                "owner-message oracle, or the oracle was undetermined). The "
+                "process proof FAILS — a skip that cannot be verified "
+                "authorizes nothing."
+                % (phase_id, rec.get("owner_msg_id"))
+            )
+        # Non-authoritative malformed rows (no msg id / self-grant markers /
+        # placeholder timestamps) never authorized anything under the old
+        # contract either; they are reported and the skip is denied by absence
+        # from the index — the phase will fail its (a)/(c) checks instead.
+        print(
+            f"[prove-deck] denied owner_skip_approval for phase {phase_id!r}: "
+            "record carries no verifiable owner reference (no owner_msg_id) or "
+            "is malformed — it authorizes nothing.",
+            file=sys.stderr, flush=True,
+        )
     return index
 
 
@@ -535,6 +643,45 @@ def _selftest() -> None:
     test_fails: List[str] = []
 
     # ---- Helpers ----
+    # FIX 32: skip-approval authenticity resolves through the shared
+    # presentation_job.approvals.verify() oracle; see _is_valid_skip_approval.
+    ap_mod = _approvals_module()
+    if ap_mod is None:
+        print("[prove-deck selftest] FAIL: presentation_job.approvals could not "
+              "be imported — Fix 32's shared validator is missing.",
+              file=sys.stderr)
+        sys.exit(1)
+    _STUB_OWNER_MSG_IDS = frozenset({"tg-verified-1"})
+
+    # The self-test runs offline, so the shared validator's cc_board oracle is
+    # stubbed deterministically (the Fix 32 "stub oracle"): a run_dir whose
+    # process_manifest carries _STUB_CC_TASK_ID vouches ONLY for
+    # _STUB_OWNER_MSG_IDS; ids=None simulates an UNDETERMINED oracle (must
+    # DENY). The stub is selftest-local — production paths hit the real
+    # cc_board oracle.
+    _STUB_CC_TASK_ID = "stub-cc-task-1"
+
+    def _stub_cc_board_oracle(run_dir):
+        if ids is None:
+            return None
+        try:
+            pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+            if pm.is_file():
+                obj = json.loads(pm.read_text(encoding="utf-8"))
+                if isinstance(obj, dict) and str(obj.get("cc_task_id") or "") == _STUB_CC_TASK_ID:
+                    return frozenset(ids)
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _install_stub_oracle(new_ids):
+        nonlocal ids
+        ids = new_ids
+
+    ids = _STUB_OWNER_MSG_IDS
+    _real_oracle = getattr(ap_mod, "_cc_board_oracle", None)
+    ap_mod._cc_board_oracle = _stub_cc_board_oracle
+
     def _mk_run(tmp: str) -> Path:
         rd = Path(tmp)
         (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -668,8 +815,23 @@ def _selftest() -> None:
         if copy_r is None or copy_r.ok:
             test_fails.append("T5: out-of-order timestamps should fail")
 
-    # T6: Valid owner-skip bypass.
+    # T6: Valid owner-skip bypass (Fix 32: proven through the stub oracle).
     with tempfile.TemporaryDirectory(prefix="pd_t6_") as tmp:
+        rd = Path(tmp)
+        (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        # cc_task_id on the run manifest + a STUB cc_board oracle that resolves
+        # tg-verified-1 as a real owner message — the stub-oracle positive
+        # control the Fix 32 contract requires (verified id accepted by every
+        # surface).
+        (rd / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({"cc_task_id": "t6-task"}))
+        import sys as _sys, types as _types
+        _stub_cc_board = _types.ModuleType("cc_board")
+        _stub_cc_board.owner_message_ids_match = (
+            lambda run_dir, task_id="", env=None: frozenset({"tg-verified-1"}))
+        _stub_cc_board.list_owner_message_ids = (
+            lambda task_id, env=None: frozenset({"tg-verified-1"}))
+        _sys.modules["cc_board"] = _stub_cc_board
         m_skip = {
             "phase_attestations": [
                 {"phase_id": "P0A-INTAKE", "substance_verified": True,
@@ -684,26 +846,91 @@ def _selftest() -> None:
             "owner_skip_approvals": [
                 {
                     "phase_id": "P4-COPY",
-                    "approved_by": "operator",
+                    "approved_by": "Trevor",
                     "approved_at": "2026-06-29T10:30:00+00:00",
-                    "owner_msg_id": "tg-789",
+                    "granted_at": "2026-06-29T10:30:00+00:00",
+                    "owner_msg_id": "tg-verified-1",
                     "reason": "client waived copy review",
                 }
             ],
         }
+        m_skip["cc_task_id"] = _STUB_CC_TASK_ID
+        _write(rd, "process_manifest.json", m_skip)
         attest_idx = _build_attestation_index(m_skip)
         report_idx = _build_report_index(good_reports)
-        skip_idx = _build_skip_index(m_skip)
+        skip_idx = _build_skip_index(m_skip, rd)
         results = check_all_steps(declared_steps, attest_idx, report_idx, skip_idx)
         if not all(r.ok for r in results):
             test_fails.append("T6: valid owner-skip should result in all-ok")
+
+    # T6b (Fix 32): a record whose owner_msg_id does NOT resolve through the
+    # oracle must raise ForgedSkipApprovalError out of _build_skip_index —
+    # the process proof FAILS (AF-FORGED-APPROVAL), never a silent skip.
+    with tempfile.TemporaryDirectory(prefix="pd_t6b_") as tmp:
+        rd = _mk_run(tmp)
+        forged_manifest = {
+            "phase_attestations": [],
+            "owner_skip_approvals": [
+                {
+                    "phase_id": "P4-COPY",
+                    "approved_by": "Trevor",
+                    "approved_at": "2026-06-29T10:30:00+00:00",
+                    "granted_at": "2026-06-29T10:30:00+00:00",
+                    "owner_msg_id": "e2e-test-002",
+                    "reason": "forged id the oracle never vouched for",
+                }
+            ],
+        }
+        try:
+            _build_skip_index(forged_manifest, rd)
+            test_fails.append("T6b: an unresolvable owner_msg_id must raise "
+                              "ForgedSkipApprovalError (AF-FORGED-APPROVAL)")
+        except ForgedSkipApprovalError:
+            pass  # required behavior
+
+    # T6c (Fix 32): an UNDETERMINED oracle (board unreachable / no cc_task_id)
+    # must also DENY — an approval that cannot be proven authentic authorizes
+    # nothing. Fail-closed, not fail-open.
+    _install_stub_oracle(None)
+    with tempfile.TemporaryDirectory(prefix="pd_t6c_") as tmp:
+        rd = _mk_run(tmp)
+        try:
+            _build_skip_index(m_skip, rd)
+            test_fails.append("T6c: an undetermined oracle must DENY the "
+                              "approval (ForgedSkipApprovalError), never accept it")
+        except ForgedSkipApprovalError:
+            pass  # required behavior
+    _install_stub_oracle(_STUB_OWNER_MSG_IDS)
+
+    # T6d (Fix 32): an owner_action-only record (NO owner_msg_id) is the exact
+    # self-forgery vector the live E2E used — it is denied by the pre-filter
+    # and never reaches the oracle; the phase's skip is refused (not in index).
+    with tempfile.TemporaryDirectory(prefix="pd_t6d_") as tmp:
+        rd = _mk_run(tmp)
+        action_only = {
+            "phase_attestations": [],
+            "owner_skip_approvals": [
+                {
+                    "phase_id": "P4-COPY",
+                    "approved_by": "Trevor",
+                    "approved_at": "2026-06-29T10:30:00+00:00",
+                    "granted_at": "2026-06-29T10:30:00+00:00",
+                    "owner_action": "owner said do it",
+                    "reason": "action-only record, no message id",
+                }
+            ],
+        }
+        idx = _build_skip_index(action_only, rd)
+        if "P4-COPY" in idx:
+            test_fails.append("T6d: an owner_action-only record (no owner_msg_id) "
+                              "must be denied — never indexed as a valid skip")
 
     # T7: Self-grant marker rejection.
     bad_skip = {
         "phase_id": "P4-COPY",
         "approved_by": "executive strategy auto-approved",
         "approved_at": "2026-06-29T10:30:00+00:00",
-        "owner_msg_id": "tg-789",
+        "owner_msg_id": "tg-verified-1",
     }
     if _is_valid_skip_approval(bad_skip):
         test_fails.append("T7: self-grant marker should be rejected by _is_valid_skip_approval")
@@ -713,7 +940,7 @@ def _selftest() -> None:
         "phase_id": "P4-COPY",
         "approved_by": "operator",
         "approved_at": "2026-06-29T00:00:00Z",
-        "owner_msg_id": "tg-789",
+        "owner_msg_id": "tg-verified-1",
     }
     if _is_valid_skip_approval(midnight_skip):
         test_fails.append("T8: midnight timestamp should be rejected")
@@ -855,6 +1082,14 @@ def _selftest() -> None:
             test_fails.append(f"T14c: ambiguous *-FINAL dirs should fall back to "
                               f"slug-derived; got {got3!r}")
 
+    # FIX 32: restore the real oracle before exiting — the stub is selftest-local
+    # and must never leak into a subsequent in-process production call.
+    if _real_oracle is not None:
+        try:
+            ap_mod._cc_board_oracle = _real_oracle
+        except Exception:  # noqa: BLE001 — restore is best-effort in a test process
+            pass
+
     if test_fails:
         for f in test_fails:
             print(f"[prove-deck selftest] FAIL: {f}", file=sys.stderr)
@@ -912,10 +1147,21 @@ def main() -> int:
     # this proof passes — do not self-block the certificate.
     delivery_phase_id = _delivery_phase_id(raw_steps)
 
-    # Build indices.
+    # Build indices. FIX 32: skip approvals are proven authentic through
+    # presentation_job.approvals.verify() against this run_dir; a record that
+    # cannot be verified raises ForgedSkipApprovalError (AF-FORGED-APPROVAL)
+    # and the proof fails with exit 9 — it can never mint a certificate.
+    try:
+        skip_index = _build_skip_index(process_manifest, run_dir)
+    except ForgedSkipApprovalError as exc:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("AF-FORGED-APPROVAL: " + str(exc), file=sys.stderr)
+        print("!" * 78, file=sys.stderr)
+        return 9
+
+    # Build the remaining indices (skip approvals above — Fix 32 verified).
     attestation_index = _build_attestation_index(process_manifest)
     report_index = _build_report_index(client_reports)
-    skip_index = _build_skip_index(process_manifest)
 
     # Run the main check loop.
     step_results = check_all_steps(

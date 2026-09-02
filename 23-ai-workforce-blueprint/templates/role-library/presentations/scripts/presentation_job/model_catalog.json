@@ -1,7 +1,7 @@
 {
-  "catalog_version": "1.0.0",
-  "updated": "2026-08-31",
-  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code.",
+  "catalog_version": "1.2.0",
+  "updated": "2026-09-02",
+  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs priced from [R12] provider rate limits (web, sourced; master plan Part 4 table): deepseek-v4-flash $0.22/$0.66 per M (peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, gpt-image-2 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
   "aliases": {
     "image.t2i": {
       "provider": "kie",
@@ -9,7 +9,14 @@
       "family": "gpt-image",
       "prefer_latest": true,
       "verified_live": "2026-06-16",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_image_usd": 0.05,
+        "status": "priced",
+        "basis": "R12: gpt-image-2 2K ~= $0.05 per image (Kie)"
+      },
+      "served_ids": {
+        "kie": "gpt-image-2-text-to-image"
+      }
     },
     "image.i2i": {
       "provider": "kie",
@@ -17,7 +24,14 @@
       "family": "gpt-image",
       "prefer_latest": true,
       "verified_live": "2026-06-16",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_image_usd": 0.05,
+        "status": "priced",
+        "basis": "R12: gpt-image-2 2K ~= $0.05 per image (Kie)"
+      },
+      "served_ids": {
+        "kie": "gpt-image-2-image-to-image"
+      }
     },
     "image.fallback": {
       "provider": "kie",
@@ -26,31 +40,76 @@
       "prefer_latest": false,
       "verified_live": "2026-06-16",
       "note": "Prior healthy gpt-image-2 alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves — see 'retired'.",
-      "unit_costs": {"per_image_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_image_usd": 0.05,
+        "status": "priced",
+        "basis": "R12: gpt-image-2 2K ~= $0.05 per image (Kie)"
+      },
+      "served_ids": {
+        "kie": "gpt-image-2-text-to-image"
+      }
     },
     "text.strong": {
       "provider": "deepseek",
       "model": "deepseek-v4-pro",
       "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_million_tokens_in_usd": 0.66,
+        "per_million_tokens_out_usd": 1.98,
+        "status": "priced",
+        "basis": "R12: deepseek-v4-pro $0.66 in / $1.98 out per M (peak pricing; half off-peak)"
+      },
+      "served_ids": {
+        "deepseek-direct": "deepseek-v4-pro",
+        "deepseek": "deepseek-v4-pro"
+      }
     },
     "text.fast": {
       "provider": "deepseek",
       "model": "deepseek-v4-flash",
       "note": "Cheap/fast mechanical text and independent judge (FIX 7).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_million_tokens_in_usd": 0.22,
+        "per_million_tokens_out_usd": 0.66,
+        "status": "priced",
+        "basis": "R12: deepseek-v4-flash $0.22 in / $0.66 out per M (peak pricing; half off-peak)"
+      },
+      "served_ids": {
+        "deepseek-direct": "deepseek-v4-flash",
+        "deepseek": "deepseek-v4-flash"
+      }
     },
     "text.judge": {
       "provider": "deepseek",
       "model": "deepseek-v4-flash",
       "note": "Independent cheap text judge class; router may re-point to a profile-owned model (FIX 7/FIX 14).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_million_tokens_in_usd": 0.22,
+        "per_million_tokens_out_usd": 0.66,
+        "status": "priced",
+        "basis": "R12: priced at its default served model deepseek-v4-flash $0.22/$0.66 per M (peak); OpenRouter re-points re-price at z-ai/glm-5.3-flash $0.075/$0.25"
+      },
+      "served_ids": {
+        "deepseek-direct": "deepseek-v4-flash",
+        "deepseek": "deepseek-v4-flash",
+        "openrouter": "z-ai/glm-5.3-flash",
+        "ollama-cloud": "glm-5.3-flash"
+      }
     },
     "vision.ocr": {
       "provider": "ollama_cloud",
       "model": "glm-ocr",
       "note": "Vision + OCR class (FIX 7 P-TYPO-QC / P-IMAGE-QC row).",
-      "unit_costs": {"per_million_tokens_in_usd": null, "per_million_tokens_out_usd": null, "status": "cost_unknown"}
+      "unit_costs": {
+        "per_call_usd": 0.0,
+        "status": "priced",
+        "basis": "R12: ollama-cloud bills from a monthly pool ($60 Pro / $300 Max), $0 per call — never assumed free-by-default: priced at 0 with this basis recorded"
+      },
+      "served_ids": {
+        "ollama-cloud": "glm-ocr",
+        "ollama_cloud": "glm-ocr",
+        "openrouter": "z-ai/glm-4.6v"
+      }
     }
   },
   "retired": {

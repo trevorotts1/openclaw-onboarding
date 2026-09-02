@@ -1,0 +1,17 @@
+{
+  "name": "signature-presentation",
+  "version": "1.1.9",
+  "description": "Trevor Otts Signature Presentation deck type — governed 4-phase, min-100-slide methodology that runs through the Presentations department engine.",
+  "entry": "bin/presentation",
+  "platforms": ["mac", "vps", "docker"],
+  "adapters": {
+    "claude-code": "adapters/claude-code/SKILL.md",
+    "claude-nine": "adapters/claude-nine/SKILL.md",
+    "codex": "adapters/codex/AGENTS.md"
+  },
+  "notify_transport": {
+    "gateway_default": "openclaw",
+    "file_queue_fallback": "working/outbox.jsonl",
+    "override_env": "PRESENTATION_NOTIFY_CMD"
+  }
+}

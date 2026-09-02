@@ -101,6 +101,15 @@ from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo
 from presentation_job.manifest import (
     MAX_HEARTBEAT_INTERVAL_MINUTES, PHASE_BUDGET_MINUTES, DEFAULT_PHASE_BUDGET_MINUTES,
 )
+# FIX 68 — the ONE platform-aware openclaw-path resolver every engine module
+# imports. sync_check's only openclaw defaults were the ~/.openclaw skills
+# default in _cluster_peer_candidates() and the ~/.openclaw/workspace default
+# for the materialized-department peer; both are now derived from oc_paths
+# (OPENCLAW_PLATFORM, then /data/.openclaw, then ~/.openclaw) so the check runs
+# identically on the docker VPS, where ~/.openclaw does not exist. One
+# definition of "where openclaw lives", shared with the engine it audits — this
+# script can never itself become the second source that drifts.
+from presentation_job.oc_paths import skills as _oc_skills, workspace as _oc_workspace
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -125,7 +134,10 @@ def _cluster_peer_candidates():
     cands = []
     if _CLUSTER_REPO is not None:
         cands.append(_CLUSTER_REPO / "PIPELINE-MANIFEST.json")  # type: ignore[union-attr]
-    skills_dir = os.environ.get("OC_SKILLS_DIR", os.path.expanduser("~/.openclaw/skills"))
+    # FIX 68 — the skills-dir DEFAULT (still $OC_SKILLS_DIR first) now comes
+    # from oc_paths.skills(): /data/.openclaw/skills on the VPS layout instead
+    # of the Mac-only ~/.openclaw/skills hard-code.
+    skills_dir = str(_oc_skills())
     cands.append(Path(skills_dir) / "universal-sops" / "presentation-slide-craft"
                  / "PIPELINE-MANIFEST.json")
     cands.append(Path.home() / "openclaw-onboarding" / "universal-sops"
@@ -692,8 +704,10 @@ def copy_drift_checks(manifest) -> list:
                       f"nothing to compare)", file=sys.stderr)
                 return drift
         else:
-            workspace = os.environ.get(
-                "OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+            # FIX 68 — the OPENCLAW_WORKSPACE default is oc_paths.workspace()
+            # (root()/workspace): /data/.openclaw/workspace on the VPS layout,
+            # ~/.openclaw/workspace on a Mac — platform-aware, one source.
+            workspace = os.environ.get("OPENCLAW_WORKSPACE", str(_oc_workspace()))
             peer = os.path.join(workspace, "departments", "Presentations", "sops",
                                 "PIPELINE-MANIFEST.json")
             peer_source = "materialized department default"

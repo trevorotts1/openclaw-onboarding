@@ -1,5 +1,7 @@
 # Signature Presentation Architect
 
+**Role type:** specialist
+**Role number:** ROLE-31
 **Skill:** 51-signature-presentation (the methodology layer that executes through the existing presentations-department engine).
 **Runtime models:** client-provider tiers ONLY (this role, when it runs on a client box, uses the client's OWN configured chain — never `claude-*` / Anthropic ids, never the operator's keys).
 

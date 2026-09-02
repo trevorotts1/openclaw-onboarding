@@ -1,5 +1,5 @@
 {
- "manifest_version": 54,
+ "manifest_version": 56,
  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
  "deliverables_required": [
   {
@@ -130,7 +130,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "raw/source-brief.*"
+   ]
   },
   {
    "id": "P-0.5-RESEARCH",
@@ -250,7 +253,10 @@
    "executor": {
     "kind": "agent"
    },
-   "verifier": "phase_verifiers.verify"
+   "verifier": "phase_verifiers.verify",
+   "consumes": [
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P0A-INTAKE",
@@ -314,7 +320,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "raw/source-brief.*"
+   ]
   },
   {
    "id": "P-SP-CLAIM",
@@ -341,7 +350,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 10
+   "heartbeat_minutes": 10,
+   "consumes": [
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P-SP-INTAKE",
@@ -372,7 +384,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P-SP-INTAKE-TRACE",
@@ -399,7 +414,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "working/copy/sp_intake.json"
+   ]
   },
   {
    "id": "P0B-PRIORITY",
@@ -465,7 +483,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P3-ARC",
@@ -512,7 +533,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/intake.json",
+    "working/copy/priority_shift_spec.json"
+   ]
   },
   {
    "id": "P-3.5-RESEARCH-MAP",
@@ -540,14 +565,21 @@
    "executor": {
     "kind": "agent"
    },
-   "verifier": "phase_verifiers.verify"
+   "verifier": "phase_verifiers.verify",
+   "consumes": [
+    "working/research/brief-*.md",
+    "working/copy/arc_allocation.json"
+   ]
   },
   {
    "id": "P-U-SALES-COPY",
    "order": 3.6,
    "name": "Upsell Sales Page Copy (8-section main structure)",
    "owning_role": "slide-copywriter",
-   "produces_artifact": "working/upsell/copy/sales.fragment.md + working/upsell/copy/copy_ledger.json",
+   "produces_artifact": [
+    "working/upsell/copy/sales.fragment.md",
+    "working/upsell/copy/copy_ledger.json"
+   ],
    "defers_unless": "intake.want_sales_checkout == \"yes\"",
    "gate_codes": [],
    "preflight": null,
@@ -559,7 +591,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json"
+   ]
   },
   {
    "id": "P-U-CHECKOUT-COPY",
@@ -578,7 +614,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/sales.fragment.md",
+    "working/upsell/copy/copy_ledger.json"
+   ]
   },
   {
    "id": "P-U-VSL-RESEARCH",
@@ -597,7 +637,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json"
+   ]
   },
   {
    "id": "P-U-VSL-COPY",
@@ -616,7 +660,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/vsl-research.md",
+    "working/upsell/copy/sales.fragment.md"
+   ]
   },
   {
    "id": "P4-COPY",
@@ -656,7 +704,13 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json",
+    "working/research/research_map.json",
+    "working/research/brief-*.md"
+   ]
   },
   {
    "id": "P-SP-STRUCTURE",
@@ -691,7 +745,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/slides_copy.md",
+    "working/copy/sp_intake.json"
+   ]
   },
   {
    "id": "P-SP-P3-HYGIENE",
@@ -718,14 +776,20 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/copy/sp_structure.json"
+   ]
   },
   {
    "id": "P-U-DESIGN-SALES",
    "order": 4.2,
    "name": "Upsell Sales Page Design (5,000\u201319,000 prompt band)",
    "owning_role": "slide-image-creator",
-   "produces_artifact": "prompts/sales.design.txt + design/sales-design.png",
+   "produces_artifact": [
+    "prompts/sales.design.txt",
+    "design/sales-design.png"
+   ],
    "defers_unless": "intake.want_sales_checkout == \"yes\"",
    "gate_codes": [],
    "preflight": null,
@@ -737,7 +801,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/sales.fragment.md"
+   ]
   },
   {
    "id": "P1Q-COPY-QC",
@@ -788,14 +855,20 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/copy/slides_copy.md"
+   ]
   },
   {
    "id": "P-U-DESIGN-CHECKOUT",
    "order": 4.3,
    "name": "Upsell Checkout Page Design (includes order/payment form design)",
    "owning_role": "slide-image-creator",
-   "produces_artifact": "prompts/checkout.design.txt + design/checkout-design.png",
+   "produces_artifact": [
+    "prompts/checkout.design.txt",
+    "design/checkout-design.png"
+   ],
    "defers_unless": "intake.want_sales_checkout == \"yes\"",
    "gate_codes": [],
    "preflight": null,
@@ -807,14 +880,20 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/checkout.fragment.md"
+   ]
   },
   {
    "id": "P-U-DESIGN-VSL",
    "order": 4.4,
    "name": "Upsell VSL Page Design (includes email/phone gate form design)",
    "owning_role": "slide-image-creator",
-   "produces_artifact": "prompts/vsl.design.txt + design/vsl-design.png",
+   "produces_artifact": [
+    "prompts/vsl.design.txt",
+    "design/vsl-design.png"
+   ],
    "defers_unless": "intake.want_vsl_page == \"yes\"",
    "gate_codes": [],
    "preflight": null,
@@ -826,7 +905,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/vsl.fragment.md"
+   ]
   },
   {
    "id": "PF-DESIGN",
@@ -851,7 +933,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/slides_copy.md",
+    "working/research/brief-*.md"
+   ]
   },
   {
    "id": "P-TYPO-QC",
@@ -879,7 +965,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/research/design-brief-*.md"
+   ]
   },
   {
    "id": "P4-PROMPT",
@@ -889,7 +978,10 @@
    "sop_refs": [
     "prompt-author-presentations-sops.md"
    ],
-   "produces_artifact": "working/prompts/slide-*.txt",
+   "produces_artifact": [
+    "working/prompts/slide-*.txt",
+    "working/prompts/infographic-prompt.txt"
+   ],
    "gate_codes": [
     "AF-PROMPT-FLOOR"
    ],
@@ -906,7 +998,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/copy/slides_copy.md",
+    "working/research/design-brief-*.md"
+   ]
   },
   {
    "id": "P-PROMPT-QC",
@@ -933,7 +1029,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/prompts/slide-*.txt"
+   ]
   },
   {
    "id": "P-STYLE-PREVIEW",
@@ -962,7 +1061,63 @@
     "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json --sample --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 45
+   "heartbeat_minutes": 45,
+   "consumes": [
+    "working/copy/slides.json",
+    "working/prompts/slide-*.txt",
+    "working/copy/style_preview_spec.json"
+   ]
+  },
+  {
+   "id": "P-STYLE-SPEC",
+   "order": 4.84,
+   "name": "Style Preview Spec (3 attention-grade variants + representative slides, authored before the 9 samples render)",
+   "owning_role": "brand-steward",
+   "sop_refs": [
+    "brand-steward-sops.md"
+   ],
+   "produces_artifact": "working/copy/style_preview_spec.json",
+   "gate_codes": [],
+   "preflight": null,
+   "client_report": {
+    "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+    "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+   },
+   "executor": {
+    "kind": "agent"
+   },
+   "verifier": "phase_verifiers.verify",
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/copy/slides.json",
+    "working/copy/intake.json"
+   ]
+  },
+  {
+   "id": "P-STYLE-PICK",
+   "order": 4.86,
+   "name": "Owner Style Pick (human gateway: owner approves ONE of the 3 variants; choice logged with a verified owner_msg_id)",
+   "owning_role": "brand-steward",
+   "sop_refs": [
+    "brand-steward-sops.md"
+   ],
+   "produces_artifact": "working/copy/style_preview_choice.json",
+   "gate_codes": [
+    "AF-STYLE-UNPICKED"
+   ],
+   "preflight": null,
+   "client_report": {
+    "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+    "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+   },
+   "executor": {
+    "kind": "human"
+   },
+   "verifier": "phase_verifiers.verify",
+   "heartbeat_minutes": 45,
+   "consumes": [
+    "working/style-preview/style_samples_manifest.json"
+   ]
   },
   {
    "id": "P4-RENDER",
@@ -1003,7 +1158,12 @@
     "kind": "script",
     "cmd": "python3 scripts/build_deck.py {run_dir}/working/copy/slides.json {run_dir}/out.pptx --run-dir {run_dir} --out {run_dir}/working/deliverables"
    },
-   "verifier": "phase_verifiers.verify"
+   "verifier": "phase_verifiers.verify",
+   "consumes": [
+    "working/copy/slides.json",
+    "working/prompts/slide-*.txt",
+    "working/copy/style_preview_choice.json"
+   ]
   },
   {
    "id": "P-IMAGE-QC",
@@ -1038,7 +1198,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "renders/slide-*.png"
+   ]
   },
   {
    "id": "P-U-HTML-SALES",
@@ -1057,7 +1220,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "design/sales-design.png",
+    "working/upsell/copy/sales.fragment.md"
+   ]
   },
   {
    "id": "P-U-HTML-CHECKOUT",
@@ -1076,7 +1243,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "design/checkout-design.png",
+    "working/upsell/copy/checkout.fragment.md"
+   ]
   },
   {
    "id": "P-U-HTML-VSL",
@@ -1095,14 +1266,21 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "design/vsl-design.png",
+    "working/upsell/copy/vsl.fragment.md"
+   ]
   },
   {
    "id": "P-U-FORM-GATE",
    "order": 5.6,
    "name": "Upsell VSL Email/Phone Gate Form + Workflow (Skill 44)",
    "owning_role": "media-librarian-ghl-updater",
-   "produces_artifact": "ecosystem/gate-form.json + workflows/gate-workflow.json",
+   "produces_artifact": [
+    "ecosystem/gate-form.json",
+    "workflows/gate-workflow.json"
+   ],
    "defers_unless": "intake.want_vsl_page == \"yes\"",
    "gate_codes": [],
    "preflight": null,
@@ -1114,7 +1292,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/vsl/html/vsl.html"
+   ]
   },
   {
    "id": "P-U-GHL-SALES",
@@ -1133,7 +1314,13 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/sales-checkout/html/sales.html",
+    "working/sales-checkout/html/checkout.html",
+    "ecosystem/gate-form.json",
+    "workflows/gate-workflow.json"
+   ]
   },
   {
    "id": "P-U-GHL-VSL",
@@ -1152,7 +1339,12 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/vsl/html/vsl.html",
+    "ecosystem/gate-form.json",
+    "workflows/gate-workflow.json"
+   ]
   },
   {
    "id": "P-SHIFT-QC",
@@ -1181,7 +1373,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/copy/priority_shift_spec.json",
+    "working/copy/slides_copy.md"
+   ]
   },
   {
    "id": "P8-ASSEMBLE",
@@ -1211,7 +1407,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "renders/slide-*.png",
+    "working/deliverables/PRESENTERS-SPEECH.md"
+   ]
   },
   {
    "id": "P8.1-PDF-EXPORT",
@@ -1233,7 +1433,10 @@
     "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "*-FINAL.pptx"
+   ]
   },
   {
    "id": "P8.2-GUIDE",
@@ -1243,7 +1446,7 @@
    "sop_refs": [
     "presenters-guide-specialist-sops.md"
    ],
-   "produces_artifact": "working/deliverables/PRESENTER-GUIDE.pdf",
+   "produces_artifact": "working/deliverables/PRESENTER-GUIDE-WRONG.pdf",
    "gate_codes": [],
    "preflight": null,
    "client_report": {
@@ -1255,7 +1458,11 @@
     "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "*-FINAL.pptx",
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P8.25-WORKBOOK",
@@ -1266,7 +1473,10 @@
     "WORKBOOK-BUILDER-SOP.md",
     "pptx-assembly-specialist-sops.md"
    ],
-   "produces_artifact": "working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf",
+   "produces_artifact": [
+    "working/deliverables/{deck_slug}-WORKBOOK.pdf",
+    "{deck_slug}-WORKBOOK-FILLABLE.pdf"
+   ],
    "gate_codes": [
     "AF-WORKBOOK-PROMPT-NO-CONTENT",
     "AF-WORKBOOK-EMPTY",
@@ -1282,7 +1492,37 @@
     "cmd": "python3 scripts/workbook_builder.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "*-FINAL.pptx",
+    "working/copy/intake.json",
+    "working/copy/slides_copy.md"
+   ]
+  },
+  {
+   "id": "P8.3-INFOGRAPHIC",
+   "order": 8.3,
+   "name": "Infographic Render (canonical Kie path, 9:16 1440x2560, 102,400-byte PNG floor)",
+   "owning_role": "slide-image-creator",
+   "sop_refs": [
+    "slide-image-creator-sops.md"
+   ],
+   "produces_artifact": "working/deliverables/infographic.png",
+   "gate_codes": [],
+   "preflight": null,
+   "client_report": {
+    "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+    "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+   },
+   "executor": {
+    "kind": "script",
+    "cmd": "python3 scripts/build_infographic.py --run-dir {run_dir}"
+   },
+   "verifier": "phase_verifiers.verify",
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/prompts/infographic-prompt.txt"
+   ]
   },
   {
    "id": "P9-SPEECH",
@@ -1313,6 +1553,11 @@
    "heartbeat_minutes": 30,
    "notes": [
     "REVISED 2026-09-01 (SMOKE-1): produces_artifact pointed at working/presenter-speech/ but the phase's own executor cmd writes --out working/deliverables/. Aligned artifact path to the cmd's real output (same convention as P8.4-FISH-TAG / P8.2-GUIDE)."
+   ],
+   "consumes": [
+    "working/copy/intake.json",
+    "working/copy/slides_copy.md",
+    "working/copy/arc_allocation.json"
    ]
   },
   {
@@ -1335,7 +1580,10 @@
     "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH.md"
+   ]
   },
   {
    "id": "P9-SPEECH-WEBINAR-INTRO",
@@ -1360,7 +1608,11 @@
     "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO-WEBINAR.mp3 --webinar-intro-outro"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 120
+   "heartbeat_minutes": 120,
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"
+   ]
   },
   {
    "id": "P9.1-SPEECH-PDF",
@@ -1385,6 +1637,11 @@
    "heartbeat_minutes": 15,
    "notes": [
     "REVISED 2026-09-01 (SMOKE-1): original cmd chained two scripts with && \u2014 the engine's executor runs argv without a shell, so && was a literal token and the phase always exited 2. Replaced with scripts/speech_pdf_chain.py (same steps, no shell)."
+   ],
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/copy/intake.json",
+    "working/copy/arc_allocation.json"
    ]
   },
   {
@@ -1412,7 +1669,10 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"
+   ]
   },
   {
    "id": "P-QC-AGGREGATE",
@@ -1434,7 +1694,15 @@
     "cmd": "python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 10
+   "heartbeat_minutes": 10,
+   "consumes": [
+    "working/qc/copy_qc_report.json",
+    "working/qc/typography_qc_report.json",
+    "working/qc/prompt_qc_report.json",
+    "working/qc/image_qc_report.json",
+    "working/qc/priority_shift_report.json",
+    "working/qc/speech_qc_report.json"
+   ]
   },
   {
    "id": "P9.5-NOTES-SYNC",
@@ -1457,7 +1725,11 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "*-FINAL.pptx",
+    "working/deliverables/PRESENTERS-SPEECH.md"
+   ]
   },
   {
    "id": "P-U-SALES-BUILD",
@@ -1482,7 +1754,12 @@
     "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/sales.fragment.md",
+    "design/sales-design.png",
+    "working/sales-checkout/html/sales.html"
+   ]
   },
   {
    "id": "P-U-CHECKOUT-BUILD",
@@ -1507,7 +1784,11 @@
     "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/upsell/copy/checkout.fragment.md",
+    "design/checkout-design.png"
+   ]
   },
   {
    "id": "P-U-FORM-CHECKOUT",
@@ -1532,7 +1813,10 @@
     "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/sales-checkout/html/checkout.html"
+   ]
   },
   {
    "id": "P-U-COLLATERAL",
@@ -1551,7 +1835,13 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/sales-checkout/html/sales.html",
+    "working/sales-checkout/html/checkout.html",
+    "working/vsl/html/vsl.html",
+    "working/sales-checkout/build_receipt.json"
+   ]
   },
   {
    "id": "P9.2-GHL-UPLOAD",
@@ -1573,7 +1863,16 @@
     "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 15
+   "heartbeat_minutes": 15,
+   "consumes": [
+    "working/deliverables/*-FINAL.pptx",
+    "working/deliverables/*-FINAL.pdf",
+    "working/deliverables/PRESENTER-GUIDE.pdf",
+    "working/deliverables/PRESENTERS-SPEECH.pdf",
+    "working/delivery/PRESENTER-AUDIO.mp3",
+    "working/delivery/PRESENTER-AUDIO-WEBINAR.mp3",
+    "working/delivery/{deck_slug}-WEBINAR.mp4"
+   ]
   },
   {
    "id": "P9.6-WEBINAR-VIDEO",
@@ -1597,7 +1896,11 @@
     "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 120
+   "heartbeat_minutes": 120,
+   "consumes": [
+    "renders/slide-*.png",
+    "working/deliverables/PRESENTERS-SPEECH.md"
+   ]
   },
   {
    "id": "P-U-VSL-BUILD",
@@ -1622,7 +1925,12 @@
     "cmd": "python3 scripts/vsl_builder.py --run-dir {run_dir}"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/delivery/{deck_slug}-WEBINAR.mp4",
+    "working/upsell/copy/vsl.fragment.md",
+    "design/vsl-design.png"
+   ]
   },
   {
    "id": "P7-TELEPROMPTER",
@@ -1644,7 +1952,11 @@
     "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 10
+   "heartbeat_minutes": 10,
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/copy/intake.json"
+   ]
   },
   {
    "id": "P9-DELIVER",
@@ -1672,7 +1984,11 @@
     "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 30
+   "heartbeat_minutes": 30,
+   "consumes": [
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"
+   ]
   },
   {
    "id": "P-U-QC",
@@ -1691,7 +2007,48 @@
     "kind": "agent"
    },
    "verifier": "phase_verifiers.verify",
-   "heartbeat_minutes": 20
+   "heartbeat_minutes": 20,
+   "consumes": [
+    "working/sales-checkout/html/sales.html",
+    "working/sales-checkout/html/checkout.html",
+    "working/vsl/html/vsl.html"
+   ]
+  },
+  {
+   "id": "P-BUNDLE-GATE",
+   "order": 9.95,
+   "name": "Bundle-Completeness Gate (terminal; run_postflight_gate body via bundle_gate.py \u2014 exit 5 naming any missing/under-threshold deliverable)",
+   "owning_role": "pptx-assembly-specialist",
+   "sop_refs": [
+    "pptx-assembly-specialist-sops.md"
+   ],
+   "produces_artifact": "working/checkpoints/bundle_gate.json",
+   "gate_codes": [
+    "AF-BUNDLE-COMPLETE"
+   ],
+   "preflight": null,
+   "client_report": {
+    "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+    "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+   },
+   "executor": {
+    "kind": "script",
+    "cmd": "python3 scripts/bundle_gate.py --run-dir {run_dir}"
+   },
+   "verifier": "phase_verifiers.verify",
+   "heartbeat_minutes": 10,
+   "consumes": [
+    "working/deliverables/{deck_slug}-FINAL.pptx",
+    "working/deliverables/{deck_slug}-FINAL.pdf",
+    "working/deliverables/PRESENTER-GUIDE.pdf",
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/deliverables/PRESENTERS-SPEECH.pdf",
+    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+    "working/delivery/PRESENTER-AUDIO.mp3",
+    "working/deliverables/infographic.png",
+    "working/deliverables/presenter-teleprompter.html",
+    "working/delivery/{deck_slug}-WEBINAR.mp4"
+   ]
   }
  ],
  "autofails": [
@@ -3620,7 +3977,7 @@
   },
   {
    "id": "brand-steward",
-   "owns_phase": null
+   "owns_phase": "P-STYLE-SPEC"
   },
   {
    "id": "capacity-reliability-engineer",
@@ -3676,11 +4033,11 @@
   },
   {
    "id": "presenters-guide-specialist",
-   "owns_phase": null
+   "owns_phase": "P8.2-GUIDE"
   },
   {
    "id": "presenters-speech-writer",
-   "owns_phase": null
+   "owns_phase": "P7-TELEPROMPTER"
   },
   {
    "id": "qc-specialist-presentations",

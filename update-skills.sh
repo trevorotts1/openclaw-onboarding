@@ -1143,7 +1143,7 @@ For each such skill folder under \`~/.openclaw/skills/\`:
 - Skills 22-23: MAIN ORCHESTRATOR ONLY, never delegate
 - Tier order in any tiered skill (e.g. skill 36 GHL MCP): try Tier N before Tier N+1, no skipping
 - Disclosure headers (e.g. \`[GHL tier used: N -- tool_name]\`) required per any skill's SOUL-level rules
-- No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no \`--break-system-packages\` unless explicitly instructed
+- No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no pip flag that bypasses the system Python's externally-managed guard (install Python deps only into the department venv, FIX 71) unless explicitly instructed
 
 ### When the GATE passes
 - This section is removed AUTOMATICALLY by the next update-skills.sh run. Leave it alone.
@@ -3262,16 +3262,48 @@ colocate_presentation_entry() {
     return 0
   fi
   local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
-  local copied=0
-  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
+  # FIX 65 — Stop the permanent colocate partial. The old list hardcoded the
+  # retired deck-build-guard.sh (retired U025, v21.4.0), so one leg of the pair
+  # was never copyable and every roll printed "partial (copied 1 of 2)" forever,
+  # silently. New contract (R11 §G1): "colocate list = files that exist; return
+  # 1 on any miss; CI asserts the list."
+  #   1. The colocate LIST is derived from the candidates that EXIST in the
+  #      canonical source dir right now — a retired candidate is absent from
+  #      the list, never a permanent partial.
+  #   2. An EMPTY list is itself a miss (the canonical entry script must
+  #      always exist) -> return 1, loudly.
+  #   3. Any listed file missing at copy time or failing to copy is a MISS ->
+  #      echo FAILED + return 1, so a caller under `set -euo pipefail` sees
+  #      the failure instead of an eternal WARN-and-continue.
+  # The CI colocate gate (W22/FIX 65) asserts exactly this list contract.
+  local -a colocate_list=()
+  local -a colocate_candidates=(presentation-canonical-entry.sh deck-build-guard.sh)
+  local f copied=0
+  for f in "${colocate_candidates[@]}"; do
     if [ -f "$src_dir/$f" ]; then
-      cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
+      colocate_list+=("$f")
+    else
+      echo "  [U006] colocate candidate absent (not in list): $src_dir/$f"
     fi
   done
-  if [ "$copied" -eq 2 ]; then
-    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
+  if [ "${#colocate_list[@]}" -eq 0 ]; then
+    echo "  [U006] colocate MISS: no colocatable files exist in $src_dir — co-location FAILED" >&2
+    return 1
+  fi
+  for f in "${colocate_list[@]}"; do
+    if [ -f "$src_dir/$f" ]; then
+      cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
+    else
+      echo "  [U006] colocate MISS: $src_dir/$f vanished between listing and copy — co-location FAILED" >&2
+      return 1
+    fi
+  done
+  if [ "$copied" -eq "${#colocate_list[@]}" ]; then
+    echo "  [U006] co-located ${colocate_list[*]} -> $dept_scripts/"
   else
-    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
+    # FIX 65: any shortfall is a hard failure, never a soft partial.
+    echo "  [U006] colocate MISS (copied $copied of ${#colocate_list[@]}) — co-location FAILED" >&2
+    return 1
   fi
 }
 # <<< U006-COLOCATE-PRESENTATION-ENTRY-END
@@ -3394,6 +3426,111 @@ retire_legacy_sunday_crontab() {
   rm -f "$tmp" 2>/dev/null || true
 }
 
+  pres_deps_canon_rows() {
+    # FIX 70: resolve the presentation-deps canon exactly like qc-completeness.sh
+    # (repo checkout first, then the role-library copy) and print one
+    # "kind|spec" row per dep. Unparsable canon -> a single __canon__ row so the
+    # caller warns loudly instead of silently converging nothing.
+    local _canon=""
+    local _cand
+    for _cand in "$SKILLS_DIR/presentations/scripts/presentation-deps.json" \
+                 "$SKILLS_DIR/templates/role-library/presentations/scripts/presentation-deps.json"; do
+      if [ -n "$_cand" ] && [ -r "$_cand" ]; then _canon="$_cand"; break; fi
+    done
+    if [ -z "$_canon" ] || ! command -v python3 >/dev/null 2>&1; then
+      printf '__canon__|missing:%s\n' "${_canon:-no-candidate-readable}"
+      return 0
+    fi
+    PDEPS_CANON="$_canon" python3 - <<'PYEOF'
+import json, os
+try:
+    canon = json.load(open(os.environ["PDEPS_CANON"]))
+except Exception as exc:
+    print(f"__canon__|unparsable:{exc}")
+    raise SystemExit(0)
+for dep in canon.get("deps", []):
+    name = dep.get("name", "")
+    kind = dep.get("kind", "")
+    if kind == "python_import":
+        pkgs = " ".join(dep.get("pip_packages", []) or [dep.get("import_spec", "")])
+        spec = dep.get("import_spec", "")
+        print(f"python_import|{spec}|{pkgs}")
+    elif kind == "binary":
+        print(f"binary|{dep.get('binary_name', '') or name}")
+    else:
+        print(f"__canon__|unknown-kind:{name}:{kind}")
+PYEOF
+  }
+  pres_deps_check_and_install() {
+    # FIX 70: converge each canon row. python_import -> venv pip (deduped into one
+    # pip invocation per fresh batch); binary -> brew on Mac (pdftoppm via poppler,
+    # ffprobe/ffmpeg via ffmpeg, tesseract directly — all already handled by the
+    # Mac branch below; the binary pass here only REPORTS a canon binary the Mac
+    # branch does not install, so a future canon addition can never converge
+    # silently-nothing).
+    local _py="$_PRES_VENV_PY"
+    local _fresh_pkgs=""
+    local _row_kind _row_spec _row_pkgs
+    while IFS='|' read -r _row_kind _row_spec _row_pkgs; do
+      [ -z "$_row_kind" ] && continue
+      case "$_row_kind" in
+        __canon__)
+          echo "    ⚠⚠ presentation-deps canon problem: ${_row_spec} — converge ran on the hardcoded core set only"
+          ;;
+        python_import)
+          [ -z "$_row_spec" ] && continue
+          if [ -x "$_py" ] && ! "$_py" -c "import ${_row_spec%%,*}" >/dev/null 2>&1; then
+            for _p in ${_row_pkgs:-$_row_spec}; do
+              case " ${_fresh_pkgs} " in *" ${_p} "*) ;; *) _fresh_pkgs="${_fresh_pkgs} ${_p}" ;; esac
+            done
+          fi
+          ;;
+        binary)
+          # brew-backed binaries are converged by the Mac branch above (poppler,
+          # libreoffice, ffmpeg, tesseract). Anything else the canon names is a
+          # gap this updater cannot install — say so, never a silent skip.
+          case "$_row_spec" in
+            soffice|pdftoppm|ffmpeg|ffprobe|tesseract) ;;
+            *) command -v "$_row_spec" >/dev/null 2>&1 || \
+               echo "    ⚠ canon binary '${_row_spec}' has no converge install action — add it to update-skills.sh (Mac brew + VPS reassert) and install.sh Step 6.5" ;;
+          esac
+          ;;
+      esac
+    done < <(pres_deps_canon_rows)
+    if [ -n "${_fresh_pkgs// /}" ] && [ -x "$_py" ]; then
+      echo "    Installing canon deps INTO the department venv:${_fresh_pkgs} (venv-local pip only)..."
+      if "$_py" -m pip install --quiet --disable-pip-version-check $_fresh_pkgs >/dev/null 2>&1 \
+         && "$_py" -c "import ${_fresh_pkgs%% *}" >/dev/null 2>&1; then
+        echo "    ✓ canon deps installed in the venv:${_fresh_pkgs}"
+      else
+        echo "    ⚠ venv pip install of canon deps failed — re-run: $_py -m pip install${_fresh_pkgs}"
+      fi
+    fi
+  }
+  pres_deps_verify_rows() {
+    # FIX 70: verify every canon row post-converge; append missing deps to
+    # _pres_missing (caller's local). Mirrors the qc-completeness exit-6 gate.
+    local _row_kind _row_spec _row_pkgs
+    while IFS='|' read -r _row_kind _row_spec _row_pkgs; do
+      [ -z "$_row_kind" ] && continue
+      case "$_row_kind" in
+        __canon__) _pres_missing="${_pres_missing} canon(${_row_spec})" ;;
+        python_import)
+          [ -z "$_row_spec" ] && continue
+          if [ -x "$_PRES_VENV_PY" ]; then
+            "$_PRES_VENV_PY" -c "import ${_row_spec}" >/dev/null 2>&1 \
+              || _pres_missing="${_pres_missing} venv(${_row_spec} at $_PRES_VENV)"
+          else
+            _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
+          fi
+          ;;
+        binary)
+          command -v "$_row_spec" >/dev/null 2>&1 || _pres_missing="${_pres_missing} ${_row_spec}"
+          ;;
+      esac
+    done < <(pres_deps_canon_rows)
+  }
+
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
@@ -3462,12 +3599,26 @@ main() {
       --agents-list-migrate)
         AGENTS_LIST_STANDALONE="migrate"
         ;;
+      # FIX 70 (W20b-B3): standalone read-only presentation-deps check. Reads the
+      # ONE canon (presentations/scripts/presentation-deps.json, then the
+      # role-library copy) and names EVERY missing dep by name — the same checks
+      # qc-completeness.sh's exit-6 gate runs — without installing anything and
+      # without a full roll. Exit 6 = at least one dep is missing (the number the
+      # qc-completeness gate uses); exit 0 = all canon deps present.
+      --presentation-deps-check)
+        PRESENTATION_DEPS_CHECK_STANDALONE="1"
+        ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
         echo "                        [--agents-list-check | --agents-list-migrate]"
+        echo "                        [--presentation-deps-check]"
         echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
         echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
         echo "  (no flag)     Install/update all skills"
+        echo ""
+        echo "  --presentation-deps-check  Read-only: verify every dep in presentations/scripts/presentation-deps.json"
+        echo "                             (soffice, pdftoppm, reportlab, python-pptx, pypdf, ffmpeg, ffprobe, tesseract,"
+        echo "                             pytesseract) and NAME each missing one. Never installs. Exit 6 = missing dep(s)."
         echo ""
         echo "  --preclear-check       Report whether this box carries OpenClaw 2026.7.1 startup-gate"
         echo "                         relics (~/.clawdbot, plugins/installs.json) and whether they are"
@@ -3516,6 +3667,71 @@ main() {
     local _al_rc=0
     agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
     exit "$_al_rc"
+  fi
+
+  # ----------------------------------------------------------
+  # FIX 70 (W20b-B3): standalone --presentation-deps-check. Read-only, exits
+  # before any roll action. Names EVERY canon dep that is missing — including
+  # pypdf / pytesseract in the department venv — with the exact fix command,
+  # and exits 6 (the qc-completeness.sh exit-6 contract) when anything is
+  # missing. The check-mode consumer for FIX 70's proof: uninstall a canon dep
+  # and this mode names it.
+  # ----------------------------------------------------------
+  if [ "${PRESENTATION_DEPS_CHECK_STANDALONE:-0}" = "1" ]; then
+    echo "============================================"
+    echo "   Presentation-deps check (FIX 70 canon) — read-only"
+    echo "============================================"
+    local _pdc_missing=""
+    local _pdc_py=""
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+      _pdc_py="${PRESENTATION_PIPELINE_INTERPRETER}"
+    else
+      local _pdc_cand
+      for _pdc_cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+        if [ -x "$_pdc_cand" ]; then _pdc_py="$_pdc_cand"; break; fi
+      done
+    fi
+    [ -z "$_pdc_py" ] && _pdc_py="python3"
+    echo "  interpreter: ${_pdc_py}"
+    local _pdc_row_kind _pdc_row_spec _pdc_row_pkgs
+    while IFS='|' read -r _pdc_row_kind _pdc_row_spec _pdc_row_pkgs; do
+      [ -z "$_pdc_row_kind" ] && continue
+      case "$_pdc_row_kind" in
+        __canon__)
+          echo "  MISSING(can): presentation-deps canon problem: ${_pdc_row_spec}"
+          _pdc_missing="${_pdc_missing} canon(${_pdc_row_spec})"
+          ;;
+        binary)
+          if command -v "$_pdc_row_spec" >/dev/null 2>&1; then
+            echo "  OK      binary: ${_pdc_row_spec}"
+          else
+            echo "  MISSING binary: ${_pdc_row_spec} — not on PATH"
+            _pdc_missing="${_pdc_missing} ${_pdc_row_spec}"
+          fi
+          ;;
+        python_import)
+          if [ -x "$_pdc_py" ] && "$_pdc_py" -c "import ${_pdc_row_spec}" >/dev/null 2>&1; then
+            echo "  OK      import: ${_pdc_row_spec} ($_pdc_py)"
+          else
+            echo "  MISSING import: ${_pdc_row_spec} — fix: ${_pdc_py} -m pip install ${_pdc_row_pkgs:-${_pdc_row_spec}}"
+            _pdc_missing="${_pdc_missing} python(${_pdc_row_spec})"
+          fi
+          ;;
+        *)
+          echo "  MISSING(?)  : ${_pdc_row_spec} (unknown canon kind ${_pdc_row_kind})"
+          _pdc_missing="${_pdc_missing} unknown-kind(${_pdc_row_spec})"
+          ;;
+      esac
+    done < <(pres_deps_canon_rows)
+    if [ -n "$_pdc_missing" ]; then
+      echo ""
+      echo "PRESENTATION_DEPS_MISSING — the Skill 23 presentation pipeline cannot run; missing:${_pdc_missing}"
+      echo "  Converge with a full update run, or install.sh Step 6.5, or (VPS) bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+      exit 6
+    fi
+    echo ""
+    echo "presentation deps OK — every presentation-deps.json dep present."
+    exit 0
   fi
 
   echo "============================================"
@@ -9001,7 +9217,18 @@ PY
 
   # U006 — Co-locate the canonical presentation entry script + guard into the
   # materialized department's scripts/ directory.
-  colocate_presentation_entry
+  # FIX 65: colocate_presentation_entry returns 1 on any miss (colocate list =
+  # files that exist; return 1 on any miss). Same failure class as
+  # deliver_canonical_scripts_tree rc 1 above — a genuine delivery failure
+  # withholds the success stamp; it never prints a soft "partial (copied …)"
+  # and never passes silently. (A SKIP — workspace or department not
+  # materialized — still returns 0 and is not a failure.)
+  _COLOCATE_RC=0
+  colocate_presentation_entry || _COLOCATE_RC=$?
+  if [ "$_COLOCATE_RC" -ne 0 ]; then
+    echo "FATAL: presentation entry co-location failed (rc=$_COLOCATE_RC); success stamp withheld" >&2
+    exit 1
+  fi
 
   # ----------------------------------------------------------
   # D5 — Command Center web-app refresh (v14.27.0):
@@ -9469,10 +9696,44 @@ PYEOF
   # (VPS is handled by the reassert script the same step writes), then hard-WARN if
   # any dep is still missing. It never blocks the update; the following
   # qc-completeness gate re-checks the same four deps.
+  #
+  # FIX 70 (W20b-B3): the converge list now MATCHES the runtime gate. One canon
+  # file — presentations/scripts/presentation-deps.json (repo checkout, then the
+  # role-library copy) — is read here via pres_deps_canon_rows (JSON -> "kind|spec"
+  # rows over stdout). Converge installs/creates what the canon names:
+  #   kind=python_import -> pip into the department venv (FIX 71); the install and
+  #     both verify strings grow the canon's pip_packages + import_spec instead of a
+  #     hardcoded trio, so pypdf AND pytesseract are installed and proved.
+  #   kind=binary with a brew path -> brew-installed on Mac (pdftoppm/ffmpeg/ffprobe/
+  #     tesseract); a canon binary this updater has no install action for is named in
+  #     a loud canon-gap line, never silently dropped. VPS converges via the reassert
+  #     script as before.
+  # The end-of-converge PRESENTATION_DEPS_MISSING check verifies EVERY canon row
+  # (binary via command -v, python_import via the venv interpreter) on top of the
+  # pre-existing hardcoded core checks, so the converge verdict and the
+  # qc-completeness.sh exit-6 gate agree by construction — remove any canon dep and
+  # the very next roll names it and installs it.
+  # ----------------------------------------------------------
+  #
+  # FIX 71 (W20b-B4): the Python deps now live in the DEPARTMENT VENV
+  #   "$OC_CONFIG/.venv-presentations"   (Mac: ~/.openclaw/.venv-presentations,
+  #   VPS: /data/.venv-presentations under /data/.openclaw — the bind-mount that
+  #   survives a docker force-recreate), and NO system-Python pip bypass flag
+  #   remains on this update path. The venv is created idempotently here (python3 -m venv;
+  #   Debian images missing python3-venv fail LOUDLY and name `apt-get install
+  #   python3-venv` — never a silent skip), the four Python deps are pip-installed
+  #   INTO it, and PRESENTATION_PIPELINE_INTERPRETER is exported pointing at the
+  #   venv python for the rest of this update (qc-completeness.sh consumes it) and
+  #   persisted in the box secrets env so the door + engine resolve the same
+  #   interpreter on the next run. System-level installs are GONE from this path:
+  #   a pip failure lands in the loud PRESENTATION_DEPS_MISSING warn with the exact
+  #   venv re-run command, it never falls back to touching system site-packages.
   # ----------------------------------------------------------
   converge_presentation_deps() {
     echo ""
-    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx)..."
+    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx, pypdf, pytesseract, ffmpeg, ffprobe, tesseract — per presentation-deps.json)..."
+    local _PRES_VENV="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations"
+    local _PRES_VENV_PY="$_PRES_VENV/bin/python"
     if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
       local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
       if [ -x "$_reassert" ]; then
@@ -9483,8 +9744,9 @@ PYEOF
       fi
     else
       # Mac: brew formula for poppler, NONINTERACTIVE cask for LibreOffice (loud
-      # warn on failure — a cask can need an admin password), pip --user for the
-      # two Python modules. NONINTERACTIVE + no `read` so a silent roll never hangs.
+      # warn on failure — a cask can need an admin password), Python modules into
+      # the department venv (FIX 71). NONINTERACTIVE + no `read` so a silent roll
+      # never hangs.
       if command -v pdftoppm >/dev/null 2>&1; then
         echo "    pdftoppm (poppler) already present"
       elif command -v brew >/dev/null 2>&1; then
@@ -9503,31 +9765,106 @@ PYEOF
       else
         echo "    ⚠ Homebrew not found — cannot install LibreOffice (soffice)"
       fi
-      if command -v python3 >/dev/null 2>&1; then
-        if python3 -c "import reportlab, pptx" >/dev/null 2>&1; then
-          echo "    reportlab + python-pptx already importable"
-        else
-          echo "    Installing reportlab + python-pptx (pip --user --break-system-packages)..."
-          python3 -m pip install --user --break-system-packages reportlab python-pptx >/dev/null 2>&1 \
-            && echo "    reportlab + python-pptx installed" \
-            || echo "    ⚠ pip install reportlab/python-pptx failed — deck assembly + presenter PDF will fail"
-        fi
+      # FIX 70 (W20b-B3): ffmpeg/ffprobe (webinar video render) and tesseract (OCR
+      # readback via pytesseract) are canon deps the older converge never installed.
+      if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+        echo "    ffmpeg + ffprobe already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing ffmpeg (provides ffmpeg + ffprobe) via Homebrew..."
+        brew install ffmpeg >/dev/null 2>&1 \
+          && echo "    ffmpeg installed (ffmpeg + ffprobe)" \
+          || echo "    ⚠ brew install ffmpeg failed — webinar video render will fail. Run: brew install ffmpeg"
+      else
+        echo "    ⚠ Homebrew not found — cannot install ffmpeg/ffprobe"
+      fi
+      if command -v tesseract >/dev/null 2>&1; then
+        echo "    tesseract already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing tesseract (OCR readback binary) via Homebrew..."
+        brew install tesseract >/dev/null 2>&1 \
+          && echo "    tesseract installed" \
+          || echo "    ⚠ brew install tesseract failed — image QC OCR readback will fail. Run: brew install tesseract"
+      else
+        echo "    ⚠ Homebrew not found — cannot install tesseract"
       fi
     fi
-    # Hard end-of-converge WARNING when any of the four deps is STILL missing.
+    # FIX 71: department venv — created on BOTH platforms (the VPS reassert script
+    # predates the venv and pip-installs into the system interpreter; converging
+    # the venv here closes that gap until install.sh Step 6.5 ships the venv too).
+    if command -v python3 >/dev/null 2>&1; then
+      if [ ! -x "$_PRES_VENV_PY" ]; then
+        echo "    Creating department venv at $_PRES_VENV ..."
+        if python3 -m venv "$_PRES_VENV" >/dev/null 2>&1 && [ -x "$_PRES_VENV_PY" ]; then
+          echo "    ✓ venv created ($_PRES_VENV)"
+        else
+          rm -rf "$_PRES_VENV" 2>/dev/null
+          echo "    ⚠⚠ python3 -m venv FAILED — the venv half was not created. Debian/Ubuntu images need: apt-get install -y python3-venv python3-pip. The four Python presentation deps (reportlab, python-pptx, pypdf, pytesseract) are NOT installed; deck assembly + presenter PDF + workbook read-back + OCR readback will fail at GATE 1."
+        fi
+      fi
+      if [ -x "$_PRES_VENV_PY" ]; then
+        if "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+          echo "    reportlab + python-pptx + pypdf + pytesseract already importable in the department venv"
+        else
+          echo "    Installing reportlab + python-pptx + pypdf + pytesseract INTO the department venv (venv-local pip only)..."
+          if "$_PRES_VENV_PY" -m pip install --quiet --disable-pip-version-check reportlab python-pptx pypdf pytesseract >/dev/null 2>&1 \
+             && "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+            echo "    ✓ reportlab + python-pptx + pypdf + pytesseract installed in the venv"
+          else
+            echo "    ⚠ venv pip install failed — deck assembly + presenter PDF + workbook read-back + OCR readback will fail. Re-run: $_PRES_VENV_PY -m pip install reportlab python-pptx pypdf pytesseract"
+          fi
+        fi
+        # FIX 70: converge every remaining canon python_import row (a canon dep
+        # added after this roll is installed here without editing the hardcoded
+        # block above).
+        pres_deps_check_and_install
+        export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_VENV_PY"
+        echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
+      fi
+    fi
+    # Hard end-of-converge WARNING when any canon dep is STILL missing (FIX 70:
+    # the verify pass now checks every presentation-deps.json row on top of the
+    # pre-existing hardcoded core checks, so this verdict matches the
+    # qc-completeness.sh exit-6 gate).
     local _pres_missing=""
     command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
     command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
-    if command -v python3 >/dev/null 2>&1; then
-      python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _pres_missing="${_pres_missing} python(reportlab+python-pptx)"
+    if [ -x "$_PRES_VENV_PY" ]; then
+      "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1 || _pres_missing="${_pres_missing} venv(reportlab+python-pptx+pypdf+pytesseract at $_PRES_VENV)"
+    elif command -v python3 >/dev/null 2>&1; then
+      _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
     fi
+    command -v ffmpeg  >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffmpeg"
+    command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
+    command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
+    pres_deps_verify_rows
     if [ -n "$_pres_missing" ]; then
-      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Mac: brew install poppler; brew install --cask libreoffice; python3 -m pip install --user --break-system-packages reportlab python-pptx. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
     else
-      echo "  ✓ presentation deps converged: soffice + pdftoppm + reportlab + python-pptx all present"
+      echo "  ✓ presentation deps converged: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present (canon-checked)"
     fi
   }
   converge_presentation_deps
+  # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
+  # are a path, never a secret) so the door + engine resolve the venv python on the
+  # next run without depending on this process env. Append-only + idempotent.
+  if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ]; then
+    _PRES_SECRETS_ENV="${OC_SECRETS_ENV:-}"
+    [ -z "$_PRES_SECRETS_ENV" ] && [ "${OC_PLATFORM:-}" = "vps" ] && _PRES_SECRETS_ENV="/data/.openclaw/secrets/.env"
+    [ -z "$_PRES_SECRETS_ENV" ] && _PRES_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+    if [ -n "$_PRES_SECRETS_ENV" ]; then
+      mkdir -p "$(dirname "$_PRES_SECRETS_ENV")" 2>/dev/null
+      touch "$_PRES_SECRETS_ENV" 2>/dev/null || true
+      if grep -q '^export PRESENTATION_PIPELINE_INTERPRETER=' "$_PRES_SECRETS_ENV" 2>/dev/null; then
+        sed -i.bak-presvenv "s|^export PRESENTATION_PIPELINE_INTERPRETER=.*|export PRESENTATION_PIPELINE_INTERPRETER=\"${PRESENTATION_PIPELINE_INTERPRETER}\"|" "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER updated in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not update PRESENTATION_PIPELINE_INTERPRETER in $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      else
+        printf 'export PRESENTATION_PIPELINE_INTERPRETER="%s"\n' "$PRESENTATION_PIPELINE_INTERPRETER" >> "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER recorded in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not write PRESENTATION_PIPELINE_INTERPRETER to $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      fi
+    fi
+  fi
 
   # ----------------------------------------------------------
   # R14: REAP THE GHL MCP STATUS LINE.

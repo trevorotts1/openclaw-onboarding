@@ -129,6 +129,188 @@ def _craft_warning_codes() -> set:
     return _CRAFT_WARNING_CODES
 
 
+# ---------------------------------------------------------------------------
+# W12a-B3 (MASTER Part 8 Fix 33, builder task B3): report floors SCALE to the
+# deck's slide count. Every numeric floor/ceiling below was authored against
+# the deck-12 standard (the SOP reference deck and the QC fixture size). Held
+# constant on a 100-slide deck they silently change meaning: the same beat
+# density that reads as "wallpapered hook" on 12 slides reads as "barely
+# present" on 100, and a section floor of 2 stops meaning anything when a
+# major arc owns 17 slides. The curve is density-preserving linear scaling
+# off the reference deck: thresholds below the reference deck keep their
+# authored value (a floor never shrinks), thresholds above scale up
+# proportionally, so a deck-12 fixture reproduces the exact historical
+# numbers and a deck-12-sized deck is judged exactly as before.
+# ---------------------------------------------------------------------------
+_QC_FLOOR_REF_SLIDES = 12  # the deck-12 standard these floors were authored against
+
+# ---------------------------------------------------------------------------
+# FIX 33 — QC independence provable; a real vision route (MASTER Part 8).
+# qc_check's share: a MECHANICAL scan of working/qc/image_qc_report.json for
+# the vision-unit provenance a real vision route leaves behind — the same
+# contract phase_verifiers._fix33_check_report and qc_aggregate enforce, so
+# the QC specialist's own report cannot declare "vision QC" that only SAYS a
+# model name. Violations are AF-IMAGE-QC-UNIT SYSTEM findings (exit-1 class,
+# same as the other mechanical codes).
+# ---------------------------------------------------------------------------
+FIX33_AF_CODE = "AF-IMAGE-QC-UNIT"
+FIX33_ROLLBACK_FLAG = "PRESENTATION_FIX33_VISION_CONTRACT"
+_FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                     "ocr_engine", "vision_engine", "reviewer_vision_model")
+_FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+_FIX33_OBSERVED_FIELDS = ("observed_text", "vision", "ocr", "ocr_text",
+                          "baked_text", "read_text", "description",
+                          "pixels_read", "visual_subject")
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_row_ordinal(row: dict, index: int):
+    for k in ("slide", "ordinal", "slide_ordinal", "index", "slide_number", "n"):
+        v = row.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("Ss-").isdigit():
+            try:
+                return int(v.strip().lstrip("Ss-"))
+            except ValueError:
+                continue
+    return index + 1
+
+
+def check_image_qc_vision_unit(run_dir: str) -> List[Dict[str, Any]]:
+    """FIX 33 mechanical scan: image_qc_report.json must carry the dispatcher's
+    vision-unit stamp — graded_by_model present AND different from the
+    authoring stamp, a request_id present, and per-slide LIST rows covering
+    every rendered PNG with a non-empty observed_text. Absent report = not
+    checkable here (the domain gates own presence); a PRESENT report that
+    fails the contract is an AF-IMAGE-QC-UNIT SYSTEM finding."""
+    findings: List[Dict[str, Any]] = []
+    if os.environ.get(FIX33_ROLLBACK_FLAG) == "0":
+        return findings
+    p = Path(run_dir) / "working" / "qc" / "image_qc_report.json"
+    if not p.is_file():
+        return findings
+    try:
+        report = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return findings
+    if not isinstance(report, dict):
+        return findings
+
+    def _add(evidence: str) -> None:
+        findings.append({
+            "code": FIX33_AF_CODE,
+            "level": "SYSTEM",
+            "evidence": evidence,
+            "report": "image_qc_report.json",
+            "report_label": "Image QC",
+        })
+
+    # Authoring stamp: who WROTE the report (qc_independence block first,
+    # then top level) — same precedence as phase_verifiers/qc_aggregate.
+    blk = report.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    authoring_stamp = ""
+    for src in (blk, report):
+        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                authoring_stamp = v.strip()
+                break
+        if authoring_stamp:
+            break
+
+    graded_model = _fix33_first_str(report, _FIX33_MODEL_KEYS)
+    if not graded_model:
+        _add("image_qc_report.json declares no graded_by_model — FIX 33 requires "
+             "the dispatcher's vision-unit stamp (graded_by_provider/"
+             "graded_by_model/request_id) in every QC artifact; a report that "
+             "only SAYS a model name carries no route provenance.")
+    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+        _add(f"graded_by_model {graded_model!r} equals the report's authoring "
+             f"stamp {authoring_stamp!r} — the author graded its own work; FIX 33 "
+             "requires a cross-graded vision route (never self-graded).")
+
+    if not _fix33_first_str(report, _FIX33_REQUEST_KEYS):
+        _add("image_qc_report.json carries no request_id — FIX 33 requires the "
+             "vision route's request id so every grade is traceable to the unit "
+             "call that produced it.")
+
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report:
+            per_slide = report.get(k)
+            break
+    if isinstance(per_slide, dict):
+        _add("per-slide coverage is a DICT — FIX 33 requires the per-slide LIST "
+             "form so no slide's vision row can be silently dropped.")
+        per_slide = None
+    rows: List[Tuple[int, dict]] = []
+    if isinstance(per_slide, list) and per_slide:
+        rows = [(_fix33_row_ordinal(r, i), r) for i, r in enumerate(per_slide)
+                if isinstance(r, dict)]
+        if len(rows) != len(per_slide):
+            _add("per-slide coverage contains non-object rows — every FIX 33 "
+                 "vision row must be an object with its own observed_text.")
+    try:
+        n_pngs = len(sorted((Path(run_dir) / "renders").glob("slide-*.png")))
+    except OSError:
+        n_pngs = 0
+    if not rows:
+        _add("image_qc_report.json has no per-slide rows — FIX 33 requires one "
+             "vision-unit row per rendered slide, each carrying a non-empty "
+             "observed_text from the route's read of the PNG.")
+    else:
+        if n_pngs and len(rows) < n_pngs:
+            _add(f"image_qc_report.json carries {len(rows)} per-slide vision rows "
+                 f"for {n_pngs} rendered PNG(s) — every rendered slide must be "
+                 "covered by its own vision-unit row (FIX 33).")
+        blind: List[str] = []
+        for ordinal, row in rows:
+            if not _fix33_first_str(row, _FIX33_OBSERVED_FIELDS):
+                blind.append(f"slide {ordinal:02d}" if isinstance(ordinal, int)
+                             else f"row {ordinal!r}")
+        if blind:
+            _add("per-slide rows without a non-empty observed_text (pixel-blind "
+                 "rows cannot attest a vision unit): " + ", ".join(blind[:12]))
+    return findings
+
+
+def _scaled_floor(base: int, total_slides: int,
+                  ref: int = _QC_FLOOR_REF_SLIDES) -> int:
+    """Scale a MINIMUM count (a floor) to the deck's slide count.
+
+    Density-preserving: floor = max(base, ceil(base * total / ref)). At the
+    reference deck size this returns base exactly; below it, the authored
+    floor stands (floors never shrink with deck size); above it, the floor
+    grows proportionally so the required beat DENSITY stays constant."""
+    if total_slides <= 0 or ref <= 0 or total_slides <= ref:
+        return base
+    return max(base, -(-base * total_slides // ref))  # ceil division
+
+
+def _scaled_ceiling(base: int, total_slides: int,
+                    ref: int = _QC_FLOOR_REF_SLIDES) -> int:
+    """Scale a MAXIMUM count (a ceiling) to the deck's slide count.
+
+    Density-preserving: ceiling = max(base, ceil(base * total / ref)). The
+    same beat density that trips the ceiling on the reference deck trips it
+    on any larger deck; below the reference size the authored ceiling stands
+    (a cap never tightens as a deck shrinks)."""
+    if total_slides <= 0 or ref <= 0 or total_slides <= ref:
+        return base
+    return max(base, -(-base * total_slides // ref))  # ceil division
+
+
 def _run_craft_warning_checks(run_dir: str,
                               codes: List[Dict]) -> List[Dict[str, Any]]:
     """Heuristic findings for the six warning codes, disposition-filtered,
@@ -272,14 +454,18 @@ def check_hook_doctrine(run_dir: str, intake: Optional[dict],
                     "hook_phrase": hook_phrase,
                 })
 
-    # AF-HOOK-1: hook on > 4 slides (over-stamp / ceiling)
+    # AF-HOOK-1: hook on > N slides (over-stamp / ceiling; N scales with the
+    # deck's slide count -- W12a-B3 -- so a long deck is allowed the same
+    # refrain DENSITY, not the same absolute count)
     if "AF-HOOK-1" in enforced_codes and hook_phrase:
         hook_slides = [(i, t) for i, t in slides if hook_phrase.lower() in t.lower()]
-        if len(hook_slides) > 4:
+        hook_ceiling = _scaled_ceiling(4, len(slides))
+        if len(hook_slides) > hook_ceiling:
             findings.append({
                 "code": "AF-HOOK-1",
                 "level": "DECK",
-                "evidence": f"hook appears on {len(hook_slides)} slides (ceiling is 4): "
+                "evidence": f"hook appears on {len(hook_slides)} slides (ceiling is "
+                            f"{hook_ceiling}): "
                             f"slides {[i for i, _ in hook_slides]}",
                 "hook_phrase": hook_phrase,
                 "count": len(hook_slides),
@@ -548,18 +734,21 @@ def check_density(run_dir: str, copy_text: Optional[str],
             if pattern.search(text):
                 beat_positions[beat_name].append(idx)
 
-    # AF-DEN-1: price beats < 8 slides apart
+    # AF-DEN-1: price beats too close together (gap floor scales with the
+    # deck's slide count -- W12a-B3 -- so beats stay proportionally spaced)
     if "AF-DEN-1" in enforced_codes:
         price_positions = beat_positions.get("PRICE", [])
+        den1_gap_floor = _scaled_floor(8, total_slides)
         for i in range(len(price_positions) - 1):
             gap = price_positions[i + 1] - price_positions[i]
-            if gap < 8:
+            if gap < den1_gap_floor:
                 findings.append({
                     "code": "AF-DEN-1",
                     "level": "DECK",
-                    "evidence": f"price beats {gap} slides apart (floor is 8): "
+                    "evidence": f"price beats {gap} slides apart (floor is {den1_gap_floor}): "
                                 f"slides {price_positions[i]} and {price_positions[i + 1]}",
                     "gap": gap,
+                    "floor": den1_gap_floor,
                 })
 
     # AF-DEN-2: anchor outside 25-45% depth
@@ -620,41 +809,50 @@ def check_density(run_dir: str, copy_text: Optional[str],
                     "evidence": f"no PROMISE beat before first anchor at slide {first_price}",
                 })
 
-    # AF-DEN-6: Wall of Wins not 4-6 before offer
+    # AF-DEN-6: Wall of Wins not in its 4-6 band before offer (the band scales
+    # with the deck's slide count -- W12a-B3 -- keeping the approach density)
     if "AF-DEN-6" in enforced_codes:
         wow_positions = beat_positions.get("WALL_OF_WINS", [])
         price_positions = beat_positions.get("PRICE", [])
         if wow_positions and price_positions:
             first_price = min(price_positions)
+            wow_min = _scaled_floor(4, total_slides)
+            wow_max = _scaled_ceiling(6, total_slides)
             for wow_pos in wow_positions:
                 if wow_pos < first_price:
                     gap = first_price - wow_pos
-                    if gap < 4 or gap > 6:
+                    if gap < wow_min or gap > wow_max:
                         findings.append({
                             "code": "AF-DEN-6",
                             "level": "DECK",
                             "evidence": f"Wall of Wins at slide {wow_pos} is {gap} slides "
-                                        f"before offer at slide {first_price} (expected 4-6)",
+                                        f"before offer at slide {first_price} "
+                                        f"(expected {wow_min}-{wow_max})",
                         })
 
-    # AF-DEN-7: no 4-7 slide re-pitch after FINAL
+    # AF-DEN-7: re-pitch after FINAL below its 4-7 band (the band scales with
+    # the deck's slide count -- W12a-B3 -- so the close stays proportionally long)
     if "AF-DEN-7" in enforced_codes:
         recap_positions = beat_positions.get("RECAP", [])
         price_positions = beat_positions.get("PRICE", [])
         if price_positions:
             last_price = max(price_positions)
             after_last_price = total_slides - last_price
-            # Expect 4-7 slides of re-pitch after the final price
-            if after_last_price < 4:
+            # Expect 4-7 slides of re-pitch after the final price (scaled)
+            repitch_min = _scaled_floor(4, total_slides)
+            repitch_max = _scaled_ceiling(7, total_slides)
+            if after_last_price < repitch_min:
                 findings.append({
                     "code": "AF-DEN-7",
                     "level": "DECK",
                     "evidence": f"only {after_last_price} slides after final price at "
-                                f"slide {last_price} (expected 4-7)",
+                                f"slide {last_price} (expected {repitch_min}-{repitch_max})",
                     "after_last_price": after_last_price,
                 })
 
-    # AF-DEN-8: section below its slide floor
+    # AF-DEN-8: section below its slide floor (each floor scales with the
+    # deck's slide count -- W12a-B3 -- so every major arc must hold its
+    # proportional share of the deck)
     if "AF-DEN-8" in enforced_codes:
         # Each major arc section should have a minimum slide count
         section_floors = {
@@ -665,7 +863,8 @@ def check_density(run_dir: str, copy_text: Optional[str],
             "VALUE_ADD": 2,
             "RECAP": 2,
         }
-        for section, floor in section_floors.items():
+        for section, base_floor in section_floors.items():
+            floor = _scaled_floor(base_floor, total_slides)
             positions = beat_positions.get(section, [])
             if positions and len(positions) < floor:
                 findings.append({
@@ -850,25 +1049,30 @@ def check_c2(run_dir: str, copy_text: Optional[str],
     hook_slides = [(i, t) for i, t in slides if hook_phrase.lower() in t.lower()]
     hook_positions = [i for i, _ in hook_slides]
     hook_count = len(hook_positions)
+    # W12a-B3: cadence band scales with the deck's slide count so the refrain
+    # DENSITY (beats per slide) stays inside the doctrine band on any deck size.
+    c2_ceiling = _scaled_ceiling(4, len(slides))
+    c2_floor = _scaled_floor(3, len(slides))
 
-    # Ceiling: > 4 slides (over-stamp / wallpaper)
-    if hook_count > 4:
+    # Ceiling: > N slides (over-stamp / wallpaper)
+    if hook_count > c2_ceiling:
         findings.append({
             "code": "AF-C2",
             "level": "DECK",
             "sub_rule": "ceiling",
-            "evidence": f"hook refrain on {hook_count} slides (ceiling is 4)",
+            "evidence": f"hook refrain on {hook_count} slides (ceiling is {c2_ceiling})",
             "count": hook_count,
             "slide_indices": hook_positions,
         })
 
-    # Floor: fewer than 3 named anchor beats
-    if hook_count < 3:
+    # Floor: fewer than N named anchor beats
+    if hook_count < c2_floor:
         findings.append({
             "code": "AF-C2",
             "level": "DECK",
             "sub_rule": "floor",
-            "evidence": f"hook refrain on only {hook_count} slide(s) (floor is 3 anchor beats)",
+            "evidence": f"hook refrain on only {hook_count} slide(s) "
+                        f"(floor is {c2_floor} anchor beats)",
             "count": hook_count,
             "slide_indices": hook_positions,
         })
@@ -1285,11 +1489,16 @@ def run_all(run_dir: str, manifest_path: Optional[str] = None) -> Dict[str, Any]
     # Cross-check
     false_negatives = cross_check_qc_reports(str(run_path))
 
+    # FIX 33 — mechanical vision-unit scan of image_qc_report.json
+    # (AF-IMAGE-QC-UNIT, SYSTEM level: blocking, same exit-1 class as the
+    # other mechanical codes).
+    fix33_findings = check_image_qc_vision_unit(str(run_path))
+
     # FIX 18 — level=="warning" findings are advisory: they ride in the report
     # (so the QC Specialist sees them and can disposition them) but they never
     # set exit_code=1. A WARNING code that still fires means: correct the deck,
     # or acknowledge it via working/qc/craft-warning-dispositions.json.
-    all_violations = mechanical_violations + false_negatives
+    all_violations = mechanical_violations + false_negatives + fix33_findings
     blocking_violations = [v for v in all_violations if v.get("level") != "warning"]
     warning_violations = [v for v in all_violations if v.get("level") == "warning"]
     exit_code = 0 if len(blocking_violations) == 0 else 1
@@ -1305,6 +1514,7 @@ def run_all(run_dir: str, manifest_path: Optional[str] = None) -> Dict[str, Any]
                                          and not c.get("py_symbol")),
         "mechanical_violations": mechanical_violations,
         "false_negatives": false_negatives,
+        "fix33_vision_unit_findings": fix33_findings,
         "blocking_violations": blocking_violations,
         "warning_violations": warning_violations,
         "total_violations": len(all_violations),

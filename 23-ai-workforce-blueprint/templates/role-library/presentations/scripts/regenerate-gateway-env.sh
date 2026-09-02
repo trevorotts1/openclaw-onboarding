@@ -47,10 +47,18 @@
 # restart the gateway. Apply the box's restart doctrine (Mac kickstart-then-stop:
 # `openclaw daemon restart`) after a first-time run so the new labels activate.
 #
+#   bash regenerate-gateway-env.sh --docker   # FIX-73: same wire on the docker
+#                    VPS layout — resolves the container secrets store
+#                    /data/.openclaw/secrets/.env (SVC_ENV still overrides for
+#                    tests), wires the managed list there, and prints the
+#                    `docker compose up -d --force-recreate` instruction (a
+#                    plain `docker compose restart` does NOT reload env changes).
+#
 # USAGE:
 #   bash regenerate-gateway-env.sh            # wire the two MC labels in
 #   bash regenerate-gateway-env.sh --check    # read-only: report current state
 #   bash regenerate-gateway-env.sh --dry-run  # print planned mutations, write nothing
+#   bash regenerate-gateway-env.sh --docker   # FIX-73: wire on the docker VPS layout
 #
 # ENV:
 #   SVC_ENV          override the gateway service-env file path (test seam).
@@ -58,6 +66,8 @@
 #   MISSION_CONTROL_URL  same.
 #   OPENCLAW_GATEWAY_PLIST  override the launchd plist path inspected to find the
 #                    service-env file (test seam).
+#   OPENCLAW_SECRETS  override the docker secrets store path (test seam; the
+#                    live container path is /data/.openclaw/secrets/.env).
 #
 # EXIT:
 #   0  wired (or already wired / dry-run planned / read-only check)
@@ -77,11 +87,13 @@ die() { local code="$1"; shift; log "HARD STOP ($code): $*"; exit "$code"; }
 
 MODE="wire"
 DRY_RUN=0
+PLATFORM_MODE="mac"
 for a in "$@"; do
   case "$a" in
     --check)  MODE="check" ;;
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,76p' "$0" | sed 's/^# \{0,1\}//' >&2; exit "$EX_OK" ;;
+    --docker) PLATFORM_MODE="docker" ;;
+    -h|--help) sed -n '2,92p' "$0" | sed 's/^# \{0,1\}//' >&2; exit "$EX_OK" ;;
     *) die "$EX_REFUSED" "unknown argument: $a" ;;
   esac
 done
@@ -139,6 +151,43 @@ resolve_gateway_service_env_file() {
     printf '%s\n' "$fallback"
   fi
   return 0
+}
+
+# --------------------------------------------------------------------------- #
+# FIX-73: docker/VPS resolution. The container has no launchd plist and no
+# ~/Library LaunchAgents tree; the gateway env the engine reads lives in the
+# container secrets store /data/.openclaw/secrets/.env (the path
+# presentation_job/oc_paths.py lists FIRST for the vps layout, and the path the
+# 2026-08-30 fleet envsync proved the docker gateway and every reader consume).
+# SVC_ENV still overrides (the test seam), then $OPENCLAW_SECRETS, then the
+# canonical container path. Prints the path, or nothing when unresolvable.
+# --------------------------------------------------------------------------- #
+resolve_docker_secrets_env_file() {
+  if [ -n "${SVC_ENV:-}" ]; then
+    if [ -f "${SVC_ENV}" ]; then
+      printf '%s\n' "${SVC_ENV}"
+    fi
+    return 0
+  fi
+  if [ -n "${OPENCLAW_SECRETS:-}" ]; then
+    if [ -f "${OPENCLAW_SECRETS}" ]; then
+      printf '%s\n' "${OPENCLAW_SECRETS}"
+    fi
+    return 0
+  fi
+  local candidate="/data/.openclaw/secrets/.env"
+  if [ -f "$candidate" ]; then
+    printf '%s\n' "$candidate"
+  fi
+  return 0
+}
+
+print_docker_next_steps() {
+  log "NEXT (docker): a plain 'docker compose restart' does NOT reload env changes — the container"
+  log "      must be RECREATED to pick the keys up: cd <compose project dir> && docker compose up -d --force-recreate"
+  log "      Then prove the runtime carries the token (value never printed):"
+  log "      docker exec openclaw printenv MC_API_TOKEN | wc -c   # must be > 1"
+  log "      and re-run check_agent_env.py — it must exit 0."
 }
 
 # --------------------------------------------------------------------------- #
@@ -215,6 +264,17 @@ path = os.environ["ENV_FILE"]
 managed_label = "OPENCLAW_SERVICE_MANAGED_ENV_KEYS"
 want = ["MC_API_TOKEN", "MISSION_CONTROL_URL"]
 
+def env_file_value_of(env_path, label):
+    try:
+        t = open(env_path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return ""
+    for ln in t.splitlines():
+        m = re.match(r'^\s*(?:export\s+)?' + re.escape(label) + r'\s*=\s*(.*)$', ln)
+        if m:
+            return m.group(1).strip().strip('"').strip("'")
+    return ""
+
 try:
     text = open(path, encoding="utf-8", errors="replace").read()
 except OSError as exc:
@@ -265,8 +325,16 @@ for ln in lines:
     if m:
         already.add(m.group(1))
 
+docker_mode = os.environ.get("FIX73_DOCKER_MODE", "") == "1"
+store_val = {}
+if docker_mode:
+    for lbl in want:
+        store_val[lbl] = env_file_value_of(env_path=path, label=lbl)
+
 for lbl in want:
     val = os.environ.get(lbl, "")
+    if not val and docker_mode:
+        val = store_val.get(lbl, "")
     if val and lbl not in already:
         lines.append("export %s=%s" % (lbl, val)); changed = True
 
@@ -312,7 +380,17 @@ verify_wire() {
       *,${lbl},*) ;;
       *) log "VERIFY FAIL: ${lbl} NOT in ${MANAGED}"; ok=1 ;;
     esac
-    if proc_has "$lbl"; then
+    # FIX-73 (docker): on the docker layout the secrets file IS the runtime env
+    # source the gateway is recreated from, so a label missing from the file
+    # itself is a fail even when the live process env does not carry it (on a
+    # Mac the label is injected at regeneration time, so only the
+    # live-process-carries-it case can be proven here).
+    if [ "$PLATFORM_MODE" = "docker" ]; then
+      if ! env_file_has_label "$env_file" "$lbl"; then
+        log "VERIFY FAIL: ${lbl} missing from ${env_file} (docker secrets store is the runtime env source)"
+        ok=1
+      fi
+    elif proc_has "$lbl"; then
       if ! env_file_has_label "$env_file" "$lbl"; then
         log "VERIFY FAIL: ${lbl} missing from ${env_file} (live process env carries it)"
         ok=1
@@ -325,15 +403,25 @@ verify_wire() {
 # --------------------------------------------------------------------------- #
 # Main.
 # --------------------------------------------------------------------------- #
-ENV_FILE="$(resolve_gateway_service_env_file)"
-if [ -z "$ENV_FILE" ]; then
-  die "$EX_REFUSED" "cannot resolve the gateway service-env file (launchd plist not found at $HOME/Library/LaunchAgents/ai.openclaw.gateway.plist, or it carries no *.env argument, and no $HOME/.openclaw/service-env/ai.openclaw.gateway.env). Set SVC_ENV to point at it."
+if [ "$PLATFORM_MODE" = "docker" ]; then
+  ENV_FILE="$(resolve_docker_secrets_env_file)"
+  if [ -z "$ENV_FILE" ]; then
+    die "$EX_REFUSED" "cannot resolve the docker secrets env file (no /data/.openclaw/secrets/.env, no \$OPENCLAW_SECRETS pointer, and no SVC_ENV override). Run this inside the openclaw container, or set SVC_ENV to the host-side bind-mount path (/docker/<project>/data/.openclaw/secrets/.env)."
+  fi
+else
+  ENV_FILE="$(resolve_gateway_service_env_file)"
+  if [ -z "$ENV_FILE" ]; then
+    die "$EX_REFUSED" "cannot resolve the gateway service-env file (launchd plist not found at $HOME/Library/LaunchAgents/ai.openclaw.gateway.plist, or it carries no *.env argument, and no $HOME/.openclaw/service-env/ai.openclaw.gateway.env). Set SVC_ENV to point at it."
+  fi
 fi
-[ -f "$ENV_FILE" ] || die "$EX_REFUSED" "gateway service-env file not found at $ENV_FILE"
-[ -r "$ENV_FILE" ] || die "$EX_REFUSED" "gateway service-env file not readable at $ENV_FILE"
+[ -f "$ENV_FILE" ] || die "$EX_REFUSED" "gateway env file not found at $ENV_FILE"
+[ -r "$ENV_FILE" ] || die "$EX_REFUSED" "gateway env file not readable at $ENV_FILE"
 
 if [ "$MODE" = "check" ]; then
   report_state "$ENV_FILE"
+  if [ "$PLATFORM_MODE" = "docker" ]; then
+    print_docker_next_steps
+  fi
   exit "$EX_OK"
 fi
 
@@ -341,6 +429,9 @@ report_state "$ENV_FILE"
 
 if [ "$DRY_RUN" = "1" ]; then
   log "dry-run: planned wire of MC_API_TOKEN + MISSION_CONTROL_URL into $MANAGED (and export each when the live process env carries it); nothing written (exit 0)"
+  if [ "$PLATFORM_MODE" = "docker" ]; then
+    print_docker_next_steps
+  fi
   exit "$EX_OK"
 fi
 
@@ -349,7 +440,8 @@ if [ "$(id -u)" = "0" ]; then
   die "$EX_REFUSED" "running as root is refused; env-file writes must run as the gateway runtime user (re-run as the node user)"
 fi
 
-OUT="$(apply_wire "$ENV_FILE")" || die "$EX_REFUSED" "wire failed for $ENV_FILE (see message above)"
+FIX73_DOCKER_MODE=$([ "$PLATFORM_MODE" = "docker" ] && echo 1 || echo 0) \
+  OUT="$(apply_wire "$ENV_FILE")" || die "$EX_REFUSED" "wire failed for $ENV_FILE (see message above)"
 if [ "$OUT" = "UNCHANGED" ]; then
   log "RESULT: no-op. MC_API_TOKEN + MISSION_CONTROL_URL already in $MANAGED (nothing rewritten)."
 else
@@ -360,6 +452,10 @@ fi
 
 verify_wire "$ENV_FILE" || die "$EX_REFUSED" "read-back verification FAILED after the write; restoring requires the operator to re-run against the backup ($ENV_FILE.bak-fix14.*)"
 
-log "NEXT: apply the box's gateway restart doctrine (Mac: openclaw daemon restart), then re-run check_agent_env.py — it must exit 0."
+if [ "$PLATFORM_MODE" = "docker" ]; then
+  print_docker_next_steps
+else
+  log "NEXT: apply the box's gateway restart doctrine (Mac: openclaw daemon restart), then re-run check_agent_env.py — it must exit 0."
+fi
 log "      Then prove a board write authenticates: run the dept verify or dispatch a test presentation task."
 exit "$EX_OK"

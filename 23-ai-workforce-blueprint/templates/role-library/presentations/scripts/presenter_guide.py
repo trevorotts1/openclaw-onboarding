@@ -18,10 +18,27 @@ from reportlab.platypus import (
 )
 
 MIN_FONT_PT = 12.0
-MIN_BYTES_PER_SLIDE = 1600   # floor per slide (tuned for thin as well as rich copy)
 MIN_BYTES_SAMPLE = 8192
-# legacy 34-slide reference floor kept as absolute guardrail
-MIN_BYTES_ABSOLUTE = 51200
+# FIX 3 (MASTER Part 8): the guide byte floor comes from ONE helper --
+# presentation_job/deliverable_floors.guide_floor(n) = max(1600 * n, 12000).
+# The former local constants MIN_BYTES_PER_SLIDE (1600) and the legacy
+# 34-slide-reference MIN_BYTES_ABSOLUTE (51,200) made a 12-slide deck
+# structurally unpassable (12x1600 = 19.2KB < 51.2KB) and re-ran P8.2-GUIDE
+# on every resume. Import guarded so the writer still runs standalone.
+try:
+    try:
+        from presentation_job.deliverable_floors import guide_floor  # type: ignore[import-not-resolved]
+    except ImportError:  # pragma: no cover - standalone-run safety
+        from deliverable_floors import guide_floor  # type: ignore[no-redef]
+except ImportError:  # pragma: no cover - merge-order safety only
+    def guide_floor(n_slides: int) -> int:
+        """Local fallback identical to deliverable_floors.guide_floor."""
+        return max(1600 * int(n_slides), 12000)
+
+# Names kept for the existing test surface (tests/test_producers.py) and any
+# external caller: same values the helper encodes, never re-derived locally.
+MIN_BYTES_PER_SLIDE = 1600   # == deliverable_floors.BYTES_PER_SLIDE
+MIN_BYTES_ABSOLUTE = 12000   # == deliverable_floors.MIN_BYTES_ABSOLUTE (was legacy 51,200)
 SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
@@ -515,20 +532,16 @@ class PresenterGuide:
         if sample_mode:
             floor = MIN_BYTES_SAMPLE
         else:
-            # Per-slide byte floor (MIN_BYTES_PER_SLIDE) tuned for thin copy
-            # (~230 chars/note) as well as rich production decks. The legacy
-            # 51,200-byte / 34-slide reference is retained as MIN_BYTES_ABSOLUTE
-            # to catch empty/garbled guides regardless of slide count.
-            # F36 (SMOKE-1, 2026-09-01): the absolute guardrail is now SCALED to
-            # slide count — 51,200 bytes calibrated a 34-slide reference deck
-            # (~1,506 bytes/slide), so a 12-slide deck was structurally
-            # unpassable (12x1600=19.2KB < 51.2KB) and the gate auto-failed any
-            # short deck regardless of guide richness. Keep the same
-            # bytes-per-slide calibration: floor = max(per-slide floor,
-            # 51200 * n/34).
+            # FIX 3 (MASTER Part 8): ONE floor formula, imported from
+            # presentation_job/deliverable_floors.guide_floor(n) —
+            # max(1600 * n, 12000). No local re-derivation: the old inline
+            # max(MIN_BYTES_PER_SLIDE * n, MIN_BYTES_ABSOLUTE * n / 34) math
+            # (F36's scaling of the legacy 51,200 / 34-slide reference) is
+            # replaced by the shared helper used by the banked validator,
+            # build_deck and deliverables.py. Slide count = this guide's own
+            # parsed slide list (never a constant).
             _n_slides = len(getattr(self, "slides", []) or []) or 1
-            _scaled_absolute = int(MIN_BYTES_ABSOLUTE * _n_slides / 34)
-            floor = max(MIN_BYTES_PER_SLIDE * _n_slides, _scaled_absolute)
+            floor = guide_floor(_n_slides)
         if size < floor:
             print(f"[FATAL] {Path(out_path).name} is {size} bytes, below {floor:,}-byte floor", file=sys.stderr)
             sys.exit(3)
@@ -664,9 +677,9 @@ def main():
     pages, size = guide.build(str(out_path), str(alias), sample_mode=is_sample)
 
     _n = len(getattr(guide, "slides", []) or []) or 1
-    # F36: scale the legacy absolute guardrail to slide count (see build() above).
-    floor = MIN_BYTES_SAMPLE if is_sample else max(
-        MIN_BYTES_PER_SLIDE * _n, int(MIN_BYTES_ABSOLUTE * _n / 34))
+    # FIX 3 (MASTER Part 8): same single helper as build() above —
+    # guide_floor(n) = max(1600 * n, 12000); no local re-derivation.
+    floor = MIN_BYTES_SAMPLE if is_sample else guide_floor(_n)
     print(f"[presenter-guide] Rendered {out_path} ({pages} page(s), {size:,} bytes)")
     print(f"[presenter-guide] Alias: {alias}")
     if size >= floor:

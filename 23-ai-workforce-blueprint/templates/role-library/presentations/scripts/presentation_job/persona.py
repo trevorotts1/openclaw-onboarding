@@ -16,17 +16,15 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-BLEND_TIMEOUT_S = 30          # HALF of persona_for_job's own default subprocess timeout
-                               # (shared-utils/persona_for_job.py:425, "timeout: int = 60"; neither
-                               # persona-selector-v2.py's 20s/120s subprocess timeouts nor
-                               # persona_for_job.py carry a 30s value anywhere — checked, re-checked
-                               # 2026-07-27, and there is none. So this wall is NOT a mirror of an
-                               # upstream number; it is this unit's own, deliberately tighter, choice:
-                               # fail fast and BLOCK the phase well before the seam's own 60s budget
-                               # is spent, accepting that a legitimately slow 30-59s call is treated
-                               # the same as a hung one — consistent with "block, do not degrade"
-                               # above. Do not raise it to 60 "to match": that would let one slow
-                               # persona resolution silently eat the whole per-phase critical path.)
+BLEND_TIMEOUT_S = 90          # (Fix 28, 2026-09-02) raised from 30 s: the 30 s wall
+                               # blocked legitimately slow copy-phase persona
+                               # resolutions (P4-COPY et al.) and the SMOKE-1
+                               # ledger shows copy phases dying on it. The seam's
+                               # own subprocess budget is 60 s
+                               # (shared-utils/persona_for_job.py:425,
+                               # "timeout: int = 60"); 90 s gives one full seam
+                               # budget plus headroom, and the retry below gives
+                               # one second attempt before the phase blocks.
 BLEND_PHASE_FOR = {           # pipeline phase id -> Skill-51 narrative phase
     "P-SP-STRUCTURE":  "avatar-section",
     "P4-COPY":         "signature-story",
@@ -182,24 +180,37 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
         return {"persona_governance": "legacy-intake-tone",
                 "phase_id": phase_id}
 
-    # Normal path: call governed_phase_voice under a hard timeout
+    # Normal path: call governed_phase_voice under a hard timeout.
+    # (Fix 28, 2026-09-02) One retry: a single timed-out attempt no longer
+    # blocks the phase immediately. Attempt 1 gets BLEND_TIMEOUT_S; if it
+    # times out, exactly one fresh attempt (a new executor thread, so a wedged
+    # first call cannot poison the retry) gets the same wall; only a second
+    # timeout raises TimeoutError and blocks the phase.
     import concurrent.futures
-    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    try:
-        fut = ex.submit(
-            mod.governed_phase_voice,
-            narrative, avatar_context,
-            department="presentations", record=True)
+    bundle = None
+    attempts = 2
+    for attempt in range(1, attempts + 1):
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
-            bundle = fut.result(timeout=BLEND_TIMEOUT_S)
-        except concurrent.futures.TimeoutError:
-            raise TimeoutError(
-                f"blend_voice_governance.governed_phase_voice('{narrative}') "
-                f"timed out after {BLEND_TIMEOUT_S}s for phase {phase_id}. "
-                "The persona resolution seam (persona_for_job.py) did not "
-                "respond within the governance wall.") from None
-    finally:
-        ex.shutdown(wait=False)
+            fut = ex.submit(
+                mod.governed_phase_voice,
+                narrative, avatar_context,
+                department="presentations", record=True)
+            try:
+                bundle = fut.result(timeout=BLEND_TIMEOUT_S)
+                break
+            except concurrent.futures.TimeoutError:
+                if attempt >= attempts:
+                    raise TimeoutError(
+                        f"blend_voice_governance.governed_phase_voice('{narrative}') "
+                        f"timed out after {BLEND_TIMEOUT_S}s on attempt {attempt} "
+                        f"of {attempts} for phase {phase_id}. The persona "
+                        "resolution seam (persona_for_job.py) did not respond "
+                        "within the governance wall; one retry was spent.") from None
+                import time as _time
+                _time.sleep(1.0)
+        finally:
+            ex.shutdown(wait=False)
 
     # Write the bundle to state.json and record the event.
     _try_record_bundle(run_dir, phase_id, narrative, bundle)

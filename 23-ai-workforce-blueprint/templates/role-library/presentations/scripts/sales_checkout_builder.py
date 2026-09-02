@@ -95,6 +95,8 @@ EXIT CODES
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -978,7 +980,11 @@ def _record_ledger(run_dir: Path, record: dict) -> None:
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
-def main(argv: Optional[List[str]] = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """The ONE argparse surface of this module (FIX 100: the manifest's executor.cmd
+    must match this parser — the selftest's reconciliation guard tokenises every
+    manifest cmd that names this script and feeds it to THIS parser, so a flag set
+    change here or a cmd change in PIPELINE-MANIFEST.json fails the selftest)."""
     ap = argparse.ArgumentParser(
         description="Build the sales page + checkout page (kie.ai design -> copy -> "
                     "HTML -> delegated GHL funnel push), gated on WANT_SALES_CHECKOUT."
@@ -990,6 +996,66 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="offline smoke build: copy+design+HTML only, no nonce required, "
                          "no GHL push plan/receipt steps")
     ap.add_argument("--selftest", action="store_true", help="offline deterministic self-test")
+    return ap
+
+
+def _manifest_cmd_guard(manifest_path: Path) -> List[str]:
+    """FIX 100 reconciliation check: every executor.cmd in the canonical manifest
+    that names THIS script must parse under THIS module's argparse. Returns a list
+    of failure strings (empty = reconciled). See the selftest's step-7 comment for
+    the full rationale. Pure/offline: no dispatch, no network, no file writes."""
+    import shlex as _shlex
+
+    fails: List[str] = []
+    try:
+        _mp = Path(manifest_path)
+        _phases = json.loads(_mp.read_text(encoding="utf-8")).get("phases", [])
+    except Exception as exc:  # noqa: BLE001
+        return [f"FIX-100 guard: manifest {manifest_path} unreadable: {exc}"]
+    _parser = _build_parser()
+    _my_cmds = [
+        (p.get("id"), p.get("executor", {}).get("cmd", ""))
+        for p in _phases
+        if isinstance(p, dict) and "sales_checkout_builder.py"
+        in str(p.get("executor", {}).get("cmd", ""))
+    ]
+    if not _my_cmds:
+        return [
+            f"FIX-100 guard: no executor.cmd naming sales_checkout_builder.py found in "
+            f"{manifest_path} — the phases vanished from the manifest or the cmd was "
+            "renamed; the manifest/argparse seam is unverified."
+        ]
+    for _pid, _cmd in _my_cmds:
+        # Tokenise then substitute (same order as
+        # run_signature_deck._build_executor_argvs at real dispatch time).
+        try:
+            _toks = _shlex.split(str(_cmd))
+            _script_tok = next(t for t in _toks if t.endswith("sales_checkout_builder.py"))
+            _flags = _toks[_toks.index(_script_tok) + 1:]
+        except (ValueError, StopIteration):
+            fails.append(f"FIX-100 guard: {_pid} executor.cmd {_cmd!r} did not tokenise")
+            continue
+        _argv = [tok.replace("{run_dir}", "/tmp/fix100") for tok in _flags]
+        _buf_err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(_buf_err):
+                _ns = _parser.parse_args(_argv)
+            if _ns.selftest:
+                fails.append(f"FIX-100 guard: {_pid} cmd {_cmd!r} resolves to --selftest")
+            if _ns.no_push:
+                fails.append(
+                    f"FIX-100 guard: {_pid} cmd {_cmd!r} carries --no-push — a manifest "
+                    "phase must never dispatch the offline smoke path")
+        except SystemExit:
+            fails.append(
+                f"FIX-100 guard: {_pid} executor.cmd {_cmd!r} is REJECTED by this "
+                f"script's argparse ({_buf_err.getvalue().strip()}) — manifest/argparse "
+                "drift is back (FIX 100 regression). Fix the manifest cmd or the flag set.")
+    return fails
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = _build_parser()
     args = ap.parse_args(argv)
 
     if args.selftest:
@@ -1454,6 +1520,29 @@ def _selftest() -> int:
         if ledger.get("a") != 1 or ledger.get("b") != 2:
             fails.append(f"ledger round-trip lost a field: {ledger}")
 
+    # 7) FIX 100 — MANIFEST/ARGPARSE RECONCILIATION GUARD (permanent, offline).
+    #    SALES-CHECKOUT-BUILDER-SOP.md §3/§7 recorded the live Wave C defect: the
+    #    manifest once wired `--mode sales|checkout|form-checkout` while this
+    #    script's argparse has only --run-dir/--skip-design/--no-push/--selftest,
+    #    so every dispatch crashed with "unrecognized arguments" (exit 2) before
+    #    doing any work. The manifest was reconciled (PIPELINE-MANIFEST.json
+    #    manifest_version 54: all three P-U-SALES/CHECKOUT/FORM-CHECKOUT cmds cite
+    #    this script with --run-dir only, + --skip-design where intended). This
+    #    guard makes that reconciliation TESTABLE FOREVER: it tokenises every
+    #    executor.cmd that names this script (the same shlex tokenise-then-
+    #    substitute order run_signature_deck._build_executor_argvs uses at real
+    #    dispatch time), substitutes {run_dir}, feeds each argv through THIS
+    #    module's own argparse parser, and fails if ANY flag the manifest names is
+    #    not a flag this parser accepts — the exact mismatch class FIX 100 closed,
+    #    re-detected the moment anyone reintroduces it in either file.
+    try:
+        import manifest_source as _ms
+        _manifest_path, _src = _ms.resolve_manifest(_here())
+        fails.extend(_manifest_cmd_guard(Path(_manifest_path)))
+    except SystemExit:
+        raise  # manifest_source.refuse() already explained itself on stderr
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"FIX-100 guard could not run (manifest unreadable?): {exc}")
     if fails:
         print("sales_checkout_builder selftest -> FAIL")
         for f in fails:
@@ -1466,7 +1555,8 @@ def _selftest() -> int:
           "prompt band + content-gate pass/zero-content-refuse/wireframe-refuse; HTML "
           "content + ghl_rest_canvas.html_fragment/images-as-media-links/new_page_blob/"
           "funnel_create/step_create/page_autosave (all offline, no session); receipt "
-          "absent/placeholder/real; ledger round-trip)")
+          "absent/placeholder/real; ledger round-trip; FIX-100 manifest/argparse "
+          "reconciliation guard)")
     return 0
 
 

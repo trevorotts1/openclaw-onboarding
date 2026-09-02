@@ -21,6 +21,7 @@
 //   GET  /api/sessions/:token/answers?since=      -> poll new answers    (capability)
 //   POST /api/sessions/:token/complete            -> mark complete       (capability)
 //   POST /api/intake                              -> store finished intake JSON  (box/auth)
+//   GET  /api/intake?id=<session>                 -> fetch stored intake (box auth)
 //   POST /api/dept-start                          -> trigger presentation dept   (box/auth)
 //
 // Bindings (see wrangler.toml): DB (D1). Secrets: INTAKE_ADMIN_TOKEN (box auth),
@@ -53,6 +54,7 @@ async function route(request, env) {
   // dead code: POST /api/intake and /api/dept-start 404'd forever and deploying
   // this worker verbatim broke the whole submit path. Indexes now match reality.
   if (parts.length === 3 && parts[1] === "intake" && parts[2] === "list" && method === "GET") return listIntakes(request, env);
+  if (parts.length === 2 && parts[1] === "intake" && method === "GET") return fetchIntake(request, env);
   if (parts.length === 2 && parts[1] === "intake" && method === "POST") return storeIntake(request, env);
   if (parts.length === 2 && parts[1] === "dept-start" && method === "POST") return triggerDeptStart(request, env);
   if (parts[1] === "sessions") return routeSessions(request, env, parts, method, url);
@@ -218,6 +220,36 @@ async function storeIntake(request, env) {
     await env.DB.prepare("INSERT INTO intakes (session_id, file_name, intake_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, created_at = excluded.created_at").bind(session_id, file_name, JSON.stringify(intake), created).run();
   }
   return jsonResponse({ status: "stored", session_id, file_name, stored_at: created }, 201);
+}
+
+/**
+ * GET /api/intake?id=<session> — fetch a stored intake for the box bridge.
+ *
+ * FIX 58 (bridge rendezvous): intake_bridge.py's cmd_ingest() fetches the
+ * finished intake via GET /api/intake?id=<session_id> (see _fetch_intake in
+ * bridge/intake_bridge.py). This route was missing from the D1 worker — the
+ * bridge's `ingest` command 404'd against it even though `poll` (which uses
+ * /api/intake/list) worked, so a session picked up by poll could never be
+ * re-fetched by session id. Same contract as deployed-r2/src/index.js
+ * (the R2-backed worker live in production), converted to the D1 store.
+ */
+async function fetchIntake(request, env) {
+  if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) return errorResponse("id query param required", 400);
+  if (!env.DB) return errorResponse("intake not found", 404);
+  const row = await env.DB.prepare(
+    "SELECT session_id, file_name, intake_json, created_at FROM intakes WHERE session_id = ?"
+  ).bind(id).first();
+  if (!row) return errorResponse("intake not found", 404);
+  let intake = null;
+  try { intake = JSON.parse(row.intake_json); } catch { return errorResponse("corrupt intake record", 500); }
+  return jsonResponse({
+    session_id: row.session_id,
+    file_name: row.file_name,
+    intake,
+    stored_at: row.created_at != null ? Number(row.created_at) : null,
+  }, 200);
 }
 
 /**
