@@ -211,6 +211,15 @@ def validate_input(data: Any, source: str) -> Dict[str, Any]:
             f"{source}: prompt_constraints.required_blocks must be a non-empty "
             "array of non-empty strings")
 
+    # F43 (SMOKE-1, 2026-09-01): owning_role is optional (older callers omit it)
+    # but when present must be a non-empty string -- and it MUST survive into
+    # the normalized return below, or the child authors with the hardcoded
+    # default role and the role-SOP lookup dies (RoleSOPNotFound, slide-01).
+    owning_role = data.get("owning_role")
+    if owning_role is not None and (
+            not isinstance(owning_role, str) or not owning_role.strip()):
+        raise WorkerUsageError(f"{source}: owning_role must be a non-empty string")
+
     slides = data.get("slides")
     if not isinstance(slides, list) or not slides:
         raise WorkerUsageError(f"{source}: slides must be a non-empty array")
@@ -266,6 +275,7 @@ def validate_input(data: Any, source: str) -> Dict[str, Any]:
             "max_chars": max_chars,
             "required_blocks": list(blocks),
         },
+        "owning_role": owning_role,
         "slides": [dict(s) for s in slides],
     }
 

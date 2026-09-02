@@ -786,6 +786,19 @@ def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
+        # F51 (SMOKE-1, 2026-09-01): kie_generate is flaky (provider 500/429 between
+        # waves). The hero PNGs are CONTENT-STABLE once baked — a re-bake that fails
+        # must not make executor retries fail forever when a good bake is already on
+        # disk (the same reuse contract --skip-design encodes). Reuse existing
+        # above-floor renders if BOTH are present; only then fail.
+        existing = []
+        for png in (renders_dir / "sales-hero.png", renders_dir / "checkout-hero.png"):
+            if png.is_file() and png.stat().st_size > 51200:
+                existing.append(png.name)
+        if len(existing) == 2:
+            print(f"  F51: kie_generate exited {proc.returncode}; reusing verified "
+                  f"existing hero renders ({', '.join(existing)})", file=sys.stderr)
+            return True, "kie_generate.py: reused existing verified hero renders"
         return False, f"kie_generate.py exited {proc.returncode}"
     return True, "kie_generate.py: all slides downloaded"
 

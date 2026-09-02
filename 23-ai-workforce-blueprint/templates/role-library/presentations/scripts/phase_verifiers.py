@@ -522,13 +522,23 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
     """P4-RENDER / P-IMAGE-QC: canonical_render_guard image-QC (AF-IMAGE-QC-VISION).
     Falls back to filesystem PNG existence check when the guard is unavailable."""
     if _crg is not None:
-        fn = getattr(_crg, "check_image_qc", None) or getattr(_crg, "check_rendered_images", None)
+        # F39 (SMOKE-1, 2026-09-01): canonical_render_guard exposes run_fix2_checks
+        # (which internally runs build_deck.check_image_qc_vision — the pixel
+        # cross-check), NOT a symbol named check_image_qc / check_rendered_images;
+        # the old getattr chain always fell through to the fail-closed MISSING
+        # branch even when the guard was importable. Route through
+        # run_fix2_checks and map its finding list to the verifier verdict.
+        fn = getattr(_crg, "run_fix2_checks", None)
         if fn is not None:
             try:
-                result = fn(run_dir)
-                if not _checker_pass(result):
-                    return False, [f"AF-IMAGE-QC-VISION: {result}"]
+                findings = fn(run_dir)
+                af_findings = [f for f in (findings or [])
+                               if isinstance(f, dict) and "IMAGE-QC" in str(f.get("code", ""))]
+                if not _checker_pass(findings):
+                    return False, [f"AF-IMAGE-QC-VISION: {f}" for f in (findings or [])[:3]]
                 return True, []
+            except Exception as exc:  # noqa: BLE001
+                pass  # fall through to the MISSING branch below (unchanged)
             except Exception as exc:  # noqa: BLE001
                 # F03: the vision measurer crashed — falling through to a bare
                 # PNG-existence check in production would attest renders that no
@@ -1439,17 +1449,23 @@ def _deliverable_content_check(key: str, path: Path, reasons: list) -> None:
             break
 
     if chk == "fish_tags":
-        # Must contain actual Fish Audio [fish] tags — a plain text file renamed
-        # as FISH-TAGGED.md would have no bracket tags at all.
+        # Must contain real Fish Audio expression tags — a plain text file renamed
+        # as FISH-TAGGED.md would have no bracket tags at all. Fish Audio S2/S2-Pro
+        # syntax (FISH-AUDIO-TAGS-MASTER.md §"current default") is a bracket-wrapped
+        # natural-language cue, e.g. [warm and welcoming] / [pause] / [long pause] —
+        # NOT a literal "[fish...]" prefix. The tagger (speech_fish_tag.py) emits
+        # exactly this S2 form, so the check validates the S2 catalog syntax. The
+        # anti-drift intent is unchanged: >= 3 bracket tags demanded, a renamed
+        # plain text file still fails (it has zero bracket tags).
         import re
-        fish_pattern = re.compile(r'\[fish\b[^\]]*\]', re.IGNORECASE)
+        fish_pattern = re.compile(r'\[[a-z][^\]\[]{3,60}\]', re.IGNORECASE)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
             matches = fish_pattern.findall(text)
             if len(matches) < 3:
                 reasons.append(
                     f"AF-BUNDLE-INCOMPLETE: {key} — {path.name} has only "
-                    f"{len(matches)} [fish] tags (min 3 expected).  A renamed "
+                    f"{len(matches)} Fish S2 bracket tags (min 3 expected).  A renamed "
                     f"plain text file is not a fish-tagged speech."
                 )
         except Exception as exc:  # noqa: BLE001
@@ -1548,10 +1564,30 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
         if size == 0:
             reasons.append(f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is zero bytes")
             continue
-        if size < min_bytes:
+        # F43c (SMOKE-1, 2026-09-01): guide_pdf/deck_pdf floors were tuned for the
+        # 34-slide reference deck. F43 already scaled the P8.2 phase verifier and the
+        # build_deck BUNDLE gate by slide count (max(51200*n//34, 8192)); scale the
+        # P9-DELIVERY gate identically so all three gates measure the same thing.
+        _min_b = min_bytes
+        if key in ("guide_pdf", "deck_pdf"):
+            try:
+                _n = 0
+                for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
+                    _data = json.loads(_cand.read_text(encoding="utf-8", errors="replace"))
+                    if isinstance(_data, list):
+                        _n = len(_data)
+                    elif isinstance(_data, dict) and _data.get("slides"):
+                        _n = len(_data["slides"])
+                    if _n:
+                        break
+                if _n:
+                    _min_b = max(int(_min_b * _n // 34), 8192)
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                pass
+        if size < _min_b:
             reasons.append(
                 f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is {size} bytes "
-                f"(minimum {min_bytes} bytes)"
+                f"(minimum {_min_b} bytes)"
             )
             continue
 

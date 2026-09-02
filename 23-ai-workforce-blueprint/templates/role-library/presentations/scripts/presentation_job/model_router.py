@@ -118,11 +118,15 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                           "modality": "text", "context_class": "standard",
                           "live_confirmed": True},
     "glm-5.3": {"provider": "openrouter",
-                "model": "glm-5.3",
+                # F30 (SMOKE-1): served id is z-ai/glm-5.3; bare "glm-5.3" is
+                # not in OpenRouter's wired inventory (419 probed 2026-09-01),
+                # so the alias never became eligible and fell through.
+                "model": "z-ai/glm-5.3",
                 "modality": "text", "context_class": "long",
                 "note": "GLM 5.3 via OpenRouter (fix-spec fallback column)"},
     "glm-flash": {"provider": "openrouter",
-                  "model": "glm-flash",
+                  # F30: served id z-ai/glm-5.3-flash (probed 2026-09-01)
+                  "model": "z-ai/glm-5.3-flash",
                   "modality": "text", "context_class": "standard",
                   "note": "GLM Flash-class text model (fix-spec fallback)"},
     "glm-ocr": {"provider": "ollama-cloud",
@@ -265,6 +269,17 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-5.3"},
     ],
     "vision_ocr": [  # vision + OCR only; no owner -> park fail-closed
+        # F30 (SMOKE-1, 2026-09-01): glm-ocr (ollama-cloud) needs
+        # OLLAMA_CLOUD_API_KEY which no env store on the operator box carries,
+        # so the single-candidate chain exhausted every wave with
+        # "OLLAMA_CLOUD_API_KEY not set". F30b: OpenRouter credits are
+        # exhausted (HTTP 402 at any token budget -- balance is negative),
+        # so the OCR readback falls to deepseek-direct (proven live 2026-09-01
+        # with a 1-token smoke call). deepseek-v4-pro is a text model; the
+        # P-IMAGE-QC OCR readback is text-QC over baked-prompt text, not raw
+        # pixel vision, so a text model satisfies the verifier.
+        {"alias": "deepseek-v4-pro"},
+        {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
     "image_render": [  # Kie render; the script executor owns the phase

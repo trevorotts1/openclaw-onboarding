@@ -186,7 +186,24 @@ def _resolve_intake_depth(explicit: Optional[str], entries: dict,
     INVALID refusal (via UnknownIntakeDepth), never a silent QUICK fallback
     -- this is what keeps run-mode vocabulary (ultra|standard|economy) from
     ever leaking into the intake-depth axis."""
+    def _unwrap(val):
+        """Tolerate dict-shaped ledger values: the interview_depth entry's
+        `value`/`normalized` can be {"standard_mode": "IN-DEPTH"} (real
+        driver shape, measured 2026-09-01) — unwrap the standard_mode
+        sub-key when it is a string; any other non-string shape is None
+        (skip to the next candidate, never invent a value)."""
+        if isinstance(val, dict):
+            for k in ("standard_mode", "value", "normalized"):
+                sub = val.get(k)
+                if isinstance(sub, str):
+                    return sub
+            return None
+        if isinstance(val, str):
+            return val
+        return None
+
     def _canon(val) -> Optional[str]:
+        val = _unwrap(val)
         if val is None:
             return None
         s = str(val).strip().lower().replace("_", "-").replace(" ", "-")
@@ -471,7 +488,9 @@ def main(argv=None) -> int:
                    help="path to write the engine's --new intake JSON")
     p.add_argument("--source", default="resolve-intake",
                    help="tag recorded in intake.source (which caller ran this)")
-    p.add_argument("--intake-depth", default=None, choices=list(INTAKE_DEPTH_LEGAL),
+    p.add_argument("--intake-depth", default=None,
+                   type=lambda v: str(v).strip().lower().replace("_", "-").replace(" ", "-"),
+                   choices=list(INTAKE_DEPTH_LEGAL),
                    help="FIX 36(3): the deck's intake depth, quick|in-depth "
                         "(the interview_depth question's standard_mode). "
                         "Distinct from run-mode --mode (Ultra|Standard|Economy) "

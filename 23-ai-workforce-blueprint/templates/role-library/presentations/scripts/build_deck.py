@@ -1557,10 +1557,23 @@ def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> No
     readback = pg.ocr_readback(out_path, slide.get("copy"), slide_id=label)
     _record_ocr_readback(out_path, readback)
     if readback.get("checked") and readback.get("matched") is False:
-        raise RuntimeError(
-            f"slide {ordinal}: OCR readback — rendered text does not match the approved "
-            f"copy (unreadable/garbled: {readback.get('misses')}). Re-rendering this slide."
-        )
+        # F38 (SMOKE-1, 2026-09-01): honor the same logged owner_skip_approval the
+        # closeout gate (check_ocr_readback) honors. Without this, the render-repair
+        # loop re-rendered slide-05/09 forever (tiny citation-kicker labels pytesseract
+        # cannot lift from a photographic panel at any zoom/PSM) and the build died
+        # with outputPath=null BEFORE assembly — the closeout waiver could never even
+        # run. The waiver check reuses _owner_skip_approved (same disclosure layer:
+        # every consult prints OWNER-SKIP-CONSUMED). checked:false stays unwaivable
+        # here too: the engine must have actually run.
+        _run_dir = out_path.parent.parent  # renders/.. == run dir (canonical layout)
+        _skip = _owner_skip_approved(_run_dir, AF_OCR_READBACK)
+        if _skip is None:
+            raise RuntimeError(
+                f"slide {ordinal}: OCR readback — rendered text does not match the approved "
+                f"copy (unreadable/garbled: {readback.get('misses')}). Re-rendering this slide."
+            )
+        print(f"  [{label}] OCR readback mismatch waived by logged owner_skip_approval "
+              f"(AF-OCR-READBACK, approved_by={_skip.get('approved_by')!r}).", file=sys.stderr, flush=True)
 
 
 def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> str:
@@ -3056,7 +3069,35 @@ QC_PHASE_REPORT = {
 }
 
 QC_REPORT_FLOOR_BYTES = 256   # bytes; a real per-slide QC report is far larger
-QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry
+# F40 (SMOKE-1, 2026-09-01): the verdict floor was tuned for the 34-slide reference
+# deck. A 12-slide deck can NEVER carry 20 real per-slide verdicts, so every
+# legitimately-populated QC report on a small deck tripped AF-QC-PLACEHOLDER and the
+# bundle gate failed closed. Scale the floor to the deck: max(8, min(20, slide_count)).
+QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry (reference deck)
+
+
+def _qc_slide_floor(run_dir: Path) -> int:
+    """F40: verdict floor scaled to THIS deck's slide count (the 20 was tuned for the
+    34-slide reference deck; a fully-graded 12-slide deck legitimately carries 12).
+    Floor = max(8, min(QC_REPORT_SLIDE_FLOOR, slide count from slides_copy/slides.json))."""
+    try:
+        n = 0
+        for cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
+            data = json.loads(Path(cand).read_text(encoding="utf-8", errors="replace"))
+            if isinstance(data, list):
+                n = len(data)
+            elif isinstance(data, dict) and data.get("slides"):
+                n = len(data["slides"])
+            if n:
+                break
+        if not n:
+            import re as _re
+            txt = (run_dir / "working" / "copy" / "slides_copy.md").read_text(encoding="utf-8", errors="replace") \
+                if (run_dir / "working" / "copy" / "slides_copy.md").is_file() else ""
+            n = len(set(_re.findall(r"(?mi)^SLIDE (\d+)", txt)))
+        return max(8, min(QC_REPORT_SLIDE_FLOOR, n or QC_REPORT_SLIDE_FLOOR))
+    except Exception:  # noqa: BLE001 — fall back to the reference floor
+        return QC_REPORT_SLIDE_FLOOR
 
 
 def _qc_report_per_slide_verdicts(obj) -> list:
@@ -3126,9 +3167,10 @@ def check_qc_reports_real(run_dir: Path, slides_path=None) -> str:
             return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
         verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
                     if _qc_slide_verdict_is_real(e)]
-        if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+        _floor = _qc_slide_floor(run_dir)  # F40: scale to this deck
+        if len(verdicts) < _floor:
             return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
-                    f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                    f"{len(verdicts)}/{_floor} real per-slide verdicts — "
                     "a placeholder or a verdict-less rubber stamp, not real QC.")
     return ""
 
@@ -3158,9 +3200,10 @@ def check_qc_phase_report_real(run_dir: Path, phase_id: str) -> str:
         return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
     verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
                 if _qc_slide_verdict_is_real(e)]
-    if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+    _floor = _qc_slide_floor(run_dir)
+    if len(verdicts) < _floor:
         return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
-                f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                f"{len(verdicts)}/{_floor} real per-slide verdicts — "
                 "a placeholder or a verdict-less rubber stamp, not real QC.")
     return ""
 
@@ -11232,12 +11275,32 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                                      "NOT_REGULAR"))
             continue
         actual = st.st_size
-        if actual < spec["min_bytes"]:
+        # F43 (SMOKE-1, 2026-09-01): guide_pdf/pdf floors were tuned for the 34-slide
+        # reference deck; a fully-populated 12-slide deck legitimately renders smaller
+        # (the P8.2 phase verifier already scales by slides: max(51200*n//34, 8192)).
+        # Scale the BUNDLE floor identically so the two gates measure the same thing.
+        _min_b = spec["min_bytes"]
+        if key in ("guide_pdf", "deck_pdf"):
+            try:
+                _n = 0
+                for _cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
+                    _data = json.loads(Path(_cand).read_text(encoding="utf-8", errors="replace"))
+                    if isinstance(_data, list):
+                        _n = len(_data)
+                    elif isinstance(_data, dict) and _data.get("slides"):
+                        _n = len(_data["slides"])
+                    if _n:
+                        break
+                if _n:
+                    _min_b = max(int(_min_b * _n // 34), 8192)
+            except Exception:  # noqa: BLE001 — fall back to the absolute floor
+                pass
+        if actual < _min_b:
             update_deliverable_status(ledger_path, key, "failed",
                                       size=actual,
                                       error=f"file too small: {actual} bytes "
-                                            f"(min {spec['min_bytes']})")
-            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"],
+                                            f"(min {_min_b})")
+            missing_or_short.append((key, fname, spec["label"], _min_b,
                                      actual, "UNDER_THRESHOLD"))
             continue
         # C2: magic-byte content-type check (md is intentionally size-only).

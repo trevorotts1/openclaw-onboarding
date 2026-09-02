@@ -1374,6 +1374,37 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                 pass
             if exc.code == 429 or exc.code >= 500:
                 last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
+            elif exc.code == 402 and "can only afford" in payload:
+                # F31 (SMOKE-1, 2026-09-01): OpenRouter 402 names the exact
+                # token budget the remaining credits can afford. Retry THIS
+                # call at that budget instead of treating it as fatal -- the
+                # deliverable (an OCR readback) is small and does not need the
+                # 64k default. One demotion per call site, floor 512.
+                import re as _re
+                _m = _re.search(r"can only afford (\d+)", payload)
+                if _m:
+                    afford = max(512, int(_m.group(1)) - 128)
+                    demoted = dict(body)
+                    demoted["max_tokens"] = afford
+                    data2 = json.dumps(demoted).encode("utf-8")
+                    req2 = urllib.request.Request(
+                        f"{base.rstrip('/')}/chat/completions", data=data2,
+                        method="POST",
+                        headers={"Authorization": f"Bearer {key}",
+                                 "Content-Type": "application/json"})
+                    try:
+                        with urllib.request.urlopen(req2, timeout=DEEPSEEK_TIMEOUT_S) as resp2:
+                            obj2 = json.loads(resp2.read().decode("utf-8"))
+                        choice2 = (obj2.get("choices") or [{}])[0]
+                        content2 = ((choice2.get("message") or {}).get("content")) or ""
+                        usage2 = obj2.get("usage") or {}
+                        return content2, usage2
+                    except Exception as exc2:  # noqa: BLE001
+                        raise DeepSeekCallError(
+                            f"HTTP 402 demoted retry ({afford} tokens) also failed: "
+                            f"{type(exc2).__name__}: {exc2}") from exc2
+                raise DeepSeekCallError(
+                    f"HTTP 402 (non-transient): {payload}") from exc
             else:
                 raise DeepSeekCallError(
                     f"HTTP {exc.code} (non-transient): {payload}") from exc
@@ -2328,8 +2359,29 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
         "model": DEEPSEEK_MODEL,
         "router": "disabled",
         "mode": "standard",
-         "measured_capacity": 8,
+        "measured_capacity": DEFAULT_MAX_WORKERS,
     }
+    # F41 (SMOKE-1, 2026-09-01): FIX 7 popped measured_capacity whenever the
+    # router resolved a profile route -- but the parallel_prompt_worker usage
+    # contract (routing.measured_capacity must be a positive int,
+    # parallel_prompt_worker.py validate_input) rejects the whole wave input,
+    # so EVERY router-resolved wave self-rejected with
+    # "routing.measured_capacity must be a positive integer (got None)" before
+    # any provider call. The stamp must always carry a worker-slot count.
+    # Derive it from the capacity probe -- never fabricate a provider claim:
+    #   * UNBOUNDED (NO_CAP_PROVIDERS BYOK hit, e.g. deepseek-direct --
+    #     operator ruling fix/capacity-uncap-byok: never limit someone who
+    #     brought their own capacity) -> DEFAULT_MAX_WORKERS (8) worker slots;
+    #     the worker itself clamps to its own DEFAULT_MAX_WORKERS=8 ceiling.
+    #   * MEASURED positive int -> that real cap-table ceiling.
+    #   * probe PARKED/UNDETERMINED/FAILED for the routed provider (or probe
+    #     unavailable) -> DEFAULT_MAX_WORKERS, honestly labelled
+    #     capacity_status so the audit trail never reads as a measurement.
+    # The capacity PARK about a DIFFERENT provider (e.g. 9router combo routing
+    # an unrelated model to ollama-cloud) does not gate this route: the
+    # launcher's AF-CAPACITY-UNMEASURED refuse already ran before dispatch.
+    stamp["capacity_status"] = "fallback-default"
+    stamp["capacity_source"] = "dispatcher-default"
     if _model_router is None:
         return stamp
     try:
@@ -2344,7 +2396,34 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 "route_reason": decision.get("reason"),
                 "requested_alias": decision.get("requested_alias"),
             })
-            stamp.pop("measured_capacity", None)
+            routed_provider = str(route.get("provider") or "")
+            try:
+                from presentation_job import capacity as _cap_mod
+                probe_res = _cap_mod.probe()
+                available = probe_res.get("available")
+                probe_provider = str(probe_res.get("provider") or "")
+                if _cap_mod.is_unbounded(available):
+                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                    stamp["capacity_status"] = "unbounded-byok"
+                    stamp["capacity_source"] = str(
+                        probe_res.get("detection_source") or "capacity-probe")
+                elif isinstance(available, int) and available > 0                         and probe_provider == routed_provider:
+                    stamp["measured_capacity"] = available
+                    stamp["capacity_status"] = "measured"
+                    stamp["capacity_source"] = str(
+                        probe_res.get("detection_source") or "capacity-probe")
+                else:
+                    # PARKED/UNDETERMINED for the routed provider, or a probe
+                    # about a different provider -- fall back, labelled.
+                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                    stamp["capacity_status"] = "probe-not-measured"
+                    stamp["capacity_source"] = (
+                        f"{probe_res.get('status')}"
+                        f"/{probe_provider or 'none'}")
+            except Exception as cap_exc:  # noqa: BLE001 -- probe is best-effort
+                stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                stamp["capacity_status"] = "probe-error"
+                stamp["capacity_source"] = type(cap_exc).__name__
     except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
         try:
             _append_sidecar(run_dir, "P4-PROMPT", {
@@ -2446,11 +2525,19 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
 
     # --- build prompt-wave-input.json (schema_version 1) stamped routing
     routing = _prompt_routing_stamp(run_dir=run_dir)
+    # F42 (SMOKE-1, 2026-09-01): the manifest's owning_role MUST ride the wave
+    # input. Without it the worker falls back to its hardcoded default
+    # ("Presentation Manager (Deck Author)", parallel_prompt_worker.py) whose
+    # role-SOP lookup cannot resolve against the flat role-library layout --
+    # slide-01 (the one slide needing re-authoring) died with RoleSOPNotFound
+    # on every wave while slides 2-12 passed on banked results. The serial
+    # path already forwards owning_role; the parallel path must too.
     wave_input = {
         "schema_version": 1,
         "run_id": run_dir.name,
         "run_dir": str(run_dir),
         "phase_id": phase_id,
+        "owning_role": owning_role,
         "routing": routing,
         "prompt_constraints": {
             "min_chars": 9000,

@@ -1086,7 +1086,12 @@ run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
     if [ -n "$INTAKE_DEPTH" ]; then
-        _RESOLVE_DEPTH_ARGS="--intake-depth $INTAKE_DEPTH"
+        # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
+        # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
+        # argparse choices are exactly quick|in-depth (resolve_intake.py:474) --
+        # passing "QUICK" died with "invalid choice" and engine_fail
+        # AF-DECK-TYPE-UNKNOWN. Lowercase for the resolver call only.
+        _RESOLVE_DEPTH_ARGS="--intake-depth $(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')"
     fi
     _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
         --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"

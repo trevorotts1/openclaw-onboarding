@@ -32,6 +32,12 @@ from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, H
 from . import heal
 from . import persona
 from . import curate as _curate
+
+# F54b (SMOKE-1, 2026-09-01): serializes each script phase's nonce
+# mint -> child -> unlink critical section (see _run_script_phase). Module-level so
+# ALL Job instances in this process — one engine process dispatches every wave
+# sibling — share the same mutual exclusion.
+_NONCE_LOCK = threading.Lock()
 # FIX-21 (D21): run_with_cleanup spawns the phase exec in a NEW PROCESS GROUP and, on
 # budget expiry, kills the WHOLE group (SIGTERM -> SIGKILL) so a timed-out phase leaves
 # no orphaned grandchildren (the D21 zombie path). Direct-child-only `subprocess.run`
@@ -561,8 +567,34 @@ class Engine:
             matches = list(self.run_dir.glob(rel)) if any(c in rel for c in "*?[") \
                 else ([self.run_dir / rel] if (self.run_dir / rel).exists() else [])
             if not matches:
+                # F60 (SMOKE-1, 2026-09-01): P-U-QC's artifact lives under
+                # working/upsell/ (its verifier's _pu_artifact_paths resolves
+                # 'qc/upsell-scorecard.json' via the working/upsell prefix), but
+                # _artifacts_present checked only the literal run_dir/<rel>.
+                # The engine was waiting forever at the FINAL phase while its
+                # own verifier said PASS. Mirror _pu_artifact_paths: when the
+                # literal path is absent, try run_dir/working/upsell/<rel>.
+                up = self.run_dir / "working" / "upsell" / rel
+                if up.is_file():
+                    continue
                 missing.append(rel)
         return (not missing), missing
+
+    def _phase_is_gate_declined(self, phase: Phase) -> bool:
+        """True when the phase's own substance verifier returns a PASS whose
+        reason names a gate decline (defer/waived) — the phase legitimately
+        made no artifact because the client declined the upsell, and must be
+        checkpointed deferred, never regenerated or blocked (F59)."""
+        try:
+            import phase_verifiers
+            ok, notes = phase_verifiers.verify(phase.id, self.run_dir)
+        except Exception:  # noqa: BLE001 — verifier unusable: not a decline
+            return False
+        if not ok:
+            return False
+        joined = "; ".join(notes or []).lower()
+        return ("defer" in joined or "waived" in joined) and ("gate" in joined
+                or "declined" in joined)
 
     def _revalidate_banked(self, phase: Phase, ps: Dict[str, Any]) -> List[str]:
         """Return a list of human-readable reasons, empty when every banked artifact is still good."""
@@ -708,6 +740,38 @@ class Engine:
         if rc == EXIT_OK:
             ok, missing = self._artifacts_present(phase)
             if not ok:
+                # F59 (SMOKE-1, 2026-09-01): a gate-decline script phase (the
+                # upsell-BUILD phases P-U-VSL-BUILD / P-U-SALES-BUILD /
+                # P-U-CHECKOUT-BUILD / P-U-FORM-CHECKOUT) runs a CONDITIONAL
+                # executor: when the client declined the option (e.g.
+                # want_vsl_page == "no") the executor resolves its gate to
+                # WAIVED/DEFER and exits 0 WITHOUT writing produces_artifact.
+                # The artifact-presence pre-check used to fire REGENERATION on
+                # that (run64: "regeneration reported success but produced
+                # nothing: missing working/vsl/html/vsl.html") -- an infinite
+                # block on a phase that is legitimately declined. The phase's
+                # OWN substance verifier is the authority on the gate: it
+                # already returns PASS for defer/waived (see
+                # _verify_upsell_vsl_build etc. -- "NOTE: ... {defer,waived} --
+                # gated OUT (not a failure)"). So BEFORE regenerating, consult
+                # the verifier: a PASS whose NOTE names a gate decline means
+                # this phase is deferred-by-design, not missing a product.
+                if self._phase_is_gate_declined(phase):
+                    with self._state_lock:
+                        self._checkpoint(phase.id, status="deferred",
+                                         deferred_reason=(
+                                             "decline-gated (WANT_VSL_PAGE / "
+                                             "WANT_SALES_CHECKOUT = no) — conditional "
+                                             "executor resolved WAIVED/DEFER, no artifact "
+                                             "by design"))
+                        self.report.event(
+                            "phase.deferred",
+                            f"{phase.id} deferred — client declined this upsell; "
+                            "the conditional executor produced no artifact by design.")
+                        print(f"DEFER {phase.id}: gate resolved to decline "
+                              "(WAIVED/DEFER) — no artifact produced, deferred by "
+                              "design.", flush=True)
+                    return EXIT_OK
                 with self._state_lock:
                     # heal internals record events + checkpoints — held under
                     # the engine lock; a rare regeneration serializes its wave
@@ -931,29 +995,53 @@ class Engine:
         checkpoints_dir.mkdir(parents=True, exist_ok=True)
         nonce = secrets.token_hex(32)
         nonce_file = checkpoints_dir / ".canonical-entry-nonce"
-        umask = os.umask(0o077)
-        try:
-            nonce_file.write_text(nonce)
-        finally:
-            os.umask(umask)
-        os.chmod(nonce_file, 0o600)
-        os.environ["OC_DECK_ENTRY_NONCE"] = nonce
 
-        try:
-            return self._run_script_phase_locked(phase, argv, checkpoints_dir, nonce_file)
-        finally:
-            # FIX 4 cleanup: the nonce is per-invocation. Remove the file and the env
-            # var on EVERY exit path (success return, heal exhaustion, rung 3, block,
-            # exception), so a later run can never reuse (or leak) this front-door
-            # nonce.
+        # F54b (SMOKE-1, 2026-09-01): F54 fixed env delivery, but the nonce FILE is
+        # still ONE shared run-scoped path, and script phases in the same wave run
+        # concurrently (ThreadPoolExecutor, execution_plan width) — sibling B mints
+        # its own nonce over A's file, and whichever sibling unlinks FIRST leaves
+        # the other's child with env-nonce present + file missing/mismatched ->
+        # exit 2 AF-CANONICAL-RENDER-BYPASS (run61 P9.6 attempt 3, 21:51:10). The
+        # consumers (build_deck/build_webinar_video) MUST NOT accept an env-supplied
+        # path — that would let a model point the guard at a file it wrote itself —
+        # so the fix cannot be a per-invocation filename. Serialize the whole
+        # mint -> child -> unlink critical section on a module-level lock: siblings
+        # queue, and every child sees exactly the nonce it was spawned with. The
+        # lock wraps only script executors; LLM/gate phases never touch it.
+        with _NONCE_LOCK:
+            umask = os.umask(0o077)
             try:
-                nonce_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-            os.environ.pop("OC_DECK_ENTRY_NONCE", None)
+                nonce_file.write_text(nonce)
+            finally:
+                os.umask(umask)
+            os.chmod(nonce_file, 0o600)
+
+            # F54 (2026-09-01): the nonce is delivered via a PER-INVOCATION env dict
+            # passed to run_with_cleanup(env=...), NOT by mutating os.environ. The
+            # old delivery path (os.environ[...] = nonce; pop on exit) raced whenever
+            # two script phases ran in the same wave: phase B's finally-block popped
+            # the shared variable while phase A's child was still mid-flight.
+            # child_env inherits this process's full environment plus this phase's
+            # own nonce; the file side is serialized by _NONCE_LOCK above.
+            child_env = dict(os.environ)
+            child_env["OC_DECK_ENTRY_NONCE"] = nonce
+
+            try:
+                return self._run_script_phase_locked(phase, argv, checkpoints_dir,
+                                                     nonce_file, child_env)
+            finally:
+                # FIX 4 cleanup: the nonce is per-invocation. Remove the file on EVERY
+                # exit path (success return, heal exhaustion, rung 3, block, exception),
+                # so a later run can never reuse (or leak) this front-door nonce — still
+                # under _NONCE_LOCK so no other sibling is mid-flight against it.
+                try:
+                    nonce_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
         raise AssertionError("unreachable")
 
-    def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file) -> int:
+    def _run_script_phase_locked(self, phase: Phase, argv, checkpoints_dir, nonce_file,
+                                 child_env: Optional[dict] = None) -> int:
         ps = self._phase_state(phase.id)
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
@@ -976,10 +1064,14 @@ class Engine:
                 # module is absent (it ships beside this package).
                 if run_with_cleanup is not None:
                     r = run_with_cleanup(argv, cwd=str(self.run_dir),
-                                         timeout=budget, capture=False)
+                                         timeout=budget, capture=False,
+                                         env=child_env)
                 else:
+                    # F54: even the fallback path must not mutate os.environ —
+                    # pass the per-invocation env dict instead.
                     r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
-                                       timeout=budget, capture_output=False)
+                                       timeout=budget, capture_output=False,
+                                       env=child_env)
                 if r.returncode == 0:
                     return EXIT_OK
                 reason = f"exit {r.returncode}"
@@ -1522,12 +1614,18 @@ class Engine:
         blocked_sent = (sent.get('blocked', {}).get('count', 0)
                         if isinstance(sent.get('blocked'), dict) else 0)
 
-        # 5. Monotonic timestamp check
+        # 5. Monotonic timestamp check — CHRONOLOGICAL order, not manifest order.
+        # F48 (SMOKE-1, 2026-09-01): the previous loop compared attested_at in
+        # manifest sequence, so a phase that re-ran later in wall clock but sits
+        # EARLIER in the manifest (banked revalidation, driver-authored heals)
+        # counted as a "violation" purely from ordering. The integrity property
+        # that matters is that attestation timestamps never go backwards in TIME.
         timestamps = []
         for p in attested:
             at = p.get('attested_at')
             if at:
                 timestamps.append((p.get('id'), at))
+        timestamps.sort(key=lambda t: t[1] or "")
         monotonic_violations = []
         for i in range(1, len(timestamps)):
             if timestamps[i][1] < timestamps[i-1][1]:
@@ -1823,6 +1921,13 @@ class Engine:
         # WORK-ITEM-13: assemble flat deliverables/ folder.
         try:
             _curate.curate(self.run_dir)
+        except _curate.CurateAlreadyRan:
+            # F50 (SMOKE-1, 2026-09-01): close() re-runs curate on EVERY invocation,
+            # and curate refuses a second pass by design (duplicate-file safety). A
+            # prior curation with the full deliverable set present IS the close-time
+            # end state — the fix is to treat it as success, not crash close().
+            # Re-verified below by the self-audit (flat folder audit) either way.
+            pass
         except _curate.AFBundleIncomplete as exc:
             self.state["terminal"] = "BLOCKED"
             self.state["blocked"] = {

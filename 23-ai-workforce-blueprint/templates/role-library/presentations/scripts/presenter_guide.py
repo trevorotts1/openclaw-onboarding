@@ -519,8 +519,16 @@ class PresenterGuide:
             # (~230 chars/note) as well as rich production decks. The legacy
             # 51,200-byte / 34-slide reference is retained as MIN_BYTES_ABSOLUTE
             # to catch empty/garbled guides regardless of slide count.
+            # F36 (SMOKE-1, 2026-09-01): the absolute guardrail is now SCALED to
+            # slide count — 51,200 bytes calibrated a 34-slide reference deck
+            # (~1,506 bytes/slide), so a 12-slide deck was structurally
+            # unpassable (12x1600=19.2KB < 51.2KB) and the gate auto-failed any
+            # short deck regardless of guide richness. Keep the same
+            # bytes-per-slide calibration: floor = max(per-slide floor,
+            # 51200 * n/34).
             _n_slides = len(getattr(self, "slides", []) or []) or 1
-            floor = max(MIN_BYTES_PER_SLIDE * _n_slides, MIN_BYTES_ABSOLUTE)
+            _scaled_absolute = int(MIN_BYTES_ABSOLUTE * _n_slides / 34)
+            floor = max(MIN_BYTES_PER_SLIDE * _n_slides, _scaled_absolute)
         if size < floor:
             print(f"[FATAL] {Path(out_path).name} is {size} bytes, below {floor:,}-byte floor", file=sys.stderr)
             sys.exit(3)
@@ -656,7 +664,9 @@ def main():
     pages, size = guide.build(str(out_path), str(alias), sample_mode=is_sample)
 
     _n = len(getattr(guide, "slides", []) or []) or 1
-    floor = MIN_BYTES_SAMPLE if is_sample else max(MIN_BYTES_PER_SLIDE * _n, MIN_BYTES_ABSOLUTE)
+    # F36: scale the legacy absolute guardrail to slide count (see build() above).
+    floor = MIN_BYTES_SAMPLE if is_sample else max(
+        MIN_BYTES_PER_SLIDE * _n, int(MIN_BYTES_ABSOLUTE * _n / 34))
     print(f"[presenter-guide] Rendered {out_path} ({pages} page(s), {size:,} bytes)")
     print(f"[presenter-guide] Alias: {alias}")
     if size >= floor:

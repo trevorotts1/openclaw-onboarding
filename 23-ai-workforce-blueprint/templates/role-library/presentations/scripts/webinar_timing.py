@@ -324,7 +324,14 @@ def derive_timing(speech_md_path: str, chunks_dir: str, chunk_chars: int = DEFAU
         # Guard failed -> documented proportional fallback.
         log(f"WARNING: rechunk count {n_rechunked} != on-disk chunk count {n_disk}; "
             f"falling back to SECONDS:-proportional split")
-        n_slides = 20 if n_disk >= 20 else max(rechunked, key=lambda t: t[1])[1] if rechunked else 20
+        # F45 (SMOKE-1, 2026-09-01): the fallback hardcoded 20 slides (the reference
+        # deck). A 12-slide deck carries 12 SECONDS: entries, so the fallback could
+        # NEVER derive a timing track for any small deck — P9.6 was structurally
+        # impossible below 20 slides. Derive the slide count from the speech's own
+        ## Slide N headers (same parser the fallback itself uses), floor 1.
+        import re as _re
+        _heads = {int(m.group(1)) for m in _re.finditer(r"^##+ \s*Slide (\d+)\b", md_text, _re.M)}
+        n_slides = max(_heads) if _heads else 20
         timing_entries = seconds_proportional_fallback(md_text, chunk_durations, n_slides)
         fallback = "seconds_proportional"
 

@@ -103,7 +103,11 @@ DELIVERABLE_AUDIT_SPEC = [
         # / PIPELINE-MANIFEST.json value: "a minimal guide covers all slides with talking
         # points and timing; < 50KB implies only a stub header." deliverables.py had
         # carried a never-chosen 20_000 that no doctrine source cites.
-        "min_bytes": 51_200,              # 50 KB — guide covers all slides with talking points
+        # F49 (SMOKE-1, 2026-09-01): floor is per-deck, not absolute — the 50KB reference
+        # was measured on the 34-slide deck; the P8.2 phase verifier and the bundle gate
+        # both scale it by slide count (max(51200*n//34, 8192)). The self-audit reads this
+        # list statically, so scale here too: FLOOR(n) computed per run by audit_all.
+        "min_bytes": 51_200,              # 50 KB — reference-deck floor; scaled per deck
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",

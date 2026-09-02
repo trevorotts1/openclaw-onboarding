@@ -1064,6 +1064,27 @@ def _deliverables_fact(run_dir: Path) -> Fact:
                 magic_problem="", content_problem=""))
             continue
         p = hits[0]
+        # F43c mirror (SMOKE-1, 2026-09-01): scale guide_pdf/deck_pdf floors by
+        # slide count exactly like phase_verifiers._verify_delivery and the
+        # build_deck BUNDLE gate (max(51200*n//34, 8192)). This mirror previously
+        # kept the raw 34-slide floor, so enforcing mode would have re-bricked
+        # P9-DELIVER on a 12-slide deck even after the legacy gate was fixed.
+        _min_b = int(spec["min_bytes"])
+        if key in ("guide_pdf", "deck_pdf"):
+            try:
+                _n = 0
+                for _cand in sorted(run_dir.glob("working/copy/slides*.json")):
+                    _data = json.loads(_cand.read_text(encoding="utf-8", errors="replace"))
+                    if isinstance(_data, list):
+                        _n = len(_data)
+                    elif isinstance(_data, dict) and _data.get("slides"):
+                        _n = len(_data["slides"])
+                    if _n:
+                        break
+                if _n:
+                    _min_b = max(int(_min_b * _n // 34), 8192)
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                pass
         try:
             size = p.stat().st_size
         except OSError as exc:  # noqa: BLE001
@@ -1093,9 +1114,13 @@ def _deliverables_fact(run_dir: Path) -> Fact:
         if key == "speech_fish_md":
             try:
                 text = p.read_text(encoding="utf-8", errors="replace")
-                n = len(re.findall(r"\[fish\b[^\]]*\]", text, re.IGNORECASE))
+                # Fish Audio S2/S2-Pro syntax (FISH-AUDIO-TAGS-MASTER.md) is a
+                # bracket-wrapped natural-language cue — e.g. [warm and welcoming]
+                # — NOT a literal "[fish...]" prefix. Mirror the fixed
+                # phase_verifiers check exactly.
+                n = len(re.findall(r"\[[a-z][^\]\[]{3,60}\]", text, re.IGNORECASE))
                 if n < 3:
-                    content_problem = (f"only {n} [fish] tags (min 3 expected) — a renamed "
+                    content_problem = (f"only {n} Fish S2 bracket tags (min 3 expected) — a renamed "
                                        f"plain text file is not a fish-tagged speech")
             except Exception as exc:  # noqa: BLE001
                 content_problem = f"cannot read for fish-tag check: {exc!r}"
@@ -1129,7 +1154,7 @@ def _deliverables_fact(run_dir: Path) -> Fact:
 
         infos.append(DeliverableInfo(
             key=key, found=True, path=str(p), size=size,
-            min_bytes=int(spec["min_bytes"]), magic_ok=magic_ok,
+            min_bytes=_min_b, magic_ok=magic_ok,
             magic_problem=magic_problem, content_problem=content_problem))
 
     return Fact.known(tuple(infos),

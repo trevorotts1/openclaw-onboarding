@@ -92,6 +92,26 @@ BONUS_ITEMS = [
 ]
 
 
+def _count_deck_slides(deliverables_dir: str) -> int:
+    """F49: slide count for floor scaling. Reads the run's slides.json wherever it
+    resolves (run-dir working/copy, or the deliverables sibling walking up to the
+    run root). Returns 0 when undeterminable (spec floors used unchanged)."""
+    import glob as _glob
+    root = os.path.dirname(os.path.abspath(deliverables_dir)) if deliverables_dir else ""
+    for cand in (os.path.join(root, "working", "copy", "slides.json"),
+                 os.path.join(root, "..", "working", "copy", "slides.json")):
+        try:
+            with open(cand, encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, list):
+                return len(data)
+            if isinstance(data, dict) and isinstance(data.get("slides"), list):
+                return len(data["slides"])
+        except Exception:  # noqa: BLE001
+            continue
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -342,7 +362,16 @@ def audit_all(deliverables_dir: str) -> dict:
     results = []
     bonus_results = []
 
+    # F49 (SMOKE-1, 2026-09-01): scale the guide/speech PDF floors by THIS deck's slide
+    # count (the 51,200B reference was measured on the 34-slide deck; the P8.2 verifier
+    # and the bundle gate already scale identically: max(51200*n//34, 8192)). The spec
+    # list stays the authority; the per-run floor is computed here and applied to the
+    # items the single-source spec marks as deck-scaled.
+    n_slides = _count_deck_slides(deliverables_dir) 
     for item in DELIVERABLE_AUDIT_LIST:
+        item = dict(item)
+        if item.get("key") in ("guide_pdf", "deck_pdf", "speech_pdf") and n_slides:
+            item["min_bytes"] = max(int(item["min_bytes"] * n_slides // 34), 8192)
         fp = _find_file(deliverables_dir, item["filename"])
         r = audit_deliverable(fp, item)
         results.append(r)
