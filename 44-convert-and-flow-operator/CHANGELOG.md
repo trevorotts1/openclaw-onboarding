@@ -1,5 +1,29 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.19] - 2026-09-03 — send-integrity gates: fail-closed email bodies, merge-safe contacts, WF-22
+
+### Fixed
+- **`contacts update --tag` replaced the entire tag set.** `PUT /contacts/{id}` with a
+  `tags` array overwrites every tag on the contact; agents using it to *add* one tag
+  destroyed all others (implicated in a ~3,000-contact tag loss). `--tag` on `update`
+  is now REFUSED (exit 2) with merge-safe alternatives named. Non-tag fields unaffected.
+- **`workflows patch-email` wrote empty bodies and reported success.** An empty
+  `--body-file` landed as `""` in both `body` and `html`, printed `{"ok": true}`, and
+  never read the workflow back (~3,000 subject-only emails). Pre-write validation now
+  refuses empty, under-200-char (unless `--allow-short`), and placeholder (TODO/TBD/
+  lorem/placeholder) bodies (exit 2); post-write the workflow is re-read from GHL and
+  an empty body exits 3 with the snapshot-restore command instead of success.
+- **No merge-safe contact write existed.** New `contacts upsert` matches on
+  email/phone via `POST /contacts/upsert` and applies tags afterwards via
+  `POST /contacts/{id}/tags` (strictly additive) — tags are never sent in the upsert
+  body, so no existing tag can be dropped by construction.
+
+### Added
+- **WF-22 email-body check in `qc-built-workflow.sh`.** The harness asserted SMS
+  From-numbers (WF-12) but had no email-body check, so blank-email workflows passed QC
+  clean. WF-22 fails any email node rendering to empty text (or under 200 chars) and is
+  wired into the D6 deliverability floor alongside WF-12.
+
 ## [1.3.18] - 2026-08-17 — `workflows build`: idempotent folder/workflow creation, install/import fixes, quiet stderr
 
 ### Fixed

@@ -37,6 +37,7 @@
 #   WF-6  Re-entry/allow-multiple vs re-entry decision
 #   WF-7  Action sequence: at minimum one action node present + delivery chain not empty
 #   WF-12 SMS From-number non-empty (for any SMS-type action nodes)
+#   WF-22 Email body non-empty + >=200 rendered chars (for any email-type action nodes)
 #   WF-15 Delivery chain linkage: trigger -> step -> exit (targetActionId present)
 #   WF-18 Snapshot exists for this workflow id (reversibility gate)
 #   WF-21 Snapshot file is present and non-empty on disk
@@ -347,6 +348,63 @@ else
   record_pass "WF-12" "all_${SMS_TOTAL}_sms_nodes_have_nonempty_from_number" "fromNumber key present + non-empty" "All $SMS_TOTAL SMS node(s) carry a non-empty From-number"
 fi
 
+# ── WF-22: EMAIL BODY NON-EMPTY (SEND_INTEGRITY_CODE_GATES_V1) ────────────────
+# Added 2026-09-03 after ~3,000 emails shipped with a subject and an EMPTY BODY
+# and still passed QC. WF-12 covered SMS From-numbers; NOTHING covered email
+# bodies. An email node whose body/html renders to no text is a blank send.
+# Output: "<total_email_nodes> <empty_bodies> <short_bodies> <parse_ok>"
+EMAIL_BODY_CHECK=$(printf '%s' "$EXPORT_OUT" | python3 -c "
+import sys, json, re
+def rendered(s):
+    if not isinstance(s, str): return ''
+    t = re.sub(r'<[^>]+>', ' ', s).replace('&nbsp;', ' ')
+    return ' '.join(t.split())
+total = empty = short = 0
+def looks_email(node, attrs):
+    blob = ' '.join(str(node.get(k, '')) for k in ('type','actionType','action','name','templateType')).lower()
+    if 'email' in blob: return True
+    return ('subject' in attrs) and ('body' in attrs or 'html' in attrs)
+def walk(o):
+    global total, empty, short
+    if isinstance(o, dict):
+        a = o.get('attributes')
+        if isinstance(a, dict) and looks_email(o, a):
+            total += 1
+            body = rendered(a.get('body') or '') or rendered(a.get('html') or '')
+            if not body: empty += 1
+            elif len(body) < 200: short += 1
+        for v in o.values(): walk(v)
+    elif isinstance(o, list):
+        for v in o: walk(v)
+try:
+    walk(json.load(sys.stdin)); ok = 1
+except Exception:
+    ok = 0
+print('%d %d %d %d' % (total, empty, short, ok))
+" 2>/dev/null || echo "0 0 0 0")
+read -r EMAIL_TOTAL EMAIL_EMPTY EMAIL_SHORT EMAIL_PARSE_OK <<< "$EMAIL_BODY_CHECK"
+
+if [ "${EMAIL_PARSE_OK:-0}" != "1" ]; then
+  # Parse failed — fall back to a text grep for literally-empty body/html values.
+  if printf '%s' "$EXPORT_OUT" | grep -qE '"(body|html)"[[:space:]]*:[[:space:]]*""'; then
+    record_fail "WF-22" "empty_email_body_detected_textgrep" "every email node has a non-empty body" \
+      "CRITICAL: an email node with an EMPTY body/html was found (text-grep fallback). This ships a subject line with no message. DO NOT send."
+  else
+    record_human "WF-22" "Export JSON could not be parsed — email bodies NOT machine-verified. A QC agent must open each email step and confirm the body is present and is the intended copy."
+  fi
+elif [ "${EMAIL_TOTAL:-0}" -eq 0 ]; then
+  record_pass "WF-22" "no_email_nodes" "n/a — no email nodes" "No email nodes detected in this workflow"
+elif [ "${EMAIL_EMPTY:-0}" -gt 0 ]; then
+  record_fail "WF-22" "${EMAIL_EMPTY}_of_${EMAIL_TOTAL}_email_nodes_have_EMPTY_body" "every email node has a non-empty body" \
+    "CRITICAL: $EMAIL_EMPTY of $EMAIL_TOTAL email node(s) render to an EMPTY body — a subject line with no message. This is the exact failure that sent ~3,000 blank emails. DO NOT publish or send; repair the body and re-run QC."
+elif [ "${EMAIL_SHORT:-0}" -gt 0 ]; then
+  record_fail "WF-22" "${EMAIL_SHORT}_of_${EMAIL_TOTAL}_email_nodes_under_200_chars" "every email body >= 200 rendered chars" \
+    "$EMAIL_SHORT of $EMAIL_TOTAL email node(s) render to fewer than 200 characters of text — almost always truncated or placeholder copy. Confirm with the owner before shipping."
+else
+  record_pass "WF-22" "all_${EMAIL_TOTAL}_email_nodes_have_nonempty_body" "every email node has a non-empty body" \
+    "All $EMAIL_TOTAL email node(s) carry a non-empty body of >= 200 rendered characters"
+fi
+
 # ── WF-15: Delivery chain linkage ─────────────────────────────────────────────
 HAS_TARGET_ACTION=$(echo "$EXPORT_OUT" | grep -cE 'targetActionId|target_action_id|nextStep|next_step|parentKey|parent_key' || echo 0)
 HAS_TARGET_ACTION=$(echo "$HAS_TARGET_ACTION" | tr -d ' ')
@@ -460,7 +518,7 @@ else D3=1; fi
 
 # D6 Deliverability integrity — WF-12 is mechanical; WF-13/2/10/11 need human.
 # Machine FLOOR from WF-12: empty-on-LIVE => 1, key-present(empty draft / non-empty) => 5 floor.
-if [ "$(_wf WF-12)" = "FAIL" ]; then D6=1
+if [ "$(_wf WF-12)" = "FAIL" ] || [ "$(_wf WF-22)" = "FAIL" ]; then D6=1
 else D6=5; fi   # floor; QC sub-agent raises to 10 once senders + deps GET-verified
 D6_HUMAN=1
 
@@ -533,7 +591,7 @@ if [ "$JSON_MODE" -eq 1 ]; then
   echo "  \"mechanical_fail\": $FAIL_COUNT,"
   echo "  \"overall_mechanical\": \"$([ "$FAIL_COUNT" -eq 0 ] && echo PASS || echo FAIL)\","
   echo "  \"items\": {"
-  ALL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-21" \
+  ALL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" \
              "WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
   FIRST=1
   for item in "${ALL_ITEMS[@]}"; do
