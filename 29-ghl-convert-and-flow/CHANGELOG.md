@@ -294,3 +294,7 @@ Skill 36's router now routes Tier 0 (Convert and Flow CLI, skill 44) first. Skil
 - `references/modules.md` medias block updated: key endpoint line + deep reference pointer to medias.md added.
 
 ## [v6.5.6] - prior
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

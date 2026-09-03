@@ -242,3 +242,7 @@ This skill is the state-machine-driven closeout layer. Same architectural patter
 
 ### Cost envelope
 ~$0.60 / client in KIE credits (worst case).
+
+## [v13.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

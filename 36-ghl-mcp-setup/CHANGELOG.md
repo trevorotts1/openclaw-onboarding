@@ -504,3 +504,7 @@ the Build API are orthogonal surfaces.
 - **20-assertion QC script** (`qc-ghl-setup.sh`) covering platform detection, credentials, both MCPs, core file wiring, and security
 - **Cross-references** to skills 05 (foundation), 29 (Tier 3 reference), and 35 (which now routes through MCPs first)
 - **Credential canonical path migration:** moved from `~/clawd/secrets/.env` (legacy skill 05 location) to `~/.openclaw/secrets/.env` (current AGENTS.md canonical)
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

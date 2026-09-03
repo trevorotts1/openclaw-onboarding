@@ -32,3 +32,7 @@ Initial release. Ships graphify as standalone Skill 43.
 - SKILL.md / INSTALL.md / INSTRUCTIONS.md / CORE_UPDATES.md, `references/GRAPHIFY-COMMANDS.md`, `scripts/verify-graphify-install.sh`, `qc-graphify-knowledge-graph.sh`.
 - Carries the binding NO-COMINGLING rule: the graph and the model are this client's alone; if the client's model isn't available, STOP and WAIT — never substitute. References `../NO-COMINGLING-RULE.md` and AGENTS.md N0.
 - All commands verified against github.com/safishamsi/graphify and docs.openclaw.ai. No client PII or working artifacts shipped.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -194,3 +194,7 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   No other repo file was changed - fixing those sites, or building a shared
   `--declaration-key` helper for them, is a separate, explicitly-scoped
   follow-up (touches more than a handful of skills).
+
+## [v1.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

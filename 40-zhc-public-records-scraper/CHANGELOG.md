@@ -191,3 +191,7 @@ outreach. The skill NEVER fabricates a record.
 - No-fabrication floor machine-enforced by `scripts/qc-no-fabrication.sh`.
 - Governed by `../QC-PROTOCOL.md` (8.5 threshold, 10-category rubric).
 - Registered in `install.sh` (`install_skill_40_zhc_public_records_scraper`) + the README skill catalog.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

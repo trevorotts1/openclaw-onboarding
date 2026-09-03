@@ -143,3 +143,7 @@ Wave-0 merge-train **T-50-email-engine** (fixes: FIX-XC-11d, FIX-XC-12a, FIX-S36
 ### Added
 - **`test_cc_contract.py` (byte-identical):** stdlib contract test proving `complete_run` posts
   `review` and never `done`, the legal-path walk, route-template parity, and disabled-board no-op.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

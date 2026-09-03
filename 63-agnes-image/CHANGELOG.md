@@ -78,3 +78,7 @@ second run is byte-identical across AGENTS.md / TOOLS.md / MEMORY.md with no new
   value never printed).
 - Bundled `qc-agnes-image.sh` install QC that fails closed on a corrupted
   reference doc, plus `PREREQS.json` declaring Skills 01/02 and the credential.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

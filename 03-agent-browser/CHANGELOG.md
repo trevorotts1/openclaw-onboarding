@@ -117,3 +117,7 @@ All notable changes to this skill wrapper are documented here.
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 - Added wrapper skill to ensure agent-browser is installed and available as the preferred browser automation tool.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

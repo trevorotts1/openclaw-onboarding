@@ -53,3 +53,7 @@ All notable changes to this skill are documented here.
 - Packaged `66-kie-image-1.0.0.skill` bundle (SKILL.md, INSTALL.md,
   INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, CHANGELOG.md, QC.md,
   PREREQS.json, models.json, references/, scripts/, skill-version.txt).
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

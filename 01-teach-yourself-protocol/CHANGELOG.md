@@ -31,3 +31,7 @@ as a mandatory pre-write check.
 
 **Not changed:** teach-yourself-protocol-full.md, SKILL.md trigger section (SKILL.md
 description updated only in next full rewrite), INSTALL.md, EXAMPLES.md, MIGRATION-TYP.md
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

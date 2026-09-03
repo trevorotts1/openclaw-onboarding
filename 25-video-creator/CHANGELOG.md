@@ -102,3 +102,7 @@
 - Global version markers (`/version`, `install.sh`/`update-skills.sh` ONBOARDING_VERSION, root
   CHANGELOG header) are intentionally NOT touched here — the operator rolls them with
   `scripts/bump-version.sh` at merge.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

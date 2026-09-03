@@ -75,3 +75,7 @@ CI: `.github/workflows/memory-activator-guard.yml`.
 - Cognee (Layer 6) for graph-based knowledge relationships
 - Obsidian Vault (Layer 7) for structured knowledge base
 - Wiki System (Layer 8) for collaborative documentation
+
+## [v8.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

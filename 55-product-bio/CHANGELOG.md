@@ -97,3 +97,7 @@
   a full pass, deterministic sha ⇒ idempotent).
 - Golden worked example `examples/golden-atlasflow/` (6,105-word bio +
   envelope-clean HTML) + one broken-variant per AF-PB-* code; `verify.sh` green.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

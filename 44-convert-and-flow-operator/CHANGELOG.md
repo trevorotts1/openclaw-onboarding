@@ -1053,3 +1053,7 @@ by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
   platform/vps/ (venv at /data/.openclaw/tools/..., owner-nudge on expired token).
 - Client-facing plain-language auto-re-grab disclosure in INSTALL.md (binding transparency).
 - qc-convert-and-flow.sh with assertions for all acceptance criteria.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

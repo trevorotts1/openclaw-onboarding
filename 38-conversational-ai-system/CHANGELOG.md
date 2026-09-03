@@ -2325,3 +2325,7 @@ an installable skill. Builds the conversational AI BRAIN on top of skill 29 (GHL
 
 The skill's structure (numbered scripts, protocols/ folder, references/) leaves room for
 these to be added later without restructuring.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
