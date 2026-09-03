@@ -3,6 +3,34 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [0.1.7] - 2026-09-03
+
+Fixed a self-amplifying alert-storm bug: `route_finding()`'s "no operator alert
+target configured" branch (`ews_alert.py`) wrote a fresh, undeduped `S7`/`P2`
+event on every finding, every tick, for as long as no operator target env var
+was set - measured at 27,841 undeduped rows on one live box (49.9% of that
+box's entire `events` table), because the branch never checked or recorded a
+digest, so nothing could ever suppress a repeat.
+
+- The branch now uses the same check-then-record `recent_digest()` /
+  `record_digest()` idiom every other repeat condition in the function already
+  uses, keyed on one fixed, condition-level key (`S7|no_operator_target`)
+  instead of the per-finding key - the condition resurfaces once per
+  `dedup_window_hours` (default 6h) while it stays broken, never silenced,
+  never appended forever.
+- Severity bumped P2 -> P1: this condition disables every alert the box's
+  sentinel can raise, not just the one finding that triggered it - P1 also
+  means an unacked one older than 30 minutes reaches Rescue Rangers via
+  `escalate()`, the one path still able to reach a human when the operator
+  target itself is what's missing.
+- `ews_ledger.py`'s `record_event()` gained a write-layer guard: `dedup_key`
+  is derived (`"<signal>|<key_path>"`) when a caller passes none, so the
+  column is never NULL again. Hygiene/defense-in-depth, not a throttle -
+  `record_event()` still does not itself enforce dedup; that stays the
+  caller's job.
+- Existing rows from the live flood are NOT cleaned up by this change
+  (recommendation only, nothing destructive implemented).
+
 ## [0.1.0] - unreleased (build in progress)
 
 Initial build of the fleet Early Warning System - a deterministic, zero-model-call
