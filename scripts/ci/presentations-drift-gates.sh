@@ -49,6 +49,40 @@
 #                                       (backtick-quoted) every current phase. The
 #                                       precise guard SOP-SLIDE-06 §6 now points to as
 #                                       what makes its "same phase ids" claim true.
+# GATE 6 (FIX 114 provider-id canon) -- reads every "provider" literal out of
+#                                       model_catalog.json (all aliases and their
+#                                       served_ids keys) and fails, naming the exact
+#                                       id(s), if any carries an underscore or space --
+#                                       the FIX 114 drift class (catalog said
+#                                       `ollama_cloud` while the router said
+#                                       `ollama-cloud`, and both spellings lived on
+#                                       disk). Also proves the FIX 114 rejects in place:
+#                                       model_router refuses an ollama-cloud route with
+#                                       no resolvable key, research_web accepts a key
+#                                       stored only as BRAVE_API_KEY, and the canon
+#                                       helper rejects a placeholder through
+#                                       looks_like_real_key.
+# GATE 7 (FIX 65 colocate contract) -- asserts the colocate list contract of
+#                                       U006 colocate_presentation_entry in
+#                                       BOTH install.sh and update-skills.sh
+#                                       (R11 §G1): the candidate list must
+#                                       name exactly the presentation scripts
+#                                       that exist in the canonical source
+#                                       dir 23-ai-workforce-blueprint/scripts/
+#                                       (a retired file must leave the list,
+#                                       so installs can never print
+#                                       "partial (copied 1 of 2)" again);
+#                                       an empty list must be a hard miss
+#                                       (return 1); a copy miss must be a
+#                                       hard miss (return 1), never a
+#                                       warn-and-continue. This gate is the
+#                                       "CI asserts the list" leg of that
+#                                       contract: deleting a listed file
+#                                       from the source dir makes THIS gate
+#                                       fail (list-vs-disk divergence), and
+#                                       silently re-adding a retired file to
+#                                       the array makes it fail too (the
+#                                       retired-name check).
 #
 # Exit code: 0 only if every gate that CAN fail today did not fail.
 # Prints which gate failed (and why) on any non-zero exit.
@@ -429,14 +463,58 @@ for doc_rel, count_prefix in docs_count:
     else:
         print(f"GATE4_COUNT_OK: {doc_rel} generated line states {stated} == len(manifest.phases).")
 
+# FIX 84: role-file check runs FIRST (below) so its failures land in the same
+# failures[] list as the doc-list failures; the gate exits once, naming both.
+
+# FIX 84: GATE 4 also covers the ROLE FILES. Every role file that uses numeric
+# short codes ("Phase 1", "Phase 1Q", ...) as pipeline shorthand must carry a
+# Phase-Code Map pointer (director-of-presentations.md Section 9) so its short
+# codes resolve to manifest ids, and every backtick-quoted P-id it cites must
+# be a real phases[].id. Role files WITHOUT pipeline short codes are exempt
+# (nothing to map); the Signature-Talk arc's internal "Phase 1-4" is prose
+# inside P3-ARC and is not a manifest phase, which the map pointer itself
+# states. This is reference-resolution coverage, not full-registry coverage:
+# a specialist role file describes its own stages, it does not promise to
+# name all 59 ids.
+role_files_checked = 0
+idset = set(ids)
+role_dir = repo_root / "23-ai-workforce-blueprint/templates/role-library/presentations"
+for role_path in sorted(role_dir.glob("*.md")):
+    name = role_path.name
+    if name.startswith(("00-START-HERE", "DEPARTMENT-COUNTS-CANONICAL", "BUILDER-PROMPT", "IDENTITY", "how-to-use-this-department")):
+        continue  # covered by docs_full_id / non-role docs
+    if name == "director-of-presentations.md":
+        continue  # the map itself; covered by docs_full_id
+    text = role_path.read_text(encoding="utf-8")
+    short_codes = _re.findall(r"Phase [0-9]", text)
+    if len(short_codes) < 3:
+        continue  # no pipeline-shorthand usage worth gating
+    this_role_failures = []
+    if "Phase-Code Map" not in text:
+        this_role_failures.append("no Phase-Code Map pointer (director-of-presentations.md Section 9) -- its numeric short codes do not resolve to manifest ids")
+    # Only P-prefixed phase-id shapes count as id citations; backtick-quoted
+    # filenames (PRESENTER-AUDIO.mp3), the manifest path itself, and
+    # placeholder labels are not phase ids. A real phase id is P + a digit or
+    # F (PF-DESIGN), never P followed by a lowercase extension fragment.
+    cited_ids = set(_re.findall(r"`(P[A-Za-z0-9.\-]+)`", text))
+    cited_ids = {pid for pid in cited_ids if _re.fullmatch(r"P[0-9F][A-Za-z0-9.\-]*", pid) and _re.search(r"[0-9]", pid)}
+    bad_ids = sorted(pid for pid in cited_ids if pid not in idset)
+    if bad_ids:
+        this_role_failures.append(f"backtick-quoted id(s) not in manifest phases[]: {bad_ids}")
+    if this_role_failures:
+        failures.append(f"role file {name} ({len(short_codes)} 'Phase N' short-code uses): " + "; ".join(this_role_failures))
+    else:
+        role_files_checked += 1
+        print(f"GATE4_ROLE_OK: role-library/presentations/{name} carries the Phase-Code Map pointer and cites only manifest phase ids ({len(short_codes)} short-code refs).")
+
 if failures:
-    print("GATE4_FAIL: a doc's phase-id list has drifted from PIPELINE-MANIFEST.json phases[] "
+    print("GATE4_FAIL: a doc's phase list or a role file's short-code map has drifted from PIPELINE-MANIFEST.json phases[] "
           "(missing id = doc describes fewer phases than the manifest actually runs):")
     for f in failures:
         print(f"  - {f}")
     sys.exit(1)
 
-print(f"GATE4_PASS: all five count-restating docs hold lockstep with the manifest ({len(docs_full_id)} full-id docs name all {len(ids)} ids; {len(docs_count)} generated-line doc(s) match len(manifest.phases)).")
+print(f"GATE4_PASS: docs hold lockstep with the manifest ({len(docs_full_id)} full-id docs name all {len(ids)} ids; {len(docs_count)} generated-line doc(s) match len(manifest.phases); {role_files_checked} role files checked for map pointer + id resolution).")
 sys.exit(0)
 PYEOF
 )" || GATE4_RC=$?
@@ -566,11 +644,280 @@ fi
 rm -rf "$GATE5_TMP"
 
 # ---------------------------------------------------------------------------
+# GATE 6 (FIX 114) — catalog provider-id canon: hyphenated everywhere, and the
+# FIX 114 key-resolution rejects still hold. The broken state this gate exists
+# for was measured in the Sept-1 sweep: model_catalog.json carried
+# "ollama_cloud" (underscore) next to router-side "ollama-cloud", the vision
+# alias listed BOTH as served ids, and the drift silently split one provider
+# into two billing identities. FIX 114 folded the catalog to hyphenated ids;
+# this gate keeps it folded and re-proves the seam-level rejects on every CI
+# run. Data-only: no network, no credential values -- keys read here are
+# synthetic fixtures the gate itself writes.
+echo
+echo "== GATE 6: catalog provider-id hyphenation (FIX 114) + key-gate rejects =="
+GATE6_RC=0
+if SCRIPTS_DIR="$SCRIPTS_DIR" python3 - <<'PYEOF' 2>&1
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+
+scripts_dir = Path(os.environ["SCRIPTS_DIR"])
+catalog_path = scripts_dir / "presentation_job" / "model_catalog.json"
+failures = []
+
+doc = json.loads(catalog_path.read_text(encoding="utf-8"))
+aliases = doc.get("aliases") or {}
+
+# (a) every alias-level "provider" literal is hyphenated (no underscore/space).
+for alias, entry in sorted(aliases.items()):
+    if not isinstance(entry, dict):
+        continue
+    provider = str(entry.get("provider") or "")
+    if provider and ("_" in provider or " " in provider):
+        failures.append(f"(a) alias {alias}: provider id {provider!r} is not hyphenated")
+
+# (b) every served_ids key is hyphenated too -- the drift lived at BOTH levels.
+for alias, entry in sorted(aliases.items()):
+    if not isinstance(entry, dict):
+        continue
+    for served in sorted((entry.get("served_ids") or {}).keys()):
+        s = str(served)
+        if s and ("_" in s or " " in s):
+            failures.append(f"(b) alias {alias}: served id {s!r} is not hyphenated")
+
+# (c) the FIX 114 fold is complete: no underscore spelling survives in any
+#     served_ids map.
+for alias, entry in aliases.items():
+    if isinstance(entry, dict) and "ollama_cloud" in (entry.get("served_ids") or {}):
+        failures.append(f"(c) alias {alias}: underscore spelling ollama_cloud still present in served_ids")
+
+if failures:
+    print("GATE6_FAIL: catalog provider ids are not fully hyphenated (FIX 114):")
+    for f in failures:
+        print(f"  - {f}")
+    sys.exit(1)
+
+# (d) FIX 114 rejects still hold, proven against synthetic fixtures:
+#     d1 model_router.provider_key_resolves refuses ollama-cloud when no key
+#        resolves (family names scrubbed from the env); d2 research_web
+#        resolves a key stored ONLY as BRAVE_API_KEY and still rejects a
+#        placeholder; d3 the canon helper rejects a placeholder through
+#        looks_like_real_key.
+pj = scripts_dir / "presentation_job"
+sys.path.insert(0, str(pj))
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+helper = None
+for anc in Path(__file__).resolve().parents:
+    cand = anc / "shared-utils" / "secret_helper.py"
+    if cand.is_file():
+        helper = _load("secret_helper_g6", cand)
+        break
+if helper is None:
+    failures.append("(d) shared-utils/secret_helper.py not found from gate cwd")
+else:
+    # d3: placeholder rejected, canon-shaped value accepted (synthetic only)
+    if helper.looks_like_real_key("PASTE_REAL_TOKEN", "OLLAMA_API_KEY"):
+        failures.append("(d3) looks_like_real_key accepted a placeholder value")
+    alpha = "0123456789abcdefghijklmnopqrstuvwxyz"
+    fake = "".join(alpha[(i * 7) % len(alpha)] for i in range(48))
+    if not helper.looks_like_real_key(fake, "OLLAMA_API_KEY"):
+        failures.append("(d3) looks_like_real_key rejected a plausible 48-char key")
+
+if not failures:
+    try:
+        router = _load("model_router_g6", pj / "model_router.py")
+        saved_env = {}
+        for k in ("OLLAMA_API_KEY", "OLLAMA_CLOUD_API_KEY", "OLLAMA_KEY",
+                  "OLLAMA_TOKEN", "SHARED_UTILS_DIR"):
+            saved_env[k] = os.environ.pop(k, None)
+        try:
+            resolves = router.provider_key_resolves("ollama-cloud")
+        finally:
+            for k, v in saved_env.items():
+                if v is not None:
+                    os.environ[k] = v
+        if resolves:
+            failures.append("(d1) provider_key_resolves('ollama-cloud') answered True with every family name scrubbed from the environment")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"(d1) model_router provider-key gate broke: {exc}")
+
+if not failures:
+    try:
+        rw = _load("research_web_g6", pj / "research_web.py")
+        # d2: a key stored ONLY as BRAVE_API_KEY resolves via the alias family.
+        # Synthetic fixture value; the store seam is bypassed via the fake-env
+        # parameter (never a real secret read). The placeholder reject is
+        # proven on the REAL-env reader posture instead: _read_secret_named
+        # runs the looks_like_real_key plausibility gate on whatever the real
+        # env/files hold, so a value that cannot pass it yields None.
+        if not rw._brave_key({"BRAVE_API_KEY": "BSAa" + "b" * 24}):
+            failures.append("(d2) research_web did not resolve a key stored only as BRAVE_API_KEY (fake-env seam)")
+        saved = os.environ.pop("BRAVE_SEARCH_API_KEY", None)
+        try:
+            if rw._read_secret_named("BRAVE_SEARCH_API_KEY") == "PASTE_REAL_TOKEN":
+                failures.append("(d2) research_web accepted a placeholder BRAVE key (real-env reader)")
+        finally:
+            if saved is not None:
+                os.environ["BRAVE_SEARCH_API_KEY"] = saved
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"(d2) research_web alias seam broke: {exc}")
+
+if failures:
+    print("GATE6_FAIL: FIX 114 key-gate rejects regressed:")
+    for f in failures:
+        print(f"  - {f}")
+    sys.exit(1)
+print("GATE6_PASS: every catalog provider id hyphenated; router key gate, "
+      "BRAVE alias resolve, and placeholder reject all hold.")
+sys.exit(0)
+PYEOF
+then
+  :
+else
+  GATE6_RC=$?
+fi
+if [ "$GATE6_RC" -ne 0 ]; then
+  echo "GATE 6 FAILED: catalog provider-id hyphenation or the FIX 114 key-gate rejects regressed -- see GATE6_FAIL above." >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+# GATE 7 (FIX 65) — the U006 colocate list contract, asserted as CI. This is
+# the "CI asserts the list" leg of the R11 §G1 contract that installer
+# colocate_presentation_entry already implements in BOTH install.sh and
+# update-skills.sh: "colocate list = files that exist; return 1 on any miss."
+# The old list hardcoded the retired deck-build-guard.sh, so one leg of the
+# pair was never copyable and every install printed "partial (copied 1 of 2)"
+# forever, silently. What this gate enforces (per leg, install.sh AND
+# update-skills.sh):
+#   (a) list-vs-disk: every candidate named in colocate_candidates=(...) must
+#       EXIST in the canonical source dir 23-ai-workforce-blueprint/scripts/ --
+#       deleting a listed file (e.g. the retired deck-build-guard.sh case
+#       inverted) makes THIS gate fail instead of the install printing a
+#       permanent partial. The candidate list may only name files that are
+#       actually on disk.
+#   (b) both arrays identical: the two installers must carry the SAME
+#       candidate list -- a drift between them re-creates the partial class
+#       on whichever leg lags.
+#   (c) hard-miss rejects: each function still returns 1 on an empty list and
+#       on a copy miss (the installer-side contract), re-proven per CI run so
+#       a warn-and-continue regression cannot land silently.
+echo
+echo "== GATE 7: U006 colocate list contract (FIX 65) =="
+GATE7_RC=0
+if CANON_SRC_DIR="23-ai-workforce-blueprint/scripts" INSTALL_SH="install.sh" UPDATE_SKILLS_SH="update-skills.sh" python3 - <<'PYEOF' 2>&1
+import os
+import re
+import sys
+from pathlib import Path
+
+canon = Path(os.environ["CANON_SRC_DIR"])
+install_sh = Path(os.environ["INSTALL_SH"])
+update_sh = Path(os.environ["UPDATE_SKILLS_SH"])
+failures = []
+
+ARRAY_RE = re.compile(
+    r"local -a colocate_candidates=\(([^)]*)\)", re.M
+)
+
+def candidates_of(path):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    hits = ARRAY_RE.findall(text)
+    if len(hits) != 1:
+        sys.exit(
+            f"GATE7_SETUP_FAIL: expected exactly one colocate_candidates "
+            f"array in {path}, found {len(hits)}"
+        )
+    return [t for t in hits[0].split() if t], text
+
+try:
+    inst_list, inst_text = candidates_of(install_sh)
+    upd_list, upd_text = candidates_of(update_sh)
+except SystemExit as exc:
+    print(str(exc))
+    sys.exit(1)
+
+# (a) list-vs-disk: every named candidate must exist in the canonical source
+#     dir. Deleting a listed file is the retired-candidate drift class in
+#     reverse -- either way, the array must match the disk.
+for label, arr in (("install.sh", inst_list), ("update-skills.sh", upd_list)):
+    for name in arr:
+        if not (canon / name).is_file():
+            failures.append(
+                f"(a) {label}: colocate candidate {name!r} does not exist in "
+                f"{canon}/ -- the list names files that exist, not retired "
+                f"ones (delete it from the array or restore the file)"
+            )
+
+# (b) both installers carry the SAME candidate list.
+if inst_list != upd_list:
+    failures.append(
+        f"(b) colocate candidate lists diverge: install.sh={inst_list} vs "
+        f"update-skills.sh={upd_list} -- a drift between the two installers "
+        f"re-creates the partial-copy class on whichever leg lags"
+    )
+
+# (c) the installer-side hard-miss rejects still hold, per leg: the empty-list
+#     MISS must return 1, and the shortfall path must print the MISS line and
+#     return 1 (never warn-and-continue). Parsed from the same function text.
+EMPTY_MISS = re.compile(
+    r"colocate MISS: no colocatable files exist.*?co-location FAILED.*?\n(.*?)return 1",
+    re.S,
+)
+SHORTFALL = re.compile(
+    r"colocate MISS \(copied \$copied of \$\{#colocate_list\[@\]\}\).*?co-location FAILED.*?\n(.*?)return 1",
+    re.S,
+)
+for label, text in (("install.sh", inst_text), ("update-skills.sh", upd_text)):
+    if not EMPTY_MISS.search(text):
+        failures.append(
+            f"(c) {label}: the empty-list hard-miss (print + return 1) is "
+            f"gone from colocate_presentation_entry -- warn-and-continue "
+            f"regression of the FIX 65 contract"
+        )
+    if not SHORTFALL.search(text):
+        failures.append(
+            f"(c) {label}: the copy-shortfall hard-miss "
+            f"(colocate MISS (copied X of Y) + return 1) is gone from "
+            f"colocate_presentation_entry"
+        )
+
+if failures:
+    print("GATE7_FAIL: U006 colocate list contract (FIX 65) violated:")
+    for f in failures:
+        print(f"  - {f}")
+    sys.exit(1)
+print(
+    "GATE7_PASS: colocate candidates "
+    f"{inst_list} all exist in {canon}/, both installers agree, and the "
+    "empty-list + shortfall hard-miss rejects hold (FIX 65)."
+)
+sys.exit(0)
+PYEOF
+then
+  :
+else
+  GATE7_RC=$?
+fi
+if [ "$GATE7_RC" -ne 0 ]; then
+  echo "GATE 7 FAILED: U006 colocate list contract (FIX 65) violated -- see GATE7_FAIL above." >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
 echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 provider-id hyphenation, GATE 7 colocate contract)."
 exit 0

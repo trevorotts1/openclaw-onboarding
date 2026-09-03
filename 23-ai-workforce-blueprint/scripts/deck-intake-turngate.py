@@ -524,18 +524,77 @@ INTAKE_JSON_REL = pathlib.Path("working") / "copy" / "intake.json"
 
 def merge_intake_json(run_dir: pathlib.Path, updates: dict) -> pathlib.Path:
     """Merge `updates` into working/copy/intake.json, creating it (and parents)
-    if absent. Existing keys not present in `updates` are preserved."""
+    if absent. Existing keys not present in `updates` are preserved.
+
+    FIX 109: this driver is a SANCTIONED intake writer (the interview bridge
+    the owner talks through), so every merge appends one provenance row to
+    working/checkpoints/intake.provenance.jsonl — {writer_phase, writer_pid,
+    ts, sha_before, sha_after} via presentation_job.runfacts. Without the row
+    the engine's AF-INTAKE-PROVENANCE oracle would refuse every subsequent
+    phase of this very run (the regime activates with the first row), so the
+    append is part of the write, not an afterthought. Best-effort loud: a
+    failed append prints AF-INTAKE-PROVENANCE-APPEND-FAILED on stderr but
+    never loses the merge itself — the engine's fail-closed refusal then
+    names the sha and the operator re-runs the driver, which is exactly the
+    sanctioned-unblock path."""
     p = run_dir / INTAKE_JSON_REL
     p.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
+    sha_before = None
     if p.exists():
         try:
             existing = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             existing = {}
+        try:
+            import hashlib
+            sha_before = hashlib.sha256(p.read_bytes()).hexdigest()
+        except OSError:
+            sha_before = None
+    else:
+        existing = {}
     existing.update(updates)
     p.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    _append_intake_provenance_row(run_dir, sha_before=sha_before,
+                                  writer_phase="deck-intake-turngate")
     return p
+
+
+def _append_intake_provenance_row(run_dir: pathlib.Path, *, sha_before,
+                                  writer_phase: str) -> None:
+    """FIX 109: append one intake provenance row for a sanctioned driver
+    write. Imports runfacts lazily (the driver may run on a box where the
+    engine package sits elsewhere); a loud stderr line replaces a silent
+    skip when the append itself fails — the run then refuses closed until a
+    row exists, never open."""
+    try:
+        here = pathlib.Path(__file__).resolve().parent
+        candidates = [here]
+        # FIX 75 layout: the engine package (presentation_job/) ships beside the
+        # role-library's materialized copy of this driver — walk up to it when
+        # this bare copy runs from the repo's 23-ai-workforce-blueprint/scripts/.
+        # On a deployed box both resolutions collapse to the same scripts dir.
+        candidates.append(here.parent / "templates" / "role-library" /
+                          "presentations" / "scripts")
+        candidates.append(here.parents[2] / "templates" / "role-library" /
+                          "presentations" / "scripts")
+        _runfacts_mod = None
+        for cand in candidates:
+            if (cand / "presentation_job" / "runfacts.py").is_file():
+                if str(cand) not in sys.path:
+                    sys.path.insert(0, str(cand))
+                from presentation_job import runfacts as _runfacts_mod  # noqa: PLC0415
+                break
+        if _runfacts_mod is None:
+            raise ModuleNotFoundError("presentation_job.runfacts")
+        _runfacts_mod.append_intake_provenance(
+            run_dir, writer_phase=writer_phase,
+            previous_sha=sha_before,
+            note="deck-intake-turngate.py merge")
+    except Exception as exc:  # noqa: BLE001 — loud, never silent, never fatal
+        print(f"AF-INTAKE-PROVENANCE-APPEND-FAILED: intake.json was written "
+              f"but the provenance row could not be appended ({exc!r}). The "
+              f"engine will refuse every phase until a sanctioned rewrite "
+              f"appends the row.", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------

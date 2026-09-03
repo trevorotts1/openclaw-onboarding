@@ -29,6 +29,14 @@ PROG="bin/presentation (skill 51)"
 note() { echo "=== [$PROG] $* ===" >&2; }
 die() { echo "FATAL [$PROG]: $*" >&2; exit "${2:-2}"; }
 
+# The caller's own PATH, captured BEFORE any secrets sourcing. The secrets env
+# may legitimately export PATH itself; the notify-transport branch below must
+# judge "openclaw absent from PATH" against the CALLER's environment, never the
+# post-sourcing one — otherwise a secrets file that appends ~/.local/bin (where
+# the openclaw CLI lives) silently disarms the file-queue fallback and the
+# fail-closed notify gate (NOT_READY_NOTIFY) comes back on gateway-less hosts.
+CALLER_PATH="${PATH}"
+
 # --- 1. absolute self-location (works from any cwd, incl. docker exec) ------
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SKILL_DIR="$(dirname "$SELF")"
@@ -109,7 +117,15 @@ note "dept scripts: $DEPT_SCRIPTS (platform=$PLATFORM)"
 # <run-dir>/working/outbox.jsonl; the host (Claude Code / claude-nine / Codex
 # session) relays those rows. PRESENTATION_NOTIFY_CMD remains the override.
 OUTBOX_QUEUE="$SKILL_DIR/bin/presentation-outbox-queue"
-if ! command -v openclaw >/dev/null 2>&1; then
+# Judge openclaw's absence against the CALLER's PATH (captured pre-sourcing), not
+# the post-secrets one — see the CALLER_PATH comment at the top of this file.
+# The override-resolution probe also uses the caller's PATH: a relative transport
+# command the caller could resolve is honored; the file-queue export wins otherwise.
+OPENCLAW_PRESENT=0
+_PRE_PATH="${PATH}"
+PATH="${CALLER_PATH}"
+command -v openclaw >/dev/null 2>&1 && OPENCLAW_PRESENT=1
+if [ "$OPENCLAW_PRESENT" -eq 0 ]; then
     if [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
         if [ -f "$OUTBOX_QUEUE" ]; then
             export PRESENTATION_NOTIFY_CMD="$OUTBOX_QUEUE"
@@ -134,6 +150,7 @@ if ! command -v openclaw >/dev/null 2>&1; then
         fi
     fi
 fi
+PATH="${_PRE_PATH}"
 
 # --- 6. export the run dir for the file-queue transport ---------------------
 # The outbox transport resolves <run-dir>/working/outbox.jsonl; pass the run
@@ -161,25 +178,20 @@ else
 fi
 
 # Normalize "--run-dir=DIR" to the door's "--run-dir DIR" form (argv rebuild).
-_newargs=""
+# The rebuild is a BASH ARRAY, never a string re-split: run dirs and output
+# paths legitimately contain spaces ("SEPT 1ST ..."), and a string rebuild +
+# unquoted expansion silently splits them into bogus door args (caught by the
+# FIX 69 proof run on 2026-09-02: the door saw "unknown argument: 1ST").
+_newargs=()
 _have_newargs=0
 for _a in "$@"; do
     case "$_a" in
         --run-dir=*)
-            if [ "$_have_newargs" -eq 0 ]; then
-                _newargs="--run-dir ${_a#--run-dir=}"
-                _have_newargs=1
-            else
-                _newargs="$_newargs --run-dir ${_a#--run-dir=}"
-            fi
+            _newargs+=("--run-dir" "${_a#--run-dir=}")
+            _have_newargs=1
             ;;
         *)
-            if [ "$_have_newargs" -eq 0 ]; then
-                _newargs="$_a"
-                _have_newargs=1
-            else
-                _newargs="$_newargs|$_a"
-            fi
+            _newargs+=("$_a")
             ;;
     esac
 done
@@ -188,13 +200,10 @@ done
 DOOR="$DEPT_SCRIPTS/presentation-canonical-entry.sh"
 [ -f "$DOOR" ] || die "canonical door not found at $DOOR" 61
 if [ "$_have_newargs" -eq 1 ]; then
-    # Re-split the rebuilt argv (paths may contain no IFS chars in the
-    # supported usage; the door's own parsing is the same split). The run-dir
-    # normalization is the ONLY transformation this wrapper makes.
-    # shellcheck disable=SC2086
-    note "dispatching canonical door: $DOOR $(printf '%s' "$_newargs" | tr '|' ' ')"
-    # shellcheck disable=SC2086
-    exec bash "$DOOR" $(printf '%s' "$_newargs" | tr '|' ' ')
+    # The run-dir normalization is the ONLY transformation this wrapper makes;
+    # every argv element is passed as one quoted word (spaces survive).
+    note "dispatching canonical door: $DOOR ${_newargs[*]}"
+    exec bash "$DOOR" "${_newargs[@]}"
 else
     note "dispatching canonical door: $DOOR $*"
     exec bash "$DOOR" "$@"

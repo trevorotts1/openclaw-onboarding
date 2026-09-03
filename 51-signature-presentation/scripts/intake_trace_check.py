@@ -19,7 +19,7 @@ assistant turn, waiting for the owner's answer before asking the next.
 SCOPE (per sp-8-questions.json delivery.conversation_contract.af_on_violation
 and the intake-conversation guard doctrine): this is a POST-HOC QC/Healer
 scan of a conversation TRANSCRIPT EXPORT. It NEVER inspects, runs inside, or
-gates build_deck.py / run_signature_deck.py / deck-intake-driver.py --
+gates build_deck.py / run_signature_deck.py / deck-intake-turngate.py --
 those are the deterministic, real-time RECORD-layer gates
 (prove_sp_intake.py / AF-SP-8Q-SPLIT) and are unaffected by this file.
 
@@ -100,12 +100,12 @@ BANNED_PHRASE = "give me whatever you have got"
 # E2E audit — the agent deleted the driver's ledger and hand-wrote it in
 # Python with invented answers). To make the intake conversation
 # UNFAKEABLE at the transcript layer, a transcript must be PRODUCED BY the
-# interview driver (deck-intake-driver.py --signature turn-gate) and carry
+# interview driver (deck-intake-turngate.py --signature turn-gate) and carry
 # that production as a signed envelope:
 #
 #     {
 #       "format": "sp-intake-transcript-v1",
-#       "driver": "deck-intake-driver.py",
+#       "driver": "deck-intake-turngate.py",
 #       "qid_sequence": ["interview_choice", "q1", "q2", ..., "frame_selection"],
 #       "turns": [{"role": "assistant", "text": "...", "qid": "q1"}, ...],
 #       "driver_signature": "<hex sha256-hmac>"
@@ -126,10 +126,10 @@ BANNED_PHRASE = "give me whatever you have got"
 #
 # The DRIVER and this CHECKER MUST serialize identically — keep
 # _canonical_transcript_payload() byte-identical with
-# deck-intake-driver.py's _transcript_sign_payload().
+# deck-intake-turngate.py's _transcript_sign_payload().
 # ---------------------------------------------------------------------------
 DRIVER_FORMAT = "sp-intake-transcript-v1"
-DRIVER_NAME = "deck-intake-driver.py"
+DRIVER_NAME = "deck-intake-turngate.py"
 DRIVER_SIGNATURE_KEY = b"skill51-sp-intake-transcript-driver-v1"
 
 PROV_NO_FORMAT = "NO-DRIVER-ENVELOPE"
@@ -141,7 +141,7 @@ PROV_UNSIGNED_TURNS = "UNSIGNED-TURN"
 
 def _canonical_transcript_payload(qid_sequence, turns):
     """Deterministic serialization the driver signs and this checker verifies.
-    MUST match deck-intake-driver.py's _transcript_sign_payload() exactly."""
+    MUST match deck-intake-turngate.py's _transcript_sign_payload() exactly."""
     payload = {"qid_sequence": qid_sequence, "turns": turns}
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -152,7 +152,7 @@ def _sign_transcript(qid_sequence, turns):
 
 
 def build_driver_envelope(qid_sequence, turns):
-    """Build a signed driver envelope EXACTLY as deck-intake-driver.py's
+    """Build a signed driver envelope EXACTLY as deck-intake-turngate.py's
     turn-gate writes it. Single source of truth for the signed shape — the
     driver, the engine gate, and the test fixtures all use this so the
     canonical payload and signature stay byte-identical across producers.
@@ -171,7 +171,7 @@ def build_driver_envelope(qid_sequence, turns):
 HERE = Path(__file__).resolve().parent
 SP_SPEC_PATH = HERE.parent / "intake" / "sp-8-questions.json"
 # 23-ai-workforce-blueprint is a SIBLING skill dir on an installed box and in
-# the repo (mirrors the resolution pattern in deck-intake-driver.py).
+# the repo (mirrors the resolution pattern in deck-intake-turngate.py).
 DECK_QUESTIONS_CANDIDATES = [
     HERE.parent.parent / "23-ai-workforce-blueprint" / "templates" / "role-library"
     / "presentations" / "intake" / "deck-intake-questions.json",
@@ -471,7 +471,7 @@ def scan_transcript(turns: list, bank: dict) -> dict:
         # The rule as written demanded the quick-vs-in-depth choice in the
         # FIRST assistant turn (turn_index 0, literal). But the driver's own
         # canonical order (deck-intake-questions.json, enforced by
-        # deck-intake-driver.py's turn-gate) is:
+        # deck-intake-turngate.py's turn-gate) is:
         #   order 0   presentation_type  -> turn 0: "What kind of presentation
         #                                    is this? (1) From scratch..."
         #   order 0.6 standard_mode      -> turn 2: "Quick or in-depth? QUICK
@@ -561,14 +561,14 @@ def check_driver_provenance(envelope) -> list:
     if not isinstance(envelope, dict):
         return [(PROV_NO_FORMAT,
                  "the intake transcript is not a driver envelope — it must be produced by "
-                 "deck-intake-driver.py --signature (format='sp-intake-transcript-v1', "
+                 "deck-intake-turngate.py --signature (format='sp-intake-transcript-v1', "
                  "driver_signature + qid_sequence). A hand-written transcript (e.g. a bare "
                  "JSON list) is not proof of a real one-at-a-time conversation (fail-closed).")]
 
     if envelope.get("format") != DRIVER_FORMAT:
         return [(PROV_NO_FORMAT,
                  "the intake transcript envelope format is %r, expected %r — it was not "
-                 "produced by deck-intake-driver.py's turn-gate." % (
+                 "produced by deck-intake-turngate.py's turn-gate." % (
                      envelope.get("format"), DRIVER_FORMAT))]
 
     turns = envelope.get("turns")
@@ -612,7 +612,7 @@ def check_driver_provenance(envelope) -> list:
     if not isinstance(sig, str) or not sig.strip():
         return [(PROV_NOT_SIGNED,
                  "driver envelope has no driver_signature — it was not produced by "
-                 "deck-intake-driver.py's turn-gate (fail-closed: a hand-written transcript "
+                 "deck-intake-turngate.py's turn-gate (fail-closed: a hand-written transcript "
                  "is not proof of a real intake conversation).")]
 
     expected = _sign_transcript(seq, turns)

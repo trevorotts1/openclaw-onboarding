@@ -3277,7 +3277,17 @@ colocate_presentation_entry() {
   #      the failure instead of an eternal WARN-and-continue.
   # The CI colocate gate (W22/FIX 65) asserts exactly this list contract.
   local -a colocate_list=()
-  local -a colocate_candidates=(presentation-canonical-entry.sh deck-build-guard.sh)
+  # FIX 113: presentations-drift-gates.sh joins the colocate list — GATE 0c in
+  # presentation-canonical-entry.sh resolves the gate as a SIBLING of the entry
+  # script it runs from, so the department copy of the door needs the gate
+  # colocated next to it or the install is partial (the entry script's own
+  # else-branch dies on exactly that). The gate ships as byte-identical
+  # generated mirrors in 23-ai-workforce-blueprint/scripts/ and the role
+  # library's presentations/scripts/; co-location delivers the runtime copy.
+  # FIX 65 (CI leg): deck-build-guard.sh left the array — the CI colocate gate
+  # (scripts/ci/presentations-drift-gates.sh GATE 7) asserts every candidate
+  # EXISTS in the canonical source dir, so a retired name cannot ride along.
+  local -a colocate_candidates=(presentation-canonical-entry.sh presentations-drift-gates.sh)
   local f copied=0
   for f in "${colocate_candidates[@]}"; do
     if [ -f "$src_dir/$f" ]; then
@@ -3431,17 +3441,38 @@ retire_legacy_sunday_crontab() {
     # (repo checkout first, then the role-library copy) and print one
     # "kind|spec" row per dep. Unparsable canon -> a single __canon__ row so the
     # caller warns loudly instead of silently converging nothing.
+    # FIX 70-B4 (critic failure): SKILLS_DIR is NOT set when the standalone
+    # --presentation-deps-check block runs (it is discovered at the bottom of
+    # main(), after this block), and under `set -u` an unbound reference inside
+    # the `done < <(pres_deps_canon_rows)` process substitution silently
+    # aborted the subshell — zero canon rows — which read as "all deps OK",
+    # a false pass with exit 0. SKILLS_DIR is now guarded (${SKILLS_DIR:-}) and
+    # the candidate list also falls back to the REPO copy shipped next to this
+    # script (and its role-library twin), so the check works on any box —
+    # including one whose installed skills dir predates the canon.
     local _canon=""
     local _cand
-    for _cand in "$SKILLS_DIR/presentations/scripts/presentation-deps.json" \
-                 "$SKILLS_DIR/templates/role-library/presentations/scripts/presentation-deps.json"; do
+    local _script_dir
+    _script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
+    for _cand in "${SKILLS_DIR:-}/presentations/scripts/presentation-deps.json" \
+                 "${SKILLS_DIR:-}/templates/role-library/presentations/scripts/presentation-deps.json" \
+                 "${SKILLS_DIR:-}/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-deps.json" \
+                 "${_script_dir}/presentations/scripts/presentation-deps.json" \
+                 "${_script_dir}/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-deps.json"; do
       if [ -n "$_cand" ] && [ -r "$_cand" ]; then _canon="$_cand"; break; fi
     done
     if [ -z "$_canon" ] || ! command -v python3 >/dev/null 2>&1; then
       printf '__canon__|missing:%s\n' "${_canon:-no-candidate-readable}"
       return 0
     fi
-    PDEPS_CANON="$_canon" python3 - <<'PYEOF'
+    # FIX 70-B4: capture the heredoc output instead of piping it straight
+    # through. If python3 cannot even fork (resource exhaustion) or dies
+    # mid-parse, the raw stream is EMPTY — and every consumer of this function
+    # treats zero rows as "nothing missing", i.e. a silent false pass. Now an
+    # empty/unsuccessful run is converted into a LOUD __canon__ row (exit 6 in
+    # the standalone check; a hard "canon problem" warning in the converge).
+    local _rows=""
+    if ! _rows="$(PDEPS_CANON="$_canon" python3 - <<'PYEOF'
 import json, os
 try:
     canon = json.load(open(os.environ["PDEPS_CANON"]))
@@ -3460,6 +3491,11 @@ for dep in canon.get("deps", []):
     else:
         print(f"__canon__|unknown-kind:{name}:{kind}")
 PYEOF
+)" || [ -z "$_rows" ]; then
+      printf '__canon__|unreadable:%s (python3 failed or produced no rows — refusing to report an empty canon as OK)\n' "$_canon"
+      return 0
+    fi
+    printf '%s\n' "$_rows"
   }
   pres_deps_check_and_install() {
     # FIX 70: converge each canon row. python_import -> venv pip (deduped into one

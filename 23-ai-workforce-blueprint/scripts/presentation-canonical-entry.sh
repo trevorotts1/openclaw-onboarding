@@ -175,6 +175,9 @@ case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')" in
     quick)       INTAKE_DEPTH="QUICK" ;;
     in-depth)    INTAKE_DEPTH="IN-DEPTH" ;;
     in_depth)    INTAKE_DEPTH="IN-DEPTH" ;;   # tolerated shell-friendly spelling
+    "in depth")  INTAKE_DEPTH="IN-DEPTH" ;;   # FIX 59: space form — resolve_intake.py's
+                                              # _unwrap already normalizes it; the door
+                                              # must not be stricter than the resolver.
     ultra|standard|economy)
         die "--intake-depth got run-mode vocabulary '$INTAKE_DEPTH'. The intake-depth \
 axis (FIX 30's standard_mode) accepts ONLY quick|in-depth; the run-mode axis \
@@ -247,12 +250,43 @@ PY
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-stamp_intake_depth "$INTAKE_DEPTH"
 if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
     [ -n "$OUT" ] || die "--out is required to build a deck"
 fi
+# FIX 62 (W14, R4 §H.4-5): the intake-depth stamp runs AFTER the gates, not
+# before. It used to fire right after arg validation, so a run that then failed
+# any gate still wrote pre_presentation_capture.STANDARD_MODE into
+# working/copy/intake.json — a side effect from a run that never opened the
+# door. Depth tuning is a build-time side effect; it belongs with the other
+# side effects, behind every gate. (The stamp itself stays non-fatal.)
+# FIX 62 (B4 proof): --plan is read-only inspection by its own contract — it
+# must leave NO side effect, so the stamp is also gated on PLAN=0 (proven live:
+# five --plan invocations each appended a depth_audit record before this gate).
+stamp_intake_depth_after_gates() {
+    [ "$PLAN" -eq 0 ] || return 0
+    # FIX 59: stamp ONLY a caller-STATED depth. The shell's "" -> QUICK
+    # display default is not an answer; stamping it here clobbered the real
+    # interview_depth answer the driver recorded in working/copy/intake.json
+    # (caught live in the FIX 59 dispatch proof: an IN-DEPTH interview was
+    # re-stamped QUICK post-gate). The stamp's own contract — "the CLI/env
+    # flag is an explicit override and wins, with the prior value recorded in
+    # the audit note" — only ever meant an explicitly stated one.
+    if [ "$INTAKE_DEPTH_STATED" != "1" ]; then
+        note "intake-depth stamp: caller stated no --intake-depth/PRESENTATION_INTAKE_DEPTH — keeping the interview's own answer (no door default stamped)"
+        return 0
+    fi
+    stamp_intake_depth "$INTAKE_DEPTH"
+}
+# Called below, immediately after GATE 3 — see "FIX 62: all gates passed".
+
+# FIX 62: SELF_DIR must be defined BEFORE GATE 0c (it runs the sibling
+# presentations-drift-gates.sh by that path). The wave-1 gate landed using
+# SELF_DIR at line ~289 while the definition sat down at line ~345 (where the
+# scripts-dir resolution needs it); with `set -u` that is "SELF_DIR: unbound
+# variable" on EVERY invocation — the door never opened at all.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------------------------------------------------------------------------
 # FIX-23(b) — CANONICAL-ENTRY ATTEMPT CAP (loop-breaker; Error 4/5 residual).
@@ -265,16 +299,18 @@ fi
 # (open a maintenance ticket / apply the sync + GHL fix) instead of letting the
 # agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
 # dir must never consume its entry budget.
+#
+# FIX 62 (W14, R4 §H.4-5): the counter is BUMPED only after the gates have
+# passed, and is RESET on a successful engine exit. The old order bumped the
+# counter before GATE 0/0b/1/1b/2/3 ran, so three runs that failed on a gate
+# (the exact transient the cap exists to ride out — the drift gate literally
+# prints the sanctioned repair above) burned the budget and the fourth,
+# repaired, run was bricked by the cap itself. Now: a gate failure exits with
+# the budget untouched; a build that reaches the engine consumes one attempt;
+# a build whose engine exits 0 clears the counter. The cap therefore still
+# stops the engine-keeps-failing loop while never punishing gate-repair cycles.
 # ---------------------------------------------------------------------------
-if [ "$PLAN" -eq 0 ]; then
-    _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
-    mkdir -p "$(dirname "$_ATTEMPT_FILE")"
-    _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
-    echo "$_ATTEMPTS" > "$_ATTEMPT_FILE"
-    if [ "$_ATTEMPTS" -gt 3 ]; then
-        die "canonical entry attempted $_ATTEMPTS times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry."
-    fi
-fi
+# (Bump happens below, right after "ALL GATES PASSED". --plan never reaches it.)
 
 # ---------------------------------------------------------------------------
 # Locate the canonical render scripts (single source of truth).
@@ -289,7 +325,7 @@ fi
 # (sync_check exit 4, 79 drift items). A guess here silently invalidates GATE 1b, GATE 3
 # and every downstream attestation.
 # ---------------------------------------------------------------------------
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# (SELF_DIR is now defined near the top, before GATE 0c — see FIX 62 note.)
 OC_WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 DEPT_SCRIPTS_DEFAULT="$OC_WORKSPACE/departments/Presentations/scripts"
 
@@ -380,6 +416,8 @@ PY
 # the runtime-deps gate — a test-context env bypass OR a logged owner token —
 # leaves a durable, timestamped trail so a bypass is never silent. Never fatal:
 # a manifest it cannot write is logged, not raised.
+# (FIX 62: defined here — BEFORE GATE 0c — so the drift gate's own test-context
+# bypass can record through it; it previously sat below GATE 0c.)
 # ---------------------------------------------------------------------------
 _record_dep_gate_bypassed() {
     local via="$1" reason="${2:-}"
@@ -447,15 +485,83 @@ trace_fail() {
     echo "GATE FAILED [$code]: $*" >&2
     echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
     echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
-    echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
+    echo "permission. Run the real interview (deck-intake-turngate.py --signature" >&2
     echo "  --next/--answer) so the driver writes the transcript itself." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
 
 # ===========================================================================
+# GATE 0c moved here (FIX 62 reconciliation): the drift gate consumes the
+# scripts-dir resolution below it (it verifies the resolved repo/department
+# copies), so it must run AFTER resolve_scripts_dir — but still BEFORE the
+# intake gates (verifying WHAT RUNS precedes verifying WHAT WAS ASKED) and
+# before the attempt cap.
+# ===========================================================================
+# GATE 0c — REPO/DEPARTMENT/PROVENANCE DRIFT (FIX 113; EXTENDS Fix 31, 66)
+# ---------------------------------------------------------------------------
+# The drift this gate closes was measured live twice: the manifest peer copy
+# sat at v51 while the repo was v54 (2026-08-31) and again v54 vs v59
+# (2026-09-02), build_deck.py diverged byte-for-byte between the repo copy and
+# the department copy, and NOTHING compared them — every per-copy provenance
+# check passed on both copies while the copies disagreed. A repo-only fix was
+# invisible because dispatch runs the DEPARTMENT copy.
+#
+# presentations-drift-gates.sh (sibling file, byte-identical generated mirror
+# in both trees) compares the content sha of the repo copy, the materialized
+# department copy, and the provenance stamp, and exits non-zero NAMING the
+# differing file. The sanctioned repair is the reinstall/update roll:
+# refresh-dept-scripts.py re-mirrors the department from the repo and
+# restamps sops/MANIFEST-SOURCE.txt automatically (FIX 113) — then the door
+# opens. Fail-closed BEFORE the entry-attempt cap: a drifted stack is exactly
+# the transient the cap exists to stop being engineered around, and burning
+# the cap on a known, repairable drift only teaches the agent to improvise.
+# Runs before the intake gates: verifying WHAT RUNS precedes verifying WHAT
+# WAS ASKED. PRESENTATION_DRIFT_GATE=0 documents the skip inside the gate
+# itself (it prints the skip; it never pretends to pass).
+# ===========================================================================
+# FIX 62 (continued): _TEST_CONTEXT_MARKER must exist BEFORE GATE 0c reads it.
+# With `set -u`, the wave-1 bypass branch referenced the variable before its
+# old deps_check-area definition — "unbound variable", exit 1, on EVERY
+# invocation that reached GATE 0c (the door bricked again, this time by the
+# bypass check itself). The marker is a pure run-dir-derived constant, so
+# defining it here is safe and definition-order-honest.
+_TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
+if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then
+    # FIX 62: the same test-context contract GATE 1 honors (QC_SKIP_PRESENTATION_DEPS
+    # gated on the harness-dropped .test-context marker, every honored bypass
+    # recorded as dep_gate_bypassed) applies here. The QC harness runs the door
+    # against a sandboxed run dir with OPENCLAW_WORKSPACE pointed at a path with no
+    # materialized department, so the drift gate's exit-2 environment failure there
+    # is fixture absence, not stack drift. A LIVE run (no marker) can NEVER take
+    # this branch — QC_SKIP_PRESENTATION_DEPS alone is ignored, exactly as at GATE 1.
+    if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ] && [ -f "$_TEST_CONTEXT_MARKER" ]; then
+        echo "  SKIP: GATE 0c drift gate bypassed — test-context marker present ($_TEST_CONTEXT_MARKER)"
+        _record_dep_gate_bypassed "env:QC_SKIP_PRESENTATION_DEPS" "test-context marker present (GATE 0c)"
+    else
+        bash "$SELF_DIR/presentations-drift-gates.sh" || {
+            rc=$?
+            if [ "$rc" -eq 11 ]; then
+                gate_fail "AF-DEPT-REPO-DRIFT" 11 "the department copy of the Presentations stack has drifted \
+from the repo copy (or its provenance stamp is stale) — the exact files are named above. The ONLY \
+sanctioned repair is the reinstall/update roll: run update-skills.sh (or refresh-dept-scripts.py \
+--apply), which re-mirrors the department from the repo and restamps the provenance stamp \
+automatically. Do NOT hand-edit the department copy."
+            fi
+            exit "$rc"   # environment failure (2): fail closed, never continue unverifiable
+        }
+    fi
+else
+    # Gate script missing = the install is partial; a door that cannot verify
+    # what it is about to run must not open silently.
+    die "presentations-drift-gates.sh not found next to this entry script ($SELF_DIR) — \
+a partial install. Reinstall the 23-ai-workforce-blueprint bundle; the drift gate is not optional."
+fi
+
+
+# ===========================================================================
 # GATE 0 — INTAKE-LEDGER CHECK (fail-closed)
-# The intake interview (deck-intake-driver.py) must be complete before any
+# The intake interview (deck-intake-turngate.py) must be complete before any
 # deck build runs. Read-only --plan inspection is exempt. The only waiver is
 # a logged owner_skip_approval token for gate INTAKE-INTERVIEW.
 #
@@ -522,7 +628,7 @@ check_intake_ledger() {
             note "  GATE 0 PASSED (owner-approved skip)"
             return 0
         fi
-        gate_fail "INTAKE-INTERVIEW" 5 "intake ledger missing ($_INTAKE_LEDGER) — run the Brainstorming Buddy interview (deck-intake-driver.py --next/--answer/--complete) before building. Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW (approved:true, approved_by, reason) in working/checkpoints/process_manifest.json."
+        gate_fail "INTAKE-INTERVIEW" 5 "intake ledger missing ($_INTAKE_LEDGER) — run the Brainstorming Buddy interview (deck-intake-turngate.py --next/--answer/--complete) before building. Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW (approved:true, approved_by, reason) in working/checkpoints/process_manifest.json."
     fi
     if command -v python3 >/dev/null 2>&1; then
         local complete
@@ -540,7 +646,7 @@ except Exception:
                 note "  GATE 0 PASSED (owner-approved skip)"
                 return 0
             fi
-            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER status is not 'complete'). Finish the deck-intake interview with deck-intake-driver.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
+            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER status is not 'complete'). Finish the deck-intake interview with deck-intake-turngate.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
         fi
     else
         # python3 absent: parse crudely with grep
@@ -550,7 +656,7 @@ except Exception:
                 note "  GATE 0 PASSED (owner-approved skip)"
                 return 0
             fi
-            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER). Complete the deck-intake interview with deck-intake-driver.py --complete before building."
+            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER). Complete the deck-intake interview with deck-intake-turngate.py --complete before building."
         fi
     fi
     note "  GATE 0 PASSED"
@@ -567,7 +673,7 @@ check_intake_ledger "$RUN_DIR"
 # invented answers (ERROR 3 of the 2026-08-06 E2E audit: the agent deleted the
 # driver's ledger and hand-wrote it in python) satisfies GATE 0 with zero
 # conversation. The TRANSCRIPT is the evidence that a real one-at-a-time
-# conversation happened: deck-intake-driver.py --signature's turn-gate writes it
+# conversation happened: deck-intake-turngate.py --signature's turn-gate writes it
 # mechanically as a SIGNED DRIVER ENVELOPE.
 #
 # This gate requires working/interview/intake_transcript.json to exist AND be
@@ -589,7 +695,7 @@ check_intake_trace() {
     [ "$PLAN" -eq 1 ] && return 0
     _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
     if [ ! -f "$_INT_TRACE" ]; then
-        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-turngate.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
     fi
     if command -v python3 >/dev/null 2>&1; then
         local _trace_bytes
@@ -605,7 +711,7 @@ print('%d' % len(raw.strip()))
 " 2>/dev/null)"
         _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
         if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
-            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-turngate.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
         fi
     else
         # python3 absent: size-only fallback.
@@ -620,9 +726,9 @@ print('%d' % len(raw.strip()))
 check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
-# GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
+# GATE 1 — DEPS CHECK (canon-driven; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
+note "GATE 1/3 — DEPS CHECK (presentation-deps.json canon: soffice, pdftoppm, reportlab, pptx, pypdf, ffmpeg, ffprobe, tesseract, pytesseract)"
 # FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
 # function (`QC_SKIP_PRESENTATION_DEPS=1 -> return 0`) was a live process-skip
 # vector — any agent could export it, sail past GATE 1, burn the full Kie render
@@ -631,7 +737,7 @@ note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)
 # var is honored ONLY in a TEST context — a `.test-context` marker file the harness
 # drops in the run dir — and every honored bypass is recorded as a
 # dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
-_TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
+# (FIX 62: _TEST_CONTEXT_MARKER is defined up at GATE 0c, before its first read.)
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
         if [ -f "$_TEST_CONTEXT_MARKER" ]; then
@@ -644,31 +750,85 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
-    command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
-    command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
-            || missing+=("python(reportlab+python-pptx)")
-        # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
-        # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
-        # the AcroForm fields + /NeedAppearances survived before it may upload). It is
-        # NOT gated by the pdf_export/guide phase's own checks, so it must be gated
-        # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
-        # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
-        # deps).
-        python3 -c "import pypdf" >/dev/null 2>&1 \
-            || missing+=("python(pypdf)")
-    else
-        missing+=("python3")
+    # FIX 70: the dep LIST is the ONE canon — presentations/scripts/presentation-deps.json
+    # (repo checkout first, then the role-library twin, then the materialized
+    # department). Resolved the same way qc-completeness.sh's exit-6 gate does, so a
+    # dep the canon adds is enforced at the door the moment it lands in the JSON.
+    # If the canon is absent or unparsable, the pre-FIX-70 hardcoded checks below run
+    # instead and say so — an unreadable canon is never a silent clean pass.
+    local _gate_canon=""
+    local _gate_cand
+    for _gate_cand in "$SCRIPTS_DIR/presentation-deps.json" \
+                      "$SCRIPTS_DIR/../templates/role-library/presentations/scripts/presentation-deps.json" \
+                      "$DEPT_SCRIPTS_DEFAULT/presentation-deps.json"; do
+        [ -n "$_gate_cand" ] && [ -r "$_gate_cand" ] && { _gate_canon="$_gate_cand"; break; }
+    done
+    if [ -z "$_gate_canon" ] && [ -r "${BASH_SOURCE[0]%/*}/../templates/role-library/presentations/scripts/presentation-deps.json" ]; then
+        _gate_canon="${BASH_SOURCE[0]%/*}/../templates/role-library/presentations/scripts/presentation-deps.json"
     fi
-    # Feature L2-G (P9.6-WEBINAR-VIDEO): ffmpeg is a REAL runtime dep of the webinar
-    # phase (build_webinar_video.py -> webinar_ffmpeg.py renders the Ken Burns + xfade
-    # slideshow + muxes the audio). It is NOT gated by the audio phase's own check, so
-    # it must be gated here so a box without ffmpeg fails the dep gate BEFORE the
-    # webinar phase runs (owner-token skippable via PRESENTATION_DEPS_MISSING exactly
-    # like the other deps).
-    command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
-    command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    local _gate_py3=""
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+        _gate_py3="${PRESENTATION_PIPELINE_INTERPRETER}"
+    else
+        for _gate_cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+            if [ -x "$_gate_cand" ]; then _gate_py3="$_gate_cand"; break; fi
+        done
+        [ -z "$_gate_py3" ] && _gate_py3="python3"
+    fi
+    if [ -n "$_gate_canon" ] && command -v python3 >/dev/null 2>&1; then
+        while IFS='|' read -r _g_dep_name _g_dep_kind _g_dep_spec; do
+            [ -z "$_g_dep_name" ] && continue
+            case "$_g_dep_kind" in
+                binary)
+                    command -v "$_g_dep_spec" >/dev/null 2>&1 \
+                        || missing+=("$_g_dep_name ($_g_dep_spec; per presentation-deps.json)")
+                    ;;
+                python_import)
+                    "$_gate_py3" -c "import ${_g_dep_spec}" >/dev/null 2>&1 \
+                        || missing+=("python(${_g_dep_spec} in the department venv; fix: ${_gate_py3} -m pip install ${_g_dep_spec})")
+                    ;;
+                *)
+                    missing+=("$_g_dep_name (unknown kind ${_g_dep_kind} in canon)")
+                    ;;
+            esac
+        done < <(python3 - "$_gate_canon" <<'PYEOF'
+import json, sys
+try:
+    canon = json.load(open(sys.argv[1]))
+except Exception as exc:
+    print(f"__CANON_UNPARSABLE__|__canon__|{sys.argv[1]}: {exc}")
+    sys.exit(0)
+for dep in canon.get("deps", []):
+    name = dep.get("name", "")
+    kind = dep.get("kind", "")
+    if kind == "binary":
+        spec = dep.get("binary_name", "") or name
+        print(f"{name}|binary|{spec}")
+    elif kind == "python_import":
+        print(f"{name}|python_import|{dep.get('import_spec', '')}")
+    else:
+        print(f"{name}|{kind}|")
+PYEOF
+)
+    else
+        missing+=("canon (presentation-deps.json not readable — falling back to the pre-FIX-70 hardcoded checks below)")
+        command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
+        command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
+                || missing+=("python(reportlab+python-pptx)")
+            python3 -c "import pypdf" >/dev/null 2>&1 \
+                || missing+=("python(pypdf)")
+        else
+            missing+=("python3")
+        fi
+        command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
+        command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+        command -v tesseract >/dev/null 2>&1 || missing+=("tesseract (OCR readback; brew install tesseract)")
+        "$_gate_py3" -c "import pytesseract" >/dev/null 2>&1 \
+            || missing+=("python(pytesseract)")
+        return 6
+    fi
     if [ "${#missing[@]}" -gt 0 ]; then
         # FIX-PRES-09(iv): event-shaped reassert. On a VPS the runtime deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
@@ -889,11 +1049,37 @@ PY
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
                 python3 - <<'PY' || true
 # write a CC event so the drift debt is surfaced, not hidden
-import json, os, urllib.request
+# FIX 62 (W14, R4 §H.4-5): the old body imported `from cc_board import cc_post`
+# — a symbol that does not exist in any cc_board.py copy on any box, so the
+# import raised, the except swallowed it, and the event was NEVER posted (a
+# silent no-op wearing an event costume). Now the event posts inline: same
+# env-based config contract as cc_board.board_config() (COMMAND_CENTER_URL /
+# MISSION_CONTROL_URL, CC_API_TOKEN / MC_API_TOKEN, WEBHOOK_SECRET /
+# CC_WEBHOOK_SECRET, CC_BOARD_TIMEOUT), Bearer + HMAC webhook signature, and
+# it stays best-effort (`|| true`) — a box with no board never blocks the door.
+import hashlib, hmac, json, os, urllib.error, urllib.request
 try:
-    from cc_board import cc_post
-    cc_post("/api/events", {"type": "sync_drift_deferred",
-       "message": "sync_check library-only drift (A5/A6) deferred on canonical render", "severity": "warn"})
+    _base = (os.environ.get("COMMAND_CENTER_URL")
+             or os.environ.get("MISSION_CONTROL_URL") or "").strip().rstrip("/")
+    if not _base:
+        raise SystemExit(0)   # board disabled — clean no-op, per cc_board contract
+    _payload = {"type": "sync_drift_deferred",
+                "message": "sync_check library-only drift (A5/A6) deferred on canonical render",
+                "severity": "warn"}
+    _raw = json.dumps(_payload, separators=(",", ":")).encode("utf-8")
+    _headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    _tok = (os.environ.get("CC_API_TOKEN")
+            or os.environ.get("MC_API_TOKEN") or "").strip()
+    if _tok:
+        _headers["Authorization"] = f"Bearer {_tok}"
+    _sec = (os.environ.get("WEBHOOK_SECRET")
+            or os.environ.get("CC_WEBHOOK_SECRET") or "")
+    if _sec:
+        _headers["x-webhook-signature"] = hmac.new(
+            _sec.encode("utf-8"), _raw, hashlib.sha256).hexdigest()
+    _req = urllib.request.Request(_base + "/api/events", data=_raw,
+                                  headers=_headers, method="POST")
+    urllib.request.urlopen(_req, timeout=5)
 except Exception:
     pass
 PY
@@ -946,6 +1132,26 @@ governed version before building."
     else
         gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "renderer hash does not match the pinned governed \
 head. Re-sync the canonical build_deck.py / run_signature_deck.py to the fleet-pinned version."
+    fi
+fi
+
+# ===========================================================================
+# ALL GATES PASSED — FIX 62 post-gate side effects.
+# (W14, R4 §H.4-5). Everything from here on is side-effect-ful: this is where
+# (a) the intake-depth stamp fires (moved here from pre-gate, see FIX 62 above),
+# and (b) the canonical-entry attempt budget is consumed (moved here from
+# pre-gate — a run that died on any gate above never touched the counter, so
+# gate-repair cycles no longer burn the cap; see FIX-23(b) above).
+# ===========================================================================
+note "ALL GATES PASSED — applying post-gate effects (intake-depth stamp, entry budget)"
+stamp_intake_depth_after_gates
+if [ "$PLAN" -eq 0 ]; then
+    _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
+    mkdir -p "$(dirname "$_ATTEMPT_FILE")"
+    _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
+    echo "$_ATTEMPTS" > "$_ATTEMPT_FILE"
+    if [ "$_ATTEMPTS" -gt 3 ]; then
+        die "canonical entry attempted $_ATTEMPTS times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry."
     fi
 fi
 
@@ -1063,6 +1269,7 @@ if [ "$PLAN" -eq 1 ]; then
     if [ "$RESUME" -eq 0 ]; then
     echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
     fi
+    # FIX 60: the door's --resume is forwarded to the engine (see below).
     echo "  Then:       python3 $ENGINE_ENTRY --run --run-dir $RUN_DIR"
     echo "  All phases walked mechanically. 6 fail-closed gates at close()."
     exit 0
@@ -1085,7 +1292,16 @@ engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
-    if [ -n "$INTAKE_DEPTH" ]; then
+    # FIX 59: pass the depth to the resolver EXPLICITLY only when the caller
+    # actually STATED one (--intake-depth flag or PRESENTATION_INTAKE_DEPTH).
+    # The shell's own "" -> QUICK defaulting (FIX 36(3) above) is a DISPLAY
+    # default for stamp_intake_depth, not an answer: forwarding it as an
+    # explicit flag let the door's default outrank the ledger's real
+    # interview_depth answer (state.json recorded QUICK on an IN-DEPTH
+    # interview — caught live in the FIX 59 dispatch proof). An unstated depth
+    # is forwarded as NO flag, so the resolver's own precedence
+    # (CLI > env > ledger > schema default) decides, exactly as documented.
+    if [ -n "$INTAKE_DEPTH" ] && [ "$INTAKE_DEPTH_STATED" = "1" ]; then
         # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
         # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
         # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
@@ -1126,8 +1342,21 @@ $_CREATE_OUT"
     # from PIPELINE-MANIFEST.json, never a hardcoded number), refuses to skip,
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
     # Returns the engine's exit code directly to the caller.
-    note "Engine run starting -- $_PHASE_COUNT manifest phases, all mechanically enforced"
-    _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
+    # FIX 60 (W14, R4 §H.3): a parked run dispatched through the door with
+    # --resume now reaches the engine as --resume, not --run. The flag was
+    # parsed (RESUME=1) and used only to exempt the caller from --slides/--out,
+    # then dropped on the floor: the engine always got --run. --run on a parked
+    # job does clear terminal/blocked (FIX 22), but it skips the park
+    # diagnosis ("job.resume" event, describe_park banner) and re-enters
+    # without the resume semantics an operator explicitly asked for.
+    # Forward the verb; a fresh job is unaffected (RESUME defaults 0).
+    if [ "$RESUME" -eq 1 ]; then
+        note "Engine resume starting -- parked job continues from checkpoint ($_PHASE_COUNT manifest phases, all mechanically enforced)"
+        _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --resume --run-dir "$RUN_DIR")
+    else
+        note "Engine run starting -- $_PHASE_COUNT manifest phases, all mechanically enforced"
+        _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
+    fi
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
     # FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. Two
@@ -1171,6 +1400,17 @@ $_CREATE_OUT"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
     rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
+    # FIX 62 (W14, R4 §H.4-5): a SUCCESSFUL engine exit clears the entry budget.
+    # The run is done — its attempts are consumed and counted, and the next
+    # deck in this run dir starts from a fresh budget instead of inheriting
+    # this one's history.
+    if [ "$_ENGINE_RC" -eq 0 ]; then
+        _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
+        if [ -f "$_ATTEMPT_FILE" ]; then
+            printf '%s\n' 0 > "$_ATTEMPT_FILE"
+            note "engine exited 0 — canonical-entry attempt budget reset"
+        fi
+    fi
     exit "$_ENGINE_RC"
 else
     # The engine component is genuinely absent from this box -- the ONE

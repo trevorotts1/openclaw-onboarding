@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/unit/presentation-deck-intake-driver-workspace.test.sh
+# tests/unit/presentation-deck-intake-turngate-workspace.test.sh
 #
 # U86 [GK-24] — the DRIVER leg of the binary acceptance, made durable.
 #
@@ -8,7 +8,7 @@
 # zero writes elsewhere)."
 #
 # GROUNDING CORRECTION (VERIFIED-BY-EXECUTION, recorded here so the next reader
-# does not re-derive it): the unit spec assumed deck-intake-driver.py resolved a
+# does not re-derive it): the unit spec assumed deck-intake-turngate.py resolved a
 # bare CWD-relative `working/` and therefore needed a NEW --workspace flag "with
 # the current directory as default". It does not. The driver has ALWAYS required
 # --run-dir DIR (main(): "--run-dir DIR is required for all commands except
@@ -46,7 +46,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-driver.py"
+DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-turngate.py"
 PY="${PYTHON:-python3}"
 
 PASS=0
@@ -54,7 +54,7 @@ FAIL=0
 pass() { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
-[ -f "$DRIVER" ] || { echo "FATAL: deck-intake-driver.py not found at $DRIVER" >&2; exit 1; }
+[ -f "$DRIVER" ] || { echo "FATAL: deck-intake-turngate.py not found at $DRIVER" >&2; exit 1; }
 
 TMPDIR_TEST="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
@@ -236,6 +236,6 @@ fi
 
 echo
 echo "===================================================================="
-echo " presentation-deck-intake-driver-workspace: PASS=$PASS FAIL=$FAIL"
+echo " presentation-deck-intake-turngate-workspace: PASS=$PASS FAIL=$FAIL"
 echo "===================================================================="
 [ "$FAIL" -eq 0 ]

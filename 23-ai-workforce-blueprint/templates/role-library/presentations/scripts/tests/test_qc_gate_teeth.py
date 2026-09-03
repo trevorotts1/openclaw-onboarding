@@ -290,9 +290,12 @@ def test_speech_qc_fabricated_pass_fails_naming_short_speech(tmp_path):
 
 
 def test_speech_qc_genuine_report_over_full_speech_passes(tmp_path):
-    """A genuine speech-QC report over a speech that fills the duration (3,600 words
-    for 30 min) must PASS ("")."""
-    rd = _speech_run(tmp_path, " ".join(["word"] * 3600), target_minutes=30,
+    """A genuine speech-QC report over a speech that fills the duration AND sits
+    inside the Fix 97 pacing band must PASS (""). The speech is sized to the
+    run's target rate (30 min x 140 wpm default = 4,200 words — 3,600 words at
+    30 min is 120 wpm effective, 14% off the band, an AF-SPEECH-PACING under the
+    Fix 97 hard band, so the old 3,600-word fixture no longer passes)."""
+    rd = _speech_run(tmp_path, " ".join(["word"] * 4200), target_minutes=30,
                      report=_speech_report())
     assert bd._chk_speech_qc(rd / "working" / "qc" / "speech_qc_report.json") == ""
 
@@ -311,8 +314,11 @@ def test_speech_qc_absent_report_defers(tmp_path):
     """No speech-QC report yet (pre-delivery) -> the gate DEFERS (""), even when the
     speech exists. The report is the gate's trigger; this is the unchanged
     conditional-by-design contract. The manifest calls the checker with None for an
-    absent artifact (the checker never sees a dangling path)."""
-    rd = _speech_run(tmp_path, " ".join(["word"] * 3600), target_minutes=30)
+    absent artifact (the checker never sees a dangling path). The speech fixture is
+    sized to the run's 140 wpm default (30 x 140 = 4,200 words) so the pacing
+    re-measure is in-band — the defer here is about the ABSENT REPORT, not a
+    duration finding."""
+    rd = _speech_run(tmp_path, " ".join(["word"] * 4200), target_minutes=30)
     # Teeth, called directly, also defer when speech exists but no report does.
     assert bd.check_speech_qc_teeth(rd) == ""
     # The gate itself defers on the absent report (path is None from the manifest).

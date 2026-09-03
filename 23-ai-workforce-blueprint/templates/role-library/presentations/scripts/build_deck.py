@@ -3990,19 +3990,11 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
 
     problems = []
 
-    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
-    target = None
-    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
-        p = run_dir / rel
-        if p.exists():
-            obj = _read_json(p)
-            if isinstance(obj, dict) and "__parse_error__" not in obj:
-                raw = obj.get("target_talk_minutes")
-                try:
-                    target = float(raw) if raw is not None else None
-                except (TypeError, ValueError):
-                    target = None
-            break
+    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) + Fix 97 PACING BAND ---
+    # One intake read supplies BOTH the duration target and the run's own wpm
+    # target (Fix 97: the band measures against the run's TARGET_WPM, not the
+    # module default).
+    target, intake_wpm = _intake_speech_target(run_dir)
     if not target or target <= 0:
         return ""  # no usable duration target — the intake gate owns that case.
 
@@ -4014,18 +4006,23 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
             f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
             f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
             f"that does not fill the requested duration (AF-SPEECH-SHORT)")
-    # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
-    # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
-    # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
-    # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
-    _dev = _speech_pacing_deviation(words, target)
+    # Fix 97 leg 2: HARD pacing band. PASS iff
+    # |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND with TARGET_WPM
+    # from intake.json (target_wpm) falling back to SPEECH_TARGET_WPM. A speech
+    # that clears the 120-wpm floor but sits outside the band was written to the
+    # wrong pace for this run — the report marking it pass is rejected
+    # (AF-SPEECH-PACING), mirroring _chk_speech_length's leg 2.
+    target_wpm = intake_wpm if (intake_wpm and intake_wpm > 0) else SPEECH_TARGET_WPM
+    _dev = _speech_pacing_deviation(words, target, target_wpm)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: {speech.name} measured "
-              f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
-              f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
-              f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
-              f"duration reject.", file=sys.stderr)
+        problems.append(
+            f"{speech.name} measured {_eff_wpm:.0f} wpm effective ({words} words / "
+            f"{target:g} min) — {_dev:.0%} off the {target_wpm} wpm target rate, "
+            f"outside the +/-{SPEECH_PACING_BAND:.0%} pacing band "
+            f"(|words/TARGET_WPM - target_minutes| <= {SPEECH_PACING_BAND:.0%}) — "
+            f"the speech-QC report marked pass over a speech that does not fill the "
+            f"requested duration at the run's target pace ({SPEECH_PACING_FAIL_CODE})")
 
     # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
     pec = _import_pitch_engines_check()
@@ -5389,50 +5386,53 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
     return ""
 
 
-# Speech-length gate floor: the presenter speech must carry at least
-# target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW end of the
-# verified 120-140 absorption band the Presenter Speech Writer cites. This is the
-# HARD floor only (a script below 120 wpm of content is too SHORT for the chosen
-# duration and fails AF-SPEECH-SHORT). The pacing band around the target rate is
-# advisory (Fix 97, MASTER Part 8 ruling 9.3-B): the measured
-# |words / SPEECH_TARGET_WPM - target_minutes| deviation within 10% is reported,
-# never fails — the band follows the target, it does not gate.
+# Speech-length gate: TWO duration legs, one band.
+#
+# Leg 1 — HARD word floor (AF-SPEECH-SHORT, unchanged): the presenter speech must
+# carry at least target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW
+# end of the verified 120-140 absorption band the Presenter Speech Writer cites.
+#
+# Leg 2 — HARD pacing band (Fix 97, AF-SPEECH-PACING): PASS iff
+# |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND. TARGET_WPM is the
+# run's OWN target rate — read from intake.json (target_wpm, written by
+# deck-intake-driver.py from speech_speed_preference; SPEECH_TARGET_WPM is only
+# the default when intake states none). The band is deliberately TIGHTER than the
+# legacy 120-140 wpm bracket: a 60-minute speech sized for 130 wpm is only ~7.7%
+# off when re-measured at a 140 wpm target, so no 10% band can discriminate the
+# two targets (that unsatisfiable arithmetic is why the old bracket was demoted).
+# A speech outside the band still clears the leg-1 floor -> the pacing rate does
+# not fill the requested duration at the run's target pace -> AF-SPEECH-PACING.
+# The WIDE 120-140 wpm bracket the speech-QC SOP used to enforce as hard
+# auto-fails is DEMOTED to advisory under this band (MASTER Part 8 ruling 9.3-B,
+# "band advisory only" now names the legacy bracket, not this leg).
 SPEECH_WPM_FLOOR = 120    # hard SHORT floor (low end of the verified band)
-SPEECH_TARGET_WPM = 140   # MASTER Part 8 ruling 9.3-B; the advisory band centers on it
-SPEECH_PACING_BAND = 0.10  # +/-10% around target (Fix 97, band advisory only)
+SPEECH_TARGET_WPM = 140   # default target wpm when intake.json states none
+SPEECH_PACING_BAND = 0.07  # Fix 97: PASS iff |words/TARGET_WPM - minutes| <= 7%
 SPEECH_PACING_ADVISORY_PREFIX = "NOTE-SPEECH-PACING"
+SPEECH_PACING_FAIL_CODE = "AF-SPEECH-PACING"
 
 
 def _speech_pacing_deviation(words: int, target_minutes: float,
                              target_wpm: int = SPEECH_TARGET_WPM) -> Optional[float]:
     """Fix 97 pacing arithmetic: |words/target_wpm - target_minutes| / target_minutes
-    as an absolute fraction (0.10 == 10% off). Returns None when the inputs cannot
-    be divided (target <= 0). Pure arithmetic shared by the gate and the teeth."""
+    as an absolute fraction (0.07 == 7% off). PASS iff this is <= SPEECH_PACING_BAND.
+    Returns None when the inputs cannot be divided (target <= 0). Pure arithmetic
+    shared by the gate and the teeth."""
     if not target_minutes or target_minutes <= 0 or not target_wpm or target_wpm <= 0:
         return None
     effective = float(words) / float(target_wpm)          # minutes at target wpm
     return abs(effective - float(target_minutes)) / float(target_minutes)
 
 
-def _chk_speech_length(run_dir: Path) -> str:
-    """SPEECH-LENGTH gate (AF-SPEECH-SHORT). Once the presenter speech exists, its
-    word count must be >= target_talk_minutes x SPEECH_WPM_FLOOR (120 wpm). A speech
-    shorter than that does not fill the duration the client asked for and FAILS short.
-
-    Fix 97 (MASTER Part 8): the pacing band is advisory only — a speech within
-    +/-10% of target_talk_minutes at SPEECH_TARGET_WPM is fine, and one OUTSIDE the
-    band still PASSES as long as it clears the hard floor; the band deviation is
-    surfaced as an advisory note (SPEECH_PACING_ADVISORY_PREFIX) on stderr, never
-    as a hard fail (the hard floor above is the only duration reject).
-
-    This gate is CONDITIONAL by design: the speech is written downstream (Phase 9
-    delivery), AFTER the deterministic render. So when no speech artifact exists yet,
-    this returns "" (the render is allowed to proceed — the gate fires at delivery,
-    not at render). When a speech file IS present, it is enforced. Either way the
-    gate is wired into the lockstep so it can never be silently skipped once the
-    speech is written. Returns "" on pass/not-applicable, or a fatal AF message."""
-    # target_talk_minutes comes from intake.json (the field _chk_intake requires).
-    target = None
+def _intake_speech_target(run_dir: Path) -> Tuple[Optional[float], Optional[int]]:
+    """Fix 97: read the run's duration target AND its own wpm target from
+    intake.json. Returns (target_talk_minutes, target_wpm) — either may be None.
+    Reads intake.json ONCE and pulls both fields; the wpm key is matched
+    case-insensitively because deck-intake-driver.py writes lowercase
+    `target_wpm` while the intake question schema names the storeOn key
+    `TARGET_WPM` — both spellings land in the same file and both must resolve
+    (the critic's finding: a gate that cannot read the run's TARGET_WPM makes a
+    130-wpm run behave identically to a 140-wpm run)."""
     for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
         p = run_dir / rel
         if p.exists():
@@ -5443,7 +5443,43 @@ def _chk_speech_length(run_dir: Path) -> str:
                     target = float(raw) if raw is not None else None
                 except (TypeError, ValueError):
                     target = None
+                wpm = None
+                for key in obj:
+                    if str(key).lower() in ("target_wpm", "targetwpm"):
+                        try:
+                            wpm = int(float(obj[key])) if obj[key] is not None else None
+                        except (TypeError, ValueError):
+                            wpm = None
+                        break
+                return target, wpm
             break
+    return None, None
+
+
+def _chk_speech_length(run_dir: Path) -> str:
+    """SPEECH-LENGTH gate (AF-SPEECH-SHORT + Fix 97 AF-SPEECH-PACING). Once the
+    presenter speech exists, TWO duration legs apply:
+
+    Leg 1 (unchanged): word count must be >= target_talk_minutes x
+    SPEECH_WPM_FLOOR (120 wpm). A speech shorter than that does not fill the
+    duration the client asked for and FAILS short.
+
+    Leg 2 (Fix 97): PASS iff |words/TARGET_WPM - target_minutes| <=
+    SPEECH_PACING_BAND, where TARGET_WPM is the run's OWN rate from intake.json
+    (target_wpm; SPEECH_TARGET_WPM is only the default). A speech that clears
+    the leg-1 floor but sits outside the band was written to the WRONG pace and
+    fails AF-SPEECH-PACING. The wide legacy 120-140 wpm bracket the speech-QC
+    SOP used to enforce as hard auto-fails is the advisory layer now (a
+    NOTE-SPEECH-PACING stderr note), never a second hard fail.
+
+    This gate is CONDITIONAL by design: the speech is written downstream (Phase 9
+    delivery), AFTER the deterministic render. So when no speech artifact exists yet,
+    this returns "" (the render is allowed to proceed — the gate fires at delivery,
+    not at render). When a speech file IS present, it is enforced. Either way the
+    gate is wired into the lockstep so it can never be silently skipped once the
+    speech is written. Returns "" on pass/not-applicable, or a fatal AF message."""
+    # target_talk_minutes + target_wpm come from intake.json (one read, both fields).
+    target, intake_wpm = _intake_speech_target(run_dir)
     if not target or target <= 0:
         # No usable target (intake gate handles a missing target). Not applicable here.
         return ""
@@ -5474,18 +5510,33 @@ def _chk_speech_length(run_dir: Path) -> str:
                 f"the floor for a {target:g}-minute talk is {floor} words "
                 f"(target_talk_minutes x {SPEECH_WPM_FLOOR} wpm). The speech is too "
                 f"SHORT to fill the requested duration. Lengthen it.")
-    # Fix 97: pacing band ADVISORY only. Above the floor, the measured deviation
-    # from the target rate is reported (stderr) — it never fails the gate. The
-    # band follows SPEECH_TARGET_WPM (ruling 9.3-B) so the arithmetic stays the
-    # |words/TARGET_WPM - target_minutes| <= 10% form the speech-QC harness uses.
-    _dev = _speech_pacing_deviation(words, target)
+    # Fix 97 leg 2: HARD pacing band against the run's OWN target rate. PASS iff
+    # |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND; TARGET_WPM comes
+    # from intake.json (target_wpm, lowercased by the intake driver) and falls
+    # back to SPEECH_TARGET_WPM when intake states none. Outside the band the
+    # speech was written to the wrong pace for this run -> AF-SPEECH-PACING.
+    target_wpm = intake_wpm if (intake_wpm and intake_wpm > 0) else SPEECH_TARGET_WPM
+    _dev = _speech_pacing_deviation(words, target, target_wpm)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: presenter speech {speech.name} is "
-              f"outside the {SPEECH_TARGET_WPM} wpm +/-{SPEECH_PACING_BAND:.0%} pacing "
-              f"band: {_eff_wpm:.0f} wpm effective ({words} words / {target:g} min, "
-              f"{_dev:.0%} off target). Advisory only — the hard AF-SPEECH-SHORT "
-              f"floor ({SPEECH_WPM_FLOOR} wpm) still governs.", file=sys.stderr)
+        return (f"{SPEECH_PACING_FAIL_CODE}: presenter speech {speech.name} measures "
+                f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
+                f"{_dev:.0%} off the {target_wpm} wpm target rate, outside the "
+                f"+/-{SPEECH_PACING_BAND:.0%} pacing band "
+                f"(|words/TARGET_WPM - target_minutes| <= {SPEECH_PACING_BAND:.0%}). "
+                f"The speech does not fill the requested duration at the run's target "
+                f"pace. Resize it to {int(round(target * target_wpm))} words "
+                f"({target:g} min x {target_wpm} wpm).")
+    # Advisory layer only: the WIDE legacy 120-140 wpm bracket (the speech-QC SOP's
+    # old hard auto-fails) is a NOTE on stderr, never a second hard fail.
+    _legacy_slow, _legacy_fast = 120.0, 140.0
+    _eff = words / target
+    if _eff < _legacy_slow or _eff > _legacy_fast:
+        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: presenter speech {speech.name} sits "
+              f"outside the legacy 120-140 wpm absorption bracket ({_eff:.0f} wpm "
+              f"effective) — advisory only under the Fix 97 band (the "
+              f"{SPEECH_PACING_FAIL_CODE} band above is the hard reject).",
+              file=sys.stderr)
     return ""
 
 

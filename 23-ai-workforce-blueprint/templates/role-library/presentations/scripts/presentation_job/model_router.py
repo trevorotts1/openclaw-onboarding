@@ -188,29 +188,29 @@ def resolve_alias(alias: str) -> Dict[str, Any]:
                         resolved = None  # fail-closed catalog miss -> next
                     if isinstance(resolved, dict) and resolved.get("provider") \
                             and resolved.get("model"):
-                    out = dict(resolved)
-                    out.setdefault("modality", "text")
-                    out.setdefault("context_class", "standard")
-                    # FIX 17a: normalise the served_ids keys to canonical
-                    # dash-form provider ids so `ollama_cloud` (underscore
-                    # drift) and `ollama-cloud` resolve identically.
-                    raw_served = out.get("served_ids")
-                    if isinstance(raw_served, dict) and raw_served:
-                        norm = getattr(_catalog, "normalize_provider_id", None)
-                        if callable(norm):
-                            out["served_ids"] = {
-                                str(norm(k)): str(v)
-                                for k, v in raw_served.items()
-                                if str(v).strip()
-                            }
-                        else:
-                            out["served_ids"] = {
-                                str(k).strip().lower()
-                                .replace("_", "-").replace(" ", "-"): str(v)
-                                for k, v in raw_served.items()
-                                if str(v).strip()
-                            }
-                    return out
+                        out = dict(resolved)
+                        out.setdefault("modality", "text")
+                        out.setdefault("context_class", "standard")
+                        # FIX 17a: normalise the served_ids keys to canonical
+                        # dash-form provider ids so `ollama_cloud` (underscore
+                        # drift) and `ollama-cloud` resolve identically.
+                        raw_served = out.get("served_ids")
+                        if isinstance(raw_served, dict) and raw_served:
+                            norm = getattr(_catalog, "normalize_provider_id", None)
+                            if callable(norm):
+                                out["served_ids"] = {
+                                    str(norm(k)): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                            else:
+                                out["served_ids"] = {
+                                    str(k).strip().lower()
+                                    .replace("_", "-").replace(" ", "-"): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                        return out
     except Exception:  # noqa: BLE001 -- catalog absence never breaks routing
         pass
     return dict(DEFAULT_ALIAS_REGISTRY.get(alias) or {})

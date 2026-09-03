@@ -33,7 +33,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 QUESTIONS_JSON="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json"
-DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-driver.py"
+DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-turngate.py"
 BUILD_DECK="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
 
 PY="${PYTHON:-python3}"

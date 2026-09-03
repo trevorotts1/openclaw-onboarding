@@ -2900,7 +2900,17 @@ colocate_presentation_entry() {
   #      withhold; the call site latches the rc and reports it loudly.)
   # The CI colocate gate (W22/FIX 65) asserts exactly this list contract.
   local -a colocate_list=()
-  local -a colocate_candidates=(presentation-canonical-entry.sh deck-build-guard.sh)
+  # FIX 113: presentations-drift-gates.sh joins the colocate list — GATE 0c in
+  # presentation-canonical-entry.sh resolves the gate as a SIBLING of the entry
+  # script it runs from, so the department copy of the door needs the gate
+  # colocated next to it or the install is partial (the entry script's own
+  # else-branch dies on exactly that). The gate ships as byte-identical
+  # generated mirrors in 23-ai-workforce-blueprint/scripts/ and the role
+  # library's presentations/scripts/; co-location delivers the runtime copy.
+  # FIX 65 (CI leg): deck-build-guard.sh left the array — the CI colocate gate
+  # (scripts/ci/presentations-drift-gates.sh GATE 7) asserts every candidate
+  # EXISTS in the canonical source dir, so a retired name cannot ride along.
+  local -a colocate_candidates=(presentation-canonical-entry.sh presentations-drift-gates.sh)
   local f copied=0
   for f in "${colocate_candidates[@]}"; do
     if [ -f "$src_dir/$f" ]; then
@@ -2930,6 +2940,266 @@ colocate_presentation_entry() {
   fi
 }
 # <<< U006-COLOCATE-PRESENTATION-ENTRY-END
+
+# ----------------------------------------------------------
+# FIX 49 — Wake the watchdog: regenerate the installed launchd watchdog
+# plist from the in-repo template.
+#
+# WHY: presentation-watchdog.sh's FIX 22 gate is fail-closed — an unset
+# PRESENTATION_NOTIFY_CMD makes EVERY launchd tick exit 4
+# (AF-NOTIFY-UNCONFIGURED) before any pass runs. The installed plist on a
+# rolled box predates that gate and carries no PRESENTATION_NOTIFY_CMD and
+# no PATH, so the watchdog has been "running" (StartInterval firing) while
+# never once scanning: the exact silent-watchdog state FIX 49 exists to
+# wake. Proof of life is a new row in watchdog-scan-audit.jsonl.
+#
+# WHAT THIS DOES:
+#   1. Renders presentation-watchdog.plist.template (the canonical copy in
+#      the installed skill bundle) with this box's real values:
+#        <WATCHDOG_SCRIPT_PATH> -> the materialised department's
+#                                  presentation-watchdog.sh
+#        <SCAN_ROOT>            -> the department runs dir (single root;
+#                                  extra roots ride SCAN_ROOTS_CONFIG /
+#                                  PRESENTATION_SCAN_ROOTS per the
+#                                  2026-08-27 scan-roots fix, never a
+#                                  hardcode)
+#        <LOG_PATH>             -> ~/Library/Logs/openclaw/presentation-watchdog.log
+#                                  (ALSO passed as the script's argv[2], so
+#                                  the script's own echo-diagnostics land in
+#                                  the SAME file launchd captures stdout to)
+#        <WATCHDOG_PATH>        -> a minimal launchd PATH that includes
+#                                  /opt/homebrew/bin (gtimeout) and
+#                                  ~/.npm-global/bin (the `openclaw` gateway
+#                                  CLI the notify transport sends through)
+#        <NOTIFY_CMD>           -> the department scripts dir's
+#                                  presentation-notify.py — the canonical
+#                                  FIX 64 gateway-only transport. A box
+#                                  whose department is NOT materialised
+#                                  takes a SKIP, never a broken plist.
+#   2. Writes the rendered plist over the installed
+#      com.blackceo.presentation-watchdog.plist (timestamped backup first),
+#      then `launchctl kickstart -k` the label so the new environment and
+#      arguments apply on the next tick without a full unload/load cycle.
+#
+# Idempotent: re-running re-renders the same plist content and re-kickstarts
+# (harmless — the script is bounded and re-entrant). Best-effort on the
+# kickstart: a non-zero kickstart is reported but never aborts the install
+# (the plist on disk is already correct; the next natural StartInterval tick
+# picks it up).
+# ----------------------------------------------------------
+regen_watchdog_plist() {
+  local _label="com.blackceo.presentation-watchdog"
+  local _plist="$HOME/Library/LaunchAgents/${_label}.plist"
+  local _tpl=""
+  local _dept_scripts=""
+
+  # The department scripts dir is both the template-owner's neighbour and
+  # the home of the transport we point NOTIFY_CMD at. Same resolution order
+  # colocate_presentation_entry uses one block above (obs_resolve_workspace,
+  # then the standard roots) — one convention, not a second one.
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    local _ws; _ws="$(obs_resolve_workspace 2>/dev/null || true)"
+    if [ -n "$_ws" ]; then
+      _dept_scripts="$_ws/departments/Presentations/scripts"
+    fi
+  fi
+  if [ -z "$_dept_scripts" ]; then
+    local _home_ws="${HOME}/.openclaw/workspace"
+    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
+    _dept_scripts="$_home_ws/departments/Presentations/scripts"
+  fi
+
+  # Template source: THIS BUNDLE's canonical copy first (the repo tree this
+  # installer shipped in — it is the newest template this roll carries; the
+  # installed skill-bundle copy can lag behind it until update-skills.sh
+  # runs), then the installed skill bundle's copy. If neither exists there
+  # is nothing to render from — a SKIP with a loud line, never a
+  # half-rendered plist.
+  if [ -f "$ONBOARDING_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template" ]; then
+    _tpl="$ONBOARDING_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template"
+  elif [ -f "$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template" ]; then
+    _tpl="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template"
+  fi
+  if [ -z "$_tpl" ]; then
+    echo "  [FIX49] watchdog plist regen SKIPPED (template not found under $SKILLS_DIR or $ONBOARDING_DIR)" >&2
+    return 0
+  fi
+  if [ ! -d "$_dept_scripts" ]; then
+    echo "  [FIX49] watchdog plist regen SKIPPED (department not materialized at $_dept_scripts)" >&2
+    return 0
+  fi
+
+  # The notify transport must exist at the path we hardwire into the plist:
+  # a PRESENTATION_NOTIFY_CMD pointing at a missing file would only convert
+  # exit-4 (unconfigured) into a new per-tick transport failure. Skip loudly
+  # instead.
+  if [ ! -f "$_dept_scripts/presentation-notify.py" ]; then
+    echo "  [FIX49] watchdog plist regen SKIPPED (transport missing: $_dept_scripts/presentation-notify.py)" >&2
+    return 0
+  fi
+
+  # <WATCHDOG_SCRIPT_PATH>: prefer the co-located script in the department
+  # scripts dir (what the installed plist already pointed at); fall back to
+  # the skill-bundle copy.
+  local _watchdog_sh="$_dept_scripts/presentation-watchdog.sh"
+  [ -f "$_watchdog_sh" ] || _watchdog_sh="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh"
+  if [ ! -f "$_watchdog_sh" ]; then
+    echo "  [FIX49] watchdog plist regen SKIPPED (watchdog script not found at $_watchdog_sh)" >&2
+    return 0
+  fi
+
+  local _scan_root="$_dept_scripts/../runs"
+  local _log_path="$HOME/Library/Logs/openclaw/presentation-watchdog.log"
+  local _notify_cmd="$_dept_scripts/presentation-notify.py"
+
+  # PATH: launchd gives the job NO user PATH. /opt/homebrew/bin supplies
+  # gtimeout (the watchdog's time limit); $HOME/.npm-global/bin supplies the
+  # openclaw gateway CLI the notify transport execs. The system prefix rides
+  # behind them so /usr/bin/python3 still resolves.
+  local _watchdog_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
+
+  # OWNER_CHAT_ID: the numeric operator chat id the transport needs to land
+  # subsystem alerts in the operator chat (launchd env is empty). Resolution
+  # order mirrors presentation-notify.py's own fallback tier, WITHOUT ever
+  # printing the value: OPENCLAW_OWNER_CHAT_ID / OWNER_CHAT_ID from this
+  # shell's env, then the OPERATOR_TELEGRAM_CHAT_ID / OWNER_TELEGRAM_CHAT_ID /
+  # TELEGRAM_CHAT_ID keys from the box's env stores (openclaw.json env.vars,
+  # ~/.openclaw/secrets/.env, ~/.openclaw/.env). If nothing resolves, render
+  # the variable EMPTY (the transport's own documented behaviour: unresolved
+  # alerts exit 4 and queue for --sweep-undeliverable) — never a fabricated
+  # id, and the regen still proceeds: scanning wakes regardless, delivery of
+  # alerts degrades to the queued-retry path with the gap visible in the log.
+  local _owner_chat_id=""
+  if [ -n "${OPENCLAW_OWNER_CHAT_ID:-}" ]; then
+    _owner_chat_id="$OPENCLAW_OWNER_CHAT_ID"
+  elif [ -n "${OWNER_CHAT_ID:-}" ]; then
+    _owner_chat_id="$OWNER_CHAT_ID"
+  else
+    _owner_chat_id="$(python3 - <<'PYEOF'
+import json, os, re
+home = os.path.expanduser("~")
+keys = ("OPERATOR_TELEGRAM_CHAT_ID", "OWNER_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
+numeric = re.compile(r"^-?\d+$")
+def pick(v):
+    v = str(v or "").strip().strip('"').strip("'")
+    return v if numeric.match(v) else ""
+# 1) openclaw.json env.vars
+try:
+    cfg = json.load(open(os.path.join(home, ".openclaw", "openclaw.json")))
+    vars_d = (cfg.get("env") or {}).get("vars") or {}
+    for k in keys:
+        v = pick(vars_d.get(k))
+        if v: print(v); raise SystemExit
+except SystemExit:
+    raise
+except Exception:
+    pass
+# 2) secrets env files
+for envf in (os.path.join(home, ".openclaw", "secrets", ".env"),
+             os.path.join(home, ".openclaw", ".env")):
+    try:
+        if not os.path.isfile(envf): continue
+        for line in open(envf):
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line: continue
+            k, _, v = line.partition("=")
+            if k.strip() in keys:
+                v = pick(v)
+                if v: print(v); raise SystemExit
+    except SystemExit:
+        raise
+    except Exception:
+        continue
+PYEOF
+)" || _owner_chat_id=""
+  fi
+
+  # Render. The template's XML body stores placeholders HTML-escaped
+  # (&lt;NAME&gt;) — sed must target the ESCAPED form for the body AND the
+  # bare form for the comment header, or the body keeps its raw
+  # &lt;PLACEHOLDER&gt; strings and launchd loads a plist full of literals
+  # (exactly the bug the dry-run caught). One sed -e per placeholder per
+  # form; values are literal paths / ids with no '|' or '&'.
+  local _rendered
+  _rendered="$(sed -e "s|&lt;WATCHDOG_SCRIPT_PATH&gt;|$_watchdog_sh|g" \
+                   -e "s|<WATCHDOG_SCRIPT_PATH>|$_watchdog_sh|g" \
+                   -e "s|&lt;SCAN_ROOT&gt;|$_scan_root|g" \
+                   -e "s|<SCAN_ROOT>|$_scan_root|g" \
+                   -e "s|&lt;LOG_PATH&gt;|$_log_path|g" \
+                   -e "s|<LOG_PATH>|$_log_path|g" \
+                   -e "s|&lt;WATCHDOG_PATH&gt;|$_watchdog_path|g" \
+                   -e "s|<WATCHDOG_PATH>|$_watchdog_path|g" \
+                   -e "s|&lt;NOTIFY_CMD&gt;|$_notify_cmd|g" \
+                   -e "s|<NOTIFY_CMD>|$_notify_cmd|g" \
+                   -e "s|&lt;OWNER_CHAT_ID&gt;|$_owner_chat_id|g" \
+                   -e "s|<OWNER_CHAT_ID>|$_owner_chat_id|g" \
+                   -e "s|&lt;SCRIPTS_DIR&gt;|$_dept_scripts|g" \
+                   -e "s|<SCRIPTS_DIR>|$_dept_scripts|g" \
+                   "$_tpl")"
+  if [ -z "$_rendered" ]; then
+    echo "  [FIX49] watchdog plist regen FAILED (rendered empty from $_tpl)" >&2
+    return 1
+  fi
+  if printf '%s' "$_rendered" | grep -q '&lt;WATCHDOG_SCRIPT_PATH&gt;\|&lt;SCAN_ROOT&gt;\|&lt;LOG_PATH&gt;\|&lt;WATCHDOG_PATH&gt;\|&lt;NOTIFY_CMD&gt;\|&lt;OWNER_CHAT_ID&gt;\|&lt;SCRIPTS_DIR&gt;'; then
+    echo "  [FIX49] watchdog plist regen FAILED (unsubstituted placeholder remains in plist body)" >&2
+    return 1
+  fi
+  if [ -z "$_owner_chat_id" ]; then
+    echo "  [FIX49] NOTE: OWNER_CHAT_ID did not resolve on this box (no OPENCLAW_OWNER_CHAT_ID / env-store key) — rendered EMPTY: stall alerts will queue for --sweep-undeliverable instead of landing in the operator chat. Set the variable and re-run to complete delivery."
+  fi
+
+  # Validate BEFORE touching the live plist: the rendered body (comment
+  # stripped) must parse as a plist.
+  if ! printf '%s' "$_rendered" | sed -n '/<?xml/,$p' | python3 -c "import plistlib,sys; plistlib.loads(sys.stdin.buffer.read())" >/dev/null 2>&1; then
+    echo "  [FIX49] watchdog plist regen FAILED (rendered plist does not parse)" >&2
+    return 1
+  fi
+
+  # Backup the installed plist, then write atomically.
+  if [ -f "$_plist" ]; then
+    local _bak="${_plist}.bak-fix49-$(date -u +%Y%m%dT%H%M%SZ)"
+    cp "$_plist" "$_bak" || { echo "  [FIX49] watchdog plist backup FAILED" >&2; return 1; }
+    echo "  [FIX49] installed plist backed up -> $_bak"
+  fi
+  mkdir -p "$(dirname "$_plist")" 2>/dev/null || true
+  printf '%s\n' "$_rendered" > "${_plist}.tmp-fix49" \
+    && mv "${_plist}.tmp-fix49" "$_plist" \
+    || { echo "  [FIX49] watchdog plist write FAILED" >&2; rm -f "${_plist}.tmp-fix49"; return 1; }
+  echo "  [FIX49] rendered $_tpl -> $_plist (PATH incl. npm-global, PRESENTATION_NOTIFY_CMD=presentation-notify.py, LOG_PATH argv + StandardOut/Err)"
+
+  # Apply. launchd caches a service's definition at LOAD time: kickstart alone
+  # re-runs the OLD definition (proven live 2026-09-02 — the kickstarted job
+  # kept exiting 4 with the old env while the corrected plist sat on disk).
+  # The only reliable re-read is bootout -> bootstrap. The service's label is
+  # whatever the RENDERED plist's <key>Label</key> says (the template's
+  # internal label com.presentations.watchdog differs from the installed FILE
+  # name com.blackceo.presentation-watchdog.plist — a filename/label mismatch
+  # that silently defeated label-derived kickstarts before this fix), so read
+  # the label out of the rendered body and use IT; bootout BOTH it and the
+  # filename-derived label first so a stale registration under either name
+  # cannot survive.
+  local _svc_label
+  _svc_label="$(printf '%s\n' "$_rendered" \
+    | sed -n '/<key>Label<\/key>/{n; s/^[[:space:]]*<string>//; s/<\/string>[[:space:]]*$//; p;}' \
+    | head -1 | tr -d '[:space:]')"
+  [ -n "$_svc_label" ] || _svc_label="$_label"
+  launchctl bootout "gui/$(id -u)/$_svc_label" >/dev/null 2>&1 || true
+  [ "$_svc_label" != "$_label" ] \
+    && launchctl bootout "gui/$(id -u)/$_label" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/$(id -u)" "$_plist" >/dev/null 2>&1; then
+    echo "  [FIX49] bootout+bootstrap $_svc_label ($_plist) — launchd re-read the new plist"
+  else
+    # bootstrap can legitimately fail if an identically-labelled service is
+    # already bootstrapped from this same file (idempotent re-run); kickstart
+    # still re-runs the current definition, so report and continue.
+    echo "  [FIX49] bootstrap returned non-zero (likely already loaded) — kickstarting $_svc_label"
+  fi
+  launchctl kickstart -k "gui/$(id -u)/$_svc_label" >/dev/null 2>&1 \
+    && echo "  [FIX49] launchctl kickstart -k fired ($_svc_label)" \
+    || echo "  [FIX49] launchctl kickstart returned non-zero — next StartInterval tick will apply the new plist"
+  return 0
+}
+# <<< FIX49-REGEN-WATCHDOG-PLIST-END
 
 # ----------------------------------------------------------
 # Concurrency Configuration
@@ -4484,14 +4754,15 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 APT_GET="/usr/bin/apt-get"
 PY3="$(command -v python3 || echo /usr/bin/python3)"
 
-# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg.
+# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg
+# --- + tesseract-ocr (FIX 70 canon: the OCR readback binary the gate enforces).
 if [ -x "$APT_GET" ]; then
     if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1 \
-       || ! command -v ffmpeg >/dev/null 2>&1; then
-        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg" >> "$LOG"
+       || ! command -v ffmpeg >/dev/null 2>&1 || ! command -v tesseract >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg tesseract-ocr" >> "$LOG"
         ( "$APT_GET" update -y && \
           DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
-              libreoffice-impress poppler-utils ffmpeg ) >> "$LOG" 2>&1 \
+              libreoffice-impress poppler-utils ffmpeg tesseract-ocr ) >> "$LOG" 2>&1 \
             && echo "[$(ts)] apt packages OK" >> "$LOG" \
             || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
     else
@@ -4534,6 +4805,7 @@ _CHK_PY="$PY3"; [ -x "$VENV_PY" ] && _CHK_PY="$VENV_PY"
 "$_CHK_PY" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx+pypdf OK ($_CHK_PY)" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx/pypdf import failed under $_CHK_PY" >> "$LOG"
 command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
 command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
+command -v tesseract >/dev/null 2>&1 && echo "[$(ts)] verify tesseract OK" >> "$LOG" || echo "[$(ts)] WARN: tesseract missing (OCR readback; apt install tesseract-ocr)" >> "$LOG"
 
 echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
 REASSERT_EOF
@@ -4726,6 +4998,19 @@ else
             || warn "brew install ffmpeg failed — the webinar video (P9.6) cannot render. Manual fix: brew install ffmpeg"
     else
         warn "Homebrew not found — cannot install ffmpeg. The webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: brew install ffmpeg"
+    fi
+
+    # tesseract (FIX 70 canon: OCR readback binary, presentation-deps.json row
+    # "tesseract"; pytesseract drives it — the venv installs the binding above).
+    if command -v tesseract >/dev/null 2>&1; then
+        success "tesseract already on PATH (OCR readback)"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing tesseract (OCR readback binary) via Homebrew formula..."
+        brew install tesseract 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "tesseract installed" \
+            || warn "brew install tesseract failed — image QC OCR readback will fail. Manual fix: brew install tesseract"
+    else
+        warn "Homebrew not found — cannot install tesseract. Manual fix: brew install tesseract"
     fi
 fi
 
@@ -9276,6 +9561,20 @@ colocate_presentation_entry || _COLOCATE_RC=$?
 if [ "$_COLOCATE_RC" -ne 0 ]; then
     echo "  ✗ ERROR: [U006] presentation entry co-location FAILED (rc=$_COLOCATE_RC) — the department door script is NOT co-located; see the [U006] MISS lines above" | tee -a "$LOG_FILE" >&2
     warn "U006 co-location FAILED (rc=$_COLOCATE_RC) — fix the source bundle and re-run; install continues (no success stamp exists on the install path)"
+fi
+
+# FIX 49 — Wake the watchdog: regenerate the installed launchd watchdog plist
+# from the template (adds PRESENTATION_NOTIFY_CMD, the log-path argument, and
+# a launchd-viable PATH incl. ~/.npm-global/bin) and kickstart the label so
+# the next tick actually scans. Proof of life: a new row in
+# watchdog-scan-audit.jsonl within one StartInterval.
+_FIX49_RC=0
+regen_watchdog_plist || _FIX49_RC=$?
+if [ "$_FIX49_RC" -ne 0 ]; then
+    echo "  ✗ ERROR: [FIX49] watchdog plist regeneration FAILED (rc=$_FIX49_RC) — the installed plist was NOT modified (backup + atomic write; failure modes leave the old plist in place); see the [FIX49] lines above" | tee -a "$LOG_FILE" >&2
+    warn "FIX49 watchdog plist regen FAILED (rc=$_FIX49_RC) — watchdog stays in its fail-closed exit-4 state; fix and re-run; install continues"
+else
+    success "FIX49: watchdog plist regenerated + kickstarted — watchdog will scan this box's runs (see watchdog-scan-audit.jsonl)"
 fi
 
 # FIX 2 (v10.15.48): Operator Telegram channel separation.

@@ -167,6 +167,8 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 
 ## 9. Standard Operating Procedures (Numbered)
 
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+
 ### SOP 9.1 — Grounded-Content Capture
 
 **SOP ID:** SOP-PRES-CUSTOM-09 (BlackCEO)

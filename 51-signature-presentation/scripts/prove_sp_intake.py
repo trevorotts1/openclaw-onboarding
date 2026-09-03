@@ -144,7 +144,7 @@ AF_PROVENANCE = "AF-SP-PROVENANCE"
 # file and the drivers). It is now LOADED FROM THE SECRETS STORE as a versioned
 # rotation record — see the FIX 29 header block at the top of this file and
 # sp-turn-ledger-keys.template.json next to this script for the provisioning
-# runbook. Signers (deck-intake-driver.py and its materialized role-library
+# runbook. Signers (deck-intake-turngate.py and its materialized role-library
 # copy call sign_turn_ledger()/the 3-arg _sign_turn_ledger() shim) sign with
 # the CURRENT key only; this verifier accepts the current and (within the
 # migration window) the previous key. NO key bytes ever appear here, in repo
@@ -451,7 +451,7 @@ def _resolve_mode(intake):
     """Resolve the RECORD's atomic-commit-mode signal (consumed ONLY by the
     AF-SP-8Q-SPLIT check below). This is deliberately NOT the interview DEPTH
     signal (QUICK/IN-DEPTH) that a live record also carries under the bare
-    top-level `mode` key -- see deck-intake-driver.py's _sig_finalize comment:
+    top-level `mode` key -- see deck-intake-turngate.py's _sig_finalize comment:
     "mode" stays the interview DEPTH (read by prove_sp_routing.py's
     P-SP-CLAIM gate); "delivery.mode" is the SEPARATE record-commit-mode
     signal this gate actually means ("the assembled RECORD's atomic-commit
@@ -518,7 +518,7 @@ def _missing_questions(intake):
 # CLIENT'S OWN WORDS, captured at answer time and confirmed back to the
 # client before the record commits.
 #
-# Contract (written by deck-intake-driver.py's _sig_answer/--sig-confirm):
+# Contract (written by deck-intake-turngate.py's _sig_answer/--sig-confirm):
 #   answer_provenance: {
 #     "<qid>": {
 #       "client_text":        <verbatim client words for this answer>,
@@ -566,7 +566,7 @@ def _evaluate_answer_provenance(intake, today=None):
             return []  # pre-provenance driver record: grandfathered (accepted rollout cost)
         return [(AF_PROVENANCE,
                  "intake record carries no answer_provenance — per-answer client provenance "
-                 "(client_text + confirmed_by_client, captured by deck-intake-driver.py's "
+                 "(client_text + confirmed_by_client, captured by deck-intake-turngate.py's "
                  "--sig-answer/--sig-confirm quote-back step) is required after the %s migration "
                  "window closed; answers without provenance cannot be shown to be the client's "
                  "own words." % PROVENANCE_GRACE_WINDOW_UNTIL.isoformat())]
@@ -615,7 +615,7 @@ def _evaluate_answer_provenance(intake, today=None):
         if block.get("confirmed_by_client") is not True:
             fails.append((AF_PROVENANCE,
                            "%s answer is NOT confirmed by the client (confirmed_by_client is %r) — "
-                           "run deck-intake-driver.py --sig-confirm %s to read the answer back and "
+                           "run deck-intake-turngate.py --sig-confirm %s to read the answer back and "
                            "record the client's confirmation before committing." % (
                                qid, block.get("confirmed_by_client"), qid)))
             continue
@@ -634,7 +634,7 @@ def _canonical_turns_payload(turns, deck_type, commit_id, key_id=None, signed_at
     """The HMAC payload. When key_id/signed_at are present they sit INSIDE the
     authenticated payload (cannot be swapped or stripped without invalidating
     the signature). Legacy signer calls omit both, producing the byte-identical
-    pre-FIX-29 payload. Matches deck-intake-driver.py's sort_keys JSON dict."""
+    pre-FIX-29 payload. Matches deck-intake-turngate.py's sort_keys JSON dict."""
     payload = {"deck_type": deck_type, "record_commit_ids": commit_id, "turns": turns}
     if key_id is not None:
         payload["key_id"] = key_id
@@ -739,7 +739,7 @@ def _verify_turn_ledger_signature(prov, turns, deck_type, commit_id):
                 return ((AF_UNPACED,
                          "envelope key_id %r is the previous (old) key id and the %d-hour "
                          "migration window closed at %s — old-key verification has stopped "
-                         "(fail-closed); re-sign through deck-intake-driver.py"
+                         "(fail-closed); re-sign through deck-intake-turngate.py"
                          % (key_id, MIGRATION_WINDOW_HOURS,
                             record["previous_key_expires_at"].isoformat())), None)
         else:
@@ -805,7 +805,7 @@ def _evaluate_turn_pacing(intake, today=None):
         return [(AF_UNPACED,
                  "intake record carries no turn_ledger_provenance — the driver's turn-gate stamp "
                  "(per-question turn id + asked_at/validated_at) is required after the %s migration "
-                 "window closed; assemble the intake through deck-intake-driver.py --signature "
+                 "window closed; assemble the intake through deck-intake-turngate.py --signature "
                  "--next/--answer, never by hand or via a bare --record with no ledger behind it."
                  % GRACE_WINDOW_UNTIL.isoformat())]
 
@@ -1218,7 +1218,7 @@ def self_test():
     # defect: a real signature intake carries top-level mode="IN-DEPTH" (interview
     # depth, read by prove_sp_routing.py's P-SP-CLAIM gate) PLUS delivery.mode=
     # "one_block" (this gate's actual atomic-commit signal) -- see
-    # deck-intake-driver.py's _sig_finalize comment for the namespacing intent.
+    # deck-intake-turngate.py's _sig_finalize comment for the namespacing intent.
     print("== self-test: E3-20260819 mode-resolver DEPTH-vs-COMMIT namespacing ==")
 
     # 3c) the REAL live shape: top-level mode is the DEPTH value ("IN-DEPTH"),

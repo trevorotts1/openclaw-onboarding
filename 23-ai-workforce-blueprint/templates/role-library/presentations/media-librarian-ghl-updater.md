@@ -129,6 +129,8 @@ Review the local workdir structure. Are all completed run directories properly a
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 60, 59 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own phases: GHL media upload `P9.2-GHL-UPLOAD` (order 8.9) and the upsell GHL waves `P-U-GHL-SALES` (6.2) / `P-U-GHL-VSL` (6.4); the media it hosts is rendered in `P4-RENDER` (4.9).
+
 ### SOP 9.1 -- Step-0 Landing Zone Creation
 
 **When to run:** At the very start of every new deck run -- before discovery interview, before any other action.
@@ -156,7 +158,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)
-         (no pptx_text_overlays.json -- native-text overlays are eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)
+         (NO overlay ledger file -- native-text overlays are eliminated, Decision 5C;
+          the retired ledger filename is recorded in the RETIRED appendix of
+          pptx-assembly-specialist.md; its presence is AF-OVERLAY-DELIVERED)
        qc/                        (QC reports from all phases)
          copy_qc_report.json
          prompt_qc_report.json

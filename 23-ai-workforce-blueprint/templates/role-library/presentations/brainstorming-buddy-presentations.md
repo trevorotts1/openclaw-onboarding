@@ -169,6 +169,8 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 ## 9. Standard Operating Procedures (Numbered)
 
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+
 ### SOP 9.0 -- PRE-PRESENTATION HARD-REQUIRED CAPTURE (runs FIRST, before mode offer)
 
 **When to run:** The instant a new deck request arrives, before the mode offer and before

@@ -3423,6 +3423,160 @@ def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_
     return DispatchResult(phase_id, "exhausted", total_attempts, reasons)
 
 
+def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutSpec"]:
+    """Restore the FIX 15b seam dispatch_one already calls (live NameError:
+    the wave-1 merge shipped the call site without these two helpers, so EVERY
+    dispatch whose artifact was not already satisfied died with
+    NameError('_phase_fanout_spec') and the dispatcher could never claim any
+    agent phase). Reads THIS phase's manifest `fanout` field and parses it
+    through the single authority fanout.parse_fanout_field. A phase without
+    the field (or an unparsable one, which is logged, never raised — the
+    serial path is the documented fallback) returns None and keeps the
+    pre-fanout behavior byte-for-byte."""
+    raw = None
+    try:
+        from presentation_job.manifest_source import resolve_manifest as _rm
+        mpath = _rm(None, run_dir, str(dept_root))[0]
+        with open(mpath, "r", encoding="utf-8") as _fh:
+            _m = json.load(_fh)
+        for _ph in _m.get("phases", []):
+            if isinstance(_ph, dict) and _ph.get("id") == phase_id:
+                raw = _ph.get("fanout")
+                break
+    except Exception:
+        raw = None
+    if raw is None:
+        return None
+    try:
+        return fanout.parse_fanout_field(raw)
+    except fanout.FanoutSpecError as exc:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": "dispatcher:fanout-spec", "attempt": 0, "status": "error",
+            "reason": f"fanout field unparsable — falling back to serial dispatch: {exc}",
+        })
+        return None
+
+
+def _dispatch_phase_fanout_units(run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
+                                 phase_obj: Optional[Phase], worker_id: str,
+                                 spec: "fanout.FanoutSpec", patterns: List[str],
+                                 target: Path, prior_reasons: List[str]) -> DispatchResult:
+    """Generic per-unit fan-out for a manifest `fanout` phase (FIX 15b): one
+    model call per unit key (slide / section / file), through the SAME
+    dispatch_complete transport the serial loop uses, aggregated best-effort
+    into the phase's single produces_artifact target. A phase whose unit
+    inventory cannot be derived returns declined so the caller's serial
+    branch is reached rather than inventing units."""
+    phase_id = order.get("phase") or (phase_obj.id if phase_obj else "")
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+    unit_keys = _fanout_unit_keys(run_dir, spec)
+    if not unit_keys:
+        return DispatchResult(phase_id, "declined", 0,
+                              ["fanout phase with no derivable unit inventory — serial path"])
+    units = [fanout.Unit(key=k, payload={"key": k}) for k in unit_keys]
+    unit_out_paths = {k: fanout.unit_output_path(run_dir, phase_id, k) for k in unit_keys}
+    n = len(units)
+
+    def _worker(unit: fanout.Unit) -> fanout.UnitResult:
+        out_path = unit_out_paths[unit.key]
+        last_reason = ""
+        for attempt in range(1, DISPATCH_RETRY_CAP + 1):
+            try:
+                system_prompt, user_prompt = compose_prompt(
+                    phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                    run_dir=run_dir, order=order, attempt=attempt,
+                    prior_reasons=prior_reasons,
+                )
+                content, _usage, _route = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+                payload = _clean_payload(content)
+                if not payload.strip():
+                    last_reason = "empty completion"
+                    continue
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = out_path.with_suffix(out_path.suffix + f".partial-{os.getpid()}-{attempt}")
+                tmp.write_text(payload, encoding="utf-8")
+                os.replace(tmp, out_path)
+                fanout.append_unit_ledger_row(
+                    run_dir, phase_id, {"unit": unit.key, "status": "ok",
+                                        "attempts": attempt})
+                return fanout.UnitResult(key=unit.key, status="ok", attempts=attempt,
+                                         target=str(out_path))
+            except Exception as exc:  # noqa: BLE001 — per-unit failure, never the pool
+                last_reason = str(exc)
+        fanout.append_unit_ledger_row(
+            run_dir, phase_id, {"unit": unit.key, "status": "failed",
+                                "attempts": DISPATCH_RETRY_CAP, "reason": last_reason})
+        return fanout.UnitResult(key=unit.key, status="failed",
+                                 attempts=DISPATCH_RETRY_CAP, reason=last_reason)
+
+    env_key = "PRESENTATION_PHASE_WORKERS_" + re.sub(r"[^A-Za-z0-9]+", "_", phase_id).strip("_")
+    effective_workers = fanout.resolve_effective_workers(
+        spec.max_units or 1, n, env_var=env_key)
+    deadline_s: Optional[float] = None
+    if phase_obj is not None:
+        try:
+            deadline_s = float(phase_obj.budget_minutes * 60)
+        except Exception:  # noqa: BLE001
+            deadline_s = None
+    results = fanout.run_units(
+        units, _worker, workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
+        per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1, deadline_s=deadline_s)
+    failed = [r for r in results if r.status != "ok"]
+    total_attempts = sum(r.attempts for r in results)
+    _aggregate_unit_outputs(target, unit_out_paths)
+    ok, reasons = _verify(phase_id, run_dir)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": total_attempts,
+        "status": "verified" if ok else "failed", "verifier_ok": ok,
+        "verifier_reasons": reasons, "units": len(unit_keys),
+        "units_failed": len(failed),
+    })
+    if ok:
+        return DispatchResult(phase_id, "ok", total_attempts, [])
+    return DispatchResult(phase_id, "exhausted", total_attempts,
+                          [f"unit {r.key}: {r.reason}" for r in failed] or reasons)
+
+
+def _fanout_unit_keys(run_dir: Path, spec: "fanout.FanoutSpec") -> List[str]:
+    """Unit inventory for a fanout phase. by=slide -> the run's slide ordinals
+    (arc_allocation/slides.json, never a constant); by=section -> the arc
+    bands; by=file -> not derivable generically (empty -> serial). Unknown =>
+    empty (caller falls back to serial)."""
+    try:
+        if spec.by == "slide":
+            n = _prompt_slide_count(run_dir)
+            return [f"{i:02d}" for i in range(1, (n or 0) + 1)] if n else []
+        if spec.by == "section":
+            arc = run_dir / "working" / "copy" / "arc_allocation.json"
+            obj = json.loads(arc.read_text(encoding="utf-8")) if arc.is_file() else None
+            bands = (obj or {}).get("bands") if isinstance(obj, dict) else None
+            return sorted(bands.keys()) if isinstance(bands, dict) else []
+    except Exception:
+        return []
+    return []
+
+
+def _aggregate_unit_outputs(target: Path, unit_out_paths: Dict[str, Path]) -> None:
+    """Best-effort aggregation: concatenate per-unit scratch outputs (sorted by
+    unit key) into the phase's real artifact target when it does not already
+    exist. A phase whose real writer is the owning role itself stays untouched
+    (the scratch files remain for that role to read)."""
+    try:
+        if target.exists():
+            return
+        parts = []
+        for key in sorted(unit_out_paths):
+            p = unit_out_paths[key]
+            if p.is_file():
+                parts.append(p.read_text(encoding="utf-8"))
+        if parts:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("\n".join(parts), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                   dept_root: Path, phase_obj: Optional[Phase],
                   worker_id: str) -> DispatchResult:
@@ -3518,9 +3672,10 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         return _dispatch_phase_fanout_units(
             run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
             worker_id=worker_id, spec=fanout_spec, patterns=patterns,
-            target=target, prior_reasons=prior_reasons)
+            target=target, prior_reasons=reasons if reasons else None)
 
     last_reasons: List[str] = reasons
+    prior_reasons = reasons if reasons else None
 
     for attempt in range(1, DISPATCH_RETRY_CAP + 1):
         try:

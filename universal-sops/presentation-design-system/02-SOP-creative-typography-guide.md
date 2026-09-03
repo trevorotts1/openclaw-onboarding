@@ -17,14 +17,14 @@ Give the Typography Architect and the Slide Image Creator a concrete, checkable 
 
 ## 2. The Hard Rule
 
-Every deck obeys ONE locked weight ladder with at least FOUR distinct weights and named roles, and a per-word emphasis rule. The single repeated device (one black headline plus one accent word on every slide) is banned. Display type is used expressively where the master SOP archetypes call for type to be the hero (A4 type-punch, A3 data hero, hook slides).
+Every deck obeys ONE locked weight ladder with at least FOUR distinct weights and named roles, and a per-word emphasis rule -- the coded minimum WEIGHT_LADDER_MIN_WEIGHTS = 4 (presentations/scripts/build_deck.py, FIX 87 canon block, lines 697-708). The single repeated device (one black headline plus one accent word on every slide) is banned. Display type is used expressively where the master SOP archetypes call for type to be the hero (A4 type-punch, A3 data hero, hook slides).
 
 ### 2.1 The locked weight ladder (the gold-standard reference proof, adapt sizes to slide height)
 
-| Weight | Role | Typical size (relative to 1440px slide height) |
+| Weight | Role | Typical size (pt-equivalent at a 1080px-tall canvas, the build_deck.py token frame) |
 |--------|------|-------------------------------------------------|
-| BLACK | Hero headlines, hero numbers, the live price numeral | 60 to 86pt |
-| ExtraBold | Sub-heads, the second line of a two-line headline, the struck price | 26 to 34pt |
+| BLACK | Hero headlines, hero numbers, the live price numeral | 62 to 86pt (HERO_HEADLINE_PT_RANGE = (62, 86) in presentations/scripts/build_deck.py, FIX 87 canon block) |
+| ExtraBold | Sub-heads, the second line of a two-line headline, the struck price | 24 to 32pt (SUBHEADLINE_PT_RANGE = (24, 32) in build_deck.py) |
 | Bold | Kicker labels, section banners, tag-price labels, bullet labels | 16 to 22pt |
 | Medium / SemiBold + Italic | Body lines, tertiary lines, captions, the compliance disclaimer | 17 to 24pt |
 

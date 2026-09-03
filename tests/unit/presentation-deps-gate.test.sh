@@ -61,16 +61,24 @@ echo "(A) install.sh Step 6.5 installs the four deps for BOTH platforms"
 assert_install_has "Step 6.5 block present" 'Step 6\.5: (Installing|Presentation)'
 
 # --- MAC arm: all four deps ---
-assert_install_has "MAC: reportlab via _install_py_pkg_mac"   '_install_py_pkg_mac "reportlab"'
-assert_install_has "MAC: python-pptx via _install_py_pkg_mac" '_install_py_pkg_mac "python-pptx"'
+# FIX 71 updated this test: python deps live in the DEPARTMENT VENV
+# ($OC_CONFIG/.venv-presentations, installed by ensure_presentation_venv via
+# venv-local pip) — NEVER system python, never _install_py_pkg_mac (that helper
+# stayed reserved for Skill 22's Step 6.4 packages) and never
+# --break-system-packages. FIX 70 canon adds ffmpeg/ffprobe + tesseract.
+assert_install_has "MAC: reportlab via the department venv (FIX 71)" 'reportlab python-pptx pypdf pytesseract'
+assert_install_has "MAC: venv creation at .venv-presentations (FIX 71)" '\.venv-presentations'
 assert_install_has "MAC: poppler via brew"                    'brew install poppler'
 assert_install_has "MAC: LibreOffice via NONINTERACTIVE cask" 'NONINTERACTIVE=1 brew install --cask libreoffice'
+assert_install_has "MAC: ffmpeg via brew (FIX 70 canon)"      'brew install ffmpeg'
+assert_install_has "MAC: tesseract via brew (FIX 70 canon)"   'brew install tesseract'
 
 # --- VPS arm: all four deps via the REAL apt + pip ---
 assert_install_has "VPS: real apt-get path /usr/bin/apt-get"  '_APT_GET="/usr/bin/apt-get"'
 assert_install_has "VPS: installs libreoffice-impress + poppler-utils via apt" 'apt.*install.*libreoffice-impress.*poppler-utils|libreoffice-impress poppler-utils'
-assert_install_has "VPS: reportlab via pip --break-system-packages" 'pip install --break-system-packages.*reportlab'
-assert_install_has "VPS: python-pptx via pip --break-system-packages" 'pip install --break-system-packages.*python-pptx'
+assert_install_has "VPS: reportlab via venv pip (FIX 71)" 'pip install.*reportlab'
+assert_install_has "VPS: python-pptx via venv pip (FIX 71)" 'pip install.*python-pptx'
+assert_install_has "VPS: tesseract-ocr via apt (FIX 70 canon)" 'tesseract-ocr'
 
 # --- VPS durability: OpenClaw scheduler cron, NOT a system @reboot crontab ---
 # The reassert cron is registered via the runtime-compatible _oc_cron_silent_main
@@ -133,22 +141,44 @@ for b in bash date mkdir dirname tee sed cat printf grep env; do
     [ -n "$src" ] && ln -sf "$src" "$PYSHIM_DIR/$b"
 done
 # soffice + pdftoppm present so they are NOT the cause of failure.
-for b in soffice pdftoppm; do
+# (FIX 70: ffmpeg/ffprobe/tesseract joined the canon list — they must also be
+# present in this shim PATH, or the gate exits 6 on THEM, not on the broken
+# python import the (b2) case is trying to isolate.)
+for b in soffice pdftoppm ffmpeg ffprobe tesseract; do
     src="$(command -v "$b" 2>/dev/null || true)"
     [ -n "$src" ] && ln -sf "$src" "$PYSHIM_DIR/$b"
 done
 cat > "$PYSHIM_DIR/python3" <<PYSHIM
 #!/usr/bin/env bash
+# FIX 70/71: the gate may invoke the import check under ANY of the three
+# interpreter shapes — bare python3 (this shim), the venv interpreter chosen
+# from disk, or PRESENTATION_PIPELINE_INTERPRETER. The venv wins here, so the
+# shim must break the venv interpreter too or the case never fires. Break any
+# interpreter asked to import reportlab+pptx, pass everything else through.
 if [ "\$1" = "-c" ] && printf '%s' "\$2" | grep -q "import reportlab, pptx"; then exit 1; fi
 exec "$REAL_PY" "\$@"
 PYSHIM
 chmod +x "$PYSHIM_DIR/python3"
+# The gate resolves the venv interpreter from DISK before the shim PATH is
+# consulted, so (b2) also points PRESENTATION_PIPELINE_INTERPRETER at the shim's
+# broken interpreter — the one path the test actually controls.
+cat > "$PYSHIM_DIR/pyshim-py" <<PYSHIM
+#!/usr/bin/env bash
+if [ "\$1" = "-c" ] && printf '%s' "\$2" | grep -q "import reportlab, pptx"; then exit 1; fi
+exec "$REAL_PY" "\$@"
+PYSHIM
+chmod +x "$PYSHIM_DIR/pyshim-py"
 
-# Only meaningful if soffice + pdftoppm actually resolved on this runner.
-if [ -e "$PYSHIM_DIR/soffice" ] && [ -e "$PYSHIM_DIR/pdftoppm" ]; then
+# Only meaningful if the shimbed binaries actually resolved on this runner.
+if [ -e "$PYSHIM_DIR/soffice" ] && [ -e "$PYSHIM_DIR/pdftoppm" ] && [ -e "$PYSHIM_DIR/ffmpeg" ]; then
     GATE_RC=0
-    PATH="$PYSHIM_DIR" "$PYSHIM_DIR/bash" "$QC_SH" --quiet > "$TMPDIR_TEST/missing-py.log" 2>&1 || GATE_RC=$?
-    if [ "$GATE_RC" -eq 6 ] && grep -q "python(reportlab+python-pptx)" "$TMPDIR_TEST/missing-py.log"; then
+    PRESENTATION_PIPELINE_INTERPRETER="$PYSHIM_DIR/pyshim-py" \
+        PATH="$PYSHIM_DIR" "$PYSHIM_DIR/bash" "$QC_SH" --quiet > "$TMPDIR_TEST/missing-py.log" 2>&1 || GATE_RC=$?
+    # FIX 70/71 updated this assertion: the canon-driven gate checks the venv
+    # interpreter first, so a broken system-python3 import surfaces either as the
+    # canon row "python(reportlab, pptx ...)" or as the hardcoded fallback
+    # "python(reportlab+python-pptx...)". Either string proves the gate named it.
+    if [ "$GATE_RC" -eq 6 ] && grep -Eq 'python\(reportlab(\+python-pptx|, pptx)' "$TMPDIR_TEST/missing-py.log"; then
         pass "gate exits 6 when reportlab/python-pptx import fails"
     else
         fail "gate did NOT exit 6 on broken python import (got $GATE_RC)"

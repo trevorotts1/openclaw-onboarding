@@ -155,18 +155,18 @@ else
   bad "intake_trace_check.py missing at $TRACE_CHECK (AF-INTAKE-BATCH still has no runtime implementation)"
 fi
 
-# ---- (H) SIGNATURE mode has a REAL turn-gate: deck-intake-driver.py --signature --selftest ----
+# ---- (H) SIGNATURE mode has a REAL turn-gate: deck-intake-turngate.py --signature --selftest ----
 echo "--- SIGNATURE mode: --signature --next/--answer real turn-gate self-tests green ---"
-DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-driver.py"
+DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-turngate.py"
 if [ -f "$DRIVER" ]; then
   if OUT="$("$PY" "$DRIVER" --signature --selftest 2>&1)"; then
-    ok "deck-intake-driver.py --signature --selftest PASS (signature mode is a real one-question-per-turn gate)"
+    ok "deck-intake-turngate.py --signature --selftest PASS (signature mode is a real one-question-per-turn gate)"
   else
-    bad "deck-intake-driver.py --signature --selftest FAILED"
+    bad "deck-intake-turngate.py --signature --selftest FAILED"
     printf '%s\n' "$OUT" | sed 's/^/         /' >&2
   fi
 else
-  bad "deck-intake-driver.py missing at $DRIVER"
+  bad "deck-intake-turngate.py missing at $DRIVER"
 fi
 
 # ---- (J) E5 REGRESSION GUARD: the SIGNATURE turn-gate is REQUIRED, not optional ----
@@ -197,7 +197,7 @@ if [ -f "$DRIVER" ]; then
     printf '%s\n' "$PLAN_OUT" | sed 's/^/         /' >&2
   fi
 else
-  bad "deck-intake-driver.py missing at $DRIVER -- cannot regression-test E5"
+  bad "deck-intake-turngate.py missing at $DRIVER -- cannot regression-test E5"
 fi
 
 # ---- (I) AF-INTAKE-BATCH: the scanner does not autofail a COMPLIANT transcript ----
@@ -206,7 +206,7 @@ fi
 # 3-question BATCH-IN-TURN ([sp:frame_selection, sp:q5, sp:q6]) purely from
 # incidental keyword overlap inside that ONE compliant bank question. This must
 # now PASS (exit 0), not autofail (exit 2). FIX-3: the compliant transcript is a
-# SIGNED DRIVER ENVELOPE (the shape deck-intake-driver.py writes), so it passes
+# SIGNED DRIVER ENVELOPE (the shape deck-intake-turngate.py writes), so it passes
 # the conversation scan AND the driver-provenance gate.
 echo "--- AF-INTAKE-BATCH: compliant transcript (frame prompt verbatim, alone) does not autofail ---"
 if [ -f "$TRACE_CHECK" ]; then
@@ -288,7 +288,7 @@ else
   bad "intake_trace_check.py missing at $TRACE_CHECK -- cannot regression-test FIX-3"
 fi
 
-# ---- (L) FIX-3: a SIGNED driver envelope (the shape deck-intake-driver.py writes)
+# ---- (L) FIX-3: a SIGNED driver envelope (the shape deck-intake-turngate.py writes)
 # passes the scanner end-to-end. Proves the positive control for (K): the scanner is
 # not broken, it specifically rejects the fabricated (bare) shape.
 echo "--- FIX-3: signed driver envelope transcript PASSES (positive control) ---"

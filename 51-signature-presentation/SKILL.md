@@ -39,7 +39,7 @@ Skill 53 (Book Writer) and consumed here as the offer-deck data source.
   to record no conversation. The QC Specialist / Healer still run it out-of-band as a
   post-hoc scan (SOP 9.1 / SOP 9.13); that duty is unchanged.
   > FIX-3 (2026-08-06 Gauntlet Loop): the transcript is now a **SIGNED DRIVER ENVELOPE** —
-  > `deck-intake-driver.py --signature`'s turn-gate writes `working/interview/
+  > `deck-intake-turngate.py --signature`'s turn-gate writes `working/interview/
   > intake_transcript.json` as `{"format":"sp-intake-transcript-v1","qid_sequence":[...],
   > "turns":[{...,"qid":...}],"driver_signature":...}`. A hand-written bare-list transcript
   > (the shape ERROR 3 of the E2E audit fabricated) FAILS the scanner as

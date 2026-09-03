@@ -123,6 +123,8 @@ Review the delivery_destinations records across all completed runs. Are all deli
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 60, 59 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own phases: delivery `P9-DELIVER` (order 9, postflight completeness gate); the bundle it checks is produced by the export band `P8.1-PDF-EXPORT` (8.1), `P8.2-GUIDE` (8.2), `P8.25-WORKBOOK` (8.25), `P8.3-INFOGRAPHIC` (8.3), and closed by the terminal gate `P-BUNDLE-GATE` (9.95).
+
 ### SOP 9.0 -- Package Assembly and Hygiene Sweep
 
 **When to run:** FIRST, immediately after the QC interlock is confirmed (score >= 8.5 in `working/qc/final_deck_qc.json`) and before any destination is resolved or touched. Nothing is uploaded from anywhere except this clean package directory.

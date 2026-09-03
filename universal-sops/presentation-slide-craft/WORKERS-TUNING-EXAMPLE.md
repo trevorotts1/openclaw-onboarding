@@ -5,10 +5,10 @@ section 3.4, "Recommended per-phase starting values."
 
 ## Status: documentation only, not live
 
-**As of v22.0.81, `PIPELINE-MANIFEST.json` declares NO `workers` field on any
+**As of manifest v61, `PIPELINE-MANIFEST.json` declares NO `workers` field on any
 of its declared phases — the phase count itself is never restated as a literal
 here; read it mechanically: `len(PIPELINE_MANIFEST["phases"])` (the count at
-this snapshot was 55, per §2.40's generated line in
+this snapshot was 62, per §2.40's generated line in
 `23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md`,
 which GATE 4 of `scripts/ci/presentations-drift-gates.sh` keeps honest).**
 Every phase resolves to the default (`1`), which is the

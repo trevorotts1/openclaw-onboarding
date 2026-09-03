@@ -23,7 +23,7 @@
     "  1. Generate current + previous keys (e.g. openssl rand -base64 32).",
     "  2. Write the record to the secrets store with a fresh key_id pair",
     "     (IDs are safe to log; key VALUES never are).",
-    "  3. Start signers (deck-intake-driver.py and its materialized",
+    "  3. Start signers (deck-intake-turngate.py and its materialized",
     "     role-library copy) - they pick up the CURRENT key automatically",
     "     and stamp its key_id + signed_at into every envelope. A signer",
     "     NEVER signs with the previous key.",

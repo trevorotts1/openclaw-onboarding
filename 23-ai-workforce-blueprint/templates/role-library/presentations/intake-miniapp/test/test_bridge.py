@@ -17,7 +17,7 @@ sys.path.insert(0, str(HERE.parent / "bridge"))
 
 import intake_bridge as br  # noqa: E402
 
-DRIVER = "/box/23-ai-workforce-blueprint/scripts/deck-intake-driver.py"
+DRIVER = "/box/23-ai-workforce-blueprint/scripts/deck-intake-turngate.py"
 RUN = "/box/runs/RUN1"
 
 

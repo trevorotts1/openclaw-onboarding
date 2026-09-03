@@ -238,10 +238,10 @@ full interview as normal - purely additive.
 - For every department, ask the one Healer-dependency question so the embedded Healer knows what to watch: "Are there any unusual outside tools, APIs, or services this department depends on that I should keep an eye on for breakages or version changes?" (example answer: "We rely on a niche scheduling API and a custom Zapier webhook.") This seeds the department Healer's model and external-dependency census.
 
 **DECK-INTAKE OVERRIDE (binding):** For the Presentations DECK-INTAKE interview specifically,
-`deck-intake-driver.py` is the authoritative pacing mechanism and supersedes model-discretion.
+`deck-intake-turngate.py` is the authoritative pacing mechanism and supersedes model-discretion.
 Do NOT emit deck-intake questions (representation_mix, audience_composition_note,
 grounded_content, visual_mix, dark_ok, hook_seed, plus scope fields) yourself. Run
-`deck-intake-driver.py --next --run-dir <RUN_DIR>` for each question. The driver enforces
+`deck-intake-turngate.py --next --run-dir <RUN_DIR>` for each question. The driver enforces
 canonical ordering, one-question-per-turn, answer validation, budget enforcement, and the
 block-gate precondition for `--complete`. The AI Workforce Blueprint workforce-build interview
 (this skill's main interview) keeps its existing dynamic question logic described above —

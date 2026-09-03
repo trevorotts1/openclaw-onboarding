@@ -114,6 +114,8 @@ Re-read the SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reprod
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 60, 59 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: adversarial review runs against the QC band -- copy `P1Q-COPY-QC` (4.2), prompt `P-PROMPT-QC` (4.8), image `P-IMAGE-QC` (4.95), aggregate `P-QC-AGGREGATE` (8.65) -- and the upsell QC `P-U-QC` (9.05).
+
 ### SOP 9.1 -- Adversarial Doctrine Review and Kill-List
 
 **When to run:** By default, every DA review runs AFTER Phase 1Q (copy QC passes) and BEFORE Phase 1A (owner approval) -- so the adversarial review sits on QC-approved copy, doctrine violations are caught before the owner spends attention, and findings can be addressed in copy before the owner approves and before any prompt is written. A post-delivery review (after Phase 6, on the final deck) remains OPTIONAL and is dispatched only when the Director explicitly requests it.
