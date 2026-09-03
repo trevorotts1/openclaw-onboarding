@@ -414,6 +414,6 @@ chatter introduced. No first-party-LLM model recommendation exists in this skill
 0 found, 0 introduced); GoHighLevel credential var names already canonical (`GOHIGHLEVEL_API_KEY` /
 `GOHIGHLEVEL_LOCATION_ID`).
 
-## [v13.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [13.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -279,6 +279,6 @@
   per AF-AW-* code with a generated `REJECTION-RESULTS.json`.
 - `verify.sh`: read-only, idempotent self-verify gate — green end-to-end.
 
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -249,7 +249,7 @@ AGENTS.md instead of only stamping the "applied" marker. Guarded by `tests/unit/
 
 ---
 
-## [v6.10.0] - 2026-06-27
+## [7.0.0] - 2026-06-27
 
 ### Deepened — acuff-miner-new-model-of-selling + miller-building-storybrand blueprints
 

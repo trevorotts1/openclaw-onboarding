@@ -80,6 +80,6 @@ All changes are scoped to `47-movie-producer/`.
 - **FIX-S36-43** — `install.sh` pins the OpenMontage clone to a verified upstream commit (`OPENMONTAGE_PINNED_SHA=ce11f6a…`, overridable via `OPENCLAW_OPENMONTAGE_SHA`); the `INSTRUCTIONS.md` pipeline table was regenerated from that pinned tree's real 13 `pipeline_defs/*.yaml` (removing the invented `script-to-video`/`explainer-video`/`brand-video`/`news-recap` entries). `SKILL.md` pipeline list + documentary-montage source list corrected to the pinned tree.
 - **FIX-S36-44** — `video_build_check.py` `run_postflight_gate`: the `final_mp4` deliverable is validated against the render receipt's specific `final_mp4_path` (falling back to `output_path`), excluding any path under `assets/` (raw stock footage), instead of a blind recursive `**/*.mp4` glob; the downstream handoff must be an EXACT enum token, not a substring. Fixtures updated; regression probes added.
 
-## [v15.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [15.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

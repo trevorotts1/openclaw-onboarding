@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.1.2] - July 21, 2026
+## [2.0.0] - July 21, 2026
 
 ### Fixed
 - **ONB-46-001 (BLOCKER) — the Kie recordInfo FALLBACK wrote a permanent `done`

@@ -498,6 +498,6 @@ Initial release.
 - Teach Yourself Protocol requirement
 - Error handling with 3 retries and Telegram > Email > Text notification chain
 
-## [v3.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [3.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

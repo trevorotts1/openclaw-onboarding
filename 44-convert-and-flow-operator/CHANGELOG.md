@@ -1,6 +1,6 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
-## [1.3.20] - 2026-09-03 — safe contact upsert policy: default upsert, verified writes, 18-behavior regression suite
+## [2.0.0] - 2026-09-03 — safe contact upsert policy: default upsert, verified writes, 18-behavior regression suite
 
 ### Changed
 - **Generic add/save now routes to `contacts upsert` (DEFAULT).** Upsert docstring

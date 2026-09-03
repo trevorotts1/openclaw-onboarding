@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.5.9] - July 21, 2026
+## [7.0.0] - July 21, 2026
 
 > Version note: `skill-version.txt` is this skill's authoritative marker (now
 > `v6.5.9`). The `v1.x` headings below are the historical wrapper series and are

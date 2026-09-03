@@ -19,6 +19,6 @@
 - tools/ghl_media.py: removed dead Skill-06 funnel code unused by this skill (`build_prompts_json`, `generate_images`, `kie_generate_path`, `image_tag`, `build_image_manifest` and their dead constants/imports); the media host (`upload_media`, `create_media_folder`, `resolve_location_pit`, `resolve_location_id`, `verify_png`) is unchanged.
 - INSTALL.md / DEPENDENCY-MANIFEST.md: canonicalized the documented location-id env var to `GOHIGHLEVEL_LOCATION_ID` (preferred) with the `GHL_LOCATION_ID` alias, matching the code's canonical-first resolution.
 
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

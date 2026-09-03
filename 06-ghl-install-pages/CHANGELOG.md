@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v22.0.89] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
+## [23.0.0] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
 
 ### Changed
 - **v2-autonomous-build-sop.md CRM proof step.** The `contacts create` test-record

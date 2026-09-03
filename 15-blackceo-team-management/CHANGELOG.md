@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.7.2] - 2026-07-17
+## [7.0.0] - 2026-07-17
 
 ### Fixed - PRIVACY (fleet no-client-names invariant)
 

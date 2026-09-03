@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v6.9.1] - 2026-09-03 — safe contact upsert policy: generic add/save defaults to upsert
+## [7.0.0] - 2026-09-03 — safe contact upsert policy: generic add/save defaults to upsert
 
 ### Changed
 - **Contact write decision table in INSTRUCTIONS.md.** Generic "add/save this

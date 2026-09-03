@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.7.0] - 2026-08-26 - Modernize KIE provider router, callback policy, and core wiring
+## [7.0.0] - 2026-08-26 - Modernize KIE provider router, callback policy, and core wiring
 
 ### Changed
 - Narrowed 07-kie-setup to canonical KIE provider/setup/router skill (credential management, generic Market API rules, dedicated API families, callback/polling policy, rate limits, retention).

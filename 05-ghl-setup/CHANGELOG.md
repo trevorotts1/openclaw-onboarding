@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.5.14] - 2026-09-03 — contact operations teach upsert-first (generic add/save defaults to upsert)
+## [7.0.0] - 2026-09-03 — contact operations teach upsert-first (generic add/save defaults to upsert)
 
 ### Changed
 - **INSTRUCTIONS.md + ghl-setup-full.md contact sections.** Generic add/save

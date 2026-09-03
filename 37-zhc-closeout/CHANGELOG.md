@@ -1,6 +1,6 @@
 # Changelog - Skill 37: ZHC Closeout
 
-## [1.3.6] - 2026-07-05 - v12.14.14: doc-vs-code drift correction — version literal, model slugs, stale "Known Issues: None" (Wave-2 FIX-XC-13b, W2-doc-37)
+## [13.0.0] - 2026-07-05 - v12.14.14: doc-vs-code drift correction — version literal, model slugs, stale "Known Issues: None" (Wave-2 FIX-XC-13b, W2-doc-37)
 
 - **FIX-XC-13b — SKILL.md taught a stale `1.0.0` version literal.** `SKILL.md`'s Files table hardcoded `skill-version.txt` as "Currently `1.0.0`" while the skill was actually shipping v12.14.13. Replaced the frozen literal with a source-of-truth pointer ("read `skill-version.txt` at runtime; never hardcode the version elsewhere"), so the doc can no longer drift from the version file (the FIX-XC-13 pattern). `INSTALL.md`'s Known-Issues heading also referenced "v1.0.0" — removed.
 - **FIX-XC-13b — wrong image model slug vs the scripts.** `SKILL.md` (Cost Envelope table + "Workforce-Structure Infographic" section) taught the Infographic-#2 primary model as `gemini-3-1-flash-image`. That slug returns HTTP 422 on KIE and is NOT what the code uses: `scripts/generate-infographics.sh:257` pins `PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"` (the same script's header comment records the v10.X.4 correction away from `gemini-3-1-flash-image`). Corrected both SKILL.md references to `nano-banana-2` (noting the marketing name `gemini-3-1-flash-image` is the non-working slug), matching the script.

@@ -1,6 +1,6 @@
 # Changelog — video-creator (Skill 25)
 
-## [6.6.1] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
+## [7.0.0] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
 
 ### Added
 - **Agnes Video 2.0 documented as an OPTIONAL alternative generator** in `SKILL.md`. KIE.ai (VEO)

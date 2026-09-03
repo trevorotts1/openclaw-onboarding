@@ -1,4 +1,4 @@
-## [1.11.1] - 2026-08-04 - fix: the pointer-stanza rewriter (v1.11.0) is now WIRED IN, and 9 qc gates check the LIVE box instead of the shipped source
+## [2.0.0] - 2026-08-04 - fix: the pointer-stanza rewriter (v1.11.0) is now WIRED IN, and 9 qc gates check the LIVE box instead of the shipped source
 
 v1.11.0 shipped `05-update-agents-md.sh` (the writer) but nothing in the
 automated pipeline ever CALLED it — it was a MANUAL INSTALL.md step-5 only.

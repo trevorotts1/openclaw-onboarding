@@ -1,4 +1,4 @@
-## [1.6.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
+## [2.0.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
 
 ### Why
 Two defects compounded. (1) The markers embedded the RUNTIME skill version and the

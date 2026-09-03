@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.0.0] - 2026-08-26 - feat: new KIE Image skill (Skill 66) — model selection, validation, async dispatch, and real visual QC for KIE.ai Market API image families
+## [2.0.0] - 2026-08-26 - feat: new KIE Image skill (Skill 66) — model selection, validation, async dispatch, and real visual QC for KIE.ai Market API image families
 
 ### Added
 - Initial release covering all 14 spec 7.2 image families on the KIE.ai Market

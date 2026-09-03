@@ -3,7 +3,7 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
-## [0.6.6] - 2026-08-26
+## [1.0.0] - 2026-08-26
 
 **What 0.6.5 got wrong about other people's decisions.** 0.6.5 shipped the idempotent
 cron reconciler, the installer verdict and `last_tick_ts`. This release corrects four

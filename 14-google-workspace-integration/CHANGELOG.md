@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v2.0.0] - March 19, 2026
+## [7.0.0] - March 19, 2026
 
 ### Changed
 - Replaced google-api.js and gog with Google Workspace CLI (gws).

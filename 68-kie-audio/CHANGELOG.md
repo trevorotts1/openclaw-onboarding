@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.0.0] - 2026-08-26
+## [2.0.0] - 2026-08-26
 
 ### Added
 - Initial release: KIE.ai audio skill (Skill 68) covering three sub-domains with

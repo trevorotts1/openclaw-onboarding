@@ -2,7 +2,7 @@
 
 All notable changes to this skill will be documented in this file.
 
-## [v7.3.0] - 2026-07-21 - SK1-31: the activator applies what the skill declares mandatory, writes atomically, and verifies instead of announcing
+## [8.0.0] - 2026-07-21 - SK1-31: the activator applies what the skill declares mandatory, writes atomically, and verifies instead of announcing
 
 - **T2-27 — the required Layer-8 settings were never applied.** SKILL.md:14
   states "ACTIVE MEMORY IS REQUIRED - Layer 8 (Active Memory) requires

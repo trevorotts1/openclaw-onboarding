@@ -1,6 +1,6 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
-## [1.3.1] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
+## [2.0.0] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
 
 `scripts/qc-no-personal-data.sh` exited 1 whenever the client roster was absent. The roster
 is gitignored by design (so no real client name ever enters the repo), so it is ALWAYS absent

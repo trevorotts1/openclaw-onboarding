@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.4.4] - 2026-09-03 — contact write routing: generic add/save defaults to upsert
+## [2.0.0] - 2026-09-03 — contact write routing: generic add/save defaults to upsert
 
 ### Changed
 - **CONTACT WRITE ROUTING policy in INSTRUCTIONS.md + CORE_UPDATES.md.** Generic

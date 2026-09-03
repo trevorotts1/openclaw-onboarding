@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.6.3] - July 21, 2026 (T0-25 / T0-26: install the pin, and prove the fill actually filled)
+## [7.0.0] - July 21, 2026 (T0-25 / T0-26: install the pin, and prove the fill actually filled)
 
 ### Fixed
 - **The documented install now reads the version pin and installs that exact version (T0-25).** `INSTALL.md` Step 2 ran a bare `npm install -g agent-browser`, with no reference to `agent-browser-cli.pin` and no step comparing the installed version to it — the pin was read only by `qc-agent-browser.sh` and the pin-bump script, never by the install procedure. On any day the registry default is not the pinned release, a fresh install silently placed an UNPROVEN release on the box while the documented procedure reported the installation good — and `qc-agent-browser.sh` then hard-FAILED that box for a version mismatch the install itself had introduced. Step 2 now reads the pin and installs `agent-browser@$AB_PIN`, refusing to fall back to an unpinned install if the pin file cannot be read, and a new Step 3b compares the installed version to the pin and says explicitly not to re-pin to whatever happens to be installed. This adds no new gate: the installed-vs-pin hard assertion already existed in `qc-agent-browser.sh`; landing fresh installs ON the pin strictly reduces the failures it reports.

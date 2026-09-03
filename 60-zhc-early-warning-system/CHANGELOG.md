@@ -3,7 +3,7 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
-## [0.1.7] - 2026-09-03
+## [1.0.0] - 2026-09-03
 
 Fixed a self-amplifying alert-storm bug: `route_finding()`'s "no operator alert
 target configured" branch (`ews_alert.py`) wrote a fresh, undeduped `S7`/`P2`

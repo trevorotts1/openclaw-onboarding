@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [1.2.0] - 2026-08-26 - feat: second approved model, deterministic model router, verified contracts
+## [2.0.0] - 2026-08-26 - feat: second approved model, deterministic model router, verified contracts
 
 ### Added
 - **`scripts/select_agnes_video_model.py`** — pure/offline deterministic model

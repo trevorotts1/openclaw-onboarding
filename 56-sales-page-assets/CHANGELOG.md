@@ -240,6 +240,6 @@ this skill's own directory (conflict-free merge).
   image-slice / main-8 / upsell-9 / high-ticket / bump / bundle provers, signed PROCESS-CERTIFICATE,
   and the Golden Momentum worked example with broken-variant rejections.
 
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
