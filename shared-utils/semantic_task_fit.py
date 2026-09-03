@@ -40,6 +40,30 @@ _TASK_EMBED_CACHE_MAX = max(1, int(os.environ.get("SEMANTIC_TASK_FIT_CACHE_MAX",
 _TASK_EMBED_CACHE: "OrderedDict[tuple, object]" = OrderedDict()
 _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
 
+# STAR-EMBED-01: negative-cache sentinel. Before this fix, the cache above
+# only ever stored a SUCCESSFUL embed (see the old `if task_vec is not None:
+# _task_cache_put(...)` guard) — a failed _embed_text() call (429 quota
+# exhausted, network error, malformed response, anything) was never cached,
+# so it was retried from scratch on every subsequent call for the SAME
+# (persona_id, task_text) funnel. semantic_task_fit() and
+# semantic_persona_ids() are both called once PER CANDIDATE PERSONA for one
+# task selection (persona-selector-v2.py's compute_layer_scores loop) with
+# the IDENTICAL task_text each time, so on a quota-exhausted account one
+# task selection turned 1 legitimate wasted embed attempt into N (N =
+# filtered candidate-pool size, observed up to several dozen on a live
+# client box) — every one of those N calls failing for the exact same
+# reason milliseconds apart. This sentinel lets the SAME cache remember a
+# failure too, so only the FIRST candidate in a given selection pays for
+# the failed call; every remaining candidate in that same pass falls
+# straight through to the keyword-overlap fallback. Scope is intentionally
+# narrow: this cache — sentinel included — lives only for this one process
+# (the module docstring's "process-per-selection" CLI lifetime), so the
+# VERY NEXT task selection (a fresh python3 invocation) always gets its own
+# fresh attempt. A real outage keeps degrading gracefully to keyword
+# scoring every time; it just stops being N-times more expensive than it
+# needs to be while doing so.
+_EMBED_FAILED = object()
+
 
 def _task_cache_get(key):
     """MRU read: return the cached vector for `key` (or None), marking it recent."""
@@ -307,11 +331,18 @@ def semantic_task_fit(
         db_path = _gemini_index_path(paths)
         if api_key and db_path.exists():
             cache_key = ("task", task_text)
-            task_vec = _task_cache_get(cache_key)
-            if task_vec is None:
-                task_vec = _embed_text(task_text, api_key)
-                if task_vec is not None:
-                    _task_cache_put(cache_key, task_vec)
+            cached = _task_cache_get(cache_key)
+            if cached is None:
+                # First attempt THIS PROCESS has made for this exact
+                # task_text — try it, and cache whichever outcome we get
+                # (a real vector OR the failure sentinel) so every other
+                # candidate persona scored against this same task_text in
+                # this same selection reuses the outcome instead of
+                # re-hitting the API (STAR-EMBED-01).
+                embedded = _embed_text(task_text, api_key)
+                cached = embedded if embedded is not None else _EMBED_FAILED
+                _task_cache_put(cache_key, cached)
+            task_vec = cached if cached is not _EMBED_FAILED else None
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(persona_id, db_path)
                 if persona_vec is not None:
@@ -367,14 +398,18 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     if not api_key or not db_path.exists():
         return None
 
-    # Shared task embedding — SAME cache key semantic_task_fit() uses.
+    # Shared task embedding — SAME cache key semantic_task_fit() uses, so a
+    # failure recorded by either function short-circuits the other for the
+    # rest of this process (STAR-EMBED-01 — see _EMBED_FAILED above).
     cache_key = ("task", task_text)
-    task_vec = _task_cache_get(cache_key)
-    if task_vec is None:
-        task_vec = _embed_text(task_text, api_key)
-        if task_vec is None:
-            return None
-        _task_cache_put(cache_key, task_vec)
+    cached = _task_cache_get(cache_key)
+    if cached is None:
+        embedded = _embed_text(task_text, api_key)
+        cached = embedded if embedded is not None else _EMBED_FAILED
+        _task_cache_put(cache_key, cached)
+    if cached is _EMBED_FAILED:
+        return None
+    task_vec = cached
 
     try:
         import numpy as np
