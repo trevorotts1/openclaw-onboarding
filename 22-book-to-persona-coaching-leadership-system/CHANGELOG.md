@@ -249,7 +249,7 @@ AGENTS.md instead of only stamping the "applied" marker. Guarded by `tests/unit/
 
 ---
 
-## [v6.10.0] - 2026-06-27
+## [7.0.0] - 2026-06-27
 
 ### Deepened — acuff-miner-new-model-of-selling + miller-building-storybrand blueprints
 
@@ -487,3 +487,7 @@ pipeline before the Phase 3 persona-blueprint is assembled.
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 - Fixed duplicate step numbering and added a pipeline execution test step to validate Phase 1, Phase 2, Phase 3 readiness.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

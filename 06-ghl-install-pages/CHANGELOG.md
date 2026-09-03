@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v22.0.89] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
+## [23.0.0] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
 
 ### Changed
 - **v2-autonomous-build-sop.md CRM proof step.** The `contacts create` test-record
@@ -1534,3 +1534,7 @@ This change adds two primitives to `ghl_rest_canvas.py` that close the gap:
 - Updated `enforced_in` to list both `tools/inject-ghl-auth.sh` (shell side) and
   `tools/browser_manager.py assert_agent_browser_version()` (Python side), and
   updated `_doc` to reflect that both enforce the pin.
+
+## [v23.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.5.14] - 2026-09-03 — contact operations teach upsert-first (generic add/save defaults to upsert)
+## [7.0.0] - 2026-09-03 — contact operations teach upsert-first (generic add/save defaults to upsert)
 
 ### Changed
 - **INSTRUCTIONS.md + ghl-setup-full.md contact sections.** Generic add/save
@@ -94,3 +94,6 @@ All notable changes to this skill wrapper are documented here.
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -1,6 +1,6 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
-## [v1.3.4] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
+## [2.0.0] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
 
 ### Why
 `prompt-bands.json` (P3-05, v1.3.3) listed `nano-banana-2` as a `text_bearing_long` endpoint and
@@ -242,3 +242,7 @@ the routing rule could never both be satisfied as written.
 ---
 
 ## End of Skill 45 CHANGELOG
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

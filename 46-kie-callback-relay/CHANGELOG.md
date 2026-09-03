@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.1.2] - July 21, 2026
+## [2.0.0] - July 21, 2026
 
 ### Fixed
 - **ONB-46-001 (BLOCKER) — the Kie recordInfo FALLBACK wrote a permanent `done`
@@ -91,3 +91,7 @@ the tests up to the same contract, and adds per-client credential derivation.
 
 - Initial centralized Cloudflare Worker + KV-pull architecture (Candidate B,
   transport B2), with the 2026-06-14 security-hardening pass in `worker/src/index.js`.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

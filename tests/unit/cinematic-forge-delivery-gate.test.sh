@@ -226,7 +226,7 @@ echo "--- MUTATION: revert CORE_UPDATES.md to unprefixed path, verify T2-30 catc
 MUT_FILE="$SKILL/CORE_UPDATES.md"
 CORE_BACKUP="$(mktemp)"
 cp "$MUT_FILE" "$CORE_BACKUP"
-sed -i '' 's|skills/28-cinematic-forge|skills/cinematic-forge|g' "$MUT_FILE" 2>/dev/null
+if sed --version >/dev/null 2>&1; then sed -i 's|skills/28-cinematic-forge|skills/cinematic-forge|g' "$MUT_FILE"; else sed -i '' 's|skills/28-cinematic-forge|skills/cinematic-forge|g' "$MUT_FILE"; fi
 grep -q "skills/cinematic-forge[^.]" "$MUT_FILE" && pass "MUTATION: unprefixed path reintroduced (RED expected)" || fail "MUTATION: sed did not produce an unprefixed path"
 cp "$CORE_BACKUP" "$MUT_FILE"
 rm -f "$CORE_BACKUP"

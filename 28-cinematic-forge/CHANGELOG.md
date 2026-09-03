@@ -68,3 +68,7 @@ CI: `.github/workflows/cinematic-forge-delivery-guard.yml`.
 - VPS-awareness: SKILL.md Phase 0 resolves SECRETS_ENV / OUTPUT_ROOT / SKILL_DIR by detecting `/data/.openclaw`; `qc-cinematic-forge.sh` fallback resolver is now VPS-aware and adds `set -o pipefail`; INSTALL.md and QC.md reference the VPS secrets path.
 - Canonicalized GoHighLevel credential names away from the drifted `GHL_API_KEY` / `GHL_LOCATION_ID` to `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` across SKILL.md and QC.md; removed an operator-name reference from QC.md.
 - Anthropic scrub: removed the external `summarize`-tool Anthropic credential option from the key lists (kept `GEMINI_API_KEY` / `OPENAI_API_KEY`, which keep the tool working) in SKILL.md and QC.md; minimally removed the two stale Anthropic client-model recommendations (vision line + executor line) from the `cinematic-forge.skill` bundle and repacked it. The existing "never Anthropic" / "BANNED: Anthropic" vision and executor guidance was left intact.
+
+## [7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

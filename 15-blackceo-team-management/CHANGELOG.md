@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.7.2] - 2026-07-17
+## [7.0.0] - 2026-07-17
 
 ### Fixed - PRIVACY (fleet no-client-names invariant)
 
@@ -60,3 +60,7 @@ Added 5 HARD auto-fail gates that fail QC if:
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 - Fixed isolation rules: context/data isolation only. Communication is allowed when explicitly directed. Removed communication lockdown interpretation.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

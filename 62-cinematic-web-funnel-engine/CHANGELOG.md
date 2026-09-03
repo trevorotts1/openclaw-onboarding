@@ -226,3 +226,7 @@ found (spec §2.2 lists the qualifying gap conditions; none apply). Build unit U
 (independent QC) and any separately-justified Command Center enhancement (U25 per
 the checklist's item 25, deferred unless a future unit proves a real gap) are not
 part of this entry.
+
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
