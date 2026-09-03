@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v22.0.89] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
+
+### Changed
+- **v2-autonomous-build-sop.md CRM proof step.** The `contacts create` test-record
+  call is now marked as an explicitly requested NEW test record, matching the
+  upsert-default policy (generic add/save → upsert; create → explicit new only).
+
 ## [v21.4.54] - 2026-08-01 - docs: document preview-URL 301 redirect host discovery
 
 ### Added

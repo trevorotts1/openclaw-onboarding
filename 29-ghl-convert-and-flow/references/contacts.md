@@ -20,6 +20,19 @@
 
 ### Module: contacts
 
+> **CONTACT WRITE ROUTING (binding).** Generic "add/save this person" is NOT a
+> create — route to **POST /contacts/upsert** with match keys (email and/or
+> phone). **POST /contacts/** is for an explicitly requested NEW record only.
+> Known contactId: GET /contacts/{contactId} first, then PUT only supplied
+> fields. Send ONLY supplied fields plus locationId — never empty/null/blank
+> values. NEVER put a `tags` array in an upsert or update body — tag additions
+> go through **POST /contacts/{contactId}/tags** (additive). Verify every write:
+> capture the returned contact ID, GET /contacts/{contactId}, confirm intended
+> fields; a succeeded write with a failed read-back is "WRITE SUCCEEDED —
+> VERIFICATION INCOMPLETE" — never re-fire the write to check. ("Contact
+> Created" workflow triggers below are event names, not write instructions —
+> they stay as-is.)
+
 #### GET /contacts/ - Get Contacts
 - Description: Get Contacts   **Note:** This API endpoint is deprecated. Please use the [Search Contacts](https://highlevel.stoplight.io/docs/integrations/dbe4f3a00a106-search-contacts) endpoint instead.
 - Security: bearer
@@ -46,6 +59,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/ - Create Contact
+- **Explicit NEW record ONLY** — use solely when the owner explicitly asked for a new contact even if a match exists. Generic add/save routes to POST /contacts/upsert above.
 - Description: Please find the list of acceptable values for the `country` field  <a href="https://highlevel.stoplight.io/docs/integrations/ZG9jOjI4MzUzNDIy-country-list" target="_blank">here</a>
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -200,6 +214,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/search/duplica
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/upsert - Upsert Contact
+- **DEFAULT for generic add/save.** HighLevel's Upsert endpoint resolves whether to create or update according to the Location-level Allow Duplicate Contact configuration and its configured matching priority. Pass email and/or phone as match keys plus ONLY the fields the owner supplied (plus locationId). Omit createNewIfDuplicateAllowed unless the owner explicitly asked for a new record even if a match exists. Do NOT send a `tags` array here — apply tags afterwards via POST /contacts/{contactId}/tags. Always read the record back after the write.
 - Description: Please find the list of acceptable values for the `country` field  <a href="https://highlevel.stoplight.io/docs/integrations/ZG9jOjI4MzUzNDIy-country-list" target="_blank">here</a><br/><br/>The Upsert API will adhere to the configuration defined under the “Allow Duplicate Contact” setting at the Location level. If the setting is configured to check
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
