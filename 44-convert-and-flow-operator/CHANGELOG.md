@@ -1,5 +1,16 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.19] - 2026-09-03 — WF-22: email-send-integrity gates as real source content (version bump for CI G3)
+
+### Fixed
+- **WF-22 email body non-empty + >=200 rendered chars** (`qc-built-workflow.sh`): any email-type
+  action node whose body/html renders to no text is a blank send — caught after ~3,000 emails
+  shipped with a subject and an EMPTY BODY and still passed QC. WF-12 covered SMS From-numbers;
+  NOTHING covered email bodies until now. Unparseable export JSON falls back to a text grep for
+  literally-empty body/html values, then to a human-QC record.
+- **`gohighlevel_cli.py` contacts merge-safety**: WF-22 send-integrity gates (fail-closed email
+  bodies, merge-safe contacts).
+
 ## [1.3.18] - 2026-08-17 — `workflows build`: idempotent folder/workflow creation, install/import fixes, quiet stderr
 
 ### Fixed
