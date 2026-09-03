@@ -105,3 +105,64 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   frontmatter bumped 0.1.4 -> 0.1.5 in this same commit (the prior merge to main
   landed the `install.sh` fix without the version bump, tripping the repo's G3
   skill-content-change gate; this closes that gap).
+
+- **Unit 7 - cron registration is now declaration-keyed, closing the
+  N-duplicate-tick defect** (version 0.1.7) - `install.sh` registered its tick
+  (and, on the operator box, the aggregator) via plain `openclaw cron add
+  --name/--cron/--command`, with NO dedupe-by-name guard - the CLI itself has
+  none. Every install/repair/fleet-skills-roll run therefore created ANOTHER
+  identical registration under the same name, schedule, and command; a live box
+  was found carrying NINE copies of the same tick, each firing every 15
+  minutes (9x the intended wall time and load). FIX: both `cron add` calls now
+  pass `--declaration-key` (verified against the installed OpenClaw CLI's own
+  `cron add --help`, which documents it as an "Idempotent declaration identity
+  key" and implements add-or-converge semantics in the gateway's `cron.add`
+  handler - it updates the one existing job in place if anything differs,
+  no-ops if nothing changed, and creates exactly one job the first time), so
+  re-running the installer any number of times now always converges to ONE job
+  per key. A new `dedupe_legacy_cron_dupes()` runs before each registration
+  and separately cleans up registrations made BEFORE this fix existed (which
+  the declaration key alone cannot retroactively adopt, since it only matches
+  jobs that already carry it): it lists existing jobs, and only when 2+ share
+  the exact name + command + schedule with no declaration key (proven
+  duplication - a box with a single, ordinary, never-duplicated legacy
+  registration is left untouched) does it DISABLE all of them (never delete -
+  fully reversible via `openclaw cron list --all` / re-enable), logging every
+  id + creation time; the declaration-keyed registration immediately following
+  becomes the one enabled survivor. Self-test: 5 -> 10 cases. The two new
+  cases beyond the direct dedupe checks are a static extension of the existing
+  cron-flag guard (every `cron add` invocation must carry
+  `--declaration-key`, reconstructed across `\` continuations exactly like the
+  existing `--schedule`/`--cron` check) and a dynamic suite against a fake
+  `openclaw` CLI (a tiny JSON-file cron store backing `cron add/list/disable`)
+  proving: fresh install registers exactly one cron; running install.sh TWICE
+  still leaves exactly one (the regression guard); an existing registration
+  whose command/schedule drifted is converged back in place rather than
+  duplicated; 3 seeded legacy duplicates are all disabled (never deleted) with
+  exactly one declaration-keyed survivor left enabled; and a lone
+  (non-duplicated) legacy registration is left completely untouched (no false
+  positives). Mutation-proven twice: (1) deleting `--declaration-key` from a
+  real invocation is caught by the static guard; (2) disabling the fake CLI's
+  own declaration-key match logic (simulating a CLI that accepts the flag but
+  never dedupes) passes "fresh install" but correctly fails "run install.sh
+  TWICE" with 2 crons registered - proving that check is a real functional
+  guard, not a restatement of the static one. `skill-version.txt` + SKILL.md
+  frontmatter bumped 0.1.6 -> 0.1.7 in this same commit.
+
+  Fleet-wide audit (same investigation): every other `openclaw cron add`
+  registrar in this repo already guards against duplication via
+  `shared-utils/cron-lib.sh`'s `oc_cron_present()` (an exact JSON name-match
+  presence check called BEFORE registering - built after the documented "6x
+  duplicate cron" incidents in Skill 38/39 and the FIX-XC-08a incident in
+  Skill 37) or an equivalent local copy of that same check (the four
+  `06-ghl-install-pages/scripts/install-*-cron.sh` installers,
+  `35-social-media-planner/scripts/register-weekly-cron.sh`). Skill 60's
+  `install.sh` was the one remaining registrar with no guard of any kind - not
+  even the older list-then-check idiom. `59-anthology-engine/scripts/
+  provision-anthology-client.sh` was also found still passing the
+  non-existent `--schedule` flag (the exact defect class this skill fixed in
+  itself back in 0.1.4/0.1.5) - a silent zero-registration bug, not a
+  duplication bug, and out of scope for this unit; flagged for its own owner.
+  No other repo file was changed - fixing those sites, or building a shared
+  `--declaration-key` helper for them, is a separate, explicitly-scoped
+  follow-up (touches more than a handful of skills).
