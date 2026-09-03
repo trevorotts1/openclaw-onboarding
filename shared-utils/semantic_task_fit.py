@@ -40,6 +40,62 @@ _TASK_EMBED_CACHE_MAX = max(1, int(os.environ.get("SEMANTIC_TASK_FIT_CACHE_MAX",
 _TASK_EMBED_CACHE: "OrderedDict[tuple, object]" = OrderedDict()
 _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
 
+# EMBED-FAIL-CACHE: process-local latch. True once an embed call has failed
+# for a reason that will not resolve itself by simply retrying within this
+# process (quota/billing exhaustion, auth rejection). semantic_task_fit() is
+# called ONCE PER CANDIDATE PERSONA in the same selection loop (8-15 calls
+# for one selection) — the task-embedding cache above only ever records a
+# SUCCESS, so a quota/billing failure on candidate #1 was previously
+# re-attempted, identically, on every remaining candidate: one wasted API
+# call amplified into 8-15. This flag is checked before every subsequent
+# _embed_text() call so the FIRST such failure short-circuits the rest of
+# the loop straight to the existing keyword-overlap fallback.
+#
+# Process-local by design (no on-disk state): the selector is a short-lived
+# spawned process, so there is nothing to persist and nothing to expire —
+# the next invocation starts with a clean flag. A genuinely transient
+# failure (network blip, 500, timeout) does NOT set this, since those can
+# clear between one candidate and the next; see _is_permanent_embedding_failure().
+_EMBEDDING_UNAVAILABLE = False
+_EMBEDDING_UNAVAILABLE_REASON = ""
+
+
+def _is_permanent_embedding_failure(exc: Exception) -> bool:
+    """
+    Classify an embed-call exception as permanent-ish (latch embeddings off
+    for the rest of this process) vs genuinely transient (worth retrying on
+    the very next call).
+
+    Permanent-ish:
+      - credential/auth rejection (401/403/API key/permission/unauthenticated)
+        — delegates to embedding_engine.is_credential_error() so query-time
+        (here) and index-time credential failures are classified from ONE
+        place, per that function's own contract.
+      - quota / billing exhaustion (429, RESOURCE_EXHAUSTED, "prepayment
+        credits are depleted") — a billing wall does not clear itself
+        mid-process; every remaining candidate in this selection would hit
+        the identical doomed call.
+
+    Transient (must NOT latch):
+      - network blips, 5xx, generic timeouts. These can clear between one
+        candidate and the next, so permanently disabling embeddings for the
+        rest of the process on one blip would be its own regression.
+    """
+    try:
+        import sys as _sys, os as _os
+        _su = _os.path.dirname(__file__)
+        if _su not in _sys.path:
+            _sys.path.insert(0, _su)
+        from embedding_engine import is_credential_error
+        if is_credential_error(exc):
+            return True
+    except Exception:
+        pass
+    msg = str(exc).lower()
+    return ("429" in msg or "quota" in msg or "resource_exhausted" in msg
+            or "prepayment" in msg or "credits are depleted" in msg
+            or "insufficient_quota" in msg)
+
 
 def _task_cache_get(key):
     """MRU read: return the cached vector for `key` (or None), marking it recent."""
@@ -145,6 +201,16 @@ def _embed_text(text: str, api_key: str):
         return np.array(response.embeddings[0].values, dtype="float32")
     except Exception as e:
         print(f"[semantic_task_fit] embed failed: {e}", file=sys.stderr)
+        if _is_permanent_embedding_failure(e):
+            global _EMBEDDING_UNAVAILABLE, _EMBEDDING_UNAVAILABLE_REASON
+            _EMBEDDING_UNAVAILABLE = True
+            _EMBEDDING_UNAVAILABLE_REASON = str(e)[:200]
+            print(
+                "[semantic_task_fit] embedding marked UNAVAILABLE for the rest of "
+                "this process (quota/billing/auth exhaustion) — remaining "
+                "candidates in this selection fall back to keyword overlap.",
+                file=sys.stderr,
+            )
         return None
 
 
@@ -301,8 +367,9 @@ def semantic_task_fit(
       2. Keyword overlap with persona id + blueprint summary
       3. Neutral 0.6
     """
-    # Step 1: try Gemini semantic embedding
-    if _try_import_genai():
+    # Step 1: try Gemini semantic embedding (skipped once _EMBEDDING_UNAVAILABLE
+    # has latched — see the EMBED-FAIL-CACHE block near the top of this module)
+    if _try_import_genai() and not _EMBEDDING_UNAVAILABLE:
         api_key = _get_google_api_key(paths)
         db_path = _gemini_index_path(paths)
         if api_key and db_path.exists():
@@ -360,7 +427,7 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     unavailable, so the caller falls back to the subprocess / keyword path
     (never-to-zero).
     """
-    if not _try_import_genai():
+    if not _try_import_genai() or _EMBEDDING_UNAVAILABLE:
         return None
     api_key = _get_google_api_key(paths)
     db_path = _gemini_index_path(paths)

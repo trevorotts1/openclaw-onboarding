@@ -39,6 +39,103 @@ done
 
 py() { python3 "$SCRIPTS/$1" "${@:2}"; }
 
+# ---------------------------------------------------------------------------
+# dedupe_legacy_cron_dupes NAME COMMAND CRON_EXPR
+#
+# ROOT CAUSE OF "N IDENTICAL TICK CRONS" (fixed 2026-09-03): before this fix,
+# `openclaw cron add` was called with plain --name/--cron/--command and NO
+# declaration key, and `openclaw cron add` has no dedupe-by-name guard of its
+# own - every install/repair/fleet-roll run created ANOTHER identical
+# registration. One box carried NINE live "ews-tick-<box>" jobs, each firing
+# every 15 minutes. Those pre-existing duplicates predate this fix and are
+# NOT self-healing - the new declaration-keyed `cron add` below only
+# recognizes jobs that already carry ITS OWN declaration key, so it always
+# creates a fresh job the first time it runs on a box, leaving any legacy
+# duplicates in place unless something disables them.
+#
+# This function is that something. It runs BEFORE the declaration-keyed
+# `cron add` and only ever acts on PROVEN duplication: it lists existing
+# jobs, keeps only those matching this exact name + command + schedule that
+# carry NO declaration key (a job this installer already converged always has
+# one, so it is never a candidate here), and does nothing at all unless 2 or
+# more such jobs exist - a box with a single, ordinary, never-duplicated
+# legacy registration is left completely untouched.
+#
+# When duplication IS found, every matching legacy job is DISABLED (never
+# deleted - fully reversible, fully inspectable via `openclaw cron list
+# --all`) and logged by id + creation time. All of them, including the
+# oldest, are disabled: the declaration-keyed `cron add` immediately
+# following this call is what becomes the one enabled, going-forward survivor
+# - leaving the oldest duplicate enabled alongside it would just make it a
+# second, permanently-duplicated active tick, not a fix. Nothing here can
+# fail the install: any error (openclaw missing, list fails, bad JSON,
+# disable fails) is logged and swallowed - only the registration call itself
+# can flip CRON_FAILURES.
+# ---------------------------------------------------------------------------
+dedupe_legacy_cron_dupes() {
+    local name="$1" command="$2" cron_expr="$3"
+    command -v openclaw >/dev/null 2>&1 || return 0
+    local listfile
+    listfile="$(mktemp 2>/dev/null)" || return 0
+    if ! openclaw cron list --all --json >"$listfile" 2>/dev/null; then
+        echo "$TAG (dedupe skipped: 'openclaw cron list' failed)"
+        rm -f "$listfile"
+        return 0
+    fi
+    python3 - "$listfile" "$name" "$command" "$cron_expr" "$TAG" <<'PY'
+import json, subprocess, sys
+listfile, name, command, cron_expr, tag = sys.argv[1:6]
+try:
+    with open(listfile) as fh:
+        data = json.load(fh)
+except Exception as e:
+    print(f"{tag} (dedupe skipped: could not parse cron list JSON: {e})")
+    sys.exit(0)
+jobs = data.get("jobs") if isinstance(data, dict) else data
+if not isinstance(jobs, list):
+    sys.exit(0)
+
+def is_legacy_dupe(job):
+    if not isinstance(job, dict) or job.get("name") != name:
+        return False
+    if job.get("declarationKey"):
+        return False  # already converged under a declaration key - not a legacy dupe
+    payload = job.get("payload") or {}
+    argv = payload.get("argv") or []
+    if payload.get("kind") != "command" or not argv or argv[-1] != command:
+        return False
+    schedule = job.get("schedule") or {}
+    return schedule.get("expr") == cron_expr
+
+dupes = [j for j in jobs if is_legacy_dupe(j)]
+if len(dupes) < 2:
+    sys.exit(0)  # no proven duplication - leave a lone legacy registration alone
+
+def created_rank(j):
+    v = j.get("createdAtMs")
+    return (v if isinstance(v, (int, float)) else float("inf"), str(j.get("id")))
+
+dupes.sort(key=created_rank)
+oldest = dupes[0]
+print(f"{tag} found {len(dupes)} legacy duplicate registration(s) of '{name}' with no "
+      f"declaration key (oldest id={oldest.get('id')} created={oldest.get('createdAtMs')}); "
+      f"disabling all {len(dupes)} - the declaration-keyed registration below becomes the "
+      f"one enabled survivor:")
+for j in dupes:
+    jid = j.get("id")
+    if not jid:
+        continue
+    r = subprocess.run(["openclaw", "cron", "disable", jid], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"{tag}   disabled id={jid} created={j.get('createdAtMs')}")
+    else:
+        err = ((r.stderr or r.stdout or "").strip().splitlines() or ["unknown error"])[0]
+        print(f"{tag}   WARN: could not disable duplicate id={jid}: {err}")
+PY
+    rm -f "$listfile"
+    return 0
+}
+
 do_install() {
     echo "$TAG preflight..."
     bash "$SELF_DIR/preflight.sh" --check || return $?
@@ -78,24 +175,53 @@ PY
     # a guard that is silently dead is worse than no guard, and it is the exact
     # failure class EWS exists to catch. A cron that does not register is an
     # INSTALL FAILURE, not a warning.
+    #
+    # ROOT CAUSE OF "N IDENTICAL TICK CRONS" (fixed 2026-09-03): `openclaw cron
+    # add` has no dedupe-by-name guard, so every install/repair/fleet-roll run
+    # created ANOTHER identical registration under the same name, schedule, and
+    # command — one box was found carrying NINE live copies of the same tick.
+    # FIX: pass `--declaration-key` on every `cron add` call. The CLI's own
+    # add-or-converge path matches on that key first: it updates the ONE
+    # existing job in place if anything differs, no-ops if nothing changed, and
+    # creates exactly one job the first time — so re-running this installer any
+    # number of times now always converges to ONE job per declaration key; it
+    # never adds a second. `dedupe_legacy_cron_dupes` (above) separately
+    # disables any PRE-EXISTING duplicates from before this fix existed — see
+    # its header for why those need a distinct, conservative cleanup pass.
     CRON_FAILURES=0
     CRON_FAILED_NAMES=""
     if [ "$NO_CRON" -eq 0 ] && command -v openclaw >/dev/null 2>&1; then
-        echo "$TAG registering the 15-minute tick cron (--no-deliver, operator-only)..."
-        if openclaw cron add --name "ews-tick-${BOX}" --cron "*/15 * * * *" --no-deliver \
-                --command "bash $SELF_DIR/ews-entry.sh tick" >/dev/null 2>&1; then
-            echo "$TAG tick cron registered"
+        TICK_NAME="ews-tick-${BOX}"
+        TICK_DECL="skill60-ews-tick-${BOX}"
+        TICK_CRON_EXPR="*/15 * * * *"
+        TICK_COMMAND="bash $SELF_DIR/ews-entry.sh tick"
+
+        dedupe_legacy_cron_dupes "$TICK_NAME" "$TICK_COMMAND" "$TICK_CRON_EXPR"
+
+        echo "$TAG registering the 15-minute tick cron (--no-deliver, operator-only, declaration-keyed)..."
+        if openclaw cron add --name "$TICK_NAME" --cron "$TICK_CRON_EXPR" --no-deliver \
+                --declaration-key "$TICK_DECL" \
+                --command "$TICK_COMMAND" >/dev/null 2>&1; then
+            echo "$TAG tick cron registered (converged — no duplicate)"
         else
-            echo "$TAG ERROR: 'openclaw cron add' FAILED for ews-tick-${BOX}" >&2
-            CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}ews-tick-${BOX} "
+            echo "$TAG ERROR: 'openclaw cron add' FAILED for ${TICK_NAME}" >&2
+            CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}${TICK_NAME} "
         fi
         if [ "$ROLE" = "operator" ]; then
-            if openclaw cron add --name "ews-aggregator" --cron "0 * * * *" --no-deliver \
-                    --command "bash $SELF_DIR/ews-entry.sh fleet cycle" >/dev/null 2>&1; then
-                echo "$TAG aggregator cron registered (operator box)"
+            AGG_NAME="ews-aggregator"
+            AGG_DECL="skill60-ews-aggregator"
+            AGG_CRON_EXPR="0 * * * *"
+            AGG_COMMAND="bash $SELF_DIR/ews-entry.sh fleet cycle"
+
+            dedupe_legacy_cron_dupes "$AGG_NAME" "$AGG_COMMAND" "$AGG_CRON_EXPR"
+
+            if openclaw cron add --name "$AGG_NAME" --cron "$AGG_CRON_EXPR" --no-deliver \
+                    --declaration-key "$AGG_DECL" \
+                    --command "$AGG_COMMAND" >/dev/null 2>&1; then
+                echo "$TAG aggregator cron registered (operator box, converged — no duplicate)"
             else
-                echo "$TAG ERROR: 'openclaw cron add' FAILED for ews-aggregator" >&2
-                CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}ews-aggregator "
+                echo "$TAG ERROR: 'openclaw cron add' FAILED for ${AGG_NAME}" >&2
+                CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}${AGG_NAME} "
             fi
         fi
     else
@@ -123,7 +249,7 @@ PY
         echo "$TAG is ever checked and no alert can ever be raised. This exits" >&2
         echo "$TAG NON-ZERO on purpose: a silently dead guard is worse than none." >&2
         echo "$TAG Re-run the failing command by hand to see the real error:" >&2
-        echo "$TAG   openclaw cron add --name ews-tick-${BOX} --cron '*/15 * * * *' --no-deliver --command 'bash $SELF_DIR/ews-entry.sh tick'" >&2
+        echo "$TAG   openclaw cron add --name ews-tick-${BOX} --cron '*/15 * * * *' --declaration-key skill60-ews-tick-${BOX} --no-deliver --command 'bash $SELF_DIR/ews-entry.sh tick'" >&2
         echo "$TAG ============================================================" >&2
         return $EX_ERR
     fi
@@ -193,7 +319,15 @@ missing = [l.strip()[:120] for l in calls if not re.search(r"(?<![\w-])--cron\b"
 if missing:
     print("FAIL\tinvocation(s) pass NO --cron flag: " + " || ".join(missing))
     raise SystemExit(0)
-print(f"OK\t{len(calls)} invocation(s) checked as whole logical lines; all pass --cron, none pass --schedule")
+# ROOT CAUSE OF "N IDENTICAL TICK CRONS" (fixed 2026-09-03): `openclaw cron add`
+# has no dedupe-by-name guard, so an invocation missing --declaration-key
+# creates a fresh duplicate registration on every run. Every real invocation
+# must declare one so the CLI's own add-or-converge path applies.
+undeclared = [l.strip()[:120] for l in calls if not re.search(r"(?<![\w-])--declaration-key\b", l)]
+if undeclared:
+    print("FAIL\tinvocation(s) pass NO --declaration-key flag (will duplicate on every re-run): " + " || ".join(undeclared))
+    raise SystemExit(0)
+print(f"OK\t{len(calls)} invocation(s) checked as whole logical lines; all pass --cron and --declaration-key, none pass --schedule")
 PY
 )"
     case "$cron_check" in
@@ -230,6 +364,226 @@ PY
     fi
     echo "  cron-skip case: PASS (--no-cron still exits 0; only a real failure fails)"
     rm -rf "$td2"
+
+    # cron-DEDUPE cases: a fake `openclaw` backed by a tiny JSON cron store that
+    # honors --declaration-key add-or-converge, `cron list --all --json`, and
+    # `cron disable <id>` — just enough of the real CLI contract to prove the
+    # regression this fix exists to close, without touching any real cron store.
+    write_fake_cron_bin() {
+        local dir="$1"
+        mkdir -p "$dir"
+        cat > "$dir/openclaw" <<'FAKECRON'
+#!/usr/bin/env python3
+"""Fake `openclaw` for install.sh self-test only. Backs `cron add/list/disable`
+with a JSON file at $FAKE_CRON_STORE, mirroring the real CLI's declaration-key
+add-or-converge contract closely enough to prove install.sh's dedupe behavior."""
+import json, os, sys
+
+store_path = os.environ["FAKE_CRON_STORE"]
+
+def load():
+    if os.path.exists(store_path):
+        with open(store_path) as fh:
+            return json.load(fh)
+    return {"jobs": [], "_seq": 0}
+
+def save(store):
+    with open(store_path, "w") as fh:
+        json.dump(store, fh)
+
+def parse_flags(argv):
+    flags, i = {}, 0
+    while i < len(argv):
+        a = argv[i]
+        if a.startswith("--"):
+            key = a[2:]
+            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                flags[key] = argv[i + 1]; i += 2
+            else:
+                flags[key] = True; i += 1
+        else:
+            i += 1
+    return flags
+
+def cmd_add(argv):
+    flags = parse_flags(argv)
+    name, cron_expr, command = flags.get("name"), flags.get("cron"), flags.get("command")
+    decl = flags.get("declaration-key")
+    store = load()
+    jobs = store.setdefault("jobs", [])
+    if decl:
+        match = next((j for j in jobs if j.get("declarationKey") == decl), None)
+        if match:
+            match["name"] = name
+            match["schedule"] = {"kind": "cron", "expr": cron_expr}
+            match["payload"] = {"kind": "command", "argv": ["sh", "-lc", command]}
+            save(store); return 0
+    store["_seq"] = store.get("_seq", 0) + 1
+    job = {
+        "id": f"job-{store['_seq']}", "name": name, "enabled": True,
+        "createdAtMs": store["_seq"],
+        "schedule": {"kind": "cron", "expr": cron_expr},
+        "payload": {"kind": "command", "argv": ["sh", "-lc", command]},
+    }
+    if decl:
+        job["declarationKey"] = decl
+    jobs.append(job); save(store); return 0
+
+def cmd_list(argv):
+    print(json.dumps({"jobs": load().get("jobs", [])})); return 0
+
+def cmd_disable(argv):
+    if not argv:
+        print("missing job id", file=sys.stderr); return 1
+    jid = argv[0]; store = load()
+    for j in store.get("jobs", []):
+        if j.get("id") == jid:
+            j["enabled"] = False; save(store); return 0
+    print(f"unknown cron job id: {jid}", file=sys.stderr); return 1
+
+def main():
+    argv = sys.argv[1:]
+    if len(argv) < 2 or argv[0] != "cron":
+        print("fake-openclaw: unsupported invocation", file=sys.stderr); return 1
+    sub, rest = argv[1], argv[2:]
+    if sub in ("add", "create"): return cmd_add(rest)
+    if sub == "list": return cmd_list(rest)
+    if sub == "disable": return cmd_disable(rest)
+    print(f"fake-openclaw: unsupported cron subcommand: {sub}", file=sys.stderr); return 1
+
+sys.exit(main())
+FAKECRON
+        chmod +x "$dir/openclaw"
+    }
+
+    local td3 fakebin3 store3
+    td3="$(mktemp -d)"; fakebin3="$td3/bin"
+    write_fake_cron_bin "$fakebin3"
+    store3="$td3/store.json"
+
+    # fresh install -> exactly one cron
+    local rc_a count_a
+    PATH="$fakebin3:$PATH" FAKE_CRON_STORE="$store3" NO_CRON=0 ROLE="client" BOX="dedupe-test-box" do_install >/dev/null 2>&1; rc_a=$?
+    count_a="$(python3 -c "import json; d=json.load(open('$store3')); print(sum(1 for j in d.get('jobs', []) if j.get('name')=='ews-tick-dedupe-test-box'))" 2>/dev/null)"
+    if [ "$rc_a" -eq 0 ] && [ "$count_a" = "1" ]; then
+        echo "  declaration-key case (fresh install): PASS (exactly 1 cron registered)"
+    else
+        echo "$TAG self-test FAIL: fresh install left $count_a 'ews-tick-dedupe-test-box' cron(s) (rc=$rc_a)" >&2
+        rm -rf "$td3"; return 1
+    fi
+
+    # run install.sh AGAIN -> still exactly one (the regression guard)
+    local rc_b count_b
+    PATH="$fakebin3:$PATH" FAKE_CRON_STORE="$store3" NO_CRON=0 ROLE="client" BOX="dedupe-test-box" do_install >/dev/null 2>&1; rc_b=$?
+    count_b="$(python3 -c "import json; d=json.load(open('$store3')); print(sum(1 for j in d.get('jobs', []) if j.get('name')=='ews-tick-dedupe-test-box'))" 2>/dev/null)"
+    if [ "$rc_b" -eq 0 ] && [ "$count_b" = "1" ]; then
+        echo "  declaration-key case (run install.sh TWICE): PASS (still exactly 1 cron - no duplicate)"
+    else
+        echo "$TAG self-test FAIL: running install.sh TWICE left $count_b 'ews-tick-dedupe-test-box' cron(s) - the exact regression this fix exists to close" >&2
+        rm -rf "$td3"; return 1
+    fi
+
+    # existing registration with DIFFERENT content -> updated in place, not duplicated
+    python3 - "$store3" <<'PY'
+import json, sys
+store = json.load(open(sys.argv[1]))
+for j in store.get("jobs", []):
+    if j.get("name") == "ews-tick-dedupe-test-box":
+        j["payload"]["argv"][-1] = "echo stale-command-from-a-prior-version"
+        j["schedule"]["expr"] = "*/5 * * * *"
+json.dump(store, open(sys.argv[1], "w"))
+PY
+    PATH="$fakebin3:$PATH" FAKE_CRON_STORE="$store3" NO_CRON=0 ROLE="client" BOX="dedupe-test-box" do_install >/dev/null 2>&1
+    local drift_check
+    drift_check="$(python3 -c "
+import json
+d = json.load(open('$store3'))
+jobs = [j for j in d.get('jobs', []) if j.get('name') == 'ews-tick-dedupe-test-box']
+ok = len(jobs) == 1 and jobs[0]['payload']['argv'][-1].endswith('ews-entry.sh tick') and jobs[0]['schedule']['expr'] == '*/15 * * * *'
+print('OK' if ok else 'FAIL')
+")"
+    if [ "$drift_check" = "OK" ]; then
+        echo "  declaration-key case (drifted content): PASS (converged back to current command/schedule, still exactly 1 cron)"
+    else
+        echo "$TAG self-test FAIL: a drifted existing registration was not converged back to the current command/schedule" >&2
+        rm -rf "$td3"; return 1
+    fi
+    rm -rf "$td3"
+
+    # legacy-duplicate cleanup: 3 pre-existing unkeyed dupes -> all disabled,
+    # never deleted; the new declaration-keyed job is the sole enabled survivor
+    local td4 fakebin4 store4
+    td4="$(mktemp -d)"; fakebin4="$td4/bin"
+    write_fake_cron_bin "$fakebin4"
+    store4="$td4/store.json"
+    python3 - "$store4" "$SELF_DIR" <<'PY'
+import json, sys
+store_path, self_dir = sys.argv[1], sys.argv[2]
+base_cmd = f"bash {self_dir}/ews-entry.sh tick"
+store = {"jobs": [], "_seq": 0}
+for i, created in enumerate([1000, 2000, 3000]):
+    store["jobs"].append({
+        "id": f"legacy-{i}", "name": "ews-tick-legacy-test-box", "enabled": True,
+        "createdAtMs": created,
+        "schedule": {"kind": "cron", "expr": "*/15 * * * *"},
+        "payload": {"kind": "command", "argv": ["sh", "-lc", base_cmd]},
+    })
+    store["_seq"] += 1
+json.dump(store, open(store_path, "w"))
+PY
+    PATH="$fakebin4:$PATH" FAKE_CRON_STORE="$store4" NO_CRON=0 ROLE="client" BOX="legacy-test-box" do_install >/dev/null 2>&1
+    local cleanup_check
+    cleanup_check="$(python3 -c "
+import json
+d = json.load(open('$store4'))
+jobs = [j for j in d.get('jobs', []) if j.get('name') == 'ews-tick-legacy-test-box']
+legacy = [j for j in jobs if not j.get('declarationKey')]
+declared = [j for j in jobs if j.get('declarationKey')]
+legacy_enabled = [j for j in legacy if j.get('enabled')]
+ok = len(legacy) == 3 and len(legacy_enabled) == 0 and len(declared) == 1 and declared[0].get('enabled') is True
+print('OK' if ok else f'FAIL legacy={len(legacy)} legacy_enabled={len(legacy_enabled)} declared={len(declared)}')
+")"
+    if [ "$cleanup_check" = "OK" ]; then
+        echo "  legacy-duplicate cleanup case: PASS (3 pre-existing dupes disabled, none deleted; 1 declaration-keyed job is the sole enabled survivor)"
+    else
+        echo "$TAG self-test FAIL: legacy-duplicate cleanup did not converge to exactly one enabled survivor: $cleanup_check" >&2
+        rm -rf "$td4"; return 1
+    fi
+    rm -rf "$td4"
+
+    # no-false-positive case: a LONE pre-existing registration (no proven
+    # duplication) must be left completely untouched by cleanup
+    local td5 fakebin5 store5
+    td5="$(mktemp -d)"; fakebin5="$td5/bin"
+    write_fake_cron_bin "$fakebin5"
+    store5="$td5/store.json"
+    python3 - "$store5" "$SELF_DIR" <<'PY'
+import json, sys
+store_path, self_dir = sys.argv[1], sys.argv[2]
+store = {"jobs": [{
+    "id": "lone-1", "name": "ews-tick-lone-test-box", "enabled": True,
+    "createdAtMs": 500,
+    "schedule": {"kind": "cron", "expr": "*/15 * * * *"},
+    "payload": {"kind": "command", "argv": ["sh", "-lc", f"bash {self_dir}/ews-entry.sh tick"]},
+}], "_seq": 1}
+json.dump(store, open(store_path, "w"))
+PY
+    PATH="$fakebin5:$PATH" FAKE_CRON_STORE="$store5" NO_CRON=0 ROLE="client" BOX="lone-test-box" do_install >/dev/null 2>&1
+    local lone_check
+    lone_check="$(python3 -c "
+import json
+d = json.load(open('$store5'))
+original = next((j for j in d.get('jobs', []) if j.get('id') == 'lone-1'), None)
+print('OK' if original is not None and original.get('enabled') is True else 'FAIL')
+")"
+    if [ "$lone_check" = "OK" ]; then
+        echo "  no-false-positive case: PASS (a lone pre-existing registration - no proven duplication - is left untouched)"
+    else
+        echo "$TAG self-test FAIL: cleanup touched a lone (non-duplicated) pre-existing registration" >&2
+        rm -rf "$td5"; return 1
+    fi
+    rm -rf "$td5"
+    unset -f write_fake_cron_bin
 
     rm -rf "$td"
     unset EWS_STATE_DIR EWS_OPENCLAW_ROOT EWS_CONFIG_PATH
