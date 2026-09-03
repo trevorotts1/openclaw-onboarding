@@ -801,8 +801,9 @@ ids, re-GET 200) — NOT `status:"PLANNED"` stubs:
    with the live `page_id` + the marker proving it rendered.
 4. **CRM contact + form→CRM PROOF (the dimension's hard requirement):**
    - baseline `contacts search` → `before_count`;
-   - submit the opt-in (or `contacts create` with a unique
-     `…@<brand>-test.invalid` email + tags `workshop-registrant`, `soap-lead`);
+   - submit the opt-in (or `contacts create` — an explicitly requested NEW
+     test record — with a unique `…@<brand>-test.invalid` email + tags
+     `workshop-registrant`, `soap-lead`);
    - **prove the roundtrip**: `contacts search` by that email → assert the new id
      exists AND carries both tags → re-GET `contacts/{id}`;
    - write `ecosystem/contact-test.json` with `created_contact_id`,

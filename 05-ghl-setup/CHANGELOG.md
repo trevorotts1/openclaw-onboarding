@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.5.14] - 2026-09-03 — contact operations teach upsert-first (generic add/save defaults to upsert)
+
+### Changed
+- **INSTRUCTIONS.md + ghl-setup-full.md contact sections.** Generic add/save
+  routes to POST /contacts/upsert (match keys + supplied fields only, no tags
+  array, read-back after write); POST /contacts/ labeled explicit-new-record
+  only. (v6.5.11–v6.5.13: QC script maintenance bumps with no changelog entry.)
+
 ## [v6.5.10] - July 21, 2026 — fix: the automatic self-test sent live SMS and email from the client's account
 
 ### Removed

@@ -109,7 +109,7 @@ commands automatically; operators never need to memorize command syntax.
 
 ### What Tier 0 covers (standard ops — PIT only)
 
-- **contacts** — search, get, create, update, tag, untag, bulk operations
+- **contacts** — search, get, create (explicit NEW record only), upsert (DEFAULT for generic add/save — match keys + supplied fields only, verified by read-back), update (non-tag fields; `--tag` refused destructive), tag/untag (additive), bulk operations
 - **opportunities** — list, get, update, move pipeline stage
 - **calendars** — list calendars, get appointments, create/update bookings
 - **conversations** — list, get, send message, read threads

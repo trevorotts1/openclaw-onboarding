@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.4.4] - 2026-09-03 — contact write routing: generic add/save defaults to upsert
+
+### Changed
+- **CONTACT WRITE ROUTING policy in INSTRUCTIONS.md + CORE_UPDATES.md.** Generic
+  add/save routes to Tier 0 `caf contacts upsert` first (explicit-new only to
+  `create`, known-ID to `update` with non-tag fields); same rule binds Tier 1 MCP
+  (`contacts_upsert-contact` vs `contacts_create-contact`) and Tier 3 raw API.
+  (v1.4.2–v1.4.3: QC script maintenance bumps with no changelog entry.)
+
 ## [v1.4.1] - 2026-08-03 — Reconciled with the GHL API currency work
 
 No behaviour change in this skill. Two parallel branches both touched skill 36 on

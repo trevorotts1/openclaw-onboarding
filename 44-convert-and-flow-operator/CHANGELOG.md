@@ -1,5 +1,53 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.20] - 2026-09-03 — safe contact upsert policy: default upsert, verified writes, 18-behavior regression suite
+
+### Changed
+- **Generic add/save now routes to `contacts upsert` (DEFAULT).** Upsert docstring
+  uses HighLevel's canonical matching language (resolves create-vs-update per the
+  Location-level Allow Duplicate Contact configuration and its matching priority).
+  New `--create-new-if-duplicate-allowed` flag travels ONLY on explicit new-record
+  request; generic add/save omits it (false/omitted default, regression-locked).
+- **Every upsert ends with a GET read-back of the returned contact ID.**
+  Intended fields are confirmed against the live record; a failed read NEVER
+  re-POSTs (duplicate risk) — it reports "WRITE SUCCEEDED — VERIFICATION
+  INCOMPLETE" and names the manual read to run instead.
+- **Contact-write routing documented in SKILL.md / INSTRUCTIONS.md /
+  CORE_UPDATES.md / QC.md**, with `qc-convert-and-flow.sh` static asserts for the
+  upsert command, the `--tag` refusal, the read-back, the tag-endpoint sequence,
+  and the regression suite.
+
+### Added
+- **`tests/test_contacts_upsert.py` — 19 tests locking the 18 approved behaviors**
+  (upsert default routing, explicit-create/known-ID paths, field omission,
+  additive tags, Version 2021-07-28, locationId, duplicate-flag default/explicit,
+  dry-run, 429 STOP, loud auth failure, read-back, no-rePOST-on-failed-read,
+  source omission, targeted fields, `--tag` refusal, canonical help language).
+
+## [1.3.19] - 2026-09-03 — send-integrity gates: fail-closed email bodies, merge-safe contacts, WF-22
+
+### Fixed
+- **`contacts update --tag` replaced the entire tag set.** `PUT /contacts/{id}` with a
+  `tags` array overwrites every tag on the contact; agents using it to *add* one tag
+  destroyed all others (implicated in a ~3,000-contact tag loss). `--tag` on `update`
+  is now REFUSED (exit 2) with merge-safe alternatives named. Non-tag fields unaffected.
+- **`workflows patch-email` wrote empty bodies and reported success.** An empty
+  `--body-file` landed as `""` in both `body` and `html`, printed `{"ok": true}`, and
+  never read the workflow back (~3,000 subject-only emails). Pre-write validation now
+  refuses empty, under-200-char (unless `--allow-short`), and placeholder (TODO/TBD/
+  lorem/placeholder) bodies (exit 2); post-write the workflow is re-read from GHL and
+  an empty body exits 3 with the snapshot-restore command instead of success.
+- **No merge-safe contact write existed.** New `contacts upsert` matches on
+  email/phone via `POST /contacts/upsert` and applies tags afterwards via
+  `POST /contacts/{id}/tags` (strictly additive) — tags are never sent in the upsert
+  body, so no existing tag can be dropped by construction.
+
+### Added
+- **WF-22 email-body check in `qc-built-workflow.sh`.** The harness asserted SMS
+  From-numbers (WF-12) but had no email-body check, so blank-email workflows passed QC
+  clean. WF-22 fails any email node rendering to empty text (or under 200 chars) and is
+  wired into the D6 deliverability floor alongside WF-12.
+
 ## [1.3.18] - 2026-08-17 — `workflows build`: idempotent folder/workflow creation, install/import fixes, quiet stderr
 
 ### Fixed
