@@ -252,6 +252,20 @@ class Ledger:
         if severity not in VALID_SEVERITIES:
             raise ValueError("invalid severity %r" % severity)
         ts = tick_ts or now_utc()
+        # write-layer guard: events.dedup_key must never be empty/NULL. A
+        # caller that forgets to pass one (the root cause of the 2026-08-21
+        # alert-storm bug - ews_alert.py route_finding wrote thousands of
+        # identical "no operator target" events with dedup_key=None because
+        # nothing stopped it) still gets a stable, non-empty key here, derived
+        # the SAME way ews_sentinel.py's own finding factory (F()) already
+        # defaults one: "<signal>|<key_path>". NOTE this is a hygiene guard,
+        # not a throttle: record_event() has never enforced dedup on this
+        # column and still doesn't - callers are responsible for checking
+        # recent_digest()/record_digest() themselves before deciding whether
+        # to write at all (see ews_alert.py route_finding). This guard only
+        # guarantees the column is always something a later query can
+        # group/filter on, never NULL.
+        dedup_key = dedup_key or ("%s|%s" % (signal, key_path or ""))
         cur = self.conn.execute(
             "INSERT INTO events(signal,severity,key_path,class,detail,tick_ts,dedup_key) "
             "VALUES(?,?,?,?,?,?,?)",
@@ -549,6 +563,27 @@ def self_test():
         assert len(led.open_events()) == 0
         assert not led.ack_event(999999)  # nonexistent
         print("  events case: PASS (record/query/ack, nonexistent ack is False)")
+
+        # write-layer guard: an event written with NO dedup_key still gets a
+        # stable, non-empty one derived - the general-case defense for the
+        # alert-storm bug class (any call site that forgets to pass one, not
+        # just ews_alert.py route_finding). This does NOT throttle repeat
+        # writes by itself (record_event never has); it only guarantees the
+        # column is never NULL, so a caller must still check
+        # recent_digest()/record_digest() before deciding whether to write.
+        eid_nodedup = led.record_event("S9", "P2", key_path="skills.tree", klass="drift",
+                                       detail="no dedup_key passed")
+        row = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+               if e["event_id"] == eid_nodedup][0]
+        assert row["dedup_key"] == "S9|skills.tree", row["dedup_key"]
+        # an explicit dedup_key always wins over the derived default
+        eid_explicit = led.record_event("S9", "P2", key_path="skills.tree", klass="drift",
+                                        detail="explicit key", dedup_key="S9|explicit-override")
+        row2 = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+                if e["event_id"] == eid_explicit][0]
+        assert row2["dedup_key"] == "S9|explicit-override", row2["dedup_key"]
+        print("  write-layer guard case: PASS (empty dedup_key derived as signal|key_path; "
+              "an explicit key still wins)")
 
         # invalid severity is refused
         try:
