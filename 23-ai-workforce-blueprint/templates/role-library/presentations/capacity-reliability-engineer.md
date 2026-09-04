@@ -123,8 +123,6 @@ Re-calibrate the fleet sizing table (see SOP 9.1) against actual run performance
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: the capacity probe (Step 0.5) is NOT a manifest phase -- it writes `working/checkpoints/capacity_plan.json` as a Gate 1 input before `P0A-INTAKE` (0.1); every phase it sizes (intake `P0A-INTAKE`, copy `P4-COPY`, render `P4-RENDER`, assemble `P8-ASSEMBLE`, deliver `P9-DELIVER`) is a manifest phase in the map.
-
 ### SOP 9.1 -- System Capacity Probe and Fleet Sizing
 
 **When to run:** Step 0.5 -- immediately after media library creation (Step 0 / SOP 9.1 of media-librarian-ghl-updater) and before Phase A (discovery interview) begins. The Director must wait for capacity_plan.json before dispatching any sub-agents.

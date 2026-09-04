@@ -864,18 +864,10 @@ def _selftest_last_429_ts(path: str, provider: str) -> Optional[float]:
 
 def _selftest_phase1(provider: str, submits: int, timeout_s: float,
                      log_path_: str) -> dict:
-    """Admit *submits* acquisitions in parallel; report window/inflight proof.
-
-    [B4] The window scan is seeded by a START row written BEFORE the first
-    worker is spawned and bounded by since=start_ts, so rows from anything
-    else writing to the same log path (a concurrent live run on the shared
-    /tmp path) can never inflate the count: the scan counts only acquisitions
-    this phase emitted after its own start timestamp."""
+    """Admit *submits* acquisitions in parallel; report window/inflight proof."""
     import threading
     leases: list = []
     errors: list = []
-    start_ts = time.time()
-    _append_log(f"selftest-start", "phase1_start", 0, 0)
     # One barrier party per thread: a party-count mismatch strands threads on
     # gate.wait() (BrokenBarrierError after its 10 s timeout, which then
     # shows up as spurious errors and halves the admission count).
@@ -898,8 +890,7 @@ def _selftest_phase1(provider: str, submits: int, timeout_s: float,
     peak = max_inflight_seen(provider)
     for l in leases:
         release(l)
-    window_max = _selftest_window_max(log_path_, since=start_ts,
-                                      provider=provider)
+    window_max = _selftest_window_max(log_path_)
     cfg = provider_config(provider)
     ok = (
         acquired == submits
@@ -962,18 +953,6 @@ def _selftest_phase2(provider: str, timeout_s: float, log_path_: str) -> dict:
     }
 
 
-def _selftest_default_log() -> str:
-    """Default selftest log: pid-unique under /tmp so two selftests (or a
-    selftest and a live run) can never interleave rows in one file.
-
-    [B4 / wave-1 critic] The shared ``/tmp/presentation_governor.log`` mixed
-    rows from concurrent processes and a window scan over it showed 57
-    acquisitions in one 10 s window while the governor itself admitted 20 --
-    the proof instrument was polluted, not the limiter. A pid-unique path
-    makes every selftest scan self-consistent by construction."""
-    return f"/tmp/presentation_governor.{os.getpid()}.log"
-
-
 def _main(argv: list) -> int:
     import argparse
     ap = argparse.ArgumentParser(
@@ -989,8 +968,7 @@ def _main(argv: list) -> int:
     ap.add_argument("--timeout", type=float, default=120.0,
                     help="per-acquire timeout in seconds")
     ap.add_argument("--log", default=None,
-                    help="window log path (default: pid-unique /tmp path so "
-                         "concurrent runs never share rows)")
+                    help="window log path (default /tmp/presentation_governor.log)")
     args = ap.parse_args(argv)
     if not args.selftest:
         ap.print_help()
@@ -998,7 +976,7 @@ def _main(argv: list) -> int:
     if args.submits < 1:
         print(json.dumps({"ok": False, "error": "submits must be >= 1"}))
         return 3
-    log = args.log or _selftest_default_log()
+    log = args.log or "/tmp/presentation_governor.log"
     set_log_path(log)
     if os.path.exists(log):
         try:

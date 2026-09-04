@@ -69,8 +69,16 @@ except ImportError as exc:
 # audit falls back to the same formula locally, so behaviour never changes on
 # a mid-fleet-roll box.
 try:
-    from presentation_job.deliverable_floors import pdf_floor, slide_count  # noqa: F401
+    from presentation_job.deliverable_floors import pdf_floor, slide_count, guide_floor  # noqa: F401
 except ImportError:  # pragma: no cover — merge-order safety only
+    def guide_floor(n_slides: int) -> int:
+        """Local fallback identical to deliverable_floors.guide_floor."""
+        try:
+            _n = int(n_slides)
+        except (TypeError, ValueError):
+            _n = 0
+        return max(1600 * max(_n, 0), 12000)
+
     def pdf_floor(n_slides: int) -> int:
         """Local fallback identical to deliverable_floors.pdf_floor (F49 formula)."""
         try:
@@ -408,8 +416,16 @@ def audit_all(deliverables_dir: str) -> dict:
     n_slides = _count_deck_slides(deliverables_dir)
     for item in DELIVERABLE_AUDIT_LIST:
         item = dict(item)
-        if item.get("key") in ("guide_pdf", "deck_pdf") and n_slides:
-            item["min_bytes"] = pdf_floor(n_slides)
+        # FIX 103: each row scales with ITS OWN helper formula — guide_pdf via
+        # guide_floor(n)=max(1600n, 12000), deck_pdf via pdf_floor(n)=max(1506n,
+        # 8192) — exactly as phase_verifiers' P8.1/P8.2 verifiers and build_deck's
+        # run_postflight_gate scale the same two rows. One helper family, no
+        # site re-derives the arithmetic.
+        if n_slides:
+            if item.get("key") == "guide_pdf":
+                item["min_bytes"] = guide_floor(n_slides)
+            elif item.get("key") == "deck_pdf":
+                item["min_bytes"] = pdf_floor(n_slides)
         fp = _find_file(deliverables_dir, item["filename"])
         r = audit_deliverable(fp, item)
         results.append(r)

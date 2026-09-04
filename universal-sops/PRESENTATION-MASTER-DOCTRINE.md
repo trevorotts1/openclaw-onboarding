@@ -44,8 +44,7 @@ and gives the crosswalk that makes every "master SOP Section N" citation resolve
 > not two choices; they are two stages in strict sequence. Layer A *makes the artifacts*;
 > Layer B *renders and delivers them deterministically*. Layer B physically refuses to run
 > until Layer A's artifacts exist — which is exactly why an agent that skips Layer A hits
-> the preflight wall. The engine (`presentation_job.py`) walks that order; the runner
-> (`run_signature_deck.py`) is only the turn-gate interface to it (Fix 93).
+> the preflight wall.
 
 ### LAYER A — THE AUTHORING PIPELINE (how the artifacts get made)
 The multi-phase, multi-role pipeline governed by `PIPELINE-MANIFEST.json` and the role
@@ -84,27 +83,13 @@ audiences for two different file sets:
 - Layer A **authors** the rich prompt files and the copy; Layer B **consumes** them
   verbatim. The retired claim that "the script composes the KIE prompt mechanically" is
   **false** for the current engine and is a banned residual pattern.
-- The single entry command (`presentation-canonical-entry.sh` → the engine
-  `presentation_job.py` → `build_deck.py`) enforces Layer A **before** Layer B:
-  `build_deck.py`'s preflight requires the full Layer-A artifact set, and the engine
-  refuses to attest a phase out of order. "Finishing at a bare `.pptx`" is a forbidden
-  shortcut — the deck is DELIVERED only when the full bundle exists.
-- **The packaged skill entry (FIX 69):** from any cwd and any host the department is
-  invoked as `51-signature-presentation/bin/presentation` (see `skill.json`,
-  `entry: "bin/presentation"`). The wrapper resolves the dept scripts via `oc_paths`,
-  sources the secrets env (`set -a`), refuses an unmaterialized department, and `exec`s
-  the canonical door — a pass-through, never a second render path. Per-host adapters:
-  `adapters/claude-code/SKILL.md`, `adapters/claude-nine/SKILL.md`,
-  `adapters/codex/AGENTS.md`. When `openclaw` is absent and `PRESENTATION_NOTIFY_CMD`
-  is unset, the wrapper exports the file-queue transport (`working/outbox.jsonl`), which
-  the host relays.
-- **One-sentence entry statement (Fix 93):** the engine
-  (`presentation_job.py`, dispatched by `presentation-canonical-entry.sh`) is what walks
-  and enforces the phase order, while the runner (`run_signature_deck.py`) is only the
-  agent's turn-gate interface (`--next`/`--phase`) — the two names are not
-  interchangeable and never describe the same component.
+- The single entry command (`presentation-canonical-entry.sh` → `run_signature_deck.py` →
+  `build_deck.py`) enforces Layer A **before** Layer B: `build_deck.py`'s preflight requires
+  the full Layer-A artifact set, and `run_signature_deck.py` refuses to attest a phase out
+  of order. "Finishing at a bare `.pptx`" is a forbidden shortcut — the deck is DELIVERED
+  only when the full bundle exists.
 - **The correct mental model for every builder:** *you are always running Layer A up to the
-  render, and Layer B is the render+delivery the engine dispatches for you.* You never
+  render, and Layer B is the render+delivery the runner dispatches for you.* You never
   choose between them.
 
 ---

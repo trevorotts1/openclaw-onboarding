@@ -75,6 +75,17 @@ except ImportError:
 # still carrying the pre-doctrine 10_240 / 20_480 values during that pass).
 _MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
+# P8.1/P8.2/P9-DELIVERY verifiers scale guide_pdf/deck_pdf floors by THIS
+# deck's slide count through guide_floor(n)/pdf_floor(n) here — no site
+# re-derives the arithmetic, and no 51,200 / 34-slide literal is enforced at
+# this site. Fail-soft: when the helper module is absent the verifiers fall
+# back to the raw spec floors below (pre-F103 behaviour).
+try:
+    from presentation_job import deliverable_floors as _floors
+except ImportError:  # pragma: no cover — fail-soft: legacy box without the module
+    _floors = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Defensive engine-checker imports (all optional)
 # ---------------------------------------------------------------------------
@@ -2037,23 +2048,22 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
             reasons.append(f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is zero bytes")
             continue
         # F43c (SMOKE-1, 2026-09-01): guide_pdf/deck_pdf floors were tuned for the
-        # 34-slide reference deck. F43 already scaled the P8.2 phase verifier and the
-        # build_deck BUNDLE gate by slide count (max(51200*n//34, 8192)); scale the
-        # P9-DELIVERY gate identically so all three gates measure the same thing.
+        # 34-slide reference deck. FIX 103 (MASTER Part 8, SMOKE-1 addenda): the
+        # inline reference-ratio scaler is gone — the P9-DELIVERY gate delegates
+        # to THE one helper (presentation_job.deliverable_floors): guide_pdf via
+        # guide_floor(n)=max(1600n, 12000), deck_pdf via pdf_floor(n)=max(1506n,
+        # 8192), with slide_count(run_dir) reading slides.json and never a
+        # constant. pdf_floor(34) reproduces the legacy reference floor exactly;
+        # when the count is undeterminable the spec floor is used unchanged.
         _min_b = min_bytes
         if key in ("guide_pdf", "deck_pdf"):
             try:
-                _n = 0
-                for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
-                    _data = json.loads(_cand.read_text(encoding="utf-8", errors="replace"))
-                    if isinstance(_data, list):
-                        _n = len(_data)
-                    elif isinstance(_data, dict) and _data.get("slides"):
-                        _n = len(_data["slides"])
-                    if _n:
-                        break
+                _n = _floors.slide_count(run_dir) if _floors is not None else 0
                 if _n:
-                    _min_b = max(int(_min_b * _n // 34), 8192)
+                    if key == "guide_pdf":
+                        _min_b = _floors.guide_floor(_n)
+                    else:
+                        _min_b = _floors.pdf_floor(_n)
             except Exception:  # noqa: BLE001 — fall back to the fixed floor
                 pass
         if size < _min_b:
@@ -2146,27 +2156,25 @@ def _verify_converter(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_text_artifact(pattern: str, min_bytes: int = 50,
-                          scale_by_slides: bool = False):
+                          scale_by_slides: bool = False,
+                          floor_formula: str = "pdf"):
     """Factory returning a verifier that checks a text artifact. When
-    scale_by_slides is True, min_bytes is scaled by the deck's slide count
-    (MIN_BYTES was tuned for a ~34-slide reference deck; a fully-populated
-    smaller deck legitimately renders smaller — E2E finding)."""
+    scale_by_slides is True, min_bytes is scaled by the deck's slide count from
+    THE one floor helper (presentation_job/deliverable_floors — FIX 103):
+    floor_formula="guide" uses guide_floor(n)=max(1600n, 12000) and the default
+    "pdf" uses pdf_floor(n)=max(1506n, 8192). The slide count comes from
+    deliverable_floors.slide_count(run_dir), which reads slides.json /
+    arc_allocation.json and never a constant. The former inline scaler (a
+    reference-deck ratio re-derivation) is gone. When scaling cannot run (floors
+    module unavailable) the raw min_bytes applies, as before."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         if not scale_by_slides:
             return _check_text_nonempty(run_dir, pattern, min_bytes)
         try:
-            _n = 0
-            for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
-                import json as _json
-                _data = _json.load(open(_cand))
-                if isinstance(_data, list):
-                    _n = len(_data)
-                elif isinstance(_data, dict) and _data.get("slides"):
-                    _n = len(_data["slides"])
-                if _n:
-                    break
+            _n = _floors.slide_count(run_dir) if _floors is not None else 0
             _n = _n or 1
-            _scaled = max(int(min_bytes * _n // 34), 8192)
+            _scaled = (_floors.guide_floor(_n) if floor_formula == "guide"
+                       else _floors.pdf_floor(_n)) if _floors is not None else min_bytes
         except Exception:  # noqa: BLE001 — fall back to the fixed floor
             _scaled = min_bytes
         return _check_text_nonempty(run_dir, pattern, _scaled)
@@ -2988,6 +2996,198 @@ def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+
+# ---------------------------------------------------------------------------
+# FIX 112 — the two remaining missing producers.
+#
+# P-STYLE-SPEC (order 4.84): the copy stage's fanout unit authors
+#   working/copy/style_preview_spec.json — the artifact P-STYLE-PREVIEW
+#   requires and, before this fix, nothing on disk authored. The verifier
+#   re-measures the exact contract build_deck.run_style_preview_samples
+#   FATAL-exits on: exactly 3 variants (ids A/B/C, each a non-empty
+#   style_directive) and exactly 3 representative slide ordinals.
+# P8.3-INFOGRAPHIC (order 8.3): the infographic-checklist QC unit — the
+#   bundle table's long-named, never-implemented role (now a real role file,
+#   presentations/infographic-checklist.md, plus a manifest roles[] row) —
+#   grades Fix 2's rendered PNG against its prompt and WRITES A VERDICT FILE
+#   (working/qc/infographic_checklist_verdict.json). The verifier re-derives
+#   the verdict, never trusting a hand-typed pass.
+# ---------------------------------------------------------------------------
+_STYLE_SPEC_VARIANT_IDS = ("A", "B", "C")
+
+
+def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-SPEC: the style-preview spec must carry exactly 3 variants
+    (A/B/C with non-empty style_directive strings) and exactly 3
+    representative slide ordinals — the exact shape
+    build_deck.run_style_preview_samples refuses to run without."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_spec.json")
+    if p is None:
+        p = _resolve_glob(run_dir, "working/style-preview/style_preview_spec.json")
+    if p is None:
+        return False, ["working/copy/style_preview_spec.json: file not found — "
+                       "phase artifact missing"]
+    spec = _read_json(p)
+    if not isinstance(spec, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    variants = spec.get("variants")
+    if not isinstance(variants, list) or len(variants) != 3:
+        return False, [f"{p.name}: variants must list exactly 3 entries "
+                       f"(got {len(variants) if isinstance(variants, list) else type(variants).__name__})"]
+    ids: List[str] = []
+    for i, v in enumerate(variants):
+        if not isinstance(v, dict):
+            return False, [f"{p.name}: variants[{i}] must be an object"]
+        vid = str(v.get("id") or "").strip().upper()
+        directive = str(v.get("style_directive") or "").strip()
+        if vid not in _STYLE_SPEC_VARIANT_IDS:
+            return False, [f"{p.name}: variants[{i}].id {v.get('id')!r} is not one of A/B/C"]
+        if not directive:
+            return False, [f"{p.name}: variants[{i}].style_directive is empty"]
+        ids.append(vid)
+    if len(set(ids)) != 3:
+        return False, [f"{p.name}: variant ids must be distinct A/B/C (got {ids})"]
+    reps = spec.get("representative_slides")
+    if not isinstance(reps, list) or len(reps) != 3:
+        return False, [f"{p.name}: representative_slides must list exactly 3 slide ordinals"]
+    for i, r in enumerate(reps):
+        if isinstance(r, bool) or not isinstance(r, int) or r < 1:
+            return False, [f"{p.name}: representative_slides[{i}] must be a positive "
+                           f"slide ordinal (got {r!r})"]
+    return True, []
+
+
+_INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
+
+
+def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
+    only when (a) the rendered PNG exists at/above the deliverable floor,
+    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
+    file exists, parses, and its own verdict is pass with the render inputs
+    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
+    dirty render never passes, and a missing verdict file is a FAIL (the QC
+    unit ran, or it did not — absence is not a pass)."""
+    import json as _json
+    reasons: List[str] = []
+
+    png = _resolve_glob(run_dir, "working/deliverables/infographic.png")
+    if png is None:
+        reasons.append("working/deliverables/infographic.png: file not found — "
+                       "the render under QC is missing")
+    else:
+        floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        if png.stat().st_size < floor:
+            reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
+                           f"{floor}-byte deliverable floor")
+    status = _read_json(_resolve_glob(run_dir, "working/checkpoints/infographic_status.json")
+                        or Path("/nonexistent"))
+    if not isinstance(status, dict):
+        reasons.append("working/checkpoints/infographic_status.json: missing or "
+                       "not a JSON object (build_infographic's render record)")
+    else:
+        if status.get("status") != "ready":
+            reasons.append(f"infographic_status.json: status is "
+                           f"{status.get('status')!r}, not 'ready'")
+        if status.get("qc_passed") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true")
+
+    verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
+    verdict = _read_json(verdict_path)
+    if not isinstance(verdict, dict):
+        reasons.append(f"{_INFOGRAPHIC_CHECKLIST_VERDICT_REL}: missing or not a JSON "
+                       "object — the infographic-checklist QC unit has not written "
+                       "its verdict")
+        return False, reasons
+    if verdict.get("verdict") != "pass":
+        vreasons = verdict.get("reasons") or []
+        detail = "; ".join(str(r) for r in vreasons) if isinstance(vreasons, list) else repr(vreasons)
+        reasons.append(f"infographic-checklist verdict is {verdict.get('verdict')!r}: {detail}")
+    checked = verdict.get("checked")
+    if not isinstance(checked, list) or not checked:
+        reasons.append("verdict.checked must be a non-empty list of the prompt's "
+                       "checklist items as checked")
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+def _verify_style_pick(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-PICK (order 4.86, kind human): the owner's gateway pick. The
+    choice file must exist, carry owner_approved:true, and name ONE variant
+    under the canonical key the whole style chain already uses
+    (chosen_variant — build_deck's _chk_style_preview, the samples manifest's
+    owner_pick_note and the engine's _style_choice_authentic all speak this
+    key). The engine's executor (presentation_job.phases._run_human_phase) is
+    the AUTHENTICITY authority: it resolves owner_msg_id through the Fix 32
+    approvals oracle before this verifier ever runs, so this re-measures the
+    FILE's shape — owner_approved:true + a variant id, where the id may come
+    from a real pick (owner_msg_id present) or from the recorded
+    intake.style_pick_auto timeout auto-pick (auto_pick:true present). A file
+    that is neither is a forgery shape and FAILS here too."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_choice.json")
+    if p is None:
+        return False, ["working/copy/style_preview_choice.json: file not found — "
+                       "the owner has not picked a variant yet (human gateway)"]
+    choice = _read_json(p)
+    if not isinstance(choice, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    if choice.get("owner_approved") is not True:
+        return False, [f"{p.name}: owner_approved is not true — a file without an "
+                       "owner decision is never a verified pick"]
+    picked = str(choice.get("chosen_variant") or "").strip()
+    if not picked:
+        return False, [f"{p.name}: no chosen_variant recorded — the canonical key is "
+                       "chosen_variant (picked_variant/variant/choice are not read)"]
+    has_msg_id = bool(str(choice.get("owner_msg_id") or "").strip())
+    auto_pick = choice.get("auto_pick") is True
+    if not (has_msg_id or auto_pick):
+        return False, [f"{p.name}: pick is unverified — it needs either a resolvable "
+                       "owner_msg_id (a real owner pick) or auto_pick:true under the "
+                       "recorded intake.style_pick_auto opt-in (the timeout auto-pick)"]
+    return True, []
+
+
+def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-BUNDLE-GATE (order 9.95, script bundle_gate.py): the terminal
+    bundle-completeness gate's own verdict record. The script exits 5 naming
+    any missing/under-threshold deliverable; the verifier re-measures the
+    bundle it attests (every consumed deliverable pattern must resolve) and
+    requires the gate's own checkpoint record to exist and pass."""
+    import json as _json
+    consumed = [
+        "working/deliverables/{deck_slug}-FINAL.pptx",
+        "working/deliverables/{deck_slug}-FINAL.pdf",
+        "working/deliverables/PRESENTER-GUIDE.pdf",
+        "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/deliverables/PRESENTERS-SPEECH.pdf",
+        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "working/delivery/PRESENTER-AUDIO.mp3",
+        "working/deliverables/infographic.png",
+        "working/deliverables/presenter-teleprompter.html",
+        "working/delivery/{deck_slug}-WEBINAR.mp4",
+    ]
+    missing: List[str] = []
+    for pat in consumed:
+        if "{deck_slug}" in pat:
+            # The slug resolves per run; match the glob the engine itself uses.
+            pat = pat.replace("{deck_slug}", "*")
+        if _resolve_glob(run_dir, pat) is None:
+            missing.append(pat)
+    if missing:
+        return False, [f"bundle deliverable(s) absent: {', '.join(missing)}"]
+    gate = _read_json(_resolve_glob(run_dir, "working/checkpoints/bundle_gate.json")
+                      or Path("/nonexistent"))
+    if not isinstance(gate, dict):
+        return False, ["working/checkpoints/bundle_gate.json: missing or not a JSON "
+                       "object — the bundle gate has not recorded its verdict"]
+    if gate.get("ok") is False or gate.get("pass") is False or \
+            (isinstance(gate.get("verdict"), str) and gate["verdict"].lower() != "pass"):
+        return False, [f"bundle_gate.json records failure: "
+                       f"{gate.get('missing') or gate.get('reasons') or gate.get('reason') or 'unspecified'}"]
+    return True, []
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -3088,8 +3288,17 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # spec (already imported above for the P9-DELIVER whitelist).
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html",
                                                   _MIN_BYTES["teleprompter_html"]),
-    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
+    # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
+    # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
+    # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
+    # literal is enforced here any more (the verifier registry fixture in
+    # tests/test_fix17_verifier_import_failclosed.py mirrors this call shape).
+    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
+                                                _MIN_BYTES["deck_pdf"],
+                                                scale_by_slides=True, floor_formula="pdf"),
+    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
+                                                _MIN_BYTES["guide_pdf"],
+                                                scale_by_slides=True, floor_formula="guide"),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
     # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
@@ -3122,11 +3331,11 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
     "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
     "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
-    # --- FIX 83: style/closeout/render-band parity (manifest v62) ---
-    "P-STYLE-SPEC":       _verify_json_artifact("working/copy/style_preview_spec.json"),
-    "P-STYLE-PICK":       _verify_json_artifact("working/copy/style_preview_choice.json"),
-    "P8.3-INFOGRAPHIC":   _verify_text_artifact("working/deliverables/infographic.png", 102400),
-    "P-BUNDLE-GATE":      _verify_json_artifact("working/checkpoints/bundle_gate.json"),
+    # --- FIX 112: the two remaining missing producers ---
+    "P-STYLE-SPEC":       _verify_style_spec,
+    "P-STYLE-PICK":       _verify_style_pick,
+    "P8.3-INFOGRAPHIC":   _verify_infographic_checklist,
+    "P-BUNDLE-GATE":      _verify_bundle_gate,
 }
 
 
@@ -3262,11 +3471,15 @@ for _pid, _arts in (
     ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
     ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
     ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
-    ("P-U-DESIGN-RENDER-SALES", ["design/sales-design.png"]),
     ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
-    ("P-U-DESIGN-RENDER-CHECKOUT", ["design/checkout-design.png"]),
     ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
-    ("P-U-DESIGN-RENDER-VSL", ["design/vsl-design.png"]),
+    # FIX 28 render phases: the agent phase above now authors the prompt only;
+    # the script executor P-U-DESIGN-RENDER-* produces design/<page>-design.png
+    # through build_infographic.py --spec design (no hand step). Each render
+    # phase verifies its own PNG so the registry covers every manifest phase id.
+    ("P-U-DESIGN-RENDER-SALES",   ["design/sales-design.png"]),
+    ("P-U-DESIGN-RENDER-CHECKOUT",["design/checkout-design.png"]),
+    ("P-U-DESIGN-RENDER-VSL",     ["design/vsl-design.png"]),
     ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),

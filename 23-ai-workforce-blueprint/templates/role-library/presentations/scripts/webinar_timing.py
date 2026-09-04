@@ -329,19 +329,18 @@ def derive_timing(speech_md_path: str, chunks_dir: str, chunk_chars: int = DEFAU
         # NEVER derive a timing track for any small deck — P9.6 was structurally
         # impossible below 20 slides. Derive the slide count from the speech's own
         ## Slide N headers (same parser the fallback itself uses), floor 1.
-        # FIX 103 (MASTER Part 8): no 20-slide literal remains — when the speech
-        # carries no Slide headers the count is genuinely undeterminable, and the
-        # fallback raises TimingError (fail-loud) instead of guessing the reference
-        # deck's size.
+        # FIX 103 (MASTER Part 8, SMOKE-1 addenda): the reference-deck guess is
+        # gone — no fallback may invent a deck size this deck never had. When the
+        # speech carries no ## Slide N headers the slide count is undeterminable
+        # and the tool fails loudly (TimingError) instead of silently timing a
+        # 20-slide deck that does not exist.
         import re as _re
         _heads = {int(m.group(1)) for m in _re.finditer(r"^##+ \s*Slide (\d+)\b", md_text, _re.M)}
         if not _heads:
             raise TimingError(
-                "SECONDS:-proportional fallback needs Slide headers to size the "
-                "deck: the speech carries no '## Slide N' headings, so the slide "
-                "count is undeterminable (FIX 103: never guess a reference-deck "
-                "constant). Re-derive the rechunk path or fix the speech markdown."
-            )
+                "no '## Slide N' headers in the speech markdown — the per-slide "
+                "count is undeterminable and the timing fallback refuses to "
+                "guess a deck size (FIX 103: never a hardcoded 20-slide deck)")
         n_slides = max(_heads)
         timing_entries = seconds_proportional_fallback(md_text, chunk_durations, n_slides)
         fallback = "seconds_proportional"

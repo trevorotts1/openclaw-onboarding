@@ -242,48 +242,14 @@ def read_intake_json(run_dir: Path) -> Dict[str, Any]:
 
 
 def write_intake_json(run_dir: Path, intake: Dict[str, Any]) -> None:
-    """Write working/copy/intake.json atomically.
-
-    FIX 109 — intake is the trust root: this driver is a SANCTIONED intake
-    writer (the interview bridge the owner talks through), so every write
-    here appends one provenance row
-      {writer_phase, writer_pid, ts, sha_before, sha_after}
-    to working/checkpoints/intake.provenance.jsonl via
-    presentation_job.runfacts.append_intake_provenance — the same contract
-    resolve_intake.py and the repo-side drift copy honor. sha_before is the
-    pre-write sha of the intake.json this write replaces ("" on first
-    creation); sha_after is computed from the file as it landed on disk.
-    Without the row the engine's AF-INTAKE-PROVENANCE oracle would refuse
-    every phase of this very run (the regime activates with the first row),
-    so the append is part of the write, never an afterthought. A failed
-    append is loud on stderr and never fatal: the write already happened,
-    the engine refuses fail-closed, and a sanctioned re-write unblocks."""
+    """Write working/copy/intake.json atomically."""
     dest = run_dir / "working" / "copy"
     dest.mkdir(parents=True, exist_ok=True)
     path = dest / "intake.json"
-    sha_before = ""
-    if path.is_file():
-        try:
-            import hashlib
-            sha_before = hashlib.sha256(path.read_bytes()).hexdigest()
-        except OSError:
-            sha_before = ""
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(intake, fh, indent=2, default=str)
     os.replace(tmp, path)
-    try:
-        if str(SCRIPTS_DIR) not in sys.path:
-            sys.path.insert(0, str(SCRIPTS_DIR))
-        from presentation_job.runfacts import append_intake_provenance
-        append_intake_provenance(run_dir, writer_phase="deck-intake-driver",
-                                 previous_sha=sha_before or None,
-                                 note="deck-intake-driver.py write_intake_json")
-    except Exception as exc:  # noqa: BLE001 — loud, never silent, never fatal
-        print(f"AF-INTAKE-PROVENANCE-APPEND-FAILED: intake.json was written "
-              f"but the provenance row could not be appended ({exc!r}). The "
-              f"engine will refuse every phase until a sanctioned rewrite "
-              f"appends the row.", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,3 @@
-source_path=universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json
-git_sha=a29a4cbc2c0482a7d5bd40f0cffcd5b61b8bc8f4
 content_sha256=4c4b96417e7d127cedbb9e0af85c5873b2295f1571b4037a6d17d24bba80bd79
-installed_at=2026-09-03T17:58:00Z
+generated=2026-09-02T11:48:59Z
+source=PIPELINE-MANIFEST.json (manifest_version 64)

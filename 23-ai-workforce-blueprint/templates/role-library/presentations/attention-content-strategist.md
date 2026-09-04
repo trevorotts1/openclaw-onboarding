@@ -148,8 +148,6 @@ Re-read `sops/SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md` and the master frame
 
 ## 9. Standard Operating Procedures (Numbered)
 
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: hook/attention work runs inside `P4-COPY` (order 4) and the deep-research grounding band `P-0.5-RESEARCH` (order -0.5); the copy QC gate on its output is `P1Q-COPY-QC` (4.2).
-
 Master authority: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`. Doctrine root: `sops/SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md`.
 
 ### SOP 9.1 -- Author the Priority-Shift Spec (Phase P0B-PRIORITY, order 0.2)

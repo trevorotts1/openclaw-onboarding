@@ -3423,179 +3423,6 @@ def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_
     return DispatchResult(phase_id, "exhausted", total_attempts, reasons)
 
 
-def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutSpec"]:
-    """Restore the FIX 15b seam dispatch_one already calls (live NameError:
-    the wave-1 merge shipped the call site without these two helpers, so EVERY
-    dispatch whose artifact was not already satisfied died with
-    NameError('_phase_fanout_spec') and the dispatcher could never claim any
-    agent phase). Reads THIS phase's manifest `fanout` field and parses it
-    through the single authority fanout.parse_fanout_field. A phase without
-    the field (or an unparsable one, which is logged, never raised — the
-    serial path is the documented fallback) returns None and keeps the
-    pre-fanout behavior byte-for-byte."""
-    raw = None
-    try:
-        # FIX 15 (round 4): the shipped body referenced `dept_root`, a name
-        # that does not exist in this helper's scope -- the NameError was
-        # swallowed by the except below, so EVERY phase returned spec=None and
-        # the generic manifest-fanout branch never engaged. Resolve the
-        # manifest the same way load_manifest_for_run does: the run's own
-        # state.json pins manifest_path (authoritative per-run), with the
-        # PRESENTATION_MANIFEST env var as the documented fallback.
-        mpath: Optional[Path] = None
-        try:
-            _st = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
-            _mp = _st.get("manifest_path")
-            if _mp and Path(_mp).is_file():
-                mpath = Path(_mp)
-        except (OSError, json.JSONDecodeError):
-            mpath = None
-        if mpath is None:
-            _env = os.environ.get("PRESENTATION_MANIFEST")
-            if _env and Path(_env).is_file():
-                mpath = Path(_env)
-        if mpath is None:
-            return None
-        with open(mpath, "r", encoding="utf-8") as _fh:
-            _m = json.load(_fh)
-        for _ph in _m.get("phases", []):
-            if isinstance(_ph, dict) and _ph.get("id") == phase_id:
-                raw = _ph.get("fanout")
-                break
-    except Exception:
-        raw = None
-    if raw is None:
-        return None
-    try:
-        return fanout.parse_fanout_field(raw)
-    except fanout.FanoutSpecError as exc:
-        _append_sidecar(run_dir, phase_id, {
-            "worker": "dispatcher:fanout-spec", "attempt": 0, "status": "error",
-            "reason": f"fanout field unparsable — falling back to serial dispatch: {exc}",
-        })
-        return None
-
-
-def _dispatch_phase_fanout_units(run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
-                                 phase_obj: Optional[Phase], worker_id: str,
-                                 spec: "fanout.FanoutSpec", patterns: List[str],
-                                 target: Path, prior_reasons: List[str]) -> DispatchResult:
-    """Generic per-unit fan-out for a manifest `fanout` phase (FIX 15b): one
-    model call per unit key (slide / section / file), through the SAME
-    dispatch_complete transport the serial loop uses, aggregated best-effort
-    into the phase's single produces_artifact target. A phase whose unit
-    inventory cannot be derived returns declined so the caller's serial
-    branch is reached rather than inventing units."""
-    phase_id = order.get("phase") or (phase_obj.id if phase_obj else "")
-    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
-    unit_keys = _fanout_unit_keys(run_dir, spec)
-    if not unit_keys:
-        return DispatchResult(phase_id, "declined", 0,
-                              ["fanout phase with no derivable unit inventory — serial path"])
-    units = [fanout.Unit(key=k, payload={"key": k}) for k in unit_keys]
-    unit_out_paths = {k: fanout.unit_output_path(run_dir, phase_id, k) for k in unit_keys}
-    n = len(units)
-
-    def _worker(unit: fanout.Unit) -> fanout.UnitResult:
-        out_path = unit_out_paths[unit.key]
-        last_reason = ""
-        for attempt in range(1, DISPATCH_RETRY_CAP + 1):
-            try:
-                system_prompt, user_prompt = compose_prompt(
-                    phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
-                    run_dir=run_dir, order=order, attempt=attempt,
-                    prior_reasons=prior_reasons,
-                )
-                content, _usage, _route = dispatch_complete(
-                    system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
-                payload = _clean_payload(content)
-                if not payload.strip():
-                    last_reason = "empty completion"
-                    continue
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = out_path.with_suffix(out_path.suffix + f".partial-{os.getpid()}-{attempt}")
-                tmp.write_text(payload, encoding="utf-8")
-                os.replace(tmp, out_path)
-                fanout.append_unit_ledger_row(
-                    run_dir, phase_id, {"unit": unit.key, "status": "ok",
-                                        "attempts": attempt})
-                return fanout.UnitResult(key=unit.key, status="ok", attempts=attempt,
-                                         target=str(out_path))
-            except Exception as exc:  # noqa: BLE001 — per-unit failure, never the pool
-                last_reason = str(exc)
-        fanout.append_unit_ledger_row(
-            run_dir, phase_id, {"unit": unit.key, "status": "failed",
-                                "attempts": DISPATCH_RETRY_CAP, "reason": last_reason})
-        return fanout.UnitResult(key=unit.key, status="failed",
-                                 attempts=DISPATCH_RETRY_CAP, reason=last_reason)
-
-    env_key = "PRESENTATION_PHASE_WORKERS_" + re.sub(r"[^A-Za-z0-9]+", "_", phase_id).strip("_")
-    effective_workers = fanout.resolve_effective_workers(
-        spec.max_units or 1, n, env_var=env_key)
-    deadline_s: Optional[float] = None
-    if phase_obj is not None:
-        try:
-            deadline_s = float(phase_obj.budget_minutes * 60)
-        except Exception:  # noqa: BLE001
-            deadline_s = None
-    results = fanout.run_units(
-        units, _worker, workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
-        per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1, deadline_s=deadline_s)
-    failed = [r for r in results if r.status != "ok"]
-    total_attempts = sum(r.attempts for r in results)
-    _aggregate_unit_outputs(target, unit_out_paths)
-    ok, reasons = _verify(phase_id, run_dir)
-    _append_sidecar(run_dir, phase_id, {
-        "worker": worker_id, "attempt": total_attempts,
-        "status": "verified" if ok else "failed", "verifier_ok": ok,
-        "verifier_reasons": reasons, "units": len(unit_keys),
-        "units_failed": len(failed),
-    })
-    if ok:
-        return DispatchResult(phase_id, "ok", total_attempts, [])
-    return DispatchResult(phase_id, "exhausted", total_attempts,
-                          [f"unit {r.key}: {r.reason}" for r in failed] or reasons)
-
-
-def _fanout_unit_keys(run_dir: Path, spec: "fanout.FanoutSpec") -> List[str]:
-    """Unit inventory for a fanout phase. by=slide -> the run's slide ordinals
-    (arc_allocation/slides.json, never a constant); by=section -> the arc
-    bands; by=file -> not derivable generically (empty -> serial). Unknown =>
-    empty (caller falls back to serial)."""
-    try:
-        if spec.by == "slide":
-            n = _prompt_slide_count(run_dir)
-            return [f"{i:02d}" for i in range(1, (n or 0) + 1)] if n else []
-        if spec.by == "section":
-            arc = run_dir / "working" / "copy" / "arc_allocation.json"
-            obj = json.loads(arc.read_text(encoding="utf-8")) if arc.is_file() else None
-            bands = (obj or {}).get("bands") if isinstance(obj, dict) else None
-            return sorted(bands.keys()) if isinstance(bands, dict) else []
-    except Exception:
-        return []
-    return []
-
-
-def _aggregate_unit_outputs(target: Path, unit_out_paths: Dict[str, Path]) -> None:
-    """Best-effort aggregation: concatenate per-unit scratch outputs (sorted by
-    unit key) into the phase's real artifact target when it does not already
-    exist. A phase whose real writer is the owning role itself stays untouched
-    (the scratch files remain for that role to read)."""
-    try:
-        if target.exists():
-            return
-        parts = []
-        for key in sorted(unit_out_paths):
-            p = unit_out_paths[key]
-            if p.is_file():
-                parts.append(p.read_text(encoding="utf-8"))
-        if parts:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("\n".join(parts), encoding="utf-8")
-    except Exception:
-        pass
-
-
 def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                   dept_root: Path, phase_obj: Optional[Phase],
                   worker_id: str) -> DispatchResult:
@@ -3694,7 +3521,14 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             target=target, prior_reasons=reasons if reasons else None)
 
     last_reasons: List[str] = reasons
-    prior_reasons = reasons if reasons else None
+    # FIX 69 (proof run 2026-09-02): `prior_reasons` is only rebound AFTER a
+    # failed verifier pass (below), so attempt 1 of every dispatch crashed with
+    # UnboundLocalError("cannot access local variable 'prior_reasons'") — the
+    # same live failure the wave-1 proof hit on P-SP-P3-HYGIENE. Seed it from
+    # the sweep's own upstream reasons; empty reasons means None (compose_prompt
+    # treats a falsy prior_reasons as "no prior findings"), exactly the shape
+    # the fanout branch above already passes.
+    prior_reasons: Optional[List[str]] = reasons if reasons else None
 
     for attempt in range(1, DISPATCH_RETRY_CAP + 1):
         try:
@@ -3778,6 +3612,244 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     })
     return DispatchResult(phase_id, "exhausted", DISPATCH_RETRY_CAP, last_reasons,
                           str(target.relative_to(run_dir)))
+
+
+
+
+# ---------------------------------------------------------------------------
+# FIX 112 — the missing FIX-15b generic fan-out dispatch glue.
+#
+# dispatch_one() below has branched on `_phase_fanout_spec()` /
+# `_dispatch_phase_fanout_units()` since FIX 15b, but the two callables were
+# never defined in any shipped module: the moment a manifest phase declares a
+# `fanout` field (this fix does exactly that for P-STYLE-SPEC — "a fanout unit
+# in the copy stage authors the style-preview spec from the design direction"),
+# the generic dispatch path died with `NameError: name '_phase_fanout_spec' is
+# not defined` AFTER the target had already been resolved — a latent crash,
+# proven live against a synthetic manifest before this fix (the serial path
+# never hit it only because no shipped manifest phase declared `fanout`).
+#
+# The contract here mirrors fanout.py's own three seams (PARALLEL-PIPELINE-SPEC
+# S2): parse the manifest's {"by", "max_units"} field via fanout.parse_fanout_field
+# (malformed -> FanoutSpecError -> phase error, never a silent serial fallback),
+# enumerate the deterministic unit list via fanout.enumerate_fanout_items, run
+# the pool through fanout.run_units (per-unit ledger rows, partial failure
+# without cancellation), then aggregate every authored unit into the phase's
+# single produces_artifact target and re-run the SAME whole-phase verifier the
+# engine will run. A unit that returns nothing aggregates to nothing: if no
+# unit produced text the phase reports exhausted — never a fabricated file.
+# ---------------------------------------------------------------------------
+def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutSpec"]:
+    """Read THIS run's resolved manifest and return the phase's FanoutSpec,
+    or None when the phase declares no fanout field (the serial path below
+    stays byte-for-byte untouched). The manifest is re-resolved through the
+    same load_manifest_for_run() every sweep already uses — never a second,
+    drifting manifest source."""
+    manifest = load_manifest_for_run(run_dir)
+    if manifest is None:
+        return None
+    try:
+        phase_obj = manifest.phase_or_none(phase_id) if hasattr(manifest, "phase_or_none") \
+            else next((p for p in manifest.phases if p.id == phase_id), None)
+    except Exception:  # noqa: BLE001 — an unresolvable phase has no fanout spec
+        return None
+    if phase_obj is None:
+        return None
+    raw = getattr(phase_obj, "fanout", None)
+    if raw is None:
+        return None
+    try:
+        return fanout.parse_fanout_field(raw)
+    except fanout.FanoutSpecError as exc:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": "dispatcher", "attempt": 0, "status": "error",
+            "reason": f"fanout field malformed: {exc}",
+        })
+        return None
+
+
+def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
+    """FIX 112: per-phase aggregation of fanout unit outputs into the ONE text
+    document the phase's produces_artifact names. Returns None when the parts
+    cannot be honestly aggregated (the caller then refuses the write — never a
+    broken artifact on disk).
+
+    Default (no per-phase override): 1 part passes through as-is; N JSON-object
+    parts shallow-merge into one object; anything else is refused.
+
+    P-STYLE-SPEC override: each unit authored {"id","style_directive",
+    "representative_slide"}; the deck-level spec build_deck.run_style_preview_samples
+    enforces is {"variants":[exactly 3],"representative_slides":[exactly 3]}.
+    The aggregator keeps the first THREE well-formed variant candidates (ids
+    forced unique A/B/C in unit order), maps each candidate's own
+    representative_slide ordinal, and refuses unless exactly 3 made it."""
+    if phase_id != "P-STYLE-SPEC":
+        if len(parts) == 1:
+            return parts[0]
+        if not parts:
+            return None
+        try:
+            docs = [json.loads(p) for p in parts]
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not all(isinstance(d, dict) for d in docs):
+            return None
+        merged: Dict[str, Any] = {}
+        for d in docs:
+            merged.update(d)
+        return json.dumps(merged, indent=2, ensure_ascii=False)
+
+    variants: List[Dict[str, Any]] = []
+    reps: List[int] = []
+    used_ids: set = set()
+    fallback_ids = ("A", "B", "C")
+    for p in parts:
+        if len(variants) >= 3:
+            break
+        try:
+            doc = json.loads(p)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        directive = str(doc.get("style_directive") or "").strip()
+        rep = doc.get("representative_slide")
+        if not directive or isinstance(rep, bool) or not isinstance(rep, int):
+            continue
+        vid = str(doc.get("id") or "").strip().upper()
+        if vid not in ("A", "B", "C") or vid in used_ids:
+            vid = next((c for c in fallback_ids if c not in used_ids), None)
+            if vid is None:
+                continue
+        used_ids.add(vid)
+        variants.append({"id": vid, "style_directive": directive})
+        reps.append(int(rep))
+    if len(variants) != 3:
+        return None
+    return json.dumps(
+        {"variants": variants, "representative_slides": reps},
+        indent=2, ensure_ascii=False)
+
+
+def _dispatch_phase_fanout_units(
+        run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
+        phase_obj: Optional[Phase], worker_id: str,
+        spec: "fanout.FanoutSpec", patterns: List[str], target: Path,
+        prior_reasons: List[str]) -> DispatchResult:
+    """Run ONE manifest-declared fan-out phase through fanout.run_units and
+    aggregate the units into `target`. Per-unit prompt composition reuses
+    compose_prompt() (role SOP context + upstream artifacts, attempt-stamped),
+    the model call goes through dispatch_complete() (the same routed
+    entrypoint every other phase uses), and the whole-phase verifier runs at
+    the end — mirroring the P4-PROMPT parallel loop's partial-failure
+    semantics (S2.4): no fail-fast, every submitted unit runs to its own
+    conclusion, and the phase-level verify() only runs when every unit came
+    back ok."""
+    phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+    items = fanout.enumerate_fanout_items(
+        run_dir, spec, phase_id=phase_id, produces_artifact=patterns)
+    if not items:
+        reason = ("fanout spec enumerated zero units — refusing both a serial "
+                  "fallback and an empty aggregate (S2: no unit is ever invented)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
+        })
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    from presentation_job.fanout import resolve_effective_workers
+    effective_workers = resolve_effective_workers(
+        phase_obj.workers if phase_obj is not None else 1, unit_count=len(items))
+
+    def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
+        try:
+            system_prompt, user_prompt = compose_prompt(
+                phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                run_dir=run_dir, order={**order, "fanout_unit": unit.key},
+                attempt=1, prior_reasons=prior_reasons,
+            )
+            content, usage, route = dispatch_complete(
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+        except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
+                                     reasons=[f"{type(exc).__name__}: {exc}"])
+        text = (content or "").strip()
+        if not text:
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
+                                     reasons=["unit returned empty output"])
+        scratch = fanout.unit_output_path(run_dir, phase_id, unit.key)
+        scratch.parent.mkdir(parents=True, exist_ok=True)
+        tmp = scratch.with_name(scratch.name + ".partial")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(scratch)
+        return fanout.UnitResult(
+            key=unit.key, status="ok", attempts=1,
+            target=str(scratch.relative_to(run_dir)),
+            meta={"provider": route.get("provider"), "model": route.get("model"),
+                  "request_id": usage.get("request_id") if isinstance(usage, dict) else None},
+        )
+
+    deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
+    results = fanout.run_units(
+        [fanout.Unit(key=it["key"], payload=it) for it in items], _unit_worker,
+        workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
+        per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
+        deadline_s=deadline_s)
+
+    failed = [r for r in results if r.status != "ok"]
+    for r in results:
+        fanout.append_unit_ledger_row(run_dir, phase_id, {
+            "unit": r.key, "status": r.status, "attempts": r.attempts,
+            "target": r.target, "reasons": r.reasons,
+            **({"meta": r.meta} if r.meta else {}),
+        })
+    if failed:
+        reasons = [f"{r.key}: {'; '.join(r.reasons) or 'failed'}" for r in failed]
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": sum(r.attempts for r in results),
+            "status": "exhausted", "failed_units": [r.key for r in failed],
+            "reasons": reasons,
+        })
+        return DispatchResult(phase_id, "exhausted",
+                              sum(r.attempts for r in results), reasons)
+
+    # Aggregate: every ok unit's text is concatenated in unit-key order — the
+    # spec authoring contract (P-STYLE-SPEC) is one JSON document, so the
+    # units' outputs must be joined as JSON parts, not raw concatenation. The
+    # unit contract itself teaches JSON-object output; aggregation validates
+    # the JOIN and fails loudly rather than writing an unparsable file.
+    parts = []
+    for r in results:  # run_units returns INPUT order — merge order (S2.1)
+        if r.target:
+            scratch = run_dir / r.target
+            if scratch.is_file():
+                parts.append(scratch.read_text(encoding="utf-8", errors="replace").strip())
+    merged_text: Optional[str] = _aggregate_fanout_parts(phase_id, parts)
+    if not merged_text:
+        reason = ("fanout units produced output that could not be aggregated "
+                  "into a single artifact document — refusing to write a broken "
+                  "artifact (see per-unit files under working/fanout/)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 1, "status": "exhausted",
+            "reason": reason,
+        })
+        return DispatchResult(phase_id, "exhausted", 1, [reason])
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".partial")
+    tmp.write_text(merged_text + "\n", encoding="utf-8")
+    tmp.replace(target)
+
+    ok, reasons = _verify(phase_id, run_dir)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": len(results),
+        "status": "verified" if ok else "failed", "verifier_ok": ok,
+        "verifier_reasons": reasons, "units": len(results),
+    })
+    if ok:
+        return DispatchResult(phase_id, "ok", len(results), [],
+                              str(target.relative_to(run_dir)))
+    return DispatchResult(phase_id, "exhausted", len(results), reasons)
 
 
 # ---------------------------------------------------------------------------

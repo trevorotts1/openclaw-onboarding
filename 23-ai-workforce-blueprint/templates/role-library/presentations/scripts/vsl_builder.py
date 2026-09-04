@@ -130,11 +130,8 @@ USAGE
 
 FRONT-DOOR NONCE (mirrors build_deck.py / workbook_builder.py / build_webinar_video.py
 / sales_checkout_builder.py)
-    presentation-canonical-entry.sh and the engine's _script_nonce_env mint
-    OC_DECK_ENTRY_NONCE + a 0600 nonce file: the PER-PHASE file
-    <run-dir>/working/checkpoints/.nonce-<sanitized phase id> selected by
-    OC_DECK_ENTRY_NONCE_FILE (FIX 106), falling back to the run-scoped
-    .canonical-entry-nonce when the env var is absent. A hand-rolled invocation
+    presentation-canonical-entry.sh mints OC_DECK_ENTRY_NONCE + the run-scoped 0600
+    file <run-dir>/working/checkpoints/.canonical-entry-nonce. A hand-rolled invocation
     that would spend kie.ai money or touch a client's GHL funnel is refused (exit 2,
     AF-CANONICAL-RENDER-BYPASS) unless --no-push. --no-push offline smoke builds are
     exempt (no client GHL write is possible on that path).
@@ -224,22 +221,6 @@ VSL_GATE_MAX_SEC = 480.0
 # Front-door nonce (identical contract to workbook_builder.py / build_deck.py /
 # build_webinar_video.py / sales_checkout_builder.py).
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
-
-def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
-    """FIX 106: run-scoped PER-PHASE nonce file
-    <run-dir>/working/checkpoints/.nonce-<sanitized phase id>.
-
-    Mirrors build_deck._entry_nonce_phase_file / phases._nonce_phase_token
-    byte-for-byte so the engine's minted name and this reader's derived name can
-    never diverge. The engine (presentation_job.phases._script_nonce_env) mints one
-    file per phase and exports OC_DECK_ENTRY_NONCE_FILE alongside the nonce value;
-    a single shared run-scoped file let concurrent siblings overwrite each other's
-    handshake (P-U-VSL-BUILD runs at order 8.93, right beside P9.6-WEBINAR-VIDEO at
-    8.92 — sibling B's mint/unlink used to destroy sibling A's in-flight phase)."""
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
-    if not safe:
-        return Path(run_dir) / ENTRY_NONCE_REL
-    return (Path(run_dir) / ENTRY_NONCE_REL.parent / f".nonce-{safe}")
 
 # Brand defaults when intake carries no palette (mirrors workbook_builder.py's /
 # sales_checkout_builder.py's fallback).
@@ -1155,24 +1136,13 @@ def verify_push_receipt(run_dir: Path) -> Tuple[Optional[bool], str, dict]:
 # ---------------------------------------------------------------------------
 # Front-door nonce (identical contract to workbook_builder.py / build_deck.py /
 # build_webinar_video.py / sales_checkout_builder.py)
-# FIX 106 (per-phase nonce): when OC_DECK_ENTRY_NONCE_FILE is set, that value
-# selects the per-phase compare target .nonce-<sanitized phase id> — two script
-# phases in one wave each get their own file and no longer overwrite each other
-# (P-U-VSL-BUILD sits at order 8.93, immediately beside P9.6-WEBINAR-VIDEO).
-# Without OC_DECK_ENTRY_NONCE_FILE the legacy run-scoped handshake is preserved
-# (canonical-entry.sh fallback path mints both). A missing env var, a missing
-# file, or any mismatch -> False (fail-closed).
 # ---------------------------------------------------------------------------
 def _verify_entry_nonce(run_dir: Path) -> bool:
     import hmac
     env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
     if len(env_nonce) < 16:
         return False
-    phase_ref = (os.environ.get("OC_DECK_ENTRY_NONCE_FILE") or "").strip()
-    if phase_ref:
-        nf = _entry_nonce_phase_file(run_dir, phase_ref)
-    else:
-        nf = run_dir / ENTRY_NONCE_REL
+    nf = run_dir / ENTRY_NONCE_REL
     try:
         file_nonce = nf.read_text(encoding="utf-8").strip()
     except OSError:
@@ -1807,7 +1777,6 @@ def _selftest() -> int:
         nf.parent.mkdir(parents=True, exist_ok=True)
         nf.write_text("a-real-nonce-value-1234567890")
         old = os.environ.get("OC_DECK_ENTRY_NONCE")
-        old_ref = os.environ.get("OC_DECK_ENTRY_NONCE_FILE")
         try:
             os.environ["OC_DECK_ENTRY_NONCE"] = "a-real-nonce-value-1234567890"
             if not _verify_entry_nonce(rd):
@@ -1815,32 +1784,11 @@ def _selftest() -> int:
             os.environ["OC_DECK_ENTRY_NONCE"] = "a-DIFFERENT-nonce-value-000000"
             if _verify_entry_nonce(rd):
                 fails.append("_verify_entry_nonce: mismatched env+file returned True")
-            # FIX 106: per-phase target — the engine's minted .nonce-<phase> file
-            # is honored via OC_DECK_ENTRY_NONCE_FILE, and a mismatched value
-            # still fails closed.
-            os.environ["OC_DECK_ENTRY_NONCE"] = "a-real-nonce-value-1234567890"
-            os.environ["OC_DECK_ENTRY_NONCE_FILE"] = "P-U-VSL-BUILD"
-            (rd / ENTRY_NONCE_REL.parent / ".nonce-P-U-VSL-BUILD").write_text(
-                "a-real-nonce-value-1234567890")
-            if not _verify_entry_nonce(rd):
-                fails.append("_verify_entry_nonce: matching per-phase env+file returned False")
-            os.environ["OC_DECK_ENTRY_NONCE"] = "a-DIFFERENT-nonce-value-000000"
-            if _verify_entry_nonce(rd):
-                fails.append("_verify_entry_nonce: mismatched per-phase env+file returned True")
-            # And a missing per-phase file fails closed even with a plausible env.
-            (rd / ENTRY_NONCE_REL.parent / ".nonce-P-U-VSL-BUILD").unlink()
-            os.environ["OC_DECK_ENTRY_NONCE"] = "a-real-nonce-value-1234567890"
-            if _verify_entry_nonce(rd):
-                fails.append("_verify_entry_nonce: missing per-phase file returned True")
         finally:
             if old is None:
                 os.environ.pop("OC_DECK_ENTRY_NONCE", None)
             else:
                 os.environ["OC_DECK_ENTRY_NONCE"] = old
-            if old_ref is None:
-                os.environ.pop("OC_DECK_ENTRY_NONCE_FILE", None)
-            else:
-                os.environ["OC_DECK_ENTRY_NONCE_FILE"] = old_ref
 
     if fails:
         print("vsl_builder selftest -> FAIL")

@@ -368,12 +368,14 @@ class TestRegistryParity:
         resolving py_symbols, so the total moves 183 -> 188 while the
         build_deck-enforced count and the tightened A3 invariant both hold.
         The FIX 5/M7 teleprompter publish gate (AF-TELEPROMPTER-UNPUBLISHED,
-        enforced_by postflight_bundle_gate) brings the total to 189; the
-        build_deck-enforced count is unchanged."""
+        enforced_by postflight_bundle_gate) and the FIX 103-family registrations
+        (AF-SPEECH-PACING, AF-RENDER-EMPTY, AF-RENDER-COMPLETE — all
+        build_deck-enforced with resolving py_symbols) bring the total to 192
+        and the build_deck-enforced count to 108."""
         manifest = json.loads(MANIFEST.read_text())
         enforced = [a for a in manifest["autofails"] if a.get("enforced_by") == "build_deck"]
-        assert len(manifest["autofails"]) == 189
-        assert len(enforced) == 105
+        assert len(manifest["autofails"]) == 192
+        assert len(enforced) == 108
 
 
 # ===========================================================================
@@ -389,7 +391,7 @@ class TestManifestDerivedPhaseCount:
         # cannot stale-pin this file.
         phases = m["phases"]
         assert len(phases) == len({p["id"] for p in phases}), "phase ids must be unique"
-        assert m["manifest_version"] >= 55  # FIX 83: floor and manifest move together (U019 step 8); FIX 92 bumped 56 -> 58 (two closeout rows)
+        assert m["manifest_version"] >= 55  # FIX 83: floor and manifest move together (U019 step 8); FIX 92/103 waves bumped it further (v64 at merge)
 
     def test_entry_script_derives_count_from_manifest(self):
         """No stale hardcoded '36' for the displayed count; the script computes

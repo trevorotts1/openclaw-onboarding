@@ -14,7 +14,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Import the driver as a module
 # ---------------------------------------------------------------------------
-_DRV = pathlib.Path(__file__).resolve().parent.parent / "deck-intake-turngate.py"
+_DRV = pathlib.Path(__file__).resolve().parent.parent / "deck-intake-driver.py"
 _mod = {}
 
 with open(_DRV) as f:
@@ -130,7 +130,7 @@ def test_waiver_emitted_when_decline_with_quote(qdata):
     assert r["client_request_quote"] == "I read from paper, always have"
     assert r["intake_field"] == "teleprompter_declined_reason"
     assert r["captured_at"] == "2026-07-25T10:00:00Z"
-    assert r["captured_from"] == "deck-intake-turngate.py"
+    assert r["captured_from"] == "deck-intake-driver.py"
 
 
 def test_captured_at_falls_back_to_asked_at(qdata):

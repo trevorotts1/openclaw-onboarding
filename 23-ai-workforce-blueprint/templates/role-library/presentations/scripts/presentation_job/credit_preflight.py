@@ -74,8 +74,7 @@ never opens sockets, never reads credentials):
     "estimate_source": "catalog" | "unpriced" | None,   # FIX 13
     "per_provider": [{provider, estimate_usd, phases, calls, rate_source,
                       balance, balance_evidence, shortfall_usd}],
-    "blocking": [{code, provider, phase_id?, detail}],   # balance blocks +
-                      FIX 114 provider_payment_required (402 hard stop)
+    "blocking": [{code, provider, phase_id?, detail}],   # ONLY balance blocks
     "warnings": [{code, provider, phase_id?, detail}],   # FIX 13: never block
     "downgrade_to": str | None,
     "balance_evidence": "measured" | "unverified",
@@ -103,7 +102,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -145,95 +143,6 @@ CODE_UNPRICED_WARN = "unpriced_warn"
 #: None when nothing could be priced at all.
 ESTIMATE_SOURCE_CATALOG = "catalog"
 ESTIMATE_SOURCE_UNPRICED = "unpriced"
-
-#: FIX 114: HTTP 402 (payment required) from a provider is NEVER a per-call
-#: failure. It is recorded as evidence the moment a provider caller sees it,
-#: and the next preflight hard-stops the launch BEFORE any dispatch row is
-#: written. Two evidence seams, both data-only (no credential ever appears):
-#:   * real: the run dir's working/telemetry/provider-402.jsonl rows, appended
-#:     by record_provider_402();
-#:   * stub: $PRESENTATION_CREDIT_402 -- comma-separated `provider` or
-#:     `provider=detail` entries, the proof/QC switch that needs no file.
-CODE_PROVIDER_402 = "provider_payment_required"
-PROVIDER_402_FILE_ENV = "PRESENTATION_CREDIT_402_FILE"
-PROVIDER_402_STUB_ENV = "PRESENTATION_CREDIT_402"
-
-
-def provider_402_path(run_dir) -> Path:
-    """The run dir's 402 evidence file (FIX 114)."""
-    return Path(run_dir) / "working" / "telemetry" / "provider-402.jsonl"
-
-
-def record_provider_402(run_dir, provider: str, *, detail: str = "",
-                        status: int = 402,
-                        phase_id: Optional[str] = None) -> Dict[str, Any]:
-    """Append one 402 evidence row for `provider` to the run dir (FIX 114).
-
-    The seam a provider caller uses the moment a provider answers 402
-    (payment required) mid-run: the row is the evidence the next
-    launcher_gate() hard-stops on, instead of the 402 being swallowed as a
-    transient per-call failure. Best-effort persistence: an OSError is
-    swallowed because this runs inside the caller's own failure path. No
-    credential value ever enters the row -- provider id, status, detail text.
-    """
-    row = {"event": "provider_402",
-           "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "provider": str(provider or ""), "status": int(status),
-           "detail": str(detail or ""), "phase_id": phase_id}
-    if run_dir is not None and row["provider"]:
-        try:
-            path = provider_402_path(run_dir)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(row, sort_keys=True) + "\n")
-        except OSError:
-            pass  # evidence write must never raise inside a failure path
-    return row
-
-
-def read_provider_402(run_dir=None) -> List[Dict[str, Any]]:
-    """All 402 evidence rows: $PRESENTATION_CREDIT_402 stub entries plus the
-    run dir's (or $PRESENTATION_CREDIT_402_FILE override's) jsonl rows.
-    Unparsable/unreadable rows are skipped -- evidence is never fabricated.
-    """
-    rows: List[Dict[str, Any]] = []
-    stub = os.environ.get(PROVIDER_402_STUB_ENV, "").strip()
-    if stub:
-        for part in stub.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            provider, _, detail = part.partition("=")
-            provider = provider.strip()
-            if not provider:
-                continue
-            rows.append({"event": "provider_402", "provider": provider,
-                         "status": 402, "detail": detail.strip(),
-                         "phase_id": None, "source": "stub-env"})
-    override = os.environ.get(PROVIDER_402_FILE_ENV, "").strip()
-    if override:
-        path: Optional[Path] = Path(override).expanduser()
-    elif run_dir is not None:
-        path = provider_402_path(run_dir)
-    else:
-        path = None
-    if path is not None and path.is_file():
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(row, dict) and str(row.get("provider") or ""):
-                        row.setdefault("source", str(path))
-                        rows.append(row)
-        except OSError:
-            pass  # unreadable evidence is skipped, never fabricated
-    return rows
 
 #: Providers billed from a monthly pool rather than per call: the master fix
 #: spec FIX 13 prices ollama-cloud at 0 ("ollama-cloud 0 (monthly pool)"). A
@@ -489,8 +398,7 @@ def preflight(mode: str, *,
               measured_calls: Optional[Dict[str, int]] = None,
               plan_calls: Optional[Dict[str, int]] = None,
               actuals: Optional[Dict[str, Dict[str, Any]]] = None,
-              last_run_dir: Optional[Path] = None,
-              provider_402: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+              last_run_dir: Optional[Path] = None) -> Dict[str, Any]:
     """One credit-preflight verdict for one mode launch / phase boundary.
 
     Args:
@@ -509,11 +417,7 @@ def preflight(mode: str, *,
       actuals: {phase_id: telemetry row} for COMPLETED phases at a boundary
                 re-check -- actuals replace estimates per the spec.
       last_run_dir: run dir to read measured calls from when measured_calls
-                is None (the launch-call convenience); also where FIX 114 402
-                evidence is read from when provider_402 is None.
-      provider_402: FIX 114 pre-read 402 evidence rows (read_provider_402
-                shape). None -> read from $PRESENTATION_CREDIT_402 + the
-                last_run_dir/provider-402.jsonl seam.
+                is None (the launch-call convenience).
 
     Returns the verdict dict (module docstring contract). PURE: no I/O beyond
     the optional telemetry/balances reads named above, no sockets, no keys.
@@ -657,33 +561,6 @@ def preflight(mode: str, *,
         })
         reasons.append("no LLM-routed phases -> WARN (estimate $0.00)")
 
-    # FIX 114: recorded/stubbed 402 evidence is a HARD STOP -- the provider
-    # refused payment mid-run once; relaunching would burn budget into the
-    # same refusal. Never a per-call failure, never a warning, and not
-    # downgradeable: a cheaper mode hits the same account.
-    rows_402 = list(provider_402) if provider_402 is not None \
-        else read_provider_402(last_run_dir)
-    seen_402: Dict[str, List[Dict[str, Any]]] = {}
-    for row in rows_402:
-        prov = str(row.get("provider") or "")
-        if prov:
-            seen_402.setdefault(prov, []).append(row)
-    for prov in sorted(seen_402):
-        events = seen_402[prov]
-        last = events[-1]
-        detail = str(last.get("detail") or "")
-        blocking.append({
-            "code": CODE_PROVIDER_402, "provider": prov,
-            "phase_id": last.get("phase_id"),
-            "detail": (f"provider {prov} answered HTTP 402 (payment "
-                       f"required) {len(events)} time(s) mid-run -- FIX 114: "
-                       f"never a per-call failure; refusing {mode} launch "
-                       f"BEFORE any dispatch until credit is restored"
-                       + (f" (last: {detail})" if detail else "")),
-        })
-        reasons.append(f"{prov}: recorded 402 -> hard stop "
-                       f"({len(events)} event(s))")
-
     verdict = "blocked" if blocking else "proceed"
     downgrade_to = _downgrade(mode, blocking, per_provider, balances,
                               measured_calls, plan_calls, actuals, routes)
@@ -745,12 +622,9 @@ def _downgrade(mode: str, blocking: List[Dict[str, Any]],
     if not blocking or not any(b["code"] == CODE_INSUFFICIENT_BALANCE
                                for b in blocking):
         return None
-    if any(b["code"] in (CODE_COST_UNKNOWN, CODE_CALLS_UNESTIMATED,
-                         CODE_PROVIDER_402)
+    if any(b["code"] in (CODE_COST_UNKNOWN, CODE_CALLS_UNESTIMATED)
            for b in blocking):
-        return None  # a price/estimability/payment problem is not a budget
-        # problem -- FIX 114: a 402 hard stop is never downgraded, the cheaper
-        # mode hits the same refused account.
+        return None  # a price/estimability problem is not a budget problem
     try:
         idx = MODE_ORDER.index(mode)
     except ValueError:

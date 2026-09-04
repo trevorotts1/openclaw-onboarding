@@ -124,8 +124,6 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: healing passes run inside the QC band `P-QC-AGGREGATE` (8.65) and the assembly band `P8-ASSEMBLE` (8).
-
 ### SOP 9.1 -- Incident Intake and Triage
 
 **When to run:** On every error flag, watchdog handoff, QC loop-4 escalation, failCode event, or operator bug report.

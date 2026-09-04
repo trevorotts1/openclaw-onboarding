@@ -210,6 +210,16 @@ from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
 from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
+# BUNDLE gate's guide_pdf/deck_pdf floors scale by THIS deck's slide count via
+# guide_floor(n)/pdf_floor(n) here — no site re-derives the arithmetic, and no
+# 51,200 / 34-slide literal is enforced at this site. Fail-soft: when the
+# helper module is absent the gate falls back to the raw spec floors below.
+try:
+    from presentation_job import deliverable_floors as _floors
+except Exception:  # noqa: BLE001 — fail-soft: legacy box without the floors module
+    _floors = None  # type: ignore[assignment]
+
 # FIX 23a [FIX 14] — ONE per-provider governor for every outbound KIE call. Every
 # submit (createTask POST) and every poll (recordInfo GET) acquires a slot from
 # presentation_job/governor.py: rate bucket (burst 20 => <= 20 in any rolling
@@ -971,15 +981,24 @@ DELIVERABLES_REQUIRED = [
         "key": "deck_pdf",
         "filename": "{deck_slug}-FINAL.pdf",
         "label": "deck PDF export",
-        "min_bytes": 51_200,             # 50 KB — PDF export of at least 2 slides
-        "note": ">50KB; produced by PPTX Assembly Specialist (LibreOffice/Pandoc export)",
+        # FIX 103: static value is the reference-deck calibration DERIVED from
+        # THE one floors module (pdf_floor(34) == max(1506*34, 8192), no bare
+        # 51,200 literal); the RUNTIME floor enforced by the BUNDLE gate below
+        # is _floors.pdf_floor(slide_count), scaled per deck — never a flat
+        # constant at the enforcement point.
+        "min_bytes": _floors.pdf_floor(34),   # reference-deck calibration — runtime is pdf_floor(n)
+        "note": "scaled per deck by deliverable_floors.pdf_floor(n); produced by PPTX Assembly Specialist (LibreOffice/Pandoc export)",
     },
     {
         "key": "guide_pdf",
         "filename": "PRESENTER-GUIDE.pdf",
         "label": "presenter guide PDF",
-        "min_bytes": 51_200,             # 50 KB — guide covers all slides with talking points
-        "note": ">50KB; produced by Presenters Guide Specialist. REQUIRED UPSTREAM STEP.",
+        # FIX 103: static reference calibration derived from THE one floors
+        # module (guide_floor(34) == max(1600*34, 12000)); the RUNTIME floor
+        # enforced by the BUNDLE gate below is _floors.guide_floor(slide_count),
+        # scaled per deck — never a flat constant at the enforcement point.
+        "min_bytes": _floors.guide_floor(34),  # reference-deck calibration — runtime is guide_floor(n)
+        "note": "scaled per deck by deliverable_floors.guide_floor(n); produced by Presenters Guide Specialist. REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_md",
@@ -3380,6 +3399,9 @@ QC_REPORT_FLOOR_BYTES = 256   # bytes; a real per-slide QC report is far larger
 # deck. A 12-slide deck can NEVER carry 20 real per-slide verdicts, so every
 # legitimately-populated QC report on a small deck tripped AF-QC-PLACEHOLDER and the
 # bundle gate failed closed. Scale the floor to the deck: max(8, min(20, slide_count)).
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): the reference ceiling and the scaling
+# come from THE one helper (_floors.qc_verdict_floor(n) = min(20, n)) — the 20 is
+# the helper's reference-deck ceiling, not an inline literal at this site.
 QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry (reference deck)
 
 
@@ -3392,7 +3414,9 @@ def _qc_slide_floor(run_dir: Path, report_obj=None) -> int:
     (e.g. a QC fixture run dir that ships only the reports) the floor derives from
     the REPORT's own per-slide rows — an honest report grades every deck slide, so
     its row count is the deck size it attests to. Falls back to the reference floor
-    only when neither is readable."""
+    only when neither is readable.
+    FIX 103: the min(20, n) arithmetic is THE helper's (_floors.qc_verdict_floor);
+    this site never re-derives it."""
     try:
         n = 0
         for cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
@@ -3414,7 +3438,9 @@ def _qc_slide_floor(run_dir: Path, report_obj=None) -> int:
             # 12-slide deck; an 11-row report cannot cover 12 slides).
             n = len([e for e in _qc_report_per_slide_verdicts(report_obj)
                      if _qc_slide_verdict_is_real(e)])
-        return max(8, min(QC_REPORT_SLIDE_FLOOR, n or QC_REPORT_SLIDE_FLOOR))
+        return max(8, _floors.qc_verdict_floor(n or QC_REPORT_SLIDE_FLOOR)
+                   if _floors is not None
+                   else min(QC_REPORT_SLIDE_FLOOR, n or QC_REPORT_SLIDE_FLOOR))
     except Exception:  # noqa: BLE001 — fall back to the reference floor
         return QC_REPORT_SLIDE_FLOOR
 
@@ -3990,11 +4016,19 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
 
     problems = []
 
-    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) + Fix 97 PACING BAND ---
-    # One intake read supplies BOTH the duration target and the run's own wpm
-    # target (Fix 97: the band measures against the run's TARGET_WPM, not the
-    # module default).
-    target, intake_wpm = _intake_speech_target(run_dir)
+    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
     if not target or target <= 0:
         return ""  # no usable duration target — the intake gate owns that case.
 
@@ -4006,23 +4040,18 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
             f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
             f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
             f"that does not fill the requested duration (AF-SPEECH-SHORT)")
-    # Fix 97 leg 2: HARD pacing band. PASS iff
-    # |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND with TARGET_WPM
-    # from intake.json (target_wpm) falling back to SPEECH_TARGET_WPM. A speech
-    # that clears the 120-wpm floor but sits outside the band was written to the
-    # wrong pace for this run — the report marking it pass is rejected
-    # (AF-SPEECH-PACING), mirroring _chk_speech_length's leg 2.
-    target_wpm = intake_wpm if (intake_wpm and intake_wpm > 0) else SPEECH_TARGET_WPM
-    _dev = _speech_pacing_deviation(words, target, target_wpm)
+    # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
+    # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
+    # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
+    # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
+    _dev = _speech_pacing_deviation(words, target)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        problems.append(
-            f"{speech.name} measured {_eff_wpm:.0f} wpm effective ({words} words / "
-            f"{target:g} min) — {_dev:.0%} off the {target_wpm} wpm target rate, "
-            f"outside the +/-{SPEECH_PACING_BAND:.0%} pacing band "
-            f"(|words/TARGET_WPM - target_minutes| <= {SPEECH_PACING_BAND:.0%}) — "
-            f"the speech-QC report marked pass over a speech that does not fill the "
-            f"requested duration at the run's target pace ({SPEECH_PACING_FAIL_CODE})")
+        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: {speech.name} measured "
+              f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
+              f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
+              f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
+              f"duration reject.", file=sys.stderr)
 
     # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
     pec = _import_pitch_engines_check()
@@ -5386,53 +5415,50 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
     return ""
 
 
-# Speech-length gate: TWO duration legs, one band.
-#
-# Leg 1 — HARD word floor (AF-SPEECH-SHORT, unchanged): the presenter speech must
-# carry at least target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW
-# end of the verified 120-140 absorption band the Presenter Speech Writer cites.
-#
-# Leg 2 — HARD pacing band (Fix 97, AF-SPEECH-PACING): PASS iff
-# |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND. TARGET_WPM is the
-# run's OWN target rate — read from intake.json (target_wpm, written by
-# deck-intake-driver.py from speech_speed_preference; SPEECH_TARGET_WPM is only
-# the default when intake states none). The band is deliberately TIGHTER than the
-# legacy 120-140 wpm bracket: a 60-minute speech sized for 130 wpm is only ~7.7%
-# off when re-measured at a 140 wpm target, so no 10% band can discriminate the
-# two targets (that unsatisfiable arithmetic is why the old bracket was demoted).
-# A speech outside the band still clears the leg-1 floor -> the pacing rate does
-# not fill the requested duration at the run's target pace -> AF-SPEECH-PACING.
-# The WIDE 120-140 wpm bracket the speech-QC SOP used to enforce as hard
-# auto-fails is DEMOTED to advisory under this band (MASTER Part 8 ruling 9.3-B,
-# "band advisory only" now names the legacy bracket, not this leg).
+# Speech-length gate floor: the presenter speech must carry at least
+# target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW end of the
+# verified 120-140 absorption band the Presenter Speech Writer cites. This is the
+# HARD floor only (a script below 120 wpm of content is too SHORT for the chosen
+# duration and fails AF-SPEECH-SHORT). The pacing band around the target rate is
+# advisory (Fix 97, MASTER Part 8 ruling 9.3-B): the measured
+# |words / SPEECH_TARGET_WPM - target_minutes| deviation within 10% is reported,
+# never fails — the band follows the target, it does not gate.
 SPEECH_WPM_FLOOR = 120    # hard SHORT floor (low end of the verified band)
-SPEECH_TARGET_WPM = 140   # default target wpm when intake.json states none
-SPEECH_PACING_BAND = 0.07  # Fix 97: PASS iff |words/TARGET_WPM - minutes| <= 7%
+SPEECH_TARGET_WPM = 140   # MASTER Part 8 ruling 9.3-B; the advisory band centers on it
+SPEECH_PACING_BAND = 0.10  # +/-10% around target (Fix 97, band advisory only)
 SPEECH_PACING_ADVISORY_PREFIX = "NOTE-SPEECH-PACING"
-SPEECH_PACING_FAIL_CODE = "AF-SPEECH-PACING"
 
 
 def _speech_pacing_deviation(words: int, target_minutes: float,
                              target_wpm: int = SPEECH_TARGET_WPM) -> Optional[float]:
     """Fix 97 pacing arithmetic: |words/target_wpm - target_minutes| / target_minutes
-    as an absolute fraction (0.07 == 7% off). PASS iff this is <= SPEECH_PACING_BAND.
-    Returns None when the inputs cannot be divided (target <= 0). Pure arithmetic
-    shared by the gate and the teeth."""
+    as an absolute fraction (0.10 == 10% off). Returns None when the inputs cannot
+    be divided (target <= 0). Pure arithmetic shared by the gate and the teeth."""
     if not target_minutes or target_minutes <= 0 or not target_wpm or target_wpm <= 0:
         return None
     effective = float(words) / float(target_wpm)          # minutes at target wpm
     return abs(effective - float(target_minutes)) / float(target_minutes)
 
 
-def _intake_speech_target(run_dir: Path) -> Tuple[Optional[float], Optional[int]]:
-    """Fix 97: read the run's duration target AND its own wpm target from
-    intake.json. Returns (target_talk_minutes, target_wpm) — either may be None.
-    Reads intake.json ONCE and pulls both fields; the wpm key is matched
-    case-insensitively because deck-intake-driver.py writes lowercase
-    `target_wpm` while the intake question schema names the storeOn key
-    `TARGET_WPM` — both spellings land in the same file and both must resolve
-    (the critic's finding: a gate that cannot read the run's TARGET_WPM makes a
-    130-wpm run behave identically to a 140-wpm run)."""
+def _chk_speech_length(run_dir: Path) -> str:
+    """SPEECH-LENGTH gate (AF-SPEECH-SHORT). Once the presenter speech exists, its
+    word count must be >= target_talk_minutes x SPEECH_WPM_FLOOR (120 wpm). A speech
+    shorter than that does not fill the duration the client asked for and FAILS short.
+
+    Fix 97 (MASTER Part 8): the pacing band is advisory only — a speech within
+    +/-10% of target_talk_minutes at SPEECH_TARGET_WPM is fine, and one OUTSIDE the
+    band still PASSES as long as it clears the hard floor; the band deviation is
+    surfaced as an advisory note (SPEECH_PACING_ADVISORY_PREFIX) on stderr, never
+    as a hard fail (the hard floor above is the only duration reject).
+
+    This gate is CONDITIONAL by design: the speech is written downstream (Phase 9
+    delivery), AFTER the deterministic render. So when no speech artifact exists yet,
+    this returns "" (the render is allowed to proceed — the gate fires at delivery,
+    not at render). When a speech file IS present, it is enforced. Either way the
+    gate is wired into the lockstep so it can never be silently skipped once the
+    speech is written. Returns "" on pass/not-applicable, or a fatal AF message."""
+    # target_talk_minutes comes from intake.json (the field _chk_intake requires).
+    target = None
     for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
         p = run_dir / rel
         if p.exists():
@@ -5443,43 +5469,7 @@ def _intake_speech_target(run_dir: Path) -> Tuple[Optional[float], Optional[int]
                     target = float(raw) if raw is not None else None
                 except (TypeError, ValueError):
                     target = None
-                wpm = None
-                for key in obj:
-                    if str(key).lower() in ("target_wpm", "targetwpm"):
-                        try:
-                            wpm = int(float(obj[key])) if obj[key] is not None else None
-                        except (TypeError, ValueError):
-                            wpm = None
-                        break
-                return target, wpm
             break
-    return None, None
-
-
-def _chk_speech_length(run_dir: Path) -> str:
-    """SPEECH-LENGTH gate (AF-SPEECH-SHORT + Fix 97 AF-SPEECH-PACING). Once the
-    presenter speech exists, TWO duration legs apply:
-
-    Leg 1 (unchanged): word count must be >= target_talk_minutes x
-    SPEECH_WPM_FLOOR (120 wpm). A speech shorter than that does not fill the
-    duration the client asked for and FAILS short.
-
-    Leg 2 (Fix 97): PASS iff |words/TARGET_WPM - target_minutes| <=
-    SPEECH_PACING_BAND, where TARGET_WPM is the run's OWN rate from intake.json
-    (target_wpm; SPEECH_TARGET_WPM is only the default). A speech that clears
-    the leg-1 floor but sits outside the band was written to the WRONG pace and
-    fails AF-SPEECH-PACING. The wide legacy 120-140 wpm bracket the speech-QC
-    SOP used to enforce as hard auto-fails is the advisory layer now (a
-    NOTE-SPEECH-PACING stderr note), never a second hard fail.
-
-    This gate is CONDITIONAL by design: the speech is written downstream (Phase 9
-    delivery), AFTER the deterministic render. So when no speech artifact exists yet,
-    this returns "" (the render is allowed to proceed — the gate fires at delivery,
-    not at render). When a speech file IS present, it is enforced. Either way the
-    gate is wired into the lockstep so it can never be silently skipped once the
-    speech is written. Returns "" on pass/not-applicable, or a fatal AF message."""
-    # target_talk_minutes + target_wpm come from intake.json (one read, both fields).
-    target, intake_wpm = _intake_speech_target(run_dir)
     if not target or target <= 0:
         # No usable target (intake gate handles a missing target). Not applicable here.
         return ""
@@ -5510,33 +5500,18 @@ def _chk_speech_length(run_dir: Path) -> str:
                 f"the floor for a {target:g}-minute talk is {floor} words "
                 f"(target_talk_minutes x {SPEECH_WPM_FLOOR} wpm). The speech is too "
                 f"SHORT to fill the requested duration. Lengthen it.")
-    # Fix 97 leg 2: HARD pacing band against the run's OWN target rate. PASS iff
-    # |words/TARGET_WPM - target_minutes| <= SPEECH_PACING_BAND; TARGET_WPM comes
-    # from intake.json (target_wpm, lowercased by the intake driver) and falls
-    # back to SPEECH_TARGET_WPM when intake states none. Outside the band the
-    # speech was written to the wrong pace for this run -> AF-SPEECH-PACING.
-    target_wpm = intake_wpm if (intake_wpm and intake_wpm > 0) else SPEECH_TARGET_WPM
-    _dev = _speech_pacing_deviation(words, target, target_wpm)
+    # Fix 97: pacing band ADVISORY only. Above the floor, the measured deviation
+    # from the target rate is reported (stderr) — it never fails the gate. The
+    # band follows SPEECH_TARGET_WPM (ruling 9.3-B) so the arithmetic stays the
+    # |words/TARGET_WPM - target_minutes| <= 10% form the speech-QC harness uses.
+    _dev = _speech_pacing_deviation(words, target)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        return (f"{SPEECH_PACING_FAIL_CODE}: presenter speech {speech.name} measures "
-                f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
-                f"{_dev:.0%} off the {target_wpm} wpm target rate, outside the "
-                f"+/-{SPEECH_PACING_BAND:.0%} pacing band "
-                f"(|words/TARGET_WPM - target_minutes| <= {SPEECH_PACING_BAND:.0%}). "
-                f"The speech does not fill the requested duration at the run's target "
-                f"pace. Resize it to {int(round(target * target_wpm))} words "
-                f"({target:g} min x {target_wpm} wpm).")
-    # Advisory layer only: the WIDE legacy 120-140 wpm bracket (the speech-QC SOP's
-    # old hard auto-fails) is a NOTE on stderr, never a second hard fail.
-    _legacy_slow, _legacy_fast = 120.0, 140.0
-    _eff = words / target
-    if _eff < _legacy_slow or _eff > _legacy_fast:
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: presenter speech {speech.name} sits "
-              f"outside the legacy 120-140 wpm absorption bracket ({_eff:.0f} wpm "
-              f"effective) — advisory only under the Fix 97 band (the "
-              f"{SPEECH_PACING_FAIL_CODE} band above is the hard reject).",
-              file=sys.stderr)
+        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: presenter speech {speech.name} is "
+              f"outside the {SPEECH_TARGET_WPM} wpm +/-{SPEECH_PACING_BAND:.0%} pacing "
+              f"band: {_eff_wpm:.0f} wpm effective ({words} words / {target:g} min, "
+              f"{_dev:.0%} off target). Advisory only — the hard AF-SPEECH-SHORT "
+              f"floor ({SPEECH_WPM_FLOOR} wpm) still governs.", file=sys.stderr)
     return ""
 
 
@@ -6842,17 +6817,6 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
                 if str(att.get("status", "")).strip().lower() not in (
                         "done", "artifact_present", "preflight_ok",
                         "preflight_ok_adhoc", "qc_pass_measurer"):
-                    continue
-                # FIX 30 — only ENGINE-WRITTEN rows are attestations. The writer
-                # identity is attested_by, namespaced "engine:" (the engine writes
-                # "engine:<pid>", run_signature_deck.attest_phase writes the same).
-                # A row WITHOUT an "engine:"-prefixed attested_by is a hand-edited /
-                # self-minted shape — the exact vector the live 28-rows-at-midnight
-                # hand-edit used — and satisfies NOTHING, even when it carries a
-                # completed status and substance_verified True. The writer always
-                # stamps it, so a genuine row can never trip here; only a forged
-                # row can.
-                if not str(att.get("attested_by", "")).strip().startswith("engine:"):
                     continue
                 if att.get("substance_verified") is not True:
                     continue
@@ -9337,30 +9301,13 @@ def _chk_rerank(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     text = _slides_copy_text_lc(run_dir)
     if not text:
         return ""
-    # FIX 35: the price anchor is a WHOLE-WORD match, not a substring find.
-    # "price" as a substring also lives inside "pricing", "priceless",
-    # "overpriced", "compare prices" — a deck whose copy merely MENTIONS the
-    # word family got a false price anchor at that offset, and any re-rank
-    # demand sitting after it satisfied Move 7 even though no PRICE beat (the
-    # offer slide the eight-move sequence anchors on) exists. The anchor must
-    # be the standalone word. scan_negation_aware's whole-word machinery is
-    # exactly this (plus negation suppression, which a price beat must also
-    # survive to count — "the price is not the point" is not a price beat).
-    _scanners_35 = _import_scanners()
-    if _scanners_35 is not None:
-        price_hits = _scanners_35.scan_negation_aware(text, ("price",))
-        price = price_hits[0][1] if price_hits else -1
-    else:
-        # Legacy fallback: whole-word regex over the lowercased text (keeps the
-        # pre-FIX-35 anchor semantics for the standalone word; a substring hit
-        # inside a longer word was ALWAYS the aliasing defect, so the fallback
-        # tightens to the same whole-word rule rather than preserving it).
-        price = next((m.start() for m in re.finditer(r"\bprice\b", text)), -1)
+    price = text.find("price")
     if price < 0:
         return ""  # no price beat yet.
     # FIX 35: negation-aware marker scan. scan_negation_aware operates on the
     # ORIGINAL-case text but lowercases internally, and it never crosses a sentence
     # boundary — exactly the same unit the pre-fix substring scan compared offsets in.
+    _scanners_35 = _import_scanners()
     if _scanners_35 is not None:
         surviving = [(kw, off) for kw, off in _scanners_35.scan_negation_aware(
             text, RERANK_MARKERS) if off > price]
@@ -10065,6 +10012,66 @@ def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         return ""
     return ("slide-craft gate: " + str(len(reasons)) + " craft gate failure(s) — "
             + " | ".join(reasons))
+
+
+# ---------------------------------------------------------------------------
+# FIX 92 — grounding and representation artifacts registered as gates (lockstep).
+#
+# The FIX 16 sub-verifiers (_verify_image_grounding / _verify_representation_casting
+# in phase_verifiers.py) fail runs with the codes AF-IMAGE-GROUNDING /
+# AF-IMAGE-GROUNDING-PARK and AF-CASTING / AF-CASTING-PARK /
+# AF-CASTING-MIX-PARITY — but until now NONE of those codes was registered in
+# PIPELINE-MANIFEST.autofails. A verifier-emitted code absent from the registry
+# is the exact HOLE-B class sync_check was built to catch: the gate fires live,
+# yet no registry row describes it, so nothing proves the verdicts gate
+# closeout. These two rows close that hole AT THE CLOSEOUT, where the park
+# condition is binding: at P-IMAGE-QC / P-PROMPT-QC attestation a MISSING
+# image_grounding / representation_casting sub-verdict PARKS the run for human
+# review — it cannot pass and cannot be skipped silently.
+#
+# The two thin wrappers below are the manifest's py_symbol for each closeout
+# gate (lockstep: same check function, one delegation each, no re-derived
+# rubric). They take the run dir directly (the same argument shape the
+# postflight sub-checks use) and delegate to the phase_verifiers FIX 16
+# sub-verifier so the closeout gate and the phase attestation can never drift
+# apart. PRESENTATION_FIX16_QC_WIRING=0 (the documented FIX 16 rollback) also
+# rolls these wrappers back to defer — the registry rows remain, correctly
+# describing the retired gate.
+# ---------------------------------------------------------------------------
+
+def _chk_image_grounding_verdict(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """FIX 92 closeout gate for AF-IMAGE-GROUNDING(-PARK): delegate to
+    phase_verifiers._verify_image_grounding (the image-grounding-steward
+    sub-verifier that owns P-IMAGE-QC). Returns "" on pass (or legitimate
+    pre-report defer); a non-empty AF-IMAGE-GROUNDING* reason on fail/park."""
+    try:
+        import phase_verifiers as _pv92
+    except ImportError as exc:
+        return ("AF-IMAGE-GROUNDING-PARK: phase_verifiers.py is not importable "
+                "next to build_deck.py (" + repr(exc) + ") — the image-grounding "
+                "verdict gate cannot be evaluated; fail-closed.")
+    ok, reasons = _pv92._verify_image_grounding(Path(run_dir))
+    if ok:
+        return ""
+    return "AF-IMAGE-GROUNDING-PARK: " + " | ".join(reasons)
+
+
+def _chk_representation_casting_verdict(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """FIX 92 closeout gate for AF-CASTING(-PARK / -MIX-PARITY): delegate to
+    phase_verifiers._verify_representation_casting (the representation-casting-
+    director sub-verifier that owns P-PROMPT-QC). Returns "" on pass (or
+    legitimate pre-report defer); a non-empty AF-CASTING* reason on fail/park."""
+    try:
+        import phase_verifiers as _pv92
+    except ImportError as exc:
+        return ("AF-CASTING-PARK: phase_verifiers.py is not importable next to "
+                "build_deck.py (" + repr(exc) + ") — the representation-casting "
+                "verdict gate cannot be evaluated; fail-closed.")
+    ok, reasons = _pv92._verify_representation_casting(Path(run_dir))
+    if ok:
+        return ""
+    return "AF-CASTING-PARK: " + " | ".join(reasons)
+
 
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
@@ -11062,14 +11069,8 @@ def _sha256_file(path: Path) -> Optional[str]:
 
 
 def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
-                           out_path: Path, timestamp: str,
-                           bundle_dir: Optional[Path] = None) -> Path:
+                           out_path: Path, timestamp: str) -> Path:
     """APPEND this render's record to working/checkpoints/process_manifest.json.
-
-    FIX 1: the render record ALSO records the bundle dir (bundleDir) the render wrote
-    its deliverables into, so the P-BUNDLE-GATE terminal phase (scripts/bundle_gate.py,
-    resolving the bundle dir "exactly like the render main" via
-    process_manifest.json.bundleDir) finds the SAME directory the render used.
 
     The manifest is a cumulative, multi-phase record: each department phase appends
     its own entry under "phases" — this writer must NEVER clobber prior phases. It
@@ -11136,16 +11137,6 @@ def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
         "output_pptx": str(out_path),
         "slides": per_slide,
     }
-    # FIX 1: record the bundle dir (where the --out deliverables ledger lives) so
-    # scripts/bundle_gate.py (P-BUNDLE-GATE, order 9.95) resolves the SAME bundle
-    # dir from the process manifest — its _resolve_bundle_dir reads exactly this key.
-    try:
-        if bundle_dir is not None:
-            manifest["bundleDir"] = str(Path(bundle_dir).resolve())
-        else:
-            manifest["bundleDir"] = str(out_path.parent.resolve())
-    except Exception:  # noqa: BLE001 — a bundle-dir record is best-effort, never fatal
-        pass
     manifest["phases"].append(record)
 
     manifest_path.write_text(json.dumps(manifest, indent=2))
@@ -11678,31 +11669,15 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
         return (reason, False)
     obj = _read_json(pub)
     if "__parse_error__" in obj:
-        # FIX 5 round-4 repair: this branch MUST return (reason, warn_only) like
-        # every sibling branch — a bare str here would ValueError at the caller's
-        # `tele_pub, tele_warn_only = ...` tuple-unpack (an unpack failure is a
-        # FATAL crash, not a WARN). A corrupt ledger means the teleprompter is
-        # not verifiably published, so it follows the same FIX 5 warn rule.
-        reason = (f"teleprompter_publish.json not valid JSON "
-                  f"({obj['__parse_error__']})")
-        if creds_absent:
-            return (reason, True)  # WARN — publish not enforced without credentials
-        return (reason, False)
+        return f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})"
     if obj.get("status") == "skipped_adhoc":
         print("WARNING: teleprompter_publish.json carries a stale 'skipped_adhoc' "
               "status from a prior --adhoc run. This NO LONGER passes the gate (M7): "
               "a real run must publish the teleprompter and verify a live HTTP 200, "
               "or be re-run with the explicit --skip-teleprompter-gate flag.",
               file=sys.stderr)
-        # FIX 5 round-4 repair: must return the (reason, warn_only) tuple like every
-        # sibling branch — a bare str ValueErrors at the caller's tuple-unpack. A
-        # stale ad-hoc record is an UNPUBLISHED failure (M7, per this function's own
-        # docstring) so it follows the FIX 5 warn rule when credentials are absent.
-        reason = ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
-                  "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
-        if creds_absent:
-            return (reason, True)  # WARN — publish not enforced without credentials
-        return (reason, False)
+        return ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
+                "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
     if obj.get("status") != "published":
         reason = f"teleprompter publish status is {obj.get('status')!r}, expected 'published'"
         if creds_absent:
@@ -11947,116 +11922,6 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
     )
 
 
-def run_render_gate(run_dir: Path, slides_path: Optional[Path] = None,
-                    bundle_dir: Optional[Path] = None,
-                    ledger_path: Optional[Path] = None,
-                    deck_slug: str = "deck") -> None:
-    """FIX 1 — RENDER-ONLY closeout gate. main() calls this ALWAYS after assembly.
-
-    The render phase must exit 0 on a fresh run whose only outputs are the 12 verified
-    baked slide PNGs + the assembled .pptx: the guide PDF, speech, audio, infographic,
-    teleprompter and deck PDF are produced by LATER phases, so demanding them here is
-    what made render structurally unable to complete. The bundle-completeness gate
-    (run_postflight_gate / AF-BUNDLE-COMPLETE) is the P-BUNDLE-GATE terminal phase —
-    invoked by scripts/bundle_gate.py on a separate run.
-
-    This gate re-proves the RENDER outputs only, exactly as postflight did:
-      * KIE-BAKED (AF-I14)        — _chk_kie_baked(require_rendered=True) on the
-                                    process-manifest render record
-      * OCR READBACK (AF-OCR-READBACK, U027) — check_ocr_readback() on the per-slide
-                                    .ocr.json sidecars
-      * IMAGE-QC (AF-IMAGE-QC-RAN) — check_image_qc_present() freshness + coverage
-      * PNG VERIFY + ASPECT/2K (per-slide) — verify_png() + verify_aspect_ratio() on
-                                    every renders/slide-*.png
-
-    Every check DEFERS (returns "") when the render record is absent — the genuine
-    pre-render state. Once a render record + PNGs exist they are the source of truth.
-    A FAILURE here exits 5 (loud) with the same style as run_postflight_gate; the
-    ledger (when supplied) is updated per check so the failure is on disk too.
-    Returns None on pass; sys.exit(5) on any failed check.
-    """
-    if run_dir is None:
-        return  # no run dir — nothing render-scoped to prove (gate-only invocation).
-
-    problems: list = []
-
-    def _fail(key: str, fname: str, label: str, reason: str, reason_code: str) -> None:
-        problems.append((key, fname, label, reason, reason_code))
-        if ledger_path is not None:
-            try:
-                update_deliverable_status(ledger_path, key, "failed", error=reason)
-            except Exception:  # noqa: BLE001 — ledger shortfall never masks the gate
-                pass
-
-    # --- KIE-BAKED (AF-I14) — re-prove every rendered slide was model-baked ---
-    # require_rendered=True: closeout means render+assembly already happened, so an
-    # absent manifest/render-record here is UNDETERMINED->FAIL (mirrors the postflight
-    # contract exactly).
-    kie_reason = _chk_kie_baked(run_dir, slides_path, require_rendered=True)
-    if kie_reason:
-        _fail("deck_pptx", _expand_filename("deck.pptx", deck_slug),
-              "KIE-baked slide images (every slide model-baked, not native render)",
-              kie_reason, "NOT_BAKED")
-
-    # --- OCR READBACK (AF-OCR-READBACK, U027) — every PNG carries a verified sidecar ---
-    ocr_reason = check_ocr_readback(run_dir)
-    if ocr_reason:
-        _fail("deck_pptx", _expand_filename("deck.pptx", deck_slug),
-              "OCR readback sidecars (AF-OCR-READBACK)",
-              ocr_reason, "OCR_READBACK_FAIL")
-
-    # --- IMAGE-QC RAN (AF-IMAGE-QC-RAN) — report fresh + per-slide coverage ---
-    iqc_reason = check_image_qc_present(run_dir, slides_path)
-    if iqc_reason:
-        _fail("deck_pptx", "working/qc/image_qc_report.json",
-              "image-QC report (fresh + per-slide coverage; AF-IMAGE-QC-RAN)",
-              iqc_reason, "IMAGE_QC_STALE_OR_MISSING")
-
-    # --- PNG VERIFY + ASPECT/2K (per-slide) — every render is a real 16:9 2K PNG ---
-    pg = _import_prompt_gate()
-    pngs = _gather_rendered_pngs(run_dir)
-    for png in pngs:
-        try:
-            verify_png(png)
-        except Exception as exc:  # noqa: BLE001
-            _fail("deck_pptx", png.name,
-                  "verified per-slide PNG (magic + non-empty)",
-                  f"{png.name}: {exc}", "BAD_PNG")
-            continue
-        if pg is not None:
-            try:
-                pg.verify_aspect_ratio(png, slide_id=png.stem)
-            except Exception as exc:  # noqa: BLE001 — PromptGateError (shape/2K)
-                _fail("deck_pptx", png.name,
-                      "per-slide PNG aspect/2K (16:9, >= 2K wide; never stretched)",
-                      f"{png.name}: {exc}", "BAD_ASPECT")
-    if not pngs:
-        # No rendered PNGs at all — the render record exists but produced nothing.
-        # UNDETERMINED behaves like FAIL at closeout (same doctrine as _chk_kie_baked).
-        _fail("deck_pptx", "renders/slide-*.png",
-              "rendered slide PNGs (none found in <run>/renders)",
-              "AF-RENDER-EMPTY: closeout reached with NO rendered slide PNGs in "
-              f"{run_dir / 'renders'} — the render produced nothing to verify.",
-              "NO_RENDERS")
-
-    # --- Fail loud, as the postflight gate does (exit 5) ---
-    if problems:
-        bar = "=" * 78
-        print(f"\n{bar}", file=sys.stderr)
-        print("FATAL: RENDER GATE FAILED (AF-RENDER-COMPLETE) — the render phase "
-              "did not prove its own outputs.", file=sys.stderr)
-        print(f"Bundle dir: {bundle_dir}", file=sys.stderr)
-        print(f"Ledger:     {ledger_path}", file=sys.stderr)
-        print("Render gate failures:", file=sys.stderr)
-        for (key, fname, label, reason, reason_code) in problems:
-            print(f"  FAIL  [{key}] {fname}  ({label})", file=sys.stderr)
-            print(f"        {reason}", file=sys.stderr)
-        print(f"\n{bar}", file=sys.stderr)
-        sys.exit(5)
-    print("=== RENDER GATE PASSED — render outputs verified (KIE baked, OCR "
-          "readback, image-QC, PNG aspect/2K) ===", flush=True)
-
-
 def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                         skip_teleprompter_gate: bool = False,
                         run_dir: Optional[Path] = None,
@@ -12118,23 +11983,26 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             continue
         actual = st.st_size
         # F43 (SMOKE-1, 2026-09-01): guide_pdf/pdf floors were tuned for the 34-slide
-        # reference deck; a fully-populated 12-slide deck legitimately renders smaller
-        # (the P8.2 phase verifier already scales by slides: max(51200*n//34, 8192)).
-        # Scale the BUNDLE floor identically so the two gates measure the same thing.
+        # reference deck; a fully-populated 12-slide deck legitimately renders smaller.
+        # FIX 103 (MASTER Part 8, SMOKE-1 addenda): the inline reference-ratio scaler
+        # is gone — the BUNDLE gate delegates to THE one helper
+        # (presentation_job.deliverable_floors): guide_pdf scales via
+        # guide_floor(n)=max(1600n, 12000) and deck_pdf via pdf_floor(n)=
+        # max(1506n, 8192), with the slide count read by slide_count(run_dir)
+        # from slides.json / arc_allocation.json and never a constant.
+        # pdf_floor(34) reproduces the legacy reference floor exactly, so nothing
+        # that passed before gets looser; below 34 the floor scales down with the
+        # deck. When the count is undeterminable the spec floor is used unchanged
+        # (fail-closed, same as the pre-F103 behaviour).
         _min_b = spec["min_bytes"]
         if key in ("guide_pdf", "deck_pdf"):
             try:
-                _n = 0
-                for _cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
-                    _data = json.loads(Path(_cand).read_text(encoding="utf-8", errors="replace"))
-                    if isinstance(_data, list):
-                        _n = len(_data)
-                    elif isinstance(_data, dict) and _data.get("slides"):
-                        _n = len(_data["slides"])
-                    if _n:
-                        break
+                _n = _floors.slide_count(run_dir) if run_dir is not None else 0
                 if _n:
-                    _min_b = max(int(_min_b * _n // 34), 8192)
+                    if key == "guide_pdf":
+                        _min_b = _floors.guide_floor(_n)
+                    else:
+                        _min_b = _floors.pdf_floor(_n)
             except Exception:  # noqa: BLE001 — fall back to the absolute floor
                 pass
         if actual < _min_b:
@@ -12432,6 +12300,42 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         if run_dir is not None:
             _append_process_manifest_warning(
                 run_dir, "AF-TELEPROMPTER-UNPUBLISHED", tele_pub)
+
+    # --- FIX 92: GROUNDING + REPRESENTATION closeout sub-checks ---
+    # (AF-IMAGE-GROUNDING-PARK / AF-CASTING-PARK). The FIX 16 sub-verdicts are
+    # REQUIRED at closeout exactly as at phase attestation: a run whose
+    # image_qc_report.json carries no image_grounding verdict, or whose
+    # prompt_qc_report.json carries no representation_casting verdict, PARKS
+    # here instead of shipping — the deck cannot be reported complete while
+    # image-grounding-steward / representation-casting-director have not
+    # recorded their human verdicts. Both wrappers delegate to the same
+    # phase_verifiers sub-verifiers the P-IMAGE-QC / P-PROMPT-QC attestations
+    # use, so the closeout and the attestation can never drift apart.
+    # Pre-QC defers are preserved by the sub-verifiers themselves: a run dir
+    # with no render prompts / no research anchors / no intake mix yields only
+    # the PARK reason, which at closeout (render+assembly already happened) is
+    # binding, not a defer — mirrors the require_rendered=True AF-I14 pattern.
+    if run_dir is not None:
+        grounding_reason = _chk_image_grounding_verdict(run_dir)
+        if grounding_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                "working/qc/image_qc_report.json",
+                "image-grounding-steward verdict recorded in the image-QC report "
+                "(image_grounding={pass, reviewed_by}; AF-IMAGE-GROUNDING-PARK)",
+                0, 0, "GROUNDING_PARK"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=grounding_reason)
+        casting_reason = _chk_representation_casting_verdict(run_dir)
+        if casting_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                "working/qc/prompt_qc_report.json",
+                "representation-casting-director verdict recorded in the prompt-QC "
+                "report (representation_casting={pass, reviewed_by}; AF-CASTING-PARK)",
+                0, 0, "CASTING_PARK"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=casting_reason)
 
     # NOTE: the AF-CC-UNREGISTERED gate is enforced once, AFTER the bundle-completeness
     # check passes (see the dedicated _chk_cc_registered call below). It is intentionally
@@ -12858,13 +12762,6 @@ def main():
     platform_arg = None  # --platform {vps|mac} override (default None -> auto-detect)
     skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
                                     # publish sub-check (never via a persisted status).
-    bundle_gate = False  # FIX 1: run the bundle-completeness gate inside the render
-                         # phase (AF-BUNDLE-COMPLETE / run_postflight_gate). DEFAULT
-                         # OFF: the render phase by itself now exits 0 on a fresh
-                         # render-only run (12 baked PNGs, no PDF/guide/audio/... yet)
-                         # — bundle completeness is the P-BUNDLE-GATE terminal phase
-                         # (scripts/bundle_gate.py). A caller that WANTS the old
-                         # inline behavior re-arms it with --bundle-gate.
     sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
     notes_sync_mode = False  # P9.5-NOTES-SYNC (8.7): re-inject notes post-speech-QC.
     style_spec_arg = None
@@ -12888,9 +12785,6 @@ def main():
             style_spec_arg = tok[len("--style-spec="):]
         elif tok == "--skip-teleprompter-gate":
             skip_teleprompter_gate = True
-        elif tok == "--bundle-gate":
-            # FIX 1: opt-in re-arm of the inline bundle-completeness gate.
-            bundle_gate = True
         elif tok == "--run-dir":
             i += 1
             if i >= len(argv):
@@ -13059,7 +12953,7 @@ def main():
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
               "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
               "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process] "
-              "[--skip-teleprompter-gate] [--bundle-gate]",
+              "[--skip-teleprompter-gate]",
               file=sys.stderr)
         sys.exit(2)
 
@@ -13375,8 +13269,7 @@ def main():
     manifest_path = None
     try:
         manifest_path = write_process_manifest(
-            run_dir, rendered, task_ids, model_used, out_path, timestamp,
-            bundle_dir=bundle_dir)
+            run_dir, rendered, task_ids, model_used, out_path, timestamp)
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: render succeeded but process manifest write failed: {exc}",
               file=sys.stderr, flush=True)
@@ -13418,7 +13311,7 @@ def main():
         "processManifest": str(manifest_path) if manifest_path else None,
         "failures": [],
     }
-    print("\n=== SUMMARY (RENDER OK — running render gate) ===",
+    print("\n=== SUMMARY (RENDER OK — running postflight completeness gate) ===",
           flush=True)
     print(json.dumps(summary, indent=2))
 
@@ -13446,42 +13339,18 @@ def main():
                   f"gate will fail loud (TELEPROMPTER-PUBLISH) until it is published "
                   f"and the URL verified.", file=sys.stderr, flush=True)
 
-    # RENDER GATE (FIX 1) — ALWAYS runs, --bundle-gate or not. The render phase
-    # gates on RENDER outputs only: KIE-baked (AF-I14), OCR readback (U027), image-QC
-    # ran (AF-IMAGE-QC-RAN), and per-slide PNG verify + aspect/2K. This is what makes
-    # a fresh 12-PNG run able to exit 0: the bundle-completeness gate no longer waits
-    # inside the render phase for PDFs/audio/guide produced by LATER phases (those are
-    # the P-BUNDLE-GATE terminal phase's job, via scripts/bundle_gate.py).
-    run_render_gate(run_dir, slides_path, bundle_dir=bundle_dir,
-                    ledger_path=ledger_path, deck_slug=deck_slug)
-
     # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
-    # FIX 1 SPLIT: render gates ONLY on render outputs. By default (--bundle-gate
-    # OFF) the render phase now exits 0 on a fresh run whose only outputs are the 12
-    # verified baked slide PNGs + the assembled .pptx; the full bundle-completeness
-    # gate is the P-BUNDLE-GATE terminal phase (scripts/bundle_gate.py calls this
-    # exact postflight body on a separate run). --bundle-gate re-arms the old inline
-    # behavior for callers that want it. In BOTH modes the render-only gate
-    # (run_render_gate) has ALREADY run unconditionally above, so a render that did
-    # not prove its KIE bake / OCR readback / image-QC / PNG aspect still exits 5 —
-    # the split moves the BUNDLE question to its own phase, never the RENDER question
-    # into oblivion.
+    # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are
+    # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
+    # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
+    # after reading deliverables.json (not from in-memory state).
     # M7: the teleprompter-publish sub-check is bypassed ONLY by an explicit per-run
     # CLI flag — never by a persisted status string. --adhoc-no-process is itself an
     # explicit per-run flag (ad-hoc output is not a client deliverable), so it implies
     # the bypass for THIS run only; a later real run without the flag re-arms the gate.
-    if bundle_gate:
-        print("=== BUNDLE GATE ENABLED (--bundle-gate): running the inline "
-              "postflight completeness gate (AF-BUNDLE-COMPLETE) ===", flush=True)
-        run_postflight_gate(bundle_dir, ledger_path, deck_slug,
-                             skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
-                             run_dir=run_dir, slides_path=slides_path)
-    else:
-        print("=== BUNDLE GATE SKIPPED (FIX 1: default OFF) — bundle completeness "
-              "is the P-BUNDLE-GATE terminal phase; run "
-              "'python3 scripts/bundle_gate.py --run-dir <run>' to enforce "
-              "AF-BUNDLE-COMPLETE. Render outputs were gated by run_render_gate "
-              "above. ===", flush=True)
+    run_postflight_gate(bundle_dir, ledger_path, deck_slug,
+                         skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
+                         run_dir=run_dir, slides_path=slides_path)
 
     # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
     # The producer STOPS at the TERMINAL status 'review' (there is NO 'delivered'

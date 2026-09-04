@@ -48,13 +48,6 @@ deployed client box with no extra packages installed.
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# THE SINGLE SOURCE OF TRUTH — all deliverable metadata lives here.
-# fix_bundle_complete.py, presentation_job/curate.py, phase_verifiers.py, and
-# self_audit.py all import this constant (and/or its derived views below) and
-# derive their runtime maps from it. No other file may hardcode a deliverable
-# list.
-# ---------------------------------------------------------------------------
 # FIX 103 (MASTER Part 8, SMOKE-1 addenda): the static rows keep the
 # reference-deck calibration for the manifest ledger, but DERIVED from THE one
 # floors module — no bare 51,200 literal lives in this file. Runtime floors for a
@@ -68,6 +61,13 @@ except ImportError:  # pragma: no cover — mid-roll box safety
     _REFERENCE_DECK_PDF_FLOOR = 1506 * 34
     _REFERENCE_DECK_GUIDE_FLOOR = 1600 * 34
 
+# ---------------------------------------------------------------------------
+# THE SINGLE SOURCE OF TRUTH — all deliverable metadata lives here.
+# fix_bundle_complete.py, presentation_job/curate.py, phase_verifiers.py, and
+# self_audit.py all import this constant (and/or its derived views below) and
+# derive their runtime maps from it. No other file may hardcode a deliverable
+# list.
+# ---------------------------------------------------------------------------
 DELIVERABLE_AUDIT_SPEC = [
     {
         "key": "deck_pptx",

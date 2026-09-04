@@ -68,7 +68,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Section labels + subheads on photo slides: [family] SemiBold
    - Tertiary / breathing lines: [family] Medium, often italic
    - Footnotes / fine print / disclaimers: [family] Regular, ~11-13pt, often italic
-   Size scale (relative to slide height): giant numbers 110-150pt (Black); hero 2-line headline 62-86pt (Black, HERO_HEADLINE_PT_RANGE = (62, 86) in build_deck.py); secondary headline 42-62pt; raspberry sub-headline 24-32pt (ExtraBold, SUBHEADLINE_PT_RANGE = (24, 32)); body beat 18-22pt (BODY_BEAT_PT_RANGE = (18, 22); bottom == FONT_BODY_PT_FLOOR = 18); tertiary italic 16-19pt; gold kicker label ~13pt (Bold); footnote 11-13pt.
+   Size scale (relative to slide height): giant numbers 110-150pt (Black); hero 2-line headline 62-86pt (Black); secondary headline 42-62pt; raspberry sub-headline 24-32pt (ExtraBold); body beat 17-22pt; tertiary italic 16-19pt; gold kicker label ~13pt (Bold); footnote 11-13pt.
    Type is always legible on the white base. No reversed-out text on dark backgrounds (unless DARK_OK).
    BASIC OR DEFAULT FONTS ARE FORBIDDEN: Calibri, Arial, Times, or any system/platform default is an AUTO-FAIL at QC. Every prompt must name the exact weight and a large pt size per line.
 
@@ -169,7 +169,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Why this engine exists.** Representation is not only the RATIO (which group, how often -- SOP 9.2). It is also AUTHENTICITY: real, age-appropriate, culturally accurate hair, so the render does not produce generic "AI plastic hair." The ratio engine (AF-R*/AF-CAST) and the hair engine (AF-HAIR-INAUTHENTIC) are ORTHOGONAL and both run.
 
-**The hard rule (mechanical):** every people-prompt MUST cite a hairstyle token that is a MEMBER of an age-banded, by-gender hairstyle reference catalog you ship to `working/brand/hairstyle_catalog.json`. Prompt QC runs `scripts/intelligence_engines_check.py --phase prompt`; a people-prompt that cites no catalog hairstyle (or any prompt at all when the catalog asset is absent) auto-fails AF-HAIR-INAUTHENTIC. The "AI plastic hair" render is the vision VERDICT, graded at Image-QC and logged to the per-slide rows of `working/qc/image_qc_report.json` (the artifact `build_deck.check_image_qc_vision` opens; the retired `working/qc/vision_qc_log.json` is written and read by nothing).
+**The hard rule (mechanical):** every people-prompt MUST cite a hairstyle token that is a MEMBER of an age-banded, by-gender hairstyle reference catalog you ship to `working/brand/hairstyle_catalog.json`. Prompt QC runs `scripts/intelligence_engines_check.py --phase prompt`; a people-prompt that cites no catalog hairstyle (or any prompt at all when the catalog asset is absent) auto-fails AF-HAIR-INAUTHENTIC. The "AI plastic hair" render is the vision VERDICT, graded at Image-QC and logged to `vision_qc_log.json`.
 
 **Steps:**
 1. From `REPRESENTATION_MIX` and `audience_demographic` (intake), determine the cast's groups, genders, and age bands present on this deck.
@@ -243,10 +243,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 2. **SIZE SCALE -- extreme contrast, slide-height-relative.** Tiny letter-spaced labels at one end, billboard headlines and three-digit-point giant numbers at the other:
    - GIANT NUMBER: 110-150pt (Black) -- dollar figures, hero stats, the price-drop current price. Giant numbers run 1.5x to 3x the size of surrounding text and are the hero of the data zone.
-   - Hero headline: 62-86pt (Black; HERO_HEADLINE_PT_RANGE = (62, 86) in build_deck.py) -- the dominating 2-line headline, the first thing the eye reads.
+   - Hero headline: 62-86pt (Black) -- the dominating 2-line headline, the first thing the eye reads.
    - Secondary headline: 42-62pt (Black / ExtraBold) -- data-zone headlines, sub-punch lines.
-   - Sub-headline: 24-32pt (ExtraBold; SUBHEADLINE_PT_RANGE = (24, 32) in build_deck.py) -- the BRAND_SECONDARY accent line under the headline.
-   - Body beat: 18-22pt (BODY_BEAT_PT_RANGE = (18, 22) in build_deck.py) (ExtraBold / Medium).
+   - Sub-headline: 24-32pt (ExtraBold) -- the BRAND_SECONDARY accent line under the headline.
+   - Body beat: 17-22pt (ExtraBold / Medium).
    - Tertiary / italic breathing line: 16-19pt (Medium italic).
    - Kicker label: ~13pt (Bold), gold all-caps, letter-spaced +0.12 to +0.15em.
    - Footnote: 11-13pt (Regular italic).

@@ -167,10 +167,6 @@ This role contributes to the company revenue cascade by: **making every client's
 
 ## 9. Standard Operating Procedures (Numbered)
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
-
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 64, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: casting/representation work runs inside the `P4-COPY` (order 4) fanout and gates the render band `P4-RENDER` (4.9) via the STYLE BLOCK; image QC is `P-IMAGE-QC` (4.95).
-
 ### SOP 9.1 — Audience Capture Verification and Percentage Allocation
 
 **SOP ID:** SOP-PRES-CUSTOM-05 (BlackCEO)

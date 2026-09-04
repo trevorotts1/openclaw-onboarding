@@ -104,11 +104,10 @@ def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
     Every sanctioned writer nests the answer under entries[key]; reading it
     at the ledger's TOP level (the pre-fix behavior) always returns None
     against a real ledger -- that was the whole bug. But the two sanctioned
-    intake drivers disagree on the entry's own inner key:
+    deck-intake-driver.py copies disagree on the entry's own inner key:
 
-      - 23-ai-workforce-blueprint/scripts/deck-intake-turngate.py (this
-        repo's top-level dev copy — FIX 75 renamed deck-intake-driver.py to
-        deck-intake-turngate.py) writes entries[qid] = {"answer": raw,
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py (this repo's
+        top-level dev copy) writes entries[qid] = {"answer": raw,
         "normalized": canonical, ...} -- "normalized" is the canonicalized
         form and is preferred (mirrors _apply_type_picker_derivation's own
         pt_entry.get("normalized", pt_entry.get("answer")) precedence in

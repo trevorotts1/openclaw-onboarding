@@ -135,8 +135,6 @@ Audit the price_ladder.json outputs from the past quarter. Identify any patterns
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: offer/price work runs inside the `P4-COPY` (order 4) fanout concurrent with Phase 1; the copy QC gate on the arc is `P1Q-COPY-QC` (4.2) and the upsell copy waves are `P-U-SALES-COPY` (3.6) / `P-U-CHECKOUT-COPY` (3.7) / `P-U-VSL-COPY` (3.9).
-
 ### SOP 9.1 -- Spread Value-Ladder Choreography (ANCHOR -> DROP1/2/3 -> FINAL)
 
 **When to run:** Concurrently with Phase 1 (copy writing) as a fanout dispatch -- this SOP is one of the parallel agents the Director fans out at order 4, and its fanout slot is governed by the governor: `max_concurrent_agents` / `writer_agents_recommended` in `working/checkpoints/capacity_plan.json` (see capacity-reliability-engineer.md Step 0.5). Must complete before the Slide Copywriter reaches the Price Ladder section.

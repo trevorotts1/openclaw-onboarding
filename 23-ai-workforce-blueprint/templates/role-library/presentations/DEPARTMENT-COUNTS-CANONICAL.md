@@ -32,11 +32,11 @@ completely unrelated to the deliverable-FILE counts below. Don't conflate the tw
 | **7** | Client package folder `delivery/[DECK_SLUG]-FINAL/` | Enforced today (all 7 hard-required) — unchanged by Wave C |
 | **12** | What actually ships every run (10 + 2 workbook PDFs) | Ships today, but not in any deliverable list — unchanged by Wave C |
 | **15** | 12 + 3 client-elected upsells (sales, checkout, VSL pages) | Asked today; **buildable as of Wave C, one named gap** (`P-U-FORM-CHECKOUT`'s real form-wiring is a placeholder) — see §1.15 |
-| **62** | Declared and machine-enforced phase count | **Changed by Wave C: 36 -> 40** (manifest_version 50 -> 51), then by later waves to **62** (manifest_version 62; count is read from `len(manifest.phases)`, never hardcoded) |
-| **35 / 49 / 45 / 57** (standard) | Executed phases on a standard deck, by upsell election (both declined / sales-only / VSL-only / both elected) | Regenerated against the live manifest — see the full matrix in §2 |
-| **39 / 53 / 49 / 61** (signature) | Same, on a signature deck | Regenerated against the live manifest — see §2 |
-| **36 / 50 / 46 / 58** (content-conversion) | Same, on a content-conversion deck | Regenerated against the live manifest — see §2 |
-| **~74** | Honest end-to-end mechanical step count (declared phase count, read from the manifest, + ~12 outside-manifest gates) | Descriptive, not a manifest number — the "~12 gates" arithmetic is unchanged; the base phase count under it moved 36 -> 40 -> 55 -> 62 |
+| **55** | Declared and machine-enforced phase count | **Changed by Wave C: 36 -> 40** (manifest_version 50 -> 51), then by later waves to **55** (manifest_version 55; count is read from `len(manifest.phases)`, never hardcoded) |
+| **31 / 43 / 40 / 50** (standard) | Executed phases on a standard deck, by upsell election (both declined / sales-only / VSL-only / both elected) | Regenerated against the live manifest — see the full matrix in §2 |
+| **35 / 47 / 44 / 54** (signature) | Same, on a signature deck | Regenerated against the live manifest — see §2 |
+| **32 / 44 / 41 / 51** (content-conversion) | Same, on a content-conversion deck | Regenerated against the live manifest — see §2 |
+| **~67** | Honest end-to-end mechanical step count (declared phase count, read from the manifest, + ~12 outside-manifest gates) | Descriptive, not a manifest number — the "~12 gates" arithmetic is unchanged; the base phase count under it moved 36 -> 40 -> 55 |
 
 **RUN 1 -> RUN 2, what actually changed:** only the step-count side (§2) and the "15" deliverable
 status (§1.15). The 10/7/12 deliverable counts (§1) are byte-for-byte unchanged — `deliverables.py`,
@@ -200,7 +200,7 @@ publishing this revision:
 
 ```
 At the RUN 2 snapshot, the live read was: manifest ids == registered verifier ids
-(see §2.40 for the mechanical read; parity = 62/62 at the 2026-09-03 re-check).
+(see §2.40 for the mechanical read; parity = 55/55 at the 2026-09-02 re-check).
 missing from PHASE_VERIFIERS: []
 ```
 
@@ -246,9 +246,8 @@ The numbers that expression prints are the live manifest's, whatever they are at
 2026-08-19 RUN 2 snapshot read one value; the Wave D merge raised it; GATE 4 of
 `scripts/ci/presentations-drift-gates.sh` fails CI if any doc that restates this count goes stale
 against the manifest). Do not copy a number from this document into another document — link here, or
-read the manifest the same way this document does. At the 2026-09-03 re-check (FIX 83 regeneration)
-the live read was
-manifest_version 62, declared count 62.
+read the manifest the same way this document does. At the 2026-09-02 re-check the live read was
+manifest_version 55, declared count 55.
 
 All declared phase ids, sorted mechanically by the true `order` field
 (`sorted(phases, key=lambda p: p["order"])`, executed directly against the live manifest in this
@@ -257,37 +256,34 @@ worktree, not hand-ordered). Wave D's new P-U COPY/DESIGN/HTML/GHL/COLLATERAL/FO
 
 | # | order | id | # | order | id |
 |---|---|---|---|---|---|
-| 1 | -1 | `P-CONVERTER` | 32 | 4.95 | `P-IMAGE-QC` |
-| 2 | -0.5 | `P-0.5-RESEARCH` | 33 | 5.2 | `P-U-HTML-SALES` |
-| 3 | 0.1 | `P0A-INTAKE` | 34 | 5.3 | `P-U-HTML-CHECKOUT` |
-| 4 | 0.14 | `P-SP-CLAIM` | 35 | 5.4 | `P-U-HTML-VSL` |
-| 5 | 0.15 | `P-SP-INTAKE` | 36 | 5.6 | `P-U-FORM-GATE` |
-| 6 | 0.16 | `P-SP-INTAKE-TRACE` | 37 | 6.2 | `P-U-GHL-SALES` |
-| 7 | 0.2 | `P0B-PRIORITY` | 38 | 6.4 | `P-U-GHL-VSL` |
-| 8 | 3 | `P3-ARC` | 39 | 7.5 | `P-SHIFT-QC` |
-| 9 | 3.5 | `P-3.5-RESEARCH-MAP` | 40 | 8 | `P8-ASSEMBLE` |
-| 10 | 3.6 | `P-U-SALES-COPY` | 41 | 8.1 | `P8.1-PDF-EXPORT` |
-| 11 | 3.7 | `P-U-CHECKOUT-COPY` | 42 | 8.2 | `P8.2-GUIDE` |
-| 12 | 3.8 | `P-U-VSL-RESEARCH` | 43 | 8.25 | `P8.25-WORKBOOK` |
-| 13 | 3.9 | `P-U-VSL-COPY` | 44 | 8.3 | `P8.3-INFOGRAPHIC` |
-| 14 | 4 | `P4-COPY` | 45 | 8.5 | `P9-SPEECH` |
-| 15 | 4.1 | `P-SP-STRUCTURE` | 46 | 8.52 | `P8.4-FISH-TAG` |
-| 16 | 4.15 | `P-SP-P3-HYGIENE` | 47 | 8.54 | `P9-SPEECH-WEBINAR-INTRO` |
-| 17 | 4.2 | `P-U-DESIGN-SALES` | 48 | 8.55 | `P9.1-SPEECH-PDF` |
-| 18 | 4.2 | `P1Q-COPY-QC` | 49 | 8.6 | `P-SPEECH-QC` |
-| 19 | 4.21 | `P-U-DESIGN-RENDER-SALES` | 50 | 8.65 | `P-QC-AGGREGATE` |
-| 20 | 4.3 | `P-U-DESIGN-CHECKOUT` | 51 | 8.7 | `P9.5-NOTES-SYNC` |
-| 21 | 4.31 | `P-U-DESIGN-RENDER-CHECKOUT` | 52 | 8.75 | `P-U-SALES-BUILD` |
-| 22 | 4.4 | `P-U-DESIGN-VSL` | 53 | 8.76 | `P-U-CHECKOUT-BUILD` |
-| 23 | 4.41 | `P-U-DESIGN-RENDER-VSL` | 54 | 8.77 | `P-U-FORM-CHECKOUT` |
-| 24 | 4.5 | `PF-DESIGN` | 55 | 8.8 | `P-U-COLLATERAL` |
-| 25 | 4.6 | `P-TYPO-QC` | 56 | 8.9 | `P9.2-GHL-UPLOAD` |
-| 26 | 4.7 | `P4-PROMPT` | 57 | 8.92 | `P9.6-WEBINAR-VIDEO` |
-| 27 | 4.8 | `P-PROMPT-QC` | 58 | 8.93 | `P-U-VSL-BUILD` |
-| 28 | 4.84 | `P-STYLE-SPEC` | 59 | 8.95 | `P7-TELEPROMPTER` |
-| 29 | 4.85 | `P-STYLE-PREVIEW` | 60 | 9 | `P9-DELIVER` |
-| 30 | 4.86 | `P-STYLE-PICK` | 61 | 9.05 | `P-U-QC` |
-| 31 | 4.9 | `P4-RENDER` | 62 | 9.95 | `P-BUNDLE-GATE` |
+| 1 | -1 | `P-CONVERTER` | 29 | 5.3 | `P-U-HTML-CHECKOUT` |
+| 2 | -0.5 | `P-0.5-RESEARCH` | 30 | 5.4 | `P-U-HTML-VSL` |
+| 3 | 0.1 | `P0A-INTAKE` | 31 | 5.6 | `P-U-FORM-GATE` |
+| 4 | 0.14 | `P-SP-CLAIM` | 32 | 6.2 | `P-U-GHL-SALES` |
+| 5 | 0.15 | `P-SP-INTAKE` | 33 | 6.4 | `P-U-GHL-VSL` |
+| 6 | 0.16 | `P-SP-INTAKE`-TRACE | 34 | 7.5 | `P-SHIFT-QC` |
+| 7 | 0.2 | `P0B-PRIORITY` | 35 | 8 | `P8-ASSEMBLE` |
+| 8 | 3 | `P3-ARC` | 36 | 8.1 | `P8.1-PDF-EXPORT` |
+| 9 | 3.5 | `P-3.5-RESEARCH-MAP` | 37 | 8.2 | `P8.2-GUIDE` |
+| 10 | 3.6 | `P-U-SALES-COPY` | 38 | 8.25 | `P8.25-WORKBOOK` |
+| 11 | 3.7 | `P-U-CHECKOUT-COPY` | 39 | 8.5 | `P9-SPEECH` |
+| 12 | 3.8 | `P-U-VSL-RESEARCH` | 40 | 8.52 | `P8.4-FISH-TAG` |
+| 13 | 3.9 | `P-U-VSL-COPY` | 41 | 8.54 | `P9-SPEECH`-WEBINAR-INTRO |
+| 14 | 4 | `P4-COPY` | 42 | 8.55 | `P9.1-SPEECH-PDF` |
+| 15 | 4.1 | `P-SP-STRUCTURE` | 43 | 8.6 | `P-SPEECH-QC` |
+| 16 | 4.15 | `P-SP-P3-HYGIENE` | 44 | 8.65 | `P-QC-AGGREGATE` |
+| 17 | 4.2 | `P-U-DESIGN-SALES` | 45 | 8.7 | `P9.5-NOTES-SYNC` |
+| 18 | 4.2 | `P1Q-COPY-QC` | 46 | 8.75 | `P-U-SALES-BUILD` |
+| 19 | 4.3 | `P-U-DESIGN-CHECKOUT` | 47 | 8.76 | `P-U-CHECKOUT-BUILD` |
+| 20 | 4.4 | `P-U-DESIGN-VSL` | 48 | 8.77 | `P-U-FORM-CHECKOUT` |
+| 21 | 4.5 | `PF-DESIGN` | 49 | 8.8 | `P-U-COLLATERAL` |
+| 22 | 4.6 | `P-TYPO-QC` | 50 | 8.9 | `P9.2-GHL-UPLOAD` |
+| 23 | 4.7 | `P4-PROMPT` | 51 | 8.92 | `P9.6-WEBINAR-VIDEO` |
+| 24 | 4.8 | `P-PROMPT-QC` | 52 | 8.93 | `P-U-VSL-BUILD` |
+| 25 | 4.85 | `P-STYLE-PREVIEW` | 53 | 8.95 | `P7-TELEPROMPTER` |
+| 26 | 4.9 | `P4-RENDER` | 54 | 9 | `P9-DELIVER` |
+| 27 | 4.95 | `P-IMAGE-QC` | 55 | 9.05 | `P-U-QC` |
+| 28 | 5.2 | `P-U-HTML-SALES` |  |  |  |
 
 `DEPT/scripts/run_signature_deck.py`'s `declare_plan()` still sorts **every declared phase** by `order`
 to build the unfiltered `steps`/`total` fields of `declared_plan.json` (the attestation-chain contract,
@@ -296,8 +292,8 @@ per B2, is unchanged in shape — only the count moved). `DEPT/scripts/phase_ver
 worktree:
 
 ```
-total manifest ids: len(PIPELINE_MANIFEST["phases"])          (read live: registry parity 62/62 at the 2026-09-03 re-check)
-total registered in PHASE_VERIFIERS: len(PHASE_VERIFIERS)     (62 at the same re-check)
+total manifest ids: len(PIPELINE_MANIFEST["phases"])          (read live: registry parity 55/55 at the 2026-09-02 re-check)
+total registered in PHASE_VERIFIERS: len(PHASE_VERIFIERS)     (55 at the same re-check)
 missing from PHASE_VERIFIERS: []
 ```
 
@@ -318,14 +314,14 @@ verified by reading the actual gating logic in
 |---|---|---|
 | Content-conversion | `P-CONVERTER` (1) | `creation_mode` known AND not content-first |
 | Signature-only | `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P-SP-STRUCTURE`, `P-SP-P3-HYGIENE` (4) | `deck_type` known AND not `signature_presentation` |
-| Sales/checkout upsell — Wave C BUILD + Wave D COPY/DESIGN/RENDER/HTML/GHL/COLLATERAL (12) | `P-U-SALES-COPY`, `P-U-CHECKOUT-COPY`, `P-U-DESIGN-SALES`, `P-U-DESIGN-RENDER-SALES`, `P-U-DESIGN-CHECKOUT`, `P-U-DESIGN-RENDER-CHECKOUT`, `P-U-HTML-SALES`, `P-U-HTML-CHECKOUT`, `P-U-GHL-SALES`, `P-U-COLLATERAL`, `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT` | `WANT_SALES_CHECKOUT` known AND != "yes" |
-| VSL upsell — Wave C BUILD + Wave D RESEARCH/COPY/DESIGN/RENDER/HTML/GATE/GHL (8) | `P-U-VSL-RESEARCH`, `P-U-VSL-COPY`, `P-U-DESIGN-VSL`, `P-U-DESIGN-RENDER-VSL`, `P-U-HTML-VSL`, `P-U-FORM-GATE`, `P-U-GHL-VSL`, `P-U-VSL-BUILD` | `WANT_VSL_PAGE` known AND != "yes" |
+| Sales/checkout upsell — Wave C BUILD + Wave D COPY/DESIGN/HTML/GHL/COLLATERAL (11) | `P-U-SALES-COPY`, `P-U-CHECKOUT-COPY`, `P-U-DESIGN-SALES`, `P-U-DESIGN-CHECKOUT`, `P-U-HTML-SALES`, `P-U-HTML-CHECKOUT`, `P-U-GHL-SALES`, `P-U-COLLATERAL`, `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT` | `WANT_SALES_CHECKOUT` known AND != "yes" |
+| VSL upsell — Wave C BUILD + Wave D RESEARCH/COPY/DESIGN/HTML/GATE/GHL (7) | `P-U-VSL-RESEARCH`, `P-U-VSL-COPY`, `P-U-DESIGN-VSL`, `P-U-HTML-VSL`, `P-U-FORM-GATE`, `P-U-GHL-VSL`, `P-U-VSL-BUILD` | `WANT_VSL_PAGE` known AND != "yes" |
 | Both-upsell QC | `P-U-QC` (1) | both flags known AND both != "yes" |
 
 `P-SP-CLAIM` is still never filtered (runs on every deck as the router). An unknown/absent signal
 **always widens**, never narrows — the same fail-safe direction on every family.
 
-**Mechanical derivation actually run in this worktree (2026-09-03 re-check)** — the real
+**Mechanical derivation actually run in this worktree (2026-09-02 re-check)** — the real
 `run_signature_deck._client_visible_phases()` and the real
 `presentation_job.phases.Engine._client_visible_phases()` called against real `intake.json` fixtures;
 both methods agree exactly:
@@ -333,32 +329,32 @@ both methods agree exactly:
 ```
                           both        sales-only      VSL-only       both
                           declined    (VSL no)        (sales no)     elected
-standard-from-scratch  ->   35            49              45             57
-signature              ->   39            53              49             61
-content-conversion     ->   36            50              46             58
+standard-from-scratch  ->   31            43              40             50
+signature              ->   35            47              44             54
+content-conversion     ->   32            44              41             51
 ```
 
 **Unknown-flag / not-yet-asked cases — the numbers `test_client_step_count.py` pins directly,
-re-run 2026-09-03, all 26 passing:**
+re-run 2026-09-02, all 26 passing:**
 
 ```
-standard-from-scratch, deck known, upsell flags unset  -> 50   (test_standard_from_scratch_is_31)
-signature, deck known, upsell flags unset              -> 54   (test_signature_is_35)
-content-conversion, deck known, upsell flags unset     -> 51   (test_content_conversion_is_32)
-fully unknown deck (no intake.json / empty object)     -> 62   (test_unknown_intake_fails_safe_to_full_36)
+standard-from-scratch, deck known, upsell flags unset  -> 44   (test_standard_from_scratch_is_31)
+signature, deck known, upsell flags unset              -> 48   (test_signature_is_35)
+content-conversion, deck known, upsell flags unset     -> 45   (test_content_conversion_is_32)
+fully unknown deck (no intake.json / empty object)     -> 55   (test_unknown_intake_fails_safe_to_full_36)
 ```
 
 (The flags-unset numbers are BELOW both-elected because an unelectable upsell still widens to visible
-while a proven decline hides its 12/8 phases — widening is fail-safe for INTAKE uncertainty, not an
+while a proven decline hides its 11/7 phases — widening is fail-safe for INTAKE uncertainty, not an
 optimization.)
 
 **Read this carefully — it is the single most confusing part of this document, so it gets its own
-paragraph.** "35 phases execute on a standard deck" was always implicitly "...when neither upsell
+paragraph.** "31 phases execute on a standard deck" was always implicitly "...when neither upsell
 applies." That is still true and still the right number for a declined-upsells standard deck. But a
 REAL client run's client-facing count depends on what they actually elected — a standard deck whose
-client said yes to sales+checkout (the default) sees **57** (or 45 with VSL-only, 49 with sales-only
-forfeited for a VSL), not 35, and `declare_plan()`'s outbound message will correctly quote the elected
-count, not 35. Any document that states a bare "35" without naming the upsell-election assumption
+client said yes to sales+checkout (the default) sees **50** (or 43 with VSL-only, 40 with sales-only
+forfeited for a VSL), not 31, and `declare_plan()`'s outbound message will correctly quote the elected
+count, not 31. Any document that states a bare "31" without naming the upsell-election assumption
 behind it is now incomplete. **Do not pick one number as "the" standard-deck count — state the
 election it assumes, or link here.**
 
@@ -368,10 +364,10 @@ Wave D merge (DESIGN-OPUS §4, 2026-09-01) so the full P-U COPY/DESIGN/HTML/GHL/
 honor their own `defers_unless` gates through the same fail-safe shape (verified by reading
 `_SALES_CHECKOUT_ONLY_PHASE_IDS` / `_VSL_ONLY_PHASE_IDS` / `Engine._client_visible_phases`'s
 `defers_unless` branch in both files). This is pinned by `DEPT/scripts/tests/test_client_step_count.py`
-(26 tests, all passing at the 2026-09-03 re-check) and
+(26 tests, all passing at the 2026-09-02 re-check) and
 `DEPT/scripts/tests/test_engine_client_report.py`.
 
-### 2.~74 — honest end-to-end, including the ~12 scripted gates outside `phases[]`
+### 2.~67 — honest end-to-end, including the ~12 scripted gates outside `phases[]`
 
 **Unchanged arithmetic shape, new base.** The ~12 scripted gates/steps outside `phases[]` (the intake
 interview, poll/ingest, 6 entry gates in `presentation-canonical-entry.sh`, 3 phase-0 preflights, the
@@ -384,17 +380,17 @@ present in this worktree (same files/symbols as RUN 1: `deck-intake-driver.py`,
 
 **Arithmetic:** `len(phases[])` (read live from the manifest — the declared count at RUN 2's snapshot
 was 40, the Wave D merge raised it; today it is what §2.40's generated line says) + ~12 (the scripted
-gates above) ≈ **~74**, not ~48 or ~52 — the honest end-to-end count moves with the declared phase
+gates above) ≈ **~67**, not ~48 or ~52 — the honest end-to-end count moves with the declared phase
 count, because the ~12 outside-manifest gates wrap the WHOLE phase list, not a fixed subset of it.
-Stated as **"~74"** deliberately, not as a precise count, for the same reason RUN 1 stated "~48"
+Stated as **"~67"** deliberately, not as a precise count, for the same reason RUN 1 stated "~48"
 imprecisely: the intake interview is conversational, not a single mechanical checkpoint. **RUN 1's
-"~48" and RUN 2's "~52" are both stale — update any document that still says either to "~74," or
-better, link here instead of restating the number. The Quick Reference row already reads "~74."**
+"~48" and RUN 2's "~52" are both stale — update any document that still says either to "~67," or
+better, link here instead of restating the number. The Quick Reference row already reads "~67."**
 
 **Ticket 6 (2026-08-27) added one MECHANICAL gate inside the phase-walk loop itself** (AF-INTAKE-GATE,
 `presentation_job/phases.py`'s `Engine._check_intake_gate`), distinct from both the declared manifest
 phases and the ~12 outside-manifest scripted gates above — it does not add a phase or a script step, so
-it does not change the ~74 arithmetic. It blocks P0B-PRIORITY and every phase after it from starting
+it does not change the ~67 arithmetic. It blocks P0B-PRIORITY and every phase after it from starting
 unless `working/copy/intake.json` already exists on disk, closing the gap where a content-authoring
 phase could previously run before intake ever completed.
 
@@ -417,11 +413,10 @@ wired) — not a disagreement, a timeline difference. Where this document disagr
 dispatch brief's own prose: **none found** — the brief's instruction to "derive mechanically, don't copy
 numbers from the brief" was followed, and the derived numbers (the declared count at that RUN-2
 snapshot, later raised by the Wave D merge; 31/34/35 standard, 35/38/39 signature, 32/35/36
-content-conversion by upsell election as of that snapshot — superseded by the 2026-09-03 regenerated
+content-conversion by upsell election as of that snapshot — superseded by the 2026-09-02 regenerated
 matrix in §2, which reads the live manifest; landed-with-two-gaps upsell branch status) match what the
 brief anticipated in shape, though the brief did not itself state the full election matrix — that matrix
 is this document's own contribution, not copied from anywhere.
 
-*Last verified: 2026-09-03, Fix 83 regeneration against manifest_version 62 (was: 2026-09-02 Fix 84
-against manifest_version 60; before that: 2026-08-19, Unit
+*Last verified: 2026-09-02, Fix 83 regeneration against manifest_version 55 (was: 2026-08-19, Unit
 COUNTS-R2, RUN 2).*

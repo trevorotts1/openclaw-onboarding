@@ -102,7 +102,7 @@ When a master SOP is restructured (e.g., CLIENT-WEBINAR-DECK-SOP section renumbe
 | SOP | References |
 |---|---|
 | SOP-SIGPRES-00 (The Law) | Refs presentation-canonical-entry.sh, AF-CANONICAL-RENDER-BYPASS |
-| SOP-SIGPRES-01 (8 Questions) | Refs deck-intake-turngate.py --signature, `asked_all_at_once` deprecations |
+| SOP-SIGPRES-01 (8 Questions) | Refs deck-intake-driver.py --signature, `asked_all_at_once` deprecations |
 | SOP-SIGPRES-02..05 (Phases 1-4) | Ref prove_sp_*.py provers, AF-SP-* family |
 | SOP-SIGPRES-06 (Frames) | Refs frame-templates/the-{rulebook,vault,quest,original}.md |
 

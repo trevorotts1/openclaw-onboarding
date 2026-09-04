@@ -124,18 +124,10 @@ def _state_store_update_phase(state_store: Any, phase_id: str,
                   "sha256": {}, "attempts": 0, "heal_events": [],
                   "attested_at": None}
         phases.append(record)
-    # Predicate-scope results are written under "<type>_predicate_*" keys so
-    # they can never collide with the phase record's real keys — most
-    # importantly "sha256", which on an engine-managed phase record is the
-    # {rel_path: digest} dict the attestation chain reads. Overwriting it with
-    # the scalar predicate digest corrupts the recorded digest map.
-    record[f"{artifact_type}_predicate_ok"] = fields.get("value", True)
+    record[artifact_type] = fields.get("value", True)
     for k, v in fields.items():
-        if k in ("value", "sha256"):
-            if k == "sha256":
-                record[f"{artifact_type}_predicate_sha256"] = v
-            continue
-        record[k] = v
+        if k != "value":
+            record[k] = v
     try:
         state_store.save(state)
     except Exception:

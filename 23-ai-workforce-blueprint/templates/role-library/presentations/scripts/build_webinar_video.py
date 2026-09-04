@@ -77,7 +77,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -392,22 +391,6 @@ def upload_webinar(out_path: Path, run_dir: Path, deck_slug: str,
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
 
 
-def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
-    """FIX 106: run-scoped PER-PHASE nonce file
-    <run-dir>/working/checkpoints/.nonce-<sanitized phase id>.
-
-    Mirrors build_deck._entry_nonce_phase_file / phases._nonce_phase_token
-    byte-for-byte so the engine's minted name and this reader's derived name can
-    never diverge. The engine (presentation_job.phases._script_nonce_env) mints one
-    file per phase and exports OC_DECK_ENTRY_NONCE_FILE alongside the nonce value;
-    a single shared run-scoped file let concurrent siblings overwrite each other's
-    handshake."""
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
-    if not safe:
-        return Path(run_dir) / ENTRY_NONCE_REL
-    return (Path(run_dir) / ENTRY_NONCE_REL.parent / f".nonce-{safe}")
-
-
 def _verify_entry_nonce(run_dir: Path) -> bool:
     """True iff OC_DECK_ENTRY_NONCE is set AND equals the run-scoped nonce file.
 
@@ -415,25 +398,12 @@ def _verify_entry_nonce(run_dir: Path) -> bool:
     invocation fails closed (AF-CANONICAL-RENDER-BYPASS). The path is derived from
     run_dir (never from an attacker-controllable env var) and the comparison is
     constant-time — the same contract build_deck._verify_entry_nonce enforces for the
-    deck renderer.
-
-    FIX 106 (per-phase nonce): when OC_DECK_ENTRY_NONCE_FILE is set, that value
-    selects the per-phase compare target — the engine mints one nonce file PER
-    PHASE (.nonce-<sanitized phase id>) and no longer writes the legacy run-scoped
-    file, so reading only the legacy path would fail every engine-dispatched run.
-    Only the phase-ID form is honored (path derived from run_dir); without the
-    variable the legacy run-scoped file is read. Missing env var, missing file,
-    or any mismatch -> False (fail-closed)."""
+    deck renderer."""
     import hmac
     env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
     if len(env_nonce) < 16:
         return False
-    phase_ref = (os.environ.get("OC_DECK_ENTRY_NONCE_FILE") or "").strip()
-    if phase_ref and "/" not in phase_ref and "\\" not in phase_ref:
-        nf = _entry_nonce_phase_file(run_dir, phase_ref)
-    else:
-        # No per-phase ref (or a malformed one): legacy run-scoped file.
-        nf = run_dir / ENTRY_NONCE_REL
+    nf = run_dir / ENTRY_NONCE_REL
     try:
         file_nonce = nf.read_text(encoding="utf-8").strip()
     except OSError:

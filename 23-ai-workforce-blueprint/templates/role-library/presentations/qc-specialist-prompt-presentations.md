@@ -382,7 +382,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 ```json
 {
   "slide": "22",
-  "char_count": 8400,
+  "char_count": 4750,
   "auto_fails": ["AF-P1"],
   "defect_detail": "AF-P1: char count 8,400 is below the 9,000-char floor (PROMPT_CHAR_FLOOR). The scene description (element 2) is generic ('a person at a desk') and does not reference the client's method or source material. The NEGATIVE BLOCK (element 15) is present but covers only 5 of 8 defect classes (missing Class 5 anatomical, Class 7 skin-tone fidelity, Class 8 universal baseline). Remediation: expand the scene to a grounded client-method moment; add the 3 missing NEGATIVE BLOCK classes with positive twins.",
   "verdict": "FAIL"

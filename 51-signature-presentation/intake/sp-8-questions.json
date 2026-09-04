@@ -22,7 +22,7 @@
    "af_on_violation": "AF-INTAKE-BATCH",
    "banned_batch_anti_pattern": "A single message that enumerates the 8 Questions (title + alternate titles + avatar pain + story + teaching topic + teaching titles + offer + anything-else) together, or the screenshot phrase 'give me whatever you have got and I will get moving.' That message offers no choice and dumps the whole batch at once -- the canonical AF-INTAKE-BATCH failure."
   },
-  "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-turngate.py signature mode",
+  "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-driver.py signature mode",
   "blocks_until_answered": [
    "P4-COPY",
    "all slide authoring"
@@ -145,7 +145,7 @@
    "AF-SP-FRAME-UNSET": "signature_frame not one of the four allowed values (frame gate)",
    "AF-SP-TYPE-MISMATCH": "deck_type != signature_presentation vs the run manifest",
    "AF-SP-OFFER-UNDECLARED": "a product named in q7 is absent from the pitch-token ledger",
-   "AF-SP-PROVENANCE": "CONTENT layer (deterministic, prove_sp_intake.py -- the record's own answer provenance): an answered question carries no answer_provenance entry, no client_text, committed text != client_text (whitespace-normalized), origin='agent_authored' (system-authored draft -- never passes), or the client never confirmed the answer (confirmed_by_client != true, or confirmation mode not 'quote_back'/'direct'). Captured by deck-intake-turngate.py --sig-answer (--origin) and the --sig-confirm / --sig-confirm --confirmed quote-back step. Record-only gate; dated migration window PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15) grandfathers pre-provenance records."
+   "AF-SP-PROVENANCE": "CONTENT layer (deterministic, prove_sp_intake.py -- the record's own answer provenance): an answered question carries no answer_provenance entry, no client_text, committed text != client_text (whitespace-normalized), origin='agent_authored' (system-authored draft -- never passes), or the client never confirmed the answer (confirmed_by_client != true, or confirmation mode not 'quote_back'/'direct'). Captured by deck-intake-driver.py --sig-answer (--origin) and the --sig-confirm / --sig-confirm --confirmed quote-back step. Record-only gate; dated migration window PROVENANCE_GRACE_WINDOW_UNTIL (2026-09-15) grandfathers pre-provenance records."
   }
  }
 }

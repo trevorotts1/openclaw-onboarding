@@ -5,7 +5,7 @@
 **Owning roles at write time:** Director of Presentations (arc allocation and the hard splits), Slide Copywriter (per-slide enforcement)
 **Owning role at render time:** Slide Image Creator (renders only the copy blocks)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-OBI, below)
-**Status:** AUTHORITATIVE COPY — this file in `universal-sops/presentation-slide-craft/` is the authoritative copy of this SOP; the department mirror at `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a byte-identical regenerated copy and must never be edited directly (FIX 98, 2026-09-03). DRAFT for integration. Strengthens, does not replace, the existing one-big-idea language in the master SOP and the slide-copywriter role.
+**Status:** DRAFT for integration. Strengthens, does not replace, the existing one-big-idea language in the master SOP and the slide-copywriter role.
 
 ---
 

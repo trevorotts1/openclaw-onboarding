@@ -222,103 +222,12 @@ def resolve_base_url() -> str:
     return url.rstrip("/") + "/chat/completions"
 
 
-#: FIX 114: the shared canon helper (shared-utils/secret_helper.py), path-imported
-#: by capacity.py / research_web.py under the same seam, gates key values here too:
-#: the speech harness once called ollama.com with a placeholder key and burned the
-#: run. Reject placeholder-shaped values; when the canon helper is reachable also
-#: require looks_like_real_key (shape + entropy) for the canonical family name.
-_SECRET_HELPER_MOD = None
-_SECRET_HELPER_TRIED = False
-
-def _secret_helper():
-    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
-    Returns the module or None when no candidate location has it. Cached."""
-    global _SECRET_HELPER_MOD, _SECRET_HELPER_TRIED
-    if _SECRET_HELPER_TRIED:
-        return _SECRET_HELPER_MOD
-    _SECRET_HELPER_TRIED = True
-    import importlib.util
-    repo_root = None
-    for anc in Path(__file__).resolve().parents:
-        if (anc / "shared-utils" / "secret_helper.py").is_file():
-            repo_root = anc
-            break
-    candidates = [os.environ.get("SHARED_UTILS_DIR", "").strip()]
-    if repo_root:
-        candidates.append(str(repo_root / "shared-utils"))
-    candidates.append(str(Path.home() / ".openclaw" / "skills" / "shared-utils"))
-    candidates.append("/data/.openclaw/skills/shared-utils")
-    for d in candidates:
-        if d and (Path(d) / "secret_helper.py").is_file():
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    "secret_helper_s114", str(Path(d) / "secret_helper.py"))
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)  # type: ignore
-                _SECRET_HELPER_MOD = mod
-            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
-                _SECRET_HELPER_MOD = None
-            break
-    return _SECRET_HELPER_MOD
-
-def _is_placeholder_value(value: str) -> bool:
-    """FIX 114: a placeholder value (PASTE_REAL_TOKEN, CHANGE_ME, <TODO>, ...)
-    never leaves this box. Canon is_placeholder when the helper is reachable,
-    else the same minimal inline gate capacity.py carries."""
-    if not value:
-        return True
-    helper = _secret_helper()
-    if helper is not None:
-        try:
-            return bool(helper.is_placeholder(value))
-        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
-            pass
-    low = value.strip().lower()
-    if len(low) < 10:
-        return True
-    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
-                "<todo>", "[replace]", "{{", "placeholder", "example_key",
-                "todo:", "xxx"):
-        if sub in low:
-            return True
-    if low.startswith("<") and low.endswith(">"):
-        return True
-    if low.startswith("[") and low.endswith("]"):
-        return True
-    return False
-
-def _alias_names(env_key: str) -> tuple:
-    """The accepted names for `env_key`: itself plus its canon alias family
-    (e.g. OLLAMA_API_KEY <-> OLLAMA_CLOUD_API_KEY). Unknown names degrade to
-    the direct name -- never a hard break, never a NEW name invented here."""
-    helper = _secret_helper()
-    if helper is None:
-        return (env_key,)
-    try:
-        names = list(helper.alias_list(helper.canonical_for(env_key)))
-        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
-    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
-        return (env_key,)
-
 def resolve_api_key() -> str:
-    """Bearer key from env: Ollama Cloud primary (plus its canon alias family,
-    e.g. OLLAMA_CLOUD_API_KEY), OpenRouter fallback (generic SPEECH_LLM_API_KEY /
-    OPENAI_API_KEY overrides at the ends). NEVER ANTHROPIC_API_KEY.
-    FIX 114: a placeholder-shaped value is rejected wherever it sits, and when
-    the canon helper is reachable the value must pass looks_like_real_key for
-    the canonical family name -- a placeholder key never reaches ollama.com."""
+    """Bearer key from env: Ollama Cloud primary, OpenRouter fallback (generic
+    SPEECH_LLM_API_KEY / OPENAI_API_KEY overrides at the ends). NEVER ANTHROPIC_API_KEY."""
     for name in ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
-        for env_name in _alias_names(name):
-            v = os.environ.get(env_name, "").strip()
-            if not v or _is_placeholder_value(v):
-                continue
-            helper = _secret_helper()
-            if helper is not None:
-                try:
-                    if not helper.looks_like_real_key(v, name):
-                        continue
-                except Exception:  # noqa: BLE001 -- gate failure keeps the seam
-                    pass
+        v = os.environ.get(name, "").strip()
+        if v:
             return v
     return ""
 

@@ -197,80 +197,6 @@ _MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # (".py", ".sh", ".js", ".tpl
 _ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # (".json",)
 
 
-# ---------------------------------------------------------------------------
-# FIX 113 — AUTOMATIC PROVENANCE RESTAMP after the mirror.
-# ---------------------------------------------------------------------------
-# The department's sops/MANIFEST-SOURCE.txt records the sha256 of the
-# sops/PIPELINE-MANIFEST.json copy it was installed from. U001 (update-skills.sh)
-# writes that stamp at install time — but NOTHING refreshed it afterward. When
-# the manifest (or any script) later moved on in the repo while the department
-# copy sat still, the recorded hash went stale and became indistinguishable from
-# tampering: manifest_source.resolve_manifest() refuses with
-# "the installed manifest does not match the recorded hash", the door closes, and
-# the operator cannot tell a silent partial install from an edited file.
-#
-# FIX 113 makes the recovery automatic: after refresh-dept-scripts.py has
-# re-mirrored a department's scripts/ tree (the same unconditional every-roll
-# pass that already heals stale scripts), the Presentations department's
-# sops/ stamp is REWRITTEN from the CURRENT bytes of its sops/PIPELINE-MANIFEST.json
-# — same four-line shape U001 writes (source_path / git_sha / content_sha256 /
-# installed_at), same file, no new format. If the installed manifest itself is
-# missing, the restamp does nothing (there are no current bytes to record — the
-# mirror does not deliver sops/, only scripts/). A restamp failure is recorded
-# in the receipt problems list (issue "stamp-failed") so it degrades the run to
-# the SAME graceful rc 3 contract as a failed copy — it never raises, and it
-# never silently leaves a stamp it could not refresh claiming to be current.
-def restamp_manifest_source(dept_dir: Path, problems: list) -> None:
-    """Rewrite <dept_dir>/sops/MANIFEST-SOURCE.txt from the CURRENT bytes of
-    <dept_dir>/sops/PIPELINE-MANIFEST.json (FIX 113). Presentations-only:
-    it is the one department manifest_source.py resolves by provenance
-    "installed" (its sops/ carries the stamp). Never raises; a failure is
-    appended to `problems` as {"path", "issue": "stamp-failed", "reason"}."""
-    manifest_path = dept_dir / "sops" / "PIPELINE-MANIFEST.json"
-    source_txt = dept_dir / "sops" / "MANIFEST-SOURCE.txt"
-    if not manifest_path.is_file():
-        return  # no installed manifest — nothing to stamp against (mirror delivers scripts/ only)
-    try:
-        content_sha256 = _sha256(manifest_path)
-        repo_root = None
-        cur = Path(__file__).resolve()
-        for _ in range(12):
-            if (cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json").is_dir() or \
-               (cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json").is_file():
-                repo_root = cur
-                break
-            if cur.parent == cur:
-                break
-            cur = cur.parent
-        source_rel = "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
-        git_sha = ""
-        if repo_root is not None:
-            import subprocess  # noqa: PLC0415 — local, guarded
-            try:
-                git_sha = subprocess.run(
-                    ["git", "-C", str(repo_root), "log", "-1", "--format=%H", "--", source_rel],
-                    capture_output=True, text=True, timeout=15,
-                ).stdout.strip()
-            except Exception:
-                git_sha = ""
-        stamp = (
-            f"source_path={source_rel}\n"
-            f"git_sha={git_sha}\n"
-            f"content_sha256={content_sha256}\n"
-            f"installed_at={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
-        )
-        source_txt.parent.mkdir(parents=True, exist_ok=True)
-        source_txt.write_text(stamp, encoding="utf-8")
-        print(f"  refresh-dept-scripts: RESTAMPED {source_txt} "
-              f"(content_sha256={content_sha256[:12]}…) — provenance now matches the "
-              f"installed manifest bytes (FIX 113)")
-    except OSError as e:
-        reason = f"{type(e).__name__}: {e}"
-        problems.append({"path": str(source_txt), "issue": "stamp-failed", "reason": reason})
-        print(f"  refresh-dept-scripts: STAMP FAILED -- {source_txt} -- {reason}",
-              file=sys.stderr)
-
-
 def resolve_workspace(explicit):
     """Mirrors detect-stale-artifacts.py / refresh-stale-roles.py's
     resolve_workspace() so all three tools agree on the client workspace
@@ -472,20 +398,6 @@ def main(argv=None):
         # names which file could not be written and why.
         copy_failed_paths = {p["path"] for p in result["copy_failed"]}
         problems = [p for p in problems if p["path"] not in copy_failed_paths] + result["copy_failed"]
-
-        # FIX 113 — AUTOMATIC PROVENANCE RESTAMP. The reinstall/update roll is
-        # the repair the drift gate (presentations-drift-gates.sh) names; for
-        # it to actually re-open the door, the roll must restamp
-        # sops/MANIFEST-SOURCE.txt itself — a restamp the operator has to
-        # remember separately is the exact "indistinguishable from tampering"
-        # staleness this fix closes. Restamp the Presentations stamp from the
-        # CURRENT installed manifest bytes on every --apply pass (apply-only:
-        # a dry-run writes nothing and must not rewrite a stamp). Failures
-        # land in `problems` and degrade the run to the same verify_failed /
-        # rc 3 contract — never raised, never silent.
-        if args.apply:
-            restamp_manifest_source(dept_dir, problems)
-
         dept_failed = len(problems)
         failed_inscope += dept_failed
 

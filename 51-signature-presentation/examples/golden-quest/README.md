@@ -32,7 +32,7 @@ three SP provers and drives `prove-deck.py` to a process certificate.
 | `working/copy/intake.json` | Type-picker record (`deck_type: signature_presentation` + derived legacy fields) — driver-produced; this is what `build_deck.py`'s `_sp_active` switch and `prove_sp_routing.py` actually read |
 | `working/copy/arc_allocation.json` | Per-slide converting-arc allocation (`_chk_arc` preflight receipt) — derived from `sp_structure.json`'s own phase/tag data, not a stub |
 | `working/copy/*.json` | Run-dir mirrors consumed by the provers (`--run-dir`) |
-| `working/interview/` | The real turn-gate ledgers (`intake_ledger.json`, `sp_intake_ledger.json`), per-question answer files, and `intake_transcript.json` from the `deck-intake-turngate.py` replay |
+| `working/interview/` | The real turn-gate ledgers (`intake_ledger.json`, `sp_intake_ledger.json`), per-question answer files, and `intake_transcript.json` from the `deck-intake-driver.py` replay |
 | `working/checkpoints/*.json` | Declared plan + attestations + client reports (governed run) |
 | `working/prover_results.json` | Captured PASS output of the three SP provers |
 | `delivery/golden-quest-FINAL/PROCESS-CERTIFICATE.{json,md}` | Issued process certificate |
@@ -58,7 +58,7 @@ files are the ONLY ones touched). Never run it against this tracked path — cop
 the fixture to a scratch dir first and run it there, or `git checkout --` the two
 certificate files afterward if you do run it in-tree.
 
-`run_method`: **provers-direct, PLUS a real `deck-intake-turngate.py` run for the
+`run_method`: **provers-direct, PLUS a real `deck-intake-driver.py` run for the
 intake leg (GK-25/U87).** The canonical entry (`presentation-canonical-entry.sh`
 → `run_signature_deck.py`) drives every pipeline phase including `P4-RENDER`
 (paid kie.ai image generation gated by a balance preflight) before reaching
@@ -69,7 +69,7 @@ fixture's driver-run repair — the sanctioned way to prove structure and issue
 the certificate without rendering. The ONE exception: `sp_intake.json` /
 `working/copy/intake.json` are NOT hand-assembled. They are the real output of
 replaying this fixture's own q1-q8 + frame answers through
-`deck-intake-turngate.py --signature --next/--answer` (the SACRED one-question-
+`deck-intake-driver.py --signature --next/--answer` (the SACRED one-question-
 at-a-time turn-gate) plus the standard `--next/--answer` flow for
 `presentation_type`/`signature_source` — see `working/interview/` for the
 resulting ledgers, per-question answer files, and transcript, and

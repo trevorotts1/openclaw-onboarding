@@ -48,7 +48,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Purpose:** Kill the cookie-cutter chassis (the reference failure case Dimension F: the identical five-part vertical stack on nearly every slide; V8 rotated image position but kept a rigid recurring chassis). Force a real rotation of WORD-BLOCK placement, not just image position.
 
-**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear -- the coded constants ARCHETYPE_WINDOW_SLIDES = 5 and ARCHETYPE_WINDOW_MIN_DISTINCT = 3 (build_deck.py FIX 87 canon block).
+**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
 
 **Inputs:** SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
 
@@ -119,7 +119,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. For every slide, write a `type_plan` entry: {slide, archetype, text_anchor, headline_treatment (weight + size band), emphasis_words, sub_treatment, price_rule (or none), hook_treatment (A4 pure-type with image at low opacity, or none), logo_placement (defer to STYLE BLOCK chip)}.
-2. For hook-anchor slides, set hook_treatment = "A4 type-dominant, image at 15% opacity or lower (HOOK_IMAGE_OPACITY_CEILING_PCT = 15 in presentations/scripts/build_deck.py, FIX 87 canon) behind the words or no image" and confirm the slide carries the hook line as the hero, nowhere else (cross-reference the Hook Doctrine; the hook is NOT a footer).
+2. For hook-anchor slides, set hook_treatment = "A4 type-dominant, image at 10 to 20 percent opacity behind the words or no image" and confirm the slide carries the hook line as the hero, nowhere else (cross-reference the Hook Doctrine; the hook is NOT a footer).
 3. Run the anti-cookie-cutter audit across the full plan: adjacency check (no two consecutive slides identical archetype + anchor) and window check (3 distinct archetypes per 5-slide window). Fix and re-audit until clean.
 4. Write design_system.json (machine-readable) and design_system.md (human-readable summary: the weight ladder table, the archetype rotation, the price system, and the per-slide plan).
 5. Register in system_registry.json. Notify the Slide Image Creator that the design system spec is required pre-reading before Phase 2, and notify the Director that the spec is delivered.

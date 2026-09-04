@@ -14,19 +14,7 @@
 
 ## ⛔ The ONE Sanctioned Build Command (entrypoint gate — read before you build)
 
-> **There is exactly one way to build a deck**, and it is the canonical entry command.
-> From any cwd, on any host, the packaged skill entry is the invocation:
->
-> ```
-> bash <skill>/51-signature-presentation/bin/presentation \
->     --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
-> ```
->
-> The packaged entry (`bin/presentation`, FIX 69) resolves the dept scripts dir
-> via `oc_paths`, sources the secrets env (`set -a`, never a value printed),
-> refuses if the department is not materialized, and `exec`s the canonical door
-> with your args and its exit code — it is a pass-through, never a second
-> render path. Direct door invocation is equivalent:
+> **There is exactly one way to build a deck**, and it is the canonical entry command:
 >
 > ```
 > bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
@@ -34,18 +22,13 @@
 > ```
 >
 > The entry script runs three **fail-closed** gates and only then dispatches the canonical
-> engine `presentation_job.py` (which walks every manifest phase in order and enforces it;
-> the runner `run_signature_deck.py` is only the turn-gate interface to it — `--next` /
-> `--phase` — and `build_deck.py` is the render step the engine dispatches at `P4-RENDER`)
-> (kie.ai gpt-image-2 only, words baked into each image, zero native on-slide text, full
-> phase-attestation chain):
+> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai gpt-image-2 only, words baked
+> into each image, zero native on-slide text, full phase-attestation chain):
 > 1. **deps check** — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
 >    or the build refuses to start.
 > 2. **bypass-scan** — refuses to start if any hand-rolled renderer/assembler is present in the
 >    run directory: a non-canonical `*.py` defining a 2048×1152 `Image.new` slide canvas
->    (`AF-LOCAL-CANVAS`), a native PowerPoint text-box overlay call (the retired
->    native-overlay path is eliminated, Decision 5C — the retired token pair is recorded in
->    the RETIRED appendix of pptx-assembly-specialist.md), or a direct kie
+>    (`AF-LOCAL-CANVAS`), a native `add_textbox`/`add_text_box` overlay, or a direct kie
 >    `createTask` outside `build_deck.py` (`AF-CANONICAL-RENDER-BYPASS`).
 > 3. **version/hash pin** — the deployed renderer must be in lockstep with the SOP/manifest
 >    stack (`sync_check.py`) and match the pinned governed head.
@@ -58,10 +41,6 @@
 > `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` +
 > `approved_by` + `reason`, naming the exact gate code) — never silently, never by an agent's
 > own choice. Agent doctrine: see `BUILDER-PROMPT.md` STEP 2.
-> **One-sentence entry statement (Fix 93):** the engine (`presentation_job.py`) is what
-> walks and enforces the phase order; the runner (`run_signature_deck.py`) is only the
-> agent's turn-gate interface to it (`--next` / `--phase`) — the two names are never
-> interchangeable.
 
 ---
 
@@ -140,34 +119,22 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ## Pipeline Sequence (phase order)
 
-> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number the engine (`presentation_job.py`) sorts phases on (and the same key the runner's turn-gate reports) — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
+> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 55, 55 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number `run_signature_deck.py` sorts phases on — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
 >
 > **Before phase order -1:** the Brainstorming Buddy (`brainstorming-buddy-presentations`, and, for a first-time owner, First-Time Onboarding `first-time-onboarding-presentations` first) hold the pre-manifest brainstorm that locks `working/brainstorm/presentations/<slug>/brief.json` and hands it to the Director. Neither step is a `phases[]` entry — the machine-checked, manifest-governed pipeline begins at intake.
 >
 
-### Style and closeout phases — manifest v60 additions (FIX 112 / FIX 1 / FIX 84)
-
-Four phases added after the Wave D upsell band complete the 62-phase manifest:
-
-- **`P-STYLE-SPEC`** (order 4.84, brand-steward) — fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render; produces `working/copy/style_preview_spec.json`.
-- **`P-STYLE-PICK`** (order 4.86, brand-steward, human gateway) — owner approves ONE of the 3 variants; choice logged with a verified owner_msg_id in `working/copy/style_preview_choice.json`; gate code `AF-STYLE-UNPICKED`.
-- **`P8.3-INFOGRAPHIC`** (order 8.3, slide-image-creator, mechanical: `scripts/build_infographic.py`) — canonical Kie path, 9:16 1440x2560, 102,400-byte PNG floor; produces `working/deliverables/infographic.png`.
-- **`P-BUNDLE-GATE`** (order 9.95, pptx-assembly-specialist, terminal, mechanical: `scripts/bundle_gate.py`) — bundle-completeness gate, exit 5 naming any missing/under-threshold deliverable; produces `working/checkpoints/bundle_gate.json`; gate code `AF-BUNDLE-COMPLETE`.
-
 ### Upsell (P-U) phases — Wave D (manifest v54, added by the presentation rev2 batch)
 
-The Wave D upsell band below is part of the current 62-phase manifest (later waves added the P-U DESIGN-RENDER trio and the BUILD phases — see §2.40 of DEPARTMENT-COUNTS-CANONICAL.md for the generated full registry). Each is CONDITIONAL (defer per its own preflight; a decline is a logged client waiver, never silence):
+The 15 P-U upsell phases below complete the 55-phase manifest. Each is CONDITIONAL (defer per its own preflight; a decline is a logged client waiver, never silence):
 
 - **`P-U-SALES-COPY`** (order 3.6) — . Full contract: look it up in the manifest.
 - **`P-U-CHECKOUT-COPY`** (order 3.7) — . Full contract: look it up in the manifest.
 - **`P-U-VSL-RESEARCH`** (order 3.8) — . Full contract: look it up in the manifest.
 - **`P-U-VSL-COPY`** (order 3.9) — . Full contract: look it up in the manifest.
 - **`P-U-DESIGN-SALES`** (order 4.2) — . Full contract: look it up in the manifest.
-- **`P-U-DESIGN-RENDER-SALES`** (order 4.21) — . Full contract: look it up in the manifest.
 - **`P-U-DESIGN-CHECKOUT`** (order 4.3) — . Full contract: look it up in the manifest.
-- **`P-U-DESIGN-RENDER-CHECKOUT`** (order 4.31) — . Full contract: look it up in the manifest.
 - **`P-U-DESIGN-VSL`** (order 4.4) — . Full contract: look it up in the manifest.
-- **`P-U-DESIGN-RENDER-VSL`** (order 4.41) — . Full contract: look it up in the manifest.
 - **`P-U-HTML-SALES`** (order 5.2) — . Full contract: look it up in the manifest.
 - **`P-U-HTML-CHECKOUT`** (order 5.3) — . Full contract: look it up in the manifest.
 - **`P-U-HTML-VSL`** (order 5.4) — . Full contract: look it up in the manifest.
@@ -179,7 +146,7 @@ The Wave D upsell band below is part of the current 62-phase manifest (later wav
 
 > **Conditional phases (do not assume every phase ran on every deck):** `P-CONVERTER` runs ONLY on the content-first path (Zoom/video/doc source) and DEFERS otherwise. `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P-SP-STRUCTURE`, and `P-SP-P3-HYGIENE` DEFER (return empty, no-op) unless `intake.json` declares `deck_type: signature_presentation` — they exist only for the Trevor Otts Signature Presentation type. `P-SP-CLAIM` is the exception among the signature-named gates: it runs on EVERY deck (never defers) as the router that fails closed if signature signals appear without the declaration. `P-SPEECH-QC` defers when no speech QC report exists (i.e., when the run's `DELIVERABLE_SET` did not put a speech in scope). **`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, and `P-U-FORM-CHECKOUT`** (Wave C, manifest v51) DEFER unless the client elects the sales+checkout upsell (`intake/upsell-questions.json` `want_sales_checkout`, default YES; a decline is a logged client waiver, never silence). **`P-U-VSL-BUILD`** DEFERS unless the client elects the VSL upsell (`want_vsl_page`, default NO, opt-in only) and only ever runs after `P9.6-WEBINAR-VIDEO`. Every other phase below runs on every standard deck.
 >
-> **Executed counts (out of the enforced declared set):** the count now depends on BOTH deck type AND the two upsell elections — see `DEPARTMENT-COUNTS-CANONICAL.md` for the full mechanically-derived table (deck type x sales/checkout x VSL). With both upsells unelected/unknown and no signature/content-conversion signals: **31 on a standard from-scratch deck, 35 on a signature deck, 32 on a content-conversion deck** (the pre-Wave-C baseline, unchanged when the upsells are declined). Do not restate the full matrix here — `DEPARTMENT-COUNTS-CANONICAL.md` is the single source; link to it.
+> **Executed counts (out of 40 enforced):** the count now depends on BOTH deck type AND the two upsell elections — see `DEPARTMENT-COUNTS-CANONICAL.md` for the full mechanically-derived table (deck type x sales/checkout x VSL). With both upsells unelected/unknown and no signature/content-conversion signals: **31 on a standard from-scratch deck, 35 on a signature deck, 32 on a content-conversion deck** (the pre-Wave-C baseline, unchanged when the upsells are declined). Do not restate the full matrix here — `DEPARTMENT-COUNTS-CANONICAL.md` is the single source; link to it.
 
 1. **`P-CONVERTER`** (order -1) -- CONDITIONAL, content-first path only -- content-to-presentation-architect converts a Zoom/video/doc source into `intake.json` (`source_brief_origin: content-to-presentation-architect`); DEFERS unless a raw source is present. Mandates Phase -0.5 Deep Research immediately after (SOP 9.8 step 3).
 2. **`P-0.5-RESEARCH`** (order -0.5) -- MANDATORY on every run -- deep-research-specialist-presentations runs the six research categories (A: niche deck structures, B: pricing/value benchmarking, C: supporting statistics, D: external corroboration/GP-8, E: grounded image context, F: design+hook+pacing best practices). Blocks everything downstream until `working/research/brief-*.md` carries `research_complete: true`. Category F routes to the Typography Architect and Slide Image Creator; the STYLE BRANCH (match/analyze -> `design_research_mode: delegated_to_DIU`, else complete F1-F4) is decided here.
@@ -190,7 +157,7 @@ The Wave D upsell band below is part of the current 62-phase manifest (later wav
 7. **`P0B-PRIORITY`** (order 0.2) -- attention-content-strategist writes the Priority-Shift Spec (`priority_shift_spec.json`: `true_goal` + `priority_stack[]`, the Seven-P / Eight-Move build sequence) BEFORE any copy is written. All P0B gates DEFER until this spec exists.
 8. **`P3-ARC`** (order 3) -- offer-price-strategist allocates the converting arc.
 9. **`P-3.5-RESEARCH-MAP`** (order 3.5) -- deep-research-specialist-presentations maps the already-gathered facts/quotes/stats (Categories C/D/G/H) onto SPECIFIC slides, writing `working/research/research_map.json`. Phase 4 copy is BLOCKED until this map exists.
-10. **`P4-COPY`** (order 4) -- slide-copywriter (concurrent: offer-price-strategist -- a slot in the order-4 `fanout` dispatch, the `fanout` field / `phase.workers` pool in `presentation_job/fanout.py`, width-clamped by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`, capacity-reliability-engineer.md Step 0.5) writes `slides_copy.md` + `price_ladder.json`, loading `research_map.json` and weaving each assigned anchor into the copy. The concurrent pair runs as the Director's order-4 fanout dispatch (the `fanout` field / `phase.workers` pool in `presentation_job/fanout.py`), its width governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json` (capacity-reliability-engineer.md Step 0.5). Every `concurrent:` pairing below is a slot in that same `fanout` field, dispatched through `presentation_job/fanout.py` and width-clamped by the governor's `max_concurrent_agents`.
+10. **`P4-COPY`** (order 4) -- slide-copywriter (concurrent: offer-price-strategist) writes `slides_copy.md` + `price_ladder.json`, loading `research_map.json` and weaving each assigned anchor into the copy.
 11. **`P-SP-STRUCTURE`** (order 4.1) -- SIGNATURE-ONLY -- signature-presentation-architect locks the SACRED 4-phase arc (Avatar >=11 -> Story >=13 -> Teaching >=36 -> Pitch >=40, >=100 slides floor) with contiguous phase labels, image suggestions on every slide, and the N.E.E.I.T. / 4-Quadrant markers.
 12. **`P-SP-P3-HYGIENE`** (order 4.15) -- SIGNATURE-ONLY -- qc-specialist-signature-presentations enforces no-pitch hygiene on the Teaching band: no offer name, price, or enroll/buy/scarcity CTA before the Phase-3-to-Phase-4 bridge.
 13. **`P1Q-COPY-QC`** (order 4.2) -- qc-specialist-presentations runs the copy QC gate (score >= 8.5). This is the current "Phase 1Q" -- it is sequenced AFTER Slide Copy (order 4.2, not before it); a QC now follows the artifact it grades, which is the defect the O1 re-sequence fixed.
@@ -344,12 +311,6 @@ add-ons and the style branch, and shown an ECHO + PRD + checklist before a singl
 ---
 
 ## Master SOP Authority
-
-**Master SOP (one line, declared once):** the department's master SOP is
-**`universal-sops/CLIENT-WEBINAR-DECK-SOP.md`**; every "master SOP" citation in this
-department resolves to that file. Declared here only — the doctrine home
-(`universal-sops/PRESENTATION-MASTER-DOCTRINE.md` header) and BUILDER-PROMPT.md carry
-the same single line for reachability, and every role's Section 9 header cites the file.
 
 All roles defer to: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`
 

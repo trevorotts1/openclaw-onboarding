@@ -2,7 +2,7 @@
   "$id": "presentation-deps",
   "manifest_version": "1.0.0",
   "updated": "2026-09-02",
-  "source": "FIX 70 (SEPT-1, [R11 G6-7]): ONE dependency canon for the Skill 23 presentation pipeline. Read by qc-completeness.sh (exit-6 deps gate), update-skills.sh converge_presentation_deps + --presentation-deps-check, the reassert-script generator (install.sh Step 6.5), and door GATE 1 (presentation-canonical-entry.sh deps_check). Every consumer reads THIS file; none hardcodes its own list anymore. FIX 71 (SEPT-1, [R11 G8]): every python_import dep installs into the department venv <root>/.venv-presentations via its own pip \u2014 venv pip carries no PEP 668 externally-managed marker, so no --break-system-packages flag exists anywhere in the two installers or this canon; pip_flags are empty on both platforms.",
+  "source": "FIX 70 (SEPT-1, [R11 G6-7]): ONE dependency canon for the Skill 23 presentation pipeline. Read by qc-completeness.sh (exit-6 deps gate), update-skills.sh converge_presentation_deps + --presentation-deps-check, the reassert-script generator (install.sh Step 6.5), and door GATE 1 (presentation-canonical-entry.sh deps_check). Every consumer reads THIS file; none hardcodes its own list anymore.",
   "resolution": "Consumers resolve the canon in order: 1) <skill_dir>/presentations/scripts/presentation-deps.json (repo checkout), 2) <skill_dir>/templates/role-library/presentations/scripts/presentation-deps.json (role-library copy), 3) <workspace>/departments/Presentations/scripts/presentation-deps.json (materialized department). Missing canon -> consumer falls back to its own pre-FIX-70 hardcoded check and reports canon_missing=true.",
   "deps": [
     {
@@ -48,7 +48,9 @@
         "pip_flags": []
       },
       "vps": {
-        "pip_flags": []
+        "pip_flags": [
+          "--break-system-packages"
+        ]
       }
     },
     {
@@ -63,7 +65,9 @@
         "pip_flags": []
       },
       "vps": {
-        "pip_flags": []
+        "pip_flags": [
+          "--break-system-packages"
+        ]
       }
     },
     {
@@ -124,7 +128,9 @@
         "pip_flags": []
       },
       "vps": {
-        "pip_flags": []
+        "pip_flags": [
+          "--break-system-packages"
+        ]
       }
     }
   ]

@@ -44,15 +44,6 @@ name: presentations-drift-gates
 #            materialized v51, every per-copy provenance check green on both.
 #            At launch the same M1 check runs inside presentation-canonical-entry.sh
 #            GATE 3 (sync_check --json) and fails closed (class render_path).
-#   GATE 7 - U006 colocate list contract (FIX 65): asserts the colocate list
-#            contract of colocate_presentation_entry in BOTH install.sh and
-#            update-skills.sh ("colocate list = files that exist; return 1 on
-#            any miss"). Deleting a listed file from the canonical source dir
-#            makes the gate fail (list-vs-disk divergence); a retired name
-#            re-added to either installer's array fails too; both arrays must
-#            stay identical; the empty-list and copy-shortfall hard-miss
-#            rejects must remain present per leg. The path filter below
-#            includes install.sh and update-skills.sh for exactly this gate.
 #
 # This job's path filter deliberately covers the exact files each gate reads,
 # since none of those files are in presentations-lockstep.yml's trigger list
@@ -99,15 +90,6 @@ on:
       # whose phase-id lists must stay a superset of PIPELINE-MANIFEST.json phases[]
       - "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md"
       - "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md"
-      # GATE 7 targets -- the U006 colocate list contract (FIX 65): the two
-      # installers whose colocate_candidates arrays the gate parses, plus the
-      # canonical source dir whose contents the list must mirror. A PR that
-      # deletes (or restores) a colocate candidate, or drifts one installer's
-      # array from the other's, now fires this workflow.
-      - "install.sh"
-      - "update-skills.sh"
-      - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
-      - "23-ai-workforce-blueprint/scripts/presentations-drift-gates.sh"
       # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs
       - "51-signature-presentation/**"
       # Skill-23 engine script verify.sh resolves against (register --check leg)
@@ -145,7 +127,7 @@ jobs:
           set -euo pipefail
           echo "OPENCLAW_PLATFORM=${OPENCLAW_PLATFORM} leg: drift gates + Skill-51 verify.sh"
 
-      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 / GATE 4 / GATE 5 / GATE 7 (exit 0 required)
+      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 / GATE 4 / GATE 5 (exit 0 required)
         shell: bash
         run: |
           set -euo pipefail

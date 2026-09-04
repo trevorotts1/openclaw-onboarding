@@ -3,11 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import signal
 import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,20 +16,14 @@ from .state import (
 )
 from . import lease as lease_mod
 from .lease import DEFAULT_TTL_S as LEASE_TTL_S, HEARTBEAT_INTERVAL_S as LEASE_HEARTBEAT_S
-from .manifest import Manifest, ManifestInvalid, resolve_manifest
+from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .report import dispatch
-# FIX 64 (one notification transport): the scheduled undeliverable-retry pass a
-# watchdog tick can run (--sweep-undeliverable-roots) resolves the SAME root
-# list every other scanning pass uses, so it needs scan_roots' resolver/report
-# helpers, sweep.py's run-dir finder, and the sweep exit code it returns.
-from .scan_roots import format_roots_report, resolve_scan_roots, split_primary
+from .scan_roots import split_primary
 from .watchdog import watchdog as _run_watchdog
 from .supervisor import supervise as _run_supervise, DEFAULT_MAX_RESTARTS, DEFAULT_BACKOFF_SECONDS
 from .board import BoardMirror
 from .sweep import reconcile_sweep
-from .sweep import _find_run_dirs_multi  # FIX 64: shared run-dir finder for the roots sweep
-from .state import EXIT_SWEEP_HAD_FAILURES
 from . import diagnose
 from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
@@ -82,13 +73,6 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--capacity", action="store_true",
                    help="WORK-ITEM-12: run the 9Router capacity probe and print the report; "
                         "exit 0. Read-only measurement, never simulated.")
-    m.add_argument("--plan", action="store_true",
-                   help="MASTER Part 8 FIX 8: print the wave-scheduled execution plan (the "
-                        "artifact DAG the engine runs: wave one is intake + research only, "
-                        "P8.2-GUIDE never before P4-COPY) and exit. Read-only — never runs "
-                        "a phase, never takes the run lease. Manifest resolution mirrors "
-                        "--status/--run: the job's pinned manifest when state.json exists "
-                        "in --run-dir, else --manifest, else resolve_manifest()'s search.")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -497,7 +481,7 @@ def cmd_sweep_undeliverable_roots(args) -> int:
     roots = resolve_scan_roots(
         primary=primary_roots[0] if primary_roots else None,
         extra=tuple(primary_roots[1:]) + tuple(getattr(args, "scan_root_extras", None) or ()),
-        config_path=getattr(args, "roots_config", None),
+        roots_config=getattr(args, "roots_config", None),
     )
     print(format_roots_report(roots, "sweep-undeliverable-roots"), flush=True)
 
@@ -592,111 +576,6 @@ def cmd_capacity(args) -> int:
     from . import capacity
     result = capacity.probe()
     print(capacity.format_report(result), flush=True)
-    return EXIT_OK
-
-
-def cmd_plan(args, scripts_dir: Path) -> int:
-    """MASTER Part 8 FIX 8: print the wave-scheduled execution plan, exit 0.
-
-    Read-only: resolves the manifest exactly the way --run does (the job's
-    PINNED manifest when --run-dir holds a state.json naming it, else
-    --manifest, else resolve_manifest()'s search — never a walk-up guess),
-    validates it through Manifest.load (a consumed artifact with no producer
-    that is not an intake file raises ManifestInvalid naming it), then builds
-    the SAME plan the engine runs — build_execution_plan over the artifact
-    DAG (edge u→v iff produces(u) ∩ consumes(v) ≠ ∅; manifest `order` only
-    breaks ties intra-wave) with the REAL capacity.probe() result. The width
-    is measured, never a constant: a probe that cannot produce a number
-    refuses with AF-CAPACITY-UNMEASURED and EXIT_GATE_BLOCKED exactly like
-    execution_plan.main().
-
-    A fresh run dir (the QC FIX 8 proof shape — `--plan --run-dir <dir>` on a
-    from-scratch deck with no state yet) resolves via --manifest /
-    resolve_manifest and prints the from-scratch plan: wave 1 = intake +
-    research only (P-0.5-RESEARCH, P0A-INTAKE, P-SP-CLAIM), P8.2-GUIDE in a
-    strictly later wave than P4-COPY. Never writes state, never takes the
-    run lease, never creates the run dir.
-
-    Routing parity (MASTER Part 8 FIX 8 proof: "wave one = intake and research
-    only"): on a dir with no state/intake yet — the from-scratch proof shape —
-    the plan applies the SAME converter routing the engine applies
-    (phases.py:1796-1804): converter_path phases (P-CONVERTER, "Content-first
-    path only") are routed around, because the intake driver's default
-    creation_mode for a not-yet-interviewed deck is from_scratch
-    (deck-intake-driver.py:110,134) and P-CONVERTER does no work on such a
-    deck. A dir whose state/intake positively declares a content-first
-    creation_mode keeps P-CONVERTER, mirroring the engine's fail-open rule.
-    """
-    from . import capacity
-    from .execution_plan import (CapacityUnmeasured, autofail_payload,
-                                 build_execution_plan, refusal_message)
-
-    run_dir = args.run_dir.expanduser().resolve() if args.run_dir else None
-    manifest_path: Optional[Path] = None
-    creation_mode: Optional[str] = None
-    if run_dir is not None:
-        store = StateStore(run_dir)
-        if store.exists():
-            pinned = store.load().get("manifest_path")
-            if pinned:
-                mp = Path(pinned)
-                if not mp.is_file():
-                    die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {mp} is gone")
-                manifest_path = mp
-        # Same best-effort read the engine's _deck_creation_mode does
-        # (phases.py:486-505): None on absence/parse failure -- a routing
-        # decision that depends on this never skips a phase on missing
-        # information, only on a positively-read confirmed mode.
-        try:
-            obj = json.loads(
-                (run_dir / "working" / "copy" / "intake.json").read_text(encoding="utf-8"))
-            if isinstance(obj, dict):
-                val = obj.get("creation_mode")
-                if isinstance(val, str) and val:
-                    creation_mode = val
-        except Exception:  # noqa: BLE001
-            creation_mode = None
-    if manifest_path is None and args.manifest:
-        mp = Path(args.manifest).expanduser().resolve()
-        if not mp.is_file():
-            die(EXIT_USAGE, f"--manifest {mp} does not exist")
-        manifest_path = mp
-    if manifest_path is None:
-        if run_dir is None:
-            die(EXIT_USAGE, "--plan needs --run-dir (or --manifest)")
-        manifest_path = resolve_manifest(args.manifest, run_dir, scripts_dir)
-
-    try:
-        manifest = Manifest.load(manifest_path)   # ManifestInvalid names the dangling input
-    except ManifestInvalid as exc:
-        die(EXIT_MANIFEST_MISMATCH, f"--plan refuses this manifest: {exc}")
-    probe = capacity.probe()
-    try:
-        plan = build_execution_plan(manifest_path, probe)
-    except CapacityUnmeasured:
-        print(f"CAPACITY AUTOFAIL: {refusal_message(probe)}", file=sys.stderr)
-        print(json.dumps(autofail_payload(probe), indent=2), file=sys.stderr)
-        return EXIT_GATE_BLOCKED
-
-    # Converter routing (see docstring): a from-scratch deck routes
-    # converter_path phases out of the plan. A fresh dir (no intake.json) IS
-    # the from-scratch proof shape; an unknown mode would only arise for a
-    # state-pinned run whose intake was deleted, and failing open (keeping the
-    # phase) there matches the engine.
-    if not (creation_mode and creation_mode in ("content_personal", "content_general")):
-        plan["waves"] = [[pid for pid in wave
-                          if not manifest.phase_or_none(pid).converter_path]
-                         for wave in plan["waves"]]
-        plan["waves"] = [wave for wave in plan["waves"] if wave]
-    print(f"EXECUTION PLAN -- presentation_job (MASTER Part 8 FIX 8)")
-    print(f"Manifest: {manifest_path} (v{manifest.version}, "
-          f"{len(manifest.phases)} phases)")
-    print(f"Capacity probe: {plan['capacity_probe_mode']} -- status "
-          f"{plan.get('capacity_status')}, provider {plan.get('capacity_provider')}, "
-          f"dispatchable {plan['dispatchable']}, available {plan['available']}")
-    print(f"Execution plan: {len(plan['waves'])} waves")
-    for i, wave in enumerate(plan["waves"], 1):
-        print(f"  wave {i:>2}: " + ", ".join(wave))
     return EXIT_OK
 
 
@@ -830,120 +709,8 @@ def _pid_is_alive(pid: int) -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
-# FIX 19 (MASTER Part 8) — reap orphans, children included.
-#
-# The QC probe: start a stubbed deck-12 run, wait for P4-PROMPT workers, kill
-# the engine with SIGTERM, then require within 30 s that NO dispatcher,
-# worker, or render child remains — and that a NEW engine on the same run dir
-# spawns its own dispatcher (the old lock file did not block it).
-#
-# Three engine-side gaps closed here:
-#
-# 1. THE ENGINE IS ITS OWN SESSION LEADER. The engine process is spawned by
-#    the launcher with start_new_session=True (launcher.py dispatch()), so
-#    SIGTERM to the engine's process group reaches the engine, its
-#    auto-spawned dispatcher, and every render child in one os.killpg. But a
-#    SIGKILL (or a crash) leaves nothing to catch the stragglers — so the
-#    engine also installs its own SIGTERM handler that raises a shutdown
-#    event the finally-block honours before normal teardown, and the
-#    scheduled process_reaper (presentation-watchdog.sh) backstops anything
-#    that survives.
-#
-# 2. THE AUTO-SPAWNED DISPATCHER IS ITS OWN GROUP LEADER.
-#    _spawn_dispatcher_if_available spawns with start_new_session=True so
-#    _stop_auto_dispatcher can os.killpg the dispatcher AND its in-flight
-#    wave workers, not just the watcher — the pre-FIX 19 proc.terminate()
-#    killed only the watcher and orphaned the workers mid-wave, exactly the
-#    survivors that kept rewriting intake.
-#
-# 3. THE AUTOSPAWN LOCK CANNOT BLOCK A NEW ENGINE. The lock previously
-#    recorded {pid, started_at} and a live holder meant "not spawning" —
-#    but a dispatcher from a PREVIOUS run id (different job on the same
-#    reused run dir) is precisely the orphan this fix exists to reap. Now
-#    the lock record carries run_id (the state.json job_id) and run_dir; a
-#    live holder whose run_id differs from THIS run's job_id is killed
-#    (whole process group, TERM then KILL) and its lock replaced, so a new
-#    engine always spawns its own fresh dispatcher.
-# ---------------------------------------------------------------------------
-
-#: FIX 19: SIGTERM handler — flip the engine-shutdown flag. Installed in
-#: main() for --run/--resume so a launcher stop_engine() SIGTERM (or an
-#: operator's kill -TERM) is OBSERVED: the handler itself does nothing else
-#: (no cleanup from a signal handler — the finally blocks own that), it only
-#: raises the flag so the exit path can log it. SIGKILL remains unrecoverable
-#: by design; that is what the scheduled reaper and stop_engine's killpg
-#: escalation are for.
-_ENGINE_SHUTDOWN_REQUESTED = False
-
-
-def _install_engine_sigterm_handler() -> None:
-    """FIX 19: record that this engine was asked to stop. Idempotent;
-    main-thread only (signal.signal raises ValueError elsewhere).
-
-    FIX 105: the handler ALSO raises the phases module's shutdown event (the
-    sliced exec waits poll it) and killpgs every REGISTERED in-flight exec's
-    own process group — the render batch spawned start_new_session=True sits
-    OUTSIDE the engine's group, so the launcher's group-TERM never reaches it;
-    without this the exec outlived the engine and kept writing stale renders.
-    Signal-handler discipline holds: only these two asyncio-safe calls plus
-    the flag write happen here; the sliced waiter does the kill join, and the
-    handler's own group-KILL is a belt-and-braces reaper for execs whose
-    waiter already exited."""
-    global _ENGINE_SHUTDOWN_REQUESTED
-    if threading.current_thread() is not threading.main_thread():
-        return
-
-    def _handler(signum, _frame):  # noqa: ANN001 -- signal handler signature
-        global _ENGINE_SHUTDOWN_REQUESTED
-        _ENGINE_SHUTDOWN_REQUESTED = True
-        try:
-            from . import phases as _ph
-            _ph._ENGINE_SHUTDOWN_EVENT.set()
-            _ph._kill_registered_execs(signal.SIGTERM)
-            print(f"[engine {os.getpid()}] signal {signum} received -- shutdown "
-                  f"requested; in-flight execs reaped; unwinding via the "
-                  f"normal finally path", flush=True)
-        except Exception:  # noqa: BLE001 -- the handler must never raise
-            print(f"[engine {os.getpid()}] signal {signum} received -- shutdown "
-                  f"requested; unwinding via the normal finally path", flush=True)
-
-    try:
-        signal.signal(signal.SIGTERM, _handler)
-        signal.signal(signal.SIGINT, _handler)
-    except (ValueError, OSError):
-        pass
-
-
-def _kill_process_group_best_effort(pid: int, sig: int) -> bool:
-    """FIX 19: os.killpg(pid, sig) with a direct-pid fallback, then swallow
-    every failure. The pid passed IS the group leader (every FIX 19 spawn is
-    start_new_session=True); the fallback covers a recorded pid from an older
-    spawn that was never a leader. Never raises — best-effort by contract."""
-    try:
-        os.killpg(pid, sig)
-        return True
-    except OSError:
-        pass
-    try:
-        os.kill(pid, sig)
-        return True
-    except OSError:
-        return False
-
-
 def _auto_dispatch_lock_path(run_dir: Path) -> Path:
     return run_dir / "working" / "dispatcher-autospawn.lock"
-
-
-def _read_autospawn_lock(lock_path: Path) -> Dict[str, Any]:
-    """FIX 19: read the autospawn lock record defensively. Returns {} on any
-    absence/parse failure — the caller treats an empty record as no holder."""
-    try:
-        rec = json.loads(lock_path.read_text(encoding="utf-8"))
-        return rec if isinstance(rec, dict) else {}
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return {}
 
 
 def _auto_dispatch_disabled(disabled_flag: bool) -> bool:
@@ -952,70 +719,18 @@ def _auto_dispatch_disabled(disabled_flag: bool) -> bool:
     return os.environ.get("PRESENTATION_AUTO_DISPATCH", "1").strip().lower() in (
         "0", "false", "no", "off")
 
-#: FIX 105: the module files a running dispatcher EXECUTES. Any of these whose
-#: mtime postdates the running dispatcher's start time makes that dispatcher
-#: stale — it is executing pre-patch code and must be replaced, never reused.
-_DISPATCHER_MODULE_FILES = ("presentation_job/dispatcher.py",
-                            "work_order_dispatcher.py")
-
-def _dispatcher_modules_stale(lock_record: Dict[str, Any]) -> Tuple[bool, str]:
-    """FIX 105 launcher staleness check. True (with a naming detail) when the
-    live dispatcher described by `lock_record` started BEFORE the newest mtime
-    of its own module files — i.e. a patch landed while it was running and it
-    will keep the old code loaded forever (the silent re-introduction of a
-    fixed bug). The lock record carries the spawner-written wall-clock
-    `started_at`; a missing/unparseable one means we cannot judge — report
-    NOT stale (fail-open to the pre-FIX 105 reuse behavior, never kill a
-    dispatcher on a guess)."""
-    started_at = lock_record.get("started_at")
-    if not isinstance(started_at, (int, float)) or started_at <= 0:
-        # ISO string form (older records): parse defensively; unparseable -> not stale.
-        if isinstance(started_at, str) and started_at:
-            try:
-                from datetime import datetime
-                started_at = datetime.fromisoformat(started_at).timestamp()
-            except (ValueError, TypeError, OSError):
-                return False, ""
-        else:
-            return False, ""
-    try:
-        scripts_dir = Path(__file__).resolve().parent.parent
-        for name in _DISPATCHER_MODULE_FILES:
-            f = scripts_dir / name
-            if f.is_file() and f.stat().st_mtime > started_at + 1.0:
-                return True, (f"{name} mtime {f.stat().st_mtime:.0f} > "
-                              f"dispatcher started_at {float(started_at):.0f}")
-    except OSError:
-        return False, ""   # cannot judge the disk: never kill on a guess
-    return False, ""
-
 
 def _spawn_dispatcher_if_available(run_dir: Path, scripts_dir: Path,
-                                    disabled: bool = False,
-                                    run_id: Optional[str] = None) -> Optional[subprocess.Popen]:
+                                    disabled: bool = False) -> Optional[subprocess.Popen]:
     """Auto-spawn work_order_dispatcher.py --watch, scoped to `run_dir`, as a
     child of THIS process. See the module-level design note above this
     function for the full rationale (concurrency, getppid survival,
     termination, no-double-spawn). Call this BEFORE engine.run()/
     engine.close(), never after -- see the deadlock warning above.
 
-    FIX 19: the dispatcher is spawned start_new_session=True — its own
-    process-group leader — so _stop_auto_dispatcher's os.killpg reaches the
-    watcher AND every in-flight wave worker it fathered, never just the
-    watcher (the pre-FIX 19 terminate() that orphaned workers mid-wave).
-
-    FIX 19: `run_id` is the current run's state.json job_id. The lock record
-    now carries run_id; a lock holding a LIVE pid whose recorded run_id
-    differs from `run_id` names a dispatcher from a DIFFERENT (earlier) run —
-    an orphan — and is killed (whole process group: SIGTERM, 5 s grace,
-    SIGKILL) before this run spawns its own fresh watcher. Only a live holder
-    of the SAME run_id blocks the spawn ("already running for this run"),
-    exactly the operator-manual-watcher convenience the original check
-    protected, and never a stale cross-run orphan.
-
     Returns the Popen handle on a real spawn, or None when auto-dispatch is
-    disabled (flag/env) or a same-run dispatcher is already alive for this
-    run dir. The caller owns the returned handle and MUST pass it to
+    disabled (flag/env) or a dispatcher is already alive for this run dir.
+    The caller owns the returned handle and MUST pass it to
     _stop_auto_dispatcher when the run this call was made for is done,
     regardless of how it finished (success, block, or exception)."""
     if _auto_dispatch_disabled(disabled):
@@ -1024,66 +739,23 @@ def _spawn_dispatcher_if_available(run_dir: Path, scripts_dir: Path,
     lock_path = _auto_dispatch_lock_path(run_dir)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-    recorded = _read_autospawn_lock(lock_path)
-    existing_pid = 0
-    try:
-        existing_pid = int(recorded.get("pid") or 0)
-    except (ValueError, TypeError):
-        existing_pid = 0
-    existing_run_id = str(recorded.get("run_id") or "")
-    if existing_pid and _pid_is_alive(existing_pid):
-        if run_id and existing_run_id and existing_run_id != run_id:
-            # FIX 19: live pid, DIFFERENT run id — a dispatcher left over from
-            # a previous job on this run dir. Kill its whole group (it is a
-            # group leader: every FIX 19 spawn is start_new_session=True) so
-            # its in-flight wave workers die with it, replace the lock, and
-            # spawn fresh below. This is the "old lock file did not block the
-            # new engine" half of the QC proof.
-            print(f"[auto-dispatch] autospawn lock holds live pid {existing_pid} "
-                  f"from run_id {existing_run_id!r} (this run: {run_id!r}) -- "
-                  f"killing that orphan group and spawning fresh", flush=True)
-            _kill_process_group_best_effort(existing_pid, signal.SIGTERM)
-            time.sleep(5)
-            if _pid_is_alive(existing_pid):
-                _kill_process_group_best_effort(existing_pid, signal.SIGKILL)
-                time.sleep(1)
-        else:
-            # FIX 105: same-run_id live holder — reuse it ONLY when its loaded
-            # code is not stale. The lock record's started_at (wall clock,
-            # written by the spawner at spawn time) is the dispatcher's birth;
-            # if any module file it executes was modified AFTER that birth, the
-            # running process predates the patch and must be replaced.
-            stale, stale_detail = _dispatcher_modules_stale(recorded)
-            if stale:
-                print(f"[auto-dispatch] live dispatcher pid {existing_pid} for "
-                      f"{run_dir} is running STALE modules ({stale_detail}) -- "
-                      f"stopping it (whole process group) and spawning a fresh "
-                      f"one on the patched code", flush=True)
-                _kill_process_group_best_effort(existing_pid, signal.SIGTERM)
-                time.sleep(5)
-                if _pid_is_alive(existing_pid):
-                    _kill_process_group_best_effort(existing_pid, signal.SIGKILL)
-                    time.sleep(1)
-            else:
-                print(f"[auto-dispatch] work_order_dispatcher.py already running for "
-                      f"{run_dir} (pid {existing_pid}) -- not spawning a second one",
-                      flush=True)
-                return None
-    elif existing_pid:
-        # Dead holder: clear the stale record so the fresh write below is the
-        # only record for this run (dispatcher.py's _clear_stale_autospawn_
-        # lock does the same from the watcher side).
+    existing_pid = None
+    if lock_path.is_file():
         try:
-            lock_path.unlink()
-        except OSError:
-            pass
+            recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+            existing_pid = int(recorded.get("pid") or 0)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            existing_pid = None
+    if existing_pid and _pid_is_alive(existing_pid):
+        print(f"[auto-dispatch] work_order_dispatcher.py already running for "
+              f"{run_dir} (pid {existing_pid}) -- not spawning a second one", flush=True)
+        return None
 
     dispatcher_entry = scripts_dir / "work_order_dispatcher.py"
     argv = [sys.executable, str(dispatcher_entry), "--run-dir", str(run_dir), "--watch"]
     try:
         proc = subprocess.Popen(argv, cwd=str(scripts_dir),
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 start_new_session=True)  # FIX 19: own process group
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as exc:
         print(f"[auto-dispatch] could not spawn {dispatcher_entry}: {exc}",
               file=sys.stderr, flush=True)
@@ -1091,8 +763,7 @@ def _spawn_dispatcher_if_available(run_dir: Path, scripts_dir: Path,
 
     try:
         lock_path.write_text(
-            json.dumps({"pid": proc.pid, "started_at": utcnow(),
-                        "run_dir": str(run_dir), "run_id": run_id or ""}),
+            json.dumps({"pid": proc.pid, "started_at": utcnow(), "run_dir": str(run_dir)}),
             encoding="utf-8")
     except OSError:
         pass
@@ -1108,32 +779,26 @@ def _stop_auto_dispatcher(run_dir: Path, proc: Optional[subprocess.Popen]) -> No
     this call never spawned one (disabled, or one was already running) --
     in that case there is nothing to stop and, critically, nothing to delete:
     a lock file that exists in that case belongs to a still-running instance
-    this call does not own, and must be left alone.
-
-    FIX 19: the watcher was spawned start_new_session=True, so stopping it
-    means signalling its whole PROCESS GROUP (SIGTERM to proc.pid's group,
-    then SIGKILL after the grace) — not just the watcher pid. The old
-    terminate()/kill() pair killed the watcher and ORPHANED every wave
-    worker mid-flight: the exact survivors that kept rewriting intake after
-    an engine kill (the QC FIX 19 failure)."""
+    this call does not own, and must be left alone."""
     if proc is None:
         return
     if proc.poll() is None:
-        # FIX 19: group-TERM first (children included), then confirm, then
-        # group-KILL as escalation. proc.pid IS the group leader.
-        _kill_process_group_best_effort(proc.pid, signal.SIGTERM)
         try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            _kill_process_group_best_effort(proc.pid, signal.SIGKILL)
+            proc.terminate()
             try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
                 proc.wait(timeout=5)
-            except (subprocess.TimeoutExpired, Exception):  # noqa: BLE001 -- teardown never crashes the exit
-                pass
+        except Exception:  # noqa: BLE001 -- stopping the dispatcher must never crash the engine exit
+            pass
     lock_path = _auto_dispatch_lock_path(run_dir)
     try:
         if lock_path.is_file():
-            recorded = _read_autospawn_lock(lock_path)
+            try:
+                recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                recorded = {}
             if recorded.get("pid") == proc.pid:
                 lock_path.unlink()
     except OSError:
@@ -1229,18 +894,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             roots_config=args.roots_config,
         )
 
-    # FIX 64 (one notification transport): --sweep-undeliverable-roots is the
-    # SCHEDULED driver for the undeliverable queue -- the pass a watchdog tick
-    # runs without knowing any --run-dir. Without this branch the flag parsed
-    # but was never reachable from main(): execution fell through to the
-    # "--run-dir is required" usage refusal, so nothing could ever schedule
-    # the retry loop report.py queues into state["undeliverable"]. Run it
-    # BEFORE that --run-dir requirement, alongside the other scan-root modes.
-    if args.sweep_undeliverable_roots:
-        if not args.scan_root:
-            die(EXIT_USAGE, "--sweep-undeliverable-roots needs --scan-root")
-        return cmd_sweep_undeliverable_roots(args)
-
     if args.supervise:
         root = (args.scan_root or args.run_dir)
         if not root:
@@ -1269,14 +922,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --capacity needs no run-dir: it is a read-only probe of the harness.
     if args.capacity:
         return cmd_capacity(args)
-
-    # MASTER Part 8 FIX 8: --plan is read-only inspection of the execution
-    # plan (same manifest resolution --run uses, never a phase run, never
-    # the lease). Sits BEFORE the "--run-dir is required" refusal: the QC
-    # proof shape is `--plan --run-dir <fresh dir>` where no state exists
-    # yet, so the run dir is optional-but-expected, never mandated.
-    if args.plan:
-        return cmd_plan(args, scripts_dir)
 
     if not args.run_dir:
         die(EXIT_USAGE, "--run-dir is required")
@@ -1334,15 +979,6 @@ def main(argv: Optional[List[str]] = None) -> int:
       with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
-        # FIX 19 (MASTER Part 8): this engine is (via the launcher's
-        # start_new_session=True spawn) its own process-group leader, so a
-        # stop_engine() SIGTERM reaches the whole tree. The handler only
-        # RAISES a flag -- a signal handler never performs cleanup -- but the
-        # flag is observable proof in the log that the signal was received
-        # and the normal finally path (lease release, dispatcher stop) owns
-        # the unwind. Without it a SIGTERM mid-wave looked like a silent
-        # death with no teardown at all.
-        _install_engine_sigterm_handler()
         manifest_path = Path(state.get("manifest_path") or
                              resolve_manifest(args.manifest, run_dir, scripts_dir))
         if not manifest_path.is_file():
@@ -1444,14 +1080,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         # design note above _spawn_dispatcher_if_available). --dry-run never
         # executes agent phases for real (no work orders are serviced, none are
         # even worth spawning a dispatcher over), so it is excluded here.
-        # FIX 19: the run's job_id rides along as run_id so the autospawn-lock
-        # preemption can tell a SAME-run watcher (leave it) from a PREVIOUS
-        # run's orphan (kill its group and spawn fresh).
         dispatcher_proc = None
         if not args.dry_run:
             dispatcher_proc = _spawn_dispatcher_if_available(
-                run_dir, scripts_dir, disabled=args.no_auto_dispatch,
-                run_id=str(state.get("job_id") or ""))
+                run_dir, scripts_dir, disabled=args.no_auto_dispatch)
         try:
             return engine.run(only=args.phase, until=args.until)
         finally:

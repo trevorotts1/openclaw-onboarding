@@ -856,6 +856,148 @@ def run(run_dir: Path, out_arg: Path | None = None, force: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# DESIGN MODE (FIX 28): resolve_design_prompt + run_design — the producer for
+# design/<page>-design.png (page ∈ sales|checkout|vsl). The SAME canonical Kie
+# chain run() rides (submit -> record id -> poll -> download -> verify), at the
+# design geometry, with the page prompt and run-root output. No hand step.
+# ---------------------------------------------------------------------------
+def resolve_design_prompt(run_dir: Path, page: str) -> tuple[str, Path]:
+    """Locate + read working/prompts/<page>.design.txt and enforce the SAME
+    9,000-char HARD floor + shared rich-prompt gate resolve_prompt enforces for
+    the infographic (one gate, every paid render). Returns (prompt_text, path).
+    Exits 1 with a named reason on any failure — never a placeholder render."""
+    if page not in DESIGN_PAGES:
+        print(f"FATAL: unknown design page {page!r} — must be one of "
+              f"{', '.join(DESIGN_PAGES)}", file=sys.stderr)
+        raise SystemExit(1)
+    p = run_dir / _design_prompt_rel(page)
+    if not p.is_file():
+        print(f"FATAL: design prompt not found: {p}\n"
+              f"       The P-U-DESIGN-{page.upper()} agent phase authors "
+              f"working/prompts/{page}.design.txt under the 15-element template "
+              "(INFOGRAPHIC-PROMPT-TEMPLATE.md § DESIGN MODE). No prompt -> no "
+              "render (fail loud, never a placeholder, never a hand step).",
+              file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"FATAL: design prompt unreadable: {p}: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+    stripped = text.strip()
+    if len(stripped) < PROMPT_CHAR_FLOOR:
+        print(f"FATAL: {page} design prompt is {len(stripped)} chars — under the "
+              f"{PROMPT_CHAR_FLOOR}-char HARD floor (SOP 9.10 step 4, the same "
+              "floor as slide prompts, AF-P1/AF-PROMPT-FLOOR). A thin prompt is a "
+              "stub; re-author it to the 15-element standard and re-run.",
+              file=sys.stderr)
+        raise SystemExit(1)
+    import prompt_gate as _pg
+    problems: list = []
+    try:
+        problems = _pg.prompt_problems(stripped)
+    except Exception as exc:  # noqa: BLE001
+        print(f"NOTE: prompt_gate.prompt_problems unavailable ({exc!r}); using "
+              "build_deck parity gate.", flush=True)
+        problems = _gate_prompt_via_build_deck(stripped)
+    if problems:
+        print(f"FATAL: {page} design prompt FAILS the shared rich-prompt gate "
+              "(SOP 9.10 step 5) — NOT submitted to the paid API. Re-author to "
+              "the 15-element template.", file=sys.stderr)
+        for problem in problems:
+            print("   - " + problem, file=sys.stderr)
+        raise SystemExit(1)
+    return stripped, p
+
+
+def run_design(run_dir: Path, page: str, force: bool = False) -> int:
+    """One <page> design render end to end (FIX 28). Returns 0 on a verified
+    design/<page>-design.png AT THE RUN ROOT with the Kie task id recorded."""
+    if page not in DESIGN_PAGES:
+        print(f"FATAL: unknown design page {page!r} — must be one of "
+              f"{', '.join(DESIGN_PAGES)}", file=sys.stderr)
+        return 2
+    prompt_text, prompt_path = resolve_design_prompt(run_dir, page)
+
+    # Idempotency: an existing verified deliverable is reused unless --force, so
+    # a resume never re-burns a paid Kie render (same doctrine as run()).
+    out_path = run_dir / _design_out_rel(page)
+    if out_path.is_file() and not force:
+        try:
+            size = verify_png(out_path)
+            print(f"SKIP: {out_path} already exists and verifies ({size} bytes) — "
+                  "pass --force to re-render.")
+            return 0
+        except RuntimeError as exc:
+            print(f"NOTE: existing {out_path} failed verification ({exc}); re-rendering.")
+
+    api_key = load_api_key()
+    logo_url = resolve_logo(run_dir)
+    model_t2i, model_i2i = _resolve_image_models()
+    model = model_i2i if logo_url else model_t2i
+
+    print(f"=== P-U-DESIGN-{page.upper()} — run dir: {run_dir} ===", flush=True)
+    print(f"  prompt   : {prompt_path} ({len(prompt_text)} chars)", flush=True)
+    print(f"  model    : {model} (catalog image.{'i2i' if logo_url else 't2i'})",
+          flush=True)
+    print(f"  geometry : {DESIGN_ASPECT_RATIO} landscape at 2K "
+          f"({DESIGN_WIDTH_PX}x{DESIGN_HEIGHT_PX})", flush=True)
+    print(f"  logo     : {'image-to-image via input_urls' if logo_url else 'text-to-image'}",
+          flush=True)
+
+    # ---- canonical Kie path: submit -> record id -> poll -> download -> verify ----
+    task_id = submit_task(prompt_text, api_key, logo_url=logo_url,
+                          model_t2i=model_t2i, model_i2i=model_i2i,
+                          aspect_ratio=DESIGN_ASPECT_RATIO)
+    print(f"  submitted: taskId={task_id}", flush=True)
+    _record_pending_task(run_dir, task_id, key=_design_pending_key(page))
+
+    result_url = poll_task(task_id, api_key)
+
+    render_path = run_dir / _design_render_rel(page)
+    render_path.parent.mkdir(parents=True, exist_ok=True)
+    size = download_image(result_url, render_path, api_key)
+    print(f"  downloaded: {render_path} ({size} bytes)", flush=True)
+    verify_png(render_path)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.resolve() != render_path.resolve():
+        out_path.write_bytes(render_path.read_bytes())
+    final_size = verify_png(out_path)
+    shape = verify_shape(out_path, spec="design")
+
+    _record_completed_task(run_dir, task_id, out_path, key=_design_pending_key(page))
+    status = {
+        "design_page": page,
+        "status": "ready",
+        "prompt_path": str(_design_prompt_rel(page)),
+        "render_path": str(_design_render_rel(page)),
+        "deliverable_path": str(_design_out_rel(page)),
+        "task_id": task_id,
+        "width_px": DESIGN_WIDTH_PX,
+        "height_px": DESIGN_HEIGHT_PX,
+        "qc_passed": True,
+        "qc_note": "engine-rendered via build_infographic.py --spec design "
+                   "(FIX 28: no hand step)",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if shape:
+        status["actual_width_px"] = shape["width"]
+        status["actual_height_px"] = shape["height"]
+        status["actual_ratio_ok"] = shape["ratio_ok"]
+        if shape.get("warn"):
+            status["shape_warning"] = shape["warn"]
+    atomic_write_text(run_dir / _design_status_rel(page), json.dumps(status, indent=2))
+
+    print(f"  OK: {page}-design.png verified — {final_size} bytes (>= {PNG_MIN_BYTES}), "
+          f"PNG magic ok, {DESIGN_ASPECT_RATIO} {DESIGN_WIDTH_PX}x{DESIGN_HEIGHT_PX}",
+          flush=True)
+    print(f"  task id recorded: pending_tasks.json[{_design_pending_key(page)!r}]"
+          f".task_id={task_id}", flush=True)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Selftest — offline, deterministic, no network, no run dir, no nonce.
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
@@ -1166,6 +1308,12 @@ def main(argv: list | None = None) -> int:
                     "the canonical Kie path at 9:16 (1440x2560) from the agent-authored "
                     "prompt (FIX 2).")
     ap.add_argument("--run-dir", default=None)
+    ap.add_argument("--spec", default="infographic", choices=("infographic", "design"),
+                    help="render spec: 'infographic' (FIX 2, 9:16 poster) or "
+                         "'design' (FIX 28, one upsell page design at 16:9)")
+    ap.add_argument("--page", default=None, choices=DESIGN_PAGES,
+                    help="--spec design: which upsell page "
+                         "(sales|checkout|vsl); required with --spec design")
     ap.add_argument("--out", default=None, help="deliverable PNG path "
                     "(default <run_dir>/working/deliverables/infographic.png)")
     ap.add_argument("--force", action="store_true",
@@ -1179,6 +1327,10 @@ def main(argv: list | None = None) -> int:
 
     if not args.run_dir:
         ap.error("--run-dir is required (or --selftest)")
+    if args.spec == "design" and not args.page:
+        ap.error("--page sales|checkout|vsl is required with --spec design")
+    if args.spec == "infographic" and args.page:
+        ap.error("--page applies only to --spec design")
     run_dir = Path(args.run_dir).resolve()
     if not run_dir.is_dir():
         print(f"FATAL: run dir does not exist: {run_dir}", file=sys.stderr)
@@ -1196,6 +1348,9 @@ def main(argv: list | None = None) -> int:
             "guessed/stale nonce — is denied by the front-door handshake.",
             file=sys.stderr)
         return 2
+
+    if args.spec == "design":
+        return run_design(run_dir, page=args.page, force=args.force)
 
     out_path = Path(args.out).resolve() if args.out else None
     return run(run_dir, out_arg=out_path, force=args.force)

@@ -5,7 +5,7 @@
 **Owning role at write time:** Hook Strategist (anchors + hook-absent list), Slide Copywriter (places only the approved anchors)
 **Owning role at render time:** Slide Image Creator (renders the hook ONLY on its dedicated typography slides, never as a footer band)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-HOOK, below)
-**Status:** AUTHORITATIVE COPY — this file in `universal-sops/presentation-slide-craft/` is the authoritative copy of this SOP; the department mirror at `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a byte-identical regenerated copy and must never be edited directly (FIX 98, 2026-09-03). DRAFT for integration. This SOP DIRECTLY CORRECTS the existing floor-based hook rule. See Section 6 (Reconciliation) for the exact contradictions this resolves.
+**Status:** DRAFT for integration. This SOP DIRECTLY CORRECTS the existing floor-based hook rule. See Section 6 (Reconciliation) for the exact contradictions this resolves.
 
 ---
 
@@ -42,7 +42,7 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 | HOOK-6: Hook misspelled or garbled in a rendered image | On the rendered slide, the hook contains a misspelling or garbled glyph ("hclarity"). This is also AF-I1 at image QC; it is double-flagged here because the hook is sacred. | "AF-HOOK-6: slide N renders the hook misspelled: '[rendered]'. Re-render via RE-PROMPT + RE-SEED; on persistent garble ESCALATE TO A HUMAN — never a native text overlay (Decision 5C, AF-OVERLAY-DELIVERED)." |
 | HOOK-7: Signature quote conflated with the hook | The dedicated signature-quote slide also carries the main contrast-style hook. | "AF-HOOK-7: slide N is the signature-quote beat but also carries the main hook. Keep them as two separate beats. Remove the main hook from the quote slide." |
 
-**Render-time guarantee against HOOK-6:** because the hook is sacred, a hook that garbles twice is fixed by the Slide Image Creator's RE-PROMPT + RE-SEED loop (tighten the per-line spelling-lock + negative block, new seed, re-render the SINGLE composed gpt-image-2 image), and on PERSISTENT garble is ESCALATED TO A HUMAN. The hook text is ALWAYS baked into the image and is NEVER composited as a native PPTX text run/layer — the legacy native-text overlay path is eliminated (Decision 5C; the retired overlay-ledger file — its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md — or any native on-slide text run is AF-OVERLAY-DELIVERED). See slide-image-creator SOP 9.5 step 7.
+**Render-time guarantee against HOOK-6:** because the hook is sacred, a hook that garbles twice is fixed by the Slide Image Creator's RE-PROMPT + RE-SEED loop (tighten the per-line spelling-lock + negative block, new seed, re-render the SINGLE composed gpt-image-2 image), and on PERSISTENT garble is ESCALATED TO A HUMAN. The hook text is ALWAYS baked into the image and is NEVER composited as a native PPTX text run/layer — the legacy native-text overlay path is eliminated (Decision 5C; a `pptx_text_overlays.json` or any native on-slide text run is AF-OVERLAY-DELIVERED). See slide-image-creator SOP 9.5 step 7.
 
 ---
 

@@ -5,15 +5,14 @@ section 3.4, "Recommended per-phase starting values."
 
 ## Status: documentation only, not live
 
-**As of manifest v62, `PIPELINE-MANIFEST.json` declares a `workers` field on
-exactly one phase — `P4-PROMPT` (`workers: 12`, the Ticket-4-wired fan-out) —
-and none on the rest. The phase count itself is never restated as a literal
+**As of v22.0.81, `PIPELINE-MANIFEST.json` declares NO `workers` field on any
+of its declared phases — the phase count itself is never restated as a literal
 here; read it mechanically: `len(PIPELINE_MANIFEST["phases"])` (the count at
-this snapshot was 62, per §2.40's generated line in
+this snapshot was 55, per §2.40's generated line in
 `23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md`,
 which GATE 4 of `scripts/ci/presentations-drift-gates.sh` keeps honest).**
-Every phase without an explicit `workers` key resolves to the default (`1`),
-which is the literal, unchanged, currently-shipping serial dispatch path
+Every phase resolves to the default (`1`), which is the
+literal, unchanged, currently-shipping serial dispatch path
 (`presentation_job/dispatcher.py`'s `_dispatch_prompt_phase_serial`, and the
 generic single-target dispatch for every other phase). Fleet-wide behavior on
 upgrade day is byte-for-byte identical to v22.0.80.

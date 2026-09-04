@@ -3,7 +3,7 @@
 THE FAULT (live run denise-calloway/trust-ledger/2026-08-27, P-SP-INTAKE-TRACE
 parked BLOCKED, run terminal=BLOCKED): the checker demanded the
 quick-vs-in-depth choice in the FIRST assistant turn (literal turn_index 0),
-while deck-intake-turngate.py's canonical order (deck-intake-questions.json:
+while deck-intake-driver.py's canonical order (deck-intake-questions.json:
 order 0 presentation_type -> turn 0, order 0.6 standard_mode "Quick or
 in-depth?" -> turn 2, sp_mode later for signature decks) can NEVER put it
 there. The result: every driver-produced, one-question-per-turn signature

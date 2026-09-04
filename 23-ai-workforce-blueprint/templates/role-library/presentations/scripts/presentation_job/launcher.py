@@ -407,117 +407,6 @@ def resolve_runs_root() -> Path:
     scripts = resolve_scripts_dir()
     return scripts.parent / "runs"
 
-# ---------------------------------------------------------------------------
-# FIX 105: dispatcher module-staleness refusal (launcher side).
-#
-# The engine's auto-spawn (presentation_job/__main__.py
-# _spawn_dispatcher_if_available) refuses to REUSE a live dispatcher whose
-# modules were patched after that dispatcher started — but the engine only
-# reaches that check on ITS OWN launch. A launch through THIS launcher
-# (dispatch()/dispatch_resume()) must refuse the same way, or a long-lived
-# dispatcher keeps its pre-patch modules loaded forever and silently
-# re-introduces a bug the patch just fixed. The lock record
-# (working/dispatcher-autospawn.lock, shape shared with __main__) carries the
-# spawner-written `started_at`; any module file the dispatcher EXECUTES whose
-# mtime postdates that start makes the holder STALE: it is stopped (whole
-# process group — every FIX 19 spawn is start_new_session=True) and its lock
-# is cleared so the engine's own auto-spawn brings up a fresh watcher on the
-# patched code. A holder that cannot be judged (missing started_at, unreadable
-# record) is NEVER killed — fail-open to the pre-FIX 105 reuse behavior.
-# ---------------------------------------------------------------------------
-
-#: The module files a running dispatcher EXECUTES (same list __main__ uses).
-_DISPATCHER_MODULE_FILES = ("presentation_job/dispatcher.py",
-                            "work_order_dispatcher.py")
-
-def _dispatcher_modules_stale(lock_record: Dict[str, Any]) -> Tuple[bool, str]:
-    """FIX 105 launcher staleness check. True (with a detail string) when the
-    live dispatcher described by `lock_record` started BEFORE the newest mtime
-    of its own module files — i.e. a patch landed while it was running and it
-    keeps executing pre-patch code. Unjudgeable records report NOT stale
-    (fail-open), never kill a dispatcher on a guess."""
-    started_at = lock_record.get("started_at")
-    if isinstance(started_at, str) and started_at:
-        try:
-            started_at = __import__("datetime").datetime.fromisoformat(
-                started_at).timestamp()
-        except (ValueError, TypeError, OSError):
-            return False, ""
-    if not isinstance(started_at, (int, float)) or started_at <= 0:
-        return False, ""
-    try:
-        scripts_dir = Path(__file__).resolve().parent.parent
-        for name in _DISPATCHER_MODULE_FILES:
-            f = scripts_dir / name
-            if f.is_file() and f.stat().st_mtime > started_at + 1.0:
-                return True, (f"{name} mtime {f.stat().st_mtime:.0f} > "
-                              f"dispatcher started_at {float(started_at):.0f}")
-    except OSError:
-        return False, ""   # cannot judge the disk: never kill on a guess
-    return False, ""
-
-def _reap_stale_dispatcher(run_dir: str | Path) -> None:
-    """FIX 105: before a launch, refuse a STALE live dispatcher for this run
-    dir — kill its whole process group and clear the autospawn lock so the
-    engine's auto-spawn starts a fresh watcher on the current code. Live AND
-    code-current (or unjudgeable) holders are left untouched: an operator's
-    manual --watch or a fresh dispatcher is never disturbed."""
-    lock_path = Path(run_dir) / "working" / "dispatcher-autospawn.lock"
-    if not lock_path.is_file():
-        return
-    try:
-        rec = json.loads(lock_path.read_text(encoding="utf-8"))
-        if not isinstance(rec, dict):
-            return
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return
-    try:
-        pid = int(rec.get("pid") or 0)
-    except (ValueError, TypeError):
-        return
-    if pid <= 0 or pid == os.getpid():
-        return
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return          # dead holder: the engine's own lock handling clears it
-    except OSError:
-        return          # cannot probe: leave it alone
-    stale, stale_detail = _dispatcher_modules_stale(rec)
-    if not stale:
-        return
-    print(f"launcher: dispatcher pid {pid} for {run_dir} runs STALE modules "
-          f"({stale_detail}) — refusing to reuse it; stopping its whole "
-          f"process group so a fresh dispatcher starts on the patched code",
-          file=sys.stderr, flush=True)
-    try:
-        os.killpg(pid, signal.SIGTERM)   # every FIX 19 spawn is its own leader
-    except OSError:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return
-    deadline = time.time() + 5.0
-    reaped = False
-    while time.time() < deadline:
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            reaped = True
-            break
-        time.sleep(0.2)
-    if not reaped:
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except OSError:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-    try:
-        lock_path.unlink()
-    except OSError:
-        pass
 
 # ---------------------------------------------------------------------------
 # Engine lifecycle
@@ -1233,12 +1122,6 @@ def dispatch(
         return -1
 
     run_path = Path(run_dir).expanduser().resolve()
-
-    # FIX 105: refuse to launch over a live dispatcher whose loaded modules
-    # predate the code on disk — stop its whole group and clear the autospawn
-    # lock so the engine's auto-spawn brings up a fresh watcher on the patched
-    # code (a live, code-current holder is never disturbed).
-    _reap_stale_dispatcher(run_path)
 
     # FIX 11 MODE GATE -- an unknown declared mode is refused here, before
     # any gate, before the sidecar, before any process exists. An unknown

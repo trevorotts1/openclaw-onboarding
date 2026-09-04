@@ -61,7 +61,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 1. Confirm the Presenters Speech Writer has completed the speech and it exists at `working/deliverables/PRESENTERS-SPEECH.md` (P9-SPEECH, order 8.5; the speech-PDF phase P9.1-SPEECH-PDF at 8.55 has rendered `working/deliverables/PRESENTERS-SPEECH.pdf` from it -- both must be present before P-SPEECH-QC runs).
 2. Confirm the QC-passed deck exists (the speech is graded against the deck it narrates -- a speech that does not map to the assembled slides fails coverage QC).
 3. Run SOP 9.1: coverage audit (every slide has a talk track in the speech).
-4. Run SOP 9.2: timing and pacing check (Fix 97: `|words/TARGET_WPM - target_minutes| <= 7%`; PASS iff inside the band).
+4. Run SOP 9.2: timing and pacing check (word count against the `target_talk_minutes` window).
 5. Run SOP 9.3: claim-verification gate (no fabricated statistics or unverified facts spoken aloud).
 6. Run SOP 9.4: expression-tag and audience-voice QC (expression tags are sane, no stage-direction or pitch-doctrine read aloud).
 7. Compile the section scores, check the auto-fail registry, compute the average, and write `working/qc/speech_qc_report.json`.
@@ -83,7 +83,7 @@ Review the speech QC trend data for the past month. If the same auto-fail codes 
 
 ## 6. Quarterly Operations
 
-Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the speech QC criteria. Verify the Fix 97 pacing band (`|words/TARGET_WPM - target_minutes| <= 7%`, advisory-only legacy 120-140 wpm bracket) is still current. Check if the persuasion-arc beat sequence has been updated. Update this document if anything has shifted.
+Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the speech QC criteria. Verify the target words-per-minute window (120-140 wpm) and timing tolerance are still current. Check if the persuasion-arc beat sequence has been updated. Update this document if anything has shifted.
 
 ---
 
@@ -93,7 +93,7 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the speec
 |--------|--------|
 | Auto-fail conditions checked BEFORE scoring begins | 100% |
 | AF-SPEECH-COVERAGE (slide with no talk track) reaching the Audio Demo or owner | 0 |
-| AF-SPEECH-PACING (pacing deviation > 7% of `|words/TARGET_WPM - target_minutes|`, Fix 97 band) escaping to delivery | 0 |
+| AF-SPEECH-PACING (speech pacing outside 120-140 wpm) escaping to delivery | 0 |
 | AF-SPEECH-CLAIM (unverified statistic or fabricated fact spoken aloud) reaching the owner | 0 |
 | AF-SPEECH-STAGEDIRECTION (stage direction or pitch doctrine read aloud) reaching the owner | 0 |
 | QC independence: graded_by set to anything other than "qc-specialist-speech-presentations" | 0 |
@@ -173,21 +173,24 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Inputs:**
 - `working/deliverables/PRESENTERS-SPEECH.md` (the speech manuscript -- the P9-SPEECH artifact)
-- `working/copy/intake.json` (`target_talk_minutes` -- the owner's stated presentation length goal; `target_wpm` / `TARGET_WPM` -- the run's own target speaking rate, written by the intake driver from the speed preference)
+- `working/copy/intake.json` (`target_talk_minutes` -- the owner's stated presentation length goal)
 
-**Steps (Fix 97 pacing arithmetic -- the SAME numbers build_deck.py gates on):**
+**Steps:**
 
 1. Count the total word count of the speech manuscript (excluding section headers, stage directions, and expression tags -- count only the words the owner will SPEAK).
-2. Compute the pacing deviation against the run's OWN target rate `TARGET_WPM` (read `target_wpm` from intake.json, case-insensitive; when absent use 140 wpm):
-   `deviation = |word_count / TARGET_WPM - target_talk_minutes| / target_talk_minutes`.
-3. Pacing verdict: **PASS iff `deviation <= 0.07`** (the 7% band -- `|words/TARGET_WPM - target_minutes| <= 7%`). Outside the band is `AF-SPEECH-PACING` and the speech routes back to the Presenters Speech Writer to resize to `target_talk_minutes x TARGET_WPM` words. (The former wide 120-140 wpm bracket -- the old AF-SPEECH-PACING-LONG / AF-SPEECH-PACING-SHORT hard auto-fails -- is now the ADVISORY layer only: report a `NOTE-SPEECH-PACING` note when the effective wpm sits outside 120-140, never a hard auto-fail. A 10% band cannot discriminate the 130/140 wpm targets -- a 60-minute speech sized for 130 wpm is only ~7.7% off at 140 -- which is why the band tightened to 7%.)
+2. Compute the estimated runtime at both ends of the target pacing band:
+   - At 120 wpm: `word_count / 120 = runtime_minutes_at_slow`
+   - At 140 wpm: `word_count / 140 = runtime_minutes_at_fast`
+3. Compare the computed runtime range against `target_talk_minutes` from intake.json (with a 10% tolerance on each end):
+   - If `runtime_minutes_at_slow` > `target_talk_minutes * 1.10`: the speech is too long at the slowest acceptable pacing. The owner will run over by more than 10% if they speak at the bottom of the natural range. AF-SPEECH-PACING-LONG.
+   - If `runtime_minutes_at_fast` < `target_talk_minutes * 0.90`: the speech is too short even at the fastest acceptable pacing. The owner will run short by more than 10% if they speak briskly. AF-SPEECH-PACING-SHORT.
+   - If the runtime range brackets `target_talk_minutes` (it falls within the range): PASS.
 4. Perform a per-section pacing check: identify sections where the talk-track density is significantly uneven (a 10-slide section with 200 words vs a 10-slide section with 800 words). Uneven pacing causes the owner to rush through some sections and stall on others. Score pacing evenness 1-10.
 5. Verify natural pause points exist: the speech should have explicit pause instructions (a line break, a breath marker, or an expression tag like `[pause]`) at the hook refrain slides and at each price drop. A hook beat with no pause marker is a scored defect (the hook must breathe).
 
 **Outputs:**
-- Total word count, the run's `TARGET_WPM`, and the computed deviation percentage
-- Pacing verdict: PASS / AF-SPEECH-PACING (with the measured deviation vs the 7% band)
-- Advisory note when the effective wpm sits outside the legacy 120-140 wpm bracket (NOTE-SPEECH-PACING; advisory only)
+- Total word count and computed runtime range (at 120 wpm and 140 wpm)
+- Pacing verdict: PASS / AF-SPEECH-PACING-LONG / AF-SPEECH-PACING-SHORT with specific over/under amount
 - Per-section pacing evenness score (1-10)
 - Pause marker check result (hook and drop slides have pause markers: PASS / FAIL with specific missing slides)
 
@@ -276,7 +279,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 Every content slide has a talk-track block. Persuasion-arc beats in sequence. Hook refrain spoken at scheduled hook slides. (AF-SPEECH-COVERAGE-1, -2, -3 are hard auto-fails.)
 
 ### Gate 2 -- Timing and Pacing (Hard)
-**PASS iff `|word_count / TARGET_WPM - target_talk_minutes| <= 7%`** (Fix 97 band; `TARGET_WPM` = the run's own rate from intake.json `target_wpm`, case-insensitive, defaulting to 140 wpm when absent). AF-SPEECH-PACING is the hard auto-fail outside the band. The legacy 120-140 wpm bracket (AF-SPEECH-PACING-LONG / SHORT) is now the ADVISORY layer only -- a NOTE-SPEECH-PACING note, never a hard auto-fail.
+Computed runtime at 120-140 wpm brackets `target_talk_minutes` within 10% tolerance. (AF-SPEECH-PACING-LONG / SHORT are hard auto-fails.)
 
 ### Gate 3 -- Claim Fidelity (Hard)
 Every factual claim, statistic, and dollar figure traced to intake interview, proof audit, or QC-passed slide copy. No numeric mismatches within the speech or against the slides. (AF-SPEECH-CLAIM, AF-SPEECH-CLAIM-MISMATCH are hard auto-fails.)
@@ -326,11 +329,10 @@ Per-speech average >= 8.5 across all scored criteria. No single scored criterion
 {
   "gate": "Phase Speech-QC",
   "word_count": 9840,
-  "target_wpm": 140,
-  "pacing_deviation": 0.057,
-  "pacing_verdict": "PASS",
-  "note_speech_pacing": null,
+  "runtime_at_120wpm_minutes": 82,
+  "runtime_at_140wpm_minutes": 70,
   "target_talk_minutes": 75,
+  "pacing_verdict": "PASS",
   "average": 8.8,
   "triggered_autofails": [],
   "pass": true,
@@ -427,7 +429,7 @@ The hook refrain must be spoken at the scheduled hook-slide beats (per `hook_pac
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. The Fix 97 pacing band (`|words/TARGET_WPM - target_minutes| <= 7%`) or the advisory-only legacy 120-140 wpm bracket changes in the master SOP.
+1. The target pacing band (120-140 wpm) changes in the master SOP.
 2. The persuasion-arc beat sequence changes (new beat type added, sequence reordered).
 3. The expression-tag format or density limit changes (Fish Audio API or ElevenLabs spec update).
 4. The speech QC auto-fail battery is extended in the master SOP.

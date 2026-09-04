@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-deck-intake-turngate.py — interview turn-gate for the Presentations deck-intake.
+deck-intake-driver.py — interview turn-gate for the Presentations deck-intake.
 
 Reads deck-intake-questions.json and maintains working/interview/intake_ledger.json
 within the deck run directory. Enforces one-question-per-turn ordering so the agent
@@ -95,7 +95,7 @@ def load_ledger(run_dir: pathlib.Path, ledger_rel: pathlib.Path = LEDGER_REL) ->
             with open(lp) as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
-            print(f"[deck-intake-turngate] WARNING: corrupted ledger ({e}); resetting.", file=sys.stderr)
+            print(f"[deck-intake-driver] WARNING: corrupted ledger ({e}); resetting.", file=sys.stderr)
     return {
         "status": "in_progress",
         "started_at": _now(),
@@ -622,7 +622,7 @@ def _build_waiver_records(qdata: dict, ledger: dict) -> list:
         quote = str(rsn.get("answer") or "").strip()
         # U026: an AUTO-SKIPPED entry is written validated with a non-empty
         # answer -- auto_skip_conditionals stamps validated=True, skipped=True,
-        # answer="(not applicable)" at deck-intake-turngate.py:365-368. Checking
+        # answer="(not applicable)" at deck-intake-driver.py:365-368. Checking
         # only `validated and quote` therefore accepts the driver's own
         # placeholder as the client's words. A skipped question was never asked,
         # so it can never carry consent. Reject it before anything else.
@@ -636,7 +636,7 @@ def _build_waiver_records(qdata: dict, ledger: dict) -> list:
             "client_request_quote": quote,
             "intake_field": fields["reason"],
             "captured_at": rsn.get("validated_at") or rsn.get("asked_at") or _now(),
-            "captured_from": "deck-intake-turngate.py",
+            "captured_from": "deck-intake-driver.py",
         })
     return out
 
@@ -1098,7 +1098,7 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
             # record here warns loudly but does not block — the SIGNATURE path
             # (_sp_finalize), which the prover DOES gate, fails closed instead.
             if _is_key_config_error(exc):
-                print(f"[deck-intake-turngate] WARNING: standard-flow turn-ledger "
+                print(f"[deck-intake-driver] WARNING: standard-flow turn-ledger "
                       f"stamp skipped — {type(exc).__name__}: {exc}", file=sys.stderr)
                 provenance = None
             else:
@@ -1139,7 +1139,7 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
 def cmd_selftest() -> None:
     """--selftest: run offline validation in a temp dir. Exits 0 on pass."""
     import tempfile
-    print("[deck-intake-turngate] --selftest: starting offline self-test...")
+    print("[deck-intake-driver] --selftest: starting offline self-test...")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         run_dir = pathlib.Path(tmpdir)
@@ -1150,7 +1150,7 @@ def cmd_selftest() -> None:
         except FileNotFoundError as e:
             print(f"[selftest] SKIP: questions file not found ({e}). "
                   "Self-test requires the questions file beside the script.", file=sys.stderr)
-            print("[deck-intake-turngate] --selftest: PASS (questions file absent; skipping question-dependent steps)")
+            print("[deck-intake-driver] --selftest: PASS (questions file absent; skipping question-dependent steps)")
             sys.exit(0)
 
         with open(qfile) as f:
@@ -1415,10 +1415,10 @@ def cmd_selftest() -> None:
     # CI / verify path that exercises the driver also exercises the SP one-block
     # gate wiring. It self-skips when skill 51 is not co-located.
     if not signature_selftest():
-        print("[deck-intake-turngate] --selftest: FAILED (signature mode)", file=sys.stderr)
+        print("[deck-intake-driver] --selftest: FAILED (signature mode)", file=sys.stderr)
         sys.exit(1)
 
-    print("[deck-intake-turngate] --selftest: ALL PASS")
+    print("[deck-intake-driver] --selftest: ALL PASS")
     sys.exit(0)
 
 
@@ -1586,7 +1586,7 @@ def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text, qid:
                       "qid": qid or ""})
         tpath.write_text(json.dumps({
             "format": "sp-intake-transcript-v1",
-            "driver": "deck-intake-turngate.py",
+            "driver": "deck-intake-driver.py",
             "qid_sequence": _transcript_qid_sequence(turns),
             "turns": turns,
         }, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1612,7 +1612,7 @@ def _transcript_write_signed(run_dir, role, text, qid, checker) -> None:
         qid_seq = _transcript_qid_sequence(turns)
         payload = {
             "format": getattr(checker, "DRIVER_FORMAT", "sp-intake-transcript-v1"),
-            "driver": getattr(checker, "DRIVER_NAME", "deck-intake-turngate.py"),
+            "driver": getattr(checker, "DRIVER_NAME", "deck-intake-driver.py"),
             "qid_sequence": qid_seq,
             "turns": turns,
             "driver_signature": checker._sign_transcript(qid_seq, turns),
@@ -2060,8 +2060,8 @@ def cmd_signature_pointer(args) -> None:
             "read-only dry-run inspection of the full question set — never to "
             "conduct the interview."
         ),
-        "next_command": f"deck-intake-turngate.py --signature --next --run-dir {run_dir_hint}",
-        "dry_run_inspection_command": "deck-intake-turngate.py --signature --plan",
+        "next_command": f"deck-intake-driver.py --signature --next --run-dir {run_dir_hint}",
+        "dry_run_inspection_command": "deck-intake-driver.py --signature --plan",
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0)
@@ -2145,13 +2145,13 @@ def signature_selftest() -> bool:
     (exit 0); (3) a one-per-turn/split record is REJECTED (exit 2, AF-SP-8Q-SPLIT);
     (4) a record missing q7 is REJECTED (AF-SP-8Q-MISSING). Steps 2-4 run the
     REAL prover subprocess, proving the driver is wired to it."""
-    print("[deck-intake-turngate] --signature --selftest: starting...")
+    print("[deck-intake-driver] --signature --selftest: starting...")
     try:
         spec = json.loads(find_sp_spec(None).read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         print(f"[sig-selftest] SKIP: SP spec not found ({exc}); skill 51 not co-located.",
               file=sys.stderr)
-        print("[deck-intake-turngate] --signature --selftest: PASS (spec absent; skipped)")
+        print("[deck-intake-driver] --signature --selftest: PASS (spec absent; skipped)")
         return True
 
     ok = True
@@ -2206,7 +2206,7 @@ def signature_selftest() -> bool:
     if prover is None:
         print("[sig-selftest] SKIP: prove_sp_intake.py not co-located; wiring tests skipped.",
               file=sys.stderr)
-        print(f"[deck-intake-turngate] --signature --selftest: {'PASS' if ok else 'FAIL'}")
+        print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
         return ok
 
     def _assemble_and_prove(record: dict, provenance: Optional[dict] = None) -> Tuple[int, str]:
@@ -2254,7 +2254,7 @@ def signature_selftest() -> bool:
                   f"unavailable ({type(exc).__name__}: {exc}). Provision "
                   "PRESENTATION_SP_TURN_LEDGER_KEYS_FILE to exercise the store-backed signer.",
                   file=sys.stderr)
-            print(f"[deck-intake-turngate] --signature --selftest: {'PASS' if ok else 'FAIL'}")
+            print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
             return ok
         raise
 
@@ -2344,7 +2344,7 @@ def signature_selftest() -> bool:
               f"real turn-gate walked {len(seen_ids)} distinct questions one at a time, "
               f"finalized={finalized is not None and finalized.get('passed')}")
 
-    print(f"[deck-intake-turngate] --signature --selftest: {'ALL PASS' if ok else 'FAILED'}")
+    print(f"[deck-intake-driver] --signature --selftest: {'ALL PASS' if ok else 'FAILED'}")
     return ok
 
 
@@ -2353,7 +2353,7 @@ def signature_selftest() -> bool:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="deck-intake-turngate.py",
+        prog="deck-intake-driver.py",
         description="Interview turn-gate for the Presentations deck-intake.",
     )
     parser.add_argument("--run-dir", metavar="DIR",

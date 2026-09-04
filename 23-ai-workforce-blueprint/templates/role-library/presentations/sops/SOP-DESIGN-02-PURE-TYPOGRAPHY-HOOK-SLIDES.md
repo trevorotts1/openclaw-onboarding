@@ -17,7 +17,7 @@ Define the visual design of the 3 to 4 dedicated hook slides: the hook line set 
 
 ## 2. The Hard Rule
 
-A dedicated hook slide is PURE TYPOGRAPHY. The hook line is the entire slide. It is set large (BLACK weight, hero scale) over a single low-opacity image (15% opacity or lower -- HOOK_IMAGE_OPACITY_CEILING_PCT = 15 in presentations/scripts/build_deck.py, FIX 87 canon -- or a soft single-color wash) that does not compete with the words. There is no second photographic subject, no chart, no body paragraph, no kicker stack, no footer band, and no second idea. The hook line is the canonical refrain, verbatim, never reworded, never extended, never duplicated on the slide.
+A dedicated hook slide is PURE TYPOGRAPHY. The hook line is the entire slide. It is set large (BLACK weight, hero scale) over a single low-opacity image (8 to 15% opacity, or a soft single-color wash) that does not compete with the words. There is no second photographic subject, no chart, no body paragraph, no kicker stack, no footer band, and no second idea. The hook line is the canonical refrain, verbatim, never reworded, never extended, never duplicated on the slide.
 
 ### 2.0 "Pure typography" means kie.ai RENDERS THE TYPE AS THE IMAGE — it does NOT mean "render this slide locally"
 
@@ -59,7 +59,7 @@ The signature quote (e.g. "Instead of solving problems, we walk them through how
 | A PURE_TYPE_HOOK slide is excluded from image-QC scope ("slides 1/24/49 out of scope") | AUTO-FAIL the gate (no slide is exempt from pixel QC) |
 | The hook line (or its refrain) is rendered in a footer band on ANY slide | AUTO-FAIL that slide (footer-stamped hook) |
 | A slide marked PURE_TYPE_HOOK carries a competing photographic subject at normal opacity | AUTO-FAIL that slide |
-| The background image on a hook slide is above the 15% opacity ceiling (HOOK_IMAGE_OPACITY_CEILING_PCT = 15 in build_deck.py) | FAIL that prompt/image |
+| The background image on a hook slide is above ~15% opacity (it competes with the type) | FAIL that prompt/image |
 | The hook line appears twice on the same slide | AUTO-FAIL that slide |
 | The hook line is reworded or extended from the canonical refrain | AUTO-FAIL that slide (verbatim refrain only) |
 | A second idea, body paragraph, or chart appears on a PURE_TYPE_HOOK slide | FAIL that slide (one big idea) |

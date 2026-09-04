@@ -78,34 +78,16 @@ fi
 # Protocol B (manual, positional "message" [kind]): re-encode as the same
 # stdin JSON the engine path uses, so ONE payload shape reaches the
 # canonical transport.
-#
-# FIX 64 (R-B03-B5): Protocol B was previously gated on `[ -t 0 ]` and passed
-# the chat id through an ESCAPED heredoc expansion ("\${OWNER_CHAT_ID:-}") --
-# the literal string "${OWNER_CHAT_ID:-}" reached the transport as the
-# chat_id (proven live through the stub gateway), never the operator id, and
-# any positional call from cron/launchd (no tty) fell through to the stdin
-# path and died on "stdin is not valid JSON". Both defects are closed here:
-#   - ONE protocol: positional args present -> JSON is BUILT by python
-#     (correct quoting, no shell interpolation holes) and piped to the
-#     transport; no positional args -> stdin is forwarded verbatim. No tty
-#     sniffing: cron/launchd/manual all take the same path.
-#   - chat_id: OWNER_CHAT_ID is expanded by the SHELL (not escaped in a
-#     heredoc) and may legitimately be empty -- the canonical transport's
-#     FIX 64 boundary resolves a non-numeric id (or an empty payload chat_id
-#     via its own OWNER_CHAT_ID fallback tier) and exits 4 (undeliverable,
-#     queued for --sweep-undeliverable) rather than ever fabricating a target.
-_CHAT_ID="${OWNER_CHAT_ID:-}"
-if [ -n "${1:-}" ]; then
-  PAYLOAD="$(python3 -c 'import json,sys
-kind = sys.argv[1]
-message = sys.argv[2]
-chat_id = sys.argv[3]
-sys.stdout.write(json.dumps({"chat_id": chat_id, "kind": kind, "message": message}))' \
-      "${2:-progress}" "$1" "$_CHAT_ID")" || {
-    echo "ERROR: could not build the transport payload" >&2
+if [ -t 0 ]; then
+  MSG="${1:-}"
+  KIND="${2:-progress}"
+  if [ -z "$MSG" ]; then
+    echo "ERROR: no message text (stdin JSON or positional args required)" >&2
     exit 1
-  }
-  printf '%s\n' "$PAYLOAD" | python3 "$CANONICAL"
+  fi
+  python3 "$CANONICAL" <<EOF
+{"chat_id": "\${OWNER_CHAT_ID:-}", "kind": "$(printf '%s' "$KIND" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')", "message": "$(printf '%s' "$MSG" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')"}
+EOF
   exit $?
 fi
 

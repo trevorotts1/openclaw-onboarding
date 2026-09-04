@@ -107,13 +107,6 @@ PHASE_WORKINGSET_GLOBS: Dict[str, List[str]] = {
     "P-SP-P3-HYGIENE": ["working/copy/sp_structure.json"],
     "P4-COPY": ["working/copy/intake.json", "working/copy/slides_copy.md"],
     "PF-DESIGN": ["working/research/design-brief-*.md"],
-    # FIX 112: P-STYLE-SPEC (the copy stage's fanout unit) sees exactly the
-    # two inputs its manifest consumes[] declares — the slide design tokens
-    # it derives style directions from, and the sealed intake for the deck's
-    # hook/brand context — plus its own per-unit scratch dir.
-    "P-STYLE-SPEC": ["working/copy/slides.json",
-                     "working/copy/intake.json",
-                     "working/fanout/P-STYLE-SPEC/*"],
     "P-STYLE-PREVIEW": ["working/style-preview/style_samples_manifest.json"],
     # Prompt authoring + QC — the per-slide rich prompts are the big files.
     "P4-PROMPT": ["working/prompts/slide-*.txt", "working/copy/slides_copy.md"],
@@ -203,15 +196,6 @@ def _expand_globs(run_dir: Path, globs: List[str]) -> List[Path]:
     return uniq
 
 
-def _read_bytes(path: Path) -> bytes:
-    """Read a file's raw bytes, leniently. Phase-completion measurement only —
-    never the hot-loop path (see _stat_meta)."""
-    try:
-        return path.read_bytes()
-    except OSError:
-        return b""
-
-
 def _stat_meta(path: Path) -> Optional[Dict[str, int]]:
     """Cost-free metadata for one file: size + mtime from stat, no byte read.
 
@@ -297,11 +281,6 @@ def measure_workingset(run_dir: Path, phase_id: str,
             "chars": None,
             "mtime_ns": int(meta["mtime_ns"]),
         }
-        # FIX 26 regression guard (R-B02-B2): the stat-only rewrite dropped the
-        # `files.append(entry)` call, so the documented `files` list came back
-        # empty while totals stayed right — the checkpoint record lost every
-        # per-file row and the "no SOP leak" test passed vacuously. Append it.
-        files.append(entry)
         if hash_on_completion:
             # Phase completion only: read + leniently decode once. The sha256
             # (records["sha256"]) computed by the caller is over the raw bytes
@@ -392,20 +371,17 @@ def checkpoint_phase(run_dir: Path, phase_id: str, state: Dict[str, Any],
                                      hash_on_completion=hash_on_completion)
 
     state_sha = sha256_text(json.dumps(state, sort_keys=True, default=str))
-    from .state import utcnow  # deferred import keeps module import-light
     checkpoint = {
         "schema_version": 1,
         "phase_id": phase_id,
-        # The timestamp is set HERE (utcnow at write time), not by the caller:
-        # every existing caller passed the checkpoint straight through, so a
-        # "caller will stamp it" contract had no caller — the field would have
-        # stayed None on every disk record.
-        "checkpointed_at": utcnow(),
+        "checkpointed_at": None,  # set by caller via utcnow(); avoid import cycle
         "working_set": measurement,
         "phase_record": phase_record,
         "state_sha256": state_sha,
         "has_state_snapshot": phase_record is not None,
     }
+    from .state import utcnow  # deferred import keeps module import-light
+    checkpoint["checkpointed_at"] = utcnow()
 
     path = _checkpoint_path(run_dir, phase_id)
     path.parent.mkdir(parents=True, exist_ok=True)

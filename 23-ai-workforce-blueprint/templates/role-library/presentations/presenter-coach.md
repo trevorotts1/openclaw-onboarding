@@ -143,8 +143,6 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own stages: coaching runs against the speech band `P9-SPEECH` (8.5), `P9.1-SPEECH-PDF` (8.55), `P-SPEECH-QC` (8.6), and the teleprompter export `P7-TELEPROMPTER` (8.95).
-
 ### SOP 9.1 -- Talk Track
 
 **When to run:** After the PPTX assembly final QC has passed (>= 8.5 per MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4)). The approved slides_copy.md and presenter_notes.json must both exist before this SOP begins.

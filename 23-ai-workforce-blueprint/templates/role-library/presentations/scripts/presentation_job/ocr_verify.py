@@ -42,7 +42,6 @@ receipt shared off-box names no user.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
@@ -161,29 +160,11 @@ if pyt_mod and pil_ok and bin_path:
     try:
         img = Image.new("RGB", (640, 120), "white")
         d = ImageDraw.Draw(img)
-        font = None
-        # FIX 24: the fixture must work on BOTH platforms. The Mac-only Arial
-        # path made every non-Mac box fall back to PIL's ~11px bitmap default
-        # font, which tesseract cannot lift at 640x120 — the probe then
-        # reported Branch B on a box whose OCR stack is actually fine. Order:
-        # Mac Arial -> common Linux/DejaVu paths -> Pillow >=10.1 SCALABLE
-        # default (a real 44pt face, not the 11px bitmap) -> bitmap last.
-        for _fp, _sz in (
-                ("/System/Library/Fonts/Supplemental/Arial.ttf", 44),
-                ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 44),
-                ("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 44),
-                ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 44),
-        ):
-            try:
-                font = ImageFont.truetype(_fp, _sz)
-                break
-            except Exception:
-                continue
-        if font is None:
-            try:
-                font = ImageFont.load_default(size=44)  # Pillow >= 10.1 scalable
-            except Exception:
-                font = ImageFont.load_default()  # last resort: 11px bitmap
+        try:
+            font = ImageFont.truetype(
+                "/System/Library/Fonts/Supplemental/Arial.ttf", 44)
+        except Exception:
+            font = ImageFont.load_default()
         d.text((12, 34), "OCR PROBE FIX33", fill="black", font=font)
         fixture_text_out = pytesseract.image_to_string(img).strip()
         fixture_ok = "FIX33" in fixture_text_out.upper().replace(" ", "")
@@ -380,120 +361,3 @@ def interpreter_binding_ok(receipt: Dict[str, Any],
     recorded = os.path.expanduser(recorded)
     current = interpreter or resolve_pipeline_interpreter()
     return os.path.realpath(os.path.expanduser(current)) == os.path.realpath(recorded)
-
-
-# ---------------------------------------------------------------------------
-# FIX 24 CLI -- `python3 -m presentation_job.ocr_verify --probe`
-#
-# THE FAULT THIS CLOSES: FIX 33 shipped the probe + receipt machinery but no
-# command-line entry, so the FIX 24 proof command (`python3 -m
-# presentation_job.ocr_verify --probe` must print `available: true`) was a
-# SILENT NO-OP — python -m ran the module, found no __main__ guard, printed
-# nothing, exited 0. An operator (or a critic) had no way to see the OCR
-# state without reading state.json.
-#
-# `--probe` prints a machine-readable line FIRST — `available: true|false` —
-# exactly the key preflight_deps._record_receipt() persists into
-# state.json's runtime_deps.ocr entry, so the CLI and the recorded state can
-# never disagree about the word. Then the redacted receipt JSON (machine
-# consumers parse that). Exit codes: 0 = Branch A (OCR functional under the
-# pipeline interpreter), 9 = Branch B / unmeasured (== launcher's
-# EXIT_OCR_ENGINE_MISSING, the same refusal family), 2 = usage error.
-# PRESENTATION_OCR_VERIFY=0 disables (documented rollback, same as the
-# launch gate) — prints `available: false` and exits 9, never silently.
-# ---------------------------------------------------------------------------
-PROBE_CLI_EXIT_OK = 0
-PROBE_CLI_EXIT_MISSING = 9  # == launcher.EXIT_OCR_ENGINE_MISSING
-
-
-def _probe_available(receipt: Dict[str, Any]) -> bool:
-    """THE word: available means Branch A under the probed interpreter — the
-    same predicate preflight_deps._record_receipt() writes as
-    runtime_deps.ocr.available. One predicate, two writers, never drifts."""
-    return receipt.get("branch") == "A"
-
-
-def build_probe_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="python3 -m presentation_job.ocr_verify",
-        description="FIX 24/FIX 33 OCR probe -- measure the OCR stack (pytesseract "
-                    "import + tesseract binary + real one-line fixture OCR) under "
-                    "the EXACT interpreter the canonical entry resolves for the "
-                    "pipeline. Read-only: no install, no network, no provider calls.",
-    )
-    parser.add_argument(
-        "--probe", action="store_true",
-        help="Run the Step 0 OCR probe and print 'available: true|false' plus the "
-             "redacted receipt JSON. Exit 0 = available (Branch A); exit 9 = "
-             "missing/broken (Branch B or unmeasured; prints the failed layers "
-             "and the exact install command).",
-    )
-    parser.add_argument(
-        "--receipt", metavar="DEST",
-        help="With --probe: also write the redacted receipt JSON to DEST (a file "
-             "or a directory; a directory gets " + RECEIPT_NAME + " inside).",
-    )
-    parser.add_argument(
-        "--quiet", action="store_true",
-        help="Print only the 'available:' line and the receipt JSON (suppress the "
-             "human-readable failed-layer/install-command block on failure).",
-    )
-    return parser
-
-
-def main(argv: Optional[list] = None) -> int:
-    args = build_probe_parser().parse_args(argv)
-
-    if not args.probe:
-        # No flag = usage error, not a silent no-op: always SOMETHING on stdout.
-        build_probe_parser().print_help()
-        print("ocr_verify: nothing to do -- pass --probe "
-              "(see the FIX 24 proof command: "
-              "python3 -m presentation_job.ocr_verify --probe)", file=sys.stderr)
-        return 2
-
-    if not verify_enabled():
-        print("available: false", flush=True)
-        print("ocr_verify: PRESENTATION_OCR_VERIFY=0 -- the FIX 33 Step 0 OCR "
-              "probe is disabled (documented rollback). Unset it to probe.",
-              file=sys.stderr)
-        return PROBE_CLI_EXIT_MISSING
-
-    receipt = run_step0_probe()
-    if args.receipt:
-        try:
-            written = write_receipt(receipt, Path(args.receipt).expanduser())
-            print(f"ocr_verify: receipt written to {written}", file=sys.stderr)
-        except OSError as exc:
-            print(f"ocr_verify: could not write receipt: {exc}", file=sys.stderr)
-
-    # The FIX 24 proof key FIRST, on stdout, always — machine-readable and
-    # identical in wording to the state.json runtime_deps.ocr value.
-    print(f"available: {'true' if _probe_available(receipt) else 'false'}",
-          flush=True)
-    print(json.dumps(receipt, indent=2, default=str))
-
-    if _probe_available(receipt):
-        return PROBE_CLI_EXIT_OK
-
-    if not args.quiet:
-        layers = failed_layers(receipt) or ["probe could not measure"]
-        print("ocr_verify: OCR stack missing or broken (Branch B) under the "
-              f"pipeline interpreter {receipt.get('interpreter')}. "
-              "Failed layer(s):", file=sys.stderr)
-        for layer in layers:
-            print(f"  - {layer}", file=sys.stderr)
-        print(
-            "ocr_verify: fix (Branch B, explicit): install the pinned "
-            "pytesseract (ocr-deps.json) into the pipeline's DEDICATED venv — "
-            "never global Python — and point PRESENTATION_PIPELINE_INTERPRETER "
-            "at that venv; provision the native tesseract binary on PATH "
-            "(Mac: brew install tesseract). Python deps: "
-            "<venv>/bin/python -m pip install pytesseract pillow. "
-            "Then re-run: python3 -m presentation_job.ocr_verify --probe",
-            file=sys.stderr)
-    return PROBE_CLI_EXIT_MISSING
-
-
-if __name__ == "__main__":
-    sys.exit(main())

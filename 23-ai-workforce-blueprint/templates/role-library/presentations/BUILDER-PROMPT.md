@@ -24,7 +24,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
 - **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
-  the engine `presentation_job.py`, fronted by `presentation-canonical-entry.sh`). It reads the
+  `run_signature_deck.py`, fronted by `presentation-canonical-entry.sh`). It reads the
   Layer-A rich prompts **VERBATIM** — it does **not** compose them, does **not** have an
   image tool of its own, and does **not** turn a bare `scene`/`copy` pair into a prompt.
   It submits each rich prompt to `gpt-image-2-text-to-image` / `-image-to-image` (16:9,
@@ -45,20 +45,14 @@ stop — you are one phase behind. The render step (`build_deck.py`) preflights 
 Layer-A artifact set and refuses (loudly, non-zero exit) to run without it.
 
 **The correct mental model:** *you are always running Layer A up to the render, and
-Layer B is the render+delivery the engine (`presentation_job.py`, dispatched by
-`presentation-canonical-entry.sh`) executes for you once Layer A is done.* You never
-choose between them, and you never skip ahead.
-
-**One-sentence entry statement (Fix 93):** the engine (`presentation_job.py`) is the
-component that walks and enforces the phase order, while the runner
-(`run_signature_deck.py`) is only the agent's turn-gate interface to it (`--next` /
-`--phase`) — the two names are not interchangeable.
+Layer B is the render+delivery the runner dispatches for you once Layer A is done.* You
+never choose between them, and you never skip ahead.
 
 ---
 
 ## THE RUNNER IS YOUR INTERFACE — SERVE THE PROCESS ONE STEP AT A TIME
 
-Doctrine is not something you hold in your head across 30 documents. **`run_signature_deck.py --next` is your interface to what is next** — it is the turn-gate face of the engine (`presentation_job.py`), which is the component that actually walks and enforces the phase order. The loop is:
+Doctrine is not something you hold in your head across 30 documents. **`run_signature_deck.py --next` is your interface to what is next.** The loop is:
 
 ```
 python3 <SCRIPTS_DIR>/run_signature_deck.py --run-dir <RUN_DIR> --slides slides.json --next
@@ -73,7 +67,7 @@ contract (`produces_artifact` path + `required_brief_categories` + whether a sub
 verifier runs at attest time), the `sop_refs`, the gate codes, and the exact
 `attest_command` to run next. It deliberately reveals no phase further ahead — attestation
 is order-enforced (`AF-PHASE-SKIPPED` on an out-of-order attempt), so you physically
-cannot run the process out of the order the engine enforces it. `--plan` is a read-only
+cannot run the process out of the order the runner serves it. `--plan` is a read-only
 view of the whole phase list if you need orientation (never a substitute for `--next`).
 
 **SLICED READS — FIX-19 (D18).** The SOP/role files `sop_refs` point at are 25–125KB.
@@ -84,7 +78,7 @@ you reasoned from incomplete context. Each `sop_ref` in the `--next` payload car
 (`working/checkpoints/read_slice_truncations.json`) must stay 0 across the build.
 
 **Do not hand-author `slides.json` in isolation and skip straight to a render command.**
-Walk the loop above from wherever the ledger says you are; the turn-gate will emit intake,
+Walk the loop above from wherever the ledger says you are; the runner will emit intake,
 structure, copy, copy-QC, prompt-authoring, and prompt-QC phases (per
 `PIPELINE-MANIFEST.json`) before it ever emits `P4-RENDER`.
 
@@ -105,7 +99,7 @@ bash <ENTRY>/presentation-canonical-entry.sh \
 check**, a **bypass-scan** that refuses to start if any hand-rolled renderer/assembler
 exists in your run directory, and a **version/hash pin** that confirms the deployed
 renderer is the pinned governed one — and only then hands off to the canonical
-engine (`presentation_job.py` → `build_deck.py`). The scripts directory defaults
+orchestrator (`run_signature_deck.py` → `build_deck.py`). The scripts directory defaults
 to the materialized department's `scripts/` folder; `--scripts-dir` overrides it. The
 script refuses rather than searching. That canonical path, for every
 slide, reads the pre-authored rich prompt **verbatim**, calls KIE.ai, polls, downloads
@@ -147,10 +141,7 @@ code) — **never silently, never by your own choice.**
 - Rendering a slide locally (`Image.new` Pillow canvas / a PowerPoint-drawn typography
   card) instead of via KIE.ai — including for pure-typography hook slides (KIE renders
   those too).
-- Adding native PowerPoint text on top of a slide image (the retired native-overlay
-  path is eliminated, Decision 5C — a native on-slide text run or a present overlay
-  ledger file is AF-OVERLAY-DELIVERED; the retired token pair is recorded in the RETIRED
-  appendix of pptx-assembly-specialist.md);
+- Adding native PowerPoint text on top of a slide image (`add_textbox` / `add_text_box`);
   the only legitimate text is baked into the KIE image, the only legitimate PPTX text is
   the off-slide notes pane.
 - Generating images yourself (you have no image tool; `image_generate`/native/openai are

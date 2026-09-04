@@ -10,7 +10,7 @@ fail-closed AF-SP-TYPE-UNDECLARED.
 
 A non-signature deck with no SP signal passes untouched.
 
-Called by build_deck._chk_sp_claim() and by deck-intake-turngate.py at --complete.
+Called by build_deck._chk_sp_claim() and by deck-intake-driver.py at --complete.
 The evaluate_run_dir() function is the single entry point imported by both callers.
 """
 
@@ -154,7 +154,7 @@ def evaluate_run_dir(run_dir: Path) -> List[Tuple[str, str]]:
     else:
         reason_parts.append(
             "intake.json is absent -- deck_type was never set by the intake "
-            "driver. Run deck-intake-turngate.py --next/--answer/--complete "
+            "driver. Run deck-intake-driver.py --next/--answer/--complete "
             "to set it.")
 
     reason_parts.append(

@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-03T22:28:41Z",
+  "generated_at": "2026-09-02T11:48:59Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -9,8 +9,8 @@
       "bytes": 32014
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
-      "sha256": "81424af3082a450f30d1b21e73b3627d1b545e495b6e45e373b227c8d1f44ac3",
-      "bytes": 15666
+      "sha256": "bf27f8a242a63141108b393708ba393ea4ec38e211ac0b263ce2d670860db15c",
+      "bytes": 14360
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
@@ -257,20 +257,20 @@
       "bytes": 15337
     },
     "presentation-design-system/02-SOP-creative-typography-guide.md": {
-      "sha256": "4cc353d3258d43b9e50adbd0c9169a1be13fc7a6c3f6c8a1c7fdf59640772232",
-      "bytes": 8573
+      "sha256": "d16f6b7ca918e67648dd230416950b1dd27a2a9a93fb1f790829c52245e6a270",
+      "bytes": 8266
     },
     "presentation-design-system/03-SOP-pure-typography-hook-slides.md": {
-      "sha256": "feec5dc022f61d9d9b4712051f024f6db3c2ff05aab95faaf58f23e598026d77",
-      "bytes": 8127
+      "sha256": "834c569be7312cd2a7b0e1dc5aa998803229b7ca6ad10cb927050ea5f00d9c6d",
+      "bytes": 7991
     },
     "presentation-design-system/04-SOP-variable-layout-anti-template.md": {
       "sha256": "dba7e9e52dfdf1403b086bba3d74212f4bbb5bcfd4b5bf9a53e2d55e2d6da965",
       "bytes": 6807
     },
     "presentation-design-system/05-SOP-logo-consistency.md": {
-      "sha256": "241bb95347296e454991ef755a5354320a2ce2142f1fd58ac1f29598c0676910",
-      "bytes": 9968
+      "sha256": "551a50e262ae78e1aa76c54eaa16376dce1519ffa38a3981b12c8a95ffe04f78",
+      "bytes": 9866
     },
     "presentation-design-system/README.md": {
       "sha256": "329c2aec2e6c1c076f17c535faea4e69c77799ce69c260a3ae0dd6d8e4302525",
@@ -281,8 +281,8 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "b57108007aa294812d5b330caca5985744185a58bc49922959d07dc1b2aea257",
-      "bytes": 17971
+      "sha256": "89205fbb92635ded5b53c1fdcd34e0482415c340b72aeeeab01c89672dc5c4a2",
+      "bytes": 17873
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
       "sha256": "fa8a5245acc325fd356b8fe2075ce85f2ed657ad8b315b90dfbc441d4d6b1ea3",
@@ -297,44 +297,44 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "360821454ada02f8eee24b4a7727ee9642f1d4a1ab8e88fb2a7f4afbcd621b17",
-      "bytes": 130467
+      "sha256": "a0d9afeb7c224ad631cb786aff9c9b008eb54a39cc617b8fa29d9f9d69bf7c77",
+      "bytes": 127005
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "4c4b96417e7d127cedbb9e0af85c5873b2295f1571b4037a6d17d24bba80bd79",
-      "bytes": 197627
+      "sha256": "ce0ce0705cbc3f0fede909b1d1874ce8a9d346f1d36daafb2a80fc379b02f258",
+      "bytes": 173596
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
       "bytes": 1383
     },
     "presentation-slide-craft/SOP-CROSS-REFERENCE-MAP.md": {
-      "sha256": "8db828426e8230cb2f435c0219f50b5fc4904b63ccfabb5800baa3c74d465196",
-      "bytes": 5942
+      "sha256": "c2acd851002f25fdd9d4624ebd389da29a80102d0ea29f1a658e6a4174584e76",
+      "bytes": 5940
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
-      "sha256": "62487743d8f0bfb4e7e8ad776fb196d2b94968c60ca9b2255f579084e9ce6998",
-      "bytes": 19320
+      "sha256": "fa464b861a0a1abac7621dce42cfc3313ca9174b92d0dd3bd7dbe9a178db345b",
+      "bytes": 18851
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
-      "sha256": "431b268c64b4b4d82fbdacc654c147c9603189cf5e16da38308dec26f6f847a8",
-      "bytes": 9914
+      "sha256": "57982a7d91db1fb24200f2cb2ddbfda4a76553a47d0bab734a47d636167ae560",
+      "bytes": 9607
     },
     "presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md": {
-      "sha256": "5a976ab8a5c7f8139806616941d37a44bc493f1180f786b85a002cecf5b7480c",
-      "bytes": 12056
+      "sha256": "423dd9b8ea69a09fe08754f281b02d6f30dc7c13adc2cc9187a3d52e35df7030",
+      "bytes": 11749
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "36f79bc961a35497f6a1bc922faa164d80d3a3bc956e87d708af2d6641879ae7",
-      "bytes": 14041
+      "sha256": "c62bccfe953afcfbbb5205b6e36e81c753a103e77961113aea35584f87a8e41f",
+      "bytes": 13639
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
-      "sha256": "96644c19b0c7e98f760d24d521c8b6094f1d549836ae75b224cc55a379c2a936",
-      "bytes": 11874
+      "sha256": "f9b1ecc6ab0323e3506f1ae20a24cc338e15af005a7f2bff635b5c8cc1ac6128",
+      "bytes": 11567
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "789a8a8c6ce09465083bdaf5802a6d68b1403c256abb497fa38c24ce178899f1",
-      "bytes": 14609
+      "sha256": "8e3333eb522f0354dd8579c694f824f5c00770ad37cab49df7b6965fc670829c",
+      "bytes": 14152
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",
@@ -345,8 +345,8 @@
       "bytes": 4819
     },
     "presentation-slide-craft/WORKERS-TUNING-EXAMPLE.md": {
-      "sha256": "f20d295ee218df1ae0eb56cdab44273c2fbec52c12206e081c6650c799c16d53",
-      "bytes": 4624
+      "sha256": "d3f99e9003ea76e52d0f0d9c8181bcbd89ec1a3ad06bc1e7c88ae758fbb25766",
+      "bytes": 4620
     },
     "product-bio-craft/README.md": {
       "sha256": "e9776de5172089bb334c97c62f5fa49ed33956d4449f546227390ef138691943",

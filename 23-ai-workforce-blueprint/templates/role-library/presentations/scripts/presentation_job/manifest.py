@@ -238,12 +238,14 @@ class Phase:
     # edge u→v iff produces(u) ∩ consumes(v) ≠ ∅) reads this field; empty list
     # for phases that declare none (legacy manifests).
     consumes: List[str] = field(default_factory=list)
-    # FIX 112: the manifest's raw `fanout` field ({"by": "slide"|"section"|"file",
-    # "max_units": N}), carried verbatim so the dispatcher's generic fan-out
-    # path (_phase_fanout_spec -> fanout.parse_fanout_field) can parse it with
-    # fanout.py's OWN validator — never a second, drifting parser here. None =
-    # the phase is not fan-out enabled and the serial dispatch path stays
-    # byte-for-byte untouched (the FIX 15b opt-in rule, unchanged).
+    # FIX 112 (2026-09-03): the manifest's optional `fanout` declaration
+    # ({"by": "slide"|"section"|"file", "max_units": N}) that turns the phase
+    # into N independent units dispatched through fanout.run_units (the FIX 15b
+    # generic glue in dispatcher.py: _phase_fanout_spec / _dispatch_phase_fanout_units).
+    # Carried RAW on the Phase object — parsing into fanout.FanoutSpec stays at
+    # the dispatcher seam (fanout.parse_fanout_field) so a malformed field raises
+    # FanoutSpecError as a phase error there, not a manifest-load refusal here.
+    # Absent/None => the serial single-target path, byte-for-byte unchanged.
     fanout: Optional[Dict[str, Any]] = None
 
     @property
@@ -503,10 +505,9 @@ class Manifest:
                 # (execution_plan edge u→v iff produces(u) ∩ consumes(v) ≠ ∅)
                 # reads the manifest's own declaration, never a heuristic.
                 consumes=_split_artifact_patterns(_as_list(p.get("consumes"))),
-                # FIX 112: parse the phase's optional `fanout` declaration. Kept as
-                # the RAW dict -- fanout.parse_fanout_field (the ONE validator) does
-                # the by/max_units checking in the dispatcher, so a malformed value
-                # dies with fanout.py's own error text, never a silent None here.
+                # FIX 112: carry the raw {"by","max_units"} fanout declaration so
+                # dispatcher._phase_fanout_spec can hand it to fanout.parse_fanout_field.
+                # None for phases without the field (the serial path is untouched).
                 fanout=(p.get("fanout")
                         if isinstance(p.get("fanout"), dict) else None),
             ))
@@ -869,19 +870,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 #  produces working/prompts/infographic-prompt.txt (the FIX 2 fanout extra unit);
 #  P-STYLE-PREVIEW consumes the spec; P4-RENDER consumes the pick. Phase count
 #  55 -> 59. Floor follows the manifest in the same commit per U019 step 8.)
-# 59 -> 60: FIX 112 — the two remaining missing producers. P-STYLE-SPEC becomes
-#  the copy stage's fanout unit (manifest `fanout` field, dispatcher glue
-#  _phase_fanout_spec/_dispatch_phase_fanout_units now real) and the
-#  infographic-checklist QC unit becomes real: a role file
-#  (presentations/infographic-checklist.md) + a manifest roles[] row + a
-#  P8.3-INFOGRAPHIC-checklist verdict verifier in phase_verifiers. Content
-#  edits on P-STYLE-SPEC + a new roles[] row; floor follows the manifest in the
-#  same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 60  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
-    # (57 = concurrent v57 bump, 2026-09-02; 59 = FIX 92 grounding/casting
-    #  closeout-gate registration — AF-IMAGE-GROUNDING(-PARK) /
-    #  AF-CASTING(-PARK / -MIX-PARITY), five autofail rows, manifest_version
-    #  56 -> 59. Floor follows the manifest in the same commit per U019 step 8.)
+MIN_MANIFEST_VERSION = 56  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

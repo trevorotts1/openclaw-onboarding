@@ -121,8 +121,6 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 9. Standard Operating Procedures (Numbered)
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
-
 Voice authority: 30-fish-audio-api-reference/.
 
 ### SOP 9.1 -- Tag the Script for the Target Tier

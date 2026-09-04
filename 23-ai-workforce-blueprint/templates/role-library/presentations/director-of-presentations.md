@@ -247,7 +247,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### Phase-Code Map (short codes -> manifest ids)
 
-This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
+This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 55, 55 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
 
 | Legacy short code | Manifest `phases[].id` (order) | Manifest row |
 |---|---|---|
@@ -262,15 +262,15 @@ This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3",
 | Phase 1.5 (typography lock) | `PF-DESIGN` (order 4.5) | typography-architect; produces `type_system` + `layout_map` + `treatment_table` |
 | Phase 2 (prompt authoring) | `P4-PROMPT` (order 4.7) | prompt-author-presentations; 9,000-char standard per slide |
 | Phase 3 (prompt QC) | `P-PROMPT-QC` (order 4.8) | qc-specialist-prompt-presentations; produces `working/qc/prompt_qc_report.json` |
-| Phase 3.5 / style preview | `P-STYLE-PREVIEW` (order 4.85) | slide-image-creator; 9 samples across 3 style variants, owner gateway pick; preceded by `P-STYLE-SPEC` (order 4.84, brand-steward: 3 slide-bound fanout units aggregate `working/copy/style_preview_spec.json`) and followed by `P-STYLE-PICK` (order 4.86, brand-steward human gateway: owner approves ONE variant, `AF-STYLE-UNPICKED`) |
+| Phase 3.5 / style preview | `P-STYLE-PREVIEW` (order 4.85) | slide-image-creator; 9 samples across 3 style variants, owner gateway pick |
 | Phase 4 (image generation / render) | `P4-RENDER` (order 4.9) | slide-image-creator via `build_deck.py` (the ONLY renderer) |
 | Phase 5 (image QC) | `P-IMAGE-QC` (order 4.95) | qc-specialist-image-presentations; produces `working/qc/image_qc_report.json` |
 | Priority-Shift ship gate | `P-SHIFT-QC` (order 7.5) | qc-specialist-presentations; 14-item pre-output checklist |
 | Phase 6 (assembly) | `P8-ASSEMBLE` (order 8) | pptx-assembly-specialist; produces the deck `.pptx` |
-| Phase 6 exports and speech band | `P8.1-PDF-EXPORT` (8.1), `P8.2-GUIDE` (8.2), `P8.25-WORKBOOK` (8.25), `P8.3-INFOGRAPHIC` (8.3), `P9-SPEECH` (8.5), `P8.4-FISH-TAG` (8.52), `P9-SPEECH-WEBINAR-INTRO` (8.54), `P9.1-SPEECH-PDF` (8.55), `P-SPEECH-QC` (8.6), `P-QC-AGGREGATE` (8.65), `P9.5-NOTES-SYNC` (8.7), `P9.2-GHL-UPLOAD` (8.9), `P9.6-WEBINAR-VIDEO` (8.92), `P7-TELEPROMPTER` (8.95), `P9-DELIVER` (order 9), `P-BUNDLE-GATE` (9.95, terminal) | post-render band; full contract per id in the manifest; `P8.3-INFOGRAPHIC` is the canonical Kie 9:16 infographic render (slide-image-creator via `scripts/build_infographic.py`); `P-BUNDLE-GATE` is the terminal bundle-completeness gate (pptx-assembly-specialist via `scripts/bundle_gate.py`, `AF-BUNDLE-COMPLETE`) |
+| Phase 6 exports and speech band | `P8.1-PDF-EXPORT` (8.1), `P8.2-GUIDE` (8.2), `P8.25-WORKBOOK` (8.25), `P9-SPEECH` (8.5), `P8.4-FISH-TAG` (8.52), `P9-SPEECH-WEBINAR-INTRO` (8.54), `P9.1-SPEECH-PDF` (8.55), `P-SPEECH-QC` (8.6), `P-QC-AGGREGATE` (8.65), `P9.5-NOTES-SYNC` (8.7), `P9.2-GHL-UPLOAD` (8.9), `P9.6-WEBINAR-VIDEO` (8.92), `P7-TELEPROMPTER` (8.95), `P9-DELIVER` (order 9) | post-render band; full contract per id in the manifest |
 | Final deck QC | `P-QC-AGGREGATE` (order 8.65) | qc-specialist-presentations; combines the six domain QC reports into `working/qc/final_qc_report.json` |
 | Delivery | `P9-DELIVER` (order 9) | delivery-concierge; postflight completeness gate |
-| Upsell waves | `P-U-SALES-COPY` (3.6), `P-U-CHECKOUT-COPY` (3.7), `P-U-VSL-RESEARCH` (3.8), `P-U-VSL-COPY` (3.9), `P-U-DESIGN-SALES` (4.2), `P-U-DESIGN-RENDER-SALES` (4.21), `P-U-DESIGN-CHECKOUT` (4.3), `P-U-DESIGN-RENDER-CHECKOUT` (4.31), `P-U-DESIGN-VSL` (4.4), `P-U-DESIGN-RENDER-VSL` (4.41), `P-U-HTML-SALES` (5.2), `P-U-HTML-CHECKOUT` (5.3), `P-U-HTML-VSL` (5.4), `P-U-FORM-GATE` (5.6), `P-U-GHL-SALES` (6.2), `P-U-GHL-VSL` (6.4), `P-U-COLLATERAL` (8.8), `P-U-SALES-BUILD` (8.75), `P-U-CHECKOUT-BUILD` (8.76), `P-U-FORM-CHECKOUT` (8.77), `P-U-VSL-BUILD` (8.93), `P-U-QC` (9.05) | conditional upsell branch (P-U), defers per its own preflight |
+| Upsell waves | `P-U-SALES-COPY` (3.6), `P-U-CHECKOUT-COPY` (3.7), `P-U-VSL-RESEARCH` (3.8), `P-U-VSL-COPY` (3.9), `P-U-DESIGN-SALES` (4.2), `P-U-DESIGN-CHECKOUT` (4.3), `P-U-DESIGN-VSL` (4.4), `P-U-HTML-SALES` (5.2), `P-U-HTML-CHECKOUT` (5.3), `P-U-HTML-VSL` (5.4), `P-U-FORM-GATE` (5.6), `P-U-GHL-SALES` (6.2), `P-U-GHL-VSL` (6.4), `P-U-COLLATERAL` (8.8), `P-U-SALES-BUILD` (8.75), `P-U-CHECKOUT-BUILD` (8.76), `P-U-FORM-CHECKOUT` (8.77), `P-U-VSL-BUILD` (8.93), `P-U-QC` (9.05) | conditional upsell branch (P-U), defers per its own preflight |
 | Signature + converter branches | `P-CONVERTER` (-1), `P-SP-CLAIM` (0.14), `P-SP-INTAKE` (0.15), `P-SP-INTAKE-TRACE` (0.16), `P0B-PRIORITY` (0.2), `P3-ARC` (3), `P-3.5-RESEARCH-MAP` (3.5), `P-SP-STRUCTURE` (4.1), `P-SP-P3-HYGIENE` (4.15), `P-TYPO-QC` (4.6) | conditional/auxiliary rows; deferral rules per row in the manifest |
 
 The authoritative machine-readable list is `phases[]` in `PIPELINE-MANIFEST.json`; `00-START-HERE.md` (Pipeline Sequence) and `SOP-SLIDE-05-PROCESS-MANIFEST.md` carry the full per-id list in lockstep with it (GATE 4 of `scripts/ci/presentations-drift-gates.sh` enforces the lockstep for the role files too — this file and the other four role files of the department must name every current manifest phase id).
@@ -482,7 +482,7 @@ The authoritative machine-readable list is `phases[]` in `PIPELINE-MANIFEST.json
 - mission_prd.json updated with slide_count_final and the canonical HOOK string
 - working/copy/arc_allocation.json (with the reserved slots, split slots, and canonical arc-section labels tagged)
 
-**Hand to:** Slide Copywriter (Phase 1 copy write), Hook Strategist (anchor map), and Offer Price Strategist (price ladder choreography, concurrent) -- the concurrent pair is dispatched as the order-4 fanout dispatch (the `fanout` field / `phase.workers` pool in `presentation_job/fanout.py`), its width governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json` (capacity-reliability-engineer.md Step 0.5)
+**Hand to:** Slide Copywriter (Phase 1 copy write), Hook Strategist (anchor map), and Offer Price Strategist (price ladder choreography, concurrent)
 
 **Failure mode:** If the client's stated slide count is impossible for the duration (e.g., 200 slides for a 30-minute presentation), push back with the content inventory and recommend the content-driven count. Record the negotiated count in mission_prd.json with a note. In Mode A the 90 figure is the duration-derived default (the target/cap applied ONLY when the owner gave a duration and no slide count); in Mode B it yields to source_slide_count (the deck must never drop below the source count, even if that exceeds 90 -- a >90 source deck is never rejected and never trimmed, it is add-only). A rich source with more substantive points than the duration default is covered, never compressed: do NOT reject a deck for being long. Reject or trim ONLY when `client_requested_slide_cap` is set in intake.json / mission_prd.json AND the count exceeds it; in that case surface the content-vs-cap tension to the owner and trim the least substantive points first (never the offer section) only after the owner decides. If the client's stated slide count is impossibly LOW for the content (e.g., 10 slides for a source with 80 substantive points), push back with the content inventory and recommend the content-driven count; never silently compress. The only non-content limit is the 1000-slide runaway-loop safety backstop, which is never used against real content.
 
@@ -524,11 +524,11 @@ The authoritative machine-readable list is `phases[]` in `PIPELINE-MANIFEST.json
 - Current phase and the list of specialist agents available
 
 **Steps:**
-1. Read capacity_plan.json. Identify: max_concurrent_agents, qc_agents_allowed, writer_agents_allowed. Every batched dispatch below is a fanout dispatch through the `fanout` field / `phase.workers` pool (`presentation_job/fanout.py`), and every fanout width is governed by the governor: never more concurrent agents than `max_concurrent_agents` in this capacity_plan.json (capacity-reliability-engineer.md Step 0.5).
+1. Read capacity_plan.json. Identify: max_concurrent_agents, qc_agents_allowed, writer_agents_allowed.
 2. For Phase 2 (prompt authoring): dispatch prompt writers in batches of min(writer_agents_allowed, 10). Each writer handles a slice of slides. Slices must not overlap. Record the assignment map in working/checkpoints/phase2_dispatch.json.
 3. For Phase 3 (prompt QC): dispatch min(qc_agents_allowed, 10) QC agents. Each scores the same prompt independently. Average their scores. Scores < 8.5 trigger revision; revised prompts are re-scored before proceeding.
 4. For Phase 4 (image generation): submission runs in waves of 20 slides with 10-second sleeps between waves (= the documented 20-requests-per-10-seconds cap per master SOP; source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Dispatch the Slide Submitter as a single detached agent. NEVER split submission across multiple agents (creates rate-cap violations).
-5. For Phase 5 (image QC): dispatch up to 5 QC agents in parallel -- a fanout dispatch whose width is governed by the governor's `max_concurrent_agents` in capacity_plan.json (capacity-reliability-engineer.md Step 0.5). Each scores a non-overlapping batch of images.
+5. For Phase 5 (image QC): dispatch up to 5 QC agents in parallel. Each scores a non-overlapping batch of images.
 6. Log every dispatch event in working/checkpoints/dispatch_log.json with: agent_type, assigned_slides, dispatched_at, status.
 
 **Outputs:**
@@ -576,7 +576,7 @@ final_deck_qc_report.json: all 11 image criteria and 14 copy criteria satisfied 
 
 ### You hand work off to:
 - Slide Copywriter (Phase 1 copy) -- receives a complete intake.json with all mandatory variables: TONE (one of seven named styles), PRICE_MODE, VIP_TIER (with contents/price/real spot count), REPRESENTATION_MIX (with percentages), VISUAL_MIX, DARK_OK, HOOK (seeded from client or to be derived), and PROOF_ASSETS. Incomplete intake is NOT forwarded; the Director resolves gaps first.
-- Offer Price Strategist (price ladder, concurrent with Phase 1 -- one of the parallel agents in the order-4 fanout dispatch, its slot governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`, capacity-reliability-engineer.md Step 0.5)
+- Offer Price Strategist (price ladder, concurrent with Phase 1)
 - Brand Steward (STYLE BLOCK, early in run)
 - Slide Image Creator (Phase 2 prompts) -- never receives a prompt brief until approval_record.json exists (Phase 1A gate confirmed)
 - QC Specialist (Phases 1Q, 3, 5)

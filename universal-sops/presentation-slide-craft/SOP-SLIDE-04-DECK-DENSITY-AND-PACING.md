@@ -5,7 +5,7 @@
 **Owning role at write time:** Director of Presentations (arc_allocation.json minimum-count enforcement)
 **Enforced at the gate by:** QC Specialist - Presentations (the AF-DENSITY battery = manifest codes AF-DEN-1..8, below)
 **Gold-standard numbers:** the proven 75-slide reference run: ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75 — **note: 2 post-FINAL slides, which is BELOW the 4-to-7 floor this document sets in item 7 and in DEN-7. The reference deck is authoritative on ladder spacing and Wall-of-Wins placement; it is NOT authoritative on re-pitch length, and an enforcer built to DEN-7 will correctly flag it. Do not widen DEN-7 to accommodate this line.**
-**Status:** AUTHORITATIVE COPY — this file in `universal-sops/presentation-slide-craft/` is the authoritative copy of this SOP; the department mirror at `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a byte-identical regenerated copy and must never be edited directly (FIX 98, 2026-09-03). DRAFT for integration. Strengthens Section 4 with hard minimum counts and a minimum-gap floor, so the offer can never be crammed into the back third again.
+**Status:** DRAFT for integration. Strengthens Section 4 with hard minimum counts and a minimum-gap floor, so the offer can never be crammed into the back third again.
 
 ---
 
