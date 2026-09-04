@@ -1,3 +1,14 @@
+## [v23.0.1]  -  2026-09-04  -  Resume wave 2026-09-02/03: clean integration delta — 60 fixes + round-5 repairs, 110/111 PASS (#1015
+## [v14.20.0]  -  2026-06-27  -  feat(skill6): idempotent page create — page_list + find_page_by_name (v14.20.0)
+## [v12.5.1]  -  2026-06-14  -  chore: bump version to v12.5.1 + CHANGELOG for genericize audit (PR #224)
+## [v11.18.4]  -  2026-06-11  -  fix(skill-44): correct INSTALL.md Action-3 heredoc entrypoint (gohighlevel.main → gohighlevel) (#167
+## [v11.18.2]  -  2026-06-11  -  fix(skill44): retry-once on transient Firebase token-refresh error for workflow writes (#164)
+## [v11.18.1]  -  2026-06-11  -  fix(skill44): workflows build adds action ordering + fails loud on rejected save (+ wrapper/opportun
+## [v11.8.7]  -  2026-06-10  -  feat(prd-2.5-onb): branding-questions.json — single source of truth for Skill 23 branding [v11.8.7]
+## [v11.3.1]  -  2026-06-09  -  fix(v11.3.1): remove invalid agents.defaults.tools.exec; add generation dept tools.allow [Mac]
+## [v11.1.0]  -  2026-06-09  -  chore(release): bump version v11.0.1 → v11.1.0 [Mac] (#111)
+## [v99.99.99]  -  2026-08-03  -  feat(podcast-audit): act-1-hook register-podcast-hook.sh intake route + session binding
+
 ## [v23.0.0]  -  2026-09-03  -  v23 major generation: all-skill major bump on top of GHL safe-upsert
 
 ### Why
