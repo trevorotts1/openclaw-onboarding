@@ -1713,6 +1713,21 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
         ctx.reason = str((decision or {}).get("reason") or "")
         ctx.router = router_id or "model_router"
 
+        # FIX 17a provider fold at the ONE transport seam: the catalog may
+        # spell the native DeepSeek provider "deepseek" while every transport,
+        # the profile store and the key canon speak "deepseek-direct" (the
+        # router's own _norm_provider fold). Without this fold a routed
+        # "deepseek" phase fell through to _openai_compat_complete, which has
+        # no base URL and no transport for the native endpoint -- every call
+        # died with "no base URL known for provider deepseek" no matter how
+        # healthy the route. Normalizing here (never in the catalog) keeps the
+        # catalog's spelling authoritative for eligibility while the dispatch
+        # branch picks the transport the provider id actually owns.
+        try:
+            ctx.provider = _model_router._norm_provider(ctx.provider)
+        except Exception:  # noqa: BLE001 -- a fold failure must not change routing
+            pass
+
         if ctx.provider == "deepseek-direct":
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
