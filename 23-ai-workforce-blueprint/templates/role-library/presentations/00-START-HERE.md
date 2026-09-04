@@ -161,11 +161,16 @@ The 15 P-U upsell phases below complete the 55-phase manifest. Each is CONDITION
 11. **`P-SP-STRUCTURE`** (order 4.1) -- SIGNATURE-ONLY -- signature-presentation-architect locks the SACRED 4-phase arc (Avatar >=11 -> Story >=13 -> Teaching >=36 -> Pitch >=40, >=100 slides floor) with contiguous phase labels, image suggestions on every slide, and the N.E.E.I.T. / 4-Quadrant markers.
 12. **`P-SP-P3-HYGIENE`** (order 4.15) -- SIGNATURE-ONLY -- qc-specialist-signature-presentations enforces no-pitch hygiene on the Teaching band: no offer name, price, or enroll/buy/scarcity CTA before the Phase-3-to-Phase-4 bridge.
 13. **`P1Q-COPY-QC`** (order 4.2) -- qc-specialist-presentations runs the copy QC gate (score >= 8.5). This is the current "Phase 1Q" -- it is sequenced AFTER Slide Copy (order 4.2, not before it); a QC now follows the artifact it grades, which is the defect the O1 re-sequence fixed.
+14. **`P-U-DESIGN-RENDER-SALES`** (order 4.21, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
+14. **`P-U-DESIGN-RENDER-CHECKOUT`** (order 4.31, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
+14. **`P-U-DESIGN-RENDER-VSL`** (order 4.41, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
 14. **`PF-DESIGN`** (order 4.5) -- typography-architect locks `type_system` + `layout_map` + `treatment_table` and runs the self-audit before any prompt is written.
 15. **`P-TYPO-QC`** (order 4.6) -- qc-specialist-typography-presentations independently reviews the design brief.
 16. **`P4-PROMPT`** (order 4.7) -- prompt-author-presentations writes each slide's image prompt to the treatment table, to the 9,000-character standard.
 17. **`P-PROMPT-QC`** (order 4.8) -- qc-specialist-prompt-presentations independently (dual-scored) reviews the prompts.
+18. **`P-STYLE-SPEC`** (order 4.84, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
 18. **`P-STYLE-PREVIEW`** (order 4.85) -- slide-image-creator renders 9 samples across 3 style variants; the owner picks 1 via their OWN gateway before the full render, and the winner's 3 representative renders are LOCKED + reused so Kie never double-charges.
+19. **`P-STYLE-PICK`** (order 4.86, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
 19. **`P4-RENDER`** (order 4.9) -- slide-image-creator's deterministic render via `build_deck.py` (this script; the ONLY renderer -- Logo via image-to-image on Mode B; hook slides pure-type; no footer hook).
 20. **`P-IMAGE-QC`** (order 4.95) -- qc-specialist-image-presentations runs the independent multimodal vision QC gate on every rendered slide.
 21. **`P-SHIFT-QC`** (order 7.5) -- qc-specialist-presentations runs the Priority-Shift Ship Gate -- the ONLY phase where copy, design, and rendered images all coexist; the framework's 14-item pre-output checklist (item 0 = the North Star: attention is the #1 job).
@@ -173,6 +178,7 @@ The 15 P-U upsell phases below complete the 55-phase manifest. Each is CONDITION
 23. **`P8.1-PDF-EXPORT`** (order 8.1, mechanical: `scripts/pdf_export.py`) -- exports the deck PDF (portable-document export, required delivery output + QC render).
 24. **`P8.2-GUIDE`** (order 8.2, mechanical: `scripts/presenter_guide.py`) -- presenters-guide-specialist builds the speaker-facing outline PDF (font >= 12) + Notion.
 25. **`P8.25-WORKBOOK`** (order 8.25, mechanical, resumes the canonical entry script) -- pptx-assembly-specialist builds the branded content-rich Workbook (regular PDF + fillable AcroForm PDF).
+26. **`P8.3-INFOGRAPHIC`** (order 8.3, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
 26. **`P9-SPEECH`** (order 8.5, mechanical: `scripts/speech_build_harness.py`) -- presenters-speech-writer writes the word-for-word Presenter's Speech at 130 wpm (length-gated).
 27. **`P8.4-FISH-TAG`** (order 8.52, mechanical: `scripts/speech_fish_tag.py`) -- fish-audio-expression-specialist expression-tags the speech for Fish Audio synthesis.
 28. **`P9-SPEECH-WEBINAR-INTRO`** (order 8.54, mechanical: `scripts/synthesize_full_speech.py`) -- audio-demonstration-specialist renders the webinarized speech audio (welcome + Q&A + crescendo close framing).
@@ -188,6 +194,7 @@ The 15 P-U upsell phases below complete the 55-phase manifest. Each is CONDITION
 38. **`P-U-VSL-BUILD`** (order 8.93, mechanical: `scripts/vsl_builder.py`) -- CONDITIONAL, upsell branch -- DEFERS unless the client elects it (`want_vsl_page`, default NO, opt-in only; a decline is a logged client waiver) -- media-librarian-ghl-updater builds the video-sales-letter page (kie design -> HTML -> GHL funnel push). MUST run after `P9.6-WEBINAR-VIDEO` (order 8.92) -- `verify_video_dependency()` fails closed (`AF-VSL-NO-VIDEO`) if `{deck_slug}-WEBINAR.mp4` does not exist yet. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.
 39. **`P7-TELEPROMPTER`** (order 8.95, mechanical: `scripts/build_teleprompter.py`) -- presenters-speech-writer builds the standalone scrolling teleprompter HTML app.
 40. **`P9-DELIVER`** (order 9, mechanical: `scripts/synthesize_full_speech.py` + delivery interlock) -- delivery-concierge runs the postflight completeness gate and delivers to every destination (deliverables Trevor opens go to Downloads, clearly labeled).
+41. **`P-BUNDLE-GATE`** (order 9.95, kind: script) -- See manifest for the full contract.. Full contract: look it up in the manifest.
 
 On-call throughout: devils-advocate-presentations (high-stakes reviews).
 

@@ -102,7 +102,7 @@
     {
       "id": "P-CONVERTER",
       "order": -1,
-      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
+      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc \u2192 Intake)",
       "owning_role": "content-to-presentation-architect",
       "sop_refs": [
         "content-to-presentation-architect-sops.md"
@@ -123,8 +123,8 @@
       "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
       "converter_path": true,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -215,7 +215,7 @@
         },
         {
           "code": "H",
-          "name": "Fact-Validation — Slide-Claim Verification Ledger",
+          "name": "Fact-Validation \u2014 Slide-Claim Verification Ledger",
           "hard_gate": true,
           "note": "Every slide-bound figure verified; produces fact-validation ledger; routed to QC + Slide Copywriter"
         },
@@ -245,8 +245,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
       "heartbeat_minutes": 15,
@@ -289,12 +289,12 @@
         {
           "required": true,
           "checker": "_chk_slide_count_exact",
-          "label": "slide-count exact (when intake.json records client_requested_slide_count, the built deck must have EXACTLY that many slides — the client's number is honored verbatim 25->25/50->50/500->500, never floored up, capped down, defaulted, or substituted; the client is never asked to accept a different number; AUTHORITATIVE over the pacing floor and the Mode-B coverage floor; AF-SLIDE-COUNT-EXACT)"
+          "label": "slide-count exact (when intake.json records client_requested_slide_count, the built deck must have EXACTLY that many slides \u2014 the client's number is honored verbatim 25->25/50->50/500->500, never floored up, capped down, defaulted, or substituted; the client is never asked to accept a different number; AUTHORITATIVE over the pacing floor and the Mode-B coverage floor; AF-SLIDE-COUNT-EXACT)"
         },
         {
           "required": true,
           "checker": "_chk_asset_question",
-          "label": "asset-intake question asked (intake records asset_intake_question_asked:true — the one question about photos/logo/colors/rough deck/slides/concepts; AF-ASSET-QUESTION-MISSING)"
+          "label": "asset-intake question asked (intake records asset_intake_question_asked:true \u2014 the one question about photos/logo/colors/rough deck/slides/concepts; AF-ASSET-QUESTION-MISSING)"
         },
         {
           "required": true,
@@ -313,8 +313,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -340,11 +340,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_claim",
-        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir \u2014 closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -377,8 +377,8 @@
         "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -404,11 +404,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_intake_trace",
-        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed \u2014 a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -476,8 +476,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -506,18 +506,18 @@
       "preflight": {
         "required": true,
         "checker": "_chk_arc",
-        "label": "converting arc — per-slide arc-section allocation"
+        "label": "converting arc \u2014 per-slide arc-section allocation"
       },
       "additional_preflights": [
         {
           "required": true,
           "checker": "_chk_peak_end",
-          "label": "peak-end rule — the arc declares a deliberate PEAK/APEX beat AND a deliberate ending beat (a flat ending is remembered as flat; AF-PEAK-END). DEFERS without doctrine/arc."
+          "label": "peak-end rule \u2014 the arc declares a deliberate PEAK/APEX beat AND a deliberate ending beat (a flat ending is remembered as flat; AF-PEAK-END). DEFERS without doctrine/arc."
         },
         {
           "required": true,
           "checker": "_chk_pitch",
-          "label": "offer ladder + re-pitch (CONDITIONAL on pitch_included:true — arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING). Pitchless decks (pitch_included:false) defer this and are governed by AF-PITCH-LEAK instead."
+          "label": "offer ladder + re-pitch (CONDITIONAL on pitch_included:true \u2014 arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING). Pitchless decks (pitch_included:false) defer this and are governed by AF-PITCH-LEAK instead."
         },
         {
           "required": true,
@@ -526,8 +526,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -554,11 +554,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_research_map",
-        "label": "research woven across the deck — research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
+        "label": "research woven across the deck \u2014 research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
       "heartbeat_minutes": 15,
@@ -584,8 +584,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -607,8 +607,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -630,8 +630,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -653,8 +653,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -697,12 +697,12 @@
         {
           "required": true,
           "checker": "_chk_research_reaches_render",
-          "label": "research reaches the RENDER copy — every research-mapped non-exempt slide's anchor token is present in slides.json copy[] (the file the renderer bakes into the slides), not only in slides_copy.md (AF-RESEARCH-REACHES-RENDER; defers pre-map/pre-copy)"
+          "label": "research reaches the RENDER copy \u2014 every research-mapped non-exempt slide's anchor token is present in slides.json copy[] (the file the renderer bakes into the slides), not only in slides_copy.md (AF-RESEARCH-REACHES-RENDER; defers pre-map/pre-copy)"
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -742,8 +742,8 @@
         "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -773,8 +773,8 @@
         "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -788,7 +788,7 @@
     {
       "id": "P-U-DESIGN-SALES",
       "order": 4.2,
-      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "name": "Upsell Sales Page Design (5,000\u201319,000 prompt band)",
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
@@ -802,8 +802,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -817,15 +817,15 @@
     {
       "id": "P-U-DESIGN-RENDER-SALES",
       "order": 4.21,
-      "name": "Upsell Sales Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
+      "name": "Upsell Sales Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) \u2014 FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
       "owning_role": "slide-image-creator",
       "produces_artifact": "design/sales-design.png",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -840,7 +840,7 @@
     {
       "id": "P1Q-COPY-QC",
       "order": 4.2,
-      "name": "Copy QC (Phase 1Q) — sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
+      "name": "Copy QC (Phase 1Q) \u2014 sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md"
@@ -879,8 +879,8 @@
         "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -908,8 +908,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -923,15 +923,15 @@
     {
       "id": "P-U-DESIGN-RENDER-CHECKOUT",
       "order": 4.31,
-      "name": "Upsell Checkout Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
+      "name": "Upsell Checkout Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) \u2014 FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
       "owning_role": "slide-image-creator",
       "produces_artifact": "design/checkout-design.png",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -960,8 +960,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -975,15 +975,15 @@
     {
       "id": "P-U-DESIGN-RENDER-VSL",
       "order": 4.41,
-      "name": "Upsell VSL Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
+      "name": "Upsell VSL Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) \u2014 FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
       "owning_role": "slide-image-creator",
       "produces_artifact": "design/vsl-design.png",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1008,11 +1008,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_design_brief",
-        "label": "typography/design brief — per-slide creative art direction"
+        "label": "typography/design brief \u2014 per-slide creative art direction"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1027,7 +1027,7 @@
     {
       "id": "P-TYPO-QC",
       "order": 4.6,
-      "name": "Typography QC — sequenced AFTER Design (O1; independent reviewer)",
+      "name": "Typography QC \u2014 sequenced AFTER Design (O1; independent reviewer)",
       "owning_role": "qc-specialist-typography-presentations",
       "sop_refs": [
         "qc-specialist-typography-presentations-sops.md"
@@ -1043,8 +1043,8 @@
         "label": "typography QC report (gate Phase Typography-QC, average >= 8.5, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1058,7 +1058,7 @@
     {
       "id": "P4-PROMPT",
       "order": 4.7,
-      "name": "Prompt Authoring — each slide prompt to the 9,000-char standard",
+      "name": "Prompt Authoring \u2014 each slide prompt to the 9,000-char standard",
       "owning_role": "prompt-author-presentations",
       "fanout": {
         "by": "slide",
@@ -1077,11 +1077,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_rich_prompts",
-        "label": "rich per-slide prompt — every slide has a >=9,000-char prompt in working/prompts/ (rendered VERBATIM)"
+        "label": "rich per-slide prompt \u2014 every slide has a >=9,000-char prompt in working/prompts/ (rendered VERBATIM)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1097,7 +1097,7 @@
     {
       "id": "P-PROMPT-QC",
       "order": 4.8,
-      "name": "Prompt QC — sequenced AFTER Prompt-Authoring (O1; independent reviewer)",
+      "name": "Prompt QC \u2014 sequenced AFTER Prompt-Authoring (O1; independent reviewer)",
       "owning_role": "qc-specialist-prompt-presentations",
       "fanout": {
         "by": "slide",
@@ -1116,8 +1116,8 @@
         "label": "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1131,7 +1131,7 @@
     {
       "id": "P-STYLE-PREVIEW",
       "order": 4.85,
-      "name": "Approved 3-Style Preview (9 samples → owner gateway sign-off, before full render)",
+      "name": "Approved 3-Style Preview (9 samples \u2192 owner gateway sign-off, before full render)",
       "owning_role": "slide-image-creator",
       "sop_refs": [
         "slide-image-creator-sops.md"
@@ -1147,8 +1147,8 @@
         "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1178,8 +1178,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1205,14 +1205,14 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "human"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 45,
+      "heartbeat_minutes": 20,
       "consumes": [
         "working/style-preview/style_samples_manifest.json"
       ]
@@ -1220,7 +1220,7 @@
     {
       "id": "P4-RENDER",
       "order": 4.9,
-      "name": "Deterministic Render (build_deck.py — this script)",
+      "name": "Deterministic Render (build_deck.py \u2014 this script)",
       "owning_role": "slide-image-creator",
       "sop_refs": [
         "slide-image-creator-sops.md"
@@ -1247,8 +1247,8 @@
         ]
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
       "heartbeat_minutes": 60,
@@ -1266,7 +1266,7 @@
     {
       "id": "P-IMAGE-QC",
       "order": 4.95,
-      "name": "Image QC — sequenced AFTER Render (O1; independent multimodal reviewer)",
+      "name": "Image QC \u2014 sequenced AFTER Render (O1; independent multimodal reviewer)",
       "owning_role": "qc-specialist-image-presentations",
       "fanout": {
         "by": "slide",
@@ -1289,12 +1289,12 @@
         {
           "required": true,
           "checker": "_chk_salience_apex",
-          "label": "most vivid by the end — the OFFER/PROMISE-APEX slide is the single most vivid rendered slide (von Restorff deterministic backstop reusing AF-VISUAL-VARIETY pixel data; AF-NO-SALIENCE-APEX). DEFERS pre-render / without doctrine."
+          "label": "most vivid by the end \u2014 the OFFER/PROMISE-APEX slide is the single most vivid rendered slide (von Restorff deterministic backstop reusing AF-VISUAL-VARIETY pixel data; AF-NO-SALIENCE-APEX). DEFERS pre-render / without doctrine."
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1315,8 +1315,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1338,8 +1338,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1361,8 +1361,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1387,8 +1387,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1409,8 +1409,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1434,8 +1434,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1468,8 +1468,8 @@
         "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1502,8 +1502,8 @@
         ]
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1527,8 +1527,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1552,8 +1552,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1586,8 +1586,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1613,15 +1613,15 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/build_infographic.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 30,
+      "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/infographic-prompt.txt"
       ]
@@ -1645,11 +1645,11 @@
       "preflight": {
         "required": false,
         "checker": "_chk_speech_length",
-        "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
+        "label": "speech length \u2014 presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1678,8 +1678,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1706,8 +1706,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1732,8 +1732,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1742,7 +1742,7 @@
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 15,
       "notes": [
-        "REVISED 2026-09-01 (SMOKE-1): original cmd chained two scripts with && — the engine's executor runs argv without a shell, so && was a literal token and the phase always exited 2. Replaced with scripts/speech_pdf_chain.py (same steps, no shell)."
+        "REVISED 2026-09-01 (SMOKE-1): original cmd chained two scripts with && \u2014 the engine's executor runs argv without a shell, so && was a literal token and the phase always exited 2. Replaced with scripts/speech_pdf_chain.py (same steps, no shell)."
       ],
       "consumes": [
         "working/deliverables/PRESENTERS-SPEECH.md",
@@ -1753,7 +1753,7 @@
     {
       "id": "P-SPEECH-QC",
       "order": 8.6,
-      "name": "Speech QC — sequenced AFTER Speech (O1; independent reviewer; conditional)",
+      "name": "Speech QC \u2014 sequenced AFTER Speech (O1; independent reviewer; conditional)",
       "owning_role": "qc-specialist-speech-presentations",
       "sop_refs": [
         "qc-specialist-speech-presentations-sops.md"
@@ -1768,8 +1768,8 @@
         "label": "speech QC report (gate Phase Speech-QC, average >= 8.5, independent-reviewer provenance; defers when speech QC absent)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1783,7 +1783,7 @@
     {
       "id": "P-QC-AGGREGATE",
       "order": 8.65,
-      "name": "Final QC Aggregation — combines the six domain QC reports (Copy/Typography/Prompt/Image/Priority-Shift/Speech) into working/qc/final_qc_report.json, sequenced AFTER every domain QC phase; verifies independent-reviewer + anti-bypass provenance via qc_generator_guard.py before computing the combined score",
+      "name": "Final QC Aggregation \u2014 combines the six domain QC reports (Copy/Typography/Prompt/Image/Priority-Shift/Speech) into working/qc/final_qc_report.json, sequenced AFTER every domain QC phase; verifies independent-reviewer + anti-bypass provenance via qc_generator_guard.py before computing the combined score",
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md"
@@ -1792,8 +1792,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1813,7 +1813,7 @@
     {
       "id": "P9.5-NOTES-SYNC",
       "order": 8.7,
-      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "name": "Notes-Pane Sync \u2014 reorder notes assembly to AFTER the speech is finalized",
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -1824,8 +1824,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1852,8 +1852,8 @@
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie gpt-image-2 design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1882,8 +1882,8 @@
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-SALES-BUILD -- intake/upsell-questions.json want_sales_checkout covers BOTH pages with one client answer). sales_checkout_builder.py has NO --mode flag and NO separate checkout-only entry point: P-U-SALES-BUILD's single invocation already writes checkout.html alongside sales.html. This phase re-invokes the SAME script with --skip-design (documented: 'reuse already-downloaded hero renders ... without a fresh kie.ai run -- copy + HTML + plan + receipt-check only', so it never re-spends kie.ai money) purely to give the checkout page its own tracked gate/AF code and step-count entry, per the P-U-CHECKOUT-* id family intake/upsell-questions.json promises. DEFERS identically to P-U-SALES-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-SALES-BUILD (order 8.75).",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1911,8 +1911,8 @@
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py by both C1 and, independently, C5's SOP audit): P-U-FORM-CHECKOUT has NO dedicated implementation anywhere yet -- upsell-questions.json names it as its own id family distinct from P-U-CHECKOUT-*, but no script wires the checkout page's payment/lead-capture FORM fields as a separate build step; there is no working/upsell/checkout_form.json and no design note beyond SALES-CHECKOUT-BUILDER-SOP.md SS4's proposal. This phase currently re-invokes sales_checkout_builder.py with --skip-design (no kie.ai spend) as an interim placeholder that re-verifies the SAME build_receipt.json P-U-SALES-BUILD produced, so the phase/gate/step-count entry the intake app already promised the client exists and is DEFERS-correct -- it does not yet independently prove a payment/lead form was wired. A follow-up unit must implement the real form/payment-field wiring (see SALES-CHECKOUT-BUILDER-SOP.md SS4 'THE CHECKOUT FORM') and update this phase's executor + AF-U-FORM-CHECKOUT check accordingly. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76). MERGE-NOTE 2026-09-01: merge/apicur-train's parallel DESIGN-OPUS proposal for this id (order 5.5, Skill-44 SKILL44_WIDGET seam, ecosystem/checkout-form.json) was superseded by this wired 8.77 placeholder entry; nothing consumed the 5.5 design (verified 2026-09-01 full-repo grep).",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1934,8 +1934,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -1961,8 +1961,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -1994,8 +1994,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -2023,8 +2023,8 @@
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_vsl_page, default NO -- a VSL page requires the video to exist). DEFERS (resolve_vsl_gate exits 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'. A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.VSL_PAGE_DECLINED_REASON, verbatim, non-empty) and gates the phase OUT entirely. VIDEO DEPENDENCY: order 8.93 is deliberately AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -2050,8 +2050,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -2082,8 +2082,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -2106,8 +2106,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "agent"
@@ -2123,7 +2123,7 @@
     {
       "id": "P-BUNDLE-GATE",
       "order": 9.95,
-      "name": "Bundle-Completeness Gate (terminal; run_postflight_gate body via bundle_gate.py — exit 5 naming any missing/under-threshold deliverable)",
+      "name": "Bundle-Completeness Gate (terminal; run_postflight_gate body via bundle_gate.py \u2014 exit 5 naming any missing/under-threshold deliverable)",
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -2134,8 +2134,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "executor": {
         "kind": "script",
@@ -2199,7 +2199,7 @@
       "stage": "-0.5/1Q",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "research pack contains fewer than MIN_CITED_SOURCES (8) distinct http(s) URLs, OR slide copy contains factual/statistical claim markers with zero cited URLs in the research pack — the self-asserted research_complete:true flag is ignored; real citations are required",
+      "trigger": "research pack contains fewer than MIN_CITED_SOURCES (8) distinct http(s) URLs, OR slide copy contains factual/statistical claim markers with zero cited URLs in the research pack \u2014 the self-asserted research_complete:true flag is ignored; real citations are required",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_research_cited",
       "secondary_py_symbols": [
@@ -2221,7 +2221,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "postflight completeness gate — one or more required deliverables missing or below size threshold",
+      "trigger": "postflight completeness gate \u2014 one or more required deliverables missing or below size threshold",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
     },
@@ -2230,7 +2230,7 @@
       "stage": "Postflight/Bundle",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) — one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
+      "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) \u2014 one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
       "enforced_by": "fix_bundle_complete",
       "py_symbol": null,
       "check_script": "scripts/fix_bundle_complete.py::check_bundle_complete",
@@ -2294,7 +2294,7 @@
       "stage": "8.7",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the final .pptx ships with empty notes panes on content slides (per-slide speaker notes not injected) — fixed by reordering notes assembly to P9.5-NOTES-SYNC (AFTER the speech is finalized and QC-passed), then re-verified here at postflight",
+      "trigger": "the final .pptx ships with empty notes panes on content slides (per-slide speaker notes not injected) \u2014 fixed by reordering notes assembly to P9.5-NOTES-SYNC (AFTER the speech is finalized and QC-passed), then re-verified here at postflight",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_notes_pane"
     },
@@ -2303,7 +2303,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "delivery interlock — the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
+      "trigger": "delivery interlock \u2014 the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
@@ -2447,7 +2447,7 @@
       "stage": "5/6",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "placeholder on render — cross-listed audience-facing alias of AF-PLACEHOLDER",
+      "trigger": "placeholder on render \u2014 cross-listed audience-facing alias of AF-PLACEHOLDER",
       "enforced_by": "qc_check",
       "py_symbol": null
     },
@@ -2650,7 +2650,7 @@
       "stage": "1Q",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Phase-1Q copy QC report was self-graded / builder-graded — it lacks an independent-reviewer provenance block (qc_independence: graded_by + independent:true naming a QC specialist who is NOT build_deck.py / self / builder / author / the deck-copy author), is marked self_graded:true, sets independent:false, or names a reviewer equal to the recorded builder",
+      "trigger": "Phase-1Q copy QC report was self-graded / builder-graded \u2014 it lacks an independent-reviewer provenance block (qc_independence: graded_by + independent:true naming a QC specialist who is NOT build_deck.py / self / builder / author / the deck-copy author), is marked self_graded:true, sets independent:false, or names a reviewer equal to the recorded builder",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_copy_qc",
       "secondary_py_symbols": [
@@ -2677,7 +2677,7 @@
       "stage": "QC",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a phase-skip approval record (phase_skip_approvals.json) or owner_skip_approval token names one of the four QC phases (copy / prompt / typography / shift) — QC phases are STRUCTURALLY UNSKIPPABLE (FIX-2, Error 2); no owner record can waive a QC phase. The skip is refused and the QC phase stays required.",
+      "trigger": "a phase-skip approval record (phase_skip_approvals.json) or owner_skip_approval token names one of the four QC phases (copy / prompt / typography / shift) \u2014 QC phases are STRUCTURALLY UNSKIPPABLE (FIX-2, Error 2); no owner record can waive a QC phase. The skip is refused and the QC phase stays required.",
       "enforced_by": "build_deck",
       "py_symbol": "UNSKIPPABLE_QC_PHASES"
     },
@@ -2752,7 +2752,7 @@
       "stage": "0a/4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "output slide count is below target_talk_minutes x 1.3 (the low end of the verified 1.3-1.5 slides/min pacing band); e.g. a 30-minute talk on 10 slides (floor 39) AUTO-FAILS — it is a reading session, not a paced deck. DEFERS to AF-SLIDE-COUNT-EXACT when the client stated an explicit requested count (the pacing floor must never force MORE slides than the client asked for).",
+      "trigger": "output slide count is below target_talk_minutes x 1.3 (the low end of the verified 1.3-1.5 slides/min pacing band); e.g. a 30-minute talk on 10 slides (floor 39) AUTO-FAILS \u2014 it is a reading session, not a paced deck. DEFERS to AF-SLIDE-COUNT-EXACT when the client stated an explicit requested count (the pacing floor must never force MORE slides than the client asked for).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_slide_count_floor",
       "secondary_py_symbols": [
@@ -2764,7 +2764,7 @@
       "stage": "0a/4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the client stated an EXPLICIT requested slide count (intake.json.client_requested_slide_count) but the built deck does not have EXACTLY that many slides (too few OR too many). The client's requested slide count is honored EXACTLY (25->25, 50->50, 500->500); it is NEVER floored up, capped down, defaulted, or substituted by the duration/content/source heuristic, and the client is NEVER asked to accept a different number. AUTHORITATIVE over the duration pacing floor (AF-SLIDE-COUNT-FLOOR) and the Mode-B anti-compression coverage floor (AF-COVERAGE-1) — both DEFER when an explicit requested count is present. DEFERS (passes) only when no explicit count was stated, or the output count is unreadable (the rich-prompt/coverage gates own a missing slides.json).",
+      "trigger": "the client stated an EXPLICIT requested slide count (intake.json.client_requested_slide_count) but the built deck does not have EXACTLY that many slides (too few OR too many). The client's requested slide count is honored EXACTLY (25->25, 50->50, 500->500); it is NEVER floored up, capped down, defaulted, or substituted by the duration/content/source heuristic, and the client is NEVER asked to accept a different number. AUTHORITATIVE over the duration pacing floor (AF-SLIDE-COUNT-FLOOR) and the Mode-B anti-compression coverage floor (AF-COVERAGE-1) \u2014 both DEFER when an explicit requested count is present. DEFERS (passes) only when no explicit count was stated, or the output count is unreadable (the rich-prompt/coverage gates own a missing slides.json).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_slide_count_exact",
       "secondary_py_symbols": [
@@ -2776,7 +2776,7 @@
       "stage": "3",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "CONDITIONAL on intake.json.pitch_included:true. When the client said the deck ends with an offer/pitch, the converting arc (arc_allocation.json) carries no offer-ladder beats (value-stack -> anchor -> price drops) OR no re-pitch beat after the FINAL price — a teaching dump that never asks for the sale, or asks once and never recovers a 'no'. DEFERS for pitchless decks (pitch_included:false), which are first-class and governed by AF-PITCH-LEAK; defers when the flag is unset (AF-PITCH-FLAG-UNSET owns that).",
+      "trigger": "CONDITIONAL on intake.json.pitch_included:true. When the client said the deck ends with an offer/pitch, the converting arc (arc_allocation.json) carries no offer-ladder beats (value-stack -> anchor -> price drops) OR no re-pitch beat after the FINAL price \u2014 a teaching dump that never asks for the sale, or asks once and never recovers a 'no'. DEFERS for pitchless decks (pitch_included:false), which are first-class and governed by AF-PITCH-LEAK; defers when the flag is unset (AF-PITCH-FLAG-UNSET owns that).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_pitch",
       "secondary_py_symbols": [
@@ -2788,7 +2788,7 @@
       "stage": "F/4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "template-sameness or cliche — a single layout archetype covers more than ARCHETYPE_DOMINANCE_CEILING (60%) of the slides (forty copies of one layout), OR slide copy leans on a banned worn-out cliche phrase",
+      "trigger": "template-sameness or cliche \u2014 a single layout archetype covers more than ARCHETYPE_DOMINANCE_CEILING (60%) of the slides (forty copies of one layout), OR slide copy leans on a banned worn-out cliche phrase",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_creativity",
       "secondary_py_symbols": [
@@ -2801,7 +2801,7 @@
       "stage": "Image-QC/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "all-dark monotone deck — >= 90% of rendered slides share one dominant background hue bucket OR >= 90% of slides are below the dark-luma threshold (0.30) with < 10% light/break slides. Rejects decks with no visual variety (e.g. all-navy 35-slide deck) that are illegible at projection distance and violate WCAG AA contrast.",
+      "trigger": "all-dark monotone deck \u2014 >= 90% of rendered slides share one dominant background hue bucket OR >= 90% of slides are below the dark-luma threshold (0.30) with < 10% light/break slides. Rejects decks with no visual variety (e.g. all-navy 35-slide deck) that are illegible at projection distance and violate WCAG AA contrast.",
       "enforced_by": "build_deck",
       "py_symbol": "check_visual_variety",
       "secondary_py_symbols": [
@@ -2816,7 +2816,7 @@
       "stage": "Postflight/Closeout",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "dev artifacts in the delivered bundle — any *.py, *.sh, ~$* Office lock/temp file, tasks/ directory, task_*.json, or numbered intermediate .md working draft present in the final bundle directory. The client package must contain ONLY the canonical deliverable files.",
+      "trigger": "dev artifacts in the delivered bundle \u2014 any *.py, *.sh, ~$* Office lock/temp file, tasks/ directory, task_*.json, or numbered intermediate .md working draft present in the final bundle directory. The client package must contain ONLY the canonical deliverable files.",
       "enforced_by": "build_deck",
       "py_symbol": "check_package_cleanliness",
       "secondary_py_symbols": [
@@ -2841,7 +2841,7 @@
       "stage": "Image-QC/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "off-brand palette — any rendered slide whose dominant palette colors ALL fall outside the declared brand token set (intake.json brand.palette) by more than BRAND_CONSISTENCY_TOLERANCE (80 RGB units). Complements AF-VISUAL-VARIETY: variety rejects sameness; brand rejects off-token outliers (e.g. fantasy-castle render against navy/gold token set). Defers when no brand palette is declared.",
+      "trigger": "off-brand palette \u2014 any rendered slide whose dominant palette colors ALL fall outside the declared brand token set (intake.json brand.palette) by more than BRAND_CONSISTENCY_TOLERANCE (80 RGB units). Complements AF-VISUAL-VARIETY: variety rejects sameness; brand rejects off-token outliers (e.g. fantasy-castle render against navy/gold token set). Defers when no brand palette is declared.",
       "enforced_by": "build_deck",
       "py_symbol": "check_brand_consistency",
       "secondary_py_symbols": [
@@ -2940,7 +2940,7 @@
       "stage": "Intake",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. intake.json does not record asset_intake_question_asked:true. Every signature run MUST ask the client the one asset-intake question (anything they already have — photos, a logo, brand colors, a rough/old deck, slides, or concepts) and record that it was asked. Defers (passes) only when intake.json is absent (AF-SLIDE-COUNT-FLOOR / _chk_intake own intake absence).",
+      "trigger": "Decision 1C. intake.json does not record asset_intake_question_asked:true. Every signature run MUST ask the client the one asset-intake question (anything they already have \u2014 photos, a logo, brand colors, a rough/old deck, slides, or concepts) and record that it was asked. Defers (passes) only when intake.json is absent (AF-SLIDE-COUNT-FLOOR / _chk_intake own intake absence).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_asset_question",
       "secondary_py_symbols": [
@@ -2952,7 +2952,7 @@
       "stage": "Intake/2",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
+      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream \u2014 it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_assets_manifest",
       "secondary_py_symbols": [
@@ -2973,7 +2973,7 @@
       "stage": "Intake/1",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 2A. intake.json.pitch_included is missing or not a boolean at intake. The deck must capture an EXPLICIT yes/no (yes = the presentation ends with an offer/pitch; no = a teaching/content-only presentation). It is non-defaultable — a deck must never silently inherit 'has a pitch'. Defers when intake.json is absent (_chk_intake owns that).",
+      "trigger": "Decision 2A. intake.json.pitch_included is missing or not a boolean at intake. The deck must capture an EXPLICIT yes/no (yes = the presentation ends with an offer/pitch; no = a teaching/content-only presentation). It is non-defaultable \u2014 a deck must never silently inherit 'has a pitch'. Defers when intake.json is absent (_chk_intake owns that).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_pitch_flag",
       "secondary_py_symbols": [
@@ -3025,7 +3025,7 @@
       "stage": "Runner",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 3C. The deterministic signature runner (scripts/run_signature_deck.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/process_manifest.json AND its produces_artifact present — and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering a phase is structurally impossible except via an explicit, logged owner authorization (not a free flag).",
+      "trigger": "Decision 3C. The deterministic signature runner (scripts/run_signature_deck.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/process_manifest.json AND its produces_artifact present \u2014 and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering a phase is structurally impossible except via an explicit, logged owner authorization (not a free flag).",
       "enforced_by": "runner",
       "py_symbol": null
     },
@@ -3034,7 +3034,7 @@
       "stage": "5/6/Postflight",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
+      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation \u2014 never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_no_overlay",
       "secondary_py_symbols": [
@@ -3047,7 +3047,7 @@
       "stage": "4/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai gpt-image-2 path. Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck \u2014 or any slide PNG \u2014 was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai gpt-image-2 path. Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -3059,7 +3059,7 @@
       "stage": "4/5/6",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai gpt-image-2 — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai gpt-image-2 \u2014 the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES \u2014 the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -3071,7 +3071,7 @@
       "stage": "Image-QC/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The image-QC pass is PIXEL-BLIND — it graded a self-typed number, reasoned from filenames / prompt text, or omitted a real multimodal vision read of one or more rendered slide PNGs. Fires when working/qc/image_qc_report.json is absent / empty, declares no vision engine, or lacks a per-slide vision/OCR observation for EVERY rendered slide (a non-null vision_api_response provenance record in the retired vision_qc_log.json satisfies nothing — that file is written and read by nothing; the artifact the gate opens is the image-QC report), when the image-QC report excludes any slide index from scope (e.g. 'slides 1/24/49 out of scope'), or when the report blesses a native typography-overlay model (a typography_overlay_readiness criterion or an 'overlay the headlines' recommendation). Every slide — cover, section dividers, and pure-typography / hook slides included — is in scope under the same battery. The build_deck-enforced, deterministic vision-provenance successor of the closeout-only AF-NO-VISION-QC; complements _chk_image_qc (report gate) and check_image_qc_present (freshness gate). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The image-QC pass is PIXEL-BLIND \u2014 it graded a self-typed number, reasoned from filenames / prompt text, or omitted a real multimodal vision read of one or more rendered slide PNGs. Fires when working/qc/image_qc_report.json is absent / empty, declares no vision engine, or lacks a per-slide vision/OCR observation for EVERY rendered slide (a non-null vision_api_response provenance record in the retired vision_qc_log.json satisfies nothing \u2014 that file is written and read by nothing; the artifact the gate opens is the image-QC report), when the image-QC report excludes any slide index from scope (e.g. 'slides 1/24/49 out of scope'), or when the report blesses a native typography-overlay model (a typography_overlay_readiness criterion or an 'overlay the headlines' recommendation). Every slide \u2014 cover, section dividers, and pure-typography / hook slides included \u2014 is in scope under the same battery. The build_deck-enforced, deterministic vision-provenance successor of the closeout-only AF-NO-VISION-QC; complements _chk_image_qc (report gate) and check_image_qc_present (freshness gate). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_image_qc_vision",
       "secondary_py_symbols": [
@@ -3083,7 +3083,7 @@
       "stage": "Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render — NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch — waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
+      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render \u2014 NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch \u2014 waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
       "enforced_by": "build_deck",
       "py_symbol": "check_ocr_readback"
     },
@@ -3092,7 +3092,7 @@
       "stage": "Delivery-Boundary",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). A deck artifact (.pptx/.pdf) was presented for delivery with NO governed run dir (no working/checkpoints/process_manifest.json resolvable from the artifact or an explicit run dir) — i.e. it was hand-built OUTSIDE run_signature_deck.py and never passed through the governed pipeline. This FLIPS the legacy delivery_gate no-run-dir DEFER to a fail-closed REJECT at the delivery boundary, so a deck produced by python-pptx/Pillow/Google-Slides with no governed run dir cannot ship. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NO-RUN-DIR) in process_manifest.json or an owner_skip_approval.json adjacent to the artifact — never silently, never by an agent's own choice.",
+      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). A deck artifact (.pptx/.pdf) was presented for delivery with NO governed run dir (no working/checkpoints/process_manifest.json resolvable from the artifact or an explicit run dir) \u2014 i.e. it was hand-built OUTSIDE run_signature_deck.py and never passed through the governed pipeline. This FLIPS the legacy delivery_gate no-run-dir DEFER to a fail-closed REJECT at the delivery boundary, so a deck produced by python-pptx/Pillow/Google-Slides with no governed run dir cannot ship. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NO-RUN-DIR) in process_manifest.json or an owner_skip_approval.json adjacent to the artifact \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "delivery_gate",
       "py_symbol": null,
       "check_script": "scripts/delivery_gate.py::gate_delivered_artifact",
@@ -3103,7 +3103,7 @@
       "stage": "Delivery-Boundary",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). The SHIPPED artifact cannot be proven to be a kie.ai-baked image-only deck: the process manifest's render record maps no slide (or one or more slides) to a REAL kie.ai taskId (taskId in {None, '', native, placeholder, none, null, n/a}), OR the delivered .pptx/.pdf is unreadable / not a real OOXML/PDF deck (a renamed-image or hand-built decoy). A canonical deck records a kie taskId per slide; absent that, the images were not kie-rendered. Inspects the artifact itself with stdlib only (no python-pptx dependency) so it bites on any box. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NOT-KIE-RENDERED) — never silently.",
+      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). The SHIPPED artifact cannot be proven to be a kie.ai-baked image-only deck: the process manifest's render record maps no slide (or one or more slides) to a REAL kie.ai taskId (taskId in {None, '', native, placeholder, none, null, n/a}), OR the delivered .pptx/.pdf is unreadable / not a real OOXML/PDF deck (a renamed-image or hand-built decoy). A canonical deck records a kie taskId per slide; absent that, the images were not kie-rendered. Inspects the artifact itself with stdlib only (no python-pptx dependency) so it bites on any box. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NOT-KIE-RENDERED) \u2014 never silently.",
       "enforced_by": "delivery_gate",
       "py_symbol": null,
       "check_script": "scripts/delivery_gate.py::gate_delivered_artifact",
@@ -3114,7 +3114,7 @@
       "stage": "Typography/Design",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the DECLARED type system (working/typography/type_layout_system.md) sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme opt-in), declares a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 when dark opt-in) — OR the type_layout_system.md tokens are missing once a design system exists (the R8 phantom-artifact hole). DETERMINISTIC numeric rejector that COMPLEMENTS the vision-opinion AF-TYPOGRAPHY-QC; it rejects a sub-floor declared design BEFORE any render.",
+      "trigger": "the DECLARED type system (working/typography/type_layout_system.md) sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme opt-in), declares a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 when dark opt-in) \u2014 OR the type_layout_system.md tokens are missing once a design system exists (the R8 phantom-artifact hole). DETERMINISTIC numeric rejector that COMPLEMENTS the vision-opinion AF-TYPOGRAPHY-QC; it rejects a sub-floor declared design BEFORE any render.",
       "enforced_by": "build_deck",
       "py_symbol": "check_font_floor",
       "secondary_py_symbols": [
@@ -3142,7 +3142,7 @@
       "stage": "4/Render",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "research that the weave gate (AF-RESEARCH-WEAVE) validated in slides_copy.md never reached the RENDER COPY. The renderer consumes slides.json copy[], NOT slides_copy.md — so a deck whose slides.json was authored without the mapped anchors (or had a hand-fed slides.json substituted) renders with NO research even though the markdown passed. _chk_research_reaches_render reads the ACTUAL positional slides.json (H3) and FAILS when a research-mapped non-exempt slide's anchor token is absent from that slide's render copy[]. Defers pre-map/pre-copy (owned upstream); hook/pure-type/transition exempt slides excluded.",
+      "trigger": "research that the weave gate (AF-RESEARCH-WEAVE) validated in slides_copy.md never reached the RENDER COPY. The renderer consumes slides.json copy[], NOT slides_copy.md \u2014 so a deck whose slides.json was authored without the mapped anchors (or had a hand-fed slides.json substituted) renders with NO research even though the markdown passed. _chk_research_reaches_render reads the ACTUAL positional slides.json (H3) and FAILS when a research-mapped non-exempt slide's anchor token is absent from that slide's render copy[]. Defers pre-map/pre-copy (owned upstream); hook/pure-type/transition exempt slides excluded.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_research_reaches_render",
       "secondary_py_symbols": [
@@ -3238,7 +3238,7 @@
       "stage": "Prompt",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide prompt fails the density gate: missing a hex color code, missing a type-size spec (e.g. '36pt', '48px'), missing a composition/zone token (e.g. 'left third', 'upper right', 'center zone'), or carrying fewer than PROMPT_MIN_DISTINCT_WORDS (220) distinct words — the word-count rubber-stamp is replaced by a true distinct-word density check.",
+      "trigger": "a slide prompt fails the density gate: missing a hex color code, missing a type-size spec (e.g. '36pt', '48px'), missing a composition/zone token (e.g. 'left third', 'upper right', 'center zone'), or carrying fewer than PROMPT_MIN_DISTINCT_WORDS (220) distinct words \u2014 the word-count rubber-stamp is replaced by a true distinct-word density check.",
       "enforced_by": "build_deck",
       "py_symbol": "_prompt_density_problems",
       "secondary_py_symbols": [
@@ -3252,7 +3252,7 @@
       "stage": "Prompt",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide's rich prompt does not contain verbatim copies of the non-trivial copy strings (headline, subhead, CTA) from slides.json — the prompt is the canonical render surface and must bake copy into the model instruction, not rely on post-render overlay.",
+      "trigger": "a slide's rich prompt does not contain verbatim copies of the non-trivial copy strings (headline, subhead, CTA) from slides.json \u2014 the prompt is the canonical render surface and must bake copy into the model instruction, not rely on post-render overlay.",
       "enforced_by": "build_deck",
       "py_symbol": "_verbatim_copy_problems",
       "secondary_py_symbols": [
@@ -3278,7 +3278,7 @@
       "stage": "Prompt/Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a people-bearing prompt is missing facial expression/emotion tokens AND/OR lighting direction tokens (key/fill/rim) — the build_deck.py intelligence-engine mechanical check wired to check_intelligence_engines_prompt(). Complements the qc_check-owned AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING with a hard build-gate enforcement.",
+      "trigger": "a people-bearing prompt is missing facial expression/emotion tokens AND/OR lighting direction tokens (key/fill/rim) \u2014 the build_deck.py intelligence-engine mechanical check wired to check_intelligence_engines_prompt(). Complements the qc_check-owned AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING with a hard build-gate enforcement.",
       "enforced_by": "build_deck",
       "py_symbol": "check_intelligence_engines_prompt"
     },
@@ -3287,7 +3287,7 @@
       "stage": "1Q/Prompt-QC",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "hook cadence out of the sanctioned banded range: the refrain appears on >4 slides (over-stamp / wallpaper) OR on 2+ consecutive slides OR in every footer-band OR on fewer than the 3 named anchor beats — i.e. BOTH the ceiling and the floor are enforced. A deck that wallpapers the hook everywhere AND a deck that barely plants it fail AF-C2.",
+      "trigger": "hook cadence out of the sanctioned banded range: the refrain appears on >4 slides (over-stamp / wallpaper) OR on 2+ consecutive slides OR in every footer-band OR on fewer than the 3 named anchor beats \u2014 i.e. BOTH the ceiling and the floor are enforced. A deck that wallpapers the hook everywhere AND a deck that barely plants it fail AF-C2.",
       "enforced_by": "qc_check",
       "py_symbol": null
     },
@@ -3296,7 +3296,7 @@
       "stage": "1Q/Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "generic copy-engine deficiency emitted when an intelligence-engine problem dict carries no specific code — a catch-all that names the failing dimension; the exact failure is in the detail field of the routeback work order",
+      "trigger": "generic copy-engine deficiency emitted when an intelligence-engine problem dict carries no specific code \u2014 a catch-all that names the failing dimension; the exact failure is in the detail field of the routeback work order",
       "enforced_by": "build_deck",
       "py_symbol": "_engine_problem_to_def"
     },
@@ -3305,7 +3305,7 @@
       "stage": "Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide prompt clears the 9,000-char LENGTH floor but scores below the EXCELLENCE floor (0.55) on the QUALITY dimension: negative-block coverage, spelling-lock richness, anatomy/world-grounding, brand HEX + type SIZE + composition, and lexical richness — two independent floors (length AND excellence); boilerplate-padded prompts route back",
+      "trigger": "a slide prompt clears the 9,000-char LENGTH floor but scores below the EXCELLENCE floor (0.55) on the QUALITY dimension: negative-block coverage, spelling-lock richness, anatomy/world-grounding, brand HEX + type SIZE + composition, and lexical richness \u2014 two independent floors (length AND excellence); boilerplate-padded prompts route back",
       "enforced_by": "build_deck",
       "py_symbol": "check_prompt_excellence"
     },
@@ -3323,7 +3323,7 @@
       "stage": "Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "the sacred refrain is baked into a FOOTER or bottom recurring band on a slide's image prompt — the hook is never a footer stamp; footer placement on ANY slide fails this slide regardless of deck-level hook count",
+      "trigger": "the sacred refrain is baked into a FOOTER or bottom recurring band on a slide's image prompt \u2014 the hook is never a footer stamp; footer placement on ANY slide fails this slide regardless of deck-level hook count",
       "enforced_by": "build_deck",
       "py_symbol": "check_intelligence_engines_prompt"
     },
@@ -3332,7 +3332,7 @@
       "stage": "Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "generic intelligence-engine failure when a perceptual-engine problem dict carries no specific AF code — emitted by check_prompt_qc_deterministic as a catch-all for unclassified engine token absence; the exact failing engine dimension is in the routeback work order",
+      "trigger": "generic intelligence-engine failure when a perceptual-engine problem dict carries no specific AF code \u2014 emitted by check_prompt_qc_deterministic as a catch-all for unclassified engine token absence; the exact failing engine dimension is in the routeback work order",
       "enforced_by": "build_deck",
       "py_symbol": "_engine_name_for_code"
     },
@@ -3341,7 +3341,7 @@
       "stage": "1Q/COPY-QC",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the WRITING-half intelligence engines (Story villain-before-hero, Emotional felt-stakes-before-offer, Hook copy refrain, Recap, narrative harmony) auto-failed at COPY-QC — the deck must fix the SCRIPT before any image prompt is authored (shift-left); no prompts are authored until this gate passes",
+      "trigger": "the WRITING-half intelligence engines (Story villain-before-hero, Emotional felt-stakes-before-offer, Hook copy refrain, Recap, narrative harmony) auto-failed at COPY-QC \u2014 the deck must fix the SCRIPT before any image prompt is authored (shift-left); no prompts are authored until this gate passes",
       "enforced_by": "build_deck",
       "py_symbol": "check_intelligence_engines_copy"
     },
@@ -3350,7 +3350,7 @@
       "stage": "1Q",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "generic One-Big-Idea violation catch-all — the OBI dimension name for any unclassified multi-idea defect; the specific violation is carried by the AF-OBI-1..6 sub-codes; this base code labels the dimension in routeback work orders",
+      "trigger": "generic One-Big-Idea violation catch-all \u2014 the OBI dimension name for any unclassified multi-idea defect; the specific violation is carried by the AF-OBI-1..6 sub-codes; this base code labels the dimension in routeback work orders",
       "enforced_by": "qc_check",
       "py_symbol": null
     },
@@ -3359,7 +3359,7 @@
       "stage": "Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide's rich prompt is missing one or more of the REQUIRED_STRUCTURAL_BLOCKS — the mandatory sections (ARCHETYPE, NEGATIVE BLOCK, 'Do not ' imperatives) that the build preflight asserts are present; a prompt that lacks a block cannot render correctly and routes back",
+      "trigger": "a slide's rich prompt is missing one or more of the REQUIRED_STRUCTURAL_BLOCKS \u2014 the mandatory sections (ARCHETYPE, NEGATIVE BLOCK, 'Do not ' imperatives) that the build preflight asserts are present; a prompt that lacks a block cannot render correctly and routes back",
       "enforced_by": "build_deck",
       "py_symbol": "REQUIRED_STRUCTURAL_BLOCKS"
     },
@@ -3368,7 +3368,7 @@
       "stage": "1Q/COPY-QC",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the persuasion (offer) sub-engine checker (pitch_engines_check.py) could not be imported, exposes no check_copy entry point, raised an exception, or the offer sub-engines auto-failed at COPY-QC (PROMISE must precede PRICE; value cadence, cost-of-inaction, branded method, guarantee specificity, and time-to-result must all pass before any prompt is authored — shift-left)",
+      "trigger": "the persuasion (offer) sub-engine checker (pitch_engines_check.py) could not be imported, exposes no check_copy entry point, raised an exception, or the offer sub-engines auto-failed at COPY-QC (PROMISE must precede PRICE; value cadence, cost-of-inaction, branded method, guarantee specificity, and time-to-result must all pass before any prompt is authored \u2014 shift-left)",
       "enforced_by": "build_deck",
       "py_symbol": "check_pitch_engines"
     },
@@ -3416,7 +3416,7 @@
       "stage": "0.2/4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Move 1 is missing — the audience's current priority stack is not NAMED before the first value/price ladder beat in slides_copy.md (P142). DEFERS without doctrine/copy/ladder.",
+      "trigger": "Move 1 is missing \u2014 the audience's current priority stack is not NAMED before the first value/price ladder beat in slides_copy.md (P142). DEFERS without doctrine/copy/ladder.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_priority_stack",
       "secondary_py_symbols": [
@@ -3429,7 +3429,7 @@
       "stage": "4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Move 7 is missing — after the PRICE beat the deck does not demand the re-rank / decision out loud (P148). DEFERS for pitchless/unset decks (the re-rank is a sale mechanic).",
+      "trigger": "Move 7 is missing \u2014 after the PRICE beat the deck does not demand the re-rank / decision out loud (P148). DEFERS for pitchless/unset decks (the re-rank is a sale mechanic).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rerank",
       "secondary_py_symbols": [
@@ -3442,7 +3442,7 @@
       "stage": "4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Move 8 is missing — the CTA carries no time-bound trigger (deadline / scarcity window / act-now) (P149). DEFERS for pitchless/unset decks.",
+      "trigger": "Move 8 is missing \u2014 the CTA carries no time-bound trigger (deadline / scarcity window / act-now) (P149). DEFERS for pitchless/unset decks.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_trigger",
       "secondary_py_symbols": [
@@ -3467,7 +3467,7 @@
       "stage": "3",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the arc fails the peak-end rule — arc_allocation.json declares no PEAK/APEX/WOW beat, or no deliberate ending/recap/CTA beat. A flat ending is remembered as flat (P49). DEFERS without doctrine/arc.",
+      "trigger": "the arc fails the peak-end rule \u2014 arc_allocation.json declares no PEAK/APEX/WOW beat, or no deliberate ending/recap/CTA beat. A flat ending is remembered as flat (P49). DEFERS without doctrine/arc.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_peak_end",
       "secondary_py_symbols": [
@@ -3480,7 +3480,7 @@
       "stage": "4.95",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the OFFER/PROMISE-APEX slide (the arc's PEAK/APEX beat) is not the single most VIVID rendered slide in the deck (von Restorff — the most vivid thing is what the mind prioritizes). Deterministic backstop to the human style sign-off: vividness proxy = 1 - dominant-colour fraction, reusing the AF-VISUAL-VARIETY pixel data; fires only on a clear inversion (apex < 0.85 x deck peak). DEFERS pre-render / without doctrine / when the apex slide cannot be identified (P48/P155).",
+      "trigger": "the OFFER/PROMISE-APEX slide (the arc's PEAK/APEX beat) is not the single most VIVID rendered slide in the deck (von Restorff \u2014 the most vivid thing is what the mind prioritizes). Deterministic backstop to the human style sign-off: vividness proxy = 1 - dominant-colour fraction, reusing the AF-VISUAL-VARIETY pixel data; fires only on a clear inversion (apex < 0.85 x deck peak). DEFERS pre-render / without doctrine / when the apex slide cannot be identified (P48/P155).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_salience_apex",
       "secondary_py_symbols": [
@@ -3494,7 +3494,7 @@
       "stage": "-1",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a content-converter deck INVENTS rather than EXTRACTS — a numeric/statistical figure in the converter's source brief does not trace back to the raw source text (P167d). DEFERS unless BOTH the source brief AND the raw source text are present on disk.",
+      "trigger": "a content-converter deck INVENTS rather than EXTRACTS \u2014 a numeric/statistical figure in the converter's source brief does not trace back to the raw source text (P167d). DEFERS unless BOTH the source brief AND the raw source text are present on disk.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_converter_no_invent",
       "secondary_py_symbols": [
@@ -3590,7 +3590,7 @@
       "stage": "4.85",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the 9 style samples (3 variants x 3 representative slides) were rendered but the OWNER has not picked a winning variant (working/copy/style_preview_choice.json must carry owner_approved:true + chosen_variant). The full deck must NOT render until the owner picks A/B/C via their OWN gateway — never the operator chat. Waivable only by a logged owner_skip_approval. DEFERS until the style samples manifest exists.",
+      "trigger": "the 9 style samples (3 variants x 3 representative slides) were rendered but the OWNER has not picked a winning variant (working/copy/style_preview_choice.json must carry owner_approved:true + chosen_variant). The full deck must NOT render until the owner picks A/B/C via their OWN gateway \u2014 never the operator chat. Waivable only by a logged owner_skip_approval. DEFERS until the style samples manifest exists.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_style_preview",
       "secondary_py_symbols": [
@@ -3604,7 +3604,7 @@
       "stage": "4.85/4.9",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the winning style variant's 3 representative slide renders are not LOCKED + reused (style_preview_choice.locked_renders missing or its files absent) — kie would be charged twice for the already-approved samples. The approved samples must be carried forward, never re-dispatched. Waivable only by a logged owner_skip_approval.",
+      "trigger": "the winning style variant's 3 representative slide renders are not LOCKED + reused (style_preview_choice.locked_renders missing or its files absent) \u2014 kie would be charged twice for the already-approved samples. The approved samples must be carried forward, never re-dispatched. Waivable only by a logged owner_skip_approval.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_style_preview",
       "secondary_py_symbols": [
@@ -3616,7 +3616,7 @@
       "stage": "7.5",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the framework's 14-item pre-output ship gate failed at P-SHIFT-QC (order 7.5 — the ONLY phase where copy + design + rendered images coexist). Item 0 is the North Star: the #1 job is to hold attention. The composite reuses the shift-left gates (mode / priority-stack / shift / rerank / trigger / hedge / peak-end / salience-apex) plus the spec's one-promise/one-wow/one-demonstration anchors, writes working/qc/priority_shift_report.json (one row per item + evidence), and refuses ship until all 14 PASS. Waivable only by a logged owner_skip_approval. DEFERS pre-render / without doctrine (P161/P155).",
+      "trigger": "the framework's 14-item pre-output ship gate failed at P-SHIFT-QC (order 7.5 \u2014 the ONLY phase where copy + design + rendered images coexist). Item 0 is the North Star: the #1 job is to hold attention. The composite reuses the shift-left gates (mode / priority-stack / shift / rerank / trigger / hedge / peak-end / salience-apex) plus the spec's one-promise/one-wow/one-demonstration anchors, writes working/qc/priority_shift_report.json (one row per item + evidence), and refuses ship until all 14 PASS. Waivable only by a logged owner_skip_approval. DEFERS pre-render / without doctrine (P161/P155).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_priority_shift_ledger",
       "secondary_py_symbols": [
@@ -3629,7 +3629,7 @@
       "stage": "1Q",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "HOLE-A (register the live-but-unregistered code). The writing arc is out of canonical order — an out-of-order present pair across HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP. Emitted by intelligence_engines_check.check_narrative_harmony (called inside check_copy) and consumed by run_signature_deck.py, but absent from the registry until now. Registered via all four SOP-SLIDE-06 lockstep steps.",
+      "trigger": "HOLE-A (register the live-but-unregistered code). The writing arc is out of canonical order \u2014 an out-of-order present pair across HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP. Emitted by intelligence_engines_check.check_narrative_harmony (called inside check_copy) and consumed by run_signature_deck.py, but absent from the registry until now. Registered via all four SOP-SLIDE-06 lockstep steps.",
       "enforced_by": "qc_check",
       "py_symbol": null,
       "check_script": "scripts/intelligence_engines_check.py::check_copy",
@@ -3684,7 +3684,7 @@
       "stage": "1Q/COPY-QC",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "HOLE-B (emitted-but-unregistered, now registered). A PRICE/ladder beat appears before any PROMISE beat — the promise must precede the price (price only matters in the absence of value). Emitted by pitch_engines_check.chk_promise_before_price via check_copy.",
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). A PRICE/ladder beat appears before any PROMISE beat \u2014 the promise must precede the price (price only matters in the absence of value). Emitted by pitch_engines_check.chk_promise_before_price via check_copy.",
       "enforced_by": "qc_check",
       "py_symbol": null,
       "check_script": "scripts/pitch_engines_check.py::check_copy",
@@ -3740,7 +3740,7 @@
       "stage": "Phase0",
       "level": "deck",
       "in_ruleset": true,
-      "trigger": "FIX-14 (Error 8 / D-8): MC_API_TOKEN / MISSION_CONTROL_URL are present in a store but NOT members of OPENCLAW_SERVICE_MANAGED_ENV_KEYS — a regeneration will DROP them (the exact 15-day regression). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh to add the labels to the managed list, restart the gateway, re-run.",
+      "trigger": "FIX-14 (Error 8 / D-8): MC_API_TOKEN / MISSION_CONTROL_URL are present in a store but NOT members of OPENCLAW_SERVICE_MANAGED_ENV_KEYS \u2014 a regeneration will DROP them (the exact 15-day regression). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh to add the labels to the managed list, restart the gateway, re-run.",
       "enforced_by": "runner",
       "py_symbol": null
     },
@@ -3758,7 +3758,7 @@
       "stage": "Phase0",
       "level": "deck",
       "in_ruleset": true,
-      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) — path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
+      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) \u2014 path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
       "enforced_by": "runner",
       "py_symbol": null
     },
@@ -3776,7 +3776,7 @@
       "stage": "Process",
       "level": "deck",
       "in_ruleset": true,
-      "trigger": "closeout where CC registration could NOT be verified: cc_register_attempted=True but no cc_task_id (transport/partial failure or outage), or a cc_task_id whose cc_registration HMAC receipt does not verify (hand-written or stale — not provably produced by a real cc_board.ingest_deck_task round-trip). Could-not-verify NEVER counts as verified; the gate fails with an explicit honest message (fail-soft: a genuine Command Center outage is surfaced truthfully, never read as verified)",
+      "trigger": "closeout where CC registration could NOT be verified: cc_register_attempted=True but no cc_task_id (transport/partial failure or outage), or a cc_task_id whose cc_registration HMAC receipt does not verify (hand-written or stale \u2014 not provably produced by a real cc_board.ingest_deck_task round-trip). Could-not-verify NEVER counts as verified; the gate fails with an explicit honest message (fail-soft: a genuine Command Center outage is surfaced truthfully, never read as verified)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_cc_registered"
     },
@@ -3938,7 +3938,7 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box — measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions",
+      "trigger": "a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box \u2014 measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_text_fits",
       "secondary_py_symbols": [
@@ -3951,7 +3951,7 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list — measured over OCR output from the baked PNG, never over the prompt",
+      "trigger": "a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list \u2014 measured over OCR output from the baked PNG, never over the prompt",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_spelling"
     },
@@ -3960,7 +3960,7 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) — measured, not read off the design brief",
+      "trigger": "the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) \u2014 measured, not read off the design brief",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_type_size",
       "secondary_py_symbols": [
@@ -3974,7 +3974,7 @@
       "stage": "Phase-0",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched — an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
+      "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched \u2014 an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
       "enforced_by": "build_deck",
       "py_symbol": "_preflight_kie_auth",
       "secondary_py_symbols": [
@@ -3986,7 +3986,7 @@
       "stage": "1Q/QC",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending — a phase can never be skipped on an approval that is not a real owner message.",
+      "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending \u2014 a phase can never be skipped on an approval that is not a real owner message.",
       "enforced_by": "build_deck",
       "py_symbol": "check_phase_preconditions",
       "secondary_py_symbols": [
@@ -3998,7 +3998,7 @@
       "stage": "8.54",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the webinarized speech audio (P9-SPEECH-WEBINAR-INTRO, Feature L2-H) is absent, zero-byte, not a valid MP3, or was produced WITHOUT the welcome / chat-Q&A / crescendo-close framing: the executor must pass --webinar-intro-outro to synthesize_full_speech.py so the ~5-min WELCOME section is spoken before Slide 1 and the ~2-min CHAT Q&A + ~3-min CRESCENDO CLOSE after the last slide (generated by webinar_intro_outro.py, Fish-tagged). A plain deck-only audio renamed as the webinar audio is a defect — the webinar host framing is the point of the deliverable. Enforced by the P9-SPEECH-WEBINAR-INTRO executor cmd (manifest-authored --webinar-intro-outro) and the runner-side substance verifier (phase_verifiers._verify_webinarized_speech) at attestation time.",
+      "trigger": "the webinarized speech audio (P9-SPEECH-WEBINAR-INTRO, Feature L2-H) is absent, zero-byte, not a valid MP3, or was produced WITHOUT the welcome / chat-Q&A / crescendo-close framing: the executor must pass --webinar-intro-outro to synthesize_full_speech.py so the ~5-min WELCOME section is spoken before Slide 1 and the ~2-min CHAT Q&A + ~3-min CRESCENDO CLOSE after the last slide (generated by webinar_intro_outro.py, Fish-tagged). A plain deck-only audio renamed as the webinar audio is a defect \u2014 the webinar host framing is the point of the deliverable. Enforced by the P9-SPEECH-WEBINAR-INTRO executor cmd (manifest-authored --webinar-intro-outro) and the runner-side substance verifier (phase_verifiers._verify_webinarized_speech) at attestation time.",
       "enforced_by": "synthesize_full_speech",
       "py_symbol": null,
       "check_script": "scripts/phase_verifiers.py::_verify_webinarized_speech"
@@ -4076,7 +4076,7 @@
       "stage": "Image-QC/closeout",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "the image-grounding-steward verdict is missing or failing at closeout: working/qc/image_qc_report.json carries NO image_grounding sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, or its reviewed_by is a builder/self identity — the run PARKS for human vision review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_image_grounding at P-IMAGE-QC) as a closeout gate so an un-parked deck proves its grounding verdict exists; the companion scene-grounding/anchor-parity findings ride the same verifier as AF-IMAGE-GROUNDING. Defers (pass) only when the run has no prompts/anchors to judge and no report at all — at closeout, after render+assembly, the park is binding.",
+      "trigger": "the image-grounding-steward verdict is missing or failing at closeout: working/qc/image_qc_report.json carries NO image_grounding sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, or its reviewed_by is a builder/self identity \u2014 the run PARKS for human vision review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_image_grounding at P-IMAGE-QC) as a closeout gate so an un-parked deck proves its grounding verdict exists; the companion scene-grounding/anchor-parity findings ride the same verifier as AF-IMAGE-GROUNDING. Defers (pass) only when the run has no prompts/anchors to judge and no report at all \u2014 at closeout, after render+assembly, the park is binding.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
     },
@@ -4085,7 +4085,7 @@
       "stage": "Prompt-QC/closeout",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "the representation-casting-director verdict is missing or failing at closeout: working/qc/prompt_qc_report.json carries NO representation_casting sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, its reviewed_by is a builder/self identity, or the verifier's cast-parity checks fail (an invented demographic default, or a declared representation_mix no people-bearing prompt honors — the verifier's own AF-CASTING / AF-CASTING-MIX-PARITY findings) — the run PARKS for human review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_representation_casting at P-PROMPT-QC) as a closeout gate. Defers (pass) only when the client declined representation_mix capture and no forbidden default is present.",
+      "trigger": "the representation-casting-director verdict is missing or failing at closeout: working/qc/prompt_qc_report.json carries NO representation_casting sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, its reviewed_by is a builder/self identity, or the verifier's cast-parity checks fail (an invented demographic default, or a declared representation_mix no people-bearing prompt honors \u2014 the verifier's own AF-CASTING / AF-CASTING-MIX-PARITY findings) \u2014 the run PARKS for human review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_representation_casting at P-PROMPT-QC) as a closeout gate. Defers (pass) only when the client declined representation_mix capture and no forbidden default is present.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
     },
@@ -4094,7 +4094,7 @@
       "stage": "Image-QC/Render",
       "level": "slide",
       "in_ruleset": false,
-      "trigger": "a people/scene-bearing render prompt carries NO client-specific research anchor (research_map.json assigns no anchored item to the slide, or the assigned anchor token appears in neither the prompt nor the render copy — observed-render parity fails), or the prompt/copy contains an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS). Generic scenes are ungrounded; pure abstract/typography slides are exempt. Emitted by the image-grounding-steward sub-verifier at P-IMAGE-QC.",
+      "trigger": "a people/scene-bearing render prompt carries NO client-specific research anchor (research_map.json assigns no anchored item to the slide, or the assigned anchor token appears in neither the prompt nor the render copy \u2014 observed-render parity fails), or the prompt/copy contains an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS). Generic scenes are ungrounded; pure abstract/typography slides are exempt. Emitted by the image-grounding-steward sub-verifier at P-IMAGE-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
     },
@@ -4112,7 +4112,7 @@
       "stage": "Prompt-QC",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "the representation mix declares cast targets but NO people-bearing prompt names any declared cast target — the prompt-level casting does not reflect the client's captured mix. Emitted by the representation-casting-director sub-verifier (phase_verifiers._verify_representation_casting) at P-PROMPT-QC.",
+      "trigger": "the representation mix declares cast targets but NO people-bearing prompt names any declared cast target \u2014 the prompt-level casting does not reflect the client's captured mix. Emitted by the representation-casting-director sub-verifier (phase_verifiers._verify_representation_casting) at P-PROMPT-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
     },
@@ -4121,7 +4121,7 @@
       "stage": "Postflight/TELEPROMPTER-PUBLISH",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the teleprompter bundle was never published, its publish ledger (working/deliverables/teleprompter_publish.json) records a non-published status or a non-HTTP-200 verification, and the fleet Cloudflare credential pair is present — the deck must not ship with an unhosted teleprompter. WARN-only (defers) when the credential pair (CLOUDFLARE_ZHW_APPS_API_TOKEN / CLOUDFLARE_ZHW_ACCOUNT_ID) is absent from every store: a warned_no_credentials ledger row is written, the AF-TELEPROMPTER-UNPUBLISHED warning lands in process_manifest.json.warnings, and the deck is flagged NOT client-deliverable (build_deck._check_teleprompter_published, FIX 5 / M7).",
+      "trigger": "the teleprompter bundle was never published, its publish ledger (working/deliverables/teleprompter_publish.json) records a non-published status or a non-HTTP-200 verification, and the fleet Cloudflare credential pair is present \u2014 the deck must not ship with an unhosted teleprompter. WARN-only (defers) when the credential pair (CLOUDFLARE_ZHW_APPS_API_TOKEN / CLOUDFLARE_ZHW_ACCOUNT_ID) is absent from every store: a warned_no_credentials ledger row is written, the AF-TELEPROMPTER-UNPUBLISHED warning lands in process_manifest.json.warnings, and the deck is flagged NOT client-deliverable (build_deck._check_teleprompter_published, FIX 5 / M7).",
       "enforced_by": "postflight_bundle_gate",
       "py_symbol": "_check_teleprompter_published"
     },
@@ -4130,7 +4130,7 @@
       "stage": "9",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Fix 97 hard pacing band: |speech words/target_wpm - target_talk_minutes| / target_talk_minutes exceeds SPEECH_PACING_BAND — the speech does not fill the requested duration at the run's own target pace (target_wpm read case-insensitively from intake.json; SPEECH_TARGET_WPM=140 is only the default). Leg 2 of the speech-length gate; leg 1 (AF-SPEECH-SHORT) unchanged.",
+      "trigger": "Fix 97 hard pacing band: |speech words/target_wpm - target_talk_minutes| / target_talk_minutes exceeds SPEECH_PACING_BAND \u2014 the speech does not fill the requested duration at the run's own target pace (target_wpm read case-insensitively from intake.json; SPEECH_TARGET_WPM=140 is only the default). Leg 2 of the speech-length gate; leg 1 (AF-SPEECH-SHORT) unchanged.",
       "enforced_by": "build_deck",
       "py_symbol": "_speech_pacing_deviation",
       "secondary_py_symbols": [
@@ -4142,7 +4142,7 @@
       "stage": "P8-ASSEMBLE",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "closeout reached with NO rendered slide PNGs in renders/ — the render phase produced zero artifacts; an empty deck must never assemble.",
+      "trigger": "closeout reached with NO rendered slide PNGs in renders/ \u2014 the render phase produced zero artifacts; an empty deck must never assemble.",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
     },
@@ -4151,7 +4151,7 @@
       "stage": "P8-ASSEMBLE",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "RENDER GATE FAILED — the render phase did not complete its full slide output set before assembly; partial decks are refused.",
+      "trigger": "RENDER GATE FAILED \u2014 the render phase did not complete its full slide output set before assembly; partial decks are refused.",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
     }
@@ -4319,7 +4319,7 @@
     {
       "id": "infographic-checklist",
       "owns_phase": null,
-      "description": "FIX 112 infographic-checklist QC unit: independent reviewer of the rendered infographic (working/deliverables/infographic.png + working/checkpoints/infographic_status.json). Writes working/qc/infographic_checklist_verdict.json — the verdict file P-STYLE-PREVIEW-era bundle table always named and nothing implemented."
+      "description": "FIX 112 infographic-checklist QC unit: independent reviewer of the rendered infographic (working/deliverables/infographic.png + working/checkpoints/infographic_status.json). Writes working/qc/infographic_checklist_verdict.json \u2014 the verdict file P-STYLE-PREVIEW-era bundle table always named and nothing implemented."
     }
   ]
 }
