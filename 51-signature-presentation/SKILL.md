@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: 2.0.0
+version: v2.0.0
 ---
 
 # Signature Presentation (Skill 51)
@@ -157,46 +157,6 @@ logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-meth
 as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
 `deck_type == "signature_presentation"`.
 
-## Invoking the skill — host adapters (FIX 69)
-
-The department is packaged as an **invocable skill** (`skill.json`, entry
-`bin/presentation`) so any host reaches the ONE sanctioned build path from ANY
-working directory — never a hand-rolled driver, never a direct `build_deck.py`
-call (`AF-CANONICAL-RENDER-BYPASS`):
-
-```
-bash <repo>/51-signature-presentation/bin/presentation --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
-bash <repo>/51-signature-presentation/bin/presentation --run-dir <RUN_DIR> --resume
-```
-
-`bin/presentation` (cwd-independent, self-locating): resolves the dept scripts
-dir via `oc_paths` (Fix 68 platform chain — `/data/.openclaw` for docker/vps,
-then `~/.openclaw`), sources the client's secrets env with `set -a` (never a
-value printed, never operator keys), **refuses if the Presentations department
-is not materialized** (exit 61), and `exec`s the canonical door with
-pass-through args and its exit code (2/3/4/5/6/7/8/9 propagate; the wrapper
-adds only 60=secrets missing, 61=dept unmaterialized).
-
-Per-host adapters (each names `bin/presentation` and nothing else):
-
-| Host | Adapter file | Invocation note |
-|---|---|---|
-| Claude Code | `adapters/claude-code/SKILL.md` | any cwd; discover via this skill |
-| claude-nine | `adapters/claude-nine/SKILL.md` | same wrapper, operator's own session |
-| Codex | `adapters/codex/AGENTS.md` | run unsandboxed (network + secrets env needed) |
-| docker exec | — | `docker exec -u node openclaw /data/.openclaw/skills/51-signature-presentation/bin/presentation --run-dir …` |
-
-**Notify file-queue fallback:** when `openclaw` is absent from PATH AND
-`PRESENTATION_NOTIFY_CMD` is unset, `bin/presentation` exports
-`PRESENTATION_NOTIFY_CMD=<skill>/bin/presentation-outbox-queue` — a file-queue
-transport that appends each notify row (one JSON object per line) to
-`<run-dir>/working/outbox.jsonl`, so the fail-closed notify gate
-(`notify_preflight.py`, exit 8 when transportless) PASSES on hosts with no
-gateway. The host session then relays and drains the queued rows. An explicit
-`PRESENTATION_NOTIFY_CMD` always wins; `openclaw` present means the gateway
-transport is untouched. The wrapper also exports `PRESENTATION_RUN_DIR` for
-the queue helper so rows land in the right run dir regardless of cwd.
-
 ## Integration surface (wired by `wire-signature-presentation.sh`)
 
 - `PIPELINE-MANIFEST.json` — three SP phases + `AF-SP-*` autofail rows + a manifest_version bump.
@@ -249,33 +209,6 @@ and wires via the department lockstep. The three legs:
   The intake-conversation guard (`tests/unit/presentation-intake-conversation.test.sh`) is
   self-tested separately in CI. The scanner remains a QC Specialist / Healer duty out-of-band
   (SOP 9.1 / SOP 9.13) **in addition to** being a build gate, not instead of it.
-
-## Host adapters (FIX 69 — invoke from any host, any cwd)
-
-The skill packages an invocable entry so any host shell can build a deck
-without touching the methodology or the render path:
-
-- `skill.json` — the package manifest (`entry: "bin/presentation"`, platforms
-  mac/vps/docker, adapter map).
-- `bin/presentation` — the ONE invocable entry. It resolves the skill dir from
-  its own path (works from an unrelated cwd, from `claude-nine`, from Codex,
-  and from `docker exec -u node openclaw /data/.openclaw/skills/
-  51-signature-presentation/bin/presentation --run-dir ...`), sources the
-  platform secrets env with `set -a` (FIX 72), REFUSES if the Presentations
-  department is not materialized, and execs the canonical door
-  (`presentation-canonical-entry.sh`) with pass-through args and exit code.
-- **Notify adapter**: when the `openclaw` gateway CLI is absent from PATH and
-  `PRESENTATION_NOTIFY_CMD` is unset, `bin/presentation` exports the
-  file-queue transport (`bin/presentation-outbox-queue`), which appends the
-  notify rows to `<run-dir>/working/outbox.jsonl` — so the fail-closed notify
-  gate (`presentation_job.notify_preflight`) passes and the HOST relays the
-  queued rows. `PRESENTATION_NOTIFY_CMD` stays the override.
-- `adapters/claude-code/SKILL.md`, `adapters/claude-nine/SKILL.md`,
-  `adapters/codex/AGENTS.md` — ~20-line host instructions, each naming
-  `bin/presentation` and nothing else as the build command.
-
-The adapter layer changes HOW a build is invoked, never WHAT the fail-closed
-gates enforce — there is still exactly one sanctioned render path.
 
 ## Prerequisites
 
