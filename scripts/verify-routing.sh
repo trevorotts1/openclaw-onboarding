@@ -106,10 +106,41 @@ WORKSPACE_DIR=""
 
 WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 - <<'PYEOF'
 import json, os, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 try:
     cfg = json.load(open(os.environ['OC_JSON']))
-    for ag in cfg.get('agents', {}).get('list', []) or []:
-        if isinstance(ag, dict) and ag.get('id') == 'main':
+    _agents, _OC_IDS = _oc_agents(cfg)
+    for ag in _agents:
+        if (_OC_IDS.get(id(ag)) or ag.get('id')) == 'main':
             ws = ag.get('workspace')
             if ws:
                 print(os.path.expanduser(ws))
@@ -188,6 +219,36 @@ fi
 _info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
 G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 from pathlib import Path
 
 # Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
@@ -203,23 +264,23 @@ def _is_router(ag):
         return True
     if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
         return True
-    return ag.get("id") in ROUTER_IDS
+    return _oc_id(ag, "") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents_list = cfg.get("agents", {}).get("list", []) or []
+    agents_list, _OC_IDS = _oc_agents(cfg)
 
     # Priority 1: agent with default:true
     default_agent = None
     for ag in agents_list:
-        if isinstance(ag, dict) and ag.get("default") is True:
+        if ag.get("default") is True:
             default_agent = ag
             break
 
     # Priority 2: fall back to id=="main" (legacy convention)
     if default_agent is None:
         for ag in agents_list:
-            if isinstance(ag, dict) and ag.get("id") == "main":
+            if _oc_id(ag) == "main":
                 default_agent = ag
                 break
 
@@ -227,7 +288,7 @@ try:
         print("NO_DEFAULT_AGENT")
         sys.exit(0)
 
-    agent_id = default_agent.get("id", "<unknown>")
+    agent_id = _oc_id(default_agent)
 
     # PA-DEFAULT topology: the default agent is a hands-on personal assistant /
     # owner agent, NOT a router. skills:[] (the pptx router-deny) is intentionally
@@ -430,6 +491,36 @@ fi
 
 G7_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 from pathlib import Path
 
 # NOTE: the REQUIRED_DENY production-tool set was REMOVED 2026-08-05 (gate
@@ -445,11 +536,11 @@ def _is_router(ag):
         return True
     if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
         return True
-    return ag.get("id") in ROUTER_IDS
+    return _oc_id(ag, "") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents = cfg.get("agents", {}).get("list", []) or []
+    agents, _OC_IDS = _oc_agents(cfg)
 
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent
     # (default:true FIRST, then id=="main", then a known CEO id). If that default
@@ -459,20 +550,20 @@ try:
     # what the v13.1.3 over-broadening caused downstream).
     ceo = None
     for ag in agents:
-        if isinstance(ag, dict) and ag.get("default") is True:
+        if ag.get("default") is True:
             ceo = ag; break
     if ceo is None:
         for ag in agents:
-            if isinstance(ag, dict) and ag.get("id") == "main":
+            if _oc_id(ag) == "main":
                 ceo = ag; break
     if ceo is None:
         for ag in agents:
-            if isinstance(ag, dict) and ag.get("id") in CEO_IDS:
+            if _oc_id(ag) in CEO_IDS:
                 ceo = ag; break
     if ceo is None:
         print("NO_CEO_AGENT"); sys.exit(0)
 
-    cid = ceo.get("id", "<unknown>")
+    cid = _oc_id(ceo)
 
     # PA-DEFAULT topology → no CEO gate expected on the default agent. But if a
     # SEPARATE router agent ALSO exists on the box (e.g. a dept-ceo alongside a PA
@@ -482,7 +573,7 @@ try:
         if router is None:
             print(f"PA_DEFAULT_OK:{cid}"); sys.exit(0)
         ceo = router
-        cid = ceo.get("id", "<unknown>")
+        cid = _oc_id(ceo)
 
     tools = ceo.get("tools")
     if not isinstance(tools, dict):
