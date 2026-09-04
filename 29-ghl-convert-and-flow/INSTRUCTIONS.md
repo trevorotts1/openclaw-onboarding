@@ -22,7 +22,21 @@ When a user asks a GHL question, classify it into a domain:
 
 | User Says | Domain | Reference File |
 |-----------|--------|---------------|
-| "add a contact", "find a contact", "update contact tags" | contacts | `references/contacts.md` |
+| "add a contact", "save a contact", "find a contact", "update contact tags" | contacts | `references/contacts.md` |
+
+### Contact write decision table — read BEFORE building any contact call
+
+Generic "add/save this person" is NOT a create. Route first:
+
+| Intent | Meaning | Call |
+|---|---|---|
+| Generic add/save ("add this person", "save this contact") | Record may or may not exist | POST /contacts/upsert with match keys (email and/or phone). Omit createNewIfDuplicateAllowed unless the owner explicitly asked for a new record. |
+| Explicit new record ("create a NEW contact", "add them as a new contact even if duplicate") | New row even if a match exists | POST /contacts/ (or upsert with createNewIfDuplicateAllowed=true on explicit request only) |
+| Known contactId ("update contact <id>") | Exact record targeted | GET /contacts/{contactId} first, then PUT only the supplied fields |
+
+Upsert matching is resolved by HighLevel's Upsert endpoint according to the
+Location-level Allow Duplicate Contact configuration and its configured matching
+priority — never claim it "matches on email/phone" as a fixed rule.
 | "send an SMS", "reply to message", "get conversations" | conversations | `references/conversations.md` |
 | "move deal to closed", "create opportunity", "check pipeline" | opportunities | `references/opportunities.md` |
 | "book appointment", "get available slots", "cancel booking" | calendars | `references/calendars.md` |
@@ -43,8 +57,16 @@ Read ONLY the specific reference file. Do not read the 430K master.
 read references/contacts.md
 ```
 
+Safe non-destructive payload rule: send ONLY supplied fields plus locationId
+(and match keys for upsert). Never send empty/null/blank values — they can wipe
+data. Never put a `tags` array in an upsert or update body (use the dedicated tag
+endpoint). Verify after every write: capture the returned contact ID, GET the
+record, confirm intended fields. A succeeded write with a failed read-back is
+reported "WRITE SUCCEEDED — VERIFICATION INCOMPLETE" — never re-fire the write
+to "check" (it can duplicate).
+
 Scan the file for:
-- The endpoint that matches the task (e.g., `POST /contacts/` to create a contact)
+- The endpoint that matches the task (e.g., `POST /contacts/upsert` for a generic add/save; `POST /contacts/` ONLY for an explicitly requested new record)
 - Required scopes (must be enabled in your Private Integration)
 - Required headers (Authorization + Version always, others per endpoint)
 - Required path params (e.g., `{contactId}`)
@@ -58,21 +80,37 @@ Scan the file for:
 
 Take the cURL template from the reference file and substitute real values:
 
+Generic add/save — upsert (DEFAULT for "add/save this person"):
+
 ```bash
-# Template (from reference file)
-curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
+# Template (from reference file) — match keys + only the fields the owner gave
+curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
   -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
-  -d '{"firstName": "John", "lastName": "Smith", "locationId": "<locationId>"}'
+  -d '{"email": "john@example.com", "firstName": "John", "lastName": "Smith", "locationId": "<locationId>"}'
 
 # Substituted (ready to run)
+curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H 'Version: 2021-07-28' \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\": \"john@example.com\", \"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
+```
+
+Explicit new record — create (ONLY when the owner explicitly asked for a NEW
+record even if a match exists):
+
+```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
 ```
+
+Every write ends with a read-back: capture the returned contact ID, GET
+`/contacts/{contactId}`, confirm intended fields.
 
 Substitution rules:
 - `<PRIVATE_INTEGRATION_TOKEN>` becomes `$GOHIGHLEVEL_API_KEY`
@@ -94,8 +132,8 @@ RESPONSE=$(curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
-  --request POST 'https://services.leadconnectorhq.com/contacts/' \
-  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}")
+  --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
+  -d "{\"email\": \"john@example.com\", \"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}")
 
 echo "$RESPONSE" | python3 -m json.tool
 ```

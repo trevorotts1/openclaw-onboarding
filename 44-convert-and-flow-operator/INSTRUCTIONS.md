@@ -27,6 +27,20 @@ error. Also: never use `grep -P` on macOS (BSD grep has no -P); use `python3 -c`
 
 Full lookup routing table and all failure modes: `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md`.
 
+## Contact Write Routing (READ BEFORE any contact add/save/create/update)
+
+**Generic "add/save this person" → `caf contacts upsert`** (email and/or phone
+match keys, supplied fields only — never empty/null/blank values, never a tags
+array; tags merge afterwards via `caf contacts add-tag`). HighLevel's Upsert
+endpoint resolves create-vs-update per the Location-level Allow Duplicate
+Contact configuration and its matching priority. `--create-new-if-duplicate-allowed`
+travels ONLY on explicit new-record request. **Explicit "create a NEW contact"
+→ `caf contacts create`.** **Known contactId → `caf contacts update <id>`**
+(non-tag fields; `--tag` is refused destructive — PUT replaces the whole set).
+Every write ends with a read-back (`caf contacts get <id>`); a succeeded write
+with a failed read-back is "WRITE SUCCEEDED — VERIFICATION INCOMPLETE" — never
+re-fire the write to check.
+
 ---
 
 ## Step 0 — Model Check Pre-flight (READ BEFORE ANY BUILD OR MODIFY ACTION)

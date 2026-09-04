@@ -1,6 +1,6 @@
 ---
 name: zhc-public-records-scraper
-version: 1.3.1
+version: v2.0.0
 description: 4-tier public records lookup system — auto-detects and routes queries through cached results, free public APIs, paid data providers, and Playwright scraping as last resort. Enforces cost caps, rate limits, and compliance rules with a public-records-queries.jsonl audit trail.
 ---
 

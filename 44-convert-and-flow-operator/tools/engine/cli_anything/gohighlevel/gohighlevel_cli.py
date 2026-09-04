@@ -246,12 +246,19 @@ def contacts_create(ctx, email, phone, first_name, last_name, name, company_name
 @click.option("--company", "company_name", default=None, help="Company name")
 @click.option("--tag", "tags", multiple=True, help="Tags to MERGE in (repeatable, additive)")
 @click.option("--source", default=None, help="Contact source")
+@click.option("--create-new-if-duplicate-allowed", "create_new", is_flag=True, default=False,
+              help="EXPLICIT-ONLY: send createNewIfDuplicateAllowed=true. Use ONLY when the "
+                   "owner explicitly asked for a NEW record even if a duplicate match exists. "
+                   "Generic add/save MUST omit this (it defaults to false/omitted).")
 @click.pass_context
-def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name, tags, source):
-    """Create-or-update a contact by email/phone WITHOUT destroying existing tags.
+def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name, tags,
+                    source, create_new):
+    """Create-or-update a contact WITHOUT destroying existing data.
 
     SEND_INTEGRITY_CODE_GATES_V1 — the merge-safe replacement for
-    `contacts update --tag`. Matches on email/phone via POST /contacts/upsert.
+    `contacts update --tag`. HighLevel's Upsert endpoint resolves whether to
+    create or update according to the Location-level Allow Duplicate Contact
+    configuration and its configured matching priority.
     Tags are NEVER sent in the upsert body (an upsert `tags` array can replace the
     set); they are applied afterwards via POST /contacts/{id}/tags, which is
     strictly additive. No existing tag can be dropped by this command.
@@ -276,6 +283,10 @@ def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name
             body["companyName"] = company_name
         if source:
             body["source"] = source
+        # createNewIfDuplicateAllowed is FALSE-or-OMITTED for generic add/save;
+        # TRUE only travels when the owner explicitly requested a new record.
+        if create_new:
+            body["createNewIfDuplicateAllowed"] = True
         # NOTE: `tags` deliberately NOT placed in the upsert body — see docstring.
         data = api.post("/contacts/upsert", data=body)
         contact_id = None
@@ -290,7 +301,49 @@ def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name
                            err=True)
             else:
                 api.post("/contacts/%s/tags" % contact_id, data={"tags": list(tags)})
-        _output(ctx, data, "Contact Upserted (tags merged additively, none replaced)")
+        # VERIFY AFTER WRITE: read the record back and confirm the intended
+        # fields landed. A failed read NEVER re-POSTs — that could create a
+        # duplicate. The read is retried read-only (one retry); an unrecoverable
+        # read is reported accurately, not hidden.
+        intended = {k: v for k, v in body.items() if k != "locationId"}
+        verified = False
+        if contact_id:
+            read_back, read_err = None, None
+            for _attempt in range(2):
+                try:
+                    read_back = api.get("/contacts/%s" % contact_id)
+                    read_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001 — transient read, retry once
+                    read_err = exc
+            if read_back is None:
+                click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: POST /contacts/upsert "
+                           "succeeded but GET /contacts/%s failed (%s). The write is NOT "
+                           "confirmed. DO NOT re-run upsert blindly — read the record "
+                           "first (`caf contacts get %s`)."
+                           % (contact_id, read_err, contact_id), err=True)
+            else:
+                if isinstance(read_back, dict):
+                    seen = read_back.get("contact") if isinstance(
+                        read_back.get("contact"), dict) else read_back
+                else:
+                    seen = {}
+                missing = [k for k, v in intended.items() if seen.get(k) != v]
+                if missing:
+                    click.echo("WRITE SUCCEEDED — VERIFICATION MISMATCH: these intended "
+                               "fields were not observed on read-back: %s. Confirm the "
+                               "record before reporting done." % ", ".join(missing),
+                               err=True)
+                else:
+                    verified = True
+        else:
+            click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: upsert returned no "
+                       "contact id, so the record could not be read back. Confirm the "
+                       "record before reporting done.", err=True)
+        label = "Contact Upserted (tags merged additively, none replaced)"
+        if verified:
+            label += " + VERIFIED (fields read back from GHL)"
+        _output(ctx, data, label)
     except Exception as e:
         _handle_error(e)
 

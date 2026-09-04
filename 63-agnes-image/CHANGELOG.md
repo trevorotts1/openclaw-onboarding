@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.2.0] - 2026-08-26 - fix: prompt policy alignment, remove invented 25K cap, add models.json registry and validators
+## [2.0.0] - 2026-08-26 - fix: prompt policy alignment, remove invented 25K cap, add models.json registry and validators
 
 ### Why
 First-party documentation for Agnes Image 2.1 Flash (`apihub.agnes-ai.com`) does NOT publish a hard prompt character limit. Earlier revisions of Skill 63 erroneously asserted that "the API accepts up to 25,000 chars" and enforced a mandatory hard rejection below 5,000 and above 19,000 characters. That 25K figure belongs to KIE GPT Image 2 (owner-observed), not Agnes. Furthermore, Spec §12 and §14 mandate machine-readable capability registries (`models.json`), structured references (`references/`), and deterministic testable validator scripts (`scripts/`).
@@ -78,3 +78,7 @@ second run is byte-identical across AGENTS.md / TOOLS.md / MEMORY.md with no new
   value never printed).
 - Bundled `qc-agnes-image.sh` install QC that fails closed on a corrupted
   reference doc, plus `PREREQS.json` declaring Skills 01/02 and the credential.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

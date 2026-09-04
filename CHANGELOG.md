@@ -1,3 +1,36 @@
+## [v23.0.0]  -  2026-09-03  -  v23 major generation: all-skill major bump on top of GHL safe-upsert
+
+### Why
+
+PR #1011 (GHL contact upsert default) merged as 53b141ae9 and tagged v22.0.89. This release advances the repo to v23.0.0 and rolls every live skill to its next major generation so clients see one clean new generation with a matching tag, changelog entries, and version files.
+
+### What changed
+
+- All 63 live skills bumped to next major generation (skill-version.txt + CHANGELOG.md entries; SKILL.md frontmatter where present). No behavior change in this commit beyond version markers.
+- Repo version markers rolled to v23.0.0 (version, install.sh, update-skills.sh, README, DIRECT-TO-AGENT-UPDATE-MESSAGE, cc-compat, Skill 23 SKILL.md + skill-version.txt + role-library index).
+
+### Risk
+
+Low. Version-marker-only release on top of PR #1011, which passed all CI checks. Full QC re-run on merge.
+
+
+## [v22.0.89]  -  2026-09-03  -  GHL safe contact upsert default (PR #1011)
+
+### Why
+
+Generic contact add/save could silently wipe tags (PUT replaces the whole tag set) and create duplicates. This makes POST /contacts/upsert the default write path with explicit-only create, additive tags, and verify-after-write.
+
+### What changed
+
+- Skill 44 v1.3.20: contacts upsert default (canonical HighLevel matching language, explicit-only duplicate flag, GET read-back, 19-test suite, route gate).
+- Skill 29 v6.9.1, Skill 36 v1.4.4, Skill 05 v6.5.14, Skill 06 v22.0.89: matching write-routing docs.
+- Carries forward v1.3.19 send-integrity protections (WF-22 email-body fail-closed QC).
+
+### Risk
+
+Low. All CI checks passed on PR #1011 before merge.
+
+
 ## [v22.0.88]  -  2026-09-01  -  batch/unmerged-sweep-20260901: 49 unmerged branches + Phase C (FIX 17-29) + Phase D (FIX 30-39) presentation-dept integration
 
 ### Why

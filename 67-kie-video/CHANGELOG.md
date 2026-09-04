@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.1.1] - 2026-08-31 - fix: QC.md version expectation matches skill-version.txt after media-limits repack
+## [2.0.0] - 2026-08-31 - fix: QC.md version expectation matches skill-version.txt after media-limits repack
 
 - `QC.md` checklist no longer asserts `skill-version.txt` reads `v1.0.0` (it
   has been `v1.1.0` since the media-limits repack); the expectation is now
@@ -37,3 +37,7 @@ All notable changes to this skill are documented here.
 - Payload validator (`scripts/validate_payload.py`): endpoint matching (createTask vs dedicated), duration window checks, resolution enums, media reference limits, Runway 1080p 5s constraint, and auth_env validation.
 - References: `models.md` (golden limits matrix and routing guide), `prompt-policy.md` (17-part video prompt structure and compression examples), `api-patterns.md` (generic createTask/recordInfo, dedicated Runway/Veo APIs, webhook HMAC verification, and polling backoff), `qc.md` (multi-frame sampling: Frame 0, Midpoint, Final Frame, and 5-step controlled retry ladder).
 - Core documentation: `SKILL.md`, `INSTRUCTIONS.md`, `INSTALL.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `QC.md`, `PREREQS.json`, `skill-version.txt`, and idempotent `wire.sh`.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

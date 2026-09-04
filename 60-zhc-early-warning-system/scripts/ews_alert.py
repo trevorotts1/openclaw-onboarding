@@ -245,10 +245,43 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
         # operator route
         target = _first_env(_OPERATOR_TARGET_ENV)
         if not target:
-            # a send was warranted but no operator target is configured: send to NOBODY
-            # (a client chat is never a fallback). Flag it so the canary catches it.
-            led.record_event("S7", "P2", key_path="alert.operator_target", klass="alert",
-                             detail="an alert was warranted but no operator target is configured")
+            # a send was warranted but no operator target is configured: send to
+            # NOBODY (a client chat is never a fallback). Flag it so the canary
+            # catches it - but ONCE per dedup window, not once per finding per
+            # tick. Root cause of the 2026-08-21 alert-storm bug (27,841
+            # undeduped rows on one box, 49.9% of the whole ledger): this used
+            # to call record_event() with no dedup_key and never recorded a
+            # digest, so the outer per-finding dedup check above (line ~202)
+            # could never suppress a repeat - every finding, every tick, wrote
+            # a brand-new row forever. Fixed the same way every OTHER repeat
+            # condition in this function is throttled: check-then-record
+            # against the digests table before writing.
+            #
+            # Severity: P1, not P2. This condition disables EVERY alert this
+            # box's sentinel can raise, not just the one finding that happened
+            # to trigger this check - a total loss of the alerting path is at
+            # least as severe as any single finding it would have reported.
+            # P1 also means an unacked one older than 30 minutes gets picked
+            # up by escalate() and pushed to Rescue Rangers, which is the one
+            # path still capable of reaching a human when the operator target
+            # itself is the thing that's missing.
+            #
+            # Key: ONE fixed, condition-level dedup key (not the per-finding
+            # `dedup_key` computed above), so every distinct finding that hits
+            # this branch collapses onto the SAME recurring record instead of
+            # each minting its own. Re-surfaces once per dedup_window_hours
+            # (default 6h) for as long as it stays broken - never silenced,
+            # never appended forever.
+            no_target_key = "S7|no_operator_target"
+            if led.recent_digest(no_target_key, window) is None:
+                led.record_event("S7", "P1", key_path="alert.operator_target", klass="alert",
+                                 detail="an alert was warranted but no operator target is configured "
+                                        "(EWS_OPERATOR_CHAT / OPERATOR_TELEGRAM_CHAT_ID / "
+                                        "FOUNDER_TELEGRAM_CHAT_ID) - EVERY alert this box's sentinel "
+                                        "can raise is going to nobody",
+                                 dedup_key=no_target_key)
+                led.record_digest("no_operator_target", no_target_key,
+                                  payload="recorded once per dedup window while unresolved")
             return False
 
         # storm cap: count today's operator alert digests
@@ -457,12 +490,41 @@ def self_test():
         assert len(sent_log) == before + 1
         print("  storm-cap case: PASS (non-P1 defers past the cap; P1 bypasses the batch)")
 
-        # no operator target -> send to NOBODY (never a client fallback)
+        # no operator target -> send to NOBODY (never a client fallback), and the
+        # CONDITION itself is recorded exactly ONCE per dedup window - not once
+        # per finding per tick. Regression guard for the 2026-08-21 alert-storm
+        # bug (27,841 undeduped rows on one live box, 49.9% of the whole
+        # ledger, still growing at the time it was found).
         os.environ.pop("EWS_OPERATOR_CHAT", None)
-        f2 = F("S4", "P1", "x", "cap", "y", dedup_key="no-target")
-        assert route_finding(f2, sender=fake_sender) is False
+        os.environ.pop("OPERATOR_TELEGRAM_CHAT_ID", None)
+        os.environ.pop("FOUNDER_TELEGRAM_CHAT_ID", None)
+        with Ledger() as led_before:
+            events_before = len(led_before.events_since("2000-01-01T00:00:00+00:00"))
+        before_no_target_sends = len(sent_log)
+        # THREE DIFFERENT findings (distinct signal + their own dedup_key),
+        # each of which would normally warrant its own operator send, hit the
+        # "no target" branch across FIVE simulated ticks - 15 calls total.
+        no_target_findings = [
+            F("S4", "P1", "x", "cap", "y", dedup_key="no-target-a"),
+            F("S1", "P2", "x", "model", "y", dedup_key="no-target-b"),
+            F("S6", "P1", "x", "config", "y", dedup_key="no-target-c"),
+        ]
+        for _tick in range(5):
+            for f in no_target_findings:
+                assert route_finding(f, sender=fake_sender) is False
+        assert len(sent_log) == before_no_target_sends  # operator sender NEVER called
+        with Ledger() as led_after:
+            new_events = led_after.events_since("2000-01-01T00:00:00+00:00")[events_before:]
+        no_target_events = [e for e in new_events if e["key_path"] == "alert.operator_target"]
+        assert len(no_target_events) == 1, no_target_events  # exactly ONE, not 15 - the core regression guard
+        ev = no_target_events[0]
+        assert ev["signal"] == "S7" and ev["dedup_key"] == "S7|no_operator_target", ev
+        assert ev["severity"] == "P1", ev  # not P2 - this kills ALL alerting on the box
+        assert ev["ack_state"] == "open"  # still visible/unacked - not silenced into invisibility
         os.environ["EWS_OPERATOR_CHAT"] = "9999operator"
-        print("  no-target case: PASS (no operator target = send to nobody, never a client)")
+        print("  no-target case: PASS (no operator target = send to nobody, never a client; the "
+              "CONDITION is recorded exactly ONCE across 5 ticks x 3 distinct findings, as P1, "
+              "still open - not silenced, not appended 15x)")
 
         # escalation: an unacked P1 older than the window escalates to Rescue Rangers
         with Ledger() as led:

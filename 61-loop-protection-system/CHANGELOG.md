@@ -3,7 +3,7 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
-## [0.6.6] - 2026-08-26
+## [1.0.0] - 2026-08-26
 
 **What 0.6.5 got wrong about other people's decisions.** 0.6.5 shipped the idempotent
 cron reconciler, the installer verdict and `last_tick_ts`. This release corrects four
@@ -1146,3 +1146,7 @@ Interlock:
   signals S11-S14, Open Decision T2). Operated by openclaw-maintenance + Healer +
   Bugs (spec Section 8); the maintenance role SOPs now invoke
   `loop-companion.sh audit --local` and the kill cards, and carry the F14+ extension.
+
+## [v1.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

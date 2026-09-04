@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.5.7] - July 21, 2026 (T2-08 / T0-24: prune only after the replacement verifies)
+## [7.0.0] - July 21, 2026 (T2-08 / T0-24: prune only after the replacement verifies)
 
 ### Fixed
 - **Backup rotation no longer deletes the oldest backup before the replacement exists (T2-08).** "Step 2: Rotate Old Backups" ran *before* the new backup directory was created — the destructive step went first, and verification did not happen until Step 16. Any failure in the copy, disk or verification steps in between left ONE verified restore point instead of the promised two, during exactly the failure window backups exist to cover. Rotation is now the LAST step and is only reachable after verification has passed; it also refuses to delete the backup just created.
@@ -19,3 +19,6 @@ All notable changes to this skill wrapper are documented here.
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

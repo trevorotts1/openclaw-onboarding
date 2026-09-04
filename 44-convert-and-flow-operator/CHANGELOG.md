@@ -1,5 +1,29 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [2.0.0] - 2026-09-03 — safe contact upsert policy: default upsert, verified writes, 18-behavior regression suite
+
+### Changed
+- **Generic add/save now routes to `contacts upsert` (DEFAULT).** Upsert docstring
+  uses HighLevel's canonical matching language (resolves create-vs-update per the
+  Location-level Allow Duplicate Contact configuration and its matching priority).
+  New `--create-new-if-duplicate-allowed` flag travels ONLY on explicit new-record
+  request; generic add/save omits it (false/omitted default, regression-locked).
+- **Every upsert ends with a GET read-back of the returned contact ID.**
+  Intended fields are confirmed against the live record; a failed read NEVER
+  re-POSTs (duplicate risk) — it reports "WRITE SUCCEEDED — VERIFICATION
+  INCOMPLETE" and names the manual read to run instead.
+- **Contact-write routing documented in SKILL.md / INSTRUCTIONS.md /
+  CORE_UPDATES.md / QC.md**, with `qc-convert-and-flow.sh` static asserts for the
+  upsert command, the `--tag` refusal, the read-back, the tag-endpoint sequence,
+  and the regression suite.
+
+### Added
+- **`tests/test_contacts_upsert.py` — 19 tests locking the 18 approved behaviors**
+  (upsert default routing, explicit-create/known-ID paths, field omission,
+  additive tags, Version 2021-07-28, locationId, duplicate-flag default/explicit,
+  dry-run, 429 STOP, loud auth failure, read-back, no-rePOST-on-failed-read,
+  source omission, targeted fields, `--tag` refusal, canonical help language).
+
 ## [1.3.19] - 2026-09-03 — send-integrity gates: fail-closed email bodies, merge-safe contacts, WF-22
 
 ### Fixed
@@ -1029,3 +1053,7 @@ by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
   platform/vps/ (venv at /data/.openclaw/tools/..., owner-nudge on expired token).
 - Client-facing plain-language auto-re-grab disclosure in INSTALL.md (binding transparency).
 - qc-convert-and-flow.sh with assertions for all acceptance criteria.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v22.0.88"
+ONBOARDING_VERSION="v23.0.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1145,48 +1145,18 @@ inject_shared_operator_secrets() {
     #      when grep did NOT error (rc<=1; rc1 = "all lines were VAR=", a legit empty)
     #      AND the .tmp is non-empty (or that legit all-removed case). On any doubt
     #      the original is left intact and we append in place.
-    # FIX 72 (export-safe secrets): every line this helper writes is
-    # `export VAR=value`. Secrets must survive into ANY consumer's env without
-    # the consumer needing bash-specific semantics: `set -a; . secrets/.env;
-    # set +a` (the fleet pattern in the qc-* gates) and a bare `. secrets/.env`
-    # in a `bash -c` both land the value in the child python's environ only if
-    # the line is an EXPORT. Plain `VAR=value` lines require the reader to
-    # opt-in with `set -a`, and the proof for this fix (`set -a; . <secrets>;
-    # set +a; python3 -c ...print KIE_API_KEY...`) plus the older bare-source
-    # readers both depend on export semantics. Every consumer that already
-    # sources with `set -a` is unaffected (export lines work identically).
     _shared_write_env() {
         local var="$1"; local val="$2"
         local f="$OC_SECRETS_ENV"
         [ -f "$f" ] || { touch "$f"; chmod 600 "$f" 2>/dev/null || true; }
-        # (1) Already exact (either historical form) -> byte-identical no-op.
-        #     Accept both `export VAR=val` (current) and bare `VAR=val` (older
-        #     box) as "already correct" for the bare case too: the next line
-        #     rewrites it to the export form, but if the export form is ALREADY
-        #     present we leave the file byte-identical.
-        if grep -qxF "export ${var}=${val}" "$f" 2>/dev/null \
-           || grep -qxF "${var}=${val}" "$f" 2>/dev/null; then
-            # Upgrade a legacy bare line in place to the export form (same
-            # value -> idempotent, no reorder): scoped, clobber-guarded swap.
-            if ! grep -qxF "export ${var}=${val}" "$f" 2>/dev/null; then
-                cp -p "$f" "$f.bak" 2>/dev/null || true
-                local _ugrc=0
-                grep -v "^${var}=" "$f" > "$f.tmp" 2>/dev/null || _ugrc=$?
-                if [ "$_ugrc" -le 1 ] && { [ -s "$f.tmp" ] || [ "$_ugrc" -eq 1 ]; }; then
-                    mv "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp" 2>/dev/null || true
-                else
-                    rm -f "$f.tmp" 2>/dev/null || true
-                fi
-                printf 'export %s=%s\n' "$var" "$val" >> "$f"
-                chmod 600 "$f" 2>/dev/null || true
-            fi
+        # (1) Already exact -> byte-identical no-op.
+        if grep -qxF "${var}=${val}" "$f" 2>/dev/null; then
             return 0
         fi
-        # (2) Scoped replace, clobber-guarded. Remove BOTH the bare and the
-        #     export form of the var before appending the canonical export line.
+        # (2) Scoped replace, clobber-guarded.
         cp -p "$f" "$f.bak" 2>/dev/null || true
         local _grc=0
-        grep -vE "^([[:space:]]*export[[:space:]]+)?${var}=" "$f" > "$f.tmp" 2>/dev/null || _grc=$?
+        grep -v "^${var}=" "$f" > "$f.tmp" 2>/dev/null || _grc=$?
         if [ "$_grc" -le 1 ] && { [ -s "$f.tmp" ] || [ "$_grc" -eq 1 ]; }; then
             mv "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp" 2>/dev/null || true
         else
@@ -1194,7 +1164,7 @@ inject_shared_operator_secrets() {
             # clobber: drop the tmp and append to the (untouched) original.
             rm -f "$f.tmp" 2>/dev/null || true
         fi
-        printf 'export %s=%s\n' "$var" "$val" >> "$f"
+        printf '%s=%s\n' "$var" "$val" >> "$f"
         chmod 600 "$f" 2>/dev/null || true
     }
 
@@ -1458,104 +1428,10 @@ backup_config_file() {
 #  10. Recursive scan of openclaw.json for any field named apiKey|token|secret
 #
 # Alias map handles naming variants per credential.
-#
-# FIX 67 (one secret-name canon): the authoritative alias table now lives in
-# shared-utils/secret_names.json (canonical -> aliases) so every reader —
-# get_alias_list here, check-skill-prereqs.sh, key_resolver.py,
-# api_key_utils.py — extends from ONE file. get_alias_list consults the canon
-# first (installed copy next to the skills root, or the repo clone next to this
-# script) and falls back to the hardcoded case table below when the canon is
-# absent, unreadable, or does not carry the requested canonical name. A canon
-# that cannot be read can therefore never WIDEN or NARROW discovery relative to
-# the built-in table — it only ever adds aliases.
 
 CREDS_FOUND_LIST=""
 
-# FIX 67: emit the alias line for <canonical> from secret_names.json when it
-# carries one. Prints nothing (and returns 1) when the canon has no entry, so
-# the caller can fall through to the built-in case table. Read-only, cached.
-_SECRET_CANON_CACHE=""
-_get_canon_aliases() {
-    local CANONICAL="$1"
-    local canon_file=""
-    # Candidate locations: installed shared-utils next to the skills root, the
-    # onboarding repo clone next to this script, and the repo's own shared-utils.
-    if [ -n "${SKILLS_DIR:-}" ] && [ -f "${SKILLS_DIR}/shared-utils/secret_names.json" ]; then
-        canon_file="${SKILLS_DIR}/shared-utils/secret_names.json"
-    elif [ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/shared-utils/secret_names.json" ]; then
-        canon_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/secret_names.json"
-    elif [ -f "${OC_CANON_SRC:-}/shared-utils/secret_names.json" ]; then
-        canon_file="${OC_CANON_SRC}/shared-utils/secret_names.json"
-    fi
-    [ -n "$canon_file" ] || return 1
-    # Cache: one memo per (file, canonical) pair for this process — positive
-    # hits stored as "key=alias-line", negatives as "key;".
-    local cache_key="${canon_file}::${CANONICAL}"
-    case ";${_SECRET_CANON_CACHE};" in
-        *";${cache_key};"*) return 1 ;;   # previously looked up, not found
-    esac
-    if [ "${_SECRET_CANON_CACHE}" != "${_SECRET_CANON_CACHE%%${cache_key}=*}" ]; then
-        # positive cache hit: extract the stored alias line
-        local stored="${_SECRET_CANON_CACHE##*${cache_key}=}"
-        stored="${stored%%|*}"
-        if [ -n "$stored" ]; then printf '%s' "$stored"; return 0; fi
-        return 1
-    fi
-    local line
-    line=$(CANON_NAME="$CANONICAL" CANON_FILE="$canon_file" python3 - <<'PYEOF' 2>/dev/null
-import json, os
-try:
-    with open(os.environ["CANON_FILE"]) as f:
-        canon = json.load(f)
-    name = os.environ["CANON_NAME"]
-    aliases = None
-    # Shape A (this repo, FIX 67): {"canonical_names": {"CANON": ["ALIAS", ...]}}
-    names = canon.get("canonical_names")
-    if isinstance(names, dict) and isinstance(names.get(name), list):
-        aliases = [a for a in names[name] if isinstance(a, str) and a]
-    # Shape B (alternate): {"secrets": {"CANON": {"aliases": [...]}}}
-    secrets = canon.get("secrets")
-    if aliases is None and isinstance(secrets, dict):
-        entry = secrets.get(name)
-        if isinstance(entry, dict) and isinstance(entry.get("aliases"), list):
-            aliases = [a for a in entry["aliases"] if isinstance(a, str) and a]
-        elif isinstance(entry, list):
-            aliases = [a for a in entry if isinstance(a, str) and a]
-    if not aliases:
-        raise SystemExit(1)
-    # The canonical name is always first; drop any duplicate entries (some
-    # canon shapes list the canonical name among its own aliases).
-    seen = []
-    for a in [name] + aliases:
-        if a not in seen:
-            seen.append(a)
-    print(" ".join(seen))
-except SystemExit:
-    raise
-except Exception:
-    raise SystemExit(1)
-PYEOF
-)
-    local rc=$?
-    if [ $rc -eq 0 ] && [ -n "$line" ]; then
-        _SECRET_CANON_CACHE="${_SECRET_CANON_CACHE:+${_SECRET_CANON_CACHE}|}${cache_key}=${line}"
-        printf '%s' "$line"
-        return 0
-    fi
-    _SECRET_CANON_CACHE="${_SECRET_CANON_CACHE:+${_SECRET_CANON_CACHE}|}${cache_key};"
-    return 1
-}
-
 get_alias_list() {
-    # FIX 67: the secret-name canon is the authoritative alias source. Only a
-    # canon entry EXTENDS the built-in table; when it is absent or unreadable
-    # the hardcoded case below stands alone (never narrower than before).
-    local _canon_line
-    _canon_line=$(_get_canon_aliases "$1") || true
-    if [ -n "$_canon_line" ]; then
-        echo "$_canon_line"
-        return 0
-    fi
     case "$1" in
         GOHIGHLEVEL_API_KEY)
             echo "GOHIGHLEVEL_API_KEY GHL_PRIVATE_INTEGRATION_TOKEN GHL_API_KEY GHL_PIT HIGHLEVEL_API_KEY HIGHLEVEL_TOKEN GHL_PRIVATE_TOKEN" ;;
@@ -1607,17 +1483,6 @@ get_alias_list() {
             echo "ELEVENLABS_API_KEY ELEVEN_API_KEY" ;;
         BRAVE_API_KEY)
             echo "BRAVE_API_KEY BRAVE_SEARCH_API_KEY" ;;
-        BRAVE_SEARCH_API_KEY)
-            # FIX 67: research_web reads BRAVE_SEARCH_API_KEY; discovery must
-            # find the same credential under either name.
-            echo "BRAVE_SEARCH_API_KEY BRAVE_API_KEY" ;;
-        OLLAMA_CLOUD_API_KEY)
-            # FIX 67: same Ollama Cloud token under either name.
-            echo "OLLAMA_CLOUD_API_KEY OLLAMA_API_KEY OLLAMA_KEY OLLAMA_TOKEN" ;;
-        CLOUDFLARE_ZHW_APPS_API_TOKEN)
-            echo "CLOUDFLARE_ZHW_APPS_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZHW_API_TOKEN" ;;
-        CLOUDFLARE_ZHW_ACCOUNT_ID)
-            echo "CLOUDFLARE_ZHW_ACCOUNT_ID CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_ZHW_ACCOUNT" ;;
         FAL_API_KEY)
             echo "FAL_API_KEY FAL_KEY" ;;
         *)
@@ -1790,9 +1655,6 @@ looks_like_real_key() {
         *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*) return 1 ;;
         *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
         *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
-        # FIX 67: PASTE_* template tokens (e.g. PASTE_REAL_TOKEN) — high enough
-        # entropy (3.3+) to slip stage 3, so rejected explicitly by name family.
-        *paste_*|*-paste*|*real_token*|*real-token*|*paste*) return 1 ;;
         *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
         # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
         *EXAMPLE|*example) return 1 ;;
@@ -2034,8 +1896,7 @@ PLACEHOLDER_SUBSTRINGS = (
     'change_me', 'change-me', '_here', '-here', 'placeholder',
     'sample', 'dummy', 'demo', 'test_key', 'fake_key', 'sk-test', 'sk-xxx',
     'sk-example', 'sk-replace', 'todo', 'tbd', 'fill_in', 'fillin',
-    'paste-your', 'paste_your', 'paste_', 'paste', 'real_token',
-    'real-token', 'insert_your', 'enter_your',
+    'paste-your', 'paste_your', 'insert_your', 'enter_your',
     'set_your', 'no_key', 'none_yet',
 )
 
@@ -2884,49 +2745,16 @@ colocate_presentation_entry() {
     return 0
   fi
   local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
-  # FIX 65 — Stop the permanent colocate partial. The old list hardcoded the
-  # retired deck-build-guard.sh (retired U025, v21.4.0), so one leg of the pair
-  # was never copyable and every install printed "partial (copied 1 of 2)"
-  # forever, silently. New contract (R11 §G1): "colocate list = files that
-  # exist; return 1 on any miss; CI asserts the list."
-  #   1. The colocate LIST is derived from the candidates that EXIST in the
-  #      canonical source dir right now — a retired candidate is absent from
-  #      the list, never a permanent partial.
-  #   2. An EMPTY list is itself a miss (the canonical entry script must
-  #      always exist) -> return 1, loudly.
-  #   3. Any listed file missing at copy time or failing to copy is a MISS ->
-  #      echo FAILED + return 1, so the caller sees a real failure instead of
-  #      an eternal WARN-and-continue. (install.sh has no success stamp to
-  #      withhold; the call site latches the rc and reports it loudly.)
-  # The CI colocate gate (W22/FIX 65) asserts exactly this list contract.
-  local -a colocate_list=()
-  local -a colocate_candidates=(presentation-canonical-entry.sh deck-build-guard.sh)
-  local f copied=0
-  for f in "${colocate_candidates[@]}"; do
-    if [ -f "$src_dir/$f" ]; then
-      colocate_list+=("$f")
-    else
-      echo "  [U006] colocate candidate absent (not in list): $src_dir/$f"
-    fi
-  done
-  if [ "${#colocate_list[@]}" -eq 0 ]; then
-    echo "  [U006] colocate MISS: no colocatable files exist in $src_dir — co-location FAILED" >&2
-    return 1
-  fi
-  for f in "${colocate_list[@]}"; do
+  local copied=0
+  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
     if [ -f "$src_dir/$f" ]; then
       cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
-    else
-      echo "  [U006] colocate MISS: $src_dir/$f vanished between listing and copy — co-location FAILED" >&2
-      return 1
     fi
   done
-  if [ "$copied" -eq "${#colocate_list[@]}" ]; then
-    echo "  [U006] co-located ${colocate_list[*]} -> $dept_scripts/"
+  if [ "$copied" -eq 2 ]; then
+    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
   else
-    # FIX 65: any shortfall is a hard failure, never a soft partial.
-    echo "  [U006] colocate MISS (copied $copied of ${#colocate_list[@]}) — co-location FAILED" >&2
-    return 1
+    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
   fi
 }
 # <<< U006-COLOCATE-PRESENTATION-ENTRY-END
@@ -3523,49 +3351,6 @@ inject_shared_operator_secrets
 # Step 2: Silent Credential Discovery
 # ----------------------------------------------------------
 discover_all_credentials
-
-# ----------------------------------------------------------
-# Step 2.05 (FIX 72 — export-safe secrets): PERSIST discovered credentials.
-# ----------------------------------------------------------
-# Discovery only DETECTS credentials (shell env, rc files, config JSON …). A
-# key that lives only in the operator's ~/.zshrc is invisible to every other
-# process on the box: the gateway env, docker exec printenv, and any child
-# python a skill spawns (`bash -c 'set -a; . <secrets>; set +a; python3 …'`
-# per the FIX 72 proof). Canonicalize every FOUND credential into
-# $OC_SECRETS_ENV as an `export NAME=value` line via _shared_write_env (same
-# idempotent, clobber-guarded writer Step 1.5 uses; chmod 600). The file is
-# ALSO the source of truth the fleet's set -a readers already consume, so a
-# re-run stays byte-identical when nothing changed. Values carry over from the
-# exact alias discovery resolved — written under the CANONICAL name.
-# Non-fatal: persistence failure only warns.
-persist_discovered_credentials() {
-    local persisted=0
-    local creds="${CREDS_FOUND_LIST:-}"
-    # CREDS_FOUND_LIST is a |-separated list of canonical names with a
-    # leading empty field (e.g. "|KIE_API_KEY|GOHIGHLEVEL_API_KEY").
-    local entry
-    while [ -n "$creds" ]; do
-        if echo "$creds" | grep -q "|"; then
-            entry=$(echo "$creds" | cut -d'|' -f2)
-            creds=$(echo "$creds" | cut -d'|' -f3-)
-        else
-            entry="$creds"; creds=""
-        fi
-        [ -z "$entry" ] && continue
-        local value
-        value=$(search_env_var "$entry" 2>/dev/null || true)
-        if [ -n "$value" ]; then
-            _shared_write_env "$entry" "$value"
-            persisted=$((persisted + 1))
-        fi
-    done
-    if [ "$persisted" -gt 0 ]; then
-        success "FIX 72: $persisted discovered credential(s) persisted as export lines in $OC_SECRETS_ENV (chmod 600, idempotent)"
-    else
-        note "FIX 72: no discovered credentials needed persisting (secrets file already canonical)"
-    fi
-}
-persist_discovered_credentials
 
 # ----------------------------------------------------------
 # Step 2.5: Base runtime tools (Linux containers) — jq, unzip, python3-pip
@@ -4203,20 +3988,11 @@ fi
 # On a fresh Linux container python3-pip may be installed as a module with NO
 # `pip3` on PATH, so `pip3 install` would be "command not found". `python3 -m pip`
 # also guarantees the package lands in the SAME interpreter the import check uses.
-# FIX 71: NO `--break-system-packages` anywhere in this installer. Externally
-# managed environments (macOS 13+ python, PEP 668 Debian containers) reject the
-# bare install, so try a --user install first, then pipx, and fail LOUDLY with
-# the manual remediation instead of punching through the environment marker.
 if ! python3 -c "import google.genai" 2>/dev/null; then
     note "Installing google-genai package..."
-    if python3 -m pip install --user google-genai >> "$LOG_FILE" 2>&1 \
-       && python3 -c "import google.genai" 2>/dev/null; then
-        success "google-genai installed via pip --user"
-    elif command -v pipx >/dev/null 2>&1 && pipx inject google-genai 2>/dev/null; then
-        success "google-genai installed via pipx inject"
-    else
-        warn "google-genai install failed — manual install required: python3 -m pip install --user google-genai (or a venv)"
-    fi
+    python3 -m pip install google-genai --break-system-packages 2>/dev/null || \
+        python3 -m pip install google-genai 2>/dev/null || \
+        warn "google-genai install failed - manual install required"
 else
     success "google-genai already installed"
 fi
@@ -4226,30 +4002,10 @@ fi
 # ----------------------------------------------------------
 # Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
 # Each verified individually; failures LOUDLY warn (not silently swallowed).
-# FIX 71 install order: uv → pip --user → venv pip → pipx fallback. NO
-# --break-system-packages anywhere — an externally-managed environment (PEP
-# 668, macOS 13+) is worked WITH (user site / a venv), never punched through.
+# Mac install order: uv → pip3 --break-system-packages → pip3 → pipx fallback.
 # ────────────────────────────────────────────────────────────────────────────
 
 step "Step 6.4: Installing Skill 22 Python pipeline dependencies (Mac)"
-
-# FIX 71: shared scratch venv for packages a PEP-668 system python refuses.
-# Reused by _install_py_pkg_mac attempt 3 and any consumer needing a clean
-# interpreter. Lives under the OpenClaw root next to .venv-presentations.
-_ensure_s22_fallback_venv() {
-    local VENV_ROOT
-    if [ -d "/data/.openclaw" ]; then VENV_ROOT="/data/.openclaw"; else VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"; fi
-    local VENV_DIR="$VENV_ROOT/.venv-skill22"
-    local VENV_PY="$VENV_DIR/bin/python"
-    if [ -x "$VENV_PY" ]; then
-        echo "$VENV_PY"; return 0
-    fi
-    if python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
-        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1 || true
-        echo "$VENV_PY"; return 0
-    fi
-    return 1
-}
 
 _install_py_pkg_mac() {
     local pkg="$1"
@@ -4272,42 +4028,29 @@ _install_py_pkg_mac() {
         fi
     fi
 
-    # Attempt 2: pip --user. v14.1.3: `python3 -m pip` instead of bare `pip3` —
-    # portable. Resolves to the SAME pip on Mac, and works on a fresh Linux
-    # container where pip is installed as a module with no `pip3` binary on
-    # PATH (this helper now also runs Skill 22 deps on VPS, where bare `pip3`
-    # would have been "command not found"). FIX 71: no --break-system-packages;
-    # on a PEP-668 system python this attempt simply fails and we fall through.
-    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
+    # Attempt 2: pip --break-system-packages (macOS 13+ externally-managed python).
+    # v14.1.3: `python3 -m pip` instead of bare `pip3` — portable. Resolves to the
+    # SAME pip on Mac, and works on a fresh Linux container where pip is installed
+    # as a module with no `pip3` binary on PATH (this helper now also runs Skill 22
+    # deps on VPS, where bare `pip3` would have been "command not found").
+    if python3 -m pip install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
         if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip --user"
+            success "$display installed via pip --break-system-packages"
             return 0
         fi
     fi
 
-    # Attempt 3 (FIX 71): the Skill 22 fallback venv — guaranteed importable
-    # there even on an externally-managed system python.
-    local _s22_venv_py
-    if _s22_venv_py="$(_ensure_s22_fallback_venv)" && [ -n "$_s22_venv_py" ]; then
-        if "$_s22_venv_py" -m pip install --quiet "$pkg" >> "$LOG_FILE" 2>&1; then
-            if "$_s22_venv_py" -c "import $import" 2>/dev/null; then
-                success "$display installed via Skill 22 fallback venv ($_s22_venv_py)"
-                return 0
-            fi
-        fi
-    fi
-
-    # Attempt 4: pipx (runs apps in their own venvs — never touches system site).
-    if command -v pipx >/dev/null 2>&1; then
-        if pipx inject skill22-shared "$pkg" >> "$LOG_FILE" 2>&1; then
-            success "$display installed via pipx (skill22-shared)"
+    # Attempt 3: pip without the flag (older pip that lacks --break-system-packages)
+    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
+        if python3 -c "import $import" 2>/dev/null; then
+            success "$display installed via pip"
             return 0
         fi
     fi
 
     warn "WARN: $display installation failed after all attempts."
     warn "      Skill 22 book extraction may fail for formats requiring $display."
-    warn "      Manual fix: python3 -m pip install --user $pkg  (or: python3 -m venv ~/.openclaw/.venv-skill22 && ~/.openclaw/.venv-skill22/bin/pip install $pkg)"
+    warn "      Manual fix: python3 -m pip install --user $pkg --break-system-packages"
     return 1
 }
 
@@ -4347,15 +4090,14 @@ fi
 #   • ffmpeg + ffprobe — webinar video render + size probe (Feature L2-G,
 #     P9.6-WEBINAR-VIDEO, build_webinar_video.py → webinar_ffmpeg.py)
 #
-# Platform branches (FIX 71: both platforms install python deps into the
-# department venv <root>/.venv-presentations — NEVER system python):
-#   Mac  — venv first (ensure_presentation_venv above); poppler via formula;
-#          LibreOffice via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
+# Platform branches:
+#   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
+#          via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
 #   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
 #          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
 #          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
-#          brew on these images). Python deps (reportlab, python-pptx, pypdf,
-#          pytesseract) into /data/.openclaw/.venv-presentations via its own pip.
+#          brew on these images). Python deps (reportlab, python-pptx, pypdf) via pip
+#          --break-system-packages into the SAME python3 that build_deck.py runs.
 #          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
@@ -4378,72 +4120,6 @@ fi
 # ────────────────────────────────────────────────────────────────────────────
 
 step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, pypdf, poppler, LibreOffice, ffmpeg)"
-
-# ----------------------------------------------------------
-# FIX 71 — the department venv: <root>/.venv-presentations
-# ----------------------------------------------------------
-# <root> is the OpenClaw root: /data/.openclaw on a VPS container, ~/.openclaw
-# on a Mac. ALL presentation-pipeline python deps (reportlab, python-pptx,
-# pypdf, pytesseract, Pillow) install INTO THIS VENV — never into the system
-# python, never with --break-system-packages. The interpreter is exported to
-# every consumer via PRESENTATION_PIPELINE_INTERPRETER (secrets/.env export
-# line per FIX 72, so `set -a; . secrets/.env` reaches the door, the engine,
-# and every child python). ocr-deps.json's install_policy already names this
-# exact shape ("install into the pipeline's dedicated venv ... and point
-# PRESENTATION_PIPELINE_INTERPRETER at that venv's interpreter").
-# Idempotent: an existing healthy venv with all four imports is a byte-identical
-# no-op. A venv missing deps gets ONLY the missing packages pip-installed into
-# it (venv pip has no PEP 668 marker, so no flag is ever needed).
-ensure_presentation_venv() {
-    local VENV_ROOT
-    if [ -d "/data/.openclaw" ]; then
-        VENV_ROOT="/data/.openclaw"
-    else
-        VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"
-    fi
-    local VENV_DIR="$VENV_ROOT/.venv-presentations"
-    local VENV_PY="$VENV_DIR/bin/python"
-    local VENV_PIP="$VENV_DIR/bin/pip"
-
-    if [ -x "$VENV_PY" ]        && "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
-        success "FIX 71: presentation venv already healthy at $VENV_DIR (reportlab, pptx, pypdf, pytesseract all import)"
-    else
-        note "FIX 71: creating presentation venv at $VENV_DIR ..."
-        if ! python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
-            warn "FIX 71: python3 -m venv failed at $VENV_DIR — the presentation pipeline will fall back to the system python3. Manual fix: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
-            return 0
-        fi
-        # venv pip is self-contained (no PEP 668 external-management marker) —
-        # a bare install works, no --break-system-packages, ever.
-        local _pkgs="reportlab python-pptx pypdf pytesseract Pillow"
-        note "FIX 71: installing $_pkgs into $VENV_DIR ..."
-        if "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1            && "$VENV_PY" -m pip install --quiet $_pkgs >> "$LOG_FILE" 2>&1; then
-            if "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
-                success "FIX 71: presentation venv populated — reportlab, pptx, pypdf, pytesseract import in $VENV_PY"
-            else
-                warn "FIX 71: venv packages installed but the import check FAILED — see $LOG_FILE. Manual: $VENV_PY -c 'import reportlab, pptx, pypdf, pytesseract'"
-            fi
-        else
-            warn "FIX 71: pip install into $VENV_DIR failed (network/offline?) — see $LOG_FILE. Manual: $VENV_PY -m pip install $_pkgs"
-        fi
-    fi
-
-    # Export the interpreter path via the FIX 72 writer: an export line in
-    # secrets/.env + a mirror in openclaw.json env.vars. Consumers (door,
-    # engine, qc gates) read it with set -a or from the gateway env.
-    local _venv_val="$VENV_PY"
-    if command -v _shared_write_env >/dev/null 2>&1; then
-        _shared_write_env "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
-        if command -v _shared_write_ocjson >/dev/null 2>&1; then
-            _shared_write_ocjson "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
-        fi
-        success "FIX 71: PRESENTATION_PIPELINE_INTERPRETER=$_venv_val (export line in $OC_SECRETS_ENV + openclaw.json env.vars)"
-    else
-        warn "FIX 71: _shared_write_env unavailable — set PRESENTATION_PIPELINE_INTERPRETER=$_venv_val manually in $OC_SECRETS_ENV"
-    fi
-    export PRESENTATION_PIPELINE_INTERPRETER="$VENV_PY"
-}
-ensure_presentation_venv
 
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
@@ -4501,37 +4177,22 @@ else
     echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
 fi
 
-# --- Python deps into the FIX 71 department venv (NEVER system python, never
-# --- --break-system-packages). The venv lives on the /data bind-mount, so it
-# --- DOES survive a force-recreate; this script still (re)asserts idempotently.
-VENV_DIR="/data/.openclaw/.venv-presentations"
-VENV_PY="$VENV_DIR/bin/python"
-if [ ! -x "$VENV_PY" ]; then
-    echo "[$(ts)] FIX 71: creating venv at $VENV_DIR" >> "$LOG"
-    python3 -m venv "$VENV_DIR" >> "$LOG" 2>&1 \
-        && echo "[$(ts)] venv created" >> "$LOG" \
-        || echo "[$(ts)] WARN: venv creation failed at $VENV_DIR" >> "$LOG"
-fi
-if [ -x "$VENV_PY" ]; then
-    if ! "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
-        echo "[$(ts)] FIX 71: pip install reportlab python-pptx pypdf pytesseract Pillow (venv pip, no external-management marker)" >> "$LOG"
-        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG" 2>&1 || true
-        "$VENV_PY" -m pip install --quiet reportlab python-pptx pypdf pytesseract Pillow >> "$LOG" 2>&1 \
-            && echo "[$(ts)] FIX 71: venv packages OK" >> "$LOG" \
-            || echo "[$(ts)] WARN: venv pip install failed (see above)" >> "$LOG"
-    else
-        echo "[$(ts)] FIX 71: venv already healthy — pip install skipped" >> "$LOG"
-    fi
-else
-    echo "[$(ts)] WARN: no venv interpreter at $VENV_PY — presentation python deps NOT installed" >> "$LOG"
-fi
+# --- Python deps into the SAME interpreter build_deck.py runs.
+"$PY3" -m pip install --break-system-packages --quiet reportlab >> "$LOG" 2>&1 \
+    && echo "[$(ts)] reportlab OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: reportlab install failed" >> "$LOG"
+"$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
+    && echo "[$(ts)] python-pptx OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
+"$PY3" -m pip install --break-system-packages --quiet pypdf >> "$LOG" 2>&1 \
+    && echo "[$(ts)] pypdf OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: pypdf install failed (workbook PDF read-back)" >> "$LOG"
 
-# --- Verify (same checks qc-completeness.sh hard-fails on) — under the VENV
-# --- interpreter when present, system python3 otherwise.
+# --- Verify (same checks qc-completeness.sh hard-fails on).
 command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
 command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
-_CHK_PY="$PY3"; [ -x "$VENV_PY" ] && _CHK_PY="$VENV_PY"
-"$_CHK_PY" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx+pypdf OK ($_CHK_PY)" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx/pypdf import failed under $_CHK_PY" >> "$LOG"
+"$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
+"$PY3" -c "import pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify pypdf OK" >> "$LOG" || echo "[$(ts)] WARN: pypdf import failed (workbook PDF read-back)" >> "$LOG"
 command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
 command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
 
@@ -4550,22 +4211,15 @@ REASSERT_EOF
     command -v pdftoppm >/dev/null 2>&1 \
         && success "pdftoppm (poppler-utils) on PATH" \
         || warn "pdftoppm NOT on PATH after install — Phase-6 QC PNG extraction will fail. Manual fix: $_APT_GET install -y poppler-utils"
-    # FIX 71: import checks under the VENV interpreter (falls back to system
-    # python3 only to NAME the gap); manual fixes point at the venv, never bsp.
-    _VENV_PY="/data/.openclaw/.venv-presentations/bin/python"
-    _IMP_PY="$_PY3"; [ -x "$_VENV_PY" ] && _IMP_PY="$_VENV_PY"
-    "$_IMP_PY" -c "import reportlab" >/dev/null 2>&1 \
-        && success "reportlab importable in $_IMP_PY" \
-        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: ${_VENV_PY} -m pip install reportlab (create venv first: python3 -m venv /data/.openclaw/.venv-presentations)"
-    "$_IMP_PY" -c "import pptx" >/dev/null 2>&1 \
-        && success "python-pptx importable in $_IMP_PY" \
-        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: ${_VENV_PY} -m pip install python-pptx"
-    "$_IMP_PY" -c "import pypdf" >/dev/null 2>&1 \
-        && success "pypdf importable in $_IMP_PY" \
-        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: ${_VENV_PY} -m pip install pypdf"
-    "$_IMP_PY" -c "import pytesseract" >/dev/null 2>&1 \
-        && success "pytesseract importable in $_IMP_PY" \
-        || warn "pytesseract NOT importable — OCR read-back will fail. Manual fix: ${_VENV_PY} -m pip install pytesseract Pillow (plus the tesseract binary)"
+    "$_PY3" -c "import reportlab" >/dev/null 2>&1 \
+        && success "reportlab importable in $_PY3" \
+        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: $_PY3 -m pip install --break-system-packages reportlab"
+    "$_PY3" -c "import pptx" >/dev/null 2>&1 \
+        && success "python-pptx importable in $_PY3" \
+        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
+    "$_PY3" -c "import pypdf" >/dev/null 2>&1 \
+        && success "pypdf importable in $_PY3" \
+        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: $_PY3 -m pip install --break-system-packages pypdf"
     command -v ffmpeg >/dev/null 2>&1 \
         && success "ffmpeg on PATH (webinar video render, P9.6)" \
         || warn "ffmpeg NOT on PATH after install — the webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: $_APT_GET install -y ffmpeg"
@@ -4643,21 +4297,10 @@ REASSERT_EOF
 
 else
     # ── MAC ARM ───────────────────────────────────────────────────────────────
-    # FIX 71: the department venv was already created + populated at the top of
-    # Step 6.5 (ensure_presentation_venv — .venv-presentations with reportlab,
-    # python-pptx, pypdf, pytesseract, Pillow and the PRESENTATION_PIPELINE_
-    # INTERPRETER export line). Nothing system-side is needed for python deps;
-    # the _install_py_pkg_mac helper stays reserved for the Skill 22 deps in
-    # Step 6.4 (pdfplumber/ebooklib/mobi/… — a DIFFERENT pipeline's packages).
-    if command -v python3 >/dev/null 2>&1; then
-        _MAC_VENV_PY="${PRESENTATION_PIPELINE_INTERPRETER:-}"
-        [ -z "$_MAC_VENV_PY" ] && _MAC_VENV_PY="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python"
-        if [ -x "$_MAC_VENV_PY" ] && "$_MAC_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
-            success "Mac presentation venv verified: reportlab, pptx, pypdf, pytesseract import in $_MAC_VENV_PY"
-        else
-            warn "Mac presentation venv incomplete — re-running ensure_presentation_venv checks is advised. Manual: python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
-        fi
-    fi
+    # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
+    _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
+    _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
+    _install_py_pkg_mac "pypdf"       "pypdf"      "pypdf (workbook PDF read-back verification, P8.25-WORKBOOK)"
 
     # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
     if command -v pdftoppm >/dev/null 2>&1; then
@@ -9047,88 +8690,6 @@ else
 fi
 echo ""
 
-# ----------------------------------------------------------
-# FIX 66 (MASTER Part 8): DEPARTMENT-SCRIPTS CONTENT STAMP + DRIFT GATE on the
-# INSTALL PATH. Runs AFTER the migrate backstop above so the mirror
-# (refresh-dept-scripts.py) and the intake mirror (refresh-dept-intake.py) have
-# done their fleet-owned writes first; this step then STAMPS the result and
-# GATES it. Three phases, all sourcing the role library that ships in this
-# bundle ($SKILLS_DIR/23-ai-workforce-blueprint):
-#   1. refresh-dept-scripts.py --apply   (mirror canonical suffixes into every
-#      materialized department's scripts/ tree — the same unconditional mirror
-#      the update path runs every roll, giving install==update parity here too)
-#   2. refresh-dept-intake.py --apply    (mirror the intake/ tree, incl. the
-#      provenance-gated question banks)
-#   3. create_role_workspaces.py --stamp-dept-scripts per materialized dept:
-#      writes <dept>/.dept-scripts-manifest.json hashing EVERY file under
-#      scripts/ and intake/ REGARDLESS OF SUFFIX with its library sha256
-#   4. create_role_workspaces.py --verify-dept-scripts-stamp per dept: the
-#      GATE. Read-only re-derivation from disk. A non-allowlisted file that is
-#      missing from the library, diverged from it (an edited/tampered .py, .sh,
-#      anything), or unreadable is NAMED with its path and reason, and the gate
-#      exits non-zero. Allowlist (FIX 66 spec): box-owned .json (client-local
-#      override policy) and the two provenance-gated intake question banks.
-# Not a hard install abort — a failure is LOUD (named per-file + exit status
-# recorded for the log), mirrors the surrounding non-fatal convention; a
-# rerun/repair path is the update path's next roll. Idempotent: stamping again
-# overwrites only the manifest file.
-# ----------------------------------------------------------
-note "Department-scripts content stamp + drift gate (FIX 66: every suffix, box-owned allowlist)..."
-_FIX66_SKILL="$SKILLS_DIR/23-ai-workforce-blueprint"
-_FIX66_SCRIPTS="$_FIX66_SKILL/scripts"
-_FIX66_LIB="$_FIX66_SKILL/templates/role-library"
-_FIX66_DEPTS_DIR="$OC_WORKSPACE/departments"
-_FIX66_GATE_FAILS=""
-if command -v python3 >/dev/null 2>&1 && [ -d "$_FIX66_LIB" ] && [ -d "$_FIX66_DEPTS_DIR" ]; then
-    # Pin the library to THIS bundle (ROLE_LIBRARY_PATH is crw's own documented
-    # override) so the stamp + gate verify against exactly what this installer
-    # ships, never a stale skill dir resolved elsewhere on the box. Scoped
-    # per-invocation (never exported for the rest of the installer).
-    _FIX66_RLP="ROLE_LIBRARY_PATH=$_FIX66_SKILL"
-    for _fix66_py in "$_FIX66_SCRIPTS/refresh-dept-scripts.py" "$_FIX66_SCRIPTS/refresh-dept-intake.py"; do
-        if [ -f "$_fix66_py" ]; then
-            env "$_FIX66_RLP" python3 "$_fix66_py" --workspace "$OC_WORKSPACE" --apply >> "$LOG_FILE" 2>&1 \
-                || warn "$(basename "$_fix66_py") reported drift it could not fully repair (see $LOG_FILE)"
-        fi
-    done
-    for _fix66_libdir in "$_FIX66_LIB"/*/; do
-        [ -d "$_fix66_libdir" ] || continue
-        _fix66_slug="$(basename "$_fix66_libdir")"
-        case "$_fix66_slug" in _*) continue ;; esac
-        # Resolve the materialized dept dir with crw.resolve_dept_dir (detected,
-        # never assumed: bare / -dept suffixed / normalized scan).
-        _fix66_dept="$(env "$_FIX66_RLP" python3 - "$OC_WORKSPACE" "$_fix66_slug" "$_FIX66_SCRIPTS" <<'PYF66'
-import sys, os
-from pathlib import Path
-sys.path.insert(0, sys.argv[3])
-import create_role_workspaces as crw
-d = crw.resolve_dept_dir(Path(sys.argv[1]) / "departments", sys.argv[2])
-print(d if d else "")
-PYF66
-)"
-        [ -n "$_fix66_dept" ] || continue  # dept not materialized on this box — benign skip
-        _fix66_stamp_py="$_FIX66_SCRIPTS/create_role_workspaces.py"
-        if [ -f "$_fix66_stamp_py" ]; then
-            env "$_FIX66_RLP" python3 "$_fix66_stamp_py" --stamp-dept-scripts --dept-path "$_fix66_dept" --dept-slug "$_fix66_slug" >> "$LOG_FILE" 2>&1 \
-                || warn "dept-scripts stamp write failed for $_fix66_slug (see $LOG_FILE)"
-            if env "$_FIX66_RLP" python3 "$_fix66_stamp_py" --verify-dept-scripts-stamp --dept-path "$_fix66_dept" --dept-slug "$_fix66_slug"; then
-                success "dept-scripts stamp gate PASS: $_fix66_slug"
-            else
-                _FIX66_GATE_FAILS="$_FIX66_GATE_FAILS $_fix66_slug"
-                warn "dept-scripts stamp gate FAILED for $_fix66_slug — the files named above are stray/diverged from the role library (box-owned .json + intake banks allowlisted). Install continues; the next update roll re-mirrors and re-verifies."
-            fi
-        else
-            note "create_role_workspaces.py not found at $_fix66_stamp_py — skipping FIX 66 stamp gate (older bundle)"
-        fi
-    done
-else
-    note "FIX 66 stamp gate skipped (python3, role library, or departments/ dir unavailable at this phase)"
-fi
-if [ -n "$_FIX66_GATE_FAILS" ]; then
-    warn "FIX 66 dept-scripts stamp gate failed for department(s):$_FIX66_GATE_FAILS (details above)"
-fi
-echo ""
-
 # Apply routing-defect permanent fix (4-layer: doctrine path, pptx deny, symlink unblock, dept seeding)
 # Must run AFTER workspace + openclaw.json + mission-control.db are initialised.
 note "Applying routing-defect permanent fix (Layers 1-4)..."
@@ -9265,18 +8826,7 @@ echo ""
 
 # U006 — Co-locate the canonical presentation entry script + guard into the
 # materialized department's scripts/ directory.
-# FIX 65: colocate_presentation_entry returns 1 on any miss (colocate list =
-# files that exist; return 1 on any miss). A SKIP — department not
-# materialized — still returns 0 and is not a failure; a real MISS is a
-# delivery failure that must be LOUD. install.sh has no success stamp to
-# withhold, so the failure is latched + reported here (echo + log + warn)
-# instead of being swallowed by set -e or an eternal soft partial.
-_COLOCATE_RC=0
-colocate_presentation_entry || _COLOCATE_RC=$?
-if [ "$_COLOCATE_RC" -ne 0 ]; then
-    echo "  ✗ ERROR: [U006] presentation entry co-location FAILED (rc=$_COLOCATE_RC) — the department door script is NOT co-located; see the [U006] MISS lines above" | tee -a "$LOG_FILE" >&2
-    warn "U006 co-location FAILED (rc=$_COLOCATE_RC) — fix the source bundle and re-run; install continues (no success stamp exists on the install path)"
-fi
+colocate_presentation_entry
 
 # FIX 2 (v10.15.48): Operator Telegram channel separation.
 # Adds channels.telegram.accounts.{default,operator} + defaultAccount=default +

@@ -2,7 +2,7 @@
 
 All notable changes to this skill will be documented in this file.
 
-## [v7.3.0] - 2026-07-21 - SK1-31: the activator applies what the skill declares mandatory, writes atomically, and verifies instead of announcing
+## [8.0.0] - 2026-07-21 - SK1-31: the activator applies what the skill declares mandatory, writes atomically, and verifies instead of announcing
 
 - **T2-27 — the required Layer-8 settings were never applied.** SKILL.md:14
   states "ACTIVE MEMORY IS REQUIRED - Layer 8 (Active Memory) requires
@@ -75,3 +75,7 @@ CI: `.github/workflows/memory-activator-guard.yml`.
 - Cognee (Layer 6) for graph-based knowledge relationships
 - Obsidian Vault (Layer 7) for structured knowledge base
 - Wiki System (Layer 8) for collaborative documentation
+
+## [v8.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

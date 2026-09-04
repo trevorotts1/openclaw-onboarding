@@ -1,6 +1,6 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
-## [1.1.1] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
+## [2.0.0] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
 
 `scripts/qc-no-personal-data.sh` exited 1 whenever the client roster was absent. The roster
 is gitignored by design (so no real client name ever enters the repo), so it is ALWAYS absent
@@ -167,3 +167,7 @@ NEVER fabricates property data.
 - No-fabrication floor machine-enforced by `scripts/qc-no-fabrication.sh`.
 - Governed by `../QC-PROTOCOL.md` (8.5 threshold, 10-category rubric).
 - Registered in `install.sh` (`install_skill_39_real_estate_playbook`) + the README skill catalog.
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

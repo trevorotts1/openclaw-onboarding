@@ -116,7 +116,7 @@ Health: caf doctor
 
 | Domain | Commands |
 |---|---|
-| contacts | caf contacts list/get/create/update/tag/untag |
+| contacts | caf contacts list/get/create/update/upsert/tag/untag — generic add/save routes to `upsert` (match keys + supplied fields only, tags additive via dedicated tag endpoint); `create` is explicit-new-record only; `update --tag` is refused (destructive) |
 | opportunities | caf opportunities list/get/update |
 | calendars | caf calendars list/appointments |
 | conversations | caf conversations list/get/send |

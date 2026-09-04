@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.5.9] - July 21, 2026
+## [7.0.0] - July 21, 2026
 
 > Version note: `skill-version.txt` is this skill's authoritative marker (now
 > `v6.5.9`). The `v1.x` headings below are the historical wrapper series and are
@@ -46,3 +46,6 @@ failed). After: 8 passed, 0 failed, and the gate still exits 1 naming
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
