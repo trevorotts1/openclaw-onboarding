@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-04T08:26:58Z",
+  "generated_at": "2026-09-04T14:13:54Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -9,8 +9,8 @@
       "bytes": 32014
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
-      "sha256": "ae0ea539946e23a2a0fd774d06b4e892521211e194954c412d2d14a5ff4679a6",
-      "bytes": 13752
+      "sha256": "5c3f7b2a0f22068d3af7001b7565bdd0bb6b1b0094638bd720d2e0cc58a05747",
+      "bytes": 14478
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
@@ -265,8 +265,8 @@
       "bytes": 7991
     },
     "presentation-design-system/04-SOP-variable-layout-anti-template.md": {
-      "sha256": "4aa3dc1b639d132747ebd7ef11990c9750328655403cd6aa26d688856bede350",
-      "bytes": 6787
+      "sha256": "dba7e9e52dfdf1403b086bba3d74212f4bbb5bcfd4b5bf9a53e2d55e2d6da965",
+      "bytes": 6807
     },
     "presentation-design-system/05-SOP-logo-consistency.md": {
       "sha256": "551a50e262ae78e1aa76c54eaa16376dce1519ffa38a3981b12c8a95ffe04f78",
@@ -281,8 +281,8 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "65ac80460e59c12142555e99757e105f3caafc1657b5994c580080ca1dcbb997",
-      "bytes": 17520
+      "sha256": "89205fbb92635ded5b53c1fdcd34e0482415c340b72aeeeab01c89672dc5c4a2",
+      "bytes": 17873
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
       "sha256": "fa8a5245acc325fd356b8fe2075ce85f2ed657ad8b315b90dfbc441d4d6b1ea3",

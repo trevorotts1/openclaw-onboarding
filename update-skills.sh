@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v23.0.1"
+ONBOARDING_VERSION="v23.0.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v23.0.1 - safe_json_edit
+# v23.0.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9472,7 +9472,9 @@ PYEOF
   # ----------------------------------------------------------
   converge_presentation_deps() {
     echo ""
-    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx)..."
+    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx, pypdf, pytesseract, ffmpeg, ffprobe, tesseract — per presentation-deps.json)..."
+    local _PRES_VENV="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations"
+    local _PRES_VENV_PY="$_PRES_VENV/bin/python"
     if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
       local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
       if [ -x "$_reassert" ]; then
@@ -9483,8 +9485,9 @@ PYEOF
       fi
     else
       # Mac: brew formula for poppler, NONINTERACTIVE cask for LibreOffice (loud
-      # warn on failure — a cask can need an admin password), pip --user for the
-      # two Python modules. NONINTERACTIVE + no `read` so a silent roll never hangs.
+      # warn on failure — a cask can need an admin password), Python modules into
+      # the department venv (FIX 71). NONINTERACTIVE + no `read` so a silent roll
+      # never hangs.
       if command -v pdftoppm >/dev/null 2>&1; then
         echo "    pdftoppm (poppler) already present"
       elif command -v brew >/dev/null 2>&1; then
@@ -9503,31 +9506,106 @@ PYEOF
       else
         echo "    ⚠ Homebrew not found — cannot install LibreOffice (soffice)"
       fi
-      if command -v python3 >/dev/null 2>&1; then
-        if python3 -c "import reportlab, pptx" >/dev/null 2>&1; then
-          echo "    reportlab + python-pptx already importable"
-        else
-          echo "    Installing reportlab + python-pptx (pip --user --break-system-packages)..."
-          python3 -m pip install --user --break-system-packages reportlab python-pptx >/dev/null 2>&1 \
-            && echo "    reportlab + python-pptx installed" \
-            || echo "    ⚠ pip install reportlab/python-pptx failed — deck assembly + presenter PDF will fail"
-        fi
+      # FIX 70 (W20b-B3): ffmpeg/ffprobe (webinar video render) and tesseract (OCR
+      # readback via pytesseract) are canon deps the older converge never installed.
+      if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+        echo "    ffmpeg + ffprobe already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing ffmpeg (provides ffmpeg + ffprobe) via Homebrew..."
+        brew install ffmpeg >/dev/null 2>&1 \
+          && echo "    ffmpeg installed (ffmpeg + ffprobe)" \
+          || echo "    ⚠ brew install ffmpeg failed — webinar video render will fail. Run: brew install ffmpeg"
+      else
+        echo "    ⚠ Homebrew not found — cannot install ffmpeg/ffprobe"
+      fi
+      if command -v tesseract >/dev/null 2>&1; then
+        echo "    tesseract already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing tesseract (OCR readback binary) via Homebrew..."
+        brew install tesseract >/dev/null 2>&1 \
+          && echo "    tesseract installed" \
+          || echo "    ⚠ brew install tesseract failed — image QC OCR readback will fail. Run: brew install tesseract"
+      else
+        echo "    ⚠ Homebrew not found — cannot install tesseract"
       fi
     fi
-    # Hard end-of-converge WARNING when any of the four deps is STILL missing.
+    # FIX 71: department venv — created on BOTH platforms (the VPS reassert script
+    # predates the venv and pip-installs into the system interpreter; converging
+    # the venv here closes that gap until install.sh Step 6.5 ships the venv too).
+    if command -v python3 >/dev/null 2>&1; then
+      if [ ! -x "$_PRES_VENV_PY" ]; then
+        echo "    Creating department venv at $_PRES_VENV ..."
+        if python3 -m venv "$_PRES_VENV" >/dev/null 2>&1 && [ -x "$_PRES_VENV_PY" ]; then
+          echo "    ✓ venv created ($_PRES_VENV)"
+        else
+          rm -rf "$_PRES_VENV" 2>/dev/null
+          echo "    ⚠⚠ python3 -m venv FAILED — the venv half was not created. Debian/Ubuntu images need: apt-get install -y python3-venv python3-pip. The four Python presentation deps (reportlab, python-pptx, pypdf, pytesseract) are NOT installed; deck assembly + presenter PDF + workbook read-back + OCR readback will fail at GATE 1."
+        fi
+      fi
+      if [ -x "$_PRES_VENV_PY" ]; then
+        if "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+          echo "    reportlab + python-pptx + pypdf + pytesseract already importable in the department venv"
+        else
+          echo "    Installing reportlab + python-pptx + pypdf + pytesseract INTO the department venv (venv-local pip only)..."
+          if "$_PRES_VENV_PY" -m pip install --quiet --disable-pip-version-check reportlab python-pptx pypdf pytesseract >/dev/null 2>&1 \
+             && "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+            echo "    ✓ reportlab + python-pptx + pypdf + pytesseract installed in the venv"
+          else
+            echo "    ⚠ venv pip install failed — deck assembly + presenter PDF + workbook read-back + OCR readback will fail. Re-run: $_PRES_VENV_PY -m pip install reportlab python-pptx pypdf pytesseract"
+          fi
+        fi
+        # FIX 70: converge every remaining canon python_import row (a canon dep
+        # added after this roll is installed here without editing the hardcoded
+        # block above).
+        pres_deps_check_and_install
+        export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_VENV_PY"
+        echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
+      fi
+    fi
+    # Hard end-of-converge WARNING when any canon dep is STILL missing (FIX 70:
+    # the verify pass now checks every presentation-deps.json row on top of the
+    # pre-existing hardcoded core checks, so this verdict matches the
+    # qc-completeness.sh exit-6 gate).
     local _pres_missing=""
     command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
     command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
-    if command -v python3 >/dev/null 2>&1; then
-      python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _pres_missing="${_pres_missing} python(reportlab+python-pptx)"
+    if [ -x "$_PRES_VENV_PY" ]; then
+      "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1 || _pres_missing="${_pres_missing} venv(reportlab+python-pptx+pypdf+pytesseract at $_PRES_VENV)"
+    elif command -v python3 >/dev/null 2>&1; then
+      _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
     fi
+    command -v ffmpeg  >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffmpeg"
+    command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
+    command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
+    pres_deps_verify_rows
     if [ -n "$_pres_missing" ]; then
-      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Mac: brew install poppler; brew install --cask libreoffice; python3 -m pip install --user --break-system-packages reportlab python-pptx. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
     else
-      echo "  ✓ presentation deps converged: soffice + pdftoppm + reportlab + python-pptx all present"
+      echo "  ✓ presentation deps converged: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present (canon-checked)"
     fi
   }
   converge_presentation_deps
+  # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
+  # are a path, never a secret) so the door + engine resolve the venv python on the
+  # next run without depending on this process env. Append-only + idempotent.
+  if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ]; then
+    _PRES_SECRETS_ENV="${OC_SECRETS_ENV:-}"
+    [ -z "$_PRES_SECRETS_ENV" ] && [ "${OC_PLATFORM:-}" = "vps" ] && _PRES_SECRETS_ENV="/data/.openclaw/secrets/.env"
+    [ -z "$_PRES_SECRETS_ENV" ] && _PRES_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+    if [ -n "$_PRES_SECRETS_ENV" ]; then
+      mkdir -p "$(dirname "$_PRES_SECRETS_ENV")" 2>/dev/null
+      touch "$_PRES_SECRETS_ENV" 2>/dev/null || true
+      if grep -q '^export PRESENTATION_PIPELINE_INTERPRETER=' "$_PRES_SECRETS_ENV" 2>/dev/null; then
+        sed -i.bak-presvenv "s|^export PRESENTATION_PIPELINE_INTERPRETER=.*|export PRESENTATION_PIPELINE_INTERPRETER=\"${PRESENTATION_PIPELINE_INTERPRETER}\"|" "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER updated in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not update PRESENTATION_PIPELINE_INTERPRETER in $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      else
+        printf 'export PRESENTATION_PIPELINE_INTERPRETER="%s"\n' "$PRESENTATION_PIPELINE_INTERPRETER" >> "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER recorded in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not write PRESENTATION_PIPELINE_INTERPRETER to $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      fi
+    fi
+  fi
 
   # ----------------------------------------------------------
   # R14: REAP THE GHL MCP STATUS LINE.

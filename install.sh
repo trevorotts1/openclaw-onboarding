@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v23.0.1"
+ONBOARDING_VERSION="v23.0.2"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3983,29 +3983,59 @@ PYEOF
     unset _BROWSER_HEAL_OUT
 fi
 
-# Install google-genai if needed.
-# v14.1.3: use `python3 -m pip` (portable) instead of the bare `pip3` binary.
-# On a fresh Linux container python3-pip may be installed as a module with NO
-# `pip3` on PATH, so `pip3 install` would be "command not found". `python3 -m pip`
-# also guarantees the package lands in the SAME interpreter the import check uses.
+# FIX 71: NO `--break-system-packages` anywhere in this installer. Externally
+# managed environments (macOS 13+ python, PEP 668 Debian containers) reject the
+# bare install, so try a --user install first, then pipx, and fail LOUDLY with
+# the manual remediation instead of punching through the environment marker.
 if ! python3 -c "import google.genai" 2>/dev/null; then
     note "Installing google-genai package..."
-    python3 -m pip install google-genai --break-system-packages 2>/dev/null || \
-        python3 -m pip install google-genai 2>/dev/null || \
-        warn "google-genai install failed - manual install required"
+    if python3 -m pip install --user google-genai >> "$LOG_FILE" 2>&1 \
+       && python3 -c "import google.genai" 2>/dev/null; then
+        success "google-genai installed via pip --user"
+    elif command -v pipx >/dev/null 2>&1 && pipx inject google-genai 2>/dev/null; then
+        success "google-genai installed via pipx inject"
+    else
+        warn "google-genai install failed — manual install required: python3 -m pip install --user google-genai (or a venv)"
+    fi
 else
     success "google-genai already installed"
 fi
+
+# ----------------------------------------------------------
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
 # ----------------------------------------------------------
 # Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
 # Each verified individually; failures LOUDLY warn (not silently swallowed).
-# Mac install order: uv → pip3 --break-system-packages → pip3 → pipx fallback.
+# v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
+# ----------------------------------------------------------
+# Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
+# Each verified individually; failures LOUDLY warn (not silently swallowed).
+# FIX 71 install order: uv → pip --user → venv pip → pipx fallback. NO
+# --break-system-packages anywhere — an externally-managed environment (PEP
+# 668, macOS 13+) is worked WITH (user site / a venv), never punched through.
 # ────────────────────────────────────────────────────────────────────────────
 
 step "Step 6.4: Installing Skill 22 Python pipeline dependencies (Mac)"
+
+# FIX 71: shared scratch venv for packages a PEP-668 system python refuses.
+# Reused by _install_py_pkg_mac attempt 3 and any consumer needing a clean
+# interpreter. Lives under the OpenClaw root next to .venv-presentations.
+_ensure_s22_fallback_venv() {
+    local VENV_ROOT
+    if [ -d "/data/.openclaw" ]; then VENV_ROOT="/data/.openclaw"; else VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"; fi
+    local VENV_DIR="$VENV_ROOT/.venv-skill22"
+    local VENV_PY="$VENV_DIR/bin/python"
+    if [ -x "$VENV_PY" ]; then
+        echo "$VENV_PY"; return 0
+    fi
+    if python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1 || true
+        echo "$VENV_PY"; return 0
+    fi
+    return 1
+}
 
 _install_py_pkg_mac() {
     local pkg="$1"
@@ -4028,29 +4058,42 @@ _install_py_pkg_mac() {
         fi
     fi
 
-    # Attempt 2: pip --break-system-packages (macOS 13+ externally-managed python).
-    # v14.1.3: `python3 -m pip` instead of bare `pip3` — portable. Resolves to the
-    # SAME pip on Mac, and works on a fresh Linux container where pip is installed
-    # as a module with no `pip3` binary on PATH (this helper now also runs Skill 22
-    # deps on VPS, where bare `pip3` would have been "command not found").
-    if python3 -m pip install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
+    # Attempt 2: pip --user. v14.1.3: `python3 -m pip` instead of bare `pip3` —
+    # portable. Resolves to the SAME pip on Mac, and works on a fresh Linux
+    # container where pip is installed as a module with no `pip3` binary on
+    # PATH (this helper now also runs Skill 22 deps on VPS, where bare `pip3`
+    # would have been "command not found"). FIX 71: no --break-system-packages;
+    # on a PEP-668 system python this attempt simply fails and we fall through.
+    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
         if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip --break-system-packages"
+            success "$display installed via pip --user"
             return 0
         fi
     fi
 
-    # Attempt 3: pip without the flag (older pip that lacks --break-system-packages)
-    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
-        if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip"
+    # Attempt 3 (FIX 71): the Skill 22 fallback venv — guaranteed importable
+    # there even on an externally-managed system python.
+    local _s22_venv_py
+    if _s22_venv_py="$(_ensure_s22_fallback_venv)" && [ -n "$_s22_venv_py" ]; then
+        if "$_s22_venv_py" -m pip install --quiet "$pkg" >> "$LOG_FILE" 2>&1; then
+            if "$_s22_venv_py" -c "import $import" 2>/dev/null; then
+                success "$display installed via Skill 22 fallback venv ($_s22_venv_py)"
+                return 0
+            fi
+        fi
+    fi
+
+    # Attempt 4: pipx (runs apps in their own venvs — never touches system site).
+    if command -v pipx >/dev/null 2>&1; then
+        if pipx inject skill22-shared "$pkg" >> "$LOG_FILE" 2>&1; then
+            success "$display installed via pipx (skill22-shared)"
             return 0
         fi
     fi
 
     warn "WARN: $display installation failed after all attempts."
     warn "      Skill 22 book extraction may fail for formats requiring $display."
-    warn "      Manual fix: python3 -m pip install --user $pkg --break-system-packages"
+    warn "      Manual fix: python3 -m pip install --user $pkg  (or: python3 -m venv ~/.openclaw/.venv-skill22 && ~/.openclaw/.venv-skill22/bin/pip install $pkg)"
     return 1
 }
 
@@ -4077,6 +4120,8 @@ else
 fi
 
 # ----------------------------------------------------------
+
+# ----------------------------------------------------------
 # Step 6.5: Presentation pipeline runtime dependencies
 # ----------------------------------------------------------
 # Skill 23 (AI Workforce Blueprint) includes a presentation pipeline that needs:
@@ -4090,14 +4135,15 @@ fi
 #   • ffmpeg + ffprobe — webinar video render + size probe (Feature L2-G,
 #     P9.6-WEBINAR-VIDEO, build_webinar_video.py → webinar_ffmpeg.py)
 #
-# Platform branches:
-#   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
-#          via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
+# Platform branches (FIX 71: both platforms install python deps into the
+# department venv <root>/.venv-presentations — NEVER system python):
+#   Mac  — venv first (ensure_presentation_venv above); poppler via formula;
+#          LibreOffice via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
 #   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
 #          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
 #          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
-#          brew on these images). Python deps (reportlab, python-pptx, pypdf) via pip
-#          --break-system-packages into the SAME python3 that build_deck.py runs.
+#          brew on these images). Python deps (reportlab, python-pptx, pypdf,
+#          pytesseract) into /data/.openclaw/.venv-presentations via its own pip.
 #          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
@@ -4121,6 +4167,71 @@ fi
 
 step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, pypdf, poppler, LibreOffice, ffmpeg)"
 
+# ----------------------------------------------------------
+# FIX 71 — the department venv: <root>/.venv-presentations
+# ----------------------------------------------------------
+# <root> is the OpenClaw root: /data/.openclaw on a VPS container, ~/.openclaw
+# on a Mac. ALL presentation-pipeline python deps (reportlab, python-pptx,
+# pypdf, pytesseract, Pillow) install INTO THIS VENV — never into the system
+# python, never with --break-system-packages. The interpreter is exported to
+# every consumer via PRESENTATION_PIPELINE_INTERPRETER (secrets/.env export
+# line per FIX 72, so `set -a; . secrets/.env` reaches the door, the engine,
+# and every child python). ocr-deps.json's install_policy already names this
+# exact shape ("install into the pipeline's dedicated venv ... and point
+# PRESENTATION_PIPELINE_INTERPRETER at that venv's interpreter").
+# Idempotent: an existing healthy venv with all four imports is a byte-identical
+# no-op. A venv missing deps gets ONLY the missing packages pip-installed into
+# it (venv pip has no PEP 668 marker, so no flag is ever needed).
+ensure_presentation_venv() {
+    local VENV_ROOT
+    if [ -d "/data/.openclaw" ]; then
+        VENV_ROOT="/data/.openclaw"
+    else
+        VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"
+    fi
+    local VENV_DIR="$VENV_ROOT/.venv-presentations"
+    local VENV_PY="$VENV_DIR/bin/python"
+    local VENV_PIP="$VENV_DIR/bin/pip"
+
+    if [ -x "$VENV_PY" ]        && "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+        success "FIX 71: presentation venv already healthy at $VENV_DIR (reportlab, pptx, pypdf, pytesseract all import)"
+    else
+        note "FIX 71: creating presentation venv at $VENV_DIR ..."
+        if ! python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+            warn "FIX 71: python3 -m venv failed at $VENV_DIR — the presentation pipeline will fall back to the system python3. Manual fix: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+            return 0
+        fi
+        # venv pip is self-contained (no PEP 668 external-management marker) —
+        # a bare install works, no --break-system-packages, ever.
+        local _pkgs="reportlab python-pptx pypdf pytesseract Pillow"
+        note "FIX 71: installing $_pkgs into $VENV_DIR ..."
+        if "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1            && "$VENV_PY" -m pip install --quiet $_pkgs >> "$LOG_FILE" 2>&1; then
+            if "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+                success "FIX 71: presentation venv populated — reportlab, pptx, pypdf, pytesseract import in $VENV_PY"
+            else
+                warn "FIX 71: venv packages installed but the import check FAILED — see $LOG_FILE. Manual: $VENV_PY -c 'import reportlab, pptx, pypdf, pytesseract'"
+            fi
+        else
+            warn "FIX 71: pip install into $VENV_DIR failed (network/offline?) — see $LOG_FILE. Manual: $VENV_PY -m pip install $_pkgs"
+        fi
+    fi
+
+    # Export the interpreter path via the FIX 72 writer: an export line in
+    # secrets/.env + a mirror in openclaw.json env.vars. Consumers (door,
+    # engine, qc gates) read it with set -a or from the gateway env.
+    local _venv_val="$VENV_PY"
+    if command -v _shared_write_env >/dev/null 2>&1; then
+        _shared_write_env "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
+        if command -v _shared_write_ocjson >/dev/null 2>&1; then
+            _shared_write_ocjson "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
+        fi
+        success "FIX 71: PRESENTATION_PIPELINE_INTERPRETER=$_venv_val (export line in $OC_SECRETS_ENV + openclaw.json env.vars)"
+    else
+        warn "FIX 71: _shared_write_env unavailable — set PRESENTATION_PIPELINE_INTERPRETER=$_venv_val manually in $OC_SECRETS_ENV"
+    fi
+    export PRESENTATION_PIPELINE_INTERPRETER="$VENV_PY"
+}
+ensure_presentation_venv
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
     # Resolve the REAL Debian apt-get (NOT the Linuxbrew shim). On these images
@@ -4177,25 +4288,39 @@ else
     echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
 fi
 
-# --- Python deps into the SAME interpreter build_deck.py runs.
-"$PY3" -m pip install --break-system-packages --quiet reportlab >> "$LOG" 2>&1 \
-    && echo "[$(ts)] reportlab OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: reportlab install failed" >> "$LOG"
-"$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
-    && echo "[$(ts)] python-pptx OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
-"$PY3" -m pip install --break-system-packages --quiet pypdf >> "$LOG" 2>&1 \
-    && echo "[$(ts)] pypdf OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: pypdf install failed (workbook PDF read-back)" >> "$LOG"
+# --- Python deps into the FIX 71 department venv (NEVER system python, never
+# --- --break-system-packages). The venv lives on the /data bind-mount, so it
+# --- DOES survive a force-recreate; this script still (re)asserts idempotently.
+VENV_DIR="/data/.openclaw/.venv-presentations"
+VENV_PY="$VENV_DIR/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+    echo "[$(ts)] FIX 71: creating venv at $VENV_DIR" >> "$LOG"
+    python3 -m venv "$VENV_DIR" >> "$LOG" 2>&1 \
+        && echo "[$(ts)] venv created" >> "$LOG" \
+        || echo "[$(ts)] WARN: venv creation failed at $VENV_DIR" >> "$LOG"
+fi
+if [ -x "$VENV_PY" ]; then
+    if ! "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+        echo "[$(ts)] FIX 71: pip install reportlab python-pptx pypdf pytesseract Pillow (venv pip, no external-management marker)" >> "$LOG"
+        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG" 2>&1 || true
+        "$VENV_PY" -m pip install --quiet reportlab python-pptx pypdf pytesseract Pillow >> "$LOG" 2>&1 \
+            && echo "[$(ts)] FIX 71: venv packages OK" >> "$LOG" \
+            || echo "[$(ts)] WARN: venv pip install failed (see above)" >> "$LOG"
+    else
+        echo "[$(ts)] FIX 71: venv already healthy — pip install skipped" >> "$LOG"
+    fi
+else
+    echo "[$(ts)] WARN: no venv interpreter at $VENV_PY — presentation python deps NOT installed" >> "$LOG"
+fi
 
-# --- Verify (same checks qc-completeness.sh hard-fails on).
+# --- Verify (same checks qc-completeness.sh hard-fails on) — under the VENV
+# --- interpreter when present, system python3 otherwise.
 command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
 command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
-"$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
-"$PY3" -c "import pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify pypdf OK" >> "$LOG" || echo "[$(ts)] WARN: pypdf import failed (workbook PDF read-back)" >> "$LOG"
+_CHK_PY="$PY3"; [ -x "$VENV_PY" ] && _CHK_PY="$VENV_PY"
+"$_CHK_PY" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx+pypdf OK ($_CHK_PY)" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx/pypdf import failed under $_CHK_PY" >> "$LOG"
 command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
 command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
-
 echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
 REASSERT_EOF
     chmod +x "$_VPS_REASSERT_SCRIPT"
@@ -4211,15 +4336,20 @@ REASSERT_EOF
     command -v pdftoppm >/dev/null 2>&1 \
         && success "pdftoppm (poppler-utils) on PATH" \
         || warn "pdftoppm NOT on PATH after install — Phase-6 QC PNG extraction will fail. Manual fix: $_APT_GET install -y poppler-utils"
-    "$_PY3" -c "import reportlab" >/dev/null 2>&1 \
-        && success "reportlab importable in $_PY3" \
-        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: $_PY3 -m pip install --break-system-packages reportlab"
-    "$_PY3" -c "import pptx" >/dev/null 2>&1 \
-        && success "python-pptx importable in $_PY3" \
-        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
-    "$_PY3" -c "import pypdf" >/dev/null 2>&1 \
-        && success "pypdf importable in $_PY3" \
-        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: $_PY3 -m pip install --break-system-packages pypdf"
+    _VENV_PY="/data/.openclaw/.venv-presentations/bin/python"
+    _IMP_PY="$_PY3"; [ -x "$_VENV_PY" ] && _IMP_PY="$_VENV_PY"
+    "$_IMP_PY" -c "import reportlab" >/dev/null 2>&1 \
+        && success "reportlab importable in $_IMP_PY" \
+        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: ${_VENV_PY} -m pip install reportlab (create venv first: python3 -m venv /data/.openclaw/.venv-presentations)"
+    "$_IMP_PY" -c "import pptx" >/dev/null 2>&1 \
+        && success "python-pptx importable in $_IMP_PY" \
+        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: ${_VENV_PY} -m pip install python-pptx"
+    "$_IMP_PY" -c "import pypdf" >/dev/null 2>&1 \
+        && success "pypdf importable in $_IMP_PY" \
+        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: ${_VENV_PY} -m pip install pypdf"
+    "$_IMP_PY" -c "import pytesseract" >/dev/null 2>&1 \
+        && success "pytesseract importable in $_IMP_PY" \
+        || warn "pytesseract NOT importable — OCR read-back will fail. Manual fix: ${_VENV_PY} -m pip install pytesseract Pillow (plus the tesseract binary)"
     command -v ffmpeg >/dev/null 2>&1 \
         && success "ffmpeg on PATH (webinar video render, P9.6)" \
         || warn "ffmpeg NOT on PATH after install — the webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: $_APT_GET install -y ffmpeg"
@@ -4297,10 +4427,22 @@ REASSERT_EOF
 
 else
     # ── MAC ARM ───────────────────────────────────────────────────────────────
-    # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
-    _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
-    _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
-    _install_py_pkg_mac "pypdf"       "pypdf"      "pypdf (workbook PDF read-back verification, P8.25-WORKBOOK)"
+    # ── MAC ARM ───────────────────────────────────────────────────────────────
+    # FIX 71: the department venv was already created + populated at the top of
+    # Step 6.5 (ensure_presentation_venv — .venv-presentations with reportlab,
+    # python-pptx, pypdf, pytesseract, Pillow and the PRESENTATION_PIPELINE_
+    # INTERPRETER export line). Nothing system-side is needed for python deps;
+    # the _install_py_pkg_mac helper stays reserved for the Skill 22 deps in
+    # Step 6.4 (pdfplumber/ebooklib/mobi/… — a DIFFERENT pipeline's packages).
+    if command -v python3 >/dev/null 2>&1; then
+        _MAC_VENV_PY="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+        [ -z "$_MAC_VENV_PY" ] && _MAC_VENV_PY="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python"
+        if [ -x "$_MAC_VENV_PY" ] && "$_MAC_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+            success "Mac presentation venv verified: reportlab, pptx, pypdf, pytesseract import in $_MAC_VENV_PY"
+        else
+            warn "Mac presentation venv incomplete — re-running ensure_presentation_venv checks is advised. Manual: python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+        fi
+    fi
 
     # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
     if command -v pdftoppm >/dev/null 2>&1; then
