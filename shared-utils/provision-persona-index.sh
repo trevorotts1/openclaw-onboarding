@@ -388,20 +388,33 @@ try:
 except Exception:
     print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
 
-        # Raw DISTINCT embedded-persona count (persona slug = the dir one level
-        # above each chunk's file_path, per embedding_engine.get_persona_name).
-        # Scoped to PERSONA rows only ('%/personas/%', the same filter
-        # embedding_engine uses to identify persona chunks) so non-persona rows
-        # shipped in the asset (e.g. hormozi_leads_rows) can NEVER inflate the
-        # count and spuriously flip the local-delta decision.
+        # Raw DISTINCT embedded-persona count — COUNT(DISTINCT persona_id),
+        # the same column build-and-publish.sh stamps embedded_persona_count
+        # from and the same thing the manifest's persona_count refers to.
+        # FAIL-SAFE DIRECTION: when in doubt this gate prefers RE-DOWNLOAD
+        # over skip. A false "already canonical" silently ships stale data to
+        # the fleet (live-proven: a mis-constructed index printed "already
+        # canonical" and self-stamped its sentinel, never re-downloading);
+        # a false "needs download" costs one sha256-verified download.
+        # NULL/empty persona_id rows NEVER count as coverage — that IS the
+        # stale state (rows present, persona_ids untagged/under-counted).
+        # Falls back to the file_path-dir derivation ONLY when the
+        # persona_id column does not exist (legacy pre-section index), so
+        # old boxes still converge instead of error-looping.
         _INDEX_PERSONAS="$(python3 -c 'import sqlite3,sys,os
 try:
     c=sqlite3.connect(sys.argv[1])
-    seen=set()
-    for (fp,) in c.execute("SELECT DISTINCT file_path FROM embeddings WHERE file_path LIKE ?", ("%/personas/%",)):
-        if not fp: continue
-        seen.add(os.path.basename(os.path.dirname(fp)))
-    c.close(); print(len(seen))
+    cols=[r[1] for r in c.execute("PRAGMA table_info(embeddings)").fetchall()]
+    n=0
+    if "persona_id" in cols:
+        n=c.execute("SELECT COUNT(DISTINCT persona_id) FROM embeddings WHERE persona_id IS NOT NULL AND TRIM(persona_id) != \"\"").fetchone()[0]
+    else:
+        seen=set()
+        for (fp,) in c.execute("SELECT DISTINCT file_path FROM embeddings WHERE file_path LIKE ?", ("%/personas/%",)):
+            if not fp: continue
+            seen.add(os.path.basename(os.path.dirname(fp)))
+        n=len(seen)
+    c.close(); print(n)
 except Exception:
     print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
 
