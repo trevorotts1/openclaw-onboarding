@@ -214,7 +214,12 @@ def compute_ledger(repo, hcm):
         # whose deletion landed in a MERGE commit, which `git log` omits by
         # default (that is how the 8th retired SOP,
         # presentations/sops/deck-discovery-strategist-sops.md, is found).
-        log = _git(repo, "log", "--no-renames", "--pretty=format:",
+        # --full-history is REQUIRED: without it, history simplification on a
+        # PR merge ref (refs/pull/N/merge, which CI checks out) can prune the
+        # side branch that deleted a path when the merge result carries the
+        # same content, hiding the deletion commit from `git log -- <path>`
+        # and desyncing the ledger (measured on PR 1015, 2026-09-04).
+        log = _git(repo, "log", "--full-history", "--no-renames", "--pretty=format:",
                    "--name-only", "--diff-filter=ACDMRT", "--", tree) or ""
         for line in log.split("\n"):
             line = line.strip()
@@ -263,7 +268,7 @@ def _shas_for_path(repo, rel, hcm):
     """Every content_sha this path ever carried, oldest commit first."""
     shas, seen = [], set()
     commits = [c.strip() for c in
-               (_git(repo, "log", "--no-renames", "--pretty=%H", "--", rel) or "").split("\n")
+               (_git(repo, "log", "--full-history", "--no-renames", "--pretty=%H", "--", rel) or "").split("\n")
                if c.strip()]
     for commit in reversed(commits):
         blob = _git(repo, "cat-file", "-p", f"{commit}:{rel}", allow_fail=True)
@@ -277,7 +282,7 @@ def _shas_for_path(repo, rel, hcm):
 
 
 def _deletion_record(repo, rel):
-    out = _git(repo, "log", "--no-renames", "--diff-filter=D", "-1",
+    out = _git(repo, "log", "--full-history", "--no-renames", "--diff-filter=D", "-1",
                "--pretty=%H%x09%cI", "--", rel, allow_fail=True)
     if not out or "\t" not in out:
         return (None, None)

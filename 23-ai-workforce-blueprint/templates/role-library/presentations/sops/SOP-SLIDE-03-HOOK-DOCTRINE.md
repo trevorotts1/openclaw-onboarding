@@ -1,7 +1,7 @@
 # SOP-SLIDE-03: HOOK DOCTRINE (THE SACRED REFRAIN)
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 1, Section 5.1 the HOOK, criterion 11)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — hook ceiling + anti-footer + density floor (Section 6.1 legacy) lives in `SOP-SLIDE-03-HOOK-DOCTRINE` (this file) + `qc-specialist-presentations` copy-QC criterion **[univ slide-craft]**
 **Owning role at write time:** Hook Strategist (anchors + hook-absent list), Slide Copywriter (places only the approved anchors)
 **Owning role at render time:** Slide Image Creator (renders the hook ONLY on its dedicated typography slides, never as a footer band)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-HOOK, below)
@@ -80,9 +80,9 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 
 This SOP contradicts, on purpose, the current floor-based hook rule that PRODUCED the forensic-reference failure. The integrator MUST make these exact changes so the system stops flooring-and-stamping:
 
-- **Master SOP Section 4.3 rule 1:** replace "The hook appears AT LEAST 7 TIMES across the deck (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7)" with "The hook appears on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE. Footer-stamping is banned. The hook is a verbatim, sacred refrain." Keep "Sing it early", "Refrain after proof" only as a NOTE that the refrain after proof is one of the 3 to 4 dedicated beats, not a new footer.
-- **Master SOP Section 5.1, THE HOOK bullet:** replace "Sing it at least 7 times" with "Place it on 3 to 4 dedicated slides only." Delete "refrains at the bottom of proof slides" (that line authorized the footer) and "light occurrences through every section."
-- **Master SOP Section 6.1 criterion 11 (HOOK COUNT):** replace "Fewer than 7 = auto-fail" with "More than 4 hook-carrying slides = auto-fail; zero dedicated hook slides = auto-fail; the hook footer-stamped on any slide = auto-fail."
+- **Legacy citation crosswalk — pitch-doctrine home (was "Master SOP Section 4.3 rule 1"):** replace "The hook appears AT LEAST 7 TIMES across the deck (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7)" with "The hook appears on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE. Footer-stamping is banned. The hook is a verbatim, sacred refrain." Keep "Sing it early", "Refrain after proof" only as a NOTE that the refrain after proof is one of the 3 to 4 dedicated beats, not a new footer.
+- **Legacy citation crosswalk — copy-limits home (was "Master SOP Section 5.1, THE HOOK bullet"):** replace "Sing it at least 7 times" with "Place it on 3 to 4 dedicated slides only." Delete "refrains at the bottom of proof slides" (that line authorized the footer) and "light occurrences through every section."
+- **Legacy citation crosswalk — hook-count home (was "Master SOP Section 6.1 criterion 11 (HOOK COUNT)"):** replace "Fewer than 7 = auto-fail" with "More than 4 hook-carrying slides = auto-fail; zero dedicated hook slides = auto-fail; the hook footer-stamped on any slide = auto-fail."
 - **QC role AF-C2:** replace the BELOW-7 floor auto-fail with the AF-HOOK ceiling battery above.
 - **Hook Strategist role:** change the KPI "Hook occurrences >= 7" to "Hook-carrying slides: 3 to 4; footer occurrences: 0; dedicated typography hook slides: 3 to 4." Replace the "7 to 10 variants + refrains after proof" placement logic with the 3-to-4-anchor + hook-absent-list logic. The dedicated A4 hook slide and the closing reprise remain hard requirements (they ARE two of the 3 to 4 anchors).
 - **Slide Image Creator SOP 9.4 (Overlays element 8):** DELETE the "semi-transparent band at the bottom 15% ... HOOK VARIANT TEXT" footer rendering. The hook renders ONLY as the type-dominant content of a dedicated A4 hook slide. Non-hook slides have no hook overlay.

@@ -268,7 +268,6 @@ def _secrets_candidates() -> list:
         candidates.append(os.path.expanduser(override))
     candidates += [
         os.path.expanduser("~/.openclaw/workspace/.env"),
-        os.path.expanduser("~/clawd/secrets/.env"),
         os.path.expanduser("~/.openclaw/secrets/.env"),
     ]
     return candidates

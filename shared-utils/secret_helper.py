@@ -56,7 +56,6 @@ ENV_FILE_CANDIDATES = [
     os.path.expanduser("~/.openclaw/secrets/.env"),
     os.path.expanduser("~/.openclaw/secrets/secrets.env"),
     os.path.expanduser("~/.openclaw/.env"),
-    os.path.expanduser("~/clawd/secrets/.env"),
     os.path.expanduser("~/.env"),
 ]
 
