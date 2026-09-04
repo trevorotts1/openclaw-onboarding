@@ -5394,7 +5394,7 @@ PYEOF
   # by the POST-stamp qc-completeness run + the onboarding-resume cron; it NEVER
   # withholds the skills-version stamp):
   _D2_MIGRATE_STATUS="ok"       # workforce floor-fill / workforce QC (migrate-existing-workforce.sh: empty depts for an interview-incomplete client, or a dept below the 95% floor)
-  _D5_ACTIVATION_PASS=1         # dept-agent activation (materialize-dept-agents.sh: agents.list[] below this box's computed department floor)
+  _D5_ACTIVATION_PASS=1         # dept-agent activation (materialize-dept-agents.sh: agent roster -- agents.entries, else legacy agents.list -- below this box's computed department floor)
   _D5_NOTLIVE_DETAIL=""
   _D5_AGENT_COUNT=0
   _D5_DEPT_STATE="skipped"
@@ -7411,9 +7411,21 @@ else:
       _D5_DEPT_STATE="interview-not-complete"
       echo "  ✓ [D5] pre-interview self-skip (INTERVIEW_NOT_COMPLETE) — benign, not a failure"
     else
+      # ROSTER-SHAPE FIX (2026-09-04): this counted ONLY the legacy
+      # `agents.list` array. On a box migrated to the canonical
+      # `agents.entries` roster that count is 0, so D5 false-FAILED
+      # ("agents.list[] has only 0 entries ... below the computed department
+      # floor") on a box whose departments were in fact fully registered.
+      # Count the roster materialize-dept-agents.sh actually writes to:
+      # agents.entries when present and non-empty, legacy agents.list
+      # otherwise -- the same entries-first precedence as _oc_agents() in
+      # scripts/verify-routing.sh (PR #1021).
       _D5_AGENT_COUNT=0
+      _D5_ROSTER_LABEL="none"
       if [ -f "$OC_JSON" ]; then
-        _D5_AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+        _D5_ROSTER_INFO=$(python3 -c "import json,sys;d=json.load(open('$OC_JSON'));a=(d.get('agents') or {});e=a.get('entries');r=[v for v in e.values() if isinstance(v,dict)] if isinstance(e,dict) and e else [x for x in (a.get('list') or []) if isinstance(x,dict)];lab='agents.entries' if (isinstance(e,dict) and e) else ('agents.list' if isinstance(a.get('list'),list) else 'none');sys.stdout.write('%d %s' % (len(r), lab))" 2>/dev/null || echo "0 none")
+        _D5_AGENT_COUNT="${_D5_ROSTER_INFO%% *}"
+        _D5_ROSTER_LABEL="${_D5_ROSTER_INFO#* }"
       fi
       # D5[F2]: gate on THIS box's real expected department count instead of a
       # fixed "-lt 2" magic number. A genuine interview-complete box carries the
@@ -7444,11 +7456,11 @@ if isinstance(n, int) and n > 0:
         if [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt "$_D5_EXPECTED_COUNT" ]; then
           _D5_ACTIVATION_PASS=0
           _D5_DEPT_STATE="fail"
-          _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below this box's computed department floor of ${_D5_EXPECTED_COUNT} (interview complete)"
-          echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below the computed department floor of ${_D5_EXPECTED_COUNT}"
+          _D5_NOTLIVE_DETAIL="${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize, below this box's computed department floor of ${_D5_EXPECTED_COUNT} (interview complete)"
+          echo "  ✗ [D5] WIRING-ASSERT FAIL: ${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize, below the computed department floor of ${_D5_EXPECTED_COUNT}"
         else
           _D5_DEPT_STATE="registered"
-          echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[], floor=${_D5_EXPECTED_COUNT})"
+          echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in ${_D5_ROSTER_LABEL}, floor=${_D5_EXPECTED_COUNT})"
         fi
       elif [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt 2 ]; then
         # department-floor.py unavailable / no verdict for this box -- fall
@@ -7456,11 +7468,11 @@ if isinstance(n, int) and n > 0:
         # we have no computable floor for.
         _D5_ACTIVATION_PASS=0
         _D5_DEPT_STATE="fail"
-        _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize (interview complete; department-floor.py unavailable -- fell back to the wiring-only check)"
-        echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize"
+        _D5_NOTLIVE_DETAIL="${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize (interview complete; department-floor.py unavailable -- fell back to the wiring-only check)"
+        echo "  ✗ [D5] WIRING-ASSERT FAIL: ${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize"
       else
         _D5_DEPT_STATE="registered"
-        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[]; department-floor.py unavailable -- wiring-only check)"
+        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in ${_D5_ROSTER_LABEL}; department-floor.py unavailable -- wiring-only check)"
       fi
     fi
   else
@@ -8962,15 +8974,22 @@ PY
       # miss, or a silent empty run is surfaced loudly — NOT swallowed with a
       # soft "update continues" message.  Skips gracefully when openclaw.json is
       # absent (Skill 32 not yet built on this box).
+      # ROSTER-SHAPE FIX (2026-09-04): counted ONLY legacy `agents.list`, so on
+      # a migrated box (agents.entries) it always read 0 and warned "Dept agents
+      # NOT live" on a box that was fully registered. Entries-first with a list
+      # fallback, same precedence as the D5 counter above.
       _AGENT_COUNT=0
+      _AGENT_ROSTER_LABEL="none"
       if [ -f "$OC_JSON" ]; then
-        _AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+        _AGENT_ROSTER_INFO=$(python3 -c "import json,sys;d=json.load(open('$OC_JSON'));a=(d.get('agents') or {});e=a.get('entries');r=[v for v in e.values() if isinstance(v,dict)] if isinstance(e,dict) and e else [x for x in (a.get('list') or []) if isinstance(x,dict)];lab='agents.entries' if (isinstance(e,dict) and e) else ('agents.list' if isinstance(a.get('list'),list) else 'none');sys.stdout.write('%d %s' % (len(r), lab))" 2>/dev/null || echo "0 none")
+        _AGENT_COUNT="${_AGENT_ROSTER_INFO%% *}"
+        _AGENT_ROSTER_LABEL="${_AGENT_ROSTER_INFO#* }"
       fi
       if [ -z "$_AGENT_COUNT" ] || [ "$_AGENT_COUNT" -lt 2 ]; then
-        echo "  ⚠ WIRING-ASSERT FAIL: agents.list[] has only ${_AGENT_COUNT:-0} entries after materialize"
+        echo "  ⚠ WIRING-ASSERT FAIL: ${_AGENT_ROSTER_LABEL} holds only ${_AGENT_COUNT:-0} agents after materialize"
         echo "  ⚠ Dept agents NOT live — re-run update after build-workforce.py completes or check Skill 32 path"
       else
-        echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in agents.list[])"
+        echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in ${_AGENT_ROSTER_LABEL})"
       fi
 
       # DEPARTMENT-RUNTIME-PARITY GUARD (belt-and-suspenders on update runs): the

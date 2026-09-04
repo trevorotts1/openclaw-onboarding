@@ -21,8 +21,12 @@
 #   - Scans the canonical master-files ZHC departments/ tree, workspaces/command-center/,
 #     and legacy workspace/departments/ for dept folders — canonical wins on slug collision
 #     (see the "ONE TRUE RULE" comment above DEPT_SCAN_ROOTS for the full priority order)
-#   - For each dept, adds (or updates) an entry in openclaw.json's agents.list[]
-#     following the schema in 32-command-center-setup/INSTALL.md Phase 4
+#   - For each dept, adds (or updates) an entry in openclaw.json's CANONICAL
+#     agents.entries{} roster (keyed by agent id), falling back to the legacy
+#     agents.list[] array ONLY on a genuinely pre-migration config that already
+#     carries it. It NEVER creates agents.list on a config that lacks it: the
+#     modern schema is strict and that one key invalidates the whole config
+#     ("agents: Unrecognized key: \"list\"").
 #   - Atomic write (tmp file + rename); timestamped backup before mutation
 #   - Idempotent — re-running adds zero duplicates; updates existing entries
 #     in-place if workspace path or pretty name changes
@@ -231,6 +235,7 @@ export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
 python3 <<'PYEOF'
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -304,7 +309,7 @@ for root in DEPT_ROOTS:
 
 if not discovered:
     print(f"[materialize-dept-agents] WARN: no department folders found under {DEPT_ROOTS} — nothing to materialize")
-    print("added 0 agents, updated 0 agents, total in agents.list: <unchanged>")
+    print("added 0 agents, updated 0 agents, total in roster: <unchanged>")
     sys.exit(0)
 
 # ─── Load openclaw.json ─────────────────────────────────────────────────────
@@ -315,25 +320,205 @@ except json.JSONDecodeError as e:
     print(f"[materialize-dept-agents] FATAL: openclaw.json is malformed JSON: {e}", file=sys.stderr)
     sys.exit(1)
 
-if "agents" not in cfg or not isinstance(cfg["agents"], dict):
-    cfg["agents"] = {"list": []}
-if "list" not in cfg["agents"] or not isinstance(cfg["agents"]["list"], list):
-    cfg["agents"]["list"] = []
+# ─── Resolve the roster shape: agents.entries (canonical) vs agents.list ────
+# THE BUG THIS FIXES (2026-09-04): this block used to create
+# cfg["agents"]["list"] UNCONDITIONALLY. A schema-valid modern OpenClaw config
+# CANNOT CONTAIN agents.list -- AgentsSchema is .strict() with exactly
+# {ownership, defaults, entries} -- so that single key invalidates the whole
+# config:
+#     x openclaw.json:2 - agents: Unrecognized key: "list"
+# On a migrated box (agents.entries) every routine `update-skills.sh` run
+# therefore INVALIDATED the client's config: the gateway could no longer reload,
+# and the remedy the validator prints (`openclaw doctor --fix`) has been
+# observed on this fleet to restore an older last-known-good and silently DROP
+# departments. Reproduced end-to-end on 2026-09-04: a modern fixture validated
+# rc=0 before this script and rc=1 (`Unrecognized key: "list"`) after it.
+#
+# The rules below were each verified against openclaw 2026.9.1's own zod schema
+# (dist/zod-schema-*.js) AND with `openclaw config validate` on fixtures:
+#   * entries WINS when both shapes are present -- the same precedence the
+#     gateway applies at boot ("Removed agents.list because canonical
+#     agents.entries is already set").
+#   * legacy agents.list is written ONLY when the config ALREADY carries it and
+#     has NO entries. We NEVER create agents.list on a config that lacks it.
+#   * in entries mode the agent id is the KEY. An "id" key INSIDE an entry is
+#     rejected -- AgentEntryConfigSchema is AgentEntrySchema.omit({id}).strict():
+#       x agents.entries.main: Unrecognized key: "id"
+#   * in entries mode the memory-search block lives at entry.memory.search.
+#     A top-level "memorySearch" key is rejected the same way:
+#       x agents.entries.main: Unrecognized key: "memorySearch"
+#   * entries KEYS must match ^[a-z0-9_][a-z0-9_-]{0,63}$ (case-INSENSITIVE),
+#     and any two keys that normalize to the same agent id are a hard schema
+#     error ("resolve to the same agent id ...; rename one key"). This is not
+#     theoretical: the fleet's Presentations department folder is capitalized
+#     ("departments/Presentations") while its migrated entries key is lowercase
+#     ("dept-presentations"), so a naive f"dept-{slug}" key would collide.
+ENTRIES_KEY_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,63}$", re.IGNORECASE)
+_RUNTIME_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.IGNORECASE)
+_INVALID_ID_CHARS_RE = re.compile(r"[^a-z0-9_-]+")
 
-agent_list = cfg["agents"]["list"]
-by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
+
+def normalize_agent_id(value: str) -> str:
+    """Mirror of OpenClaw's normalizeAgentIdStrict()
+    (packages/normalization-core/src/agent-id.ts): trim, lowercase, replace runs
+    of invalid characters with '-', strip leading/trailing '-', cap at 64 chars.
+    Returns "" when the id is unrepresentable. Writing THIS as the entries key
+    means the key we write is exactly the id the gateway resolves at runtime.
+    """
+    trimmed = (value or "").strip()
+    lowered = trimmed.lower()
+    if _RUNTIME_ID_RE.match(trimmed):
+        return lowered
+    return _INVALID_ID_CHARS_RE.sub("-", lowered).lstrip("-").rstrip("-")[:64]
+
+
+agents_cfg = cfg.get("agents")
+if not isinstance(agents_cfg, dict):
+    agents_cfg = {}
+    cfg["agents"] = agents_cfg
+
+_cfg_entries = agents_cfg.get("entries")
+_cfg_list = agents_cfg.get("list")
+
+if isinstance(_cfg_entries, dict) and _cfg_entries:
+    ROSTER_MODE = "entries"
+elif isinstance(_cfg_list, list):
+    ROSTER_MODE = "list"
+else:
+    # Neither shape present (or entries is an empty dict, which is itself
+    # schema-invalid: "agents.entries must contain at least one configured
+    # agent"). Modern is the default -- we never invent agents.list.
+    ROSTER_MODE = "entries"
+
+if ROSTER_MODE == "entries":
+    if not isinstance(agents_cfg.get("entries"), dict):
+        agents_cfg["entries"] = {}
+    roster = agents_cfg["entries"]  # LIVE dict inside cfg -- never a copy
+    ROSTER_LABEL = "agents.entries"
+    if isinstance(_cfg_list, list):
+        print(
+            "[materialize-dept-agents] WARN: this config carries BOTH agents.entries "
+            f"({len(roster)} entries) and a legacy agents.list ({len(_cfg_list)} items). "
+            "Registering into agents.entries (the canonical roster the gateway keeps). "
+            "The stale agents.list is left EXACTLY as found -- this script never deletes "
+            "a key it did not create -- but that key makes the config fail "
+            '`openclaw config validate` (agents: Unrecognized key: "list"). '
+            "Clear it with the atomic migration: update-skills.sh --agents-list-migrate",
+            file=sys.stderr,
+        )
+else:
+    roster = agents_cfg["list"]  # LIVE list inside cfg -- never a copy
+    ROSTER_LABEL = "agents.list"
+    print(
+        "[materialize-dept-agents] legacy pre-migration config detected "
+        "(agents.list present, no agents.entries) -- registering into agents.list[] "
+        "and NOT creating agents.entries."
+    )
+
+# by_id maps ROSTER KEY -> the LIVE entry dict inside cfg (mutating one of these
+# mutates cfg, which is what gets written back). key_by_norm lets a
+# differently-cased existing key be UPDATED instead of colliding with a new one.
+if ROSTER_MODE == "entries":
+    by_id = {k: v for k, v in roster.items() if isinstance(v, dict)}
+    key_by_norm = {}
+    for _k in by_id:
+        key_by_norm.setdefault(normalize_agent_id(_k), _k)
+else:
+    by_id = {a.get("id"): a for a in roster if isinstance(a, dict) and a.get("id")}
+    key_by_norm = {}
+
+claimed_norms = {}  # entries mode: normalized id -> dept slug that claimed it
+
+
+def default_memory_search():
+    """A fresh (never shared) default memory-search block."""
+    return {
+        "extraPaths": [],
+        "multimodal": {"enabled": False, "modalities": []},
+        "fallback": "openai",
+    }
+
+
+def memory_search_of(entry):
+    """The entry's LIVE memory-search dict, or None. Never returns a copy --
+    a copy here would make every migration below mutate a throwaway and still
+    print success."""
+    if ROSTER_MODE == "entries":
+        mem = entry.get("memory")
+        if isinstance(mem, dict) and isinstance(mem.get("search"), dict):
+            return mem["search"]
+        return None
+    ms = entry.get("memorySearch")
+    return ms if isinstance(ms, dict) else None
+
+
+def install_memory_search(entry, block):
+    """Attach a memory-search block where THIS roster shape expects it:
+    entry.memory.search for agents.entries, entry.memorySearch for agents.list."""
+    if ROSTER_MODE == "entries":
+        mem = entry.get("memory")
+        if not isinstance(mem, dict):
+            mem = {}
+            entry["memory"] = mem
+        mem["search"] = block
+    else:
+        entry["memorySearch"] = block
 
 added = 0
 updated = 0
 
+manifest_rows = []  # (roster_key, pretty name, workspace path, dept slug)
+
 for slug, workspace_path in discovered.items():
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
+
+    # ── Roster key ──────────────────────────────────────────────────────────
+    # list mode: the id lives INSIDE the record, unchanged from before.
+    # entries mode: the KEY is the id, and it must satisfy the schema pattern.
+    #   * reuse an existing key that normalizes to the same agent id (e.g. an
+    #     already-migrated lowercase "dept-presentations" for the capitalized
+    #     "Presentations" folder) so we UPDATE it instead of adding a second key
+    #     that the schema rejects as a duplicate agent id;
+    #   * a slug that cannot be represented at all is FATAL, never a silent drop.
+    if ROSTER_MODE == "entries":
+        norm_id = normalize_agent_id(agent_id)
+        if not norm_id or not ENTRIES_KEY_RE.match(norm_id):
+            print(
+                f"[materialize-dept-agents] FATAL: department folder '{slug}' yields agent id "
+                f"'{agent_id}', which cannot be represented as an agents.entries key "
+                f"(schema pattern ^[a-z0-9_][a-z0-9_-]{{0,63}}$). Rename the department folder "
+                f"to a slug made of letters, digits, '_' and '-'. REFUSING to continue -- a "
+                f"department is never silently dropped from the roster.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        prior_slug = claimed_norms.get(norm_id)
+        if prior_slug is not None and prior_slug != slug:
+            print(
+                f"[materialize-dept-agents] FATAL: department folders '{prior_slug}' and "
+                f"'{slug}' both normalize to the agent id '{norm_id}'. OpenClaw rejects two "
+                f"agents.entries keys that resolve to the same agent id. Rename one of the "
+                f"department folders. REFUSING to continue -- a department is never silently "
+                f"dropped from the roster.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        claimed_norms[norm_id] = slug
+        roster_key = key_by_norm.get(norm_id, norm_id)
+    else:
+        roster_key = agent_id
     # FIX (v12.9.12): derive agentDir from OC_ROOT/agents/<agent-id> so the
     # routing agent can resolve this dept agent at runtime. Without agentDir
     # the gateway cannot locate the agent's state directory and the routing
     # handoff silently fails.
-    agent_dir = os.path.join(OC_ROOT, "agents", agent_id)
+    # It is keyed on roster_key, NOT on the raw f"dept-{slug}": in entries mode
+    # those differ for a capitalized dept folder, and an agentDir naming a
+    # different id than the roster key is incoherent on a case-sensitive
+    # filesystem (the scaffolder, the manifest and agentDir must all follow the
+    # one id the gateway actually resolves). In legacy list mode roster_key IS
+    # agent_id, so this is a no-op there.
+    agent_dir = os.path.join(OC_ROOT, "agents", roster_key)
 
     # BUG FIX (v12.9.4): multimodal.enabled MUST be false when the configured
     # embedding provider is text-only (openai-compatible / text-embedding-3-small).
@@ -341,31 +526,48 @@ for slug, workspace_path in discovered.items():
     # provider adapter that supports multimodal embeddings" on EVERY message, and
     # fallback:"none" silently dropped all memory access.  Safe defaults: multimodal
     # disabled, fallback "openai" (matches the text embedding provider).
-    desired_entry = {
-        "id": agent_id,
-        "name": name,
-        "workspace": workspace_path,
-        "agentDir": agent_dir,
-        "memorySearch": {
-            "extraPaths": [],
-            "multimodal": {"enabled": False, "modalities": []},
-            "fallback": "openai",
-        },
-        # NOTE: "wiki" is NOT a valid agents.list[] key in the strict OpenClaw
-        # config schema (agents.list entries are z.core.$strict).  It was here
-        # previously and caused "Unrecognized key: wiki" on every dept agent,
-        # breaking openclaw gateway status / openclaw agents list.  Removed.
-        # Per-agent doc/wiki-search capability is expressed via memorySearch.
-    }
+    # NOTE: "wiki" is NOT a valid agent-entry key in the strict OpenClaw config
+    # schema (both agents.list entries and agents.entries values are strict). It
+    # was here previously and caused "Unrecognized key: wiki" on every dept
+    # agent, breaking openclaw gateway status / openclaw agents list. Removed.
+    # Per-agent doc/wiki-search capability is expressed via the memory-search
+    # block instead.
+    #
+    # In entries mode the id is DELIBERATELY absent from the record: the key IS
+    # the id, and an "id" key inside an entry fails validation with
+    # `agents.entries.<id>: Unrecognized key: "id"`. The memory-search block
+    # likewise moves to entry.memory.search, because a top-level "memorySearch"
+    # key fails the same way.
+    if ROSTER_MODE == "entries":
+        desired_entry = {
+            "name": name,
+            "workspace": workspace_path,
+            "agentDir": agent_dir,
+            "memory": {"search": default_memory_search()},
+        }
+    else:
+        desired_entry = {
+            "id": agent_id,
+            "name": name,
+            "workspace": workspace_path,
+            "agentDir": agent_dir,
+            "memorySearch": default_memory_search(),
+        }
 
-    existing = by_id.get(agent_id)
+    manifest_rows.append((roster_key, name, workspace_path, slug))
+
+    existing = by_id.get(roster_key)
     if existing is None:
-        agent_list.append(desired_entry)
-        by_id[agent_id] = desired_entry
+        if ROSTER_MODE == "entries":
+            roster[roster_key] = desired_entry
+            key_by_norm.setdefault(norm_id, roster_key)
+        else:
+            roster.append(desired_entry)
+        by_id[roster_key] = desired_entry
         # Ensure agentDir exists on disk so the gateway can resolve it at startup.
         os.makedirs(agent_dir, exist_ok=True)
         added += 1
-        print(f"  + added   {agent_id:40s} → {workspace_path}")
+        print(f"  + added   {roster_key:40s} → {workspace_path}")
     else:
         # Preserve any operator-curated fields on the existing entry that we
         # don't override (e.g. custom memorySearch.extraPaths, telegram bot
@@ -377,35 +579,68 @@ for slug, workspace_path in discovered.items():
         if existing.get("workspace") != workspace_path:
             existing["workspace"] = workspace_path
             changed = True
-        # Ensure memorySearch block exists (don't overwrite curated extras).
+        # IDEMPOTENT MIGRATION (2026-09-04): in entries mode a top-level
+        # "memorySearch" key is a HARD schema error
+        # (`agents.entries.<id>: Unrecognized key: "memorySearch"`). Earlier
+        # versions of THIS script wrote exactly that key, so move it to its
+        # canonical home at entry.memory.search rather than leaving the entry
+        # invalid. Existing memory.search fields win; nothing is discarded.
+        if ROSTER_MODE == "entries" and isinstance(existing.get("memorySearch"), dict):
+            legacy_ms = existing.pop("memorySearch")
+            mem = existing.get("memory")
+            if not isinstance(mem, dict):
+                mem = {}
+                existing["memory"] = mem
+            if isinstance(mem.get("search"), dict):
+                for _lk, _lv in legacy_ms.items():
+                    mem["search"].setdefault(_lk, _lv)
+            else:
+                mem["search"] = legacy_ms
+            changed = True
+        # Ensure the memory-search block exists (don't overwrite curated extras).
         # NOTE: "wiki" backfill deliberately removed -- "wiki" is not a valid
-        # agents.list[] key in the strict OpenClaw schema and causes
+        # agent-entry key in the strict OpenClaw schema and causes
         # "Unrecognized key: wiki" / Invalid input on every dept agent.
         # Also strip any stale "wiki" key left by earlier runs so existing
         # boxes become schema-valid after the next materialize run.
-        existing.setdefault("memorySearch", desired_entry["memorySearch"])
+        #
+        # memory_search_of() hands back the LIVE dict inside `existing` (which is
+        # itself the LIVE record inside cfg), so every migration below mutates
+        # the object that actually gets written. Returning copies here is the
+        # classic silent no-op: the migrations "succeed", the file is rewritten
+        # unchanged, and the run still reports success.
+        existing_ms = memory_search_of(existing)
+        if existing_ms is None:
+            existing_ms = default_memory_search()
+            install_memory_search(existing, existing_ms)
+            changed = True
         # IDEMPOTENT MIGRATION (v12.9.4): force multimodal.enabled=false on any
         # existing agent where it was previously set to true -- that was the broken
         # default that caused fleet-wide memory failures.  Re-running materialize
         # corrects all existing boxes without a separate migration step.
-        existing_mm = existing.get("memorySearch", {}).get("multimodal", {})
-        if existing_mm.get("enabled") is True:
-            existing["memorySearch"]["multimodal"] = {"enabled": False, "modalities": []}
+        existing_mm = existing_ms.get("multimodal")
+        if isinstance(existing_mm, dict) and existing_mm.get("enabled") is True:
+            existing_ms["multimodal"] = {"enabled": False, "modalities": []}
             changed = True
-        elif "multimodal" not in existing.get("memorySearch", {}):
-            existing["memorySearch"]["multimodal"] = desired_entry["memorySearch"]["multimodal"]
+        elif "multimodal" not in existing_ms:
+            existing_ms["multimodal"] = {"enabled": False, "modalities": []}
             changed = True
         # IDEMPOTENT MIGRATION (v12.9.4): force fallback to "openai" if currently
         # "none" or absent -- "none" silently drops all memory access on search errors.
-        existing_fb = existing.get("memorySearch", {}).get("fallback")
-        if existing_fb in (None, "none"):
-            existing["memorySearch"]["fallback"] = "openai"
+        if existing_ms.get("fallback") in (None, "none"):
+            existing_ms["fallback"] = "openai"
             changed = True
-        if "extraPaths" not in existing.get("memorySearch", {}):
-            existing["memorySearch"]["extraPaths"] = []
+        if "extraPaths" not in existing_ms:
+            existing_ms["extraPaths"] = []
             changed = True
         if "wiki" in existing:
             del existing["wiki"]
+            changed = True
+        # entries mode: the key IS the id, so an "id" key inside the record is a
+        # hard schema error (`agents.entries.<id>: Unrecognized key: "id"`).
+        # Strip one left by an older version of this script.
+        if ROSTER_MODE == "entries" and "id" in existing:
+            del existing["id"]
             changed = True
         # IDEMPOTENT MIGRATION (v12.9.12): back-fill agentDir on entries written
         # before this version so existing boxes self-heal on the next materialize run.
@@ -415,15 +650,32 @@ for slug, workspace_path in discovered.items():
             changed = True
         if changed:
             updated += 1
-            print(f"  ~ updated {agent_id:40s} → {workspace_path}")
+            print(f"  ~ updated {roster_key:40s} → {workspace_path}")
         else:
-            print(f"  = no-op   {agent_id:40s} (already in sync)")
+            print(f"  = no-op   {roster_key:40s} (already in sync)")
 
-total = len(agent_list)
+# agents.ownership: the schema rejects a multi-agent roster that has neither
+# ownership="explicit" nor exactly one legacy default=true marker ("multi-agent
+# rosters require agents.ownership=\"explicit\" or one legacy default=true
+# marker"). Registering department agents is precisely what turns a single-agent
+# config into a multi-agent one, so set the key when -- and ONLY when -- our own
+# write would otherwise leave the config invalid. An ownership value that is
+# already present is never overwritten.
+if ROSTER_MODE == "entries" and len(roster) > 1 and "ownership" not in agents_cfg:
+    _marked = [k for k, v in roster.items() if isinstance(v, dict) and v.get("default") is True]
+    if not _marked:
+        agents_cfg["ownership"] = "explicit"
+        print(
+            '[materialize-dept-agents] set agents.ownership="explicit" -- the schema requires '
+            "it for a multi-agent roster and this run made the roster multi-agent. No existing "
+            "ownership value was overwritten."
+        )
+
+total = len(roster)
 
 if DRY_RUN:
     print(f"[materialize-dept-agents] DRY RUN — no write performed")
-    print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+    print(f"added {added} agents, updated {updated} agents, total in {ROSTER_LABEL}: {total}")
     sys.exit(0)
 
 # ─── Atomic write (tmp + rename) ────────────────────────────────────────────
@@ -443,18 +695,21 @@ except Exception as e:
     print(f"[materialize-dept-agents] FATAL: atomic write failed: {e}", file=sys.stderr)
     sys.exit(1)
 
-print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+print(f"added {added} agents, updated {updated} agents, total in {ROSTER_LABEL}: {total}")
 
 # ─── Emit a machine-readable manifest of discovered agents so the bash
 #     wrapper can call scaffold-agent-files.sh for each one. ────────────────
 manifest_path = os.path.join(os.path.dirname(CONFIG_FILE), ".materialize-dept-agents.manifest")
 try:
     with open(manifest_path, "w") as f:
-        for slug, workspace_path in discovered.items():
-            agent_id = f"dept-{slug}"
-            name = pretty_name(slug)
+        # manifest_rows carries the roster key ACTUALLY registered above -- not a
+        # recomputed f"dept-{slug}". In entries mode those differ whenever the
+        # dept folder is capitalized (departments/Presentations -> the migrated
+        # key dept-presentations), and the scaffolder + agentDir must follow the
+        # key that is really in the config, not a second, phantom id.
+        for roster_key, name, workspace_path, slug in manifest_rows:
             # Tab-separated: agent_id<TAB>name<TAB>workspace_path<TAB>dept_slug
-            f.write(f"{agent_id}\t{name}\t{workspace_path}\t{slug}\n")
+            f.write(f"{roster_key}\t{name}\t{workspace_path}\t{slug}\n")
     print(f"[materialize-dept-agents] wrote scaffolder manifest → {manifest_path}")
 except OSError as e:
     print(f"[materialize-dept-agents] WARN: could not write scaffolder manifest: {e}", file=sys.stderr)
