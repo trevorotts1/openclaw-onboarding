@@ -1,3 +1,5 @@
+## [v24.0.0]  -  2026-09-04  -  SEPT-1 presentation department wave complete: 111 fixes merged, FIX 61 intake-poll wiring, presentations-drift-gates exit-code repair, R-BOX box-ops (31/47/63)
+
 ## [v23.0.3]  -  2026-09-04  -  FIX 61 intake-poll schedule wiring + presentations-drift-gates exit-code repair (#1018)
 
 ## [v23.0.2]  -  2026-09-04  -  Gap repair: SMOKE-1 speech-pdf chain + FIX 71 venv installers (lost in clean rebuild) (#1016)

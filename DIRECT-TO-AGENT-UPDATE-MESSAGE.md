@@ -13,7 +13,7 @@
 
 ---
 
-There is an update available for your OpenClaw / BlackCEO system. The latest version is **v23.0.3**.
+There is an update available for your OpenClaw / BlackCEO system. The latest version is **v24.0.0**.
 
 Run exactly this command. Do not read a playbook, do not improvise, do not summarise:
 
