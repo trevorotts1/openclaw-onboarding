@@ -6,6 +6,11 @@
 first. Where any other presentation document contradicts it on the *shape of the
 process*, this document wins and the other document is the one to fix.
 
+**THE MASTER SOP (one line, declared once):** the department's master SOP is
+**`universal-sops/CLIENT-WEBINAR-DECK-SOP.md`** (Layer B of this one pipeline); this
+document is its doctrine index + crosswalk, and every "master SOP" citation resolves to
+that file per §4. Declared 2026-09-02 (Fix 94).
+
 ---
 
 ## 0. WHY THIS DOCUMENT EXISTS
@@ -50,7 +55,12 @@ renderer consumes: `working/copy/intake.json`, `slides.json` / `slides_copy.md`,
 `working/prompts/slide-NN.txt`, the QC reports, `PRESENTERS-SPEECH.md`, etc. **Roles,
 phases, and doctrine (the pitch doctrine, the arc, the ten required components, the hook
 ceiling) live here.** The manifest is the single source of truth for the phase order; the
-runner (`run_signature_deck.py`) serves that order one step at a time (see §3).
+engine (`presentation_job.py`, the package the entry command dispatches) walks that order
+in ascending `order` and refuses to skip (see §3). The runner (`run_signature_deck.py`)
+wears two hats, and the wording must never blur them: its `--next`/`--phase` turn-gate
+REMAINS the agent's read-only interface to what is next (§3), while its whole-run
+orchestration is the announced legacy fallback used only for boxes whose engine
+component is absent.
 
 ### LAYER B — THE DETERMINISTIC RENDER + DELIVERY (how the render is invoked)
 `CLIENT-WEBINAR-DECK-SOP.md` (the "Slate" contract). Once Layer A's artifacts exist, the
@@ -158,7 +168,7 @@ homes marked **[univ]** already live in a `universal-sops/` cluster.
 | Section 4.2A | the BlackCEO Signature Webinar Arc (labels A–J) | `SOP-STORY-01-VILLAIN-HERO-ARC` + `slide-copywriter` SOP 9.x **[dept]** |
 | Section 4.3 | the 18/24-point Pitch Doctrine | `SOP-PITCH-*` + `SOP-PROCLAMATION-01`; reproduced verbatim (points 1–18) in `devils-advocate-presentations` SOP 9.1 (the operational home for the Kill List) **[dept]** |
 | Section 4.4 | the ten required presentation components | enumerated in `director-of-presentations` SOP (`checklist_of_promises`); enforced in `qc-specialist-presentations` SOP 9.5 structural-completeness **[dept]** |
-| Section 5.1 | hard copy limits (headline/subhead/slide) | `SOP-SLIDE-04-DECK-DENSITY-AND-PACING` + `slide-copywriter` SOP + `SOP-SLIDE-00` AF-C8/AF-OBI **[univ slide-craft]** |
+| Section 5.1 | hard copy limits (headline/subhead/slide) | `SOP-SLIDE-04-DECK-DENSITY-AND-PACING` + `slide-copywriter` SOP + `universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md` AF-C8/AF-OBI **[univ slide-craft]** |
 | Section 5.2 | the per-slide entry template + PRESENTER NOTE | `slide-copywriter` SOP 9.x (the copy-block template) + `presenter-coach` / `presenters-guide-specialist` SOPs **[dept]** |
 | Section 5.4 | guarantee types + real scarcity/urgency | `SOP-PITCH-02` (guarantee) + `SOP-OBJECTION-01` + `offer-price-strategist` SOP **[dept]** |
 | Section 5.5 | the price sequence (both modes, VIP) | `SOP-PITCH-01-SLOW-DROP-PROCESS` + `offer-price-strategist` SOP 9.x **[dept]** |
