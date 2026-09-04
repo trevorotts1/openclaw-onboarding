@@ -198,7 +198,7 @@ def _anchor(repo_path):
     return repo_path[idx + 1:]
 
 
-def compute_ledger(repo, hcm):
+def compute_ledger(repo, hcm, prior_paths=None, prior_artifacts=None):
     head = (_git(repo, "rev-parse", "HEAD") or "").strip()
 
     present, ever = set(), set()
@@ -226,7 +226,18 @@ def compute_ledger(repo, hcm):
             if line.startswith(tree + "/") and line.endswith(".md"):
                 ever.add(line)
 
+    # A squash merge (e.g. PR 1015 landed as ONE commit on main) throws away the
+    # pre-squash deletion commits, so the walk above can no longer see that a
+    # path was EVER canonical — and regenerating would silently DROP a valid
+    # retired entry, leaving old copies on boxes unremovable forever. Self-heal:
+    # seed `ever` with the paths the CURRENT ledger already records (they were
+    # proven ever-canonical when their entry was written). A path that is live
+    # again in the tree is excluded by the (ever - present) subtraction below.
+    if prior_paths:
+        ever.update(prior_paths)
+
     artifacts = []
+    prior_by_path = {a.get("repo_path"): a for a in (prior_artifacts or [])}
     for rel in sorted(ever - present):
         lib_path = _anchor(rel)
         if not lib_path:
@@ -236,13 +247,26 @@ def compute_ledger(repo, hcm):
         dept = tail[0] if tail else ""
         kind = "sop" if (len(tail) == 3 and tail[1] == "sops") else "role"
         commit, when = _deletion_record(repo, rel)
+        shas = _shas_for_path(repo, rel, hcm)
+        prior = prior_by_path.get(rel)
+        if (not commit or not shas) and prior:
+            # Squash-merge carry-forward: the pre-squash deletion commit is
+            # unreachable from this history, so the walk cannot re-derive the
+            # deletion metadata. The prior ledger entry PROVED it (its entry
+            # passed --check when written), so keep its metadata verbatim —
+            # boxes match orphans against content_shas; nulling them would
+            # make a once-canonical file permanently unquarantinable.
+            commit = commit or prior.get("retired_in")
+            when = when or prior.get("retired_at")
+            if not shas:
+                shas = list(prior.get("content_shas") or [])
         artifacts.append({
             "lib_path": lib_path,
             "repo_path": rel,
             "dept": dept,
             "file": lib_path.rsplit("/", 1)[-1],
             "kind": kind,
-            "content_shas": _shas_for_path(repo, rel, hcm),
+            "content_shas": shas,
             "retired_in": commit,
             "retired_at": when,
         })
@@ -316,9 +340,26 @@ def main():
             return 2
 
     hcm = _load_hasher()
-    ledger = compute_ledger(repo, hcm)
     out_path = Path(args.out) if args.out else \
         (repo / TRACKED_TREES[0] / "_retired.json")
+
+    # Squash-merge self-heal (see compute_ledger): seed the ever-canonical set
+    # with the paths the on-disk ledger already records, so regenerating after
+    # a squash merge cannot silently drop valid retired entries.
+    prior_paths = set()
+    prior_artifacts = []
+    if out_path.is_file():
+        try:
+            prior_artifacts = json.loads(
+                out_path.read_text(encoding="utf-8")).get("artifacts", [])
+            for art in prior_artifacts:
+                rp = art.get("repo_path")
+                if rp:
+                    prior_paths.add(rp)
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+    ledger = compute_ledger(repo, hcm, prior_paths=prior_paths,
+                            prior_artifacts=prior_artifacts)
 
     if args.json:
         print(json.dumps(ledger, indent=2))
