@@ -4047,7 +4047,10 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
     _dev = _speech_pacing_deviation(words, target)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: {speech.name} measured "
+        # AF-SPEECH-PACING: named here per the manifest enforcement row so the code is
+        # citable (sync_check af-coverage); the condition itself stays ADVISORY by
+        # design — AF-SPEECH-SHORT above is the only hard duration reject (Fix 97).
+        print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): {speech.name} measured "
               f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
               f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
               f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
@@ -5507,7 +5510,7 @@ def _chk_speech_length(run_dir: Path) -> str:
     _dev = _speech_pacing_deviation(words, target)
     if _dev is not None and _dev > SPEECH_PACING_BAND:
         _eff_wpm = words / target
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX}: presenter speech {speech.name} is "
+        print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): presenter speech {speech.name} is "
               f"outside the {SPEECH_TARGET_WPM} wpm +/-{SPEECH_PACING_BAND:.0%} pacing "
               f"band: {_eff_wpm:.0f} wpm effective ({words} words / {target:g} min, "
               f"{_dev:.0%} off target). Advisory only — the hard AF-SPEECH-SHORT "
@@ -13212,6 +13215,15 @@ def main():
     # the cert-gate 422 concern does not apply to an abort). Fail-soft: a disabled
     # board / missing task_id is a clean no-op.
     if failures:
+        # AF-RENDER-COMPLETE: the render phase did not complete its full slide output
+        # set before assembly — a partial deck is refused (manifest enforcement row).
+        if not rendered:
+            print("AF-RENDER-EMPTY: the render phase produced ZERO slide artifacts — "
+                  "an empty deck must never assemble.", file=sys.stderr)
+        else:
+            print(f"AF-RENDER-COMPLETE: render phase incomplete — {len(rendered)} of "
+                  f"{len(rendered) + len(failures)} slides rendered; partial decks are "
+                  f"refused.", file=sys.stderr)
         summary = {
             "slidesRendered": len(rendered),
             "kieTaskIds": task_ids,

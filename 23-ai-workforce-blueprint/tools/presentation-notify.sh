@@ -85,9 +85,15 @@ if [ -t 0 ]; then
     echo "ERROR: no message text (stdin JSON or positional args required)" >&2
     exit 1
   fi
-  python3 "$CANONICAL" <<EOF
-{"chat_id": "\${OWNER_CHAT_ID:-}", "kind": "$(printf '%s' "$KIND" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')", "message": "$(printf '%s' "$MSG" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')"}
-EOF
+  _KIND_JSON="$(printf '%s' "$KIND" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')"
+  _MSG_JSON="$(printf '%s' "$MSG" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')"
+  export _KIND_JSON _MSG_JSON
+  python3 -c 'import json, os, sys
+payload = json.dumps({"chat_id": os.environ.get("OWNER_CHAT_ID", ""),
+                      "kind": os.environ["_KIND_JSON"],
+                      "message": os.environ["_MSG_JSON"]})
+sys.stdout.write(payload)
+' | python3 "$CANONICAL"
   exit $?
 fi
 
