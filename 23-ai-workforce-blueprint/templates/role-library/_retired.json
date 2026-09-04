@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-09-04T10:40:27.281614+00:00",
-  "source_ref": "8c77c86c83c184eecb3b4ff5e9fbaeba4074e0cf",
+  "generated_at": "2026-09-04T10:48:19.844476+00:00",
+  "source_ref": "66d29fda403d0cde1566d5487f96c3a2293f5586",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
