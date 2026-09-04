@@ -7,7 +7,7 @@ description: Run the signature-presentation deck skill (Skill 51) from Claude Co
 
 Invoke the packaged entry, never a hand-rolled render:
 
-    /Users/blackceomacmini/openclaw-onboarding/51-signature-presentation/bin/presentation \
+    <REPO_ROOT>/51-signature-presentation/bin/presentation \
         --run-dir <RUN_DIR> --slides slides.json --out out.pptx
 
 `bin/presentation` resolves the skill dir from its own path (any cwd), sources

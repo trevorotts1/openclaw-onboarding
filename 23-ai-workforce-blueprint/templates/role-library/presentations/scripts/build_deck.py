@@ -11669,7 +11669,7 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
         return (reason, False)
     obj = _read_json(pub)
     if "__parse_error__" in obj:
-        return f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})"
+        return (f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})", False)
     if obj.get("status") == "skipped_adhoc":
         print("WARNING: teleprompter_publish.json carries a stale 'skipped_adhoc' "
               "status from a prior --adhoc run. This NO LONGER passes the gate (M7): "
@@ -11677,7 +11677,8 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
               "or be re-run with the explicit --skip-teleprompter-gate flag.",
               file=sys.stderr)
         return ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
-                "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
+                "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).",
+                False)
     if obj.get("status") != "published":
         reason = f"teleprompter publish status is {obj.get('status')!r}, expected 'published'"
         if creds_absent:
