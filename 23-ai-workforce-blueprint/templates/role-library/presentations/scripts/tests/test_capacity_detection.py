@@ -36,29 +36,42 @@ from presentation_job import launcher  # noqa: E402
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("provider,plan,expected", [
     ("ollama-cloud", "$20/month", 3),
-    ("ollama-cloud", "$100/month", 10),
+    # 8, not 10: operator ruling 2026-09-04 deliberately leaves the client 2
+    # free agent slots so a presentation build never starves whatever else
+    # they are running on the same seat.
+    ("ollama-cloud", "$100/month", 8),
+    ("deepseek-direct", "v4-flash", 2500),
+    ("deepseek-direct", "v4-pro", 500),
 ])
 def test_cap_table_exact(provider, plan, expected):
     assert capacity.CAP_TABLE[(provider, plan)] == expected
 
 
-def test_cap_table_has_no_byok_rows():
-    """fix/capacity-uncap-byok: the structural cap table is ollama-cloud ONLY.
-    A bring-your-own-key direct provider has no per-account ceiling this
-    module can observe, so it is never a CAP_TABLE row -- it lives in
-    NO_CAP_PROVIDERS instead (see below)."""
+def test_cap_table_has_ollama_and_deepseek_rows():
+    """operator ruling 2026-09-04: deepseek-direct is no longer a
+    bring-your-own-key exemption -- it has a real, plan-dependent structural
+    ceiling this module observes, exactly like ollama-cloud, so it is now a
+    CAP_TABLE row too. openrouter is the only provider left with no ceiling
+    to observe (see test_no_cap_providers_doctrine below).
+
+    Renamed from test_cap_table_has_no_byok_rows (fix/capacity-uncap-byok),
+    whose premise -- 'the structural cap table is ollama-cloud ONLY' -- the
+    2026-09-04 ruling replaced."""
     providers_on_table = {p for p, _plan in capacity.CAP_TABLE}
-    assert providers_on_table == {"ollama-cloud"}
-    assert "deepseek-direct" not in providers_on_table
+    assert providers_on_table == {"ollama-cloud", "deepseek-direct"}
     assert "openrouter" not in providers_on_table
 
 
 def test_no_cap_providers_doctrine():
-    """Operator ruling fix/capacity-uncap-byok: 'do not limit someone who
-    brought their own capacity.' DeepSeek Direct and OpenRouter (and any
-    other BYOK-direct provider added here) are exempt from the cap table."""
-    assert capacity.PROVIDER_DEEPSEEK_DIRECT in capacity.NO_CAP_PROVIDERS
+    """Operator ruling 2026-09-04: deepseek-direct is REMOVED from
+    NO_CAP_PROVIDERS -- it now has a real, plan-dependent structural ceiling
+    (CAP_TABLE), exactly like ollama-cloud. openrouter is the ONLY provider
+    still exempt under the original fix/capacity-uncap-byok doctrine ('do not
+    limit someone who brought their own capacity') because it has no
+    observable structural ceiling at all."""
+    assert capacity.NO_CAP_PROVIDERS == frozenset({capacity.PROVIDER_OPENROUTER})
     assert capacity.PROVIDER_OPENROUTER in capacity.NO_CAP_PROVIDERS
+    assert capacity.PROVIDER_DEEPSEEK_DIRECT not in capacity.NO_CAP_PROVIDERS
     assert capacity.PROVIDER_OLLAMA_CLOUD not in capacity.NO_CAP_PROVIDERS
 
 
@@ -119,9 +132,17 @@ def test_step_a_declared_override_wins(monkeypatch, tmp_path):
     assert result["available"] == 3
 
 
-def test_step_a_deepseek_no_declared_number_is_unbounded(monkeypatch, tmp_path):
-    """fix/capacity-uncap-byok: deepseek-direct with no declared max_concurrent
-    is UNBOUNDED, not parked, and not some large magic int."""
+def test_step_a_deepseek_flash_no_declared_number_is_measured_at_cap_table(
+        monkeypatch, tmp_path):
+    """operator ruling 2026-09-04: deepseek-direct is no longer a
+    NO_CAP_PROVIDERS entry -- it has a real, plan-dependent structural
+    ceiling exactly like ollama-cloud. Flash allows 2500 concurrent; with no
+    declared max_concurrent this resolves straight to the cap-table row,
+    never UNBOUNDED.
+
+    Renamed from test_step_a_deepseek_no_declared_number_is_unbounded
+    (fix/capacity-uncap-byok), whose 'is UNBOUNDED, not parked' premise the
+    2026-09-04 ruling replaced."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
@@ -129,9 +150,59 @@ def test_step_a_deepseek_no_declared_number_is_unbounded(monkeypatch, tmp_path):
         json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
     result = capacity.probe(cfg)
     assert result["status"] == capacity.STATUS_MEASURED
-    assert capacity.is_unbounded(result["available"])
-    assert capacity.available_or_none(result) is result["available"]
-    assert result["available"] is not None
+    assert not capacity.is_unbounded(result["available"])
+    assert result["available"] == 2500
+    assert capacity.available_or_none(result) == 2500
+
+
+def test_step_a_deepseek_pro_no_declared_number_is_measured_at_cap_table(
+        monkeypatch, tmp_path):
+    """Same doctrine as the Flash case above, for the Pro plan's 500 row."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-pro"}), encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_MEASURED
+    assert not capacity.is_unbounded(result["available"])
+    assert result["available"] == 500
+    assert capacity.available_or_none(result) == 500
+
+
+def test_step_a_deepseek_flash_over_declaration_clamps_to_cap_table(
+        monkeypatch, tmp_path):
+    """NEW COVERAGE (operator ruling 2026-09-04): deepseek-direct is now a
+    CAP_TABLE provider, so an over-declared max_concurrent is CLAMPED DOWN to
+    the table row -- exactly the ollama-cloud behaviour
+    (test_declared_max_concurrent_never_raises_the_table) -- never honoured
+    verbatim the way a NO_CAP_PROVIDERS declaration would be."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash",
+                    "max_concurrent": 9999}), encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_MEASURED
+    assert result["available"] == 2500
+    assert result["available"] != 9999
+
+
+def test_step_a_deepseek_pro_over_declaration_clamps_to_cap_table(
+        monkeypatch, tmp_path):
+    """NEW COVERAGE (operator ruling 2026-09-04): the Pro plan's 500-row
+    equivalent of the Flash clamp above."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "deepseek-direct", "plan": "v4-pro",
+                    "max_concurrent": 9999}), encoding="utf-8")
+    result = capacity.probe(cfg)
+    assert result["status"] == capacity.STATUS_MEASURED
+    assert result["available"] == 500
+    assert result["available"] != 9999
 
 
 def test_step_a_openrouter_no_declared_number_is_unbounded(monkeypatch, tmp_path):
@@ -161,10 +232,19 @@ def test_step_a_deepseek_declared_100_is_measured_at_100(monkeypatch, tmp_path):
     assert capacity.available_or_none(result) == 100
 
 
-def test_step_a_deepseek_declared_number_never_clamped(monkeypatch, tmp_path):
-    """A NO_CAP_PROVIDERS declaration has no table row to clamp against --
-    unlike ollama-cloud, a huge declared number is honoured verbatim (it is
-    the client's own paid-for account, not a guess about a shared ceiling)."""
+def test_step_a_deepseek_unknown_plan_parks_not_clamped(monkeypatch, tmp_path):
+    """NEW COVERAGE (operator ruling 2026-09-04): deepseek-direct is now a
+    CAP_TABLE provider, so an unknown plan PARKs behind the one-time
+    interview question -- a declared max_concurrent can never bypass that by
+    pretending to be a measurement, exactly like the ollama-cloud case in
+    test_declared_max_concurrent_cannot_bypass_park_via_ordering.
+
+    Renamed from test_step_a_deepseek_declared_number_never_clamped
+    (fix/capacity-uncap-byok): that test's premise -- 'a NO_CAP_PROVIDERS
+    declaration has no table row to clamp against, so a huge declared number
+    is honoured verbatim' -- no longer applies to deepseek-direct at all, so
+    this asserts the new truth (PARK) instead of weakening or dropping the
+    scenario."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
@@ -172,8 +252,23 @@ def test_step_a_deepseek_declared_number_never_clamped(monkeypatch, tmp_path):
         json.dumps({"provider": "deepseek-direct", "max_concurrent": 9000}),
         encoding="utf-8")
     result = capacity.probe(cfg)
-    assert result["status"] == capacity.STATUS_MEASURED
-    assert result["available"] == 9000
+    assert result["status"] == capacity.STATUS_PARKED
+    assert result["available"] is None
+    assert capacity.available_or_none(result) is None
+    assert result["autofail_code"] == "AF-CAPACITY-UNMEASURED"
+    assert "Which plan is your deepseek-direct account on?" in result["interview_question"]
+
+
+def test_interview_question_deepseek_reads_live_cap_table_values():
+    """NEW COVERAGE (operator ruling 2026-09-04): unlike the ollama-cloud
+    branch of interview_question() (a fixed string), the deepseek-direct
+    branch composes its rows straight from CAP_TABLE/PLANS_BY_PROVIDER, so
+    the question always names the CURRENT numbers -- proof that a future cap
+    change cannot leave a stale number in the operator-facing question the
+    way a hard-coded string could."""
+    question = capacity.interview_question("deepseek-direct")
+    assert "v4-flash -> 2500" in question
+    assert "v4-pro -> 500" in question
 
 
 def test_declared_max_concurrent_never_raises_the_table(monkeypatch, tmp_path):
@@ -232,6 +327,8 @@ def test_local_ollama_is_not_a_cap_table_provider(monkeypatch, tmp_path):
 
 
 def test_interview_answer_is_asked_once(monkeypatch, tmp_path):
+    """operator ruling 2026-09-04: ollama-cloud $100/month is 8, not 10 (see
+    test_cap_table_exact)."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
@@ -239,7 +336,22 @@ def test_interview_answer_is_asked_once(monkeypatch, tmp_path):
     assert written.is_file()
     result = capacity.probe(cfg)
     assert result["detection_source"] == capacity.SOURCE_OVERRIDE
-    assert result["available"] == 10
+    assert result["available"] == 8
+    assert result["interview_question"] is None
+
+
+def test_interview_answer_is_asked_once_deepseek(monkeypatch, tmp_path):
+    """NEW COVERAGE (operator ruling 2026-09-04): deepseek-direct now goes
+    through the SAME ask-once interview mechanism as ollama-cloud, since it
+    is a CAP_TABLE provider too."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    written = capacity.persist_plan_answer("deepseek-direct", "v4-pro", cfg)
+    assert written.is_file()
+    result = capacity.probe(cfg)
+    assert result["detection_source"] == capacity.SOURCE_OVERRIDE
+    assert result["available"] == 500
     assert result["interview_question"] is None
 
 
@@ -398,13 +510,32 @@ def test_cap_wave_width_unbounded_does_not_hang_on_a_large_ready_count():
 
 
 def test_dependency_logic_untouched(tmp_path):
-    """A dependent phase never lands in the same wave as its dependency."""
+    """A dependent phase never lands in the same wave as its dependency.
+
+    Rewritten: the manifest's `order` field has not created cross-phase
+    dependency edges since MASTER Part 8 FIX 8 -- edges come from the
+    produces/consumes artifact graph, and `order` is only the intra-wave
+    tie-break (execution_plan.py:13-15, build_edges' docstring). The
+    original version of this test relied on same-order-only phases still
+    serialising into three single-phase waves, a premise FIX 8 removed (three
+    independent phases with no shared artifacts now land in ONE wave, capped
+    only by measured capacity) -- unrelated to this unit's deepseek/ollama
+    capacity doctrine, but still an assertion against behaviour this module
+    no longer has. Rewritten with a real produces->consumes chain so the
+    scenario the docstring names (a dependent phase never joins its
+    dependency's wave) is actually exercised again."""
     path = tmp_path / "PIPELINE-MANIFEST.json"
     path.write_text(json.dumps({
         "manifest_version": 9902,
-        "phases": [{"id": "A-one", "order": 1},
-                   {"id": "A-two", "order": 2},
-                   {"id": "A-three", "order": 3}],
+        "phases": [
+            {"id": "A-one", "order": 1,
+             "produces_artifact": "working/copy/a.txt"},
+            {"id": "A-two", "order": 2,
+             "consumes": ["working/copy/a.txt"],
+             "produces_artifact": "working/copy/b.txt"},
+            {"id": "A-three", "order": 3,
+             "consumes": ["working/copy/b.txt"]},
+        ],
     }), encoding="utf-8")
     plan = execution_plan.build_execution_plan(path, _probe(10))
     assert plan["waves"] == [["A-one"], ["A-two"], ["A-three"]]
@@ -585,7 +716,10 @@ def test_measured_box_ignores_requested_parallel_and_dispatches_at_real_ceiling(
     """A properly configured box (a real cap-table hit) is untouched by
     requested_parallel -- it is a MEASURED ceiling, not a floor to defend.
     execution_plan.py's wave-capping, not this gate, is what bounds a request
-    that exceeds it."""
+    that exceeds it.
+
+    operator ruling 2026-09-04: ollama-cloud $100/month is 8, not 10 (see
+    test_cap_table_exact)."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
@@ -609,20 +743,60 @@ def test_measured_box_ignores_requested_parallel_and_dispatches_at_real_ceiling(
     assert rc != launcher.DISPATCH_CAPACITY_REFUSED
     assert marker.is_file()
     out = capsys.readouterr().out
-    assert "capacity measured -- 10 concurrent agents available" in out
+    assert "capacity measured -- 8 concurrent agents available" in out
 
 
-def test_deepseek_unbounded_ignores_requested_parallel_and_dispatches(
+def test_deepseek_measured_ceiling_ignores_requested_parallel_and_dispatches(
         monkeypatch, tmp_path, capsys):
-    """ACCEPTANCE: deepseek-direct with no declared number is UNBOUNDED, not
-    parked -- dispatch proceeds (never refused), same as any other MEASURED
-    ceiling, and the banner says UNBOUNDED out loud rather than printing a
-    magic integer."""
+    """operator ruling 2026-09-04: deepseek-direct is now a real MEASURED
+    ceiling (2500 for Flash), not UNBOUNDED -- it behaves exactly like the
+    ollama-cloud case above: a requested_parallel far beyond the table row
+    (5000 > 2500) is ignored by the gate, never refused, and the banner
+    prints the real cap-table number rather than UNBOUNDED."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     (cfg / capacity.OVERRIDE_FILENAME).write_text(
         json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
+    monkeypatch.setattr(capacity, "measure_working_concurrent", lambda: (0, "stub", True))
+    monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
+    marker = tmp_path / "engine_ran.marker"
+    (tmp_path / "presentation_job.py").write_text(
+        "import pathlib, sys\n"
+        f"pathlib.Path(r'''{marker}''').write_text('ran')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    rc = launcher.dispatch(str(tmp_path / "run"), client="acme", deck_type="standard",
+                           background=False, requested_parallel=5000)
+    assert rc != launcher.DISPATCH_CAPACITY_REFUSED
+    assert marker.is_file()
+    out = capsys.readouterr().out
+    assert "capacity measured -- 2500 concurrent agents available" in out
+    assert "UNBOUNDED" not in out
+
+
+def test_openrouter_unbounded_ignores_requested_parallel_and_dispatches(
+        monkeypatch, tmp_path, capsys):
+    """ACCEPTANCE: openrouter with no declared number is UNBOUNDED, not
+    parked -- dispatch proceeds (never refused), same as any other MEASURED
+    ceiling, and the banner says UNBOUNDED out loud rather than printing a
+    magic integer.
+
+    Renamed from test_deepseek_unbounded_ignores_requested_parallel_and_dispatches:
+    operator ruling 2026-09-04 moved deepseek-direct off NO_CAP_PROVIDERS
+    onto the structural cap table (see
+    test_deepseek_measured_ceiling_ignores_requested_parallel_and_dispatches
+    above for its new behaviour), so openrouter -- the one provider still in
+    NO_CAP_PROVIDERS -- is the one this UNBOUNDED-at-dispatch proof needs
+    now."""
+    _isolate(monkeypatch, tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / capacity.OVERRIDE_FILENAME).write_text(
+        json.dumps({"provider": "openrouter"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
     # FIX 22: declare the transport so the unbounded-dispatch acceptance
     # (not the notify refusal) is what this test exercises.
@@ -667,15 +841,22 @@ def test_resolve_max_workers_unbounded_does_not_collapse_to_default_eight(
     """S0.6: `capacity._Unbounded.__int__` raises TypeError ON PURPOSE, so the
     OLD `isinstance(available, int)` check was False for every UNBOUNDED
     (NO_CAP_PROVIDERS) measurement and silently fell through to
-    DEFAULT_MAX_WORKERS = 8. A deepseek-direct override with NO
-    max_concurrent declared (=> available is UNBOUNDED, capacity.py:556) must
-    resolve to the caller's unit_count instead -- proven here by reading a
-    REAL override file through the REAL capacity.probe(), not a stub."""
+    DEFAULT_MAX_WORKERS = 8. An openrouter override with NO max_concurrent
+    declared (=> available is UNBOUNDED) must resolve to the caller's
+    unit_count instead -- proven here by reading a REAL override file
+    through the REAL capacity.probe(), not a stub.
+
+    Repurposed from deepseek-direct to openrouter: operator ruling
+    2026-09-04 moved deepseek-direct off NO_CAP_PROVIDERS onto the
+    structural cap table (it now measures a concrete int, e.g. 2500 for
+    Flash -- see test_step_a_deepseek_flash_no_declared_number_is_measured_
+    at_cap_table), so it can no longer produce the UNBOUNDED sentinel this
+    proof needs. openrouter is the one remaining NO_CAP_PROVIDERS entry."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     (cfg / capacity.OVERRIDE_FILENAME).write_text(
-        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+        json.dumps({"provider": "openrouter"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
 
     from presentation_job import dispatcher
@@ -691,12 +872,16 @@ def test_resolve_max_workers_unbounded_without_unit_count_falls_back_to_default(
     the fallback is still the pre-existing conservative DEFAULT_MAX_WORKERS
     (=8) -- an honest "I don't know how wide to go", not a crash, and not a
     silently-wrong number either since it is the SAME constant the pre-fix
-    code already used as its floor."""
+    code already used as its floor.
+
+    Repurposed from deepseek-direct to openrouter for the same reason as
+    the test above: only openrouter still measures UNBOUNDED after the
+    2026-09-04 ruling."""
     _isolate(monkeypatch, tmp_path)
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     (cfg / capacity.OVERRIDE_FILENAME).write_text(
-        json.dumps({"provider": "deepseek-direct", "plan": "v4-flash"}), encoding="utf-8")
+        json.dumps({"provider": "openrouter"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
 
     from presentation_job import dispatcher

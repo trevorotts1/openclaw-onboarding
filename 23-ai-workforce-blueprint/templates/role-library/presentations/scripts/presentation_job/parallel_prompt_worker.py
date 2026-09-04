@@ -21,7 +21,7 @@ Binding contract implemented here (verbatim from spec lines 27-35):
     (non-empty) with the exact per-slide field set; slide_id and ordinal unique;
     whole input rejected pre-dispatch on any validation failure.
   * Concurrency: multiprocessing spawn model, one slide task per process slot,
-    default worker count min(measured_capacity, 8). Processes share no mutable
+    default worker count min(measured_capacity, slides). Processes share no mutable
     output file; each child receives only its slide payload plus an immutable
     routing snapshot.
   * Per-slide result: {slide_id, ordinal, status, prompt_path, prompt_sha256,
@@ -94,9 +94,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1
 PHASE_ID = "P4-PROMPT"
-DEFAULT_MAX_WORKERS = 8          # first safe operating default (spec: cap 8 even
-                                 # when a provider advertises more; FIX 11 may pick
-                                 # a different mode cap later)
+DEFAULT_MAX_WORKERS = 8          # FALLBACK ONLY -- used when measured_capacity is
+                                 # absent or unusable. It is NOT a ceiling on a
+                                 # measured provider: operator ruling 2026-09-04
+                                 # ("do not cap someone who brought their own
+                                 # capacity"). Wave width stays bounded by the
+                                 # number of slides ready to run (see _workers_for
+                                 # and execution_plan.cap_wave_width), which is the
+                                 # real safety -- a 15-slide wave spawns 15 workers,
+                                 # never 2500, even on a 2500 ceiling.
 RETRY_CAP = 3                    # attempts per slide, total, all rounds
 BACKOFF_S = {2: 2.0, 3: 4.0}     # sleep BEFORE attempt N (spec: 2s then 4s)
 JITTER_MAX_S = 0.5               # bounded 0-500ms jitter on every retry sleep
@@ -673,7 +679,15 @@ def _plan_wave(results: List[Dict[str, Any]], all_slides: List[Dict[str, Any]],
 
 
 def _workers_for(slides: int, capacity: int, requested: Optional[int]) -> int:
-    effective = min(max(1, capacity), DEFAULT_MAX_WORKERS)
+    # Honour the MEASURED ceiling. DEFAULT_MAX_WORKERS is only the fallback for a
+    # missing/invalid capacity -- clamping a measured 2500 down to 8 was the
+    # "cap 8 even when a provider advertises more" behaviour the operator ruled
+    # out on 2026-09-04. The wave is still bounded by `slides` on the return.
+    try:
+        cap = int(capacity)
+    except (TypeError, ValueError):
+        cap = 0
+    effective = cap if cap >= 1 else DEFAULT_MAX_WORKERS
     if requested is not None:
         if requested < 1:
             raise WorkerUsageError("--workers must be >= 1")
