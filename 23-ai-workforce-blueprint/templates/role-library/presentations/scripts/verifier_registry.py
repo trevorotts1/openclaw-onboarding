@@ -38,6 +38,7 @@ ZERO third-party deps (stdlib only), matching the rest of this package.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +64,137 @@ FINDING_PREFIX = _rf.FINDING_PREFIX
 DIVERGENCE_PREFIX = _rf.DIVERGENCE_PREFIX
 
 QC_REPORTS: Dict[str, Dict[str, Optional[str]]] = dict(_rf.QC_REPORTS)
+
+# ---------------------------------------------------------------------------
+# FIX 33 — QC independence provable; a real vision route (MASTER Part 8).
+# "the dispatcher stamps graded_by_provider, graded_by_model, request_id into
+# every QC artifact it authors; qc_aggregate AND verifier_registry.
+# qc_report_verifier fail a report whose model equals the authoring stamp for
+# the same range or lacks a request id."
+#
+# This module's share: the qc_report_verifier seal (the ONE front-door read the
+# purity contract allows) ALSO captures the report's FIX 33 vision-unit stamp
+# (graded_by_provider / graded_by_model / request_id + the authoring stamp it
+# must differ from), and the verdict fails when
+#   * graded_by_model is absent, OR equals the authoring stamp (self-graded
+#     vision pass), OR
+#   * request_id is absent (the report names no route).
+# The captured snapshot is stored in _FIX33_SNAPSHOTS keyed by (qc_key,
+# sha256) AT SEAL TIME; the verdict reads only that sealed snapshot — no file
+# I/O in the verdict, so the purity contract holds. A qc_key with no captured
+# snapshot (artifact absent, or a non-image key whose report carries no
+# vision-unit stamp at all) is not FIX-33-judged: the contract is about
+# artifacts the dispatcher AUTHORS with a vision-unit stamp, not about
+# reports that never claimed one.
+#
+# Rollback: PRESENTATION_FIX33_REGISTRY_CONTRACT=0 restores the pre-FIX-33
+# verifier verdicts exactly. Default is ON.
+# ---------------------------------------------------------------------------
+FIX33_REGISTRY_ROLLBACK_FLAG = "PRESENTATION_FIX33_REGISTRY_CONTRACT"
+
+FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
+FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                    "ocr_engine", "vision_engine", "reviewer_vision_model")
+FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+FIX33_AUTHORING_KEYS = ("graded_by", "builder", "built_by", "reviewer",
+                        "reviewed_by")
+FIX33_AF_CODE = "AF-IMAGE-QC-UNIT"
+
+# (qc_key, sha256) -> {"graded_model": str, "authoring_stamp": str,
+#                      "request_id": str, "has_stamp": bool}
+# Written ONLY inside the qc_report_verifier seal (front-door read time);
+# read ONLY by the pure verdict. Cleared by reset_fix33_snapshots().
+_FIX33_SNAPSHOTS: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+
+def reset_fix33_snapshots() -> None:
+    """Test hook: drop every captured FIX 33 snapshot (call alongside
+    reset_cache_for_tests between fixtures)."""
+    _FIX33_SNAPSHOTS.clear()
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_capture(qc_key: str, obj: Optional[dict], sha256: str) -> None:
+    """Seal-time capture of a report's FIX 33 vision-unit stamp. Called from
+    the qc_report_verifier's front-door read; stores the snapshot the pure
+    verdict later consumes. Only reports that carry (or should carry) the
+    dispatcher's stamp are captured — a report with none of the FIX 33 keys
+    anywhere is snapshotted with has_stamp=False and the verdict treats a
+    captured report for the IMAGE range as missing its stamp (fail), while
+    other ranges are not FIX-33-judged unless they DO carry a stamp."""
+    if obj is None:
+        _FIX33_SNAPSHOTS.pop((qc_key, sha256), None)
+        return
+    graded_model = _fix33_first_str(obj, FIX33_MODEL_KEYS)
+    request_id = _fix33_first_str(obj, FIX33_REQUEST_KEYS)
+    blk = obj.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    authoring_stamp = ""
+    for src in (blk, obj):
+        stamp = _fix33_first_str(src, FIX33_AUTHORING_KEYS)
+        if stamp:
+            authoring_stamp = stamp
+            break
+    has_stamp = bool(graded_model or request_id
+                     or _fix33_first_str(obj, FIX33_PROVIDER_KEYS))
+    _FIX33_SNAPSHOTS[(qc_key, sha256)] = {
+        "graded_model": graded_model,
+        "authoring_stamp": authoring_stamp,
+        "request_id": request_id,
+        "has_stamp": has_stamp,
+    }
+
+
+def _fix33_registry_enabled() -> bool:
+    return os.environ.get(FIX33_REGISTRY_ROLLBACK_FLAG) != "0"
+
+
+def _fix33_verdict_problems(qc_key: str, fact_value: Any) -> List[str]:
+    """PURE. FIX 33 verdict contribution for one sealed QC report fact:
+    a report whose graded_by_model equals the authoring stamp for the same
+    range, or that lacks a request_id, FAILS. Reads ONLY the snapshot the
+    seal captured — never a file, never the environment."""
+    if not _fix33_registry_enabled():
+        return []
+    snap = _FIX33_SNAPSHOTS.get((qc_key, getattr(fact_value, "sha256", "")))
+    if snap is None:
+        return []
+    # Only the IMAGE range is fix-33-judged when the report carries no stamp
+    # at all (a report that never claimed a vision unit is judged by the
+    # existing independence/rubric checks; a report that DID claim one must
+    # prove it).
+    problems: List[str] = []
+    if not snap["has_stamp"] and qc_key != "image":
+        return []
+    graded_model = snap["graded_model"]
+    if not graded_model:
+        problems.append(
+            f"{FIX33_AF_CODE}: {getattr(fact_value, 'rel_path', qc_key)} declares "
+            "no graded_by_model — FIX 33 requires the dispatcher's vision-unit "
+            "stamp (graded_by_provider/graded_by_model/request_id) in every QC "
+            "artifact the dispatcher authors.")
+    elif (snap["authoring_stamp"]
+          and graded_model.strip().lower() == snap["authoring_stamp"].strip().lower()):
+        problems.append(
+            f"{FIX33_AF_CODE}: graded_by_model {graded_model!r} equals the "
+            f"report's authoring stamp {snap['authoring_stamp']!r} for the same "
+            "range — the author graded its own work. FIX 33: the vision route "
+            "that graded the deck must be a DIFFERENT model from the authoring "
+            "stamp (cross-graded, never self-graded).")
+    if not snap["request_id"]:
+        problems.append(
+            f"{FIX33_AF_CODE}: {getattr(fact_value, 'rel_path', qc_key)} carries "
+            "no request_id — FIX 33 requires the vision route's request id in "
+            "the report so every grade is traceable to the unit call that "
+            "produced it.")
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -244,12 +376,37 @@ def qc_report_verifier(qc_key: str) -> VerifierSpec:
     def _v(artifact_paths: Tuple[str, ...], run_dir: Path,
            config: Optional[dict]) -> Tuple[RunFacts, bool]:
         facts = _rf.seal(Path(run_dir), nonce_bound=False, force=True)
-        had = facts.qc.get(qc_key) is not None and \
-            facts.qc[qc_key].state is not Epistemic.ABSENT
+        fact = facts.qc.get(qc_key)
+        had = fact is not None and fact.state is not Epistemic.ABSENT
+        # FIX 33 — capture the report's vision-unit stamp at the seal's
+        # front-door read so the PURE verdict can judge it later without
+        # touching the file again. A KNOWN fact carries the parsed report's
+        # sha256; re-reading the same bytes here is the one allowed read.
+        if had and fact.state is Epistemic.KNOWN:
+            info = fact.value
+            try:
+                p = Path(run_dir) / QC_REPORTS[qc_key]["path"]
+                obj = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+                if not isinstance(obj, dict):
+                    obj = None
+            except Exception:  # noqa: BLE001 — capture must never break a seal
+                obj = None
+            _fix33_capture(qc_key, obj, getattr(info, "sha256", ""))
         return facts, bool(had)
 
     def _verdict(facts: RunFacts) -> Tuple[Verdict, str]:
-        return _rf.verify_qc(facts, qc_key)
+        base_verdict, base_detail = _rf.verify_qc(facts, qc_key)
+        fact = facts.qc.get(qc_key)
+        # FIX 33 — cross-graded + request-id teeth on top of the existing
+        # rubric. Composes: the base rubric problems stay the headline; the
+        # FIX 33 findings are appended (a base FAIL keeps its reasons).
+        if fact is not None and fact.state is Epistemic.KNOWN:
+            fix33 = _fix33_verdict_problems(qc_key, fact.value)
+            if fix33:
+                if base_verdict is Verdict.FAIL:
+                    return Verdict.FAIL, base_detail + " | " + "; ".join(fix33)
+                return Verdict.FAIL, "; ".join(fix33)
+        return base_verdict, base_detail
 
     return VerifierSpec(
         gate=f"qc:{qc_key}",

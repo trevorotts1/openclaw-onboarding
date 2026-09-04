@@ -1490,8 +1490,26 @@ def test_postflight_speech_length_reverify():
         png_body = b"\x89PNG\r\n\x1a\n" + (b"\x00" * (build_deck.PLACEHOLDER_MIN_BYTES + 1024))
         png_path.write_bytes(png_body)
         import hashlib as _hashlib
-        (root / "working" / "checkpoints" / "process_manifest.json").write_text(
-            json.dumps({
+        # FIX 92 closeout gates (image-grounding + representation-casting) fire on
+        # ANY run-dir-scoped postflight call since the round-5 wiring: satisfy both
+        # with independent verdicts so this fixture isolates the speech-length
+        # re-check, as its docstring promises.
+        (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "qc" / "image_qc_report.json").write_text(json.dumps(
+            {"image_grounding": {"pass": True, "reviewed_by": "vision-review-steward"},
+             "vision_model": "gpt-image-2",
+             "slides": [{"slide": n, "pass": True, "score": 9.0,
+                         "observed_text": "rendered slide carries the section title and body copy",
+                         "visual_subject": "photographic hero with grounding-consistent scene"
+                         } for n in range(1, 25)]}))
+        (root / "working" / "qc" / "prompt_qc_report.json").write_text(json.dumps(
+            {"representation_casting": {"pass": True, "reviewed_by": "casting-director"},
+             "slides": [{"slide": n, "pass": True, "score": 9.0,
+                         "notes": "cast parity verified against the intake mix"
+                         } for n in range(1, 25)]},
+            indent=2))
+        import hashlib as _hashlib
+        (root / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({
                 "phase_attestations": [],
                 "cc_task_id": "task-pf-speech-test",
                 "cc_register_attempted": True,
@@ -1565,6 +1583,12 @@ def test_teleprompter_publish_gate():
     Returns a list of failure strings ([] = all passed)."""
     fails = []
     all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    # FIX 5 semantics: the gate is WARN-only when the fleet credentials are absent.
+    # These legs pin the HARD-FAIL path, so stub credentials PRESENT regardless of
+    # the runner's environment (CI has no ~/.openclaw). Restore in `finally`.
+    _real_creds = build_deck._teleprompter_credentials_present
+    build_deck._teleprompter_credentials_present = lambda: True
 
     # (a) No publish ledger at all -> exit 5.
     bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
@@ -1640,6 +1664,7 @@ def test_teleprompter_publish_gate():
     print(f"TELE-F (explicit skip flag)  -> {'PASS' if not [f for f in fails if 'TELE-F' in f] else 'FAIL'}")
 
     print(f"TELE-PUBLISH (gate self-test)-> {'PASS' if not fails else 'FAIL'}")
+    build_deck._teleprompter_credentials_present = _real_creds  # FIX 5: restore real creds probe
     return fails
 
 
@@ -4931,6 +4956,43 @@ def emit_af_coverage():
             sys.modules.pop("craft_judgement", None)
         else:
             sys.modules["craft_judgement"] = _saved_cj
+
+    # AF-SPEECH-PACING / AF-RENDER-EMPTY / AF-RENDER-COMPLETE (Guard A): the three
+    # remaining manifest rows. AF-SPEECH-PACING surfaces as an ADVISORY on stderr from
+    # _chk_speech_length when the speech's effective wpm falls outside the pacing band
+    # (Fix 97: AF-SPEECH-SHORT is the only hard reject) — capture stderr around a real
+    # 120-wpm fixture and record the code from the print. AF-RENDER-EMPTY and
+    # AF-RENDER-COMPLETE are pure emits off _emit_render_af_codes — drive both with
+    # synthetic rendered/failures lists and record from the captured stderr.
+    import io as _io
+    import contextlib as _contextlib
+
+    _root = Path(tempfile.mkdtemp(prefix="deck_af_pacing_"))
+    (_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (_root / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"interview_confirmed": True, "presentation_mode": "general",
+         "audience_mode": "STANDARD", "target_talk_minutes": 30}))
+    _sp = _root / "working" / "presenter-speech"
+    _sp.mkdir(parents=True, exist_ok=True)
+    # 3,600 words / 30 min = 120 wpm effective — 14% off the 140 wpm target, inside the
+    # hard floor but OUTSIDE the pacing band -> the advisory names AF-SPEECH-PACING.
+    (_sp / "speech.md").write_text(" ".join(["word"] * 3600))
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._chk_speech_length(_root)
+    record("AF-SPEECH-PACING", _err.getvalue())
+
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._emit_render_af_codes([], [{"slide": 1, "error": "stub"}])
+    record("AF-RENDER-EMPTY", _err.getvalue())
+
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._emit_render_af_codes(
+            [{"slide": 1, "file": "slide-01.png", "taskId": "t"}],
+            [{"slide": 2, "error": "stub"}])
+    record("AF-RENDER-COMPLETE", _err.getvalue())
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -666,9 +666,11 @@
       QUESTIONS.forEach(function (q) {
         var a = answers[q.id];
         if (!a) return;
-        var target = (a.storeOn || "").split(".");
+        var target = a.storeOn === "intake.json"
+          ? ["intake.json", q.key || "json"]
+          : (a.storeOn || "").split(".");
         var section = target.length > 1 ? target[0] : "deck_brief";
-        var key = target.length > 1 ? target[1] : a.storeOn;
+        var key = target.length > 1 ? target[1] : (q.key || a.storeOn);
         var v = a.value;
         if (a.kind === "image_links") v = a.extra && a.extra.image_links ? a.extra.image_links : [];
         if (a.kind === "logo") {

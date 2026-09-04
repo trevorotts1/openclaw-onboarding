@@ -515,8 +515,12 @@ def build_webinar(run_dir: Path, *, out: Optional[str] = None, no_upload: bool =
             record["status"] = "built+size-gated+uploaded+confirmed"
             log("GHL list-back confirmed the webinar is in the library.")
         else:
-            log("WARNING: GHL list-back did not confirm the webinar (upload record written, "
-                "but the local copy is NOT deleted until confirmed).", file=sys.stderr)
+            # F46 (SMOKE-1, 2026-09-01): log() takes no file= kwarg — this line
+            # crashed AFTER a successful build+upload, turning a completed webinar
+            # into a phase failure. print to stderr directly.
+            print("WARNING: GHL list-back did not confirm the webinar (upload record "
+                  "written, but the local copy is NOT deleted until confirmed).",
+                  file=sys.stderr)
 
     return record
 

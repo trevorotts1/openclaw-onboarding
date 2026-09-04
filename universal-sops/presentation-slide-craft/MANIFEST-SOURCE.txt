@@ -1,3 +1,2 @@
-content_sha256=c21fe068530981c8975d6c7daad834a3d976fdee824ccb94e5e96bbe16f6901a
-generated=2026-08-31T00:00:00Z
-source=PIPELINE-MANIFEST.json (manifest_version 54, release/presentation-rev2-batch2: merge of v53 (2f32c0391/388863c14 sync_check registration) with phase-b head (FIX 20 citation gate adds P-0.5-RESEARCH additional_preflights[_chk_citation_validated]; FIX 22 launch gate; FIX 32 drift detector; FIX 33 OCR gate; FIX 18 warning bucket; collateral repairs), union-resolved 2026-08-31: version 53->54 taking main's registered loaders + Ticket-7/v22.0.86 executors (P4-RENDER argv form, P8.25/P9.6 direct builders) + branch's citation validation; MIN_MANIFEST_VERSION mirrors bumped to 54 in both; content_sha256 restamped after the union edit)
+content_sha256=adae14aa13933ef1d4258fbd8f214f62f9a0c85fb0f5fe2c37354fde48ea3623
+generated=2026-09-04T08:15:07Z

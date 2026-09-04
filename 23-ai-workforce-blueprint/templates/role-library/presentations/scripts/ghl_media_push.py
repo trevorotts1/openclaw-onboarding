@@ -57,6 +57,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ghl_media  # noqa: E402  (the SHARED, verified-working module)
 import delivery_gate  # noqa: E402  (the OUT-OF-BAND delivery boundary gate)
+# FIX 111 (MASTER Part 8 / R14 §5.10): the STANDARD over-cap rule lives in
+# ghl_media_upload.py — the cap constant, the receipt builder/validator, and THE
+# accept-either-id reader every gate calls. The push transport builds its PDF-twin
+# receipt through build_receipt/record_upload_receipt (one implementation) and the
+# closeout gate accepts either id through hosted_deck_media_id, so "the pptx was
+# over the 25 MB cap, the PDF twin is the hosted deck" is machine-readable at the
+# gate instead of an improvised per-incident shape.
+import ghl_media_upload  # noqa: E402  (the FIX 111 rule + receipt + gate-reader layer)
 
 # The closeout code this GHL-upload gate folds under (diagnosis 4.6 / Fix-Goal 5).
 GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
@@ -172,6 +180,25 @@ def _deck_pdf(uploaded):
             return e
     return None
 
+def _deck_pptx_local_path(run_dir, slug: str, extra_files) -> str | None:
+    """FIX 111: the LOCAL deck pptx that would have been hosted — the file the over-cap
+    receipt must name. Resolved the same narrow way the deck artifacts are classified:
+    a *-FINAL.pptx among the extra deliverables (the assembled bundle deck) first, else
+    the {slug}-FINAL.pptx under the run dir's delivery bundle. Returns None (never a
+    guess) when no deck pptx exists — a PDF-twin receipt without a real local pptx is
+    exactly the phantom ghl_media_upload refuses to build."""
+    for f in extra_files or []:
+        p = Path(str(f))
+        if p.name.lower().endswith("-final.pptx") and p.is_file():
+            return str(p)
+    for cand in sorted((Path(run_dir) / "delivery").glob("*-FINAL.pptx")):
+        if cand.is_file():
+            return str(cand)
+    named = Path(run_dir) / "delivery" / f"{slug}-FINAL.pptx"
+    if named.is_file():
+        return str(named)
+    return None
+
 
 def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None,
                     extra_files: list | None = None, opener=None) -> dict:
@@ -263,12 +290,34 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
         # deliverable so the closeout/verifier ledger still passes — and mark the deck as
         # hosted-as-PDF so downstream readers know the pptx is intentionally absent (it
         # exceeds the 25MB cap), never lost.
+        #
+        # FIX 111: the projections alone are not the contract — the receipt is. The
+        # deck PDF is accepted as the hosted deck ONLY alongside the standard over-cap
+        # receipt ({pptx_local_path, pdf_media_id, pptx_media_id: null,
+        # reason: "over_cap"}), built by the ONE implementation in
+        # ghl_media_upload.build_receipt and merged into the ledger by
+        # record_upload_receipt. The receipt is what every accept-either-id gate
+        # (ghl_media_upload.hosted_deck_media_id) validates, and what a human reads to
+        # tell "the pptx was over the cap, the PDF twin is the hosted deck" from "the
+        # pptx upload was lost". The local pptx that exceeded the cap is resolved from
+        # the deck-pptx name among the would-be uploads / the delivery bundle, and a
+        # pptx that is NOT actually over the cap does NOT get a receipt: it gets an
+        # honest failure surface instead (the upload of a sub-cap pptx that never
+        # landed is a lost upload, not an over-cap hosting).
         deck_pdf = _deck_pdf(uploaded)
         if deck_pdf is not None:
             out["pptx_ghl_media_id"] = deck_pdf["ghl_media_id"]
             out["pptx_ghl_url"] = deck_pdf["ghl_url"]
             out["pptx_ghl_remote_name"] = deck_pdf["ghl_remote_name"]
             out["deck_upload_kind"] = "pdf"
+            pptx_local = _deck_pptx_local_path(run_dir, slug, extra_files or [])
+            if pptx_local is not None and ghl_media_upload.is_over_cap(pptx_local):
+                receipt = ghl_media_upload.build_receipt(pptx_local, {
+                    "ghl_media_id": deck_pdf.get("ghl_media_id"),
+                    "ghl_url": deck_pdf.get("ghl_url"),
+                    "ghl_remote_name": deck_pdf.get("ghl_remote_name"),
+                })
+                ghl_media_upload.record_upload_receipt(out, receipt)
 
     ledger.update(out)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,11 +458,25 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
                 f"{GHL_UPLOAD_GATE}: only {len(slides)} of {exp} slide PNGs are uploaded to "
                 "GHL — every slide must be hosted before delivery.")
 
-    # (3) final assembled PPTX uploaded.
-    if not str(media.get("pptx_ghl_media_id") or "").strip():
-        reasons.append(
-            f"{GHL_UPLOAD_GATE}: pptx_ghl_media_id is absent — the final assembled PPTX was "
-            "never uploaded to the GHL media library.")
+    # (3) final assembled deck uploaded — FIX 111 accept-either-id: a real pptx media
+    # id (the canonical path) OR a PDF media id carrying a VALID over-cap receipt
+    # (reason "over_cap", pptx_media_id null, real pdf id). The bare
+    # pptx_ghl_media_id-absent check stays for the no-receipt case so the failure
+    # message still names the missing upload; the accept-either-id reader
+    # (ghl_media_upload.hosted_deck_media_id) decides the pass, never a bare
+    # deck_upload_kind marker without a valid receipt.
+    hosted_id = ghl_media_upload.hosted_deck_media_id(media)
+    if not hosted_id:
+        if not str(media.get("pptx_ghl_media_id") or "").strip():
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: pptx_ghl_media_id is absent — the final assembled PPTX was "
+                "never uploaded to the GHL media library.")
+        else:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: the deck's hosted-media id does not pass the FIX 111 "
+                "accept-either-id check — a PDF-twin id without a valid over-cap receipt "
+                "(reason \"over_cap\", pptx_media_id null, real pdf_media_id) is not proof "
+                "the deck is hosted.")
 
     return (len(reasons) == 0), reasons
 
@@ -853,18 +916,140 @@ def _selftest() -> int:
             if str(out.get("pptx_ghl_media_id") or "") != "file_x":
                 fails.append(f"U pptx-wins: expected pptx_ghl_media_id from the PPTX "
                              f"upload, got {out!r}")
+            if out.get("deck_upload_receipt") is not None:
+                fails.append(f"U pptx-wins: no over-cap receipt may exist on the canonical "
+                             f"pptx path, got {out!r}")
+
+    # === FIX 111 — THE STANDARD OVER-CAP RULE (MASTER Part 8 / R14 §5.10) ===
+    # V — a 52 MB fixture pptx: the PDF twin is uploaded, the receipt carries
+    # reason "over_cap" + pptx_media_id null, and the closeout gate is GREEN via the
+    # accept-either-id reader.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        pkg = base / "delivery" / "demo-deck-FINAL"
+        pkg.mkdir(parents=True, exist_ok=True)
+        big_pptx = pkg / "demo-deck-FINAL.pptx"
+        big_pptx.write_bytes(b"PK\x03\x04" + b"\x00" * (52 * 1024 * 1024))
+        deck_pdf = pkg / "demo-deck-FINAL.pdf"
+        deck_pdf.write_bytes(b"%PDF-1.7\n" + b"\x00" * 128)  # real %PDF header (image-only)
+        (base / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (base / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps(
+            {"phases": [{"phase": "render", "output_slide_count": 1,
+                         "slides": [{"slide": 1, "taskId": "kie-aaa"}]}]}))
+        (base / "working" / "checkpoints" / "delivery_plan.json").write_text(json.dumps(
+            {"destinations": [{"type": "ghl", "status": "uploaded"},
+                              {"type": "mac_downloads",
+                               "verify_anchor": str(big_pptx)}]}))
+        (base / "working" / "teleprompter").mkdir(parents=True, exist_ok=True)
+        (base / "working" / "teleprompter" / "teleprompter.html").write_text("<html></html>")
+        (pkg / "presenter-teleprompter.html").write_text("<html></html>")
+        saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+        _os.environ["GHL_API_KEY"] = "pit-" + "a" * 40
+        _os.environ["GHL_LOCATION_ID"] = "loc-" + "a" * 40
+        out = None
+        try:
+            out = push_deck_media(base, [], extra_files=[str(big_pptx), str(deck_pdf)],
+                                  opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"V over-cap-52MB: push_deck_media raised {exc!r}")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        if out is None:
+            fails.append("V over-cap-52MB: push_deck_media returned None")
+        else:
+            rec = out.get("deck_upload_receipt")
+            if not ghl_media_upload.receipt_ok(rec):
+                fails.append(f"V over-cap-52MB: expected a VALID over-cap receipt, got "
+                             f"{rec!r}")
+            else:
+                if rec.get("reason") != "over_cap" or rec.get("pptx_media_id") is not None:
+                    fails.append(f"V over-cap-52MB: receipt shape wrong, got {rec!r}")
+                if not ghl_media_upload.is_over_cap(rec.get("pptx_local_path")):
+                    fails.append(f"V over-cap-52MB: receipt pptx_local_path is not a real "
+                                 f"over-cap file: {rec!r}")
+            if out.get("deck_upload_kind") != "pdf":
+                fails.append(f"V over-cap-52MB: expected deck_upload_kind 'pdf', got {out!r}")
+            if str(out.get("pptx_ghl_media_id") or "") != "file_x":
+                fails.append(f"V over-cap-52MB: expected the hosted id from the PDF twin "
+                             f"upload, got {out!r}")
+            # the persisted ledger must carry the receipt too (the gate reads the FILE).
+            led = _read_json(_ledger_path(base))
+            if not ghl_media_upload.receipt_ok(led.get("deck_upload_receipt")):
+                fails.append(f"V over-cap-52MB: media_library.json did not persist the "
+                             f"receipt, got {led.get('deck_upload_receipt')!r}")
+            ok_g, r_g = gate_ghl_media_complete(base)
+            if not ok_g:
+                fails.append(f"V over-cap-52MB: closeout gate must be GREEN on the over-cap "
+                             f"PDF twin, got {r_g}")
+
+    # W — a deck hosted via the PDF twin WITHOUT a valid over-cap receipt (a bare
+    # deck_upload_kind marker / legacy shape only) must FAIL the closeout gate: the
+    # receipt is the reason carrier, and without it a human cannot tell "over the cap"
+    # from "the pptx upload was lost".
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, intake={"has_ghl": True},
+               media={"ghl_folder_id": "root",
+                      "pptx_ghl_media_id": "pdf_legacy",
+                      "deck_upload_kind": "pdf"})
+        ok_g, r_g = gate_ghl_media_complete(base)
+        if ok_g:
+            fails.append("W no-receipt: closeout gate must FAIL on a pdf-hosted deck with "
+                         "no valid over-cap receipt")
+        elif not any("accept-either-id" in x for x in r_g):
+            fails.append(f"W no-receipt: expected the FIX 111 accept-either-id reason, "
+                         f"got {r_g}")
+
+    # X — a 10 MB pptx uploads AS PPTX with a real media id (the canonical path), and
+    # the closeout gate is green WITHOUT any receipt.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck_pptx = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        delivery_gate._write_render_manifest(base, ["kie-aaa"])
+        saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+        _os.environ["GHL_API_KEY"] = "pit-" + "a" * 40
+        _os.environ["GHL_LOCATION_ID"] = "loc-" + "a" * 40
+        out = None
+        try:
+            out = push_deck_media(base, [], extra_files=[str(deck_pptx)],
+                                  opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"X under-cap-10MB: push_deck_media raised {exc!r}")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        if out is None:
+            fails.append("X under-cap-10MB: push_deck_media returned None")
+        else:
+            if str(out.get("pptx_ghl_media_id") or "") != "file_x":
+                fails.append(f"X under-cap-10MB: expected a real pptx media id, got {out!r}")
+            if out.get("deck_upload_receipt") is not None:
+                fails.append(f"X under-cap-10MB: an under-cap pptx must NOT carry an "
+                             f"over-cap receipt, got {out!r}")
+        ok_g, r_g = gate_ghl_media_complete(base)
+        if not ok_g:
+            fails.append(f"X under-cap-10MB: closeout gate must be GREEN on the canonical "
+                         f"pptx path, got {r_g}")
 
     if fails:
         print("ghl_media_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("ghl_media_push gate selftest -> PASS (21 cases: complete/empty/no-pptx/"
+    print("ghl_media_push gate selftest -> PASS (24 cases: complete/empty/no-pptx/"
           "no-slides/null-folder/agent-skip/owner-skip/false-token/incomplete/coverage + "
           "transport-boundary: clean-allow/overlay-abort/no-run-dir-abort/non-deck-allow/"
           "push-aborts-pre-network + chokepoint: direct-overlay-BLOCKED/direct-no-run-dir-"
           "BLOCKED/governed-push-ALLOWED/image-unaffected + deck-pdf-fallback-ALLOWED/"
-          "pptx-wins-over-deck-pdf)")
+          "pptx-wins-over-deck-pdf + FIX-111: over-cap-52MB-receipt-green/no-receipt-FAILS/"
+          "under-cap-10MB-pptx-canonical)")
     return 0
 
 

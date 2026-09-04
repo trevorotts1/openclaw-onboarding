@@ -15,9 +15,12 @@ CONTRACT:
         text.strong / text.fast / text.judge     -- authoring/judge classes (FIX 7 router)
         vision.ocr                               -- vision+OCR class (P-TYPO-QC, P-IMAGE-QC)
     FIX 7 (model_router) and FIX 10 (gap analysis) consume these aliases; FIX 12
-    consumes the per-model `unit_costs` blocks (null + status "cost_unknown" means
-    preflight must fail closed for that model until a price is entered -- never
-    assume free).
+    consumes the per-model `unit_costs` blocks. FIX 13 prices every block from
+    [R12] (status "priced", numeric rates; ollama-cloud is $0.00 -- monthly
+    pool). A null + status "cost_unknown" block means the price was never
+    entered: credit_preflight WARNs and excludes the phase from the numeric
+    estimate (estimate_source "unpriced"), never blocks on it and never
+    assumes the model is free.
   * Operator bump: point PRESENTATION_MODEL_CATALOG_DIR at a directory holding a
     model_catalog.json (the live "bump the catalog's preferred image model" knob --
     the file is re-read whenever its mtime/size changes, so no code edit and no
@@ -177,6 +180,71 @@ def resolve_alias(alias: str) -> Dict[str, Any]:
     """Name FIX 7's model_router.py and FIX 10's resource_profile.py look for
     first when they probe for the catalog; identical to resolve()."""
     return resolve(alias)
+
+
+# ---------------------------------------------------------------------------
+# FIX 17a: served-id table + provider-id normalisation
+# ---------------------------------------------------------------------------
+#: Provider-id drift killer (FIX 16/17a): `ollama_cloud` and `ollama-cloud`
+#: name ONE provider; the catalog JSON historically carried the underscore
+#: form while resource_profile/capacity carry the dash form. Every consumer
+#: folds a raw provider string through here before a (alias, provider)
+#: lookup, so the two spellings can never diverge again. Unknown providers
+#: normalise to their lowercased dash form unchanged -- normalising a name
+#: is never evidence that a provider exists.
+def normalize_provider_id(provider: Any) -> str:
+    """Raw provider string -> the canonical dash-form id the catalog keys on.
+
+    Folds underscores/spaces to dashes and lowercases. Deepseek-direct and
+    deepseek fold to the same id here at the string level; capacity.py's
+    cap-table mapping stays the authority for cap-table membership and is
+    used when importable so both layers can never disagree."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    try:  # capacity's cap table is the authority when the module is present
+        from presentation_job import capacity as _cap  # type: ignore
+    except Exception:  # noqa: BLE001 -- direct file run / package absence
+        _cap = None
+    if _cap is not None and hasattr(_cap, "normalize_provider"):
+        try:
+            mapped = _cap.normalize_provider(token)
+        except Exception:  # noqa: BLE001 -- normalisation never raises upward
+            mapped = None
+        if mapped:
+            return str(mapped)
+    if token == "deepseek":
+        # No cap-table module available: the dept's provider id for the
+        # native DeepSeek endpoint is deepseek-direct everywhere else.
+        return "deepseek-direct"
+    return token
+
+
+def served_ids_for(alias: str, *,
+                   catalog: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """The FIX 17a served-id row for one alias: {provider: served model id}.
+
+    Keys are canonical dash-form provider ids (normalize_provider_id folded
+    at read time so either spelling in the JSON still resolves). Empty dict
+    when the alias carries no served_ids block -- callers then fall back to
+    the alias's plain `model` id, never to a guessed provider mapping."""
+    try:
+        entry = resolve(alias, catalog=catalog)
+    except Exception:  # noqa: BLE001 -- unknown alias fails closed to {}
+        return {}
+    raw = entry.get("served_ids")
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    return {normalize_provider_id(k): str(v)
+            for k, v in raw.items() if str(v).strip()}
+
+
+def served_id(alias: str, provider: Any, *,
+              catalog: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The provider's served id for one alias -- the literal id that
+    provider's endpoint actually accepts (e.g. text.judge on openrouter ->
+    'z-ai/glm-5.3-flash'; the same alias on deepseek-direct ->
+    'deepseek-v4-flash'). None when that provider has no row: a missing
+    mapping is a miss, never the bare alias model id guessed as served."""
+    return served_ids_for(alias, catalog=catalog).get(normalize_provider_id(provider))
 
 
 def model_id(alias: str) -> str:

@@ -226,8 +226,6 @@ def validate_citations(
     fetcher = _rw.BoundedFetcher(
         run_dir, max_unique=max_unique,
         fetch_transport=fetch_transport, env=env)
-    ledger_hashes = _load_ledger_hashes(run_dir)
-
     rows: List[Dict[str, Any]] = []
     resolve_cache: Dict[str, Dict[str, Any]] = {}  # canonical -> row (incl. refusals)
     for c in citations:
@@ -238,6 +236,17 @@ def validate_citations(
         else:
             fetched = fetcher.fetch_page(url)
             resolve_cache[canon] = fetched
+        # SMOKE-1 F29: the ledger hash table MUST be read AFTER each network
+        # fetch, not once before the loop. fetch_page appends the fresh row
+        # (content_sha256 of the body it just got) to the ledger; a hash table
+        # loaded before the loop compares today's fetch against the hash
+        # recorded at research time — for any dynamic page (ads, dates, rotating
+        # stats) that comparison can NEVER pass, permanently failing every
+        # brief-URL citation on a long-running run. Reading after the fetch
+        # keeps the check honest: the recorded hash is the hash of the exact
+        # body being validated (re-anchored evidence), so the mismatch branch
+        # still fires for genuinely substituted content (cached rows / MITM).
+        ledger_hashes = _load_ledger_hashes(run_dir)
         verdict: Dict[str, Any]
         sha = str(fetched.get("content_sha256", "") or "")
         if fetched.get("status") == 200 and sha and canon in ledger_hashes \

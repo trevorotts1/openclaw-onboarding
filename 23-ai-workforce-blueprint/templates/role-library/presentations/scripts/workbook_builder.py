@@ -543,6 +543,8 @@ ellipsis unless it is in the source string. The quoted strings are the ONLY text
 page beyond the {client_name} wordmark and the page number. Text must read exactly as
 quoted — this is the spelling-lock for every baked string above.
 
+PRINT LEGIBILITY (OCR-locked): every quoted string is rendered as clean, plain, machine-readable print lettering in the {font} family, at full contrast against its {base} background, sized so it still reads when the page is shrunk to 25%. Do NOT render any quoted string as decorative script, brush calligraphy, outline or inline lettering, warped/perspective type, hand-drawn stylized letterforms, or type broken up by illustration. If a word is hard to set, set it LARGER and PLAINER — never smaller or fancier. This print-legibility rule is part of the spelling-lock: a beautiful render that cannot be read back is a failed render.
+
 === LAYOUT GRID (fixed per page, per page type) ===
 HEADER BAND (top 0-16%): solid {prim} band with the page title set in white/ink, and a thin
 {acc} rule at its bottom edge. Reserved: the page title + one client-name form line (empty

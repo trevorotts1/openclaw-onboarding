@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional
 from .gates import GATE_KEYS, NON_WAIVABLE_GATES
 from .state import _norm, _read_json
 
+# MASTER Part 8 Fix 32: an owner-skip approval claimed by a waiver record is
+# verified through the shared approvals.verify() oracle (cc_board owner-message
+# resolution), not taken on the strength of its own fields. Import is deferred
+# into validate_waiver() so a bare-module import of waivers.py keeps working.
+
 assert not (set(GATE_KEYS) & set(NON_WAIVABLE_GATES)), "a non-waivable gate appears in GATE_KEYS"
 
 # DECISION (self-issuable-waiver fix, see CHANGELOG [Unreleased]):
@@ -60,6 +65,35 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
                           f"Never waivable: {', '.join(NON_WAIVABLE_GATES)}")
     if rule in NON_WAIVABLE_GATES:
         raise WaiverError(f"gate {rule!r} cannot be waived")
+
+    # MASTER Part 8 Fix 32: a waiver that claims owner authority — an approved_by
+    # name and no client-voice quote (the {approved_by:"Trevor", no
+    # owner_msg_id} shape QC FIX 32 calls the forged record) — is an owner-skip
+    # approval and MUST verify against the shared approvals oracle before
+    # anything else about it is honored. Presence of "Trevor" in approved_by is
+    # never proof. Fail-closed: a forged/unresolvable record raises
+    # WaiverError with the AF-FORGED-APPROVAL reason; a record whose
+    # owner_msg_id resolves to a real owner message (stub-oracle proof) passes.
+    # Field mapping onto the approvals schema: the waiver's `rule` names the
+    # gate, and its `captured_at` is the grant timestamp.
+    claimed_owner = str(w.get("approved_by", "") or "").strip()
+    if claimed_owner and not (w.get("client_request_quote") or "").strip():
+        from .approvals import verify as _approvals_verify
+        approval_record = dict(w, gate=rule, granted_at=w.get("captured_at"))
+        try:
+            _approvals_verify(approval_record, Path(run_dir))
+        except Exception as exc:  # noqa: BLE001 — verify raises ApprovalError;
+            # any other failure from the oracle path is still fail-closed.
+            raise WaiverError(
+                f"waiver for {rule!r} claims owner approval by {claimed_owner!r} "
+                f"but could not be verified — {exc}") from exc
+        # The owner_msg_id RESOLVED (stub-oracle proof / real board): this is a
+        # genuine owner-authorized skip, honored without a client-voice quote —
+        # the quote path below is for client-sourced waivers only (Fix 32 half B:
+        # the verified-id record must be ACCEPTED, not fall through to the quote
+        # check and fail).
+        return
+
     src = w.get("source")
     if src not in ("intake_field", "transcript"):
         raise WaiverError(f"waiver for {rule!r} has source={src!r}; must be "

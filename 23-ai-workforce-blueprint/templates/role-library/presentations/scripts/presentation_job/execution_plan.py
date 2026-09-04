@@ -3,8 +3,20 @@
 
 Turns PIPELINE-MANIFEST.json into a wave-scheduled execution plan:
 
-  * load_phase_dag(manifest_path) -- phases as DAG nodes, edges from phase order
-    and artifact dependencies (produces_artifact consumed by later phases).
+  * build_edges(phases) -- the artifact DAG: edge u->v iff produces(u) intersects
+    consumes(v), which is how a phase that needs a file waits for the phase
+    that makes it. Consumed artifact patterns with no producer at all that are
+    not intake files are a manifest defect (static validation: find_unproduced_
+    consumed_artifacts / the ValueError raised by load_phase_dag). Intake files
+    (raw/source-brief.* and the intake record working/copy/intake.json while it
+    is still being rewritten by the intake stages) carry no edges: they are the
+    run's inputs, present before the engine starts. Manifest `order` only
+    orders phases INTRA-STAGE (deterministic tie-break), it no longer creates
+    cross-phase edges.
+  * load_phase_dag(manifest_path) -- phases as DAG nodes, edges from the
+    artifact graph above (replaces the old name-prefix/role edges, which put
+    P8.2-GUIDE and P9-SPEECH in wave one and let P-0.5-RESEARCH wait for a
+    phase that runs after it: MASTER Part 8 FIX 8).
   * topological_sort (Kahn's algorithm) -- a phase never runs before its
     dependencies; the manifest's `order` values provide the deterministic
     tie-break so the sort is stable across runs.
@@ -36,7 +48,9 @@ Import as package-relative. Standalone run: `python3 -m presentation_job.executi
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
+import re
 import sys
 from collections import deque
 from pathlib import Path
@@ -80,41 +94,211 @@ def _load_raw_phases(manifest_path: str | Path) -> List[dict]:
     return phases
 
 
-def load_phase_dag(manifest_path: str | Path) -> Dict[str, List[str]]:
-    """Load the manifest's phases as an adjacency map: phase_id -> [dependents].
+def _as_artifact_list(value) -> List[str]:
+    """Normalize produces_artifact / consumes to a list of pattern strings.
 
-    Edges come from the manifest `order` field: a phase depends on the phases
-    with a lower order in the same family (first segment of the phase id) and
-    on the previous phase of the same owning role. This yields a deterministic,
-    acyclic dependency graph that follows the manifest's own pipeline sequence.
-
-    The returned map is the Kahn-adjacency: keys are phase ids, values are the
-    phases that depend on them. Phases with no dependents have an empty list.
+    The manifest declares produces_artifact as either a single string or a
+    list of strings (consumes is always a list); both shapes are accepted,
+    and a missing field is an empty list. Nothing else is coerced -- a
+    non-string entry is skipped, never guessed.
     """
-    phases = _load_raw_phases(manifest_path)
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v]
+    return []
+
+
+def _patterns_match(producer_pattern: str, consumed_pattern: str) -> bool:
+    """True when a produced artifact satisfies a consumed artifact pattern.
+
+    Exact match, or a glob match in either direction (the producer may declare
+    the concrete path while the consumer declares a wildcard -- e.g. producer
+    'working/deliverables/PRESENTER-GUIDE.pdf' matching the consumer's glob, or
+    producer 'working/research/brief-*.md' matching the consumer's exact same
+    glob). fnmatch on the full pattern string in both directions covers both."
+    """
+    if producer_pattern == consumed_pattern:
+        return True
+    return (fnmatch.fnmatch(producer_pattern, consumed_pattern)
+            or fnmatch.fnmatch(consumed_pattern, producer_pattern))
+
+
+_RAW_INTAKE_RE = re.compile(r"^raw/")
+_INTAKE_RECORD = "working/copy/intake.json"
+
+
+def _is_intake_file(pattern: str) -> bool:
+    """True when the consumed pattern names a run input, not a produced file.
+
+    Two classes are intake (FIX 8, MASTER Part 8):
+      * raw/source-brief.* -- the client's source material; no phase produces
+        it, so it can never be an edge source and must not trip validation.
+      * working/copy/intake.json -- the intake record. It is written by the
+        intake stages (P-CONVERTER / P0A-INTAKE / P-SP-CLAIM rewrite it: a
+        same-artifact producing stage), so any consumer whose manifest order
+        is at or before the record's LAST producer treats it as run input
+        (already on disk when the engine starts; the intake driver writes it
+        before the run). The freshness rule lives in build_edges."""
+    if _RAW_INTAKE_RE.match(pattern):
+        return True
+    return _patterns_match(pattern, _INTAKE_RECORD)
+
+
+def _phase_order(phase: dict) -> float:
+    try:
+        return float(phase.get("order", 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def find_unproduced_consumed_artifacts(phases: List[dict]) -> List[str]:
+    """Static validation (FIX 8): consumed patterns no phase produces.
+
+    Returns the list of consumed artifact patterns that have NO producer in
+    the same manifest and are NOT intake files (raw/*, intake record still in
+    its producing stage). A consumer that reads a file nobody makes can never
+    succeed -- the manifest declares a dead edge and the defect is in the
+    manifest, not the engine. Empty list means every consumed artifact has a
+    producer or is a run input. Callers (manifest.load()'s static check,
+    the --plan command line) raise their own error type naming these.
+    """
+    producers: List[str] = []
+    for p in phases:
+        producers.extend(_as_artifact_list(p.get("produces_artifact")))
+    orphans: List[str] = []
+    seen: set = set()
+    for p in phases:
+        for cpat in _as_artifact_list(p.get("consumes")):
+            if cpat in seen:
+                continue
+            if _is_intake_file(cpat):
+                continue
+            if any(_patterns_match(pp, cpat) for pp in producers):
+                continue
+            seen.add(cpat)
+            orphans.append(cpat)
+    return orphans
+
+
+def build_edges(phases: List[dict]) -> Dict[str, List[str]]:
+    """The artifact DAG: edge u -> v iff produces(u) intersects consumes(v).
+
+    MASTER Part 8 FIX 8 replaces the old name-prefix/role edges with
+    produces->consumes edges, so a phase that needs a file waits for the phase
+    that makes it -- P8.2-GUIDE (consumes *-FINAL.pptx) can no longer sit in
+    wave one ahead of P8-ASSEMBLE, and P9-SPEECH (consumes slides_copy.md)
+    waits for P4-COPY instead of running in wave one.
+
+    Rules, in order of application per consumed pattern:
+
+      1. Intake files carry no edges (see _is_intake_file).
+      2. Same-artifact stage rule: a phase that itself produces a pattern
+         matching the consumed pattern belongs to that artifact's producing
+         stage and takes no edge from other producers of the same artifact
+         (P-SP-CLAIM produces and consumes intake.json -- the claim router is
+         part of the intake stage, not a downstream of it).
+      3. Intake-record freshness: for consumers of working/copy/intake.json
+         whose order is at or before the record's last producer's order, the
+         record is a run input and the pattern is skipped (the intake driver
+         writes it before the engine starts); consumers ordered AFTER the
+         record's last rewrite take edges from its producers (P0B-PRIORITY
+         needs the priority_shift answers the rewrite merged in).
+      4. Otherwise: any producer u's pattern matching the consumed pattern
+         yields edge u -> v (u != v). A consumed pattern with NO producer and
+         no intake exemption is a manifest defect -- load_phase_dag raises
+         ValueError naming it via find_unproduced_consumed_artifacts.
+
+    The manifest's `order` values no longer create cross-phase edges (that was
+    the prefix-collapse defect: every id shares the 'P' segment, so every
+    phase "depended" on every earlier phase and the true artifact order was
+    ignored); order remains the deterministic tie-break within a wave and, in
+    build_edges, the freshness threshold above.
+
+    Returns Kahn-adjacency: keys are phase ids, values are the phases that
+    depend on them; a phase with no dependents has an empty list.
+    """
     nodes: Dict[str, List[str]] = {}
     by_id: Dict[str, dict] = {}
     for p in phases:
         pid = p.get("id")
         if not isinstance(pid, str) or not pid:
-            raise ValueError(f"phase without a string id in {manifest_path}")
+            raise ValueError(f"phase without a string id")
         nodes[pid] = []
         by_id[pid] = p
 
-    ordered = sorted(by_id.items(), key=lambda kv: (float(kv[1].get("order", 0)), kv[0]))
-    for idx, (pid, ph) in enumerate(ordered):
-        role = ph.get("owning_role") or ""
-        family = pid.split("-")[0]
-        for (qid, qh) in ordered[:idx]:
-            same_role = (qh.get("owning_role") or "") == role and role
-            same_family = qid.split("-")[0] == family
-            if same_role or same_family:
-                nodes[qid].append(pid)
+    producers: List[tuple] = [  # (pattern, phase_id)
+        (pat, pid) for pid, p in by_id.items()
+        for pat in _as_artifact_list(p.get("produces_artifact"))
+    ]
 
-    # De-duplicate edges (a pair may be added by both rules).
+    def _last_producer_order(consumed: str, exclude: Optional[str] = None):
+        latest: Optional[float] = None
+        for ppat, pid in producers:
+            if pid == exclude:
+                continue
+            if not _patterns_match(ppat, consumed):
+                continue
+            o = _phase_order(by_id[pid])
+            if latest is None or o > latest:
+                latest = o
+        return latest
+
+    for vp in phases:
+        vid = vp["id"]
+        own_produces = _as_artifact_list(vp.get("produces_artifact"))
+        for cpat in _as_artifact_list(vp.get("consumes")):
+            if _is_intake_file(cpat):
+                if _patterns_match(cpat, _INTAKE_RECORD):
+                    # Freshness rule: only consumers ordered AFTER the last
+                    # producer of the record depend on it (rule 3).
+                    latest = _last_producer_order(cpat, exclude=vid)
+                    if latest is not None and _phase_order(vp) <= latest:
+                        continue
+                    # Fall through: records past the intake stage are real
+                    # dependencies of their latest producer.
+                else:
+                    continue
+            if any(_patterns_match(own, cpat) for own in own_produces):
+                # Rule 2: same-artifact producing stage.
+                continue
+            for ppat, pid in producers:
+                if pid == vid:
+                    continue
+                if not _patterns_match(ppat, cpat):
+                    continue
+                if vid not in nodes[pid]:
+                    nodes[pid].append(vid)
+
+    # De-duplicate edges (a pair may be reached by several matching patterns).
     for pid in nodes:
         nodes[pid] = list(dict.fromkeys(nodes[pid]))
     return nodes
+
+
+def load_phase_dag(manifest_path: str | Path) -> Dict[str, List[str]]:
+    """Load the manifest's phases as an adjacency map: phase_id -> [dependents].
+
+    The DAG is the ARTIFACT graph (build_edges): u -> v exactly when
+    produces(u) intersects consumes(v), with intake files exempt and the
+    same-artifact producing-stage rule applied. This is FIX 8's replacement
+    for the old order/name-prefix edges, which collapsed every id onto the
+    same family segment ('P') and let P8.2-GUIDE / P9-SPEECH join wave one.
+
+    The returned map is the Kahn-adjacency: keys are phase ids, values are the
+    phases that depend on them. Phases with no dependents have an empty list.
+
+    Orphaned consumed artifacts (a consumed pattern no phase produces that is
+    not an intake file) do not produce edges -- they are declared by the
+    manifest as pre-existing inputs and are surfaced by the reporting surface
+    (find_unproduced_consumed_artifacts) so Manifest.load can raise
+    ManifestInvalid on them without the plan-builder itself refusing a
+    manifest it can still schedule.
+    """
+    phases = _load_raw_phases(manifest_path)
+    return build_edges(phases)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +310,9 @@ def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
     Returns the phases in dependency order (a deterministic topological
     ordering). Raises ValueError on a cycle. Independent phases are ordered
     by their manifest order (tie-break on the id) so the output is stable.
+    (FIX 8: the dag passed in is the artifact graph from build_edges; the
+    manifest `order` values are only the deterministic tie-break here, never
+    themselves a source of edges.)
     """
     indegree: Dict[str, int] = {pid: 0 for pid in dag}
     for pid, deps in dag.items():

@@ -128,9 +128,25 @@ FLAG_DEFAULT = "1"
 DIR_ENV = "PRESENTATION_RESOURCE_PROFILE_DIR"
 
 #: The secrets-adjacent store: under the openclaw state root, sibling of
-#: ~/.openclaw/secrets/ -- the same ownership boundary the operator's
-#: secrets already live behind. Never inside any repository checkout.
-DEFAULT_STORE_DIR = Path.home() / ".openclaw" / "state" / "presentation"
+#: secrets/ -- the same ownership boundary the operator's secrets already
+#: live behind. Never inside any repository checkout.
+#: FIX 68/B3: the root resolves through presentation_job/oc_paths.py
+#: (state_dir() is exactly this path, platform-aware: /data/.openclaw/state/
+#: presentation on the docker VPS, ~/.openclaw/state/presentation on a Mac),
+#: degrading to the legacy Mac path when oc_paths is not deployed beside this
+#: module (a partial deploy keeps the pre-FIX-68 behavior, never a hard
+#: break). The override envs below still win, in the documented order.
+def _default_store_dir() -> Path:
+    try:
+        try:
+            from . import oc_paths as _op  # package-relative (python3 -m)
+        except ImportError:  # pragma: no cover - direct file run
+            import oc_paths as _op  # type: ignore[no-redef]
+        return Path(_op.state_dir())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        return Path.home() / ".openclaw" / "state" / "presentation"
+
+DEFAULT_STORE_DIR = _default_store_dir()
 
 
 def flag_enabled() -> bool:

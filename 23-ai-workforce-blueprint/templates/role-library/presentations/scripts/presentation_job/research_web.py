@@ -93,23 +93,104 @@ def web_fetch_enabled() -> bool:
 # ---------------------------------------------------------------------------
 # Secret resolution -- same posture as dispatcher._load_deepseek_key: the value
 # exists only for the request header; presence is all callers may surface.
+# FIX 67 + FIX 68: the NAME is resolved through the one secret-name canon
+# (shared-utils/secret_helper: canonical_for() maps any family alias -- e.g.
+# BRAVE_API_KEY -> BRAVE_SEARCH_API_KEY -- so a key written under ANY alias
+# resolves here), and the VALUE is rejected when it is a placeholder
+# (looks_like_real_key's is_placeholder discipline), while the FILE SEARCH
+# ORDER is platform-aware via presentation_job.oc_paths.secrets_env_candidates
+# (/data/.openclaw/secrets/.env first on the docker VPS, ~/.openclaw first on
+# a Mac). The canon helper is path-imported from the repo checkout, the
+# installed skills dir, or /data/.openclaw/skills -- the same seam
+# blend_voice_governance._load_pfj uses -- and a box without it keeps the
+# exact pre-canon behavior (direct name only), never a hard break.
 # ---------------------------------------------------------------------------
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it."""
+    import importlib.util
+    try:
+        from presentation_job.oc_paths import skills as _oc_skills
+        skills_default = Path(_oc_skills())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        skills_default = Path.home() / ".openclaw" / "skills"
+    # Walk up from this file: the repo checkout carries shared-utils/ at its
+    # root; a deployed department copy carries it in the installed skills dir.
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                return mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                return None
+    return None
+
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value (PASTE_REAL_TOKEN, CHANGE_ME, <TODO>, ...)
+    is rejected by every reader. Uses the canon's is_placeholder when the
+    helper is reachable; otherwise the same minimal inline gate (the canon's
+    documented placeholder substrings) so a partial deploy still refuses."""
+    if not value:
+        return True
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def _read_secret_named(name: str) -> Optional[str]:
     value = (os.environ.get(name) or "").strip()
-    if value:
+    if value and not _is_placeholder_value(value):
         return value
-    env_path = Path.home() / ".openclaw" / "secrets" / ".env"
-    fallback = Path.home() / ".openclaw" / "secrets" / "secrets.env"
-    for path in (env_path, fallback):
+    # FIX 68: platform-aware candidate order (oc_paths.secrets_env_candidates)
+    # -- /data/.openclaw/secrets/.env first on the docker VPS, ~/.openclaw
+    # first on a Mac. Same parse semantics, no hard-coded platform prefix.
+    try:
+        from presentation_job.oc_paths import secrets_env_candidates
+        candidates = secrets_env_candidates()
+    except Exception:  # noqa: BLE001 -- standalone/partial deploy falls back to the Mac default
+        candidates = [
+            Path.home() / ".openclaw" / "secrets" / ".env",
+            Path.home() / ".openclaw" / "secrets" / "secrets.env",
+        ]
+    # FIX 67 canon: this name plus every alias in its family are accepted.
+    helper = _secret_helper()
+    try:
+        names = list(helper.alias_list(helper.canonical_for(name))) if helper else [name]
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        names = [name]
+    for path in candidates:
         try:
             if not path.is_file():
                 continue
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
-                if line.startswith(f"{name}="):
-                    candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    if candidate:
-                        return candidate
+                for accepted in names:
+                    if line.startswith(f"{accepted}="):
+                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if candidate and not _is_placeholder_value(candidate):
+                            return candidate
         except OSError:
             continue
     return None
@@ -117,10 +198,15 @@ def _read_secret_named(name: str) -> Optional[str]:
 
 def brave_key_present(env: Optional[dict] = None) -> bool:
     """Key PRESENCE only. `env` overrides the process environment (the same
-    proof-stubbing posture capacity.probe_one_provider uses for its env view)."""
+    proof-stubbing posture capacity.probe_one_provider uses for its env view).
+    FIX 67: a placeholder value is REJECTED by this reader wherever a REAL
+    source (the process env or the secrets files) provides it; an explicitly
+    injected fake-env view is the proof seam and is taken at face value."""
     view = os.environ if env is None else env
     if str(view.get("BRAVE_SEARCH_API_KEY") or "").strip():
-        return True
+        if env is not None:
+            return True  # fake env: proof stubs are never operator placeholders
+        return not _is_placeholder_value(str(view.get("BRAVE_SEARCH_API_KEY")))
     if env is not None:
         return False  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY") is not None
@@ -129,10 +215,10 @@ def brave_key_present(env: Optional[dict] = None) -> bool:
 def _brave_key(env: Optional[dict] = None) -> Optional[str]:
     view = os.environ if env is None else env
     value = str(view.get("BRAVE_SEARCH_API_KEY") or "").strip()
-    if value:
+    if value and (env is not None or not _is_placeholder_value(value)):
         return value
     if env is not None:
-        return None
+        return None  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY")
 
 

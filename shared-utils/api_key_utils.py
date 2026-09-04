@@ -16,12 +16,23 @@ Usage:
 
 Sources checked (in order of priority):
     1. Environment variables (os.environ)
-    2. ~/.openclaw/.env
+    2. ~/.openclaw/.env (and ~/.openclaw/secrets/.env)
     3. ~/clawd/secrets/.env
     4. ~/.clawdbot/.env
+    5. /data/.openclaw/... (VPS containers)
+
+FIX 67 — One secret-name canon: KEY_PATTERNS is built at import from the
+canon in shared-utils/secret_names.json ({"CANONICAL": ["ALIAS", ...]})
+via secret_helper.load_secret_names(); a key stored under ANY alias in a
+family resolves, on both platforms. Placeholder rejection goes through
+secret_helper.is_placeholder — a value like PASTE_REAL_TOKEN is never
+returned as a key. If the canon is missing or unreadable, the loader
+fails OPEN to the pre-FIX-67 fallback tables below; placeholder
+rejection stays hard either way. Add new aliases to secret_names.json,
+never here.
 
 Author: OpenClaw
-Version: 1.0.0
+Version: 1.1.0
 """
 
 import os
@@ -29,15 +40,50 @@ import re
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 
+# FIX 67 — One secret-name canon. This module consumes
+# shared-utils/secret_names.json ({"CANONICAL": ["ALIAS", ...]}) through
+# secret_helper instead of restating its own alias table. Families found in
+# the canon are appended to KEY_PATTERNS (additive: anything that resolved
+# before keeps resolving; the canon only ADDS names). Placeholder rejection
+# goes through secret_helper.looks_like_real_key — a PASTE_REAL_TOKEN-style
+# value never satisfies get_api_key/find_api_key/check_key_exists. If the
+# canon is missing or unreadable, the local tables below keep working
+# (fail open on names, hard on values).
+try:
+    from secret_helper import (
+        alias_list as _canon_alias_list,
+        canonical_for as _canon_canonical_for,
+        is_placeholder as _canon_is_placeholder,
+        load_secret_names as _canon_load,
+        looks_like_real_key as _canon_looks_like_real_key,
+    )
+    _CANON_AVAILABLE = True
+except Exception:  # canon module unreadable: fail open to local tables
+    _CANON_AVAILABLE = False
+
+
+def _canon_placeholder_rejected(value: str, candidate: str) -> bool:
+    """True when the value is a placeholder or wrong shape for the credential
+    family the candidate name belongs to. No-ops to False without the canon."""
+    if not _CANON_AVAILABLE:
+        return False
+    canonical = _canon_canonical_for(candidate) if candidate else None
+    return not _canon_looks_like_real_key(value, canonical)
+
 # Priority order for env file locations.
 # These strings are always resolved through _expand_path() -> os.path.expanduser()
 # before any filesystem call, so the tilde is always expanded at use.
 # Do not construct Path("~/...") directly — that does not expand tilde in pathlib.
 # (PRD item 1.7)
+# FIX 67: /data/.openclaw stores added so VPS containers resolve keys too
+# (Mac reads the ~/.openclaw entries first; VPS reads /data first by existence).
 ENV_FILE_PATHS = [
+    os.path.expanduser("~/.openclaw/secrets/.env"),
     os.path.expanduser("~/.openclaw/.env"),
     os.path.expanduser("~/clawd/secrets/.env"),
     os.path.expanduser("~/.clawdbot/.env"),
+    "/data/.openclaw/secrets/.env",
+    "/data/.openclaw/.env",
 ]
 
 # Convert and Flow is the client-facing brand name for GoHighLevel (GHL). The
@@ -102,6 +148,22 @@ KEY_PATTERNS = {
     "jira": ["JIRA_API_TOKEN", "JIRA_TOKEN"],
     "clickup": ["CLICKUP_API_KEY", "CLICKUP_TOKEN"],
 }
+
+# FIX 67: overlay the canon onto KEY_PATTERNS. Every canon family becomes a
+# pattern entry under its canonical head (lowercased) PLUS one entry per alias
+# name (lowercased, separator-stripped) so _fuzzy_match_key finds the whole
+# family from any of its names. Additive only — local entries above win for
+# their own keys so existing behavior never changes.
+if _CANON_AVAILABLE:
+    try:
+        for _canonical, _family in _canon_load().items():
+            _entry = list(_family)
+            KEY_PATTERNS.setdefault(_canonical.lower(), _entry)
+            for _name in _family:
+                KEY_PATTERNS.setdefault(
+                    _name.lower().replace("-", "").replace("_", ""), _entry)
+    except Exception:
+        pass  # canon overlay is best-effort; local patterns still stand
 
 
 def _expand_path(path: str) -> Path:
@@ -209,36 +271,56 @@ def _fuzzy_match_key(search_term: str) -> List[str]:
     return unique_candidates
 
 
+def _resolve_family(name: str) -> List[str]:
+    """All env-var names that satisfy a query for `name`: the name itself
+    plus, when it belongs to a canon family, every alias in that family.
+    FIX 67: a key stored under any alias resolves for any family member."""
+    names = [name]
+    if _CANON_AVAILABLE:
+        for alias in _canon_alias_list(name):
+            if alias != name and alias not in names:
+                names.append(alias)
+    return names
+
+
 def get_api_key(key_name: str, default: Optional[str] = None) -> Optional[str]:
     """
     Get a specific API key by its exact name.
-    
+
     Checks sources in this order:
         1. Environment variables
-        2. ~/.openclaw/.env
+        2. ~/.openclaw/secrets/.env, ~/.openclaw/.env
         3. ~/clawd/secrets/.env
         4. ~/.clawdbot/.env
-    
+        5. /data/.openclaw/secrets/.env, /data/.openclaw/.env
+
+    FIX 67: when the name belongs to a canon family (secret_names.json),
+    every alias in the family is tried as well, and a placeholder-shaped
+    value (PASTE_REAL_TOKEN, your_key_here, ...) is never returned.
+
     Args:
         key_name: The exact name of the environment variable
         default: Default value if key not found
-    
+
     Returns:
         The API key value or default if not found
-    
+
     Example:
         >>> get_api_key("OPENAI_API_KEY")
         "sk-..."
     """
-    # Check environment variables first
-    if key_name in os.environ:
-        return os.environ[key_name]
-    
+    for name in _resolve_family(key_name):
+        value = os.environ.get(name)
+        if value and not _canon_placeholder_rejected(value, name):
+            return value
+
     # Check env files
     env_vars = _load_all_env_files()
-    if key_name in env_vars:
-        return env_vars[key_name]
-    
+    for name in _resolve_family(key_name):
+        value = env_vars.get(name)
+        if value and not _canon_placeholder_rejected(value, name):
+            return value
+
     return default
 
 
@@ -264,18 +346,24 @@ def find_api_key(service_name: str, default: Optional[str] = None) -> Optional[s
     """
     # Get candidate key names
     candidates = _fuzzy_match_key(service_name)
-    
+
     # Check environment variables first
     for candidate in candidates:
         if candidate in os.environ:
-            return os.environ[candidate]
-    
+            value = os.environ[candidate]
+            if value and _canon_placeholder_rejected(value, candidate):
+                continue  # FIX 67: placeholder never satisfies a reader
+            return value
+
     # Check env files
     env_vars = _load_all_env_files()
     for candidate in candidates:
         if candidate in env_vars:
-            return env_vars[candidate]
-    
+            value = env_vars[candidate]
+            if value and _canon_placeholder_rejected(value, candidate):
+                continue
+            return value
+
     return default
 
 

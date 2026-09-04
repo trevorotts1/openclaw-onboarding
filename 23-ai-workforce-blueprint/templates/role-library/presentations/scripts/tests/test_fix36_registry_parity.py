@@ -21,6 +21,9 @@ not exist. Three legs, all failing LOUDLY on drift:
      enforce must be reconciled: they are doctrine aliases/parents, and each
      must appear in the doc's documented alias table naming its manifest
      successor(s) — a silent mismatch is exactly the pre-FIX-36 disease.
+  4. (FIX 82) No registry row marked DOCTRINE-ONLY may name a code the
+     manifest enforces with a py_symbol — a wired gate understated as
+     doctrine fails here (R6 J10-11).
 """
 from __future__ import annotations
 
@@ -186,3 +189,85 @@ def test_doctrine_alias_codes_are_declared_not_silent():
         f"are not declared as doctrine aliases in section 3.4: "
         f"{undocumented}. Either register their manifest successor or add "
         f"them to 3.4 with the successor mapping.")
+
+
+# ---------------------------------------------------------------------------
+# 2. FIX 82 leg: a DOCTRINE-ONLY row may never carry a py_symbol.
+# ---------------------------------------------------------------------------
+#
+# A DOCTRINE-ONLY registration means "no mechanical enforcement exists" (the
+# registry's own definition, section 2). The moment the manifest assigns that
+# code a py_symbol — a real `_chk_*` callable in build_deck.py — the row is a
+# LIE: it understates live enforcement and lets a wired gate be read as
+# doctrine. That drift is exactly what FIX 82 (R6 J10-11) closed: the six
+# North-Star rows in section 3.2 had sat at DOCTRINE-ONLY for months while the
+# manifest v54 already enforced every one of them. This leg makes any such
+# regression fail the parity test: either flip the row to REGISTERED or remove
+# the py_symbol from the manifest — one of the two, never both true at once.
+
+def _manifest_py_symbol_map() -> dict:
+    """code -> py_symbol for every manifest autofail that declares one."""
+    m = load_manifest()
+    return {
+        a["code"]: a["py_symbol"]
+        for a in m["autofails"]
+        if isinstance(a, dict) and a.get("code") and a.get("py_symbol")
+    }
+
+
+def _doctrine_only_rows() -> list:
+    """(af_code, py_symbols_found_in_the_row, line_number) for every registry
+    table row whose Registration cell says DOCTRINE-ONLY."""
+    text = REGISTRY_DOC.read_text(encoding="utf-8", errors="replace")
+    rows = []
+    for lineno, ln in enumerate(text.splitlines(), 1):
+        s = ln.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        if not any("DOCTRINE-ONLY" == c for c in cells):
+            continue
+        row_text = "| " + " | ".join(cells) + " |"
+        rows.append((AF_RE.findall(cells[0]), AF_RE.findall(row_text), lineno))
+    return rows
+
+
+def test_no_doctrine_only_row_has_a_py_symbol():
+    """FIX 82: any code whose manifest autofail entry carries a py_symbol is
+    machine-enforced; a registry row marking it DOCTRINE-ONLY contradicts the
+    manifest and must fail."""
+    py_symbol_codes = _manifest_py_symbol_map()
+    stale = []
+    for first_col_codes, row_codes, lineno in _doctrine_only_rows():
+        for code in first_col_codes:
+            if code in py_symbol_codes:
+                stale.append(
+                    f"{code} (row line {lineno}, py_symbol "
+                    f"{py_symbol_codes[code]})")
+    assert not stale, (
+        f"{len(stale)} registry row(s) still marked DOCTRINE-ONLY while the "
+        f"manifest enforces them with a py_symbol (FIX 82): {stale}. Flip the "
+        f"row to REGISTERED (see registry section 4) — the gate is wired, the "
+        f"ledger must not say otherwise.")
+
+
+def test_fix82_flipped_rows_are_registered_in_doc():
+    """The six North-Star codes flipped by FIX 82 must now read REGISTERED in
+    their section-3.2 rows (the row text must not match DOCTRINE-ONLY) and
+    must each carry a py_symbol in the manifest."""
+    text = REGISTRY_DOC.read_text(encoding="utf-8", errors="replace")
+    py_symbol_codes = _manifest_py_symbol_map()
+    for code in ("AF-PRIORITY-SHIFT", "AF-PEAK-END", "AF-NO-SALIENCE-APEX",
+                 "AF-MODE-UNSET", "AF-NO-SHIFT", "AF-PROCLAMATION-HEDGE"):
+        row = next((ln for ln in text.splitlines()
+                    if ln.strip().startswith(f"| {code} |")), None)
+        assert row is not None, f"{code} lost from the registry entirely"
+        assert "DOCTRINE-ONLY" not in row, (
+            f"{code} is manifest-enforced with py_symbol "
+            f"{py_symbol_codes.get(code)} but its registry row still says "
+            f"DOCTRINE-ONLY (FIX 82 flip incomplete)")
+        assert code in py_symbol_codes, (
+            f"{code} flipped to REGISTERED by FIX 82 but the manifest no "
+            f"longer declares a py_symbol for it — re-verify the manifest")

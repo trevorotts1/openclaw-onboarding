@@ -61,6 +61,7 @@ not asyncio -- see spec S2.3 for why.
 """
 
 import os
+import re
 import sys
 import threading
 import time
@@ -81,6 +82,15 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_OWN_SCRIPTS_DIR))
 
 from presentation_job import heal as _heal  # noqa: E402
+
+# FIX 14 (MASTER Part 8): one per-provider governor for every outbound call.
+# Defensive import, same pattern as heal above: a tree that predates the
+# governor module (W09 has not landed presentation_job/governor.py yet) keeps
+# the old behavior byte-for-byte -- the _run_one gate degrades to a no-op.
+try:
+    from presentation_job import governor as _governor  # noqa: E402
+except ImportError:  # pragma: no cover - pre-FIX-14 trees limit nothing new
+    _governor = None  # type: ignore[assignment]
 
 # Reused, never re-invented (spec S2.3): the one retry budget the serial path
 # already uses at dispatcher.py:1815 (`for attempt in range(1, DISPATCH_RETRY_CAP + 1)`).
@@ -134,6 +144,10 @@ class UnitResult:
     attempts: int = 1
     reasons: List[str] = field(default_factory=list)
     target: Optional[str] = None  # path relative to run_dir, when a file was produced
+    # FIX 15: optional per-unit stamps {provider, model, request_id, response_id,
+    # started_at, ended_at} the worker_fn already holds in hand, forwarded into
+    # the unit ledger row below so every unit row carries its own provenance.
+    meta: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -227,18 +241,55 @@ def run_units(
         attempts = 0
         last_exc: Optional[BaseException] = None
         cap = max(1, retry_cap)
+        # FIX 14: the unit's provider, when the caller stamps one into
+        # unit.payload ({"provider": "kie", ...} for image/TTS units, etc.).
+        # Unstamped units gate on "deepseek-direct" only if the payload also
+        # carries {"govern": true}; plain local units (QC graders, file
+        # assembly) consume no provider budget and stay ungated. The gate is
+        # best-effort: a tree without presentation_job/governor.py no-ops.
+        _gov_provider = unit.payload.get("provider") or "deepseek-direct"
+        _gov_enabled = bool(unit.payload.get("provider")) or \
+            bool(unit.payload.get("govern"))
+        _gov = _governor if _gov_enabled else None
         while attempts < cap:
             attempts += 1
+            _lease = None
+            if _gov is not None:
+                try:
+                    # FIX 14 named call site: fanout acquires one governor
+                    # lease per attempt so a 40-unit wave can never exceed the
+                    # provider's max_inflight or rps/burst window.
+                    _lease = _gov.acquire(_gov_provider)
+                except Exception:  # noqa: BLE001 -- gating never kills a unit
+                    _lease = None
             try:
                 result = worker_fn(unit)
+                if _gov is not None:
+                    try:
+                        _gov.report_ok(_gov_provider)
+                    except Exception:  # noqa: BLE001
+                        pass
                 _emit(unit.key, "verified" if result.status == "ok" else "failed")
                 return result
             except Exception as exc:  # noqa: BLE001 -- transient-fault safety net (S2.3)
                 last_exc = exc
+                text = f"{type(exc).__name__}: {exc}"
+                if _gov is not None and ("429" in text or
+                                         "rate limit" in text.lower()):
+                    try:
+                        _gov.report_429(_gov_provider)
+                    except Exception:  # noqa: BLE001
+                        pass
                 if attempts >= cap:
                     break
                 _emit(unit.key, "retrying")
                 time.sleep(min(30, 5 * attempts))
+            finally:
+                if _gov is not None and _lease is not None:
+                    try:
+                        _gov.release(_lease)
+                    except Exception:  # noqa: BLE001
+                        pass
         _emit(unit.key, "failed")
         return UnitResult(key=unit.key, status="failed", attempts=attempts,
                            reasons=[f"worker raised: {last_exc}"])
@@ -306,3 +357,256 @@ def resolve_effective_workers(
         except Exception:  # noqa: BLE001 -- capacity probing is best-effort
             pass
     return max(1, effective)
+
+
+# ---------------------------------------------------------------------------
+# FIX 15b (MASTER Part 8 / W07a-B2): manifest-declared fanout by
+# slide/section/file -- one unit per item.
+#
+# The manifest declares, on a per-phase entry:
+#     "fanout": {"by": "slide"|"section"|"file", "max_units": N}
+# and the dispatcher runs ONE unit per enumerated item (Prompts: one unit per
+# slide. Prompt QC: one judge unit per slide. Image QC: one vision unit per
+# slide. Copy: one unit per section. Design PNGs: one unit per page. Speech:
+# one unit per slide). This module owns three things for that contract:
+#
+#   1. parse_fanout_field    -- manifest field -> FanoutSpec, refusing a
+#                               malformed declaration at parse time (the same
+#                               defect class _parse_workers_field refuses in
+#                               manifest.py: silent coercion of a scheduling
+#                               number).
+#   2. enumerate_fanout_items -- run-dir truth -> the deterministic, ordered
+#                               list of units for a spec. NO unit is invented:
+#                               slides come from slides.json/arc_allocation
+#                               (the same sources _prompt_slide_count trusts),
+#                               sections from arc_allocation.json /
+#                               slides_copy.md headings, files from the
+#                               spec's own list or the phase's
+#                               produces_artifact patterns.
+#   3. append_unit_ledger_row -- one JSONL ledger row per unit into
+#                               working/work-orders/_units/<phase>.units.jsonl
+#                               ("each unit has its own ledger row", Part 7).
+# ---------------------------------------------------------------------------
+FANOUT_BY_VALUES = ("slide", "section", "file")
+
+
+class FanoutSpecError(ValueError):
+    """Raised when a manifest's `fanout` field is malformed. The dispatcher
+    converts this into a phase error -- the run never proceeds with a guessed
+    unit shape."""
+
+
+@dataclass(frozen=True)
+class FanoutSpec:
+    by: str                      # "slide" | "section" | "file"
+    max_units: Optional[int] = None   # submission-batch cap; None = all units at once
+
+    def batches(self, units: List["Unit"]) -> List[List["Unit"]]:
+        """Split `units` into submission batches of at most `max_units`.
+        max_units=None (or <= 0, refused at parse) => one batch."""
+        if not self.max_units or self.max_units >= len(units):
+            return [units]
+        return [units[i:i + self.max_units]
+                for i in range(0, len(units), self.max_units)]
+
+
+def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
+    """Manifest `fanout` field -> FanoutSpec, or None when absent.
+
+    Absent/None => None (the phase is NOT fan-out enabled; the caller keeps
+    its existing path untouched). Anything PRESENT but malformed raises
+    FanoutSpecError -- a typo'd "by": "Slide" or a string "max_units": "12"
+    must never silently degrade to serial dispatch (same refusal rule as
+    manifest.py's _parse_workers_field).
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    if not isinstance(raw, dict):
+        raise FanoutSpecError(
+            f"fanout must be an object {{by, max_units}}, got {raw!r}")
+    by = raw.get("by")
+    if not isinstance(by, str) or by.strip().lower() not in FANOUT_BY_VALUES:
+        raise FanoutSpecError(
+            f"fanout.by must be one of {FANOUT_BY_VALUES}, got {by!r}")
+    max_units = raw.get("max_units")
+    if max_units is not None:
+        if isinstance(max_units, bool) or not isinstance(max_units, int) \
+                or max_units < 1:
+            raise FanoutSpecError(
+                f"fanout.max_units must be a positive int, got {max_units!r}")
+    return FanoutSpec(by=by.strip().lower(), max_units=max_units)
+
+
+def unit_output_dir(run_dir: Path, phase_id: str) -> Path:
+    """Per-unit scratch outputs for one phase: working/fanout/<phase_id>/."""
+    return run_dir / "working" / "fanout" / phase_id
+
+
+def unit_output_path(run_dir: Path, phase_id: str, unit_key: str) -> Path:
+    """Where one unit's authored text lands before the dispatcher aggregates
+    it into the phase's real artifact. Deterministic per unit key so a re-run
+    (resume) of the same unit overwrites exactly its own scratch file."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", unit_key)
+    return unit_output_dir(run_dir, phase_id) / f"{safe}.out"
+
+
+def unit_ledger_path(run_dir: Path, phase_id: str) -> Path:
+    return run_dir / "working" / "work-orders" / "_units" / f"{phase_id}.units.jsonl"
+
+
+def append_unit_ledger_row(run_dir: Path, phase_id: str, row: Dict[str, Any]) -> None:
+    """One JSONL row per unit into working/work-orders/_units/<phase>.units.jsonl.
+
+    Append-only, best-effort (an OSError must never fail a unit that already
+    did its real work). Rows carry at least: unit, status, attempts; callers
+    add the provider/model/request-id stamps they already hold in hand."""
+    try:
+        path = unit_ledger_path(run_dir, phase_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = dict(row)
+        record.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        record.setdefault("phase_id", phase_id)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    except OSError:
+        pass
+
+
+def _slides_for_units(run_dir: Path) -> List[Dict[str, Any]]:
+    """The slide list for by=slide units, from the SAME sources
+    dispatcher._prompt_slide_count trusts (working/copy/slides.json, then
+    arc_allocation.json). Ordered by ordinal; entries carry at least
+    {"ordinal": int}. Returns [] when neither source is present/readable --
+    the caller reports that honestly rather than inventing slides."""
+    for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        raw = obj if isinstance(obj, list) else (
+            obj.get("slides") if isinstance(obj, dict) else None)
+        if isinstance(raw, list) and raw:
+            out = []
+            for s in raw:
+                if isinstance(s, dict):
+                    o = s.get("ordinal") if isinstance(s.get("ordinal"), int) else None
+                    if o is None and isinstance(s.get("slide"), int):
+                        o = s["slide"]
+                    if o is None:
+                        o = len(out) + 1  # positional fallback keeps order honest
+                    out.append({"ordinal": int(o), **{k: v for k, v in s.items()
+                                                      if k not in ("ordinal", "slide")}})
+            if out:
+                return sorted(out, key=lambda s: s["ordinal"])
+    arc = run_dir / "working" / "copy" / "arc_allocation.json"
+    if arc.is_file():
+        try:
+            obj = json.loads(arc.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            obj = None
+        slots = None
+        if isinstance(obj, dict):
+            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
+        elif isinstance(obj, list):
+            slots = obj
+        if isinstance(slots, list) and slots:
+            return [{"ordinal": i + 1, **(s if isinstance(s, dict) else {"slot": s})}
+                    for i, s in enumerate(slots)]
+    return []
+
+
+def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
+    """The section list for by=section units (P4-COPY: one unit per section).
+
+    Priority: arc_allocation.json's own "sections" array (its declared shape),
+    then the arc grouping of its slots, then the top-level headings of the
+    existing slides_copy.md, then ONE whole-file unit. Ordered; entries carry
+    {"name": str, "ordinal": int}."""
+    arc = run_dir / "working" / "copy" / "arc_allocation.json"
+    if arc.is_file():
+        try:
+            obj = json.loads(arc.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            obj = None
+        if isinstance(obj, dict):
+            secs = obj.get("sections")
+            if isinstance(secs, list) and secs:
+                return [{"ordinal": i + 1,
+                         "name": str((s.get("name") if isinstance(s, dict) else s)
+                                     or f"section-{i + 1:02d}")}
+                        for i, s in enumerate(secs)]
+            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
+            if isinstance(slots, list) and slots:
+                names: List[str] = []
+                for s in slots:
+                    if not isinstance(s, dict):
+                        continue
+                    arc_name = s.get("arc") or s.get("section") or s.get("name")
+                    if isinstance(arc_name, str) and arc_name.strip() \
+                            and arc_name not in names:
+                        names.append(arc_name)
+                if names:
+                    return [{"ordinal": i + 1, "name": n}
+                            for i, n in enumerate(names)]
+    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
+    if copy_md.is_file():
+        try:
+            names = []
+            for line in copy_md.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("## ") and not line.startswith("### "):
+                    n = line[3:].strip()
+                    if n and n not in names:
+                        names.append(n)
+            if names:
+                return [{"ordinal": i + 1, "name": n} for i, n in enumerate(names)]
+        except OSError:
+            pass
+    return [{"ordinal": 1, "name": "whole"}]
+
+
+def enumerate_fanout_items(run_dir: Path, spec: FanoutSpec, *, phase_id: str,
+                           produces_artifact: Optional[List[str]] = None,
+                           ) -> List[Dict[str, Any]]:
+    """Deterministic, ordered unit items for one FanoutSpec against a run dir.
+
+    Returns a list of item dicts, each carrying its stable `key` (the merge
+    order for text aggregation) plus whatever the unit worker needs:
+      by=slide    -> {"key": "slide-NN", "ordinal": N}
+      by=section  -> {"key": "section-NN", "ordinal": N, "name": ...}
+      by=file     -> {"key": "file-NN", "path": <rel path>}
+    """
+    if spec.by == "slide":
+        slides = _slides_for_units(run_dir)
+        return [{"key": f"slide-{s['ordinal']:02d}", "ordinal": s["ordinal"],
+                 "slide": s} for s in slides]
+    if spec.by == "section":
+        secs = _sections_for_units(run_dir)
+        return [{"key": f"section-{s['ordinal']:02d}", "ordinal": s["ordinal"],
+                 "name": s["name"]} for s in secs]
+    # by=file: the spec's own file list wins; else enumerate the phase's
+    # produces_artifact patterns (a '*' pattern globs the run dir).
+    rels: List[str] = []
+    if isinstance(getattr(spec, "files", None), list):
+        rels = [str(r) for r in spec.files if str(r).strip()]  # type: ignore[attr-defined]
+    elif produces_artifact:
+        for pattern in produces_artifact:
+            if "*" in pattern or "?" in pattern:
+                base = run_dir / pattern
+                for hit in sorted(base.parent.glob(base.name)):
+                    if hit.is_file():
+                        rels.append(str(hit.relative_to(run_dir)))
+            else:
+                rels.append(pattern)
+    seen: set = set()
+    items: List[Dict[str, Any]] = []
+    for rel in rels:
+        if rel in seen:
+            continue
+        seen.add(rel)
+        items.append({"key": f"file-{len(items) + 1:02d}", "path": rel})
+    return items

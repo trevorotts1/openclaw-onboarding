@@ -1111,7 +1111,7 @@
   "intake_v2": {
     "flag_env": "PRESENTATION_INTAKE_V2",
     "default": "on",
-    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 19 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
+    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 25 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
     "mapping": {
       "presentation_type": "captured:turn 1 (presentation_type)",
       "recipient_name": "conditional:turn 2 (asked when branch=content_personal)",

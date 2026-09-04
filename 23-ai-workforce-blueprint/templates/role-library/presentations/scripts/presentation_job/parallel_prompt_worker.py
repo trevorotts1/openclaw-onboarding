@@ -42,7 +42,8 @@ Binding contract implemented here (verbatim from spec lines 27-35):
     multi-slide dispatches) abort immediately with the complete sanitized report;
     no third full wave is launched.
   * Artifacts: prompts written atomically (same-directory temp + os.replace) to
-    <run_dir>/working/prompts/slide-NN-prompt.txt (three digits for ordinals >=100),
+    <run_dir>/working/prompts/slide-NN.txt (FIX 15: unified with the serial
+    loop's name; three digits for ordinals >=100),
     then SHA-256/read-back verified. The aggregate result is atomically written to
     the result file. An incomplete process may leave temp files but never a
     canonical prompt path. If the real deterministic gate already certifies a
@@ -53,9 +54,10 @@ Binding contract implemented here (verbatim from spec lines 27-35):
 
 Transport seam (REQUIRED for proofs, no network in tests): the provider call is
 injectable through the module attribute `provider_call` -- the single seam every
-invocation goes through. The production default reuses the EXISTING DeepSeek-direct
+invocation goes through. The production default reuses the EXISTING routed
 authoring path dispatcher.py already uses today (dispatcher.compose_prompt +
-dispatcher.deepseek_complete); credentials handling is never duplicated. In spawn
+dispatcher.dispatch_complete -- FIX 16: the routed entrypoint, never the raw
+deepseek transport); credentials handling is never duplicated. In spawn
 children the attribute resolves through _resolve_provider(), which honors the
 PRESENTATION_PROMPT_PROVIDER_STUB env var (absolute path to a stub-spec JSON) so
 spawn children stub deterministically; absent that env it calls the real
@@ -66,6 +68,13 @@ gate-passing prompt from the slide payload itself), "fail_429", "fail_500",
 
 Exit codes: 0 = every slide succeeded; 1 = one or more slides failed (result file
 still written); 2 = usage/schema validation failure BEFORE any provider call.
+
+FIX 104 (Master Part 8): the whole-input reject gate below DELEGATES to
+presentation_job.wave_contract.validate_input -- the ONE WaveContract shared
+with the dispatcher (stamp -> wave_input -> validate_input). The old hand-built
+field whitelist here is gone: it silently dropped any field the dispatcher's
+routing stamp grew (the F41 measured_capacity=None and F42 owning_role drift
+class). Field passthrough is now identity-preserving by construction.
 """
 from __future__ import annotations
 
@@ -97,6 +106,17 @@ DEFAULT_MAX_CHARS = 18000
 RESULT_FILENAME = "prompt-worker-results.json"
 ATTEMPTS_LOG_SUFFIX = "-attempts.jsonl"
 INPUT_RELNAME = "prompt-wave-input.json"
+
+# FIX 104: the ONE WaveContract module (dispatcher <-> worker shared). The
+# whole-input reject gate below delegates here; stdlib-only import keeps the
+# spawn child payload light, same rule as _now_iso above.
+try:
+    from . import wave_contract as _wave_contract
+except ImportError:  # pragma: no cover - standalone/flat-import invocations
+    try:
+        import wave_contract as _wave_contract  # type: ignore[no-redef]
+    except ImportError:
+        _wave_contract = None  # type: ignore[assignment]
 
 
 class WorkerUsageError(RuntimeError):
@@ -154,120 +174,18 @@ def _append_attempt_log(log_path: Path, record: Dict[str, Any]) -> None:
 
 # ---------------------------------------------------------------------------
 # Input validation -- whole-input reject BEFORE any dispatch (spec-mandated).
+# FIX 104: DELEGATED to presentation_job.wave_contract -- the ONE WaveContract
+# the dispatcher and this worker share. The previous hand-built whitelist here
+# (a return dict enumerating exactly four routing keys) silently dropped any
+# stamp field it did not name; the contract's identity-preserving normalize
+# makes that loss class impossible. Same reject messages, same normalized
+# shape, same exit-2 semantics (WorkerUsageError wraps the contract error).
 # ---------------------------------------------------------------------------
 def validate_input(data: Any, source: str) -> Dict[str, Any]:
-    if not isinstance(data, dict):
-        raise WorkerUsageError(f"{source}: input must be a JSON object")
-    if data.get("schema_version") != SCHEMA_VERSION:
-        raise WorkerUsageError(
-            f"{source}: unsupported schema_version {data.get('schema_version')!r} "
-            f"(this worker speaks version {SCHEMA_VERSION} only)")
-    run_id = data.get("run_id")
-    if not isinstance(run_id, str) or not run_id.strip():
-        raise WorkerUsageError(f"{source}: run_id must be a non-empty string")
-    run_dir_raw = data.get("run_dir")
-    if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
-        raise WorkerUsageError(f"{source}: run_dir must be a non-empty string")
-    run_dir = Path(run_dir_raw).expanduser()
-    if not run_dir.is_absolute():
-        raise WorkerUsageError(
-            f"{source}: run_dir must be an ABSOLUTE path (got {run_dir_raw!r})")
-    if data.get("phase_id") != PHASE_ID:
-        raise WorkerUsageError(
-            f"{source}: phase_id must be {PHASE_ID!r} (got {data.get('phase_id')!r})")
-
-    routing = data.get("routing")
-    if not isinstance(routing, dict):
-        raise WorkerUsageError(f"{source}: routing must be an object")
-    for key in ("provider", "model", "mode"):
-        if not isinstance(routing.get(key), str) or not routing[key].strip():
-            raise WorkerUsageError(
-                f"{source}: routing.{key} must be a non-empty string")
-    cap = routing.get("measured_capacity")
-    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
-        raise WorkerUsageError(
-            f"{source}: routing.measured_capacity must be a positive integer "
-            f"(got {cap!r})")
-
-    pc = data.get("prompt_constraints")
-    if not isinstance(pc, dict):
-        raise WorkerUsageError(f"{source}: prompt_constraints must be an object")
-    min_chars = pc.get("min_chars", DEFAULT_MIN_CHARS)
-    max_chars = pc.get("max_chars", DEFAULT_MAX_CHARS)
-    if isinstance(min_chars, bool) or not isinstance(min_chars, int) or min_chars < 1:
-        raise WorkerUsageError(
-            f"{source}: prompt_constraints.min_chars must be a positive integer")
-    if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
-        raise WorkerUsageError(
-            f"{source}: prompt_constraints.max_chars must be a positive integer")
-    if max_chars <= min_chars:
-        raise WorkerUsageError(
-            f"{source}: prompt_constraints.max_chars ({max_chars}) must exceed "
-            f"min_chars ({min_chars})")
-    blocks = pc.get("required_blocks")
-    if not isinstance(blocks, list) or not blocks or \
-            not all(isinstance(b, str) and b.strip() for b in blocks):
-        raise WorkerUsageError(
-            f"{source}: prompt_constraints.required_blocks must be a non-empty "
-            "array of non-empty strings")
-
-    slides = data.get("slides")
-    if not isinstance(slides, list) or not slides:
-        raise WorkerUsageError(f"{source}: slides must be a non-empty array")
-    seen_ids = set()
-    seen_ordinals = set()
-    for idx, slide in enumerate(slides):
-        where = f"{source}: slides[{idx}]"
-        if not isinstance(slide, dict):
-            raise WorkerUsageError(f"{where}: each slide must be an object")
-        slide_id = slide.get("slide_id")
-        if not isinstance(slide_id, str) or not slide_id.strip():
-            raise WorkerUsageError(f"{where}: slide_id must be a non-empty string")
-        ordinal = slide.get("ordinal")
-        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 1:
-            raise WorkerUsageError(
-                f"{where}: ordinal must be an integer >= 1 (got {ordinal!r})")
-        copy = slide.get("copy")
-        if not isinstance(copy, list) or not all(isinstance(c, str) for c in copy):
-            raise WorkerUsageError(f"{where}: copy must be an array of strings")
-        if not isinstance(slide.get("archetype"), str):
-            raise WorkerUsageError(f"{where}: archetype must be a string")
-        anchors = slide.get("research_anchors")
-        if not isinstance(anchors, list) or \
-                not all(isinstance(a, str) for a in anchors):
-            raise WorkerUsageError(
-                f"{where}: research_anchors must be an array of strings")
-        if not isinstance(slide.get("design_tokens"), dict):
-            raise WorkerUsageError(f"{where}: design_tokens must be an object")
-        negs = slide.get("negative_requirements")
-        if not isinstance(negs, list) or not all(isinstance(n, str) for n in negs):
-            raise WorkerUsageError(
-                f"{where}: negative_requirements must be an array of strings")
-        if slide_id in seen_ids:
-            raise WorkerUsageError(f"{where}: duplicate slide_id {slide_id!r}")
-        if ordinal in seen_ordinals:
-            raise WorkerUsageError(f"{where}: duplicate ordinal {ordinal}")
-        seen_ids.add(slide_id)
-        seen_ordinals.add(ordinal)
-
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "run_id": run_id,
-        "run_dir": run_dir,
-        "phase_id": PHASE_ID,
-        "routing": {
-            "provider": routing["provider"],
-            "model": routing["model"],
-            "mode": routing["mode"],
-            "measured_capacity": cap,
-        },
-        "prompt_constraints": {
-            "min_chars": min_chars,
-            "max_chars": max_chars,
-            "required_blocks": list(blocks),
-        },
-        "slides": [dict(s) for s in slides],
-    }
+    try:
+        return _wave_contract.validate_input(data, source)
+    except _wave_contract.WaveContractError as exc:
+        raise WorkerUsageError(str(exc)) from exc
 
 
 def load_input(path: Path) -> Dict[str, Any]:
@@ -412,8 +330,9 @@ ART DIRECTION LEXICON: {lex}
 def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
                            attempt: int, run_dir: Path, owning_role: str,
                            n_slides: int) -> str:
-    """PRODUCTION transport: reuse the existing DeepSeek-direct authoring path the
-    serial loop uses today (dispatcher.compose_prompt + deepseek_complete). Lazy
+    """PRODUCTION transport: reuse the existing routed authoring path the
+    serial loop uses today (dispatcher.compose_prompt + dispatch_complete --
+    FIX 16: the routed entrypoint, never the raw deepseek transport). Lazy
     import inside the child keeps the spawn import payload light; credentials are
     handled ONLY by dispatcher (_load_deepseek_key), never here, never printed."""
     import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
@@ -445,8 +364,34 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
     # dispatcher's dispatch_complete, which resolves the route from the
     # client resource profile (DeepSeek-direct stays the default/rollback
     # path) and returns (content, usage, route_dict).
-    _content, _usage, _route = dispatcher.dispatch_complete(
-        system_prompt, user_prompt, phase_id=PHASE_ID, run_dir=run_dir)
+    # FIX 14: this is a named governor call site. The spawn child holds its
+    # own logical governor lease for the duration of the routed completion.
+    # The provider is whatever dispatch_complete routes to (deepseek-direct
+    # stays the no-profile default/rollback), so the worker gates on
+    # dispatcher's own _govern helper -- it keys the lease per thread+provider
+    # and dispatch_complete's inner gate re-uses it via the depth counter, so
+    # exactly ONE real acquire per logical call either way. A tree without
+    # governor.py no-ops the gate (_governor is None there).
+    _gov = getattr(dispatcher, "_governor", None)
+    _lease = None
+    if _gov is not None:
+        try:
+            # The FIX 14 named call-site acquire: routed through the
+            # dispatcher's provider registry (per thread+provider depth
+            # counter) so dispatch_complete's inner gate re-uses THIS lease
+            # instead of double-holding one logical call's capacity.
+            _lease = dispatcher._govern_acquire("deepseek-direct")
+        except Exception:  # noqa: BLE001 -- gating never kills a unit
+            _lease = None
+    try:
+        _content, _usage, _route = dispatcher.dispatch_complete(
+            system_prompt, user_prompt, phase_id=PHASE_ID, run_dir=run_dir)
+    finally:
+        if _lease is not None and _gov is not None:
+            try:
+                dispatcher._govern_release("deepseek-direct", _lease)
+            except Exception:  # noqa: BLE001
+                pass
     return dispatcher._clean_payload(_content)
 
 
@@ -515,9 +460,15 @@ def _sanitize(msg: str) -> str:
 # Artifact naming + atomic write + read-back verify.
 # ---------------------------------------------------------------------------
 def _prompt_filename(ordinal: int) -> str:
+    # FIX 15 (MASTER Fix 15): one prompt filename convention fleet-wide --
+    # `slide-NN.txt` (two digits), the name the serial loop, the per-slide
+    # verifier path, and build_deck's resolve_prompt_path all read. The old
+    # `slide-NN-prompt.txt` made every parallel-authored prompt invisible to
+    # the dispatcher's on-disk SHA/verify gate (dispatcher.py read
+    # slide-NN.txt only, so "no prompt file on disk" on every wave).
     if ordinal >= 100:
-        return f"slide-{ordinal:03d}-prompt.txt"  # 3 digits for 3+ digit ordinals
-    return f"slide-{ordinal:02d}-prompt.txt"
+        return f"slide-{ordinal:03d}.txt"  # 3 digits for 3+ digit ordinals
+    return f"slide-{ordinal:02d}.txt"
 
 
 def _prompt_path(run_dir: Path, ordinal: int) -> Path:
@@ -969,7 +920,9 @@ def _seam_name() -> str:
                        repr(provider_call))[:80]
     if os.environ.get(_STUB_ENV):
         return f"env-stub:{_STUB_ENV}"
-    return "dispatcher.deepseek_complete"
+    # FIX 16: the production seam is the ROUTED entrypoint
+    # (dispatcher.dispatch_complete), never the raw deepseek transport.
+    return "dispatcher.dispatch_complete"
 
 
 # ---------------------------------------------------------------------------

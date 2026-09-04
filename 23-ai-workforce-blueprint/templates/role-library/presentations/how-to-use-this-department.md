@@ -35,7 +35,7 @@ Reach for this department when you want any of the following:
 - Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
 - The front door for one specific request.
 - Owns P9-DELIVER multi-destination deck delivery.
-- First-Time-User Onboarding specialist for the Presentations department at BlackCEO.
+- First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -77,7 +77,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Capacity Reliability Engineer** | Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has. |
 | **Content To Presentation Architect** | The front door for one specific request. |
 | **Delivery Concierge** | Owns P9-DELIVER multi-destination deck delivery. |
-| **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells. |
+| **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host. |
 | **Fish Audio / Expression Specialist** | Makes the audio demonstration of the Presenter's Speech sound like a real. |
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
 | **Media Librarian GHL Updater** | Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR. |
@@ -125,8 +125,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **First Time Onboarding Presentations**
 
-- *What it is for:* First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells.
-- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at BlackCEO."
+- *What it is for:* First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
+- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at the company."
 
 **Fish Audio / Expression Specialist**
 

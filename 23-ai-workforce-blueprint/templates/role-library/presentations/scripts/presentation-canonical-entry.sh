@@ -1086,7 +1086,12 @@ run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
     if [ -n "$INTAKE_DEPTH" ]; then
-        _RESOLVE_DEPTH_ARGS="--intake-depth $INTAKE_DEPTH"
+        # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
+        # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
+        # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
+        # passing "QUICK" died with "invalid choice" and engine_fail
+        # AF-DECK-TYPE-UNKNOWN. Lowercase for the resolver call only.
+        _RESOLVE_DEPTH_ARGS="--intake-depth $(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')"
     fi
     _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
         --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"
@@ -1125,6 +1130,18 @@ $_CREATE_OUT"
     _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
+    # FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. Two
+    # concurrent door invocations used to share ONE .canonical-entry-nonce file, so
+    # sibling B's mint (or exit-trap unlink) destroyed sibling A's in-flight
+    # handshake and killed phases like P9.6 and close. The engine minted per-phase
+    # files since FIX 25; the door now matches it: this invocation's own file is
+    # .nonce-<sanitized phase id> and OC_DECK_ENTRY_NONCE_FILE names it. The
+    # legacy run-scoped .canonical-entry-nonce is ALSO minted with the same value
+    # so consumers that only read the legacy path (workbook_builder.py,
+    # sales_checkout_builder.py before their FIX 106 upgrade) keep passing — it is
+    # never a sibling's target, because every sibling's trap unlinks only its own
+    # per-phase file plus the legacy one it minted (same value, atomic 0600
+    # rewrites, no cross-sibling read window).
     NONCE_DIR="$RUN_DIR/working/checkpoints"
     NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
     mkdir -p "$NONCE_DIR"
@@ -1132,19 +1149,28 @@ $_CREATE_OUT"
     [ -n "$OC_DECK_ENTRY_NONCE" ] || die "could not mint the front-door nonce"
     ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
     chmod 600 "$NONCE_FILE" 2>/dev/null || true
+    # FIX 106: per-phase companion file (same nonce value, phase-keyed name).
+    _NONCE_PHASE_TOKEN="$(printf '%s' "$PHASE" | tr -c 'A-Za-z0-9_.-' '_')"
+    NONCE_PHASE_FILE="$NONCE_DIR/.nonce-${_NONCE_PHASE_TOKEN}"
+    ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_PHASE_FILE" )
+    chmod 600 "$NONCE_PHASE_FILE" 2>/dev/null || true
     export OC_DECK_ENTRY_NONCE
+    export OC_DECK_ENTRY_NONCE_FILE="${_NONCE_PHASE_TOKEN}"
     export OC_DECK_CANONICAL_ENTRY=1
     export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
     # F16 — U047 Rule 3.5 staging is OVER: canonical runs enforce the three
     # pixel-level gates (AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED)
     # by default; only an explicit PRESENTATION_SLIDE_GEOMETRY_ENFORCE=0 opts out.
     export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
-    trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+    # FIX 106: the exit trap unlinks THIS invocation's per-phase file (and the
+    # legacy file it minted); a concurrent sibling's per-phase file is a different
+    # path and is never touched.
+    trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
-    rm -f "$NONCE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
+    rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
     # The engine component is genuinely absent from this box -- the ONE
@@ -1185,6 +1211,18 @@ note "run: ${cmd[*]}"
 # box-visible comments and were forgeable by any model that read the repo. A random
 # per-run nonce cannot be conjured from shipped source; it is consumed (deleted)
 # after the run so a stale env value can never be replayed.
+#
+# FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. A single
+# shared .canonical-entry-nonce let two concurrent door invocations overwrite and
+# unlink each other's handshake (sibling B's trap rm killed sibling A's phase, e.g.
+# P9.6 and close). Each invocation now ALSO mints its own phase-keyed file
+# .nonce-<sanitized PHASE> and exports OC_DECK_ENTRY_NONCE_FILE=<phase token>;
+# build_deck._verify_entry_nonce prefers that per-phase target and confines it to
+# this run's checkpoints dir with a .nonce- basename. The legacy run-scoped file is
+# still minted with the same value for consumers that have not been upgraded
+# (workbook_builder.py et al.) — every sibling rewrites it atomically 0600 with the
+# SAME value it exports, and unlinks only its OWN phase-keyed file, so no sibling's
+# handshake can be destroyed by another's exit.
 # ===========================================================================
 NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
@@ -1198,7 +1236,14 @@ OC_DECK_ENTRY_NONCE="$(_mint_nonce)"
 # Write 0600 BEFORE exporting (umask 077 guarantees no group/other bits on create).
 ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
 chmod 600 "$NONCE_FILE" 2>/dev/null || true
+# FIX 106: phase-keyed companion file + OC_DECK_ENTRY_NONCE_FILE (same sanitizer
+# alphabet as build_deck._entry_nonce_phase_file / phases._nonce_phase_token).
+_NONCE_PHASE_TOKEN="$(printf '%s' "$PHASE" | tr -c 'A-Za-z0-9_.-' '_')"
+NONCE_PHASE_FILE="$NONCE_DIR/.nonce-${_NONCE_PHASE_TOKEN}"
+( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_PHASE_FILE" )
+chmod 600 "$NONCE_PHASE_FILE" 2>/dev/null || true
 export OC_DECK_ENTRY_NONCE
+export OC_DECK_ENTRY_NONCE_FILE="${_NONCE_PHASE_TOKEN}"
 # Legacy marker kept for informational/back-compat wiring only — it is NO LONGER
 # sufficient on its own; the nonce above is the real gate.
 export OC_DECK_CANONICAL_ENTRY=1
@@ -1221,9 +1266,11 @@ export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
 export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
 
 # Consume/rotate the nonce on ANY exit (normal or signal) so it can never be replayed.
-trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+# FIX 106: unlink BOTH this invocation's phase-keyed file and the legacy file — a
+# concurrent sibling's phase-keyed file is a different path and is never touched.
+trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
 "${cmd[@]}"
 _rc=$?
-rm -f "$NONCE_FILE" 2>/dev/null || true
+rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

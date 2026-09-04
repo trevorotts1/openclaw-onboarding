@@ -9,6 +9,33 @@ gateway-only rule (see delivery-concierge.md step 3 and CC src/lib/notify.ts
 Exits 0 on success, non-zero on failure (dispatch3 maps non-zero to
 UNDETERMINED and queues the message for retry via --sweep-undeliverable).
 
+FIX 64 (one notification transport, W14a-B3 implementation): subsystem alerts
+used to pass the SUBSYSTEM NAME ("watchdog", "supervisor", "capacity",
+"credit") as the chat_id -- a name no gateway target can resolve, so the
+stall/capacity/supervisor alert could never land anywhere. Resolution happens
+at BOTH boundaries, single-sourced:
+  - report.py dispatch3 (the choke point inside the engine) resolves a known
+    subsystem LABEL to OWNER_CHAT_ID before the payload ever reaches a
+    transport, via report.resolve_subsystem_chat();
+  - THIS script (the transport itself) re-checks independently, because
+    dispatch3 keeps the label verbatim when OWNER_CHAT_ID is unset (never a
+    fabricated id) and any OTHER caller (a stub in a test, the retired
+    tools/presentation-notify.sh, a hand-run pipe) may bypass dispatch3
+    entirely. The rule implemented here:
+      * a chat_id that is a NUMERIC Telegram chat id (optionally signed, and
+       /or a -100... supergroup id) is a real target -- sent as-is;
+      * anything else is treated as a subsystem NAME and the numeric operator
+        chat id is resolved from the tiered env keys
+        (PRESENTATION_OWNER_CHAT_ID -> OPENCLAW_OWNER_CHAT_ID -> OWNER_CHAT_ID
+        -> OWNER_TELEGRAM_CHAT_ID -> TELEGRAM_CHAT_ID, then the
+        OPERATOR_ESCALATION/HELP/TELEGRAM keys operator_requester.py shares,
+        then the openclaw.json env.vars fallback those keys expose);
+      * the subsystem name is preserved in the message prefix so the alert
+        still says where it came from;
+      * no numeric id resolvable anywhere -> exit 4 (undeliverable, queued
+        for --sweep-undeliverable), never a fabricated id, never a silent
+        drop, and never the subsystem name handed to the gateway as a target.
+
 FIX 23 (presentation rev2 waves): the transport is gateway-only. Rollback:
 set PRESENTATION_NOTIFY_DIRECT_TELEGRAM=1 to restore the legacy direct-Bot-API
 path (reads OPERATOR_TELEGRAM_BOT_TOKEN again); that flag is the only supported
@@ -18,10 +45,11 @@ Exit codes (stable dispatch3 contract, see tests/test_report.py):
   0  -- sent via the gateway (or dry-run dispatch succeeded)
   2  -- transport misconfiguration (gateway CLI absent AND no legacy flag)
   3  -- stdin is not valid JSON
-  4  -- no chat_id in payload and no OWNER_CHAT_ID fallback
+  4  -- no chat_id in payload and no OWNER_CHAT_ID fallback, OR a subsystem
+        name chat_id that could not be resolved to a numeric target
   5  -- gateway send rejected/failed (non-zero gateway exit, timeout, OSError)
 """
-import os, sys, json, shutil, subprocess
+import os, re, sys, json, shutil, subprocess
 
 DEFAULT_NOTIFY_TIMEOUT_S = 30  # matches CC src/lib/notify.ts OWNER_SEND_TIMEOUT_MS
 
@@ -29,6 +57,99 @@ DEFAULT_NOTIFY_TIMEOUT_S = 30  # matches CC src/lib/notify.ts OWNER_SEND_TIMEOUT
 # --message are the real flags; the old --to/--text do not exist (commander
 # rejects them) -- same finding notify.ts documents.
 _GATEWAY_CHANNEL_DEFAULT = "telegram"
+
+# FIX 64: a numeric Telegram chat id is a deliverable target -- the gateway
+# accepts signed integers (negative for groups/supergroups, including the
+# -100... supergroup prefix) and bare positive ids for users. Anything that
+# is not numeric is a LABEL (a subsystem name like "watchdog"), never a
+# target, and must be resolved before a send is attempted.
+_NUMERIC_CHAT_ID_RE = re.compile(r"^-?\d+$")
+
+# FIX 64: the operator chat-id tier, byte-for-byte the order
+# run_signature_deck.py::_resolve_owner_route already reads -- one vocabulary,
+# not a second divergent list.
+OWNER_CHAT_ID_ENV_KEYS = (
+    "PRESENTATION_OWNER_CHAT_ID",
+    "OPENCLAW_OWNER_CHAT_ID",
+    "OWNER_CHAT_ID",
+    "OWNER_TELEGRAM_CHAT_ID",
+    "TELEGRAM_CHAT_ID",
+    # The OPERATOR_* keys operator_requester.py sanctions (FIX F19's
+    # last-resort operator fallback) -- same tier, appended behind the
+    # presentation-specific keys so an explicit owner route always wins.
+    "OPERATOR_ESCALATION_CHAT_ID",
+    "OPERATOR_HELP_CHAT_ID",
+    "OPERATOR_TELEGRAM_CHAT_ID",
+)
+
+def _first_nonempty_env(keys, env):
+    for key in keys:
+        val = str(env.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+def _openclaw_config_path():
+    """Path of the openclaw.json env store (operator_requester.py's constant
+    pattern, re-derived here so the transport has no package import
+    dependency -- this script must run standalone under a bare python3)."""
+    return os.path.join(os.path.expanduser("~"), ".openclaw", "openclaw.json")
+
+def _first_nonempty_config_vars(keys, config_path):
+    """Read env.vars.<key> (in order) from an openclaw.json-shaped file.
+    Tolerates absence/corruption -- returns "" rather than raising, matching
+    operator_requester.py's own precedent."""
+    if not config_path or not os.path.isfile(config_path):
+        return ""
+    try:
+        with open(config_path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(cfg, dict):
+        return ""
+    env_vars = (cfg.get("env") or {}).get("vars")
+    if not isinstance(env_vars, dict):
+        return ""
+    return _first_nonempty_env(keys, env_vars)
+
+def is_numeric_chat_id(chat_id) -> bool:
+    """FIX 64: True only for a numeric Telegram chat id (optionally signed).
+    A subsystem label ("watchdog"/"supervisor"/"capacity"/"credit") is never
+    numeric, so it never passes this check."""
+    return bool(_NUMERIC_CHAT_ID_RE.match(str(chat_id or "").strip()))
+
+def resolve_numeric_operator_chat_id(env=None, config_path=None) -> str:
+    """FIX 64: resolve the numeric operator chat id from the tiered env keys,
+    falling back to ~/.openclaw/openclaw.json's env.vars (operator_requester
+    precedent). Returns "" -- never a fabricated id -- when nothing resolves.
+    `env` / `config_path` are injectable ONLY for tests (hermetic; production
+    reads os.environ and the real ~/.openclaw/openclaw.json)."""
+    src_env = os.environ if env is None else env
+    chat_id = _first_nonempty_env(OWNER_CHAT_ID_ENV_KEYS, src_env)
+    if not chat_id:
+        chat_id = _first_nonempty_config_vars(
+            OWNER_CHAT_ID_ENV_KEYS,
+            config_path if config_path is not None else _openclaw_config_path())
+    return chat_id
+
+def resolve_chat_id_for_transport(chat_id, env=None, config_path=None) -> tuple:
+    """FIX 64: map the payload chat_id to a deliverable (numeric) target.
+
+    Returns (target_chat_id, prefix). prefix is "" for an already-numeric id
+    and "[watchdog] " (the label) for a resolved subsystem name, so the alert
+    text still says where it came from. A label that cannot be resolved to a
+    numeric id returns ("", "") -- the caller exits 4 (undeliverable, queued
+    for --sweep-undeliverable) instead of handing the gateway a target it can
+    never deliver to. `env` / `config_path` are injectable ONLY for tests."""
+    raw = str(chat_id or "").strip()
+    if is_numeric_chat_id(raw):
+        return (raw, "")
+    # Non-numeric: a subsystem label. Resolve the operator target.
+    operator = resolve_numeric_operator_chat_id(env, config_path)
+    if operator and is_numeric_chat_id(operator):
+        return (operator, f"[{raw}] ")
+    return ("", "")
 
 
 def _notify_timeout_s() -> float:
@@ -142,8 +263,31 @@ def main() -> int:
         return 4
     kind = payload.get("kind", "progress")
     msg = payload.get("message", "")
-    text = (f"[Presentation Dept] {str(kind).upper()}: {msg}" if msg
-            else f"[Presentation Dept] {str(kind).upper()}")
+    # FIX 64: resolve a non-numeric chat_id (a subsystem label such as
+    # "watchdog"/"supervisor"/"capacity") to the numeric operator chat id at
+    # this transport boundary, independent of report.py's dispatch3 (which
+    # keeps the label verbatim when OWNER_CHAT_ID is unset, and which any
+    # non-engine caller may have bypassed). A label with no resolvable
+    # numeric operator id is UNDELIVERABLE (exit 4, queued for
+    # --sweep-undeliverable) -- never the label handed to the gateway as a
+    # target, never a fabricated id, never a silent drop. The label survives
+    # in the message prefix.
+    target, label_prefix = resolve_chat_id_for_transport(chat_id)
+    if not target:
+        print(
+            "FATAL: chat_id "
+            f"{str(chat_id).strip()!r} is not a numeric Telegram chat id and "
+            "no numeric operator chat id could be resolved (tiered "
+            "PRESENTATION_OWNER_CHAT_ID/OPENCLAW_OWNER_CHAT_ID/OWNER_CHAT_ID/"
+            "OWNER_TELEGRAM_CHAT_ID/TELEGRAM_CHAT_ID/OPERATOR_*_CHAT_ID env, "
+            "then ~/.openclaw/openclaw.json env.vars) -- undeliverable, "
+            "queued for --sweep-undeliverable",
+            file=sys.stderr)
+        return 4
+    chat_id = target
+    text = (f"[Presentation Dept] {label_prefix}{str(kind).upper()}: {msg}"
+            if msg
+            else f"[Presentation Dept] {label_prefix}{str(kind).upper()}")
     if direct_rollback:
         return _send_direct_telegram(chat_id, text)
     if not shutil.which("openclaw"):

@@ -187,7 +187,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    in the order listed). The six audience/content/hook fields are MANDATORY -- there is no
    skip and no assumed default except where explicitly stated; the scope fields
    (DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM) and the STYLE BRANCH have sensible defaults
-   (deck-only / false / 140 / create-new) and never block the gate:
+   (deck-only / false / 140 per ruling 9.3 / create-new) and never block the gate:
 
    **Field 1 -- REPRESENTATION_MIX (with percentages; the audience-composition core)**
    Ask: "Who will be in the seats watching this -- and how should the people in the images
@@ -239,9 +239,11 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    deck only / +guide / +guide+speech / +audio."
    Capture as: `DELIVERABLE_SET` (one of: deck-only / +guide / +guide+speech / +audio).
    Default if owner says "just the deck" or "no preference": `deck-only`. The Director uses
-   this to decide whether to dispatch the Presenters Guide Specialist (ROLE-19), the
-   Presenters Speech Writer (ROLE-20), and the Audio Demonstration Specialist (ROLE-21)
-   after the Presenter Coach.
+   this to decide whether to dispatch the speech chain -- Presenters Guide Specialist
+   (P8.2-GUIDE, order 8.2), Presenters Speech Writer (P9-SPEECH, order 8.5), Fish Audio
+   Expression Specialist (P8.4-FISH-TAG, order 8.52), Audio Demonstration Specialist
+   (P9-SPEECH-WEBINAR-INTRO, order 8.54), Speech QC Specialist (P-SPEECH-QC, order 8.6),
+   and the Delivery Concierge (P9-DELIVER, order 9) -- in manifest pipeline order.
 
    **Field 8 -- WANT_AUDIO_DEMO (audio demo + voice/persona)**
    Ask only if DELIVERABLE_SET is "+audio" (otherwise default false): "For the audio demo,
@@ -257,8 +259,10 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    should the spoken pace feel -- standard (about 140 words a minute, the most credible
    pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?"
    Capture as: `TARGET_WPM` (integer). Default if owner says "you decide" or not asked:
-   `140` (the presentation-speech constant; never silently 150). Mark `target_wpm_defaulted:
-   true` when defaulted.
+   `140` (ruling 9.3 default; never silently 150). Mark `target_wpm_defaulted: true` when
+   defaulted. The captured value is the downstream pacing authority: the speech-QC pacing
+   band (target +/-10 percent, Fix 97) and the audio duration gate follow whatever was
+   captured -- they never re-derive the pace from a fixed constant.
 
    **STYLE BRANCH -- "do you have a style or want me to create one?"**
    Ask: "Do you have an existing deck or visual style you want matched, a reference deck I
@@ -289,6 +293,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
        "WANT_AUDIO_DEMO": false,
        "AUDIO_VOICE_PERSONA": null,
        "TARGET_WPM": 140,
+       "target_wpm_defaulted": true,
        "STYLE_SOURCE": "create-new",
        "STYLE_REFERENCE": null,
        "pre_presentation_gate_passed": true
@@ -441,9 +446,12 @@ NEVER fabricate a grounded-content description.
      --persona — \
    ```
 2. The Director ingests brief.json as the seed for its OWN intake SOP (it confirms and
-   extends, never re-asks what the brief already answers).
+   extends, never re-asks what the brief already answers). When the brief carries
+   TARGET_WPM, it maps to intake `target_wpm` (ruling 9.3: the captured value, not a
+   re-derived constant) and to `speech_speed_preference` for the Fish prosody presets --
+   the QC pacing band (Fix 97) and the audio duration gate then follow the owner's pace.
 3. The Director then dispatches this department's BUILD SPECIALISTS in pipeline order:
-   Hook Strategist, Slide Copywriter, Offer/Price Strategist, Brand Steward, Slide Image Creator, QC Specialist, Slide Submitter, Media Librarian/GHL Updater, PPTX Assembly Specialist, Presenter Coach, Delivery Concierge.
+   Hook Strategist, Slide Copywriter, Offer/Price Strategist, Brand Steward, Slide Image Creator, QC Specialist, Slide Submitter, Media Librarian/GHL Updater, PPTX Assembly Specialist, Presenter Coach, Presenters Guide Specialist (P8.2-GUIDE, 8.2), Presenters Speech Writer (P9-SPEECH, 8.5), Fish Audio Expression Specialist (P8.4-FISH-TAG, 8.52), Audio Demonstration Specialist (P9-SPEECH-WEBINAR-INTRO, 8.54), Speech QC Specialist (P-SPEECH-QC, 8.6), Delivery Concierge (P9-DELIVER, 9).
 4. Notify the owner that the build has started and tell them the next gate they will see
    (usually the Director's owner-approval gate).
 5. Record `handoff_at`, `handoff_to`, `dispatch_id` in brief.json.
@@ -485,9 +493,13 @@ the Master Orchestrator with the locked brief attached. Never silently drop a lo
 ### You hand work off to:
 - Director of Presentations -- receives the locked, signed-off brief.json (with the full
   pre_presentation_capture block) and runs the build. The Director then dispatches this
-  department's build specialists: Hook Strategist, Slide Copywriter, Offer/Price Strategist,
-  Brand Steward, Slide Image Creator, QC Specialist, Slide Submitter, Media Librarian/GHL
-  Updater, PPTX Assembly Specialist, Presenter Coach, Delivery Concierge.
+  department's build specialists in pipeline order: Hook Strategist, Slide Copywriter,
+  Offer/Price Strategist, Brand Steward, Slide Image Creator, QC Specialist, Slide Submitter,
+  Media Librarian/GHL Updater, PPTX Assembly Specialist, Presenter Coach, Presenters Guide
+  Specialist (P8.2-GUIDE, 8.2), Presenters Speech Writer (P9-SPEECH, 8.5), Fish Audio
+  Expression Specialist (P8.4-FISH-TAG, 8.52), Audio Demonstration Specialist
+  (P9-SPEECH-WEBINAR-INTRO, 8.54), Speech QC Specialist (P-SPEECH-QC, 8.6), Delivery
+  Concierge (P9-DELIVER, 9).
   Any active flags (representation_uncaptured, grounded_content_provisional, hook_seed_missing)
   are visible in the brief; the Director surfaces these to the operator before image generation
   begins. The Director does NOT proceed past the generation gate with representation_uncaptured: true
@@ -658,8 +670,11 @@ Skip only if the answer is already confirmed on file.
 - **D1. DELIVERABLE_SET (default: deck-only)**
   "Beyond the slide deck, do you want a presenter's GUIDE, a full word-for-word SPEECH script,
   or an AUDIO demo of the talk? Pick: deck only / +guide / +guide+speech / +audio."
-  -> `DELIVERABLE_SET`. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21
-  (audio) after the Presenter Coach per this value.
+  -> `DELIVERABLE_SET`. The Director dispatches the speech chain per this value in
+  manifest order: Presenters Guide Specialist (P8.2-GUIDE, 8.2), Presenters Speech Writer
+  (P9-SPEECH, 8.5), Fish Audio Expression Specialist (P8.4-FISH-TAG, 8.52), Audio
+  Demonstration Specialist (P9-SPEECH-WEBINAR-INTRO, 8.54), Speech QC Specialist
+  (P-SPEECH-QC, 8.6), Delivery Concierge (P9-DELIVER, 9).
 
 - **D2. WANT_AUDIO_DEMO + voice (ask only if "+audio"; default false)**
   "What voice or persona should the audio demo use -- your cloned voice, a warm female
@@ -670,8 +685,10 @@ Skip only if the answer is already confirmed on file.
 - **D3. TARGET_WPM (ask only if a speech is in scope; default 140)**
   "How fast should the spoken pace feel -- standard (~140 WPM, the most credible pace),
   teach pace (~130), or high-energy (~150-160)?"
-  -> `TARGET_WPM` (integer; default 140, never silently 150; mark `target_wpm_defaulted: true`
-  when defaulted).
+  -> `TARGET_WPM` (integer; default 140 per ruling 9.3, never silently 150; mark
+  `target_wpm_defaulted: true` when defaulted). The captured value is the pacing
+  authority downstream: speech-QC pacing (target +/-10 percent, Fix 97) and the audio
+  duration gate follow it, never a fixed constant.
 
 - **D4. STYLE BRANCH (default: create-new)**
   "Do you have an existing deck/visual style to match, a reference deck to analyze, or should

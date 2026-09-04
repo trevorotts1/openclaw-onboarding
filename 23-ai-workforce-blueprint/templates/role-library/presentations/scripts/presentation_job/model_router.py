@@ -80,6 +80,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -118,11 +119,15 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                           "modality": "text", "context_class": "standard",
                           "live_confirmed": True},
     "glm-5.3": {"provider": "openrouter",
-                "model": "glm-5.3",
+                # F30 (SMOKE-1): served id is z-ai/glm-5.3; bare "glm-5.3" is
+                # not in OpenRouter's wired inventory (419 probed 2026-09-01),
+                # so the alias never became eligible and fell through.
+                "model": "z-ai/glm-5.3",
                 "modality": "text", "context_class": "long",
                 "note": "GLM 5.3 via OpenRouter (fix-spec fallback column)"},
     "glm-flash": {"provider": "openrouter",
-                  "model": "glm-flash",
+                  # F30: served id z-ai/glm-5.3-flash (probed 2026-09-01)
+                  "model": "z-ai/glm-5.3-flash",
                   "modality": "text", "context_class": "standard",
                   "note": "GLM Flash-class text model (fix-spec fallback)"},
     "glm-ocr": {"provider": "ollama-cloud",
@@ -136,30 +141,131 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# FIX 17b: the router's candidate aliases and the FIX 13 catalog's alias
+# vocabulary are two names for the same route. The catalog
+# (model_catalog.json) is the ONLY place a literal model id may live, so
+# resolve_alias() resolves the router alias THROUGH this mapping into the
+# catalog's alias space first; the built-in DEFAULT_ALIAS_REGISTRY above is
+# the fallback for aliases the catalog does not name (the GLM/OpenRouter
+# labels), never a second source of truth for the ones it does.
+ROUTER_CATALOG_ALIAS: Dict[str, str] = {
+    "deepseek-v4-pro": "text.strong",
+    "deepseek-v4-flash": "text.fast",
+    "gpt-image-2": "image.t2i",
+}
+
+
 def resolve_alias(alias: str) -> Dict[str, Any]:
-    """One alias -> ({provider, model, modality, ...}) or {} when unknown.
+    """One alias -> ({provider, model, modality, ..., served_ids}) or {} when
+    unknown.
 
     FIX 13's model_catalog wins when present; this built-in registry is the
-    fallback, never duplicated at call sites."""
+    fallback, never duplicated at call sites. FIX 17a: the catalog's
+    served_ids table -- {provider: served model id} keyed (alias, provider) --
+    rides through on the resolved definition so the router can name the id
+    each provider's endpoint actually accepts (openrouter serves
+    z-ai/glm-5.3-flash for the judge class; deepseek-direct serves
+    deepseek-v4-flash for the same alias).
+    FIX 17b: the router READS THE CATALOG -- the alias is first mapped into
+    the catalog's own vocabulary (ROUTER_CATALOG_ALIAS) and resolved through
+    presentation_job.model_catalog, so provider, model and served_ids all
+    come from model_catalog.json, the single literal-id store. A catalog
+    entry also wins over the registry for the router alias it backs."""
+    candidates = [alias]
+    mapped = ROUTER_CATALOG_ALIAS.get(alias)
+    if mapped and mapped != alias:
+        candidates.insert(0, mapped)  # catalog vocabulary first (FIX 17b)
     try:  # FIX 13 hook -- the live catalog is authoritative when landed
         from presentation_job import model_catalog as _catalog  # type: ignore
-        resolved = None
-        for name in ("resolve_alias", "resolve"):  # FIX 13 landed names
-            resolver = getattr(_catalog, name, None)
-            if callable(resolver):
-                try:
-                    resolved = resolver(alias)
-                except Exception:
-                    resolved = None  # fail-closed catalog miss -> registry
-                if isinstance(resolved, dict) and resolved.get("provider") \
-                        and resolved.get("model"):
-                    out = dict(resolved)
-                    out.setdefault("modality", "text")
-                    out.setdefault("context_class", "standard")
-                    return out
+        for probe in candidates:
+            resolved = None
+            for name in ("resolve_alias", "resolve"):  # FIX 13 landed names
+                resolver = getattr(_catalog, name, None)
+                if callable(resolver):
+                    try:
+                        resolved = resolver(probe)
+                    except Exception:
+                        resolved = None  # fail-closed catalog miss -> next
+                    if isinstance(resolved, dict) and resolved.get("provider") \
+                            and resolved.get("model"):
+                        out = dict(resolved)
+                        out.setdefault("modality", "text")
+                        out.setdefault("context_class", "standard")
+                        # FIX 17a: normalise the served_ids keys to canonical
+                        # dash-form provider ids so `ollama_cloud` (underscore
+                        # drift) and `ollama-cloud` resolve identically.
+                        raw_served = out.get("served_ids")
+                        if isinstance(raw_served, dict) and raw_served:
+                            norm = getattr(_catalog, "normalize_provider_id", None)
+                            if callable(norm):
+                                out["served_ids"] = {
+                                    str(norm(k)): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                            else:
+                                out["served_ids"] = {
+                                    str(k).strip().lower()
+                                    .replace("_", "-").replace(" ", "-"): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                        return out
     except Exception:  # noqa: BLE001 -- catalog absence never breaks routing
         pass
     return dict(DEFAULT_ALIAS_REGISTRY.get(alias) or {})
+
+
+def _norm_provider(provider: Any) -> str:
+    """FIX 17a provider-id normalisation for the router side.
+
+    `ollama_cloud` vs `ollama-cloud` is the same provider spelled twice;
+    the profile store and the catalog must never disagree about that.
+    capacity.normalize_provider is the cap-table authority when importable;
+    the string fold (lowercase, underscores/spaces -> dashes) covers the
+    rest. Unknown providers pass through normalised unchanged -- folding a
+    name is never evidence the provider exists."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    try:  # cap-table authority (deepseek -> deepseek-direct, ollama fold)
+        from . import capacity as _cap  # package-relative
+    except ImportError:  # pragma: no cover - direct file run
+        try:
+            import capacity as _cap  # type: ignore[no-redef]
+        except ImportError:
+            _cap = None  # type: ignore[assignment]
+    if _cap is not None and hasattr(_cap, "normalize_provider"):
+        try:
+            mapped = _cap.normalize_provider(token)
+        except Exception:  # noqa: BLE001 -- normalisation never raises upward
+            mapped = None
+        if mapped:
+            return str(mapped)
+    if token == "deepseek":
+        return "deepseek-direct"
+    return token
+
+
+def _norm_model_id(model_id: Any) -> str:
+    """FIX 17b model-id normalisation for wired-inventory comparison.
+
+    Same fold resource_profile._norm_model_id uses: lowercase, every
+    non-alphanumeric run collapsed to a single dash. 'zai/glm-5.3-flash:free',
+    'GLM 5.3 Flash' and 'glm_5_3_flash' land on one comparable shape --
+    spelling drift only, never a prefix/family inference."""
+    return re.sub(r"[^a-z0-9]+", "-", str(model_id).lower()).strip("-") or ""
+
+
+def _served_model(alias_def: Dict[str, Any], provider: str) -> str:
+    """FIX 17a: the served model id one provider's endpoint accepts for this
+    alias, or the alias's plain model id when no (alias, provider) row
+    exists. A missing served row falls back to the alias model verbatim --
+    the fallback is the catalog's own declared id, never an invented one."""
+    served = alias_def.get("served_ids")
+    if isinstance(served, dict) and served:
+        hit = served.get(_norm_provider(provider))
+        if isinstance(hit, str) and hit.strip():
+            return hit
+    return str(alias_def.get("model") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +293,9 @@ PHASE_CAPABILITY: Dict[str, str] = {
     # Copy + prompt authoring (high-throughput long-form)
     "P4-COPY": "authoring",
     "P4-PROMPT": "prompt_authoring",
+    # FIX 112: the copy stage's fanout unit (per-slide style-variant candidates)
+    # is creative-cheap structured text, same class as the design direction.
+    "P-STYLE-SPEC": "creative_cheap",
     "PF-DESIGN": "creative_cheap",
     # Independent cheap text judges
     "P1Q-COPY-QC": "judge",
@@ -265,6 +374,17 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-5.3"},
     ],
     "vision_ocr": [  # vision + OCR only; no owner -> park fail-closed
+        # F30 (SMOKE-1, 2026-09-01): glm-ocr (ollama-cloud) needs
+        # OLLAMA_CLOUD_API_KEY which no env store on the operator box carries,
+        # so the single-candidate chain exhausted every wave with
+        # "OLLAMA_CLOUD_API_KEY not set". F30b: OpenRouter credits are
+        # exhausted (HTTP 402 at any token budget -- balance is negative),
+        # so the OCR readback falls to deepseek-direct (proven live 2026-09-01
+        # with a 1-token smoke call). deepseek-v4-pro is a text model; the
+        # P-IMAGE-QC OCR readback is text-QC over baked-prompt text, not raw
+        # pixel vision, so a text model satisfies the verifier.
+        {"alias": "deepseek-v4-pro"},
+        {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
     "image_render": [  # Kie render; the script executor owns the phase
@@ -644,57 +764,60 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
 
     Returns (eligible, reason). Never reads, never returns, a credential:
     the profile stores presence booleans and model-id lists only."""
-    provider = str(alias_def.get("provider") or "")
-    model = str(alias_def.get("model") or "")
-    if not provider:
+    raw_provider = str(alias_def.get("provider") or "")
+    if not raw_provider:
         return False, "alias resolves to no provider"
+    # FIX 17a: canonical dash-form provider id -- `ollama_cloud` and
+    # `ollama-cloud` are the same provider; the profile store and the
+    # catalog can never disagree about the spelling.
+    provider = _norm_provider(raw_provider)
+    # FIX 17a: the served model is what the provider's endpoint actually
+    # accepts (catalog served_ids keyed (alias, provider)); eligibility is
+    # judged against the id that will be sent, never the bare alias label.
+    model = _served_model(alias_def, provider)
     entry = providers.get(provider)
+    if not isinstance(entry, dict):
+        # The profile may still store this provider under a raw spelling
+        # (pre-normalisation row) -- try it before declaring unowned.
+        entry = providers.get(raw_provider)
     if not isinstance(entry, dict):
         return False, f"provider {provider} not owned by the client profile"
     if entry.get("consented") is False:
         return False, f"provider {provider} is not consented"
     wired = entry.get("wired_models")
     if isinstance(wired, list) and wired:
-        # Catalog health: the alias must resolve to a wired model id. Exact
-        # id match, per-model, or family pattern; a profile may also wire a
-        # sibling class member (e.g. the client wired v4-flash: the v4 pair
-        # is one live-confirmed endpoint class, so v4-pro rides the same
-        # ownership + consent + endpoint evidence).
+        # Catalog health: the alias must resolve to a wired model id.
+        # FIX 17b: exact match only -- no prefix, family, "same class",
+        # "-r"-suffix or startswith heuristic. A profile that wired
+        # z-ai/glm-5.3-flash must not silently bless glm-5.3 (or any other
+        # sibling) as present: the served_ids table (keyed (alias, provider))
+        # is the single source of what id each provider actually accepts,
+        # and the wired list holds ids verbatim from the provider probe.
+        # Spelling drift (underscores, whitespace, case) is folded by
+        # _norm_model_id -- folding a name is never evidence of presence,
+        # it only lets "glm_5.3 flash" and "z-ai/glm-5.3-flash" compare
+        # like-for-like. Explicit '*' or '?' globs in the wired inventory
+        # remain honored (fnmatch) because a probe may legitimately
+        # declare a family wildcard.
         def _model_matches(m: str) -> bool:
             if not m:
                 return False
+            nm = _norm_model_id(m)
             return any(
-                m == w or fnmatch.fnmatch(m, str(w))
-                or fnmatch.fnmatch(str(w), m + "-*")
-                or (m.split("-r", 1)[0] == str(w).split("-r", 1)[0]
-                    and m.rsplit("-", 1)[-1] == str(w).rsplit("-", 1)[-1])
-                or _same_class(m, str(w))
+                nm == _norm_model_id(w)
+                or fnmatch.fnmatch(m, str(w))
+                or fnmatch.fnmatch(str(w), m)
                 for w in wired
             )
 
-        def _same_class(a: str, b: str) -> bool:
-            def klass(m: str) -> str:
-                parts = m.replace("_", "-").split("-")
-                head = parts[0]
-                tail = parts[-1] if len(parts) > 1 and len(parts[-1]) <= 8 else ""
-                return f"{head}:{tail}"
-            ka, kb = klass(a), klass(b)
-            if ka == kb and klass(a) not in ("", ":"):
-                return True
-            # family prefix: deepseek-v4-* is one endpoint class
-            pref = a.rsplit("-", 1)[0]
-            return bool(pref) and (b == pref or b.startswith(pref + "-"))
-
         if _model_matches(model):
+            # FIX 114: wired on the provider AND a plausible key resolves --
+            # a wired inventory without a resolvable credential never routes.
+            if not provider_key_resolves(provider):
+                return False, (f"provider {provider} has no resolvable key "
+                               f"(FIX 114: no store carries a plausible "
+                               f"credential)")
             return True, f"wired on {provider}"
-        # family/class fallback: same endpoint class, sibling member wired
-        try:
-            family = model.rsplit("-", 1)[0]
-        except Exception:
-            family = model
-        if any(str(w) == family or str(w).startswith(family) for w in wired):
-            return True, (f"{provider} carries the {family} model family "
-                          f"(wired: {', '.join(map(str, wired[:3]))})")
         return False, (f"model {model} not in {provider}'s wired "
                        f"inventory ({len(wired)} wired)")
     # No wired inventory yet (never probed): presence/detected alone keeps
@@ -702,8 +825,176 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
     # absence (resource_profile keeps the last good inventory for the same
     # reason).
     if entry.get("presence") or entry.get("detected"):
-        return True, f"{provider} present (no wired inventory yet)"
+        # FIX 114: presence alone is no longer dispatchable evidence -- the
+        # provider must also carry a RESOLVABLE, plausible key. An unprobed
+        # but keyless provider is still parked, with the key gate named.
+        if not provider_key_resolves(provider):
+            return False, (f"provider {provider} has no resolvable key "
+                           f"(FIX 114: no store carries a plausible credential)")
+        return True, f"{provider} present + key resolves (no wired inventory yet)"
     return False, f"provider {provider} has no presence or inventory evidence"
+
+
+#: FIX 114 cache for the path-imported canon helper (defined before first use).
+_SECRET_HELPER_MOD = None
+_SECRET_HELPER_TRIED = False
+
+
+# ---------------------------------------------------------------------------
+# FIX 114: key-resolution eligibility gate. The router DECIDES; it never reads,
+# receives, or returns a credential -- so the gate is presence-only: the
+# provider's key name is resolved through the ONE secret-name canon
+# (shared-utils/secret_helper, the seam capacity._read_secret_value uses) and
+# the resolved VALUE (never surfaced) must pass looks_like_real_key. A route
+# may resolve ONLY to a provider whose key resolves AND is plausible; a box
+# with no OLLAMA_CLOUD_API_KEY in any store therefore never selects an
+# ollama-cloud model -- the failure is named in the candidate row's reason
+# (park/fail-closed) instead of burning a twenty-minute phase budget on
+# "OLLAMA_CLOUD_API_KEY not set" at dispatch time.
+# ---------------------------------------------------------------------------
+_PROVIDER_KEY_NAMES: Dict[str, Tuple[str, ...]] = {
+    "deepseek-direct": ("DEEPSEEK_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "ollama-cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "ollama_cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "agnes": ("AGNES_AI_API_KEY", "AGNES_API_KEY"),
+    "kie": ("KIE_API_KEY",),
+}
+
+
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (FIX 67 canon helper).
+    Returns the module or None. Same discovery order capacity.py uses."""
+    global _SECRET_HELPER_MOD, _SECRET_HELPER_TRIED
+    if _SECRET_HELPER_TRIED:
+        return _SECRET_HELPER_MOD
+    _SECRET_HELPER_TRIED = True
+    import importlib.util
+    skills_default = None
+    try:
+        from presentation_job.oc_paths import skills as _oc_skills
+        skills_default = Path(_oc_skills())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        skills_default = Path.home() / ".openclaw" / "skills"
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s114", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                _SECRET_HELPER_MOD = mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                _SECRET_HELPER_MOD = None
+            break
+    return _SECRET_HELPER_MOD
+
+
+def _secrets_env_files() -> Tuple[str, ...]:
+    """Candidate secrets env files, platform-aware (FIX 68 oc_paths)."""
+    try:
+        from presentation_job.oc_paths import secrets_env_candidates
+        return tuple(str(p) for p in secrets_env_candidates())
+    except Exception:  # noqa: BLE001 -- standalone deploy falls back to Mac defaults
+        return (str(Path.home() / ".openclaw" / "secrets" / ".env"),
+                str(Path.home() / ".openclaw" / "secrets" / "secrets.env"),
+                str(Path.home() / ".openclaw" / ".env"))
+
+
+def _alias_family(env_key: str) -> Tuple[str, ...]:
+    """The canon alias family of `env_key` (canonical spelling + aliases)."""
+    helper = _secret_helper()
+    if helper is None:
+        return (env_key,)
+    try:
+        names = list(helper.alias_list(helper.canonical_for(env_key)))
+        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return (env_key,)
+
+
+def _key_is_placeholder(value: str) -> bool:
+    """Placeholder gate; uses the canon's is_placeholder when reachable."""
+    if not value:
+        return True
+    helper = _secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
+            pass
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
+def provider_key_resolves(provider: Any) -> bool:
+    """FIX 114 presence-only key gate: does `provider` have a credential that
+    resolves (process env or the platform's secrets env files) AND passes
+    looks_like_real_key? NEVER returns a value. Unknown providers answer
+    False -- a provider with no known key name is not dispatchable, and
+    normalising a name is never evidence a key exists."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    names = None
+    for key, candidates in _PROVIDER_KEY_NAMES.items():
+        if str(key).lower().replace("_", "-") == token:
+            names = candidates
+            break
+    if not names:
+        return False
+    helper = _secret_helper()
+
+    def _plausible(value: str) -> bool:
+        if _key_is_placeholder(value):
+            return False
+        if helper is not None:
+            try:  # the canonical spelling judges the shape
+                canonical = helper.canonical_for(names[0])
+                return bool(helper.looks_like_real_key(value, canonical))
+            except Exception:  # noqa: BLE001 -- gate failure degrades to inline
+                pass
+        return True
+
+    for env_key in names:
+        for accepted in _alias_family(env_key):
+            value = (os.environ.get(accepted) or "").strip()
+            if value and _plausible(value):
+                return True
+            for file_spec in _secrets_env_files():
+                path = Path(file_spec).expanduser()
+                try:
+                    if not path.is_file():
+                        continue
+                    for line in path.read_text(
+                            encoding="utf-8", errors="replace").splitlines():
+                        line = line.strip()
+                        if line.startswith(f"{accepted}="):
+                            candidate = line.split("=", 1)[1].strip() \
+                                .strip('"').strip("'")
+                            if candidate and _plausible(candidate):
+                                return True
+                except OSError:
+                    continue
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -813,8 +1104,15 @@ def resolve_route(phase_id: str, *,
         # model lacking the capability is never selected (its class simply
         # does not appear in this capability's candidate list).
         if ok and route is None:
+            # FIX 17a: route.model is always the SERVED id for the selected
+            # provider (catalog served_ids keyed (alias, provider)) -- the
+            # dispatcher sends it verbatim, so the request body must carry
+            # what the endpoint accepts (openrouter: z-ai/glm-5.3-flash, not
+            # bare glm-5.3-flash). `_eligible` already judged the same id.
+            # API shape stays route={"provider","model"} exactly: the
+            # candidate row keeps the catalog model alias alongside.
             route = {"provider": alias_def["provider"],
-                     "model": alias_def["model"]}
+                     "model": _served_model(alias_def, alias_def["provider"])}
             reason = ("primary" if len(candidates) == 1 or ok == candidates[0].get("eligible")
                       else f"fallback: {why}")
     if route is not None:

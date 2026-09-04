@@ -75,6 +75,17 @@ except ImportError:
 # still carrying the pre-doctrine 10_240 / 20_480 values during that pass).
 _MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
+# P8.1/P8.2/P9-DELIVERY verifiers scale guide_pdf/deck_pdf floors by THIS
+# deck's slide count through guide_floor(n)/pdf_floor(n) here — no site
+# re-derives the arithmetic, and no 51,200 / 34-slide literal is enforced at
+# this site. Fail-soft: when the helper module is absent the verifiers fall
+# back to the raw spec floors below (pre-F103 behaviour).
+try:
+    from presentation_job import deliverable_floors as _floors
+except ImportError:  # pragma: no cover — fail-soft: legacy box without the module
+    _floors = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Defensive engine-checker imports (all optional)
 # ---------------------------------------------------------------------------
@@ -117,6 +128,178 @@ except ImportError:
     _vb = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
+# FIX 109 — intake provenance pre-phase refusal.
+#
+# runfacts.check_intake_provenance() is the refuse/allow oracle: when the run's
+# current working/copy/intake.json sha256 has no row in
+# working/checkpoints/intake.provenance.jsonl (an out-of-band shell edit), the
+# file was written by something other than the intake phase or the owner's
+# approval path, and EVERY downstream phase must refuse — naming the sha —
+# instead of authoring content from unprovenanced intake. verify() is the one
+# funnel every phase's substance check passes through, so the check runs here,
+# BEFORE dispatching to the per-phase verifier. Phases that produce intake.json
+# themselves (P-CONVERTER / P0A-INTAKE / P-SP-CLAIM) are exempt: they are the
+# sanctioned writers whose own completion appends the provenance row.
+# ---------------------------------------------------------------------------
+try:
+    from presentation_job import runfacts as _rf109
+except ImportError:  # pragma: no cover — only when presentation_job is absent entirely
+    _rf109 = None  # type: ignore[assignment]
+
+_INTAKE_PRODUCER_PHASES = ("P-CONVERTER", "P0A-INTAKE", "P-SP-CLAIM")
+
+
+def _intake_provenance_refusal(phase_id: str, run_dir: Path) -> Optional[str]:
+    """Return the AF-INTAKE-PROVENANCE refusal line when this phase may not run
+    against the current intake sha, else None. Regime-aware: a run with no
+    provenance log at all (pre-FIX-109) is never refused by this check."""
+    if _rf109 is None:
+        return None
+    if phase_id in _INTAKE_PRODUCER_PHASES:
+        return None
+    try:
+        ok, why, _invalidated = _rf109.check_intake_provenance(run_dir)
+    except Exception as exc:  # noqa: BLE001 — fail closed, never crash the funnel
+        # FIX 107: no getattr on a verifier module — plain dict probe; the
+        # fallback is a literal constant, not a silent symbol degrade.
+        af_code = _rf109.__dict__.get("AF_INTAKE_PROVENANCE") or "AF-INTAKE-PROVENANCE"
+        return (f"{af_code}: "
+                f"provenance check itself failed ({exc!r}) — refusing to verify a "
+                "phase against an unprovenanced intake")
+    if ok:
+        return None
+    return why
+
+# ---------------------------------------------------------------------------
+# FIX 107 — the verifier symbol contract, bound at IMPORT time.
+#
+# The old shape probed engine symbols at CALL time with getattr(..., None) and
+# degraded to a weaker check whenever a name was missing. That is how the render
+# gate stayed permanently fail-closed: it getattr'd `check_image_qc` /
+# `check_rendered_images` off canonical_render_guard, names that never existed
+# (the real entry is run_fix2_checks), so the gate never once ran the real pixel
+# cross-check. A symbol contract probed with a None fallback cannot tell
+# "module absent" from "symbol renamed" — and only the first of those is a
+# legitimate degrade.
+#
+# The contract below is the one place that names every engine symbol this
+# module's verifiers bind to. assert_bound() walks it at IMPORT time (bottom of
+# this file) and raises ImportError naming module.symbol for any missing entry,
+# so a rename fails the import — loudly, at the preflight boundary — instead of
+# silently degrading every phase that used the renamed checker. The engine's
+# FIX 17 fail-closed path (VerifierImportError) then carries the name out of the
+# run. No getattr on any verifier module remains in this file: _bd_fn is a plain
+# bound-dict lookup that can only return None for a module that is genuinely
+# ABSENT (never for a missing symbol — assert_bound proved every symbol exists
+# before this module finished importing).
+#
+# assert_bound() is also exported for the preflight gate to call explicitly
+# (build_deck.run_preflight wires it in as its first gate), so a drift detected
+# after a hot patch is named at preflight even when the module was already
+# imported by an earlier stage of the process.
+# ---------------------------------------------------------------------------
+#: module -> tuple of symbols the verifiers REQUIRE (callable or constant).
+_VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
+    "build_deck": (
+        # preflights (PREFLIGHT_REQUIRED wiring)
+        "_chk_research_brief",
+        "_chk_research_cited",
+        "_chk_claims_without_citation",
+        "check_prompt_qc_deterministic",
+        "check_deck_harmony",
+        "_chk_notes_pane",
+        "_load_slide_copy_map",
+        "FORBIDDEN_DEMOGRAPHIC_DEFAULTS",
+        "FORBIDDEN_QC_GRADER_IDENTITIES",
+        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC)
+        "_chk_copy_qc",
+        "_chk_prompt_qc",
+        # Signature-Presentation verifiers
+        "_chk_sp_intake",
+        "_chk_sp_structure",
+        "_chk_sp_no_pitch",
+        "_chk_sp_claim",
+        "_chk_sp_intake_trace",
+    ),
+    "canonical_render_guard": (
+        # the REAL render image-QC entry (F39/U023): the render gate routes
+        # through run_fix2_checks, which fail-closes on its own contract.
+        "run_fix2_checks",
+    ),
+    "intelligence_engines_check": ("check_copy",),
+    "pitch_engines_check": ("check_copy",),
+    "sales_checkout_builder": (
+        "load_intake",
+        "resolve_sales_checkout_gate",
+        "verify_push_receipt",
+    ),
+    "vsl_builder": (
+        "load_intake",
+        "resolve_vsl_gate",
+        "resolve_deck_slug",
+        "verify_video_dependency",
+        "VslBuildError",
+    ),
+}
+
+_MODULE_TABLE = {
+    "build_deck": lambda: _bd,
+    "canonical_render_guard": lambda: _crg,
+    "intelligence_engines_check": lambda: _iec,
+    "pitch_engines_check": lambda: _pec,
+    "sales_checkout_builder": lambda: _scb,
+    "vsl_builder": lambda: _vb,
+}
+
+
+def assert_bound() -> List[str]:
+    """FIX 107: prove every symbol in _VERIFIER_SYMBOL_CONTRACT exists.
+
+    Returns the sorted list of "module.symbol" names proven present (the bound
+    contract), so a caller can log what it verified. Raises ImportError naming
+    EVERY missing "module.symbol" — never None-fallbacks, never degrades.
+
+    A module that is genuinely ABSENT (ImportError on its own import) is NOT a
+    contract violation: absent-module is the documented degraded mode
+    (CI/test contexts). A module that is present but lost a symbol IS a
+    violation — that is a rename/drift, and it must fail the preflight naming
+    the symbol.
+    """
+    missing: List[str] = []
+    for mod_name, symbols in _VERIFIER_SYMBOL_CONTRACT.items():
+        mod = _MODULE_TABLE[mod_name]()
+        if mod is None:
+            # Module absent entirely — documented degrade, not a symbol drift.
+            continue
+        for sym in symbols:
+            # Plain dict probe — deliberately NOT getattr(..., None): the
+            # fallback-None shape is exactly what let the render gate sit
+            # fail-closed for its whole life. A missing key here is a real
+            # drift and gets named.
+            if sym not in mod.__dict__:
+                missing.append(f"{mod_name}.{sym}")
+                continue
+            val = mod.__dict__[sym]
+            if sym == "VslBuildError":
+                if not (isinstance(val, type) and issubclass(val, BaseException)):
+                    missing.append(f"{mod_name}.{sym}")
+            elif not callable(val) and not isinstance(val, (str, list, tuple, set, frozenset, dict)):
+                missing.append(f"{mod_name}.{sym}")
+    if missing:
+        raise ImportError(
+            "FIX 107 verifier symbol contract violated — these engine symbols are "
+            "bound by phase_verifiers.py but missing on their module: "
+            + ", ".join(sorted(missing))
+            + ". A verifier module was renamed/removed without updating "
+              "_VERIFIER_SYMBOL_CONTRACT; the preflight gate fails closed naming it."
+        )
+    return sorted(
+        f"{m}.{s}" for m, syms in _VERIFIER_SYMBOL_CONTRACT.items()
+        if _MODULE_TABLE[m]() is not None for s in syms
+    )
+
+
+# ---------------------------------------------------------------------------
 # Internal filesystem helpers
 # ---------------------------------------------------------------------------
 
@@ -152,10 +335,24 @@ def _read_text(path: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _bd_fn(name: str):
-    """Return a build_deck attribute by name, or None if unavailable."""
+    """FIX 107: return a build_deck symbol by name, or None ONLY when the
+    build_deck module itself is absent (the documented degraded mode).
+
+    This is a plain bound-dict lookup — deliberately NOT getattr(..., None).
+    The old None-fallback shape made "symbol renamed" indistinguishable from
+    "module absent", which is how the render gate sat fail-closed for its whole
+    life. With assert_bound() having proven every contract symbol at import
+    time, a missing key here would mean a post-import patch dropped a symbol;
+    it raises (names the symbol) instead of silently degrading."""
     if _bd is None:
         return None
-    return getattr(_bd, name, None)
+    try:
+        return _bd.__dict__[name]
+    except KeyError as exc:
+        raise ImportError(
+            f"build_deck.{name} is bound by phase_verifiers.py's verifier "
+            f"contract but missing on build_deck (FIX 107 assert_bound: a "
+            f"post-import patch renamed/removed it)") from exc
 
 
 def _degraded_allowed(run_dir) -> bool:
@@ -518,32 +715,85 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
     return _v
 
 
+def _verify_finding_text(finding) -> str:
+    """Normalise one canonical_render_guard.run_fix2_checks finding to a readable
+    AF-... reason string.
+
+    run_fix2_checks returns (af_code, message) TUPLES (one per wired symbol);
+    defensively also accept dict findings ({"code","message"}) or bare strings.
+    The underlying messages already carry their own "AF-...:" prefix, so never
+    double-prefix (the pre-unification code f-string-dumped the whole tuple,
+    producing 'AF-IMAGE-QC-VISION: (\\'AF-IMAGE-QC-VISION\\', ...\\')' garbage)."""
+    if isinstance(finding, (tuple, list)) and len(finding) >= 2:
+        code, msg = str(finding[0]), str(finding[1])
+    elif isinstance(finding, dict):
+        code = str(finding.get("code") or finding.get("af_code") or "AF-IMAGE-QC-VISION")
+        msg = str(finding.get("message") or finding.get("msg") or finding)
+    else:
+        code, msg = "AF-IMAGE-QC-VISION", str(finding)
+    if msg.strip().startswith(code):
+        return msg.strip()
+    return f"{code}: {msg}"
+
 def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
     """P4-RENDER / P-IMAGE-QC: canonical_render_guard image-QC (AF-IMAGE-QC-VISION).
-    Falls back to filesystem PNG existence check when the guard is unavailable."""
+
+    UNIFIED (W12b-B3 — one path; resolves F28 vs F39). F28: this gate looked up
+    check_image_qc / check_rendered_images on canonical_render_guard — symbols
+    that never existed — so the render gate was permanently fail-closed. F39
+    repointed it at canonical_render_guard.run_fix2_checks. The unified path
+    keeps the F39 repoint and applies the F03 degraded contract UNIFORMLY to
+    every outcome of the measurement:
+
+      1. Guard MODULE present -> the pixel/vision cross-check runs via
+         run_fix2_checks (FIX 107: DIRECT symbol access — no getattr on any
+         verifier module; the import-time assert_bound() contract already
+         proved the symbol, and a post-import loss raises here, naming it).
+           clean findings    -> PASS (a full-evidence pass: the gate measured).
+           findings          -> production: FAIL naming each finding;
+                                test/CI degraded: NOTE-pass listing them.
+           checker raised    -> production: FAIL AF-IMAGE-QC-CRASH (fail closed —
+                                a crashed measurer equals no measurement, and no
+                                measurement cannot equal pass);
+                                test/CI degraded: NOTE-pass.
+      2. Guard MODULE absent -> filesystem fallback:
+           no renders/slide-*.png -> FAIL;
+           production             -> FAIL AF-IMAGE-QC-MISSING (fail closed);
+           test/CI degraded       -> NOTE-pass.
+
+    A degraded (NOTE) pass is permitted ONLY via _degraded_allowed (explicit
+    test/CI marker) — never by default, never in production."""
+    degraded = _degraded_allowed(run_dir)
     if _crg is not None:
-        fn = getattr(_crg, "check_image_qc", None) or getattr(_crg, "check_rendered_images", None)
-        if fn is not None:
-            try:
-                result = fn(run_dir)
-                if not _checker_pass(result):
-                    return False, [f"AF-IMAGE-QC-VISION: {result}"]
-                return True, []
-            except Exception as exc:  # noqa: BLE001
-                # F03: the vision measurer crashed — falling through to a bare
-                # PNG-existence check in production would attest renders that no
-                # gate ever actually measured. Fail closed unless test/CI.
-                if not _degraded_allowed(run_dir):
-                    return False, [
-                        f"AF-IMAGE-QC-CRASH: canonical_render_guard image-QC raised "
-                        f"{exc!r} — the render image-QC did not run; failing closed "
-                        "(test/CI marker absent)"]
+        try:
+            findings = _crg.run_fix2_checks(run_dir) or []
+        except Exception as exc:  # noqa: BLE001
+            # F03: the vision measurer crashed — falling through to a bare
+            # PNG-existence check in production would attest renders that no
+            # gate ever actually measured. Fail closed unless test/CI.
+            if not degraded:
+                return False, [
+                    f"AF-IMAGE-QC-CRASH: canonical_render_guard image-QC raised "
+                    f"{exc!r} — the render image-QC did not run; failing closed "
+                    "(test/CI marker absent)"]
+            return True, [
+                "NOTE: canonical_render_guard image-QC crashed — "
+                f"{exc!r} — filesystem-only check (pass) under an explicit "
+                "test/CI degraded context"]
+        if not _checker_pass(findings):
+            reasons = [_verify_finding_text(f) for f in findings]
+            if not degraded:
+                return False, reasons
+            return True, [
+                "NOTE: canonical_render_guard image-QC reported findings that are "
+                "NOT attested by this degraded (test/CI) pass: " + " | ".join(reasons)]
+        return True, []
 
     # Filesystem fallback: at least one render PNG must exist.
     hits = list(run_dir.glob("renders/slide-*.png"))
     if not hits:
         return False, ["AF-IMAGE-QC-VISION: no render PNGs found at renders/slide-*.png"]
-    if not _degraded_allowed(run_dir):
+    if not degraded:
         return False, [
             "AF-IMAGE-QC-MISSING: canonical_render_guard image-QC unavailable — the "
             "render image-QC never ran. A PNG-existence check alone cannot attest "
@@ -944,7 +1194,17 @@ def _fix16_get_verifier(phase_id: str) -> Callable:
     if phase_id == "P-IMAGE-QC":
         if not _fix16_wiring_enabled():
             return _verify_render
-        return _fix16_aggregate(_verify_render, _verify_image_grounding)
+        # FIX 33 (W12b-B3 unification): the aggregate grows a THIRD leg — the
+        # vision-unit contract (graded_by_model != authoring stamp, request_id
+        # present, per-slide non-empty observed_text). The three legs compose
+        # with _merge via the ONE dead-branch-free pair helper: base render
+        # gate AND grounding steward AND unit contract.
+        unit = _fix33_get_verifier()
+        if unit is None:
+            return _fix16_aggregate(_verify_render, _verify_image_grounding)
+        return _fix16_aggregate(
+            _verify_render,
+            lambda rd: _fix33_pair(_verify_image_grounding, unit, rd))
     if phase_id == "P-PROMPT-QC":
         if not _fix16_wiring_enabled():
             return _verify_qc_report(
@@ -953,6 +1213,239 @@ def _fix16_get_verifier(phase_id: str) -> Callable:
             "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC")
         return _fix16_aggregate(prompt_gate, _verify_representation_casting)
     raise KeyError(phase_id)
+
+
+def _fix33_pair(sub_a: Callable, sub_b: Callable, run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX 33: merge TWO sub-verifiers (grounding steward + vision-unit
+    contract) into one (ok, reasons) leg so _fix16_aggregate keeps its
+    (base, sub) shape. ok = sub_a AND sub_b; reasons concatenated, sub_a's
+    park reasons first (the ones the operator reads)."""
+    ok_a, r_a = sub_a(run_dir)
+    ok_b, r_b = sub_b(run_dir)
+    return _merge([(ok_a, r_a), (ok_b, r_b)])
+
+
+# ---------------------------------------------------------------------------
+# FIX 33 — image-QC vision UNIT contract (observed_text + request id + cross-graded model)
+# ---------------------------------------------------------------------------
+# MASTER Part 8 Fix 33: "image-QC report declared independent and was written
+# by the driver; no verifier calls a vision model; 'vision QC' means the report
+# says a model name. HOW: the dispatcher stamps graded_by_provider,
+# graded_by_model, request_id into every QC artifact it authors; qc_aggregate
+# and verifier_registry.qc_report_verifier fail a report whose model equals the
+# authoring stamp for the same range or lacks a request id; P-IMAGE-QC units
+# call a vision-capable route with the PNG attached and store observed_text
+# per slide."
+#
+# This file's share of the fix (the W12b builder task) is the PHASE-VERIFIER
+# side: a vision-UNIT contract sub-verifier for P-IMAGE-QC that enforces, per
+# slide, that the image_qc_report.json carries the three FIX 33 provenance
+# fields a real vision unit leaves behind:
+#   * graded_by_model  — the model that actually graded the slide (must NOT
+#     equal the report's authoring stamp qc_independence/builder identity — a
+#     self-graded vision pass is not a vision pass);
+#   * request_id       — the vision route's request id (a report without one
+#     names no route and cannot prove a unit ran);
+#   * observed_text    — the per-slide non-empty vision observation (the OCR /
+#     multimodal readout; a row without one is pixel-blind).
+# Layout inside the report:
+#   * top-level graded_by_provider / graded_by_model / request_id are accepted
+#     (the dispatcher's stamp), with per-slide rows carrying their own
+#     observed_text (+ optionally their own graded_by_model/request_id, which
+#     override the top-level stamp for that slide);
+#   * per-slide rows are the LIST form the existing _image_qc_report_defects
+#     rubric already demands (key slides/per_slide/slide_results; row key
+#     "slide" or "ordinal" / 1-based, or index position when the row carries
+#     no number).
+# Wiring: appended to the P-IMAGE-QC aggregate via _fix16_get_verifier (base
+# render gate AND grounding steward AND this contract). Rollback:
+# PRESENTATION_FIX33_VISION_CONTRACT=0 restores the pre-FIX-33 aggregate
+# exactly. Default is ON.
+# ---------------------------------------------------------------------------
+
+FIX33_ROLLBACK_FLAG = "PRESENTATION_FIX33_VISION_CONTRACT"
+
+# Top-level keys accepted as the report's vision-unit provenance stamp.
+_FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
+_FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                     "ocr_engine", "vision_engine", "reviewer_vision_model")
+_FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+
+# Per-slide observation fields (mirrors build_deck._image_qc_report_defects
+# VIS_FIELDS so the two rubrics agree on what counts as an observation).
+_FIX33_OBSERVED_FIELDS = ("observed_text", "vision", "ocr", "ocr_text",
+                          "baked_text", "read_text", "description",
+                          "pixels_read", "visual_subject")
+
+
+def _fix33_wiring_enabled() -> bool:
+    """FIX 33 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-fix P-IMAGE-QC aggregate exactly (documented rollback path)."""
+    return os.environ.get(FIX33_ROLLBACK_FLAG) != "0"
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    """First non-empty string value among keys, else ''."""
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_row_ordinal(row: dict, index: int) -> Optional[int]:
+    """1-based slide ordinal for a per-slide row: row['slide'] / row['ordinal']
+    / row['slide_ordinal'] / row['index'] when an int, else the row's list
+    position (0-based index -> 1-based)."""
+    for k in ("slide", "ordinal", "slide_ordinal", "index", "slide_number", "n"):
+        v = row.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("Ss-").isdigit():
+            try:
+                return int(v.strip().lstrip("Ss-"))
+            except ValueError:
+                continue
+    return index + 1
+
+
+def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]:
+    """FIX 33 vision-unit contract over working/qc/image_qc_report.json.
+
+    Returns (ok, reasons). Contract (production):
+      * the report exists and parses;
+      * a per-slide LIST is present covering every rendered PNG (the same LIST
+        shape build_deck._image_qc_report_defects already demands — a dict
+        keyed by slide can silently drop rows);
+      * top-level graded_by_model present AND different from the authoring
+        stamp (qc_independence/builder identity) — the model that graded the
+        deck cannot be the model that wrote it;
+      * a request_id is present (the vision route's request id);
+      * EVERY per-slide row carries a non-empty observed_text (pixel-blind
+        rows are refused), and the row count covers every rendered PNG.
+    A test/CI degraded context NOTE-passes with the findings listed."""
+    reasons: List[str] = []
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    report = _read_json(report_path) if report_path.is_file() else None
+    if not isinstance(report, dict):
+        if not degraded:
+            return False, [
+                "AF-IMAGE-QC-UNIT: image_qc_report.json missing or unparseable — "
+                "the FIX 33 vision-unit contract (graded_by_model + request_id + "
+                "per-slide observed_text) cannot be attested without the report "
+                "the P-IMAGE-QC vision units write."]
+        return True, ["NOTE: image_qc_report.json missing — FIX 33 vision-unit "
+                      "contract not checkable (test/CI degraded NOTE pass)"]
+
+    # --- the authoring stamp: who WROTE the report (builder/driver identity) ---
+    blk = report.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    authoring_stamp = ""
+    for src in (blk, report):
+        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                authoring_stamp = v.strip()
+                break
+        if authoring_stamp:
+            break
+
+    # --- graded_by_model must exist and DIFFER from the authoring stamp ---
+    graded_model = _fix33_first_str(report, _FIX33_MODEL_KEYS)
+    if not graded_model:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json declares no graded_by_model — "
+            "FIX 33 requires the dispatcher's vision-unit stamp "
+            "(graded_by_provider/graded_by_model/request_id) in every QC artifact; "
+            "a report that only SAYS a model name carries no route provenance.")
+    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+        reasons.append(
+            f"AF-IMAGE-QC-UNIT: graded_by_model {graded_model!r} equals the report's "
+            f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
+            "FIX 33: the vision route that graded the deck must be a DIFFERENT "
+            "model from the authoring stamp (cross-graded, never self-graded).")
+
+    # --- request_id: the vision route's request id must appear ---
+    request_id = _fix33_first_str(report, _FIX33_REQUEST_KEYS)
+    if not request_id:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json carries no request_id — FIX 33 "
+            "requires the vision route's request id in the report so every grade "
+            "is traceable to the unit call that produced it. A report with no "
+            "request id names no route and cannot prove a vision unit ran.")
+
+    # --- per-slide coverage: LIST, covering every rendered PNG, observed_text ---
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report:
+            per_slide = report.get(k)
+            break
+    if isinstance(per_slide, dict):
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: per-slide coverage is a DICT — FIX 33 requires the "
+            "per-slide LIST form so no slide's vision row can be silently dropped.")
+        per_slide = None
+    rows: List[Tuple[int, dict]] = []
+    if isinstance(per_slide, list) and per_slide:
+        rows = [( _fix33_row_ordinal(r, i), r) for i, r in enumerate(per_slide)
+                if isinstance(r, dict)]
+        if len(rows) != len(per_slide):
+            reasons.append(
+                "AF-IMAGE-QC-UNIT: per-slide coverage contains non-object rows — "
+                "every FIX 33 vision row must be an object with its own "
+                "observed_text.")
+    pngs = sorted(run_dir.glob("renders/slide-*.png"))
+    n_pngs = len(pngs)
+    if not rows:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json has no per-slide rows — FIX 33 "
+            "requires one vision-unit row per rendered slide, each carrying a "
+            "non-empty observed_text from the route's read of the PNG.")
+    else:
+        if n_pngs and len(rows) < n_pngs:
+            reasons.append(
+                f"AF-IMAGE-QC-UNIT: image_qc_report.json carries {len(rows)} per-slide "
+                f"vision rows for {n_pngs} rendered PNG(s) — every rendered slide "
+                "must be covered by its own vision-unit row (FIX 33).")
+        # observed_text per row (a row may override the top-level stamp, but the
+        # OBSERVATION is per-slide and never inheritable).
+        blind: List[str] = []
+        for ordinal, row in rows:
+            observed = _fix33_first_str(row, _FIX33_OBSERVED_FIELDS)
+            if not observed:
+                blind.append(f"slide {ordinal:02d}" if isinstance(ordinal, int)
+                             else f"row {ordinal!r}")
+        if blind:
+            reasons.append(
+                "AF-IMAGE-QC-UNIT: per-slide rows without a non-empty observed_text "
+                "(the route's per-slide read of the PNG): " + ", ".join(blind[:12])
+                + " — a pixel-blind row cannot attest a vision unit (FIX 33).")
+
+    if reasons:
+        if degraded:
+            return True, ["NOTE: FIX 33 vision-unit contract findings NOT attested "
+                          "by this degraded (test/CI) pass: " + " | ".join(reasons)]
+        return False, reasons
+    return True, []
+
+
+def _verify_qc_vision_unit_contract(run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX 33 sub-verifier for P-IMAGE-QC: the vision-UNIT contract over
+    image_qc_report.json — graded_by_model != authoring stamp, request_id
+    present, per-slide non-empty observed_text covering every rendered PNG.
+    Pure filesystem reads; no engine required; test/CI degraded NOTE-pass only
+    (F03: no measurement cannot equal pass in production)."""
+    return _fix33_check_report(run_dir, _degraded_allowed(run_dir))
+
+
+def _fix33_get_verifier() -> Optional[Callable]:
+    """Resolve the FIX 33 sub-verifier for the P-IMAGE-QC aggregate (None when
+    the rollback flag disables it)."""
+    if not _fix33_wiring_enabled():
+        return None
+    return _verify_qc_vision_unit_contract
 
 
 def _fix16_apply(pv_registry: dict) -> dict:
@@ -1439,17 +1932,23 @@ def _deliverable_content_check(key: str, path: Path, reasons: list) -> None:
             break
 
     if chk == "fish_tags":
-        # Must contain actual Fish Audio [fish] tags — a plain text file renamed
-        # as FISH-TAGGED.md would have no bracket tags at all.
+        # Must contain real Fish Audio expression tags — a plain text file renamed
+        # as FISH-TAGGED.md would have no bracket tags at all. Fish Audio S2/S2-Pro
+        # syntax (FISH-AUDIO-TAGS-MASTER.md §"current default") is a bracket-wrapped
+        # natural-language cue, e.g. [warm and welcoming] / [pause] / [long pause] —
+        # NOT a literal "[fish...]" prefix. The tagger (speech_fish_tag.py) emits
+        # exactly this S2 form, so the check validates the S2 catalog syntax. The
+        # anti-drift intent is unchanged: >= 3 bracket tags demanded, a renamed
+        # plain text file still fails (it has zero bracket tags).
         import re
-        fish_pattern = re.compile(r'\[fish\b[^\]]*\]', re.IGNORECASE)
+        fish_pattern = re.compile(r'\[[a-z][^\]\[]{3,60}\]', re.IGNORECASE)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
             matches = fish_pattern.findall(text)
             if len(matches) < 3:
                 reasons.append(
                     f"AF-BUNDLE-INCOMPLETE: {key} — {path.name} has only "
-                    f"{len(matches)} [fish] tags (min 3 expected).  A renamed "
+                    f"{len(matches)} Fish S2 bracket tags (min 3 expected).  A renamed "
                     f"plain text file is not a fish-tagged speech."
                 )
         except Exception as exc:  # noqa: BLE001
@@ -1548,10 +2047,29 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
         if size == 0:
             reasons.append(f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is zero bytes")
             continue
-        if size < min_bytes:
+        # F43c (SMOKE-1, 2026-09-01): guide_pdf/deck_pdf floors were tuned for the
+        # 34-slide reference deck. FIX 103 (MASTER Part 8, SMOKE-1 addenda): the
+        # inline reference-ratio scaler is gone — the P9-DELIVERY gate delegates
+        # to THE one helper (presentation_job.deliverable_floors): guide_pdf via
+        # guide_floor(n)=max(1600n, 12000), deck_pdf via pdf_floor(n)=max(1506n,
+        # 8192), with slide_count(run_dir) reading slides.json and never a
+        # constant. pdf_floor(34) reproduces the legacy reference floor exactly;
+        # when the count is undeterminable the spec floor is used unchanged.
+        _min_b = min_bytes
+        if key in ("guide_pdf", "deck_pdf"):
+            try:
+                _n = _floors.slide_count(run_dir) if _floors is not None else 0
+                if _n:
+                    if key == "guide_pdf":
+                        _min_b = _floors.guide_floor(_n)
+                    else:
+                        _min_b = _floors.pdf_floor(_n)
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                pass
+        if size < _min_b:
             reasons.append(
                 f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is {size} bytes "
-                f"(minimum {min_bytes} bytes)"
+                f"(minimum {_min_b} bytes)"
             )
             continue
 
@@ -1638,27 +2156,25 @@ def _verify_converter(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_text_artifact(pattern: str, min_bytes: int = 50,
-                          scale_by_slides: bool = False):
+                          scale_by_slides: bool = False,
+                          floor_formula: str = "pdf"):
     """Factory returning a verifier that checks a text artifact. When
-    scale_by_slides is True, min_bytes is scaled by the deck's slide count
-    (MIN_BYTES was tuned for a ~34-slide reference deck; a fully-populated
-    smaller deck legitimately renders smaller — E2E finding)."""
+    scale_by_slides is True, min_bytes is scaled by the deck's slide count from
+    THE one floor helper (presentation_job/deliverable_floors — FIX 103):
+    floor_formula="guide" uses guide_floor(n)=max(1600n, 12000) and the default
+    "pdf" uses pdf_floor(n)=max(1506n, 8192). The slide count comes from
+    deliverable_floors.slide_count(run_dir), which reads slides.json /
+    arc_allocation.json and never a constant. The former inline scaler (a
+    reference-deck ratio re-derivation) is gone. When scaling cannot run (floors
+    module unavailable) the raw min_bytes applies, as before."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         if not scale_by_slides:
             return _check_text_nonempty(run_dir, pattern, min_bytes)
         try:
-            _n = 0
-            for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
-                import json as _json
-                _data = _json.load(open(_cand))
-                if isinstance(_data, list):
-                    _n = len(_data)
-                elif isinstance(_data, dict) and _data.get("slides"):
-                    _n = len(_data["slides"])
-                if _n:
-                    break
+            _n = _floors.slide_count(run_dir) if _floors is not None else 0
             _n = _n or 1
-            _scaled = max(int(min_bytes * _n // 34), 8192)
+            _scaled = (_floors.guide_floor(_n) if floor_formula == "guide"
+                       else _floors.pdf_floor(_n)) if _floors is not None else min_bytes
         except Exception:  # noqa: BLE001 — fall back to the fixed floor
             _scaled = min_bytes
         return _check_text_nonempty(run_dir, pattern, _scaled)
@@ -2480,6 +2996,198 @@ def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+
+# ---------------------------------------------------------------------------
+# FIX 112 — the two remaining missing producers.
+#
+# P-STYLE-SPEC (order 4.84): the copy stage's fanout unit authors
+#   working/copy/style_preview_spec.json — the artifact P-STYLE-PREVIEW
+#   requires and, before this fix, nothing on disk authored. The verifier
+#   re-measures the exact contract build_deck.run_style_preview_samples
+#   FATAL-exits on: exactly 3 variants (ids A/B/C, each a non-empty
+#   style_directive) and exactly 3 representative slide ordinals.
+# P8.3-INFOGRAPHIC (order 8.3): the infographic-checklist QC unit — the
+#   bundle table's long-named, never-implemented role (now a real role file,
+#   presentations/infographic-checklist.md, plus a manifest roles[] row) —
+#   grades Fix 2's rendered PNG against its prompt and WRITES A VERDICT FILE
+#   (working/qc/infographic_checklist_verdict.json). The verifier re-derives
+#   the verdict, never trusting a hand-typed pass.
+# ---------------------------------------------------------------------------
+_STYLE_SPEC_VARIANT_IDS = ("A", "B", "C")
+
+
+def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-SPEC: the style-preview spec must carry exactly 3 variants
+    (A/B/C with non-empty style_directive strings) and exactly 3
+    representative slide ordinals — the exact shape
+    build_deck.run_style_preview_samples refuses to run without."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_spec.json")
+    if p is None:
+        p = _resolve_glob(run_dir, "working/style-preview/style_preview_spec.json")
+    if p is None:
+        return False, ["working/copy/style_preview_spec.json: file not found — "
+                       "phase artifact missing"]
+    spec = _read_json(p)
+    if not isinstance(spec, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    variants = spec.get("variants")
+    if not isinstance(variants, list) or len(variants) != 3:
+        return False, [f"{p.name}: variants must list exactly 3 entries "
+                       f"(got {len(variants) if isinstance(variants, list) else type(variants).__name__})"]
+    ids: List[str] = []
+    for i, v in enumerate(variants):
+        if not isinstance(v, dict):
+            return False, [f"{p.name}: variants[{i}] must be an object"]
+        vid = str(v.get("id") or "").strip().upper()
+        directive = str(v.get("style_directive") or "").strip()
+        if vid not in _STYLE_SPEC_VARIANT_IDS:
+            return False, [f"{p.name}: variants[{i}].id {v.get('id')!r} is not one of A/B/C"]
+        if not directive:
+            return False, [f"{p.name}: variants[{i}].style_directive is empty"]
+        ids.append(vid)
+    if len(set(ids)) != 3:
+        return False, [f"{p.name}: variant ids must be distinct A/B/C (got {ids})"]
+    reps = spec.get("representative_slides")
+    if not isinstance(reps, list) or len(reps) != 3:
+        return False, [f"{p.name}: representative_slides must list exactly 3 slide ordinals"]
+    for i, r in enumerate(reps):
+        if isinstance(r, bool) or not isinstance(r, int) or r < 1:
+            return False, [f"{p.name}: representative_slides[{i}] must be a positive "
+                           f"slide ordinal (got {r!r})"]
+    return True, []
+
+
+_INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
+
+
+def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
+    only when (a) the rendered PNG exists at/above the deliverable floor,
+    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
+    file exists, parses, and its own verdict is pass with the render inputs
+    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
+    dirty render never passes, and a missing verdict file is a FAIL (the QC
+    unit ran, or it did not — absence is not a pass)."""
+    import json as _json
+    reasons: List[str] = []
+
+    png = _resolve_glob(run_dir, "working/deliverables/infographic.png")
+    if png is None:
+        reasons.append("working/deliverables/infographic.png: file not found — "
+                       "the render under QC is missing")
+    else:
+        floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        if png.stat().st_size < floor:
+            reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
+                           f"{floor}-byte deliverable floor")
+    status = _read_json(_resolve_glob(run_dir, "working/checkpoints/infographic_status.json")
+                        or Path("/nonexistent"))
+    if not isinstance(status, dict):
+        reasons.append("working/checkpoints/infographic_status.json: missing or "
+                       "not a JSON object (build_infographic's render record)")
+    else:
+        if status.get("status") != "ready":
+            reasons.append(f"infographic_status.json: status is "
+                           f"{status.get('status')!r}, not 'ready'")
+        if status.get("qc_passed") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true")
+
+    verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
+    verdict = _read_json(verdict_path)
+    if not isinstance(verdict, dict):
+        reasons.append(f"{_INFOGRAPHIC_CHECKLIST_VERDICT_REL}: missing or not a JSON "
+                       "object — the infographic-checklist QC unit has not written "
+                       "its verdict")
+        return False, reasons
+    if verdict.get("verdict") != "pass":
+        vreasons = verdict.get("reasons") or []
+        detail = "; ".join(str(r) for r in vreasons) if isinstance(vreasons, list) else repr(vreasons)
+        reasons.append(f"infographic-checklist verdict is {verdict.get('verdict')!r}: {detail}")
+    checked = verdict.get("checked")
+    if not isinstance(checked, list) or not checked:
+        reasons.append("verdict.checked must be a non-empty list of the prompt's "
+                       "checklist items as checked")
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+def _verify_style_pick(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-PICK (order 4.86, kind human): the owner's gateway pick. The
+    choice file must exist, carry owner_approved:true, and name ONE variant
+    under the canonical key the whole style chain already uses
+    (chosen_variant — build_deck's _chk_style_preview, the samples manifest's
+    owner_pick_note and the engine's _style_choice_authentic all speak this
+    key). The engine's executor (presentation_job.phases._run_human_phase) is
+    the AUTHENTICITY authority: it resolves owner_msg_id through the Fix 32
+    approvals oracle before this verifier ever runs, so this re-measures the
+    FILE's shape — owner_approved:true + a variant id, where the id may come
+    from a real pick (owner_msg_id present) or from the recorded
+    intake.style_pick_auto timeout auto-pick (auto_pick:true present). A file
+    that is neither is a forgery shape and FAILS here too."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_choice.json")
+    if p is None:
+        return False, ["working/copy/style_preview_choice.json: file not found — "
+                       "the owner has not picked a variant yet (human gateway)"]
+    choice = _read_json(p)
+    if not isinstance(choice, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    if choice.get("owner_approved") is not True:
+        return False, [f"{p.name}: owner_approved is not true — a file without an "
+                       "owner decision is never a verified pick"]
+    picked = str(choice.get("chosen_variant") or "").strip()
+    if not picked:
+        return False, [f"{p.name}: no chosen_variant recorded — the canonical key is "
+                       "chosen_variant (picked_variant/variant/choice are not read)"]
+    has_msg_id = bool(str(choice.get("owner_msg_id") or "").strip())
+    auto_pick = choice.get("auto_pick") is True
+    if not (has_msg_id or auto_pick):
+        return False, [f"{p.name}: pick is unverified — it needs either a resolvable "
+                       "owner_msg_id (a real owner pick) or auto_pick:true under the "
+                       "recorded intake.style_pick_auto opt-in (the timeout auto-pick)"]
+    return True, []
+
+
+def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-BUNDLE-GATE (order 9.95, script bundle_gate.py): the terminal
+    bundle-completeness gate's own verdict record. The script exits 5 naming
+    any missing/under-threshold deliverable; the verifier re-measures the
+    bundle it attests (every consumed deliverable pattern must resolve) and
+    requires the gate's own checkpoint record to exist and pass."""
+    import json as _json
+    consumed = [
+        "working/deliverables/{deck_slug}-FINAL.pptx",
+        "working/deliverables/{deck_slug}-FINAL.pdf",
+        "working/deliverables/PRESENTER-GUIDE.pdf",
+        "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/deliverables/PRESENTERS-SPEECH.pdf",
+        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "working/delivery/PRESENTER-AUDIO.mp3",
+        "working/deliverables/infographic.png",
+        "working/deliverables/presenter-teleprompter.html",
+        "working/delivery/{deck_slug}-WEBINAR.mp4",
+    ]
+    missing: List[str] = []
+    for pat in consumed:
+        if "{deck_slug}" in pat:
+            # The slug resolves per run; match the glob the engine itself uses.
+            pat = pat.replace("{deck_slug}", "*")
+        if _resolve_glob(run_dir, pat) is None:
+            missing.append(pat)
+    if missing:
+        return False, [f"bundle deliverable(s) absent: {', '.join(missing)}"]
+    gate = _read_json(_resolve_glob(run_dir, "working/checkpoints/bundle_gate.json")
+                      or Path("/nonexistent"))
+    if not isinstance(gate, dict):
+        return False, ["working/checkpoints/bundle_gate.json: missing or not a JSON "
+                       "object — the bundle gate has not recorded its verdict"]
+    if gate.get("ok") is False or gate.get("pass") is False or \
+            (isinstance(gate.get("verdict"), str) and gate["verdict"].lower() != "pass"):
+        return False, [f"bundle_gate.json records failure: "
+                       f"{gate.get('missing') or gate.get('reasons') or gate.get('reason') or 'unspecified'}"]
+    return True, []
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -2580,8 +3288,17 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # spec (already imported above for the P9-DELIVER whitelist).
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html",
                                                   _MIN_BYTES["teleprompter_html"]),
-    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
+    # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
+    # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
+    # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
+    # literal is enforced here any more (the verifier registry fixture in
+    # tests/test_fix17_verifier_import_failclosed.py mirrors this call shape).
+    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
+                                                _MIN_BYTES["deck_pdf"],
+                                                scale_by_slides=True, floor_formula="pdf"),
+    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
+                                                _MIN_BYTES["guide_pdf"],
+                                                scale_by_slides=True, floor_formula="guide"),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
     # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
@@ -2614,6 +3331,11 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
     "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
     "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
+    # --- FIX 112: the two remaining missing producers ---
+    "P-STYLE-SPEC":       _verify_style_spec,
+    "P-STYLE-PICK":       _verify_style_pick,
+    "P8.3-INFOGRAPHIC":   _verify_infographic_checklist,
+    "P-BUNDLE-GATE":      _verify_bundle_gate,
 }
 
 
@@ -2627,28 +3349,84 @@ PHASE_VERIFIERS: dict[str, Callable] = {
 # empty artifact is a hard FAIL (same vacuous-pass defect class B3 fixed).
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# FIX 107 — ONE artifact resolver for the engine's presence check AND every
+# verifier. The F60 defect: P-U-QC's artifact lives under working/upsell/ (its
+# verifier resolved it there) while the engine's _artifacts_present checked
+# only the literal run root, so the final phase waited forever on its own PASS.
+# The fix was two independent resolvers that can (and did) drift apart. This is
+# now the single resolution rule, exported for both sides:
+#   * the verifiers here resolve through it (see _pu_artifact_paths below);
+#   * presentation_job.phases._artifacts_present delegates to it for the exact
+#     same patterns, so an artifact the engine waits on and the artifact the
+#     verifier attests can never be two different files again.
+# Order of resolution (identical on both sides): literal run-dir path first
+# (canonical for the core pipeline), then the working/upsell/ root convention
+# (the P-U-* branch phases write under it).
+# ---------------------------------------------------------------------------
+
+def artifact_path(run_dir: Path, key: str) -> Optional[Path]:
+    """Resolve ONE declared produces_artifact key under the run dir.
+
+    Returns the first existing file for the key, or None. Handles:
+      * a trailing '/*' — returns the upsell-root directory itself when it
+        exists and is non-empty (COLLATERAL's 'delivery/{deck_slug}-FINAL/upsell/*');
+      * the working/upsell/ root convention (P-U-* branch phases);
+      * the literal run-dir-relative path (core pipeline phases).
+
+    This is THE single resolution rule for the engine's presence check
+    (presentation_job.phases._artifacts_present) and every verifier here —
+    one function, one ordering, no mirror to drift.
+    """
+    key = (key or "").strip()
+    if not key:
+        return None
+    if key.endswith("/*"):
+        base = run_dir / "working" / "upsell" / key[:-2]
+        if base.is_dir() and any(base.iterdir()):
+            return base
+        return None
+    if any(c in key for c in "*?["):
+        for prefix in (Path("."), Path("working") / "upsell"):
+            matches = [p for p in sorted(run_dir.glob(str(prefix / key)))
+                       if p.is_file()]
+            if matches:
+                return max(matches, key=lambda p: p.stat().st_mtime)
+        return None
+    for prefix in (Path("."), Path("working") / "upsell"):
+        cand = run_dir / prefix / key
+        if cand.is_file():
+            return cand
+    return None
+
+
+def artifact_paths(run_dir: Path, keys: List[str]) -> List[Path]:
+    """Resolve a phase's whole declared produces_artifact list through
+    artifact_path (FIX 107: one resolver for engine and verifiers)."""
+    out: List[Path] = []
+    for k in keys:
+        p = artifact_path(run_dir, k)
+        if p is not None:
+            out.append(p)
+    return out
+
+
 def _pu_artifact_paths(run_dir: Path, artifacts: List[str]) -> List[Path]:
     """Resolve a phase's declared produces_artifact list under the run dir.
-    Handles the manifest's 'a + b' multi-artifact spelling and the
-    working/upsell/... root convention."""
-    out: List[Path] = []
+    FIX 107: delegates to artifact_paths() — the ONE resolver shared with the
+    engine's _artifacts_present. Handles the manifest's 'a + b' multi-artifact
+    spelling and the working/upsell/... root convention."""
+    expanded: List[str] = []
     for art in artifacts:
         art = art.strip()
         if not art:
             continue
-        # Wildcard tail (COLLATERAL's 'delivery/{deck_slug}-FINAL/upsell/*'):
-        # verify the directory exists and is non-empty instead.
-        if art.endswith("/*"):
-            base = run_dir / "working" / "upsell" / art[:-2]
-            if base.is_dir() and any(base.iterdir()):
-                out.append(base)
-            continue
-        for prefix in (Path("working") / "upsell", Path(".")):
-            cand = run_dir / prefix / art
-            if cand.is_file():
-                out.append(cand)
-                break
-    return out
+        # Manifest 'a + b' multi-artifact spelling.
+        if " + " in art:
+            expanded.extend(part.strip() for part in art.split(" + ") if part.strip())
+        else:
+            expanded.append(art)
+    return artifact_paths(run_dir, expanded)
 
 
 def _make_pu_verifier(phase_id: str, artifacts: List[str]):
@@ -2695,6 +3473,13 @@ for _pid, _arts in (
     ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
     ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
     ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
+    # FIX 28 render phases: the agent phase above now authors the prompt only;
+    # the script executor P-U-DESIGN-RENDER-* produces design/<page>-design.png
+    # through build_infographic.py --spec design (no hand step). Each render
+    # phase verifies its own PNG so the registry covers every manifest phase id.
+    ("P-U-DESIGN-RENDER-SALES",   ["design/sales-design.png"]),
+    ("P-U-DESIGN-RENDER-CHECKOUT",["design/checkout-design.png"]),
+    ("P-U-DESIGN-RENDER-VSL",     ["design/vsl-design.png"]),
     ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
@@ -2725,11 +3510,20 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     BEFORE dispatching to the per-phase verifier, this function checks the run's
     attestation record (process_manifest.json) for SIMULATED entries.  A SIMULATED
     result without a valid allowed_simulated declaration FAILS the phase — this
-    check runs first so no verifier can silently accept a SIMULATED attestation."""
+    check runs first so no verifier can silently accept a SIMULATED attestation.
+
+    FIX 109: before even the SIMULATED check, the intake provenance refusal runs
+    (see _intake_provenance_refusal): an out-of-band intake.json edit refuses
+    EVERY non-producer phase, naming the file's current sha256."""
     fn: Optional[Callable] = PHASE_VERIFIERS.get(phase_id)
     if fn is None:
         return False, [f"no verifier registered for {phase_id!r} — pass"]
 
+    # ---- FIX 109: intake provenance pre-phase refusal (naming the sha) ----
+    refusal = _intake_provenance_refusal(phase_id, Path(run_dir))
+    if refusal is not None:
+        return False, [refusal]
+    # ---- end FIX 109 ----
 
     # ---- ANTI-DRIFT CORE (WORK-ITEM-14c): SIMULATED rejection ----
     # Check BEFORE the per-phase verifier so a SIMULATED attestation cannot be
@@ -2996,6 +3790,27 @@ def _selftest() -> None:
 # SLICE-2 wiring: register the converted gate verifiers into the shared
 # registry at module load (idempotent; see _register_slice2_verifiers).
 _register_slice2_verifiers()
+
+# ---------------------------------------------------------------------------
+# FIX 107 — bind the verifier symbol contract AT IMPORT TIME.
+#
+# This is the preflight boundary for the verifier registry itself: the engine
+# imports phase_verifiers before any phase runs, so a rename/drift anywhere in
+# the contract below FAILS THE IMPORT naming module.symbol — the engine's FIX 17
+# fail-closed path (VerifierImportError) then aborts the run carrying that name,
+# instead of every dependent verifier silently degrading to weaker checks.
+# Modules genuinely ABSENT from the box stay the documented degraded mode
+# (assert_bound skips them); a module that is PRESENT but lost a symbol is a
+# hard error. The preflight gate (build_deck.run_preflight) also calls
+# assert_bound() explicitly as its first gate, so a post-import hot patch that
+# dropped a symbol is named at preflight in the same process too.
+# ---------------------------------------------------------------------------
+try:
+    _FIX107_BOUND_SYMBOLS = assert_bound()
+except ImportError:
+    raise
+# A successfully bound contract is recorded for the preflight gate to echo; no
+# further action needed at import time.
 
 
 if __name__ == "__main__":

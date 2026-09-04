@@ -96,6 +96,61 @@ import zipfile
 import zlib
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# W02-B4 (MASTER Part 8 FIX 3 + FIX 4 wiring): delivery_gate imports BOTH
+# sibling single-source modules so its filename maps derive from the canon
+# instead of being hand-maintained copies that drift:
+#
+#   * presentation_job.deliverable_floors — the ONE scaled presenter-guide
+#     floor, guide_floor(n) = max(1600*n, 12000) (replaces any inline
+#     max(51200*n//34, 8192) re-derivation in gate-side checks).
+#   * presentation_job.deliverable_paths  — the ONE key -> canonical run-dir
+#     relative path map (CANONICAL_PATHS / deliverable_path), cross-checked
+#     against deliverables.DELIVERABLE_AUDIT_SPEC by that module's --audit.
+#
+# Both imports are GUARDED and both derive their runtime values through
+# presentation_job.deliverables (the U05 whitelist canon): if a sibling has
+# not landed on a mid-roll box the gate still runs on the spec-derived views
+# below — never on a stale hand-copied literal.
+# ---------------------------------------------------------------------------
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+try:
+    from presentation_job.deliverable_floors import (  # noqa: F401
+        BYTES_PER_SLIDE,
+        MIN_BYTES_ABSOLUTE,
+        guide_floor,
+    )
+except ImportError:  # pragma: no cover - mid-roll box without the floors module
+    guide_floor = None
+    BYTES_PER_SLIDE = None
+    MIN_BYTES_ABSOLUTE = None
+
+try:
+    from presentation_job.deliverable_paths import (  # noqa: F401
+        CANONICAL_PATHS,
+        deliverable_path,
+    )
+except ImportError:  # pragma: no cover - mid-roll box without the paths module
+    CANONICAL_PATHS = None
+    deliverable_path = None
+
+
+def gate_guide_floor(n_slides):
+    """Gate-side scaled presenter-guide floor for an n-slide deck, from THE one
+    source (deliverable_floors.guide_floor). Same fail-loud contract as
+    deliverables.scaled_guide_floor: a gate that cannot compute the real floor
+    must refuse, never silently fall back to the raw 51_200 reference value
+    that made short decks structurally unpassable (F36/F43d)."""
+    if guide_floor is None:
+        raise RuntimeError(
+            "presentation_job.deliverable_floors is unavailable — the scaled "
+            "guide floor cannot be computed at the delivery gate. Restore the "
+            "module (fleet roll incomplete).")
+    return guide_floor(n_slides)
+
 
 # ---------------------------------------------------------------------------
 # CANONICAL delivery-gate rejection exception. Defined HERE (the gate module,
@@ -192,26 +247,57 @@ _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n
 # ---------------------------------------------------------------------------
 CLIENT_PACKAGE_WARN_ONLY = frozenset()
 
+# ---------------------------------------------------------------------------
+# W02-B4 (FIX 4): the client-package name -> key map is DERIVED from the U05
+# canonical spec (presentation_job.deliverables.DELIVERABLE_AUDIT_SPEC), not
+# hand-maintained. A spec entry is a client-package file iff its key is in
+# CLIENT_PACKAGE_KEYS below; its package filename comes from the spec's
+# filename_template — an exact name when the template carries no {deck_slug},
+# otherwise an endswith() suffix match on the slug-stripped template
+# ("{deck_slug}-FINAL.pptx" -> "-FINAL.pptx"). Changing a filename in the
+# canon now automatically changes it here — the two can no longer drift.
+# ---------------------------------------------------------------------------
+CLIENT_PACKAGE_KEYS = frozenset({
+    "deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3",
+    "teleprompter_html", "webinar_mp4",
+})
+
+
+def _client_package_name_map() -> dict:
+    """Build the client-package filename map from the canonical spec.
+    Returns {match_name_or_suffix: key}; suffix entries start with '-'."""
+    from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC
+    name_map = {}
+    for spec in DELIVERABLE_AUDIT_SPEC:
+        key = spec["key"]
+        if key not in CLIENT_PACKAGE_KEYS:
+            continue
+        template = spec["filename_template"]
+        if "{deck_slug}" in template:
+            # The mp4 itself lives in GHL via the v3 tier; the client package
+            # carries a reference copy as <deck_slug>-WEBINAR.mp4 (same rule
+            # the old hand-written if-chain encoded for webinar_mp4).
+            name_map[template.replace("{deck_slug}", "")] = key
+        else:
+            name_map[template] = key
+    return name_map
+
+
+try:
+    _CLIENT_PACKAGE_NAME_MAP = _client_package_name_map()
+except ImportError:  # pragma: no cover - canon module unreadable: fail loud, not stale
+    raise
+
 
 def _categorize(name: str) -> str:
-    """Return the client-package category for a filename, or '' if not whitelisted."""
-    if name == "PRESENTER-GUIDE.pdf":
-        return "guide_pdf"
-    if name == "PRESENTERS-SPEECH.pdf":
-        return "speech_pdf"
-    if name == "PRESENTER-AUDIO.mp3":
-        return "audio_mp3"
-    if name == "presenter-teleprompter.html":
-        return "teleprompter_html"
-    if name.endswith("-FINAL.pptx"):
-        return "deck_pptx"
-    if name.endswith("-FINAL.pdf"):
-        return "deck_pdf"
-    # Feature L2-G (P9.6-WEBINAR-VIDEO): the webinar video is a client-package file
-    # (webinar_mp4). The mp4 itself lives in GHL via the v3 tier; the client package
-    # carries a reference copy as <deck_slug>-WEBINAR.mp4.
-    if name.endswith("-WEBINAR.mp4"):
-        return "webinar_mp4"
+    """Return the client-package category for a filename, or '' if not whitelisted.
+    Derived from DELIVERABLE_AUDIT_SPEC (see _client_package_name_map)."""
+    for match, key in _CLIENT_PACKAGE_NAME_MAP.items():
+        if match.startswith("-"):
+            if name.endswith(match):
+                return key
+        elif name == match:
+            return key
     return ""
 
 
@@ -245,8 +331,9 @@ def check_af_dh1(package_dir: Path) -> str:
             return (f"AF-DH1: two files map to the same client slot {cat!r}: "
                     f"{found[cat]} + {nm}")
         found[cat] = nm
-    required = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3",
-                "teleprompter_html", "webinar_mp4"}
+    # W02-B4 (FIX 4): the required set is CLIENT_PACKAGE_KEYS — the same derived
+    # set _categorize's map was built from — not a second hand-maintained literal.
+    required = set(CLIENT_PACKAGE_KEYS)
     missing = required - set(found)
     hard_missing = missing - CLIENT_PACKAGE_WARN_ONLY
     warn_missing = missing & CLIENT_PACKAGE_WARN_ONLY
@@ -622,8 +709,26 @@ def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
                 else:
                     reasons.extend(upload_reasons)
     # Teleprompter sibling (part of the full presentation experience).
+    # W02-B4 (FIX 4): the expected sibling filename comes from the canon —
+    # deliverable_paths.CANONICAL_PATHS['teleprompter_html'] when the paths
+    # module has landed, else the U05 spec's own filename_template — so a
+    # rename in the canon cannot leave this glob stale.
+    tele_expected = None
+    try:
+        if CANONICAL_PATHS and "teleprompter_html" in (CANONICAL_PATHS or {}):
+            tele_expected = Path(CANONICAL_PATHS["teleprompter_html"]).name
+    except Exception:  # noqa: BLE001 — a broken canon must not crash the gate
+        tele_expected = None
+    if not tele_expected:
+        from presentation_job.deliverables import DELIVERABLE_AUDIT_SPEC
+        tele_expected = next(
+            s["filename_template"] for s in DELIVERABLE_AUDIT_SPEC
+            if s["key"] == "teleprompter_html")
+    tele_stem = tele_expected.rsplit(".", 1)[0]
     tele = []
-    for pat in ("**/*teleprompter*.html", "**/*TELEPROMPTER*.html",
+    for pat in (f"**/*{tele_stem}*.html", f"**/*{tele_stem.upper()}*.html",
+                f"**/*{tele_stem}*.pdf", f"**/*{tele_stem.upper()}*.pdf",
+                "**/*teleprompter*.html", "**/*TELEPROMPTER*.html",
                 "**/*teleprompter*.pdf", "**/*TELEPROMPTER*.pdf"):
         tele.extend(run_dir.glob(pat))
     if not tele:

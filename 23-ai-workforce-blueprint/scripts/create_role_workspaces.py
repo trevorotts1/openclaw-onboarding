@@ -2459,6 +2459,193 @@ def _iter_scripts_tree_files(scripts_root):
             yield src_file.relative_to(scripts_root), src_file
 
 
+# ─── FIX 66 (MASTER Part 8): content stamp over the department scripts tree ──
+# .dept-scripts-manifest.json — written per materialized department dir by
+# build_dept_scripts_stamp() and checked by verify_dept_scripts_stamp().
+# It hashes EVERY file under <dept>/scripts and <dept>/intake REGARDLESS OF
+# SUFFIX (the gap: _CANONICAL_SCRIPT_SUFFIXES and the intake mirror's extended
+# tuple each cover only their own subset, so a stray or edited file with any
+# other suffix — .bak, .json, .html, .sql, .mjs, .toml, anything — could sit in
+# the box's deployed department scripts/ tree and never be noticed by any
+# verifier in this repo). The manifest is the CONTENT STAMP: {dept, at,
+# library_root, files:[{path, suffix, sha256, library_sha256, box_owned}]}.
+#
+# BOX-OWNED ALLOWLIST (the gate's only tolerance):
+#   - every .json file (crw._ADDITIVE_SCRIPT_SUFFIXES — client-local overrides
+#     are a deliberate policy: copied missing-only, never clobbered);
+#   - the two provenance-gated intake question banks (refresh-dept-intake.py's
+#     _CANONICAL_BANK_FILENAMES — preserved local overrides are that script's
+#     documented no-failure outcome).
+# Anything else in the manifest that is missing from the library, diverges from
+# its library sha256, or exists on the box without a library counterpart is a
+# named problem, and the gate exits non-zero (PROOF contract: modify one .py on
+# the box, the gate names it).
+_DEPT_STAMP_TREES = ("scripts", "intake")
+
+# The two provenance-gated question banks, sourced from the ONE authority that
+# refreshes them (refresh-dept-intake imports crw, so importing back would
+# cycle — the names are fixed by that script's contract, kept literally here
+# with the pointer in the comment).
+_DEPT_STAMP_BOX_OWNED_BANKS = frozenset({
+    "intake/deck-intake-questions.json",
+    "intake/upsell-questions.json",
+})
+
+
+def _dept_stamp_is_box_owned(rel_str, suffix):
+    """True when the gate must NOT enforce this entry against the library."""
+    if suffix in _ADDITIVE_SCRIPT_SUFFIXES:  # client-local .json override policy
+        return True
+    if rel_str in _DEPT_STAMP_BOX_OWNED_BANKS:  # provenance-gated intake banks
+        return True
+    # Backup artifact of the SANCTIONED refresher (refresh-dept-intake.py's own
+    # backup-before-refresh discipline writes
+    # <bank>.bak-intake-refresh-<ts> beside the bank). Not client tampering —
+    # naming it as a stray would fail every healthy box the moment the refresher
+    # legitimately refreshes a bank. The BASE must be a canonical bank; a
+    # .bak-intake-refresh-* beside anything else is still a stray.
+    for bank in _DEPT_STAMP_BOX_OWNED_BANKS:
+        if rel_str.startswith(bank + ".bak-intake-refresh-"):
+            return True
+    return False
+
+
+def build_dept_scripts_stamp(dept_dir, library_dept_dir):
+    """
+    FIX 66: hash EVERY file under <dept_dir>/{scripts,intake} (regardless of
+    suffix) and its role-library counterpart, and write
+    <dept_dir>/.dept-scripts-manifest.json. Entries are recorded box_owned=True
+    where the box-owned allowlist applies (never hash-enforced by the gate).
+
+    Returns (manifest_dict, problems) where problems lists entries that could
+    not be read (recorded, still stamped, so the gate can name them).
+    Never raises on unreadable files. Writes exactly one file: the manifest.
+    """
+    import hashlib as _hashlib
+    dept_dir = Path(dept_dir)
+    library_dept_dir = Path(library_dept_dir)
+    files = []
+    problems = []
+
+    def _sha(path):
+        h = _hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    for tree in _DEPT_STAMP_TREES:
+        tree_root = dept_dir / tree
+        if not tree_root.is_dir():
+            continue
+        for rel_path, box_file in _iter_scripts_tree_files(tree_root):
+            rel_str = f"{tree}/{rel_path.as_posix()}"
+            suffix = box_file.suffix
+            entry = {
+                "path": rel_str,
+                "suffix": suffix,
+                "box_owned": _dept_stamp_is_box_owned(rel_str, suffix),
+            }
+            try:
+                entry["sha256"] = _sha(box_file)
+            except OSError as e:
+                entry["sha256"] = None
+                problems.append({"path": rel_str, "issue": "unreadable",
+                                 "reason": f"{type(e).__name__}: {e}"})
+            lib_file = library_dept_dir / tree / rel_path
+            if lib_file.is_file():
+                entry["in_library"] = True
+                try:
+                    entry["library_sha256"] = _sha(lib_file)
+                except OSError as e:
+                    entry["library_sha256"] = None
+                    problems.append({"path": rel_str, "issue": "library-unreadable",
+                                     "reason": f"{type(e).__name__}: {e}"})
+            else:
+                entry["in_library"] = False
+            files.append(entry)
+
+    files.sort(key=lambda e: e["path"])
+    manifest = {
+        "generator": "create_role_workspaces.build_dept_scripts_stamp (FIX 66)",
+        "dept": dept_dir.name,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "library_root": str(library_dept_dir),
+        "trees": list(_DEPT_STAMP_TREES),
+        "box_owned_policy": {
+            "json_suffixes": list(_ADDITIVE_SCRIPT_SUFFIXES),
+            "intake_banks": sorted(_DEPT_STAMP_BOX_OWNED_BANKS),
+        },
+        "file_count": len(files),
+        "files": files,
+    }
+    stamp_path = dept_dir / ".dept-scripts-manifest.json"
+    try:
+        stamp_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    except OSError as e:
+        print(f"[dept-scripts-stamp] WARN could not write {stamp_path}: {e}",
+              file=sys.stderr)
+    return manifest, problems
+
+
+def verify_dept_scripts_stamp(dept_dir, library_dept_dir):
+    """
+    FIX 66 gate: read-only re-derivation from disk (never trusts a prior run's
+    manifest). For every entry under <dept>/{scripts,intake} — REGARDLESS OF
+    SUFFIX — report a problem when:
+      - the file is NOT box-owned (allowlist) and is missing from the library
+        tree entirely (a stray the library never shipped), or
+      - the file is NOT box-owned and its library counterpart exists but the
+        bytes diverge (an edited/tampered canonical file), or
+      - the file cannot be read at all.
+    Box-owned entries (any .json, the two intake question banks) are stamped
+    but never enforced — the allowlist of FIX 66.
+    Returns (problems, file_count). Never writes anything.
+    """
+    import hashlib as _hashlib
+    dept_dir = Path(dept_dir)
+    library_dept_dir = Path(library_dept_dir)
+    problems = []
+
+    def _sha(path):
+        h = _hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    file_count = 0
+    for tree in _DEPT_STAMP_TREES:
+        tree_root = dept_dir / tree
+        if not tree_root.is_dir():
+            continue
+        for rel_path, box_file in _iter_scripts_tree_files(tree_root):
+            rel_str = f"{tree}/{rel_path.as_posix()}"
+            suffix = box_file.suffix
+            file_count += 1
+            if _dept_stamp_is_box_owned(rel_str, suffix):
+                continue  # allowlisted: stamped, never enforced
+            lib_file = library_dept_dir / tree / rel_path
+            if not lib_file.is_file():
+                problems.append({"path": rel_str, "issue": "stray-not-in-library",
+                                 "reason": "file exists on the box under the "
+                                           "department scripts/intake tree but "
+                                           "the role library never shipped it"})
+                continue
+            try:
+                box_sha = _sha(box_file)
+                lib_sha = _sha(lib_file)
+            except OSError as e:
+                problems.append({"path": rel_str, "issue": "unreadable",
+                                 "reason": f"{type(e).__name__}: {e}"})
+                continue
+            if box_sha != lib_sha:
+                problems.append({"path": rel_str, "issue": "hash-mismatch",
+                                 "reason": f"box sha256={box_sha[:16]}... != "
+                                           f"library sha256={lib_sha[:16]}..."})
+    return problems, file_count
+
+
 def verify_scripts_materialization(lib_scripts_root, scripts_target,
                                     canonical_suffixes=_CANONICAL_SCRIPT_SUFFIXES):
     """
@@ -2791,6 +2978,28 @@ def main():
             "canonical file. Makes no writes; does not require --roles-json."
         ),
     )
+    # FIX 66 (MASTER Part 8): content stamp + gate over the department
+    # scripts/intake trees, every suffix, with the box-owned allowlist.
+    parser.add_argument(
+        "--stamp-dept-scripts", action="store_true",
+        help=(
+            "FIX 66: write <dept-path>/.dept-scripts-manifest.json hashing "
+            "EVERY file under the department's scripts/ and intake/ trees "
+            "(regardless of suffix) plus its role-library counterpart sha256. "
+            "Requires --dept-path (and --dept-slug to resolve the library). "
+            "Writes only the manifest file."
+        ),
+    )
+    parser.add_argument(
+        "--verify-dept-scripts-stamp", action="store_true",
+        help=(
+            "FIX 66 gate: read-only re-derivation from disk. Fails (exit 1) "
+            "naming every non-allowlisted file under the department's "
+            "scripts//intake trees that is missing from the role library, "
+            "diverged from it, or unreadable. Box-owned entries (any .json, "
+            "the two intake question banks) are allowlisted, never enforced."
+        ),
+    )
     args = parser.parse_args()
 
     if args.workspace_root:
@@ -2834,6 +3043,42 @@ def main():
             return 1
         print(f"[verify-scripts] PASS — {scripts_target} matches "
               f"{lib_dir / 'scripts'} for every canonical file.")
+        return 0
+
+    # ── FIX 66: department scripts/intake content stamp + gate ──────────────
+    if args.stamp_dept_scripts or args.verify_dept_scripts_stamp:
+        if not args.dept_path:
+            parser.error("--dept-path is required with --stamp-dept-scripts / "
+                         "--verify-dept-scripts-stamp")
+        dept_path = Path(args.dept_path)
+        dept_slug = args.dept_slug or dept_path.name.replace("-dept", "").strip().lower()
+        lib_dir = _resolve_dept_library_dir(dept_slug)
+        if lib_dir is None:
+            print(f"[dept-scripts-stamp] no role-library source found for "
+                  f"dept-slug={dept_slug!r} — nothing to stamp/verify against.",
+                  file=sys.stderr)
+            return 2
+        if args.stamp_dept_scripts:
+            manifest, stamp_problems = build_dept_scripts_stamp(dept_path, lib_dir)
+            print(f"[dept-scripts-stamp] wrote {dept_path / '.dept-scripts-manifest.json'} "
+                  f"({manifest['file_count']} file(s) stamped"
+                  + (f"; {len(stamp_problems)} unreadable" if stamp_problems else "")
+                  + ")")
+            return 0
+        problems, file_count = verify_dept_scripts_stamp(dept_path, lib_dir)
+        if problems:
+            print(f"[dept-scripts-stamp] FAIL — {dept_path.name}: "
+                  f"{len(problems)} non-allowlisted file(s) under "
+                  f"scripts//intake stray/diverged from the role library "
+                  f"({file_count} file(s) scanned):")
+            for p in problems:
+                print(f"  - {p['issue']}: {p['path']}"
+                      + (f" ({p['reason']})" if p.get("reason") else ""))
+            return 1
+        print(f"[dept-scripts-stamp] PASS — {dept_path.name}: all "
+              f"{file_count} non-allowlisted file(s) under scripts//intake "
+              f"match the role library (box-owned .json + intake banks "
+              f"allowlisted).")
         return 0
 
     if not args.dept_path:

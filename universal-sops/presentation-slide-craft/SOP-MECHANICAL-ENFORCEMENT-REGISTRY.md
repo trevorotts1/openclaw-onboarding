@@ -53,16 +53,16 @@ This document replaces the scattered "PENDING Agent W3" notes across 6+ SOPs wit
 | AF-NO-BEFORE-AFTER | SOP-SLIDE-04 | REGISTERED | Before/after slide |
 | AF-SP-* family (SIGPRES) | SOP-SIGPRES-00..06 | REGISTERED | All signature-presentation gates wired via prove_sp_*.py provers |
 
-### 3.2 North-Star Cluster (DOCTRINE-ONLY)
+### 3.2 North-Star Cluster (REGISTERED as of FIX 82, 2026-09-02; formerly DOCTRINE-ONLY)
 
 | AF Code | SOP | Registration | Notes |
 |---|---|---|---|
-| AF-PRIORITY-SHIFT | SOP-NORTHSTAR-00, SOP-INTEGRATION-00 | DOCTRINE-ONLY | 14-item ship gate. Detection script: `run_signature_deck.py check_priority_shift_ledger`. Composite gate declared but not mechanically wired. |
-| AF-PEAK-END | SOP-NORTHSTAR-00 | DOCTRINE-ONLY | Arc acceptance-test gate |
-| AF-NO-SALIENCE-APEX | SOP-NORTHSTAR-00 | DOCTRINE-ONLY | Image-QC acceptance-test gate |
-| AF-MODE-UNSET | SOP-MODE-00 | DOCTRINE-ONLY | build_deck preflight, Phase 0.1. Intake field `creation_mode` exists; gate does not. |
-| AF-NO-SHIFT | SOP-PRIORITY-01 | DOCTRINE-ONLY | COPY-QC gate. Detection script: `pitch_engines_check.py chk_priority_shift`. |
-| AF-PROCLAMATION-HEDGE | SOP-PROCLAMATION-01 | DOCTRINE-ONLY | Hedge-token scan. Detection script: `intelligence_engines_check.py check_copy`. |
+| AF-PRIORITY-SHIFT | SOP-NORTHSTAR-00, SOP-INTEGRATION-00 | REGISTERED | 14-item ship gate. build_deck.py `_chk_priority_shift_ledger`; PIPELINE-MANIFEST.autofails entry with py_symbol (v54). |
+| AF-PEAK-END | SOP-NORTHSTAR-00 | REGISTERED | Arc acceptance-test gate. build_deck.py `_chk_peak_end`; manifest entry with py_symbol. |
+| AF-NO-SALIENCE-APEX | SOP-NORTHSTAR-00 | REGISTERED | Image-QC acceptance-test gate. build_deck.py `_chk_salience_apex`; manifest entry with py_symbol. |
+| AF-MODE-UNSET | SOP-MODE-00 | REGISTERED | build_deck preflight, Phase 0.1. Intake field `creation_mode` exists; build_deck.py `_chk_mode` enforces it; manifest entry with py_symbol. |
+| AF-NO-SHIFT | SOP-PRIORITY-01 | REGISTERED | COPY-QC gate. build_deck.py `_chk_priority_shift`; manifest entry with py_symbol. |
+| AF-PROCLAMATION-HEDGE | SOP-PROCLAMATION-01 | REGISTERED | Hedge-token scan. build_deck.py `_chk_proclamation_hedge`; manifest entry with py_symbol. |
 
 ### 3.3 SOPs with NO gate registration required
 
@@ -147,6 +147,9 @@ never hand-edited. Regenerate:
 | `AF-CADENCE` | qc_check | - |
 | `AF-CANONICAL-RENDER-BYPASS` | build_deck | check_canonical_render_path |
 | `AF-CAPACITY-UNMEASURED` | launcher | - |
+| `AF-CASTING` | closeout_gate | _chk_representation_casting_verdict |
+| `AF-CASTING-MIX-PARITY` | closeout_gate | _chk_representation_casting_verdict |
+| `AF-CASTING-PARK` | closeout_gate | _chk_representation_casting_verdict |
 | `AF-CC-UNREGISTERED` | build_deck | _chk_cc_registered |
 | `AF-CC-UNVERIFIED` | build_deck | _chk_cc_registered |
 | `AF-CONVERTER-NO-INVENT` | build_deck | _chk_converter_no_invent |
@@ -189,6 +192,8 @@ never hand-edited. Regenerate:
 | `AF-HOOK-IMG-MISSING` | qc_check | - |
 | `AF-HOOK-OVERSTAMP` | qc_check | - |
 | `AF-I14` | build_deck | _chk_kie_baked |
+| `AF-IMAGE-GROUNDING` | closeout_gate | _chk_image_grounding_verdict |
+| `AF-IMAGE-GROUNDING-PARK` | closeout_gate | _chk_image_grounding_verdict |
 | `AF-IMAGE-QC` | build_deck | _chk_image_qc |
 | `AF-IMAGE-QC-RAN` | build_deck | check_image_qc_present |
 | `AF-IMAGE-QC-VISION` | build_deck | check_image_qc_vision |
@@ -266,6 +271,8 @@ never hand-edited. Regenerate:
 | `AF-QC-PLACEHOLDER` | build_deck | check_qc_phase_report_real |
 | `AF-QC-SKIP` | build_deck | UNSKIPPABLE_QC_PHASES |
 | `AF-R3` | build_deck | FORBIDDEN_DEMOGRAPHIC_DEFAULTS |
+| `AF-RENDER-COMPLETE` | build_deck | run_postflight_gate |
+| `AF-RENDER-EMPTY` | build_deck | run_postflight_gate |
 | `AF-RENDERER` | closeout_gate | - |
 | `AF-RESEARCH-GATE` | build_deck | _chk_research_brief |
 | `AF-RESEARCH-REACHES-RENDER` | build_deck | _chk_research_reaches_render |
@@ -292,11 +299,13 @@ never hand-edited. Regenerate:
 | `AF-SP-TYPE-MISMATCH` | build_deck | _chk_sp_intake |
 | `AF-SP-TYPE-UNDECLARED` | build_deck | _chk_sp_claim |
 | `AF-SPEECH-HOOK-COUNT` | qc_check | - |
+| `AF-SPEECH-PACING` | build_deck | _speech_pacing_deviation |
 | `AF-SPEECH-QC` | build_deck | _chk_speech_qc |
 | `AF-SPEECH-SHORT` | build_deck | _chk_speech_length |
 | `AF-SPELLING` | build_deck | _chk_spelling |
 | `AF-STYLE-DOUBLECHARGE` | build_deck | _chk_style_preview |
 | `AF-STYLE-UNPICKED` | build_deck | _chk_style_preview |
+| `AF-TELEPROMPTER-UNPUBLISHED` | postflight_bundle_gate | _check_teleprompter_published |
 | `AF-TEXT-OVERFLOW` | build_deck | _chk_text_fits |
 | `AF-TOOL-SCHEMA-LOOP` | runner | - |
 | `AF-TYPE-SIZE-MEASURED` | build_deck | _chk_type_size |

@@ -86,6 +86,12 @@ class BoardMirror:
         self.store = store
         self.report = reporter
         self._config = _get_cc_board().board_config(os.environ)
+        # FIX 57: parent_task_id is cached PER RUN ID, never process-wide. The
+        # 2026-08-31 incident had 47 of 49 children of a second job nested under
+        # the FIRST job's parent because a resolved parent id outlived its run.
+        # This map is instance state on a BoardMirror that is created once per
+        # Engine (phases.py Engine.__init__), so it dies with the run.
+        self._parent_by_run = {}
         self._resolve_task_id()
 
     # ------------------------------------------------------------------
@@ -148,7 +154,8 @@ class BoardMirror:
                     try:
                         task_id = cc.ingest_deck_task(
                             self.run_dir, deck, title, desc,
-                            priority="normal", env=os.environ)
+                            priority="normal", env=os.environ,
+                            run_id=self._run_slug())
                         if task_id:
                             board_state["task_id"] = task_id
                             board_state.pop("task_id_missing_at", None)
@@ -253,9 +260,16 @@ class BoardMirror:
                 "description": description,
             }
 
+            # FIX 57: pass run_id in the BOARD identity namespace (_run_slug,
+            # not _run_id -- the job_id is the per-run cache key and never
+            # reaches the board) so the parent card's source_ref (its Ref:
+            # line) and external_session_id (its Session: line) are THIS
+            # run's identity -- the same namespace the child Session: line
+            # and sweep._card_ref_identity read, so the pairing can match.
             task_id = cc.ingest_deck_task(
                 self.run_dir, deck_slug, title, description,
-                priority="normal", env=os.environ)
+                priority="normal", env=os.environ,
+                run_id=self._run_slug())
             if task_id:
                 board_state["task_id"] = task_id
                 board_state.pop("task_id_missing_at", None)
@@ -272,7 +286,12 @@ class BoardMirror:
         return self._wrap(_do)
 
     def phase_progress(self, phase_id, note):
-        """Post mid-run activity. Never patch_phase -- use post_activity instead."""
+        """Post mid-run activity. Never patch_phase -- use post_activity instead.
+
+        activity_type is pinned to 'updated' (FIX 57 activity-type alignment):
+        the CC CreateActivitySchema accepts only {spawned, updated, completed,
+        file_created, status_changed} -- 'comment' is not a member and a strict
+        server 422s it, silently dropping every mid-run phase breadcrumb."""
         cc = _get_cc_board()
 
         def _do():
@@ -285,7 +304,7 @@ class BoardMirror:
                 )
                 return None
             return cc.post_activity(self.run_dir, task_id, phase_id, note,
-                                    activity_type="comment", scores=None, env=os.environ)
+                                    activity_type="updated", scores=None, env=os.environ)
 
         return self._wrap(_do)
 
@@ -353,16 +372,59 @@ class BoardMirror:
         return self._wrap(_do)
 
     # -- Option B child cards ---------------------------------------------
+    def _run_id(self):
+        """This run's identity for the per-run parent cache key: state.json's
+        job_id (minted 'pj_...' in __main__.cmd_new), falling back to the run
+        dir name. Instance-internal only -- it never reaches the board."""
+        rid = self.state.get("job_id")
+        if rid:
+            return str(rid)
+        return self.run_dir.name
+
+    def _run_slug(self):
+        """This run's identity in the BOARD's namespace: intake.deck_slug
+        (FIX 48 makes resolve_intake write deck_slug = run dir name), falling
+        back to the run dir name -- the same two sources sweep._deck_slug
+        reads and the SAME value open_card() sent as source_ref. cc_board
+        sends it as BOTH source_ref and external_session_id (cc_board.py
+        :614,626), so the parent card's description carries 'Session: <slug>'
+        and 'Ref: <slug>'. A child's Session line must be in this namespace
+        or the parent's Ref could never match it."""
+        slug = (self.state.get("intake") or {}).get("deck_slug")
+        if slug:
+            return str(slug)
+        return self.run_dir.name
+
     def _resolve_parent_task_id(self):
-        """Dual-recovery parent id lookup: state["board"]["task_id"] first,
-        process_manifest.json's cc_task_id second -- the same two sources
-        task_id_anywhere() checks."""
+        """Parent id lookup, cached PER RUN ID (FIX 57).
+
+        Resolution order per run_id:
+          1. state["board"]["task_id"] (live truth: open_card re-stamps it on
+             re-ingest),
+          2. process_manifest.json's cc_task_id,
+          3. the per-run cache (a memo only, never an override).
+
+        Sources 1 and 2 are both under THIS run_dir, so a value recovered from
+        them can only belong to this run. The cache is instance state on a
+        BoardMirror created once per Engine, so it is NEVER process-wide and a
+        second concurrent job cannot inherit this run's parent -- the exact
+        mechanism behind the 47-of-49 misparenting incident."""
+        cc = _get_cc_board()
+        rid = self._run_id()
         tid = (self.state.get("board") or {}).get("task_id")
-        if tid:
-            return str(tid)
-        manifest = _get_cc_board()._read_manifest(self.run_dir)
-        val = manifest.get("cc_task_id")
-        return str(val) if val else None
+        if not tid:
+            try:
+                manifest = cc._read_manifest(self.run_dir)
+            except Exception:
+                manifest = {}
+            tid = manifest.get("cc_task_id")
+        if not tid:
+            cached = self._parent_by_run.get(rid)
+            if cached:
+                return str(cached)
+            return None
+        self._parent_by_run[rid] = str(tid)
+        return str(tid)
 
     def _resolve_child_task_id(self, phase_id):
         """Dual-recovery child id lookup for one phase: state["board"]
@@ -393,6 +455,15 @@ class BoardMirror:
         uses (e.g. status='done' once the phase's verifier has passed,
         status='blocked' on a gate failure).
 
+        FIX 57 — run identity on every child mint: the ingest description
+        carries a 'Session: <run id>' line (this run's board-namespace slug)
+        and the parent card's description carries 'Ref: <deck_slug>'. A child
+        whose Session differs from the parent's Ref identity is HELD with
+        deck_run_identity_mismatch instead of being patched/parented into the
+        wrong run's set: the mismatch is recorded on the movement receipt and
+        surfaced as a board.identity_mismatch event, and no child card is
+        minted against a parent that does not belong to this run.
+
         No parent card yet (board disabled, or the parent ingest never
         landed) => nothing to nest a child under => clean no-op, same as
         every other method here. FAIL-SOFT: never raises (wrapped in _wrap,
@@ -404,11 +475,43 @@ class BoardMirror:
             parent_task_id = self._resolve_parent_task_id()
             if not parent_task_id:
                 return None
+            run_id = self._run_slug()
+            if not self._parent_belongs_to_run(parent_task_id, run_id):
+                detail = (f"deck_run_identity_mismatch: parent {parent_task_id} "
+                          f"is not this run's card (run id {run_id!r}) -- child "
+                          f"card for phase {phase_id} HELD, never parented into "
+                          f"another run's set")
+                self.report.event("board.identity_mismatch", detail)
+                try:
+                    cc._record_movement(self.run_dir, {
+                        "phase_id": phase_id, "kind": "child_ingest",
+                        "target": "deck_run_identity_mismatch",
+                        "endpoint": "POST /api/tasks/ingest",
+                        "http_status": None, "ok": False,
+                        "detail": detail,
+                    })
+                except Exception:
+                    pass
+                return None
             child_task_id = self._resolve_child_task_id(phase_id)
             if not child_task_id:
+                session_line = f"Session: {run_id}"
+                ref_line = f"Ref: {parent_task_id}:{phase_id}"
+                child_description = description if description else ""
+                if session_line not in child_description:
+                    child_description = (
+                        f"{child_description}\n\n{session_line}\n{ref_line}".strip()
+                    )
+                # FIX 57 child Session line: run_id rides in
+                # external_session_id (the card's Session: provenance line on
+                # the wire), matching the Session: line already written into
+                # the description above and pairing against the parent's Ref:
+                # (= run id, since open_card now ingests with run_id) for the
+                # deck_run_identity_mismatch hold.
                 child_task_id = cc.ingest_child_task(
-                    self.run_dir, parent_task_id, phase_id, title, description,
-                    priority="normal", env=os.environ)
+                    self.run_dir, parent_task_id, phase_id, title,
+                    child_description, priority="normal", env=os.environ,
+                    run_id=run_id)
                 if not child_task_id:
                     return None
                 self._remember_child_task_id(phase_id, child_task_id)
@@ -418,6 +521,49 @@ class BoardMirror:
                                   note, env=os.environ)
 
         return self._wrap(_do)
+
+    def _parent_belongs_to_run(self, parent_task_id, run_id):
+        """FIX 57 identity check: does the parent card this child would nest
+        under provably belong to THIS run?
+
+        OFFLINE provenance (zero network — the sanctioned child-card tests
+        budget their HTTP call sequences exactly, and the identity evidence
+        is already on disk): process_manifest.json lives INSIDE this run's
+        run_dir, and stamp_task_id writes cc_task_id AND the matching
+        cc_registration.deck_slug in the SAME atomic merge from the SAME
+        ingest_deck_task call (cc_board.py:666,1238) — so a registration
+        tag present in this run's manifest is, by construction, the
+        deck_slug THIS run's ingest sent as the parent's source_ref.
+
+        Accept when the registered slug equals EITHER candidate identity:
+        _run_slug (intake.deck_slug -> run dir name -- what the sweep
+        resolves) or the raw run dir name (what phases.py passes to
+        open_card as deck_slug -- the pre-FIX-48 engine handle, and the
+        value actually stamped on the card when the ENGINE opened it).
+
+        UNDETERMINED is not a mismatch: no registration tag in the manifest
+        (older stamps, a hand-written task_id, a test stub) returns True and
+        lets the mint proceed. Only a POSITIVE registration naming a foreign
+        slug holds the child with deck_run_identity_mismatch -- the in-memory
+        parent leak shape this run's per-run cache (_parent_by_run) alone
+        already closes; this is the on-disk belt on that suspender."""
+        cc = _get_cc_board()
+        try:
+            manifest = cc._read_manifest(self.run_dir)
+        except Exception:
+            manifest = {}
+        reg = manifest.get("cc_registration") if isinstance(manifest, dict) else None
+        if isinstance(reg, dict):
+            slug = reg.get("deck_slug")
+            if slug:
+                slug = str(slug)
+                candidates = {str(run_id), str(self.run_dir.name)}
+                return any(
+                    slug == cand or slug.startswith(f"{cand}:")
+                    for cand in candidates
+                )
+        # No registration tag -> UNDETERMINED, never a mismatch.
+        return True
 
 
 # ------------------------------------------------------------------

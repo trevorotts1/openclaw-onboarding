@@ -85,6 +85,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,6 +94,188 @@ HERE = Path(__file__).resolve().parent
 
 QC_PASS_THRESHOLD = 8.5
 FINAL_REPORT_REL = "working/qc/final_qc_report.json"
+
+# ---------------------------------------------------------------------------
+# FIX 33 — QC independence provable; a real vision route (MASTER Part 8).
+#
+# MASTER Part 8 Fix 33: "image-QC report declared independent and was written
+# by the driver; no verifier calls a vision model; 'vision QC' means the report
+# says a model name. HOW: the dispatcher stamps graded_by_provider,
+# graded_by_model, request_id into every QC artifact it authors; qc_aggregate
+# and verifier_registry.qc_report_verifier fail a report whose model equals the
+# authoring stamp for the same range or lacks a request id; P-IMAGE-QC units
+# call a vision-capable route with the PNG attached and store observed_text
+# per slide."
+#
+# This file's share of the fix: when aggregating the IMAGE domain, the report
+# must carry the vision-UNIT provenance a real route leaves behind --
+#   * graded_by_model present AND different from the report's authoring stamp
+#     (the qc_independence/builder identity -- a self-graded vision pass is
+#     not a vision pass);
+#   * a request_id (the vision route's request id -- a report without one
+#     names no route and cannot prove a unit ran);
+#   * per-slide rows in LIST form, one per rendered PNG, each carrying a
+#     non-empty observed_text (a pixel-blind row attests nothing).
+# Any violation is a BLOCKING finding on the Image QC domain, AF-IMAGE-QC-UNIT.
+# Rollback: PRESENTATION_FIX33_VISION_CONTRACT=0 restores the pre-FIX-33
+# aggregate exactly. Default is ON.
+# ---------------------------------------------------------------------------
+FIX33_ROLLBACK_FLAG = "PRESENTATION_FIX33_VISION_CONTRACT"
+
+# Top-level keys accepted as the report's vision-unit provenance stamp
+# (kept in lockstep with phase_verifiers._FIX33_*_KEYS -- same contract, same
+# accepted shapes, two enforcement points).
+FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
+FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                    "ocr_engine", "vision_engine", "reviewer_vision_model")
+FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+
+# Per-slide observation fields (mirrors build_deck._image_qc_report_defects
+# VIS_FIELDS / phase_verifiers._FIX33_OBSERVED_FIELDS so all three rubrics
+# agree on what counts as an observation).
+FIX33_OBSERVED_FIELDS = ("observed_text", "vision", "ocr", "ocr_text",
+                         "baked_text", "read_text", "description",
+                         "pixels_read", "visual_subject")
+
+FIX33_UNIT_AF_CODE = "AF-IMAGE-QC-UNIT"
+
+
+def _fix33_wiring_enabled() -> bool:
+    """FIX 33 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-fix aggregate exactly (documented rollback path)."""
+    return os.environ.get(FIX33_ROLLBACK_FLAG) != "0"
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    """First non-empty string value among keys, else ''."""
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_row_ordinal(row: dict, index: int):
+    """1-based slide ordinal for a per-slide row: row['slide'] / row['ordinal']
+    / row['slide_ordinal'] / row['index'] when an int, else the row's list
+    position (0-based index -> 1-based)."""
+    for k in ("slide", "ordinal", "slide_ordinal", "index", "slide_number", "n"):
+        v = row.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("Ss-").isdigit():
+            try:
+                return int(v.strip().lstrip("Ss-"))
+            except ValueError:
+                continue
+    return index + 1
+
+
+def _fix33_authoring_stamp(report: dict) -> str:
+    """Who WROTE the report (builder/driver identity): the first non-empty
+    authoring-identity string in the qc_independence block or at top level --
+    the SAME precedence phase_verifiers._fix33_check_report uses."""
+    blk = report.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    for src in (blk, report):
+        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        if any(isinstance(src.get(k), str) and src.get(k).strip()
+               for k in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by")):
+            break
+    return ""
+
+
+def _fix33_vision_unit_reasons(run_dir: Path, report: dict) -> List[str]:
+    """FIX 33 vision-unit contract over an already-parsed image_qc_report.json.
+    Returns the BLOCKING reason list ('' list == contract attested). Same
+    contract as phase_verifiers._fix33_check_report's production branch:
+      * graded_by_model present AND different from the authoring stamp;
+      * a request_id present (the vision route's request id);
+      * per-slide rows in LIST form (a dict can silently drop rows), one per
+        rendered PNG, each with a non-empty observed_text."""
+    reasons: List[str] = []
+    tag = FIX33_UNIT_AF_CODE
+
+    # --- graded_by_model must exist and DIFFER from the authoring stamp ---
+    authoring_stamp = _fix33_authoring_stamp(report)
+    graded_model = _fix33_first_str(report, FIX33_MODEL_KEYS)
+    if not graded_model:
+        reasons.append(
+            f"{tag}: image_qc_report.json declares no graded_by_model — "
+            "FIX 33 requires the dispatcher's vision-unit stamp "
+            "(graded_by_provider/graded_by_model/request_id) in every QC artifact; "
+            "a report that only SAYS a model name carries no route provenance.")
+    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+        reasons.append(
+            f"{tag}: graded_by_model {graded_model!r} equals the report's "
+            f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
+            "FIX 33: the vision route that graded the deck must be a DIFFERENT "
+            "model from the authoring stamp (cross-graded, never self-graded).")
+
+    # --- request_id: the vision route's request id must appear ---
+    request_id = _fix33_first_str(report, FIX33_REQUEST_KEYS)
+    if not request_id:
+        reasons.append(
+            f"{tag}: image_qc_report.json carries no request_id — FIX 33 "
+            "requires the vision route's request id in the report so every grade "
+            "is traceable to the unit call that produced it. A report with no "
+            "request id names no route and cannot prove a vision unit ran.")
+
+    # --- per-slide coverage: LIST, covering every rendered PNG, observed_text ---
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report:
+            per_slide = report.get(k)
+            break
+    if isinstance(per_slide, dict):
+        reasons.append(
+            f"{tag}: per-slide coverage is a DICT — FIX 33 requires the "
+            "per-slide LIST form so no slide's vision row can be silently dropped.")
+        per_slide = None
+    rows: List[Tuple[int, dict]] = []
+    if isinstance(per_slide, list) and per_slide:
+        rows = [(_fix33_row_ordinal(r, i), r) for i, r in enumerate(per_slide)
+                if isinstance(r, dict)]
+        if len(rows) != len(per_slide):
+            reasons.append(
+                f"{tag}: per-slide coverage contains non-object rows — "
+                "every FIX 33 vision row must be an object with its own "
+                "observed_text.")
+    try:
+        pngs = sorted(run_dir.glob("renders/slide-*.png"))
+        n_pngs = len(pngs)
+    except OSError:
+        n_pngs = 0
+    if not rows:
+        reasons.append(
+            f"{tag}: image_qc_report.json has no per-slide rows — FIX 33 "
+            "requires one vision-unit row per rendered slide, each carrying a "
+            "non-empty observed_text from the route's read of the PNG.")
+    else:
+        if n_pngs and len(rows) < n_pngs:
+            reasons.append(
+                f"{tag}: image_qc_report.json carries {len(rows)} per-slide "
+                f"vision rows for {n_pngs} rendered PNG(s) — every rendered slide "
+                "must be covered by its own vision-unit row (FIX 33).")
+        # observed_text per row (a row may override the top-level stamp, but the
+        # OBSERVATION is per-slide and never inheritable).
+        blind: List[str] = []
+        for ordinal, row in rows:
+            observed = _fix33_first_str(row, FIX33_OBSERVED_FIELDS)
+            if not observed:
+                blind.append(f"slide {ordinal:02d}" if isinstance(ordinal, int)
+                             else f"row {ordinal!r}")
+        if blind:
+            reasons.append(
+                f"{tag}: per-slide rows without a non-empty observed_text "
+                "(the route's per-slide read of the PNG): " + ", ".join(blind[:12])
+                + " — a pixel-blind row cannot attest a vision unit (FIX 33).")
+    return reasons
 
 # Known-good literal paths -- the FALLBACK used only when no manifest can be
 # resolved at all (e.g. an isolated unit-test fixture with no PIPELINE-MANIFEST.json
@@ -287,6 +470,16 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
             entry["reasons"].append(reason)
             blocking_reasons.append(reason)
 
+        # FIX 33 — vision-UNIT contract on the IMAGE domain: a report whose
+        # graded_by_model equals the authoring stamp, that lacks a request_id,
+        # or whose per-slide rows are pixel-blind is a BLOCKING finding
+        # (AF-IMAGE-QC-UNIT) exactly as specified. Rollback flag restores the
+        # pre-FIX-33 aggregate.
+        if key == "image" and _fix33_wiring_enabled():
+            for unit_reason in _fix33_vision_unit_reasons(run_dir, obj):
+                entry["reasons"].append(unit_reason)
+                blocking_reasons.append(unit_reason)
+
         domains[key] = entry
 
     # Priority-shift ship gate: a 14-item pass/fail checklist, not a 0-10 rubric.
@@ -364,6 +557,12 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
         "missing_domains": missing_domains,
         "generator_guard": generator_guard,
         "blocking_reasons": blocking_reasons,
+    }
+    # FIX 33 — surface the vision-unit contract state so downstream readers
+    # (gates.py, qc_check.py cross-check) see it without re-deriving it.
+    report["fix33_vision_unit"] = {
+        "applies": _fix33_wiring_enabled(),
+        "af_code": FIX33_UNIT_AF_CODE,
     }
     if overall_pass:
         report["per_dimension"] = {

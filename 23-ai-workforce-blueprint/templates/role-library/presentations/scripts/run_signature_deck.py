@@ -115,6 +115,16 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 from presentation_job.defers import load_intake, phase_is_deferred
+# MASTER Part 8 Fix 32 — the SINGLE owner-approval authenticity oracle. Every
+# owner_skip/phase-skip record this runner consumes is proven through
+# presentation_job.approvals.verify() (the cc_board owner-message oracle);
+# unprovable records raise AF-FORGED-APPROVAL. Imported defensively so a box
+# without presentation_job keeps the legacy inline contract (which is the same
+# contract, implemented locally below).
+try:
+    from presentation_job import approvals as _approvals
+except ImportError:  # pragma: no cover — CI/test contexts without the package
+    _approvals = None
 
 # FIX-21 (D21): run_with_cleanup dispatches the build_deck.py render/notes-sync and
 # manifest executors in a NEW PROCESS GROUP and, on timeout, kills the WHOLE group
@@ -1305,17 +1315,68 @@ def _resolve_owner_msg_ids(run_dir: Path) -> frozenset | None:
     """Resolve the run's CC task to its REAL owner-authored message ids (the
     authoritative owner-approval oracle, FIX-1).
 
+    MASTER Part 8 Fix 32: this resolver now DELEGATES to
+    presentation_job.approvals — the single verification point every surface
+    (this runner, canonical_render_guard, prove-deck) shares. The local cc_board
+    call is retained only as the fallback when presentation_job.approvals is not
+    importable on this box.
+
     Returns a frozenset of ids on success; None when UNDETERMINED (no cc_task_id
     in the manifest, the board is disabled, or the owner-ids endpoint could not
     be reached/proven). None NEVER opens the gate — the caller treats undetermined
-    as DENIED so a skip that cannot be verified can never authorize a phase.
-    Uses cc_board (the dept's own authed CC client) so the HTTP/auth contract is
-    identical to every other board call."""
+    as DENIED so a skip that cannot be verified can never authorize a phase."""
+    if _approvals is not None:
+        try:
+            # Sibling rename (W11): _resolve_owner_msg_ids_for_run -> _cc_board_oracle.
+            _resolver = getattr(_approvals, "_cc_board_oracle", None) \
+                or getattr(_approvals, "_resolve_owner_msg_ids_for_run", None)
+            if _resolver is not None:
+                return _resolver(run_dir)
+            return None
+        except Exception:  # noqa: BLE001 — fail-closed: any oracle failure is DENIED
+            return None
     try:
         import cc_board
         return cc_board.owner_message_ids_match(run_dir, "", env=None)
     except Exception:  # noqa: BLE001 — fail-closed: any oracle failure is DENIED
         return None
+
+
+def _verify_skip_record_authentic(rec: dict, run_dir: Path) -> None:
+    """MASTER Part 8 Fix 32: prove ONE skip record's owner_msg_id authentic via
+    presentation_job.approvals.verify — the single shared oracle.
+
+    Raises ForgedApprovalError (AF-FORGED-APPROVAL) when the record carries no
+    owner_msg_id, the oracle is UNDETERMINED, or the id does not resolve to a real
+    owner-authored message. When approvals is unavailable (legacy box), falls back
+    to the inline oracle check (same fail-closed contract)."""
+    if _approvals is not None:
+        try:
+            _approvals.verify(rec, run_dir)
+            return
+        except _approvals.ApprovalError as _exc:
+            raise ForgedApprovalError(str(_exc)) from _exc
+    # Legacy inline path — identical fail-closed contract (owner_msg_id required,
+    # undetermined DENIED, unresolvable id FORGED).
+    owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
+    if not owner_msg_id:
+        raise ForgedApprovalError(
+            "AF-FORGED-APPROVAL: phase %r has NO owner_msg_id. Every phase-skip "
+            "approval must carry a non-empty owner_msg_id that resolves to a real "
+            "owner-authored message in Command Center task_activities."
+            % (rec.get("phase_id", "?"),))
+    real_ids = _resolve_owner_msg_ids(run_dir)
+    if real_ids is None:
+        raise ForgedApprovalError(
+            "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, but the "
+            "Command Center owner-message oracle is UNDETERMINED. A skip that "
+            "cannot be proven authentic is DENIED." % (rec.get("phase_id", "?"),
+                                                       owner_msg_id))
+    if owner_msg_id not in real_ids:
+        raise ForgedApprovalError(
+            "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, which does "
+            "not resolve to a real owner-authored message." % (
+                rec.get("phase_id", "?"), owner_msg_id))
 
 
 def _resolve_owner_msg_ids_for_task(task_id: str) -> frozenset | None:
@@ -1433,43 +1494,15 @@ def load_skip_approvals(run_dir: Path) -> dict:
             )
             continue
 
-        # (3) AUTHENTICITY / REQUIRED MESSAGE ID (FIX-1 — AF-FORGED-APPROVAL).
-        # EVERY skip record MUST carry a non-empty owner_msg_id — the FORGER's exact
-        # vector was an owner_action-only record with no message id that passed
-        # without any oracle query. There is no verifiable owner reference without a
-        # message id, so a record with only an owner_action string (or neither field)
-        # is SELF-FORGED: raise FATAL, never accept it. Undetermined is DENIED too
-        # (never opens the gate).
-        owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
-        owner_action = str(rec.get("owner_action", "") or "").strip()
-        if not owner_msg_id:
-            raise ForgedApprovalError(
-                "AF-FORGED-APPROVAL: phase %r has NO owner_msg_id (owner_action=%r). "
-                "Every phase-skip approval must carry a non-empty owner_msg_id that "
-                "resolves to a real owner-authored message in Command Center "
-                "task_activities. An owner_action string alone is never proof of an "
-                "owner decision — a skip record without a resolvable message id is "
-                "self-forged and is DENIED. Re-run the phase or obtain a genuine "
-                "owner approval message." % (rec["phase_id"], owner_action)
-            )
-
-        # (4) RESOLVE through the authoritative oracle. The id must be proven real.
-        if _oracle_unavailable:
-            raise ForgedApprovalError(
-                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, but the "
-                "Command Center owner-message oracle is UNDETERMINED (no cc_task_id "
-                "on the run / board unreachable / endpoint did not prove the id). "
-                "A skip that cannot be proven authentic is DENIED — undetermined "
-                "never opens the gate." % (rec["phase_id"], owner_msg_id)
-            )
-        if owner_msg_id not in real_owner_msg_ids:
-            raise ForgedApprovalError(
-                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, which does "
-                "not resolve to a real owner-authored message in Command Center "
-                "task_activities. Presence of a string is never proof of an owner "
-                "message. Re-run the phase or obtain a genuine owner approval."
-                % (rec["phase_id"], owner_msg_id)
-            )
+        # (3)+(4) AUTHENTICITY (FIX-1 + MASTER Part 8 Fix 32 — AF-FORGED-APPROVAL).
+        # EVERY skip record is proven through presentation_job.approvals.verify —
+        # the SINGLE owner-approval oracle every surface (this runner, the guard,
+        # prove-deck) shares. It demands a non-empty owner_msg_id, refuses an
+        # UNDETERMINED oracle, and raises AF-FORGED-APPROVAL when the id does not
+        # resolve to a real owner-authored message in Command Center
+        # task_activities. An owner_action string alone is never proof of an owner
+        # decision. Re-run the phase or obtain a genuine owner approval.
+        _verify_skip_record_authentic(rec, run_dir)
 
         # (4) FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE. No owner
         # record — real or forged — can waive a QC phase. A skip record for
@@ -2401,11 +2434,58 @@ def _harmony_failure(result):
     return None
 
 
+def _owner_skip_verified(run_dir: Path, af_code: str) -> "dict | None":
+    """MASTER Part 8 Fix 32 (W11-B4): route the AF-HARMONY owner-override through
+    presentation_job.approvals.verify — the single owner-approval authenticity
+    oracle shared by every surface.
+
+    bd._owner_skip_approved still honors a structurally-valid record that carries
+    NO owner_msg_id (it predates Fix 32's msg_id-mandatory rule), so a forged
+    {approved_by:'Trevor', owner_approved:true, reason:..., timestamp:...} record
+    with no owner reference can open the harmony gate with zero oracle proof.
+    This wrapper takes build_deck's answer and REQUIRES the returned record to
+    carry an owner_msg_id that verifies through approvals.verify (the cc_board
+    owner-message oracle). Fail-closed: no record, a record without owner_msg_id,
+    an UNDETERMINED oracle, or an unresolvable id => None (gate stays enforced,
+    ForgedApprovalError reason surfaced on stderr)."""
+    rec = bd._owner_skip_approved(run_dir, af_code)
+    if not isinstance(rec, dict):
+        return None
+    if _approvals is not None:
+        try:
+            return _approvals.verify(rec, run_dir)
+        except _approvals.ApprovalError as _exc:
+            print(f"[owner-skip {af_code}] DENIED — {str(_exc)[:300]}",
+                  file=sys.stderr, flush=True)
+            return None
+        except Exception as _exc:  # noqa: BLE001 — oracle transport failure: fail-closed
+            print(f"[owner-skip {af_code}] DENIED — owner oracle failed: {_exc!r}",
+                  file=sys.stderr, flush=True)
+            return None
+    # approvals module unavailable (legacy box): apply the inline fail-closed
+    # contract — owner_msg_id required and must resolve via the local cc_board
+    # oracle, mirroring _verify_skip_record_authentic.
+    owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
+    if not owner_msg_id:
+        print(f"[owner-skip {af_code}] DENIED — AF-FORGED-APPROVAL: record carries "
+              "NO owner_msg_id (self-forged shape, Fix 32).",
+              file=sys.stderr, flush=True)
+        return None
+    real_ids = _resolve_owner_msg_ids(run_dir)
+    if real_ids is None or owner_msg_id not in real_ids:
+        print(f"[owner-skip {af_code}] DENIED — AF-FORGED-APPROVAL: owner_msg_id "
+              f"{owner_msg_id!r} does not resolve to a real owner-authored message.",
+              file=sys.stderr, flush=True)
+        return None
+    return rec
+
 def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
     """PRE-ASSEMBLY checkpoint (G5, harmony placement 3): prove deck-level cohesion
     (recurring character, palette coherence, world continuity, archetype rhythm) BEFORE
     the deck is assembled — never assemble-then-discover. Calls build_deck.check_deck_harmony;
-    on a finding it refuses assembly unless waived by a logged owner override (AF-HARMONY)."""
+    on a finding it refuses assembly unless waived by a logged owner override (AF-HARMONY)
+    that PROVES authentic through presentation_job.approvals.verify (Master Part 8
+    Fix 32 — a forged {Trevor, no owner_msg_id} record can no longer open this gate)."""
     fn = getattr(bd, "check_deck_harmony", None)
     if fn is None:
         print("=== PRE-ASSEMBLY HARMONY: build_deck.check_deck_harmony unavailable — "
@@ -2416,7 +2496,7 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
         print("=== PRE-ASSEMBLY HARMONY: PASS — deck coheres (arc + visual consistency) ===",
               flush=True)
         return 0
-    if bd._owner_skip_approved(run_dir, "AF-HARMONY"):
+    if _owner_skip_verified(run_dir, "AF-HARMONY"):
         print("=== PRE-ASSEMBLY HARMONY: AF-HARMONY waived by logged owner override ===",
               flush=True)
         return 0

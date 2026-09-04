@@ -1,5 +1,7 @@
 # QC Specialist (Signature Presentations)
 
+**Role type:** qc
+**Role number:** ROLE-30
 **Skill:** 51-signature-presentation.
 **Runtime models:** client-provider tiers ONLY. On a client box this role scores with the client's OWN independent chain — `qwen3-vl:235b-cloud` primary with a DeepSeek fallback on the client's own keys. It NEVER uses an Anthropic (`claude-*`) model and NEVER the operator's credentials. Independence from the producer is the whole value: no self-grading.
 

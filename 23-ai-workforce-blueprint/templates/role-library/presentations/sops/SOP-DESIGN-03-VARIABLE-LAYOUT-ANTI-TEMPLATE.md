@@ -18,7 +18,7 @@ Turn the master SOP's five-archetype system into an ENFORCED rotation. The five 
 ## 2. The Hard Rule
 
 1. The deck rotates image position across the five archetypes: image LEFT (A2), image RIGHT (A2 mirrored), image TOP (A3), image FULL-BLEED (A1), and TYPE-DOMINANT/portrait (A4/A5). At least THREE of the five archetypes appear in the deck.
-2. No single archetype is used on the whole deck. No archetype exceeds ~50% of slides (a soft cap that triggers review; see the enforcement check for the hard auto-fail).
+2. No single archetype is used on the whole deck. No archetype exceeds 60% of slides (`ARCHETYPE_DOMINANCE_CEILING` = 0.60; see the enforcement check — exceeding it is the hard auto-fail).
 3. No two CONSECUTIVE slides share BOTH the same archetype AND the same word-block position. The eye must move between adjacent slides.
 4. Word-block position rotates across the deck: lower-left, lower-right, centered, top-band, left-panel, right-panel. The identical five-part vertical stack on every slide (the forensic-deck V8 chassis) is banned.
 5. The deck is cohesive: the brand grammar (palette, type ladder, logo placement, kicker/rule devices) is constant; it is the LAYOUT and word placement that vary. Variety is in position and archetype, not in inventing new colors or fonts per slide.

@@ -326,6 +326,117 @@ class TestDeckTypeNormalizationUnchanged:
 
 
 # ---------------------------------------------------------------------------
+# FIX 25/48 -- deck_slug emission (sweep not_a_run_dir rejection)
+# ---------------------------------------------------------------------------
+class TestDeckSlugEmission:
+    """resolve() must now emit intake['deck_slug'] -- the sweep's
+    _deck_slug() reads state.json["intake"]["deck_slug"] first, and that
+    snapshot is frozen from THIS resolver's output at --new time. Without
+    it the 15-minute board-reconcile-sweep rejected every engine run as
+    "no deck_slug resolvable" / not_a_run_dir (FIX 25/48)."""
+
+    def test_deck_slug_defaults_to_slugified_run_dir_name(self):
+        rd = pathlib.Path(tempfile.mkdtemp()) / "my-Run_Dir.2"
+        rd.mkdir()
+        _write_ledger(rd, _base_entries("from_scratch"))
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+
+        intake = ri.resolve(ledger_path, "intake-poll")
+
+        # slugified with the SAME regex sweep._slugify / curate /
+        # manifest _resolve_deck_slug use -- so the emitted value
+        # round-trips their own slugifiers unchanged.
+        assert intake["deck_slug"] == "my-run-dir-2", intake["deck_slug"]
+
+    def test_deck_slug_from_upstream_stamped_intake_copy_wins(self):
+        """An explicit deck_slug stamped on working/copy/intake.json by an
+        upstream step (curate/manifest pass-1 precedence) win over the
+        run-dir-name derivation."""
+        rd = pathlib.Path(tempfile.mkdtemp()) / "decked"
+        rd.mkdir()
+        _write_ledger(rd, _base_entries("from_scratch"))
+        _write_intake_copy(rd, {"requester_chat_id": "42",
+                                "deck_slug": "Wave-E-ZHC"})
+        ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+
+        intake = ri.resolve(ledger_path, "intake-poll")
+
+        assert intake["deck_slug"] == "wave-e-zhc"
+
+    def test_deck_slug_survives_main_write(self, capsys):
+        rd = pathlib.Path(tempfile.mkdtemp()) / "mainrun"
+        rd.mkdir()
+        _write_ledger(rd, _base_entries("from_scratch"))
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+        out_path = rd / "working" / "checkpoints" / ".engine-intake.json"
+
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path),
+                      "--source", "intake-poll"])
+
+        assert rc == 0
+        written = json.loads(out_path.read_text())
+        assert written["deck_slug"] == "mainrun"
+
+
+# ---------------------------------------------------------------------------
+# FIX 59 -- dict-shaped interview_depth unwrap (real driver shape)
+# ---------------------------------------------------------------------------
+class TestIntakeDepthDictUnwrap:
+    """The real deck-intake-driver.py writes the interview_depth entry's
+    value/normalized AS A DICT: {"standard_mode": "IN-DEPTH"} (measured on
+    the live run). Entry-only _entry_raw_value returns None on the dict's
+    inner value when the inner key is 'value' -- no wait: _entry_raw_value
+    tries ('normalized','value','answer') and the outer WRAPPER is a dict
+    whose value sub-key is itself the {"standard_mode": ...} dict. So the
+    raw string must be recovered from the INNER standard_mode sub-key via
+    _unwrap; without it resolve raised/refused the real ledger's depth."""
+
+    def _ledger_with_dict_depth(self) -> pathlib.Path:
+        rd = pathlib.Path(tempfile.mkdtemp())
+        _write_ledger(rd, {
+            "presentation_type": _entry("from_scratch"),
+            "interview_depth": {
+                "value": {"standard_mode": "IN-DEPTH"},
+                "normalized": {"standard_mode": "IN-DEPTH"},
+                "answer": "IN-DEPTH",  # a bare string, exactly as driver writes it too
+            },
+        })
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        return rd / "working" / "interview" / "intake_ledger.json"
+
+    def test_dict_shaped_depth_resolves_to_indepth(self):
+        intake = ri.resolve(self._ledger_with_dict_depth(), "intake-poll")
+        assert intake["standard_mode"] == "IN-DEPTH"
+
+    def test_dict_shaped_depth_via_main_exit_zero(self, capsys):
+        ledger_path = self._ledger_with_dict_depth()
+        out_path = ledger_path.parent.parent / "working" / "checkpoints" / ".e.json"
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path),
+                      "--source", "intake-poll"])
+        assert rc == 0, capsys.readouterr().err
+
+    def test_display_case_quick_accepted_by_argparse(self, capsys):
+        """FIX 59 leg 1 -- the door passes display-case INTAKE_DEPTH
+        (QUICK/IN-DEPTH) as --intake-depth to the resolver; argparse must
+        accept it (lowercase pre-argparse), never 'invalid choice:
+        QUICK'."""
+        rd = pathlib.Path(tempfile.mkdtemp())
+        _write_ledger(rd, _base_entries("from_scratch"))
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+        out_path = rd / "working" / "checkpoints" / ".engine-intake.json"
+
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path),
+                      "--source", "intake-poll", "--intake-depth", "QUICK"])
+
+        assert rc == 0, capsys.readouterr().err
+        written = json.loads(out_path.read_text())
+        assert written["standard_mode"] == "QUICK"
+
+
+# ---------------------------------------------------------------------------
 # End-to-end: main() writes a well-formed file when everything resolves
 # ---------------------------------------------------------------------------
 class TestMainEndToEnd:

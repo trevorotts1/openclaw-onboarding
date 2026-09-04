@@ -1,0 +1,137 @@
+{
+  "$id": "presentation-deps",
+  "manifest_version": "1.0.0",
+  "updated": "2026-09-02",
+  "source": "FIX 70 (SEPT-1, [R11 G6-7]): ONE dependency canon for the Skill 23 presentation pipeline. Read by qc-completeness.sh (exit-6 deps gate), update-skills.sh converge_presentation_deps + --presentation-deps-check, the reassert-script generator (install.sh Step 6.5), and door GATE 1 (presentation-canonical-entry.sh deps_check). Every consumer reads THIS file; none hardcodes its own list anymore.",
+  "resolution": "Consumers resolve the canon in order: 1) <skill_dir>/presentations/scripts/presentation-deps.json (repo checkout), 2) <skill_dir>/templates/role-library/presentations/scripts/presentation-deps.json (role-library copy), 3) <workspace>/departments/Presentations/scripts/presentation-deps.json (materialized department). Missing canon -> consumer falls back to its own pre-FIX-70 hardcoded check and reports canon_missing=true.",
+  "deps": [
+    {
+      "name": "soffice",
+      "role": "PPTX -> PDF export (PPTX Assembly Specialist, SOP 9.2)",
+      "kind": "binary",
+      "mac": {
+        "install": "brew install --cask libreoffice",
+        "noninteractive": true
+      },
+      "vps": {
+        "apt_packages": [
+          "libreoffice-impress"
+        ]
+      },
+      "binary_name": "soffice"
+    },
+    {
+      "name": "pdftoppm",
+      "role": "PDF -> PNG page extraction for Phase-6 QC (poppler/poppler-utils)",
+      "kind": "binary",
+      "mac": {
+        "install": "brew install poppler",
+        "noninteractive": true
+      },
+      "vps": {
+        "apt_packages": [
+          "poppler-utils"
+        ]
+      },
+      "binary_name": "pdftoppm"
+    },
+    {
+      "name": "python:reportlab+pptx",
+      "role": "presenter-guide PDF (reportlab) + deck assembly (python-pptx)",
+      "kind": "python_import",
+      "import_spec": "reportlab, pptx",
+      "pip_packages": [
+        "reportlab",
+        "python-pptx"
+      ],
+      "mac": {
+        "pip_flags": []
+      },
+      "vps": {
+        "pip_flags": [
+          "--break-system-packages"
+        ]
+      }
+    },
+    {
+      "name": "python:pypdf",
+      "role": "workbook PDF read-back verification (Feature L2-D, P8.25-WORKBOOK: workbook_builder.py proves AcroForm fields + /NeedAppearances survived)",
+      "kind": "python_import",
+      "import_spec": "pypdf",
+      "pip_packages": [
+        "pypdf"
+      ],
+      "mac": {
+        "pip_flags": []
+      },
+      "vps": {
+        "pip_flags": [
+          "--break-system-packages"
+        ]
+      }
+    },
+    {
+      "name": "ffmpeg",
+      "role": "webinar video render (Feature L2-G, P9.6-WEBINAR-VIDEO: build_webinar_video.py -> webinar_ffmpeg.py, Ken Burns + xfade + audio mux)",
+      "kind": "binary",
+      "mac": {
+        "install": "brew install ffmpeg",
+        "noninteractive": true
+      },
+      "vps": {
+        "apt_packages": [
+          "ffmpeg"
+        ]
+      },
+      "binary_name": "ffmpeg"
+    },
+    {
+      "name": "ffprobe",
+      "role": "webinar video size-gate probe (part of ffmpeg)",
+      "kind": "binary",
+      "provides_with": "ffmpeg",
+      "mac": {
+        "install": "brew install ffmpeg",
+        "noninteractive": true
+      },
+      "vps": {
+        "apt_packages": [
+          "ffmpeg"
+        ]
+      },
+      "binary_name": "ffprobe"
+    },
+    {
+      "name": "tesseract",
+      "role": "OCR readback binary for image QC (presentation_job/ocr_verify.py + build_deck.py in-loop readback; pytesseract drives it)",
+      "kind": "binary",
+      "mac": {
+        "install": "brew install tesseract",
+        "noninteractive": true
+      },
+      "vps": {
+        "apt_packages": [
+          "tesseract-ocr"
+        ]
+      },
+      "binary_name": "tesseract"
+    },
+    {
+      "name": "python:pytesseract",
+      "role": "python binding the OCR readback imports (needs the tesseract binary on PATH too)",
+      "kind": "python_import",
+      "import_spec": "pytesseract",
+      "pip_packages": [
+        "pytesseract"
+      ],
+      "mac": {
+        "pip_flags": []
+      },
+      "vps": {
+        "pip_flags": [
+          "--break-system-packages"
+        ]
+      }
+    }
+  ]
+}

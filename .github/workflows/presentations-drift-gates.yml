@@ -14,7 +14,7 @@ name: presentations-drift-gates
 #   manifest_source.py's sync_check and bricking presentation-canonical-entry.sh
 #   GATE 3 -- with no CI job noticing because nothing recomputed the hash.
 #
-# scripts/ci/presentations-drift-gates.sh runs four gates and exits non-zero
+# scripts/ci/presentations-drift-gates.sh runs five gates and exits non-zero
 # on any real failure, naming which gate failed and why:
 #   GATE 1 - import smoke (presentation_job.phases) -- catches the Problem-1 class.
 #   GATE 2 - manifest lockstep, BOTH registries: PIPELINE-MANIFEST.json <->
@@ -50,6 +50,17 @@ name: presentations-drift-gates
 # (that job never fires on a fix_bundle_complete.py-only or
 # MANIFEST-SOURCE.txt-only change -- the precise blind spot both landmines
 # exploited).
+#
+# FIX 74 (2026-09-02): the job is now a two-platform MATRIX -- both legs run the
+# same gates on GitHub's ubuntu runner, but with OPENCLAW_PLATFORM set to `mac`
+# and `vps` respectively, matching how every platform-aware presentation reader
+# resolves its paths/secrets (oc_paths.py, qc-completeness.sh v10.15.44/10.16.43,
+# the install.sh MAC/VPS arms). A PR that renames a secret name (e.g.
+# BRAVE_SEARCH_API_KEY) or changes a reader's platform-keyed behavior in ONE
+# reader now fails the matrix leg whose platform the old name only resolves on,
+# instead of passing a single-`mac`-flavored CI that never exercised the vps
+# resolution. The Skill 51 (Signature Presentation) verify.sh gate -- previously
+# only reachable via presentations-lockstep.yml -- runs here too, on BOTH legs.
 
 on:
   push:
@@ -79,13 +90,28 @@ on:
       # whose phase-id lists must stay a superset of PIPELINE-MANIFEST.json phases[]
       - "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md"
       - "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md"
+      # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs
+      - "51-signature-presentation/**"
+      # Skill-23 engine script verify.sh resolves against (register --check leg)
+      - "23-ai-workforce-blueprint/scripts/register-library-additions.py"
       # This workflow file
       - ".github/workflows/presentations-drift-gates.yml"
 
 jobs:
   presentations-drift-gates:
-    name: Presentations import-smoke / manifest-lockstep / whitelist-parity drift gates
+    name: drift-gates + Skill-51 verify.sh (${{ matrix.platform }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both legs run on ubuntu-latest; the platform split is the same
+        # OPENCLAW_PLATFORM environment variable the fleet's readers use to
+        # resolve paths/secret stores (Mac = ~/.openclaw, VPS = /data/.openclaw).
+        # macOS runners cost 10x and prove nothing extra here: the gates are
+        # python/bash with no platform-native binary in either leg.
+        platform: [mac, vps]
+    env:
+      OPENCLAW_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -95,9 +121,34 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 / GATE 4 (exit 0 required)
+      - name: Announce matrix leg
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "OPENCLAW_PLATFORM=${OPENCLAW_PLATFORM} leg: drift gates + Skill-51 verify.sh"
+
+      - name: presentations-drift-gates.sh — GATE 1 / GATE 2 / GATE 3 / GATE 4 / GATE 5 (exit 0 required)
         shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/ci/presentations-drift-gates.sh
           bash scripts/ci/presentations-drift-gates.sh
+
+      - name: 51-signature-presentation/verify.sh — Skill 51 self-verification (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFY_SH="51-signature-presentation/verify.sh"
+          if [ ! -f "$VERIFY_SH" ]; then
+            echo "FATAL: verify.sh not found at $VERIFY_SH" >&2
+            exit 2
+          fi
+          chmod +x "$VERIFY_SH"
+          # Same gate presentations-lockstep.yml runs: five prover self-tests,
+          # sacred-structure pin, engine wire-presence, sync_check lockstep,
+          # manifest P-SP phase + AF-SP floor, prover resolvability, register
+          # --check, FIX-14 self-test, FIX-19 sliced read, FIX-18 self-test.
+          # On the vps leg OPENCLAW_PLATFORM=vps proves the CI-safe subset of
+          # those checks holds under VPS path resolution too.
+          bash "$VERIFY_SH"
+          echo "verify.sh: Skill 51 self-verification PASSED (OPENCLAW_PLATFORM=${OPENCLAW_PLATFORM})."

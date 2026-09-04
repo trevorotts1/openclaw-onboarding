@@ -36,6 +36,13 @@ LOCKSTEP NOTE: this helper ships in TWO repo locations —
 Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
 each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
 per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
+FIX 68/67 STATUS (W21b): the role-library copy carries the platform-aware
+secrets order (presentation_job.oc_paths) AND the FIX 67 secret-name canon
+(shared-utils/secret_helper aliases + placeholder rejection). The
+presentation-render twin has NOT yet received that port — port the same four
+functions (_secrets_candidates oc_paths seam, _import_secret_helper,
+_kie_alias_names, _is_placeholder_value, and the _load_api_key canon loop)
+before claiming the two are logic-identical again.
 
 RATE CAP: 20 requests / 10 seconds per KIE.ai docs. This script submits in waves of 20
           with a 10-second sleep between waves.
@@ -52,6 +59,7 @@ EXIT CODES:
     2 — fatal configuration error (no API key, bad prompts.json, etc.)
 """
 
+import importlib.util
 import json
 import os
 import sys
@@ -126,15 +134,42 @@ MAX_POLL_PASSES     = 100
 #   2. the client's standard env stores, HOME-relative via os.path.expanduser so the
 #      same template works for whatever user/box it runs on (no literal home path).
 def _secrets_candidates() -> list:
+    """FIX 68: platform-aware order via presentation_job.oc_paths
+    (secrets_env_candidates) when it is reachable — /data/.openclaw/secrets/.env
+    first on the docker VPS (OPENCLAW_PLATFORM=vps or a live /data/.openclaw
+    root), the Mac stores first otherwise. The $OPENCLAW_SECRETS explicit
+    override stays FIRST (HIGH-3). Falls back to the legacy Mac-only list when
+    oc_paths is not deployed beside this helper (partial-update shared callers
+    never hard-break)."""
     candidates = []
     override = os.environ.get("OPENCLAW_SECRETS", "").strip()
     if override:
         candidates.append(os.path.expanduser(override))
-    candidates += [
-        os.path.expanduser("~/.openclaw/workspace/.env"),
-        os.path.expanduser("~/clawd/secrets/.env"),
-        os.path.expanduser("~/.openclaw/secrets/.env"),
-    ]
+    oc_paths_list = None
+    here = Path(__file__).resolve().parent
+    for cand in (
+        here,                                                          # role-library copy
+        here.parent / "role-library" / "presentations" / "scripts",    # presentation-render copy
+        here.parent.parent / "role-library" / "presentations" / "scripts",
+    ):
+        if (cand / "presentation_job" / "oc_paths.py").is_file():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            try:
+                import importlib
+                oc_paths_list = importlib.import_module(
+                    "presentation_job.oc_paths").secrets_env_candidates()
+            except Exception:  # noqa: BLE001 — broken module degrades to legacy list
+                oc_paths_list = None
+            break
+    if oc_paths_list:
+        candidates += [str(p) for p in oc_paths_list]
+    else:
+        candidates += [
+            os.path.expanduser("~/.openclaw/workspace/.env"),
+            os.path.expanduser("~/clawd/secrets/.env"),
+            os.path.expanduser("~/.openclaw/secrets/.env"),
+        ]
     return candidates
 
 # ---------------------------------------------------------------------------
@@ -191,11 +226,23 @@ prompt_gate = _import_prompt_gate()
 
 def _load_api_key() -> str:
     """Read KIE_API_KEY from environment, falling back to the client's standard
-    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3)."""
-    key = os.environ.get("KIE_API_KEY", "").strip()
-    if key:
-        return key.strip("'\"")
+    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3).
+    FIX 67: the NAME is resolved through the one secret-name canon
+    (shared-utils/secret_helper: any KIE family alias — KIE_AI_API_KEY,
+    KIE_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS — resolves to the same
+    credential), and a placeholder value (PASTE_REAL_TOKEN / CHANGE_ME / ...)
+    is REJECTED wherever it sits. The canon helper is path-imported from the
+    repo checkout, the installed skills dir, or /data/.openclaw/skills — the
+    same seam _import_prompt_gate/_load_model_catalog use; without it the
+    pre-canon direct-name behavior holds, never a hard break."""
+    _key_from_env = os.environ.get("KIE_API_KEY", "").strip()
+    if _key_from_env:
+        value = _key_from_env.strip("'\"")
+        if value and not _is_placeholder_value(value):
+            return value
     candidates = _secrets_candidates()
+    # FIX 67 canon: accept every alias in the KIE key family.
+    accepted_names = _kie_alias_names()
     # Try each candidate secrets file in priority order.
     for path in candidates:
         env_path = Path(path)
@@ -203,16 +250,81 @@ def _load_api_key() -> str:
             continue
         for line in env_path.read_text().splitlines():
             line = line.strip()
-            if line.startswith("KIE_API_KEY="):
-                value = line[len("KIE_API_KEY="):].strip().strip("'\"")
-                if value:
-                    return value
+            for name in accepted_names:
+                if line.startswith(f"{name}="):
+                    value = line[len(f"{name}="):].strip().strip("'\"")
+                    if value and not _is_placeholder_value(value):
+                        return value
     print("FATAL: KIE_API_KEY not found in environment or in any of:", file=sys.stderr)
     for path in candidates:
         print("   ", path, file=sys.stderr)
     print("   (set KIE_API_KEY in env, or point $OPENCLAW_SECRETS at the client's .env)",
           file=sys.stderr)
     sys.exit(2)
+
+
+def _import_secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it."""
+    import importlib
+    here = Path(__file__).resolve().parent
+    repo_root = None
+    for anc in here.parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              os.path.expanduser("~/.openclaw/skills/shared-utils") if repo_root is None else str(repo_root / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                return mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                return None
+    return None
+
+
+def _kie_alias_names() -> list:
+    """The accepted names for the KIE_API_KEY credential: the canonical name
+    plus every canon alias; falls back to the pre-canon direct name."""
+    helper = _import_secret_helper()
+    if helper is None:
+        return ["KIE_API_KEY"]
+    try:
+        return list(helper.alias_list(helper.canonical_for("KIE_API_KEY")))
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return ["KIE_API_KEY"]
+
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value is rejected by every reader. Uses the
+    canon's is_placeholder when the helper is reachable; otherwise the same
+    minimal inline gate so a partial deploy still refuses."""
+    helper = _import_secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001
+            pass
+    if not value:
+        return True
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
 
 
 class AuthError(Exception):

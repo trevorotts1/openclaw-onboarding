@@ -114,9 +114,119 @@ try:
 except ImportError:  # pragma: no cover - pre-FIX-19 trees keep the old behavior
     _research_web = None  # type: ignore[assignment]
 
+# FIX 14 (MASTER Part 8): one per-provider governor for every outbound call.
+# Same defensive pattern as the imports above: a tree that predates the
+# governor module (or one where W09 has not yet landed governor.py) keeps the
+# old behavior byte-for-byte -- every _govern_acquire call degrades to a
+# no-op lease when the module is absent, so nothing here can hard-crash a run.
+try:
+    from presentation_job import governor as _governor
+except ImportError:  # pragma: no cover - pre-FIX-14 trees limit nothing new
+    _governor = None  # type: ignore[assignment]
+
+# FIX 104 (Master Part 8): the ONE WaveContract shared by dispatcher and
+# parallel_prompt_worker (stamp -> wave_input -> validate_input). Same
+# defensive pattern: a tree without wave_contract.py keeps the inline
+# dict-building path, and _wave_contract is None.
+try:
+    from presentation_job import wave_contract as _wave_contract
+except ImportError:  # pragma: no cover - pre-FIX-104 trees keep inline dict
+    _wave_contract = None  # type: ignore[assignment]
+
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
                                                 # whole pipeline, not a second number.
+
+# ---------------------------------------------------------------------------
+# FIX 14 -- per-provider governor gates. Every outbound call site acquires a
+# lease from presentation_job.governor before its HTTP attempt and releases it
+# after; a 429 feeds report_429, a clean response feeds report_ok. The gates
+# live HERE (module-level helpers) so dispatcher, parallel_prompt_worker and
+# fanout all gate through the same code path instead of re-deriving the
+# acquire/release/refcount dance per module. With _governor absent (pre-FIX-14
+# tree) every helper is a byte-for-byte no-op.
+#
+# WHY THE ATTEMPT-SCOPED LEASE REGISTRY: the transports issue one HTTP request
+# per retry attempt inside their own `for attempt in range(1, retries + 1)`
+# loop, and a 429 must be reported to the governor (rate halved 60 s) before
+# the loop's backoff sleep re-attempts. A single outer acquire cannot do that,
+# so each ATTEMPT takes its own lease. A re-entrant caller (worker -> provider
+# call -> dispatch_complete -> transport) must not then double-hold a lease for
+# one logical call, because max_inflight would under-count real capacity:
+# _GOVERN_DEPTH counts, per thread, how many nested _govern_acquire calls are
+# already holding for the same provider; only depth 0 actually touches the
+# governor (a "logical acquire"), deeper nesting reuses the same lease.
+# ---------------------------------------------------------------------------
+_GOVERN_DEPTH_LOCK = threading.Lock()
+_GOVERN_DEPTH: Dict[str, int] = {}   # f"{thread_ident}:{provider}" -> nested depth
+_GOVERN_ACTIVE: Dict[str, Any] = {}  # same key -> live lease to release once
+
+def _govern_key(provider: str) -> str:
+    return f"{threading.get_ident()}:{provider}"
+
+def _govern_acquire(provider: str):
+    """Acquire one lease for `provider` on this thread, re-entrant per depth.
+    Returns the live lease object (or None when the governor module is absent
+    or acquire itself fails -- gating is best-effort, never fatal)."""
+    if _governor is None:
+        return None
+    key = _govern_key(provider)
+    with _GOVERN_DEPTH_LOCK:
+        depth = _GOVERN_DEPTH.get(key, 0)
+        _GOVERN_DEPTH[key] = depth + 1
+    if depth > 0:
+        # Nested call: the outer frame already holds the lease for this
+        # logical call on this thread.
+        with _GOVERN_DEPTH_LOCK:
+            return _GOVERN_ACTIVE.get(key)
+    try:
+        lease = _governor.acquire(provider)
+    except Exception:  # noqa: BLE001 -- a broken governor never kills a run
+        lease = None
+    with _GOVERN_DEPTH_LOCK:
+        if lease is not None:
+            _GOVERN_ACTIVE[key] = lease
+        else:
+            # Nothing was acquired: un-count this frame so release symmetry
+            # stays exact (depth returns to 0, next call re-attempts).
+            _GOVERN_DEPTH[key] = max(0, _GOVERN_DEPTH.get(key, 1) - 1)
+    return lease
+
+def _govern_release(provider: str, lease: Any) -> None:
+    """Release the lease taken by _govern_acquire for `provider` on this
+    thread (only when this frame is the outermost one). Best-effort."""
+    if _governor is None:
+        return
+    key = _govern_key(provider)
+    with _GOVERN_DEPTH_LOCK:
+        depth = _GOVERN_DEPTH.get(key, 0)
+        _GOVERN_DEPTH[key] = max(0, depth - 1)
+        active = _GOVERN_ACTIVE.get(key)
+        if depth <= 1:
+            _GOVERN_ACTIVE.pop(key, None)
+    if depth <= 1 and active is not None:
+        try:
+            _governor.release(active)
+        except Exception:  # noqa: BLE001
+            pass
+
+def _govern_429(provider: str) -> None:
+    """Feed a 429 back to the governor (rate halved 60 s). Best-effort."""
+    if _governor is None:
+        return
+    try:
+        _governor.report_429(provider)
+    except Exception:  # noqa: BLE001
+        pass
+
+def _govern_ok(provider: str) -> None:
+    """Feed a clean response back to the governor. Best-effort."""
+    if _governor is None:
+        return
+    try:
+        _governor.report_ok(provider)
+    except Exception:  # noqa: BLE001
+        pass
 
 # ---------------------------------------------------------------------------
 # DeepSeek V4 Flash direct -- confirmed live configuration (openclaw.json),
@@ -235,6 +345,29 @@ DECLINE_PHASES: Dict[str, str] = {
                          "produced a driver-signed transcript, this phase's artifact is "
                          "already satisfied and this module never reaches this branch for "
                          "it (see the idempotent skip in sweep_run_dir).",
+    # FIX 34 (MASTER Part 8): P0A-INTAKE joins the decline family. The launcher
+    # seals working/copy/intake.json 0444 once --new consumes it
+    # (launcher.seal_intake), so a worker "re-emitting" it would either raise
+    # PermissionError mid-run (recorded in working/logs/intake_protection.jsonl)
+    # or, pre-seal, overwrite the run's constitutional record with model-invented
+    # intake data. Neither is acceptable: the real intake already exists from the
+    # completed interview, its content reaches every phase as upstream context,
+    # and changes flow exclusively through launcher.apply_intake_amendment
+    # (Fix 32-verified owner approval). Declining costs nothing and can never
+    # fabricate; it mirrors P-SP-INTAKE-TRACE's driver_only verdict -- a
+    # non-driver-authored intake artifact is definitionally out of this module's
+    # charter. (Its ARTIFACT_CONTRACTS entry above was rewritten to "produce
+    # NOTHING" so even a flag-rolled-back path never teaches re-emit.)
+    "P0A-INTAKE": "sealed_record: working/copy/intake.json is the run's sealed "
+                  "constitutional record, written by the completed interview and "
+                  "chmod 0444 by the launcher at --new (launcher.seal_intake; every "
+                  "write attempt lands in working/logs/intake_protection.jsonl). "
+                  "A model-authored re-emission would overwrite client interview "
+                  "data with invented content pre-seal, or fail at the OS level "
+                  "post-seal. The record already exists; every phase reads it as "
+                  "upstream context; sanctioned changes go ONLY through "
+                  "launcher.apply_intake_amendment (Fix 32-verified owner approval). "
+                  "Nothing for a worker to author here, ever.",
     # Confirmed empirically during acceptance testing (not merely read from source):
     # 3 real DeepSeek dispatch attempts against the live gate all failed identically
     # on AF-SP-8Q-MISSING even with a schema-correct-looking payload, which led to
@@ -359,10 +492,29 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "to specific slide numbers/sections. Include at least 8 distinct mapped items when "
         "the research brief supports it."
     ),
+    # FIX 34 (MASTER Part 8): the intake contract NEVER re-emits. The launcher
+    # seals working/copy/intake.json 0444 the moment --new consumes it
+    # (launcher.seal_intake, reason "dispatch-new-*"), so any attempt to write
+    # it mid-run raises PermissionError at the OS level and the attempt lands in
+    # working/logs/intake_protection.jsonl. Sanctioned intake changes go through
+    # launcher.apply_intake_amendment() only (Fix 32-verified owner approval,
+    # staged via intake.json.staging, one row in intake_amendments.jsonl, then
+    # re-sealed). A P0A worker therefore READS the sealed intake as upstream
+    # context and never writes the file -- and P0A-INTAKE is declined below in
+    # dispatch_one (DECLINE_PHASES), the same driver_only verdict family as
+    # P-SP-INTAKE-TRACE, so no model call is ever spent authoring a file the
+    # engine will refuse to overwrite.
     "P0A-INTAKE": (
-        "OUTPUT CONTRACT: valid JSON object at working/copy/intake.json. This run already "
-        "has a real intake.json from the completed interview (see upstream context below) "
-        "-- if so, re-emit it verbatim/enriched rather than inventing a new one."
+        "OUTPUT CONTRACT: NONE -- you do not write a file in this phase. "
+        "working/copy/intake.json is the run's SEALED constitutional record: it was "
+        "written once by the completed interview and sealed read-only (0444) when "
+        "the job was created. It is provided as upstream context below for you to "
+        "READ and reason over. You must NEVER re-emit, rewrite, or 'enrich' it: the "
+        "file is immutable on disk, any write attempt fails, and the only sanctioned "
+        "way intake data changes is the operator amendment channel "
+        "(launcher.apply_intake_amendment with a verified owner approval). If the "
+        "work order asks you to produce intake.json anyway, produce NOTHING -- "
+        "answer with an empty output and let the dispatcher record the decline."
     ),
     # ROOT CAUSE #1 (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P4-COPY had no
     # entry here (fell back to GENERIC_CONTRACT) and, even with the exact verifier
@@ -1191,14 +1343,20 @@ class DeepSeekCallError(RuntimeError):
 
 
 def deepseek_complete(system_prompt: str, user_prompt: str, *,
-                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
-                       retries: int = 3) -> Tuple[str, Dict[str, Any]]:
-    """One DeepSeek V4 Flash chat completion, thinking MAX. Returns
-    (content_text, usage_dict). Retries transient HTTP/network failures with
-    backoff; a non-transient (4xx other than 429) failure raises immediately."""
+                      model: Optional[str] = None,
+                      run_dir: Optional[Path] = None,
+                      max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
+                      retries: int = 3) -> Tuple[str, Dict[str, Any]]:
+    """One DeepSeek chat completion, thinking MAX. Returns
+    (content_text, usage_dict). FIX 16: the caller passes the model the ROUTE
+    selected (default stays the catalog text.fast id so the pre-FIX-7
+    rollback path is byte-for-byte unchanged). Retries transient
+    HTTP/network failures with backoff; a non-transient (4xx other than 429)
+    failure raises immediately."""
     key = _load_deepseek_key()
     body = {
-        "model": DEEPSEEK_MODEL,
+        # FIX 16: send the model the router chose, not a module constant.
+        "model": model or DEEPSEEK_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -1209,32 +1367,69 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
         "reasoning_effort": "max",
     }
     data = json.dumps(body).encode("utf-8")
+    # FIX 16 dispatcher debug log: the exact request body that leaves this
+    # box, one JSON line per attempt (proof a Pro route shows
+    # "model": "deepseek-v4-pro" in the body). Prompt text is redacted so the
+    # log stays small and carries no artifact content; never the key.
+    if run_dir is not None:
+        try:
+            dbg = run_dir / "working" / "debug" / "dispatcher-requests.jsonl"
+            dbg.parent.mkdir(parents=True, exist_ok=True)
+            with dbg.open("a", encoding="utf-8") as dfh:
+                dfh.write(json.dumps({
+                    "event": "request_body",
+                    "transport": "deepseek-direct",
+                    "model": body.get("model"),
+                    "url": DEEPSEEK_CHAT_URL,
+                    "max_tokens": max_tokens,
+                    "system_chars": len(system_prompt),
+                    "user_chars": len(user_prompt),
+                    # the request body exactly as serialized for the wire --
+                    # the FIX 16 proof greps this for the routed model id
+                    "body": body,
+                    "attempt": 1,
+                    "at": utcnow(),
+                }, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001 -- debug log never breaks a call
+            print(f"WARN dispatcher debug log: {exc}", flush=True)
     last_exc: Optional[Exception] = None
     for attempt in range(1, retries + 1):
-        req = urllib.request.Request(
-            DEEPSEEK_CHAT_URL, data=data, method="POST",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        )
+        # FIX 14: one governor lease per HTTP attempt on the deepseek-direct
+        # provider. The 429 branch feeds report_429 before the backoff sleep
+        # so the governor halves the next 60 s of rate; a clean response feeds
+        # report_ok. Lease is released before the loop's backoff sleep so a
+        # sleeping retry never occupies an in-flight slot.
+        _lease = _govern_acquire("deepseek-direct")
         try:
-            with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
-                raw = resp.read().decode("utf-8")
-            obj = json.loads(raw)
-            choice = (obj.get("choices") or [{}])[0]
-            content = ((choice.get("message") or {}).get("content")) or ""
-            usage = obj.get("usage") or {}
-            return content, usage
-        except urllib.error.HTTPError as exc:
-            payload = ""
+            req = urllib.request.Request(
+                DEEPSEEK_CHAT_URL, data=data, method="POST",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            )
             try:
-                payload = exc.read().decode("utf-8", errors="replace")[:2000]
-            except Exception:  # noqa: BLE001
-                pass
-            if exc.code == 429 or exc.code >= 500:
-                last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
-            else:
-                raise DeepSeekCallError(f"HTTP {exc.code} (non-transient): {payload}") from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
-            last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+                with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
+                    raw = resp.read().decode("utf-8")
+                obj = json.loads(raw)
+                choice = (obj.get("choices") or [{}])[0]
+                content = ((choice.get("message") or {}).get("content")) or ""
+                usage = obj.get("usage") or {}
+                _govern_ok("deepseek-direct")
+                return content, usage
+            except urllib.error.HTTPError as exc:
+                payload = ""
+                try:
+                    payload = exc.read().decode("utf-8", errors="replace")[:2000]
+                except Exception:  # noqa: BLE001
+                    pass
+                if exc.code == 429 or exc.code >= 500:
+                    if exc.code == 429:
+                        _govern_429("deepseek-direct")
+                    last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
+                else:
+                    raise DeepSeekCallError(f"HTTP {exc.code} (non-transient): {payload}") from exc
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+                last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+        finally:
+            _govern_release("deepseek-direct", _lease)
         if attempt < retries:
             time.sleep(min(30, 3 * (2 ** (attempt - 1))))
     raise last_exc or DeepSeekCallError("deepseek_complete: exhausted retries")
@@ -1353,33 +1548,76 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
     data = json.dumps(body).encode("utf-8")
     last_exc: Optional[Exception] = None
     for attempt in range(1, retries + 1):
-        req = urllib.request.Request(
-            f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
-            headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
-        )
+        # FIX 14: one governor lease per HTTP attempt on the routed provider
+        # (openrouter / ollama-cloud / agnes / ...). Same contract as
+        # deepseek_complete: report_429 before backoff on 429, report_ok on a
+        # clean response, lease released before the backoff sleep.
+        _lease = _govern_acquire(provider)
         try:
-            with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
-                raw = resp.read().decode("utf-8")
-            obj = json.loads(raw)
-            choice = (obj.get("choices") or [{}])[0]
-            content = ((choice.get("message") or {}).get("content")) or ""
-            usage = obj.get("usage") or {}
-            return content, usage
-        except urllib.error.HTTPError as exc:
-            payload = ""
+            req = urllib.request.Request(
+                f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+            )
             try:
-                payload = exc.read().decode("utf-8", errors="replace")[:2000]
-            except Exception:  # noqa: BLE001
-                pass
-            if exc.code == 429 or exc.code >= 500:
-                last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
-            else:
-                raise DeepSeekCallError(
-                    f"HTTP {exc.code} (non-transient): {payload}") from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
-                OSError) as exc:
-            last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+                with urllib.request.urlopen(req, timeout=DEEPSEEK_TIMEOUT_S) as resp:
+                    raw = resp.read().decode("utf-8")
+                obj = json.loads(raw)
+                choice = (obj.get("choices") or [{}])[0]
+                content = ((choice.get("message") or {}).get("content")) or ""
+                usage = obj.get("usage") or {}
+                _govern_ok(provider)
+                return content, usage
+            except urllib.error.HTTPError as exc:
+                payload = ""
+                try:
+                    payload = exc.read().decode("utf-8", errors="replace")[:2000]
+                except Exception:  # noqa: BLE001
+                    pass
+                if exc.code == 429 or exc.code >= 500:
+                    if exc.code == 429:
+                        _govern_429(provider)
+                    last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
+                elif exc.code == 402 and "can only afford" in payload:
+                    # F31 (SMOKE-1, 2026-09-01): OpenRouter 402 names the exact
+                    # token budget the remaining credits can afford. Retry THIS
+                    # call at that budget instead of treating it as fatal -- the
+                    # deliverable (an OCR readback) is small and does not need the
+                    # 64k default. One demotion per call site, floor 512.
+                    import re as _re
+                    _m = _re.search(r"can only afford (\d+)", payload)
+                    if _m:
+                        afford = max(512, int(_m.group(1)) - 128)
+                        demoted = dict(body)
+                        demoted["max_tokens"] = afford
+                        data2 = json.dumps(demoted).encode("utf-8")
+                        req2 = urllib.request.Request(
+                            f"{base.rstrip('/')}/chat/completions", data=data2,
+                            method="POST",
+                            headers={"Authorization": f"Bearer {key}",
+                                     "Content-Type": "application/json"})
+                        try:
+                            with urllib.request.urlopen(req2, timeout=DEEPSEEK_TIMEOUT_S) as resp2:
+                                obj2 = json.loads(resp2.read().decode("utf-8"))
+                            choice2 = (obj2.get("choices") or [{}])[0]
+                            content2 = ((choice2.get("message") or {}).get("content")) or ""
+                            usage2 = obj2.get("usage") or {}
+                            _govern_ok(provider)
+                            return content2, usage2
+                        except Exception as exc2:  # noqa: BLE001
+                            raise DeepSeekCallError(
+                                f"HTTP 402 demoted retry ({afford} tokens) also failed: "
+                                f"{type(exc2).__name__}: {exc2}") from exc2
+                    raise DeepSeekCallError(
+                        f"HTTP 402 (non-transient): {payload}") from exc
+                else:
+                    raise DeepSeekCallError(
+                        f"HTTP {exc.code} (non-transient): {payload}") from exc
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
+                    OSError) as exc:
+                last_exc = DeepSeekCallError(f"{type(exc).__name__}: {exc}")
+        finally:
+            _govern_release(provider, _lease)
         if attempt < retries:
             time.sleep(min(30, 3 * (2 ** (attempt - 1))))
     raise last_exc or DeepSeekCallError(
@@ -1410,70 +1648,103 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                                   # hard-crashes a run: fall back to DeepSeek
             decision = {"router": f"error: {exc}", "route": None, "reason": str(exc)}
 
+    # FIX 14: the routed entrypoint itself holds one logical governor lease
+    # for the phase's provider across the whole dispatch (all retry attempts
+    # of the chosen transport run inside it). The transports take their own
+    # per-attempt leases, but the re-entrancy depth counter in _govern_acquire
+    # means exactly ONE real acquire per logical call per provider per thread:
+    # this outer frame is it, the inner transport frames re-use this lease.
+    # Every return path AND every exception releases through _govern_release
+    # via the single finally below.
     route = (decision or {}).get("route") or None
     router_id = str((decision or {}).get("router") or "")
     profile_state = str((decision or {}).get("profile_state") or "")
-    if route is None and router_id != "disabled":
-        if profile_state == "has_providers":
-            # The client OWNS providers yet none satisfies this phase's
-            # required capability (e.g. a vision/OCR phase with no OCR owner,
-            # or only unconsented/unwired candidates): fail-closed PARK. A
-            # fabrication here would spend a provider the client does not own
-            # on a model that cannot hold the artifact.
+    _route_unknown_yet = (route is None or router_id == "disabled")
+    _dispatch_provider = "deepseek-direct" if _route_unknown_yet \
+        else str(route.get("provider") or "deepseek-direct")
+    _dispatch_lease = _govern_acquire(_dispatch_provider)
+    try:
+        if route is None and router_id != "disabled":
+            if profile_state == "has_providers":
+                # The client OWNS providers yet none satisfies this phase's
+                # required capability (e.g. a vision/OCR phase with no OCR owner,
+                # or only unconsented/unwired candidates): fail-closed PARK. A
+                # fabrication here would spend a provider the client does not own
+                # on a model that cannot hold the artifact.
+                ctx.router = router_id or "model_router"
+                ctx.reason = str((decision or {}).get("reason") or "no eligible route")
+                ctx.requested_alias = (decision or {}).get("requested_alias")
+                _emit_model_route_telemetry(run_dir, ctx, phase_id)
+                raise RoutingUnavailable(
+                    f"phase {phase_id}: no eligible client-owned route -- "
+                    f"{(decision or {}).get('reason')}")
+            # profile_state in ("absent", "", "mechanical", ...) -- no client-owned
+            # provider evidence exists yet: keep the dispatcher's pre-FIX-7
+            # default (DeepSeek-direct) rather than stranding runs on a profile
+            # that simply has not been captured yet.
             ctx.router = router_id or "model_router"
-            ctx.reason = str((decision or {}).get("reason") or "no eligible route")
-            ctx.requested_alias = (decision or {}).get("requested_alias")
+            ctx.provider = "deepseek-direct"
+            ctx.model = DEEPSEEK_MODEL
+            ctx.requested_alias = (decision or {}).get("requested_alias") \
+                or "deepseek-v4-flash"
+            ctx.reason = str((decision or {}).get("reason")
+                             or "no profile route; dispatcher default DeepSeek-direct")
+            content, usage = deepseek_complete(system_prompt, user_prompt,
+                                               model=ctx.model, run_dir=run_dir,
+                                               max_tokens=max_tokens, retries=retries)
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
-            raise RoutingUnavailable(
-                f"phase {phase_id}: no eligible client-owned route -- "
-                f"{(decision or {}).get('reason')}")
-        # profile_state in ("absent", "", "mechanical", ...) -- no client-owned
-        # provider evidence exists yet: keep the dispatcher's pre-FIX-7
-        # default (DeepSeek-direct) rather than stranding runs on a profile
-        # that simply has not been captured yet.
+            return content, usage, ctx.as_dict()
+        if router_id == "disabled":
+            # PRESENTATION_MODEL_ROUTER=0 rollback: the untouched pre-FIX-7 path,
+            # no model_route telemetry row (it predates the routing event).
+            ctx.router = "disabled"
+            ctx.provider = "deepseek-direct"
+            ctx.model = DEEPSEEK_MODEL
+            ctx.requested_alias = None
+            ctx.reason = str((decision or {}).get("reason") or "router disabled")
+            content, usage = deepseek_complete(system_prompt, user_prompt,
+                                               model=ctx.model, run_dir=run_dir,
+                                               max_tokens=max_tokens, retries=retries)
+            return content, usage, ctx.as_dict()
+
+        ctx.provider = str(route.get("provider") or "")
+        ctx.model = str(route.get("model") or "")
+        ctx.requested_alias = (decision or {}).get("requested_alias")
+        ctx.reason = str((decision or {}).get("reason") or "")
         ctx.router = router_id or "model_router"
-        ctx.provider = "deepseek-direct"
-        ctx.model = DEEPSEEK_MODEL
-        ctx.requested_alias = (decision or {}).get("requested_alias") \
-            or "deepseek-v4-flash"
-        ctx.reason = str((decision or {}).get("reason")
-                         or "no profile route; dispatcher default DeepSeek-direct")
-        content, usage = deepseek_complete(system_prompt, user_prompt,
-                                           max_tokens=max_tokens, retries=retries)
+
+        # FIX 17a provider fold at the ONE transport seam: the catalog may
+        # spell the native DeepSeek provider "deepseek" while every transport,
+        # the profile store and the key canon speak "deepseek-direct" (the
+        # router's own _norm_provider fold). Without this fold a routed
+        # "deepseek" phase fell through to _openai_compat_complete, which has
+        # no base URL and no transport for the native endpoint -- every call
+        # died with "no base URL known for provider deepseek" no matter how
+        # healthy the route. Normalizing here (never in the catalog) keeps the
+        # catalog's spelling authoritative for eligibility while the dispatch
+        # branch picks the transport the provider id actually owns.
+        try:
+            ctx.provider = _model_router._norm_provider(ctx.provider)
+        except Exception:  # noqa: BLE001 -- a fold failure must not change routing
+            pass
+
+        if ctx.provider == "deepseek-direct":
+            content, usage = deepseek_complete(system_prompt, user_prompt,
+                                               model=ctx.model, run_dir=run_dir,
+                                               max_tokens=max_tokens, retries=retries)
+            # usage/model provenance stays honest even though the native endpoint
+            # pins its own served id; FIX 16 now sends the ROUTE's model id in the
+            # request body itself (the route is what callers stamp AND what is sent).
+            _emit_model_route_telemetry(run_dir, ctx, phase_id)
+            return content, usage, ctx.as_dict()
+
+        content, usage = _openai_compat_complete(
+            system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
+            max_tokens=max_tokens, retries=retries, run_dir=run_dir)
         _emit_model_route_telemetry(run_dir, ctx, phase_id)
         return content, usage, ctx.as_dict()
-    if router_id == "disabled":
-        # PRESENTATION_MODEL_ROUTER=0 rollback: the untouched pre-FIX-7 path,
-        # no model_route telemetry row (it predates the routing event).
-        ctx.router = "disabled"
-        ctx.provider = "deepseek-direct"
-        ctx.model = DEEPSEEK_MODEL
-        ctx.requested_alias = None
-        ctx.reason = str((decision or {}).get("reason") or "router disabled")
-        content, usage = deepseek_complete(system_prompt, user_prompt,
-                                           max_tokens=max_tokens, retries=retries)
-        return content, usage, ctx.as_dict()
-
-    ctx.provider = str(route.get("provider") or "")
-    ctx.model = str(route.get("model") or "")
-    ctx.requested_alias = (decision or {}).get("requested_alias")
-    ctx.reason = str((decision or {}).get("reason") or "")
-    ctx.router = router_id or "model_router"
-
-    if ctx.provider == "deepseek-direct":
-        content, usage = deepseek_complete(system_prompt, user_prompt,
-                                           max_tokens=max_tokens, retries=retries)
-        # usage/model provenance stays honest even though the native endpoint
-        # pins its own served id (deepseek_complete carries DEEPSEEK_MODEL);
-        # the ROUTE (what routing selected) is what callers stamp.
-        _emit_model_route_telemetry(run_dir, ctx, phase_id)
-        return content, usage, ctx.as_dict()
-
-    content, usage = _openai_compat_complete(
-        system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
-        max_tokens=max_tokens, retries=retries, run_dir=run_dir)
-    _emit_model_route_telemetry(run_dir, ctx, phase_id)
-    return content, usage, ctx.as_dict()
+    finally:
+        _govern_release(_dispatch_provider, _dispatch_lease)
 
 
 # ---------------------------------------------------------------------------
@@ -2328,8 +2599,29 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
         "model": DEEPSEEK_MODEL,
         "router": "disabled",
         "mode": "standard",
-         "measured_capacity": 8,
+        "measured_capacity": DEFAULT_MAX_WORKERS,
     }
+    # F41 (SMOKE-1, 2026-09-01): FIX 7 popped measured_capacity whenever the
+    # router resolved a profile route -- but the parallel_prompt_worker usage
+    # contract (routing.measured_capacity must be a positive int,
+    # parallel_prompt_worker.py validate_input) rejects the whole wave input,
+    # so EVERY router-resolved wave self-rejected with
+    # "routing.measured_capacity must be a positive integer (got None)" before
+    # any provider call. The stamp must always carry a worker-slot count.
+    # Derive it from the capacity probe -- never fabricate a provider claim:
+    #   * UNBOUNDED (NO_CAP_PROVIDERS BYOK hit, e.g. deepseek-direct --
+    #     operator ruling fix/capacity-uncap-byok: never limit someone who
+    #     brought their own capacity) -> DEFAULT_MAX_WORKERS (8) worker slots;
+    #     the worker itself clamps to its own DEFAULT_MAX_WORKERS=8 ceiling.
+    #   * MEASURED positive int -> that real cap-table ceiling.
+    #   * probe PARKED/UNDETERMINED/FAILED for the routed provider (or probe
+    #     unavailable) -> DEFAULT_MAX_WORKERS, honestly labelled
+    #     capacity_status so the audit trail never reads as a measurement.
+    # The capacity PARK about a DIFFERENT provider (e.g. 9router combo routing
+    # an unrelated model to ollama-cloud) does not gate this route: the
+    # launcher's AF-CAPACITY-UNMEASURED refuse already ran before dispatch.
+    stamp["capacity_status"] = "fallback-default"
+    stamp["capacity_source"] = "dispatcher-default"
     if _model_router is None:
         return stamp
     try:
@@ -2344,7 +2636,34 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 "route_reason": decision.get("reason"),
                 "requested_alias": decision.get("requested_alias"),
             })
-            stamp.pop("measured_capacity", None)
+            routed_provider = str(route.get("provider") or "")
+            try:
+                from presentation_job import capacity as _cap_mod
+                probe_res = _cap_mod.probe()
+                available = probe_res.get("available")
+                probe_provider = str(probe_res.get("provider") or "")
+                if _cap_mod.is_unbounded(available):
+                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                    stamp["capacity_status"] = "unbounded-byok"
+                    stamp["capacity_source"] = str(
+                        probe_res.get("detection_source") or "capacity-probe")
+                elif isinstance(available, int) and available > 0                         and probe_provider == routed_provider:
+                    stamp["measured_capacity"] = available
+                    stamp["capacity_status"] = "measured"
+                    stamp["capacity_source"] = str(
+                        probe_res.get("detection_source") or "capacity-probe")
+                else:
+                    # PARKED/UNDETERMINED for the routed provider, or a probe
+                    # about a different provider -- fall back, labelled.
+                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                    stamp["capacity_status"] = "probe-not-measured"
+                    stamp["capacity_source"] = (
+                        f"{probe_res.get('status')}"
+                        f"/{probe_provider or 'none'}")
+            except Exception as cap_exc:  # noqa: BLE001 -- probe is best-effort
+                stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                stamp["capacity_status"] = "probe-error"
+                stamp["capacity_source"] = type(cap_exc).__name__
     except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
         try:
             _append_sidecar(run_dir, "P4-PROMPT", {
@@ -2445,24 +2764,67 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         return DispatchResult(phase_id, "error", 0, [reason])
 
     # --- build prompt-wave-input.json (schema_version 1) stamped routing
+    # FIX 104: built through the ONE WaveContract (stamp -> wave_input ->
+    # validate), no longer a hand-built dict that could drift from the
+    # worker's validate_input. The contract validates BEFORE the file is
+    # written or the worker is invoked -- a bad contract fails here, named.
     routing = _prompt_routing_stamp(run_dir=run_dir)
-    wave_input = {
-        "schema_version": 1,
-        "run_id": run_dir.name,
-        "run_dir": str(run_dir),
-        "phase_id": phase_id,
-        "routing": routing,
-        "prompt_constraints": {
-            "min_chars": 9000,
-            "max_chars": 18000,
-            "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
-        },
-        "slides": slides_payload,
-    }
-    input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
-    input_path.parent.mkdir(parents=True, exist_ok=True)
-    input_path.write_text(json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
-                          encoding="utf-8")
+    if _wave_contract is not None:
+        contract = _wave_contract.WaveContract(
+            run_id=run_dir.name,
+            run_dir=str(run_dir),
+            # F42 (SMOKE-1, 2026-09-01): the manifest's owning_role MUST ride
+            # the wave input. Without it the worker falls back to its
+            # hardcoded default ("Presentation Manager (Deck Author)") whose
+            # role-SOP lookup cannot resolve against the flat role-library
+            # layout -- RoleSOPNotFound on slide-01 every wave.
+            owning_role=owning_role,
+            routing=_wave_contract.RoutingStamp(
+                provider=str(routing.get("provider", "deepseek-direct")),
+                model=str(routing.get("model", DEEPSEEK_MODEL)),
+                router=str(routing.get("router", "disabled")),
+                mode=str(routing.get("mode", "standard")),
+                measured_capacity=int(routing.get("measured_capacity")
+                                      or DEFAULT_MAX_WORKERS),
+                extra={k: v for k, v in routing.items()
+                       if k not in ("provider", "model", "router", "mode",
+                                    "measured_capacity")},
+            ),
+            slides=slides_payload,
+            prompt_constraints=_wave_contract.PromptConstraints(
+                min_chars=9000, max_chars=18000,
+                required_blocks=("[ARCHETYPE", "DO-NOT BLOCK", "Do not ")),
+        )
+        try:
+            wave_input = contract.validate()
+        except _wave_contract.WaveContractError as exc:
+            reason = f"WaveContract rejected the P4-PROMPT wave input: {exc}"
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": reason})
+            return DispatchResult(phase_id, "error", 0, [reason])
+        input_path = contract.write(run_dir)
+    else:
+        # Pre-FIX-104 rollback: the inline dict build, byte-identical shape.
+        wave_input = {
+            "schema_version": 1,
+            "run_id": run_dir.name,
+            "run_dir": str(run_dir),
+            "phase_id": phase_id,
+            "owning_role": owning_role,
+            "routing": routing,
+            "prompt_constraints": {
+                "min_chars": 9000,
+                "max_chars": 18000,
+                "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
+            },
+            "slides": slides_payload,
+        }
+        input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        input_path.write_text(
+            json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
 
     # --- invoke the worker ONCE. An unhandled WorkerUsageError (exit-2 class:
     # bad input/paths/schema) is a dispatcher bug, so it surfaces as a phase
@@ -2477,10 +2839,19 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     try:
         exit_code, result_doc = _ppw.run_worker(wave_input)
     except _ppw.WorkerUsageError as exc:
+        # FIX 15 (QC.md FIX 15 proof): a forced WorkerUsageError must not fail
+        # the phase -- the serial loop is the documented fallback. Log the
+        # rejection, then complete the phase through
+        # _dispatch_prompt_phase_serial (which owns no wave input, so it
+        # cannot re-trigger the usage error).
         reason = f"parallel prompt worker rejected the wave input: {exc}"
         _append_sidecar(run_dir, phase_id, {
-            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
-        return DispatchResult(phase_id, "error", 0, [reason])
+            "worker": worker_id, "attempt": 0, "status": "serial_fallback",
+            "reason": reason,
+            "note": "WorkerUsageError -> _dispatch_prompt_phase_serial (FIX 15)"})
+        return _dispatch_prompt_phase_serial(
+            run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+            worker_id=worker_id)
     except Exception as exc:  # noqa: BLE001 -- phase must fail loudly, named
         reason = f"parallel prompt worker crashed: {type(exc).__name__}: {exc}"
         _append_sidecar(run_dir, phase_id, {
@@ -2537,9 +2908,12 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     sha_mismatches: List[str] = []
     verify_failures: List[str] = []
     for ordinal, row in sorted(succeeded.items()):
-        target = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}-prompt.txt"
+        # FIX 15: canonical name is slide-NN.txt (worker now writes it too);
+        # legacy slide-NN-prompt.txt stays as a read-back candidate so older
+        # banked waves still pass the SHA gate.
+        target = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"
         candidates = [target,
-                      run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"]
+                      run_dir / "working" / "prompts" / f"slide-{ordinal:02d}-prompt.txt"]
         disk = next((c for c in candidates if c.is_file()), None)
         if disk is None:
             sha_mismatches.append(f"slide {ordinal}: no prompt file on disk")
@@ -2885,9 +3259,23 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
             )
 
             try:
-                content, usage = deepseek_complete(system_prompt, user_prompt)
+                # FIX 16: the fanout worker is a dispatcher call site like any
+                # other -- it goes through dispatch_complete (the routed
+                # entrypoint), never the raw transport, so the model actually
+                # sent is the one the client's profile routed.
+                content, usage, route_dict = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id,
+                    run_dir=run_dir)
+            except RoutingUnavailable as exc:
+                # fail-closed: no client-owned route for this phase, park the
+                # slide honestly rather than fabricating a model.
+                last_reasons = [f"RoutingUnavailable: {exc}"]
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt, "slide": ordinal,
+                    "status": "routing_unavailable", "reason": str(exc)})
+                break
             except DeepSeekCallError as exc:
-                last_reasons = [f"DeepSeek call failed: {exc}"]
+                last_reasons = [f"Model call failed: {exc}"]
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt, "slide": ordinal,
                     "status": "call_failed", "reason": str(exc)})
@@ -2916,7 +3304,11 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": attempt, "slide": ordinal,
                 "status": "verified" if v_ok else "failed", "verifier_ok": v_ok,
-                "verifier_reasons": v_reasons, "model": DEEPSEEK_MODEL,
+                "verifier_reasons": v_reasons,
+                # FIX 16: stamp the model actually SENT (the routed one), not
+                # the module constant.
+                "model": route_dict.get("model") or DEEPSEEK_MODEL,
+                "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
                 return fanout.UnitResult(key=unit.key, status="ok", attempts=attempts_used,
@@ -3131,8 +3523,27 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         })
         return DispatchResult(phase_id, "error", 0, [reason])
 
-    prior_reasons: Optional[List[str]] = reasons if reasons else None
+    # FIX 15b: the manifest's `fanout` field turns this whole phase into N
+    # independent units -- one per slide/section/file -- run through
+    # fanout.run_units with per-unit ledger rows, instead of one serial call
+    # authoring one file. Phases without the field keep the single-target
+    # loop below untouched.
+    fanout_spec = _phase_fanout_spec(phase_id, run_dir)
+    if fanout_spec is not None:
+        return _dispatch_phase_fanout_units(
+            run_dir, order, dept_root=dept_root, phase_obj=phase_obj,
+            worker_id=worker_id, spec=fanout_spec, patterns=patterns,
+            target=target, prior_reasons=reasons if reasons else None)
+
     last_reasons: List[str] = reasons
+    # FIX 69 (proof run 2026-09-02): `prior_reasons` is only rebound AFTER a
+    # failed verifier pass (below), so attempt 1 of every dispatch crashed with
+    # UnboundLocalError("cannot access local variable 'prior_reasons'") — the
+    # same live failure the wave-1 proof hit on P-SP-P3-HYGIENE. Seed it from
+    # the sweep's own upstream reasons; empty reasons means None (compose_prompt
+    # treats a falsy prior_reasons as "no prior findings"), exactly the shape
+    # the fanout branch above already passes.
+    prior_reasons: Optional[List[str]] = reasons if reasons else None
 
     for attempt in range(1, DISPATCH_RETRY_CAP + 1):
         try:
@@ -3218,13 +3629,294 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                           str(target.relative_to(run_dir)))
 
 
+
+
+# ---------------------------------------------------------------------------
+# FIX 112 — the missing FIX-15b generic fan-out dispatch glue.
+#
+# dispatch_one() below has branched on `_phase_fanout_spec()` /
+# `_dispatch_phase_fanout_units()` since FIX 15b, but the two callables were
+# never defined in any shipped module: the moment a manifest phase declares a
+# `fanout` field (this fix does exactly that for P-STYLE-SPEC — "a fanout unit
+# in the copy stage authors the style-preview spec from the design direction"),
+# the generic dispatch path died with `NameError: name '_phase_fanout_spec' is
+# not defined` AFTER the target had already been resolved — a latent crash,
+# proven live against a synthetic manifest before this fix (the serial path
+# never hit it only because no shipped manifest phase declared `fanout`).
+#
+# The contract here mirrors fanout.py's own three seams (PARALLEL-PIPELINE-SPEC
+# S2): parse the manifest's {"by", "max_units"} field via fanout.parse_fanout_field
+# (malformed -> FanoutSpecError -> phase error, never a silent serial fallback),
+# enumerate the deterministic unit list via fanout.enumerate_fanout_items, run
+# the pool through fanout.run_units (per-unit ledger rows, partial failure
+# without cancellation), then aggregate every authored unit into the phase's
+# single produces_artifact target and re-run the SAME whole-phase verifier the
+# engine will run. A unit that returns nothing aggregates to nothing: if no
+# unit produced text the phase reports exhausted — never a fabricated file.
+# ---------------------------------------------------------------------------
+def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutSpec"]:
+    """Read THIS run's resolved manifest and return the phase's FanoutSpec,
+    or None when the phase declares no fanout field (the serial path below
+    stays byte-for-byte untouched). The manifest is re-resolved through the
+    same load_manifest_for_run() every sweep already uses — never a second,
+    drifting manifest source."""
+    manifest = load_manifest_for_run(run_dir)
+    if manifest is None:
+        return None
+    try:
+        phase_obj = manifest.phase_or_none(phase_id) if hasattr(manifest, "phase_or_none") \
+            else next((p for p in manifest.phases if p.id == phase_id), None)
+    except Exception:  # noqa: BLE001 — an unresolvable phase has no fanout spec
+        return None
+    if phase_obj is None:
+        return None
+    raw = getattr(phase_obj, "fanout", None)
+    if raw is None:
+        return None
+    try:
+        return fanout.parse_fanout_field(raw)
+    except fanout.FanoutSpecError as exc:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": "dispatcher", "attempt": 0, "status": "error",
+            "reason": f"fanout field malformed: {exc}",
+        })
+        return None
+
+
+def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
+    """FIX 112: per-phase aggregation of fanout unit outputs into the ONE text
+    document the phase's produces_artifact names. Returns None when the parts
+    cannot be honestly aggregated (the caller then refuses the write — never a
+    broken artifact on disk).
+
+    Default (no per-phase override): 1 part passes through as-is; N JSON-object
+    parts shallow-merge into one object; anything else is refused.
+
+    P-STYLE-SPEC override: each unit authored {"id","style_directive",
+    "representative_slide"}; the deck-level spec build_deck.run_style_preview_samples
+    enforces is {"variants":[exactly 3],"representative_slides":[exactly 3]}.
+    The aggregator keeps the first THREE well-formed variant candidates (ids
+    forced unique A/B/C in unit order), maps each candidate's own
+    representative_slide ordinal, and refuses unless exactly 3 made it."""
+    if phase_id != "P-STYLE-SPEC":
+        if len(parts) == 1:
+            return parts[0]
+        if not parts:
+            return None
+        try:
+            docs = [json.loads(p) for p in parts]
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not all(isinstance(d, dict) for d in docs):
+            return None
+        merged: Dict[str, Any] = {}
+        for d in docs:
+            merged.update(d)
+        return json.dumps(merged, indent=2, ensure_ascii=False)
+
+    variants: List[Dict[str, Any]] = []
+    reps: List[int] = []
+    used_ids: set = set()
+    fallback_ids = ("A", "B", "C")
+    for p in parts:
+        if len(variants) >= 3:
+            break
+        try:
+            doc = json.loads(p)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        directive = str(doc.get("style_directive") or "").strip()
+        rep = doc.get("representative_slide")
+        if not directive or isinstance(rep, bool) or not isinstance(rep, int):
+            continue
+        vid = str(doc.get("id") or "").strip().upper()
+        if vid not in ("A", "B", "C") or vid in used_ids:
+            vid = next((c for c in fallback_ids if c not in used_ids), None)
+            if vid is None:
+                continue
+        used_ids.add(vid)
+        variants.append({"id": vid, "style_directive": directive})
+        reps.append(int(rep))
+    if len(variants) != 3:
+        return None
+    return json.dumps(
+        {"variants": variants, "representative_slides": reps},
+        indent=2, ensure_ascii=False)
+
+
+def _dispatch_phase_fanout_units(
+        run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
+        phase_obj: Optional[Phase], worker_id: str,
+        spec: "fanout.FanoutSpec", patterns: List[str], target: Path,
+        prior_reasons: List[str]) -> DispatchResult:
+    """Run ONE manifest-declared fan-out phase through fanout.run_units and
+    aggregate the units into `target`. Per-unit prompt composition reuses
+    compose_prompt() (role SOP context + upstream artifacts, attempt-stamped),
+    the model call goes through dispatch_complete() (the same routed
+    entrypoint every other phase uses), and the whole-phase verifier runs at
+    the end — mirroring the P4-PROMPT parallel loop's partial-failure
+    semantics (S2.4): no fail-fast, every submitted unit runs to its own
+    conclusion, and the phase-level verify() only runs when every unit came
+    back ok."""
+    phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
+    owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+    items = fanout.enumerate_fanout_items(
+        run_dir, spec, phase_id=phase_id, produces_artifact=patterns)
+    if not items:
+        reason = ("fanout spec enumerated zero units — refusing both a serial "
+                  "fallback and an empty aggregate (S2: no unit is ever invented)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
+        })
+        return DispatchResult(phase_id, "error", 0, [reason])
+
+    from presentation_job.fanout import resolve_effective_workers
+    effective_workers = resolve_effective_workers(
+        phase_obj.workers if phase_obj is not None else 1, unit_count=len(items))
+
+    def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
+        try:
+            system_prompt, user_prompt = compose_prompt(
+                phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                run_dir=run_dir, order={**order, "fanout_unit": unit.key},
+                attempt=1, prior_reasons=prior_reasons,
+            )
+            content, usage, route = dispatch_complete(
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+        except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
+                                     reasons=[f"{type(exc).__name__}: {exc}"])
+        text = (content or "").strip()
+        if not text:
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
+                                     reasons=["unit returned empty output"])
+        scratch = fanout.unit_output_path(run_dir, phase_id, unit.key)
+        scratch.parent.mkdir(parents=True, exist_ok=True)
+        tmp = scratch.with_name(scratch.name + ".partial")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(scratch)
+        return fanout.UnitResult(
+            key=unit.key, status="ok", attempts=1,
+            target=str(scratch.relative_to(run_dir)),
+            meta={"provider": route.get("provider"), "model": route.get("model"),
+                  "request_id": usage.get("request_id") if isinstance(usage, dict) else None},
+        )
+
+    deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
+    results = fanout.run_units(
+        [fanout.Unit(key=it["key"], payload=it) for it in items], _unit_worker,
+        workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
+        per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
+        deadline_s=deadline_s)
+
+    failed = [r for r in results if r.status != "ok"]
+    for r in results:
+        fanout.append_unit_ledger_row(run_dir, phase_id, {
+            "unit": r.key, "status": r.status, "attempts": r.attempts,
+            "target": r.target, "reasons": r.reasons,
+            **({"meta": r.meta} if r.meta else {}),
+        })
+    if failed:
+        reasons = [f"{r.key}: {'; '.join(r.reasons) or 'failed'}" for r in failed]
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": sum(r.attempts for r in results),
+            "status": "exhausted", "failed_units": [r.key for r in failed],
+            "reasons": reasons,
+        })
+        return DispatchResult(phase_id, "exhausted",
+                              sum(r.attempts for r in results), reasons)
+
+    # Aggregate: every ok unit's text is concatenated in unit-key order — the
+    # spec authoring contract (P-STYLE-SPEC) is one JSON document, so the
+    # units' outputs must be joined as JSON parts, not raw concatenation. The
+    # unit contract itself teaches JSON-object output; aggregation validates
+    # the JOIN and fails loudly rather than writing an unparsable file.
+    parts = []
+    for r in results:  # run_units returns INPUT order — merge order (S2.1)
+        if r.target:
+            scratch = run_dir / r.target
+            if scratch.is_file():
+                parts.append(scratch.read_text(encoding="utf-8", errors="replace").strip())
+    merged_text: Optional[str] = _aggregate_fanout_parts(phase_id, parts)
+    if not merged_text:
+        reason = ("fanout units produced output that could not be aggregated "
+                  "into a single artifact document — refusing to write a broken "
+                  "artifact (see per-unit files under working/fanout/)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 1, "status": "exhausted",
+            "reason": reason,
+        })
+        return DispatchResult(phase_id, "exhausted", 1, [reason])
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".partial")
+    tmp.write_text(merged_text + "\n", encoding="utf-8")
+    tmp.replace(target)
+
+    ok, reasons = _verify(phase_id, run_dir)
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": len(results),
+        "status": "verified" if ok else "failed", "verifier_ok": ok,
+        "verifier_reasons": reasons, "units": len(results),
+    })
+    if ok:
+        return DispatchResult(phase_id, "ok", len(results), [],
+                              str(target.relative_to(run_dir)))
+    return DispatchResult(phase_id, "exhausted", len(results), reasons)
+
+
 # ---------------------------------------------------------------------------
 # Claiming (spec S5.6) -- atomic O_CREAT|O_EXCL, no new locking primitive,
 # never touches state.json/.job.lock (which is the Engine's own RunLock file
 # -- a completely different mechanism this module must never touch).
+#
+# FIX 105 (Master Part 8): a claim file now carries the claimant's PID and
+# boot-relative start time, and a claim whose recorded PID is DEAD is IGNORED
+# (never a stall) -- the next dispatcher re-claims the same atomic way without
+# any hand removal. Before this fix a dispatcher killed mid-wave (engine kill,
+# FIX 19 process-group teardown) left `.claim` files behind whose only cure was
+# the age-based heuristic below -- a fresh resume then waited out the FULL
+# SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER window (over 20 minutes)
+# per claimed phase before it could proceed. Liveness replaces waiting:
+#
+#   pid dead                        -> claim is stale NOW, re-claim immediately
+#   pid alive                       -> a live dispatcher holds it; age heuristic
+#                                      still applies as the only fallback for a
+#                                      claim from a process this user cannot
+#                                      signal-probe (PermissionError edge).
+#   pid missing/unreadable (legacy) -> fall back to the age heuristic exactly.
 # ---------------------------------------------------------------------------
 def _claim_path(run_dir: Path, phase_id: str) -> Path:
     return run_dir / "working" / "work-orders" / f"{phase_id}.claim"
+
+
+def _claim_is_stale(path: Path, age: float) -> Tuple[bool, str]:
+    """FIX 105 claim-liveness oracle. Returns (stale, why).
+
+    A claim whose recorded pid is dead is stale regardless of age -- a dead
+    process can never finish its wave, so honoring its claim only stalls the
+    next resume. Age stays the fallback for a legacy claim (no pid field) and
+    for the pid-probe PermissionError edge (we cannot see it either way)."""
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rec, dict):
+            return False, ""   # unreadable shape: age heuristic decides
+    except (OSError, json.JSONDecodeError):
+        return False, ""       # legacy/empty claim: age heuristic decides
+    pid = rec.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return False, ""       # legacy claim without a pid: age heuristic
+    if pid == os.getpid():
+        # Our own (thread-pool sibling's) claim: never stale by liveness;
+        # the in-process sweep serializes claims, so an O_EXCL loss here can
+        # only be a race against ourselves -- fall back to the age rule.
+        return False, ""
+    if _pid_is_alive(pid):
+        return False, ""
+    return True, (f"claim pid {pid} is dead (claimed_at "
+                  f"{rec.get('claimed_at')!r})")
 
 
 def try_claim(run_dir: Path, phase_id: str, worker_id: str) -> bool:
@@ -3233,26 +3925,44 @@ def try_claim(run_dir: Path, phase_id: str, worker_id: str) -> bool:
     try:
         fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
-        # Stale-claim recovery: a claim far older than a generous multiple of
-        # one attempt's wall-clock budget is presumed abandoned (crashed
-        # worker), not slow, and is re-claimed the same atomic way.
+        # FIX 105: liveness first. A claim from a DEAD pid is abandoned
+        # RIGHT NOW -- no waiting out the wall-clock heuristic.
         try:
             age = time.time() - path.stat().st_mtime
         except OSError:
             return False
-        if age > SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
-            try:
-                path.unlink()
-            except OSError:
+        stale, _why = _claim_is_stale(path, age)
+        if not stale:
+            # Live holder, or an unreadable claim: the generous age
+            # multiple remains the only cure (crashed worker whose pid the
+            # probe cannot judge, legacy claim files, our own pid race).
+            if age <= SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
                 return False
-            try:
-                fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            except FileExistsError:
-                return False
-        else:
+        try:
+            path.unlink()
+        except OSError:
+            return False
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
             return False
     try:
-        os.write(fd, json.dumps({"worker": worker_id, "claimed_at": utcnow()}).encode())
+        # FIX 105: the claim now names WHO holds it (pid) and WHEN its
+        # process started, so a reaper/resume can judge liveness instead of
+        # guessing from mtime alone. started_at uses time.CLOCK_BOOTTIME when
+        # the platform exposes it (Linux containers) and falls back to
+        # time.time() elsewhere (macOS) -- both monotonic enough to detect a
+        # pid-reuse restart of the same numeric pid.
+        try:
+            started_at = time.clock_gettime(time.CLOCK_BOOTTIME)  # type: ignore[attr-defined]
+        except (AttributeError, OSError):
+            started_at = time.time()
+        os.write(fd, json.dumps({
+            "worker": worker_id,
+            "pid": os.getpid(),
+            "started_at": started_at,
+            "claimed_at": utcnow(),
+        }).encode())
     finally:
         os.close(fd)
     return True
@@ -3724,6 +4434,126 @@ def _run_terminal(run_dir: Path) -> Optional[str]:
         return None
 
 
+# ---------------------------------------------------------------------------
+# FIX 9 -- the dispatcher's own exit condition. Per MASTER Part 8 Fix 9 the
+# watch loops no longer rely solely on "terminal is set" (a single-phase
+# --resume never sets terminal, and a quarantined unit parks WITHOUT setting
+# terminal -- Fix 9 drops terminal=BLOCKED entirely). The exit condition
+# becomes exactly: NO OPEN WORK ORDERS and the ENGINE PID DEAD. Until both
+# hold, the dispatcher keeps sweeping: a phase whose work order is still open
+# must be picked up whether the engine is alive or newly resumed.
+#
+# Engine-liveness oracle (read-only; this module NEVER takes RunLock -- hard
+# invariant 1): the Engine writes its pid into run_dir/.job.lock on every
+# RunLock acquisition (state.py RunLock.__enter__: "{pid} {ts}\n") and holds
+# the flock for the whole run. This module only READS that file and probes the
+# pid -- it never flocks the file, so it can never race a starting engine out
+# of its own lock. A crashed engine leaves the file with a dead pid -> dead.
+# Known residual: OS pid reuse could make a dead engine's pid look alive; the
+# getppid guard, the terminal check and --max-lifetime-minutes remain as
+# backstops, exactly as before.
+# ---------------------------------------------------------------------------
+DISPATCH_EXIT_GRACE_S = 120.0   # engine may not have written .job.lock yet when
+                                # the auto-spawn races engine.run(); grace before
+                                # "engine dead" may be believed from its absence.
+
+def _pid_is_alive(pid: int) -> bool:
+    """Mirror of __main__._pid_is_alive: True if `pid` names a process this
+    user can at least see. PermissionError still means it exists."""
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+def _engine_pid_alive(run_dir: Path) -> bool:
+    """True iff the Engine process for this run dir is alive (its pid is
+    recorded in .job.lock and still resolves). A missing or unreadable lock
+    file means the engine is NOT running."""
+    try:
+        text = (run_dir / ".job.lock").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    m = re.match(r"\s*(\d+)", text)
+    if not m:
+        return False
+    pid = int(m.group(1))
+    if pid == os.getpid():   # a stale record of a probe we never make -- never self
+        return False
+    return _pid_is_alive(pid)
+
+def _open_work_orders(run_dir: Path) -> List[str]:
+    """Phase ids whose work order is still OPEN: an order file exists for a
+    phase this module would actually work on. Settled orders are exactly the
+    sweep's own terminal short-circuits: DECLINE_PHASES membership (never
+    dispatchable) and `done` in state.json (monotonic). A phase under backoff
+    or parked at the retry ceiling is still OPEN -- its order is live and a
+    reissue or state change re-arms it, so its presence keeps the watcher
+    alive."""
+    wo_dir = run_dir / "working" / "work-orders"
+    if not wo_dir.is_dir():
+        return []
+    open_ids: List[str] = []
+    for of in sorted(wo_dir.glob("*.json")):
+        phase_id = of.stem
+        if phase_id in DECLINE_PHASES:
+            continue
+        if _phase_already_done(run_dir, phase_id):
+            continue
+        open_ids.append(phase_id)
+    return open_ids
+
+def _autospawn_lock_path(run_dir: Path) -> Path:
+    """Same file __main__._auto_dispatch_lock_path uses (that module is not
+    importable here without side effects; the path is duplicated, and its
+    record shape {pid, started_at, run_dir} is honoured, not invented)."""
+    return run_dir / "working" / "dispatcher-autospawn.lock"
+
+def _clear_stale_autospawn_lock(run_dir: Path) -> bool:
+    """Orphan-lock handling: a lock recording a DEAD pid (or an unreadable
+    one) is a leftover from a killed dispatcher -- clear it so the next
+    engine's auto-spawn is never confused by a stale record. A live pid (and
+    not ours) is a real watcher: leave it alone."""
+    path = _autospawn_lock_path(run_dir)
+    if not path.is_file():
+        return False
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(rec.get("pid") or 0)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pid = 0
+    if pid == os.getpid():
+        return False
+    if pid == 0 or not _pid_is_alive(pid):
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+    return False
+
+def _release_own_autospawn_lock(run_dir: Path) -> None:
+    """On this watcher's own exit, clear the autospawn lock IF it records our
+    pid -- so an auto-spawned dispatcher never leaves an orphan lock behind
+    (a lock naming a live-but-gone dispatcher pid is the orphan-lock defect
+    of MASTER Fix 9's evidence). A lock naming some OTHER live pid belongs to
+    a watcher this process does not own and is left untouched."""
+    path = _autospawn_lock_path(run_dir)
+    try:
+        if path.is_file():
+            rec = json.loads(path.read_text(encoding="utf-8"))
+            if int(rec.get("pid") or 0) == os.getpid():
+                path.unlink()
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+
+
 def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
                   max_lifetime_s: float = 6 * 3600, max_workers: Optional[int] = None,
                   worker_id: Optional[str] = None) -> None:
@@ -3748,28 +4578,64 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     # anything (which would mean touching phases.py/state.json, forbidden here).
     spawning_ppid = os.getppid()
     started = time.time()
-    while True:
-        if _run_terminal(run_dir) is not None:
-            print(f"[dispatcher {worker_id}] run terminal is set -- exiting", flush=True)
-            return
-        if os.getppid() != spawning_ppid:
-            print(f"[dispatcher {worker_id}] spawning process ({spawning_ppid}) is gone "
-                  f"(reparented to {os.getppid()}) -- exiting", flush=True)
-            return
-        if time.time() - started > max_lifetime_s:
-            print(f"[dispatcher {worker_id}] max lifetime exceeded -- exiting", flush=True)
-            return
-        try:
-            results = sweep_run_dir(run_dir, worker_id=worker_id, max_workers=workers)
-        except Exception as exc:  # noqa: BLE001 -- a sweep failure must never kill the watch loop
-            print(f"[dispatcher {worker_id}] sweep error: {exc!r}", flush=True)
-            results = []
-        for r in results:
-            print(f"[dispatcher {worker_id}] {r.phase_id}: {r.status} "
-                  f"(attempts={r.attempts})" + (f" target={r.target}" if r.target else "")
-                  + (f" reasons={r.reasons}" if r.status in ("exhausted", "error", "declined")
-                     else ""), flush=True)
-        time.sleep(interval)
+    # FIX 9: the exit condition is "no open work orders AND engine pid dead",
+    # never either half alone. _idle_ticks counts consecutive ticks with zero
+    # open orders while the engine is believed dead; the grace window covers
+    # the auto-spawn race (the dispatcher may start a beat BEFORE engine.run()
+    # takes RunLock and writes its pid into .job.lock) so we never declare the
+    # engine dead during startup, and never exit while an order is still open.
+    idle_ticks = 0
+    first_tick = True
+    try:
+        while True:
+            if _run_terminal(run_dir) is not None:
+                print(f"[dispatcher {worker_id}] run terminal is set -- exiting", flush=True)
+                return
+            if os.getppid() != spawning_ppid:
+                # The spawning engine process is gone. If ANY work order is
+                # still open, stay alive and keep sweeping (the swarm-runner
+                # contract: work orders outlive one engine invocation and the
+                # next resume may need no re-spawn). Exit only when nothing
+                # is open -- the old unconditional orphan exit is kept solely
+                # for the already-empty case, where spinning was pure waste.
+                if not _open_work_orders(run_dir):
+                    print(f"[dispatcher {worker_id}] spawning process ({spawning_ppid}) is gone "
+                          f"(reparented to {os.getppid()}) and no open work orders -- exiting",
+                          flush=True)
+                    return
+            if time.time() - started > max_lifetime_s:
+                print(f"[dispatcher {worker_id}] max lifetime exceeded -- exiting", flush=True)
+                return
+            _clear_stale_autospawn_lock(run_dir)
+            open_orders = _open_work_orders(run_dir)
+            engine_alive = _engine_pid_alive(run_dir)
+            if first_tick:
+                # Startup: the engine may not hold RunLock yet. Assume alive
+                # on the very first pass so a fresh auto-spawn never exits
+                # out from under a just-starting engine.
+                idle_ticks = 0
+                first_tick = False
+            elif not open_orders and not engine_alive:
+                idle_ticks += 1
+            else:
+                idle_ticks = 0
+            if idle_ticks and time.time() - started > DISPATCH_EXIT_GRACE_S:
+                print(f"[dispatcher {worker_id}] no open work orders and engine pid dead "
+                      f"({idle_ticks} idle ticks) -- exiting", flush=True)
+                return
+            try:
+                results = sweep_run_dir(run_dir, worker_id=worker_id, max_workers=workers)
+            except Exception as exc:  # noqa: BLE001 -- a sweep failure must never kill the watch loop
+                print(f"[dispatcher {worker_id}] sweep error: {exc!r}", flush=True)
+                results = []
+            for r in results:
+                print(f"[dispatcher {worker_id}] {r.phase_id}: {r.status} "
+                      f"(attempts={r.attempts})" + (f" target={r.target}" if r.target else "")
+                      + (f" reasons={r.reasons}" if r.status in ("exhausted", "error", "declined")
+                         else ""), flush=True)
+            time.sleep(interval)
+    finally:
+        _release_own_autospawn_lock(run_dir)
 
 
 def watch_scan_root(scan_root: Path, *, interval: float = SWEEP_INTERVAL_S,
@@ -3782,6 +4648,12 @@ def watch_scan_root(scan_root: Path, *, interval: float = SWEEP_INTERVAL_S,
         run_dirs = [p.parent for p in scan_root.glob("*/state.json")]
         for run_dir in run_dirs:
             if _run_terminal(run_dir) is not None:
+                continue
+            # FIX 9: a run with open work orders and a dead engine pid is
+            # exactly what this scan-root watcher EXISTS for -- it sweeps
+            # stranded runs an --run-dir watcher can no longer see. Only a
+            # run with nothing open and no engine skips its sweep.
+            if not _open_work_orders(run_dir) and not _engine_pid_alive(run_dir):
                 continue
             scripts_dir = resolve_scripts_dir_for_run(run_dir)
             dept_root = resolve_dept_root(scripts_dir)

@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -186,7 +187,24 @@ def _resolve_intake_depth(explicit: Optional[str], entries: dict,
     INVALID refusal (via UnknownIntakeDepth), never a silent QUICK fallback
     -- this is what keeps run-mode vocabulary (ultra|standard|economy) from
     ever leaking into the intake-depth axis."""
+    def _unwrap(val):
+        """Tolerate dict-shaped ledger values: the interview_depth entry's
+        `value`/`normalized` can be {"standard_mode": "IN-DEPTH"} (real
+        driver shape, measured 2026-09-01) — unwrap the standard_mode
+        sub-key when it is a string; any other non-string shape is None
+        (skip to the next candidate, never invent a value)."""
+        if isinstance(val, dict):
+            for k in ("standard_mode", "value", "normalized"):
+                sub = val.get(k)
+                if isinstance(sub, str):
+                    return sub
+            return None
+        if isinstance(val, str):
+            return val
+        return None
+
     def _canon(val) -> Optional[str]:
+        val = _unwrap(val)
         if val is None:
             return None
         s = str(val).strip().lower().replace("_", "-").replace(" ", "-")
@@ -359,6 +377,29 @@ def resolve(ledger_path: Path, source: str,
     intake_copy_path = ledger_path.parent.parent / "copy" / "intake.json"
     intake_copy = _read_json_dict(intake_copy_path)
 
+    # FIX 25/48: emit deck_slug so the board reconcile sweep stops rejecting
+    # every engine run as "not a run dir" (no deck_slug resolvable). The
+    # sweep's _deck_slug() reads state.json["intake"]["deck_slug"] first and
+    # working/copy/intake.json["deck_slug"] second -- both are fed from the
+    # engine's --new intake JSON, which is THIS file's output. So the
+    # emission lives HERE, derived from the run directory's own name (the
+    # ledger lives at <run_dir>/working/interview/intake_ledger.json, so
+    # ledger_path.parent.parent.parent is the run dir) -- exactly the step-5
+    # fallback the sweep (sweep.py _deck_slug), curate._resolve_deck_slug
+    # (curate.py:594) and manifest._resolve_deck_slug (manifest.py:451) all
+    # already use, and what phases.py passes to board.open_card. Slugified
+    # to [a-z0-9-] with the SAME regex those three consumers slugify with,
+    # so the emitted value round-trips through their own slugifiers
+    # unchanged. An intake_copy deck_slug explicitly stamped by an upstream
+    # step wins (same precedence as curate/manifest pass 1); the run-dir
+    # name is the derived default, never a fabricated one.
+    _deck_slug = str(
+        intake_copy.get("deck_slug")
+        or ledger_path.parent.parent.parent.name
+        or "deck"
+    )
+    _deck_slug = re.sub(r"[^a-z0-9]+", "-", _deck_slug.lower()).strip("-") or "deck"
+
     client = str(
         intake_copy.get("client_name")
         or ledger.get("client_name") or ledger.get("client")
@@ -399,6 +440,12 @@ def resolve(ledger_path: Path, source: str,
         # intake.json deck_type field derive_legacy_fields() writes
         # (deck-intake-driver.py) and is not read by the SP claim gate.
         "deck_type": ptype,
+        # FIX 25/48: emit deck_slug so the sweep's _deck_slug() resolves it
+        # from state.json["intake"]["deck_slug"] instead of rejecting every
+        # engine run as "not a run dir". Derived above from the run dir name
+        # (or an upstream-stamped intake_copy.deck_slug), slugified the same
+        # way every consumer slugifies.
+        "deck_slug": _deck_slug,
         "source": source,
     }
     if ptype == "signature":
@@ -463,6 +510,24 @@ def resolve(ledger_path: Path, source: str,
     return intake
 
 
+def _intake_run_dir_of(intake_out: Path) -> Optional[Path]:
+    """FIX 109 helper: resolve the deck run dir from an intake.json path — the
+    nearest ancestor that contains a working/ subtree (mirrors build_deck's
+    _intake_run_dir so the provenance log lands beside the run's own
+    checkpoints, wherever the run dir actually is)."""
+    try:
+        cur = intake_out.resolve().parent
+    except OSError:
+        return None
+    for _ in range(8):
+        if (cur / "working").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ledger", required=True, type=Path,
@@ -471,7 +536,14 @@ def main(argv=None) -> int:
                    help="path to write the engine's --new intake JSON")
     p.add_argument("--source", default="resolve-intake",
                    help="tag recorded in intake.source (which caller ran this)")
-    p.add_argument("--intake-depth", default=None, choices=list(INTAKE_DEPTH_LEGAL),
+    p.add_argument("--writer-phase", default="resolve-intake",
+                   help="FIX 109: the writer_phase recorded in the intake "
+                        "provenance row appended for this sanctioned write "
+                        "(defaults to 'resolve-intake'; the intake phase's own "
+                        "caller passes its phase id)")
+    p.add_argument("--intake-depth", default=None,
+                   type=lambda v: str(v).strip().lower().replace("_", "-").replace(" ", "-"),
+                   choices=list(INTAKE_DEPTH_LEGAL),
                    help="FIX 36(3): the deck's intake depth, quick|in-depth "
                         "(the interview_depth question's standard_mode). "
                         "Distinct from run-mode --mode (Ultra|Standard|Economy) "
@@ -493,10 +565,54 @@ def main(argv=None) -> int:
         return 5
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    # FIX 109: capture the pre-write sha BEFORE the atomic replace lands, so
+    # the provenance row's sha_before is the intake this write replaces.
+    _sha_before = None
+    if args.out.is_file():
+        from presentation_job.runfacts import _sha256_file as _sha_fn
+        _sha_before = _sha_fn(args.out)
     tmp = args.out.with_suffix(args.out.suffix + ".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(intake, fh, indent=2)
     os.replace(tmp, args.out)
+
+    # FIX 109 — approval-path provenance. THIS file is one of the two sanctioned
+    # intake.json writers (the owner's approval path; the intake phase is the
+    # other). Every sanctioned write appends one row —
+    #   {writer_phase, writer_pid, ts, sha_before, sha_after}
+    # — to <run_dir>/working/checkpoints/intake.provenance.jsonl, which is what
+    # makes the engine's refusal oracle (intake_sha_has_provenance) accept the
+    # run again after an out-of-band edit, and what lets
+    # check_intake_provenance() invalidate exactly the phases whose manifest
+    # consumes[] include intake.json so they re-run on the new intake.
+    # The append fires only when --out IS an intake.json inside a run dir
+    # (name intake.json with a working/ ancestor): resolve_intake.py can also
+    # be pointed at arbitrary out paths by tests, and those are not run
+    # artifacts. A failed append is LOUD on stderr and non-zero-tolerated: the
+    # write already happened, and the engine will refuse every phase until a
+    # row exists — fail-closed, never fail-open.
+    if args.out.name == "intake.json":
+        run_dir = _intake_run_dir_of(args.out)
+        if run_dir is not None:
+            try:
+                from presentation_job.runfacts import append_intake_provenance
+                row = append_intake_provenance(
+                    run_dir, writer_phase=args.writer_phase,
+                    previous_sha=_sha_before,
+                    note=f"resolve_intake.py --source {args.source}")
+                print(f"provenance: appended row ts={row['ts']} "
+                      f"sha_before={row['sha_before'][:12]}... "
+                      f"sha_after={row['sha_after'][:12]}... -> "
+                      f"{run_dir / 'working/checkpoints/intake.provenance.jsonl'}")
+            except Exception as exc:  # noqa: BLE001 — loud, never silent
+                print(
+                    f"AF-INTAKE-PROVENANCE: intake.json was written but the "
+                    f"provenance row could NOT be appended ({exc!r}). Every "
+                    "engine phase will refuse this run until a sanctioned "
+                    "rewrite appends the row — fix the provenance log, then "
+                    "re-run resolve_intake.py.",
+                    file=sys.stderr)
+
     print(f"resolved presentation_type={intake['presentation_type']!r} "
           f"client={intake['client']!r} -> {args.out}")
     return 0

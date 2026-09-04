@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-07-21T05:44:13.146017+00:00",
-  "source_ref": "4b01ae4e3a3486be22fc98c54d5002d445637268",
+  "generated_at": "2026-09-04T11:32:42.099553+00:00",
+  "source_ref": "8b3ef9914fde7b7f5cedb542376d57707525fd0b",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,9 +9,9 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 40,
+    "artifacts": 41,
     "sops": 8,
-    "roles": 32,
+    "roles": 33,
     "departments": 11
   },
   "artifacts": [
@@ -493,6 +493,18 @@
       ],
       "retired_in": "f5942a6867316b41cda71111a5a5e79ec1be081a",
       "retired_at": "2026-06-12T14:00:15-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/presentations/infographic-checklist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/infographic-checklist.md",
+      "dept": "presentations",
+      "file": "infographic-checklist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:1c355e73a07e1f24b514c63f6080c6eb4d09ed02f005d1300b5eca060272d902"
+      ],
+      "retired_in": "8c77c86c83c184eecb3b4ff5e9fbaeba4074e0cf",
+      "retired_at": "2026-09-04T06:20:48-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",

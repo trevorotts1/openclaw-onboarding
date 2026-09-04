@@ -184,6 +184,139 @@ def stamp_requester(intake: dict, env: dict | None = None,
     return intake
 
 
+def _load_presentation_job():
+    """Locate the presentation_job package root (the scripts/ directory that
+    CONTAINS it) the same way every other sanctioned sibling is resolved here:
+    by file path across the candidate roots, never a mix of boxes/checkouts.
+    Candidate layouts covered:
+      PRESENTATIONS_SCRIPTS override (deployed boxes);
+      <presentations>/scripts (this checkout: interview-app sits under
+      presentations/intake/, so presentations/ is HERE x3 parents up);
+      <intake>/scripts and the OC workspace path (other deployed shapes).
+    Returns the imported package or None -- never raises (a box without the
+    department scripts installed keeps its pre-FIX-61 behavior)."""
+    for root in (
+        pathlib.Path(os.environ["PRESENTATIONS_SCRIPTS"]) if os.environ.get("PRESENTATIONS_SCRIPTS") else None,
+        HERE.parent.parent.parent / "scripts",
+        HERE.parent.parent / "scripts",
+        pathlib.Path.home() / ".openclaw" / "workspace" / "departments" / "Presentations" / "scripts",
+    ):
+        if root is None:
+            continue
+        if (root / "presentation_job" / "launcher.py").is_file():
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            try:
+                import presentation_job  # noqa: F401
+                return presentation_job
+            except ImportError:
+                continue
+    return None
+
+
+def _dispatch_engine_under_lease(run_dir: pathlib.Path, intake: dict,
+                                 session_id: str, verbose: bool = False) -> dict:
+    """FIX 61: a staged submission becomes a RUNNING ENGINE within one poll
+    interval, with no human action -- this bridge is not just the card-writer
+    any more. After the run-dir record is stamped (working/copy/intake.json,
+    the file launcher.dispatch_new's --new path reads via --intake), acquire
+    the run lease (FIX 18) with THIS BRIDGE named as holder and call
+    launcher.dispatch_new() while it is held, releasing it in a finally.
+
+    The lease document (working/.lease.json) names the bridge as holder, so
+    the FIX 61 proof can read it and so the intake poll / supervisor / engine
+    can never double-launch the same run concurrently: acquire() returns None
+    when a live holder keeps the run, and that is reported, never swallowed
+    into a fake success.
+
+    Deck type comes from the GROUNDED intake record (intake_writer already
+    corrected it against the client's own presentation_type answer);
+    vocab.normalize_presentation_type() -- the same single-sourced resolver
+    the door, poll, engine, and launcher share -- accepts both the deck_type
+    name ("signature_presentation" -> "signature") and the canonical value,
+    and dispatch_new refuses loudly (DISPATCH_UNKNOWN_DECK_TYPE) on anything
+    else, so an unresolvable type is a loud failure, never a silent webinar.
+
+    Never raises: the return dict carries the outcome for the caller's own
+    status line. A launcher refusal (capacity unmeasured, notify unconfigured,
+    OCR missing, ...) leaves the staged submission staged -- the poll retries
+    it on the next interval, exactly the pre-FIX-61 staged semantics, minus
+    the human action that used to sit between the two."""
+    out: dict = {"dispatched": False, "detail": "presentation_job not reachable"}
+    pj = _load_presentation_job()
+    if pj is None:
+        return out
+    # presentation_job/__init__.py is a docstring only -- launcher and lease are
+    # SUBMODULES, never package attributes. Resolve them as attributes first
+    # (an injected stand-in in tests, or a future __init__ that re-exports
+    # them), then fall back to importing the submodules by name -- attribute
+    # access on the bare package alone would hand back the "presentation_job
+    # incomplete" report on every real box.
+    launcher = getattr(pj, "launcher", None)
+    lease_mod = getattr(pj, "lease", None)
+    if launcher is None or lease_mod is None:
+        try:
+            import importlib as _importlib
+            if launcher is None:
+                launcher = _importlib.import_module("presentation_job.launcher")
+            if lease_mod is None:
+                lease_mod = _importlib.import_module("presentation_job.lease")
+        except ImportError as exc:
+            out["detail"] = f"presentation_job incomplete: {exc}"
+            return out
+
+    deck_type = str(intake.get("deck_type") or "").strip()
+    client = str(intake.get("requester_chat_id") or intake.get("intake_session_id")
+                 or session_id or "").strip() or "operator"
+    holder = {"who": "intake-bridge", "session_id": session_id}
+    lease = None
+    try:
+        lease = lease_mod.acquire(run_dir, holder=holder,
+                                  ttl_s=lease_mod.DEFAULT_TTL_S, wait_s=30.0)
+        if lease is None:
+            doc = lease_mod.read(run_dir) or {}
+            out["detail"] = (
+                "lease held by pid {pid} on host {host}; dispatch skipped, "
+                "session left staged for the next poll".format(
+                    pid=doc.get("pid"), host=doc.get("host")))
+            return out
+        pid = launcher.dispatch_new(str(run_dir), client=client,
+                                    deck_type=deck_type, background=True)
+        out["pid"] = pid
+        out["deck_type"] = deck_type
+        if isinstance(pid, int) and pid > 0:
+            out["dispatched"] = True
+            out["detail"] = f"engine dispatched (pid {pid})"
+        elif pid == launcher.DISPATCH_UNKNOWN_DECK_TYPE:
+            out["detail"] = (f"dispatch refused (AF-DECK-TYPE-UNKNOWN): deck_type "
+                             f"{deck_type!r} does not resolve through vocab -- "
+                             "session left staged for the next poll")
+        else:
+            codes = {
+                launcher.DISPATCH_CAPACITY_REFUSED: "AF-CAPACITY-UNMEASURED",
+                launcher.DISPATCH_NOTIFY_REFUSED: "AF-NOTIFY-UNCONFIGURED",
+                launcher.DISPATCH_OCR_REFUSED: "AF-OCR-ENGINE-MISSING",
+                launcher.DISPATCH_CREDIT_REFUSED: "AF-CREDIT-PREFLIGHT",
+                launcher.DISPATCH_MODE_INVALID: "AF-MODE-INVALID",
+                -2: "already running",
+                -3: "already DONE",
+                -1: "spawn failure",
+            }
+            code = codes.get(pid, "refused")
+            out["detail"] = (f"dispatch refused ({code}, rc={pid}) -- nothing "
+                             "spawned; session left staged for the next poll")
+        return out
+    except Exception as exc:  # noqa: BLE001 -- a dispatch failure must never break ingest
+        out["detail"] = f"dispatch error: {type(exc).__name__}: {exc}"
+        return out
+    finally:
+        if lease is not None:
+            try:
+                lease_mod.release(lease)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def cmd_ingest(args) -> int:
     intake_payload = _fetch_intake(args)
     intake = intake_payload.get("intake") or intake_payload
@@ -212,6 +345,21 @@ def cmd_ingest(args) -> int:
     else:
         print("error: intake_writer.py not importable — cannot stamp the run dir", file=sys.stderr)
         return 2
+
+    # 1b) FIX 61: a staged submission becomes a running engine within one
+    #     poll interval with no human action. The intake.json is on disk
+    #     (step 1) -- exactly what launcher.dispatch_new's --new path reads
+    #     -- so dispatch the engine NOW, under the run lease (working/.lease.json
+    #     names THIS BRIDGE as holder), before the kanban card. Best-effort
+    #     and never fatal: a refusal (lease held, capacity unmeasured, ...) is
+    #     reported and the session stays staged for the next poll to retry.
+    dispatch_out = _dispatch_engine_under_lease(
+        run_dir, intake, args.session_id, verbose=bool(getattr(args, "verbose", False)))
+    if args.verbose or not dispatch_out.get("dispatched"):
+        print(json.dumps({"status": "dispatch",
+                          "session_id": args.session_id,
+                          **dispatch_out}),
+              file=(sys.stderr if not dispatch_out.get("dispatched") else sys.stdout))
 
     # 2) Trigger the presentation department start (kanban card, no shortcuts).
     cc = _load_cc_board()

@@ -1,8 +1,8 @@
 # Presentation Interview app — deployable source + question wiring
 
 The **Presentation Interview app**: a Cloudflare-hosted intake frontend that asks
-12 intake questions one at a time (7-9 core, hard cap 20), shows a segmented
-**"Question N of 12"** progress bar, captures a **logo** ("no logo on file —
+15 intake questions one at a time (7-9 core, hard cap 20), shows a segmented
+**"Question N of 15"** progress bar, captures a **logo** ("no logo on file —
 provide one or build without?") and **image links**, and on **Submit** stores the
 answers on the box and **pushes them to the presentation department** (starting
 the kanban flow — no shortcuts).
@@ -14,17 +14,23 @@ The working copy lives at `Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/app
 
 Edit the canonical JSONs, not the app, to change what a client is asked:
 
-- `../deck-intake-questions.json` (v1.3.0) — the deck-intake question bank. Now
-  includes the **new upsell yes-no questions**: `want_sales_checkout` (order 7.6,
-  "Do you need me to create a sales page and a checkout page...?") and
-  `want_vsl_page` (order 7.7, "Would you like a VSL page...?") plus their
-  declined-reason follow-ups and `waiver_field_mapping` entries. It also carries
-  the speech-speed question `speech_speed_preference` (order 7.5).
+- `../deck-intake-questions.json` (v1.8.0) — the deck-intake question bank. 48
+  physical rows: 23 numbered conversational turns (kind `merged`) + 25 legacy
+  alias rows (`"alias": true`, filtered out of the ask sequence while
+  `PRESENTATION_INTAKE_V2` is on). Includes the **upsell yes-no questions**:
+  `want_sales_checkout` (order 20.01, "Do you need me to create a sales page and
+  a checkout page...?") and `want_vsl_page` (order 20.02, "Would you like a VSL
+  page...?") plus their declined-reason follow-ups and `waiver_field_mapping`
+  entries. Also carries the speech-speed question `speech_speed_preference`
+  (order 21.01) and the six turn-23 declined-reason aliases.
 - `../upsell-questions.json` — the standalone upsell question set (signature-mode
-  loading). Same definitions as the orders 7.6/7.61/7.7/7.71 entries in
-  deck-intake-questions.json.
+  loading). Same definitions as the four upsell alias rows in
+  deck-intake-questions.json (`want_sales_checkout` order 20.01,
+  `sales_checkout_declined_reason` order 22.05, `want_vsl_page` order 20.02,
+  `vsl_page_declined_reason` order 22.06); the standalone file keeps its own
+  legacy orders 7.6/7.61/7.7/7.71.
 
-`payload/build_questions_payload.py` selects the curated 12-question set by id
+`payload/build_questions_payload.py` selects the curated 15-question set by id
 (`DEFAULT_CURATED`) and projects the UI fields from these canonical files. The
 app's `questions.json` is a snapshot of that projection.
 

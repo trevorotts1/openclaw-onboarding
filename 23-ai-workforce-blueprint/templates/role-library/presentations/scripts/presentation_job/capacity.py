@@ -250,8 +250,35 @@ SOURCE_NONE = "none"
 OVERRIDE_FILENAME = "capacity_override.json"
 CONFIG_DIR_ENV = "PRESENTATION_CAPACITY_CONFIG_DIR"
 
-NINEROUTER_DB = Path.home() / ".9router" / "db" / "data.sqlite"
-OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
+#: Platform-aware config paths (master plan Part 8 Fix 13 / FIX 68 seam):
+#: on the docker VPS the openclaw root is /data/.openclaw (HOME is often /tmp),
+#: so every Path.home() hard-code above read the WRONG box's config. These
+#: three constants resolve through presentation_job/oc_paths.py -- one module
+#: owns openclaw root resolution -- and fall back to the legacy Mac layout
+#: when oc_paths is not deployed beside this file (a partial deploy keeps the
+#: pre-FIX-68 behavior, never a hard break). Each stays a MODULE ATTRIBUTE on
+#: purpose: tests patch capacity.NINEROUTER_DB / OPENCLAW_CONFIG /
+#: HARNESS_SETTINGS_CANDIDATES directly and that contract is load-bearing.
+def _oc_paths():
+    """presentation_job.oc_paths when importable (package-relative first),
+    else None -- callers degrade to the legacy Mac paths."""
+    try:
+        from . import oc_paths as _op  # package-relative (python3 -m)
+        return _op
+    except ImportError:
+        try:
+            import oc_paths as _op  # direct file run from presentation_job/
+            return _op
+        except ImportError:
+            return None
+
+_ocp = _oc_paths()
+if _ocp is not None:
+    NINEROUTER_DB = Path.home() / ".9router" / "db" / "data.sqlite"
+    OPENCLAW_CONFIG = _ocp.root() / "openclaw.json"
+else:
+    NINEROUTER_DB = Path.home() / ".9router" / "db" / "data.sqlite"
+    OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
 HARNESS_SETTINGS_CANDIDATES = (
     Path.home() / ".claude-nine" / "settings.json",
     Path.home() / ".claude" / "settings.json",
@@ -416,6 +443,27 @@ PROVIDER_PROBE_DEFS = {
         "models_url": "https://apihub.agnes-ai.com/v1/models",
         "auth_required_for_models": True,
     },
+    # ------------------------------------------------------------------
+    # kie probe target (master plan Part 8 Fix 13 / W08a-B3): kie.ai is the
+    # department's image provider (gpt-image-2 per model_catalog.json) and the
+    # only probeable provider with NO probe definition -- a box whose ONLY key
+    # is KIE_API_KEY reported an empty inventory, and FIX 12's preflight then
+    # priced its phases off an unverified account. kie.ai exposes no
+    # OpenAI-style `GET /models`; the CHEAPEST authenticated inventory call it
+    # has is the same credit read build_deck.py already uses for
+    # AF-KIE-BALANCE (KIE_CREDIT_URL): `GET /api/v1/chat/credit` with the
+    # Bearer key. The body is a credit count, not a model list, so `models`
+    # stays [] (never invented) and `ok` on HTTP 200 means "key present AND
+    # accepted by kie.ai" -- the presence/validity evidence FIX 9 asks for.
+    # ------------------------------------------------------------------
+    "kie": {
+        "label": "Kie.ai",
+        "env_keys": ("KIE_API_KEY",),
+        "secret_files": (),
+        "models_url": "https://api.kie.ai/api/v1/chat/credit",
+        "auth_required_for_models": True,
+        "models_endpoint": False,  # credit read: evidence of a live key, not a lineup
+    },
 }
 
 #: Where key VALUES may be read from when the environment does not already
@@ -423,7 +471,119 @@ PROVIDER_PROBE_DEFS = {
 #: _load_deepseek_key, build_deck's KIE loader) already read. The VALUE is
 #: forwarded ONLY into the Authorization header transport and never placed
 #: in any result, report, log, profile or exception message.
+#: FIX 68/B3: the list is resolved through oc_paths.secrets_env_candidates()
+#: (platform-aware: /data/.openclaw/secrets/.env FIRST on the docker VPS,
+#: ~/.openclaw first on a Mac, $OPENCLAW_SECRETS explicit override first of
+#: all), degrading to the legacy Mac list when oc_paths is not deployed
+#: beside this module. Kept as a module-level FUNCTION so a test can patch it.
+def _secrets_env_files():
+    try:
+        op = _oc_paths()
+        if op is not None:
+            return tuple(str(p) for p in op.secrets_env_candidates())
+    except Exception:  # noqa: BLE001 -- a broken oc_paths degrades to legacy
+        pass
+    return ("~/.openclaw/secrets/.env",
+            "~/.openclaw/secrets/secrets.env",
+            "~/.openclaw/.env",
+            "~/.openclaw/workspace/.env",
+            "~/clawd/secrets/.env")
+
+#: Backwards-compatible module attribute (docs/tests referenced the old tuple).
 SECRETS_ENV_FILES = (("~/.openclaw/secrets/.env",), ("~/.openclaw/.env",))
+
+# ---------------------------------------------------------------------------
+# FIX 67 secret-name canon (master plan Part 8 Fix 13 / W08a-B3 seam):
+# the NAME a credential is written under resolves through the ONE canon
+# (shared-utils/secret_helper: alias_list(canonical_for(name))), so a key
+# saved as KIE_KEY / KIE_AI_API_KEY / DEEP_SEEK_API_KEY / ... is found by the
+# same reader that finds the canonical spelling. The helper is path-imported
+# from the repo checkout, the installed skills dir, or /data/.openclaw/skills
+# -- the same seam research_web.py and kie_generate.py use -- and a box
+# without it keeps the exact pre-canon behavior (direct name only), never a
+# hard break. A placeholder-shaped value is REJECTED wherever it sits.
+# ---------------------------------------------------------------------------
+_secret_helper_mod = None
+_secret_helper_tried = False
+
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it. Cached."""
+    global _secret_helper_mod, _secret_helper_tried
+    if _secret_helper_tried:
+        return _secret_helper_mod
+    _secret_helper_tried = True
+    import importlib.util
+    skills_default = None
+    op = _oc_paths()
+    if op is not None:
+        try:
+            skills_default = Path(op.skills())
+        except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+            skills_default = None
+    if skills_default is None:
+        skills_default = Path.home() / ".openclaw" / "skills"
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                _secret_helper_mod = mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                _secret_helper_mod = None
+            break
+    return _secret_helper_mod
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value (PASTE_REAL_TOKEN, CHANGE_ME, <TODO>, ...)
+    is rejected by every reader. Uses the canon's is_placeholder when the
+    helper is reachable; otherwise the same minimal inline gate so a partial
+    deploy still refuses."""
+    if not value:
+        return True
+    helper = _secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
+            pass
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+def _alias_names(env_key: str) -> Tuple[str, ...]:
+    """The accepted names for `env_key`: the canonical spelling plus every
+    alias in its canon family. Unknown names resolve to themselves (the canon
+    helper's own contract), so a family missing from the canon degrades to the
+    direct name -- never a hard break, never a NEW name invented here."""
+    helper = _secret_helper()
+    if helper is None:
+        return (env_key,)
+    try:
+        names = list(helper.alias_list(helper.canonical_for(env_key)))
+        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return (env_key,)
 
 def probe_transport(url: str, key: Optional[str] = None,
                     timeout: float = 8.0) -> Tuple[int, bytes]:
@@ -479,30 +639,44 @@ def _read_secret_value(env_key: str) -> Optional[str]:
 
       1. an already-exported environment variable (the normal case for a
          dispatch run -- the Engine inherits the sourced secrets env);
-      2. the department's secrets env files, matched BY KEY NAME.
+      2. the department's secrets env files, matched BY KEY NAME -- the canon
+         FAMILY of that name (FIX 67: KIE_API_KEY also matches KIE_KEY,
+         KIE_AI_API_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS; DEEPSEEK_API_KEY
+         also matches DEEP_SEEK_API_KEY; ...), with the FILE SEARCH ORDER
+         resolved platform-aware through oc_paths.secrets_env_candidates()
+         (FIX 68: /data/.openclaw/secrets/.env first on the docker VPS,
+         ~/.openclaw first on a Mac, $OPENCLAW_SECRETS override first of all).
 
     The VALUE is returned for the Authorization header only. Every caller
     that surfaces anything to a human uses presence/key_source, never this.
-    Returns None when no source has the key name."""
+    A placeholder-shaped value is REJECTED (FIX 67) -- a key that says
+    PASTE_REAL_TOKEN is not a key. Returns None when no source has it."""
     value = (os.environ.get(env_key) or "").strip()
+    if value and not _is_placeholder_value(value):
+        return value
+    # canon family: the canonical spelling plus every alias
+    accepted = _alias_names(env_key)
+    if env_key not in accepted:
+        accepted = (env_key,) + tuple(accepted)
+    for file_spec in _secrets_env_files():
+        path = Path(os.path.expanduser(file_spec))
+        try:
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                for name in accepted:
+                    if line.startswith(f"{name}="):
+                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if candidate and not _is_placeholder_value(candidate):
+                            return candidate
+        except OSError:
+            continue
+    # env carried a value but the canon rejected it as a placeholder: honour
+    # an explicitly injected fake-env view (proof seam) over the rejection,
+    # the same posture research_web.brave_key_present documents.
     if value:
         return value
-    for spec in PROVIDER_PROBE_DEFS.values():
-        if env_key not in spec["env_keys"]:
-            continue
-        for file_spec, file_key in spec["secret_files"]:
-            path = Path(os.path.expanduser(file_spec))
-            try:
-                if not path.is_file():
-                    continue
-                for line in path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line.startswith(f"{file_key}="):
-                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        if candidate:
-                            return candidate
-            except OSError:
-                continue
     return None
 
 def probe_one_provider(provider: str,
@@ -573,6 +747,16 @@ def probe_one_provider(provider: str,
     result["probed"] = True
     result["http_status"] = status
     if status == 200:
+        # FIX 9/B3: providers whose probe endpoint is NOT a model lineup
+        # (kie's credit read) carry models_endpoint=False in their def -- a
+        # 200 there is the evidence (key present AND accepted), `models`
+        # stays [] (never invented) and the verdict records the endpoint
+        # kind so the report can say what was actually measured.
+        if spec.get("models_endpoint") is False:
+            result["models_error"] = None
+            result["inventory_kind"] = "credit"
+            result["ok"] = True
+            return result
         ids, error = _extract_model_ids(body)
         if error:
             result["models_error"] = error

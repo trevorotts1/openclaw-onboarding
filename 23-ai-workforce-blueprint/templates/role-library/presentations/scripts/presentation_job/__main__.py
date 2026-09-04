@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +16,8 @@ from .state import (
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
     EXIT_GATE_BLOCKED,
 )
+from . import lease as lease_mod
+from .lease import DEFAULT_TTL_S as LEASE_TTL_S, HEARTBEAT_INTERVAL_S as LEASE_HEARTBEAT_S
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .report import dispatch
@@ -27,6 +31,62 @@ from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
 
 
+# ---------------------------------------------------------------------------
+# FIX 105 — engine SIGTERM/SIGINT handler: signal the engine to shut down.
+#
+# phases.py's shutdown machinery (_ENGINE_SHUTDOWN_EVENT, _shutdown_requested,
+# _kill_registered_execs, _run_exec_joined) is complete but was INERT: nothing
+# ever set the event. This handler is the missing tripwire — the launcher's
+# stop_engine SIGTERM (or a plain Ctrl-C) now flips the event, every in-flight
+# exec's blocked wait (_run_exec_joined's sliced poll) wakes, its process group
+# is killed, and the phase loop unwinds instead of blocking for the remaining
+# phase budget. The previous default behaviour (process dies instantly,
+# own-session render children keep running) is exactly the FIX 105 orphan the
+# QC probe catches.
+#
+# signal.signal() must be called from the MAIN thread (ValueError otherwise);
+# main() is always entered from the main thread, so the guard only protects
+# against exotic embedders. The prior handler is saved and restored after
+# engine.run() so embedding callers are unaffected.
+# ---------------------------------------------------------------------------
+def _install_engine_sigterm_handler():
+    """Install SIGTERM/SIGINT handlers that set phases._ENGINE_SHUTDOWN_EVENT.
+    Returns the previous (sig, handler) pairs so the caller can restore them."""
+    from . import phases as _phases
+
+    def _on_signal(signum, frame):  # noqa: ANN001 — signal handler contract
+        try:
+            _phases._ENGINE_SHUTDOWN_EVENT.set()
+            # Belt-and-braces reaper: the sliced waiter in _run_exec_joined
+            # does the TERM->KILL join for its own exec; this immediate TERM
+            # also reaches execs whose waiter thread already exited. Async-
+            # signal-safety: killpg/print are the same calls the waiter makes.
+            _phases._kill_registered_execs(signal.SIGTERM)
+        except Exception:  # noqa: BLE001 — a handler must never raise
+            pass
+        print(f"[engine shutdown] signal {signum} received — stopping in-flight "
+              f"execs and unwinding", file=sys.stderr, flush=True)
+
+    previous = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous.append((sig, signal.signal(sig, _on_signal)))
+        except (ValueError, OSError):
+            # Not the main thread, or a non-main-thread-only platform — leave
+            # the existing handler in place; the launcher's process-group
+            # kill still stops this engine the hard way.
+            pass
+    return previous
+
+
+def _restore_signal_handlers(previous) -> None:
+    for sig, handler in (previous or []):
+        try:
+            signal.signal(sig, handler)
+        except (ValueError, OSError):
+            pass
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="presentation_job.py",
@@ -34,12 +94,24 @@ def build_parser() -> argparse.ArgumentParser:
                     "Walks the manifest, refuses to skip a step, announces where it is.")
     m = p.add_mutually_exclusive_group(required=True)
     m.add_argument("--new", action="store_true", help="create a job in --run-dir from --intake")
-    m.add_argument("--run", action="store_true", help="run the phase loop")
+    m.add_argument("--run", action="store_true",
+                   help="run the phase loop. FIX 22: like --resume, a --run on a parked job "
+                        "clears terminal/blocked first, so the door's --run invocation "
+                        "continues a parked run instead of leaving it terminal-blocked "
+                        "(the dispatcher exits on a set terminal and every agent phase "
+                        "blocks after its full budget).")
     m.add_argument("--resume", action="store_true",
                    help="resume a parked job from checkpoint; prints why it parked first. "
                         "With --phase, re-runs only that phase and does NOT evaluate gates, "
                         "so it cannot clear a job parked on a gate failure.")
     m.add_argument("--status", action="store_true", help="print job status")
+    m.add_argument("--repin", action="store_true",
+                   help="FIX 20: re-pin a parked job to the CURRENT manifest. Recomputes the "
+                        "plan, diffs phase ids, marks removed phases obsolete and new phases "
+                        "pending, records the old and new manifest sha256 in state "
+                        "(manifest.repin history + manifest_sha256_prev), so --resume can "
+                        "continue under the bumped manifest instead of dying with exit 7. "
+                        "Mutually exclusive with every other mode.")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
     m.add_argument("--reconcile-board", action="store_true",
@@ -47,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "reports only unless --apply is given")
     m.add_argument("--sweep-undeliverable", action="store_true",
                    help="retry every queued undeliverable message for --run-dir, oldest first")
+    m.add_argument("--sweep-undeliverable-roots", action="store_true",
+                   help="FIX 64: retry every queued undeliverable message across ALL "
+                        "configured scan roots (--scan-root + PRESENTATION_SCAN_ROOTS + "
+                        "config file), one run dir at a time; the --sweep-undeliverable "
+                        "pass a watchdog tick can run without knowing any --run-dir")
     m.add_argument("--workingset", nargs="?", const="__all__", default=None, metavar="PHASE",
                    help="FIX-20: measure one phase's working-set token count (or all phases) and "
                         "report fit against the context-window cap. Exit 0 if every measured phase "
@@ -192,6 +269,102 @@ def cmd_new(args, scripts_dir: Path) -> int:
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------------
+# FIX 20 — Manifest bump must not brick in-flight runs.
+#   `presentation_job.py --repin --run-dir <run>`: recompute the plan against
+#   the CURRENT manifest, diff phase ids, mark removed phases obsolete and new
+#   phases pending, and record old and new shas. `--resume` then continues.
+#   SOURCE: [R1 §E] [R4 §G] — Master Part 8 Fix 20. W05-B4, delivered as a
+#   patch for W10a's --repin wiring.
+# ---------------------------------------------------------------------------
+def cmd_repin(args, scripts_dir: Path) -> int:
+    """Re-pin a parked job to the current manifest (FIX 20).
+
+    Exit 7 (EXIT_MANIFEST_MISMATCH) from verify_pin() is the ONLY thing this
+    cures: the manifest changed under a running job and every pinned run is
+    stranded. Repin is explicit operator action, never a silent fallback.
+    """
+    run_dir = args.run_dir.expanduser().resolve()
+    store = StateStore(run_dir)
+    if not store.exists():
+        die(EXIT_USAGE, f"no job state in {run_dir} — nothing to repin (run --new first)")
+    state = store.load()
+    old_sha = str(state.get("manifest_sha256") or "")
+    old_ver = state.get("manifest_version")
+
+    manifest_path = Path(state.get("manifest_path") or
+                         resolve_manifest(args.manifest, run_dir, scripts_dir))
+    # --manifest explicitly overrides the pinned path; otherwise repin in place.
+    if args.manifest:
+        manifest_path = Path(args.manifest).expanduser().resolve()
+        if not manifest_path.is_file():
+            die(EXIT_USAGE, f"--manifest {manifest_path} does not exist")
+    if not manifest_path.is_file():
+        die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone; "
+                                    "pass --manifest to repin against a copy")
+
+    new_manifest = Manifest(manifest_path)
+    new_sha = new_manifest.sha256
+    if old_sha and old_sha == new_sha:
+        print(f"repin: manifest unchanged (sha {new_sha[:12]}); nothing to do")
+        return EXIT_OK
+
+    # Phase-id diff: OLD side from the state's own phase rows (the run's real
+    # progress, not the old manifest, which may no longer be readable), NEW
+    # side from the manifest just loaded.
+    old_ids = {ps.get("id") for ps in state.get("phases", []) if ps.get("id")}
+    new_ids = {p.id for p in new_manifest.phases}
+    removed = sorted(old_ids - new_ids)
+    added = sorted(new_ids - old_ids)
+
+    changed = 0
+    for ps in state.get("phases", []):
+        if ps.get("id") in removed and ps.get("status") != "obsolete":
+            ps["status"] = "obsolete"
+            ps["obsolete_reason"] = "removed from manifest at repin (FIX 20)"
+            changed += 1
+    for pid in added:
+        state.setdefault("phases", []).append(
+            {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
+             "attempts": 0, "heal_events": [], "attested_at": None,
+             "repin_added": True})
+        changed += 1
+
+    # Record BOTH shas: manifest_sha256_prev keeps the old pin discoverable,
+    # manifest.repin history rows name old and new together, and the live pin
+    # moves forward so verify_pin() lets --resume through.
+    state["manifest_sha256_prev"] = old_sha
+    state["manifest_version_prev"] = old_ver
+    state["manifest_sha256"] = new_sha
+    state["manifest_version"] = new_manifest.version
+    state["manifest_path"] = str(manifest_path)
+    hist = state.setdefault("manifest_repin_history", [])
+    hist.append({
+        "at": utcnow(),
+        "old_sha256": old_sha,
+        "new_sha256": new_sha,
+        "old_manifest_version": old_ver,
+        "new_manifest_version": new_manifest.version,
+        "phases_removed": removed,
+        "phases_added": added,
+    })
+    # An obsolete phase can never satisfy close()'s attestation walk, so the
+    # terminal/blocked state from the old plan must reset — --resume already
+    # clears "blocked"; mark the plan-version bump so the operator sees why.
+    state["repin_applied"] = True
+    store.save(state)
+
+    print(f"repin: manifest v{old_ver} @ {old_sha[:12] if old_sha else '?'} "
+          f"-> v{new_manifest.version} @ {new_sha[:12]}")
+    print(f"  removed phases marked obsolete: {len(removed)}"
+          + (f" {removed}" if removed else ""))
+    print(f"  new phases added pending:       {len(added)}"
+          + (f" {added}" if added else ""))
+    print("  resume with: presentation_job.py --resume --run-dir "
+          f"{run_dir}")
+    return EXIT_OK
+
+
 def cmd_status(args) -> int:
     store = StateStore(args.run_dir.expanduser().resolve())
     st = store.load()
@@ -320,6 +493,136 @@ def cmd_sweep_undeliverable(args) -> int:
         print(f"{total} queued, {delivered} delivered, {still} still undeliverable, "
               f"{dead_lettered} dead-lettered")
         return EXIT_OK if still == 0 and dead_lettered == 0 else 1
+
+
+def cmd_sweep_undeliverable_roots(args) -> int:
+    """FIX 64 (MASTER Part 8) -- --sweep-undeliverable without knowing a run dir.
+
+    cmd_sweep_undeliverable is per-run: it takes --run-dir and its lock, which
+    is exactly right for an engine resuming its own job and exactly wrong for
+    a watchdog tick, which knows only --scan-root. Before this command, the
+    undeliverable retry loop report.py queues into state["undeliverable"]
+    (FAULT-14) had NO scheduled driver: a message queued while the transport
+    was down stayed queued until a human ran the sweep by hand against a
+    run dir they had to know. This is the scheduled driver: it resolves the
+    same root list every other scanning pass uses (SCAN_ROOT + extras +
+    PRESENTATION_SCAN_ROOTS + the config file, via resolve_scan_roots), finds
+    every run dir holding a non-empty undeliverable queue, and runs the SAME
+    per-run cmd_sweep_undeliverable logic against each -- the run lock, the
+    dead-letter cap, the sent stamping, all of it shared by delegation, not
+    re-derived (U069's one-implementation rule applies to behavior too).
+
+    Epistemics and fail-softness:
+      - A run dir whose lock is held by a live engine is SKIPPED, never
+        contended: die(EXIT_LOCK_HELD) from cmd_sweep_undeliverable is caught
+        (it is SystemExit) and counted as skipped -- a busy job will be swept
+        on a later tick, and an undeliverable queue is eventually-consistent
+        state, not an emergency.
+      - A run dir that raises anything else is reported and the sweep moves
+        on (same fail-soft shape as reconcile_sweep) -- one bad run dir never
+        ends the pass.
+      - Every run dir's per-run verdict line is printed (grep-able, same
+        format as the per-run sweep), plus a ROOTS summary line at the end:
+        "sweep-undeliverable-roots: N run dirs, D swept, S skipped
+        (locked), F failed -- Q queued messages remaining".
+      - Exit 0 when nothing failed; EXIT_SWEEP_HAD_FAILURES (11) when >=1 run
+        dir failed unexpectedly (same shape as reconcile_sweep). A sweep that
+        found zero runs and zero queued messages is exit 0 -- between jobs is
+        a normal, expected state (the EXIT_SWEEP_NO_RUNS UNDETERMINED doctrine
+        is for a pass that classifies run dirs; a retry pass with nothing to
+        retry simply succeeded at retrying nothing).
+    """
+    root = args.scan_root if args.scan_root else None
+    primary_roots = split_primary(root) if root is not None else [Path(".")]
+    if root is not None and not primary_roots:
+        die(EXIT_USAGE, "--sweep-undeliverable-roots needs --scan-root")
+    roots = resolve_scan_roots(
+        primary=primary_roots[0] if primary_roots else None,
+        extra=tuple(primary_roots[1:]) + tuple(getattr(args, "scan_root_extras", None) or ()),
+        roots_config=getattr(args, "roots_config", None),
+    )
+    print(format_roots_report(roots, "sweep-undeliverable-roots"), flush=True)
+
+    run_dirs = _find_run_dirs_multi(roots, getattr(args, "scan_depth", 3) or 3)
+    total_runs = len(run_dirs)
+    swept = skipped = failed = 0
+    queued_remaining = 0
+    saw_queue = 0
+    for run_dir in run_dirs:
+        try:
+            # Cheap pre-check under no lock: state.json may not even exist
+            # (a partially materialised dir) or may be unreadable. Reading it
+            # here keeps the common no-op case lock-free.
+            st = _read_json(run_dir / "state.json")
+            if not isinstance(st, dict):
+                continue
+            if not st.get("undeliverable"):
+                continue
+        except OSError:
+            # UNREADABLE state is UNDETERMINED, not "nothing queued" -- but
+            # the per-run sweep below would report the same fact loudly, so
+            # fall through and let it speak.
+            st = {"undeliverable": [{"at": utcnow(), "kind": "unknown",
+                                     "message": "unreadable state.json",
+                                     "chat_id": "", "attempts": 0,
+                                     "outcome": "PRECHECK_UNREADABLE"}]}
+        saw_queue += 1
+        before = len(st.get("undeliverable") or [])
+        try:
+            # Delegate to the SAME per-run sweep -- same lock, same cap, same
+            # output format. args.run_dir is what cmd_sweep_undeliverable
+            # reads; build a shallow copy rather than mutate the parser's
+            # namespace a caller might be holding.
+            per_run_args = _ShallowArgsCopy(args, run_dir=run_dir)
+            rc = cmd_sweep_undeliverable(per_run_args)
+        except SystemExit as exc:
+            # RunLock dies with EXIT_LOCK_HELD on contention -- a live engine
+            # owns this run right now. Skip, count, move on: never compete
+            # for a lock a worker is actively holding, never abort the pass.
+            try:
+                code = int(getattr(exc, "code", 0) or 0)
+            except (TypeError, ValueError):
+                code = 0
+            if code == EXIT_LOCK_HELD:
+                skipped += 1
+                print(f"sweep-undeliverable-roots: skipped (lock held) {run_dir}",
+                      flush=True)
+                continue
+            failed += 1
+            print(f"sweep-undeliverable-roots: FAILED (exit {exc.code}) {run_dir}",
+                  flush=True)
+            continue
+        except OSError as exc:
+            failed += 1
+            print(f"sweep-undeliverable-roots: FAILED ({exc}) {run_dir}", flush=True)
+            continue
+        swept += 1
+        try:
+            after_st = _read_json(run_dir / "state.json")
+            after_q = len((after_st or {}).get("undeliverable") or []) \
+                if isinstance(after_st, dict) else 0
+        except OSError:
+            after_q = 0
+        queued_remaining += after_q
+        if rc != EXIT_OK or before:
+            print(f"sweep-undeliverable-roots: run {run_dir} rc={rc} "
+                  f"queued {before} -> {after_q}", flush=True)
+    print(f"sweep-undeliverable-roots: {total_runs} run dirs, {swept} swept, "
+          f"{skipped} skipped (locked), {failed} failed -- "
+          f"{queued_remaining} queued messages remaining across {saw_queue} "
+          f"run dirs seen", flush=True)
+    return EXIT_OK if failed == 0 else EXIT_SWEEP_HAD_FAILURES
+
+
+class _ShallowArgsCopy:
+    """argparse.Namespace stand-in for per-run delegation: copies every
+    attribute from the parsed namespace except the ones being overridden, so
+    cmd_sweep_undeliverable's args.run_dir is the run dir THIS root-walk is
+    currently sweeping while every other flag keeps its parsed value."""
+
+    def __init__(self, source: Any, **overrides: Any) -> None:
+        self.__dict__.update({k: v for k, v in source.__dict__.items()})
+        self.__dict__.update(overrides)
 
 
 def cmd_capacity(args) -> int:
@@ -560,6 +863,44 @@ def _stop_auto_dispatcher(run_dir: Path, proc: Optional[subprocess.Popen]) -> No
         pass
 
 
+# ---------------------------------------------------------------------------
+# FIX 22 — `--run` on a parked job resets like `--resume`.
+#   The door always invokes `--run` (deck-intake-driver / presentation_job.py
+#   door path). Only the --resume branch cleared state["terminal"] and popped
+#   state["blocked"], so a door --run against a PARKED job left terminal=BLOCKED
+#   in state.json: the dispatcher's watch loop saw the set terminal and exited
+#   immediately, and every agent phase then blocked after its full budget with
+#   nothing servicing its work order ([F-R4 §A], [F-R1 §H.12]).
+#   The reset is one shared helper so --run and --resume can never drift.
+#   SOURCE: Master Part 8 FIX 22. SIZE XS. WORKFLOW W10a-B2.
+# ---------------------------------------------------------------------------
+def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Clear a parked job's terminal/blocked marker and re-validate banked
+    artifacts. Shared by --run and --resume (FIX 22) so the two entry modes
+    reset identically. Preserves the cleared block in resume_history, exactly
+    as the --resume branch did (U017: the diagnosis is preserved before it is
+    cleared). Returns the prior "blocked" record (or None)."""
+    prior = state.pop("blocked", None)
+    if prior:
+        state.setdefault("resume_history", []).append(
+            {"at": utcnow(), "cleared_blocked": prior})
+    state["terminal"] = None
+    bad_count = 0
+    total_banked = 0
+    for ps in state.get("phases", []):
+        if ps.get("status") == "done":
+            total_banked += len(ps.get("artifacts") or [])
+        if ps.get("banked_invalid"):
+            bad_count += len(ps["banked_invalid"])
+    state["resume_revalidation"] = {"checked": total_banked, "failed": bad_count}
+    if bad_count:
+        print(f"resume: {bad_count} banked artifact(s) failed re-validation "
+              f"-- those phases will re-run", flush=True)
+    else:
+        print("resume: all banked artifacts re-validated", flush=True)
+    return prior
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
@@ -654,8 +995,54 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_status(args)
     if args.sweep_undeliverable:
         return cmd_sweep_undeliverable(args)
+    # FIX 20: repin BEFORE the RunLock block — that block verify_pin()s against
+    # state's pinned sha and would die(7) on exactly the mismatch repin exists
+    # to cure. cmd_repin does its own state load/save under its own reads.
+    if args.repin:
+        return cmd_repin(args, scripts_dir)
 
-    with RunLock(run_dir):
+    # -----------------------------------------------------------------------
+    # FIX 18 — the engine refuses to run without a lease it holds.
+    #   Every launch path funnels through here for --run/--resume/--close and
+    #   single-phase runs, so the lease is taken ONCE, before the RunLock, by
+    #   the process that will drive the engine. A second engine started one
+    #   second apart exits EXIT_LOCK_HELD naming the first's pid and host from
+    #   working/.lease.json (lease_mod.describe_holder) -- the exact refusal
+    #   the FIX 18 proof greps for -- and never spawns a dispatcher.
+    #   The heartbeat thread renews every LEASE_HEARTBEAT_S (60 s); it is
+    #   stopped (and the lease released) in the same finally that stops the
+    #   auto-dispatcher, so every exit path -- done, blocked, exception,
+    #   SIGKILL (expiry does the work there) -- ends ownership inside ttl_s.
+    #   SOURCE: Master Part 8 FIX 18. WORKFLOW W10a-B1.
+    # -----------------------------------------------------------------------
+    lease_held = None
+    lease_hb = None
+    _signal_handlers_prev = []  # FIX 105: armed only on the run path below
+    if args.new or args.status or args.capacity or args.workingset is not None \
+            or args.sweep_undeliverable or args.diagnose_only:
+        pass  # read-only / creation / diagnosis modes do not need the run lease
+    else:
+        # FIX 105: arm the SIGTERM/SIGINT handlers for the run about to start.
+        # Only the run path needs them; the launcher's stop_engine SIGTERM (or
+        # Ctrl-C) now sets phases._ENGINE_SHUTDOWN_EVENT, which wakes every
+        # sliced exec wait and kills the in-flight execs' own process groups
+        # instead of orphaning own-session render children. Restored in the
+        # finally below.
+        _signal_handlers_prev = _install_engine_sigterm_handler()
+        lease_held = lease_mod.acquire(
+            run_dir, {"who": os.environ.get("PRESENTATION_LEASE_WHO", "engine")},
+            ttl_s=LEASE_TTL_S)
+        if lease_held is None:
+            holder = lease_mod.describe_holder(run_dir)
+            die(EXIT_LOCK_HELD,
+                f"another engine owns this run -- refusing to start a second.\n"
+                f"  holder: {holder}\n"
+                f"  run   : {run_dir}\n"
+                f"The holder's lease expires (ttl {LEASE_TTL_S}s, heartbeats every "
+                f"{LEASE_HEARTBEAT_S}s); retry after it lapses, or after the holder exits.")
+
+    try:
+      with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
         manifest_path = Path(state.get("manifest_path") or
@@ -663,9 +1050,43 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not manifest_path.is_file():
             die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone")
         manifest = Manifest(manifest_path)
-        manifest.verify_pin(state.get("manifest_sha256", ""))
+        # FIX 20: a sha mismatch here used to be a bare die(7) stranding the
+        # run with no way forward. It must die ALL the same — the pin is real
+        # and the engine must not silently run a different manifest — but the
+        # message now names the repin command that cures it, so the operator
+        # has the next step instead of a dead end.
+        pinned = str(state.get("manifest_sha256") or "")
+        if pinned and pinned != manifest.sha256:
+            die(EXIT_MANIFEST_MISMATCH,
+                "manifest changed under a running job.\n"
+                f"  pinned : {pinned}\n"
+                f"  on disk: {manifest.sha256}\n"
+                f"  file   : {manifest.path}\n"
+                "A job started under one manifest must finish under it.\n"
+                "To continue this job under the CURRENT manifest, re-pin it first:\n"
+                f"  presentation_job.py --repin --run-dir {run_dir}\n"
+                + (f"  (or pass --manifest <path> to repin against a specific copy)\n"
+                   if not args.manifest else "")
+                + "then --resume. Old and new shas are both recorded in state "
+                  "(manifest_sha256_prev + manifest.repin history).")
 
         engine = Engine(run_dir, manifest, store, state, dry_run=args.dry_run)
+
+        # FIX 18 -- start the 60 s heartbeat now that the lease is held and the
+        # engine is real. A lost lease (holder died and another engine took
+        # over) is logged and stops renewal; the engine does not self-kill
+        # mid-phase, the RunLock still protects state.json.
+        if lease_held is not None:
+            def _on_lease_lost(_lease, _run_dir=run_dir):
+                print(f"[lease] lease for {run_dir} lost (expired and taken over) "
+                      f"-- heartbeat stopped; this engine keeps running under the "
+                      f"RunLock but is no longer the registered owner",
+                      file=sys.stderr, flush=True)
+            lease_hb = lease_mod.start_heartbeat(
+                lease_held, interval_s=LEASE_HEARTBEAT_S, on_loss=_on_lease_lost)
+            print(f"[lease] acquired ({lease_held.doc.get('pid')} on "
+                  f"{lease_held.doc.get('host')}); ttl {LEASE_TTL_S}s, "
+                  f"heartbeat every {LEASE_HEARTBEAT_S}s", flush=True)
 
         # U024 — blended-persona governance banner, printed once at engine start
         # so every run states on the record which persona governs its output.
@@ -691,31 +1112,34 @@ def main(argv: Optional[List[str]] = None) -> int:
                       file=sys.stderr, flush=True)
             if args.diagnose_only:
                 return EXIT_OK
-            # Preserve the diagnosis BEFORE clearing it. Popping `blocked` without keeping
-            # a copy destroys the only record of why this job parked (B7's con).
-            prior = state.pop("blocked", None)
-            if prior:
-                state.setdefault("resume_history", []).append(
-                    {"at": utcnow(), "cleared_blocked": prior})
-            state["terminal"] = None
-            bad_count = 0
-            total_banked = 0
-            for ps in state.get("phases", []):
-                if ps.get("status") == "done":
-                    total_banked += len(ps.get("artifacts") or [])
-                if ps.get("banked_invalid"):
-                    bad_count += len(ps["banked_invalid"])
-            state["resume_revalidation"] = {"checked": total_banked, "failed": bad_count}
-            if bad_count:
-                print(f"resume: {bad_count} banked artifact(s) failed re-validation "
-                      f"-- those phases will re-run", flush=True)
-            else:
-                print("resume: all banked artifacts re-validated", flush=True)
+            # FIX 22: the terminal/blocked reset is the SHARED helper now, so
+            # --resume and --run reset a parked job identically and can never
+            # drift (see _reset_parked_state above).
+            prior = _reset_parked_state(state)
             store.save(state)
             engine.report.event(
                 "job.resume",
                 "resuming from checkpoint; banked artifacts reused" +
                 (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
+        elif args.run:
+            # FIX 22 — --run on a parked job resets like --resume. The door
+            # always invokes --run; before this branch a parked run kept
+            # terminal=BLOCKED in state.json, so the dispatcher's watch loop
+            # saw the set terminal and exited immediately ("run terminal is
+            # set -- exiting", dispatcher.py) and every agent phase then
+            # blocked after its full budget with nothing servicing its work
+            # order ([F-R4 §A], [F-R1 §H.12]). Same reset, different entry
+            # verb; announce it so an operator scanning output sees why the
+            # parked marker vanished.
+            if state.get("terminal") or state.get("blocked"):
+                prior = _reset_parked_state(state)
+                store.save(state)
+                engine.report.event(
+                    "job.run_reset",
+                    "--run on a parked job: cleared terminal/blocked like --resume" +
+                    (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}"
+                     if prior else ""),
+                    phase_id=(prior or {}).get("phase"))
 
         # F07 -- auto-spawn the Work-Order Dispatcher for this run, CONCURRENTLY
         # with the engine (spawned before engine.run(), never after -- see the
@@ -730,3 +1154,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             return engine.run(only=args.phase, until=args.until)
         finally:
             _stop_auto_dispatcher(run_dir, dispatcher_proc)
+    # FIX 18 -- every exit path of the RunLock block (done, blocked,
+    # exception, die()) stops the heartbeat and releases the lease, so the
+    # next engine (or the supervisor's restart) can acquire without waiting
+    # out ttl_s.
+    finally:
+        if lease_hb is not None:
+            lease_hb.stop()
+            lease_hb.join(timeout=5)
+        if lease_held is not None:
+            lease_mod.release(lease_held)
+        # FIX 105: restore the previous SIGTERM/SIGINT handlers when the run
+        # path armed them (the inner else-branch runs before this finally only
+        # when the run path was taken; a die() inside it exits the process, so
+        # a bare restore of an empty list is harmless here).
+        _restore_signal_handlers(_signal_handlers_prev)
