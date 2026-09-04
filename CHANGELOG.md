@@ -1,3 +1,5 @@
+## [v24.1.0]  -  2026-09-04  -  Capacity: real per-provider plan caps (ollama 3/8, deepseek Flash 2500 / Pro 500, openrouter unbounded) and removal of the 8-worker clamp that made every measured ceiling decorative
+
 ## [v24.0.0]  -  2026-09-04  -  SEPT-1 presentation department wave complete: 111 fixes merged, FIX 61 intake-poll wiring, presentations-drift-gates exit-code repair, R-BOX box-ops (31/47/63)
 
 ## [v23.0.3]  -  2026-09-04  -  FIX 61 intake-poll schedule wiring + presentations-drift-gates exit-code repair (#1018)

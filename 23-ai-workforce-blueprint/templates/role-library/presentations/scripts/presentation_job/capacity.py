@@ -40,21 +40,20 @@ direct provider is money the client is already paying for directly; this
 module is not the place to invent a ceiling on it.
 
     ollama-cloud    + $20/month    ->     3 concurrent agents  (structural:
-    ollama-cloud    + $100/month   ->    10 concurrent agents   the account
+    ollama-cloud    + $100/month   ->    8 concurrent agents   the account
                                           itself enforces this, not us)
-    deepseek-direct                 ->  NO CAP (UNBOUNDED)
+    deepseek-direct + Flash         ->  2500 concurrent agents (structural)
+    deepseek-direct + Pro           ->   500 concurrent agents (structural)
     openrouter                      ->  NO CAP (UNBOUNDED)
     any other declared BYOK-direct
       provider added to NO_CAP_PROVIDERS -> NO CAP (UNBOUNDED)
     unknown provider (cannot even be identified) -> 3 (DEFAULT_CONSERVATIVE)
 
-ollama-cloud is the ONLY provider with a real ceiling in this table, because
-its limit is structural to the account (a $20/month seat cannot run more than
-3 concurrent no matter what anyone declares) -- that is exactly why it is the
-only provider that still PARKs behind the one-time plan interview. DeepSeek
-Direct, OpenRouter, and any other provider the client pays for directly have
-no such structural ceiling that THIS module can observe, so it stops
-pretending one exists: `available` for those providers is the UNBOUNDED
+ollama-cloud and deepseek-direct both have real, plan-dependent ceilings the
+account itself enforces (ollama $20 -> 3, $100 -> 8; deepseek Flash -> 25,
+Pro -> 500), so both live in CAP_TABLE and both PARK behind the one-time plan
+interview when the plan is unknown. OpenRouter has no such observable
+structural ceiling, so this module stops pretending one exists: `available` for those providers is the UNBOUNDED
 sentinel (see below) unless the operator/client DECLARES a lower number for
 this run via capacity_override.json's `max_concurrent` (self-throttling is
 always honoured; inventing an upward ceiling never is). UNBOUNDED is never
@@ -193,10 +192,10 @@ PROVIDER_OPENROUTER = "openrouter"
 
 PLAN_OLLAMA_20 = "$20/month"
 PLAN_OLLAMA_100 = "$100/month"
-#: DeepSeek's plan labels are kept as metadata (which model/product the
-#: client is on) even though -- per the operator ruling below -- neither one
-#: changes the capacity ceiling any more. Reported in `probe()['plan']`
-#: purely for audit/debugging; never consulted by the cap logic.
+#: DeepSeek Direct's plan DOES change the ceiling (operator ruling
+#: 2026-09-04): Flash allows 2500 concurrent, Pro 500. Both are
+#: CAP_TABLE rows, so an over-declaration is clamped DOWN and an unknown
+#: plan PARKs behind the one-time interview, same as ollama-cloud.
 PLAN_DEEPSEEK_PRO = "v4-pro"
 PLAN_DEEPSEEK_FLASH = "v4-flash"
 
@@ -208,7 +207,12 @@ PLAN_DEEPSEEK_FLASH = "v4-flash"
 #: Direct, OpenRouter, ...) has no such table row -- see NO_CAP_PROVIDERS.
 CAP_TABLE = {
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): 3,
-    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): 10,
+    # 8, not the raw account maximum: operator ruling 2026-09-04 deliberately
+    # leaves the client 2 free agent slots so a presentation build never
+    # starves whatever else they are running on the same seat.
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): 8,
+    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_FLASH): 2500,
+    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_PRO): 500,
 }
 
 #: Providers on CAP_TABLE, derived rather than hand-duplicated: the set for
@@ -221,6 +225,7 @@ CAP_TABLE_PROVIDERS = frozenset(provider for provider, _plan in CAP_TABLE)
 #: plan-dependent ceiling to interview the operator about.
 PLANS_BY_PROVIDER = {
     PROVIDER_OLLAMA_CLOUD: (PLAN_OLLAMA_20, PLAN_OLLAMA_100),
+    PROVIDER_DEEPSEEK_DIRECT: (PLAN_DEEPSEEK_FLASH, PLAN_DEEPSEEK_PRO),
 }
 
 #: OPERATOR RULING (fix/capacity-uncap-byok): "Do not limit someone who
@@ -231,7 +236,7 @@ PLANS_BY_PROVIDER = {
 #: max_concurrent for THIS run, which is always honoured as a self-throttle.
 #: Extend this set (never CAP_TABLE) for any other BYOK-direct provider --
 #: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
-NO_CAP_PROVIDERS = frozenset({PROVIDER_DEEPSEEK_DIRECT, PROVIDER_OPENROUTER})
+NO_CAP_PROVIDERS = frozenset({PROVIDER_OPENROUTER})
 
 STATUS_MEASURED = "MEASURED"
 STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
@@ -1004,15 +1009,15 @@ def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
 
 
 def interview_question(provider: str) -> str:
-    """The ONE question that resolves a STRUCTURAL cap-table provider (today,
-    only ollama-cloud) with an unknown plan. NO_CAP_PROVIDERS entries
-    (deepseek-direct, openrouter, ...) never reach PARK, so this is never
-    called for them -- there is no plan that would change their ceiling."""
-    if provider == PROVIDER_OLLAMA_CLOUD:
-        return (
-            "Which plan is your ollama-cloud account on? "
-            "($20/month -> 3 parallel agents, $100/month -> 10.)"
-        )
+    """The ONE question that resolves a STRUCTURAL cap-table provider with an
+    unknown plan -- today ollama-cloud and deepseek-direct. NO_CAP_PROVIDERS
+    entries (openrouter, ...) never reach PARK, so this is never called for
+    them: there is no plan that would change their ceiling.
+
+    The numbers are rendered FROM CAP_TABLE, never hardcoded. A hardcoded
+    per-provider sentence drifted once already (it still advertised
+    "$100/month -> 10" after the operator lowered that row to 8), so the
+    only source of truth here is the table itself."""
     plans = PLANS_BY_PROVIDER.get(provider, ())
     if plans:
         rows = ", ".join(f"{p} -> {CAP_TABLE.get((provider, p), '?')}" for p in plans)
@@ -1087,7 +1092,7 @@ def _resolve_override(record: dict, path: Path) -> dict:
          ceiling is a physical fact the operator cannot opt out of by typing a
          bigger number, and clamping to that provider's own highest cap-table
          row would still be a guess about which plan is actually in effect (a
-         $20/month Ollama Cloud account cannot run 10 just because a
+         $20/month Ollama Cloud account cannot run 8 just because a
          $100/month account can) -- this module never guesses upward, so it
          asks instead of assuming. This check MUST come before case 3 below:
          if the bare-declared-int fallback ran first it would swallow every

@@ -50,7 +50,15 @@ _CANDIDATE_BUILDERS = [
     #     DATA-08 decoy-DB fix — honored before any install-layout candidate so a
     #     standalone script always opens the SAME file the app writes/reads.
     lambda: Path(os.environ["DATABASE_PATH"]) if "DATABASE_PATH" in os.environ else None,
-    # 3 — Mac default install path  (~/projects/command-center/mission-control.db)
+    # 3 — Mac operator/live path  (~/data/mission-control.db)
+    #     DATA-08: this is what the running Command Center server actually opens
+    #     on an operator Mac (ecosystem.config.cjs resolves DB_PATH to
+    #     INSTALL_DIR/../data/mission-control.db). It was missing from this list,
+    #     so a script run without DATABASE_PATH fell through to candidate 4/9 and
+    #     opened a DIFFERENT mission-control.db than the app -- the exact decoy
+    #     mismatch the DATA-08 guard reports. Added 2026-09-04.
+    lambda: Path.home() / "data" / "mission-control.db",
+    # 4 — Mac default install path  (~/projects/command-center/mission-control.db)
     lambda: Path.home() / "projects" / "command-center" / "mission-control.db",
     # 4 — VPS canonical  (/data/projects/command-center/mission-control.db)
     lambda: Path("/data/projects/command-center/mission-control.db"),
