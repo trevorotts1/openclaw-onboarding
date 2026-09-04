@@ -4957,6 +4957,43 @@ def emit_af_coverage():
         else:
             sys.modules["craft_judgement"] = _saved_cj
 
+    # AF-SPEECH-PACING / AF-RENDER-EMPTY / AF-RENDER-COMPLETE (Guard A): the three
+    # remaining manifest rows. AF-SPEECH-PACING surfaces as an ADVISORY on stderr from
+    # _chk_speech_length when the speech's effective wpm falls outside the pacing band
+    # (Fix 97: AF-SPEECH-SHORT is the only hard reject) — capture stderr around a real
+    # 120-wpm fixture and record the code from the print. AF-RENDER-EMPTY and
+    # AF-RENDER-COMPLETE are pure emits off _emit_render_af_codes — drive both with
+    # synthetic rendered/failures lists and record from the captured stderr.
+    import io as _io
+    import contextlib as _contextlib
+
+    _root = Path(tempfile.mkdtemp(prefix="deck_af_pacing_"))
+    (_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (_root / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"interview_confirmed": True, "presentation_mode": "general",
+         "audience_mode": "STANDARD", "target_talk_minutes": 30}))
+    _sp = _root / "working" / "presenter-speech"
+    _sp.mkdir(parents=True, exist_ok=True)
+    # 3,600 words / 30 min = 120 wpm effective — 14% off the 140 wpm target, inside the
+    # hard floor but OUTSIDE the pacing band -> the advisory names AF-SPEECH-PACING.
+    (_sp / "speech.md").write_text(" ".join(["word"] * 3600))
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._chk_speech_length(_root)
+    record("AF-SPEECH-PACING", _err.getvalue())
+
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._emit_render_af_codes([], [{"slide": 1, "error": "stub"}])
+    record("AF-RENDER-EMPTY", _err.getvalue())
+
+    _err = _io.StringIO()
+    with _contextlib.redirect_stderr(_err):
+        build_deck._emit_render_af_codes(
+            [{"slide": 1, "file": "slide-01.png", "taskId": "t"}],
+            [{"slide": 2, "error": "stub"}])
+    record("AF-RENDER-COMPLETE", _err.getvalue())
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(

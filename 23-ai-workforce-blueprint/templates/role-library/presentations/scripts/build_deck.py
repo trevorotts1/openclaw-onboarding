@@ -2205,6 +2205,21 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
 # all together, download each image the moment ITS task finishes.
 # ---------------------------------------------------------------------------
 
+def _emit_render_af_codes(rendered: list, failures: list) -> None:
+    """AF-RENDER-EMPTY / AF-RENDER-COMPLETE enforcement emit (manifest rows declare
+    enforced_by:build_deck with these codes): a render that reached closeout with
+    failures either produced ZERO slide artifacts (empty deck must never assemble)
+    or a PARTIAL set (partial decks are refused). Split out as a pure emit so the
+    af-coverage harness can trip both codes with synthetic lists (Guard A)."""
+    if not rendered:
+        print("AF-RENDER-EMPTY: the render phase produced ZERO slide artifacts — "
+              "an empty deck must never assemble.", file=sys.stderr)
+    else:
+        print(f"AF-RENDER-COMPLETE: render phase incomplete — {len(rendered)} of "
+              f"{len(rendered) + len(failures)} slides rendered; partial decks are "
+              f"refused.", file=sys.stderr)
+
+
 def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: Path,
                         has_official_logo: bool = False, logo_url: Optional[str] = None,
                         submit_interval: float = BATCH_SUBMIT_INTERVAL_S,
@@ -13215,15 +13230,11 @@ def main():
     # the cert-gate 422 concern does not apply to an abort). Fail-soft: a disabled
     # board / missing task_id is a clean no-op.
     if failures:
-        # AF-RENDER-COMPLETE: the render phase did not complete its full slide output
-        # set before assembly — a partial deck is refused (manifest enforcement row).
-        if not rendered:
-            print("AF-RENDER-EMPTY: the render phase produced ZERO slide artifacts — "
-                  "an empty deck must never assemble.", file=sys.stderr)
-        else:
-            print(f"AF-RENDER-COMPLETE: render phase incomplete — {len(rendered)} of "
-                  f"{len(rendered) + len(failures)} slides rendered; partial decks are "
-                  f"refused.", file=sys.stderr)
+        # AF-RENDER-COMPLETE / AF-RENDER-EMPTY: the render phase did not complete its
+        # full slide output set before assembly — a partial (or empty) deck is refused
+        # (manifest enforcement rows). Extracted so af-coverage can trip both codes
+        # with synthetic rendered/failures lists (Guard A negative tests).
+        _emit_render_af_codes(rendered, failures)
         summary = {
             "slidesRendered": len(rendered),
             "kieTaskIds": task_ids,
