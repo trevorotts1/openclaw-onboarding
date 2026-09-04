@@ -128,12 +128,20 @@ def _patterns_match(producer_pattern: str, consumed_pattern: str) -> bool:
 
 _RAW_INTAKE_RE = re.compile(r"^raw/")
 _INTAKE_RECORD = "working/copy/intake.json"
+# MASTER Part 8 FIX 8, root-input parity with manifest.py's V5 exemption
+# (_ROOT_INPUT_PATTERNS): working/copy/slides.json is the engine's positional
+# build input -- written at run setup by the P4 copy tooling + engine prep, not
+# by any declared phase -- so the static orphan check must exempt it the same
+# way Manifest.load does. Without the same exemption the two surfaces disagree:
+# --plan loads the manifest clean (Manifest._validate) while
+# find_unproduced_consumed_artifacts names a "dangling" input for the same file.
+_ENGINE_BUILD_INPUT = "working/copy/slides.json"
 
 
 def _is_intake_file(pattern: str) -> bool:
     """True when the consumed pattern names a run input, not a produced file.
 
-    Two classes are intake (FIX 8, MASTER Part 8):
+    Three classes are run inputs (FIX 8, MASTER Part 8):
       * raw/source-brief.* -- the client's source material; no phase produces
         it, so it can never be an edge source and must not trip validation.
       * working/copy/intake.json -- the intake record. It is written by the
@@ -141,8 +149,15 @@ def _is_intake_file(pattern: str) -> bool:
         same-artifact producing stage), so any consumer whose manifest order
         is at or before the record's LAST producer treats it as run input
         (already on disk when the engine starts; the intake driver writes it
-        before the run). The freshness rule lives in build_edges."""
+        before the run). The freshness rule lives in build_edges.
+      * working/copy/slides.json -- the engine's positional build input,
+        written at run setup by the P4 copy tooling + engine prep (not by a
+        declared phase); exempt with the SAME rationale manifest.py's
+        _ROOT_INPUT_PATTERNS exemption uses for Manifest.load, so the plan
+        builder and the loader can never disagree on it."""
     if _RAW_INTAKE_RE.match(pattern):
+        return True
+    if _patterns_match(pattern, _ENGINE_BUILD_INPUT):
         return True
     return _patterns_match(pattern, _INTAKE_RECORD)
 
@@ -152,6 +167,13 @@ def _phase_order(phase: dict) -> float:
         return float(phase.get("order", 0))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _phase_order_key(phase: dict) -> str:
+    """A phase's id, tolerating a non-string id (the DAG builder raises its
+    own error for those; this helper must never crash first)."""
+    pid = phase.get("id")
+    return pid if isinstance(pid, str) else repr(pid)
 
 
 def find_unproduced_consumed_artifacts(phases: List[dict]) -> List[str]:
@@ -196,10 +218,16 @@ def build_edges(phases: List[dict]) -> Dict[str, List[str]]:
 
       1. Intake files carry no edges (see _is_intake_file).
       2. Same-artifact stage rule: a phase that itself produces a pattern
-         matching the consumed pattern belongs to that artifact's producing
-         stage and takes no edge from other producers of the same artifact
-         (P-SP-CLAIM produces and consumes intake.json -- the claim router is
-         part of the intake stage, not a downstream of it).
+         matching the consumed pattern takes no edge from other producers of
+         the same artifact ONLY while it belongs to that artifact's producing
+         stage -- i.e. no OTHER producer of the pattern precedes it in manifest
+         order (P-SP-CLAIM, the last writer of the intake stage's own record,
+         and P-U-SALES-BUILD, the sole producer of sales.html). A same-artifact
+         phase ordered AFTER an earlier producer is that artifact's REWRITER
+         (P-SP-P3-HYGIENE rewrites sp_structure.json after P-SP-STRUCTURE
+         builds it), not part of the producing stage: it takes an edge from
+         the producer it rewrites, exactly like any other consumer, so a
+         rewriter can never surface in the artifact's producing wave.
       3. Intake-record freshness: for consumers of working/copy/intake.json
          whose order is at or before the record's last producer's order, the
          record is a run input and the pattern is skipped (the intake driver
@@ -237,7 +265,7 @@ def build_edges(phases: List[dict]) -> Dict[str, List[str]]:
     def _last_producer_order(consumed: str, exclude: Optional[str] = None):
         latest: Optional[float] = None
         for ppat, pid in producers:
-            if pid == exclude:
+            if exclude is not None and pid == exclude:
                 continue
             if not _patterns_match(ppat, consumed):
                 continue
@@ -246,15 +274,41 @@ def build_edges(phases: List[dict]) -> Dict[str, List[str]]:
                 latest = o
         return latest
 
+    def _first_other_producer_order(consumed: str, exclude: str) -> Optional[float]:
+        """Earliest manifest order among OTHER producers of `consumed`.
+
+        Rule 2's producing-stage boundary: a same-artifact phase ordered at or
+        before the artifact's first other producer IS that producing stage
+        (intake stages build their own record in place); one ordered after it
+        is a rewriter and must wait for the artifact like any consumer.
+        """
+        earliest: Optional[float] = None
+        for ppat, pid in producers:
+            if pid == exclude:
+                continue
+            if not _patterns_match(ppat, consumed):
+                continue
+            o = _phase_order(by_id[pid])
+            if earliest is None or o < earliest:
+                earliest = o
+        return earliest
+
     for vp in phases:
         vid = vp["id"]
         own_produces = _as_artifact_list(vp.get("produces_artifact"))
         for cpat in _as_artifact_list(vp.get("consumes")):
             if _is_intake_file(cpat):
                 if _patterns_match(cpat, _INTAKE_RECORD):
-                    # Freshness rule: only consumers ordered AFTER the last
-                    # producer of the record depend on it (rule 3).
-                    latest = _last_producer_order(cpat, exclude=vid)
+                    # Freshness rule (rule 3): the record's last producer is
+                    # counted INCLUDING this consumer itself -- a same-artifact
+                    # intake-stage phase (P-SP-CLAIM rewrites the record) reads
+                    # the record as its run input, so its own produces entry
+                    # must not push the boundary past it. Consumers ordered at
+                    # or before that boundary treat the record as a run input
+                    # and take no edges; only consumers ordered AFTER the
+                    # record's last rewrite depend on it (P0B-PRIORITY needs
+                    # the priority_shift answers the rewrite merged in).
+                    latest = _last_producer_order(cpat)
                     if latest is not None and _phase_order(vp) <= latest:
                         continue
                     # Fall through: records past the intake stage are real
@@ -262,8 +316,16 @@ def build_edges(phases: List[dict]) -> Dict[str, List[str]]:
                 else:
                     continue
             if any(_patterns_match(own, cpat) for own in own_produces):
-                # Rule 2: same-artifact producing stage.
-                continue
+                # Rule 2, refined (FIX 8 wave-one proof): the same-artifact
+                # exemption holds only while this phase belongs to the
+                # artifact's PRODUCING stage -- no other producer precedes
+                # it in manifest order. A same-artifact phase ordered after
+                # an earlier producer is that artifact's rewriter
+                # (P-SP-P3-HYGIENE on sp_structure.json) and takes the edge,
+                # never surfacing in the artifact's producing wave.
+                first_other = _first_other_producer_order(cpat, vid)
+                if first_other is None or _phase_order(vp) <= first_other:
+                    continue
             for ppat, pid in producers:
                 if pid == vid:
                     continue
@@ -304,7 +366,8 @@ def load_phase_dag(manifest_path: str | Path) -> Dict[str, List[str]]:
 # ---------------------------------------------------------------------------
 # Topological sort (Kahn's algorithm)
 # ---------------------------------------------------------------------------
-def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
+def topological_sort(dag: Dict[str, List[str]],
+                     phase_order: Optional[Dict[str, float]] = None) -> List[str]:
     """Kahn's algorithm over the phase DAG.
 
     Returns the phases in dependency order (a deterministic topological
@@ -312,8 +375,14 @@ def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
     by their manifest order (tie-break on the id) so the output is stable.
     (FIX 8: the dag passed in is the artifact graph from build_edges; the
     manifest `order` values are only the deterministic tie-break here, never
-    themselves a source of edges.)
+    themselves a source of edges.) phase_order=None sorts by id alone.
     """
+    if phase_order is not None:
+        def key(pid: str):
+            return (phase_order.get(pid, float("inf")), pid)
+    else:
+        key = None  # plain id sort -- never a tuple of two lambdas
+
     indegree: Dict[str, int] = {pid: 0 for pid in dag}
     for pid, deps in dag.items():
         for dep in deps:
@@ -321,12 +390,12 @@ def topological_sort(dag: Dict[str, List[str]]) -> List[str]:
 
     # Stable: process ready nodes in sorted order so independent phases come
     # out in manifest-order sequence, not in dict-insertion order.
-    ready = deque(sorted(pid for pid, deg in indegree.items() if deg == 0))
+    ready = deque(sorted((pid for pid, deg in indegree.items() if deg == 0), key=key))
     order: List[str] = []
     while ready:
         pid = ready.popleft()
         order.append(pid)
-        for dep in sorted(dag.get(pid, [])):
+        for dep in sorted(dag.get(pid, []), key=key):
             indegree[dep] -= 1
             if indegree[dep] == 0:
                 ready.append(dep)
@@ -387,7 +456,8 @@ def cap_wave_width(available, ready_items: Optional[int] = None) -> int:
     return max(1, min(int(ready_items), available))
 
 
-def _wave_schedule_dag(dag: Dict[str, List[str]], available: int) -> List[List[str]]:
+def _wave_schedule_dag(dag: Dict[str, List[str]], available: int,
+                       phase_order: Optional[Dict[str, float]] = None) -> List[List[str]]:
     """Level-scheduled waves: each wave is min(ready, available) phases wide.
 
     Same Kahn mechanics as topological_sort (indegree bookkeeping, ready set
@@ -397,15 +467,28 @@ def _wave_schedule_dag(dag: Dict[str, List[str]], available: int) -> List[List[s
     This replaces the old fixed-width slice of the topological order, which
     could not tell a phase that was READY from one that merely came next.
 
+    `phase_order` (id -> manifest order) is the deterministic tie-break for
+    INDEPENDENT phases in the same ready set: the manifest's `order` values
+    never create edges (FIX 8), but they keep the wave listing stable and in
+    pipeline sequence instead of id-alphabetical (A-one, A-two, A-three must
+    not surface as "A-one, A-three, A-two"). Phases missing from the map sort
+    after mapped ones, by id.
+
     With 5 mutually independent phases and available=3 this yields waves of
     3 then 2: the width is driven by the probe, not by a constant.
     """
+    if phase_order is not None:
+        def key(pid: str):
+            return (phase_order.get(pid, float("inf")), pid)
+    else:
+        key = None  # plain id sort -- never a tuple of two lambdas
+
     indegree: Dict[str, int] = {pid: 0 for pid in dag}
     for pid, deps in dag.items():
         for dep in deps:
             indegree[dep] = indegree.get(dep, 0) + 1
 
-    ready = sorted(pid for pid, deg in indegree.items() if deg == 0)
+    ready = sorted((pid for pid, deg in indegree.items() if deg == 0), key=key)
     waves: List[List[str]] = []
     scheduled = 0
     while ready:
@@ -416,11 +499,11 @@ def _wave_schedule_dag(dag: Dict[str, List[str]], available: int) -> List[List[s
         scheduled += len(wave)
         newly_ready: List[str] = []
         for pid in wave:
-            for dep in sorted(dag.get(pid, [])):
+            for dep in sorted(dag.get(pid, []), key=key):
                 indegree[dep] -= 1
                 if indegree[dep] == 0:
                     newly_ready.append(dep)
-        ready = sorted(carried + newly_ready)
+        ready = sorted(carried + newly_ready, key=key)
     if scheduled != len(dag):
         stuck = [pid for pid, deg in indegree.items() if deg > 0]
         raise ValueError(f"cycle detected in phase DAG involving: {sorted(stuck)}")
@@ -456,16 +539,21 @@ def build_execution_plan(manifest_path: str | Path, capacity_probe: Optional[dic
     available = require_available(capacity_probe)
 
     dag = load_phase_dag(manifest_path)
-    order = topological_sort(dag)
     raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     manifest_version = raw.get("manifest_version")
+    # Manifest `order` values as the deterministic tie-break for independent
+    # phases (FIX 8: a tie-break only -- never an edge source). One parse of
+    # the raw manifest feeds both the topo order and the wave scheduler.
+    phase_order: Dict[str, float] = {_phase_order_key(p): _phase_order(p)
+                                     for p in raw.get("phases") or []}
+    order = topological_sort(dag, phase_order)
 
     dispatchable = capacity_probe.get("dispatchable")
     if not isinstance(dispatchable, int) or isinstance(dispatchable, bool):
         dispatchable = available
     probe_mode = str(capacity_probe.get("probe_mode") or "live")
 
-    waves = _wave_schedule_dag(dag, available)
+    waves = _wave_schedule_dag(dag, available, phase_order)
     return {
         "manifest_path": str(Path(manifest_path).resolve()),
         "manifest_version": manifest_version,

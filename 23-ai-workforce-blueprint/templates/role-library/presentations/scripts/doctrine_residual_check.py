@@ -10,6 +10,14 @@ contract: the value is registered in retired-doctrine-patterns.json, and this
 check greps the tree for it. Any occurrence that is NOT explicitly framed as
 history/retirement (no allowed_context_marker on the line or within the
 configured context window) is an OFFENDER and fails CI non-zero.
+
+RETIRED PROMPT-CHAR FLOOR (FIX 79): the image-prompt floor was raised from
+5,000 chars to the 9,000-char HARD floor (AF-P1) with the 18,000 LONG-tier
+ceiling. The retired floor's literal family -- 5,000 / 5000 / 5,001 / 4,750 /
+4,800 chars, and the "char_count": <retired-family> JSON-example form -- is
+registered as the prompt-floor-5000-char and prompt-floor-char-count-field
+patterns in the registry, so a sub-floor prompt can never silently re-appear
+as a live authoring instruction or an accepted QC example.
 ================================================================================
 
 ZERO third-party deps (stdlib json / re / glob / pathlib only).

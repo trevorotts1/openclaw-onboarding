@@ -5,7 +5,53 @@
   PLACEHOLDERS to replace before installing:
     1. <WATCHDOG_SCRIPT_PATH>  -- absolute path to presentation-watchdog.sh
     2. <SCAN_ROOT>             -- the root directory to scan for run dirs
-    3. <LOG_PATH>              -- where stdout/stderr should go
+                                 (os.pathsep-packed for multiple roots)
+    3. <LOG_PATH>              -- where stdout/stderr should go. This SAME
+                                 path is passed as argv[2]: the script tees
+                                 its own diagnostics into it, so the launchd
+                                 log and the script's log are one file.
+    4. <NOTIFY_CMD>            -- the PRESENTATION_NOTIFY_CMD transport argv
+                                 (shlex-parseable), e.g.
+                                 <SCRIPTS_DIR>/presentation-notify.py.
+                                 FIX 49: with the script's fail-closed gate
+                                 (FIX 22) this is MANDATORY -- an unset
+                                 transport makes every tick exit 4
+                                 (AF-NOTIFY-UNCONFIGURED) before any pass
+                                 runs, which is exactly the "watchdog never
+                                 scans" state this plist exists to prevent.
+    5. <OWNER_CHAT_ID>         -- the operator's NUMERIC Telegram chat id
+                                 (FIX 64: launchd runs this job with no
+                                 environment, so subsystem alerts -- watchdog
+                                 stall / supervisor alarm / capacity
+                                 UNDETERMINED -- carry only their subsystem
+                                 NAME as the chat id. OWNER_CHAT_ID is the
+                                 resolution key both report.dispatch3 and
+                                 presentation-notify.py read; without it a
+                                 stall alert can never land in the operator
+                                 chat. Strongly recommended -- the tick's
+                                 --sweep-undeliverable-roots pass retries
+                                 unsent alerts, but only this variable makes
+                                 them deliverable.)
+
+  FIX 19 (MASTER Part 8): every tick of this job now also runs the stray
+  orphan reaper -- process_reaper.py --scan-root <SCAN_ROOT> -- after the
+  sweep-undeliverable pass. It reaps build-shaped strays (dispatcher,
+  prompt-wave workers, render children; argv patterns cover both the script
+  and the `-m` module forms) whose run dir is terminal/stale/gone, children
+  included. A live run's processes classify REAL_BUILD and are never
+  touched, so the pass is safe every tick. The documented rollback is an
+  EnvironmentVariables entry:
+      <key>PRESENTATION_REAPER_DISABLE</key>
+      <string>1</string>
+  which makes the tick skip the reaper pass entirely (for a box debugging
+  its own process table with the reaper out of the way).
+
+  PATH (FIX 49): launchd starts this job with NO inherited environment --
+  no /opt/homebrew/bin and no npm-global bin -- so gtimeout and the
+  `openclaw` gateway CLI (the transport's send path) are invisible to it.
+  The EnvironmentVariables PATH below is the minimal live PATH that fixes
+  both; it is templated as a placeholder so a box with a different
+  prefix layout substitutes its own rather than inheriting a wrong one.
 
   Install (Named Stop -- do not run unattended):
     cp presentation-watchdog.plist.template ~/Library/LaunchAgents/com.presentations.watchdog.plist
@@ -40,6 +86,12 @@
         <string>1.5</string>
         <key>SCAN_DEPTH</key>
         <string>3</string>
+        <key>PATH</key>
+        <string>&lt;WATCHDOG_PATH&gt;</string>
+        <key>PRESENTATION_NOTIFY_CMD</key>
+        <string>&lt;NOTIFY_CMD&gt;</string>
+        <key>OWNER_CHAT_ID</key>
+        <string>&lt;OWNER_CHAT_ID&gt;</string>
     </dict>
     <key>StartInterval</key>
     <integer>600</integer>

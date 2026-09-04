@@ -57,11 +57,80 @@ import json
 import mimetypes
 import os
 import time
+import sys
 import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any, Callable
+
+# ── FIX 14 — governor gate for every outbound GHL media call ──────────────────
+# One lease per HTTP attempt on the `ghl` provider (providers.yaml ghl row:
+# rps 2.0, burst 20, max_inflight 25): the upload POST acquires a slot from
+# presentation_job/governor.py before the request and releases it after; a
+# live HTTP 429 halves the next 60 s of rate via report_429 (report_ok
+# recovers). Fail-soft: when the governor module is absent (a legacy checkout
+# predating the FIX 14 merge) every helper is a no-op passthrough — uploads
+# proceed exactly as before, just unthrottled.
+try:
+    from presentation_job import governor as _governor
+except Exception:  # noqa: BLE001 — fail-soft: legacy tree without governor.py
+    # The repo-root presentation_job/governor.py is the single source; walk up
+    # from this file to find it and file-load it (same pattern as
+    # synthesize_full_speech when no presentation_job package is importable).
+    try:
+        import importlib.util as _ilu
+        _g = __file__ and os.path.dirname(os.path.abspath(__file__))
+        _cand = None
+        for _ in range(6):
+            if _g and os.path.isfile(os.path.join(_g, "presentation_job", "governor.py")):
+                _cand = os.path.join(_g, "presentation_job", "governor.py")
+                break
+            _g = os.path.dirname(_g) if _g else _g
+        _governor = None
+        if _cand:
+            _spec = _ilu.spec_from_file_location("_presentation_governor", _cand)
+            if _spec and _spec.loader:
+                _gov_mod = _ilu.module_from_spec(_spec)
+                sys.modules.setdefault("_presentation_governor", _gov_mod)
+                _spec.loader.exec_module(_gov_mod)
+                _governor = _gov_mod
+    except Exception:  # noqa: BLE001 — never break an upload on a gate failure
+        _governor = None
+
+_GOV_GHL_PROVIDER = "ghl"
+
+
+def _gov_ghl_acquire() -> Any:
+    """One `ghl` lease for this upload attempt. None = unthrottled."""
+    if _governor is None:
+        return None
+    try:
+        return _governor.acquire(_GOV_GHL_PROVIDER, n=1, timeout_s=60.0)
+    except Exception:  # noqa: BLE001 — the rate window is a courtesy, not a gate
+        return None
+
+
+def _gov_ghl_release(lease: Any) -> None:
+    if _governor is None or lease is None:
+        return
+    try:
+        _governor.release(lease)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _gov_ghl_report(kind: str) -> None:
+    """Telemetry into the governor: kind is 'ok' or '429'. No-op when absent."""
+    if _governor is None:
+        return
+    try:
+        if kind == "429":
+            _governor.report_429(_GOV_GHL_PROVIDER)
+        elif kind == "ok":
+            _governor.report_ok(_GOV_GHL_PROVIDER)
+    except Exception:  # noqa: BLE001
+        pass
 
 # ── Constants (ported from the PROVEN upload-ghl-media.sh) ────────────────────
 
@@ -402,19 +471,33 @@ def upload_media(
     req.add_header("Content-Type", content_type)
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
+    # FIX 14: the medias/upload-file POST is an outbound `ghl` call — acquire
+    # one governor lease per send attempt (retry sends re-acquire via
+    # _send_with_retry's loop) so an upload fan-out can never exceed the ghl
+    # row's rps/burst window or max_inflight. report_429 on a live 429 halves
+    # the next 60 s of rate; a clean response feeds report_ok. Fail-soft:
+    # a None lease (governor absent or acquire timed out) proceeds unthrottled.
+    _gov_lease = _gov_ghl_acquire()
     try:
         resp = _send_with_retry(req, timeout, _opener)
         code = resp.getcode()
         raw = resp.read()
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", "replace")
+        _gov_ghl_report("ok")
     except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            _gov_ghl_report("429")
+        else:
+            _gov_ghl_report("ok")  # a non-429 HTTP failure is not throttling
         detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
         raise RuntimeError(
             f"media upload HTTP {exc.code} for {name!r}: {detail[:300]} "
             "(media uploads REQUIRE the LOCATION PIT with medias.write scope; "
             "the Agency PIT 401s)"
         ) from exc
+    finally:
+        _gov_ghl_release(_gov_lease)
 
     if not (200 <= int(code) < 300):
         raise RuntimeError(f"media upload returned HTTP {code} for {name!r}: {raw[:300]}")

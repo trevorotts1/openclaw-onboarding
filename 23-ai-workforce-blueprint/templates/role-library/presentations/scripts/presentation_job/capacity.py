@@ -233,6 +233,37 @@ PLANS_BY_PROVIDER = {
 #: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
 NO_CAP_PROVIDERS = frozenset({PROVIDER_DEEPSEEK_DIRECT, PROVIDER_OPENROUTER})
 
+#: FIX 12 (bridge the two capacity brains) -- the published ceiling a probe
+#: can write into the resource profile for EVERY probed provider, keyed by
+#: the same normalized ids PROVIDER_PROBE_DEFS uses. Two shapes only:
+#:   * "unbounded" -- a NO_CAP_PROVIDERS bring-your-own-key account
+#:     (deepseek-direct, openrouter): no structural ceiling exists, and the
+#:     profile records the literal string "UNBOUNDED" (the same token
+#:     _Unbounded serializes to through json_default(), and the same token
+#:     model_router.measured_client_ceiling() treats as unbounded). Never a
+#:     magic integer -- that is the whole point of the sentinel.
+#:   * a positive int -- the account's REAL structural ceiling. ollama-cloud
+#:     stays plan-dependent (3 / 10 via CAP_TABLE + the one-time interview),
+#:     so the probe alone cannot name its number; when the profile's locked
+#:     interview answer supplies the plan, provider_ceiling() resolves 3 or
+#:     10 from CAP_TABLE -- never the "UNBOUNDED" row a hand edit once left
+#:     on the operator box (deleted at install time, Fix 31).
+#: Providers with no published number at all (agnes, kie) stay ABSENT from
+#: this table: the profile records no ceiling rather than a guess. Ceiling
+#: sources written beside it -- ceiling_source in
+#: {cap-table, override, measured, declared} -- never reintroduce the old
+#: "the profile is empty, floor everything to 3" vs "the mode calculator
+#: reads only the ceiling" split: one store, one derivation, every row
+#: labeled with where its number came from.
+PROVIDER_CEILINGS = {
+    PROVIDER_DEEPSEEK_DIRECT: "unbounded",
+    PROVIDER_OPENROUTER: "unbounded",
+}
+
+#: Sentinel resolved by provider_ceiling() when the account's ceiling is
+#: plan-dependent (ollama-cloud) and no plan is known yet.
+CEILING_PLAN_DEPENDENT = "plan-dependent"
+
 STATUS_MEASURED = "MEASURED"
 STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
 STATUS_UNDETERMINED = "UNDETERMINED"
@@ -421,8 +452,14 @@ PROVIDER_PROBE_DEFS = {
     },
     "ollama-cloud": {
         "label": "Ollama Cloud",
-        "env_keys": ("OLLAMA_API_KEY",),
-        "secret_files": (("~/.openclaw/secrets/.env", "OLLAMA_API_KEY"),
+        # FIX 114: both documented key names are probed IN ORDER -- the
+        # dispatcher and model_router read OLLAMA_CLOUD_API_KEY; install.sh and
+        # legacy stores hold OLLAMA_API_KEY. Either name (or its canon alias
+        # family, via _read_secret_value) must light up presence.
+        "env_keys": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+        "secret_files": (("~/.openclaw/secrets/.env", "OLLAMA_CLOUD_API_KEY"),
+                         ("~/.openclaw/secrets/.env", "OLLAMA_API_KEY"),
+                         ("~/.openclaw/.env", "OLLAMA_CLOUD_API_KEY"),
                          ("~/.openclaw/.env", "OLLAMA_API_KEY")),
         "models_url": "https://ollama.com/v1/models",
         "auth_required_for_models": True,
@@ -674,8 +711,21 @@ def _read_secret_value(env_key: str) -> Optional[str]:
             continue
     # env carried a value but the canon rejected it as a placeholder: honour
     # an explicitly injected fake-env view (proof seam) over the rejection,
-    # the same posture research_web.brave_key_present documents.
+    # the same posture research_web.brave_key_present documents. FIX 114: the
+    # seam exists for INJECTED env views (env= callers); the real process env
+    # (env_key read at the top) is a REAL source and a placeholder there never
+    # satisfies this reader -- it would be re-handed to probe_one_provider as
+    # a "resolved" credential and burn the budget. When the canon's
+    # looks_like_real_key is reachable and the value fails it, this reader
+    # returns None instead.
     if value:
+        helper = _secret_helper()
+        if helper is not None:
+            try:
+                if not helper.looks_like_real_key(value, env_key):
+                    return None
+            except Exception:  # noqa: BLE001 -- gate failure keeps the seam
+                pass
         return value
     return None
 
@@ -714,6 +764,12 @@ def probe_one_provider(provider: str,
         if candidate:
             present, key_source, key_value = True, f"env:{name}", candidate
             break
+    # FIX 114: an env-carried value that is a PLACEHOLDER never lights up
+    # presence on a real box (the proof seam env= view is exempted exactly as
+    # research_web.brave_key_present documents) -- a key that says
+    # PASTE_REAL_TOKEN is not a key, and probing with it burns the budget.
+    if present and env is None and _is_placeholder_value(key_value or ""):
+        present, key_source, key_value = False, None, None
     key_env = os.environ if env is None else env
     if not present:
         # secrets files: presence read by NAME from the files; the value is
@@ -1001,6 +1057,84 @@ def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
     if "flash" in text:
         return PLAN_DEEPSEEK_FLASH
     return None
+
+
+# ---------------------------------------------------------------------------
+# FIX 12: the per-provider ceiling the probe can WRITE (bridge the two brains)
+# ---------------------------------------------------------------------------
+def provider_ceiling(provider, plan: Optional[str] = None) -> Tuple[Optional[object], str]:
+    """The ceiling + ceiling_source for ONE provider, per FIX 12's source
+    vocabulary -- the derivation resource_profile.store_provider_probes()
+    persists beside every provider row so the mode calculator
+    (model_router.measured_client_ceiling) and the gate (capacity.probe)
+    read the SAME numbers from ONE store.
+
+    Returns (ceiling, ceiling_source) where ceiling is a positive int, the
+    string "UNBOUNDED", the CEILING_PLAN_DEPENDENT marker, or None; source
+    is one of:
+
+        "cap-table"  -- a structural CAP_TABLE row named the ceiling
+                        (ollama-cloud with a known plan: 3 or 10). The
+                        interview answer is what made the plan known, so the
+                        table is authoritative and the number is real.
+        "override"   -- a declared max_concurrent in capacity_override.json
+                        reconciled against the cap table (never above it) --
+                        the gate's own step-(a) projection.
+        "measured"   -- the profile row ALREADY carries a probe-derived
+                        ceiling from a previous run; re-derivation from
+                        PROVIDER_CEILINGS/plan would risk contradicting a
+                        newer operator self-throttle, so the stored value
+                        stands.
+        "declared"   -- a self-throttle the operator/client declared for a
+                        NO_CAP_PROVIDERS account (the declared number is
+                        honoured verbatim -- self-throttling is always
+                        honoured; an upward ceiling is never invented).
+        "plan-dependent" -- ollama-cloud with no plan yet: the ceiling is a
+                        physical fact of the plan, not decidable by this
+                        probe. The row records NO number (never a guess);
+                        the one-time interview resolves it to cap-table.
+        "absent"     -- nothing derivable (unknown provider, nothing
+                        measured): the profile records no ceiling rather
+                        than a floor dressed up as a measurement.
+
+    Never raises; never guesses upward. The four FIXED sources
+    {cap-table, override, measured, declared} are exactly the values the
+    FIX 12 proof accepts on every provider row."""
+    norm = normalize_provider(provider)
+    if norm is None:
+        return None, "absent"
+
+    plan_norm = normalize_plan(plan, norm)
+
+    # (1) structural cap-table provider (ollama-cloud): plan-dependent until
+    # the interview names the tier; then the table IS the ceiling.
+    if norm in CAP_TABLE_PROVIDERS:
+        if plan_norm and (norm, plan_norm) in CAP_TABLE:
+            return CAP_TABLE[(norm, plan_norm)], "cap-table"
+        return CEILING_PLAN_DEPENDENT, "plan-dependent"
+
+    # (2) NO_CAP_PROVIDERS BYOK account: no structural ceiling exists --
+    # "UNBOUNDED" unless a declared self-throttle lowers it (which the
+    # profile records as "declared", never as a measurement).
+    if norm in NO_CAP_PROVIDERS:
+        declared = None
+        if isinstance(plan, dict):
+            raw = plan.get("max_concurrent")
+            if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1:
+                declared = raw
+        if declared is not None:
+            return declared, "declared"
+        return "UNBOUNDED", "measured"
+
+    # (3) a probeable provider with a PUBLISHED ceiling (PROVIDER_CEILINGS).
+    published = PROVIDER_CEILINGS.get(norm)
+    if published == "unbounded":
+        return "UNBOUNDED", "measured"
+    if isinstance(published, int) and not isinstance(published, bool) and published > 0:
+        return published, "measured"
+
+    # (4) nothing published (agnes, kie, ...): honestly absent.
+    return None, "absent"
 
 
 def interview_question(provider: str) -> str:

@@ -285,7 +285,27 @@ def _extract_run_dir(proc: Dict[str, Any]) -> Optional[Path]:
         if tok == "--run-dir" and i + 1 < len(cl):
             cand = cl[i + 1]
             p = Path(cand).expanduser()
-            return p.resolve() if p.exists() else p
+            _next = cl[i + 2] if i + 2 < len(cl) else ""
+            if (p.exists() and (p / "state.json").is_file()) or (p / "working").is_dir()                     or i + 2 >= len(cl) or _next.startswith("-"):
+                return p.resolve() if p.exists() else p
+            # R-F02-B3: the `ps` fallback shlex-splits the command column, so a run dir
+            # with SPACES arrives as several argv tokens ("/Users/.../SEPT", "1ST",
+            # "PRESENTATION", ...). The next token alone does not exist. Consolidate:
+            # join successive tokens until the joined candidate is a REAL path (anchored,
+            # never guessed) or a token starts with '-'.
+            joined = cand
+            j = i + 2
+            while j < len(cl) and not cl[j].startswith("-"):
+                joined = joined + " " + cl[j]
+                pj = Path(joined).expanduser()
+                if pj.exists():
+                    return pj.resolve()
+                j += 1
+            # Never reaped a path we cannot anchor: return the FULL joined candidate
+            # even when it does not exist, so the liveness check (not the parse) is
+            # the thing that decides a run is dead — a parse artifact must never
+            # masquerade as an absent run dir.
+            return Path(joined).expanduser()
         if tok.startswith("--run-dir="):
             p = Path(tok.split("=", 1)[1]).expanduser()
             return p.resolve() if p.exists() else p
@@ -470,6 +490,33 @@ def _kill_pid(pid: int, sig: int) -> bool:
         return False
 
 
+def _kill_group_and_tree(pid: int, sig: int) -> int:
+    """FIX 19 (MASTER Part 8): signal a stray, its whole PROCESS GROUP, and its
+    whole descendant tree — "children included", enforced in code rather than
+    only claimed in a comment.
+
+    1. os.killpg(pid, sig): every FIX 19 spawn (launcher engine, auto-spawned
+       dispatcher) is start_new_session=True, so the stray IS its own group
+       leader and the killpg reaches the watcher AND its in-flight wave
+       workers in one syscall. Best-effort: a non-leader stray's killpg fails
+       (ProcessLookupError/PermissionError) and is swallowed.
+    2. _kill_tree(pid, sig): the ppid walk. Catches children a group kill
+       misses — a child that called setpgid itself, or was reparented outside
+       the stray's group between the table snapshot and the signal.
+
+    Sending both is idempotent for already-signalled processes (a second
+    SIGTERM to a dying process is a no-op; the KILL escalation below is what
+    finishes survivors). Returns the total number of signals sent."""
+    sent = 0
+    try:
+        os.killpg(pid, sig)
+        sent += 1
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    sent += _kill_tree(pid, sig)
+    return sent
+
+
 def _kill_tree(pid: int, sig: int) -> int:
     """Send sig to the process AND its descendants (walked from the current table so a
     reparented child is still found). Returns the number of signals sent. Uses only
@@ -601,12 +648,19 @@ def reap_strays(scan_root: Path,
         if notify:
             notify(line)
         if not dry_run:
-            _kill_pid(pid, signal.SIGTERM)
+            # FIX 19: the reap is a GROUP-AND-TREE kill, not a bare pid signal —
+            # "children included" is the whole point of this fix. A stray
+            # dispatcher/signature engine carries its wave workers; killing the
+            # pid alone is the pre-FIX 19 bug in miniature. _kill_group_and_tree
+            # killpg's the stray's own process group (every FIX 19 spawn is
+            # start_new_session=True) and walks the descendant tree, so the
+            # SIGTERM reaches workers a pid-only signal never saw.
+            _kill_group_and_tree(pid, signal.SIGTERM)
             time.sleep(min(kill_grace, KILL_GRACE_SECONDS))
             # Confirm dead; escalate to SIGKILL if it survived (incl. a zombie reparent).
             still = _pid_alive(pid)
             if still:
-                _kill_pid(pid, signal.SIGKILL)
+                _kill_group_and_tree(pid, signal.SIGKILL)
                 record["kills"].append({"pid": pid, "signal": "SIGTERM->SIGKILL",
                                         "final": "SIGKILL"})
             else:
@@ -662,7 +716,8 @@ def run_with_cleanup(argv: List[str], *,
                      timeout: Optional[float] = None,
                      env: Optional[Dict[str, str]] = None,
                      input_text: Optional[str] = None,
-                     capture: bool = True) -> subprocess.CompletedProcess:
+                     capture: bool = True,
+                     on_spawn=None) -> subprocess.CompletedProcess:
     """Run argv in a NEW SESSION / PROCESS GROUP (start_new_session=True). If the exec
     exceeds `timeout`, kill the ENTIRE process group (SIGTERM, then SIGKILL after the
     grace) and raise subprocess.TimeoutExpired — no orphan survives.
@@ -671,6 +726,12 @@ def run_with_cleanup(argv: List[str], *,
     kills only the direct child and leaves grandchildren (and their process group)
     running — the D21 orphan/zombie path. The caller keeps the identical contract
     (returncode / stdout / stderr / TimeoutExpired), so this is a drop-in swap.
+
+    FIX 105: optional `on_spawn` hook — a single-argument callable invoked with
+    the Popen handle the moment the child exists (before communicate blocks).
+    The engine (phases.py) uses it to REGISTER every in-flight exec so its
+    shutdown path can killpg the exec's own session; every existing caller is
+    unaffected (on_spawn defaults to None).
     """
     t = timeout if timeout is not None else DEFAULT_EXEC_TIMEOUT_SECONDS
     kwargs: Dict[str, Any] = {
@@ -686,6 +747,11 @@ def run_with_cleanup(argv: List[str], *,
         kwargs.update({"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                        "text": True})
     proc = subprocess.Popen(argv, **kwargs)
+    if on_spawn is not None:
+        try:
+            on_spawn(proc)
+        except Exception:  # noqa: BLE001 — a broken hook must never break the exec
+            pass
     try:
         out, err = proc.communicate(timeout=t)
         return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)

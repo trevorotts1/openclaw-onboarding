@@ -17,14 +17,14 @@ Give the Typography Architect and the Slide Image Creator a concrete, checkable 
 
 ## 2. The Hard Rule
 
-Every deck obeys ONE locked weight ladder with at least FOUR distinct weights and named roles, and a per-word emphasis rule. The single repeated device (one black headline plus one accent word on every slide) is banned. Display type is used expressively where the master SOP archetypes call for type to be the hero (A4 type-punch, A3 data hero, hook slides).
+Every deck obeys ONE locked weight ladder with at least FOUR distinct weights and named roles, and a per-word emphasis rule -- the coded minimum WEIGHT_LADDER_MIN_WEIGHTS = 4 (presentations/scripts/build_deck.py, FIX 87 canon block, lines 697-708). The single repeated device (one black headline plus one accent word on every slide) is banned. Display type is used expressively where the master SOP archetypes call for type to be the hero (A4 type-punch, A3 data hero, hook slides).
 
 ### 2.1 The locked weight ladder (the gold-standard reference deck, adapt sizes to slide height)
 
-| Weight | Role | Typical size (relative to 1440px slide height) |
+| Weight | Role | Typical size (pt-equivalent at a 1080px-tall canvas, the build_deck.py token frame) |
 |--------|------|-------------------------------------------------|
-| BLACK | Hero headlines, hero numbers, the live price numeral, the climbing running value total | 60 to 86pt |
-| ExtraBold | Sub-heads, the second line of a two-line headline, the struck price | 26 to 34pt |
+| BLACK | Hero headlines, hero numbers, the live price numeral, the climbing running value total | 62 to 86pt (HERO_HEADLINE_PT_RANGE = (62, 86) in presentations/scripts/build_deck.py, FIX 87 canon block) |
+| ExtraBold | Sub-heads, the second line of a two-line headline, the struck price | 24 to 32pt (SUBHEADLINE_PT_RANGE = (24, 32) in build_deck.py) |
 | Bold | Kicker labels, section banners, tag-price labels, bullet labels | 16 to 22pt |
 | Medium / SemiBold + Italic | Body lines, tertiary lines, captions, the compliance disclaimer | 17 to 24pt |
 
@@ -58,7 +58,7 @@ The two are visually PAIRED on the same slide so the widening gap is seen: the f
 
 This is the named TYPOGRAPHY INTELLIGENCE engine (SOP-ENGINE-00 Engine 3): type is engineered for the room and the goal, not decorated.
 
-**(a) The 8th-row readability test.** Headlines are sized so they read FROM THE 8TH ROW of a room. The test is mechanical and relative to slide HEIGHT, never to a guessed room distance: shrink the rendered slide to about 25% (or stand back from it) and the headline must STILL read clearly. The weight ladder in 2.1 sets the sizes (hero headlines BLACK at 60-86pt relative to a 1440px slide height); the 8th-row test is the verification that those sizes actually carry. A headline that disappears or becomes illegible at 25% shrink fails the 8th-row test.
+**(a) The 8th-row readability test.** Headlines are sized so they read FROM THE 8TH ROW of a room. The test is mechanical and relative to slide HEIGHT, never to a guessed room distance: shrink the rendered slide to about 25% (or stand back from it) and the headline must STILL read clearly. The weight ladder in 2.1 sets the sizes (hero headlines BLACK at 62-86pt (pt-equivalent at a 1080px-tall canvas; HERO_HEADLINE_PT_RANGE = (62, 86) in build_deck.py)); the 8th-row test is the verification that those sizes actually carry. A headline that disappears or becomes illegible at 25% shrink fails the 8th-row test.
 
 **(b) The salesy / cheap-font ban (fonts to avoid for trust).** Typeface choice signals INTENT. Certain display faces telegraph "salesy / cheap / $9.97-big-price-tag carnival" and are BANNED whenever the deck's goal is TRUST or credibility. The banned-for-trust taxonomy: loud condensed "big price tag" display faces, infomercial / late-night-sale carnival fonts, novelty or "free download" display fonts, distressed grunge faces, over-rounded bubble fonts, and any font whose primary association is a discount sticker or a hype sales page. These compete with the very credibility a webinar deck is built to establish. The default editorial sans (Montserrat) and the client's locked brand typeface are trust-appropriate; a banned salesy display face on a credibility deck is a defect (AF-TYPE-SALESY-FONT). (This is a TASTE / INTENT rule layered on top of the weight ladder; the ladder says HOW MANY weights, this says WHICH faces are allowed.)
 

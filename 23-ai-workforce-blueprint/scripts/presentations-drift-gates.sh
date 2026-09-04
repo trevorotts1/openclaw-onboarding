@@ -273,6 +273,57 @@ PYGATE
 # indistinguishable from tampering — same failure). LEG 4 — the department
 # manifest's CONTENT must equal the repo copy's (canonical-JSON, per FIX 32's
 # content hashing: whitespace is not drift, values are).
+
+
+# ---------------------------------------------------------------------------
+# GATE 8 (FIX 61): A scheduled path creates jobs -- the intake poll must be
+# WIRED, not merely present. The poll script and its launchd plist template
+# are dead letters unless (a) install.sh carries the installer that renders
+# the template into ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+# (or registers an openclaw cron on Linux), and (b) that installer is
+# CALLED from the main install flow. Without the call site a staged
+# submission sits staged forever with no human action -- the exact QC.md
+# FIX 61 failure. Asserted by grep contracts (cheap, deterministic).
+echo "== GATE 8: intake-poll schedule wiring (FIX 61) =="
+GATE8_RC=0
+# fix/r-f02-b3: the FIX 61 block referenced $REPO_ROOT/$SCRIPTS_DIR — variables this script never
+# defines; under `set -u` every invocation died "REPO_ROOT: unbound" before reaching the drift
+# comparison, bricking the door fleet-wide. The gate's own names are REPO_SCRIPTS + DEPT_SCRIPTS.
+python3 - "$REPO_SCRIPTS" "$DEPT_SCRIPTS" <<'PYEOF' || GATE8_RC=$?
+import re, sys
+from pathlib import Path
+repo = Path(sys.argv[1]); scr = sys.argv[2]
+fails = []
+tpl = repo / scr / "presentation-intake-poll.plist.template"
+poll = repo / scr / "presentation-intake-poll.sh"
+if not tpl.is_file():
+    fails.append("(1) plist template missing: " + str(tpl))
+if not poll.is_file():
+    fails.append("(1) poll script missing: " + str(poll))
+inst = repo / "install.sh"
+inst_text = inst.read_text(encoding="utf-8", errors="replace") if inst.is_file() else ""
+if "install_intake_poll_schedule()" not in inst_text:
+    fails.append("(2) install.sh does not define install_intake_poll_schedule() -- the scheduled path has no installer")
+if "presentation-intake-poll.plist.template" not in inst_text:
+    fails.append("(3) install.sh never resolves the intake-poll plist template -- the installer would always SKIP")
+call_re = re.compile(r"^\s*install_intake_poll_schedule\b", re.M)
+if not call_re.search(inst_text):
+    fails.append("(4) install.sh never CALLS install_intake_poll_schedule -- the poll is never scheduled (staged submissions sit forever)")
+if "_FIX61_RC=0" not in inst_text or "_FIX61_RC=$?" not in inst_text:
+    fails.append("(5) install.sh does not latch the FIX 61 installer rc (_FIX61_RC) -- a failed schedule install would be swallowed")
+if fails:
+    print("GATE8_FAIL: FIX 61 intake-poll schedule wiring violated:")
+    for f in fails:
+        print("  - " + f)
+    sys.exit(1)
+print("GATE8_PASS: intake-poll scheduled path wired -- template + poll script exist, "
+      "install.sh defines and CALLS install_intake_poll_schedule, rc is latched (FIX 61).")
+PYEOF
+if [ "$GATE8_RC" -ne 0 ]; then
+  echo "GATE 8 FAILED: FIX 61 intake-poll schedule wiring violated -- see GATE8_FAIL above." >&2
+  FAILED=1
+fi
+
 # ---------------------------------------------------------------------------
 if [ ! -f "$DEPT_STAMP" ]; then
     fail "provenance stamp $DEPT_STAMP is MISSING — the installed manifest carries no recorded provenance; run the reinstall to restamp (restamp_manifest_source, FIX 113)"

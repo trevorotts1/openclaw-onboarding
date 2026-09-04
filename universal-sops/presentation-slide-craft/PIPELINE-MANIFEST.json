@@ -1,5 +1,5 @@
 {
-  "manifest_version": 62,
+  "manifest_version": 64,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -671,6 +671,10 @@
       "order": 4,
       "name": "Slide Copy",
       "owning_role": "slide-copywriter",
+      "fanout": {
+        "by": "section",
+        "max_units": 5
+      },
       "sop_refs": [
         "slide-copywriter-sops.md"
       ],
@@ -786,6 +790,10 @@
       "order": 4.2,
       "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
       "owning_role": "slide-image-creator",
+      "fanout": {
+        "by": "slide",
+        "max_units": 3
+      },
       "produces_artifact": [
         "prompts/sales.design.txt",
         "design/sales-design.png"
@@ -799,10 +807,6 @@
       },
       "executor": {
         "kind": "agent"
-      },
-      "fanout": {
-        "by": "design_page",
-        "max_units": 1
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
@@ -892,6 +896,10 @@
       "order": 4.3,
       "name": "Upsell Checkout Page Design (includes order/payment form design)",
       "owning_role": "slide-image-creator",
+      "fanout": {
+        "by": "slide",
+        "max_units": 3
+      },
       "produces_artifact": [
         "prompts/checkout.design.txt",
         "design/checkout-design.png"
@@ -940,6 +948,10 @@
       "order": 4.4,
       "name": "Upsell VSL Page Design (includes email/phone gate form design)",
       "owning_role": "slide-image-creator",
+      "fanout": {
+        "by": "slide",
+        "max_units": 3
+      },
       "produces_artifact": [
         "prompts/vsl.design.txt",
         "design/vsl-design.png"
@@ -1048,6 +1060,10 @@
       "order": 4.7,
       "name": "Prompt Authoring — each slide prompt to the 9,000-char standard",
       "owning_role": "prompt-author-presentations",
+      "fanout": {
+        "by": "slide",
+        "max_units": 12
+      },
       "sop_refs": [
         "prompt-author-presentations-sops.md"
       ],
@@ -1075,13 +1091,18 @@
       "consumes": [
         "working/copy/slides_copy.md",
         "working/research/design-brief-*.md"
-      ]
+      ],
+      "workers": 12
     },
     {
       "id": "P-PROMPT-QC",
       "order": 4.8,
       "name": "Prompt QC — sequenced AFTER Prompt-Authoring (O1; independent reviewer)",
       "owning_role": "qc-specialist-prompt-presentations",
+      "fanout": {
+        "by": "slide",
+        "max_units": 12
+      },
       "sop_refs": [
         "qc-specialist-prompt-presentations-sops.md"
       ],
@@ -1146,6 +1167,10 @@
       "order": 4.84,
       "name": "Style Preview Spec (fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render)",
       "owning_role": "brand-steward",
+      "fanout": {
+        "by": "slide",
+        "max_units": 3
+      },
       "sop_refs": [
         "brand-steward-sops.md"
       ],
@@ -1164,11 +1189,7 @@
       "consumes": [
         "working/copy/slides.json",
         "working/copy/intake.json"
-      ],
-      "fanout": {
-        "by": "slide",
-        "max_units": 3
-      }
+      ]
     },
     {
       "id": "P-STYLE-PICK",
@@ -1247,6 +1268,10 @@
       "order": 4.95,
       "name": "Image QC — sequenced AFTER Render (O1; independent multimodal reviewer)",
       "owning_role": "qc-specialist-image-presentations",
+      "fanout": {
+        "by": "slide",
+        "max_units": 12
+      },
       "sop_refs": [
         "qc-specialist-image-presentations-sops.md"
       ],
@@ -1606,6 +1631,10 @@
       "order": 8.5,
       "name": "Presenter Speech (length gate)",
       "owning_role": "presenters-speech-writer",
+      "fanout": {
+        "by": "slide",
+        "max_units": 12
+      },
       "sop_refs": [
         "presenters-speech-writer-sops.md"
       ],
@@ -4107,6 +4136,24 @@
       "secondary_py_symbols": [
         "SPEECH_PACING_BAND"
       ]
+    },
+    {
+      "code": "AF-RENDER-EMPTY",
+      "stage": "P8-ASSEMBLE",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "closeout reached with NO rendered slide PNGs in renders/ — the render phase produced zero artifacts; an empty deck must never assemble.",
+      "enforced_by": "build_deck",
+      "py_symbol": "run_postflight_gate"
+    },
+    {
+      "code": "AF-RENDER-COMPLETE",
+      "stage": "P8-ASSEMBLE",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "RENDER GATE FAILED — the render phase did not complete its full slide output set before assembly; partial decks are refused.",
+      "enforced_by": "build_deck",
+      "py_symbol": "run_postflight_gate"
     }
   ],
   "roles": [

@@ -750,6 +750,66 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
+    # FIX 70: the dep LIST is the ONE canon — presentations/scripts/presentation-deps.json
+    # (repo checkout first, then the role-library twin, then the materialized
+    # department). Resolved the same way qc-completeness.sh's exit-6 gate does, so a
+    # dep the canon adds is enforced at the door the moment it lands in the JSON.
+    # If the canon is absent or unparsable, the pre-FIX-70 hardcoded checks below run
+    # instead and say so — an unreadable canon is never a silent clean pass.
+    local _gate_canon=""
+    local _gate_cand
+    for _gate_cand in "$SCRIPTS_DIR/presentation-deps.json" \
+                      "$SCRIPTS_DIR/../templates/role-library/presentations/scripts/presentation-deps.json" \
+                      "$DEPT_SCRIPTS_DEFAULT/presentation-deps.json"; do
+        [ -n "$_gate_cand" ] && [ -r "$_gate_cand" ] && { _gate_canon="$_gate_cand"; break; }
+    done
+    if [ -z "$_gate_canon" ] && [ -r "${BASH_SOURCE[0]%/*}/../templates/role-library/presentations/scripts/presentation-deps.json" ]; then
+        _gate_canon="${BASH_SOURCE[0]%/*}/../templates/role-library/presentations/scripts/presentation-deps.json"
+    fi
+    local _gate_py3=""
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+        _gate_py3="${PRESENTATION_PIPELINE_INTERPRETER}"
+    else
+        for _gate_cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+            if [ -x "$_gate_cand" ]; then _gate_py3="$_gate_cand"; break; fi
+        done
+        [ -z "$_gate_py3" ] && _gate_py3="python3"
+    fi
+    if [ -n "$_gate_canon" ] && [ -n "$_gate_py3" ]; then
+        while IFS='|' read -r _g_dep_name _g_dep_kind _g_dep_spec; do
+            [ -z "$_g_dep_name" ] && continue
+            case "$_g_dep_kind" in
+                binary)
+                    command -v "$_g_dep_spec" >/dev/null 2>&1 \
+                        || missing+=("$_g_dep_name ($_g_dep_spec; per presentation-deps.json)")
+                    ;;
+                python_import)
+                    "$_gate_py3" -c "import ${_g_dep_spec}" >/dev/null 2>&1 \
+                        || missing+=("python(${_g_dep_spec} in the department venv; fix: ${_gate_py3} -m pip install ${_g_dep_spec})")
+                    ;;
+                *)
+                    echo "  WARN: presentation-deps.json dep $_g_dep_name has unknown kind $_g_dep_kind" >&2
+                    ;;
+            esac
+        done < <(python3 -c "
+import json, sys
+try:
+    doc = json.load(open('$_gate_canon'))
+except Exception as exc:
+    print(f'  WARN: cannot parse canon $_gate_canon: {exc}', file=sys.stderr)
+    sys.exit(0)
+for d in doc.get('deps', []):
+    spec = d.get('mac' if '${OPENCLAW_PLATFORM:-mac}' == 'mac' else 'vps', {})
+    if d.get('kind') == 'binary':
+        spec_name = spec.get('binary') or d.get('name')
+        print(f\"{d.get('name')}|binary|{spec_name}\")
+    elif d.get('kind') == 'python_import':
+        spec = d.get('import_spec') or d.get('module')
+        print(f\"{d.get('name')}|python_import|{spec}\")
+")
+    else
+        echo "  NOTE: presentation-deps.json canon not readable here — fallback hardcoded checks below." >&2
+    fi
     command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
     command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
     if command -v python3 >/dev/null 2>&1; then

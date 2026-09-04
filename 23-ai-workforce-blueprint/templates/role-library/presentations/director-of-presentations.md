@@ -247,7 +247,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### Phase-Code Map (short codes -> manifest ids)
 
-This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 60, 59 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
+This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
 
 | Legacy short code | Manifest `phases[].id` (order) | Manifest row |
 |---|---|---|

@@ -55,6 +55,19 @@ from __future__ import annotations
 # derive their runtime maps from it. No other file may hardcode a deliverable
 # list.
 # ---------------------------------------------------------------------------
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): the static rows keep the
+# reference-deck calibration for the manifest ledger, but DERIVED from THE one
+# floors module — no bare 51,200 literal lives in this file. Runtime floors for a
+# specific deck are guide_floor(n)/pdf_floor(n) (re-exported below); the audit
+# applies them per run.
+try:
+    from .deliverable_floors import pdf_floor as _ref_pdf_floor, guide_floor as _ref_guide_floor
+    _REFERENCE_DECK_PDF_FLOOR = _ref_pdf_floor(34)      # 51,204
+    _REFERENCE_DECK_GUIDE_FLOOR = _ref_guide_floor(34)  # 54,400
+except ImportError:  # pragma: no cover — mid-roll box safety
+    _REFERENCE_DECK_PDF_FLOOR = 1506 * 34
+    _REFERENCE_DECK_GUIDE_FLOOR = 1600 * 34
+
 DELIVERABLE_AUDIT_SPEC = [
     {
         "key": "deck_pptx",
@@ -87,7 +100,7 @@ DELIVERABLE_AUDIT_SPEC = [
         # ~20-30KB; 50KB ensures at least two slides' worth of rendered content").
         # deliverables.py had carried 50_000 — a 1,200-byte rounding drift, not a real
         # doctrine disagreement.
-        "min_bytes": 51_200,              # 50 KB — PDF export of at least 2 slides
+        "min_bytes": _REFERENCE_DECK_PDF_FLOOR,   # reference-deck calibration; runtime is pdf_floor(n)
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",
@@ -107,7 +120,7 @@ DELIVERABLE_AUDIT_SPEC = [
         # was measured on the 34-slide deck; the P8.2 phase verifier and the bundle gate
         # both scale it by slide count (max(51200*n//34, 8192)). The self-audit reads this
         # list statically, so scale here too: FLOOR(n) computed per run by audit_all.
-        "min_bytes": 51_200,              # 50 KB — reference-deck floor; scaled per deck
+        "min_bytes": _REFERENCE_DECK_GUIDE_FLOOR,  # reference-deck calibration; runtime is guide_floor(n)
         "magic_bytes": b"%PDF",
         "magic_offset": 0,
         "magic_desc": "PDF document",

@@ -10,6 +10,8 @@ Cases:
   5. Narrow scope holds — a live re-introduction under sops/ passes.
   6. The two sibling roles are NOT registered — no pattern id mentions
      image-grounding-steward or representation-casting-director.
+  7. The retired prompt-char floor's literal family has teeth — any of
+     5,000 / 5000 / 5,001 / 4,750 / 4800 chars as a live instruction is caught.
 
 The deliberate gap: this test places the offending file at sops/probe-role.md for
 case 5 and asserts zero offenders. That is BY DESIGN: the pattern's scope is '*.md'
@@ -83,7 +85,7 @@ class TestRetiredRoles(unittest.TestCase):
     def test_1_pattern_registered_with_correct_shape(self):
         """The new pattern is in the registry with id, scope='*.md', no near, correct regex."""
         patterns = self.registry["patterns"]
-        self.assertEqual(len(patterns), 5, "expected 5 patterns (was 4)")
+        self.assertEqual(len(patterns), 6, "expected 6 patterns (was 5 before FIX 79)")
 
         hits = [p for p in patterns if p["id"] == "role-assembled-slide-legibility-qc-retired"]
         self.assertTrue(hits, "new pattern not found by id")
@@ -211,6 +213,45 @@ class TestRetiredRoles(unittest.TestCase):
                     slug, pid,
                     f"pattern id '{pid}' mentions '{slug}' — sibling role must not be registered"
                 )
+
+    # ------------------------------------------------------------------
+    # Case 7 — Retired prompt-char floor literal family has teeth
+    # ------------------------------------------------------------------
+    def test_7_prompt_floor_literal_family_caught(self):
+        """FIX 79 (5,000-floor residue): every literal spelling of the retired
+        prompt floor (5,000 / 5000 / 5,001 / 4,750 / 4800 chars) as a LIVE
+        instruction must be caught by the prompt-floor-5000-char pattern."""
+        p = [p for p in self.registry["patterns"] if p["id"] == "prompt-floor-5000-char"]
+        self.assertEqual(len(p), 1, "prompt-floor-5000-char pattern must exist")
+        import re
+        rx = re.compile(p[0]["pattern"], re.IGNORECASE | re.MULTILINE)
+        for lit in ("5,000 char", "5000 characters", "5,001 char", "4,750 characters",
+                    "4800 char"):
+            self.assertTrue(rx.search(lit), f"pattern must catch live instruction: {lit!r}")
+        # The 9,000 live floor (and its 14,000 target) must NOT match — it is current doctrine.
+        for lit in ("9,000 char", "9000 characters", "14,000 char", "18,000 chars"):
+            self.assertFalse(rx.search(lit), f"pattern must NOT catch live floor: {lit!r}")
+
+        root, pres = build_fixture_root([])
+        try:
+            orig_pres_dir = self.guard.PRES_DIR
+            self.guard.PRES_DIR = Path(pres)
+            try:
+                probe = Path(pres) / "probe-floor.md"
+                probe.write_text(
+                    "# Probe floor\n\n"
+                    "Author every prompt to a 4,750-char floor.\n"
+                )
+                offenders, scanned = self.guard.run_check(self.registry)
+                self.assertGreater(scanned, 0, "files_scanned must be > 0")
+                hit = [o for o in offenders if o["id"] == "prompt-floor-5000-char"]
+                self.assertEqual(len(hit), 1,
+                                 "a live 4,750-char floor instruction must be an OFFENDER")
+                self.assertEqual(hit[0]["file"], "probe-floor.md")
+            finally:
+                self.guard.PRES_DIR = orig_pres_dir
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":

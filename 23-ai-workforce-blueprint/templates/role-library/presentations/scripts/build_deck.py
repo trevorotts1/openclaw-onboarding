@@ -6843,6 +6843,17 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
                         "done", "artifact_present", "preflight_ok",
                         "preflight_ok_adhoc", "qc_pass_measurer"):
                     continue
+                # FIX 30 — only ENGINE-WRITTEN rows are attestations. The writer
+                # identity is attested_by, namespaced "engine:" (the engine writes
+                # "engine:<pid>", run_signature_deck.attest_phase writes the same).
+                # A row WITHOUT an "engine:"-prefixed attested_by is a hand-edited /
+                # self-minted shape — the exact vector the live 28-rows-at-midnight
+                # hand-edit used — and satisfies NOTHING, even when it carries a
+                # completed status and substance_verified True. The writer always
+                # stamps it, so a genuine row can never trip here; only a forged
+                # row can.
+                if not str(att.get("attested_by", "")).strip().startswith("engine:"):
+                    continue
                 if att.get("substance_verified") is not True:
                     continue
                 for k in ("phase_id", "id", "name"):
@@ -9326,13 +9337,30 @@ def _chk_rerank(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     text = _slides_copy_text_lc(run_dir)
     if not text:
         return ""
-    price = text.find("price")
+    # FIX 35: the price anchor is a WHOLE-WORD match, not a substring find.
+    # "price" as a substring also lives inside "pricing", "priceless",
+    # "overpriced", "compare prices" — a deck whose copy merely MENTIONS the
+    # word family got a false price anchor at that offset, and any re-rank
+    # demand sitting after it satisfied Move 7 even though no PRICE beat (the
+    # offer slide the eight-move sequence anchors on) exists. The anchor must
+    # be the standalone word. scan_negation_aware's whole-word machinery is
+    # exactly this (plus negation suppression, which a price beat must also
+    # survive to count — "the price is not the point" is not a price beat).
+    _scanners_35 = _import_scanners()
+    if _scanners_35 is not None:
+        price_hits = _scanners_35.scan_negation_aware(text, ("price",))
+        price = price_hits[0][1] if price_hits else -1
+    else:
+        # Legacy fallback: whole-word regex over the lowercased text (keeps the
+        # pre-FIX-35 anchor semantics for the standalone word; a substring hit
+        # inside a longer word was ALWAYS the aliasing defect, so the fallback
+        # tightens to the same whole-word rule rather than preserving it).
+        price = next((m.start() for m in re.finditer(r"\bprice\b", text)), -1)
     if price < 0:
         return ""  # no price beat yet.
     # FIX 35: negation-aware marker scan. scan_negation_aware operates on the
     # ORIGINAL-case text but lowercases internally, and it never crosses a sentence
     # boundary — exactly the same unit the pre-fix substring scan compared offsets in.
-    _scanners_35 = _import_scanners()
     if _scanners_35 is not None:
         surviving = [(kw, off) for kw, off in _scanners_35.scan_negation_aware(
             text, RERANK_MARKERS) if off > price]
@@ -11034,8 +11062,14 @@ def _sha256_file(path: Path) -> Optional[str]:
 
 
 def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
-                           out_path: Path, timestamp: str) -> Path:
+                           out_path: Path, timestamp: str,
+                           bundle_dir: Optional[Path] = None) -> Path:
     """APPEND this render's record to working/checkpoints/process_manifest.json.
+
+    FIX 1: the render record ALSO records the bundle dir (bundleDir) the render wrote
+    its deliverables into, so the P-BUNDLE-GATE terminal phase (scripts/bundle_gate.py,
+    resolving the bundle dir "exactly like the render main" via
+    process_manifest.json.bundleDir) finds the SAME directory the render used.
 
     The manifest is a cumulative, multi-phase record: each department phase appends
     its own entry under "phases" — this writer must NEVER clobber prior phases. It
@@ -11102,6 +11136,16 @@ def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
         "output_pptx": str(out_path),
         "slides": per_slide,
     }
+    # FIX 1: record the bundle dir (where the --out deliverables ledger lives) so
+    # scripts/bundle_gate.py (P-BUNDLE-GATE, order 9.95) resolves the SAME bundle
+    # dir from the process manifest — its _resolve_bundle_dir reads exactly this key.
+    try:
+        if bundle_dir is not None:
+            manifest["bundleDir"] = str(Path(bundle_dir).resolve())
+        else:
+            manifest["bundleDir"] = str(out_path.parent.resolve())
+    except Exception:  # noqa: BLE001 — a bundle-dir record is best-effort, never fatal
+        pass
     manifest["phases"].append(record)
 
     manifest_path.write_text(json.dumps(manifest, indent=2))
@@ -11634,15 +11678,31 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
         return (reason, False)
     obj = _read_json(pub)
     if "__parse_error__" in obj:
-        return f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})"
+        # FIX 5 round-4 repair: this branch MUST return (reason, warn_only) like
+        # every sibling branch — a bare str here would ValueError at the caller's
+        # `tele_pub, tele_warn_only = ...` tuple-unpack (an unpack failure is a
+        # FATAL crash, not a WARN). A corrupt ledger means the teleprompter is
+        # not verifiably published, so it follows the same FIX 5 warn rule.
+        reason = (f"teleprompter_publish.json not valid JSON "
+                  f"({obj['__parse_error__']})")
+        if creds_absent:
+            return (reason, True)  # WARN — publish not enforced without credentials
+        return (reason, False)
     if obj.get("status") == "skipped_adhoc":
         print("WARNING: teleprompter_publish.json carries a stale 'skipped_adhoc' "
               "status from a prior --adhoc run. This NO LONGER passes the gate (M7): "
               "a real run must publish the teleprompter and verify a live HTTP 200, "
               "or be re-run with the explicit --skip-teleprompter-gate flag.",
               file=sys.stderr)
-        return ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
-                "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
+        # FIX 5 round-4 repair: must return the (reason, warn_only) tuple like every
+        # sibling branch — a bare str ValueErrors at the caller's tuple-unpack. A
+        # stale ad-hoc record is an UNPUBLISHED failure (M7, per this function's own
+        # docstring) so it follows the FIX 5 warn rule when credentials are absent.
+        reason = ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
+                  "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
+        if creds_absent:
+            return (reason, True)  # WARN — publish not enforced without credentials
+        return (reason, False)
     if obj.get("status") != "published":
         reason = f"teleprompter publish status is {obj.get('status')!r}, expected 'published'"
         if creds_absent:
@@ -11885,6 +11945,116 @@ def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
         "for this deck run. Call cc_board.ingest_deck_task at run-begin. "
         f"Deck: {deck_slug}"
     )
+
+
+def run_render_gate(run_dir: Path, slides_path: Optional[Path] = None,
+                    bundle_dir: Optional[Path] = None,
+                    ledger_path: Optional[Path] = None,
+                    deck_slug: str = "deck") -> None:
+    """FIX 1 — RENDER-ONLY closeout gate. main() calls this ALWAYS after assembly.
+
+    The render phase must exit 0 on a fresh run whose only outputs are the 12 verified
+    baked slide PNGs + the assembled .pptx: the guide PDF, speech, audio, infographic,
+    teleprompter and deck PDF are produced by LATER phases, so demanding them here is
+    what made render structurally unable to complete. The bundle-completeness gate
+    (run_postflight_gate / AF-BUNDLE-COMPLETE) is the P-BUNDLE-GATE terminal phase —
+    invoked by scripts/bundle_gate.py on a separate run.
+
+    This gate re-proves the RENDER outputs only, exactly as postflight did:
+      * KIE-BAKED (AF-I14)        — _chk_kie_baked(require_rendered=True) on the
+                                    process-manifest render record
+      * OCR READBACK (AF-OCR-READBACK, U027) — check_ocr_readback() on the per-slide
+                                    .ocr.json sidecars
+      * IMAGE-QC (AF-IMAGE-QC-RAN) — check_image_qc_present() freshness + coverage
+      * PNG VERIFY + ASPECT/2K (per-slide) — verify_png() + verify_aspect_ratio() on
+                                    every renders/slide-*.png
+
+    Every check DEFERS (returns "") when the render record is absent — the genuine
+    pre-render state. Once a render record + PNGs exist they are the source of truth.
+    A FAILURE here exits 5 (loud) with the same style as run_postflight_gate; the
+    ledger (when supplied) is updated per check so the failure is on disk too.
+    Returns None on pass; sys.exit(5) on any failed check.
+    """
+    if run_dir is None:
+        return  # no run dir — nothing render-scoped to prove (gate-only invocation).
+
+    problems: list = []
+
+    def _fail(key: str, fname: str, label: str, reason: str, reason_code: str) -> None:
+        problems.append((key, fname, label, reason, reason_code))
+        if ledger_path is not None:
+            try:
+                update_deliverable_status(ledger_path, key, "failed", error=reason)
+            except Exception:  # noqa: BLE001 — ledger shortfall never masks the gate
+                pass
+
+    # --- KIE-BAKED (AF-I14) — re-prove every rendered slide was model-baked ---
+    # require_rendered=True: closeout means render+assembly already happened, so an
+    # absent manifest/render-record here is UNDETERMINED->FAIL (mirrors the postflight
+    # contract exactly).
+    kie_reason = _chk_kie_baked(run_dir, slides_path, require_rendered=True)
+    if kie_reason:
+        _fail("deck_pptx", _expand_filename("deck.pptx", deck_slug),
+              "KIE-baked slide images (every slide model-baked, not native render)",
+              kie_reason, "NOT_BAKED")
+
+    # --- OCR READBACK (AF-OCR-READBACK, U027) — every PNG carries a verified sidecar ---
+    ocr_reason = check_ocr_readback(run_dir)
+    if ocr_reason:
+        _fail("deck_pptx", _expand_filename("deck.pptx", deck_slug),
+              "OCR readback sidecars (AF-OCR-READBACK)",
+              ocr_reason, "OCR_READBACK_FAIL")
+
+    # --- IMAGE-QC RAN (AF-IMAGE-QC-RAN) — report fresh + per-slide coverage ---
+    iqc_reason = check_image_qc_present(run_dir, slides_path)
+    if iqc_reason:
+        _fail("deck_pptx", "working/qc/image_qc_report.json",
+              "image-QC report (fresh + per-slide coverage; AF-IMAGE-QC-RAN)",
+              iqc_reason, "IMAGE_QC_STALE_OR_MISSING")
+
+    # --- PNG VERIFY + ASPECT/2K (per-slide) — every render is a real 16:9 2K PNG ---
+    pg = _import_prompt_gate()
+    pngs = _gather_rendered_pngs(run_dir)
+    for png in pngs:
+        try:
+            verify_png(png)
+        except Exception as exc:  # noqa: BLE001
+            _fail("deck_pptx", png.name,
+                  "verified per-slide PNG (magic + non-empty)",
+                  f"{png.name}: {exc}", "BAD_PNG")
+            continue
+        if pg is not None:
+            try:
+                pg.verify_aspect_ratio(png, slide_id=png.stem)
+            except Exception as exc:  # noqa: BLE001 — PromptGateError (shape/2K)
+                _fail("deck_pptx", png.name,
+                      "per-slide PNG aspect/2K (16:9, >= 2K wide; never stretched)",
+                      f"{png.name}: {exc}", "BAD_ASPECT")
+    if not pngs:
+        # No rendered PNGs at all — the render record exists but produced nothing.
+        # UNDETERMINED behaves like FAIL at closeout (same doctrine as _chk_kie_baked).
+        _fail("deck_pptx", "renders/slide-*.png",
+              "rendered slide PNGs (none found in <run>/renders)",
+              "AF-RENDER-EMPTY: closeout reached with NO rendered slide PNGs in "
+              f"{run_dir / 'renders'} — the render produced nothing to verify.",
+              "NO_RENDERS")
+
+    # --- Fail loud, as the postflight gate does (exit 5) ---
+    if problems:
+        bar = "=" * 78
+        print(f"\n{bar}", file=sys.stderr)
+        print("FATAL: RENDER GATE FAILED (AF-RENDER-COMPLETE) — the render phase "
+              "did not prove its own outputs.", file=sys.stderr)
+        print(f"Bundle dir: {bundle_dir}", file=sys.stderr)
+        print(f"Ledger:     {ledger_path}", file=sys.stderr)
+        print("Render gate failures:", file=sys.stderr)
+        for (key, fname, label, reason, reason_code) in problems:
+            print(f"  FAIL  [{key}] {fname}  ({label})", file=sys.stderr)
+            print(f"        {reason}", file=sys.stderr)
+        print(f"\n{bar}", file=sys.stderr)
+        sys.exit(5)
+    print("=== RENDER GATE PASSED — render outputs verified (KIE baked, OCR "
+          "readback, image-QC, PNG aspect/2K) ===", flush=True)
 
 
 def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
@@ -12688,6 +12858,13 @@ def main():
     platform_arg = None  # --platform {vps|mac} override (default None -> auto-detect)
     skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
                                     # publish sub-check (never via a persisted status).
+    bundle_gate = False  # FIX 1: run the bundle-completeness gate inside the render
+                         # phase (AF-BUNDLE-COMPLETE / run_postflight_gate). DEFAULT
+                         # OFF: the render phase by itself now exits 0 on a fresh
+                         # render-only run (12 baked PNGs, no PDF/guide/audio/... yet)
+                         # — bundle completeness is the P-BUNDLE-GATE terminal phase
+                         # (scripts/bundle_gate.py). A caller that WANTS the old
+                         # inline behavior re-arms it with --bundle-gate.
     sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
     notes_sync_mode = False  # P9.5-NOTES-SYNC (8.7): re-inject notes post-speech-QC.
     style_spec_arg = None
@@ -12711,6 +12888,9 @@ def main():
             style_spec_arg = tok[len("--style-spec="):]
         elif tok == "--skip-teleprompter-gate":
             skip_teleprompter_gate = True
+        elif tok == "--bundle-gate":
+            # FIX 1: opt-in re-arm of the inline bundle-completeness gate.
+            bundle_gate = True
         elif tok == "--run-dir":
             i += 1
             if i >= len(argv):
@@ -12879,7 +13059,7 @@ def main():
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
               "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
               "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process] "
-              "[--skip-teleprompter-gate]",
+              "[--skip-teleprompter-gate] [--bundle-gate]",
               file=sys.stderr)
         sys.exit(2)
 
@@ -13195,7 +13375,8 @@ def main():
     manifest_path = None
     try:
         manifest_path = write_process_manifest(
-            run_dir, rendered, task_ids, model_used, out_path, timestamp)
+            run_dir, rendered, task_ids, model_used, out_path, timestamp,
+            bundle_dir=bundle_dir)
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: render succeeded but process manifest write failed: {exc}",
               file=sys.stderr, flush=True)
@@ -13237,7 +13418,7 @@ def main():
         "processManifest": str(manifest_path) if manifest_path else None,
         "failures": [],
     }
-    print("\n=== SUMMARY (RENDER OK — running postflight completeness gate) ===",
+    print("\n=== SUMMARY (RENDER OK — running render gate) ===",
           flush=True)
     print(json.dumps(summary, indent=2))
 
@@ -13265,18 +13446,42 @@ def main():
                   f"gate will fail loud (TELEPROMPTER-PUBLISH) until it is published "
                   f"and the URL verified.", file=sys.stderr, flush=True)
 
+    # RENDER GATE (FIX 1) — ALWAYS runs, --bundle-gate or not. The render phase
+    # gates on RENDER outputs only: KIE-baked (AF-I14), OCR readback (U027), image-QC
+    # ran (AF-IMAGE-QC-RAN), and per-slide PNG verify + aspect/2K. This is what makes
+    # a fresh 12-PNG run able to exit 0: the bundle-completeness gate no longer waits
+    # inside the render phase for PDFs/audio/guide produced by LATER phases (those are
+    # the P-BUNDLE-GATE terminal phase's job, via scripts/bundle_gate.py).
+    run_render_gate(run_dir, slides_path, bundle_dir=bundle_dir,
+                    ledger_path=ledger_path, deck_slug=deck_slug)
+
     # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
-    # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are
-    # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
-    # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
-    # after reading deliverables.json (not from in-memory state).
+    # FIX 1 SPLIT: render gates ONLY on render outputs. By default (--bundle-gate
+    # OFF) the render phase now exits 0 on a fresh run whose only outputs are the 12
+    # verified baked slide PNGs + the assembled .pptx; the full bundle-completeness
+    # gate is the P-BUNDLE-GATE terminal phase (scripts/bundle_gate.py calls this
+    # exact postflight body on a separate run). --bundle-gate re-arms the old inline
+    # behavior for callers that want it. In BOTH modes the render-only gate
+    # (run_render_gate) has ALREADY run unconditionally above, so a render that did
+    # not prove its KIE bake / OCR readback / image-QC / PNG aspect still exits 5 —
+    # the split moves the BUNDLE question to its own phase, never the RENDER question
+    # into oblivion.
     # M7: the teleprompter-publish sub-check is bypassed ONLY by an explicit per-run
     # CLI flag — never by a persisted status string. --adhoc-no-process is itself an
     # explicit per-run flag (ad-hoc output is not a client deliverable), so it implies
     # the bypass for THIS run only; a later real run without the flag re-arms the gate.
-    run_postflight_gate(bundle_dir, ledger_path, deck_slug,
-                         skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
-                         run_dir=run_dir, slides_path=slides_path)
+    if bundle_gate:
+        print("=== BUNDLE GATE ENABLED (--bundle-gate): running the inline "
+              "postflight completeness gate (AF-BUNDLE-COMPLETE) ===", flush=True)
+        run_postflight_gate(bundle_dir, ledger_path, deck_slug,
+                             skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
+                             run_dir=run_dir, slides_path=slides_path)
+    else:
+        print("=== BUNDLE GATE SKIPPED (FIX 1: default OFF) — bundle completeness "
+              "is the P-BUNDLE-GATE terminal phase; run "
+              "'python3 scripts/bundle_gate.py --run-dir <run>' to enforce "
+              "AF-BUNDLE-COMPLETE. Render outputs were gated by run_render_gate "
+              "above. ===", flush=True)
 
     # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
     # The producer STOPS at the TERMINAL status 'review' (there is NO 'delivered'

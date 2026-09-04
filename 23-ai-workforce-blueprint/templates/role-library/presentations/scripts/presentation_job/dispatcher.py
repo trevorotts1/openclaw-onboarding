@@ -3435,8 +3435,27 @@ def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutS
     pre-fanout behavior byte-for-byte."""
     raw = None
     try:
-        from presentation_job.manifest_source import resolve_manifest as _rm
-        mpath = _rm(None, run_dir, str(dept_root))[0]
+        # FIX 15 (round 4): the shipped body referenced `dept_root`, a name
+        # that does not exist in this helper's scope -- the NameError was
+        # swallowed by the except below, so EVERY phase returned spec=None and
+        # the generic manifest-fanout branch never engaged. Resolve the
+        # manifest the same way load_manifest_for_run does: the run's own
+        # state.json pins manifest_path (authoritative per-run), with the
+        # PRESENTATION_MANIFEST env var as the documented fallback.
+        mpath: Optional[Path] = None
+        try:
+            _st = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+            _mp = _st.get("manifest_path")
+            if _mp and Path(_mp).is_file():
+                mpath = Path(_mp)
+        except (OSError, json.JSONDecodeError):
+            mpath = None
+        if mpath is None:
+            _env = os.environ.get("PRESENTATION_MANIFEST")
+            if _env and Path(_env).is_file():
+                mpath = Path(_env)
+        if mpath is None:
+            return None
         with open(mpath, "r", encoding="utf-8") as _fh:
             _m = json.load(_fh)
         for _ph in _m.get("phases", []):

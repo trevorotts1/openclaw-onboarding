@@ -5,7 +5,7 @@
 **Owning role at write time:** Hook Strategist (anchors + hook-absent list), Slide Copywriter (places only the approved anchors)
 **Owning role at render time:** Slide Image Creator (renders the hook ONLY on its dedicated typography slides, never as a footer band)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-HOOK, below)
-**Status:** DRAFT for integration. This SOP DIRECTLY CORRECTS the existing floor-based hook rule. See Section 6 (Reconciliation) for the exact contradictions this resolves.
+**Status:** AUTHORITATIVE COPY — this file in `universal-sops/presentation-slide-craft/` is the authoritative copy of this SOP; the department mirror at `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a byte-identical regenerated copy and must never be edited directly (FIX 98, 2026-09-03). DRAFT for integration. This SOP DIRECTLY CORRECTS the existing floor-based hook rule. See Section 6 (Reconciliation) for the exact contradictions this resolves.
 
 ---
 

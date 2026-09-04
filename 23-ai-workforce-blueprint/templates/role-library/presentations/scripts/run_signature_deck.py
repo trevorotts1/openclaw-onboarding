@@ -510,8 +510,15 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         "owning_role": role,
         "status": status,
         "artifact_sha": artifact_sha,
+        "artifact_sha256": artifact_sha,
         "substance_verified": substance_verified,
         "attested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        # FIX 30 — writer identity, same namespace the engine uses (engine:<pid>).
+        # The shared phase-chain gate (build_deck.check_phase_preconditions)
+        # requires an "engine:"-prefixed attested_by on every row it accepts, so
+        # a hand-written row (no attested_by) can never satisfy a precondition
+        # even when it looks complete.
+        "attested_by": "engine:" + str(os.getpid()),
     })
     _atomic_write_json(p, obj)
 

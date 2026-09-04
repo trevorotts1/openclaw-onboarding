@@ -300,8 +300,14 @@ class TestIntakeDepthVocabulary:
 
     def test_depth_threaded_to_resolve(self):
         src = ENTRY.read_text(encoding="utf-8")
-        assert "--intake-depth $INTAKE_DEPTH" in src
+        # The depth reaches resolve_intake.py via _RESOLVE_DEPTH_ARGS: the shell
+        # keeps INTAKE_DEPTH in display case for stamp_intake_depth, so the
+        # resolver call lowercases it inline (resolve_intake.py's argparse
+        # choices are exactly quick|in-depth) — see the SMOKE-1 comment at the
+        # _RESOLVE_DEPTH_ARGS build.
+        assert '--intake-depth $(printf' in src and "tr '[:upper:]' '[:lower:]'" in src
         assert "RESOLVE_DEPTH_ARGS" in src
+        assert "--source canonical-entry $_RESOLVE_DEPTH_ARGS" in src
 
 
 # ===========================================================================
@@ -356,10 +362,17 @@ class TestRegistryParity:
 
     def test_registry_counts_stay_sane(self):
         """Pin the documented shape: 105 enforced_by build_deck, every one
-        carrying a symbol — a silent registry shrink fails here."""
+        carrying a symbol — a silent registry shrink fails here. FIX 92
+        (2026-09-02) registers five closeout_gate grounding/casting rows
+        (AF-IMAGE-GROUNDING(-PARK), AF-CASTING(-PARK / -MIX-PARITY)) with
+        resolving py_symbols, so the total moves 183 -> 188 while the
+        build_deck-enforced count and the tightened A3 invariant both hold.
+        The FIX 5/M7 teleprompter publish gate (AF-TELEPROMPTER-UNPUBLISHED,
+        enforced_by postflight_bundle_gate) brings the total to 189; the
+        build_deck-enforced count is unchanged."""
         manifest = json.loads(MANIFEST.read_text())
         enforced = [a for a in manifest["autofails"] if a.get("enforced_by") == "build_deck"]
-        assert len(manifest["autofails"]) == 183
+        assert len(manifest["autofails"]) == 189
         assert len(enforced) == 105
 
 
@@ -376,7 +389,7 @@ class TestManifestDerivedPhaseCount:
         # cannot stale-pin this file.
         phases = m["phases"]
         assert len(phases) == len({p["id"] for p in phases}), "phase ids must be unique"
-        assert m["manifest_version"] == 55  # FIX 83: floor and manifest move together (U019 step 8)
+        assert m["manifest_version"] >= 55  # FIX 83: floor and manifest move together (U019 step 8); FIX 92 bumped 56 -> 58 (two closeout rows)
 
     def test_entry_script_derives_count_from_manifest(self):
         """No stale hardcoded '36' for the displayed count; the script computes

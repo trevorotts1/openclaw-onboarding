@@ -6,7 +6,7 @@
 **Owning role at render time:** Slide Image Creator (renders only audience copy; never invents captions, never composites build tokens)
 **Routing targets:** spoken content -> Presenter's Speech; working notes -> Presenter's Guide
 **Enforced at the gate by:** QC Specialist - Presentations (the AF-AUD battery = manifest codes AF-AUD-1..6, below)
-**Status:** DRAFT for integration. Promotes the existing scored "slide-vs-script separation" criterion into a hard battery with named banned categories.
+**Status:** AUTHORITATIVE COPY — this file in `universal-sops/presentation-slide-craft/` is the authoritative copy of this SOP; the department mirror at `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a byte-identical regenerated copy and must never be edited directly (FIX 98, 2026-09-03). DRAFT for integration. Promotes the existing scored "slide-vs-script separation" criterion into a hard battery with named banned categories.
 
 ---
 

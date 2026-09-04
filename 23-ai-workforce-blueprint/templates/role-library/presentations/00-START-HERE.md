@@ -140,14 +140,14 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ## Pipeline Sequence (phase order)
 
-> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 60, 59 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number the engine (`presentation_job.py`) sorts phases on (and the same key the runner's turn-gate reports) — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
+> **This list is generated from `phases[]` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 62, 62 phases) and MUST be kept in lockstep with it — GATE 4 of `scripts/ci/presentations-drift-gates.sh` fails CI if any manifest phase id below goes missing from this file.** The **order** shown is the manifest's own `order` field, the exact number the engine (`presentation_job.py`) sorts phases on (and the same key the runner's turn-gate reports) — it is a dispatch key, not a step count, which is why it runs negative, fractional, and out of round numbers. Every id is the literal `phases[].id` string; look it up in the manifest for its full preflight/gate-code contract.
 >
 > **Before phase order -1:** the Brainstorming Buddy (`brainstorming-buddy-presentations`, and, for a first-time owner, First-Time Onboarding `first-time-onboarding-presentations` first) hold the pre-manifest brainstorm that locks `working/brainstorm/presentations/<slug>/brief.json` and hands it to the Director. Neither step is a `phases[]` entry — the machine-checked, manifest-governed pipeline begins at intake.
 >
 
 ### Style and closeout phases — manifest v60 additions (FIX 112 / FIX 1 / FIX 84)
 
-Four phases added after the Wave D upsell band complete the 59-phase manifest:
+Four phases added after the Wave D upsell band complete the 62-phase manifest:
 
 - **`P-STYLE-SPEC`** (order 4.84, brand-steward) — fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render; produces `working/copy/style_preview_spec.json`.
 - **`P-STYLE-PICK`** (order 4.86, brand-steward, human gateway) — owner approves ONE of the 3 variants; choice logged with a verified owner_msg_id in `working/copy/style_preview_choice.json`; gate code `AF-STYLE-UNPICKED`.
@@ -156,7 +156,7 @@ Four phases added after the Wave D upsell band complete the 59-phase manifest:
 
 ### Upsell (P-U) phases — Wave D (manifest v54, added by the presentation rev2 batch)
 
-The 15 P-U upsell phases below are part of the 59-phase manifest. Each is CONDITIONAL (defer per its own preflight; a decline is a logged client waiver, never silence):
+The Wave D upsell band below is part of the current 62-phase manifest (later waves added the P-U DESIGN-RENDER trio and the BUILD phases — see §2.40 of DEPARTMENT-COUNTS-CANONICAL.md for the generated full registry). Each is CONDITIONAL (defer per its own preflight; a decline is a logged client waiver, never silence):
 
 - **`P-U-SALES-COPY`** (order 3.6) — . Full contract: look it up in the manifest.
 - **`P-U-CHECKOUT-COPY`** (order 3.7) — . Full contract: look it up in the manifest.

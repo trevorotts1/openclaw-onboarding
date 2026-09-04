@@ -160,8 +160,24 @@ def _is_placeholder_value(value: str) -> bool:
 
 
 def _read_secret_named(name: str) -> Optional[str]:
+    # FIX 114: when the canon helper is reachable, a resolved value must also
+    # pass looks_like_real_key's shape+entropy gate -- a value that reads like
+    # a paste of prose (or a wrong-family key) is not a Brave credential and
+    # must never satisfy the P-0.5-RESEARCH-WEB gate. Canon absent -> the
+    # inline placeholder gate below still applies (partial deploy keeps the
+    # pre-FIX-114 behavior, never a hard break).
+    helper = _secret_helper()
+    def _plausible(candidate: str) -> bool:
+        if _is_placeholder_value(candidate):
+            return False
+        if helper is not None:
+            try:
+                return bool(helper.looks_like_real_key(candidate, name))
+            except Exception:  # noqa: BLE001 -- gate failure degrades to inline
+                pass
+        return True
     value = (os.environ.get(name) or "").strip()
-    if value and not _is_placeholder_value(value):
+    if value and _plausible(value):
         return value
     # FIX 68: platform-aware candidate order (oc_paths.secrets_env_candidates)
     # -- /data/.openclaw/secrets/.env first on the docker VPS, ~/.openclaw
@@ -189,7 +205,11 @@ def _read_secret_named(name: str) -> Optional[str]:
                 for accepted in names:
                     if line.startswith(f"{accepted}="):
                         candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        if candidate and not _is_placeholder_value(candidate):
+                        # FIX 114: same looks_like_real_key plausibility gate on
+                        # the file path -- a placeholder (or a key stored under a
+                        # BRAVE family alias whose VALUE is not key-shaped) never
+                        # satisfies the reader.
+                        if candidate and _plausible(candidate):
                             return candidate
         except OSError:
             continue
@@ -201,12 +221,26 @@ def brave_key_present(env: Optional[dict] = None) -> bool:
     proof-stubbing posture capacity.probe_one_provider uses for its env view).
     FIX 67: a placeholder value is REJECTED by this reader wherever a REAL
     source (the process env or the secrets files) provides it; an explicitly
-    injected fake-env view is the proof seam and is taken at face value."""
+    injected fake-env view is the proof seam and is taken at face value.
+    FIX 114: on a REAL source the gate is looks_like_real_key (placeholder +
+    provider shape + entropy) via _read_secret_named -- a key stored under the
+    BRAVE_API_KEY alias resolves here exactly as the canonical spelling does."""
     view = os.environ if env is None else env
-    if str(view.get("BRAVE_SEARCH_API_KEY") or "").strip():
-        if env is not None:
-            return True  # fake env: proof stubs are never operator placeholders
-        return not _is_placeholder_value(str(view.get("BRAVE_SEARCH_API_KEY")))
+    # FIX 114: the view is consulted across the whole canon family -- a key
+    # stored only as BRAVE_API_KEY (the store's alias) resolves exactly as the
+    # canonical spelling does, on the fake-env seam as on the real one.
+    try:
+        helper = _secret_helper()
+        family = (list(helper.alias_list(helper.canonical_for("BRAVE_SEARCH_API_KEY")))
+                  if helper else ["BRAVE_SEARCH_API_KEY"])
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        family = ["BRAVE_SEARCH_API_KEY"]
+    family = [n for n in family if isinstance(n, str) and n] or ["BRAVE_SEARCH_API_KEY"]
+    for accepted in family:
+        if str(view.get(accepted) or "").strip():
+            if env is not None:
+                return True  # fake env: proof stubs are never operator placeholders
+            return _read_secret_named("BRAVE_SEARCH_API_KEY") is not None
     if env is not None:
         return False  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY") is not None
@@ -214,9 +248,26 @@ def brave_key_present(env: Optional[dict] = None) -> bool:
 
 def _brave_key(env: Optional[dict] = None) -> Optional[str]:
     view = os.environ if env is None else env
-    value = str(view.get("BRAVE_SEARCH_API_KEY") or "").strip()
-    if value and (env is not None or not _is_placeholder_value(value)):
-        return value
+    # FIX 114: same family-wide view as brave_key_present -- the canonical
+    # spelling first, then every canon alias (BRAVE_API_KEY et al.).
+    try:
+        helper = _secret_helper()
+        family = (list(helper.alias_list(helper.canonical_for("BRAVE_SEARCH_API_KEY")))
+                  if helper else ["BRAVE_SEARCH_API_KEY"])
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        family = ["BRAVE_SEARCH_API_KEY"]
+    family = [n for n in family if isinstance(n, str) and n] or ["BRAVE_SEARCH_API_KEY"]
+    value = ""
+    for accepted in family:
+        value = str(view.get(accepted) or "").strip()
+        if value:
+            break
+    if value and env is not None:
+        return value  # fake env: proof stubs are taken at face value
+    if value:
+        # FIX 114: real env path routes through the same plausibility gate.
+        resolved = _read_secret_named("BRAVE_SEARCH_API_KEY")
+        return resolved
     if env is not None:
         return None  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY")

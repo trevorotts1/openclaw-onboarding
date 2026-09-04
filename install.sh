@@ -3202,6 +3202,183 @@ PYEOF
 # <<< FIX49-REGEN-WATCHDOG-PLIST-END
 
 # ----------------------------------------------------------
+# FIX 61 — A scheduled path creates jobs: install the intake poll.
+#
+# QC.md FIX 61: "A staged submission becomes a running engine within one poll
+# interval with no human action; `working/.lease.json` names the bridge as
+# holder." The bridge half (W14b intake_bridge dispatch_new under lease) and
+# the poll script (presentation-intake-poll.sh, holder "intake-poll-bridge")
+# both exist; what was missing is the SCHEDULED half — nothing installed the
+# poll as a repeating job, so nothing fired it, and a staged submission sat
+# staged until a human ran the script by hand.
+#
+# WHAT THIS DOES (macOS leg — launchd; the Linux/Contabo leg is the openclaw
+# cron fallback below, Fix 77 carries Docker):
+#   1. Renders presentation-intake-poll.plist.template with this box's real
+#      values (<POLL_SCRIPT_PATH>, <LOG_PATH>, <RUNS_ROOT>, <POLL_PATH> —
+#      placeholders in BOTH the HTML-escaped body form and the bare header
+#      form, same double-form rule FIX 49 proved live).
+#   2. Validates the rendered body parses as a plist BEFORE touching the
+#      live file; backups the installed copy first (timestamped); writes
+#      atomically (tmp+mv).
+#   3. bootout + bootstrap so launchd re-READS the definition (kickstart
+#      alone re-runs the old one — proven live on this box 2026-09-02 by
+#      FIX 49), then kickstart -k so the first poll fires immediately rather
+#      than waiting 300s.
+#
+# Idempotent: re-running re-renders the same content and re-applies. A box
+# without the poll script or the department workspace takes a loud SKIP,
+# never a broken plist. Non-darwin (Linux/Contabo) installs the poll as an
+# openclaw main-session cron on the same 5-minute cadence instead.
+# ----------------------------------------------------------
+install_intake_poll_schedule() {
+  local _label="com.blackceo.presentation-intake-poll"
+  local _plist="$HOME/Library/LaunchAgents/${_label}.plist"
+  local _tpl=""
+  local _dept_scripts=""
+
+  # Department scripts dir: same resolution order regen_watchdog_plist uses
+  # one function above (obs_resolve_workspace, then the standard roots) —
+  # one convention, not a second one.
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    local _ws; _ws="$(obs_resolve_workspace 2>/dev/null || true)"
+    if [ -n "$_ws" ]; then
+      _dept_scripts="$_ws/departments/Presentations/scripts"
+    fi
+  fi
+  if [ -z "$_dept_scripts" ]; then
+    local _home_ws="${HOME}/.openclaw/workspace"
+    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
+    _dept_scripts="$_home_ws/departments/Presentations/scripts"
+  fi
+
+  # Template source: THIS BUNDLE's canonical copy first (newest), then the
+  # installed skill bundle's copy. Neither -> loud SKIP.
+  if [ -f "$ONBOARDING_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template" ]; then
+    _tpl="$ONBOARDING_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template"
+  elif [ -f "$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template" ]; then
+    _tpl="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template"
+  fi
+  if [ -z "$_tpl" ]; then
+    echo "  [FIX61] intake-poll schedule SKIPPED (plist template not found under $SKILLS_DIR or $ONBOARDING_DIR)" >&2
+    return 0
+  fi
+
+  # The poll script itself: department copy first (what a rolled box runs),
+  # then this bundle's canonical copy. The poll self-resolves its own
+  # scripts dir at run time, so pointing the plist at either copy works.
+  local _poll_sh="$_dept_scripts/presentation-intake-poll.sh"
+  [ -f "$_poll_sh" ] || _poll_sh="$ONBOARDING_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.sh"
+  [ -f "$_poll_sh" ] || _poll_sh="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.sh"
+  if [ ! -f "$_poll_sh" ]; then
+    echo "  [FIX61] intake-poll schedule SKIPPED (poll script not found in dept scripts or bundle)" >&2
+    return 0
+  fi
+
+  local _runs_root="$_dept_scripts/../runs"
+  local _log_path="$HOME/Library/Logs/openclaw/presentation-intake-poll.log"
+
+  # PATH for the launchd job: the poll script re-exports PATH itself (F03),
+  # but give launchd a sane floor anyway — homebrew python3 resolves FIRST
+  # even before the script's own export runs.
+  local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin"
+
+  # Linux / Contabo leg: no launchd. Install the poll as an openclaw
+  # main-session cron (SILENT, --no-deliver) on the same 5-minute cadence
+  # and return. _oc_cron_silent_main probes the runtime's accepted flags and
+  # never hard-fails; presence check avoids duplicate re-registration.
+  if [ "$(uname -s)" != "Darwin" ]; then
+    if command -v openclaw >/dev/null 2>&1 && command -v _oc_cron_silent_main >/dev/null 2>&1; then
+      # JSON-exact presence check (text-table truncation false-negatives on
+      # 20+ char names — the documented duplicate-cron root cause).
+      if openclaw cron list --json 2>/dev/null | python3 -c "
+import json,sys
+try: data=json.load(sys.stdin)
+except Exception: sys.exit(1)
+def names(x):
+    if isinstance(x,dict):
+        for k in ('items','crons','jobs','data'):
+            if isinstance(x.get(k),list): yield from names(x[k])
+        yield x.get('name') or x.get('id') or ''
+    elif isinstance(x,list):
+        for it in x: yield from names(it)
+sys.exit(0 if '$_label' in [str(n) for n in names(data)] else 1)
+"; then
+        echo "  [FIX61] openclaw cron $_label already registered — skipping re-registration"
+        return 0
+      fi
+      if _oc_cron_silent_main "$_label" "main" "*/5 * * * *" "America/New_York" \
+        "Run bash $_poll_sh once, synchronously, and report its exit code and launch count only. Do not message any client. (FIX 61 scheduled path: a staged intake submission must become a running engine within one poll interval.)" ; then
+        echo "  [FIX61] intake-poll scheduled via openclaw cron $_label (Linux leg, */5 * * * *)"
+        return 0
+      fi
+      echo "  [FIX61] openclaw cron registration FAILED (all flag forms) — poll not scheduled on this Linux box" >&2
+      return 1
+    fi
+    echo "  [FIX61] intake-poll schedule SKIPPED (non-Darwin and openclaw cron helper unavailable)" >&2
+    return 0
+  fi
+
+  # Render. Double-form sed — escaped body form AND bare header form (the
+  # FIX 49 live lesson: a single-form sed leaves literals launchd will load).
+  local _rendered
+  _rendered="$(sed -e "s|&lt;POLL_SCRIPT_PATH&gt;|$_poll_sh|g" \
+                   -e "s|<POLL_SCRIPT_PATH>|$_poll_sh|g" \
+                   -e "s|&lt;LOG_PATH&gt;|$_log_path|g" \
+                   -e "s|<LOG_PATH>|$_log_path|g" \
+                   -e "s|&lt;RUNS_ROOT&gt;|$_runs_root|g" \
+                   -e "s|<RUNS_ROOT>|$_runs_root|g" \
+                   -e "s|&lt;POLL_PATH&gt;|$_poll_path|g" \
+                   -e "s|<POLL_PATH>|$_poll_path|g" \
+                   "$_tpl")"
+  if [ -z "$_rendered" ]; then
+    echo "  [FIX61] intake-poll plist render FAILED (rendered empty from $_tpl)" >&2
+    return 1
+  fi
+  if printf '%s' "$_rendered" | grep -q '&lt;POLL_SCRIPT_PATH&gt;\|&lt;LOG_PATH&gt;\|&lt;RUNS_ROOT&gt;\|&lt;POLL_PATH&gt;'; then
+    echo "  [FIX61] intake-poll plist render FAILED (unsubstituted placeholder remains in plist body)" >&2
+    return 1
+  fi
+  if ! printf '%s' "$_rendered" | sed -n '/<?xml/,$p' | python3 -c "import plistlib,sys; plistlib.loads(sys.stdin.buffer.read())" >/dev/null 2>&1; then
+    echo "  [FIX61] intake-poll plist render FAILED (rendered plist does not parse)" >&2
+    return 1
+  fi
+
+  # Backup the installed plist (if any), then write atomically.
+  if [ -f "$_plist" ]; then
+    local _bak="${_plist}.bak-fix61-$(date -u +%Y%m%dT%H%M%SZ)"
+    cp "$_plist" "$_bak" || { echo "  [FIX61] intake-poll plist backup FAILED" >&2; return 1; }
+    echo "  [FIX61] installed plist backed up -> $_bak"
+  fi
+  mkdir -p "$(dirname "$_plist")" 2>/dev/null || true
+  printf '%s\n' "$_rendered" > "${_plist}.tmp-fix61" \
+    && mv "${_plist}.tmp-fix61" "$_plist" \
+    || { echo "  [FIX61] intake-poll plist write FAILED" >&2; rm -f "${_plist}.tmp-fix61"; return 1; }
+  echo "  [FIX61] rendered $_tpl -> $_plist (StartInterval=300, PRESENTATION_RUNS_DIR=$_runs_root)"
+
+  # Apply: bootout + bootstrap so launchd re-reads the definition (kickstart
+  # alone re-runs the OLD one), then kickstart -k for an immediate first
+  # poll. Label is read from the rendered body — the template's internal
+  # label matches the file name here, but read it anyway (FIX 49 lesson).
+  local _svc_label
+  _svc_label="$(printf '%s\n' "$_rendered" \
+    | sed -n '/<key>Label<\/key>/{n; s/^[[:space:]]*<string>//; s/<\/string>[[:space:]]*$//; p;}' \
+    | head -1 | tr -d '[:space:]')"
+  [ -n "$_svc_label" ] || _svc_label="$_label"
+  launchctl bootout "gui/$(id -u)/$_svc_label" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/$(id -u)" "$_plist" >/dev/null 2>&1; then
+    echo "  [FIX61] bootout+bootstrap $_svc_label ($_plist) — launchd re-read the new plist"
+  else
+    echo "  [FIX61] bootstrap returned non-zero (likely already loaded) — kickstarting $_svc_label"
+  fi
+  launchctl kickstart -k "gui/$(id -u)/$_svc_label" >/dev/null 2>&1 \
+    && echo "  [FIX61] launchctl kickstart -k fired ($_svc_label) — first poll running now" \
+    || echo "  [FIX61] launchctl kickstart returned non-zero — first poll fires on the next 300s tick"
+  return 0
+}
+# <<< FIX61-INSTALL-INTAKE-POLL-SCHEDULE-END
+
+# ----------------------------------------------------------
 # Concurrency Configuration
 # ----------------------------------------------------------
 configure_concurrency_LEGACY_UNUSED() {
@@ -9575,6 +9752,22 @@ if [ "$_FIX49_RC" -ne 0 ]; then
     warn "FIX49 watchdog plist regen FAILED (rc=$_FIX49_RC) — watchdog stays in its fail-closed exit-4 state; fix and re-run; install continues"
 else
     success "FIX49: watchdog plist regenerated + kickstarted — watchdog will scan this box's runs (see watchdog-scan-audit.jsonl)"
+fi
+
+# FIX 61 — A scheduled path creates jobs: install the intake poll as a
+# repeating schedule (macOS: launchd StartInterval=300; Linux: openclaw
+# cron */5). A staged intake submission must become a running engine within
+# one poll interval with no human action — this installer is what makes the
+# scheduled half true on every new roll. Same failure-latch pattern as
+# FIX 49 above: the rc is latched, reported loudly, and install continues
+# (no success stamp exists to withhold).
+_FIX61_RC=0
+install_intake_poll_schedule || _FIX61_RC=$?
+if [ "$_FIX61_RC" -ne 0 ]; then
+    echo "  ✗ ERROR: [FIX61] intake-poll schedule install FAILED (rc=$_FIX61_RC) — the installed plist was NOT modified (backup + atomic write; failure modes leave the old state in place); see the [FIX61] lines above" | tee -a "$LOG_FILE" >&2
+    warn "FIX61 intake-poll schedule install FAILED (rc=$_FIX61_RC) — staged submissions will NOT auto-dispatch until fixed; fix and re-run; install continues"
+else
+    success "FIX61: intake poll scheduled (launchd/cron every 5 min) — a staged submission now becomes a running engine with no human action"
 fi
 
 # FIX 2 (v10.15.48): Operator Telegram channel separation.

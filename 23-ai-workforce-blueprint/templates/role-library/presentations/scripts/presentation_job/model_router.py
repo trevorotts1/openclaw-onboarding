@@ -293,6 +293,9 @@ PHASE_CAPABILITY: Dict[str, str] = {
     # Copy + prompt authoring (high-throughput long-form)
     "P4-COPY": "authoring",
     "P4-PROMPT": "prompt_authoring",
+    # FIX 112: the copy stage's fanout unit (per-slide style-variant candidates)
+    # is creative-cheap structured text, same class as the design direction.
+    "P-STYLE-SPEC": "creative_cheap",
     "PF-DESIGN": "creative_cheap",
     # Independent cheap text judges
     "P1Q-COPY-QC": "judge",
@@ -808,6 +811,12 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
             )
 
         if _model_matches(model):
+            # FIX 114: wired on the provider AND a plausible key resolves --
+            # a wired inventory without a resolvable credential never routes.
+            if not provider_key_resolves(provider):
+                return False, (f"provider {provider} has no resolvable key "
+                               f"(FIX 114: no store carries a plausible "
+                               f"credential)")
             return True, f"wired on {provider}"
         return False, (f"model {model} not in {provider}'s wired "
                        f"inventory ({len(wired)} wired)")
@@ -816,8 +825,176 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
     # absence (resource_profile keeps the last good inventory for the same
     # reason).
     if entry.get("presence") or entry.get("detected"):
-        return True, f"{provider} present (no wired inventory yet)"
+        # FIX 114: presence alone is no longer dispatchable evidence -- the
+        # provider must also carry a RESOLVABLE, plausible key. An unprobed
+        # but keyless provider is still parked, with the key gate named.
+        if not provider_key_resolves(provider):
+            return False, (f"provider {provider} has no resolvable key "
+                           f"(FIX 114: no store carries a plausible credential)")
+        return True, f"{provider} present + key resolves (no wired inventory yet)"
     return False, f"provider {provider} has no presence or inventory evidence"
+
+
+#: FIX 114 cache for the path-imported canon helper (defined before first use).
+_SECRET_HELPER_MOD = None
+_SECRET_HELPER_TRIED = False
+
+
+# ---------------------------------------------------------------------------
+# FIX 114: key-resolution eligibility gate. The router DECIDES; it never reads,
+# receives, or returns a credential -- so the gate is presence-only: the
+# provider's key name is resolved through the ONE secret-name canon
+# (shared-utils/secret_helper, the seam capacity._read_secret_value uses) and
+# the resolved VALUE (never surfaced) must pass looks_like_real_key. A route
+# may resolve ONLY to a provider whose key resolves AND is plausible; a box
+# with no OLLAMA_CLOUD_API_KEY in any store therefore never selects an
+# ollama-cloud model -- the failure is named in the candidate row's reason
+# (park/fail-closed) instead of burning a twenty-minute phase budget on
+# "OLLAMA_CLOUD_API_KEY not set" at dispatch time.
+# ---------------------------------------------------------------------------
+_PROVIDER_KEY_NAMES: Dict[str, Tuple[str, ...]] = {
+    "deepseek-direct": ("DEEPSEEK_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "ollama-cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "ollama_cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "agnes": ("AGNES_AI_API_KEY", "AGNES_API_KEY"),
+    "kie": ("KIE_API_KEY",),
+}
+
+
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (FIX 67 canon helper).
+    Returns the module or None. Same discovery order capacity.py uses."""
+    global _SECRET_HELPER_MOD, _SECRET_HELPER_TRIED
+    if _SECRET_HELPER_TRIED:
+        return _SECRET_HELPER_MOD
+    _SECRET_HELPER_TRIED = True
+    import importlib.util
+    skills_default = None
+    try:
+        from presentation_job.oc_paths import skills as _oc_skills
+        skills_default = Path(_oc_skills())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        skills_default = Path.home() / ".openclaw" / "skills"
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s114", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                _SECRET_HELPER_MOD = mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                _SECRET_HELPER_MOD = None
+            break
+    return _SECRET_HELPER_MOD
+
+
+def _secrets_env_files() -> Tuple[str, ...]:
+    """Candidate secrets env files, platform-aware (FIX 68 oc_paths)."""
+    try:
+        from presentation_job.oc_paths import secrets_env_candidates
+        return tuple(str(p) for p in secrets_env_candidates())
+    except Exception:  # noqa: BLE001 -- standalone deploy falls back to Mac defaults
+        return (str(Path.home() / ".openclaw" / "secrets" / ".env"),
+                str(Path.home() / ".openclaw" / "secrets" / "secrets.env"),
+                str(Path.home() / ".openclaw" / ".env"))
+
+
+def _alias_family(env_key: str) -> Tuple[str, ...]:
+    """The canon alias family of `env_key` (canonical spelling + aliases)."""
+    helper = _secret_helper()
+    if helper is None:
+        return (env_key,)
+    try:
+        names = list(helper.alias_list(helper.canonical_for(env_key)))
+        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return (env_key,)
+
+
+def _key_is_placeholder(value: str) -> bool:
+    """Placeholder gate; uses the canon's is_placeholder when reachable."""
+    if not value:
+        return True
+    helper = _secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
+            pass
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
+def provider_key_resolves(provider: Any) -> bool:
+    """FIX 114 presence-only key gate: does `provider` have a credential that
+    resolves (process env or the platform's secrets env files) AND passes
+    looks_like_real_key? NEVER returns a value. Unknown providers answer
+    False -- a provider with no known key name is not dispatchable, and
+    normalising a name is never evidence a key exists."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    names = None
+    for key, candidates in _PROVIDER_KEY_NAMES.items():
+        if str(key).lower().replace("_", "-") == token:
+            names = candidates
+            break
+    if not names:
+        return False
+    helper = _secret_helper()
+
+    def _plausible(value: str) -> bool:
+        if _key_is_placeholder(value):
+            return False
+        if helper is not None:
+            try:  # the canonical spelling judges the shape
+                canonical = helper.canonical_for(names[0])
+                return bool(helper.looks_like_real_key(value, canonical))
+            except Exception:  # noqa: BLE001 -- gate failure degrades to inline
+                pass
+        return True
+
+    for env_key in names:
+        for accepted in _alias_family(env_key):
+            value = (os.environ.get(accepted) or "").strip()
+            if value and _plausible(value):
+                return True
+            for file_spec in _secrets_env_files():
+                path = Path(file_spec).expanduser()
+                try:
+                    if not path.is_file():
+                        continue
+                    for line in path.read_text(
+                            encoding="utf-8", errors="replace").splitlines():
+                        line = line.strip()
+                        if line.startswith(f"{accepted}="):
+                            candidate = line.split("=", 1)[1].strip() \
+                                .strip('"').strip("'")
+                            if candidate and _plausible(candidate):
+                                return True
+                except OSError:
+                    continue
+    return False
 
 
 # ---------------------------------------------------------------------------

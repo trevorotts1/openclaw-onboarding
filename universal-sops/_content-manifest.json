@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-03T19:49:58Z",
+  "generated_at": "2026-09-03T22:28:41Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -297,43 +297,43 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "a32c9fcba7f2b8c7724bfad78f19443d2286192361c2e84734765734c4f7563c",
-      "bytes": 129639
+      "sha256": "360821454ada02f8eee24b4a7727ee9642f1d4a1ab8e88fb2a7f4afbcd621b17",
+      "bytes": 130467
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "267ef2ce8f14c02bfc80f1bc0e59a6c8ed7f608fbac105e5638e5cf374f32228",
-      "bytes": 195730
+      "sha256": "4c4b96417e7d127cedbb9e0af85c5873b2295f1571b4037a6d17d24bba80bd79",
+      "bytes": 197627
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
       "bytes": 1383
     },
     "presentation-slide-craft/SOP-CROSS-REFERENCE-MAP.md": {
-      "sha256": "c2acd851002f25fdd9d4624ebd389da29a80102d0ea29f1a658e6a4174584e76",
-      "bytes": 5940
+      "sha256": "8db828426e8230cb2f435c0219f50b5fc4904b63ccfabb5800baa3c74d465196",
+      "bytes": 5942
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
       "sha256": "62487743d8f0bfb4e7e8ad776fb196d2b94968c60ca9b2255f579084e9ce6998",
       "bytes": 19320
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
-      "sha256": "57982a7d91db1fb24200f2cb2ddbfda4a76553a47d0bab734a47d636167ae560",
-      "bytes": 9607
+      "sha256": "431b268c64b4b4d82fbdacc654c147c9603189cf5e16da38308dec26f6f847a8",
+      "bytes": 9914
     },
     "presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md": {
-      "sha256": "423dd9b8ea69a09fe08754f281b02d6f30dc7c13adc2cc9187a3d52e35df7030",
-      "bytes": 11749
+      "sha256": "5a976ab8a5c7f8139806616941d37a44bc493f1180f786b85a002cecf5b7480c",
+      "bytes": 12056
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "fe848b8f9dd7d0590633d20ffd83e69f62e093f4e0e14f28d7a76928215cab45",
-      "bytes": 13734
+      "sha256": "36f79bc961a35497f6a1bc922faa164d80d3a3bc956e87d708af2d6641879ae7",
+      "bytes": 14041
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
-      "sha256": "f9b1ecc6ab0323e3506f1ae20a24cc338e15af005a7f2bff635b5c8cc1ac6128",
-      "bytes": 11567
+      "sha256": "96644c19b0c7e98f760d24d521c8b6094f1d549836ae75b224cc55a379c2a936",
+      "bytes": 11874
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "b034e3413aadd304e6a7e7d20abb4527e412cf919e88872f89a8639c04d2ef8a",
+      "sha256": "789a8a8c6ce09465083bdaf5802a6d68b1403c256abb497fa38c24ce178899f1",
       "bytes": 14609
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
@@ -345,7 +345,7 @@
       "bytes": 4819
     },
     "presentation-slide-craft/WORKERS-TUNING-EXAMPLE.md": {
-      "sha256": "008e1420131946153e8d73acb7f87443940ae05c1ee026956f61017a7edb6a9b",
+      "sha256": "f20d295ee218df1ae0eb56cdab44273c2fbec52c12206e081c6650c799c16d53",
       "bytes": 4624
     },
     "product-bio-craft/README.md": {

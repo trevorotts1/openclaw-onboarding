@@ -199,4 +199,6 @@ The Phase-3 no-pitch battery still applies; coordinate with the AF-PITCH-LEAK in
 
 None; this role dispatches parallel independent scoring agents (client model) and averages, mirroring the department QC pattern.
 
+> **Phase-Code Map (short codes -> manifest ids):** the numeric short codes used in this role file ("Phase 1", "Phase 2", ...) resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 64, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9); the manifest id is the canonical key when dispatching, gating, or reading a manifest row, and the numeric short code is prose shorthand only. If a stage referenced here has no manifest id in that map, it is NOT a manifest phase (owner approval gates, the capacity probe, the Signature-Talk arc's internal Phase 1-4, which lives inside `P3-ARC`). This role's own phases: all of them live inside the Signature-Talk arc `P3-ARC` (order 3) -- the Signature Presentation phases are `P-SP-CLAIM`, `P-SP-INTAKE`, `P-SP-INTAKE-TRACE`, `P-SP-STRUCTURE`, and `P-SP-P3-HYGIENE` (orders 0.14-4.15), N.E.E.I.T.-style arc internals are prose inside `P3-ARC`.
+
 *End of how-to.md. All 19 sections present and filled.*

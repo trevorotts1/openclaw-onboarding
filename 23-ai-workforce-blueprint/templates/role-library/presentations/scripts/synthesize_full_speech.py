@@ -98,6 +98,158 @@ import time
 import urllib.request
 import urllib.error
 
+# ----------------------------------------------------------------------------
+# FIX 14 — governor gate for every outbound Fish Audio /v1/tts call.
+# One lease per HTTP attempt: the rate bucket (providers.yaml fish row:
+# rps 1.0, burst 10) keeps the synth loop from flooding the API, and a live
+# HTTP 429 halves the next 60 s of rate via report_429 (report_ok recovers).
+# Fail-soft: when the governor module is absent (a legacy checkout predating
+# the FIX 14 merge) every helper is a no-op passthrough — synthesis proceeds
+# exactly as before, just unthrottled.
+# ----------------------------------------------------------------------------
+try:
+    from presentation_job import governor as _governor
+except Exception:  # noqa: BLE001 — fail-soft: legacy tree without governor.py
+    # The repo-root presentation_job/governor.py is the single source; walk up
+    # from this file to find it and file-load it (the same pattern build_deck
+    # uses when the scripts-local package shadows the repo-root one).
+    try:
+        import importlib.util as _ilu
+        _g = __file__ and os.path.dirname(os.path.abspath(__file__))
+        _cand = None
+        for _ in range(6):
+            if _g and os.path.isfile(os.path.join(_g, "presentation_job", "governor.py")):
+                _cand = os.path.join(_g, "presentation_job", "governor.py")
+                break
+            _g = os.path.dirname(_g) if _g else _g
+        _governor = None
+        if _cand:
+            _spec = _ilu.spec_from_file_location("_presentation_governor", _cand)
+            if _spec and _spec.loader:
+                _gov_mod = _ilu.module_from_spec(_spec)
+                sys.modules.setdefault("_presentation_governor", _gov_mod)
+                _spec.loader.exec_module(_gov_mod)
+                _governor = _gov_mod
+    except Exception:  # noqa: BLE001 — never break synthesis on a gate failure
+        _governor = None
+
+_GOV_TTS_PROVIDER = "fish"
+
+
+# ----------------------------------------------------------------------------
+# FIX 114 — key-resolution gate for FISH_AUDIO_API_KEY. Same failure class the
+# speech harness burned: a placeholder key reaching the provider and eating the
+# whole run budget. The key NAME resolves through the one secret-name canon
+# (shared-utils/secret_helper: FISH_AUDIO_API_KEY <-> FISHAUDIO_API_KEY /
+# FISH_API_KEY), and the VALUE must pass is_placeholder + looks_like_real_key
+# before any synthesis call. A box without the canon helper keeps the exact
+# pre-fix behavior (the direct env name, accepted as given) — never a hard
+# break. The value is never printed, logged, or stored.
+# ----------------------------------------------------------------------------
+def _fish_canon_family() -> tuple:
+    """The accepted env names for the Fish key: the direct name plus its canon
+    alias family. Canon absent or broken -> (direct name,)."""
+    names = ("FISH_AUDIO_API_KEY",)
+    try:
+        import importlib.util as _ilu
+        _g = os.path.dirname(os.path.abspath(__file__))
+        _cand = None
+        for _ in range(6):
+            if _g and os.path.isfile(os.path.join(_g, "shared-utils", "secret_helper.py")):
+                _cand = os.path.join(_g, "shared-utils", "secret_helper.py")
+                break
+            _g = os.path.dirname(_g) if _g else _g
+        if _cand:
+            _spec = _ilu.spec_from_file_location("secret_helper_s114fish", _cand)
+            _helper = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_helper)
+            fam = _helper.alias_list(_helper.canonical_for("FISH_AUDIO_API_KEY"))
+            names = tuple(n for n in fam if isinstance(n, str) and n) or names
+    except Exception:  # noqa: BLE001 — canon failure degrades to the direct name
+        return ("FISH_AUDIO_API_KEY",)
+    return names
+
+
+def _fish_key_is_real(value: str) -> bool:
+    """False when `value` is obviously a placeholder or does not read as a real
+    Fish credential. Canon gate when reachable, else the inline placeholder
+    gate (the same minimal discipline research_web.py carries)."""
+    if not value:
+        return False
+    low = value.strip().lower()
+    if len(low) < 10:
+        return False
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return False
+    if low.startswith("<") and low.endswith(">"):
+        return False
+    if low.startswith("[") and low.endswith("]"):
+        return False
+    try:
+        import importlib.util as _ilu
+        _g = os.path.dirname(os.path.abspath(__file__))
+        _cand = None
+        for _ in range(6):
+            if _g and os.path.isfile(os.path.join(_g, "shared-utils", "secret_helper.py")):
+                _cand = os.path.join(_g, "shared-utils", "secret_helper.py")
+                break
+            _g = os.path.dirname(_g) if _g else _g
+        if _cand:
+            _spec = _ilu.spec_from_file_location("secret_helper_s114fish2", _cand)
+            _helper = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_helper)
+            return bool(_helper.looks_like_real_key(value, "FISH_AUDIO_API_KEY"))
+    except Exception:  # noqa: BLE001 — canon failure keeps the inline verdict
+        pass
+    return True
+
+
+def resolve_fish_api_key() -> str:
+    """FIX 114: resolve the Fish Audio bearer key. The canon alias family is
+    consulted in order (FISH_AUDIO_API_KEY first), and a resolved value must
+    pass the placeholder/shape gate. Returns "" when nothing real resolves —
+    the caller's existing missing-key FAIL handles that loudly."""
+    for name in _fish_canon_family():
+        v = (os.environ.get(name) or "").strip()
+        if v and _fish_key_is_real(v):
+            return v
+    return ""
+
+
+def _gov_tts_acquire():
+    """One Fish Audio lease for this TTS attempt. None = unthrottled."""
+    if _governor is None:
+        return None
+    try:
+        return _governor.acquire(_GOV_TTS_PROVIDER, n=1, timeout_s=60.0)
+    except Exception:  # noqa: BLE001 — the rate window is a courtesy, not a gate
+        return None
+
+
+def _gov_tts_release(lease) -> None:
+    if _governor is None or lease is None:
+        return
+    try:
+        _governor.release(lease)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _gov_tts_report(kind: str) -> None:
+    """Telemetry into the governor: kind is 'ok' or '429'. No-op when absent."""
+    if _governor is None:
+        return
+    try:
+        if kind == "429":
+            _governor.report_429(_GOV_TTS_PROVIDER)
+        elif kind == "ok":
+            _governor.report_ok(_GOV_TTS_PROVIDER)
+    except Exception:  # noqa: BLE001
+        pass
+
 
 # ----------------------------------------------------------------------------
 # Speech cleaning  — keep ONLY what a presenter actually says aloud.
@@ -341,37 +493,49 @@ def synth_chunk(text, api_key, voice_id, model, bitrate, out_path,
 
     last_err = None
     for attempt in range(1, retries + 1):
-        req = urllib.request.Request(
-            FISH_URL, data=data, method="POST",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "model": model,
-            },
-        )
+        # FIX 14: one governor lease per HTTP attempt on the fish provider.
+        # A live HTTP 429 feeds report_429 (rate halved 60 s) before the
+        # backoff sleep; a clean response feeds report_ok; the lease is
+        # released before the backoff so a sleeping retry holds no slot.
+        _lease = _gov_tts_acquire()
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                audio = resp.read()
-            if not audio or len(audio) < 256:
-                raise RuntimeError(f"empty/tiny audio ({len(audio)} bytes)")
-            with open(out_path, "wb") as f:
-                f.write(audio)
-            return len(audio)
-        except urllib.error.HTTPError as e:
-            err_body = ""
+            req = urllib.request.Request(
+                FISH_URL, data=data, method="POST",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "model": model,
+                },
+            )
             try:
-                err_body = e.read().decode("utf-8", "replace")[:300]
-            except Exception:
-                pass
-            last_err = f"HTTP {e.code}: {err_body}"
-            # 429 / 5xx: back off and retry; 4xx (auth/validation): FAIL LOUD now
-            if e.code == 429 or 500 <= e.code < 600:
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    audio = resp.read()
+                if not audio or len(audio) < 256:
+                    raise RuntimeError(f"empty/tiny audio ({len(audio)} bytes)")
+                with open(out_path, "wb") as f:
+                    f.write(audio)
+                _gov_tts_report("ok")
+                return len(audio)
+            except urllib.error.HTTPError as e:
+                err_body = ""
+                try:
+                    err_body = e.read().decode("utf-8", "replace")[:300]
+                except Exception:
+                    pass
+                last_err = f"HTTP {e.code}: {err_body}"
+                # 429 / 5xx: back off and retry; 4xx (auth/validation): FAIL LOUD now
+                if e.code == 429 or 500 <= e.code < 600:
+                    if e.code == 429:
+                        _gov_tts_report("429")
+                    time.sleep(min(20, 5 * attempt))
+                    continue
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = str(e)
+                _gov_tts_report("ok")  # a transport failure is not throttling
                 time.sleep(min(20, 5 * attempt))
-                continue
-            break
-        except Exception as e:  # noqa: BLE001
-            last_err = str(e)
-            time.sleep(min(20, 5 * attempt))
+        finally:
+            _gov_tts_release(_lease)
     raise RuntimeError(f"Fish Audio synthesis failed for chunk -> {out_path}: {last_err}")
 
 
@@ -467,7 +631,12 @@ def main():
                          "text synthesized (so [bracket] reader tags reach the API). Falls "
                          "back to --speech if omitted.")
     ap.add_argument("--out", required=True, help="Path to write the final full-length mp3")
-    ap.add_argument("--api-key", default=os.environ.get("FISH_AUDIO_API_KEY"))
+    # FIX 114: the key resolves through the canon alias family and must pass
+    # the placeholder/shape gate; --api-key (an explicit operator hand-off)
+    # still wins over the environment.
+    _env_fish_key = resolve_fish_api_key()
+    ap.add_argument("--api-key", default=_env_fish_key if _env_fish_key
+                    else None)
     ap.add_argument("--voice-id", default=os.environ.get("FISH_AUDIO_VOICE_ID"))
     ap.add_argument("--model", default=MAIN_MODEL_DEFAULT,
                     help="Fish Audio model (HTTP model header). Current PAID production "
@@ -514,6 +683,11 @@ def main():
 
     if not args.api_key:
         sys.exit("FAIL: no Fish Audio API key (set FISH_AUDIO_API_KEY or --api-key).")
+    # FIX 114: an explicit --api-key value is gated too — a placeholder handed
+    # on the command line never reaches the provider and burns the run.
+    if not _fish_key_is_real(args.api_key):
+        sys.exit("FAIL: FISH_AUDIO_API_KEY value looks like a placeholder, not a "
+                 "real key (FIX 114). Set a real credential and retry.")
 
     # ---- SPEED PREFERENCE (Trevor-selected presets) ----
     # intake.json carries the client's speech_speed_preference (default/medium/fast).

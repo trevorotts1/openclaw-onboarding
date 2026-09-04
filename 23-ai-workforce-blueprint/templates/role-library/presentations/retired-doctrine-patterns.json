@@ -26,7 +26,13 @@
     {
       "id": "prompt-floor-5000-char",
       "why": "FIX-PRES-09(v): the presentations image-prompt floor was RAISED from 5,000 chars to 9,000 chars (current HARD floor 9,000, ceiling 18,000; build_deck.py PROMPT_CHAR_FLOOR=9000, AF-P1). The retired 5,000-char floor must never re-appear as a live instruction — a prompt authored to 5,000 chars is now sub-floor and is refused, not run.",
-      "pattern": "5[,.]?000[\\s-]*(?:char|character)",
+      "pattern": "(?:5[,.]?000|5[,.]?001|4[,.]?750|4[,.]?800)[\\s-]*(?:char|character)",
+      "scope": "**/*.md"
+    },
+    {
+      "id": "prompt-floor-char-count-field",
+      "why": "FIX 79: the retired prompt floor also leaks through the JSON-example form (\"char_count\": 4750) used in QC example blocks and reports. A char_count field carrying a retired-family value (5,000 / 5000 / 5,001 / 4,750 / 4800) records a sub-floor prompt and must be caught; current-tier values in the 9,000-18,000 band (e.g. 8400) are legitimate and must not match.",
+      "pattern": "\"char_count\"\\s*:\\s*(?:5[,.]?000|5[,.]?001|4[,.]?750|4[,.]?800)\\b",
       "scope": "**/*.md"
     },
     {

@@ -152,7 +152,13 @@ def hosted_deck_media_id(media) -> str | None:
       * the PDF twin's media id, ONLY when the ledger carries a VALID over-cap
         receipt (reason "over_cap", pptx_media_id null, pdf id present).
     Returns None when neither exists — the caller gates on that, unchanged.
-    Never raises: a malformed ledger is a None, never a crash."""
+    Never raises: a malformed ledger is a None, never a crash.
+
+    FIX 111: the receipt is the ONLY reason carrier. A bare
+    deck_upload_kind:"pdf" marker (the Defect #9 interim shape, which kept no
+    receipt and so cannot say WHY the pptx id is absent) is NOT accepted here —
+    "the pptx was over the cap" must be distinguishable from "the pptx upload
+    was lost", and only the receipt makes that distinction."""
     if not isinstance(media, dict):
         return None
     pptx_id = str(media.get("pptx_ghl_media_id") or "").strip()
@@ -161,11 +167,6 @@ def hosted_deck_media_id(media) -> str | None:
     rec = media.get("deck_upload_receipt")
     if receipt_ok(rec):
         return str(rec["pdf_media_id"]).strip()
-    # Legacy shape (Defect #9 interim): deck_upload_kind == "pdf" with the PDF's
-    # id recorded in pptx_ghl_media_id is ALSO an accept-either-id pass, but only
-    # when the kind marker says so — a bare id with no kind marker is NOT proof.
-    if str(media.get("deck_upload_kind") or "") == "pdf" and pptx_id:
-        return pptx_id
     return None
 
 
@@ -178,15 +179,9 @@ def hosted_deck_kind(media) -> str | None:
         rec = media.get("deck_upload_receipt")
         if receipt_ok(rec) and not str(rec.get("pptx_media_id") or "").strip():
             return "pdf"
-        # Legacy Defect #9 interim shape: deck_upload_kind == "pdf" marks the id
-        # as the PDF twin's id, not a real pptx upload.
-        if str(media.get("deck_upload_kind") or "") == "pdf":
-            return "pdf"
         return "pptx"
     rec = media.get("deck_upload_receipt")
     if receipt_ok(rec):
-        return "pdf"
-    if str(media.get("deck_upload_kind") or "") == "pdf":
         return "pdf"
     return None
 
@@ -383,11 +378,13 @@ def _selftest() -> int:
     # No receipt, no pptx id -> None (the gate fails, as before).
     if hosted_deck_media_id({"ghl_folder_id": "root"}) is not None:
         fails.append("D5 either-id: empty ledger must yield None")
-    # Legacy deck_upload_kind="pdf" shape is honored.
+    # FIX 111: the legacy Defect #9 interim shape (kind marker, NO receipt) is NOT
+    # accepted by the reader — the receipt is the only reason carrier, so a bare
+    # marker cannot distinguish "over the cap" from "the upload was lost".
     m4 = {"pptx_ghl_media_id": "legacy_1", "deck_upload_kind": "pdf"}
-    if hosted_deck_media_id(m4) != "legacy_1" or hosted_deck_kind(m4) != "pdf":
-        fails.append("D6 either-id: legacy pdf-kind shape not honored")
-    # Bare id with NO kind marker and NO receipt is NOT proof.
+    if hosted_deck_media_id(m4) != "legacy_1" or hosted_deck_kind(m4) != "pptx":
+        fails.append("D6 either-id: legacy kind-marker-only shape must NOT read as pdf")
+    # Bare id with NO kind marker and NO receipt is canonical pptx.
     if hosted_deck_kind({"pptx_ghl_media_id": "x"}) != "pptx":
         fails.append("D7 either-id: bare pptx id must be kind pptx")
 

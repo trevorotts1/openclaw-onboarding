@@ -3122,6 +3122,11 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
     "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
     "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
+    # --- FIX 83: style/closeout/render-band parity (manifest v62) ---
+    "P-STYLE-SPEC":       _verify_json_artifact("working/copy/style_preview_spec.json"),
+    "P-STYLE-PICK":       _verify_json_artifact("working/copy/style_preview_choice.json"),
+    "P8.3-INFOGRAPHIC":   _verify_text_artifact("working/deliverables/infographic.png", 102400),
+    "P-BUNDLE-GATE":      _verify_json_artifact("working/checkpoints/bundle_gate.json"),
 }
 
 
@@ -3171,6 +3176,13 @@ def artifact_path(run_dir: Path, key: str) -> Optional[Path]:
         base = run_dir / "working" / "upsell" / key[:-2]
         if base.is_dir() and any(base.iterdir()):
             return base
+        return None
+    if any(c in key for c in "*?["):
+        for prefix in (Path("."), Path("working") / "upsell"):
+            matches = [p for p in sorted(run_dir.glob(str(prefix / key)))
+                       if p.is_file()]
+            if matches:
+                return max(matches, key=lambda p: p.stat().st_mtime)
         return None
     for prefix in (Path("."), Path("working") / "upsell"):
         cand = run_dir / prefix / key
@@ -3250,8 +3262,11 @@ for _pid, _arts in (
     ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
     ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
     ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
+    ("P-U-DESIGN-RENDER-SALES", ["design/sales-design.png"]),
     ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
+    ("P-U-DESIGN-RENDER-CHECKOUT", ["design/checkout-design.png"]),
     ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
+    ("P-U-DESIGN-RENDER-VSL", ["design/vsl-design.png"]),
     ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),

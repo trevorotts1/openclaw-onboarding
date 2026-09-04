@@ -37,7 +37,9 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -156,13 +158,21 @@ class TestSpawnDispatcherIfAvailable:
 
 class TestStopAutoDispatcher:
     def test_terminates_live_process_and_removes_its_own_lock(self, tmp_path):
+        """FIX 19: the stop is a WHOLE-PROCESS-GROUP kill (os.killpg to the
+        watcher's group, children included) — not the old bare terminate()
+        that orphaned every wave worker. The mock asserts the group kill
+        reached BOTH the TERM and the post-wait escalation path shape."""
         run_dir = tmp_path / "run"
         (run_dir / "working").mkdir(parents=True)
         lock_path = run_dir / "working" / "dispatcher-autospawn.lock"
         proc = _fake_proc(pid=555)
         lock_path.write_text(json.dumps({"pid": 555, "started_at": "x"}))
-        pj_main._stop_auto_dispatcher(run_dir, proc)
-        proc.terminate.assert_called_once()
+        with mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg:
+            pj_main._stop_auto_dispatcher(run_dir, proc)
+        # group SIGTERM on the live proc, and the post-wait path must not have
+        # needed the SIGKILL escalation (wait() returned in time)
+        kpg.assert_called_once()
+        assert kpg.call_args.args[1] == signal.SIGTERM
         assert not lock_path.exists()
 
     def test_none_proc_leaves_an_existing_lock_alone(self, tmp_path):
@@ -260,23 +270,27 @@ class TestEndToEndAutoSpawnWiring:
 
     def test_dispatcher_stopped_when_engine_run_returns(self, tmp_path, monkeypatch):
         """The auto-spawned dispatcher must not be left running (no orphans)
-        once the engine run it was spawned for is over."""
+        once the engine run it was spawned for is over. FIX 19: the stop is
+        the whole-process-group kill, not the old bare terminate()."""
         monkeypatch.delenv("PRESENTATION_AUTO_DISPATCH", raising=False)
         run_dir = _build_run_dir_with_outstanding_work_order(tmp_path)
         fake = _fake_proc()
 
         with mock.patch.object(Engine, "run", lambda self, only=None, until=None: 0), \
-             mock.patch.object(pj_main.subprocess, "Popen", return_value=fake):
+             mock.patch.object(pj_main.subprocess, "Popen", return_value=fake), \
+             mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg:
             rc = pj_main.main(["--run", "--run-dir", str(run_dir)])
 
         assert rc == 0
-        fake.terminate.assert_called_once()
+        kpg.assert_called_once()
+        assert kpg.call_args.args[1] == signal.SIGTERM
         assert not (run_dir / "working" / "dispatcher-autospawn.lock").exists()
 
     def test_dispatcher_stopped_even_when_engine_run_raises(self, tmp_path, monkeypatch):
         """The `finally` around engine.run() must stop the dispatcher on an
         exception too -- an engine crash must not leave an orphaned
-        dispatcher spinning declines for hours (observed live)."""
+        dispatcher spinning declines for hours (observed live). FIX 19: the
+        stop is the whole-process-group kill, children included."""
         monkeypatch.delenv("PRESENTATION_AUTO_DISPATCH", raising=False)
         run_dir = _build_run_dir_with_outstanding_work_order(tmp_path)
         fake = _fake_proc()
@@ -285,11 +299,13 @@ class TestEndToEndAutoSpawnWiring:
             raise RuntimeError("simulated engine crash")
 
         with mock.patch.object(Engine, "run", boom), \
-             mock.patch.object(pj_main.subprocess, "Popen", return_value=fake):
+             mock.patch.object(pj_main.subprocess, "Popen", return_value=fake), \
+             mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg:
             with pytest.raises(RuntimeError):
                 pj_main.main(["--run", "--run-dir", str(run_dir)])
 
-        fake.terminate.assert_called_once()
+        kpg.assert_called_once()
+        assert kpg.call_args.args[1] == signal.SIGTERM
         assert not (run_dir / "working" / "dispatcher-autospawn.lock").exists()
 
     def test_no_auto_dispatch_flag_disables_spawn(self, tmp_path, monkeypatch):
@@ -309,3 +325,130 @@ class TestEndToEndAutoSpawnWiring:
             rc = pj_main.main(["--run", "--run-dir", str(run_dir)])
         assert rc == 0
         popen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# FIX 105 — a live dispatcher running STALE modules is refused and replaced;
+# a code-current holder is reused; an unjudgeable record is never killed.
+#
+# The engine's auto-spawn may only REUSE a live same-run dispatcher when the
+# code it loaded is current. Any dispatcher.py / work_order_dispatcher.py
+# mtime that postdates the dispatcher's own started_at means it predates a
+# patch and keeps the fixed bug loaded forever — that holder is stopped
+# (whole process group) and a fresh watcher spawned on the patched code, so
+# the next launch after touching a module always logs a NEW dispatcher pid.
+# A holder whose started_at cannot be judged is never killed (fail-open).
+#
+# Every test here mocks the process-group kill, so no real dispatcher
+# process is ever started.
+# ---------------------------------------------------------------------------
+class TestDispatcherModuleStalenessRefusal:
+    def test_stale_holder_is_killed_and_replace_spawns_fresh(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("PRESENTATION_AUTO_DISPATCH", raising=False)
+        run_dir = tmp_path / "run"
+        (run_dir / "working").mkdir(parents=True)
+        # started_at = 1.0 (epoch-ish, > 0 so the judgeable guard passes):
+        # every real module mtime postdates it, so the holder (this test
+        # process — a genuinely live pid) is stale.
+        lock = run_dir / "working" / "dispatcher-autospawn.lock"
+        lock.write_text(json.dumps({
+            "pid": os.getpid(),
+            "started_at": 1.0,
+            "run_dir": str(run_dir),
+            "run_id": "same-run",
+        }))
+        with mock.patch.object(pj_main, "_pid_is_alive",
+                               side_effect=[True, False]) as alive, \
+             mock.patch.object(pj_main.time, "sleep", return_value=None), \
+             mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg, \
+             mock.patch.object(pj_main.subprocess, "Popen") as popen:
+            popen.return_value = _fake_proc(pid=424242)
+            proc = pj_main._spawn_dispatcher_if_available(
+                run_dir, SCRIPTS, run_id="same-run")
+        # liveness probe True, then the post-TERM recheck False -> exactly one
+        # group-TERM, no KILL escalation, and a fresh spawn.
+        assert alive.call_count == 2
+        kpg.assert_called_once()
+        assert kpg.call_args.args[1] == signal.SIGTERM
+        assert proc is not None, "a replaced stale holder must be re-spawned fresh"
+        assert popen.call_count == 1
+
+    def test_fresh_holder_is_reused_untouched(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("PRESENTATION_AUTO_DISPATCH", raising=False)
+        run_dir = tmp_path / "run"
+        (run_dir / "working").mkdir(parents=True)
+        # started_at far in the future: no module mtime can postdate it, so
+        # the holder is provably code-current.
+        lock = run_dir / "working" / "dispatcher-autospawn.lock"
+        lock.write_text(json.dumps({
+            "pid": os.getpid(),
+            "started_at": time.time() + 10_000.0,
+            "run_dir": str(run_dir),
+            "run_id": "same-run",
+        }))
+        with mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg, \
+             mock.patch.object(pj_main.subprocess, "Popen") as popen:
+            proc = pj_main._spawn_dispatcher_if_available(
+                run_dir, SCRIPTS, run_id="same-run")
+        kpg.assert_not_called()
+        popen.assert_not_called()
+        assert proc is None, "a code-current holder must be reused, never replaced"
+        assert lock.is_file(), "a live holder's lock is never deleted"
+
+    def test_unjudgeable_started_at_is_never_killed(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("PRESENTATION_AUTO_DISPATCH", raising=False)
+        run_dir = tmp_path / "run"
+        (run_dir / "working").mkdir(parents=True)
+        lock = run_dir / "working" / "dispatcher-autospawn.lock"
+        lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(run_dir)}))
+        with mock.patch.object(pj_main, "_kill_process_group_best_effort") as kpg:
+            proc = pj_main._spawn_dispatcher_if_available(
+                run_dir, SCRIPTS, run_id="same-run")
+        kpg.assert_not_called()
+        assert proc is None
+
+    def test_launcher_reap_stops_stale_holder_and_clears_lock(self, tmp_path):
+        from presentation_job import launcher as launcher_mod
+        run_dir = tmp_path / "run"
+        (run_dir / "working").mkdir(parents=True)
+        lock = run_dir / "working" / "dispatcher-autospawn.lock"
+        # pid 424242: not THIS process, so the reap guard passes; every os.kill
+        # is mocked, so no real signal is ever sent.
+        lock.write_text(json.dumps({
+            "pid": 424242,
+            "started_at": 1.0,    # > 0 and older than every module mtime: stale
+            "run_dir": str(run_dir),
+        }))
+        calls = []
+        def fake_kill(pid, sig):
+            calls.append(sig)
+            if sig == 0 and len(calls) == 1:
+                return            # first liveness probe: holder alive
+            if sig != 0:
+                return            # direct-pid TERM fallback: no-op success
+            raise ProcessLookupError(3, "gone")   # post-TERM recheck: reaped
+        with mock.patch.object(launcher_mod.time, "sleep", return_value=None), \
+             mock.patch.object(launcher_mod.os, "kill", side_effect=fake_kill), \
+             mock.patch.object(launcher_mod.os, "killpg",
+                               side_effect=(lambda pid, sig: None)) as kpg:
+            launcher_mod._reap_stale_dispatcher(run_dir)
+        # The group is signalled FIRST (killpg carries the TERM — the kills
+        # above are only liveness probes + fallbacks); the recheck after the
+        # grace sees the holder reaped.
+        kpg.assert_called_once()
+        assert kpg.call_args.args[1] == signal.SIGTERM
+        assert not lock.is_file(), "the stale holder's lock must be cleared"
+
+
+    def test_launcher_reap_leaves_fresh_holder_alone(self, tmp_path):
+        from presentation_job import launcher as launcher_mod
+        run_dir = tmp_path / "run"
+        (run_dir / "working").mkdir(parents=True)
+        lock = run_dir / "working" / "dispatcher-autospawn.lock"
+        lock.write_text(json.dumps({
+            "pid": os.getpid(),
+            "started_at": time.time() + 10_000.0,   # provably code-current
+            "run_dir": str(run_dir),
+        }))
+        launcher_mod._reap_stale_dispatcher(run_dir)
+        assert lock.is_file(), "a code-current holder is never disturbed"

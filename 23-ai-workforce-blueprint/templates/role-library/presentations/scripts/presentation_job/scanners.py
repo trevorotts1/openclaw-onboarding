@@ -170,14 +170,33 @@ def find_negated_spans(text: str) -> List[Tuple[int, int]]:
             # plus up to three more tokens (the coordinated object), bounded by
             # +NEGATION_WINDOW_TOKENS so a run of commas cannot eat the rest of
             # the sentence.
+            #
+            # FIX 35 B4 corollary — the coordinated object is a PHRASE, not one
+            # token. The SOP's own element-15 template ("explicitly prohibit
+            # navy, charcoal, black, and any dark background in element 15")
+            # puts the keyword THREE tokens past the conjunction ('and' 'any'
+            # 'dark'): a +2-per-conjunction jump stops at the determiner 'any'
+            # and the object's head survives, so the SOP's own mandated line
+            # tripped AF-DARK-SLIDE. After each conjunction the window now
+            # extends by a full object window (the conjunction plus
+            # NEGATION_WINDOW_TOKENS of object tokens), keeping the same
+            # +NEGATION_WINDOW_TOKENS-per-step bound so a comma run still
+            # cannot eat the rest of the sentence.
             extend = 0
             while (window_end_tok + 1 < len(tokens)
-                   and extend < NEGATION_WINDOW_TOKENS
+                   and extend + 1 + NEGATION_WINDOW_TOKENS <= NEGATION_WINDOW_TOKENS * 2
                    and tokens[window_end_tok + 1][0] in _CONJUNCTION_EXTENSIONS):
-                window_end_tok += 2  # skip the conjunction, take the next object
-                extend += 2
-            window_end_tok = min(window_end_tok + 1, len(tokens) - 1)
-            extend += 1
+                window_end_tok += 1 + NEGATION_WINDOW_TOKENS  # conjunction + a full object window
+                extend += 1 + NEGATION_WINDOW_TOKENS
+            # B4-FIX-110 off-by-one: the span must END at the last suppressed
+            # token (the negator + NEGATION_WINDOW_TOKENS after it — "within
+            # six tokens after a negator"). The previous `+ 1` extended the
+            # span through a SEVENTH token, suppressing a keyword that starts
+            # exactly six tokens after the negator's window (test NA-I: "no a
+            # b c d e f dark background" must still fire). This also matches
+            # the lint path (_negated_span_in_sentence), which never had the
+            # +1, and the lint's token slice (neg_idx .. neg_idx + WINDOW).
+            window_end_tok = min(window_end_tok, len(tokens) - 1)
             span_start = s_start + t_start
             span_end = s_start + tokens[window_end_tok][2]
             spans.append((span_start, span_end))

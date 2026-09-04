@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import shlex
 import subprocess
 import sys
@@ -36,6 +37,73 @@ from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, H
 from . import heal
 from . import persona
 from . import curate as _curate
+
+
+_ENGINE_ATTESTED_BY_PREFIX = "engine:"
+
+def _process_manifest_path(run_dir) -> Path:
+    return run_dir / "working" / "checkpoints" / "process_manifest.json"
+
+def _load_process_manifest(run_dir) -> dict:
+    p = _process_manifest_path(run_dir)
+    if not p.exists():
+        return {}
+    try:
+        obj = json.loads(p.read_text())
+        return obj if isinstance(obj, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+def _atomic_write_json(path: Path, obj) -> None:
+    """F18-style atomic replace: the process manifest is the attestation chain,
+    so a torn write must never truncate it (readers see either the old complete
+    file or the new complete one)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".tmp-{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps(obj, indent=2))
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+def _combined_artifact_sha(shas) -> str:
+    """FIX 30 — one deterministic sha256 over the banked artifact set, so
+    artifact_sha256 means 'hash of exactly what this phase produced'. Mirrors
+    the runner's _compute_artifact_sha discipline: sorted (path, sha) pairs fed
+    into a fresh sha256. Empty set => 'no-artifact-spec' (same marker the
+    runner's attest_phase accepts for system phases with no concrete
+    artifact)."""
+    import hashlib as _hl
+    if not shas:
+        return "no-artifact-spec"
+    h = _hl.sha256()
+    for rel in sorted(shas):
+        h.update(rel.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(str(shas[rel]).encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+def _intake_sha_now(run_dir):
+    """FIX 109: the intake sha to stamp alongside a DONE checkpoint.
+
+    phases.py records, on every phase it parks at status=done, WHICH intake
+    the phase's work was built from — runfacts.invalidate_intake_consumers()
+    compares that stamp against the provenance row's sha_before to decide
+    freshness by CONTENT, never by a 1-second-resolution wall clock (a
+    sanctioned intake write and a phase completion landing in the same
+    second would otherwise skip the consumer invalidation silently).
+    Best-effort by contract: an import or read failure yields None and the
+    invalidation falls back to the attested_at rule — never blocks the
+    checkpoint."""
+    try:
+        from .runfacts import current_intake_sha
+        return current_intake_sha(run_dir)
+    except Exception:  # noqa: BLE001 — stamping must never block a completion
+        return None
 
 
 def _deliverable_specs():
@@ -87,6 +155,137 @@ try:
     from process_reaper import run_with_cleanup
 except ImportError:  # pragma: no cover — module ships beside presentation_job
     run_with_cleanup = None
+
+
+# ---------------------------------------------------------------------------
+# FIX 105 (Master Part 8): ENGINE SHUTDOWN REAPS IN-FLIGHT EXEC HANDLES.
+# A render batch is spawned by _run_script_phase_locked through
+# run_with_cleanup, which puts the exec in its OWN session
+# (start_new_session=True). That own session is what makes a budget-timeout
+# group-kill work — but it also means the launcher's stop_engine killpg of the
+# ENGINE'S group does NOT reach the render child: a SIGTERM (or SIGKILL) that
+# kills the engine mid-render leaves the own-session render batch alive,
+# writing stale renders into a dead run (the FIX 105 orphan the QC probe
+# catches). The engine's FIX 19 SIGTERM handler only set a flag nothing read.
+#
+# The engine therefore REGISTERS every in-flight exec handle at spawn time and
+# (a) the SIGTERM/SIGINT handler flips _ENGINE_SHUTDOWN_EVENT AND kills every
+#     registered handle's whole process group (TERM, engine's own 10s-grace
+#     escalation is the launcher's SIGKILL; the handler KILLs after its own
+#     short grace inside communicate()'s wake-up path);
+# (b) each blocking communicate() waits on the handle in small slices and
+#     returns as soon as the shutdown event fires, so the wave's finally path
+#     runs immediately instead of blocking for the remaining phase budget.
+# Handles are unregistered the moment their wait returns — the registry only
+# ever names LIVE execs.
+# ---------------------------------------------------------------------------
+_ENGINE_SHUTDOWN_EVENT = threading.Event()
+_EXEC_REGISTRY_LOCK = threading.Lock()
+_EXEC_REGISTRY: Dict[int, subprocess.Popen] = {}
+
+def _register_exec(proc: subprocess.Popen) -> None:
+    with _EXEC_REGISTRY_LOCK:
+        _EXEC_REGISTRY[proc.pid] = proc
+
+def _unregister_exec(proc: subprocess.Popen) -> None:
+    with _EXEC_REGISTRY_LOCK:
+        _EXEC_REGISTRY.pop(proc.pid, None)
+
+def _kill_registered_execs(sig: int) -> None:
+    """os.killpg every registered exec's own process group, best-effort. The
+    execs ARE group leaders (run_with_cleanup spawns start_new_session=True);
+    a non-leader fallback covers a plain subprocess.run child."""
+    with _EXEC_REGISTRY_LOCK:
+        procs = list(_EXEC_REGISTRY.values())
+    for proc in procs:
+        try:
+            os.killpg(os.getpgid(proc.pid), sig)
+        except OSError:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+def _shutdown_requested() -> bool:
+    return _ENGINE_SHUTDOWN_EVENT.is_set()
+
+#: FIX 105: slice width for the shutdown-aware exec wait (seconds). Small
+#: enough that a SIGTERM's kill-and-unwind lands well inside the launcher's
+#: 10 s grace; large enough that the poll loop costs nothing.
+_EXEC_JOIN_SLICE_S = 0.5
+
+def _run_exec_joined(spawn_and_wait, timeout_s: Optional[float]):
+    """FIX 105: run `spawn_and_wait()` (a run_with_cleanup / subprocess.run
+    call that BLOCKS until the exec exits or hits `timeout_s`) while staying
+    responsive to engine shutdown. The spawned exec's Popen handle is
+    REGISTERED in the engine's exec registry for its whole life (via
+    run_with_cleanup's on_spawn hook), so the shutdown path can killpg the
+    render batch's own session; the wait is sliced so the moment the shutdown
+    event fires the call returns what it has (the killed exec's
+    CompletedProcess, or None when the kill races the very first slice).
+    Normal runs behave EXACTLY like the bare call: the whole timeout is
+    honoured and the return value passes through unchanged."""
+    deadline = (time.monotonic() + timeout_s) if timeout_s else None
+    handle: Dict[str, Any] = {"proc": None, "result": None, "exc": None, "done": False}
+
+    def _on_spawn(proc) -> None:  # noqa: ANN001 — Popen from run_with_cleanup
+        handle["proc"] = proc
+        _register_exec(proc)
+
+    def _runner() -> None:
+        try:
+            handle["result"] = spawn_and_wait(on_spawn=_on_spawn)
+        except BaseException as exc:  # noqa: BLE001 — forwarded to the caller verbatim
+            handle["exc"] = exc
+        finally:
+            if handle["proc"] is not None:
+                _unregister_exec(handle["proc"])
+            handle["done"] = True
+
+    th = threading.Thread(target=_runner, daemon=True)
+    th.start()
+    while not handle["done"]:
+        if _shutdown_requested():
+            # Kill every own-session exec this engine knows about, then join.
+            _kill_registered_execs(signal.SIGTERM)
+            time.sleep(0.5)
+            _kill_registered_execs(signal.SIGKILL)
+            th.join(timeout=10)
+            return handle["result"]
+        if deadline is not None and time.monotonic() >= deadline:
+            th.join(timeout=5)  # the inner call enforces its own cap
+            return handle["result"] if handle["done"] else None
+        time.sleep(_EXEC_JOIN_SLICE_S)
+    if handle["exc"] is not None:
+        raise handle["exc"]
+    return handle["result"]
+
+def _fallback_run(argv, budget: float, child_env, on_spawn, run_dir: Optional[Path] = None):
+    """FIX 105: the process_reaper-absent fallback for
+    _run_script_phase_locked — the same bare subprocess.run contract the
+    pre-FIX 105 code ran (CompletedProcess / TimeoutExpired, no env mutation),
+    with an on_spawn hook so the exec is still registered for engine-shutdown
+    reaping. NOT its own group leader here — _kill_registered_execs falls back
+    to a direct pid kill for it. `run_dir` carries the caller's cwd explicitly:
+    wave members run on pool threads, so any module-global handoff would race."""
+    proc = subprocess.Popen(argv, shell=False, cwd=str(run_dir or Path.cwd()),
+                            stdout=None, stderr=None,
+                            env=child_env)
+    if on_spawn is not None:
+        try:
+            on_spawn(proc)
+        except Exception:  # noqa: BLE001 — hook never breaks the exec
+            pass
+    try:
+        out, err = proc.communicate(timeout=budget)
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.communicate(timeout=5)
+        except (subprocess.TimeoutExpired, Exception):  # noqa: BLE001
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +644,66 @@ class Engine:
             except Exception:  # noqa: BLE001
                 pass
 
+    # -- FIX 30: engine-written attestations --------------------------------
+    def _engine_attest(self, phase: Phase, substance_verified: bool,
+                       shas: Dict[str, str], method: str,
+                       notes: Optional[List[str]] = None) -> None:
+        """FIX 30 — attestations WRITTEN BY THE ENGINE.
+
+        Every phase this engine marks done appends ONE row to
+        working/checkpoints/process_manifest.json["phase_attestations"]:
+
+          {phase_id, owning_role, status: "done", method,
+           substance_verified, artifact_sha256, artifact_sha,
+           attested_at (tz-aware ISO from the engine's own clock — never a
+           placeholder T00:00:00),
+           attested_by: "engine:<pid>"}
+
+        attested_by is the WRITER IDENTITY the shared phase chain gate
+        (build_deck.check_phase_preconditions) now requires: a row without an
+        "engine:"-prefixed attested_by is a hand-edited / self-minted shape and
+        satisfies nothing, even when it carries a completed status and
+        substance_verified True. Both engine writers sign the same way — the
+        engine above and run_signature_deck.attest_phase — so the ledger rows
+        are indistinguishable-by-shape from hand rows only in the sense that a
+        hand editor must forge the attested_by to launder one, and the
+        artifact_sha256 (deterministic over the banked artifact set) plus the
+        tz-aware timestamp make the row auditable.
+
+        The read-modify-write runs under the engine lock, so concurrent wave
+        siblings append without losing each other's rows (every checkpoint in
+        this module is lock-guarded; the ledger write keeps the same
+        discipline). Best-effort by contract at the END of a completed phase:
+        a ledger write failure is loud on stderr and must never block a
+        finished phase from reporting or the run from advancing — the row is
+        skipped, remaining on stderr for the operator."""
+        sha = _combined_artifact_sha(shas)
+        row = {
+            "phase_id": phase.id,
+            "owning_role": phase.owning_role,
+            "status": PHASE_STATUS_DONE,
+            "method": method,
+            "substance_verified": bool(substance_verified),
+            "artifact_sha256": sha,
+            "artifact_sha": sha,
+            "attested_at": utcnow(),
+            "attested_by": _ENGINE_ATTESTED_BY_PREFIX + str(os.getpid()),
+        }
+        if notes:
+            row["notes"] = list(notes)
+        try:
+            with self._state_lock:
+                mpath = _process_manifest_path(self.run_dir)
+                obj = _load_process_manifest(self.run_dir)
+                obj.setdefault("phase_attestations", [])
+                obj["phase_attestations"].append(row)
+                _atomic_write_json(mpath, obj)
+        except Exception as exc:  # noqa: BLE001 — stamping must never block completion
+            print(
+                f"WARN: engine attestation for {phase.id} not written to "
+                f"process_manifest.json: {exc!r}",
+                file=sys.stderr)
+
     # -- fix/run-slides: converter routing ---------------------------------
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): P-CONVERTER
     # (manifest order -1) declares "converter_path": true and a routing_note of
@@ -644,7 +903,19 @@ class Engine:
                          artifacts=[], sha256={}, verifier_ok=None,
                          verifier_notes=[f"NOTE: {reason}"],
                          owner_skip_approval=None, routed_around=True,
-                         routed_around_reason=reason)
+                         routed_around_reason=reason,
+                         intake_sha_at_done=_intake_sha_now(self.run_dir))
+        # FIX 30 — a routed-around phase is also 'completed': it gets an engine
+        # row too, honestly marked (never verified, no artifact). Its
+        # substance_verified=False means the shared chain gate does NOT count it
+        # as attested — the routing distinction stays auditable in the row and
+        # in state.json, exactly as the method docstring promises.
+        self._engine_attest(
+            phase,
+            substance_verified=False,
+            shas={},
+            method="engine_routed_around",
+            notes=[f"NOTE: {reason}"])
 
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
@@ -803,6 +1074,20 @@ class Engine:
 
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
+        # FIX 109 (wave-B3, judge defect a): the intake provenance check runs
+        # BEFORE the done-skip. A DONE consumer whose banked artifacts are
+        # still byte-valid was previously skipped here (EXIT_OK) before any
+        # gate ran — so an approval-path intake rewrite never re-ran it on the
+        # new intake unless some LATER pending phase happened to fire the
+        # gate. The gate's _check_intake_provenance is where consumer
+        # invalidation lands in self.state; running it first makes the
+        # done-skip below see the post-invalidation record and re-run the
+        # phase. A refusal (out-of-band edit) blocks every phase exactly as
+        # the gate would have — fail-closed, naming the sha.
+        with self._state_lock:
+            prov_rc = self._check_intake_provenance(phase)
+        if prov_rc is not None:
+            return prov_rc
         with self._state_lock:
             if ps.get("status") == PHASE_STATUS_DONE:
                 bad = self._revalidate_banked(phase, ps)
@@ -841,6 +1126,16 @@ class Engine:
             rc = self._run_script_phase(phase)
         elif phase.executor_kind == "agent":
             rc = self._run_agent_phase(phase)
+        elif phase.executor_kind == "human":
+            # FIX 29 (MASTER Part 8, W05+W07): a declared human executor is a
+            # REAL executor kind now, never the install-time error the old
+            # fall-through called it. P-STYLE-PICK (order 4.86, kind human) is
+            # the owner gateway stage: deliver the pick request, wait for the
+            # owner's choice file with a verified owner_msg_id, and auto-pick
+            # variant 1 only when the client's own intake opted in
+            # (intake.style_pick_auto: true) and the wait times out. See
+            # _run_human_phase for the full contract.
+            rc = self._run_human_phase(phase)
         else:
             with self._state_lock:
                 self.report.event("phase.no_executor",
@@ -1008,7 +1303,17 @@ class Engine:
             self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
                              sha256=shas, artifacts=sorted(shas.keys()),
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
-                             owner_skip_approval=verifier_skipped)
+                             owner_skip_approval=verifier_skipped,
+                             intake_sha_at_done=_intake_sha_now(self.run_dir))
+            # FIX 30 — the engine itself writes the attestation row on done.
+            # Runs BEFORE the (heavier) board/report work so a crash between
+            # this checkpoint and the report can never leave a checked-out
+            # phase with no ledger row.
+            self._engine_attest(
+                phase,
+                substance_verified=bool(verifier_ok),
+                shas=shas,
+                method="engine_done")
             done_msg = self._render_client_report_msg(phase, "done")
             with self._state_lock:
                 self.report.to_requester("progress", done_msg)
@@ -1052,6 +1357,95 @@ class Engine:
             return False
         return phase.order > max(producer_orders)
 
+    def _check_intake_provenance(self, phase: Phase) -> Optional[int]:
+        """FIX 109 — the engine-side intake provenance pre-phase check.
+
+        intake.json is the trust root: only the intake phase and the owner's
+        approval path may write it, and every sanctioned write appends a row
+        {writer_phase, writer_pid, ts, sha_before, sha_after} to
+        working/checkpoints/intake.provenance.jsonl (via runfacts).
+        Before ANY phase runs, the engine checks the CURRENT intake sha:
+
+          1. no provenance row ends at the current sha -> the file was edited
+             out-of-band (a leftover worker / a shell edit) and EVERY phase
+             refuses, naming the sha (AF-INTAKE-PROVENANCE). This is
+             fail-closed: the sanctioned rewrite through the approval path
+             (resolve_intake.py / deck-intake-driver.py) appends the missing
+             row and unblocks the run.
+          2. provenance OK but the intake was re-written after some phase
+             banked -> every DONE phase whose manifest consumes[] includes
+             intake.json is invalidated (reset to pending) HERE, so the
+             engine re-runs exactly those consumers on the new intake
+             instead of failing later on artifacts built from the old one.
+
+        Runs for every phase (including intake producers and phases the
+        AF-INTAKE-GATE does not apply to): an out-of-band edit must block
+        the whole run, not only the content-authoring phases. No provenance
+        log at all (a pre-FIX-109 run) stays allowed — the regime activates
+        the moment the first sanctioned write lands its row. Import failure
+        of runfacts is fail-closed loud, never a silent pass."""
+        try:
+            from . import runfacts as _rf
+        except ImportError:
+            try:
+                import runfacts as _rf  # type: ignore[no-redef]
+            except ImportError:
+                print(
+                    "AF-INTAKE-PROVENANCE: presentation_job.runfacts could not be "
+                    "imported — the intake provenance check cannot run and every "
+                    "phase is refused (fail-closed). Fix the engine install.",
+                    file=sys.stderr)
+                return self._block(
+                    phase,
+                    "AF-INTAKE-PROVENANCE: runfacts unavailable — refusing to "
+                    "run without the intake provenance check (fail-closed).")
+        try:
+            ok, why, invalidated = _rf.check_intake_provenance(
+                self.run_dir, manifest_path=self.manifest.path)
+        except Exception as exc:  # noqa: BLE001 — fail closed, never crash the loop
+            return self._block(
+                phase,
+                f"AF-INTAKE-PROVENANCE: the intake provenance check itself failed "
+                f"({exc!r}) — refusing to run against an unverifiable intake.")
+        if not ok:
+            return self._block(phase, why)
+        if invalidated:
+            print(f"FIX 109: intake re-written — invalidated {len(invalidated)} "
+                  f"consuming phase(s), they re-run on the new intake: "
+                  f"{', '.join(invalidated)}", flush=True)
+            # FIX 109 (wave-B3, judge defect b): runfacts.invalidate_intake_
+            # consumers() reset those phases to pending ON DISK, but this
+            # engine's authoritative copy is self.state — and the report.event
+            # loop below saves self.state right back over state.json, silently
+            # resurrecting every consumer the disk rewrite just invalidated.
+            # The next SKIP in run_phase then serves stale banked artifacts
+            # built from the OLD intake. So apply the invalidation to the
+            # in-memory phase records FIRST, under the state lock, and only
+            # then report — the event saves the already-invalidated state.
+            with self._state_lock:
+                by_id = {ps.get("id"): ps
+                         for ps in self.state.get("phases", []) if isinstance(ps, dict)}
+                for pid in invalidated:
+                    ps = by_id.get(pid)
+                    if ps is None or ps.get("status") != PHASE_STATUS_DONE:
+                        continue
+                    ps["status"] = PHASE_STATUS_PENDING
+                    ps["intake_invalidated"] = {
+                        "reason": "intake.json re-written through the approval "
+                                  "path after this phase banked; banked artifacts "
+                                  "invalidated — the phase re-runs on the new intake",
+                    }
+                    ps["artifacts"] = []
+                    ps["sha256"] = {}
+                self.store.save(self.state)
+            for pid in invalidated:
+                self.report.event(
+                    "phase.intake_invalidated",
+                    f"{pid}: banked artifacts invalidated — intake.json was "
+                    "re-written through the approval path after this phase "
+                    "banked; the phase re-runs on the new intake.")
+        return None
+
     def _check_intake_gate(self, phase: Phase) -> Optional[int]:
         """AF-INTAKE-GATE (Ticket 6): fail-closed pre-check run before any phase
         this manifest doesn't exempt (see _intake_gate_applies) is allowed to
@@ -1059,6 +1453,11 @@ class Engine:
         slide copy, renders, deliverables, all of it -- without a completed
         client intake on disk. Returns a block exit code on failure, None when
         the gate passes (or does not apply) and the caller should proceed."""
+        # FIX 109: the provenance gate runs FIRST, for every phase — an
+        # out-of-band intake edit blocks the whole run before any other check.
+        prov_rc = self._check_intake_provenance(phase)
+        if prov_rc is not None:
+            return prov_rc
         if not self._intake_gate_applies(phase):
             return None
         intake_path = self.run_dir / "working" / "copy" / "intake.json"
@@ -1123,6 +1522,40 @@ class Engine:
                 if tok.startswith('scripts/') and not tok.startswith('/')
                 else tok
                 for tok in tokens]
+
+    # -- FIX 10: captured-exec output helpers --------------------------------
+    @staticmethod
+    def _last_exec_stderr(captured) -> str:
+        """The stderr of a CAPTURED rung-1 attempt (the final one), as a short
+        single-line tail. FIX 10: classify_failure can only see the failure
+        CLASS the executor printed -- HTTP 402/429/5xx, quota, connection
+        refused -- if that text rides the reason string. None/empty when the
+        attempt was not captured or printed nothing. Never raises."""
+        try:
+            err = (getattr(captured, "stderr", "") or "")
+            if isinstance(err, bytes):
+                err = err.decode("utf-8", errors="replace")
+            tail = " ".join(err.strip().split())
+            return tail[-400:] if tail else ""
+        except Exception:  # noqa: BLE001 -- best-effort classification aid
+            return ""
+
+    @staticmethod
+    def _flush_captured_output(captured) -> None:
+        """Print a captured attempt's stdout/stderr to the operator console
+        (FIX 10: only the FINAL attempt is captured, and only on success does
+        anything remain to show -- failure output rides the reason). Best
+        effort, never raises."""
+        try:
+            if captured is None:
+                return
+            out = getattr(captured, "stdout", "") or ""
+            if isinstance(out, bytes):
+                out = out.decode("utf-8", errors="replace")
+            if out.strip():
+                print(out, end="" if out.endswith("\n") else "\n", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
 
     # -- FIX 25: per-phase front-door nonce minting -------------------------
     def _script_nonce_env(self, phase: Phase) -> Optional[Dict[str, str]]:
@@ -1239,6 +1672,15 @@ class Engine:
                                        else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
                              if m.is_file()))
         budget = phase.budget_minutes * 60
+        # FIX 10: the FINAL rung-1 attempt runs captured (stdout+stderr piped) so
+        # the failure CLASS the executor printed is available to the class
+        # dispatch below. Earlier attempts keep the live passthrough the operator
+        # watches; the final attempt's output is dead weight -- the phase already
+        # failed twice with visible output -- and its stderr is exactly what
+        # classify_failure needs (a bare "exit 146" names no class; the 402 the
+        # executor printed does).
+        _final_attempt = heal.HEAL_CAP_TRANSIENT
+        _captured = None
         for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
                 # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
@@ -1246,18 +1688,55 @@ class Engine:
                 # Falls back to the old direct-child subprocess.run only if the reaper
                 # module is absent (it ships beside this package).
                 if run_with_cleanup is not None:
-                    r = run_with_cleanup(argv, cwd=str(self.run_dir),
-                                         timeout=budget, capture=False,
-                                         env=child_env)
+                    r = _run_exec_joined(
+                        lambda on_spawn=None: run_with_cleanup(
+                            argv, cwd=str(self.run_dir),
+                            timeout=budget,
+                            capture=(attempt == _final_attempt),
+                            env=child_env, on_spawn=on_spawn),
+                        budget)
+                    if attempt == _final_attempt:
+                        _captured = r
                 else:
                     # F54: even the fallback path must not mutate os.environ —
                     # pass the per-invocation env dict instead.
-                    r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
-                                       timeout=budget, capture_output=False,
-                                       env=child_env)
+                    # FIX 105: the bare-subprocess fallback still registers its
+                    # handle so the shutdown path can kill it (it is NOT its own
+                    # group leader here — _kill_registered_execs falls back to a
+                    # direct kill on the pid).
+                    r = _run_exec_joined(
+                        lambda on_spawn=None: _fallback_run(
+                            argv, budget, child_env, on_spawn,
+                            run_dir=self.run_dir),
+                        budget)
+                if _shutdown_requested() and r is not None:
+                    # FIX 105: the engine was signalled to stop while THIS exec
+                    # ran; the shutdown path killed the exec's whole process
+                    # group. Surface the shutdown rc instead of a heal retry —
+                    # the engine is going down regardless of the exit code.
+                    reason = f"engine shutdown requested -- exec {argv[0]} reaped"
+                    with self._state_lock:
+                        self.state.setdefault("shutdown_events", []).append(
+                            {"at": utcnow(), "phase": phase.id, "attempt": attempt})
+                        self.store.save(self.state)
+                    print(f"[engine shutdown] {phase.id}: in-flight exec reaped "
+                          f"({reason}); no restart attempt", file=sys.stderr, flush=True)
+                    return EXIT_GATE_BLOCKED
                 if r.returncode == 0:
+                    # FIX 10: a captured success still has to SHOW its output.
+                    self._flush_captured_output(_captured)
                     return EXIT_OK
                 reason = f"exit {r.returncode}"
+                # FIX 10: a bare exit code names no failure CLASS -- the provider
+                # refusal (HTTP 402/429/5xx, quota, connection refused...) is only
+                # visible in the executor's stderr, and 402's masked exit code
+                # (402 & 255 == 146) is opaque. The final attempt's captured
+                # stderr (the SAME invocation -- no re-run, no side-effect replay)
+                # rides the reason string so classify_failure sees the class and
+                # the alternate-provider rung can fire.
+                tail = self._last_exec_stderr(_captured)
+                if tail:
+                    reason = f"exit {r.returncode}: {tail}"
             except subprocess.TimeoutExpired:
                 reason = f"exceeded its {phase.budget_minutes}-minute budget"
             except OSError as exc:
@@ -1584,6 +2063,318 @@ class Engine:
             phase,
             f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
             f"Expected: {', '.join(phase.produces_artifact)}")
+
+    # -- FIX 29 (W05 + W07): the human executor kind -------------------------
+    #
+    # A declared human executor is a REAL executor kind now. Before this fix the
+    # engine dispatched every unknown executor kind to _run_agent_phase's
+    # work-order loop, which for a human phase meant the engine "assigned" the
+    # owner decision to the LLM dispatcher — the exact forged-approval vector
+    # Fix 32 closed for skip records. P-STYLE-PICK (order 4.86, kind human) is
+    # the owner gateway stage: the engine itself delivers the pick request, then
+    # waits for the owner's choice file, then proves the choice authentic.
+    #
+    # Contract (the full _run_human_phase):
+    #
+    #   1. DELIVER: on first entry (no pick-request record on the phase yet) the
+    #      engine sends the owner a pick request through the SAME reporter
+    #      transport every client message already uses (Reporter.to_requester —
+    #      the request text carries the three variants from the samples
+    #      manifest). The delivered record is stamped on the phase checkpoint
+    #      (pick_request_sent_at) so a --resume NEVER re-spams the owner's chat.
+    #      If the phase is re-entered with the request already stamped and not
+    #      yet timed out, delivery is skipped and the wait continues.
+    #   2. WAIT: poll working/copy/style_preview_choice.json on the standard
+    #      15 s engine cadence until the phase budget expires (budget 45 via
+    #      PHASE_BUDGET_MINUTES — the owner-response polling cadence the
+    #      manifest declares as heartbeat_minutes 45).
+    #   3. PROVE: a choice file alone is never proof (the live E2E forged
+    #      "e2e-test-002"). The choice must carry owner_approved:true, a
+    #      chosen_variant that exists in the samples manifest, AND an
+    #      owner_msg_id that approvals.verify() — the single Fix 32 oracle —
+    #      resolves to a REAL owner-authored message. Any failure shape
+    #      (missing id, unresolvable id, UNDETERMINED oracle) is DENIED and the
+    #      wait continues; the run never advances on an unproven pick.
+    #   4. TIMEOUT: the configurable default (style-pick-timeout-minutes,
+    #      env PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES) is the phase's own
+    #      budget. When the wait times out the engine auto-picks variant 1
+    #      (manifest order) ONLY when the client's own intake opted in
+    #      (intake.style_pick_auto: true) — a recorded opt-in, never inferred.
+    #      Without the opt-in the phase BLOCKS (park and notify — an owner
+    #      decision, never auto-healed).
+    #
+    # Return codes: EXIT_OK advances to run_phase's substance verifier (the
+    # P-STYLE-PICK verifier re-measures the choice file itself); _block parks
+    # the run resumably.
+
+    _STYLE_PICK_CHOICE_REL = "working/copy/style_preview_choice.json"
+
+    def _style_pick_timeout_minutes(self) -> float:
+        """Configurable owner-response window (FIX 29). Precedence: the env
+        override PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES (a real number,
+        refusing garbage), then the phase's own budget. Never raises."""
+        raw = (os.environ.get("PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES") or "").strip()
+        if raw:
+            try:
+                v = float(raw)
+                if v > 0:
+                    return v
+            except ValueError:
+                pass
+        return float(self.manifest.phase_or_none("P-STYLE-PICK").budget_minutes
+                     if self.manifest.phase_or_none("P-STYLE-PICK") is not None
+                     else 45)
+
+    def _read_style_choice(self) -> Optional[Dict[str, Any]]:
+        """Read + parse working/copy/style_preview_choice.json. Returns the
+        parsed dict, or None when absent/unparseable (parse failure is NOT a
+        valid choice — never trusted, never raised)."""
+        p = self.run_dir / self._STYLE_PICK_CHOICE_REL
+        if not p.is_file():
+            return None
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return obj if isinstance(obj, dict) else None
+
+    def _style_choice_authentic(self, choice: Dict[str, Any],
+                                offered_variants: List[str]) -> Tuple[bool, str]:
+        """The pick-proof gate. owner_approved:true + a chosen_variant that
+        exists in the offered set + an owner_msg_id the Fix 32 oracle resolves
+        to a real owner-authored message. Undetermined DENIES (fail-closed,
+        same contract as every consumer of presentation_job.approvals).
+        Returns (ok, denial_reason)."""
+        if choice.get("owner_approved") is not True:
+            return False, ("style choice carries owner_approved != true — "
+                           "presence of a file is never an owner decision")
+        picked = str(choice.get("chosen_variant") or "").strip()
+        if not picked:
+            return False, "style choice records no chosen_variant"
+        if offered_variants and picked not in offered_variants:
+            return False, (f"chosen_variant {picked!r} is not one of the "
+                           f"offered variants {offered_variants}")
+        owner_msg_id = str(choice.get("owner_msg_id") or "").strip()
+        if not owner_msg_id:
+            return False, ("style choice has NO owner_msg_id — a pick without a "
+                           "resolvable owner message id is a forged approval "
+                           "(AF-FORGED-APPROVAL)")
+        approval = {
+            "gate": "P-STYLE-PICK",
+            "approved_by": str(choice.get("approved_by") or "owner"),
+            "owner_msg_id": owner_msg_id,
+            "reason": str(choice.get("reason") or
+                          f"owner style pick: variant {picked}"),
+            "granted_at": str(choice.get("granted_at") or choice.get("picked_at")
+                              or utcnow()),
+        }
+        try:
+            from . import approvals as _approvals
+            _approvals.verify(approval, self.run_dir)
+        except Exception as exc:  # ApprovalError or oracle transport — DENIED either way
+            return False, (f"style choice owner_msg_id {owner_msg_id!r} failed "
+                           f"authenticity verification: {exc}")
+        return True, ""
+
+    def _style_pick_offered_variants(self) -> List[str]:
+        """The variant ids the owner was offered, in manifest order, from the
+        samples manifest P-STYLE-PREVIEW produced. Empty list when the samples
+        manifest is absent/unreadable (the chosen_variant check then skips the
+        membership test — the substance verifier still enforces the file's
+        own shape)."""
+        p = self.run_dir / "working" / "style-preview" / "style_samples_manifest.json"
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        variants = obj.get("variants") if isinstance(obj, dict) else None
+        if not isinstance(variants, list):
+            return []
+        return [str(v).strip() for v in variants if str(v).strip()]
+
+    def _style_pick_intake_auto(self) -> bool:
+        """True ONLY when the client's own intake record opted in
+        (intake.style_pick_auto: true). A missing or falsy field is NEVER an
+        opt-in — auto-picking for a silent client is the forgery this fix
+        exists to prevent."""
+        try:
+            from .defers import load_intake
+            intake = load_intake(self.run_dir)
+        except Exception:
+            return False
+        auto = intake.get("style_pick_auto",
+                          (intake.get("pre_presentation_capture") or {})
+                          .get("STYLE_PICK_AUTO")
+                          if isinstance(intake.get("pre_presentation_capture"), dict)
+                          else None)
+        return auto is True
+
+    def _style_pick_write_auto_choice(self, variants: List[str]) -> str:
+        """The timeout auto-pick: write the choice file on the owner's behalf
+        with auto_pick provenance (intake.style_pick_auto:true recorded the
+        standing consent) and a reason that says so — never an owner_msg_id,
+        which would forge one."""
+        picked = variants[0] if variants else "A"
+        choice = {
+            "owner_approved": True,
+            "chosen_variant": picked,
+            "auto_pick": True,
+            "auto_pick_basis": "intake.style_pick_auto:true (recorded client "
+                               "opt-in; the owner-response wait timed out)",
+            "picked_at": utcnow(),
+            "reason": "variant 1 auto-picked after the owner-response timeout "
+                      "under a recorded intake.style_pick_auto opt-in",
+        }
+        p = self.run_dir / self._STYLE_PICK_CHOICE_REL
+        try:
+            import tempfile
+            dest_dir = p.parent
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=str(dest_dir))
+            os.write(fd, json.dumps(choice, indent=2).encode("utf-8"))
+            os.close(fd)
+            os.replace(tmp, str(p))
+        except OSError as exc:
+            return f"auto-pick could not write {self._STYLE_PICK_CHOICE_REL}: {exc}"
+        self.report.event(
+            "phase.style_pick.auto_pick",
+            f"{self.state.get('current_phase') or 'P-STYLE-PICK'}: "
+            "intake.style_pick_auto opt-in honored — variant "
+            f"{picked} auto-picked after the owner-response timeout.")
+        return ""
+
+
+    def _run_human_phase(self, phase: Phase) -> int:
+        """FIX 29: the human executor contract (see the block comment above
+        _STYLE_PICK_CHOICE_REL for the full design). Deliver the pick request
+        once, wait for an AUTHENTIC choice file (owner_msg_id proven through
+        the Fix 32 oracle), and on timeout auto-pick variant 1 only under a
+        recorded intake.style_pick_auto opt-in — otherwise park resumable
+        (an owner decision is never auto-healed)."""
+        ps = self._phase_state(phase.id)
+        variants = self._style_pick_offered_variants()
+        choice = self._read_style_choice()
+
+        # Re-entry fast path: a choice already on disk from an earlier attempt.
+        # Prove it before trusting it (presence is never proof).
+        if choice is not None:
+            ok, denial = self._style_choice_authentic(choice, variants)
+            if ok:
+                # FIX 29: stamp the proven pick on the phase record here too —
+                # the re-entry path (the choice landed while the run was parked,
+                # and --resume re-enters this phase) must attest the SAME
+                # owner_pick record the live-wait path stamps below, or a
+                # resumed attestation carries no record of WHICH variant the
+                # owner picked and under which message id.
+                with self._state_lock:
+                    self._checkpoint(
+                        phase.id,
+                        owner_pick={k: choice.get(k) for k in
+                                    ("chosen_variant", "owner_msg_id")},
+                        picked_at=utcnow())
+                self.report.event(
+                    "phase.style_pick.choice_received",
+                    f"{phase.id}: owner choice verified — variant "
+                    f"{choice.get('chosen_variant')} (owner_msg_id verified).")
+                return EXIT_OK
+            self.report.event(
+                "phase.style_pick.choice_rejected",
+                f"{phase.id}: choice file present but DENIED — {denial}. "
+                "Waiting for a verifiable owner pick.")
+            choice = None
+
+        if self.dry_run:
+            print(f"DRY-RUN {phase.id}: human executor — pick request would be "
+                  f"delivered to the requester; waiting on "
+                  f"{self._STYLE_PICK_CHOICE_REL}", flush=True)
+            return EXIT_OK
+
+        # 1. DELIVER (once per run: stamped on the phase record so --resume
+        #    never re-spams the owner's chat for the same outstanding request).
+        with self._state_lock:
+            already_sent = bool(ps.get("pick_request_sent_at"))
+        if not already_sent:
+            variant_lines = "\n".join(
+                f"  {i + 1}. Variant {v}" for i, v in enumerate(variants)
+            ) or "  (variant list unavailable — see style_samples_manifest.json)"
+            msg = (
+                f"Your presentation has 3 style directions ready. "
+                f"Please pick ONE by replying A, B or C:\n{variant_lines}\n"
+                f"(Phase {phase.id} — the deck renders only after your pick.)"
+            )
+            # Delivered as kind="ack", deliberately: "progress" is the one kind
+            # _throttle_decision may suppress (PROGRESS_MIN_INTERVAL_MINUTES), and
+            # a pick request that the throttle eats is an owner never asked — the
+            # run then times out and parks with no request EVER delivered. "ack"
+            # (the "Got it, building your presentation" class) bypasses the
+            # throttle unconditionally, so the ask is always on the wire exactly
+            # once per run (the pick_request_sent_at stamp guards re-entry).
+            self.report.to_requester("ack", msg)
+            self._checkpoint(phase.id, pick_request_sent_at=utcnow())
+            self.report.event(
+                "phase.style_pick.request_delivered",
+                f"{phase.id}: pick request delivered to the requester "
+                f"({len(variants) or 3} variants; waiting on "
+                f"{self._STYLE_PICK_CHOICE_REL} with a verified owner_msg_id).")
+
+        # 2. WAIT + PROVE on the standard 15 s cadence.
+        timeout_minutes = self._style_pick_timeout_minutes()
+        deadline = time.time() + timeout_minutes * 60
+        checkpoint_every = max(60, phase.heartbeat_interval_minutes * 60 // 4)
+        last_cp = time.time()
+        started_at = time.time()
+        while time.time() < deadline:
+            choice = self._read_style_choice()
+            if choice is not None:
+                ok, denial = self._style_choice_authentic(choice, variants)
+                if ok:
+                    with self._state_lock:
+                        self._checkpoint(
+                            phase.id,
+                            owner_pick={k: choice.get(k) for k in
+                                        ("chosen_variant", "owner_msg_id")},
+                            picked_at=utcnow())
+                    self.report.event(
+                        "phase.style_pick.choice_received",
+                        f"{phase.id}: owner choice verified — variant "
+                        f"{choice.get('chosen_variant')} (owner_msg_id verified "
+                        f"through the approvals oracle).")
+                    return EXIT_OK
+                # DENIED — keep waiting (the owner may rewrite the file with a
+                # real id); the denial is loud, never silent.
+                self.report.event(
+                    "phase.style_pick.choice_rejected",
+                    f"{phase.id}: choice file DENIED — {denial}. "
+                    "Continuing to wait for a verifiable owner pick.")
+            now = time.time()
+            if now - last_cp >= checkpoint_every:
+                last_cp = now
+                self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
+                                 waiting_for=[self._STYLE_PICK_CHOICE_REL],
+                                 waited_seconds=int(now - started_at))
+            time.sleep(15)
+
+        # 3. TIMEOUT: auto-pick ONLY under the recorded opt-in.
+        if self._style_pick_intake_auto():
+            err = self._style_pick_write_auto_choice(variants)
+            if not err:
+                self.report.event(
+                    "phase.style_pick.auto_pick",
+                    f"{phase.id}: intake.style_pick_auto opt-in honored — "
+                    f"variant {variants[0] if variants else 'A'} auto-picked "
+                    "after the owner-response timeout.")
+                return EXIT_OK
+            return self._block(phase, err)
+        reason = (
+            f"{phase.id}: the owner style pick timed out after "
+            f"{timeout_minutes:.0f} minutes with no verifiable owner choice. "
+            "The full deck must NOT render until the owner picks A/B/C via "
+            "their OWN gateway — this is an owner decision "
+            f"(record intake.style_pick_auto:true to allow a timeout auto-pick "
+            "of variant 1)."
+        )
+        self.report.event("phase.style_pick.timeout", reason)
+        return self._block(phase, reason)
 
     def _fail_unit(self, phase: Phase, reason: str) -> int:
         """FIX 9a (MASTER Part 8 Fix 9): quarantine ONE unit, park nothing.

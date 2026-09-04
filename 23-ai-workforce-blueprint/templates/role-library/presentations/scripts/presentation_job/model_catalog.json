@@ -97,7 +97,7 @@
       }
     },
     "vision.ocr": {
-      "provider": "ollama_cloud",
+      "provider": "ollama-cloud",
       "model": "glm-ocr",
       "note": "Vision + OCR class (FIX 7 P-TYPO-QC / P-IMAGE-QC row).",
       "unit_costs": {
@@ -107,7 +107,6 @@
       },
       "served_ids": {
         "ollama-cloud": "glm-ocr",
-        "ollama_cloud": "glm-ocr",
         "openrouter": "z-ai/glm-4.6v"
       }
     }
