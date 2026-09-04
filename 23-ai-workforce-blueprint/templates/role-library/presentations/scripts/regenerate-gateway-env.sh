@@ -406,7 +406,7 @@ verify_wire() {
 if [ "$PLATFORM_MODE" = "docker" ]; then
   ENV_FILE="$(resolve_docker_secrets_env_file)"
   if [ -z "$ENV_FILE" ]; then
-    die "$EX_REFUSED" "cannot resolve the docker secrets env file (no /data/.openclaw/secrets/.env, no \$OPENCLAW_SECRETS pointer, and no SVC_ENV override). Run this inside the openclaw container, or set SVC_ENV to the host-side bind-mount path (/docker/<project>/data/.openclaw/secrets/.env)."
+    die "$EX_REFUSED" "cannot resolve the docker secrets env file (no /data/.openclaw/secrets/.env, no \$OPENCLAW_SECRETS pointer, and no SVC_ENV override). Run this inside the openclaw container, or set SVC_ENV to the host-side bind-mount path, i.e. the project's data/.openclaw/secrets/.env under /docker/PROJECT."
   fi
 else
   ENV_FILE="$(resolve_gateway_service_env_file)"
