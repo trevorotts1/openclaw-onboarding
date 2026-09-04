@@ -56,7 +56,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Canonical engine scripts. A process is build-SHAPED when its command line names
@@ -662,7 +662,9 @@ def run_with_cleanup(argv: List[str], *,
                      timeout: Optional[float] = None,
                      env: Optional[Dict[str, str]] = None,
                      input_text: Optional[str] = None,
-                     capture: bool = True) -> subprocess.CompletedProcess:
+                     capture: bool = True,
+                     on_spawn: Optional[Callable[[subprocess.Popen], None]] = None
+                     ) -> subprocess.CompletedProcess:
     """Run argv in a NEW SESSION / PROCESS GROUP (start_new_session=True). If the exec
     exceeds `timeout`, kill the ENTIRE process group (SIGTERM, then SIGKILL after the
     grace) and raise subprocess.TimeoutExpired — no orphan survives.
@@ -671,6 +673,11 @@ def run_with_cleanup(argv: List[str], *,
     kills only the direct child and leaves grandchildren (and their process group)
     running — the D21 orphan/zombie path. The caller keeps the identical contract
     (returncode / stdout / stderr / TimeoutExpired), so this is a drop-in swap.
+
+    FIX 105: `on_spawn`, when given, is invoked with the fresh Popen handle right
+    after spawn (before any wait), so the engine's exec registry can track the
+    in-flight exec for shutdown reaping. The hook is strictly observational:
+    an exception raised by it is swallowed and never breaks the exec.
     """
     t = timeout if timeout is not None else DEFAULT_EXEC_TIMEOUT_SECONDS
     kwargs: Dict[str, Any] = {
@@ -686,6 +693,11 @@ def run_with_cleanup(argv: List[str], *,
         kwargs.update({"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                        "text": True})
     proc = subprocess.Popen(argv, **kwargs)
+    if on_spawn is not None:
+        try:
+            on_spawn(proc)
+        except Exception:  # noqa: BLE001 — the hook never breaks the exec
+            pass
     try:
         out, err = proc.communicate(timeout=t)
         return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)

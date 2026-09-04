@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +29,62 @@ from .sweep import reconcile_sweep
 from . import diagnose
 from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
+
+
+# ---------------------------------------------------------------------------
+# FIX 105 — engine SIGTERM/SIGINT handler: signal the engine to shut down.
+#
+# phases.py's shutdown machinery (_ENGINE_SHUTDOWN_EVENT, _shutdown_requested,
+# _kill_registered_execs, _run_exec_joined) is complete but was INERT: nothing
+# ever set the event. This handler is the missing tripwire — the launcher's
+# stop_engine SIGTERM (or a plain Ctrl-C) now flips the event, every in-flight
+# exec's blocked wait (_run_exec_joined's sliced poll) wakes, its process group
+# is killed, and the phase loop unwinds instead of blocking for the remaining
+# phase budget. The previous default behaviour (process dies instantly,
+# own-session render children keep running) is exactly the FIX 105 orphan the
+# QC probe catches.
+#
+# signal.signal() must be called from the MAIN thread (ValueError otherwise);
+# main() is always entered from the main thread, so the guard only protects
+# against exotic embedders. The prior handler is saved and restored after
+# engine.run() so embedding callers are unaffected.
+# ---------------------------------------------------------------------------
+def _install_engine_sigterm_handler():
+    """Install SIGTERM/SIGINT handlers that set phases._ENGINE_SHUTDOWN_EVENT.
+    Returns the previous (sig, handler) pairs so the caller can restore them."""
+    from . import phases as _phases
+
+    def _on_signal(signum, frame):  # noqa: ANN001 — signal handler contract
+        try:
+            _phases._ENGINE_SHUTDOWN_EVENT.set()
+            # Belt-and-braces reaper: the sliced waiter in _run_exec_joined
+            # does the TERM->KILL join for its own exec; this immediate TERM
+            # also reaches execs whose waiter thread already exited. Async-
+            # signal-safety: killpg/print are the same calls the waiter makes.
+            _phases._kill_registered_execs(signal.SIGTERM)
+        except Exception:  # noqa: BLE001 — a handler must never raise
+            pass
+        print(f"[engine shutdown] signal {signum} received — stopping in-flight "
+              f"execs and unwinding", file=sys.stderr, flush=True)
+
+    previous = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous.append((sig, signal.signal(sig, _on_signal)))
+        except (ValueError, OSError):
+            # Not the main thread, or a non-main-thread-only platform — leave
+            # the existing handler in place; the launcher's process-group
+            # kill still stops this engine the hard way.
+            pass
+    return previous
+
+
+def _restore_signal_handlers(previous) -> None:
+    for sig, handler in (previous or []):
+        try:
+            signal.signal(sig, handler)
+        except (ValueError, OSError):
+            pass
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -959,10 +1017,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     # -----------------------------------------------------------------------
     lease_held = None
     lease_hb = None
+    _signal_handlers_prev = []  # FIX 105: armed only on the run path below
     if args.new or args.status or args.capacity or args.workingset is not None \
             or args.sweep_undeliverable or args.diagnose_only:
         pass  # read-only / creation / diagnosis modes do not need the run lease
     else:
+        # FIX 105: arm the SIGTERM/SIGINT handlers for the run about to start.
+        # Only the run path needs them; the launcher's stop_engine SIGTERM (or
+        # Ctrl-C) now sets phases._ENGINE_SHUTDOWN_EVENT, which wakes every
+        # sliced exec wait and kills the in-flight execs' own process groups
+        # instead of orphaning own-session render children. Restored in the
+        # finally below.
+        _signal_handlers_prev = _install_engine_sigterm_handler()
         lease_held = lease_mod.acquire(
             run_dir, {"who": os.environ.get("PRESENTATION_LEASE_WHO", "engine")},
             ttl_s=LEASE_TTL_S)
@@ -1098,3 +1164,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             lease_hb.join(timeout=5)
         if lease_held is not None:
             lease_mod.release(lease_held)
+        # FIX 105: restore the previous SIGTERM/SIGINT handlers when the run
+        # path armed them (the inner else-branch runs before this finally only
+        # when the run path was taken; a die() inside it exits the process, so
+        # a bare restore of an empty list is harmless here).
+        _restore_signal_handlers(_signal_handlers_prev)
