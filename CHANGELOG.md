@@ -1,3 +1,7 @@
+## [v24.1.2]  -  2026-09-04  -  G7b reads tools.exec.mode (the normalized selector) instead of the raw security/ask pair only; G4/L2/L5 gain G7's known-router-id fallback (#1022)
+
+## [v24.1.1]  -  2026-09-04  -  Routing gates read agents.entries: G4/G7/L2/L5 no longer go blind the moment a box's config is migrated forward (#1021)
+
 ## [v24.1.0]  -  2026-09-04  -  Capacity: real per-provider plan caps (ollama 3/8, deepseek Flash 2500 / Pro 500, openrouter unbounded) and removal of the 8-worker clamp that made every measured ceiling decorative
 
 ## [v24.0.0]  -  2026-09-04  -  SEPT-1 presentation department wave complete: 111 fixes merged, FIX 61 intake-poll wiring, presentations-drift-gates exit-code repair, R-BOX box-ops (31/47/63)
