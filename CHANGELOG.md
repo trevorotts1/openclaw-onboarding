@@ -1,3 +1,5 @@
+## [v23.0.3]  -  2026-09-04  -  FIX 61 intake-poll schedule wiring + presentations-drift-gates exit-code repair (#1018)
+
 ## [v23.0.2]  -  2026-09-04  -  Gap repair: SMOKE-1 speech-pdf chain + FIX 71 venv installers (lost in clean rebuild) (#1016)
 ## [v23.0.1]  -  2026-09-04  -  Resume wave 2026-09-02/03: clean integration delta — 60 fixes + round-5 repairs, 110/111 PASS (#1015
 ## [v14.20.0]  -  2026-06-27  -  feat(skill6): idempotent page create — page_list + find_page_by_name (v14.20.0)

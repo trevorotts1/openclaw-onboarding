@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v23.0.2"
+ONBOARDING_VERSION="v23.0.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4567,6 +4567,116 @@ else
         warn "To install Calibre manually: install Homebrew (https://brew.sh), then run: brew install --cask calibre"
     fi
 fi
+
+# ----------------------------------------------------------
+# Step 6.6b (FIX 61): Schedule the intake-completion poll
+# ----------------------------------------------------------
+# WORK-ITEM-02's mechanical bridge: a finished intake interview must reach the
+# deck engine even when nobody is watching the board. presentation-intake-poll.sh
+# scans for completed intakes whose engine was never launched and dispatches it
+# (under the FIX 61 dispatch lease). A poll script that is never SCHEDULED is a
+# dead letter — staged submissions would sit forever (the exact QC.md FIX 61
+# failure). This installer wires the schedule:
+#   Mac — render scripts/presentation-intake-poll.plist.template into
+#         ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+#         (replacing <POLL_SCRIPT_PATH> / <LOG_PATH>) and launchctl load it.
+#   VPS — a 5-minute SILENT main-session openclaw cron running the same script
+#         (there is no launchd in the container; same mechanism as the
+#         reassert-presentation-deps cron above).
+# _FIX61_RC latches the outcome: a failed schedule install surfaces in the
+# step's exit status instead of being swallowed (Gate 8 clause 5).
+# ────────────────────────────────────────────────────────────────────────────
+install_intake_poll_schedule() {
+    local _rc=0
+    local POLL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh"
+    local TPL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.plist.template"
+
+    if [ ! -f "$POLL_SRC" ]; then
+        warn "FIX 61: presentation-intake-poll.sh not found at $POLL_SRC — intake poll NOT scheduled. Manual: see the script header."
+        return 1
+    fi
+
+    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+        # ── VPS: SILENT main-session openclaw cron, 5-minute cadence ──────────
+        if ! command -v openclaw >/dev/null 2>&1; then
+            warn "FIX 61: openclaw CLI not on PATH — intake-poll cron NOT registered. Re-run update-skills.sh later."
+            return 1
+        fi
+        if oc_cron_tombstoned "presentation-intake-poll"; then
+            warn "presentation-intake-poll is TOMBSTONED (deliberately removed) — NOT re-registering."
+            return 0
+        fi
+        if oc_cron_present "presentation-intake-poll"; then
+            success "FIX 61: intake-poll cron already installed — skipping"
+            return 0
+        fi
+        local CHANNEL_AGENT="main"
+        if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
+            CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
+        fi
+        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: bash $POLL_SRC . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
+        if _oc_cron_silent_main "presentation-intake-poll" "$CHANNEL_AGENT" "*/5 * * * *" "America/New_York" "$POLL_PROMPT" --light-context; then
+            success "FIX 61: intake-poll cron installed (SILENT main-session, 5-min, no client auto-announce)"
+        else
+            warn "FIX 61: intake-poll cron creation FAILED — staged intake submissions will sit undispatched. Manual: openclaw cron create --name presentation-intake-poll --agent $CHANNEL_AGENT --cron '*/5 * * * *' --session main --system-event '[PRESENTATION-INTAKE-POLL] bash $POLL_SRC'"
+            _rc=1
+        fi
+    else
+        # ── Mac: launchd LaunchAgent from the rendered plist template ─────────
+        local PLIST_DIR="$HOME/Library/LaunchAgents"
+        local PLIST_DST="$PLIST_DIR/com.blackceo.presentation-intake-poll.plist"
+        local LOG_PATH="$HOME/Library/Logs/openclaw/presentation-intake-poll.log"
+        if [ ! -f "$TPL_SRC" ]; then
+            warn "FIX 61: plist template not found at $TPL_SRC — intake poll NOT scheduled. Manual: copy the template, replace <POLL_SCRIPT_PATH>/<LOG_PATH>, launchctl load."
+            return 1
+        fi
+        mkdir -p "$PLIST_DIR" "$(dirname "$LOG_PATH")"
+        # Render the template: replace the two placeholders (sed with | delim —
+        # the paths contain /). Escape nothing: paths on this box have no | or &.
+        sed -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
+            -e "s|<LOG_PATH>|$LOG_PATH|g" \
+            "$TPL_SRC" > "$PLIST_DST"
+        if ! grep -q '<POLL_SCRIPT_PATH>\|<LOG_PATH>' "$PLIST_DST"; then
+            success "FIX 61: rendered $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH)"
+        else
+            warn "FIX 61: rendered plist still contains placeholders — refusing to load a malformed agent."
+            _rc=1
+        fi
+        # Reload semantics: if already loaded, unload first so a re-run picks up
+        # a re-rendered copy. 'launchctl load' on an already-loaded job is the
+        # documented "Load failed: 5: Input/output error" — treat it as loaded.
+        launchctl unload "$PLIST_DST" >/dev/null 2>&1 || true
+        if launchctl load "$PLIST_DST" >/dev/null 2>&1; then
+            success "FIX 61: launchctl load OK — com.blackceo.presentation-intake-poll scheduled every 300s"
+        elif launchctl list 2>/dev/null | grep -q 'com.blackceo.presentation-intake-poll'; then
+            success "FIX 61: com.blackceo.presentation-intake-poll already loaded (launchctl list confirms)"
+        else
+            warn "FIX 61: launchctl load FAILED and the agent is NOT loaded — intake poll NOT scheduled. Manual: launchctl load $PLIST_DST"
+            _rc=1
+        fi
+    fi
+
+    return "$_rc"
+}
+
+PRESENTATIONS_SCRIPTS_SRC="${PRESENTATIONS_SCRIPTS_SRC:-}"
+if [ -z "$PRESENTATIONS_SCRIPTS_SRC" ]; then
+    # Resolve the repo checkout's presentations scripts dir (the template's
+    # source). Anchor on this script's own location — install.sh lives at the
+    # repo root, so the skill's scripts dir is one fixed hop below it.
+    _poll_src_candidate="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    if [ -f "$_poll_src_candidate/presentation-intake-poll.sh" ]; then
+        PRESENTATIONS_SCRIPTS_SRC="$_poll_src_candidate"
+    fi
+fi
+install_intake_poll_schedule
+_FIX61_RC=$?
+if [ "$_FIX61_RC" -ne 0 ]; then
+    warn "FIX 61: intake-poll schedule install returned rc=$_FIX61_RC — the presentation intake poll is NOT scheduled on this box (staged submissions will sit undispatched until it is)."
+else
+    _FIX61_RC=0
+fi
+export _FIX61_RC
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.7: Install Skill 22 persona-inbox-watcher cron (Mac)

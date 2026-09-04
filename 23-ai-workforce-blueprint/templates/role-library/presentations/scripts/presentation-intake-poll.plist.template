@@ -1,0 +1,45 @@
+<!--
+  presentation-intake-poll.plist.template -- rendered by install.sh's
+  install_intake_poll_schedule() (FIX 61); install.sh replaces every
+  <...> placeholder below before writing the rendered copy to
+  ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+  (Mac) or registering the 5-minute openclaw cron (Linux/VPS).
+
+  PLACEHOLDERS install_intake_poll_schedule() replaces:
+    1. <POLL_SCRIPT_PATH>      -- absolute path to presentation-intake-poll.sh
+    2. <LOG_PATH>              -- where stdout/stderr should go
+
+  The poll runs on the same 5-minute cadence as the watchdog: it scans for
+  intake interviews whose ledger says complete but whose engine was never
+  launched, and dispatches the engine (acquiring working/.lease.json first,
+  FIX 61's dispatch lease). See presentation-intake-poll.sh for the contract.
+
+  Uninstall (Named Stop -- do not run unattended):
+    launchctl unload ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+    rm ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+
+  Verify it is loaded:
+    launchctl list | grep com.blackceo.presentation-intake-poll
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.blackceo.presentation-intake-poll</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>&lt;POLL_SCRIPT_PATH&gt;</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>&lt;LOG_PATH&gt;</string>
+    <key>StandardErrorPath</key>
+    <string>&lt;LOG_PATH&gt;</string>
+</dict>
+</plist>
