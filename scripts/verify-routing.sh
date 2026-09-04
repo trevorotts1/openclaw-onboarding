@@ -284,6 +284,14 @@ try:
                 default_agent = ag
                 break
 
+    # Priority 3: a known router/CEO id (mirrors G7). A box whose router is not
+    # literally named "main" must not read as "no default agent".
+    if default_agent is None:
+        for ag in agents_list:
+            if _oc_id(ag) in ROUTER_IDS:
+                default_agent = ag
+                break
+
     if default_agent is None:
         print("NO_DEFAULT_AGENT")
         sys.exit(0)
@@ -701,7 +709,14 @@ try:
 
     # FORM B — functional ungate (the satisfied baseline on 2026.6.8).
     exec_cfg = (cfg.get("tools") or {}).get("exec") or {}
-    exec_full = exec_cfg.get("security") == "full" and exec_cfg.get("ask") == "off"
+    # tools.exec.mode is the NORMALIZED policy surface; each mode resolves to an
+    # underlying (security, ask) pair — docs/tools/permission-modes.md:
+    #   full -> security "full" / ask "off"   (run host exec without prompts)
+    # A config carrying only mode="full" is therefore already ungated, but this
+    # gate used to read the raw pair alone and FATAL'd on it. Accept either form.
+    exec_full = exec_cfg.get("mode") == "full" or (
+        exec_cfg.get("security") == "full" and exec_cfg.get("ask") == "off"
+    )
     sub_allow = (agents_defaults.get("subagents") or {}).get("allowAgents") or []
     sub_ungated = isinstance(sub_allow, list) and "*" in sub_allow
     form_b = exec_full and sub_ungated

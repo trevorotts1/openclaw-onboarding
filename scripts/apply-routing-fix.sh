@@ -1376,6 +1376,13 @@ if default_agent is None:
         if _oc_id(ag) == "main":
             default_agent = ag
             break
+# Priority 3: a known router/CEO id (mirrors G7) — a router not literally
+# named "main" must still resolve.
+if default_agent is None:
+    for ag in agents_list:
+        if _oc_id(ag) in ROUTER_IDS:
+            default_agent = ag
+            break
 
 if default_agent is None:
     print("NO_MAIN_AGENT")
@@ -1475,6 +1482,13 @@ for ag in agents_list:
 if target is None:
     for ag in agents_list:
         if _oc_id(ag) == "main":
+            target = ag
+            break
+# Priority 3: a known router/CEO id (mirrors G7) — a router not literally
+# named "main" must still resolve.
+if target is None:
+    for ag in agents_list:
+        if _oc_id(ag) in ROUTER_IDS:
             target = ag
             break
 # Only gate a ROUTER. A non-router default agent (PA / owner) is left untouched.
@@ -1694,6 +1708,13 @@ for ag in agents_list:
 if main_agent is None:
     for ag in agents_list:
         if _oc_id(ag) == "main":
+            main_agent = ag
+            break
+# Priority 3: a known router/CEO id (mirrors G7) — a router not literally
+# named "main" must still resolve.
+if main_agent is None:
+    for ag in agents_list:
+        if _oc_id(ag) in ROUTER_IDS:
             main_agent = ag
             break
 
