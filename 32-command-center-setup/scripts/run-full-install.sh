@@ -1219,7 +1219,7 @@ cc_install_locked_dependencies() {
   [[ -f "$DASHBOARD_DIR/package-lock.json" ]] || \
     fail_install "phase=6: package-lock.json missing; CC >=v7.1.0 requires its reviewed dependency lock"
   log "INFO" "phase=6: npm ci from reviewed package-lock.json in $DASHBOARD_DIR"
-  if ! ( cd "$DASHBOARD_DIR" && npm ci --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm ci failed; dependencies were not installed successfully; refusing migrations/deployment"
   fi
 }

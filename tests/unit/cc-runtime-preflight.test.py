@@ -89,7 +89,7 @@ class Compatibility(unittest.TestCase):
                     self.assertEqual(result.returncode,0 if expected_success else 17)
                     self.assertEqual(sentinel.exists(),expected_success)
                     if has_lock:
-                        self.assertEqual(calls.read_text(),str(checkout)+'|ci --no-audit --no-fund\n')
+                        self.assertEqual(calls.read_text(),str(checkout)+'|ci --engine-strict --no-audit --no-fund\n')
                         self.assertEqual(lock.read_text(),'{"lockfileVersion":3}\n')
                     else:self.assertFalse(calls.exists())
 
