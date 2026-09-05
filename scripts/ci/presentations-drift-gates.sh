@@ -50,6 +50,18 @@
 #                                       precise guard SOP-SLIDE-06 §6 now points to as
 #                                       what makes its "same phase ids" claim true.
 #
+# GATE 6 (duplicate-SOP authority)  -- the same SOP FILENAME shipping from two
+#                                       trees with different content. role-library/
+#                                       <dept>/sops/ and universal-sops/<pack>/ BOTH
+#                                       reach every client box, and nothing compared
+#                                       them: 8 duplicated basenames, 8 disagreeing,
+#                                       0 agreeing when the gate was written. Waivers
+#                                       pin the sha256 of BOTH copies, so the known
+#                                       backlog is tolerated at exactly its current
+#                                       bytes while ANY edit to either side -- or a
+#                                       newly duplicated filename -- fails the gate.
+#                                       Delegates to scripts/check-duplicate-sop-drift.py.
+#
 # Exit code: 0 only if every gate that CAN fail today did not fail.
 # Prints which gate failed (and why) on any non-zero exit.
 
@@ -515,11 +527,24 @@ fi
 rm -rf "$GATE5_TMP"
 
 # ---------------------------------------------------------------------------
+echo "== GATE 6: duplicate-SOP authority (role-library/<dept>/sops <-> universal-sops) =="
+GATE6_SCRIPT="scripts/check-duplicate-sop-drift.py"
+if [ ! -f "$GATE6_SCRIPT" ]; then
+  echo "GATE 6 FAILED: $GATE6_SCRIPT not found" >&2
+  FAILED=1
+elif python3 "$GATE6_SCRIPT" --repo-root "$REPO_ROOT"; then
+  echo "GATE 6 PASSED: no unwaived duplicate-SOP disagreement."
+else
+  echo "GATE 6 FAILED: a duplicated SOP filename disagrees without a current waiver (see above)." >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
 echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority)."
 exit 0

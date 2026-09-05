@@ -30,12 +30,20 @@ scripts/ tree onto the box's materialized department directory, honoring
 the SAME ownership policy scaffold_department already enforces
 (create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
 
-  .py / .sh / .js / .tpl / .sha256 /  FLEET-OWNED  — always mirrored (overwritten
-  .pdf                                        whenever the sha256 diverges)
-  .json                        BOX-OWNED    — additive / missing-only,
+  _CANONICAL_SCRIPT_SUFFIXES   FLEET-OWNED  — always mirrored (overwritten
+                                               whenever the sha256 diverges)
+  _ADDITIVE_SCRIPT_SUFFIXES    BOX-OWNED    — additive / missing-only,
                                                NEVER overwritten if it exists
   anything else                             — not this mirror's concern,
                                                not copied
+
+  The suffix values themselves live in ONE place (create_role_workspaces.py)
+  and are deliberately NOT restated here: an inline copy of the tuple is
+  exactly how this policy drifted before. Every suffix the role library
+  actually ships must fall in one of those two tuples or in the explicit
+  _NON_DELIVERED_SCRIPT_SUFFIXES list, and
+  scripts/test_dept_scripts_suffix_coverage.py fails the build if one does
+  not — the mechanical end of the .js/.tpl/.md/.template/.yaml drop class.
 
 GAP-DELIVERY-JS: .js was added to the fleet-owned set above because
 rescue-rangers/scripts/relay_brain_validation.js is a versioned tool (like
@@ -80,7 +88,7 @@ For every role-library department directory with a scripts/ subdir:
      verification below can never disagree about what the tree contains).
      For each file: .json is copied only if the destination does not yet
      exist (never clobbers a client-local override); every other canonical
-     suffix (.py/.sh/.js/.tpl/.sha256/.pdf) is copied only when its sha256 differs
+     suffix (crw._CANONICAL_SCRIPT_SUFFIXES) is copied only when its sha256 differs
      from the current destination (idempotent no-op on an already-current
      box; a genuinely stale/corrupted file gets overwritten with the
      canonical library bytes). A per-file write failure here (an unwritable/
@@ -187,14 +195,19 @@ HOME = os.path.expanduser("~")
 
 # Same ownership policy scaffold_department already enforces
 # (create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
-# .py/.sh/.js/.tpl/.sha256/.pdf are FLEET-OWNED and ALWAYS mirrored (overwritten when
+# _CANONICAL_SCRIPT_SUFFIXES are FLEET-OWNED and ALWAYS mirrored (overwritten when
 # divergent); .json is BOX-OWNED and additive/missing-only. BOTH tuples are
 # sourced from create_role_workspaces (never re-declared as a second literal
 # here) so the two writers can never drift apart — the exact bug class that
 # let relay_brain_validation.js (.js) fall through every delivery path: it
 # appeared in neither list, in either file, until this fix.
-_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf")
-_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # (".json",)
+# NOTE: these comments intentionally do NOT restate the tuple contents. An
+# inline copy of the literal is exactly how the delivery policy drifted before
+# (.md/.template were added to the constant while this comment still advertised
+# the older six-suffix tuple). Read create_role_workspaces.py for the values
+# and the per-suffix rationale.
+_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # fleet-owned: always mirrored when divergent
+_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # box-owned: additive / missing-only
 
 
 def resolve_workspace(explicit):
@@ -266,7 +279,7 @@ def _try_copy(src_file, dest_file, rel_path, copy_failed):
 
 
 def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
-    """Copy .py/.sh/.js/.tpl/.sha256/.pdf files from lib_scripts_root into
+    """Copy every _CANONICAL_SCRIPT_SUFFIXES file from lib_scripts_root into
     scripts_target whenever the destination is missing or its sha256
     diverges from the source (idempotent no-op on an already-current box);
     .json files are copied ONLY when absent at the destination (additive —
@@ -334,7 +347,7 @@ def main(argv=None):
         description="Unconditionally mirror role-library department scripts/ trees onto "
                     "a materialized workspace, on every roll, independent of any "
                     "MISSING-only gap map (fixes causes 2 and 3 of the delivery defect). "
-                    ".py/.sh/.js/.tpl/.sha256/.pdf are fleet-owned and always overwritten when they "
+                    "Fleet-owned suffixes are always overwritten when they "
                     "diverge; .json is box-owned and additive/missing-only.")
     parser.add_argument("--workspace", default=None,
                         help="Client workspace root (default: resolved platform-appropriately).")
