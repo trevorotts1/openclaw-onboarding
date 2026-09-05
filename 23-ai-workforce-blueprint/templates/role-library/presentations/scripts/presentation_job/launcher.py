@@ -375,6 +375,26 @@ EXIT_OCR_ENGINE_MISSING = 9
 OCR_AUTOFAIL_CODE = "AF-OCR-ENGINE-MISSING"
 
 
+#: CLIENT MODEL PLAN (operator requirement 2026-09-04): dispatch() refuses when
+#: the client DECLARED a model plan and a capability class that plan covers has
+#: no eligible route (AF-MODEL-PLAN-UNSATISFIED) -- joins the -1..-9 refusal
+#: family. Nothing spawned.
+#:
+#: SCOPE, deliberately narrow: the gate fires ONLY for a client who declared a
+#: plan, and only for the classes that plan COVERS. A client who declared
+#: nothing reaches this gate exactly as before -- same route, same sidecars,
+#: nothing written, nothing refused. Refusing every unroutable class on every
+#: profile would be a different (and much larger) behavior change than "let the
+#: client choose their own model", and it would newly refuse client boxes that
+#: launch fine today.
+DISPATCH_MODEL_PLAN_REFUSED = -10
+
+#: CLI exit code for DISPATCH_MODEL_PLAN_REFUSED.
+EXIT_MODEL_PLAN_UNSATISFIED = 11
+
+MODEL_PLAN_AUTOFAIL_CODE = "AF-MODEL-PLAN-UNSATISFIED"
+
+
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
 #: to proceed AT, not a ceiling this account was proven to support. Checking
@@ -1035,6 +1055,141 @@ def _announce_undetermined_capacity(result: dict, run_path: Path, available: int
 # ---------------------------------------------------------------------------
 # Dispatch -- the single entry point all callers use
 # ---------------------------------------------------------------------------
+def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]:
+    """CLIENT MODEL PLAN gate. Returns DISPATCH_MODEL_PLAN_REFUSED, or None.
+
+    Runs AFTER the credit preflight on purpose (T9): credit_preflight prices an
+    unrouted phase as the dispatcher's default model on deepseek-direct, so a
+    client model nobody has priced yet is a preflight WARN, never a block --
+    this gate is where a model plan actually decides a launch.
+
+    Refuses when the client DECLARED a plan and a class that plan COVERS has no
+    eligible route, naming the class, the declared model and every rejected
+    candidate's reason. Never at dispatch time, twenty minutes in: at launch,
+    with nothing spawned.
+
+    Otherwise writes run_dir/.model-plan.json (the per-class table plus the
+    per-decision client_plan / client_plan_floor stamps) and prints the banner
+    naming every slot, every visible fallback and every waiver. The sidecar
+    write is best-effort and never blocks a launch -- same contract as
+    _record_capacity_status."""
+    try:
+        try:
+            from . import model_router as _router
+        except ImportError:
+            import model_router as _router  # type: ignore[no-redef]
+    except ImportError:
+        return None  # no router deployed: nothing to gate, pre-fix behavior
+    if not _router.flag_enabled():
+        return None  # PRESENTATION_MODEL_ROUTER=0 rollback: the surface is inert
+
+    try:
+        try:
+            from . import resource_profile as _rp
+        except ImportError:
+            import resource_profile as _rp  # type: ignore[no-redef]
+        profile = _rp.load_profile()
+    except Exception:  # noqa: BLE001 -- an unreadable store is not a plan
+        return None
+    plan = _router.model_plan(profile)
+    if not plan:
+        # No client declaration: this gate does not exist for this run. No
+        # sidecar, no banner, no refusal -- byte-for-byte the pre-fix launch.
+        return None
+
+    decisions = {}
+    unsatisfied = []
+    for phase_id, capability in _router.PHASE_CAPABILITY.items():
+        if capability == "mechanical" or capability in decisions:
+            continue
+        try:
+            # mode=None (every caller that declares no FIX 11 mode) resolves
+            # against the standard candidate lists -- resolve_route's own
+            # default. Passing None through would raise in normalize_mode.
+            decision = _router.resolve_route(phase_id, profile=profile,
+                                             mode=mode or "standard")
+        except Exception as exc:  # noqa: BLE001 -- a router error is not a verdict
+            print(f"launcher: model-plan gate could not resolve {phase_id} "
+                  f"({exc.__class__.__name__}: {exc}) -- gate skipped",
+                  file=sys.stderr)
+            return None
+        decisions[capability] = decision
+        if decision.get("profile_state") != "has_providers":
+            continue
+        if decision.get("route") is not None:
+            continue
+        if _router.CLASS_SLOT.get(capability) is None:
+            continue  # a class the client's plan does not cover
+        if _router.client_plan_for(capability, profile) is None:
+            continue  # covered class, but this client declared no slot for it
+        unsatisfied.append({
+            "capability": capability,
+            "phase_id": phase_id,
+            "declared": (decision.get("client_plan")
+                         or decision.get("client_plan_floor") or {}),
+            "reason": decision.get("reason"),
+            "rejected": [{"alias": c.get("alias"), "provider": c.get("provider"),
+                          "model": c.get("model"), "reason": c.get("reason")}
+                         for c in (decision.get("candidates") or [])],
+        })
+
+    if unsatisfied:
+        detail = "; ".join(
+            f"capability {u['capability']} (e.g. phase {u['phase_id']}) has no "
+            f"eligible route -- {u['reason']}" for u in unsatisfied)
+        payload = {
+            "code": MODEL_PLAN_AUTOFAIL_CODE,
+            "run_dir": str(run_path),
+            "model_plan": _router.plan_report(profile),
+            "unsatisfied": unsatisfied,
+            "detail": detail,
+        }
+        print(f"launcher: REFUSING to dispatch {run_path} -- "
+              f"{MODEL_PLAN_AUTOFAIL_CODE}: {detail}", file=sys.stderr)
+        print(json.dumps(payload, indent=2), file=sys.stderr)
+        return DISPATCH_MODEL_PLAN_REFUSED
+
+    report = _router.plan_report(profile)
+    stamps = []
+    for capability, decision in sorted(decisions.items()):
+        if decision.get("client_plan"):
+            stamps.append({"capability": capability, **decision["client_plan"]})
+        elif decision.get("client_plan_floor"):
+            stamps.append({"capability": capability, "floor": "failed",
+                           **decision["client_plan_floor"]})
+    try:
+        run_path.mkdir(parents=True, exist_ok=True)
+        sidecar = run_path / ".model-plan.json"
+        tmp = sidecar.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"run_dir": str(run_path), "plan": report,
+                                   "decisions": stamps}, indent=2,
+                                  sort_keys=True), encoding="utf-8")
+        os.replace(tmp, sidecar)
+    except OSError as exc:
+        print(f"launcher: could not write the model-plan sidecar: {exc}",
+              file=sys.stderr)
+
+    lines = []
+    for row in report["classes"]:
+        if row["source"] == "client-plan":
+            lines.append(f"{row['capability']}={row['provider']}/{row['model']}"
+                         f" [client {row['slot']}"
+                         + (", floor WAIVED" if row["floor"] == "waived" else "")
+                         + (f", via {row['via']}" if row.get("via") == "workhorse-spill"
+                            else "") + "]")
+        elif row["floor"] == "failed":
+            lines.append(f"{row['capability']}={row['default_alias']} "
+                         f"[DEPARTMENT DEFAULT -- the declared "
+                         f"{row['provider']}/{row['model']} does not meet this "
+                         f"class's floor: {row['detail']}]")
+    print(f"launcher: client model plan stamped -- "
+          f"{'; '.join(lines) or 'no class is governed by the declared plan'}"
+          + (f" (thinking={report['thinking']})" if report.get("thinking") else "")
+          + (f" (waivers: {', '.join(report['floor_waivers'])})"
+             if report["floor_waivers"] else ""), flush=True)
+    return None
+
+
 def dispatch(
     run_dir: str,
     client: Optional[str] = None,
@@ -1247,6 +1402,14 @@ def dispatch(
                   f"estimated ${verdict.get('total_estimate_usd', 0):.2f} "
                   f"(balances: {', '.join(parts) or 'none'})",
                   flush=True)
+
+    # CLIENT MODEL PLAN GATE -- after the credit preflight (an unpriced client
+    # model is a preflight WARN, never a block), before the mode plan sidecar,
+    # and before any process exists. A client who declared no plan passes
+    # through untouched.
+    _plan_refusal = model_plan_gate(run_path, mode=mode)
+    if _plan_refusal is not None:
+        return _plan_refusal
 
     # FIX 11 MODE PLAN -- the declared mode is stamped as an honest launch
     # plan: concurrency from the measured client ceiling (Ultra never above
@@ -1576,6 +1739,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_MODE_INVALID
         if rc == DISPATCH_OCR_REFUSED:
             return EXIT_OCR_ENGINE_MISSING
+        if rc == DISPATCH_MODEL_PLAN_REFUSED:
+            return EXIT_MODEL_PLAN_UNSATISFIED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel,
@@ -1598,6 +1763,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_MODE_INVALID
     if pid == DISPATCH_OCR_REFUSED:
         return EXIT_OCR_ENGINE_MISSING
+    if pid == DISPATCH_MODEL_PLAN_REFUSED:
+        return EXIT_MODEL_PLAN_UNSATISFIED
     return 0 if pid > 0 else 1
 
 

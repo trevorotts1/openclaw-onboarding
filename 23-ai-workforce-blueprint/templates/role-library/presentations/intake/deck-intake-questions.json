@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.8.0",
-  "description": "Deck intake v1.8.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
+  "version": "1.9.0",
+  "description": "Deck intake v1.9.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -312,7 +312,7 @@
       "section": "deck-intake",
       "order": 9,
       "kind": "merged",
-      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.'",
+      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-v4-flash@deepseek-direct (your authoring/copy workhorse); reasoning: (long-context synthesis); qc: glm-5.3-flash@ollama-cloud (independent judge); thinking: max/high/medium/low/off. An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only.",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -320,10 +320,62 @@
           "storeOn": "RESOURCE_PLAN",
           "conservative_value": "use conservative default",
           "note": "FIX 8: asked once when probe data is incomplete, then locked via resource_profile.is_plan_locked; never re-asked"
+        },
+        "workhorse_model": {
+          "storeOn": "WORKHORSE_MODEL",
+          "default": "",
+          "labels": [
+            "workhorse",
+            "workhorse model",
+            "primary model",
+            "authoring model",
+            "workhorse_model"
+          ],
+          "note": "CLIENT MODEL PLAN: the client's primary authoring/copy model, written as model@provider. Blank keeps the department default (model_router.CAPABILITY_CANDIDATES). Governs the authoring, prompt_authoring, cheap_text, creative_cheap and speech_text classes, and the reasoning classes too when it meets their long-context floor. Slot is called 'workhorse', never 'authoring_model': resource_profile.redact_record drops every key matching 'auth', so an 'authoring_model' key would vanish from the store on save."
+        },
+        "reasoning_model": {
+          "storeOn": "REASONING_MODEL",
+          "default": "",
+          "labels": [
+            "reasoning",
+            "reasoning model",
+            "long context model",
+            "reasoning_model"
+          ],
+          "note": "CLIENT MODEL PLAN: long-context reasoning/synthesis model, as model@provider. Blank = department default. Naming a model that does not meet the long-context floor is HONOURED and recorded as an explicit floor waiver -- the client is never forced -- and the waiver is printed at launch."
+        },
+        "qc_model": {
+          "storeOn": "QC_MODEL",
+          "default": "",
+          "labels": [
+            "qc",
+            "qc model",
+            "judge",
+            "judge model",
+            "qc_model"
+          ],
+          "note": "CLIENT MODEL PLAN: the independent QC judge model, as model@provider. Blank = department default. Must be named explicitly: the workhorse never spills into the judge class, so a judge can never silently ride the same model identity that authored the artifact."
+        },
+        "thinking_mode": {
+          "storeOn": "THINKING_MODE",
+          "default": "",
+          "enum": [
+            "max",
+            "high",
+            "medium",
+            "low",
+            "off"
+          ],
+          "labels": [
+            "thinking",
+            "thinking mode",
+            "thinking_mode"
+          ],
+          "note": "CLIENT MODEL PLAN: recorded on the profile now; wiring it into per-call reasoning_effort is a separate change and is NOT done in this one."
         }
       },
-      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only.",
-      "resolverHint": "Feeds resource_profile.record_plan_answer/provider/plan -> capacity.persist_plan_answer() projects the locked ceiling into capacity_override.json, and scripts/presentation_job/resource_profile.py stores the locked profile (never in-repo, never printed verbatim -- redaction contract). ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock."
+      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator.",
+      "resolverHint": "Feeds resource_profile.record_plan_answer/provider/plan -> capacity.persist_plan_answer() projects the locked ceiling into capacity_override.json, and scripts/presentation_job/resource_profile.py stores the locked profile (never in-repo, never printed verbatim -- redaction contract). ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock. The model subfields feed resource_profile.record_model_plan(plan, source='interview') -> profile['model_plan'] + profile['interview']['model_plan'] audit rows. They are deliberately NOT in storeTarget: the model plan lives in the secrets-adjacent profile store, never in the run directory's intake.json."
     },
     {
       "id": "offer_and_stack",

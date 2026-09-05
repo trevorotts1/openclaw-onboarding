@@ -1502,6 +1502,45 @@ def _emit_model_route_telemetry(run_dir: Optional[Path], ctx: _RouteContext,
         print(f"WARN telemetry: model_route row failed: {exc}", flush=True)
 
 
+#: Fallback key-name table, used ONLY when model_router is not importable.
+#: It must stay a MIRROR of model_router._PROVIDER_KEY_NAMES, never a second
+#: opinion: the router decides eligibility from that table, and a transport
+#: that reads a different name is a route that passes the gate and dies on the
+#: wire.
+_FALLBACK_PROVIDER_KEY_NAMES: Dict[str, Tuple[str, ...]] = {
+    "deepseek-direct": ("DEEPSEEK_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "ollama-cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "agnes": ("AGNES_AI_API_KEY", "AGNES_API_KEY"),
+    "kie": ("KIE_API_KEY",),
+}
+
+
+def _provider_key_names(provider: str) -> Tuple[str, ...]:
+    """Every env key name this provider's credential may be spelled under.
+
+    THE SEAM THIS CLOSES: model_router._eligible accepts an ollama-cloud route
+    when EITHER OLLAMA_CLOUD_API_KEY or OLLAMA_API_KEY resolves
+    (model_router._PROVIDER_KEY_NAMES), while this transport used to read only
+    OLLAMA_CLOUD_API_KEY -- so a box carrying OLLAMA_API_KEY produced routes
+    that passed the eligibility gate and then failed on the wire, phase after
+    phase. Eligibility and transport now read the SAME table; the router owns
+    it, and the mirror above is only for a deploy where the router is absent.
+    """
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    table = None
+    if _model_router is not None:
+        candidate = getattr(_model_router, "_PROVIDER_KEY_NAMES", None)
+        if isinstance(candidate, dict) and candidate:
+            table = candidate
+    if table is None:
+        table = _FALLBACK_PROVIDER_KEY_NAMES
+    for key, names in table.items():
+        if str(key).strip().lower().replace("_", "-") == token and names:
+            return tuple(str(n) for n in names)
+    return (f"{token.upper().replace('-', '_')}_API_KEY",)
+
+
 def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                             provider: str, model: str,
                             max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
@@ -1512,19 +1551,24 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
     deepseek_complete's retry/timeout semantics. Credentials resolve per
     provider from the environment the Engine already exported; a key value is
     never printed, never logged, never included in any telemetry row."""
-    key_name = {
-        "openrouter": "OPENROUTER_API_KEY",
-        "ollama-cloud": "OLLAMA_CLOUD_API_KEY",
-        "agnes": "AGNES_API_KEY",
-    }.get(provider, f"{provider.upper().replace('-', '_')}_API_KEY")
-    key = os.environ.get(key_name) or ""
+    key_names = _provider_key_names(provider)
+    key = ""
+    key_name = key_names[0]
+    for candidate_name in key_names:
+        value = (os.environ.get(candidate_name) or "").strip()
+        if value:
+            key_name, key = candidate_name, value
+            break
     if not key:
         # Do NOT route a provider we cannot authenticate to: fall back to a
         # clear, non-spammy error surfaced through the normal DeepSeekCallError
-        # retry path the call sites already handle.
+        # retry path the call sites already handle. Every accepted spelling is
+        # named, because a route that PASSED eligibility on OLLAMA_API_KEY and
+        # then died here on "OLLAMA_CLOUD_API_KEY not set" is the exact drift
+        # _provider_key_names() exists to close.
         raise DeepSeekCallError(
-            f"{key_name} not set in environment -- cannot dispatch to "
-            f"provider {provider} (model {model})")
+            f"none of {list(key_names)} is set in environment -- cannot "
+            f"dispatch to provider {provider} (model {model})")
     base_urls = {
         "openrouter": "https://openrouter.ai/api/v1",
         "ollama-cloud": "https://ollama.com/v1",
