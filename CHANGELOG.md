@@ -1,3 +1,16 @@
+## [v25.0.0]  -  2026-09-05  -  Major release milestone for client onboarding and workforce reliability
+
+Owner-requested major release cut from v24.3.0. The previously merged reliability batch and subsequent presentation fixes are preserved; this cut adds no new runtime feature or database migration.
+
+- Roll all ten canonical onboarding version markers to v25.0.0, including both README markers, installer/update entry points, Skill 23 metadata, role-library index, direct-update message and compatibility metadata.
+- Pin the paired Command Center release to v7.0.0. Keep the truthful minimum v6.1.0 because the supported runtime contracts are unchanged; publish the Command Center tag first.
+- Update the README with the intended installation -> individual interview -> department changes -> board/task/persona -> verified delivery/closeout sequence and explicit rollout limits.
+- Retain the v24.2.0 atomic workforce state, client-scoped retirement, managed personalization, bounded routing, authenticated readiness and independent delivery evidence fixes.
+- Retain v24.2.1-v24.3.0 presentation run-mode, phase-substance, artifact-producer and provider-identity fixes already merged on main.
+- Remove an author byline from an existing public-book reference that collided with the client-name privacy guard; retain the book title and guidance, with its canonical content hash refreshed.
+
+Validation for this version cut covers canonical marker consistency, compatibility resolution, unchanged runtime content, preserved history and repository publication guards. Earlier runtime/browser/concurrency tests remain the evidence for the earlier implementation batch; no new live client, paid provider, delivery or deployment test is claimed. Existing paired Command Center dependency advisories remain a separate remediation item.
+
 ## [v24.3.0]  -  2026-09-05  -  A client can finally reach ULTRA, the phase gate that was deleted is back, and DeepSeek fan-out stops being capped at 8
 
 ### Ultra was unreachable for every client, silently
