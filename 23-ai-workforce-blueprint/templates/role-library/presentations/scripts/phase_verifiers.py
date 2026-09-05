@@ -2206,10 +2206,24 @@ def _verify_sp_structure(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_sp_no_pitch(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P-SP-P3-HYGIENE: Phase-3 (teaching) no-pitch hygiene (via _chk_sp_no_pitch)."""
+    """P-SP-P3-HYGIENE: Phase-3 (teaching) no-pitch hygiene (via _chk_sp_no_pitch).
+
+    The build_deck-unavailable fallback checks THIS phase's OWN artifact --
+    working/qc/sp_p3_hygiene_report.json -- not P-SP-STRUCTURE's ledger. It used
+    to read working/copy/sp_structure.json with required key ("slides",), which
+    is the STRUCTURE phase's artifact and shape: the fallback passed whenever the
+    Architect's ledger existed, whether or not the hygiene review had ever run,
+    and it was the same path collision that let this phase both consume and
+    declare sp_structure.json (two producers -> no edge -> wave 1 -> a reviewer's
+    notes written over the structure ledger, live 2026-09-04). The required key is
+    the `qc_independence` provenance block that the owning role's SOP 9.3/9.4
+    refuses a verdict without -- a structure ledger does not carry it, so the
+    check cannot pass on the wrong file.
+    """
     fn = _bd_fn("_chk_sp_no_pitch")
     if fn is None:
-        return _check_json_nonempty(run_dir, "working/copy/sp_structure.json", ("slides",))
+        return _check_json_nonempty(run_dir, "working/qc/sp_p3_hygiene_report.json",
+                                    ("qc_independence",))
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
