@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v24.1.9"
+ONBOARDING_VERSION="v24.2.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -7641,7 +7641,7 @@ install_skill_49_signature_funnel() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 49 (Signature Funnel) installed -> $SKILL_DEST"
-    note "Skill 49 is the methodology + enforcement layer for the Trevor Otts Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
+    note "Skill 49 is the methodology + enforcement layer for the Trevor fixture-client-e Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
     note "It runs P0..P10 through one canonical entry (signature-funnel-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail). A 'signature funnel' request routes here via the shared STEP-0 funnel-engine selector in Skill 6. Nothing is published without explicit human approval. Skill 6, Skill 47, and Skill 07 (Kie.ai) are prerequisites."
     return 0
 }
@@ -7760,7 +7760,7 @@ install_skill_52_avatar_intelligence() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 52 (Avatar Alchemist) installed -> $SKILL_DEST"
-    note "Skill 52 is the methodology + enforcement layer for the Trevor Otts Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
+    note "Skill 52 is the methodology + enforcement layer for the Trevor fixture-client-e Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
     note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
     return 0
 }
@@ -7907,7 +7907,7 @@ install_skill_55_product_bio() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 55 (Product Bio Engine) installed -> $SKILL_DEST"
-    note "Skill 55 is the methodology + enforcement layer for the Trevor Otts master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
+    note "Skill 55 is the methodology + enforcement layer for the Trevor fixture-client-e master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
     note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's, never Anthropic model ids; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
     return 0
 }
@@ -7923,7 +7923,7 @@ install_skill_55_product_bio
 # the eight fail-closed model-free provers, the no-skip orchestrator, and the
 # canonical fail-closed entry). NO external clone. Skill 56 is the DIRECT-RESPONSE
 # sibling of Skill 49 (Signature Funnel): it AUTHORS the 8-section main sales page
-# (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B), a downsell
+# (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B), a downsell
 # recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form,
 # 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan,
 # from one "Ultimate AI Sales Page Writer" survey. Every SACRED count/band is
@@ -7954,7 +7954,7 @@ install_skill_56_sales_page_assets() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 56 (Sales Page Assets) installed -> $SKILL_DEST"
-    note "Skill 56 is the methodology + enforcement layer for the Trevor Otts Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
+    note "Skill 56 is the methodology + enforcement layer for the Trevor fixture-client-e Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
     note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47, and Skill 44 are prerequisites."
     return 0
 }
@@ -8697,7 +8697,7 @@ fire_install_kickoff_triplet() {
     # below always prints it, and on an update/re-roll the fresh-install-only
     # else-branch that used to own the assignment never runs, leaving the
     # variable unbound under `set -u` and aborting the terminal fallback
-    # BEFORE the gateway restart fires (proven on Teresa Pelham's box).
+    # BEFORE the gateway restart fires (proven on fixture-client-h's box).
     local owner_name
     owner_name=$(resolve_owner_name "$openclaw_json")
 

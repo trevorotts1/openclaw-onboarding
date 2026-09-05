@@ -1374,14 +1374,15 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
             role_metadata["vision_flag"] = _cls_info.get("vision_flag", False)
             role_metadata["msf_purpose_tier"] = _cls_info.get("purpose_tier", "")
 
+    from generated_context import write_new
     # Unique identity files
-    (role_path / "IDENTITY.md").write_text(
+    write_new(role_path / "IDENTITY.md",
         stub_identity(role_name, dept_name, is_ceo), encoding="utf-8")
-    (role_path / "SOUL.md").write_text(
+    write_new(role_path / "SOUL.md",
         stub_soul(role_name, dept_name, is_ceo), encoding="utf-8")
-    (role_path / "MEMORY.md").write_text(
+    write_new(role_path / "MEMORY.md",
         stub_memory(role_name), encoding="utf-8")
-    (role_path / "HEARTBEAT.md").write_text(
+    write_new(role_path / "HEARTBEAT.md",
         stub_heartbeat(role_name, dept_name), encoding="utf-8")
 
     # how-to.md: library first, stub fallback. Feed the explicit canonical slug
@@ -1389,10 +1390,10 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
     filled = try_library_fill(role_name, Path(dept_path), is_ceo,
                               lib_key=(explicit_slug or None))
     if filled is not None:
-        (role_path / "how-to.md").write_text(filled, encoding="utf-8")
+        write_new(role_path / "how-to.md", filled, encoding="utf-8")
         print(f"  [library-fill] {folder_name} ← templates/role-library/...")
     else:
-        (role_path / "how-to.md").write_text(
+        write_new(role_path / "how-to.md",
             stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
 
     # v10.9.0 P1-E: SOP/ subfolder per role (N19 requirement)

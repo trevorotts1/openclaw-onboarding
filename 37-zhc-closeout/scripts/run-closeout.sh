@@ -162,20 +162,8 @@ state_get() {
 # can never lost-update a concurrent run-closeout write. See lib-closeout-state.sh.
 # Usage unchanged: state_set '.field = value | .other = value'
 # shellcheck source=lib-closeout-state.sh disable=SC1090,SC1091
-if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" 2>/dev/null; then
-  # Fallback for an older bundle without the shared lib: unlocked atomic write.
-  state_set() {
-    local tmp
-    tmp=$(mktemp)
-    if jq "$1" "$STATE_FILE" > "$tmp"; then
-      mv "$tmp" "$STATE_FILE"
-    else
-      rm -f "$tmp"
-      log "ERROR" "state_set failed for expr: $1"
-      return 1
-    fi
-  }
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" || exit 1
+COMPLETION_SCRIPT="$_WORKFORCE_STATE_DIR/workforce_completion.py"
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
@@ -194,7 +182,7 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # stall) but still never delivered. Aligning this predicate with the other
 # two build/QC gates closes that dead end; the QC notes still ride along as
 # advisory (recorded in .interviewQc for the operator either way).
-_qc_closeout_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }
+_qc_closeout_eligible() { workforce_interview_eligible status "${1:-}"; }
 
 # FIX-S36-06: fail-soft Command Center card for the closeout ITSELF, keyed per
 # client slug, so a stuck closeout is board-VISIBLE. The helper never fails the
@@ -249,17 +237,9 @@ _lock_slug="$(jq -r '.companySlug // .companyName // empty' "$STATE_FILE" 2>/dev
   | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
 [[ -z "$_lock_slug" ]] && _lock_slug="default"
 RUN_CLOSEOUT_LOCK_FILE="$OC_ROOT/workspace/.run-closeout.${_lock_slug}.lock"
-if [[ -f "$RUN_CLOSEOUT_LOCK_FILE" ]]; then
-  _rc_lock_age=$(( $(date -u +%s) - $(date -u -r "$RUN_CLOSEOUT_LOCK_FILE" +%s 2>/dev/null || date -u +%s) ))
-  if (( _rc_lock_age < ZHC_STALE_LOCK_MINUTES * 60 )); then
-    log "INFO" "G3-CLOSEOUT-LOCK held for slug='$_lock_slug' (${_rc_lock_age}s old, limit=${ZHC_STALE_LOCK_MINUTES}m) -- another closeout for this client is in flight; exiting to avoid duplicate paid generation"
-    exit 0
-  fi
-  log "WARN" "G3-CLOSEOUT-LOCK stale lock for slug='$_lock_slug' removed (${_rc_lock_age}s old)"
-  rm -f "$RUN_CLOSEOUT_LOCK_FILE"
+if [[ "${WORKFORCE_RUNNER_OWNER:-}" != "$PPID" ]]; then
+  exec "$WORKFORCE_PYTHON" "$_WORKFORCE_STATE_DIR/workforce_state.py" run "$STATE_FILE.closeout-runner" bash "$0" "$@"
 fi
-touch "$RUN_CLOSEOUT_LOCK_FILE"
-trap 'rm -f "$RUN_CLOSEOUT_LOCK_FILE"' EXIT
 
 # ---- PRD-2.15 (v12.3.12): EARLY interviewQc check (before API-key preflight) ----
 # If the interview QC hasn't passed, refuse immediately - no point checking API keys
@@ -465,9 +445,15 @@ if [[ -n "$ZHC_STD_SCRIPT" ]]; then
     state_set ".closeoutStatus = \"blocked-libraries-incomplete\" | .closeoutBlockReason = \"verify-zhc-standard rc=$ZHC_STD_RC (role/SOP library not substantive)\""
     exit 0
   fi
+  if [[ "$ZHC_STD_RC" != "0" && "$ZHC_STD_RC" != "6" ]]; then
+    state_set '.closeoutStatus = "blocked-workforce-verification"'
+    exit 1
+  fi
   log "INFO" "ZHC-standard preflight rc=$ZHC_STD_RC (department floor + libraries verified substantive enough to close out)"
 else
-  log "WARN" "verify-zhc-standard.sh not found -- proceeding on buildCompletedAt alone (older Skill 23 bundle)"
+  log "ERROR" "Required verifier unavailable: verify-zhc-standard.sh"
+  state_set '.closeoutStatus = "blocked-verifier-missing"'
+  exit 1
 fi
 
 # B5: HARD verify-wiring.sh precondition — wiring must be done before closeout
@@ -488,7 +474,9 @@ if [[ -n "$VERIFY_WIRING_SCRIPT" ]]; then
   fi
   log "INFO" "verify-wiring.sh preflight rc=$VERIFY_WIRING_RC (wiring verified)"
 else
-  log "WARN" "verify-wiring.sh not found — proceeding without wiring check (older Skill 23 bundle)"
+  log "ERROR" "Required verifier unavailable: verify-wiring.sh"
+  state_set '.closeoutStatus = "blocked-verifier-missing"'
+  exit 1
 fi
 
 # B6: HARD verify-routing.sh precondition — routing must be clean before closeout.
@@ -520,7 +508,9 @@ if [[ "${ZHC_SKIP_ROUTING_PREFLIGHT:-0}" != "1" ]]; then
     fi
     log "INFO" "verify-routing.sh preflight rc=$VERIFY_ROUTING_RC (routing verified clean)"
   else
-    log "WARN" "verify-routing.sh not found — skipping routing check (ensure openclaw-onboarding is up to date)"
+    log "ERROR" "Required verifier unavailable: verify-routing.sh"
+  state_set '.closeoutStatus = "blocked-verifier-missing"'
+  exit 1
   fi
 fi
 
@@ -550,13 +540,16 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
     fi
     log "INFO" "smoke-test-provider-capabilities.sh preflight rc=$PROVIDER_SMOKE_RC (provider capabilities verified)"
   else
-    log "WARN" "smoke-test-provider-capabilities.sh not found — skipping provider capability check (ensure openclaw-onboarding is up to date)"
+    log "ERROR" "Required verifier unavailable: smoke-test-provider-capabilities.sh"
+  state_set '.closeoutStatus = "blocked-verifier-missing"'
+  exit 1
   fi
 fi
 
 closeout_status=$(state_get '.closeoutStatus')
-if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
-  log "INFO" "closeoutStatus=$closeout_status -- already complete; nothing to do"
+if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
+  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified cleanup pending; recovery identity retained"
+  log "INFO" "closeoutStatus=$closeout_status -- verified completion; cleanup retried"
   exit 0
 fi
 
@@ -681,7 +674,7 @@ else
   # exit code alone is ambiguous -- read the RECORDED commandCenterStatus
   # from state before deciding that the install completed.
   _cc_post_status=$(state_get ".commandCenterStatus")
-  if [[ "$_cc_post_status" != "done" && "$_cc_post_status" != "done-degraded" ]]; then
+  if [[ "$_cc_post_status" != "done" ]]; then
     _cc_reason=$(state_get ".commandCenterGateReason")
     [[ -z "$_cc_reason" ]] && _cc_reason="commandCenterStatus=${_cc_post_status:-<unset>} (terminal completed state not reached)"
     log "WARN" "step=1 command-center: deferred -- $_cc_reason"
@@ -1312,41 +1305,12 @@ else
     state_set '.closeoutDeliverables.n8nWired = "skipped"' || true
   fi
 
-  # PRD-2.8: SELF-REMOVE the dedicated closeout-resume cron (kill condition met).
-  resume_cron_uuid=$(state_get '.closeoutResumeUuid')
-  if [[ -n "$resume_cron_uuid" && "$resume_cron_uuid" != "null" ]] && command -v openclaw >/dev/null 2>&1; then
-    log "INFO" "self-removing closeout-resume cron $resume_cron_uuid (loop-registry kill condition: done)"
-    openclaw cron rm "$resume_cron_uuid" 2>>"$LOG_FILE" || log "WARN" "closeout-resume cron rm failed (tolerated)"
-    state_set 'del(.closeoutResumeUuid) | .closeoutResumeRegisteredAt = null' || true
+  if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
+    state_set '.closeoutStatus = "partial" | .closeoutPartialReason = "Required current verification remains pending"'
+    exit 0
   fi
 
-  # v12.3.10: SELF-REMOVE the interview-nudge cron (interviewComplete=true kill condition).
-  # Primary: keyed on .interviewNudgeUuid recorded at install time.
-  # Fallback: name-scan for boxes installed before UUID recording was added.
-  nudge_cron_uuid=$(state_get '.interviewNudgeUuid')
-  if [[ -n "$nudge_cron_uuid" && "$nudge_cron_uuid" != "null" ]] && command -v openclaw >/dev/null 2>&1; then
-    log "INFO" "self-removing interview-nudge cron $nudge_cron_uuid (interviewComplete=true, closeout done)"
-    openclaw cron rm "$nudge_cron_uuid" 2>>"$LOG_FILE" || log "WARN" "interview-nudge cron rm failed (tolerated)"
-    state_set 'del(.interviewNudgeUuid) | .interviewNudgeRegisteredAt = null' || true
-  fi
-  # Fallback scan: remove any interview-nudge cron registered without a recorded UUID
-  if command -v openclaw >/dev/null 2>&1; then
-    scan_uuid=$(openclaw cron list 2>/dev/null \
-      | awk '/interview-nudge/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
-      | head -1 || true)
-    if [[ -n "$scan_uuid" ]]; then
-      log "INFO" "fallback-scan removing interview-nudge cron $scan_uuid (no recorded UUID)"
-      openclaw cron rm "$scan_uuid" 2>>"$LOG_FILE" || log "WARN" "fallback interview-nudge cron rm failed (tolerated)"
-    fi
-  fi
-  # Loop-registry hygiene
-  if [[ -f "$SKILL_DIR/../scripts/loop-registry.sh" ]]; then
-    # shellcheck disable=SC1090
-    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
-    source "$SKILL_DIR/../scripts/loop-registry.sh" 2>/dev/null || true
-    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
-    lr_kill "interview-nudge" 2>/dev/null || true
-  fi
+  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified closeout cleanup pending; recovery identity retained"
 
   # BUG A FIX: this is the VERIFIED done path (phantom guard + telegram-delivery
   # confirmation both passed above). Clear any sticky critical-failure marker /
@@ -1356,8 +1320,6 @@ else
   # independent Command Center auto-scorer (never this script) promotes it to the
   # done column. Fail-soft.
   cc_card review
-  state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\" | .closeoutPendingSlots = [] | del(.closeoutCriticalFailed) | .closeoutFailureReason = null" || \
-    state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
   log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written + critical legs verified, resume cron removed)"
   exit 0
 fi

@@ -384,6 +384,27 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"qualityQc\": {\"org_chart\": \"pass\"}
   }"
 
+  # Seed unrelated completed artifact stages; this fixture exercises only the
+  # org-chart assertion, never image/video generation or provider polling.
+  python3 - "$FIXTURE_STATE" <<'PYARTIFACTS'
+import json,sys
+p=sys.argv[1];s=json.load(open(p))
+s['visualIntelligenceUrls']=['https://fixture.invalid/1','https://fixture.invalid/2','https://fixture.invalid/3']
+for key,field in [('flow_diagram','infographic2Url'),('celebration_video','celebrationVideoUrl'),('closeout_docs','notionRootPageUrl')]:
+    s[field]='https://fixture.invalid/'+key
+    s.setdefault('qualityRatings',{})[key]={'score':9,'qc':'pass'}
+json.dump(s,open(p,'w'))
+PYARTIFACTS
+
+  # This test isolates the downstream Playwright hold. Explicit fixture
+  # verifiers satisfy the prerequisite stages; missing real verifiers still
+  # fail closed in production and in the dedicated reliability suite.
+  prerequisites="$FAKE_OC_ROOT/skills/23-ai-workforce-blueprint/scripts"
+  mkdir -p "$prerequisites"
+  for verifier in verify-zhc-standard.sh verify-wiring.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$prerequisites/$verifier"
+  done
+
   # Override via ZHC_ORGCHART_QC_SCRIPT so run-closeout.sh uses our stub
   ZHC_ORGCHART_QC_SCRIPT="$STUB_QC_DIR/qc-assert-org-chart-connector-tree.sh" \
   KIE_API_KEY="test-key" NOTION_API_TOKEN="test-token" \

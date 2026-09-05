@@ -327,6 +327,7 @@ _mkbox() {
   # The script under test runs FROM the sandbox, so every SCRIPT_DIR sibling it
   # probes resolves inside the fixture. Only the stub floor checker is provided.
   cp "$RESUME" "$skill/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$skill/"
   cat > "$skill/department-floor.py" <<'PYEOF'
 import sys
 # Stub: department floor SATISFIED (rc=0). The point of group (9) is that a
@@ -557,7 +558,7 @@ _mutate "$MUT11" <<'PYEOF'
 import sys
 path = sys.argv[1]
 src = open(path).read()
-old = '_qc_build_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }'
+old = '_qc_build_eligible() { workforce_interview_eligible status "${1:-}"; }'
 new = '_qc_build_eligible() { case "${1:-}" in pass) return 0 ;; *) return 1 ;; esac; }'
 if old not in src:
     sys.exit(1)
@@ -635,6 +636,7 @@ else
     local skill="$h/.openclaw/skills/23-ai-workforce-blueprint/scripts"
     mkdir -p "$skill" "$h/.openclaw/workspace" "$h/bin"
     cp "$UPD" "$skill/update-interview-state.sh"
+    cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$skill/"
     cp "$LIBRL" "$skill/lib-interview-rate-limit.sh"
     cat > "$skill/qc-interview-completion.py" <<PYEOF
 import json, sys
@@ -945,51 +947,21 @@ fi  # FUNCTIONAL
 
 # ---------------------------------------------------------------------------
 # (15) HOP4_DOC_CODE_LOCKSTEP
-# INSTRUCTIONS.md claimed "HOP-4 requires `wiring_dirty == 0` before writing
-# buildCompletedAt -- so no stub department can ever silently close out." The code
-# does not check wiring_dirty at all (the variable is never computed; its only
-# assignment is the `${wiring_dirty:-0}` default, so it is permanently 0 and the
-# [WIRING-RESUME] branch is unreachable). A doc that overstates an enforcement gate
-# sends the next person debugging a stuck buildCompletedAt down the wrong path.
-# This asserts the two stay in lockstep in EITHER direction.
-# ---------------------------------------------------------------------------
+# The shared evaluator owns HOP-4; its check execution and completion refusal
+# have behavioral regression coverage in test_reliability_contracts.py.
 echo ""
-echo "--- (15) HOP4_DOC_CODE_LOCKSTEP: the wiring-gate claim must match the code ---"
+echo "--- (15) HOP4_DOC_CODE_LOCKSTEP: shared completion contract ---"
 INSTR="$REPO_ROOT/23-ai-workforce-blueprint/INSTRUCTIONS.md"
-if [[ ! -f "$RESUME" || ! -f "$INSTR" ]]; then
-  fail "15: resume-workforce-build.sh or INSTRUCTIONS.md not found"
+COMPLETION="$REPO_ROOT/23-ai-workforce-blueprint/scripts/workforce_completion.py"
+if grep -q 'COMPLETION_SCRIPT.*--refresh' "$RESUME" && grep -q "'registration':.*verify-wiring.sh" "$COMPLETION"; then
+  pass "15a: HOP-4 refresh executes the shared registration verifier"
 else
-  # The HOP-4 condition is the `if` that guards the AUTO-COMPLETE (HOP-4) log line.
-  hop4_cond="$(grep -B8 'AUTO-COMPLETE (HOP-4): all' "$RESUME" | grep -A8 '^if ((' || true)"
-  # Is wiring_dirty genuinely computed anywhere (an assignment that is not the
-  # `${wiring_dirty:-0}` default and not a comment)?
-  wiring_computed=0
-  # -F on the last grep: the default value contains {..}, which BRE reads as a
-  # repetition interval ("invalid repetition count(s)") rather than literal braces.
-  if grep -vE '^\s*#' "$RESUME" | grep -E 'wiring_dirty=' | grep -qvF 'wiring_dirty=${wiring_dirty:-0}'; then
-    wiring_computed=1
-  fi
-  doc_claims_enforced=0
-  grep -q 'HOP-4 requires `wiring_dirty == 0`' "$INSTR" && doc_claims_enforced=1
-
-  if [[ "$hop4_cond" == *wiring_dirty* ]] && (( wiring_computed == 1 )); then
-    # Gate is genuinely enforced -> the doc is allowed (and expected) to say so.
-    (( doc_claims_enforced == 1 )) \
-      && pass "15a: wiring IS enforced by HOP-4 and INSTRUCTIONS.md says so (lockstep)" \
-      || fail "15a: HOP-4 now enforces wiring but INSTRUCTIONS.md no longer documents it"
-  else
-    # Gate is NOT enforced -> the doc must not claim it is.
-    if (( doc_claims_enforced == 1 )); then
-      fail "15a: INSTRUCTIONS.md claims HOP-4 requires wiring_dirty == 0, but HOP-4 does not check it (wiring_dirty computed=$wiring_computed) — doc overstates an enforcement gate"
-    else
-      pass "15a: HOP-4 does not enforce wiring and INSTRUCTIONS.md does not claim it does (lockstep)"
-    fi
-    if grep -q 'KNOWN GAP' "$INSTR"; then
-      pass "15b: the unenforced wiring gate is documented as a known gap, not left silent"
-    else
-      fail "15b: the wiring gate is unenforced and INSTRUCTIONS.md does not flag it as a gap"
-    fi
-  fi
+  fail "15a: HOP-4 or shared registration verification disconnected"
+fi
+if grep -q 'shared completion evaluator requires current registration evidence' "$INSTR" && ! grep -q 'KNOWN GAP.*wiring gate is not enforced' "$INSTR"; then
+  pass "15b: instructions describe current shared completion evidence"
+else
+  fail "15b: instructions omit or contradict the shared completion contract"
 fi
 
 # ---------------------------------------------------------------------------

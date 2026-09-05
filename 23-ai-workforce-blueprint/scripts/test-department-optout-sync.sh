@@ -41,6 +41,11 @@ python3 -c "import json" 2>/dev/null || { echo "SKIP: python3 not usable"; exit 
 
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
+# Use the real limiter with a private ledger, including on machines that have
+# an installed OpenClaw workspace. A fresh CI runner has no default workspace.
+export INTERVIEW_RATE_LIMIT_STATE_FILE="$TMPD/.interview-rate-limit.json"
+export INTERVIEW_RATE_LIMIT_MAX=60
+export INTERVIEW_RATE_LIMIT_WINDOW_SECONDS=3600
 
 STATE="$TMPD/.workforce-build-state.json"
 OUT="$TMPD/department-optout.json"
@@ -58,8 +63,13 @@ JSON
 # ── Test (a): opting out a FLOOR department shows the loss-warning, and the
 #    sync artifact captures the exact text the owner was shown ─────────────
 seed_state
-bash "$RECORDER" --dept billing-finance --decision no --confirm-loss \
-  --source owner-interview --by owner123 --session s1 --state "$STATE" >/dev/null 2>&1
+if bash "$RECORDER" --dept billing-finance --decision no --confirm-loss \
+  --source owner-interview --by owner123 --session s1 --state "$STATE" >"$TMPD/recorder.log" 2>&1; then
+  ok "confirmed decline was recorded before sync"
+else
+  bad "confirmed decline fixture failed: $(cat "$TMPD/recorder.log")"
+  exit 1
+fi
 
 rc=1
 out="$(python3 "$SYNC" --state "$STATE" --out "$OUT" --json 2>/dev/null)"; rc=$?
@@ -116,8 +126,13 @@ else
 fi
 
 # ── Test (c): REVERSIBLE — re-opting-in restores the department ────────────
-bash "$RECORDER" --dept billing-finance --decision yes \
-  --source owner-interview --by owner123 --session s2 --state "$STATE" >/dev/null 2>&1
+if bash "$RECORDER" --dept billing-finance --decision yes \
+  --source owner-interview --by owner123 --session s2 --state "$STATE" >"$TMPD/recorder.log" 2>&1; then
+  ok "billing-finance yes decision was recorded"
+else
+  bad "decision fixture failed: $(cat "$TMPD/recorder.log")"
+  exit 1
+fi
 
 rout="$(python3 "$SYNC" --state "$STATE" --out "$OUT" --json 2>/dev/null)"
 still_opted="$(echo "$rout" | jq -r '.optedOut["billing-finance"] // "ABSENT"')"
@@ -193,8 +208,13 @@ cat > "$STATE" <<'JSON'
   }
 }
 JSON
-bash "$RECORDER" --dept my-custom-lab --decision no \
-  --source owner-interview --by owner123 --session s1 --state "$STATE" >/dev/null 2>&1
+if bash "$RECORDER" --dept my-custom-lab --decision no \
+  --source owner-interview --by owner123 --session s1 --state "$STATE" >"$TMPD/recorder.log" 2>&1; then
+  ok "my-custom-lab no decision was recorded"
+else
+  bad "decision fixture failed: $(cat "$TMPD/recorder.log")"
+  exit 1
+fi
 nout="$(python3 "$SYNC" --state "$STATE" --out "$OUT" --json 2>/dev/null)"; nrc=$?
 if [ "$nrc" -eq 0 ]; then ok "non-floor decline syncs cleanly with no unconfirmed anomaly (exit 0)"; else bad "non-floor decline unexpectedly produced rc=$nrc"; fi
 # NOTE: jq's `//` alternative operator treats `false` as falsy too (not just

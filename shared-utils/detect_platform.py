@@ -370,10 +370,13 @@ def resolve_active_company_dir(company_root: Path, extra_roots=None):
     # HAS that slug (canonical first) before any mtime-based guessing.
     slug = os.environ.get("OPENCLAW_COMPANY_SLUG")
     if slug:
+        if not slug or Path(slug).name != slug or slug in ('.', '..'):
+            return None
         for root in roots:
             candidate = root / slug
             if candidate.is_dir():
                 return candidate
+        return None  # An explicit company must never fall back to another tenant.
 
     # Pass 2: no slug match — pick the active company from the first root that
     # holds one (canonical preferred; legacy roots only as a fallback).
@@ -385,7 +388,7 @@ def resolve_active_company_dir(company_root: Path, extra_roots=None):
             continue
         if len(subdirs) == 1:
             return subdirs[0]
-        return max(subdirs, key=lambda p: p.stat().st_mtime)
+        return None  # Multiple companies require an explicit identity.
     return None
 
 

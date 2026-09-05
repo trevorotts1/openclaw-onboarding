@@ -173,20 +173,10 @@ state_get() {
   jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null
 }
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../23-ai-workforce-blueprint/scripts" && pwd)/lib-workforce-state.sh" || exit 1
+
 state_set() {
-  # Usage: state_set '.field = value | .other = value'
-  # NOTE: never bake a free-form/user-derived REASON string into $1 — a reason
-  # containing a double-quote or newline would corrupt the state file or inject jq.
-  # Use state_set_arg for any value that is not a literal you fully control.
-  local tmp
-  tmp=$(mktemp)
-  if jq "$1" "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
-    log "ERROR" "state_set failed for expr: $1"
-    return 1
-  fi
+  workforce_state_set "$STATE_FILE" "$1"
 }
 
 # state_set_arg — write a jq program that references a single string VALUE passed
@@ -195,16 +185,7 @@ state_set() {
 # program string. Usage: state_set_arg '.field = $val | .other = "lit"' "$reason"
 # No-op (returns 0) when the state file is absent, so callers stay simple.
 state_set_arg() {
-  local prog="$1" val="$2" tmp
-  [[ -f "$STATE_FILE" ]] || return 0
-  tmp=$(mktemp)
-  if jq --arg val "$val" "$prog" "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
-    log "ERROR" "state_set_arg failed for expr: $prog"
-    return 1
-  fi
+  workforce_state_set "$STATE_FILE" --arg val "$2" "$1"
 }
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -1623,9 +1604,9 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ -n "$_qc_transcript" && -f "$_qc_transcript" ]]; then
     QC_ARGS+=(--transcript "$_qc_transcript")
   fi
-  QC_OUT="$(python3 "$QC_INTERVIEW" "${QC_ARGS[@]}" 2>&1)"; QC_RC=$?
+  QC_OUT="$("$WORKFORCE_PYTHON" "$QC_INTERVIEW" "${QC_ARGS[@]}" 2>&1)"; QC_RC=$?
   printf '%s\n' "$QC_OUT" >> "$LOG_FILE"
-  if [[ "$QC_RC" -ne 0 ]]; then
+  if ! workforce_interview_eligible rc "$QC_RC"; then
     # Flag says complete but QC disagrees ⇒ NOT corroborated. Gate the CC (do NOT
     # scaffold); this is the expected "interview not genuinely done yet" hold, so we
     # exit clean and let the interview resume/nudge loop drive it to PASS. The QC
@@ -1637,7 +1618,7 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
     echo "INTERVIEW_PENDING: interviewComplete=true but qc-interview-completion.py rc=$QC_RC (not PASS) — interview not corroborated complete. Locked CC shell is up; REAL workforce NOT materialized (gated; expected until QC passes)." >&2
     exit 0
   fi
-  log "INFO" "interview-gate: qc-interview-completion.py PASS (rc=0) — interview corroborated. Proceeding with Command Center install."
+  log "INFO" "interview-gate: qc-interview-completion.py eligible (rc=$QC_RC; advisory notes retained) — interview corroborated. Proceeding with Command Center install."
 fi
 
 # ==============================================================================
@@ -2472,14 +2453,19 @@ if [[ -f "$STATE_FILE" ]]; then
   # `true` (false or "script-missing"). An absent key (older state) is not treated
   # as a regression. jq's `//` collapses false→empty, so this membership test is
   # done in one jq pass rather than via state_get.
+  if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1; then
+    log "WARN" "Tenant readiness pending. Configure this client's own IDs and enrollment per TENANT-CONFIGURATION.md; recovery remains enabled."
+    state_set '.commandCenterTenantReady = false'
+  fi
   DEGRADED_PHASES="$(jq -r '
     [ {k:"ccBuildFresh(6)",            v:.commandCenterBuildFresh},
       {k:"workspacesSeeded(6b)",       v:.commandCenterWorkspacesSeeded},
       {k:"departmentsSynced(6c)",      v:.commandCenterDepartmentsSynced},
       {k:"mdContentSynced(6d)",        v:.commandCenterMdContentSynced},
       {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded},
-      {k:"deptRuntimeParity(6e2)",     v:.commandCenterDeptRuntimeParity} ]
-    | map(select(.v != null and .v != true) | .k) | join(", ")
+      {k:"deptRuntimeParity(6e2)",     v:.commandCenterDeptRuntimeParity},
+      {k:"tenantReadiness",             v:.commandCenterTenantReady} ]
+    | map(select(.v != true) | .k) | join(", ")
   ' "$STATE_FILE" 2>/dev/null || echo "")"
   if [[ "$(state_get '.zheGateStatus')" == "failed" ]]; then
     DEGRADED_PHASES="${DEGRADED_PHASES:+$DEGRADED_PHASES, }zheGate(failed)"

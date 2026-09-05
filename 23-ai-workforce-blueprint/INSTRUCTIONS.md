@@ -1006,44 +1006,9 @@ vertical journey that tells you WHICH playbooks a given business needs.
 - **Script:** `scripts/verify-wiring.sh [--dept <slug> | --all]` -- runs all four assertions per dept, writes `wiringStatus` (done|failed) + `wiringFailReasons` + `wiringCheckedAt` per-dept into `.workforce-build-state.json`, exits non-zero on ANY failure with named missing items. Exit codes: 0=all pass, 2=materialization, 3=registration, 4=reachability, 5=connection, 6=mixed, 9=precondition.
 - **Add path:** `add-role.sh` calls `verify-wiring.sh --dept <slug>` after every role is added so a stub is caught immediately.
 - **Build path:** `build-workforce.py` calls `verify-wiring.sh --all` after `verify-library-gate.sh`; instructs the agent NOT to write `buildCompletedAt` / `closeoutStatus=pending` while this gate fails.
-- **Resume gate:** ⚠️ **NOT WIRED — see the gap note below.** The `[WIRING-RESUME]` lane exists in `resume-workforce-build.sh` but is unreachable.
-- **Auto-closeout gate:** ⚠️ **NOT WIRED — see the gap note below.** HOP-4 does *not* consult the wiring gate.
+- **Resume gate:** HOP-4 invokes `workforce_completion.py --refresh`, which runs `verify-wiring.sh --all`, post-build role verification, QC, and library verification using the same build identity. Missing tools and nonzero checks keep completion pending.
+- **Auto-closeout gate:** The shared completion evaluator requires current registration evidence, all required checks, finished departments and libraries, communications, standard-first confirmations, and unchanged input/artifact digests before it writes `buildCompletedAt`. Historical timestamps and department counts cannot satisfy these checks. Full recovery tests cover both refused incomplete builds and verified completion.
 
-> #### ⚠️ KNOWN GAP (documented v21.5.1): the wiring gate is not enforced by the resume cron
->
-> The two bullets above previously claimed that `resume-workforce-build.sh` runs
-> `verify-wiring.sh --all` on every cron fire, and that HOP-4 "requires
-> `wiring_dirty == 0` before writing `buildCompletedAt` -- so no stub department can
-> ever silently close out." **Neither is true of the shipped code.** Verified against
-> `scripts/resume-workforce-build.sh`:
->
-> - `wiring_dirty` is never computed. Its only assignment is the defaulting line
->   `wiring_dirty=${wiring_dirty:-0}`, so it is **always 0**.
-> - Consequently the `elif (( wiring_dirty > 0 ))` branch is **unreachable**, and
->   that branch is the *only* place the resume cron would ever invoke
->   `verify-wiring.sh`. The resume cron therefore never runs the wiring gate.
-> - HOP-4's actual condition is: no pending departments, no stale-building
->   departments, `library_dirty == 0` (i.e. `roleLibraryStatus` **and**
->   `sopLibraryStatus` are `done`), `comms_automation_dirty == 0`, at least one
->   department, all departments done, and `buildCompletedAt` empty. **`wiring_dirty`
->   is not part of it.** Because the variable is pinned to 0, adding it would also
->   have changed nothing.
->
-> So a stub department CAN currently close out as far as the resume cron is
-> concerned. The enforcement that does exist is on the **build path**
-> (`build-workforce.py`) and the **add path** (`add-role.sh`), both of which do call
-> the gate.
->
-> This is documented rather than silently "fixed" by wiring the variable up, for two
-> reasons. First, computing `wiring_dirty` would add a **new blocking condition** to
-> HOP-4 — the exact hop whose failure to fire is what strands clients — so switching
-> it on is a behavioral change that needs its own change, its own blast-radius
-> analysis, and its own tests, not a drive-by edit inside a fix whose purpose is to
-> *unblock* stuck builds. Second, `verify-wiring.sh`'s own tree resolution was being
-> corrected concurrently; wiring an unstable gate into the critical path would risk
-> stranding boxes that currently complete. **Follow-up:** decide deliberately whether
-> the resume cron should enforce wiring, and if so land it with tests that prove a
-> stub department is blocked *and* that a healthy box still completes.
 - **Connection manifests:** `templates/role-library/<dept>/connection-manifest.json` defines per-dept required external hooks. Each manifest entry has `name`, `description`, `cfg_key` (dot-path into `openclaw.json`), and `required` (bool). Manifests ship for: presentations, graphics, video, sales, marketing, communications, customer-support.
 
 **The master orchestrator MUST, after Moment 3.6 and 3.8 pass and BEFORE writing `buildCompletedAt`:**

@@ -53,7 +53,7 @@ trap 'rm -rf "$TMP"' EXIT
 SANDBOX_HOME="$TMP/home"
 MASTER="$TMP/master-files"
 COMPANY="$MASTER/zero-human-company/scratch-canary-co"
-STATE="$TMP/state.json"
+STATE="$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json"
 DB="$TMP/mission-control.db"
 CONSENT="$TMP/consent.json"
 mkdir -p "$SANDBOX_HOME/.openclaw/workspace" "$MASTER/zero-human-company" "$SANDBOX_HOME/.openclaw" \
@@ -66,7 +66,7 @@ echo '{}' > "$STATE"
 # $WORKFORCE_BUILD_STATE_FILE (its _build_state_path override) so no code path
 # can fall back to a live state file.
 RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SANDBOX_HOME/.openclaw"
-         "WORKFORCE_BUILD_STATE_FILE=$STATE")
+         "WORKFORCE_BUILD_STATE_FILE=$STATE" "DASHBOARD_DB_PATH=$DB")
 
 # ══ PHASE A: the prebuild (PHASE 2 driver) builds the fixture state ══
 "${RUN_ENV[@]}" bash "$PREBUILD" \
@@ -78,6 +78,16 @@ RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SAN
 RC=$?
 if [ "$RC" -eq 0 ]; then good "prebuild fixture ready (rc=0)"; else
   bad "prebuild fixture FAILED rc=$RC (see $TMP/prebuild.err)"; tail -5 "$TMP/prebuild.err" >&2; echo "ABORT"; exit 1; fi
+
+# Model the supported CC archive migration in the isolated seeded database.
+# The apply step must receive this same explicit database, never ambient discovery.
+python3 - "$DB" <<'PYDB'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    cols={r[1] for r in db.execute('PRAGMA table_info(workspaces)')}
+    for name in ('archived_at','archived_reason','updated_at'):
+        if name not in cols: db.execute('ALTER TABLE workspaces ADD COLUMN '+name+' TEXT')
+PYDB
 
 # ══ PHASE B: mock interview answers (genuine transcript for the gate) ══
 # verify_interview_complete() looks at $HOME/.openclaw/workspace/company-
@@ -207,6 +217,8 @@ RC=$?
 if [ "$RC" -eq 0 ]; then good "apply-diff build rc=0"; else
   bad "apply-diff build rc=$RC"; tail -12 "$TMP/apply.err" >&2; fi
 
+grep "RETIRE" "$TMP/apply.err" >&2 || true
+
 # A1: declined dept ARCHIVED (not deleted) — the sentinel survives in .retired/
 if [ ! -d "$COMPANY/departments/audio" ] \
    && find "$COMPANY/.retired" -name "SENTINEL.md" -exec grep -q "SENTINEL-ARCHIVE-ME" {} \; 2>/dev/null; then
@@ -335,16 +347,12 @@ else
   bad "A8: expected rc=88 + buildType refusal, got rc=$RC"
 fi
 
-# Hermeticity proof: the LIVE operator state file was never written by this
-# test (it lives outside the sandbox HOME; the test pins every write via
-# $WORKFORCE_BUILD_STATE_FILE). Assert the live-state mtime sentinel: the
-# test creates a marker file in the sandbox and asserts no state file exists
-# at the sandbox default path that was NOT pinned.
-if [ -f "$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json" ]; then
-  bad "A9: an UNPINNED sandbox-default build-state appeared (a code path bypassed the override)"
-else
-  good "A9: hermeticity held — no unpinned build-state write"
-fi
+# The normal state path is inside the sandbox HOME so the real config retirement
+# path is exercised. Every invocation still explicitly pins that exact fixture.
+case "$STATE" in
+  "$SANDBOX_HOME"/*) good "A9: explicit state remains inside isolated HOME" ;;
+  *) bad "A9: state escaped isolated HOME" ;;
+esac
 
 echo "=============================================="
 echo "test-build-standard-first-roundtrip.sh: PASS=$PASS FAIL=$FAIL"

@@ -65,6 +65,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESUME="$SCRIPT_DIR/resume-workforce-build.sh"
 SYNC_SCRIPT="$SCRIPT_DIR/department-optout-sync.py"
 
+# The runtime probes the CLI before reaching the caller; keep those probes
+# inside the fixture even when an actual gateway CLI exists on the test host.
+FIXTURE_BIN="$(mktemp -d)"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$FIXTURE_BIN/openclaw"
+chmod +x "$FIXTURE_BIN/openclaw"
+export PATH="$FIXTURE_BIN:$PATH"
+cleanup_fixture() {
+  for dir in "$FIXTURE_BIN" "${T1_HOME:-}" "${T2_HOME:-}" "${T3_HOME:-}" "${T4_HOME:-}" "${T5_HOME:-}" "${MUT_DIR:-}" "${MISSING_DIR:-}"; do
+    [[ -n "$dir" ]] && rm -rf "$dir"
+  done
+}
+trap cleanup_fixture EXIT
+
 PASS=0
 FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  PASS: $1"; }
@@ -183,6 +196,9 @@ echo ""
 echo "== T4 (MUTATION GUARD): excising the U110-OPTOUT-SYNC block must turn T1 RED =="
 MUT_DIR="$(mktemp -d)"
 MUTANT="$MUT_DIR/resume-workforce-build.sh"
+# Keep the runtime dependencies intact so a missing-helper crash cannot stand
+# in for the deliberately removed optout caller.
+cp "$SCRIPT_DIR/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$MUT_DIR/"
 
 if ! grep -q '# === U110-OPTOUT-SYNC-BEGIN' "$RESUME" || ! grep -q '# === U110-OPTOUT-SYNC-END ===' "$RESUME"; then
   bad "T4: sentinel markers not found in resume-workforce-build.sh — cannot mutation-test the wiring"
@@ -220,10 +236,10 @@ else
   HOME="$T4_HOME" bash "$MUTANT" >/dev/null 2>&1 || T4_RC=$?
   T4_OUT="$T4_HOME/.openclaw/workspace/provisioning/department-optout.json"
 
-  if [[ ! -f "$T4_OUT" ]]; then
+  if [[ "$T4_RC" -eq 0 && ! -f "$T4_OUT" ]]; then
     ok "T4: with the wiring excised, provisioning/department-optout.json is correctly NOT produced (RED without the fix)"
   else
-    bad "T4: contract file was STILL produced with the wiring excised — T1-T3 are not actually guarding the caller"
+    bad "T4: mutant must exit cleanly without a contract (rc=$T4_RC) — otherwise the caller mutation is not isolated"
   fi
 fi
 
@@ -232,16 +248,13 @@ echo ""
 echo "== T5: removing the CALLEE (department-optout-sync.py) — caller degrades safely, never blocks the build =="
 T5_HOME="$(mktemp -d)"
 mkdir -p "$T5_HOME/.openclaw"
-MOVED=0
-if [[ -f "$SYNC_SCRIPT" ]]; then
-  mv "$SYNC_SCRIPT" "${SYNC_SCRIPT}.hidden-for-t5"
-  MOVED=1
-fi
+# Remove the callee only from a copied fixture bundle; never rename a source
+# file out from under concurrent tests or other repository work.
+MISSING_DIR="$(mktemp -d)"
+cp "$RESUME" "$MISSING_DIR/resume-workforce-build.sh"
+cp "$SCRIPT_DIR/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$MISSING_DIR/"
 T5_RC=0
-HOME="$T5_HOME" bash "$RESUME" >/dev/null 2>&1 || T5_RC=$?
-if [[ "$MOVED" -eq 1 ]]; then
-  mv "${SYNC_SCRIPT}.hidden-for-t5" "$SYNC_SCRIPT"
-fi
+HOME="$T5_HOME" bash "$MISSING_DIR/resume-workforce-build.sh" >/dev/null 2>&1 || T5_RC=$?
 T5_OUT="$T5_HOME/.openclaw/workspace/provisioning/department-optout.json"
 
 [[ "$T5_RC" -eq 0 ]] && ok "T5: resume-workforce-build.sh still exits 0 when the callee script is absent (never a build blocker)" \
