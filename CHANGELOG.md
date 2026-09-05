@@ -1,5 +1,7 @@
 ## [v24.2.0]  -  2026-09-05  -  Verify client onboarding, workforce state, board handoff and closeout receipts
 
+- Require and pin paired Command Center v6.1.0 so fleet refresh cannot silently redeploy the older receiver and execution contracts.
+
 - Sanitize preexisting client-identifying comments and test/example values caught by the authoritative publication scan; runtime routing remains unchanged.
 
 Skill 23 completion now requires current build checks, libraries, department readiness and matching input/artifact evidence. Company identity is pinned across prebuild, client interview changes, department retirement, personalization, Command Center synchronization and closeout. Concurrent state/runner updates are serialized; corrupted or conflicting state is preserved for recovery. Python 3.9 is supported explicitly.
