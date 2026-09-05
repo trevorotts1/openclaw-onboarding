@@ -85,6 +85,58 @@ OBS_SKILLS_DIR="${SKILLS_DIR:-$OBS_OC_ROOT/skills}"
 
 obs_log() { printf '  [onboarding-state] %s\n' "$*"; }
 
+# ── Resolve an agent id for CLI calls that require an explicit owner ─────────
+# v25.0.4 fix. OpenClaw 2026.9.1 refuses agent-scoped CLI operations when more
+# than one agent is configured and no owner is named:
+#   "Multiple agents are configured, but the skills command has no explicit
+#    owner. Pass --agent <id>."
+# The verification gate below called `openclaw skills info` with NO --agent and
+# sent stderr to /dev/null, so on every multi-agent box the CLI errored,
+# $info_out came back EMPTY, and the gate recorded "skills-info:not-visible"
+# for EVERY skill. Measured on a VPS box carrying 39 dept-* agents and no
+# `main`: all 79 skills reported NOT verified while `openclaw skills info
+# superpowers --agent dept-research` returned "superpowers ✓ Ready".
+#
+# That is a broken instrument reported as a finding — the same failure class
+# this repo already retired scripts/update-skills.sh over. It is WORSE than a
+# crash because it exits cleanly: a fleet roll marks every box "not verified",
+# and the operator learns to ignore the gate.
+#
+# Order: explicit env override -> agents.defaults.systemAgent.agentId ->
+# an entry flagged default -> legacy "main" -> first entry. Empty output means
+# no --agent is passed, preserving single-agent behaviour exactly.
+obs_default_agent() {
+  [ -n "${OPENCLAW_AGENT_ID:-}" ] && { printf '%s' "$OPENCLAW_AGENT_ID"; return 0; }
+  command -v python3 >/dev/null 2>&1 || return 0
+  [ -f "$OBS_OC_JSON" ] || return 0
+  OC_JSON="$OBS_OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+def pick(cfg):
+    agents = cfg.get("agents", {}) or {}
+    sa = (agents.get("defaults", {}) or {}).get("systemAgent", {}) or {}
+    if sa.get("agentId"):
+        return sa["agentId"]
+    entries = agents.get("entries", {}) or {}
+    for k, v in entries.items():
+        if isinstance(v, dict) and v.get("default"):
+            return k
+    lst = agents.get("list", []) or []
+    for a in lst:
+        if isinstance(a, dict) and a.get("id") == "main":
+            return "main"
+    if entries:
+        return sorted(entries)[0]
+    for a in lst:
+        if isinstance(a, dict) and a.get("id"):
+            return a["id"]
+    return ""
+try:
+    print(pick(json.load(open(os.environ["OC_JSON"]))))
+except Exception:
+    pass
+PYEOF
+}
+
 # ── Seed the state file with every non-archived skill at "pending" ───────────
 # Idempotent: existing per-skill statuses are PRESERVED; only newly-discovered
 # skills are added at "pending". Records the onboarding version + a timestamp.
@@ -206,11 +258,24 @@ obs_verify_skill() {
   # registration signal AND check negative signals against SPECIFIC phrases
   # only (never a bare "error" substring).
   if command -v openclaw >/dev/null 2>&1; then
-    local info_out
-    info_out="$(openclaw skills info "$skill_name" 2>/dev/null || true)"
-    if [ -z "$info_out" ]; then
+    local info_out info_err _obs_agent _obs_agent_flag
+    _obs_agent="$(obs_default_agent)"
+    _obs_agent_flag=""
+    [ -n "$_obs_agent" ] && _obs_agent_flag="--agent $_obs_agent"
+    info_err="$(mktemp 2>/dev/null || printf '%s' "/tmp/obs-skills-info.$$")"
+    # NEVER discard stderr here: the owner-required error (see obs_default_agent)
+    # is emitted on stderr, and dropping it is what made an empty $info_out
+    # indistinguishable from a genuinely unregistered skill.
+    # shellcheck disable=SC2086
+    info_out="$(openclaw skills info "$skill_name" $_obs_agent_flag 2>"$info_err" || true)"
+    if [ -z "$info_out" ] && grep -qiE 'no explicit owner|multiple agents are configured|AgentSelectionRequiredError' "$info_err" 2>/dev/null; then
+      # Distinct, actionable reason — the box is not broken, the call was.
+      reasons="${reasons}skills-info:agent-required(set agents.defaults.systemAgent.agentId or OPENCLAW_AGENT_ID); "
+      rm -f "$info_err" 2>/dev/null || true
+    elif [ -z "$info_out" ]; then
+      rm -f "$info_err" 2>/dev/null || true
       reasons="${reasons}skills-info:not-visible; "
-    elif printf '%s' "$info_out" | grep -qiE 'not found|unknown skill|no such skill'; then
+    elif rm -f "$info_err" 2>/dev/null; printf '%s' "$info_out" | grep -qiE 'not found|unknown skill|no such skill'; then
       reasons="${reasons}skills-info:not-registered; "
     elif ! printf '%s' "$info_out" | grep -qiE 'ready|enabled|visible|installed|name:|path:|details:|source:'; then
       reasons="${reasons}skills-info:not-registered; "
