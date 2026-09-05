@@ -114,6 +114,7 @@ _BW_SHARED_UTILS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils"
 )
 sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
+from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
     _HAS_CANONICAL_SLUG = True
@@ -5387,14 +5388,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
             # Strip any V1 block first (so V2 is the only copy at the top)
-            if CEO_ORCHESTRATOR_V1_MARKER in existing:
-                # Remove from the V1 marker to the first --- separator (end of V1 block)
-                import re as _re
-                existing = _re.sub(
-                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
-                    existing, count=1, flags=_re.DOTALL)
             with open(soul_path, 'w') as f:
-                f.write(CEO_ORCHESTRATOR_RULE + existing)
+                f.write(_upgrade_ceo_policy(existing))
 
     # v10.13.23 - Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
@@ -5412,13 +5407,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(identity_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
-            if CEO_ORCHESTRATOR_V1_MARKER in existing:
-                import re as _re
-                existing = _re.sub(
-                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
-                    existing, count=1, flags=_re.DOTALL)
             with open(identity_path, 'w') as f:
-                f.write(CEO_ORCHESTRATOR_RULE + existing)
+                f.write(_upgrade_ceo_policy(existing))
 
     # Create MEMORY.md
     memory_path = os.path.join(dept_dir, "MEMORY.md")
@@ -5437,13 +5427,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(memory_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
-            if CEO_ORCHESTRATOR_V1_MARKER in existing:
-                import re as _re
-                existing = _re.sub(
-                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
-                    existing, count=1, flags=_re.DOTALL)
             with open(memory_path, 'w') as f:
-                f.write(CEO_ORCHESTRATOR_RULE + existing)
+                f.write(_upgrade_ceo_policy(existing))
 
     # Create HEARTBEAT.md with department-specific priorities
     heartbeat_path = os.path.join(dept_dir, "HEARTBEAT.md")
@@ -5462,12 +5447,9 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     # writing to workspace/SOUL.md stopped the CEO from self-executing; a build
     # re-run reverted it because the build never touched that file.
     #
-    # This block ALSO scrubs the "personal assistant / handle it yourself" intro
-    # from workspace/SOUL.md before prepending the directive, so there are no
-    # contradictory instructions. Idempotent: CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER
+    # Upgrade only managed rules, preserving owner-authored identity content. Idempotent: CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER
     # guards against duplicate injection on re-runs.
     if is_ceo_dept:
-        import re as _re2
         main_ws = _resolve_main_agent_workspace()
         os.makedirs(main_ws, exist_ok=True)
         ws_soul_path = os.path.join(main_ws, "SOUL.md")
@@ -5479,26 +5461,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
             ws_existing = ""
         # Only inject if V2 marker not already present
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in ws_existing:
-            # Upgrade V1 → V2 if only V1 is present
-            if CEO_ORCHESTRATOR_V1_MARKER in ws_existing:
-                ws_existing = _re2.sub(
-                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
-                    ws_existing, count=1, flags=_re2.DOTALL)
-            # Scrub the "personal assistant / handle it yourself" template intro.
-            # The SOUL.md installed by install.sh starts with this marker line -
-            # it instructs the agent to "just help" and "have opinions" which
-            # contradicts the route-not-execute PRIME DIRECTIVE.  Strip from the
-            # beginning of the file up to and including the first --- separator.
-            # (Idempotent - if no such intro is found, the sub is a no-op.)
-            ws_existing = _re2.sub(
-                r'^# SOUL\.md.*?^---\s*\n',
-                '',
-                ws_existing,
-                count=1,
-                flags=_re2.DOTALL | _re2.MULTILINE,
-            )
             with open(ws_soul_path, 'w') as _f:
-                _f.write(CEO_ORCHESTRATOR_RULE + ws_existing.lstrip())
+                _f.write(_upgrade_ceo_policy(ws_existing))
             print(
                 f"[G5-FIX] PRIME DIRECTIVE written to main-agent workspace: {ws_soul_path}",
                 file=sys.stderr
@@ -5531,58 +5495,9 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
 # before prepending - re-running the build never duplicates the block.
 
-CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
-# V2 (PR2, 2026-06-09): Replaces V1 CANONICAL ORCHESTRATOR RULE with the PRIME DIRECTIVE
-# verbatim from CANONICAL-ORCHESTRATOR-RULE.md (Trevor's sharpened + corrected version).
-# Key changes:
-#   - Header: PRIME DIRECTIVE (5-point numbered list) replaces the old table
-#   - Bridge-leak fix: routing = POST department_slug to task board, NOT spawn sub-agent
-#   - Owner-explicit-permission retained as point 3 (seek AND receive consent)
-#   - General-tasks fallback retained as point 4
-#   - R6 corrected: lists permitted actions only, no longer suggests sub-agent spawning
-# Idempotency: files with V1 marker only will get V2 prepended on next build run.
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V3 -->"
 CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
-
-CEO_ORCHESTRATOR_RULE = f"""{CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER}
-## ⛔ PRIME DIRECTIVE - I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
-
-1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
-   reaches me, I ROUTE it to the correct DEPARTMENT - every time. I have NO permission to decide
-   not to route, to refuse a task, or to choose what I will or will not do.
-2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
-   sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
-   sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
-   on the Kanban board. The doing belongs to the department and its specialist - never to me.
-3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
-   consent from the owner (the human in control). Without that explicit consent, I route - always.
-   (Routing is my default and is always allowed; I never need permission to route.)
-4. If I cannot determine the right department, I route to the General Tasks department. I never
-   self-execute because I'm unsure, and I never hold a task to "stay in control" of it.
-5. What I MAY do: have conversations, manage agents, manage departments, and route tasks.
-   What I may NEVER do: refuse to route, decide who executes, execute the work myself, or
-   commandeer a sub-agent to keep control.
-
-### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
-
-The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
-This places the task on the department's Kanban - the DEPARTMENT assigns the specialist.
-
-Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
-executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
-operate via the task board - it is not a production tool for the orchestrator.
-
-### Binding Rules
-
-- **R1** Never generate images, videos, audio, or written deliverables
-- **R2** Never write to files, databases, or external APIs as a production action
-- **R3** Never use any skill that produces a deliverable (`skills: []` enforced in config)
-- **R4** Every actionable request → `POST /api/tasks/ingest` with `department_slug`
-- **R5** If CC unreachable → escalate via Telegram, do NOT execute directly
-- **R6** If route is unclear → use `department_slug: "general-task"`, never self-execute
-- **R7** Permitted actions only: Telegram messaging, task-ingest POST, read workspace files, gateway restart
-
----
-"""
+CEO_ORCHESTRATOR_RULE = _ceo_policy_block()
 
 # ============================================================
 # READ-THE-SOP OPERATING PROTOCOL (canonical, embedded in every agent)
@@ -8009,7 +7924,13 @@ def add_agent_to_config(config, dept_id, dept_info):
     # Check if already exists (idempotent)
     existing_ids = {a.get("id") for a in agents_list if isinstance(a, dict)}
     if agent_id in existing_ids:
-        return False  # Already exists, skip
+        for existing in agents_list:
+            if (existing.get("id") == agent_id
+                    and dept_id in ("ceo", "master-orchestrator", "dept-ceo")
+                    and existing.get("skills") == []):
+                existing.pop("skills")  # Retire generated router-only skill suppression.
+                return True
+        return False  # Preserve all other installed/owner configuration.
 
     # U135 (July 23): Use the canonical model resolution chain instead of any
     # hardcoded model name. resolve_dept_agent_model() drives the capability-class
@@ -8238,7 +8159,8 @@ def add_agent_to_config(config, dept_id, dept_info):
     if is_ceo_agent:
         # Enforce orchestrator-only posture: no production skills.
         # The CEO routes via messaging + task-ingest API calls only.
-        agent_entry["skills"] = []
+        # Inherit installed skills for authorized catch-all execution.
+        # Do not generate an empty skill allowlist that disables all production skills.
         # GOAL-5 Item 1: hard tool-gate so skills:[] is not the ONLY brake.
         # Deny every production tool by real built-in name + deny all GHL MCP
         # tools by provider; allow only routing/conversation tools.

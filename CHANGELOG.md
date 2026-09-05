@@ -1,3 +1,10 @@
+## [Unreleased] — General Task and CEO fallback execution
+
+- Execute missing or unmatched department work through the assigned General Task worker or verified CEO catch-all execution, without department-choice holds, duplicate intake or routing loops. Preserve specialist assignments, tenant boundaries, QC and kill switches.
+- Upgrade managed CEO instructions to V3 without deleting owner content; retire generated empty CEO skill lists while preserving nonempty owner restrictions. Correct the routing plugin's ES-module export.
+- Pair with the Command Center catch-all execution change and **migration 133** (`agents.openclaw_agent_id`). The updater runs scoped binding verification after CC refresh/bootstrap; older schemas defer. Only an active same-company CEO master row may bind to a uniquely proven registered CEO runtime; Lead/QC/Specialist rows and archived workspaces never inherit that authority.
+- Verified with isolated policy, plugin, managed-upgrade and runtime-binding fixtures; no live client activation is claimed.
+
 ## [v25.0.2]  -  2026-09-05  -  Require the Command Center security floor and compatible Node runtime
 
 - Add one shared fail-closed Node guard for Skill 32 fresh/update/resumed installation and fleet pull/build/restart: accept ^20.19.0 || ^22.13.0 || >=24, reject unsupported/malformed/prerelease versions, and report the required manual runtime upgrade before dependency installation, migrations or process changes.

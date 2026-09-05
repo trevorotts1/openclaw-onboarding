@@ -1,0 +1,33 @@
+name: CEO fallback execution guard
+on:
+  pull_request:
+    paths:
+      - 'shared-utils/ceo_execution_policy.py'
+      - 'shared-utils/sync_ceo_runtime_bindings.py'
+      - '23-ai-workforce-blueprint/scripts/build-workforce.py'
+      - '23-ai-workforce-blueprint/scripts/create_role_workspaces.py'
+      - 'extensions/ceo-routing-doctrine/**'
+      - 'scripts/apply-routing-fix.sh'
+      - 'scripts/apply-fleet-standards.sh'
+      - 'scripts/verify-routing.sh'
+      - 'update-skills.sh'
+      - 'tests/unit/test_ceo_*.py'
+      - '.github/workflows/ceo-fallback-execution-guard.yml'
+  push:
+    branches: [main]
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify policy, managed upgrades, plugin imports and runtime ownership
+        run: |
+          python3 tests/unit/test_ceo_execution_policy.py
+          python3 tests/unit/test_ceo_runtime_bindings.py
+          bash -n scripts/apply-routing-fix.sh scripts/apply-fleet-standards.sh scripts/verify-routing.sh update-skills.sh

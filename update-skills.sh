@@ -9295,6 +9295,15 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
           exit 2
         fi
         echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
+        # Schema 133 is available only AFTER the verified CC upgrade. This scoped
+        # synchronizer never seeds identities or binds another company's runtime.
+        _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"
+        if [ -f "$_CC_BINDING_SYNC" ] && [ -n "${_CC_SLUG:-}" ]; then
+          python3 "$_CC_BINDING_SYNC" --db "$_CC_DIR/mission-control.db" \
+            --config "$OC_ROOT/openclaw.json" --company-slug "$_CC_SLUG" \
+            --build-state "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" >>"$LOG_FILE" 2>&1 \
+            || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
+        fi
       else
         echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
@@ -9414,6 +9423,13 @@ PYEOF
       echo "  Command Center not present on this box (no checkout, no pm2 app, port $_CC_PORT free) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
       if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
         echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+        _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"
+        if [ -f "$_CC_BINDING_SYNC" ]; then
+          python3 "$_CC_BINDING_SYNC" --db "$_CC_DIR_CANONICAL/mission-control.db" \
+            --config "$OC_ROOT/openclaw.json" --company-slug "$_CC_SLUG" \
+            --build-state "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" >>"$LOG_FILE" 2>&1 \
+            || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
+        fi
       else
         echo "FATAL: Command Center bootstrap failed; skills content is current but CC web-app was not bootstrapped." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run." >&2

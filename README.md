@@ -1,4 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
+
+> **Unreleased — General/CEO fallback execution.** Missing or unmatched departments execute through the client's assigned General Task worker or verified CEO fallback, retaining the same task/execution. Requires the companion Command Center catch-all change and migration 133 for explicit runtime bindings. Older schemas defer binding safely; no live readiness is implied. See [deployment and verification notes](docs/ceo-general-fallback-execution.md).
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v25.0.2.

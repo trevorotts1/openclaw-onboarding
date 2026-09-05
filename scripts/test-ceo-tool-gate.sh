@@ -203,15 +203,15 @@ m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"]
 t=m.get("tools",{})
 # RETIRED 2026-08-05: the production-deny assertion (need ⊆ deny) is gone.
 # The surviving posture is: GHL MCP denied by provider, exec allowed (routing
-# path), skills:[] preserved. Also assert the retired deny did NOT come back.
+# path), legacy empty skills retired. Also assert the retired deny did NOT come back.
 RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
 deny=set(t.get("deny") or [])
 ok = (t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
-     "exec" in (t.get("allow") or []) and m.get("skills")==[] and \
+     "exec" in (t.get("allow") or []) and "skills" not in m and \
      RETIRED.isdisjoint(deny)
 sys.exit(0 if ok else 1)
 PYEOF
-then _ok "A: L5 applies the surviving posture (GHL MCP deny + exec + skills:[]) and does NOT re-add the retired production deny"
+then _ok "A: L5 applies the surviving posture (GHL MCP deny + exec + inherited skills) and does NOT re-add the retired production deny"
 else _bad "A: L5 did not apply the surviving posture correctly (or re-added the retired production deny)"; fi
 
 # B. idempotent.
@@ -414,7 +414,7 @@ ag={a["id"]:a for a in cfg["agents"]["list"]}
 # The retired production deny is no longer part of the definition.
 deo=ag["dept-executive-office"]; mn=ag["main"]
 deo_gated = (deo.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
-            deo.get("skills")==[]
+            deo.get("skills")==["pptx"]
 main_gated = (mn.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"])
 sys.exit(0 if (deo_gated and not main_gated) else 1)
 PYEOF
@@ -538,7 +538,7 @@ RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
 # "gated" = the SURVIVING posture (GHL MCP deny + skills:[]); the retired
 # production deny must NOT be present.
 ok = t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] \
-     and a.get("skills")==[] \
+     and a.get("skills")==["pptx"] \
      and RETIRED.isdisjoint(set(t.get("deny") or []))
 sys.exit(0 if ok else 1)
 PYEOF
