@@ -155,7 +155,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # A box is "VPS-shaped" if its config lives under /data/.openclaw (Hostinger
 # VPS / canonical containers) OR if the OPENCLAW_ROOT env / cli is data-rooted.
 # Otherwise it's "Mac-shaped" — which also covers Linux containers whose config
-# lives under $HOME/.openclaw (e.g. oc-janet-pinkney: HOME layout, no launchd,
+# lives under $HOME/.openclaw (e.g. oc-fixture-client-i: HOME layout, no launchd,
 # no pm2). The VPS branches hardcode /data/logs and assume pm2/systemd; the
 # Mac branches default to $HOME/Library/Logs/ghl-mcp. A Linux container with a
 # HOME-rooted config MUST fall into the Mac branch AND survive without launchd
@@ -175,7 +175,7 @@ OC_JSON="$OC_ROOT/openclaw.json"
 SECRETS_ENV="$OC_ROOT/secrets/.env"
 # Third shape: Mac-path layout on LINUX (config under $HOME/.openclaw, no
 # launchd). start_service_mac would write plists nothing will ever run — the
-# exact silent failure oc-janet-pinkney hit live (2026-08-25): autostart
+# exact silent failure oc-fixture-client-i hit live (2026-08-25): autostart
 # reported STARTED_UNHEALTHY forever while zero supervisors existed. Route
 # these boxes to the HOME-path setsid supervised loop instead.
 if [ "$PLATFORM" = "mac" ] && [ "$(uname -s)" != "Darwin" ]; then
@@ -1635,7 +1635,7 @@ EOF
         && log "periodic liveness probe cron installed/refreshed (*/15)" \
         && return 0
     fi
-    # HOME-layout containers may have no crontab at all (oc-janet-pinkney).
+    # HOME-layout containers may have no crontab at all (oc-fixture-client-i).
     # Fall back to the openclaw cron STORE — the gateway runs it, no OS cron
     # needed. A silent return here would leave the probe uninstalled and the
     # crash-only supervisor unwatched.

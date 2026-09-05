@@ -88,28 +88,34 @@ expect() { # expect <label> <expected> <actual>
   if [ "$2" = "$3" ]; then pass "$1 -> $3"; else fail "$1: expected '$2' got '$3'"; fi
 }
 
-ALL_TRUE='{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true}'
+ALL_TRUE='{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}'
 
 # ── Fail-closed on the two Issue-#12-named keys (script-missing / false) ─────────
 # The exact audit scenario: dashboard repo lacks the sync script -> 6c script-missing.
 expect "6c=script-missing must NOT report done (fail-closed)" "done-degraded" \
-  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true}')"
+  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 expect "6b=false must NOT report done (fail-closed)" "done-degraded" \
-  "$(final_status '{"commandCenterWorkspacesSeeded":false,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true}')"
+  "$(final_status '{"commandCenterWorkspacesSeeded":false,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 expect "6d=script-missing must NOT report done (fail-closed)" "done-degraded" \
-  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":"script-missing","commandCenterDashboardContentSeeded":true}')"
+  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":"script-missing","commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 expect "6e=false must NOT report done (fail-closed)" "done-degraded" \
-  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":false}')"
+  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":false,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 
 # ── Convergence: all required sub-phases true -> done (green box stays green) ────
 expect "all required true -> done (converges)" "done" "$(final_status "$ALL_TRUE")"
 
+# Each newly required readiness phase is independently enforced.
+for key in commandCenterBuildFresh commandCenterDeptRuntimeParity commandCenterTenantReady; do
+  expect "$key absent blocks completion" "done-degraded" "$(final_status "$(printf '%s' "$ALL_TRUE" | jq --arg key "$key" 'del(.[$key])')")"
+  expect "$key false blocks completion" "done-degraded" "$(final_status "$(printf '%s' "$ALL_TRUE" | jq --arg key "$key" '.[$key]=false')")"
+done
+
 # ── 6f (KPI rollup, WARN-by-design) is DELIBERATELY EXCLUDED ────────────────────
 expect "only 6f missing must still report done (6f excluded)" "done" \
-  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterKpiRollupWritten":"script-missing"}')"
+  "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterKpiRollupWritten":"script-missing","commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 
-# ── Older state (keys absent) must NOT be treated as a regression ───────────────
-expect "absent keys (older state) -> done (no false-red)" "done" \
+# ── Historical state without required evidence remains pending ───────────────
+expect "absent keys require verified readiness before done" "done-degraded" \
   "$(final_status '{"commandCenterStatus":"building"}')"
 
 # ── ZHE gate failure (reachable only via ZHE_ENFORCE=0 escape hatch) ────────────
@@ -121,7 +127,7 @@ expect "zheGate failed -> done-degraded even when sub-phases green" "done-degrad
 #         resume path re-runs (status != "done"). Pass 2: transient cleared (dashboard
 #         repo pulled, 6c now true) -> done. The gate converges when the transient
 #         resolves and NEVER silently reports done while it persists.
-p1="$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true}')"
+p1="$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')"
 p2="$(final_status "$ALL_TRUE")"
 if [ "$p1" = "done-degraded" ] && [ "$p2" = "done" ]; then
   pass "retry loop: transient(6c=script-missing)->done-degraded, then cleared->done (converges)"
@@ -131,14 +137,15 @@ fi
 # Never-silent-pass: a persistently missing script can never yield "done".
 persist_ok=1
 for _i in 1 2 3 4 5; do
-  [ "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true}')" = "done-degraded" ] || persist_ok=0
+  [ "$(final_status '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":"script-missing","commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterBuildFresh":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}')" = "done-degraded" ] || persist_ok=0
 done
 [ "$persist_ok" = "1" ] && pass "persistent 6c=script-missing never silently passes (5/5 stayed done-degraded)" \
   || fail "persistent 6c=script-missing leaked a 'done' on some pass"
 
-# ── Static wiring: the filter guards exactly the four required keys, not 6f ─────
+# ── Static wiring: all required readiness keys stay enforced; KPI remains advisory ──
 for key in commandCenterWorkspacesSeeded commandCenterDepartmentsSynced \
-           commandCenterMdContentSynced commandCenterDashboardContentSeeded; do
+           commandCenterMdContentSynced commandCenterDashboardContentSeeded \
+           commandCenterBuildFresh commandCenterDeptRuntimeParity commandCenterTenantReady; do
   case "$FILTER" in
     *"$key"*) pass "FINAL filter still includes required key $key" ;;
     *) fail "FINAL filter lost required key $key (Issue-#12/#6 regression)" ;;

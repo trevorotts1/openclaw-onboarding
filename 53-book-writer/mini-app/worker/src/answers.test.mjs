@@ -53,7 +53,7 @@ function stubKv(seed = {}) {
 
 function bindingRow(over = {}) {
   return {
-    client_id: "karen-vaughn",
+    client_id: "fixture-client-b",
     location_id: "loc_a_fake",
     phase_id: "intake",
     run_id: "run_abc123",
@@ -150,7 +150,7 @@ test("answerKeys build per-client consumed + staged keys", () => {
   const b = bindingRow();
   const { consumed, staged } = answerKeys(b, "first_name");
   assert.equal(consumed, "consumed:run_abc123:intake:first_name");
-  assert.equal(staged, "answer:karen-vaughn:run_abc123:intake:first_name");
+  assert.equal(staged, "answer:fixture-client-b:run_abc123:intake:first_name");
   assert.equal(stagedKeyFor(b, "first_name"), staged);
 });
 
@@ -171,7 +171,7 @@ test("decideSubmit accepts a fresh step and records the BOUND destination", () =
   });
   assert.ok(d.ok);
   assert.equal(d.answer.answer, "My book");
-  assert.equal(d.answer.destination.client_id, "karen-vaughn");
+  assert.equal(d.answer.destination.client_id, "fixture-client-b");
   assert.equal(d.answer.destination.location_id, "loc_a_fake");
   assert.equal(d.answer.destination.phase_id, "intake");
   assert.equal(d.answer.destination.run_id, "run_abc123");
@@ -218,8 +218,8 @@ test("decideSubmit trims a padded qid for the consumed key", () => {
   assert.equal(a.answer.qid, "first_name");
   // stagedKeyFor trims, so a padded qid resolves to the SAME staged key as the
   // clean qid — a replayed padded submit collides with the original.
-  assert.equal(stagedKeyFor(b, "first_name "), "answer:karen-vaughn:run_abc123:intake:first_name");
-  assert.equal(stagedKeyFor(b, "first_name"), "answer:karen-vaughn:run_abc123:intake:first_name");
+  assert.equal(stagedKeyFor(b, "first_name "), "answer:fixture-client-b:run_abc123:intake:first_name");
+  assert.equal(stagedKeyFor(b, "first_name"), "answer:fixture-client-b:run_abc123:intake:first_name");
 });
 
 // ---------------------------------------------------------------------------
@@ -232,16 +232,16 @@ test("NORMAL submit: stores answer under the bound client prefix + receipts", as
   assert.equal(res.status, 201);
   const body = await res.json();
   assert.ok(body.ok);
-  assert.equal(body.receipt.client_id, "karen-vaughn");
+  assert.equal(body.receipt.client_id, "fixture-client-b");
   assert.equal(body.receipt.phase_id, "intake");
   assert.equal(body.receipt.run_id, "run_abc123");
   assert.equal(body.done_page, "/done");
   // Consumed counter + staged answer exist.
   const consumed = await kv.get("consumed:run_abc123:intake:book_about", { type: "json" });
   assert.equal(consumed.status, "consumed");
-  const staged = await kv.get("answer:karen-vaughn:run_abc123:intake:book_about", { type: "json" });
+  const staged = await kv.get("answer:fixture-client-b:run_abc123:intake:book_about", { type: "json" });
   assert.equal(staged.answer, "My book");
-  assert.equal(staged.destination.client_id, "karen-vaughn");
+  assert.equal(staged.destination.client_id, "fixture-client-b");
   // Staged under the BOUND client prefix — nothing under any other client.
   assert.ok(!(await kv.get("answer:loc_b_fake:run_abc123:intake:book_about", { type: "json" })));
 });
@@ -250,7 +250,7 @@ test("REPLAY of a consumed step is rejected (409), never duplicated", async () =
   const kv = stubKv({
     [`binding:${TOKEN}`]: JSON.stringify(bindingRow()),
     "consumed:run_abc123:intake:first_name": JSON.stringify({ ts: 1_699_000_000, status: "consumed" }),
-    "answer:karen-vaughn:run_abc123:intake:first_name": JSON.stringify({ qid: "first_name", answer: "Jane" }),
+    "answer:fixture-client-b:run_abc123:intake:first_name": JSON.stringify({ qid: "first_name", answer: "Jane" }),
   });
   const env = { BW_BINDINGS: kv };
   const res = await handleAnswersPost(answersRequest({ question_id: "first_name", answer: "Jane" }), env, 1_700_000_000);
@@ -259,7 +259,7 @@ test("REPLAY of a consumed step is rejected (409), never duplicated", async () =
   assert.equal(body.error, "step already answered");
   assert.ok(!body.ok);
   // No duplicate staged answer was written.
-  const staged = await kv.get("answer:karen-vaughn:run_abc123:intake:first_name", { type: "json" });
+  const staged = await kv.get("answer:fixture-client-b:run_abc123:intake:first_name", { type: "json" });
   assert.equal(staged.answer, "Jane");
 });
 
@@ -275,9 +275,9 @@ test("INJECTED destination is IGNORED — binding row is the sole authority", as
   };
   const res = await handleAnswersPost(answersRequest(malicious), env, 1_700_000_000);
   assert.equal(res.status, 201);
-  const staged = await kv.get("answer:karen-vaughn:run_abc123:intake:niche", { type: "json" });
+  const staged = await kv.get("answer:fixture-client-b:run_abc123:intake:niche", { type: "json" });
   assert.ok(staged);
-  assert.equal(staged.destination.client_id, "karen-vaughn");
+  assert.equal(staged.destination.client_id, "fixture-client-b");
   assert.equal(staged.destination.location_id, "loc_a_fake");
   // Injected values never leaked into the staged record.
   assert.equal(staged.answer, "cats");
