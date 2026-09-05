@@ -570,6 +570,24 @@ except Exception:
         fi
         log "  $RESOLVE_OUT"
 
+        # FIX 11 client path -- THE LAUNCH RECORD. Because this branch does not
+        # go through the launcher, nothing here ever wrote the launch-plan
+        # sidecars the launcher writes on the resume branch: a fresh client
+        # intake declaring ULTRA would correctly RUN ultra and leave no evidence
+        # it had. The mode governed but was unauditable, which is worse than not
+        # governing -- "ultra was on" becomes an unverifiable claim exactly where
+        # proof was demanded. Write the same records, in the same shape, here:
+        #   .mode-plan.json   -- resolved mode + its PROVENANCE + ceiling
+        #   .model-plan.json  -- the routing stamp (slots + thinking level)
+        # Written AFTER the intake resolved and BEFORE the engine is created, so
+        # a run dir that never becomes a launch leaves no sidecar -- the same
+        # ordering the launcher uses. Best-effort by contract: it prints and
+        # returns 0 on any failure, so an audit record can never be the reason a
+        # client's deck does not get built.
+        ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launch_plan --run-dir "$run_dir" ${RUN_MODE:+--mode "$RUN_MODE"} --source intake-slot ) 2>&1 | while IFS= read -r line; do
+            log "  [launch-plan] $line"
+        done
+
         # Create the engine job then run it.
         # FIX 11 client path: this branch calls the ENGINE directly, not the
         # launcher, so the mode travels as PRESENTATION_MODE rather than as
