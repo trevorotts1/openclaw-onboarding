@@ -59,7 +59,11 @@ CONSENT="$TMP/consent.json"
 mkdir -p "$SANDBOX_HOME/.openclaw/workspace" "$MASTER/zero-human-company" "$SANDBOX_HOME/.openclaw" \
          "$SANDBOX_HOME/Downloads/openclaw-master-files" "$COMPANY"
 printf '{"decision":"prebuild","source":"operator-prebuild","decidedAt":"2026-08-04T12:00:00Z","decidedBy":"test-operator","sessionId":"sess-test"}\n' > "$CONSENT"
-printf '{"agents":{"list":[]}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+if [ "${ONB_TEST_REGISTRY:-list}" = "entries" ]; then
+  printf '{"agents":{"entries":{}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+else
+  printf '{"agents":{"list":[]}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+fi
 echo '{}' > "$STATE"
 
 # The scratch build-state is pinned for EVERY build-workforce invocation via
@@ -243,20 +247,27 @@ else
 fi
 
 # A3: agents.list rows present for confirmed-kept departments.
-# master-orchestrator is EXCLUDED from the expected set exactly as in the
-# legacy lane: load_canonical_floor() never returns it (it is the floor-only
-# 30th id, provisioned once outside the interview; generate_departments_json
-# surfaces it as the CEO column, never as its own registered agent).
+# The non-declinable CEO foundation is registered separately from interview
+# selections. Both CEO and General must have real runtime directories.
 python3 - "$SANDBOX_HOME/.openclaw/openclaw.json" "$COMPANY/departments" "$STATE" <<'PY'
 import json, os, sys
 cfg_path, depts_dir, state_path = sys.argv[1:4]
 cfg = json.load(open(cfg_path))
-ids = {a.get("id") for a in (cfg.get("agents") or {}).get("list", []) if isinstance(a, dict)}
+agents = cfg.get("agents", {})
+entries = agents.get("entries")
+rows = [dict(value, id=key) for key, value in entries.items()] if isinstance(entries, dict) else agents.get("list", [])
+assert not (isinstance(entries, dict) and "list" in agents), "modern registry gained unsupported agents.list"
+ids = {a.get("id") for a in rows if isinstance(a, dict)}
 on_disk = {d for d in os.listdir(depts_dir) if os.path.isdir(os.path.join(depts_dir, d))}
 expected = {f"dept-{d}" for d in on_disk
             if d not in ("ceo", "dept-ceo", "master-orchestrator")}
 missing = sorted(expected - ids)
 extra_retired = [i for i in ids if i == "dept-audio"]
+runtime_rows = {a.get("id"): a for a in rows}
+for rid in ("dept-master-orchestrator", "dept-general-task"):
+    entry = runtime_rows.get(rid, {})
+    if not (os.path.isdir(entry.get("workspace", "")) and os.path.isdir(entry.get("agentDir", ""))):
+        missing.append(rid + ":runtime-directory")
 ok = not missing and not extra_retired
 print(f"PASS: A3 agents.list rows present for all {len(expected)} confirmed-kept depts (missing={missing}, declined-row-present={bool(extra_retired)})" if ok
       else f"FAIL: A3 agents.list missing={missing} declined-row-present={extra_retired}")

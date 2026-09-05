@@ -114,7 +114,7 @@ _BW_SHARED_UTILS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils"
 )
 sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
-from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy
+from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy, registry_rows as _registry_rows
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
     _HAS_CANONICAL_SLUG = True
@@ -3775,6 +3775,7 @@ def apply_standard_edits(config):
             print(f"[STANDARD-FIRST] openclaw.json backed up to: {backup_path}",
                   file=sys.stderr)
             config_data = load_openclaw_config()
+            _expected_dept_agent_ids.add(ensure_ceo_foundation_agent(config_data))
             for dept_id, dept_info in selected_departments.items():
                 try:
                     add_agent_to_config(config_data, dept_id, dept_info)
@@ -3801,7 +3802,7 @@ def apply_standard_edits(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {a.get("id") for a in _cfg_chk.get("agents", {}).get("list", [])
+            _actual_ids_chk = {a.get("id") for a in _registry_rows(_cfg_chk)
                                if isinstance(a, dict)}
             _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
             if not _wiring_missing:
@@ -3827,7 +3828,7 @@ def apply_standard_edits(config):
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
                             _actual_ids2 = {a.get("id") for a in
-                                            _cfg_chk2.get("agents", {}).get("list", [])
+                                            _registry_rows(_cfg_chk2)
                                             if isinstance(a, dict)}
                             _still_missing = _expected_dept_agent_ids - _actual_ids2
                             if not _still_missing:
@@ -4475,13 +4476,15 @@ def build_from_config(config):
                 print("[NON-INTERACTIVE] no-refusal baseline: agents.defaults.tools.allow=['*'] (GOAL-4 D4)", file=sys.stderr)
 
             registration_failures = []
+            if any(os.path.isfile(os.path.join(DEPARTMENTS_DIR, d, "SOUL.md")) for d in ("master-orchestrator", "ceo")):
+                ensure_ceo_foundation_agent(config_data)
             for dept_id, dept_info in selected_departments.items():
                 try:
                     result = add_agent_to_config(config_data, dept_id, dept_info)
                     if result is False:
                         # False = guard-blocked or not added (not just already-present)
                         # Check if it was already present (idempotent) vs actually failed
-                        existing_ids = [a.get("id") for a in config_data.get("agents", {}).get("list", [])]
+                        existing_ids = [a.get("id") for a in _registry_rows(config_data)]
                         if f"dept-{dept_id}" not in existing_ids:
                             registration_failures.append(f"{dept_id}:add_returned_false")
                 except Exception as _reg_e:
@@ -4538,7 +4541,7 @@ def build_from_config(config):
         try:
             _cfg_chk = load_openclaw_config()
             _actual_ids_chk = {
-                a.get("id") for a in _cfg_chk.get("agents", {}).get("list", [])
+                a.get("id") for a in _registry_rows(_cfg_chk)
                 if isinstance(a, dict)
             }
             _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
@@ -4570,7 +4573,7 @@ def build_from_config(config):
                             _cfg_chk2 = load_openclaw_config()
                             _actual_ids2 = {
                                 a.get("id")
-                                for a in _cfg_chk2.get("agents", {}).get("list", [])
+                                for a in _registry_rows(_cfg_chk2)
                                 if isinstance(a, dict)
                             }
                             _still_missing = _expected_dept_agent_ids - _actual_ids2
@@ -5284,7 +5287,7 @@ def _resolve_main_agent_workspace():
         try:
             with open(OPENCLAW_CONFIG, 'r') as _f:
                 _cfg = _json.load(_f)
-            for _ag in _cfg.get("agents", {}).get("list", []) or []:
+            for _ag in _registry_rows(_cfg) or []:
                 if isinstance(_ag, dict) and _ag.get("id") == "main":
                     _ws = _ag.get("workspace")
                     if _ws:
@@ -7897,6 +7900,16 @@ def _agent_dir_for(agent_id):
     return os.path.join(state_root, "agents", agent_id, "agent")
 
 
+def ensure_ceo_foundation_agent(config):
+    """Register the materialized non-declinable CEO floor without changing main."""
+    for dept in ("master-orchestrator", "ceo"):
+        workspace = os.path.join(DEPARTMENTS_DIR, dept)
+        if os.path.isdir(workspace) and os.path.isfile(os.path.join(workspace, "SOUL.md")):
+            add_agent_to_config(config, dept, {"head": "Master Orchestrator (CEO Agent)"})
+            return f"dept-{dept}"
+    raise RuntimeError("CEO foundation workspace is not materialized; cannot register fallback")
+
+
 def add_agent_to_config(config, dept_id, dept_info):
     """
     Add a department head agent to openclaw.json agents.list.
@@ -7916,6 +7929,24 @@ def add_agent_to_config(config, dept_id, dept_info):
         only schema-valid keys.
     """
     config.setdefault("agents", {})
+    if isinstance(config["agents"].get("entries"), dict):
+        # Run the established registration logic on an isolated legacy view,
+        # then write back ONLY the schema the caller actually uses.
+        import copy
+        rows = _registry_rows(config)
+        normalized = copy.deepcopy(config)
+        normalized["agents"].pop("entries")
+        normalized["agents"]["list"] = rows
+        changed = add_agent_to_config(normalized, dept_id, dept_info)
+        entries = {}
+        for entry in normalized["agents"].pop("list"):
+            entry = dict(entry)
+            rid = entry.pop("id")
+            entries[rid] = entry
+        normalized["agents"]["entries"] = entries
+        config.clear()
+        config.update(normalized)
+        return changed
     if not isinstance(config["agents"].get("list"), list):
         config["agents"]["list"] = []
     agents_list = config["agents"]["list"]
@@ -7925,6 +7956,10 @@ def add_agent_to_config(config, dept_id, dept_info):
     existing_ids = {a.get("id") for a in agents_list if isinstance(a, dict)}
     if agent_id in existing_ids:
         for existing in agents_list:
+            if (existing.get("id") == agent_id
+                    and existing.get("agentDir") == _agent_dir_for(agent_id)
+                    and os.path.isdir(existing.get("workspace", ""))):
+                os.makedirs(existing["agentDir"], exist_ok=True)
             if (existing.get("id") == agent_id
                     and dept_id in ("ceo", "master-orchestrator", "dept-ceo")
                     and existing.get("skills") == []):
@@ -8212,6 +8247,8 @@ def add_agent_to_config(config, dept_id, dept_info):
     if dept_id in ("presentations", "quality-control"):
         agent_entry["thinkingDefault"] = "high"
 
+    # Materialize the registered runtime directory; registration alone is not readiness.
+    os.makedirs(agent_dir, exist_ok=True)
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list
     # Layer-1: persist the dept-default artifact for CC seeding (idempotent —

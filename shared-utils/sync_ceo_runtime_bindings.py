@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+from ceo_execution_policy import registry_rows
 
 ALIASES = {'ceo': 'ceo', 'master-orchestrator': 'ceo', 'general-task': 'general-task'}
 
@@ -24,7 +25,7 @@ def sync(db, config, company_id, company_dir):
         return {'status': 'deferred-company', 'bound': 0}
     root = (company_dir / 'departments').resolve()
     candidates = {'ceo': [], 'general-task': []}
-    for entry in config.get('agents', {}).get('list', []):
+    for entry in registry_rows(config):
         if not isinstance(entry, dict):
             continue
         rid, ws, agent_dir = entry.get('id'), entry.get('workspace'), entry.get('agentDir')

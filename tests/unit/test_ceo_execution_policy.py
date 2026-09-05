@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
-from ceo_execution_policy import POLICY, block, upgrade
+from ceo_execution_policy import POLICY, block, upgrade, registry_rows
 
 class PolicyTests(unittest.TestCase):
     def test_legacy_upgrade_preserves_owner_bytes(self):
@@ -55,7 +55,7 @@ class PolicyTests(unittest.TestCase):
         path = ROOT / '23-ai-workforce-blueprint/scripts/build-workforce.py'
         tree = ast.parse(path.read_text())
         fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'add_agent_to_config')
-        ns = {}
+        ns = {"_agent_dir_for": lambda agent_id: "/fixture/runtime/" + agent_id, "_registry_rows": registry_rows}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec'), ns)
         for dept, skills, expected in [('ceo', [], None), ('master-orchestrator', [], None), ('ceo', ['client-skill'], ['client-skill']), ('general-task', [], [])]:
             agent = {'id': f'dept-{dept}', 'skills': skills, 'workspace': '/fixture', 'tools': {'deny': ['owner-denied']}}
@@ -65,6 +65,29 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(agent['tools'], {'deny': ['owner-denied']})
             self.assertEqual(len(cfg['agents']['list']), 1)
         self.assertNotIn('agent_entry["skills"] = []', path.read_text())
+
+    def test_modern_existing_ceo_registration_preserves_main_and_schema(self):
+        path = ROOT / '23-ai-workforce-blueprint/scripts/build-workforce.py'
+        tree = ast.parse(path.read_text())
+        names = {'add_agent_to_config', 'ensure_ceo_foundation_agent'}
+        fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            dept = Path(d) / 'departments/master-orchestrator'
+            dept.mkdir(parents=True)
+            (dept / 'SOUL.md').write_text('Owner CEO soul')
+            runtime = str(Path(d) / 'runtime/dept-master-orchestrator/agent')
+            ns = {'os': os, 'DEPARTMENTS_DIR': str(dept.parent), '_registry_rows': registry_rows,
+                  '_agent_dir_for': lambda rid: runtime}
+            exec(compile(ast.Module(body=fns, type_ignores=[]), str(path), 'exec'), ns)
+            main = {'workspace': str(Path(d) / 'owner-main'), 'skills': ['owner-skill']}
+            cfg = {'agents': {'entries': {'main': dict(main), 'dept-master-orchestrator':
+                   {'workspace': str(dept), 'agentDir': runtime, 'skills': []}}}}
+            self.assertEqual(ns['ensure_ceo_foundation_agent'](cfg), 'dept-master-orchestrator')
+            self.assertTrue(Path(runtime).is_dir())
+            self.assertEqual(cfg['agents']['entries']['main'], main)
+            self.assertNotIn('list', cfg['agents'])
+            self.assertNotIn('id', cfg['agents']['entries']['dept-master-orchestrator'])
 
     def test_real_plugin_hook_is_role_aware_and_matches_canonical_policy(self):
         script = '''const {default:plugin}=await import(process.argv[1]); let hook;

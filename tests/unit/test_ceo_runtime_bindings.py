@@ -75,6 +75,20 @@ class BindingTests(unittest.TestCase):
         self.db.execute("UPDATE agents SET is_master=0 WHERE id='own-agent'")
         self.assertEqual(self.result()['bound'], 0)
 
+    def test_modern_entries_bind_without_mutating_the_registry(self):
+        import copy
+        row = dict(self.config['agents']['list'][0])
+        row.pop('id')
+        self.config = {'agents': {'entries': {'main': row}}}
+        original = copy.deepcopy(self.config)
+        self.assertEqual(self.result()['bound'], 1)
+        self.assertEqual(self.config, original)
+
+    def test_conflicting_dual_registry_refuses(self):
+        self.config['agents']['entries'] = {'main': {'workspace': '/foreign'}}
+        with self.assertRaises(ValueError):
+            self.result()
+
     def test_general_task_actual_runtime_supported(self):
         general = self.company / 'departments/general-task-dept'
         general.mkdir()

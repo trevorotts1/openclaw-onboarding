@@ -15,6 +15,10 @@ including owner-written SOUL introductions. Existing role templates are replaced
 when the exact legacy generated protocol matches. The router's historical empty skill
 list is retired; nonempty owner skill restrictions and tool restrictions are preserved.
 The prompt plugin is an ES module and injects the same role-aware policy.
+The builder registers the existing CEO foundation separately from interview selections
+and creates real canonical agent directories. The update-time materializer repairs
+missing canonical directories without replacing owner-configured runtime paths. Both
+modern `agents.entries` and legacy `agents.list` keep their native schema.
 
 `shared-utils/sync_ceo_runtime_bindings.py` is a separate scoped synchronizer, never a
 seeder. Supply an existing database, OpenClaw config, explicit company ID and company

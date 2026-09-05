@@ -20,6 +20,24 @@ def upgrade(text, kind="CEO_ORCHESTRATOR_RULE"):
     suffix = pattern.sub("", text[first.end():])
     return text[:first.start()] + block(kind) + suffix
 
+def registry_rows(config):
+    """Read the active roster without mutating modern entries or legacy lists."""
+    agents = config.get("agents", {})
+    entries, legacy = agents.get("entries"), agents.get("list")
+    if isinstance(entries, dict):
+        if legacy:
+            raise ValueError("Conflicting agents.entries and agents.list; refusing mixed registry")
+        rows = []
+        for key, entry in entries.items():
+            if not isinstance(entry, dict):
+                raise ValueError("Invalid runtime registry entry")
+            if entry.get("id") not in (None, key):
+                raise ValueError("Runtime entry key/id mismatch")
+            rows.append(dict(entry, id=key))
+        return rows
+    return [dict(entry) for entry in (legacy or []) if isinstance(entry, dict)]
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("file", type=Path)

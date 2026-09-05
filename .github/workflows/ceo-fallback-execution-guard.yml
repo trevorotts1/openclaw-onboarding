@@ -11,6 +11,9 @@ on:
       - 'scripts/apply-fleet-standards.sh'
       - 'scripts/verify-routing.sh'
       - 'update-skills.sh'
+      - '32-command-center-setup/scripts/materialize-dept-agents.sh'
+      - '32-command-center-setup/scripts/materialize-dept-agents-roster-shape.test.sh'
+      - '23-ai-workforce-blueprint/scripts/test-build-standard-first-roundtrip.sh'
       - 'tests/unit/test_ceo_*.py'
       - '.github/workflows/ceo-fallback-execution-guard.yml'
   push:
@@ -31,3 +34,11 @@ jobs:
           python3 tests/unit/test_ceo_execution_policy.py
           python3 tests/unit/test_ceo_runtime_bindings.py
           bash -n scripts/apply-routing-fix.sh scripts/apply-fleet-standards.sh scripts/verify-routing.sh update-skills.sh
+      - name: Verify existing workforce repair and both fresh registry formats
+        env:
+          STANDARD_FIRST_ONBOARDING: '1'
+        run: |
+          bash 32-command-center-setup/scripts/materialize-dept-agents-roster-shape.test.sh
+          bash 32-command-center-setup/scripts/materialize-dept-agents-company-scope.test.sh
+          ONB_TEST_REGISTRY=list bash 23-ai-workforce-blueprint/scripts/test-build-standard-first-roundtrip.sh
+          ONB_TEST_REGISTRY=entries bash 23-ai-workforce-blueprint/scripts/test-build-standard-first-roundtrip.sh
