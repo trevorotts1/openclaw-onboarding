@@ -167,6 +167,7 @@ _mkbox() {
   mkdir -p "$skill" "$h/.openclaw/workspace" "$h/bin"
 
   cp "$RESUME" "$skill/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$skill/"
   cat > "$skill/department-floor.py" <<'PYEOF'
 import sys
 # Stub: department floor SATISFIED (rc=0).
@@ -192,6 +193,30 @@ SHIM
       done; } > "$h/.openclaw/workspace/departments/$d/lead/how-to.md"
   done
   printf '%s' "$h"
+}
+
+# Completion scenarios model the post-interview runtime build, not just the
+# prebuild inventory. Stage verifiers are explicit stubs; the shared evaluator
+# still checks confirmations, identity, states and actual artifact digests.
+_prepare_completion_box() {
+  local h="$1" skill="$1/.openclaw/skills/23-ai-workforce-blueprint/scripts"
+  for check in verify-wiring.sh qc-completeness.sh verify-library-gate.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$skill/$check"
+  done
+  printf 'raise SystemExit(0)\n' > "$skill/post-build-role-workspaces.py"
+  python3 - "$h" <<'PYPREPARE'
+import json,sys
+from pathlib import Path
+home=Path(sys.argv[1]);path=home/'.openclaw/workspace/.workforce-build-state.json'
+state=json.loads(path.read_text());root=home/'.openclaw/workspace/departments'
+state.update(companySlug='fixture-company',companyId='fixture-company-id',buildId='fixture-build')
+for dept in state['departments']:
+    dept['status']='done'
+    folder=root/dept['slug']/'lead';folder.mkdir(parents=True,exist_ok=True)
+    (folder/'how-to.md').write_text('# Fixture operating procedure\n'+('Completed role operating procedure.\n'*30))
+state['buildArtifactVerification']={'root':str(root)}
+path.write_text(json.dumps(state))
+PYPREPARE
 }
 
 # Run a box once. $1 = box home, $2 = script, rest = extra env assignments.
@@ -320,12 +345,13 @@ STATE_SF_SETTLED='{
   ]
 }'
 BOXS3="$(_mkbox boxs3 "$STATE_SF_SETTLED" "ops-custom")"
+_prepare_completion_box "$BOXS3"
 _runbox "$BOXS3" "$BOXS3/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 SLOG3="$BOXS3/.openclaw/workspace/.workforce-build-state.log"
 
 _bca=$(_pyjson "$BOXS3/.openclaw/workspace/.workforce-build-state.json" "data.get('buildCompletedAt') or ''")
 if [[ -n "$_bca" ]]; then
-  pass "S3a: HOP-4 wrote buildCompletedAt under the standard-first contract (prebuilt depts confirmed-or-declined, non-prebuilt done)"
+  pass "S3a: HOP-4 wrote buildCompletedAt under the standard-first contract (runtime departments done with current verification and owner confirmations)"
 else
   fail "S3a: buildCompletedAt NOT written — the standard-first completion contract did not close"
 fi
@@ -378,6 +404,7 @@ STATE_SF_UNSETTLED='{
   ]
 }'
 BOXS4="$(_mkbox boxs4 "$STATE_SF_UNSETTLED" "ops-custom")"
+_prepare_completion_box "$BOXS4"
 _runbox "$BOXS4" "$BOXS4/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 SLOG4="$BOXS4/.openclaw/workspace/.workforce-build-state.json"
 _bca4=$(_pyjson "$SLOG4" "data.get('buildCompletedAt') or ''")
@@ -396,6 +423,7 @@ fi
 echo ""
 echo "--- (S4-MUT) MUTATION PROOF: without the confirmationsComplete conjunct HOP-4 closes prematurely ---"
 BOXS4M="$(_mkbox boxs4m "$STATE_SF_UNSETTLED" "ops-custom")"
+_prepare_completion_box "$BOXS4M"
 MUTS4="$BOXS4M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 _mutate "$MUTS4" <<'PYEOF'
 import sys
@@ -404,8 +432,14 @@ src = open(path).read()
 old = " && (( _sf_depts_settled == 1 ))"
 if old not in src:
     sys.exit(1)
-# Revert EVERY gate (library, comms, HOP-4) to ignore confirmations.
+# Reproduce the old omission in both the dispatch guard and shared evaluator.
 open(path, "w").write(src.replace(old, ""))
+from pathlib import Path
+completion=Path(path).parent/'workforce_completion.py'
+evaluator=completion.read_text()
+conjunct="    if state.get('buildType')=='standard-first' and state.get('confirmationsComplete') is not True:missing.append('confirmations')"
+assert conjunct in evaluator
+completion.write_text(evaluator.replace(conjunct,'',1))
 PYEOF
 muts4_rc=$?
 if (( muts4_rc != 0 )); then

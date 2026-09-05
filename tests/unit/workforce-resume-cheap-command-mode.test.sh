@@ -64,6 +64,7 @@ H_C2="$SANDBOX/home-c2"; bin_c2="$SANDBOX/bin-c2"; J_C2="$SANDBOX/jobs-c2.json";
 mkdir -p "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts" "$H_C2/.openclaw/workspace"
 cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
   "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/"
 chmod +x "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 _mkbin "$bin_c2"; printf '[]' > "$J_C2"; : > "$C_C2"
 
@@ -149,6 +150,7 @@ else
   mkdir -p "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts" "$Hm/.openclaw/workspace"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
     "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts/"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/resume-prompt.txt" \
     "$Hm/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt" 2>/dev/null || true
   _mkbin "$binm"; printf '[]' > "$Jm"; : > "$Cm"
