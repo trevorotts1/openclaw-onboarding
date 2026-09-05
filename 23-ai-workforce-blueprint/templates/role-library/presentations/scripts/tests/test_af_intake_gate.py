@@ -17,10 +17,10 @@ existed at all).
 This suite proves: (1) a content-authoring phase blocks with the
 AF-INTAKE-GATE reason when intake.json is absent, unreadable, or empty;
 (2) the SAME phase proceeds past the gate once a valid intake.json exists;
-(3) the intake-establishing phases themselves (P0A-INTAKE / P-CONVERTER /
-P-SP-CLAIM) and the phases the manifest runs ahead of them (P-0.5-RESEARCH)
-are exempt -- the gate must never deadlock the pipeline against its own
-intake step; (4) a manifest that declares no intake-producing phase at all
+(3) the intake-establishing phases themselves (P0A-INTAKE / P-CONVERTER --
+P-SP-CLAIM left this set in manifest v67, see the note above test 4) and the
+phases the manifest runs ahead of them (P-0.5-RESEARCH) are exempt -- the gate
+must never deadlock the pipeline against its own intake step; (4) a manifest that declares no intake-producing phase at all
 (the narrow single-phase fixtures every other test file in this directory
 already relies on) is untouched -- the gate is a no-op there, never a false
 block.
@@ -159,8 +159,28 @@ def test_content_phase_blocks_on_empty_intake(tmp_path):
 # 4. No-deadlock proof: the phases that CREATE intake.json (and the phase the
 #    manifest runs ahead of them) must be exempt, or the pipeline could never
 #    get past its own first phase.
+#
+#    P-SP-CLAIM WAS IN THIS LIST AND IS NO LONGER (manifest v67). It was here
+#    because it DECLARED working/copy/intake.json as its produces_artifact --
+#    but that declaration was the same-artifact collision repaired in v67:
+#    build_deck._chk_sp_claim only READS intake.json (it is the routing/claim
+#    GATE), and dispatcher.ARTIFACT_TARGET_OVERRIDE already redirected the
+#    phase to its real output, working/copy/sp_claims.json.
+#
+#    The collision is exactly what created the deadlock this exemption guarded
+#    against: because P-SP-CLAIM both produced and consumed intake.json,
+#    execution_plan.build_edges rule 2 discarded its ordering edge and it
+#    level-scheduled into WAVE 1, alongside the very phase that writes the file
+#    it reads. With the collision gone there is a real P0A-INTAKE ->
+#    P-SP-CLAIM edge and the phase schedules into WAVE 2, so intake.json always
+#    exists by the time it runs -- and test 5 below, which derives the exempt
+#    ceiling FROM THE MANIFEST rather than hardcoding it, now requires this
+#    phase to be gated (order 0.14 > ceiling 0.1). Gating a phase that consumes
+#    intake.json and runs after its producer is correct, not a false block.
+#
+#    The two assertions cannot both hold; the self-deriving one wins.
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("phase_id", ["P0A-INTAKE", "P-CONVERTER", "P-SP-CLAIM", "P-0.5-RESEARCH"])
+@pytest.mark.parametrize("phase_id", ["P0A-INTAKE", "P-CONVERTER", "P-0.5-RESEARCH"])
 def test_pre_intake_phases_are_exempt(tmp_path, phase_id):
     eng = _engine(tmp_path, write_intake=False)
     phase = eng.manifest.phase(phase_id)
