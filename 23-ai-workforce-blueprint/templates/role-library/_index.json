@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "24.3.0",
+  "version": "25.0.0",
   "total_roles": 438,
   "total_departments": 36,
   "departments": {
@@ -189,8 +189,8 @@
         "qc-specialist",
         "systems-engineer"
       ],
-      "content_sha": "sha256:e1d717185474a3dfdf4629d64b87f29498c0c2bc60aeb2a9e7125a442d3e32d6",
-      "content_hashed_at": "2026-09-05T05:06:35.233257+00:00"
+      "content_sha": "sha256:b89da0a4be2e2578f0385b7089fc211de8f3e72c6bbcd637d6cc78c81dce1148",
+      "content_hashed_at": "2026-09-05T15:15:23.953519+00:00"
     },
     "founding-member-concierge": {
       "count": 6,
@@ -2531,10 +2531,10 @@
       "path": "templates/role-library/engineering/director-of-engineering/how-to.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:b14041b050cede5e214d77315370528d081de943568c621572f75df113da6c55",
-      "render_sha": "sha256:fb14a00ae0d7e31a0148954ced35d866468e4a1bbc48a476c338195e4a4f1bd9",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-09-05T05:06:35.233257+00:00"
+      "content_sha": "sha256:779ca23fb7e1ecc04aea7d762efbc46ed5ef33148472895468f52d421d0f9cca",
+      "render_sha": "sha256:42756217af6d089bedd61ccfb4fb6c2254ac501c869a410e6de252c6bdd2e1ec",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-09-05T15:15:23.953519+00:00"
     },
     {
       "slug": "qa-engineer",
