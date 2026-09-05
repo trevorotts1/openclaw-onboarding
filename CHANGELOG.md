@@ -1,3 +1,5 @@
+## [v24.1.6]  -  2026-09-04  -  Clients declare their own workhorse/reasoning/QC model in the intake and the router honours it; class capability floors, explicit waivers, and a launch-time refusal instead of a mid-run surprise (#1026)
+
 ## [v24.1.5]  -  2026-09-04  -  Dispatch outcomes reach the ledger: sweep_run_dir dropped every value dispatch_one returned, so no returned failure could ever hit the retry ceiling (#1025)
 
 ## [v24.1.4]  -  2026-09-04  -  Authoring and prompt-authoring lead with deepseek-v4-flash (operator ruling); allow_flash_fallback documented as inert (#1024)
