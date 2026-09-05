@@ -509,7 +509,12 @@ def test_the_real_driver_refuses_an_unwired_model_at_intake(tmp_path):
 
 def test_the_bank_still_carries_exactly_twenty_three_turns():
     """Trevor ruling, binding: the model-choice fields EXTEND the existing
-    resource_plan turn. They never add a 24th."""
+    resource_plan turn. They never add a 24th.
+
+    The client RUN MODE (FIX 11 ultra|standard|economy) joined this same turn
+    under the same ruling -- as a sixth labelled SUBFIELD of turn 9, not as a
+    turn of its own. max_turns and the merged-turn count below are the ceiling
+    that ruling pins, and they are unchanged."""
     bank = json.loads((SCRIPTS.parent / "intake" / "deck-intake-questions.json")
                       .read_text(encoding="utf-8"))
     assert bank["session_budget"]["max_turns"] == 23
@@ -518,7 +523,7 @@ def test_the_bank_still_carries_exactly_twenty_three_turns():
     rp = [q for q in bank["questions"] if q["id"] == "resource_plan"][0]
     assert set(rp["subfields"]) == {"resource_plan", "workhorse_model",
                                     "reasoning_model", "qc_model",
-                                    "thinking_mode"}
+                                    "thinking_mode", "run_mode"}
     assert "model@provider" in rp["prompt"]
     assert "API key" in rp["prompt"] and "endpoint" in rp["prompt"]
 
