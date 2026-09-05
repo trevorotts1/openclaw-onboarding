@@ -663,7 +663,12 @@ def launcher_gate(run_dir: Optional[Path], mode: Optional[str], *,
         phases = []
     for phase_id in phases:
         try:
-            decision = model_router.resolve_route(phase_id)
+            # FIX 11 wire: price the routes THIS MODE will actually take. The
+            # gate already receives the declared mode and priced every phase at
+            # the router's default, so an Economy launch was quoted at the
+            # Standard mix. mode=None (an un-moded caller) still resolves
+            # through model_router.active_mode -> env -> "standard".
+            decision = model_router.resolve_route(phase_id, mode=mode or None)
         except Exception:  # noqa: BLE001 -- a broken route is cost-blocked
             routes[phase_id] = {"route": None}
             continue

@@ -1284,14 +1284,14 @@ def dispatch(
     # PRESENTATION_MODES=0 (documented rollback) leaves the surface inert.
     mode_env: Optional[dict] = None
     _router = None
-    if mode is not None:
+    try:
         try:
-            try:
-                from . import model_router as _router
-            except ImportError:
-                import model_router as _router  # type: ignore[no-redef]
+            from . import model_router as _router
         except ImportError:
-            _router = None
+            import model_router as _router  # type: ignore[no-redef]
+    except ImportError:
+        _router = None
+    if mode is not None:
         if _router is not None and _router.modes_enabled():
             try:
                 mode = _router.normalize_mode(mode)
@@ -1345,6 +1345,7 @@ def dispatch(
               f"{capacity_result.get('plan')}, source "
               f"{capacity_result.get('detection_source')})", flush=True)
 
+    verdict: Any = None
     # FIX 12 CREDIT GATE -- before argv is built, before any process exists.
     # A declared mode launch is priced against the balances on every provider
     # the phase plan will use; a blocked verdict refuses with
@@ -1359,7 +1360,6 @@ def dispatch(
                 import credit_preflight
         except ImportError:
             credit_preflight = None  # type: ignore[assignment]
-        verdict = None
         if credit_preflight is not None:
             verdict = credit_preflight.launcher_gate(
                 run_path, mode, balances=balances,
@@ -1411,30 +1411,77 @@ def dispatch(
     if _plan_refusal is not None:
         return _plan_refusal
 
-    # FIX 11 MODE PLAN -- the declared mode is stamped as an honest launch
-    # plan: concurrency from the measured client ceiling (Ultra never above
-    # the 100-task operator ceiling), ETA from FIX 5 measured wall-clock,
-    # cost from the FIX 12 catalog-priced verdict. Written AFTER every
-    # refusal gate, so a refused launch never leaves a sidecar. The engine
-    # inherits the declared mode through PRESENTATION_MODE.
+    # FIX 11 MODE PLAN -- the run's mode is stamped as an honest launch plan:
+    # concurrency from the measured client ceiling (Ultra never above the
+    # 100-task operator ceiling), ETA from FIX 5 measured wall-clock, cost from
+    # the FIX 12 catalog-priced verdict. Written AFTER every refusal gate, so a
+    # refused launch never leaves a sidecar. The engine inherits the mode
+    # through PRESENTATION_MODE -- and every phase inside it now READS that
+    # var (dispatcher._active_mode), which is what makes the axis govern.
+    #
+    # THIS BLOCK RUNS FOR EVERY LAUNCH, not only a declared-mode one: the whole
+    # point of "which mode was this deck built in?" is that the answer must
+    # exist after the fact, and an un-moded run has an answer -- standard. What
+    # stays gated on an explicit declaration is the REFUSAL surface (the FIX 12
+    # credit preflight and AF-MODE-INVALID above): declaring a mode can still
+    # block a launch; not declaring one still cannot.
     # PRESENTATION_MODES=0 skips the whole block (pre-fix behavior).
-    if mode is not None and _router is not None and _router.modes_enabled():
+    if _router is not None and _router.modes_enabled():
         est = None
         if isinstance(verdict, dict):
             est = verdict.get("total_estimate_usd")
-        plan = _router.mode_plan(mode, plan_calls=plan_calls,
-                                 estimate_usd=est)
+        # explicit --mode > PRESENTATION_MODE in the launcher's own env >
+        # "standard". One authority (model_router.active_mode), one order,
+        # and never ultra by default.
+        try:
+            effective_mode = _router.active_mode(mode)
+            mode_source = ("--mode" if mode is not None else
+                           (_router.MODE_ENV
+                            if os.environ.get(_router.MODE_ENV) else "default"))
+        except ValueError as exc:
+            print(f"launcher: REFUSING to dispatch {run_path} -- "
+                  f"{MODE_AUTOFAIL_CODE}: {exc}", file=sys.stderr)
+            return DISPATCH_MODE_INVALID
+        # The measured client profile makes the recorded plan TRUE rather than
+        # a generic unmeasured guess -- the same store model_plan_gate reads.
+        _profile = None
+        try:
+            try:
+                from . import resource_profile as _rp
+            except ImportError:
+                import resource_profile as _rp  # type: ignore[no-redef]
+            _profile = _rp.load_profile()
+        except Exception:  # noqa: BLE001 -- an unreadable store is unmeasured
+            _profile = None
+        plan = _router.mode_plan(effective_mode, profile=_profile,
+                                 plan_calls=plan_calls, estimate_usd=est)
         plan["run_dir"] = str(run_path)
+        plan["declared"] = mode is not None
+        plan["mode_source"] = mode_source
+        plan["ceiling"] = _router.mode_ceiling(effective_mode, profile=_profile)
+        # Best-effort, exactly like _record_capacity_status and the
+        # model-plan sidecar: this block now runs on EVERY launch, and a
+        # record that cannot be written must never be the reason a deck does
+        # not get built. The env below is handed to the engine either way.
         sidecar = run_path / ".mode-plan.json"
-        tmp_plan = sidecar.with_suffix(".json.tmp")
-        tmp_plan.write_text(json.dumps(plan, indent=2, sort_keys=True),
-                            encoding="utf-8")
-        os.replace(tmp_plan, sidecar)
-        mode_env = dict(os.environ, PRESENTATION_MODE=mode)
+        try:
+            run_path.mkdir(parents=True, exist_ok=True)
+            tmp_plan = sidecar.with_suffix(".json.tmp")
+            tmp_plan.write_text(json.dumps(plan, indent=2, sort_keys=True),
+                                encoding="utf-8")
+            os.replace(tmp_plan, sidecar)
+        except OSError as exc:
+            print(f"launcher: could not write the mode-plan sidecar: {exc}",
+                  file=sys.stderr)
+        mode_env = dict(os.environ,
+                        **{_router.MODE_ENV: effective_mode})
         _conc = plan.get("concurrency") or {}
-        print(f"launcher: mode {mode} plan stamped -- concurrency "
-              f"{_conc.get('concurrency')} ({_conc.get('reason')})",
-              flush=True)
+        _ceil = plan.get("ceiling") or {}
+        print(f"launcher: run mode {effective_mode.upper()} "
+              f"(source: {mode_source}) -- concurrency plan "
+              f"{_conc.get('concurrency')} ({_conc.get('reason')}); ceiling "
+              f"{_ceil.get('ceiling')} ({_ceil.get('reason')}); recorded in "
+              f"{sidecar.name}", flush=True)
 
     argv = [
         sys.executable or "python3",
@@ -1663,7 +1710,7 @@ def main(argv: Optional[list] = None) -> int:
                         "conservative floor (3) is refused (AF-CAPACITY-UNMEASURED). "
                         "Omit (the default) to run at whatever capacity.probe() "
                         "measures, floor included.")
-    p.add_argument("--mode", default=None,
+    p.add_argument("--mode", default=None, metavar="ULTRA|STANDARD|ECONOMY",
                    help="declare the FIX 11 mode (ultra/standard/economy). "
                         "Selects measured-capacity concurrency, stamps the "
                         "honest ETA+cost plan as .mode-plan.json in the run "

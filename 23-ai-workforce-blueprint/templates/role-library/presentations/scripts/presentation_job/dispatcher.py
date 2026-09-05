@@ -1668,6 +1668,35 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
         f"{provider}/chat/completions: exhausted retries")
 
 
+def _active_mode() -> Tuple[str, str]:
+    """The run's FIX 11 mode inside the ENGINE process, plus where it came from.
+
+    THIS IS THE READ THAT WAS MISSING. The launcher exports PRESENTATION_MODE
+    into the engine's environment (launcher.dispatch -> mode_env) and, until
+    now, not one line of the engine consumed it: a typed `--mode Ultra` reached
+    a sidecar and an env var and then stopped, so every dispatch resolved its
+    route at the default no matter what the operator declared. Ultra was
+    unreachable by construction.
+
+    Resolution order is model_router's single authority (active_mode):
+    explicit > PRESENTATION_MODE > "standard".
+
+    A garbage env value never crashes a running deck AND is never silently
+    coerced: it falls back to standard and SAYS SO in the returned source,
+    which the routing stamp then carries into the wave input and the run's
+    record. Silence is the thing this codebase refuses, not the fallback."""
+    if _model_router is None:
+        return "standard", "router-absent-default"
+    env_name = getattr(_model_router, "MODE_ENV", "PRESENTATION_MODE")
+    raw = os.environ.get(env_name)
+    declared = bool(str(raw or "").strip().strip("'\""))
+    try:
+        return _model_router.active_mode(), (env_name if declared else "default")
+    except ValueError:
+        return (getattr(_model_router, "DEFAULT_MODE", "standard"),
+                f"invalid {env_name}={raw!r} -- fell back to standard")
+
+
 def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       phase_id: str,
                       run_dir: Optional[Path] = None,
@@ -1687,7 +1716,12 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     decision: Optional[Dict[str, Any]] = None
     if _model_router is not None:
         try:
-            decision = _model_router.resolve_route(phase_id)
+            # FIX 11 wire: the RUN'S mode, not the signature default. Passed
+            # explicitly (rather than left to resolve_route's own env read) so
+            # a hand-set garbage PRESENTATION_MODE degrades to standard with a
+            # recorded reason here instead of raising into the routing path.
+            decision = _model_router.resolve_route(phase_id,
+                                                   mode=_active_mode()[0])
         except Exception as exc:  # noqa: BLE001 -- a broken router never
                                   # hard-crashes a run: fall back to DeepSeek
             decision = {"router": f"error: {exc}", "route": None, "reason": str(exc)}
@@ -2638,11 +2672,17 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
     shape is unchanged; only the VALUES become profile-truth. (The Phase A
     measured_capacity=8 stamp was a hardcoded fabrication -- FIX 6 removes that
     fiction; this stamp carries routing truth only.)"""
+    # FIX 11 wire: the REAL mode of this run (was hardcoded "standard" here
+    # and in the resolve_route call below, so the P4-PROMPT fan-out -- the one
+    # place the engine actually decides a width -- could never be told that an
+    # Ultra or Economy run was in progress).
+    _mode, _mode_source = _active_mode()
     stamp: Dict[str, Any] = {
         "provider": "deepseek-direct",
         "model": DEEPSEEK_MODEL,
         "router": "disabled",
-        "mode": "standard",
+        "mode": _mode,
+        "mode_source": _mode_source,
         "measured_capacity": DEFAULT_MAX_WORKERS,
     }
     # F41 (SMOKE-1, 2026-09-01): FIX 7 popped measured_capacity whenever the
@@ -2668,9 +2708,9 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
     stamp["capacity_source"] = "dispatcher-default"
     if _model_router is None:
         return stamp
+    decision: Optional[Dict[str, Any]] = None
     try:
-        decision = _model_router.resolve_route("P4-PROMPT",
-                                               mode="standard")
+        decision = _model_router.resolve_route("P4-PROMPT", mode=_mode)
         route = (decision or {}).get("route")
         if decision.get("profile_state") == "has_providers" and route:
             stamp.update({
@@ -2714,6 +2754,27 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 "status": "routing_stamp_error", "reason": f"{type(exc).__name__}: {exc}"})
         except Exception:  # noqa: BLE001
             pass
+
+    # FIX 11 CEILING -- applied HERE, to the width the wave will actually run
+    # at, because routing.measured_capacity IS the P4-PROMPT worker-slot count
+    # (parallel_prompt_worker._workers_for honours it verbatim, deliberately
+    # NOT re-clamping a measured 2,500 to 8). A CAP, never a floor and never a
+    # target: min(what was measured, the mode's ceiling), so a client measured
+    # at 3 still runs 3 under Ultra and a client measured at 2,500 runs 100 --
+    # the human-ratified operator ceiling, never provider advertising. The
+    # decision computed the ceiling already; nothing is re-measured here.
+    try:
+        cap = _model_router.capped_width(stamp.get("measured_capacity"),
+                                         _mode, decision=decision)
+        if cap.get("width"):
+            stamp["mode_cap"] = cap
+            if cap.get("capped"):
+                stamp["capacity_status"] = \
+                    f"{stamp.get('capacity_status')}+mode-capped"
+            stamp["measured_capacity"] = int(cap["width"])
+    except Exception as cap_exc:  # noqa: BLE001 -- a ceiling that cannot be
+        # computed never widens the wave: the measured width stands, labelled.
+        stamp["mode_cap_error"] = f"{type(cap_exc).__name__}: {cap_exc}"
     return stamp
 
 
