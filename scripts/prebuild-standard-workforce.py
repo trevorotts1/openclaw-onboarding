@@ -308,18 +308,18 @@ def _master_orchestrator_info(df):
 # ── STATE IO ─────────────────────────────────────────────────────────────────
 
 def _load_state(state_path):
-    try:
-        return json.loads(Path(state_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    sys.path.insert(0, str(_resolve_skill23_scripts()))
+    from workforce_state import read
+    return read(state_path)
 
 
 def _atomic_write_json(path, obj):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    sys.path.insert(0, str(_resolve_skill23_scripts()))
+    from workforce_state import Snapshot, commit, atomic_write
+    if isinstance(obj, Snapshot):
+        commit(path, obj)
+    else:
+        atomic_write(path, obj)
 
 
 def _write_prebuild_state(state_path, update, apply_):
@@ -328,46 +328,23 @@ def _write_prebuild_state(state_path, update, apply_):
     (status=failed + reason), and on success (status=done — the existing
     Step 8 write).  If apply_ is False, only report what would be written."""
     if apply_:
-        try:
-            current = _load_state(state_path)
-        except Exception:
-            current = {}
+        current = _load_state(state_path)  # Missing is empty; corrupt state fails closed.
+        import uuid
+        current.setdefault('buildId', str(uuid.uuid4()))
         current["buildType"] = "standard-first"
         current["standardPrebuild"] = update
-        try:
-            _atomic_write_json(state_path, current)
-        except OSError as exc:
-            _log(f"WARNING: could not write prebuild state to {state_path}: {exc}")
+        _atomic_write_json(state_path, current)  # Never build after a failed durable write.
     else:
         _log(f"  (dry-run) would write buildType=standard-first + standardPrebuild={update.get('status')} -> {state_path}")
 
 
 def _dept_has_roles(dept_dir):
-    """Check whether a department directory has any role content (subdirectories
-    or files beyond the skeleton).  Returns False for empty or skeleton-only
-    directories — these are unrecoverable partial prebuilds that need re-fill."""
+    """Actual role artifacts, never an arbitrary roster or skeleton file."""
+    required = ('IDENTITY.md', 'SOUL.md', 'MEMORY.md', 'HEARTBEAT.md', 'how-to.md')
     if not dept_dir.is_dir():
         return False
-    # A department directory with role workspaces has at least one subdirectory
-    # (the role workspace dirs).  A skeleton dir created by a partial prebuild
-    # that was killed mid-materialize has zero children (or only empty children).
-    try:
-        children = list(dept_dir.iterdir())
-    except OSError:
-        return False
-    if not children:
-        return False
-    # Check that at least one child has content (not an empty subdir).
-    for child in children:
-        if child.is_dir():
-            try:
-                if list(child.iterdir()):
-                    return True
-            except OSError:
-                pass
-        elif child.is_file():
-            return True
-    return False
+    return any(child.is_dir() and all((child / name).is_file() and (child / name).stat().st_size > 0
+                                     for name in required) for child in dept_dir.iterdir())
 
 
 def _resume_empty_depts(expected_floor, departments_dir):
@@ -488,7 +465,7 @@ def _seed_cc_and_prove_join(skill23, company_dir, db_path, company_slug):
 
 # ── MAIN ─────────────────────────────────────────────────────────────────────
 
-def main(argv=None):
+def main(argv=None, _runner_locked=False):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--operator-consent-file", default=None,
@@ -668,6 +645,20 @@ def main(argv=None):
         return emit(_refuse(result, EXIT_LANE_REFUSED,
                             f"buildType '{build_type}' is unrecognized — refusing"))
 
+    # Serialize the whole mutating prebuild and reread all gates while held.
+    if args.apply and not _runner_locked:
+        from workforce_state import lock
+        try:
+            with lock(str(state_path)+'.runner', blocking=False):
+                return main(argv, _runner_locked=True)
+        except BlockingIOError:
+            result['reason'] = 'Another workforce build is active; retry later'
+            return emit(75)
+    pinned_slug = state.get('companySlug') or state.get('clientSlug')
+    if pinned_slug and pinned_slug != company_slug:
+        result['reason'] = 'Requested company differs from immutable build-state companySlug'
+        return emit(EXIT_STEP_FAILED)
+
     # ── STANDARD_FIRST_ONBOARDING timing (args.standard_first_onboarding already resolved) ──
     # "at-onboarding" is the default — proceed to materialize now.
     # "on-first-answer" defers until the owner answers their first interview question.
@@ -775,16 +766,10 @@ def main(argv=None):
     if empty_depts:
         _log(f"resume: {len(empty_depts)} empty/role-less dept dirs detected — "
              f"removing so they re-materialize: {', '.join(empty_depts)}")
-        if args.apply:
-            for eid in empty_depts:
-                epath = dd / eid
-                if epath.is_dir():
-                    try:
-                        shutil.rmtree(epath)
-                    except OSError as exc:
-                        _log(f"  WARNING: could not remove {epath}: {exc}")
+        # Preserve all existing content. The materializer now reconciles each
+        # expected role inside present departments; deleting skeletons loses edits.
         result["resume_empty_depts"] = empty_depts
-        result["resume_empty_depts_action"] = "removed-for-re-fill" if args.apply else "would-remove-for-re-fill"
+        result["resume_empty_depts_action"] = "additive-repair" if args.apply else "would-repair-additively"
         # Re-evaluate the floor after removal so the materializer sees them as missing.
         verdict_before = df.evaluate_floor(departments_dir=dd, build_state=state)
         expected_floor = list(verdict_before["expected_floor"])
@@ -821,7 +806,7 @@ def main(argv=None):
         mat_cmd.append("--apply")
     _log(f"driving materializer ({'APPLY' if args.apply else 'dry-run'}): "
          f"{' '.join(mat_cmd[1:])}")
-    mat_proc = subprocess.run(mat_cmd, capture_output=True, text=True)
+    mat_proc = subprocess.run(mat_cmd, capture_output=True, text=True, timeout=1200)
     mat_report = None
     try:
         brace = mat_proc.stdout.find("{")
@@ -880,7 +865,7 @@ def main(argv=None):
         if not args.apply:
             pcmd.append("--dry-run")
         _log(f"stamping governing personas ({'APPLY' if args.apply else 'dry-run'})")
-        pproc = subprocess.run(pcmd, capture_output=True, text=True, env=penv)
+        pproc = subprocess.run(pcmd, capture_output=True, text=True, env=penv, timeout=300)
         result["personas_rc"] = pproc.returncode
         if pproc.returncode != 0 and args.apply:
             result["standardPrebuildStatus"] = "failed"
@@ -1081,6 +1066,9 @@ def main(argv=None):
     if args.apply:
         new_state = _load_state(state_path)  # re-read: the chosen-artifact writer may have touched it
         prebuild_started_at = result.get("prebuildStartedAt")  # snapshot from before materialization
+        new_state["companySlug"] = company_slug
+        if os.environ.get('MC_COMPANY_ID'):
+            new_state.setdefault("companyId", os.environ['MC_COMPANY_ID'])
         new_state["buildType"] = "standard-first"
         new_state["operatorConsent"] = consent
         # standardFirstOnboarding: record the operator's chosen timing to the build-state

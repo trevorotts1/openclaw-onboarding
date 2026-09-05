@@ -76,6 +76,10 @@ _mkbox() {
   local skill="$h/.openclaw/skills/37-zhc-closeout/scripts"
   mkdir -p "$skill" "$h/.openclaw/workspace" "$h/bin"
   cp "$BELT" "$skill/resume-closeout-cron.sh"
+  cp "$REPO_ROOT/37-zhc-closeout/scripts/lib-closeout-state.sh" "$skill/"
+  local shared="$h/.openclaw/skills/23-ai-workforce-blueprint/scripts"
+  mkdir -p "$shared"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$shared/"
   # STUB run-closeout.sh: records that it fired; never runs the real closeout.
   cat > "$skill/run-closeout.sh" <<STUBEOF
 #!/usr/bin/env bash

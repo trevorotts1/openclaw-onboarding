@@ -193,7 +193,7 @@ Run these checks before building anything:
 ```bash
 python3 --version
 ```
-If Python 3.8+ is available, note it. If not, note it - the build can still proceed manually without the scaffold script.
+Python 3.9 or newer is required. Stop before build mutations if unavailable. The builder propagates its selected interpreter through WORKFORCE_PYTHON and sys.executable; do not substitute an older system Python midway through a build.
 
 ### 2b. OpenClaw Running Check
 Confirm you are running inside an OpenClaw agent environment. If you are reading this file, you are. Proceed.

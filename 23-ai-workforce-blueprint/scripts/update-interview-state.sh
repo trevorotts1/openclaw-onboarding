@@ -33,6 +33,7 @@ set -euo pipefail
 # Rate-limit gate (U056)
 UPD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$UPD_SCRIPT_DIR/lib-interview-rate-limit.sh"
+source "$UPD_SCRIPT_DIR/lib-workforce-state.sh"
 
 # Resolve state file path (VPS: /data/.openclaw/workspace; Mac: $HOME/.openclaw/workspace)
 if [ -d /data/.openclaw/workspace ]; then
@@ -75,9 +76,9 @@ DEFERRED_SPOOL="$STATE_DIR/.interview-state-deferred.jsonl"
 #       kept answering — the "frozen counter" bug class; and
 #   (b) `--complete` died AFTER the evidence gate had already passed, so an
 #       interview that genuinely satisfied QC still never got interviewComplete.
-# python3 is already a HARD dependency of this script (the deferred spool, the
+# "$WORKFORCE_PYTHON" is already a HARD dependency of this script (the deferred spool, the
 # phases parser, and lib-interview-rate-limit.sh all require it and all run
-# BEFORE any jq call), so replacing jq with python3 REMOVES a dependency rather
+# BEFORE any jq call), so replacing jq with "$WORKFORCE_PYTHON" REMOVES a dependency rather
 # than adding one — there is no box where this can work less well than jq did.
 # The emitted JSON shape is unchanged.
 
@@ -87,7 +88,7 @@ DEFERRED_SPOOL="$STATE_DIR/.interview-state-deferred.jsonl"
 # default, exactly as the `2>/dev/null || echo <default>` idiom it replaces did.
 state_read() {
   local _file="$1" _path="$2" _default="${3:-}"
-  python3 - "$_file" "$_path" "$_default" <<'PYREAD' 2>/dev/null || printf '%s' "$_default"
+  "$WORKFORCE_PYTHON" - "$_file" "$_path" "$_default" <<'PYREAD' 2>/dev/null || printf '%s' "$_default"
 import json, sys
 
 state_path, dotted, default = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -130,13 +131,13 @@ apply_interview_stamp() {
   # --argjson), --phases-complete is still split on commas into an array, and
   # lastQuestionAt is always stamped. Written tmp-then-rename so a crash mid
   # write can never leave a truncated state file.
-  python3 - "$_state" "$_phase" "$_qnum" "$_asked_by" "$_phases_complete" "$_now" <<'PYSTAMP'
+  "$WORKFORCE_PYTHON" - "$_state" "$_phase" "$_qnum" "$_asked_by" "$_phases_complete" "$_now" <<'PYSTAMP'
 import json, os, sys, tempfile
 
 state_path, phase, qnum, asked_by, phases_complete, now = sys.argv[1:7]
 
-with open(state_path) as fh:
-    data = json.load(fh)
+from workforce_state import read, commit
+data = read(state_path)
 
 if data.get("interviewProgress") is None:
     data["interviewProgress"] = {}
@@ -156,19 +157,7 @@ if phases_complete:
     ]
 progress["lastQuestionAt"] = now
 
-target_dir = os.path.dirname(os.path.abspath(state_path)) or "."
-fd, tmp = tempfile.mkstemp(dir=target_dir, prefix=".wbs-", suffix=".tmp")
-try:
-    with os.fdopen(fd, "w") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, state_path)
-except Exception:
-    if os.path.exists(tmp):
-        os.unlink(tmp)
-    raise
+commit(state_path, data)
 PYSTAMP
 }
 
@@ -184,25 +173,25 @@ drain_deferred_stamps() {
   local _applied=0 _kept=0 _line _sess _dphase _dqnum _dby _dphases
   while IFS= read -r _line || [ -n "$_line" ]; do
     [ -n "$_line" ] || continue
-    _sess="$(printf '%s' "$_line" | python3 -c "
+    _sess="$(printf '%s' "$_line" | "$WORKFORCE_PYTHON" -c "
 import json, sys
 try:
     print(json.loads(sys.stdin.read()).get('session') or '')
 except Exception:
     print('')" 2>/dev/null || true)"
     if [ -n "$_sess" ] && check_interview_rate_limit "$_sess" 2>/dev/null; then
-      _dphase="$(printf '%s' "$_line" | python3 -c "import json,sys
+      _dphase="$(printf '%s' "$_line" | "$WORKFORCE_PYTHON" -c "import json,sys
 try: print(json.loads(sys.stdin.read()).get('phase') or '')
 except Exception: print('')" 2>/dev/null || true)"
-      _dqnum="$(printf '%s' "$_line" | python3 -c "import json,sys
+      _dqnum="$(printf '%s' "$_line" | "$WORKFORCE_PYTHON" -c "import json,sys
 try:
     v = json.loads(sys.stdin.read()).get('questionNumber')
     print(v if v is not None else '')
 except Exception: print('')" 2>/dev/null || true)"
-      _dby="$(printf '%s' "$_line" | python3 -c "import json,sys
+      _dby="$(printf '%s' "$_line" | "$WORKFORCE_PYTHON" -c "import json,sys
 try: print(json.loads(sys.stdin.read()).get('askedBy') or '')
 except Exception: print('')" 2>/dev/null || true)"
-      _dphases="$(printf '%s' "$_line" | python3 -c "import json,sys
+      _dphases="$(printf '%s' "$_line" | "$WORKFORCE_PYTHON" -c "import json,sys
 try: print(json.loads(sys.stdin.read()).get('phasesComplete') or '')
 except Exception: print('')" 2>/dev/null || true)"
       apply_interview_stamp "$STATE" "$_dphase" "$_dqnum" "$_dby" "$_dphases"
@@ -232,7 +221,7 @@ defer_stamp_and_report() {
   local _sess="$1" _phase="$2" _qnum="$3" _asked_by="$4" _phases="$5"
   local _queued_at
   _queued_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  python3 -c "
+  "$WORKFORCE_PYTHON" -c "
 import json, sys
 entry = {
     'queuedAt': sys.argv[1],
@@ -362,11 +351,11 @@ if [ "$COMPLETE" = true ]; then
   fi
   echo "evidence gate: running qc-interview-completion.py --write-state BEFORE marking complete (question count 25-35, mandatory fields, transcript/counter agreement)..."
   set +e
-  QC_GATE_OUTPUT=$(python3 "$QC_SCRIPT" --write-state --state "$STATE" 2>&1)
+  QC_GATE_OUTPUT=$("$WORKFORCE_PYTHON" "$QC_SCRIPT" --write-state --state "$STATE" 2>&1)
   QC_GATE_RC=$?
   set -e
   echo "$QC_GATE_OUTPUT"
-  if [ "$QC_GATE_RC" != "0" ] && [ "$QC_GATE_RC" != "2" ]; then
+  if ! workforce_interview_eligible rc "$QC_GATE_RC"; then
     echo "REFUSED: qc-interview-completion.py rc=$QC_GATE_RC (neither PASS nor NEEDS-REVIEW) - the answer evidence does not support completion. interviewComplete was NOT written (interviewQc above already carries the reasons for the owner/agent to fix and retry)." >&2
     exit 87
   fi
@@ -406,13 +395,13 @@ if [ "$COMPLETE" = true ]; then
   # a fake department list would be a lie. We DO ensure departments[] exists as an
   # array sentinel so the resume cron and watchdog parse it cleanly, and we record
   # buildKickRequestedAt so the kick below is idempotent and auditable.
-  python3 - "$STATE" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE" "$NOW" <<'PYCOMPLETE'
+  "$WORKFORCE_PYTHON" - "$STATE" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE" "$NOW" <<'PYCOMPLETE'
 import json, os, sys, tempfile
 
 state_path, phase, qnum, asked_by, phases_complete, now = sys.argv[1:7]
 
-with open(state_path) as fh:
-    data = json.load(fh)
+from workforce_state import read, commit
+data = read(state_path)
 
 if data.get("interviewProgress") is None:
     data["interviewProgress"] = {}
@@ -445,19 +434,7 @@ if data.get("closeoutStatus") is None:
 
 data["buildKickRequestedAt"] = now
 
-target_dir = os.path.dirname(os.path.abspath(state_path)) or "."
-fd, tmp = tempfile.mkstemp(dir=target_dir, prefix=".wbs-", suffix=".tmp")
-try:
-    with os.fdopen(fd, "w") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, state_path)
-except Exception:
-    if os.path.exists(tmp):
-        os.unlink(tmp)
-    raise
+commit(state_path, data)
 PYCOMPLETE
 else
   # Ordinary per-question stamp: the same write apply_interview_stamp() also

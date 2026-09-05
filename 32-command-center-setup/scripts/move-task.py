@@ -179,6 +179,57 @@ def _ensure_tables(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_task_status_audit_task ON task_status_audit(task_id);
         """
     )
+    cols = {r[1] for r in db.execute('PRAGMA table_info(task_signoffs)')}
+    if 'artifact_fingerprint' not in cols:
+        db.execute('ALTER TABLE task_signoffs ADD COLUMN artifact_fingerprint TEXT')
+
+
+def _reviewer_error(db, task_id, actor):
+    if not actor:
+        return 'reviewer identity is required'
+    cols = _task_cols(db)
+    if actor in _builder_ids(db, task_id, cols):
+        return 'builder cannot review its own work'
+    acols = {r[1] for r in db.execute('PRAGMA table_info(agents)')}
+    if not {'id', 'workspace_id', 'role_type'} <= acols:
+        return 'registered reviewer role/scope cannot be verified'
+    agent = db.execute('SELECT workspace_id, role_type FROM agents WHERE id=?', (actor,)).fetchone()
+    if not agent:
+        return 'reviewer does not exist'
+    if agent[1] not in ('qc', 'devils-advocate', 'devils_advocate'):
+        return 'reviewer does not have an authorized QC role'
+    workspace = _task_field(db, task_id, cols, 'workspace_id')
+    if not workspace or agent[0] != workspace:
+        return 'reviewer belongs to a different department/workspace'
+    wcols = {r[1] for r in db.execute('PRAGMA table_info(workspaces)')}
+    if 'company_id' not in wcols:
+        return 'company scope cannot be verified'
+    company = db.execute('SELECT company_id FROM workspaces WHERE id=?', (workspace,)).fetchone()
+    if not company or not company[0]:
+        return 'workspace has no company identity'
+    task_company = _task_field(db, task_id, cols, 'company_id')
+    if task_company and task_company != company[0]:
+        return 'task and workspace company disagree'
+    return None
+
+
+def _artifact_fingerprint(db, task_id):
+    cols = {r[1] for r in db.execute('PRAGMA table_info(task_deliverables)')}
+    if not {'id', 'task_id', 'sha256'} <= cols:
+        return None
+    fields = [c for c in ('id','sha256','path','updated_at') if c in cols]
+    rows = db.execute('SELECT ' + ','.join(fields) + ' FROM task_deliverables WHERE task_id=? ORDER BY id', (task_id,)).fetchall()
+    if not rows or any(not row[1] for row in rows):
+        return None
+    # Verify local files when present; stored hashes alone cannot bless changed bytes.
+    if 'path' in fields:
+        for row in rows:
+            path = row[fields.index('path')]
+            if path and Path(path).is_file():
+                actual = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                if actual != str(row[1]).removeprefix('sha256:'):
+                    return None
+    return hashlib.sha256(json.dumps(rows, separators=(',', ':')).encode()).hexdigest()
 
 
 def _task_cols(db: sqlite3.Connection) -> list:
@@ -195,12 +246,13 @@ def _get_task(db: sqlite3.Connection, task_id: str):
 
 def _has_passing_da_signoff(db: sqlite3.Connection, task_id: str) -> bool:
     row = db.execute(
-        "SELECT verdict FROM task_signoffs WHERE task_id = ? AND role_type = ? LIMIT 1",
+        "SELECT verdict, agent_id, artifact_fingerprint FROM task_signoffs WHERE task_id = ? AND role_type = ? LIMIT 1",
         (task_id, DA_ROLE),
     ).fetchone()
-    if not row:
-        return False
-    return _canon(row[0] or "") in ("pass", "passed", "approve", "approved", "ok")
+    fingerprint = _artifact_fingerprint(db, task_id)
+    return bool(row and fingerprint and row[2] == fingerprint
+                and not _reviewer_error(db, task_id, row[1])
+                and _canon(row[0] or '') in ('pass', 'passed', 'approve', 'approved', 'ok'))
 
 
 def _audit(db, task_id, frm, to, actor, gate, note):
@@ -587,6 +639,8 @@ def cmd_move(db, args) -> int:
 
 def cmd_signoff(db, args) -> int:
     _ensure_tables(db)
+    db.commit()
+    db.execute('BEGIN IMMEDIATE')
     row, cols = _get_task(db, args.task)
     if row is None:
         print(f"[move-task] ERROR: task id {args.task!r} not found", file=sys.stderr)
@@ -596,19 +650,18 @@ def cmd_signoff(db, args) -> int:
     # builder record, not from any CLI flag (a flag value could only ever name a
     # different person, never disprove who built the card).
     actor = (args.by or "").strip()
-    builders = _builder_ids(db, args.task, cols)
-    if actor and actor in builders:
-        print(
-            f"[move-task] BLOCKED (sign-off independence): agent {actor!r} is the "
-            f"builder of task {args.task} (created_by/assigned on the task record) and "
-            f"cannot sign off on its own work. A separate reviewer — the department "
-            f"Devil's Advocate — must issue this sign-off.",
-            file=sys.stderr,
-        )
-        _audit(db, args.task, row[1] or "", None, actor, "blocked-self-signoff", args.note)
+    error = _reviewer_error(db, args.task, actor)
+    fingerprint = _artifact_fingerprint(db, args.task)
+    role = args.role or DA_ROLE
+    if role != DA_ROLE:
+        error = 'only the department independent-review role may sign off'
+    if not fingerprint:
+        error = error or 'current deliverable hashes are required before review'
+    if error:
+        print('[move-task] BLOCKED (sign-off): ' + error, file=sys.stderr)
+        _audit(db, args.task, row[1] or '', None, actor, 'blocked-invalid-review', error)
         db.commit()
         return 2
-    role = args.role or DA_ROLE
     now = _now_iso()
     # Idempotent upsert on (task_id, role_type) without requiring SQLite 3.24 UPSERT.
     db.execute(
@@ -617,9 +670,9 @@ def cmd_signoff(db, args) -> int:
         (secrets.token_hex(8), args.task, role, args.by or "", args.verdict, args.note or "", now, now),
     )
     db.execute(
-        "UPDATE task_signoffs SET agent_id = ?, verdict = ?, note = ?, updated_at = ? "
+        "UPDATE task_signoffs SET agent_id = ?, verdict = ?, note = ?, updated_at = ?, artifact_fingerprint = ? "
         "WHERE task_id = ? AND role_type = ?",
-        (args.by or "", args.verdict, args.note or "", now, args.task, role),
+        (actor, args.verdict, args.note or "", now, fingerprint, args.task, role),
     )
     db.commit()
     print(f"[move-task] sign-off recorded: task {args.task} role={role} verdict={args.verdict!r}")
@@ -656,7 +709,7 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("signoff", help="record a Devil's Advocate (or other) sign-off")
     s.add_argument("--task", required=True)
     s.add_argument("--role", default=DA_ROLE, help=f"role_type (default {DA_ROLE})")
-    s.add_argument("--by", default="", help="signing agent id")
+    s.add_argument("--by", required=True, help="registered independent reviewer id (local trusted operator CLI)")
     # FIX 26: no default. A missing --verdict is a usage error, never a pass.
     s.add_argument("--verdict", required=True, choices=["pass", "fail", "indeterminate"])
     s.add_argument("--note", default="")

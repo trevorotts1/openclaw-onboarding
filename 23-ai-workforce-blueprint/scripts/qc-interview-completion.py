@@ -2059,7 +2059,8 @@ def build_verdict(
 def write_state_qc(state_path: Path, details: dict) -> None:
     """Atomically write interviewQc verdict into the build state file."""
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        from workforce_state import read, commit
+        state = read(state_path)
     except Exception as exc:
         print(f"[ERROR] Cannot read state file for --write-state: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -2115,8 +2116,7 @@ def write_state_qc(state_path: Path, details: dict) -> None:
 
     tmp = Path(str(state_path) + f".tmp.{os.getpid()}")
     try:
-        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        tmp.replace(state_path)
+        commit(state_path, state)
         print(f"[INFO] Wrote interviewQc to {state_path}", file=sys.stderr)
     except Exception as exc:
         tmp.unlink(missing_ok=True)

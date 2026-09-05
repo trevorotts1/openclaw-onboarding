@@ -1661,6 +1661,9 @@ def record_task_completion(task_id: str, persona_id: str, department: str,
 def apply_weight_overrides(persona_id: str, base_score: float, department_id: str,
                             task_category: str, db_path: Path) -> tuple:
     """Returns (adjusted_score, applied_factor)."""
+    if os.environ.get('OPENCLAW_COMPANY_ID'):
+        # Global adaptation has no company namespace; retain unbiased base score.
+        return base_score, 1.0
     if not db_path or not db_path.exists():
         return base_score, 1.0
     try:

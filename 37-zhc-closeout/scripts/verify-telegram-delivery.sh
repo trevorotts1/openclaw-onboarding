@@ -13,13 +13,9 @@
 #   there. This script requires that for EVERY required deliverable. No "done"
 #   is allowed until each required messageId is confirmed present.
 #
-# ROLLING-WINDOW / AGING:
-#   The registry is a rolling window the gateway trims over time, so an id sent
-#   a while ago can age out legitimately. We therefore (a) only HARD-FAIL on a
-#   required id that is missing AND recent (younger than ZHC_TG_REGISTRY_TTL_SEC,
-#   default 86400s); (b) treat a missing-but-old id as "aged-out" (pass with a
-#   note) rather than a delivery failure -- it was confirmed at send time and the
-#   registry simply rotated. Recent missing ids are real failures.
+# Registry rotation is supported only by an exact durable receipt recorded by
+# this verifier while the authoritative registry entry was present.
+# Bare old success flags and captured IDs never establish delivery.
 #
 # REQUIRED DELIVERABLES (default): slots 1, 6, 7 -- the three text messages that
 #   MUST land for a usable closeout (announcement + Command Center URL + bookmark
@@ -27,37 +23,10 @@
 #   when their URL is missing) so they are verified-if-present but not required.
 #   Override with ZHC_TG_REQUIRED_SLOTS="1,6,7".
 #
-# VERSION-AWARENESS (OpenClaw 2026.6.x sent-registry migration):
-#   Up through OpenClaw 2026.5.x the gateway wrote the JSON sent-registry at
-#     agents/main/sessions/sessions.json.telegram-sent-messages.json
-#   In OpenClaw 2026.6.x that file was migrated into the shared SQLite state and
-#   the gateway NO LONGER writes the JSON file (verified on 2026.6.8: the old path
-#   is left renamed to "...telegram-sent-messages.json.migrated"). So on 2026.6.8
-#   the registry file is simply ABSENT even though every message was genuinely
-#   delivered — which used to make this gate exit 7 (env error) and forced a
-#   manual workaround during a recent closeout.
-#
-#   When the registry file is absent, we DERIVE the delivered set from the
-#   gateway's own confirmed messageIds — the SAME ground truth: each id in
-#   state.messagesDelivered was captured from the gateway's `message send --json`
-#   .messageId AT SEND TIME by send-telegram-celebration.sh (a slot is only
-#   recorded with a real, non-empty messageId when the gateway confirmed the send;
-#   a send with no messageId is recorded as status=send-failed and carries NO id).
-#   So "has a confirmed gateway messageId in state" is exactly what the registry
-#   cross-check proved — the registry was only ever a second copy of those ids.
-#   We keep fail-loud: a required slot with NO confirmed messageId (send-failed /
-#   never attempted) still fails (rc 4). Set ZHC_TG_REGISTRY_REQUIRED=1 to force
-#   the legacy hard-require-the-file behavior (rc 7 when absent).
-#
-# EXIT CODES:
-#   0  -> all required messageIds confirmed (in registry, or via gateway-confirmed
-#         ids when the registry file is absent, or legitimately aged out)
-#   3  -> one or more required messageIds MISSING from the registry (real fail;
-#         only reachable in registry-present mode)
-#   4  -> a required slot has no captured messageId at all (send never confirmed)
-#   7  -> environment error (no state / no jq / registry required-but-absent)
-#
-# Writes a per-id pass/fail breakdown into state.telegramDeliveryVerification.
+# Delivery authority is the matching gateway JSON registry or the supported
+# Telegram SQLite plugin-state entry. Expired unknown IDs, failed sends, wrong
+# scopes/chats and unavailable authority remain pending. See GATEWAY-RECEIPTS.md.
+# Exit 0 verified, 3 registry mismatch, 4 absent send, 7 capability unavailable.
 
 set -u
 
@@ -76,6 +45,16 @@ LOG_FILE="${ZHC_LOG_FILE:-$OC_ROOT/workspace/.zhc-closeout.log}"
 # The gateway sent-registry. Allow override for tests.
 REGISTRY="${ZHC_TG_REGISTRY:-$OC_ROOT/agents/main/sessions/sessions.json.telegram-sent-messages.json}"
 
+# The gateway scopes migrated records by the EXACT session store path. Defaults
+# apply only to the real own installation. Fixture/state/registry overrides must
+# explicitly opt into their own SQLite database; never fall through to live data.
+if [[ -z "${ZHC_STATE_FILE:-}" && -z "${ZHC_TG_REGISTRY:-}" && -n "$OC_ROOT" ]]; then
+  export ZHC_TG_STATE_DB="${ZHC_TG_STATE_DB:-$OC_ROOT/state/openclaw.sqlite}"
+fi
+if [[ -n "${ZHC_TG_STATE_DB:-}" && -z "${ZHC_TG_SESSION_STORE:-}" && "$REGISTRY" == *.telegram-sent-messages.json ]]; then
+  export ZHC_TG_SESSION_STORE="${REGISTRY%.telegram-sent-messages.json}"
+fi
+
 if [[ -z "$OC_ROOT" && ( -z "${ZHC_STATE_FILE:-}" || -z "${ZHC_TG_REGISTRY:-}" ) ]]; then
   echo "[verify-telegram] no OpenClaw root and no ZHC_STATE_FILE/ZHC_TG_REGISTRY override" >&2
   exit 7
@@ -91,187 +70,9 @@ log() {
 command -v jq >/dev/null 2>&1 || { log "ERROR" "jq not installed"; exit 7; }
 [[ -f "$STATE_FILE" ]] || { log "ERROR" "no state file at $STATE_FILE"; exit 7; }
 
-# ── Version-aware registry detection ──────────────────────────────────────────
-# REGISTRY_MODE=file    -> the JSON sent-registry exists; cross-check ids against it
-#                          (OpenClaw <= 2026.5.x behavior).
-# REGISTRY_MODE=derived -> the JSON registry is absent (OpenClaw 2026.6.x migrated
-#                          it into SQLite); confirm delivery from the gateway-
-#                          confirmed messageIds already captured in state.
-# Set ZHC_TG_REGISTRY_REQUIRED=1 to force the legacy hard-require (rc 7 if absent).
-REGISTRY_MODE="file"
-if [[ ! -f "$REGISTRY" ]]; then
-  if [[ "${ZHC_TG_REGISTRY_REQUIRED:-0}" == "1" ]]; then
-    log "ERROR" "sent-registry not found at $REGISTRY and ZHC_TG_REGISTRY_REQUIRED=1 -- cannot confirm any delivery"
-    exit 7
-  fi
-  REGISTRY_MODE="derived"
-  # Note the migrated marker when present, purely for diagnostics.
-  if [[ -f "${REGISTRY}.migrated" ]]; then
-    log "INFO" "sent-registry absent at $REGISTRY (found ${REGISTRY##*/}.migrated) -- OpenClaw 2026.6.x migrated the registry into SQLite; confirming delivery from gateway-confirmed messageIds in state"
-  else
-    log "INFO" "sent-registry absent at $REGISTRY -- confirming delivery from gateway-confirmed messageIds in state (OpenClaw 2026.6.x sent-registry migration; set ZHC_TG_REGISTRY_REQUIRED=1 to hard-require the file)"
-  fi
-fi
-
-OWNER_CHAT=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null)
-if [[ -z "$OWNER_CHAT" || "$OWNER_CHAT" == "null" ]]; then
-  log "ERROR" "ownerChat missing from state -- cannot resolve registry chat key"
-  exit 7
-fi
-
-now_ms=$(( $(date -u +%s) * 1000 ))
-ttl_ms=$(( TTL_SEC * 1000 ))
-
-# registry_ts <chatId> <messageId> -> prints the confirming ts-ms, or empty.
-#   file    mode: looks the id up in the gateway JSON registry under the chatId.
-#   derived mode (2026.6.x, no JSON registry): the gateway-confirmed messageId is
-#     the ground truth (it was returned by `message send --json` at send time and
-#     recorded in state). We confirm presence directly from the captured record
-#     and return its capture ts in ms (so aging logic still has a timestamp).
-registry_ts() {
-  local c="$1" m="$2"
-  if [[ "$REGISTRY_MODE" == "file" ]]; then
-    jq -r --arg c "$c" --arg m "$m" '(.[$c][$m] // empty) | tostring' "$REGISTRY" 2>/dev/null
-    return
-  fi
-  # derived: is there a captured-delivered record for this chat+messageId?
-  local sent_iso
-  sent_iso=$(jq -r --arg c "$c" --arg m "$m" \
-    '(.messagesDelivered // []) | map(select((.messageId // "" | tostring) == $m and ((.chatId // "" | tostring) == $c or (.chatId // "") == ""))) | (.[0].ts // empty)' \
-    "$STATE_FILE" 2>/dev/null)
-  [[ -z "$sent_iso" || "$sent_iso" == "null" ]] && return
-  # Convert the captured ISO ts to epoch-ms (GNU then BSD date); fall back to "now".
-  local sent_ms=""
-  if date -u -d "$sent_iso" +%s >/dev/null 2>&1; then
-    sent_ms=$(( $(date -u -d "$sent_iso" +%s) * 1000 ))
-  elif date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s >/dev/null 2>&1; then
-    sent_ms=$(( $(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s) * 1000 ))
-  fi
-  printf '%s' "${sent_ms:-$now_ms}"
-}
-
-# Per-slot results accumulate here as JSON objects for the state breakdown.
-results_json="[]"
-overall_rc=0
-missing_recent=()
-no_msgid=()
-
-# Normalize the required-slot CSV into a bash array.
-IFS=',' read -r -a REQ_ARR <<< "$REQUIRED_SLOTS"
-
-# Verify EVERY captured deliverable (so we get a full breakdown), then judge
-# pass/fail strictly on the REQUIRED slots.
-captured_slots=$(jq -r '(.messagesDelivered // []) | map(.n) | unique | .[]' "$STATE_FILE" 2>/dev/null)
-
-is_required() {
-  local n="$1" r
-  for r in "${REQ_ARR[@]}"; do [[ "$n" == "$r" ]] && return 0; done
-  return 1
-}
-
-check_slot() {
-  local n="$1"
-  local mid status verdict reg_ts age_ms note req="no"
-  mid=$(jq -r --argjson n "$n" '(.messagesDelivered // []) | map(select(.n == $n)) | (.[0].messageId // "")' "$STATE_FILE" 2>/dev/null)
-  status=$(jq -r --argjson n "$n" '(.messagesDelivered // []) | map(select(.n == $n)) | (.[0].status // "")' "$STATE_FILE" 2>/dev/null)
-  is_required "$n" && req="yes"
-
-  if [[ -z "$mid" || "$mid" == "null" ]]; then
-    # No captured messageId. Real problem only if this slot is required.
-    if [[ "$req" == "yes" ]]; then
-      verdict="fail-no-messageId"
-      no_msgid+=("$n")
-      overall_rc=4
-    else
-      verdict="skip-no-messageId-optional"
-    fi
-    note="${status:-no captured messageId}"
-  else
-    reg_ts=$(registry_ts "$OWNER_CHAT" "$mid")
-    if [[ -n "$reg_ts" && "$reg_ts" != "null" ]]; then
-      verdict="pass-present"
-      note="present in registry (ts=$reg_ts)"
-    else
-      # Not in registry. Distinguish recent (real fail) vs aged-out (ok).
-      local sent_iso sent_ms
-      sent_iso=$(jq -r --argjson n "$n" '(.messagesDelivered // []) | map(select(.n == $n)) | (.[0].ts // "")' "$STATE_FILE" 2>/dev/null)
-      # epoch of the send (best-effort); fall back to "recent" if unparseable.
-      sent_ms=""
-      if [[ -n "$sent_iso" ]]; then
-        if date -u -d "$sent_iso" +%s >/dev/null 2>&1; then
-          sent_ms=$(( $(date -u -d "$sent_iso" +%s) * 1000 ))           # GNU date (VPS)
-        elif date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s >/dev/null 2>&1; then
-          sent_ms=$(( $(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s) * 1000 ))  # BSD date (Mac)
-        fi
-      fi
-      age_ms=$(( now_ms - ${sent_ms:-0} ))
-      if [[ -n "$sent_ms" && "$age_ms" -gt "$ttl_ms" ]]; then
-        verdict="pass-aged-out"
-        note="absent but sent ${age_ms}ms ago > TTL ${ttl_ms}ms (registry rotated; confirmed at send time)"
-      else
-        verdict="fail-missing-recent"
-        note="absent from registry and recent (age=${age_ms}ms <= TTL ${ttl_ms}ms) -- delivery NOT confirmed"
-        if [[ "$req" == "yes" ]]; then
-          missing_recent+=("$n")
-          [[ "$overall_rc" -lt 3 ]] && overall_rc=3
-        fi
-      fi
-    fi
-  fi
-
-  log "INFO" "slot=$n required=$req messageId=${mid:-none} verdict=$verdict ($note)"
-  results_json=$(printf '%s' "$results_json" | jq \
-    --argjson n "$n" --arg mid "$mid" --arg v "$verdict" --arg req "$req" --arg note "$note" \
-    '. + [{"n": $n, "messageId": $mid, "required": ($req == "yes"), "verdict": $v, "note": $note}]')
-}
-
-if [[ -z "$captured_slots" ]]; then
-  log "ERROR" "no messagesDelivered captured at all -- nothing to verify"
-fi
-
-for n in $captured_slots; do
-  check_slot "$n"
-done
-
-# Any REQUIRED slot that was never even attempted (no capture record) is a fail.
-for r in "${REQ_ARR[@]}"; do
-  if ! jq -e --argjson n "$r" '(.messagesDelivered // []) | any(.[]; .n == $n)' "$STATE_FILE" >/dev/null 2>&1; then
-    log "ERROR" "required slot $r has NO delivery record at all -- cannot confirm"
-    no_msgid+=("$r")
-    overall_rc=4
-    results_json=$(printf '%s' "$results_json" | jq \
-      --argjson n "$r" '. + [{"n": $n, "messageId": "", "required": true, "verdict": "fail-no-record", "note": "required slot never attempted"}]')
-  fi
-done
-
-verified_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-status_str="pass"
-[[ "$overall_rc" -ne 0 ]] && status_str="fail"
-tmp=$(mktemp)
-jq \
-  --arg status "$status_str" \
-  --arg at "$verified_at" \
-  --argjson rc "$overall_rc" \
-  --argjson results "$results_json" \
-  --arg required "$REQUIRED_SLOTS" \
-  '.telegramDeliveryVerification = {
-      "status": $status,
-      "rc": $rc,
-      "verifiedAt": $at,
-      "requiredSlots": $required,
-      "results": $results
-   }' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE" || rm -f "$tmp"
-
-if [[ "$overall_rc" -eq 0 ]]; then
-  if [[ "$REGISTRY_MODE" == "derived" ]]; then
-    log "INFO" "PASS -- every required messageId confirmed via gateway-confirmed ids in state (registry file absent; OpenClaw 2026.6.x mode; required slots: $REQUIRED_SLOTS)"
-  else
-    log "INFO" "PASS -- every required messageId confirmed in sent-registry (required slots: $REQUIRED_SLOTS)"
-  fi
-else
-  reason=""
-  [[ "${#missing_recent[@]}" -gt 0 ]] && reason="missing-recent=$(IFS=,; echo "${missing_recent[*]}")"
-  [[ "${#no_msgid[@]}" -gt 0 ]] && reason="${reason:+$reason; }no-messageId=$(IFS=,; echo "${no_msgid[*]}")"
-  log "ERROR" "FAIL (rc=$overall_rc) -- $reason"
-fi
-exit "$overall_rc"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../23-ai-workforce-blueprint/scripts" && pwd)/lib-workforce-state.sh" || exit 7
+# Invalidate the current claim before I/O; the separate immutable receipt ledger
+# survives so an observed historical send remains provable after registry rotation.
+workforce_state_set "$STATE_FILE" '.telegramDeliveryVerification.status = "pending" | .telegramDeliveryVerification.rc = 7' || exit 7
+"$WORKFORCE_PYTHON" "$(dirname "${BASH_SOURCE[0]}")/verify_delivery_receipts.py" "$STATE_FILE" "$REGISTRY" "$REQUIRED_SLOTS"
+exit "$?"

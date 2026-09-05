@@ -248,6 +248,60 @@ fi
 
 FAILURES=0
 
+# Resolve identity and validate every DB scope BEFORE filesystem/config mutation.
+COMPANY_ID="$(python3 - "$STATE_FILE" "$COMPANY_DIR" "$DB_PATH" "$SKIP_CC" <<'PYIDENTITY'
+import json, pathlib, re, sys, sqlite3
+state=json.loads(pathlib.Path(sys.argv[1]).read_text())
+slug=state.get('companySlug') or state.get('clientSlug')
+if not isinstance(slug,str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*',slug):
+    raise SystemExit('retirement requires canonical company identity')
+folder=pathlib.Path(sys.argv[2])
+if not sys.argv[2] or folder.name != slug:
+    raise SystemExit('retirement company directory/state mismatch')
+config=folder/'company-config.json'
+company_id=state.get('companyId')
+if config.is_file():
+    data=json.loads(config.read_text())
+    if data.get('slug') and data['slug'] != slug:
+        raise SystemExit('retirement company config/state mismatch')
+    ids={str(data[k]) for k in ('companyId','company_id','id') if data.get(k)}
+    if len(ids)>1 or (company_id and ids and company_id not in ids):
+        raise SystemExit('retirement company state/config identity mismatch')
+    company_id=company_id or next(iter(ids),None)
+if sys.argv[4] != '1':
+    dbpath=pathlib.Path(sys.argv[3])
+    if not sys.argv[3] or not dbpath.is_file():raise SystemExit('Retirement pending: explicit company database required')
+    with sqlite3.connect(dbpath.resolve().as_uri()+'?mode=ro',uri=True) as db:
+        cols={r[1] for r in db.execute('PRAGMA table_info(companies)')}
+        if not {'id','slug'} <= cols:raise SystemExit('Retirement pending: canonical companies registry required')
+        rows=db.execute('SELECT id FROM companies WHERE slug=?',(slug,)).fetchall()
+        if len(rows)!=1:raise SystemExit('Retirement pending: company slug missing or ambiguous')
+        actual=rows[0][0]
+        if company_id and company_id!=actual:raise SystemExit('Retirement pending: company registry identity mismatch')
+        company_id=actual
+print(company_id or '')
+PYIDENTITY
+)" || exit 2
+if [[ "$SKIP_CC" -ne 1 ]]; then
+  [[ -n "$DB_PATH" && -f "$DB_PATH" ]] || { echo 'Retirement pending: explicit company database required' >&2; exit 3; }
+  python3 - "$DB_PATH" "$COMPANY_ID" <<'PYSCOPE'
+import sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db:
+    cols={r[1] for r in db.execute('PRAGMA table_info(workspaces)')}
+    if not {'company_id','archived_at','archived_reason','updated_at'} <= cols:
+        raise SystemExit('Retirement pending: company/archive migration required')
+    if not db.execute('SELECT 1 FROM workspaces WHERE company_id=? LIMIT 1',(sys.argv[2],)).fetchone():
+        raise SystemExit('Retirement pending: company has no registered workspaces')
+PYSCOPE
+  [[ "$?" -eq 0 ]] || exit 3
+fi
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh" || exit 1
+
+if [[ -n "$COMPANY_ID" ]]; then
+  workforce_state_set "$STATE_FILE" --arg company_id "$COMPANY_ID" '.companyId = $company_id' || exit 1
+fi
+
 # ── STEP 2: ARCHIVE each department tree to company_dir/.retired/<slug>-<ts>/ ──
 # NEVER delete. Runs FIRST so a declined tree can never linger on the board's
 # provisioned layer after the lane is dropped.
@@ -296,21 +350,34 @@ fi
 if [[ -z "$OC_CONFIG" && "$_SCRATCH_STATE" -eq 1 ]]; then
   echo "[retire-confirmed-decline] step 1 SKIPPED: scratch build-state without an explicit --oc-config (live config never touched by a scratch run)" >&2
 elif [[ -n "$OC_CONFIG" && -f "$OC_CONFIG" ]]; then
-  if ! python3 - "$OC_CONFIG" "$TARGETS_JSON" <<'PY'
+  if ! "$WORKFORCE_PYTHON" - "$OC_CONFIG" "$TARGETS_JSON" "$COMPANY_DIR" "$COMPANY_ID" <<'PY'
 import json, os, shutil, sys, datetime
-config_path, targets = sys.argv[1], json.loads(sys.argv[2])
+config_path, targets, company_dir, company_id = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3], sys.argv[4]
+from pathlib import Path
+from workforce_state import read, commit
 norm = lambda s: "".join(c for c in str(s).lower() if c.isalnum())
 keys = {norm(f"dept-{t}") for t in targets} | {norm(t) for t in targets}
 try:
-    cfg = json.load(open(config_path, encoding="utf-8"))
+    cfg = read(config_path)
 except (OSError, ValueError) as exc:
-    print(f"[retire-confirmed-decline] step 1 SKIPPED: cannot read openclaw.json: {exc}", file=sys.stderr)
-    sys.exit(0)
+    print(f"[retire-confirmed-decline] step 1 FAILED: cannot read openclaw.json: {exc}", file=sys.stderr)
+    sys.exit(1)
 agents = (cfg.get("agents") or {}).get("list") or []
 keep, removed = [], []
 for row in agents:
     if isinstance(row, dict) and norm(row.get("id", "")) in keys:
-        removed.append(row.get("id"))
+        workspace=row.get('workspace')
+        declared=row.get('companyId') or row.get('company_id')
+        scoped=False
+        if declared:
+            scoped=declared == company_id
+        elif workspace:
+            try:Path(workspace).resolve().relative_to(Path(company_dir).resolve());scoped=True
+            except ValueError:pass
+        else:
+            raise SystemExit('Retirement pending: agent company ownership is unverified')
+        if scoped:removed.append(row.get("id"))
+        else:keep.append(row)
     else:
         keep.append(row)
 if not removed:
@@ -322,10 +389,7 @@ os.makedirs(bak_dir, exist_ok=True)
 bak = os.path.join(bak_dir, f"openclaw-backup-{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}-pre-retire.json")
 shutil.copy2(config_path, bak)
 cfg["agents"]["list"] = keep
-tmp = config_path + ".tmp"
-with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2)
-os.replace(tmp, config_path)
+commit(config_path, cfg)
 print(f"[retire-confirmed-decline] step 1: deregistered {removed} from agents.list (backup: {bak})", file=sys.stderr)
 PY
   then
@@ -345,9 +409,9 @@ if [[ "$SKIP_CC" -eq 1 ]]; then
 elif [[ -z "$DB_PATH" || ! -f "$DB_PATH" ]]; then
   echo "[retire-confirmed-decline] step 3 NOT-APPLICABLE: no explicit Command Center database (--db / DASHBOARD_DB_PATH / DATABASE_PATH) — recorded as skipped, never faked" >&2
 else
-  if ! python3 - "$DB_PATH" "$TARGETS_JSON" <<'PY'
+  if ! python3 - "$DB_PATH" "$TARGETS_JSON" "$COMPANY_ID" <<'PY'
 import json, sqlite3, sys
-db_path, targets = sys.argv[1], json.loads(sys.argv[2])
+db_path, targets, company_id = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
 norm = lambda s: "".join(c for c in str(s).lower() if c.isalnum())
 # EXEMPT mirrors archiveDepartment()'s isDepartmentOptoutExempt() EXACTLY (src/
 # lib/workspaces/department-optout.ts DEPARTMENT_OPTOUT_EXEMPT_IDS = ['ceo',
@@ -365,7 +429,7 @@ if "workspaces" not in {r[0] for r in conn.execute(
 if "archived_at" not in cols:
     print("[retire-confirmed-decline] step 3: workspaces.archived_at absent (migration 095 not applied) — SKIPPED, lane archive deferred to the Command Center web surface", file=sys.stderr)
     sys.exit(0)
-rows = conn.execute("SELECT id, slug FROM workspaces").fetchall()
+rows = conn.execute("SELECT id, slug FROM workspaces WHERE company_id = ?", (company_id,)).fetchall()
 archived, already, refused = [], [], []
 for t in targets:
     key = norm(t)
@@ -378,7 +442,7 @@ for t in targets:
         cur = conn.execute(
             "UPDATE workspaces SET archived_at = COALESCE(archived_at, datetime('now')), "
             "archived_reason = COALESCE(archived_reason, 'retired'), "
-            "updated_at = datetime('now') WHERE id = ? AND archived_at IS NULL", (wid,))
+            "updated_at = datetime('now') WHERE id = ? AND company_id = ? AND archived_at IS NULL", (wid, company_id))
         (archived if cur.rowcount else already).append(wid)
 conn.commit()
 conn.close()
@@ -403,10 +467,13 @@ except (OSError, ValueError):
     state = {}
 try:
     entries = json.load(open(artifact, encoding="utf-8"))
+    previous_records = entries.get("removedWithProvenance", []) if isinstance(entries, dict) else []
+    if isinstance(entries, dict): entries = entries.get("departments", [])
     if not isinstance(entries, list):
         entries = []
 except (OSError, ValueError):
     entries = []
+    previous_records = []
 norm = lambda s: "".join(c for c in str(s).lower() if c.isalnum())
 keys = {norm(t) for t in targets}
 kept_entries, removed_slugs = [], []
@@ -437,7 +504,7 @@ try:
             records.append(rec)
 except Exception:
     pass
-payload = {"removedWithProvenance": records, "departments": kept_entries}
+payload = {"removedWithProvenance": previous_records + [rec for rec in records if not any(old.get("slug") == rec.get("slug") for old in previous_records)], "departments": kept_entries}
 # .bak first, then atomic tmp+rename (a crash mid-write never truncates the artifact).
 if os.path.isfile(artifact):
     import shutil
@@ -455,6 +522,23 @@ PY
   fi
 else
   echo "[retire-confirmed-decline] step 4 SKIPPED: no company dir resolvable" >&2
+fi
+
+if [[ "$FAILURES" -eq 0 ]]; then
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh" || exit 1
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$TARGETS_JSON" "$COMPANY_ID" <<'PYSETTLE'
+import sys,json
+from datetime import datetime,timezone
+from workforce_state import update
+path,targets,company_id=sys.argv[1:];targets=json.loads(targets)
+norm=lambda s:''.join(c for c in str(s).lower() if c.isalnum())
+keys={norm(t) for t in targets}
+def settle(state):
+    state['departments']=[d for d in state.get('departments',[]) if norm(d.get('slug') or d.get('id')) not in keys]
+    state.setdefault('departmentRetirementReceipts',[]).append({'targets':targets,'companyId':company_id,'buildId':state.get('buildId'),'status':'verified','verifiedAt':datetime.now(timezone.utc).isoformat()})
+update(path,settle)
+PYSETTLE
+  [[ "$?" -eq 0 ]] || exit 1
 fi
 
 echo "[retire-confirmed-decline] DONE: $TARGETS_JSON retired (archive-only; failures=$FAILURES)" >&2

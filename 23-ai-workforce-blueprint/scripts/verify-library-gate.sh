@@ -109,9 +109,12 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib-workforce-state.sh"
 
-# ---- resolve build-state file (VPS first, Mac fallback) ----
-if [ -d /data/.openclaw ]; then
+# Explicit state is authoritative for paired company/build operations.
+if [ -n "${WORKFORCE_BUILD_STATE_FILE:-}" ]; then
+  STATE_FILE="$WORKFORCE_BUILD_STATE_FILE"
+elif [ -d /data/.openclaw ]; then
   STATE_FILE="/data/.openclaw/workspace/.workforce-build-state.json"
 else
   STATE_FILE="$HOME/.openclaw/workspace/.workforce-build-state.json"
@@ -123,8 +126,8 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "[verify-library-gate] jq not installed — cannot write gate state; exiting 5" >&2
   exit 5
 fi
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "[verify-library-gate] python3 not installed — cannot run qc; exiting 5" >&2
+if ! command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
+  echo "[verify-library-gate] "$WORKFORCE_PYTHON" not installed — cannot run qc; exiting 5" >&2
   exit 5
 fi
 
@@ -191,7 +194,7 @@ fi
 #   * library_pct == 100  (how-to.md filled from role-library), AND
 #   * role_folders >= expected_roles when an expected (canonical) count exists
 #     (no department may ship below its canonical role count).
-GATE_JSON="$(python3 - "$QC_JSON" <<'PYEOF'
+GATE_JSON="$("$WORKFORCE_PYTHON" - "$QC_JSON" <<'PYEOF'
 import json, sys
 qc = json.load(open(sys.argv[1]))
 depts = qc.get("departments", [])
@@ -252,7 +255,7 @@ fi
 # library must have all three files; meta-dirs and master-orchestrator are
 # excluded because they are not operational workflow departments.
 LIBRARY_DIR="$SKILL_DIR/templates/role-library"
-TRIO_JSON="$(python3 - "$LIBRARY_DIR" <<'PYEOF'
+TRIO_JSON="$("$WORKFORCE_PYTHON" - "$LIBRARY_DIR" <<'PYEOF'
 import json, os, sys
 from pathlib import Path
 
@@ -361,7 +364,7 @@ TRIO_GAPS="$(printf '%s' "$TRIO_JSON" | jq -r '.trio_gaps | join("; ")')"
 TRIO_STATUS="failed"; [ "$TRIO_DONE" = "true" ] && TRIO_STATUS="done"
 
 # Merge trio per-dept results into the gate per-dept map
-MERGED_GATE_JSON="$(python3 - "$GATE_JSON" "$TRIO_JSON" <<'PYEOF'
+MERGED_GATE_JSON="$("$WORKFORCE_PYTHON" - "$GATE_JSON" "$TRIO_JSON" <<'PYEOF'
 import json, sys
 gate = json.loads(sys.argv[1])
 trio = json.loads(sys.argv[2])
@@ -405,7 +408,7 @@ elif [ ! -f "$BOUNDARY_GATE_SCRIPT" ]; then
   echo "[verify-library-gate] BOUNDARY GATE: sop-boundary-gate.py not found at $BOUNDARY_GATE_SCRIPT — gate unavailable" >&2
   BOUNDARY_STATUS="done"
 else
-  BOUNDARY_OUTPUT="$(python3 "$BOUNDARY_GATE_SCRIPT" --check-manifest "$MANIFEST_PATH" 2>&1)"
+  BOUNDARY_OUTPUT="$("$WORKFORCE_PYTHON" "$BOUNDARY_GATE_SCRIPT" --check-manifest "$MANIFEST_PATH" 2>&1)"
   BOUNDARY_RC=$?
   if [ "$BOUNDARY_RC" -eq 7 ]; then
     BOUNDARY_STATUS="failed"
@@ -459,7 +462,7 @@ elif [ ! -f "$ZHE_OC_ROOT/openclaw.json" ]; then
   echo "[verify-library-gate] ZHE GATE: no openclaw.json at $ZHE_OC_ROOT — skipping" >&2
   ZHE_STATUS="no-oc-root"
 else
-  ZHE_OUT="$(python3 "$ZHE_PROVER" --local "$ZHE_OC_ROOT" 2>&1)"; ZHE_RC=$?
+  ZHE_OUT="$("$WORKFORCE_PYTHON" "$ZHE_PROVER" --local "$ZHE_OC_ROOT" 2>&1)"; ZHE_RC=$?
   if [ "$ZHE_RC" -eq 0 ]; then
     # Distinguish the STANDARD_READY verdict from the full-ZHE / exempt pass so the
     # fleet aggregate can count it in its own column (never folded into "done").
@@ -529,7 +532,7 @@ fi
 if [ -f "$STATE_FILE" ]; then
   TMP="$(mktemp)"
   if [ "$FAIL_REASON" = "" ]; then FAIL_JSON="null"; else FAIL_JSON="$(printf '%s' "$FAIL_REASON" | jq -Rs '.')"; fi
-  jq \
+  workforce_state_set "$STATE_FILE" \
     --arg role "$ROLE_STATUS" \
     --arg sop "$SOP_STATUS" \
     --arg trio "$TRIO_STATUS" \
@@ -560,7 +563,7 @@ if [ -f "$STATE_FILE" ]; then
           + (if ($pd | has("sopLibraryFilled")) then {sopLibraryFilled: $pd.sopLibraryFilled} else {} end)
           + (if ($pd | has("trioFilled")) then {trioFilled: $pd.trioFilled} else {} end)
         ))
-    ' "$STATE_FILE" > "$TMP" 2>/dev/null && mv "$TMP" "$STATE_FILE" \
+    ' 2>/dev/null \
       || { rm -f "$TMP"; echo "[verify-library-gate] WARN: could not update $STATE_FILE" >&2; }
 else
   echo "[verify-library-gate] no state file at $STATE_FILE — reporting verdict only (not gating closeout)" >&2

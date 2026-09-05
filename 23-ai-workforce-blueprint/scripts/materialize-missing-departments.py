@@ -460,6 +460,18 @@ def main(argv=None):
 
     before = department_floor.evaluate_floor(departments_dir=dd, build_state=build_state)
     missing = list(before["missing_mandatory"]) + list(before["missing_universal_primary"])
+    # Directory presence is insufficient after an interrupted prebuild. Reconcile
+    # the canonical role set additively inside existing departments as well.
+    from importlib.util import spec_from_file_location, module_from_spec
+    spec = spec_from_file_location('floor_repair_keys', FLOOR_FILL_DRIVER)
+    driver = module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    for dept in before.get('expected_floor', []):
+        expected = library_roster_for(dept)
+        present = driver.existing_role_keys(dd / dept)
+        if expected and any(driver.norm(role) not in present for role in expected) and dept not in missing:
+            missing.append(dept)
+
 
     result = {
         "departments_dir": str(dd),

@@ -45,8 +45,13 @@ Instead say: step-by-step instructions, what departments share, tools you
 use, team member, specialist, director.
 """
 
+from __future__ import annotations
+
 import os
 import sys
+if sys.version_info < (3, 9):
+    raise SystemExit("Skill 23 requires Python 3.9 or newer before any build can run")
+os.environ["WORKFORCE_PYTHON"] = sys.executable
 import json
 import re
 import hashlib
@@ -69,6 +74,9 @@ from pathlib import Path
 _BW_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BW_SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _BW_SCRIPTS_DIR)
+from workforce_state import read as _state_read, commit as _state_commit, atomic_write as _state_atomic_write, lock as _state_lock
+from workforce_completion import finalize as _finalize_completion
+
 from canonical_decline import (  # noqa: E402
     norm as _decline_norm,
     analyze as _decline_analyze,
@@ -738,8 +746,7 @@ def apply_semantic_merges(selected_departments, core_answers):
             prior_mi[tgt] = prior
         existing["mergedInto"] = prior_mi
         state["canonicalReconciliation"] = existing
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[MERGE] Wrote semanticMerges record ({len(merged)} merged, "
               f"{len(kept)} kept, {len(pending)} pending) to {path}", file=sys.stderr)
     except OSError as e:
@@ -914,10 +921,9 @@ def _load_build_state():
     """Load the build-state JSON (or {} if absent/unreadable). Never raises."""
     path = _build_state_path()
     try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+        return _state_read(path)
+    except FileNotFoundError:
+        return _state_read(path)
 
 
 # ============================================================
@@ -1169,8 +1175,7 @@ def _refuse_interview_pending(reason, option):
         state["interviewBuildStatus"] = "INTERVIEW_PENDING"
         state["interviewBuildRefusedReason"] = reason
         state["interviewBuildRefusedAt"] = datetime.now().isoformat()
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
     except OSError as e:
         print(f"[FABRICATION-GUARD] Could not record interviewBuildStatus: {e}", file=sys.stderr)
 
@@ -1343,8 +1348,7 @@ def _refuse_reconciliation_pending(missing_ids, rejections=None):
         }
         if rejections:
             state["declineRejections"] = rejections
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
     except OSError as e:
         print(f"[DECISION-COVERAGE] Could not record decisionCoverage: {e}", file=sys.stderr)
 
@@ -1430,8 +1434,7 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
                          "no recorded decision are kept); only recorded declines/adds "
                          "+ net-new customs + vertical additions require decisions."),
             }
-            with open(path, "w") as f:
-                json.dump(state, f, indent=2)
+            _state_commit(path, state)
         except OSError as e:
             print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}",
                   file=sys.stderr)
@@ -1464,8 +1467,7 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
             "checkedAt": datetime.now().isoformat(),
             "expectedCount": len(expected),
         }
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
     except OSError as e:
         print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}", file=sys.stderr)
     print(f"[DECISION-COVERAGE] PASS — all {len(expected)} expected departments carry a "
@@ -1627,8 +1629,7 @@ def _write_provisioning_receipt(company_name, selected_departments, config, core
                 "missingFromBuilt": missing_from_built,
                 "generatedAt": receipt["generatedAt"],
             }
-            with open(path, "w") as f:
-                json.dump(state, f, indent=2)
+            _state_commit(path, state)
         except OSError as e:
             print(f"[PROVISIONING-RECEIPT] could not ledger verdict: {e}", file=sys.stderr)
 
@@ -1785,8 +1786,7 @@ def _flush_artifact_provenance_to_state():
             "personaSetSha": persona_set_sha,
         }
         state["artifactProvenance"] = ap
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[PROVENANCE] Wrote artifactProvenance ({len(ap['roles'])} roles, "
               f"{len(depts_out)} depts, {len(sops_out)} sops, "
               f"{len(personas_out)} personas) to {path}",
@@ -1820,8 +1820,7 @@ def _write_canonical_reconciliation(record):
         existing["floorSize"] = record.get("floorSize", 0)
         existing["source"] = record.get("source", "build-workforce.py")
         state["canonicalReconciliation"] = existing
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[CANONICAL] Wrote canonicalReconciliation to {path}", file=sys.stderr)
     except OSError as e:
         print(f"[CANONICAL WARNING] Could not write reconciliation to {path}: {e}", file=sys.stderr)
@@ -2303,7 +2302,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             "source": source,
         }
         state["canonicalReconciliation"] = recon
-        _atomic_write_json(path, state)
+        _state_commit(path, state)
         print(f"[CHOSEN-LIST] Recorded {len(slugs)} chosen departments in build-state "
               f"(canonicalReconciliation.chosenDepartments)", file=sys.stderr)
     except OSError as e:
@@ -2395,10 +2394,9 @@ def _write_interview_complete_to_state(answers_path=None):
         # Set interviewQc status to "pending" if not already evaluated
         if not isinstance(state.get("interviewQc"), dict):
             state["interviewQc"] = {"status": "pending"}
-        elif state["interviewQc"].get("status") not in ("pass", "needs-review"):
+        elif not __import__("interview_eligibility").eligible_status(state["interviewQc"].get("status")):
             state["interviewQc"]["status"] = "pending"
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[INTERVIEW] Wrote interviewComplete=true to {path}", file=sys.stderr)
         if answers_path:
             print(f"[INTERVIEW] answers file path recorded: {answers_path}", file=sys.stderr)
@@ -2756,8 +2754,11 @@ def _retire_standard_first_declines(build_state, declined_norm_set, selected_dep
     if os.path.normpath(str(state_path)) not in _LIVE_STATE_PATHS:
         cmd += ["--build-state-file", str(state_path)]
         _retire_env["WORKFORCE_BUILD_STATE_FILE"] = str(state_path)
-        if COMPANY_DIR:
-            cmd += ["--company-dir", str(COMPANY_DIR)]
+    # The builder already resolved this exact company, including custom master
+    # roots. Pass it in both installed and scratch modes; the callee verifies
+    # folder slug, state/config identity and the explicit database company row.
+    if COMPANY_DIR:
+        cmd += ["--company-dir", str(COMPANY_DIR)]
     try:
         import subprocess as _retire_sp
         _retire_proc = _retire_sp.run(cmd, timeout=600, env=_retire_env,
@@ -2860,8 +2861,7 @@ def _write_vertical_pack_record(record):
             "appliedAt": datetime.now().isoformat(),
             "source": "build-workforce.py apply_vertical_packs",
         }
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[VERTICAL] Wrote verticalPacks audit record to {path}", file=sys.stderr)
     except OSError as e:
         print(f"[VERTICAL WARNING] Could not write verticalPacks record to {path}: {e}", file=sys.stderr)
@@ -3246,8 +3246,7 @@ def materialize_custom_roles(dept_id, dept_info, dept_config, interview_answers)
                     prior.append(r)
             existing["customRolesBuilt"] = prior
             state["canonicalReconciliation"] = existing
-            with open(path, "w") as f:
-                json.dump(state, f, indent=2)
+            _state_commit(path, state)
         except OSError as e:
             print(f"[CUSTOM-ROLE WARNING] Could not record customRolesBuilt: {e}", file=sys.stderr)
 
@@ -3368,8 +3367,7 @@ def capture_custom_sops(dept_id, dept_info, dept_config, interview_answers):
                 prior.append(entry)
         existing["customSopsCaptured"] = prior
         state["canonicalReconciliation"] = existing
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
     except OSError as e:
         print(f"[CUSTOM-SOP WARNING] Could not record customSopsCaptured: {e}", file=sys.stderr)
 
@@ -3414,6 +3412,10 @@ def write_build_progress(stage, message, departments=None, documents_total=None,
         "eta_minutes": int(eta_minutes),
         "updated_at": datetime.now().isoformat(),
     }
+    state = _load_build_state()
+    payload['company_slug'] = COMPANY_SLUG or state.get('companySlug')
+    payload['build_id'] = state.get('buildId')
+    payload['completion_verification'] = state.get('completionVerification')
     if started_at:
         payload["started_at"] = started_at
     if completed_at:
@@ -3421,19 +3423,43 @@ def write_build_progress(stage, message, departments=None, documents_total=None,
     try:
         os.makedirs(COMPANY_DIR, exist_ok=True)
         target = os.path.join(COMPANY_DIR, "build-progress.json")
-        tmp = target + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(payload, f, indent=2)
-        os.replace(tmp, target)
+        _state_atomic_write(target, payload)
     except Exception as _bp_e:  # noqa: BLE001 - progress is telemetry, never fatal
         print(f"[BUILD-PROGRESS WARN] could not write build-progress.json: {_bp_e}",
               file=sys.stderr)
+
+
+def _begin_build():
+    from workforce_state import update
+    import uuid
+    def begin(state):
+        state['buildId'] = str(uuid.uuid4())
+        state['buildChecks'] = {}
+        state.pop('buildCompletedAt', None)
+        state['completionVerification'] = {'version': 1, 'status': 'pending', 'buildId': state['buildId']}
+    update(_build_state_path(), begin)
+
+
+def _exclusive_build(fn):
+    from functools import wraps
+    @wraps(fn)
+    def run(*args, **kwargs):
+        from workforce_state import owns_runner
+        if owns_runner(_build_state_path() + '.runner'):
+            return fn(*args, **kwargs)
+        try:
+            with _state_lock(_build_state_path() + '.runner', blocking=False):
+                return fn(*args, **kwargs)
+        except BlockingIOError:
+            raise SystemExit('Another workforce build is active; retry after it finishes')
+    return run
 
 
 # ============================================================
 # STANDARD-FIRST APPLY-DIFF BUILD (AI Workforce standard-first redesign,
 # PHASE 3, 2026-08-04 — master plan section 2.1)
 # ============================================================
+@_exclusive_build
 def apply_standard_edits(config):
     """
     The standard-first APPLY-DIFF build: the interview EDITS the prebuilt
@@ -3529,6 +3555,7 @@ def apply_standard_edits(config):
         "biggest_challenge": biggest_challenge,
     }
 
+    _begin_build()
     _build_started_at = datetime.now().isoformat()
     write_build_progress(
         "apply-diff-start", "Applying your interview edits to the pre-built company...",
@@ -3653,6 +3680,13 @@ def apply_standard_edits(config):
         }
         create_department_workspace(dept_id, dept_info, dept_answers)
         role_folders = create_role_workspace(dept_id, dept_info, dept_answers)
+        from generated_context import refresh_context
+        for _role_context in role_folders:
+            _role_path = Path(_role_context)
+            if not _role_path.is_absolute():
+                _role_path = Path(DEPARTMENTS_DIR) / dept_id / _role_path
+            if _role_path.is_dir():
+                refresh_context(_role_path / 'IDENTITY.md', COMPANY_SLUG, dept_answers)
         custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
@@ -3700,7 +3734,7 @@ def apply_standard_edits(config):
         if os.path.isfile(populate_script):
             try:
                 _sop_rc = _ase_subprocess.run(
-                    ["python3", populate_script, "--manifest", manifest_path,
+                    [sys.executable, populate_script, "--manifest", manifest_path,
                      "--max-parallel", "10", "--timeout", "1800"],
                     timeout=3600 + 60,
                 ).returncode
@@ -3830,16 +3864,17 @@ def apply_standard_edits(config):
                     _by_norm[_decline_norm(e["slug"])] = e
             for did in selected_departments:
                 e = _by_norm.get(_decline_norm(did))
-                if e is not None:
-                    e["status"] = "done"
-                    e.setdefault("completedAt", _now)
+                if e is None:
+                    e = {"slug": did}
+                    depts.append(e)
+                e["status"] = "done"
+                e.setdefault("completedAt", _now)
             # Departments the diff dropped (declined customs never in
             # departments[]): mark done too if they were prebuilt-kept? No —
             # they were retired by the retire script; leave their entry alone.
             state["departments"] = depts
-        if not registration_failures:
-            state["buildCompletedAt"] = datetime.now().isoformat()
-            state["buildType"] = "standard-first"
+        state.pop("buildCompletedAt", None)
+        state["buildType"] = "standard-first"
         state["applyStandardEdits"] = {
             "appliedAt": datetime.now().isoformat(),
             "keptDepartments": sorted(kept),
@@ -3847,11 +3882,10 @@ def apply_standard_edits(config):
             "registrationFailures": registration_failures,
             "source": "build-workforce.py apply_standard_edits",
         }
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _state_commit(path, state)
         print(f"[STANDARD-FIRST] State written: confirmationsComplete=true, "
               f"{len(kept)} kept settled to done, "
-              f"buildCompletedAt={'set' if not registration_failures else 'DEFERRED (registration failures)'}.",
+              f"buildCompletedAt=DEFERRED until all required checks pass.",
               file=sys.stderr)
     except OSError as _st_e:
         print(f"[STANDARD-FIRST WARN] could not write apply-diff state: {_st_e}",
@@ -3865,7 +3899,7 @@ def apply_standard_edits(config):
     if os.path.isfile(_script):
         try:
             _result = _ase_subprocess.run(
-                ["python3", _script, "--company-slug", COMPANY_SLUG or ""],
+                [sys.executable, _script, "--company-slug", COMPANY_SLUG or ""],
                 timeout=300)
             _post_build_rc = _result.returncode
         except Exception as _pb_e:  # noqa: BLE001
@@ -3878,10 +3912,11 @@ def apply_standard_edits(config):
         option=config.get("option", "A"),
         departments_done=list(selected_departments.keys()),
         departments_remaining=[],
-        progress_pct=100 if not registration_failures else 90,
+        progress_pct=90,
     )
     generate_persona_matrix(selected_departments, persona_categories, company_name)
 
+    _qc_rc = None
     _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "qc-completeness.sh")
     if os.path.isfile(_qc_script):
@@ -3889,11 +3924,12 @@ def apply_standard_edits(config):
             _qc_args = ["bash", _qc_script]
             if _post_build_rc == 0:
                 _qc_args.append("--quiet")
-            _ase_subprocess.run(_qc_args, timeout=180)
+            _qc_rc = _ase_subprocess.run(_qc_args, timeout=180).returncode
         except Exception as _qc_e:  # noqa: BLE001
             print(f"[STANDARD-FIRST WARN] qc-completeness.sh invocation failed: {_qc_e}",
                   file=sys.stderr)
 
+    _library_gate_rc = None
     _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "verify-library-gate.sh")
     if os.path.isfile(_gate_script):
@@ -3908,19 +3944,27 @@ def apply_standard_edits(config):
             print(f"[STANDARD-FIRST WARN] verify-library-gate.sh invocation failed: "
                   f"{_lg_e}", file=sys.stderr)
 
+    _verified = _finalize_completion(_build_state_path(), {
+        "registration": 1 if registration_failures else 0,
+        "postBuild": _post_build_rc, "qc": _qc_rc, "libraries": _library_gate_rc,
+    }, DEPARTMENTS_DIR)
+    create_handoff(option=config.get("option", "A"),
+                   departments_done=list(selected_departments.keys()),
+                   departments_remaining=[], progress_pct=100 if _verified else 90)
     write_build_progress(
-        "complete" if not registration_failures else "qc",
-        "Your tailored company is live." if not registration_failures
-        else "Apply-diff build finished with registration failures — see build-state.",
+        "complete" if _verified else "qc",
+        "Your tailored company is live." if _verified
+        else "Your company is being verified. Required checks are still pending.",
         eta_minutes=0, started_at=_build_started_at,
-        completed_at=datetime.now().isoformat(),
+        completed_at=datetime.now().isoformat() if _verified else None,
     )
-    print(f"\n[STANDARD-FIRST] APPLY-DIFF BUILD COMPLETE: {company_name}",
+    print(f"\n[STANDARD-FIRST] APPLY-DIFF BUILD {'VERIFIED' if _verified else 'PENDING VERIFICATION'}: {company_name}",
           file=sys.stderr)
     print(f"[STANDARD-FIRST] Departments: {len(selected_departments)} "
           f"(retired: {len(_declined_norm)})", file=sys.stderr)
 
 
+@_exclusive_build
 def build_from_config(config):
     """
     Build the full workforce from a non-interactive config JSON.
@@ -4019,6 +4063,7 @@ def build_from_config(config):
     # Issue #9: emit the first build-progress.json so the onboarding "building"
     # page leaves its "Connecting to build status..." null state immediately and
     # the /api/onboarding/build-status route stops returning the idle fallback.
+    _begin_build()
     _build_started_at = datetime.now().isoformat()
     write_build_progress(
         "manifest", "Writing your workforce manifest...",
@@ -4178,6 +4223,13 @@ def build_from_config(config):
         # CAPABILITY 3 (PRD R2.4): materialize the EXTRA roles this owner asked for
         # in THIS department as a build decision (not the post-build add-role.sh
         # path). Idempotent; skips any role slug already present.
+        from generated_context import refresh_context
+        for _role_context in role_folders:
+            _role_path = Path(_role_context)
+            if not _role_path.is_absolute():
+                _role_path = Path(DEPARTMENTS_DIR) / dept_id / _role_path
+            if _role_path.is_dir():
+                refresh_context(_role_path / 'IDENTITY.md', COMPANY_SLUG, dept_answers)
         custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
@@ -4317,7 +4369,7 @@ def build_from_config(config):
         if os.path.isfile(populate_script):
             try:
                 rc = subprocess.run(
-                    ["python3", populate_script, "--manifest", manifest_path,
+                    [sys.executable, populate_script, "--manifest", manifest_path,
                      "--max-parallel", "10", "--timeout", "1800"],
                     timeout=3600 + 60,  # 60-min cap on the whole batch
                 ).returncode
@@ -4458,7 +4510,7 @@ def build_from_config(config):
             _state_f = _build_state_path()
             if os.path.isfile(_state_f):
                 import tempfile as _tf
-                _s = json.load(open(_state_f))
+                _s = _state_read(_state_f)
                 _s["wiringStatus"] = "blocked-no-config"
                 _s["wiringFailureReason"] = f"openclaw.json absent at {OPENCLAW_CONFIG}"
                 _tmp = _tf.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
@@ -4584,7 +4636,7 @@ def build_from_config(config):
             _state_f = _build_state_path()
             if os.path.isfile(_state_f):
                 import tempfile as _tf2
-                _s2 = json.load(open(_state_f))
+                _s2 = _state_read(_state_f)
                 if _s2.get("wiringStatus") not in ("blocked-no-config",):
                     _s2["wiringStatus"] = "failed"
                     _s2["wiringFailureReason"] = f"registration_failures={registration_failures}"
@@ -4599,7 +4651,7 @@ def build_from_config(config):
         option=config.get("option", "A"),
         departments_done=list(selected_departments.keys()),
         departments_remaining=[],
-        progress_pct=_build_progress
+        progress_pct=min(_build_progress, 90)
     )
 
     # Generate/update persona-matrix.md for workforce visibility
@@ -4621,7 +4673,7 @@ def build_from_config(config):
     if os.path.isfile(_script):
         try:
             _result = _subprocess.run(
-                ["python3", _script, "--company-slug", COMPANY_SLUG or ""],
+                [sys.executable, _script, "--company-slug", COMPANY_SLUG or ""],
                 timeout=300
             )
             _post_build_rc = _result.returncode
@@ -4667,13 +4719,14 @@ def build_from_config(config):
     # gets a per-dept breakdown (and a Telegram alert if != PASS). On zero rc
     # we still invoke qc-completeness.sh but in --quiet mode (PASS = no
     # Telegram, log-only). Idempotent and read-only.
+    _qc_rc = None
     _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qc-completeness.sh")
     if os.path.isfile(_qc_script):
         try:
             _qc_args = ["bash", _qc_script]
             if _post_build_rc == 0 and (_sop_rc in (0, -1)):
                 _qc_args.append("--quiet")
-            _subprocess.run(_qc_args, timeout=180)
+            _qc_rc = _subprocess.run(_qc_args, timeout=180).returncode
         except Exception as _e:
             print(f"[v2.1 WARN] qc-completeness.sh invocation failed: {_e}", file=sys.stderr)
     else:
@@ -4685,6 +4738,7 @@ def build_from_config(config):
     # workforce is NOT complete until both are 'done'. The master orchestrator MUST
     # NOT write buildCompletedAt / closeoutStatus=pending while this gate fails (rc != 0);
     # the resume cron fires a [LIBRARY-RESUME] self-ping until it passes.
+    _library_gate_rc = None
     _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-library-gate.sh")
     # C4: capture the gate rc so the terminal build-progress emit below can
     # HARD-REQUIRE it. None = the gate could not run (missing / errored) — treated
@@ -4715,13 +4769,14 @@ def build_from_config(config):
     # non-terminal state with an honest message so it keeps polling rather than
     # falsely showing "ready" (honors the "no false done" doctrine).
     try:
-        _all_done = all(d["status"] == "complete" for d in _progress_departments)
-        # C4 HARD-REQUIRE: never signal terminal "complete" while the library gate
-        # is DEFINITIVELY failing (role/SOP library not substantive). A concrete
-        # non-zero rc blocks; a None rc (gate missing/errored) preserves prior
-        # structural behaviour so a box without the gate is never stranded.
-        _library_gate_blocks = (_library_gate_rc is not None and _library_gate_rc != 0)
-        if _build_progress >= 100 and _all_done and not _library_gate_blocks:
+        _verified = _finalize_completion(_build_state_path(), {
+            "registration": 1 if registration_failures else 0,
+            "postBuild": _post_build_rc, "qc": _qc_rc, "libraries": _library_gate_rc,
+        }, DEPARTMENTS_DIR)
+        create_handoff(option=config.get("option", "A"),
+                       departments_done=list(selected_departments.keys()),
+                       departments_remaining=[], progress_pct=100 if _verified else 90)
+        if _verified:
             write_build_progress(
                 "complete", "Your AI workforce is ready ✓",
                 departments=_progress_departments,
@@ -4732,7 +4787,7 @@ def build_from_config(config):
             )
         else:
             write_build_progress(
-                "qc", _build_complete_msg,
+                "qc", "Your workforce is being verified. Required checks are still pending.",
                 departments=_progress_departments,
                 documents_total=max(_docs_total, _docs_done),
                 documents_complete=_docs_done, eta_minutes=5,
@@ -4810,7 +4865,24 @@ def resolve_company_paths(company_name: str):
     Run scripts/migrate-zhc-to-master-files.sh to migrate existing companies.
     """
     global COMPANY_SLUG, COMPANY_DIR, DEPARTMENTS_DIR
-    COMPANY_SLUG = slugify_company_name(company_name)
+    identity = _load_build_state()
+    pinned = identity.get('companySlug') or identity.get('clientSlug') or os.environ.get('OPENCLAW_COMPANY_SLUG')
+    COMPANY_SLUG = pinned or slugify_company_name(company_name)
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', COMPANY_SLUG):
+        raise ValueError('invalid canonical company slug')
+    os.environ['OPENCLAW_COMPANY_SLUG'] = COMPANY_SLUG
+    canonical_identity = identity.get('companyId') or os.environ.get('MC_COMPANY_ID')
+    _cfg_path = Path(ZHC_ROOT) / COMPANY_SLUG / 'company-config.json'
+    if _cfg_path.is_file():
+        _cfg_identity = json.loads(_cfg_path.read_text())
+        _configured_id = _cfg_identity.get('company_id') or _cfg_identity.get('companyId') or _cfg_identity.get('id')
+        if canonical_identity and _configured_id and canonical_identity != _configured_id:
+            raise ValueError('company state/config identity mismatch')
+        canonical_identity = canonical_identity or _configured_id
+    if canonical_identity:
+        identity['companyId'] = canonical_identity
+    identity['companySlug'] = COMPANY_SLUG
+    _state_commit(_build_state_path(), identity)
 
     # PRD 1.9: always write to canonical root (ZHC_ROOT is now master_files/zero-human-company/)
     canonical = os.path.join(ZHC_ROOT, COMPANY_SLUG)
@@ -5437,6 +5509,9 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 file=sys.stderr
             )
 
+    from generated_context import refresh_context
+    refresh_context(Path(dept_dir) / 'SOUL.md', COMPANY_SLUG, interview_answers)
+    refresh_context(Path(dept_dir) / 'IDENTITY.md', COMPANY_SLUG, interview_answers)
     return dept_dir
 
 
@@ -6526,8 +6601,8 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             _lib_key, dept_id, interview_answers)
         if library_how_to is not None:
             how_to_path = os.path.join(role_dir, "how-to.md")
-            with open(how_to_path, 'w') as f:
-                f.write(library_how_to)
+            from generated_context import write_new
+            write_new(how_to_path, library_how_to)
             _LIBRARY_INSTANTIATED_ROLE_DIRS.add(os.path.abspath(role_dir))
             _LIBRARY_FILL_STATS["instantiated_from_library"] += 1
             print(f"[ROLE-LIBRARY] INSTANTIATED {folder_name} ({dept_id}) "
@@ -6577,8 +6652,8 @@ Read the matching SOP BEFORE executing a task it covers. No improvising. If no
 SOP covers the task, do not guess - escalate to the {dept_info['head']} so the
 SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
 """
-                with open(how_to_path, 'w') as f:
-                    f.write(pending_how_to)
+                from generated_context import write_new
+                write_new(how_to_path, pending_how_to)
 
         # 1. Create 00-START-HERE.md
         start_here_path = os.path.join(role_dir, "00-START-HERE.md")
@@ -6632,8 +6707,8 @@ SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
 
             content += f"\n---\n\n*Created: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}*\n"
 
-            with open(start_here_path, 'w') as f:
-                f.write(content)
+            from generated_context import write_new
+            write_new(start_here_path, content)
 
         # 2. Create governing-personas.md for this role
         personas_path = os.path.join(role_dir, "governing-personas.md")
@@ -6659,8 +6734,8 @@ This file adds role-specific filtering on top of the department pool.
 ---
 
 *Created: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}*\n"""
-            with open(personas_path, 'w') as f:
-                f.write(personas_content)
+            from generated_context import write_new
+            write_new(personas_path, personas_content)
 
         # 3. Create SOP stub files - ONLY for roles with no library template.
         # WS-2: when the role was instantiated from the library, its full
@@ -6724,9 +6799,11 @@ If this task cannot be completed at the specialist level, escalate to the {dept_
 *Created: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}*
 *Status: STUB - Needs research + personalization*
 """
-                with open(sop_path, 'w') as f:
-                    f.write(sop_content)
+                from generated_context import write_new
+                write_new(sop_path, sop_content)
 
+        from generated_context import refresh_context
+        refresh_context(Path(role_dir) / 'IDENTITY.md', COMPANY_SLUG, interview_answers)
         created_folders.append(role_dir)
         print(f"[ROLE-WORKSPACE] Created role: {folder_name} in {dept_id}/", file=sys.stderr)
 
@@ -7710,9 +7787,9 @@ def copy_departments_to_command_center(departments_json):
 
 def generate_persona_matrix(departments, persona_categories, company_name):
     """
-    Generate persona-matrix.md - a mapping of departments to their pre-qualified personas.
+    Generate persona-matrix.md - a mapping of departments to their domain-matched candidates.
     This creates visibility into which personas are available for which departments,
-    supporting the 5-layer matching protocol (Layers 1-2 pre-qualified pool).
+    supporting the 5-layer matching protocol (qualification pending in all layers).
 
     The matrix is regenerated whenever the workforce is built or updated.
     If persona-matrix.md exists, this function updates it; otherwise creates it.
@@ -7791,12 +7868,13 @@ def generate_persona_matrix(departments, persona_categories, company_name):
 
 ## Overview
 
-This matrix maps each department to its pre-qualified persona pool (Layers 1-2 of the 5-layer matching protocol).
-Personas listed here have passed company mission and owner alignment checks.
+This matrix lists domain-matched candidates from the persona catalog.
+Company mission, owner alignment and task suitability have not been evaluated by this matrix.
+Catalog version: {(persona_categories or {}).get('version', 'unversioned')}.
 
 **How to use:**
 1. For each task, query the personas listed for that department
-2. Apply Layers 3-5 (company goals, department goals, task fit) to select the best match
+2. Apply all five alignment layers using current company, owner, department and task evidence before selection
 3. Log selection in persona-selection-log.md
 
 ---
@@ -7806,7 +7884,7 @@ Personas listed here have passed company mission and owner alignment checks.
 """
 
     for dept_id, dept_info in departments.items():
-        domains = dept_to_domains.get(dept_id, ["leadership"])
+        domains = dept_to_domains.get(dept_id, [])
         matched_personas = []
 
         if persona_categories and "personas" in persona_categories:
@@ -7828,24 +7906,24 @@ Personas listed here have passed company mission and owner alignment checks.
         content += f"**Domain Tags:** {', '.join(domains)}\n\n"
 
         if matched_personas:
-            content += "**Pre-Qualified Personas:**\n\n"
+            content += "**Domain-Matched Candidates (qualification pending):**\n\n"
             for p in matched_personas[:10]:  # Limit to top 10 per department
                 perspective = ', '.join(p['perspective']) if p['perspective'] else 'general'
-                content += f"- **{p['author']}** ({p['book']}) - {perspective}\n"
+                content += f"- **{p['author']}** ({p['book']}) — ID: `{p['id']}` — {perspective}\n"
             if len(matched_personas) > 10:
-                content += f"- *...and {len(matched_personas) - 10} more*\n"
+                content += f"- *Preview shows 10 of {len(matched_personas)} candidates; the full catalog remains eligible for evaluation.*\n"
         else:
-            content += "**Pre-Qualified Personas:** None yet. Run Skill 22 (Book-to-Persona) to add personas.\n"
+            content += "**Domain-Matched Candidates (qualification pending):** None yet. Run Skill 22 (Book-to-Persona) to add personas.\n"
 
         content += "\n---\n\n"
 
     # Add usage instructions
     content += """## Using This Matrix
 
-### Step 1: Pre-Qualification (Layers 1-2)
-Personas in this matrix have already been validated against:
-- Company mission alignment
-- Owner values and style alignment
+### Step 1: Company and Owner Qualification (Layers 1-2)
+The domain filter supplies candidates only. Before selecting, verify:
+- Company mission alignment with current evidence
+- Owner values and style alignment with current evidence
 
 ### Step 2: Per-Task Matching (Layers 3-5)
 For each task, score candidates on:
@@ -8259,7 +8337,7 @@ def _resolve_dept_default_model(dept_id):
         return None
     try:
         r = subprocess.run(
-            ["python3", sel, "--mode", "dept-default",
+            [sys.executable, sel, "--mode", "dept-default",
              "--department", canon, "--format", "json"],
             capture_output=True, text=True, timeout=15,
         )

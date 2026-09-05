@@ -80,6 +80,14 @@ fi
 STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 LOCK_FILE="$OC_ROOT/workspace/.workforce-build-state.lock"
 LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-$STATE_FILE}"
+export WORKFORCE_BUILD_STATE_FILE="$STATE_FILE"
+source "$SCRIPT_DIR/lib-workforce-state.sh" || exit 1
+if [[ "${WORKFORCE_RUNNER_OWNER:-}" != "$PPID" ]]; then
+  exec "$WORKFORCE_PYTHON" "$SCRIPT_DIR/workforce_state.py" run "$STATE_FILE.runner" bash "$0" "$@"
+fi
+COMPLETION_SCRIPT="$SCRIPT_DIR/workforce_completion.py"
+
 RUN_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-runs.count"
 # v21.x: SEND count is OBSERVABILITY ONLY and gates nothing. Kept strictly separate
 # from RUN_COUNT_FILE (the turn-driven furnace ceiling) so a successful outbound
@@ -173,12 +181,12 @@ log() {
 # resolution (identical to OC_ROOT's) is what runs in production.
 mkdir -p "$OC_ROOT/workspace" 2>/dev/null || true
 DEPT_OPTOUT_SYNC_SCRIPT="$SCRIPT_DIR/department-optout-sync.py"
-if [[ -f "$DEPT_OPTOUT_SYNC_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
-  python3 "$DEPT_OPTOUT_SYNC_SCRIPT" >>"$LOG_FILE" 2>&1 \
+if [[ -f "$DEPT_OPTOUT_SYNC_SCRIPT" ]] && command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
+  "$WORKFORCE_PYTHON" "$DEPT_OPTOUT_SYNC_SCRIPT" >>"$LOG_FILE" 2>&1 \
     && log "department-optout-sync: refreshed provisioning/department-optout.json" \
     || log "department-optout-sync: exited non-zero (anomalies are still written to the file, never a build blocker - see log above)"
 else
-  log "department-optout-sync: script not found or python3 unavailable - provisioning/department-optout.json NOT refreshed this tick"
+  log "department-optout-sync: script not found or "$WORKFORCE_PYTHON" unavailable - provisioning/department-optout.json NOT refreshed this tick"
 fi
 # === U110-OPTOUT-SYNC-END ===
 
@@ -288,32 +296,19 @@ report_interview_not_complete() {
 # the BELT because the BELT is the first state reader. The write is atomic
 # (mktemp + mv), matching the other pre-lock state writes in this file.
 normalize_status_vocabulary() {
-  command -v jq >/dev/null 2>&1 || return 0
   [[ -f "$STATE_FILE" ]] || return 0
-  local _tmp
-  _tmp=$(mktemp) || return 0
-  if jq '
-        def norm: if . == "complete" or . == "completed" then "done" else . end;
-        (.status? | strings) |= norm
-        | (.roleLibraryStatus? | strings) |= norm
-        | (.sopLibraryStatus? | strings) |= norm
-        | (.commsAutomationStatus? | strings) |= norm
-        | (.closeoutStatus? | strings) |= norm
-        | (.departments? | arrays) |= map(
-            if type == "object" then ((.status? | strings) |= norm) else . end
-          )
-      ' "$STATE_FILE" > "$_tmp" 2>/dev/null && [[ -s "$_tmp" ]]; then
-    if cmp -s "$_tmp" "$STATE_FILE"; then
-      rm -f "$_tmp"
-    else
-      mv "$_tmp" "$STATE_FILE"
-      log "VOCAB-NORMALIZE: rewrote 'complete'/'completed' status value(s) to the contract word 'done' (departments and/or the library/comms/closeout/top-level status fields). Every counter in this pipeline compares == \"done\"; the synonym made them all read zero."
-    fi
-  else
-    rm -f "$_tmp"
-  fi
+  workforce_state_set "$STATE_FILE" '
+    def norm: if . == "complete" or . == "completed" then "done" else . end;
+    (.status? | strings) |= norm
+    | (.roleLibraryStatus? | strings) |= norm
+    | (.sopLibraryStatus? | strings) |= norm
+    | (.commsAutomationStatus? | strings) |= norm
+    | (.closeoutStatus? | strings) |= norm
+    | (.departments? | arrays) |= map(if type == "object" then ((.status? | strings) |= norm) else . end)
+  '
 }
 normalize_status_vocabulary
+"$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
 
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
@@ -380,8 +375,8 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
     # self-remove regardless (it is an explicit non-completion the operator set).
     _allow_remove=1
     _floor_script="$SCRIPT_DIR/department-floor.py"
-    if [[ "$_build_status" != "failed" ]] && [[ -f "$_floor_script" ]] && command -v python3 >/dev/null 2>&1; then
-      python3 "$_floor_script" >/dev/null 2>&1
+    if [[ "$_build_status" != "failed" ]] && [[ -f "$_floor_script" ]] && command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
+      "$WORKFORCE_PYTHON" "$_floor_script" >/dev/null 2>&1
       _floor_rc=$?
       if [[ "$_floor_rc" == "3" ]]; then
         _allow_remove=0
@@ -521,7 +516,7 @@ if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )
           openclaw message send --channel telegram -t "$_operator_chat" \
             -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_stuck} consecutive no-progress fires (v14.1.5 hard stuck-cap). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
         fi
-        _tmp_se=$(mktemp); jq '.stuckParkEscalated = true' "$STATE_FILE" > "$_tmp_se" 2>/dev/null && mv "$_tmp_se" "$STATE_FILE" || rm -f "$_tmp_se"
+        _tmp_se=$(mktemp); workforce_state_set "$STATE_FILE" '.stuckParkEscalated = true'
       fi
     fi
     echo "PARKED + DISABLED — ${_stuck} consecutive no-progress fires hit the hard cap ($MAX_STUCK_FIRES). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
@@ -563,19 +558,7 @@ if ! command -v openclaw >/dev/null 2>&1; then
   exit 0
 fi
 
-# ---- lock (prevent concurrent self-pings) ----
-if [[ -f "$LOCK_FILE" ]]; then
-  lock_mtime=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || stat -f %m "$LOCK_FILE" 2>/dev/null || echo 0)
-  now=$(date +%s)
-  lock_age=$(( now - lock_mtime ))
-  if (( lock_age < 600 )); then
-    log "lock held for ${lock_age}s (< 600s) - another resume in flight; exiting"
-    exit 0
-  fi
-  log "stale lock (age ${lock_age}s) - clearing"
-fi
-echo $$ > "$LOCK_FILE"
-trap 'rm -f "$LOCK_FILE"' EXIT
+# Runner claim is held by the inherited OS lock from entry.
 
 # ---- AI Workforce standard-first (2026-08-04): PARTIAL-PREBUILD repair lane ----
 # Under buildType=standard-first the operator-triggered prebuild driver
@@ -692,10 +675,10 @@ if [[ "$interview_complete" != "true" ]]; then
   log "RECOVERY: interviewComplete!=true but interview content exists (lastQuestionAt=$last_q_at_unflagged) - running QC to decide if the owner actually finished (HOP-1 recovery)."
   _recover_qc_status="pending"
   QC_SCRIPT_RECOVER="${SCRIPT_DIR}/qc-interview-completion.py"
-  if [[ -f "$QC_SCRIPT_RECOVER" ]] && command -v python3 >/dev/null 2>&1; then
+  if [[ -f "$QC_SCRIPT_RECOVER" ]] && command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
     # --write-state is a flag; the state path goes via --state (the old
     # positional form was rejected by argparse and silently no-op'd QC).
-    python3 "$QC_SCRIPT_RECOVER" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    "$WORKFORCE_PYTHON" "$QC_SCRIPT_RECOVER" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     _recover_qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
     log "RECOVERY: QC verdict on unflagged interview = $_recover_qc_status"
   else
@@ -724,13 +707,8 @@ if [[ "$interview_complete" != "true" ]]; then
     fi
     interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
     if [[ "$interview_complete" != "true" ]]; then
-      # Fallback: writer missing or failed - set the flag inline so we proceed.
-      _now_rec=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-      _tmp_rec=$(mktemp)
-      jq --arg now "$_now_rec" '.interviewComplete = true | .interviewCompletedAt = (.interviewCompletedAt // $now) | (if .departments == null then .departments = [] else . end) | (if .roleLibraryStatus == null then .roleLibraryStatus = "pending" else . end) | (if .sopLibraryStatus == null then .sopLibraryStatus = "pending" else . end)' "$STATE_FILE" > "$_tmp_rec" 2>/dev/null \
-        && mv "$_tmp_rec" "$STATE_FILE" || rm -f "$_tmp_rec"
-      interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
-      log "RECOVERY: set interviewComplete=true inline (fallback)."
+      log "RECOVERY: canonical completion writer did not verify the interview; leaving pending"
+      exit 0
     fi
     log "RECOVERY: interview promoted to complete - continuing into the normal resume/build path."
     # fall through - do NOT exit; the rest of this script now drives the build.
@@ -760,14 +738,14 @@ fi
 # as advisory (they are already recorded in .interviewQc for the operator). `fail`
 # and `pending` still block - those are genuine "evidence does not support it".
 qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
-_qc_build_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }
+_qc_build_eligible() { workforce_interview_eligible status "${1:-}"; }
 if ! _qc_build_eligible "$qc_status"; then
   QC_SCRIPT="${SCRIPT_DIR}/qc-interview-completion.py"
   if [[ "$qc_status" == "pending" ]] && [[ -f "$QC_SCRIPT" ]]; then
     log "[QC-RESUME] interviewQc.status=pending - running qc-interview-completion.py --write-state --state (best-effort)"
     # --write-state is a flag; the state path goes via --state (the old positional
     # form was rejected by argparse and silently no-op'd QC, stranding the gate).
-    python3 "$QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    "$WORKFORCE_PYTHON" "$QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
     log "[QC-RESUME] interviewQc.status after QC run: $qc_status"
   fi
@@ -809,8 +787,8 @@ fi
 _DEPTS_DIR_RESUME="$_WORKSPACE_ROOT_RESUME/departments"
 _stale_reset_count=0
 
-if command -v python3 >/dev/null 2>&1; then
-  _stale_reset_output=$(python3 - "$STATE_FILE" "$_DEPTS_DIR_RESUME" <<'STALE_PY' 2>&1
+if command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
+  _stale_reset_output=$("$WORKFORCE_PYTHON" - "$STATE_FILE" "$_DEPTS_DIR_RESUME" <<'STALE_PY' 2>&1
 import json, os, sys
 from pathlib import Path
 
@@ -819,7 +797,8 @@ depts_dir  = Path(sys.argv[2])
 HOW_TO_MIN = 256  # bytes — anything smaller is effectively empty/stub
 
 try:
-    state = json.loads(state_path.read_text(encoding="utf-8"))
+    from workforce_state import read, commit
+    state = read(state_path)
 except Exception as e:
     print(f"STALE_CHECK_ERROR: cannot read state: {e}", file=sys.stderr)
     sys.exit(0)
@@ -895,8 +874,7 @@ if changed:
     import tempfile
     tmp = state_path.with_suffix(f".stale_reset.{os.getpid()}.tmp")
     try:
-        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        tmp.replace(state_path)
+        commit(state_path, state)
         print(f"STALE_RESET_WRITTEN: {len(reset_ids)} dept(s) reset to pending")
     except Exception as e:
         tmp.unlink(missing_ok=True)
@@ -1097,22 +1075,12 @@ if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
              && (( _sf_all_nonprebuilt_done == 1 )) && (( _sf_depts_settled == 1 )); }; } \
    && [[ -z "$build_completed_at" ]]; then
   log "AUTO-COMPLETE (HOP-4): all ${total_count_now} departments done (standard-first: ${prebuilt_count} prebuilt confirmed-or-declined, confirmationsComplete=$confirmations_complete) + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal ($comms_automation_status) but buildCompletedAt was unset - writing buildCompletedAt + closeoutStatus=pending so the closeout fires automatically (no agent hand-write required)."
-  _now_bc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  _tmp_bc=$(mktemp)
-  # Set buildCompletedAt; only set closeoutStatus=pending if it is not already a
-  # later/terminal state (do not clobber generating/sent/done/partial/blocked-*).
-  if jq --arg now "$_now_bc" '
-        .buildCompletedAt = $now
-        | (if ((.closeoutStatus // "") | IN("generating","partial","sent","done","failed","blocked-floor-incomplete","blocked-libraries-incomplete","blocked-interview-incomplete","blocked-qc-pending")) then . else .closeoutStatus = "pending" end)
-      ' "$STATE_FILE" > "$_tmp_bc" 2>/dev/null; then
-    mv "$_tmp_bc" "$STATE_FILE"
-    # Refresh local copies so the dirty recompute below sees the new values.
+  if "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --refresh >>"$LOG_FILE" 2>&1; then
     build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
     closeout_status=$(jq -r '.closeoutStatus // empty' "$STATE_FILE")
-    log "AUTO-COMPLETE (HOP-4): wrote buildCompletedAt=$build_completed_at, closeoutStatus=$closeout_status."
+    log "AUTO-COMPLETE: all current required checks verified"
   else
-    rm -f "$_tmp_bc"
-    log "AUTO-COMPLETE (HOP-4): WARN - failed to write buildCompletedAt (non-fatal; will retry next fire)."
+    log "AUTO-COMPLETE: verification pending; recovery stays active"
   fi
 fi
 
@@ -1170,7 +1138,7 @@ if (( attempts >= max_attempts )); then
       curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
     fi
     _tmp_cap=$(mktemp)
-    jq '.resumeCapEscalated = true' "$STATE_FILE" > "$_tmp_cap" 2>/dev/null && mv "$_tmp_cap" "$STATE_FILE" || rm -f "$_tmp_cap"
+    workforce_state_set "$STATE_FILE" '.resumeCapEscalated = true'
   fi
   # Slow-backoff past the cap: act roughly every 2h (every 8th */15 fire) but
   # NEVER stop. The MAX_RUNS slow-mode above already throttles the overall cron;
@@ -1179,7 +1147,7 @@ if (( attempts >= max_attempts )); then
   if (( _attempts_over % 8 != 0 )); then
     log "slow-retry: attempt $attempts past cap - backoff skip this fire (will dispatch on the next ~2h boundary)."
     # still bump the counter so backoff advances
-    _tmp_a=$(mktemp); jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$_tmp_a" && mv "$_tmp_a" "$STATE_FILE"
+    _tmp_a=$(mktemp); workforce_state_set "$STATE_FILE" ".resumeAttempts = $((attempts + 1))"
     exit 0
   fi
   log "slow-retry: attempt $attempts past cap - dispatching a resume self-ping (2h boundary)."
@@ -1206,7 +1174,7 @@ if (( library_dirty == 1 )) && (( attempts >= near_cap_threshold )); then
     fi
     # Mark notified so we surface this once, not on every remaining cycle.
     _tmp_notif=$(mktemp)
-    jq '.librariesNearCapNotified = true' "$STATE_FILE" > "$_tmp_notif" && mv "$_tmp_notif" "$STATE_FILE"
+    workforce_state_set "$STATE_FILE" '.librariesNearCapNotified = true'
   fi
 fi
 
@@ -1234,7 +1202,7 @@ if (( _total_pings >= MAX_TOTAL_RESUME_PINGS )); then
       _operator_chat="$(resolve_operator_chat_id)"
       [[ -n "$_operator_chat" ]] && openclaw message send --channel telegram -t "$_operator_chat" \
         -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_total_pings} total resume self-pings (absolute ceiling ${MAX_TOTAL_RESUME_PINGS}). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
-      _tmp_pc=$(mktemp); jq '.pingCeilingEscalated = true' "$STATE_FILE" > "$_tmp_pc" 2>/dev/null && mv "$_tmp_pc" "$STATE_FILE" || rm -f "$_tmp_pc"
+      _tmp_pc=$(mktemp); workforce_state_set "$STATE_FILE" '.pingCeilingEscalated = true'
     fi
   fi
   echo "PARKED + DISABLED — ${_total_pings} total resume pings hit the absolute ceiling ($MAX_TOTAL_RESUME_PINGS). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
@@ -1288,7 +1256,7 @@ fi
 
 # ---- bump attempt counter atomically ----
 tmp_state=$(mktemp)
-jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$tmp_state" && mv "$tmp_state" "$STATE_FILE"
+workforce_state_set "$STATE_FILE" ".resumeAttempts = $((attempts + 1))"
 
 # ---- compose the resume message + dispatch ----
 agent_name=$(jq -r '.agentName // "the master orchestrator"' "$STATE_FILE")
@@ -1358,7 +1326,7 @@ if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   _roster_script="$SCRIPT_DIR/regenerate-dept-roster.py"
   if [[ -f "$_roster_script" ]]; then
     log "[ROSTER-RESUME] refreshing every department ROSTER.md from on-disk role folders"
-    python3 "$_roster_script" >>"$LOG_FILE" 2>&1 || true
+    "$WORKFORCE_PYTHON" "$_roster_script" >>"$LOG_FILE" 2>&1 || true
   fi
   msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/ AND refreshes each department's ROSTER.md from the role folders on disk); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. If any department's ROSTER.md under-reports its role folders, run scripts/regenerate-dept-roster.py to rebuild every roster from disk. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) - ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal."
 # B4: [WIRING-RESUME] self-ping when wiring is dirty

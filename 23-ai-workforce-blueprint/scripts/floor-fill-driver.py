@@ -240,22 +240,13 @@ def norm(name: str) -> str:
 
 def existing_role_keys(dept_dir: Path):
     keys = set()
-    if not dept_dir.is_dir():
-        return keys
-    for e in dept_dir.iterdir():
-        # a role is a dir with IDENTITY.md/how-to.md, or a <slug>.md file
-        if e.is_dir() and ((e / "IDENTITY.md").exists() or (e / "how-to.md").exists()):
-            keys.add(norm(e.name))
-        elif e.is_file() and e.suffix == ".md":
-            keys.add(norm(e.name))
-    # nested roles/ layout
-    rd = dept_dir / "roles"
-    if rd.is_dir():
-        for e in rd.iterdir():
-            if e.is_dir() and ((e / "IDENTITY.md").exists() or (e / "how-to.md").exists()):
-                keys.add(norm(e.name))
-            elif e.is_file() and e.suffix == ".md":
-                keys.add(norm(e.name))
+    required = ('IDENTITY.md', 'SOUL.md', 'MEMORY.md', 'HEARTBEAT.md', 'how-to.md')
+    for base in (dept_dir, dept_dir / 'roles'):
+        if not base.is_dir():
+            continue
+        for role in base.iterdir():
+            if role.is_dir() and all((role / name).is_file() and (role / name).stat().st_size > 0 for name in required):
+                keys.add(norm(role.name))
     return keys
 
 

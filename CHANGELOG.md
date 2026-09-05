@@ -1,3 +1,14 @@
+## [v24.2.0]  -  2026-09-05  -  Verify client onboarding, workforce state, board handoff and closeout receipts
+
+Skill 23 completion now requires current build checks, libraries, department readiness and matching input/artifact evidence. Company identity is pinned across prebuild, client interview changes, department retirement, personalization, Command Center synchronization and closeout. Concurrent state/runner updates are serialized; corrupted or conflicting state is preserved for recovery. Python 3.9 is supported explicitly.
+
+The existing installation remains the base that the interview edits. Partial role skeletons are repaired additively, managed interview context refreshes without overwriting owner content, and department removal verifies the exact company's database/config scope. The Command Center handoff requires an authenticated installation readiness receipt and explicit tenant/persona configuration; see 32-command-center-setup/TENANT-CONFIGURATION.md.
+
+Closeout uses one readiness evaluator, retains failed cleanup jobs for retry, and verifies actual gateway delivery through JSON or the inspected OpenClaw SQLite receipt format. Exact durable receipts survive registry rotation; fabricated, mismatched or expired unverified messages cannot certify delivery. See 37-zhc-closeout/GATEWAY-RECEIPTS.md. Local QC signoff requires an authorized independent reviewer and current artifact identity. Task routing uses stable retry identity and bounded transport.
+
+Validated with 49 isolated reliability, retirement/recovery and receipt tests under Python 3.9; separate Astra review covered cross-company scope, concurrency, cleanup and gateway receipt authority. Live client deployment and provider delivery are separate rollout acceptance.
+
+
 ## [v24.1.8]  -  2026-09-05  -  Resume no longer waits on an outstanding work order whose artifact is already satisfied; blocked-run dispatch state settles instead of stalling (#1028)
 
 ## [v24.1.7]  -  2026-09-04  -  P-STYLE-SPEC declares the arc_allocation.json it actually reads, creating the missing P3-ARC edge that let it dispatch with zero units (#1027)
