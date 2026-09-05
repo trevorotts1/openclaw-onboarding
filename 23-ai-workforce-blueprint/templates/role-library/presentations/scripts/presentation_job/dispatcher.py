@@ -4526,10 +4526,37 @@ def _run_terminal(run_dir: Path) -> Optional[str]:
 # FIX 9 -- the dispatcher's own exit condition. Per MASTER Part 8 Fix 9 the
 # watch loops no longer rely solely on "terminal is set" (a single-phase
 # --resume never sets terminal, and a quarantined unit parks WITHOUT setting
-# terminal -- Fix 9 drops terminal=BLOCKED entirely). The exit condition
-# becomes exactly: NO OPEN WORK ORDERS and the ENGINE PID DEAD. Until both
-# hold, the dispatcher keeps sweeping: a phase whose work order is still open
-# must be picked up whether the engine is alive or newly resumed.
+# terminal). The exit condition becomes exactly: NO OPEN WORK ORDERS and the
+# ENGINE PID DEAD. Until both hold, the dispatcher keeps sweeping: a phase
+# whose work order is still open must be picked up whether the engine is alive
+# or newly resumed.
+#
+# RECONCILIATION (2026-09-05, from the live run archived in the P-SP-INTAKE
+# collision evidence). This comment used to also claim "Fix 9 drops
+# terminal=BLOCKED entirely". That claim is FALSE and had drifted from the
+# code on BOTH sides:
+#   * terminal="BLOCKED" is still WRITTEN, in 8 places in phases.py
+#     (:2446 _block, :2673 the end-of-run park, and the six close()/gate
+#     paths at :3120 :3192 :3210 :3233 :3267 :3285);
+#   * it is still READ as a real terminal by five other modules --
+#     supervisor.py:406, watchdog.py:131, sweep.py:120, cc_board.py:188 and
+#     process_reaper.py:351 -- plus roughly fifteen tests that assert it by
+#     name. Nothing was ever retired.
+# So _run_terminal() honouring it is CORRECT and stays exactly as it is; the
+# comment was the thing that drifted, and the dispatcher's behaviour is not
+# changed by this reconciliation.
+#
+# What Fix 9 actually did was move the RUN-LEVEL park to a single end-of-run
+# site (phases.py:2672, guarded by `terminal is None`) so one failing unit
+# quarantines instead of parking the whole run mid-plan. The half nobody
+# enforced was the Engine's own side of that contract: _block() still stamps a
+# run-level terminal MID-PLAN, which silently kills dispatch for the whole run
+# (both watch loops below exit on the next tick) while the Engine keeps walking
+# the plan and queueing work orders nothing can service. That was FIX 22's bug
+# (__main__.py:866-876) recurring mid-run rather than at entry. It is fixed on
+# the Engine side, where the queueing happens, in _run_agent_phase's
+# `run_parked` guard (phases.py) -- NOT by loosening this terminal check, which
+# is the safety that stops a dispatcher working a run that is over.
 #
 # Engine-liveness oracle (read-only; this module NEVER takes RunLock -- hard
 # invariant 1): the Engine writes its pid into run_dir/.job.lock on every
