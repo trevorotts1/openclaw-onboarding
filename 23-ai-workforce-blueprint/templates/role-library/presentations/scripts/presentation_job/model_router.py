@@ -768,6 +768,17 @@ STANDARD_WORKER_DEFAULT = 8
 
 MODES: Tuple[str, ...] = ("ultra", "standard", "economy")
 
+#: The env var the launcher exports INTO the engine process
+#: (launcher.dispatch -> mode_env). Deliberately one letter from
+#: MODE_FLAG_ENV ("PRESENTATION_MODES"), which is the ROLLBACK FLAG, not
+#: the mode: PRESENTATION_MODES=0 turns the surface off, PRESENTATION_MODE
+#: names which mode a run is in. Both spellings are load-bearing.
+MODE_ENV = "PRESENTATION_MODE"
+
+#: The mode a run lands in when NOBODY declared one. Never "ultra":
+#: nothing silently launches at the operator ceiling.
+DEFAULT_MODE = "standard"
+
 #: Capability classes Economy legally re-points to the cheap fast model
 #: FIRST (the original candidates stay behind it as fallbacks). Anything not
 #: named here keeps its original candidate list in EVERY mode -- the
@@ -802,6 +813,48 @@ def normalize_mode(mode: str) -> str:
         raise ValueError(
             f"unknown mode {mode!r} -- FIX 11 modes are {', '.join(MODES)}")
     return want
+
+
+def active_mode(explicit: Optional[str] = None, *, strict: bool = True) -> str:
+    """THE run-mode resolution order. One authority, stated once, here.
+
+        1. an EXPLICIT declaration -- the launcher's --mode (launcher.py's
+           CLI, the run-mode door), or any caller passing mode=...;
+        2. the PRESENTATION_MODE env the launcher exports into the engine
+           process (launcher.dispatch -> mode_env). This is how a mode reaches
+           dispatcher / heal / credit_preflight code running in a CHILD
+           process that has no parameter to thread it through;
+        3. DEFAULT_MODE ("standard").
+
+    The canonical entry script is deliberately NOT a run-mode door and has no
+    --mode flag: that is a stated design decision, pinned as an executable
+    assertion in tests/test_fix36_intake_depth.py. The env in (2) is the seam
+    for anything that is not the launcher.
+
+    Never "ultra" by default, and never inferred from anything else: a mode is
+    something a human declared, or it is standard. An EMPTY value at either
+    level is unset, never a selection (same doctrine as modes_enabled()).
+
+    strict=True (the default) raises ValueError on a value outside MODES --
+    an unknown mode is never silently coerced into a cheaper or a more
+    expensive one (normalize_mode's rule). strict=False answers DEFAULT_MODE
+    instead, for the deep in-engine callers that must not hard-crash a running
+    deck over a hand-set env var; those callers RECORD the fallback (see
+    dispatcher._active_mode) rather than swallowing it.
+    """
+    for raw in (explicit, os.environ.get(MODE_ENV)):
+        if raw is None:
+            continue
+        text = str(raw).strip().strip("'\"")
+        if not text:
+            continue
+        try:
+            return normalize_mode(text)
+        except ValueError:
+            if strict:
+                raise
+            return DEFAULT_MODE
+    return DEFAULT_MODE
 
 
 def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
@@ -892,21 +945,121 @@ def mode_concurrency(mode: str, *,
     }
 
 
-def _mode_candidates(capability: str, mode: str) -> List[Dict[str, Any]]:
+def mode_ceiling(mode: str, *,
+                 profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The HARD CAP a mode imposes on a concurrency width. A CAP -- never a
+    floor, never a target.
+
+    The binding text, unchanged: "Ultra's operator ceiling is 100 concurrent
+    tasks -- even when DeepSeek advertises 500 / 2,500 ... Standard and Economy
+    derive from the MEASURED client capacity/cost policy and may never exceed
+    the same client/provider ceiling." One ceiling, shared by all three modes:
+    min(ULTRA_OPERATOR_CEILING, the client's MEASURED ceiling when one exists).
+    An unmeasured client contributes no ceiling of its own -- the absence of a
+    reading is not a ceiling any more than it is a capability -- so only the
+    operator's 100 applies and the width still comes from what was measured.
+
+    WHY THIS IS NOT mode_concurrency(): that function answers "how wide would
+    this mode PLAN to run", and its answers include FLOORS (the conservative 3
+    for an unmeasured client) and the 8-wide Standard worker default. Using
+    those as caps would (a) install a floor as a ceiling and (b) re-clamp a
+    measured 2,500 down to 8 -- the precise behaviour the operator ruled out on
+    2026-09-04 (parallel_prompt_worker._workers_for's own comment). The plan is
+    a plan; THIS is the only number allowed to cut a measured width."""
+    m = normalize_mode(mode)
+    measured = measured_client_ceiling(profile)
+    operator = ULTRA_OPERATOR_CEILING
+    if isinstance(measured, int) and not isinstance(measured, bool) and measured > 0:
+        ceiling = min(operator, int(measured))
+        reason = (f"min(operator ceiling {operator}, measured client ceiling "
+                  f"{measured}) -- no mode may exceed either")
+    else:
+        ceiling = operator
+        reason = (f"operator ceiling {operator} -- client ceiling "
+                  + ("UNBOUNDED" if measured == "UNBOUNDED" else "unmeasured")
+                  + ", which is never a raise and never provider-advertised")
+    return {"mode": m, "ceiling": int(ceiling), "measured_ceiling": measured,
+            "operator_ceiling": operator, "reason": reason}
+
+
+def capped_width(width: Any, mode: str, *,
+                 profile: Optional[Dict[str, Any]] = None,
+                 decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Apply a mode's ceiling to a width SOMEBODY ELSE MEASURED.
+
+        effective = min(measured width, mode ceiling [, Economy's cost width])
+
+    Never max(): a mode can only ever narrow what was measured. Ultra does not
+    raise a client measured at 3 to 100 -- 100 is the point past which Ultra
+    may not go, not a width to aim for. Economy is the one mode that narrows
+    below the shared ceiling, because Economy is a COST policy: it deliberately
+    spends less than the box could carry.
+
+    `decision` reuses the mode_ceiling / mode_concurrency blocks resolve_route
+    already stamped, so an in-engine caller holding a decision does not reload
+    the client profile to ask the same question twice."""
+    m = normalize_mode(mode)
+    ceil_block = (decision or {}).get("mode_ceiling") \
+        or mode_ceiling(m, profile=profile)
+    limits: List[Tuple[str, int]] = [
+        ("mode ceiling", int(ceil_block.get("ceiling") or ULTRA_OPERATOR_CEILING))]
+    if m == "economy":
+        conc = (decision or {}).get("mode_concurrency") \
+            or mode_concurrency(m, profile=profile)
+        limits.append(("economy cost policy",
+                       int(conc.get("concurrency") or 1)))
+    try:
+        measured = int(width)
+    except (TypeError, ValueError):
+        measured = 0
+    if measured < 1:
+        return {"mode": m, "width": None, "requested": width,
+                "ceiling": limits[0][1], "capped": False,
+                "reason": "no positive measured width to cap",
+                "ceiling_reason": ceil_block.get("reason")}
+    effective = measured
+    applied = "the measured width"
+    for label, limit in limits:
+        if 1 <= limit < effective:
+            effective, applied = limit, label
+    return {
+        "mode": m, "width": int(effective), "requested": int(measured),
+        "ceiling": limits[0][1], "capped": effective != measured,
+        "reason": (f"{applied} governs: min(measured {measured}, "
+                   + ", ".join(f"{lbl} {val}" for lbl, val in limits) + ")"),
+        "ceiling_reason": ceil_block.get("reason"),
+    }
+
+
+def _mode_candidates(capability: str, mode: str, *,
+                     client_governed: bool = False) -> List[Dict[str, Any]]:
     """Mode-aware ordered candidate list for one capability class.
 
-    Economy re-points ECONOMY_FLASH_REPOINT classes to the cheap fast model
-    first; every other class keeps its original list in every mode. Flag
-    OFF or a non-Economy mode returns the base list untouched."""
+    ALWAYS A FRESH LIST OF FRESH ROWS. It used to hand back the LIVE
+    CAPABILITY_CANDIDATES list object for every non-Economy mode, so any caller
+    that mutated the result rewrote the department default table process-wide
+    -- every later phase, every other client in the same process, permanently.
+    resolve_route copied defensively; nothing obliged the NEXT caller to. The
+    copy lives here now, once, where the aliasing was.
+
+    client_governed=True suppresses Economy's re-point for this class. THE
+    CLIENT'S EXPLICIT CHOICE WINS (operator requirement 2026-09-04: "I don't
+    want to be forced to do anything"), so Economy may re-point only classes
+    the client did NOT declare: where a declaration is actually in force, the
+    class keeps its department order BEHIND the client's row and no cheaper
+    model is slipped in front of it. A declaration that failed its class floor
+    and was not waived is NOT in force -- the department default is serving
+    that class, and Economy's cost policy governs department defaults."""
     base = CAPABILITY_CANDIDATES.get(capability, [])
-    if modes_enabled() and mode == "economy" \
+    if modes_enabled() and mode == "economy" and not client_governed \
             and capability in ECONOMY_FLASH_REPOINT:
-        merged: List[Dict[str, Any]] = list(ECONOMY_FLASH_REPOINT[capability])
+        merged: List[Dict[str, Any]] = [dict(c) for c in
+                                        ECONOMY_FLASH_REPOINT[capability]]
         for cand in base:
             if all(c.get("alias") != cand.get("alias") for c in merged):
                 merged.append(dict(cand))
         return merged
-    return base
+    return [dict(c) for c in base]
 
 
 def read_fix5_wall_clock(last_run_dir: Optional[Path]) -> Optional[float]:
@@ -1341,7 +1494,7 @@ def provider_key_resolves(provider: Any) -> bool:
 def resolve_route(phase_id: str, *,
                   profile: Optional[Dict[str, Any]] = None,
                   config_dir: Optional[Any] = None,
-                  mode: str = "standard") -> Dict[str, Any]:
+                  mode: Optional[str] = None) -> Dict[str, Any]:
     """Resolve one phase -> route decision.
 
     Returns a decision dict:
@@ -1354,6 +1507,19 @@ def resolve_route(phase_id: str, *,
     catalog health -> mode budget -> fallback list. A disabled flag
     (PRESENTATION_MODEL_ROUTER=0) reports router="disabled", route=None --
     the dispatcher's documented rollback to its own DeepSeek path."""
+    # THE MODE, resolved ONCE, here, by the one authority: explicit argument
+    # > PRESENTATION_MODE env > "standard". Callers deep in the engine
+    # (dispatch_complete, heal, credit_preflight) declare nothing and inherit
+    # the mode the launcher exported into their process -- which is what makes
+    # a typed `--mode Ultra` reach routing at all. mode=None is "nobody told
+    # me", not "standard": standard is what nobody-told-me RESOLVES to, and
+    # nothing lands in ultra by accident.
+    if modes_enabled():
+        mode = active_mode(mode)
+    else:
+        # PRESENTATION_MODES=0: the whole FIX 11 surface is inert, including
+        # the env read. Byte-for-byte the pre-fix default.
+        mode = str(mode or DEFAULT_MODE)
     decision: Dict[str, Any] = {
         "phase_id": phase_id,
         "capability": PHASE_CAPABILITY.get(phase_id, DEFAULT_CAPABILITY),
@@ -1370,11 +1536,6 @@ def resolve_route(phase_id: str, *,
         })
         return decision
     decision["router"] = "model_router"
-
-    if modes_enabled():
-        mode = normalize_mode(decision.get("mode", "standard"))
-    else:
-        mode = str(decision.get("mode") or "standard")
 
     capability = decision["capability"]
     if capability == "mechanical":
@@ -1422,19 +1583,36 @@ def resolve_route(phase_id: str, *,
     decision["profile_state"] = "has_providers"
     if modes_enabled():
         decision["mode_concurrency"] = mode_concurrency(mode, profile=profile)
+        # The CAP, stamped beside the plan so a caller holding this decision
+        # can narrow a measured width without reloading the profile (and so
+        # the sidecar records which ceiling actually applied).
+        decision["mode_ceiling"] = mode_ceiling(mode, profile=profile)
 
-    # THE CLIENT'S CHOICE, ahead of the department default.
+    # THE CLIENT'S CHOICE, ahead of the department default AND ahead of the
+    # mode's cost policy.
     #
-    # `cands` is a COPY, never the module table: _mode_candidates() returns the
-    # LIVE CAPABILITY_CANDIDATES list object for every non-economy mode, so
-    # prepending in place would rewrite the default table process-wide -- every
-    # later phase, every other client in the same process, permanently. Copy
-    # first, prepend into the copy.
-    cands: List[Dict[str, Any]] = list(_mode_candidates(capability, mode))
+    # PRECEDENCE RULING (operator, 2026-09-04, verbatim): "I don't want to be
+    # forced to do anything." An Economy launch is a cost preference the
+    # OPERATOR expresses; a model plan is a choice the CLIENT expressed about
+    # their own account. So Economy re-points only the classes the client left
+    # to the department (client_governed below): where a declaration is in
+    # force, Economy neither replaces it nor reorders the fallbacks behind it.
+    # A declaration that failed its class floor and was not waived is NOT in
+    # force -- the department default is serving that class, so the cost policy
+    # applies to it exactly as it would for a client who declared nothing.
+    #
+    # `cands` is a COPY, never the module table (_mode_candidates copies now);
+    # prepending into the live list would rewrite the default table
+    # process-wide -- every later phase, every other client in the same
+    # process, permanently.
     plan_pick = client_plan_for(capability, profile)
+    client_governs = bool(plan_pick is not None
+                          and (plan_pick["floor"]["ok"] or plan_pick["waived"]))
+    cands: List[Dict[str, Any]] = _mode_candidates(
+        capability, mode, client_governed=client_governs)
     client_prepended = False
     if plan_pick is not None:
-        if plan_pick["floor"]["ok"] or plan_pick["waived"]:
+        if client_governs:
             # Prepend and then judge it with the SAME _eligible() every default
             # candidate faces -- owned, consented, wired, key resolves. A client
             # choice jumps the QUEUE, never the GATE.
@@ -1456,6 +1634,10 @@ def resolve_route(phase_id: str, *,
                 "floor": "waived" if plan_pick["waived"] else "ok",
                 "detail": plan_pick["floor"]["reason"],
             }
+            if mode == "economy" and capability in ECONOMY_FLASH_REPOINT:
+                decision["client_plan"]["economy_repoint"] = (
+                    "suppressed -- the client declared this class, so Economy "
+                    "did not re-point it")
         else:
             # Declared but below this class's floor and not waived: the class
             # DEFAULT serves it, and the fallback is stamped so the launcher
