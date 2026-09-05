@@ -763,7 +763,7 @@
       "sop_refs": [
         "qc-specialist-signature-presentations-sops.md"
       ],
-      "produces_artifact": "working/copy/sp_structure.json",
+      "produces_artifact": "working/qc/sp_p3_hygiene_report.json",
       "gate_codes": [
         "AF-SP-P3-PITCH"
       ],
@@ -782,7 +782,8 @@
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
       "consumes": [
-        "working/copy/sp_structure.json"
+        "working/copy/sp_structure.json",
+        "working/copy/sp_intake.json"
       ]
     },
     {
