@@ -1,3 +1,5 @@
+## [v24.1.9]  -  2026-09-05  -  Turn-ledger key resolves from operator state so signature decks stop failing closed; manifest validator clause (b) actually runs (0 of 20 -> 20 of 20) with output tokens excluded (#1029)
+
 ## [v24.1.8]  -  2026-09-05  -  Resume no longer waits on an outstanding work order whose artifact is already satisfied; blocked-run dispatch state settles instead of stalling (#1028)
 
 ## [v24.1.7]  -  2026-09-04  -  P-STYLE-SPEC declares the arc_allocation.json it actually reads, creating the missing P3-ARC edge that let it dispatch with zero units (#1027)

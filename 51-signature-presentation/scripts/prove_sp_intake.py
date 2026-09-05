@@ -170,6 +170,65 @@ _PREVIOUS_KEY_ID_ENV = "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_ID"
 _ROTATION_STARTED_ENV = "PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"
 _EXPIRES_ENV = "PRESENTATION_SP_TURN_LEDGER_PREVIOUS_KEY_EXPIRES_AT"
 
+# --- FIX: the provisioned record's DEFAULT location -------------------------
+# FIX 29 shipped the reader with no default: with neither $..._KEYS_FILE nor
+# the discrete vars set, load_key_record() raised "no current turn-ledger key
+# provisioned". Nothing in production ever set either -- the launchd poller
+# exports only PATH and PRESENTATION_RUNS_DIR, and the two test files that set
+# the variables set them for themselves -- so EVERY signature-presentation run
+# failed its P-SP-INTAKE substance check as a configuration failure while the
+# operator's record sat provisioned in the state store the whole time.
+#
+# The default is the same secrets-ADJACENT store resource_profile.py already
+# resolves for the department (sibling of secrets/, never in-repo), named for
+# the provisioning template that documents the record shape
+# (sp-turn-ledger-keys.template.json -> sp-turn-ledger-keys.json).
+#
+# THIS DOES NOT WEAKEN THE FAIL-CLOSED POSTURE. No key is generated, no
+# unsigned path is accepted, and the default is consulted ONLY when the
+# operator configured nothing explicitly. When the default file is absent the
+# function falls through to the discrete-env branch and raises the SAME loud
+# KeyConfigError it raises today.
+_DEFAULT_KEYS_FILENAME = "sp-turn-ledger-keys.json"
+
+
+def _openclaw_state_dir():
+    """The presentations state dir, resolved through presentation_job/
+    oc_paths.py exactly as resource_profile.py's _default_store_dir() does --
+    platform-aware (/data/.openclaw/state/presentation on the docker VPS,
+    ~/.openclaw/state/presentation on a Mac) rather than a hard-coded home.
+
+    Three import spellings, because this module is loaded three different
+    ways: as a package member, as a plain file beside oc_paths.py, and --
+    the production path -- by absolute path out of the skill-51 tree via
+    deck-intake-driver.py's spec_from_file_location(), where the module has
+    NO parent package and `presentation_job.oc_paths` is the spelling that
+    resolves from the engine's scripts dir. Degrades to the legacy Mac path
+    when oc_paths is not importable at all (a partial deploy keeps the
+    pre-FIX-68 behavior, never a hard break)."""
+    try:
+        try:
+            from . import oc_paths as _op  # package-relative (python3 -m)
+        except ImportError:
+            try:
+                import oc_paths as _op  # type: ignore[no-redef]
+            except ImportError:
+                from presentation_job import oc_paths as _op  # type: ignore[no-redef]
+        return Path(_op.state_dir())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        return Path.home() / ".openclaw" / "state" / "presentation"
+
+
+def _default_keys_file():
+    """Path to the operator-provisioned rotation record, or None if the store
+    dir cannot be resolved at all. Existence is NOT checked here -- the caller
+    consults it only when nothing explicit is configured, and a missing file
+    must still reach the original fail-closed KeyConfigError."""
+    try:
+        return _openclaw_state_dir() / _DEFAULT_KEYS_FILENAME
+    except Exception:  # noqa: BLE001 -- never let path resolution mask the error
+        return None
+
 # Injected key record for deterministic tests (--self-test builds one from
 # os.urandom at runtime; no key material is ever written into source).
 _TEST_KEY_RECORD = None
@@ -251,6 +310,19 @@ def load_key_record(force=False):
         return _rotation_state
 
     file_path = os.environ.get(_KEYS_FILE_ENV)
+    # Precedence, most explicit first:
+    #   1. $..._KEYS_FILE          -- the operator named a record file
+    #   2. $..._CURRENT_KEY (+ID)  -- the operator injected discrete values
+    #   3. the provisioned default -- ONLY when neither was configured
+    #   4. otherwise: the original fail-closed KeyConfigError, unchanged
+    # Step 2 MUST outrank step 3: the two test suites delete $..._KEYS_FILE and
+    # inject a throwaway per-process key, so a default that preempted them
+    # would make them verify against the box's real record instead -- green on
+    # a box with no record, red on a box with one.
+    if not file_path and not os.environ.get(_CURRENT_KEY_ENV):
+        _default = _default_keys_file()
+        if _default is not None and _default.is_file():
+            file_path = str(_default)
     if file_path:
         try:
             raw = Path(file_path).read_text(encoding="utf-8")

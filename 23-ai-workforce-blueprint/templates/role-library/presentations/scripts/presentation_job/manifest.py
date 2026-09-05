@@ -436,9 +436,20 @@ class Manifest:
             # (working/ ecosystem/ pages/ delivery/ prompts/ design/ qc/
             # build/); flags, urls, flags' values, and scripts/ tool paths
             # are not pipeline artifacts.
+            # Every executor path in the manifest is written "{run_dir}/<path>";
+            # _looks_like_pipeline_input tests the RAW token against
+            # _PIPELINE_INPUT_DIRS, so before this strip clause (b) matched
+            # 0 of 20 real tokens and contributed nothing.
+            # Output-flagged tokens are what the phase WRITES, not what it
+            # reads: folding them into `consumed` would demand a producer for
+            # the phase's own output and raise ManifestInvalid.
             cmd = phase_obj.executor_cmd or ""
-            for tok in re.split(r"[\s;|&]+", cmd):
-                tok = tok.strip().strip("'\"")
+            toks = [t.strip().strip("'\"") for t in re.split(r"[\s;|&]+", cmd)]
+            _OUT_FLAGS = {"--out", "--pdf-out", "--workdir"}
+            for i, tok in enumerate(toks):
+                if i > 0 and toks[i - 1] in _OUT_FLAGS:
+                    continue
+                tok = tok.replace("{run_dir}/", "")
                 if _looks_like_pipeline_input(tok) and tok not in consumed:
                     consumed.append(tok)
 
@@ -576,33 +587,6 @@ _PIPELINE_INPUT_DIRS = (
 
 _GLOB_CHARS = ("*", "?", "[")
 
-# MASTER Part 8 Fix 8 — consumed artifacts with NO in-pipeline producer that
-# are legitimate by design (the "not an intake file" clause of the QC proof).
-#   raw/…                    — the client's own source material (Zoom/doc/old deck);
-#                              it enters the pipeline from outside, produced by nobody.
-#   working/copy/slides.json — the engine's positional build input: written at run
-#                              setup by the P4 copy tooling + engine prep, consumed by
-#                              P-STYLE-PREVIEW and P4-RENDER's build_deck invocation.
-#                              It is a build artifact of the run harness, not of any
-#                              single declared phase, so it is exempt the same way
-#                              intake files are. working/copy/intake.json itself is
-#                              NOT exempt — P-CONVERTER, P0A-INTAKE and P-SP-CLAIM
-#                              all declare producing it, so a manifest that drops
-#                              all three still fails V5 loudly.
-_ROOT_INPUT_PATTERNS = (
-    "raw/",
-    "working/copy/slides.json",
-)
-
-def _is_root_input(artifact: str) -> bool:
-    """True iff a consumed artifact is exempt from the producer requirement
-    (Fix 8): a raw external input (`raw/...`) or the engine-owned run-setup
-    build input `working/copy/slides.json`. Glob-normalized comparison, so
-    case and {token} differences cannot smuggle a dangling path past V5."""
-    key = _pattern_norm(artifact)
-    return any(key.startswith(pref) or key == pref for pref in _ROOT_INPUT_PATTERNS)
-
-
 def _looks_like_pipeline_input(token: str) -> bool:
     """True iff an executor-cmd token names a pipeline artifact the phase will
     read. Must be a relative path under one of the artifact directories, must
@@ -619,6 +603,19 @@ def _looks_like_pipeline_input(token: str) -> bool:
     return True
 
 
+# MASTER Part 8 Fix 8 — consumed artifacts with NO in-pipeline producer that
+# are legitimate by design (the "not an intake file" clause of the QC proof).
+#   raw/…                    — the client's own source material (Zoom/doc/old deck);
+#                              it enters the pipeline from outside, produced by nobody.
+#   working/copy/slides.json — the engine's positional build input: written at run
+#                              setup by the P4 copy tooling + engine prep, consumed by
+#                              P-STYLE-PREVIEW and P4-RENDER's build_deck invocation.
+#                              It is a build artifact of the run harness, not of any
+#                              single declared phase, so it is exempt the same way
+#                              intake files are. working/copy/intake.json itself is
+#                              NOT exempt — P-CONVERTER, P0A-INTAKE and P-SP-CLAIM
+#                              all declare producing it, so a manifest that drops
+#                              all three still fails V5 loudly.
 # Inputs with NO declaring producer BY DESIGN (MASTER Part 8 Fix 4 / QC FIX 8
 # "not an intake file" exemption). raw/ is the client's own source brief — the
 # run STARTS with it; working/copy/slides.json is written by the engine's copy
