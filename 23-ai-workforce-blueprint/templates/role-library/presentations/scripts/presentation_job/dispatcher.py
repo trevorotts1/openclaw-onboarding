@@ -4409,7 +4409,7 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
         for fut in as_completed(futs):
             phase_id = futs[fut]
             try:
-                results.append(fut.result())
+                res = fut.result()
             except Exception as exc:  # noqa: BLE001 -- one phase's crash must not kill the sweep
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": 0, "status": "error",
@@ -4421,6 +4421,50 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
                 record_outcome(run_dir, phase_id, "error", [f"dispatch_one raised {exc!r}"],
                                worker_id=worker_id)
                 results.append(DispatchResult(phase_id, "error", 0, [repr(exc)]))
+            else:
+                results.append(res)
+                # FIX 2026-09-04 -- THE RETURNED-OUTCOME LEDGER GAP.
+                #
+                # Until this line, record_outcome() had exactly THREE call
+                # sites, and all three sat OUTSIDE dispatch_one's normal
+                # return path: the DECLINE_PHASES short-circuit and the
+                # already-done short-circuit (both above, before the phase is
+                # ever claimed), and the `except` branch just above (only when
+                # dispatch_one RAISES). Every value dispatch_one actually
+                # RETURNS -- "ok", "error", "exhausted", "declined",
+                # "skipped_satisfied" -- was appended to `results` and thrown
+                # away as far as the ledger was concerned. No signature, no
+                # `consecutive`, no backoff window, no ceiling. should_dispatch
+                # therefore returned True on every tick forever.
+                #
+                # Live proof (run pres-wave-e-v3-1787240658, the SAME 542 sweep
+                # ticks 2026-09-02T11:31:25 -> 14:06:13):
+                #   P-SP-INTAKE  (DECLINE_PHASES -> record_outcome)
+                #       -> ledger written, parked at consecutive=8 with a
+                #          .dispatch-blocked.txt marker.
+                #   P4-PROMPT    (dispatch_one RETURNED "error" every tick)
+                #       -> 542 error rows, NO ledger file at all, never parked.
+                # Same run, same ticks, same failure class: 542 vs 8. The split
+                # lands exactly on "did the outcome flow through record_outcome"
+                # -- a routing fault, not a per-call-site bug. Reproduced at the
+                # seam for the fanout zero-units refusal in
+                # tests/test_fanout_zero_units_ceiling.py.
+                #
+                # Folding the returned outcome in here fixes EVERY such path at
+                # once, because sweep_run_dir is dispatch_one's only production
+                # caller -- so all ~60 _append_sidecar sites inside its call
+                # tree (the fanout zero-units refusal included) now reach the
+                # ceiling. The refusals themselves are untouched: a phase that
+                # must refuse still refuses, it just stops refusing FOREVER.
+                # Non-failing statuses are recorded too (they earn backoff on an
+                # identical repeat) but can never park -- only _FAILING_STATUSES
+                # reach the DISPATCH_REPEAT_CEILING branch in record_outcome.
+                #
+                # order_file is left to record_outcome's default, which resolves
+                # to run_dir/working/work-orders/<phase_id>.json -- byte-identical
+                # to the `of` this sweep globbed (phase_id IS of.stem).
+                record_outcome(run_dir, phase_id, res.status, list(res.reasons),
+                               worker_id=worker_id)
             finally:
                 release_claim(run_dir, phase_id)
     return results
