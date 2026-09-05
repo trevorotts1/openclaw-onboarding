@@ -3484,9 +3484,14 @@ for _pid, _arts in (
     ("P-U-CHECKOUT-COPY",  ["copy/checkout.fragment.md"]),
     ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
     ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
-    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
-    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
-    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
+    # DEFECT-4 (manifest v67): the agent phase authors the PROMPT ONLY. It used
+    # to list design/<page>-design.png here as well, which is the RENDER phase's
+    # artifact -- the same-artifact multi-producer shape that let one phase's
+    # output satisfy another's presence check (P-SP-P3-HYGIENE, v24.2.0). The
+    # manifest's produces_artifact now matches this list exactly.
+    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt"]),
+    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt"]),
+    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt"]),
     # FIX 28 render phases: the agent phase above now authors the prompt only;
     # the script executor P-U-DESIGN-RENDER-* produces design/<page>-design.png
     # through build_infographic.py --spec design (no hand step). Each render
@@ -3498,8 +3503,15 @@ for _pid, _arts in (
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
     ("P-U-FORM-GATE",      ["ecosystem/gate-form.json", "workflows/gate-workflow.json"]),
-    ("P-U-GHL-SALES",      ["build_receipt.json"]),
-    ("P-U-GHL-VSL",        ["build_receipt.json"]),
+    # DEFECT-4 (manifest v67): both GHL funnel builds declared the SAME bare
+    # `build_receipt.json`, so whichever ran first satisfied the other's
+    # presence check (and the dispatcher's already_satisfied pre-check would
+    # skip the second outright). Each funnel now writes its receipt inside its
+    # own funnel directory. The names are deliberately NOT
+    # working/<funnel>/build_receipt.json: those two paths already belong to
+    # sales_checkout_builder.py and vsl_builder.py respectively.
+    ("P-U-GHL-SALES",      ["working/sales-checkout/ghl_build_receipt.json"]),
+    ("P-U-GHL-VSL",        ["working/vsl/ghl_build_receipt.json"]),
     ("P-U-COLLATERAL",     ["delivery/upsell/*"]),
     ("P-U-QC",             ["qc/upsell-scorecard.json"]),
 ):
