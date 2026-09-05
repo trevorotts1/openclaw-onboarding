@@ -6,7 +6,7 @@ shared-utils/fleet_refresh_runner.py (step_provisioning_completeness / Step 8d).
 WHY THIS EXISTS
   The roll verdict (run_box) reports a box "ok" (PASS) when no step string carries
   "failed". Before this gate a box could carry the FULL SOP corpus yet ship
-  placeholder branding, a stale/missing onboarding version stamp, an empty
+  placeholder branding, a stale/missing onboarding version stamp, an invalid
   departments.json, and zero personas — and still report PASS (6 boxes did, one
   night). This gate hard-fails on VERSION + BRANDING + DEPARTMENTS + PERSONAS.
 
@@ -22,7 +22,7 @@ WHAT IS PROVEN (hermetic — LOCAL FIXTURES ONLY, never a real box):
   (a) full SOP + placeholder branding  -> BEFORE ok / AFTER FAIL
   (b) full SOP + stale version         -> BEFORE ok / AFTER FAIL
   (b2) full SOP + missing version      -> BEFORE ok / AFTER FAIL
-  (c) empty departments.json           -> BEFORE ok / AFTER FAIL
+  (c) missing/invalid departments.json -> BEFORE ok / AFTER FAIL
   (d) empty personas                   -> BEFORE ok / AFTER FAIL
   (e) fully-correct box                -> BEFORE ok / AFTER ok   (NO false-FAIL)
   (f) per-check breakdown is emitted   (all seven check names present)
@@ -31,7 +31,10 @@ WHAT IS PROVEN (hermetic — LOCAL FIXTURES ONLY, never a real box):
 
 ROLE-FLOOR (the second false-success closer — the roll verdict never checked
 whether the work actually LANDED ON DISK):
-  DEPARTMENTS proves only that departments.json is a non-empty array. That file
+  DEPARTMENTS proves only that departments.json is a well-formed array (U077
+  permits the empty fresh-box default). This maintenance gate accepting a fresh
+  manifest does not certify a completed workforce; declared-workforce role loss
+  remains a failure in cases (i), (j), and (o). That file
   lives in the ZHC company dir; the role folders it promises live in a DIFFERENT
   tree (the live departments workspace). So a box could lose EVERY role folder
   and still record a clean, completed roll. ROLE-FLOOR measures that tree.
@@ -39,7 +42,7 @@ whether the work actually LANDED ON DISK):
        (this is the case origin/main wrongly PASSES — asserted explicitly)
   (j)  live departments workspace ENTIRELY absent    -> BEFORE ok / AFTER FAIL
   (k)  fresh box, EMPTY departments.json             -> ROLE-FLOOR does NOT fire
-       (n/a — the intended shipped default is DEPARTMENTS' call, not a second FAIL)
+       (n/a — U077 also accepts the intended fresh-box default in DEPARTMENTS)
   (l)  departments workspace is a SYMLINK            -> PASS (regression guard:
        several fleet boxes symlink `departments`; a probe that does not follow
        symlinks reports those healthy boxes as an empty floor)
@@ -228,14 +231,23 @@ class ProvisioningCompletenessGate(unittest.TestCase):
         self.assertEqual(after, "partial")
         self.assertIn("VERSION", out["failed"])
 
-    def test_c_empty_departments_fails(self):
-        (self.company_dir / "departments.json").write_text("[]")
-        res = self._seed_good_result()
-        before, after, out, _ = self._measure("c: empty departments []", res, False)
-        self.assertEqual(before, "ok")
-        self.assertEqual(after, "partial")
-        self.assertFalse(out["checks"]["DEPARTMENTS"]["ok"])
-        self.assertIn("DEPARTMENTS", out["failed"])
+    def test_c_missing_or_invalid_departments_fails(self):
+        # U077 deliberately accepts [], but missing, malformed and non-list
+        # data must still turn an otherwise successful update into a failure.
+        path = self.company_dir / "departments.json"
+        for label, payload in [("missing", None), ("malformed", "["),
+                               ("object", "{}"), ("null", "null")]:
+            with self.subTest(label=label):
+                if payload is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_text(payload)
+                res = self._seed_good_result()
+                before, after, out, _ = self._measure(f"c: {label} departments", res, False)
+                self.assertEqual(before, "ok")
+                self.assertEqual(after, "partial")
+                self.assertFalse(out["checks"]["DEPARTMENTS"]["ok"])
+                self.assertIn("DEPARTMENTS", out["failed"])
 
     def test_d_empty_personas_fails(self):
         self._clear_personas()
@@ -289,12 +301,14 @@ class ProvisioningCompletenessGate(unittest.TestCase):
         self.assertIn("NO live departments workspace", out["checks"]["ROLE-FLOOR"]["detail"])
 
     def test_k_fresh_box_empty_departments_does_not_fire_role_floor(self):
-        """An empty departments.json is the INTENDED shipped default. DEPARTMENTS
-        judges it; ROLE-FLOOR must NOT pile a second failure on a fresh box."""
+        """U077 accepts the fresh empty default in both gates, without inventing roles."""
         (self.company_dir / "departments.json").write_text("[]")
         self._delete_role_folders()
         res = self._seed_good_result()
-        out, _ = self._run_gate(res)
+        _, after, out, _ = self._measure("k: fresh empty default", res, True)
+        self.assertEqual(after, "ok")
+        self.assertTrue(out["checks"]["DEPARTMENTS"]["ok"])
+        self.assertNotIn("DEPARTMENTS", out["failed"])
         self.assertTrue(out["checks"]["ROLE-FLOOR"]["ok"],
                         "ROLE-FLOOR must be n/a when nothing is declared")
         self.assertNotIn("ROLE-FLOOR", out["failed"])
