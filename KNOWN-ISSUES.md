@@ -239,6 +239,57 @@ hard-fails if `plugins.entries.whatsapp.enabled = true` after the merge step. Se
 
 ---
 
+## 6. qwen-mm-plugins skill-id collision (three plugins register as one)
+
+**Status: PATCHED by `scripts/fix-qwen-skill-collision.sh` — re-run required after
+every `openclaw update repair` (see below). Confirmed on a pilot Mac box, 2026-09-05.**
+
+**Symptom:** Only one of the three `qwen-mm-plugins-*` skills is ever usable, with
+no error visible to the end client. A doctor/startup warning shows the real cause:
+
+```
+[skills] plugin skill name collision: "skill" resolves to both
+/…/extensions/qwen-mm-plugins-core/skill and
+/…/extensions/qwen-mm-plugins-video-edit/skill;
+only the first will be published
+```
+
+**Root cause:** OpenClaw derives a plugin skill's id from the **directory
+basename**, not the `name:` field inside `SKILL.md`. The three
+`qwen-mm-plugins-{core,video-edit,video-memory}` plugins each ship their skill in
+a directory literally named `skill/`, so all three resolve to the same skill id
+(`skill`), collide, and OpenClaw silently keeps only the first one it loads and
+drops the other two.
+
+**Fix:** for each plugin, rename its `skill/` directory to `<plugin-id>-skill/`
+and repoint the `skills` field in every manifest that references it
+(`.codex-plugin/plugin.json` — a string, `.claude-plugin/plugin.json` — an array,
+`.qoder-plugin/plugin.json` — a string). `scripts/fix-qwen-skill-collision.sh`
+does this for all three plugins, idempotently, with a backup of every manifest it
+edits:
+
+```bash
+bash scripts/fix-qwen-skill-collision.sh
+# then re-grant capability consent per plugin if the script could not do it for you:
+openclaw plugins enable <plugin-id> --accept-capabilities
+# then restart the gateway
+openclaw gateway restart
+```
+
+Skips cleanly (exit 0) on a box that does not have the plugins installed. Exits
+non-zero and leaves any unrecognized manifest untouched if the layout does not
+match what is expected — it never guesses.
+
+**Why this cannot be fixed at the source, and why you must re-run it:** these
+plugins clone from Alibaba's upstream `github.com/QwenLM/Qwen-MM-Plugins` via a
+local marketplace, so we cannot patch the directory name in the upstream repo.
+Worse, `openclaw update repair` **re-clones** these plugins from upstream, which
+wipes the rename and reintroduces the collision. Re-run
+`scripts/fix-qwen-skill-collision.sh` after any install, update, or repair that
+touches the qwen-mm-plugins extensions.
+
+---
+
 ## Filing upstream
 
 Issues 1-4 are core-runtime or infrastructure, not onboarding. File against the
@@ -246,4 +297,7 @@ openclaw project with the symptom log lines above. Until fixed, the workarounds 
 keep the fleet responsive. The recommended fallback-embeddings and agent-timeout values
 should be carried in the default onboarding config so fresh installs are protected by
 default. Issue #5 (WhatsApp) has been permanently resolved at the fleet-standards layer
-and does not require an upstream fix.
+and does not require an upstream fix. Issue #6 (qwen-mm-plugins collision) is a defect
+in how OpenClaw core derives a skill id from a directory basename; the affected content
+itself lives in a third-party upstream repo we do not control, so the fixup script is the
+durable remediation until OpenClaw derives skill ids from the manifest instead of the path.
