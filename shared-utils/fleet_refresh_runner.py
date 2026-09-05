@@ -752,10 +752,18 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         return
 
     try:
+        from cc_runtime_preflight import check_node, assert_cc_package, check_checkout
+        check_node()
         subprocess.run(
             ["git", "-C", str(cc_dir), "fetch", "origin", "main"],
             check=True, capture_output=True, timeout=60,
         )
+
+        target = subprocess.run(
+            ["git", "-C", str(cc_dir), "show", "origin/main:package.json"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        assert_cc_package(json.loads(target.stdout))
 
         def current_on_main() -> bool:
             branch = subprocess.run(
@@ -797,6 +805,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
                 f"post-update assertion failed: checkout is not main with latest origin/main (compatibility tag {cc_tag} is not a deploy target)",
             )
             return
+        check_checkout(Path(cc_dir))
         res.step_ok("pull-cc")
     except subprocess.CalledProcessError as e:
         res.step_fail("pull-cc", f"git failed (exit {e.returncode}): {e.stderr[:200] if e.stderr else ''}")
@@ -879,6 +888,14 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
         return
 
     cc_dir = Path(cc_dir)
+
+    try:
+        from cc_runtime_preflight import check_node, check_checkout
+        check_node()
+        check_checkout(cc_dir)
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        res.step_fail("build-cc", f"CC compatibility preflight failed: {exc}")
+        return
 
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
     atomic_deploy = cc_dir / "scripts" / "atomic-deploy.sh"
@@ -973,6 +990,14 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
         return
 
     cc_dir = Path(cc_dir)
+
+    try:
+        from cc_runtime_preflight import check_node, check_checkout
+        check_node()
+        check_checkout(cc_dir)
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        res.step_fail("restart-cc", f"CC compatibility preflight failed: {exc}")
+        return
 
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
     atomic_deploy = cc_dir / "scripts" / "atomic-deploy.sh"

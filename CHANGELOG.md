@@ -1,3 +1,11 @@
+## [v25.0.2]  -  2026-09-05  -  Require the Command Center security floor and compatible Node runtime
+
+- Add one shared fail-closed Node guard for Skill 32 fresh/update/resumed installation and fleet pull/build/restart: accept ^20.19.0 || ^22.13.0 || >=24, reject unsupported/malformed/prerelease versions, and report the required manual runtime upgrade before dependency installation, migrations or process changes.
+- Both fresh and update-only Skill 32 dependency installs require the shipped lockfile and run `npm ci --no-audit --no-fund`. Missing locks or install failures stop before migration/deploy, without an `npm install` fallback or success continuation.
+- Raise the paired Command Center pin and security minimum to v7.1.0. Validate fresh/existing checkout package versions and the fetched fleet target before running an old updater; resumed phase-6 flags cannot bypass the floor. Keep the current main-convergence and local-commit preservation behavior.
+- This is a compatibility follow-up to CC's Next 16.3.4 / React 19.2.8 security upgrade. Publish CC v7.1.0 first. Earlier onboarding fixes, including v25.0.1 launch records, remain included.
+- Validate Node boundaries, missing runtime, CLI checkout rejection, fail-closed installer modes, fleet rejection before updater/deploy calls, and local Git main convergence with retained commits using isolated fixtures. No live deployment, provider, production database or notification test is claimed.
+
 ## [v25.0.1]  -  2026-09-05  -  A fresh client intake running ULTRA now leaves proof that it did
 
 v24.3.0 made ultra **reachable** for a client. It did not make it **auditable** on the path a client actually takes, and that gap is this release.
