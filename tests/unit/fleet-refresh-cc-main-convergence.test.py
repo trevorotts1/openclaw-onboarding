@@ -44,8 +44,8 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
             subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
             git(origin, "config", "user.name", "Fixture")
             git(origin, "config", "user.email", "fixture@example.invalid")
-            (origin / "version").write_text("v7.1.0\n")
-            (origin / "package.json").write_text('{"version":"7.1.0"}\n')
+            (origin / "version").write_text("v7.1.1\n")
+            (origin / "package.json").write_text('{"version":"7.1.1"}\n')
             (origin / "update.sh").write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
@@ -76,7 +76,7 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
             sys.path.insert(0, str(REPO_ROOT / "shared-utils"))
             with patch("cc_runtime_preflight.check_node"):
                 runner.step_pull_cc(
-                    {"cc_dir": checkout}, "v7.1.0", result, dry_run=False, force_cc=False,
+                    {"cc_dir": checkout}, "v7.1.1", result, dry_run=False, force_cc=False,
                 )
 
             self.assertEqual(result.steps.get("pull-cc"), "ok", result.errors)

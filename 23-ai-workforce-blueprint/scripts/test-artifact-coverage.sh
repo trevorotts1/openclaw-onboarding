@@ -47,6 +47,9 @@ make_sandbox() {  # make_sandbox -> echoes the sandbox skill dir on the FIRST li
   local sbroot="$tmp/repo"
   mkdir -p "$sbroot"
   cp -R "$SKILL_DIR" "$sbroot/23-ai-workforce-blueprint"
+  # Match the installed builder dependency layout before injecting artifact drift.
+  mkdir -p "$sbroot/shared-utils"
+  cp "$REPO_ROOT/shared-utils/ceo_execution_policy.py" "$sbroot/shared-utils/"
   [ -d "$REPO_ROOT/42-personal-assistant-library" ] && \
     cp -R "$REPO_ROOT/42-personal-assistant-library" "$sbroot/42-personal-assistant-library"
   # Repo-root files the artifact gate reads (BOOTSTRAP / SKILLS-COUNT / VERSION).

@@ -89,6 +89,30 @@ class PolicyTests(unittest.TestCase):
             self.assertNotIn('list', cfg['agents'])
             self.assertNotIn('id', cfg['agents']['entries']['dept-master-orchestrator'])
 
+    def test_delivered_scripts_import_policy_in_canonical_and_flattened_layouts(self):
+        import shutil
+        script_names = ['ceo_execution_policy.py', 'build-workforce.py', 'create_role_workspaces.py']
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / '.openclaw'
+            shared = root / 'skills/shared-utils'
+            shared.mkdir(parents=True)
+            shutil.copy2(ROOT / 'shared-utils/ceo_execution_policy.py', shared)
+            for relative in ('skills/23-ai-workforce-blueprint/scripts', 'workspace/.scripts'):
+                target = root / relative
+                target.mkdir(parents=True)
+                for name in script_names:
+                    shutil.copy2(ROOT / '23-ai-workforce-blueprint/scripts' / name, target / name)
+                # Execute exactly the delivered builders' policy import statements
+                # in a fresh interpreter: no repo sys.path, and no builder side effects.
+                imports = []
+                for name in ('build-workforce.py', 'create_role_workspaces.py'):
+                    tree = ast.parse((target / name).read_text())
+                    imports.extend(ast.unparse(node) for node in tree.body
+                                   if isinstance(node, ast.ImportFrom) and node.module == 'ceo_execution_policy')
+                program = '\n'.join(imports) + '\nassert "[catch-all]" in _ceo_policy_block()\n'
+                subprocess.run([sys.executable, '-I', '-c',
+                                'import sys; sys.path.insert(0, '+repr(str(target))+');\n'+program], check=True)
+
     def test_real_plugin_hook_is_role_aware_and_matches_canonical_policy(self):
         script = '''const {default:plugin}=await import(process.argv[1]); let hook;
 plugin({on:(name,fn)=>{if(name==='before_prompt_build')hook=fn;}});

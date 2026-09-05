@@ -98,7 +98,7 @@ obs_log() { printf '  [onboarding-state] %s\n' "$*"; }
 # superpowers --agent dept-research` returned "superpowers ✓ Ready".
 #
 # That is a broken instrument reported as a finding — the same failure class
-# this repo already retired scripts/update-skills.sh over. It is WORSE than a
+# this repo already retired the obsolete updater shim over. It is WORSE than a
 # crash because it exits cleanly: a fleet roll marks every box "not verified",
 # and the operator learns to ignore the gate.
 #
