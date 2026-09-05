@@ -42,7 +42,7 @@
 #
 #   --update-only  Skip phases already done on a prior full install
 #                  (prereqs, workspace folders, agent materialize, tunnel,
-#                  Telegram topics). Only runs: git pull + npm install +
+#                  Telegram topics). Only runs: git pull + npm ci +
 #                  CC .env.local provisioning + freshness-gated `next build` +
 #                  db:push + sync-departments-from-build-state.py + pm2 restart.
 #                  Skips db:seed (protects client-customized rows).
@@ -1204,7 +1204,28 @@ cc_route_update_through_canonical_path() {
   return 1
 }
 
+# Shared fail-closed runtime gate: both fresh and update-only installs stop
+# before package installs, checkout convergence, migrations or process changes.
+cc_security_preflight() {
+  local helper="$SKILL_DIR/../shared-utils/cc_runtime_preflight.py"
+  [[ -f "$helper" ]] || fail_install "CC compatibility preflight helper missing: $helper"
+  python3 "$helper" "$@" >>"$LOG_FILE" 2>&1 || \
+    fail_install "CC compatibility preflight failed; requires Node ^20.19.0 || ^22.13.0 || >=24 and checkout >=v7.1.0. See $LOG_FILE."
+}
+
+# CC >=7.1.0 ships an audited lockfile. Never resolve a replacement graph,
+# including after a failed clean install; failure must stop before migrations.
+cc_install_locked_dependencies() {
+  [[ -f "$DASHBOARD_DIR/package-lock.json" ]] || \
+    fail_install "phase=6: package-lock.json missing; CC >=v7.1.0 requires its reviewed dependency lock"
+  log "INFO" "phase=6: npm ci from reviewed package-lock.json in $DASHBOARD_DIR"
+  if ! ( cd "$DASHBOARD_DIR" && npm ci --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
+    fail_install "phase=6: npm ci failed; dependencies were not installed successfully; refusing migrations/deployment"
+  fi
+}
+
 # ---- preflight ----
+cc_security_preflight
 if [[ ! -f "$STATE_FILE" ]]; then
   if [[ "$UPDATE_ONLY" == "true" ]]; then
     log "WARN" "no state file at $STATE_FILE — update-only continuing without state tracking"
@@ -1339,11 +1360,11 @@ fi
 # ----------------------------------------------------------------------
 log "INFO" "phase=6 dashboard-deploy: starting"
 if [[ "$UPDATE_ONLY" == "true" ]]; then
-  # --update-only: git pull --ff-only + npm install + db:push + pm2 restart.
+  # --update-only: sync latest main + locked npm ci + db:push + canonical update.
   # Skips db:seed (protects client-customized rows).
   # Skips git-clone: a refresh must never CREATE a checkout. The gate below
   # proves one already exists (and is the right repo) or fails the run.
-  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + .env.local + db:push + CC's own update.sh (atomic-deploy, single canonical path, P1-07) (no db:seed)"
+  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm ci + .env.local + db:push + CC's own update.sh (atomic-deploy, single canonical path, P1-07) (no db:seed)"
   # APPDIR-01: fail CLOSED. This used to be `[[ ! -d "$DASHBOARD_DIR/.git" ]]`
   # -> WARN -> fall through the whole phase -> exit 0. Two defects in one line:
   # the `-d` test is wrong for a linked git worktree (where .git is a FILE), and
@@ -1358,9 +1379,8 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   else
     fail_install "phase=6: could not converge Command Center checkout onto the latest origin default branch without discarding local work. Existing checkout was not deployed. Resolve the git conflict and re-run."
   fi
-  ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
-    && log "INFO" "phase=6: npm install done" \
-    || log "WARN" "phase=6: npm install reported errors (continuing)"
+  cc_security_preflight --checkout "$DASHBOARD_DIR"
+  cc_install_locked_dependencies
   # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
   # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
   cc_write_env_local
@@ -1386,6 +1406,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   cc_route_update_through_canonical_path || \
     fail_install "phase=6 (update-only): Command Center did not end GREEN on the fresh build. A rollback means the update did NOT take effect; refusing to report this box current. See the post-update assertion and $LOG_FILE."
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
+  cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
@@ -1399,10 +1420,8 @@ else
     cc_git_sync_to_default_branch "$DASHBOARD_DIR" || log "WARN" "phase=6: git sync non-clean (continuing with existing checkout)"
   fi
 
-  log "INFO" "phase=6: npm install in $DASHBOARD_DIR"
-  if ! ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ); then
-    fail_install "phase=6: npm install failed in $DASHBOARD_DIR"
-  fi
+  cc_security_preflight --checkout "$DASHBOARD_DIR"
+  cc_install_locked_dependencies
 
   # (2)+(3)+(4) provision CC .env.local BEFORE build/boot (gateway token +
   # sovereign text model + API-auth posture), from THIS box's own config.

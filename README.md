@@ -1,10 +1,18 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.1.
+> **Version:** see `/version` - this repo at v25.0.2.
 
 
-## Current release: v25.0.0
+## Current release: v25.0.2
+
+Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.0 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
+
+Fresh and update-only dependency installs use the shipped `package-lock.json` through `npm ci`; a missing lock or failed install stops before migrations/deployment. There is no fallback that resolves a different dependency graph.
+
+The paired pin and minimum are both **v7.1.0**. Publish that Command Center security release before publishing this onboarding release. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
+
+## v25.0.0 major milestone
 
 This owner-requested major release consolidates the client interview, Skill 23 workforce, Command Center, Kanban and persona reliability batch introduced in v24.2.0, while preserving the subsequent v24.2.1, v24.2.2 and v24.3.0 changes already on main.
 
@@ -13,7 +21,7 @@ This owner-requested major release consolidates the client interview, Skill 23 w
 - The paired Command Center provides authenticated client isolation, durable task routing and assignment, execution ownership, persona consistency and live board updates.
 - Existing presentation updates remain included: the client-selected run mode reaches the engine, phase completion checks substance, artifact producers remain distinct, and routing preserves provider identity and measured capacity.
 
-The installer now pins **Command Center v7.0.0**. Its minimum compatible runtime remains v6.1.0 because this major release changes release metadata and documentation without changing those runtime contracts. See [tenant configuration](32-command-center-setup/TENANT-CONFIGURATION.md), [delivery evidence](37-zhc-closeout/GATEWAY-RECEIPTS.md), and [CHANGELOG.md](CHANGELOG.md).
+The v25.0.0 milestone paired **Command Center v7.0.0** with minimum compatible runtime v6.1.0; v25.0.2 supersedes that floor with v7.1.0 for the security upgrade. See [tenant configuration](32-command-center-setup/TENANT-CONFIGURATION.md), [delivery evidence](37-zhc-closeout/GATEWAY-RECEIPTS.md), and [CHANGELOG.md](CHANGELOG.md).
 
 Publishing a release does not deploy client machines or certify live gateway/provider acceptance. Configure each client's own resources and run the documented client acceptance flow before promotion. Existing Command Center dependency advisories are not remediated by this version cut.
 
@@ -143,7 +151,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.0.2** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

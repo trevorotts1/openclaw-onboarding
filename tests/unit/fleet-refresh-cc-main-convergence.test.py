@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,7 +44,8 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
             subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
             git(origin, "config", "user.name", "Fixture")
             git(origin, "config", "user.email", "fixture@example.invalid")
-            (origin / "version").write_text("v1\n")
+            (origin / "version").write_text("v7.1.0\n")
+            (origin / "package.json").write_text('{"version":"7.1.0"}\n')
             (origin / "update.sh").write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
@@ -52,7 +55,7 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
                 "git checkout main\n"
             )
             os.chmod(origin / "update.sh", 0o755)
-            git(origin, "add", "version", "update.sh")
+            git(origin, "add", "version", "package.json", "update.sh")
             git(origin, "commit", "-qm", "initial")
             git(origin, "tag", "v0.1.0")
 
@@ -70,9 +73,11 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
             git(origin, "commit", "-qm", "latest main")
 
             result = runner.BoxResult("fixture-box", dry_run=False)
-            runner.step_pull_cc(
-                {"cc_dir": checkout}, "v0.1.0", result, dry_run=False, force_cc=False,
-            )
+            sys.path.insert(0, str(REPO_ROOT / "shared-utils"))
+            with patch("cc_runtime_preflight.check_node"):
+                runner.step_pull_cc(
+                    {"cc_dir": checkout}, "v7.1.0", result, dry_run=False, force_cc=False,
+                )
 
             self.assertEqual(result.steps.get("pull-cc"), "ok", result.errors)
             self.assertEqual(git(checkout, "branch", "--show-current"), "main")

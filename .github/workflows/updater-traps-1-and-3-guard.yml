@@ -37,6 +37,9 @@ on:
     paths:
       - "update-skills.sh"
       - "shared-utils/fleet_refresh_runner.py"
+      - "shared-utils/cc_runtime_preflight.py"
+      - "cc-compat.json"
+      - "tests/unit/cc-runtime-preflight.test.py"
       - "32-command-center-setup/scripts/run-full-install.sh"
       - "scripts/test-updater-traps-1-and-3.sh"
       - "scripts/test-loop-protection-wiring.sh"
@@ -50,6 +53,9 @@ on:
     paths:
       - "update-skills.sh"
       - "shared-utils/fleet_refresh_runner.py"
+      - "shared-utils/cc_runtime_preflight.py"
+      - "cc-compat.json"
+      - "tests/unit/cc-runtime-preflight.test.py"
       - "32-command-center-setup/scripts/run-full-install.sh"
       - "scripts/test-updater-traps-1-and-3.sh"
       - "scripts/test-loop-protection-wiring.sh"
@@ -114,6 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/unit/update-skills-full-scripts-tree.test.sh
+          python3 tests/unit/cc-runtime-preflight.test.py
           python3 tests/unit/fleet-refresh-cc-main-convergence.test.py
           bash tests/unit/full-update-path-contract.test.sh
           bash scripts/test-loop-protection-wiring.sh
