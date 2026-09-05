@@ -1,3 +1,5 @@
+## [v24.1.4]  -  2026-09-04  -  Authoring and prompt-authoring lead with deepseek-v4-flash (operator ruling); allow_flash_fallback documented as inert (#1024)
+
 ## [v24.1.3]  -  2026-09-04  -  Installer registers department agents in agents.entries and never creates agents.list; the two D5 wiring counters read the modern roster (#1023)
 
 ## [v24.1.2]  -  2026-09-04  -  G7b reads tools.exec.mode (the normalized selector) instead of the raw security/ask pair only; G4/L2/L5 gain G7's known-router-id fallback (#1022)
