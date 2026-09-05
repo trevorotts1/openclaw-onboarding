@@ -260,7 +260,7 @@ def _poller_rig(tmp_path, ledger_entries, parked):
     declared mode against the same authority active_mode() uses."""
     scripts = tmp_path / "rig"
     (scripts / "presentation_job").mkdir(parents=True)
-    for name in ("__init__.py", "model_router.py"):
+    for name in ("__init__.py", "model_router.py", "launch_plan.py"):
         shutil.copy2(SCRIPTS / "presentation_job" / name,
                      scripts / "presentation_job" / name)
     (scripts / "presentation_job" / "launcher.py").write_text(_LAUNCHER_STUB)
@@ -352,3 +352,193 @@ def test_unparseable_declaration_is_dropped_loudly_never_guessed(
         assert "--mode" not in row["argv"], row
         assert row.get("mode_env") is None, row
         assert _resolved(row) == "standard", row
+
+
+# ---------------------------------------------------------------------------
+# 4. THE LAUNCH RECORD -- the --new branch must leave EVIDENCE
+# ---------------------------------------------------------------------------
+# The --new branch does not go through the launcher, so before this it wrote
+# none of the launcher's launch-plan sidecars: a fresh client intake declaring
+# ULTRA would correctly RUN ultra and leave nothing behind that said so. The
+# mode governed but was unauditable -- "ultra was on" became an unverifiable
+# claim exactly where proof was demanded. These pin the record.
+
+def _sidecar(run_root, name):
+    p = run_root / "runs" / "pres-rig-0001" / name
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+
+
+def test_new_branch_records_the_declared_mode_with_its_provenance(tmp_path):
+    proc, _ = _poller_rig(tmp_path, _DECLARED, parked=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    rec = _sidecar(tmp_path, ".mode-plan.json")
+    assert rec is not None, f"no .mode-plan.json: {proc.stdout[-1500:]}"
+    assert rec["mode"] == "ultra"
+    assert rec["declared"] is True
+    # The PROVENANCE: which seam supplied it. Not "--mode" (this branch has no
+    # launcher and the engine entry has no such flag) -- the client's intake.
+    assert rec["mode_source"] == "intake-slot", rec["mode_source"]
+    assert rec["ceiling"]["operator_ceiling"] == 100
+
+
+def test_new_branch_records_standard_when_nothing_was_declared(tmp_path):
+    """An un-moded run still leaves a record, and it says standard. The record
+    exists for EVERY launch: "which mode was this deck built in?" must have an
+    answer after the fact even when nobody declared one."""
+    proc, _ = _poller_rig(tmp_path, _UNDECLARED, parked=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    rec = _sidecar(tmp_path, ".mode-plan.json")
+    assert rec is not None, f"no .mode-plan.json: {proc.stdout[-1500:]}"
+    assert rec["mode"] == "standard"
+    assert rec["declared"] is False
+    assert rec["mode_source"] == "default"
+
+
+def test_resume_branch_writes_no_sidecar_from_the_poller(tmp_path):
+    """The resume branch goes through the launcher, which writes the sidecar
+    itself. The poller must NOT also write one there -- two writers for one
+    file is how records start disagreeing."""
+    proc, _ = _poller_rig(tmp_path, _DECLARED, parked=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    # the rig's launcher is a stub, so nothing should have written it
+    assert _sidecar(tmp_path, ".mode-plan.json") is None
+
+
+# ---- shape parity with the REAL launcher ----------------------------------
+def _launcher_rig(monkeypatch, tmp_path, profile=None):
+    """test_fix11_mode_axis.py's rig: a real child interpreter runs a one-line
+    stub engine, so the launcher's own writer really runs."""
+    from presentation_job import capacity, launcher, resource_profile
+    cfg = tmp_path / "cfg"
+    cfg.mkdir(exist_ok=True)
+    if profile is not None:
+        (cfg / resource_profile.PROFILE_FILENAME).write_text(
+            json.dumps(profile, indent=2), encoding="utf-8")
+    monkeypatch.setattr(capacity, "NINEROUTER_DB", tmp_path / "absent.sqlite")
+    monkeypatch.setattr(capacity, "OPENCLAW_CONFIG", tmp_path / "absent.json")
+    monkeypatch.setattr(capacity, "HARNESS_SETTINGS_CANDIDATES",
+                        (tmp_path / "absent-settings.json",))
+    monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", "/usr/bin/true")
+    monkeypatch.delenv("PRESENTATION_RESOURCE_PROFILE_DIR", raising=False)
+    monkeypatch.delenv(model_router.MODE_ENV, raising=False)
+    monkeypatch.setattr(capacity, "measure_working_concurrent",
+                        lambda: (0, "stub", True))
+    monkeypatch.setattr(model_router, "provider_key_resolves", lambda p: True)
+    monkeypatch.setattr(launcher, "resolve_scripts_dir", lambda: tmp_path)
+    (tmp_path / "presentation_job.py").write_text("import sys; sys.exit(0)\n",
+                                                  encoding="utf-8")
+    return launcher
+
+
+def _wired(provider, models):
+    return {"provider": provider, "consented": True, "detected": True,
+            "presence": True, "wired_models": list(models)}
+
+
+#: Trevor's END check #4 shape: both models + thinking max.
+_PROFILE_WITH_PLAN = {
+    ".schema_version": 1,
+    "providers": {
+        "deepseek-direct": _wired("deepseek-direct",
+                                  ["deepseek-v4-flash", "deepseek-v4-pro"]),
+        "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
+    },
+    "creative_prefs": {}, "consent": {}, "interview": {},
+    "model_plan": {
+        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4-pro"},
+        "judge": {"provider": "ollama-cloud", "model": "glm-5.3-flash"},
+        "thinking": "max",
+        "source": "interview",
+    },
+}
+
+
+def test_both_dispatch_paths_write_the_same_sidecar_shape(monkeypatch, tmp_path):
+    """THE ANTI-DRIFT GUARD. A consumer must not need to know which branch ran.
+
+    This is why the new-intake writer may restate the launcher's dozen lines of
+    assembly rather than share them: the shapes are pinned here, executably, and
+    this fails if EITHER writer's shape moves."""
+    from presentation_job import launch_plan
+    launcher = _launcher_rig(monkeypatch, tmp_path, _PROFILE_WITH_PLAN)
+    left = tmp_path / "left"
+    launcher.dispatch(str(left), client="acme", deck_type="standard",
+                      background=False, mode="ultra")
+    right = tmp_path / "right"
+    right.mkdir(parents=True, exist_ok=True)
+    launch_plan.write_launch_plan(right, "ultra", launch_plan.SOURCE_INTAKE)
+
+    for name in (launch_plan.MODE_PLAN_SIDECAR, launch_plan.MODEL_PLAN_SIDECAR):
+        lp, rp = left / name, right / name
+        assert lp.is_file(), f"the real launcher wrote no {name}"
+        assert rp.is_file(), f"the new-intake branch wrote no {name}"
+        lj = json.loads(lp.read_text(encoding="utf-8"))
+        rj = json.loads(rp.read_text(encoding="utf-8"))
+        assert sorted(lj) == sorted(rj), (name, sorted(lj), sorted(rj))
+    lmode = json.loads((left / launch_plan.MODE_PLAN_SIDECAR).read_text())
+    rmode = json.loads((right / launch_plan.MODE_PLAN_SIDECAR).read_text())
+    assert lmode["mode"] == rmode["mode"] == "ultra"
+    assert lmode["ceiling"] == rmode["ceiling"]
+    # ... and the provenance is the ONE field that legitimately differs.
+    assert lmode["mode_source"] == "--mode"
+    assert rmode["mode_source"] == "intake-slot"
+
+
+def test_routing_stamp_carries_both_models_and_the_thinking_level(monkeypatch,
+                                                                  tmp_path):
+    """END check #4, verbatim: "routing stamp: both models + thinking max"."""
+    from presentation_job import launch_plan
+    _launcher_rig(monkeypatch, tmp_path, _PROFILE_WITH_PLAN)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    launch_plan.write_launch_plan(run_dir, "ultra", launch_plan.SOURCE_INTAKE)
+    stamp = json.loads(
+        (run_dir / launch_plan.MODEL_PLAN_SIDECAR).read_text(encoding="utf-8"))
+    slots = stamp["plan"]["slots"]
+    assert slots["workhorse"] == {"provider": "deepseek-direct",
+                                  "model": "deepseek-v4-flash"}
+    assert slots["judge"] == {"provider": "ollama-cloud",
+                              "model": "glm-5.3-flash"}
+    assert stamp["plan"]["thinking"] == "max"
+
+
+def test_no_client_model_plan_writes_no_routing_stamp(monkeypatch, tmp_path):
+    """Byte-for-byte the pre-fix launch when the client declared nothing --
+    the launcher writes no .model-plan.json in that case either."""
+    from presentation_job import launch_plan
+    profile = dict(_PROFILE_WITH_PLAN)
+    profile.pop("model_plan")
+    _launcher_rig(monkeypatch, tmp_path, profile)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out = launch_plan.write_launch_plan(run_dir, "ultra", launch_plan.SOURCE_INTAKE)
+    assert launch_plan.MODE_PLAN_SIDECAR in out["wrote"]
+    assert launch_plan.MODEL_PLAN_SIDECAR not in out["wrote"]
+    assert not (run_dir / launch_plan.MODEL_PLAN_SIDECAR).exists()
+
+
+def test_modes_rollback_writes_no_sidecar_at_all(monkeypatch, tmp_path):
+    """PRESENTATION_MODES=0 is the documented rollback: the whole FIX 11
+    surface goes inert, sidecar included. Inherited exactly."""
+    from presentation_job import launch_plan
+    _launcher_rig(monkeypatch, tmp_path, _PROFILE_WITH_PLAN)
+    monkeypatch.setenv(model_router.MODE_FLAG_ENV, "0")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out = launch_plan.write_launch_plan(run_dir, "ultra", launch_plan.SOURCE_INTAKE)
+    assert out["wrote"] == []
+    assert not (run_dir / launch_plan.MODE_PLAN_SIDECAR).exists()
+    assert not (run_dir / launch_plan.MODEL_PLAN_SIDECAR).exists()
+
+
+def test_an_unrecordable_plan_never_blocks_a_dispatch(tmp_path):
+    """Best-effort by contract: the CLI exits 0 even on a bad mode, so an audit
+    record can never be the reason a client's deck does not get built."""
+    from presentation_job import launch_plan
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    rc = launch_plan.main(["--run-dir", str(run_dir), "--mode", "banana"])
+    assert rc == 0
+    assert not (run_dir / launch_plan.MODE_PLAN_SIDECAR).exists()
