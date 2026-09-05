@@ -335,14 +335,26 @@ DEFAULT_CAPABILITY = "authoring"
 # fix-spec table's Default + Ordered-fallback columns. The fallback rule is
 # the modality doctrine: reasoning/long classes never drop to Flash.
 CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
+    # OPERATOR RULING 2026-09-04: Flash leads on authoring work. Flash's
+    # DeepSeek Direct ceiling is 2500 concurrent vs Pro's 500, so a wide
+    # per-slide fan-out is only reachable on Flash; Pro remains the fallback
+    # for anything Flash cannot serve. reasoning_long and long_synthesis are
+    # deliberately NOT changed -- those classes still never see Flash.
+    #
+    # NOTE: "allow_flash_fallback" below is INERT. It is declared here and
+    # read NOWHERE in this tree (2 occurrences, both declarations, zero
+    # consumers -- verified against a CAPABILITY_CANDIDATES control with 1
+    # declaration and 2 consumers). Fallback order is enforced ONLY by the
+    # order of this list, and a class refuses Flash only by omitting it.
+    # Do not trust this key to gate anything.
     "authoring": [
-        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
         {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
-    "prompt_authoring": [  # P4-PROMPT: pro -> flash when context fits -> GLM
-        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
+    "prompt_authoring": [  # P4-PROMPT: flash -> pro -> GLM
         {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
     "reasoning_long": [  # no Flash fallback: long context + reasoning
