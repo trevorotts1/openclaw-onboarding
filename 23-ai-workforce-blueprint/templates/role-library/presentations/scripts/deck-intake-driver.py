@@ -10,7 +10,7 @@ Reads its question schema from intake/deck-intake-questions.json (the canonical
 source of truth). Supports two interview modes:
 
   STANDARD  (--next / --answer / --complete)
-    FIX 30 / schema v1.9.0: TWENTY-THREE numbered conversational turns
+    FIX 30 / schema v1.10.0: TWENTY-THREE numbered conversational turns
     (Trevor ruling, binding), down from 58 one-per-turn rows. Each turn row
     (kind "merged") may return several legacy subfields; every answer folds
     into one ledger entry per legacy question id -- captured, derived, or
@@ -831,13 +831,39 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
 def validate_labeled_enums(qdef: Dict[str, Any], text: str) -> Optional[str]:
     """An explicitly labeled answer for an enum subfield must resolve to one of
     the enum values (exact or keyword-containment) BEFORE anything is written;
-    prose routed to the first subfield is matched leniently by the engine."""
+    prose routed to the first subfield is matched leniently by the engine.
+
+    A subfield may ALSO declare `refuse_values` + `refuse_message`: a
+    vocabulary that belongs to a DIFFERENT axis and must never be quietly
+    accepted here. It is checked FIRST, and answered with the subfield's own
+    message, so the client is told which two axes they crossed instead of a
+    bare "invalid value". This is the mirror image of the canonical entry's
+    --intake-depth guard (that flag refuses the run-mode words; run_mode
+    refuses the interview-depth words) -- the two axes are never
+    interchangeable in either direction. The vocabulary lives in the question
+    bank, exactly like the label vocabulary: this parser never hardcodes a
+    field's words."""
     values = labeled_subfield_values(qdef, text)
     for k, ann in (qdef.get("subfields") or {}).items():
-        allowed = ann.get("enum")
-        if not allowed or k not in values:
+        if k not in values:
             continue
         val = values[k]
+        refused = [str(v).strip().lower()
+                   for v in (ann.get("refuse_values") or []) if str(v).strip()]
+        if refused:
+            cleaned = str(val).strip().strip(";,.").strip().lower()
+            # Whole-word, so "quick" is caught inside "quick please" but never
+            # inside an unrelated word. re.escape keeps hyphens ("in-depth")
+            # literal.
+            if any(re.search(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", cleaned)
+                   for tok in refused):
+                msg = ann.get("refuse_message") or (
+                    f"Value {val!r} for {k} belongs to a different axis and is "
+                    f"refused here.")
+                return str(msg).replace("{value}", repr(str(val).strip()))
+        allowed = ann.get("enum")
+        if not allowed:
+            continue
         if _enum_match(val, allowed) is None:
             return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
     return None
@@ -976,6 +1002,52 @@ def _record_client_model_plan(derived: Dict[str, Any],
     return 0
 
 
+#: The client's RUN-MODE declaration (FIX 11: ultra|standard|economy). It
+#: rides the SAME resource_plan turn as the model plan above and is therefore
+#: NOT a 24th turn -- session_budget.max_turns stays 23 (Trevor ruling, pinned
+#: by tests/test_model_plan.py::test_the_bank_still_carries_exactly_twenty_three_turns).
+_RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
+
+
+def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
+                     entries: Dict[str, Any]) -> None:
+    """Mirror the resource_plan turn's run-mode subfield onto its RUN_MODE
+    ledger key, normalised to the bank's own vocabulary.
+
+    Written EXPLICITLY here rather than through schema["storeTarget"], for the
+    same reason the model plan is (see _MODEL_PLAN_SUBFIELDS): storeTarget
+    entries flow into working/copy/intake.json -- the deck brief the authoring
+    phases read -- and a run mode is an EXECUTION axis, not deck content. Its
+    reader is presentation-intake-poll.sh, which carries it to the run-mode
+    door (launcher --mode on the resume path; PRESENTATION_MODE on the
+    new-intake path, which does not go through the launcher at all).
+
+    The allowed vocabulary is read from the BANK (this subfield's own enum),
+    never from a constant duplicated here -- the same single-source rule the
+    label vocabulary follows in _claim_labels.
+
+    An omitted or unrecognised declaration writes NOTHING. Absence is absence,
+    and model_router.DEFAULT_MODE ("standard") then applies downstream. Never
+    "ultra" by default: nothing silently launches at the operator ceiling.
+
+    Writing nothing also means a RE-ANSWER of this turn that omits the mode
+    leaves an earlier declaration standing. That is deliberate: a client who
+    already said ultra is not "saying nothing", so a later answer about models
+    must not silently downgrade their run -- and the asymmetry is the safe one,
+    because only an explicit "ultra" can ever escalate TO ultra."""
+    sub_id, ledger_key = _RUN_MODE_SUBFIELD
+    ann = (qdef.get("subfields") or {}).get(sub_id) or {}
+    allowed = [str(v).strip().lower() for v in (ann.get("enum") or [])]
+    want = str(derived.get(sub_id) or "").strip().strip(";,.").strip().lower()
+    if not want or want not in allowed:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rec = {"value": want, "validated": True, "source": "deck-intake-driver",
+           "answered_at": now_iso, "normalized": want, "answer": want}
+    entries[ledger_key] = rec
+    entries[sub_id] = rec
+
+
 def cmd_answer(args) -> int:
     """Record one answer and return the next question."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -1102,6 +1174,10 @@ def cmd_answer(args) -> int:
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
+            # CLIENT RUN MODE (FIX 11) rides this same turn. Recorded only
+            # AFTER the model plan above was accepted, so a refused answer
+            # never half-lands a run mode either.
+            _record_run_mode(qdef, derived, entries)
 
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":
