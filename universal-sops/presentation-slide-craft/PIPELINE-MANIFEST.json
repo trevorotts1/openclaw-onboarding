@@ -1,5 +1,5 @@
 {
-  "manifest_version": 65,
+  "manifest_version": 66,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1729,7 +1729,10 @@
       "sop_refs": [
         "presenters-speech-writer-sops.md"
       ],
-      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH.pdf",
+      "produces_artifact": [
+        "working/deliverables/PRESENTERS-SPEECH.pdf",
+        "working/deliverables/speech_spec.json"
+      ],
       "gate_codes": [],
       "preflight": null,
       "client_report": {
