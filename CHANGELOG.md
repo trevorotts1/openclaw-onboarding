@@ -1,3 +1,5 @@
+## [v24.1.8]  -  2026-09-05  -  Resume no longer waits on an outstanding work order whose artifact is already satisfied; blocked-run dispatch state settles instead of stalling (#1028)
+
 ## [v24.1.7]  -  2026-09-04  -  P-STYLE-SPEC declares the arc_allocation.json it actually reads, creating the missing P3-ARC edge that let it dispatch with zero units (#1027)
 
 ## [v24.1.6]  -  2026-09-04  -  Clients declare their own workhorse/reasoning/QC model in the intake and the router honours it; class capability floors, explicit waivers, and a launch-time refusal instead of a mid-run surprise (#1026)

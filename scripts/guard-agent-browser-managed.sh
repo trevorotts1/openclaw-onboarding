@@ -100,7 +100,7 @@
 set -uo pipefail
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-GUARD_AGENT_BROWSER_MANAGED_VERSION="v24.1.7"
+GUARD_AGENT_BROWSER_MANAGED_VERSION="v24.1.8"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
