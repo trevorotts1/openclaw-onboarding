@@ -1,4 +1,4 @@
-## [v24.2.0]  -  2026-09-05  -  P-SP-P3-HYGIENE writes its own QC verdict instead of P-SP-STRUCTURE's artifact, so the structure phase is no longer silently skipped on signature decks (#1030)
+## [v24.2.1]  -  2026-09-05  -  P-SP-P3-HYGIENE writes its own QC verdict instead of P-SP-STRUCTURE's artifact, so the structure phase is no longer silently skipped on signature decks (#1030)
 
 ## [v24.2.0]  -  2026-09-05  -  Verify client onboarding, workforce state, board handoff and closeout receipts
 
