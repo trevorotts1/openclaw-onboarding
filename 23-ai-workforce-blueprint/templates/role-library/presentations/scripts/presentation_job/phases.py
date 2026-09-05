@@ -1827,8 +1827,9 @@ class Engine:
         coordination point: it carries one row per dispatch attempt with a
         `status` field (`verified` = attempt passed its verifier;
         `exhausted`/`declined`/`already_satisfied`/`already_done_in_state`/
-        `phase_exhausted` = the dispatcher has finished with this order either
-        way; everything else -- call_failed, empty_completion, failed, error,
+        `phase_exhausted`/`blocked_retry_ceiling` = the dispatcher has finished
+        with this order either way; everything else -- call_failed,
+        empty_completion, failed, error,
         routing_unavailable, parked, ... -- means the order is still LIVE and
         a later attempt may land). Returns True while a sidecar exists whose
         LATEST status row is not yet settled, so the
@@ -1837,7 +1838,20 @@ class Engine:
         unreadable, or empty sidecar returns False -- an engine-restart
         re-entry (or a pre-sidecar run) keeps the FALSE-BLOCK tiebreaker
         path (verifier PASS accepts a complete inherited artifact), so no
-        phase that is genuinely done can ever hang on this."""
+        phase that is genuinely done can ever hang on this.
+
+        DEADLOCK-1 (live run 2026-09-04/05, phase P-SP-INTAKE): `blocked_retry_
+        ceiling` was MISSING from the settled list above, and it is the one park
+        the dispatcher writes for itself. Its own marker file says re-dispatch
+        "resumes automatically if the Engine reissues the work order"
+        (dispatcher.py:4374-4376) -- so after that row lands NO later attempt can
+        ever come without the Engine acting first. Reading it as "still mid-flight"
+        made this method permanently True, which forced ok=False in the poll loop
+        below (phases.py:2037) on every single tick: the Engine waited its whole
+        budget for a dispatcher that was waiting for the Engine. Observed at
+        23:22:54 (ceiling park) against a valid artifact, with the 00:02:29
+        --resume then sitting silent for 22 minutes. A ceiling park is the
+        dispatcher DONE with this order, so it settles."""
         log = self.run_dir / "working" / "work-orders" / f"{phase_id}.dispatcher-log.jsonl"
         try:
             if not log.is_file():
@@ -1859,11 +1873,38 @@ class Engine:
             # Terminal settle states: the dispatcher is done either way.
             if last.get("status") in ("verified", "exhausted", "declined",
                                       "already_satisfied", "already_done_in_state",
-                                      "phase_exhausted"):
+                                      "phase_exhausted", "blocked_retry_ceiling"):
                 return False
             return True
         except OSError:
             return False
+
+    def _phase_artifact_satisfied(self, phase: Phase) -> bool:
+        """True when this phase's declared artifact is BOTH on disk AND passes
+        its own substance verifier -- the engine-side twin of the dispatcher's
+        already_satisfied pre-check (dispatcher.py:3557-3561).
+
+        Presence alone is deliberately NOT enough. _artifacts_present()
+        (phases.py:921) gates on LITERAL FILE EXISTENCE and never consults
+        substance -- the hazard documented at dispatcher.py:3541-3544 for
+        P1Q-COPY-QC, and the same hole through which one phase writing another
+        phase's declared path can suppress that phase. Both halves must hold, so
+        this can never complete a phase on a file it did not earn.
+
+        Cheap and model-free: phase_verifiers.verify() only reads the run dir --
+        it dispatches nothing and spends nothing, and the poll loop already calls
+        it on every tick a few lines below. Fail-closed: an unimportable module
+        or a raising verifier returns False, i.e. keep waiting, exactly as
+        before."""
+        ok, _missing = self._artifacts_present(phase)
+        if not ok:
+            return False
+        try:
+            import phase_verifiers
+            v_ok, _notes = phase_verifiers.verify(phase.id, self.run_dir)
+        except Exception:  # noqa: BLE001 -- unusable verifier: never claim satisfied
+            return False
+        return bool(v_ok)
 
     def _run_agent_phase(self, phase: Phase) -> int:
         """
@@ -1956,8 +1997,77 @@ class Engine:
         now_ts = time.time()
         claim_live = claim_path.is_file() and (now_ts - claim_path.stat().st_mtime) < stale_after
         wo_live = wo_path.is_file() and (now_ts - wo_path.stat().st_mtime) < stale_after
+        # DEADLOCK-1 (live run 2026-09-04/05, phase P-SP-INTAKE). "Live" above is
+        # decided PURELY by file mtime; it never asked whether the artifact the
+        # order exists to produce is ALREADY THERE. Observed: order written
+        # 23:19:18, dispatcher parked it at its retry ceiling 23:22:54, the real
+        # driver-signed artifact landed afterwards, and the 00:02:29 --resume
+        # still logged "a work order is already outstanding ... waiting on it
+        # instead of reissuing" -- then waited. Nothing was ever coming: the
+        # dispatcher's own park marker says re-dispatch resumes only "if the
+        # Engine reissues the work order" (dispatcher.py:4374-4376), and the
+        # Engine was waiting on the dispatcher. A circular wait, silent, for up
+        # to the whole phase budget on any interrupted run.
+        #
+        # An outstanding work order for an ALREADY-SATISFIED artifact is not a
+        # reason to wait. "Satisfied" is not bare presence (see
+        # _phase_artifact_satisfied) -- it is presence AND the phase's own
+        # substance verifier, the same authority the poll loop tiebreaker below
+        # and the dispatcher's already_satisfied pre-check use, so all three
+        # components agree by construction.
+        #
+        # FAULT-09 IS NOT WEAKENED. A LIVE CLAIM -- a dispatcher process actually
+        # holding this phase right now -- still wins unconditionally, satisfied
+        # artifact or not: that IS the "two components must never act on one
+        # phase simultaneously" guarantee, and the claim holder may be mid-rewrite
+        # of the very file just measured. Only the claim-less "an order file is
+        # merely still outstanding" case is short-circuited.
+        wo_satisfied = bool(wo_live and not claim_live) and self._phase_artifact_satisfied(phase)
+        # DEADLOCK-2 (same run). state.json carried terminal="BLOCKED" from
+        # 00:25:20 (_block() parks the run mid-plan, phases.py:2446) and from that
+        # instant every dispatcher watching this run exits on its next tick
+        # ("run terminal is set -- exiting", dispatcher.py:4679 / :4738). The
+        # Engine never noticed: it kept walking the plan and queueing work orders
+        # (00:55:20 -- P-STYLE-SPEC and P-3.5-RESEARCH-MAP) for a run nothing
+        # would ever dispatch, and each such phase then burns its FULL budget
+        # before failing "produced nothing" -- exactly what P3-ARC did between
+        # 00:25:20 and 00:55:20. To an operator that is indistinguishable from
+        # slow progress.
+        #
+        # This is FIX 22's bug recurring MID-RUN. FIX 22 (__main__.py:866-876)
+        # diagnosed the identical mechanism -- "the dispatcher's watch loop saw
+        # the set terminal and exited immediately, and every agent phase then
+        # blocked after its full budget with nothing servicing its work order" --
+        # and fixed it only at ENTRY, by clearing a stale terminal on --run /
+        # --resume. Nothing stopped a fresh one being set half way through.
+        #
+        # The Engine now honours its own park: no NEW work order is queued for a
+        # parked run, and it says so loudly rather than accumulating silent work.
+        # Visibility at the top of status already exists (diagnose.py:16 prints
+        # "terminal : BLOCKED"); the missing half was the Engine ignoring it.
+        # The terminal check itself is untouched everywhere it lives -- BLOCKED
+        # stays load-bearing for supervisor.py:406, watchdog.py:131, sweep.py:120,
+        # cc_board.py:188 and process_reaper.py:351.
+        run_parked = None if wo_satisfied else (self.state.get("terminal") or None)
         with self._state_lock:
-            if claim_live or wo_live:
+            if wo_satisfied:
+                self.report.event(
+                    "phase.work_order_satisfied",
+                    f"{phase.id}: a work order was still outstanding at "
+                    f"working/work-orders/{phase.id}.json, but "
+                    f"{', '.join(phase.produces_artifact)} already exists and PASSES its "
+                    "substance verifier, and no dispatcher holds a live claim - completing "
+                    "the phase instead of waiting on an order nothing is servicing "
+                    "(DEADLOCK-1).")
+            elif run_parked:
+                self.report.event(
+                    "phase.no_dispatch_run_parked",
+                    f"{phase.id}: NOT queueing a work order - this run is PARKED "
+                    f"(state.terminal={run_parked!r}). Every dispatcher exits while a "
+                    "terminal is set, so the order could never be serviced and this phase "
+                    "would burn its whole budget producing nothing (DEADLOCK-2). Re-enter "
+                    "with --resume (or --run): both clear terminal/blocked (FIX 22).")
+            elif claim_live or wo_live:
                 self.report.event(
                     "phase.work_order_reused",
                     f"{phase.id}: {'a dispatcher holds a live claim on' if claim_live else 'a work order is already outstanding for'} "
@@ -1977,6 +2087,22 @@ class Engine:
                                   f"{phase.id} is agent-authored. Work order written to "
                                   f"working/work-orders/{phase.id}.json. Waiting for "
                                   f"{', '.join(phase.produces_artifact)}.")
+        if wo_satisfied:
+            return EXIT_OK
+        if run_parked:
+            print("\n" + "=" * 72, file=sys.stderr)
+            print(f"NO DISPATCH - run is PARKED (state.terminal={run_parked})", file=sys.stderr)
+            print(f"  phase    : {phase.id} ({phase.owning_role})", file=sys.stderr)
+            print(f"  expected : {', '.join(phase.produces_artifact) or '(none declared)'}",
+                  file=sys.stderr)
+            print("  why      : every dispatcher exits while state.terminal is set, so a "
+                  "work order", file=sys.stderr)
+            print("             queued now could never be serviced - the phase would just "
+                  "burn its budget.", file=sys.stderr)
+            print("  fix      : re-enter with --resume (or --run) - both clear "
+                  "terminal/blocked (FIX 22).", file=sys.stderr)
+            print("=" * 72 + "\n", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
         if self.dry_run:
             return EXIT_OK
 
