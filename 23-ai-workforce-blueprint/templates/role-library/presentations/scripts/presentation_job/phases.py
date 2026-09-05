@@ -2154,6 +2154,21 @@ class Engine:
                     except Exception as exc:  # fail closed: treat as not-yet-complete
                         v_ok, v_notes = False, [f"verifier error: {exc}"]
                     last_verify_notes = list(v_notes or [])
+                    # DEFECT-3 REPAIR (2026-09-05): honour the tiebreaker.
+                    # v22.0.63 wrote `ok = v_ok` right here; FIX 21
+                    # (commit 4019cf9b0) replaced that line with the sidecar
+                    # override below and never put it back, so v_ok became a
+                    # computed-and-never-read local and this branch completed
+                    # the phase on FILE PRESENCE ALONE. FIX 21's own comment
+                    # above still states the contract it dropped -- "the
+                    # verifier is only ever a TIEBREAKER when NO sidecar row is
+                    # pending" -- and the budget-timeout message below ("exists
+                    # but failed substance verification") is unreachable
+                    # without it. A FAIL still never blocks early: it keeps the
+                    # identical wait/announce/checkpoint cadence, which is
+                    # exactly the retry window FAULT-16 and FIX 21 both exist
+                    # to preserve.
+                    ok = v_ok
                     # FIX 21: a pending dispatcher sidecar wins over the
                     # verifier tiebreaker -- the phase may not complete while
                     # the dispatcher is mid-flight on this order. Keep waiting

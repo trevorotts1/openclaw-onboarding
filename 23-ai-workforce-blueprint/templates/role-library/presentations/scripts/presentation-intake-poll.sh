@@ -86,6 +86,155 @@ SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
 SKIPPED_LEASE_HELD=0
 LEASE_TAKEOVERS=0
+# The run mode declared by the CLIENT for the run dir currently being
+# dispatched. Re-read per run dir inside the loop; declared here so `set -u`
+# has it defined on every path.
+RUN_MODE=""
+
+# ---------------------------------------------------------------------------
+# CLIENT RUN MODE (FIX 11) -- the ultra|standard|economy axis, declared by the
+# client IN THE INTAKE and carried from here into the run.
+#
+# THE GAP THIS CLOSES. FIX 11 wired the ENGINE to read the mode it is handed
+# (dispatcher._active_mode reads PRESENTATION_MODE), and launcher.py has
+# carried `--mode ultra|standard|economy` since FIX 11 landed. But nothing on
+# the hands-off CLIENT path ever handed it one. This poller is the only actor
+# between a finished intake interview and a running engine, and it dispatched
+# with no mode at all: measured on pristine main, an intake ledger declaring
+# ultra still resolved active_mode() == "standard" on BOTH branches below.
+# Every deck a client got through "agent intake -> launchd poller -> engine"
+# ran standard no matter what the client asked for -- ultra was unreachable
+# for a client by construction. The intake now carries the declaration
+# (deck-intake-questions.json resource_plan.run_mode, riding the existing
+# turn 9; no 24th turn) and this is the wire that delivers it.
+#
+# read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
+# Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
+# "standard") then applies. It never guesses ultra -- nothing silently
+# launches at the operator ceiling.
+#
+# The vocabulary is NOT duplicated here: it is read from
+# presentation_job.model_router, the single authority active_mode() itself
+# uses. A tree where that import fails prints nothing and SAYS SO on stderr;
+# an unvalidatable declaration is dropped, never guessed. stderr is
+# deliberately NOT sent to /dev/null (unlike the lease helpers above): a
+# helper that dies inside this heredoc must be loud, not silent.
+# ---------------------------------------------------------------------------
+read_run_mode() {
+    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+scripts_dir = sys.argv[2]
+
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+try:
+    from presentation_job.model_router import MODES, normalize_mode
+except Exception as exc:  # noqa: BLE001 -- a partial deploy must be LOUD
+    print(f"[run-mode] could not import presentation_job.model_router from "
+          f"{scripts_dir} ({exc.__class__.__name__}: {exc}) -- a declared run "
+          f"mode cannot be validated against the one authority, so NONE is "
+          f"passed and the launcher default (standard) applies. Fix the "
+          f"deploy.", file=sys.stderr)
+    raise SystemExit(0)
+
+
+def normalised(raw):
+    """One candidate -> a legal mode, or None (with a loud line for garbage)."""
+    text = str(raw or "").strip().strip("'\"").strip(";,.").strip()
+    if not text:
+        return None
+    try:
+        return normalize_mode(text)
+    except ValueError:
+        print(f"[run-mode] the intake declared {text!r}, which is not one of "
+              f"{'|'.join(MODES)} -- ignoring it and letting the launcher "
+              f"default (standard) apply. A run mode is never guessed.",
+              file=sys.stderr)
+        return None
+
+
+def load(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def entry_value(entries, key):
+    val = entries.get(key)
+    if isinstance(val, dict):
+        return val.get("value", val.get("normalized"))
+    return val
+
+
+candidates = []
+
+# 1) the intake ledger -- where deck-intake-driver._record_run_mode writes it.
+entries = load(run_dir / "working" / "interview" / "intake_ledger.json").get("entries")
+if isinstance(entries, dict):
+    for key in ("RUN_MODE", "run_mode"):
+        candidates.append(entry_value(entries, key))
+    # ... and the structured parent record, when the turn stored the dict form.
+    parent = entries.get("resource_plan")
+    if isinstance(parent, dict) and isinstance(parent.get("value"), dict):
+        candidates.append(parent["value"].get("run_mode"))
+
+# 2) intake.json, for a client whose declaration arrived through a bridge that
+#    writes the run directory's intake rather than the ledger.
+intake = load(run_dir / "working" / "copy" / "intake.json")
+for key in ("RUN_MODE", "run_mode"):
+    candidates.append(intake.get(key))
+capture = intake.get("pre_presentation_capture")
+if isinstance(capture, dict):
+    candidates.append(capture.get("RUN_MODE"))
+
+seen = set()
+for candidate in candidates:
+    text = str(candidate or "").strip()
+    if not text or text.lower() in seen:
+        continue
+    seen.add(text.lower())
+    mode = normalised(candidate)
+    if mode:
+        print(mode)
+        break
+PYMODE
+}
+
+# HOW THE MODE IS ADDED TO A DISPATCH, and why it is done INLINE at each call
+# site rather than through a wrapper function.
+#
+#   resume branch: `${RUN_MODE:+--mode "$RUN_MODE"}` -- expands to nothing at
+#     all when no mode was declared, so the launcher sees the exact argv it
+#     always saw and resolves its own default.
+#   new branch:    `env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 ...`
+#     -- the engine entry (presentation_job.py) has NO --mode flag: the
+#     run-mode DOOR is the launcher, and that branch does not go through the
+#     launcher, it calls the engine directly (--new, then --run).
+#     PRESENTATION_MODE is the documented seam for exactly that case;
+#     model_router.active_mode names it "how a mode reaches dispatcher / heal /
+#     credit_preflight code running in a CHILD process that has no parameter to
+#     thread it through", and dispatcher._active_mode is the read that consumes
+#     it. The --run branch spawns the engine through subprocess.Popen with no
+#     env= argument, so the grandchild inherits it too.
+#
+# INLINE, not a helper, for two reasons that already cost this repo:
+#   1. tests/test_f03_poll_resume_invocation.py EXTRACTS the resume dispatch
+#      line out of this file by regex and EXECUTES it, to prove the real line
+#      still imports (the F03 file-path-vs-module defect). A dispatch hidden
+#      behind a function is invisible to that guard -- the guard would have to
+#      be weakened to accommodate the refactor, which is backwards.
+#   2. `${var:+...}` is bash-3.2 safe under `set -u` (verified on
+#      3.2.57: empty, set and unset all behave), whereas an argv ARRAY under
+#      `set -u` is a hard abort on an empty array, and an unquoted
+#      "${EXTRA_ARGS}" would word-split.
+# Both forms are a TEMPORARY, per-command addition -- never an `export` -- so a
+# mode declared by one run dir cannot leak into the next run dir of this scan.
 
 # ---------------------------------------------------------------------------
 # FIX 61 (W15b-B2): the intake-poll bridge ACQUIRES A LEASE before it
@@ -280,6 +429,16 @@ except Exception:
         continue
     fi
 
+    # FIX 11 client path: what run mode did the CLIENT declare in this intake?
+    # Read once here so both dispatch branches below carry the same answer.
+    # Empty = undeclared = the launcher's own default (standard) stands.
+    RUN_MODE="$(read_run_mode "$run_dir")"
+    if [ -n "$RUN_MODE" ]; then
+        log "  run mode declared in the intake: $RUN_MODE"
+    else
+        log "  no run mode declared in the intake -- the launcher default (standard) applies"
+    fi
+
     # Check if the engine has already been launched for this run
     if [ -f "$STATE_JSON" ] && command -v python3 >/dev/null 2>&1; then
         TERMINAL=$(python3 -c "
@@ -343,8 +502,15 @@ except Exception:
         # -- `-m` requires the package's PARENT directory (SCRIPTS_DIR) to be
         # the working directory, so cd there in a subshell (parens) rather
         # than changing this script's own cwd.
+        #
+        # FIX 11 client path: the launcher IS the run-mode door, so the mode
+        # the CLIENT declared in the intake goes in as --mode. Undeclared
+        # expands to nothing at all and the launcher resolves its own default
+        # (standard). Never guess ultra. NOTE: this command is extracted
+        # VERBATIM and executed by tests/test_f03_poll_resume_invocation.py --
+        # keep it one inline line, directly under the log line below.
         log "resuming parked job: $run_dir"
-        ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ) 2>&1 | while IFS= read -r line; do
+        ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ${RUN_MODE:+--mode "$RUN_MODE"} ) 2>&1 | while IFS= read -r line; do
             log "  $line"
         done
         NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
@@ -404,15 +570,19 @@ except Exception:
         fi
         log "  $RESOLVE_OUT"
 
-        # Create the engine job then run it
-        python3 "$ENGINE_ENTRY" --new --run-dir "$run_dir" --intake "$ENGINE_INTAKE_TMP" 2>&1 | while IFS= read -r line; do
+        # Create the engine job then run it.
+        # FIX 11 client path: this branch calls the ENGINE directly, not the
+        # launcher, so the mode travels as PRESENTATION_MODE rather than as
+        # --mode -- the engine entry has no such flag, by design. See the
+        # dispatch-mode note above.
+        env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 "$ENGINE_ENTRY" --new --run-dir "$run_dir" --intake "$ENGINE_INTAKE_TMP" 2>&1 | while IFS= read -r line; do
             log "  [create] $line"
         done
 
         if [ -f "$run_dir/state.json" ]; then
             # Engine job created -- now launch the run (background).
             # We use Python subprocess here because poll.sh itself must return quickly.
-            python3 -c "
+            env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 -c "
 import subprocess, sys, os
 argv = [sys.executable or 'python3', '$ENGINE_ENTRY', '--run', '--run-dir', '$run_dir']
 log_dir = os.path.join('$run_dir', 'working', 'logs')

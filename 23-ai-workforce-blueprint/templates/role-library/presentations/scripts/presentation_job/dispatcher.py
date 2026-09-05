@@ -2726,24 +2726,84 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 probe_res = _cap_mod.probe()
                 available = probe_res.get("available")
                 probe_provider = str(probe_res.get("provider") or "")
+                # DEFECT-5 REPAIR (2026-09-05): compare provider IDENTITY, not
+                # SPELLING. `probe_res["provider"]` is always canonical -- the
+                # probe runs every id through capacity.normalize_provider().
+                # `route["provider"]` is NOT: model_router.resolve_alias()
+                # normalises served_ids keys but hands the catalog's own
+                # provider string straight through, and model_catalog.json
+                # spells DeepSeek "deepseek". Measured live on the shipped
+                # table, this box, 2026-09-05:
+                #     resolve_alias("deepseek-v4-pro")["provider"] -> 'deepseek'
+                #     capacity.probe()["provider"]                 -> 'deepseek-direct'
+                # so the raw `probe_provider == routed_provider` this replaces
+                # was FALSE on every DeepSeek route -- the department default
+                # for authoring/prompt_authoring/reasoning -- and a real
+                # measured ceiling (2500 Flash / 500 Pro) was silently thrown
+                # away for DEFAULT_MAX_WORKERS on every router-resolved run.
+                # Both sides are folded through the ONE cap-table authority.
+                probe_canon = _cap_mod.normalize_provider(probe_provider)
+                routed_canon = _cap_mod.normalize_provider(routed_provider)
+                stamp["probe_provider"] = probe_provider
+                stamp["routed_provider"] = routed_provider
+                stamp["probe_provider_canonical"] = probe_canon
+                stamp["routed_provider_canonical"] = routed_canon
+                # normalize_provider returns None for anything the cap table
+                # does not cover. An UNRESOLVABLE id on either side is not a
+                # "different provider" -- it is a provider identity this build
+                # cannot establish, and it must never look like a quiet
+                # measurement decision. Say so on stderr AND in the sidecar,
+                # then fall back labelled. (Never `raise`: this function's
+                # contract is that a stamp failure never breaks P4-PROMPT --
+                # see the `except` below -- so LOUD here means announced and
+                # recorded, not a dead wave.)
+                provider_unresolved = (probe_canon is None or routed_canon is None)
+                if provider_unresolved:
+                    _msg = (f"P4-PROMPT routing stamp: provider identity is "
+                            f"UNRESOLVABLE against the capacity cap table -- "
+                            f"routed={routed_provider!r}->{routed_canon!r}, "
+                            f"probed={probe_provider!r}->{probe_canon!r}. The "
+                            f"measured ceiling cannot be attributed to this "
+                            f"route; falling back to {DEFAULT_MAX_WORKERS} "
+                            f"worker slots, labelled "
+                            f"capacity_status=provider-unresolved.")
+                    print(f"WARNING: {_msg}", file=sys.stderr, flush=True)
+                    try:
+                        _append_sidecar(run_dir, "P4-PROMPT", {
+                            "status": "routing_provider_unresolved",
+                            "reason": _msg,
+                            "routed_provider": routed_provider,
+                            "probe_provider": probe_provider,
+                        })
+                    except Exception:  # noqa: BLE001 -- sidecar is best-effort
+                        pass
+                providers_match = bool(
+                    probe_canon is not None and probe_canon == routed_canon)
                 if _cap_mod.is_unbounded(available):
                     stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
                     stamp["capacity_status"] = "unbounded-byok"
                     stamp["capacity_source"] = str(
                         probe_res.get("detection_source") or "capacity-probe")
-                elif isinstance(available, int) and available > 0                         and probe_provider == routed_provider:
+                elif (isinstance(available, int) and available > 0
+                        and providers_match):
                     stamp["measured_capacity"] = available
                     stamp["capacity_status"] = "measured"
                     stamp["capacity_source"] = str(
                         probe_res.get("detection_source") or "capacity-probe")
                 else:
-                    # PARKED/UNDETERMINED for the routed provider, or a probe
-                    # about a different provider -- fall back, labelled.
+                    # PARKED/UNDETERMINED for the routed provider, a probe
+                    # about a genuinely DIFFERENT provider, or an identity
+                    # neither side could resolve -- fall back, labelled, and
+                    # never as if the three were the same thing.
                     stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
-                    stamp["capacity_status"] = "probe-not-measured"
+                    stamp["capacity_status"] = (
+                        "provider-unresolved" if provider_unresolved
+                        else "probe-not-measured")
                     stamp["capacity_source"] = (
                         f"{probe_res.get('status')}"
-                        f"/{probe_provider or 'none'}")
+                        f"/{probe_provider or 'none'}"
+                        f"->{probe_canon or 'unresolved'}"
+                        f" vs {routed_canon or 'unresolved'}")
             except Exception as cap_exc:  # noqa: BLE001 -- probe is best-effort
                 stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
                 stamp["capacity_status"] = "probe-error"

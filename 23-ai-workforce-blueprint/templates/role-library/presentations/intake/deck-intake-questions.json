@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.9.0",
-  "description": "Deck intake v1.9.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
+  "version": "1.10.0",
+  "description": "Deck intake v1.10.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -312,7 +312,7 @@
       "section": "deck-intake",
       "order": 9,
       "kind": "merged",
-      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-v4-flash@deepseek-direct (your authoring/copy workhorse); reasoning: (long-context synthesis); qc: glm-5.3-flash@ollama-cloud (independent judge); thinking: max/high/medium/low/off. An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only.",
+      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-v4-flash@deepseek-direct (your authoring/copy workhorse); reasoning: (long-context synthesis); qc: glm-5.3-flash@ollama-cloud (independent judge); thinking: max/high/medium/low/off; mode: ultra/standard/economy (how hard this deck's BUILD runs -- not how long this interview is; that is the separate quick/in-depth question). An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only.",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -372,6 +372,30 @@
             "thinking_mode"
           ],
           "note": "CLIENT MODEL PLAN: recorded on the profile now; wiring it into per-call reasoning_effort is a separate change and is NOT done in this one."
+        },
+        "run_mode": {
+          "storeOn": "RUN_MODE",
+          "default": "",
+          "enum": [
+            "ultra",
+            "standard",
+            "economy"
+          ],
+          "labels": [
+            "mode",
+            "run mode",
+            "run_mode",
+            "build mode",
+            "deck mode"
+          ],
+          "refuse_values": [
+            "quick",
+            "in-depth",
+            "in_depth",
+            "indepth"
+          ],
+          "refuse_message": "run mode got interview-depth vocabulary {value}. The RUN-MODE axis (FIX 11) is ultra|standard|economy and decides how the deck is BUILT (concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX 30/36 standard_mode, --intake-depth) is quick|in-depth and decides how much of this interview you are asked. The two axes are never interchangeable and never share a slot.",
+          "note": "CLIENT RUN MODE (FIX 11): the client's own ultra|standard|economy declaration, riding THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23). Case-insensitive in, normalised lowercase out. An omitted or unrecognised answer records NOTHING and the launcher's own default (standard) applies: never ultra by default, because nothing silently launches at the operator ceiling. Deliberately NOT in storeTarget -- a run mode is an execution axis, not deck content, so it stays out of working/copy/intake.json's deck_brief. presentation-intake-poll.sh reads the RUN_MODE ledger key and hands it to the run-mode door (launcher --mode on the resume path, PRESENTATION_MODE on the new-intake path, which does not go through the launcher). Re-answering this turn WITHOUT a mode leaves an earlier declaration standing -- a client who already said ultra is not 'saying nothing', and a later answer about models must not silently downgrade their run; only an explicit new mode changes it, and only an explicit 'ultra' ever escalates to ultra. Distinct from interview_depth.standard_mode in every respect; see refuse_message."
         }
       },
       "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator.",
