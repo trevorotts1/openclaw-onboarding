@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v25.0.2"
+ONBOARDING_VERSION="v25.0.3"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.0.2 - safe_json_edit
+# v25.0.3 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9489,6 +9489,127 @@ PYEOF
   # any dep is still missing. It never blocks the update; the following
   # qc-completeness gate re-checks the same four deps.
   # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # FIX 70 (follow-up): the canon-driven presentation-deps helpers.
+  #
+  # converge_presentation_deps (below) calls pres_deps_check_and_install and
+  # pres_deps_verify_rows. Both CALL SITES shipped in v25.0.1; neither FUNCTION
+  # BODY did. bash aborts at the first call with rc=127 ("command not found"),
+  # which skipped the last ~4% of the updater -- the final verification gate,
+  # pres_deps_verify_rows itself, and the operator notification -- AFTER the
+  # version stamp had already been written. Every box therefore reported the new
+  # version while never running its verification gate: a hollow update that looks
+  # like a clean exit, the exact failure mode scripts/update-skills.sh was retired
+  # to prevent.
+  #
+  # These helpers supply the missing bodies. They read the SAME canon file, in the
+  # SAME resolution order, as qc-completeness.sh, so the two consumers cannot
+  # disagree. A missing or unparsable canon is always reported -- never a silent
+  # clean pass.
+  # ----------------------------------------------------------
+  _pres_deps_canon_path() {
+    local _c
+    for _c in \
+      "${SKILLS_DIR:-${OC_SKILLS_DIR:-}}/23-ai-workforce-blueprint/presentations/scripts/presentation-deps.json" \
+      "${SKILLS_DIR:-${OC_SKILLS_DIR:-}}/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-deps.json" \
+      "${OC_WORKSPACE:-${OC_WORKSPACE_DEFAULT:-${OC_CONFIG:-$HOME/.openclaw}/workspace}}/departments/Presentations/scripts/presentation-deps.json"; do
+      [ -n "$_c" ] && [ -r "$_c" ] && { printf '%s\n' "$_c"; return 0; }
+    done
+    return 1
+  }
+
+  # Emits one row per canon dep:  name|kind|spec|pip_packages_csv
+  _pres_deps_rows() {
+    python3 - "$1" <<'PYEOF'
+import json, sys
+try:
+    canon = json.load(open(sys.argv[1]))
+except Exception as exc:
+    print("__CANON_UNPARSABLE__|__canon__|%s: %s|" % (sys.argv[1], exc))
+    sys.exit(0)
+for dep in canon.get("deps", []) or []:
+    name = dep.get("name", "")
+    kind = dep.get("kind", "")
+    if kind == "binary":
+        print("%s|binary|%s|" % (name, dep.get("binary_name", "") or name))
+    elif kind == "python_import":
+        print("%s|python_import|%s|%s" % (
+            name,
+            dep.get("import_spec", ""),
+            ",".join(dep.get("pip_packages") or []),
+        ))
+    else:
+        print("%s|%s||" % (name, kind))
+PYEOF
+  }
+
+  # Append a token to the caller's _pres_missing exactly once. _pres_missing is a
+  # local of converge_presentation_deps, this function's caller -- bash dynamic
+  # scoping makes it visible and assignable here, which is how the pre-existing
+  # hardcoded checks and this canon pass share one verdict string.
+  _pres_missing_add() {
+    case " ${_pres_missing:-} " in
+      *" $1 "*) return 0 ;;
+    esac
+    _pres_missing="${_pres_missing:-} $1"
+  }
+
+  # Install every canon python_import row that is not yet importable in the
+  # department venv. Additive to the hardcoded core block above: a dep added to
+  # the canon AFTER this roll converges here without editing that block.
+  #
+  # The canon's per-platform pip_flags are deliberately NOT applied. They exist
+  # for the pre-venv system-interpreter path (e.g. --break-system-packages on
+  # Debian/Ubuntu) and are meaningless inside the venv, where pip is venv-local
+  # by construction.
+  pres_deps_check_and_install() {
+    local _canon _n _k _s _pkgs
+    command -v python3 >/dev/null 2>&1 || return 0
+    [ -x "$_PRES_VENV_PY" ] || return 0
+    if ! _canon="$(_pres_deps_canon_path)"; then
+      echo "    ⚠ presentation-deps canon not found (checked the skill checkout, its role-library copy, and the materialized department) — canon converge skipped; the hardcoded core deps above still applied"
+      return 0
+    fi
+    while IFS='|' read -r _n _k _s _pkgs; do
+      [ -z "$_n" ] && continue
+      [ "$_k" = "python_import" ] || continue
+      [ -z "$_s" ] && continue
+      "$_PRES_VENV_PY" -c "import ${_s}" >/dev/null 2>&1 && continue
+      if [ -z "$_pkgs" ]; then
+        echo "    ⚠ canon row '$_n' is missing and declares no pip_packages — cannot converge automatically"
+        continue
+      fi
+      echo "    Converging canon dep '$_n' into the department venv..."
+      if "$_PRES_VENV_PY" -m pip install --quiet --disable-pip-version-check $(printf '%s' "$_pkgs" | tr ',' ' ') >/dev/null 2>&1 \
+         && "$_PRES_VENV_PY" -c "import ${_s}" >/dev/null 2>&1; then
+        echo "    ✓ canon dep '$_n' installed in the venv"
+      else
+        echo "    ⚠ canon dep '$_n' failed to install. Re-run: $_PRES_VENV_PY -m pip install $(printf '%s' "$_pkgs" | tr ',' ' ')"
+      fi
+    done < <(_pres_deps_rows "$_canon")
+  }
+
+  # Verify EVERY canon row (binary + python_import) on top of the hardcoded core
+  # checks above, so this verdict matches qc-completeness.sh's exit-6 deps gate.
+  pres_deps_verify_rows() {
+    local _canon _n _k _s _pkgs _py
+    if ! _canon="$(_pres_deps_canon_path)"; then
+      _pres_missing_add "__CANON_MISSING__(presentation-deps.json)"
+      return 0
+    fi
+    command -v python3 >/dev/null 2>&1 || return 0
+    _py="$_PRES_VENV_PY"
+    [ -x "$_py" ] || _py="python3"
+    while IFS='|' read -r _n _k _s _pkgs; do
+      [ -z "$_n" ] && continue
+      case "$_k" in
+        __canon__)     _pres_missing_add "__CANON_UNPARSABLE__" ;;
+        binary)        command -v "$_s" >/dev/null 2>&1 || _pres_missing_add "$_s" ;;
+        python_import) [ -n "$_s" ] && { "$_py" -c "import ${_s}" >/dev/null 2>&1 || _pres_missing_add "python(${_s})"; } ;;
+        *)             _pres_missing_add "${_n}(unknown-kind:${_k})" ;;
+      esac
+    done < <(_pres_deps_rows "$_canon")
+  }
   converge_presentation_deps() {
     echo ""
     echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx, pypdf, pytesseract, ffmpeg, ffprobe, tesseract — per presentation-deps.json)..."

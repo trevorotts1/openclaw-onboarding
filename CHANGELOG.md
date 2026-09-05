@@ -1,3 +1,50 @@
+## [v25.0.3]  -  2026-09-05  -  The updater no longer aborts at rc=127 after stamping the version
+
+v25.0.1 added two calls into `converge_presentation_deps` and shipped neither function body. Every roll since has aborted part-way through, **after** writing the version stamp.
+
+### What was broken, and what it cost
+
+`update-skills.sh` called two helpers that exist nowhere in the repo:
+
+```
+line 9579:  pres_deps_check_and_install     # FIX 70: converge remaining canon python_import rows
+line 9599:  pres_deps_verify_rows           # FIX 70: verify every canon row
+```
+
+bash cannot detect an undefined function until the call executes. `bash -n` passes. CI passes. The failure only appears on a real box, as:
+
+```
+update-skills.sh: line 9579: pres_deps_check_and_install: command not found
+EXIT_RC=127
+```
+
+The abort lands at line 9579 of 9945 — the last **366 lines never run**. Those lines are not incidental: they are the canon deps verify pass, the final verification gate that decides whether the run may legitimately claim success, its exit-code semantics (stamp-withheld vs. verified), and the operator notification.
+
+The version stamp had already been written by then. So the box reports the new version, exits without an obvious error, and **was never verified**. That is precisely the HOLLOW UPDATE this repo retired `scripts/update-skills.sh` to prevent — arriving through a different door. A fleet roll would have marked every box updated-and-clean while the verification gate on each one never executed.
+
+### The fix
+
+Supply the missing bodies, plus the small canon resolver they both need:
+
+- `_pres_deps_canon_path` — resolves `presentation-deps.json` in the same order as `qc-completeness.sh` (skill checkout → role-library copy → materialized department), so the two consumers cannot disagree about the canon.
+- `_pres_deps_rows` — emits `name|kind|spec|pip_packages` per canon dep; an unparsable canon emits an explicit `__CANON_UNPARSABLE__` row rather than an empty list, so a broken canon can never read as a clean pass.
+- `_pres_missing_add` — appends to the caller's `_pres_missing` exactly once (dynamic scoping, matching how the pre-existing hardcoded checks and the canon pass already share one verdict string).
+- `pres_deps_check_and_install` — installs every canon `python_import` row not yet importable in the department venv. The canon's per-platform `pip_flags` are deliberately **not** applied: they exist for the pre-venv system-interpreter path (`--break-system-packages`) and are meaningless inside a venv.
+- `pres_deps_verify_rows` — checks every canon row, binary and python alike, on top of the hardcoded core checks, so the converge verdict matches `qc-completeness.sh`'s exit-6 deps gate.
+
+Behaviour is additive and idempotent. A canon dep added after a roll converges without editing the hardcoded block; a missing canon, an unparsable canon, and an unknown `kind` are each reported rather than skipped.
+
+### Verification
+
+Executed, not just syntax-checked (`bash -n` is exactly what missed this bug in the first place):
+
+- canon resolution returns the role-library copy; 8 canon rows parse with correct row shapes for both `binary` and `python_import`
+- **positive control** — real canon on a host where all deps are present reports nothing missing (no false positives)
+- **negative control** — synthetic canon of impossible deps flags the missing binary, the missing import, and an unknown `kind`
+- a token already present is not appended twice
+- unparsable canon reports `__CANON_UNPARSABLE__`; absent canon reports `__CANON_MISSING__`
+- `pres_deps_check_and_install` returns 0 when no venv exists, and silently skips deps that already import
+
 ## [v25.0.2]  -  2026-09-05  -  Require the Command Center security floor and compatible Node runtime
 
 - Add one shared fail-closed Node guard for Skill 32 fresh/update/resumed installation and fleet pull/build/restart: accept ^20.19.0 || ^22.13.0 || >=24, reject unsupported/malformed/prerelease versions, and report the required manual runtime upgrade before dependency installation, migrations or process changes.
