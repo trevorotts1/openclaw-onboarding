@@ -10,7 +10,7 @@ Reads its question schema from intake/deck-intake-questions.json (the canonical
 source of truth). Supports two interview modes:
 
   STANDARD  (--next / --answer / --complete)
-    FIX 30 / schema v1.8.0: TWENTY-THREE numbered conversational turns
+    FIX 30 / schema v1.9.0: TWENTY-THREE numbered conversational turns
     (Trevor ruling, binding), down from 58 one-per-turn rows. Each turn row
     (kind "merged") may return several legacy subfields; every answer folds
     into one ledger entry per legacy question id -- captured, derived, or
@@ -634,6 +634,15 @@ def _claim_labels(qdef: Dict[str, Any], raw: str):
     for k in sub:
         variants[k.lower()] = k
         variants[str(sub[k].get("storeOn", "")).lower()] = k
+        # A subfield may declare the extra labels clients actually type for it
+        # ("workhorse" for workhorse_model, "qc"/"judge" for qc_model). The
+        # label vocabulary stays in the question bank -- the parser reads it,
+        # it never hardcodes a field's synonyms. Spaces fold to underscores to
+        # match the lookup below ("thinking mode" -> "thinking_mode").
+        for label in (sub[k].get("labels") or []):
+            token = str(label).strip().lower().replace(" ", "_")
+            if token and token not in variants:
+                variants[token] = k
     claims: List[List[int]] = []  # [key, value_start, match_start]
     seen: set = set()
     for m in _SUBFIELD_LABEL_RE.finditer(raw or ""):
@@ -877,6 +886,96 @@ def apply_pitchless_skips(entries: Dict[str, Any],
         changed = True
     return changed
 
+# ---------------------------------------------------------------------------
+# CLIENT MODEL PLAN -- the intake half of the "nothing is forced" contract
+# ---------------------------------------------------------------------------
+#: subfield id -> (model-plan slot, ledger key). The ledger keys are written
+#: EXPLICITLY here rather than through schema["storeTarget"]: storeTarget
+#: entries flow into working/copy/intake.json (the run directory, which ships
+#: in the client package), and a client's model plan belongs in the
+#: secrets-adjacent profile store, not in the run directory.
+_MODEL_PLAN_SUBFIELDS = (
+    ("workhorse_model", "workhorse", "WORKHORSE_MODEL"),
+    ("reasoning_model", "reasoning", "REASONING_MODEL"),
+    ("qc_model", "judge", "QC_MODEL"),
+)
+_THINKING_SUBFIELD = ("thinking_mode", "THINKING_MODE")
+
+
+def _import_resource_profile():
+    """Import presentation_job.resource_profile beside this driver.
+
+    Fail-soft by design: an intake box that carries the driver but not the
+    engine package must still take the interview. Absence is announced LOUDLY
+    on stderr and the answer is still recorded in the ledger -- it is never
+    swallowed, and it is never reported as a successfully recorded plan."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import resource_profile as _rp  # noqa: PLC0415
+        return _rp
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [MODEL-PLAN] presentation_job.resource_profile is not "
+              f"importable from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) "
+              f"-- the client's model choice was recorded in the intake ledger "
+              f"but NOT persisted to the resource profile, so routing will use "
+              f"the department defaults. Fix the deploy, then re-answer "
+              f"resource_plan.", file=sys.stderr)
+        return None
+
+
+def _record_client_model_plan(derived: Dict[str, Any],
+                              entries: Dict[str, Any]) -> int:
+    """Persist the resource_plan turn's model subfields as a client model plan.
+
+    Returns 0 when there is nothing to record or the plan was recorded, and 1
+    (after printing {"error": ...}) when the client's declaration is refused --
+    so the client is told AT INTAKE, with the wired inventory named, instead of
+    at dispatch time. Called BEFORE the ledger is written, so a refused answer
+    never half-lands."""
+    # The merged-turn label parser hands a value through with the client's own
+    # punctuation still attached ("...@deepseek-direct; qc: ..."), so the
+    # trailing separator is trimmed HERE -- once -- and the ledger records the
+    # same cleaned text that is recorded on the profile.
+    def _clean(raw):
+        return str(raw or "").strip().strip(";,.").strip()
+
+    picks = {slot: _clean(derived.get(sub))
+             for sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
+    thinking = _clean(derived.get(_THINKING_SUBFIELD[0])).lower()
+    if not any(picks.values()) and not thinking:
+        return 0  # every slot omitted: the department defaults stand
+
+    # Mirror the answers onto their storeOn ledger keys (see the note above:
+    # deliberately not routed through storeTarget/intake.json).
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for sub, slot, key in _MODEL_PLAN_SUBFIELDS:
+        value = picks[slot]
+        entries[key] = {"value": value, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": value, "answer": value}
+    entries[_THINKING_SUBFIELD[1]] = {
+        "value": thinking, "validated": True, "source": "deck-intake-driver",
+        "answered_at": now_iso, "normalized": thinking, "answer": thinking}
+
+    rp = _import_resource_profile()
+    if rp is None:
+        return 0  # already announced loudly on stderr; the answer is kept
+    plan: Dict[str, Any] = {slot: (picks[slot] or None)
+                            for _sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
+    plan["thinking"] = thinking or None
+    try:
+        rp.record_model_plan(plan, source="interview")
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 1
+    except Exception as exc:  # noqa: BLE001 -- a store failure is loud, not silent
+        print(json.dumps({"error": f"could not record the model plan "
+                                   f"({exc.__class__.__name__}): {exc}"}))
+        return 1
+    return 0
+
+
 def cmd_answer(args) -> int:
     """Record one answer and return the next question."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -990,6 +1089,19 @@ def cmd_answer(args) -> int:
         if sc_m and ("(client-stated)" in str(sc_raw)
                      or re.search(r"slide[_ ]?count\s*[:=]", text, re.I)):
             structured_intake_writes["client_requested_slide_count"] = int(sc_m.group(0))
+
+        # CLIENT MODEL PLAN (operator requirement 2026-09-04): the client is
+        # never forced onto a department default. Recorded HERE, at intake, so
+        # a provider the profile does not carry or a model it does not wire is
+        # refused while the client is still in the conversation -- never
+        # twenty minutes into a dispatch. The plan's home is the
+        # secrets-adjacent resource profile (never intake.json, never the run
+        # directory): the P4-PROMPT fan-out children re-resolve routes in a
+        # separate process that inherits the profile path but has no run_dir.
+        if qid == "resource_plan":
+            rc = _record_client_model_plan(derived, entries)
+            if rc != 0:
+                return rc
 
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":

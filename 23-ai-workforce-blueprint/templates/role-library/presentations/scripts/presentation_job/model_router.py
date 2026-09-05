@@ -411,6 +411,332 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 
 
 # ---------------------------------------------------------------------------
+# CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
+#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#    forced to do anything. So as a client should be able to choose whatever
+#    they want to be their primary workhorse or authoring model."
+#
+# CAPABILITY_CANDIDATES above is therefore the DEFAULT for a client who
+# declares NOTHING -- it stopped being the only answer. A client's declaration
+# lives in the resource profile (resource_profile.record_model_plan ->
+# profile["model_plan"]), which is the ONE store every consumer already reads:
+# resolve_route() loads it on every call, and the P4-PROMPT fan-out children
+# re-resolve in a SEPARATE process (parallel_prompt_worker) where a run-dir
+# sidecar would be unreachable but the env-resolved profile path is inherited.
+#
+# The declaration is data, not code:
+#   profile["model_plan"] = {
+#     "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+#     "reasoning": {...} | null,
+#     "judge":     {...} | null,
+#     "thinking":  "max"|"high"|"medium"|"low"|"off"|null,
+#     "floor_waivers": ["reasoning_long", ...],
+#     "source": "interview"|"cli", "declared_at": "<ISO8601>"}
+#
+# NOTE ON THE KEY NAMES (binding): resource_profile.redact_record() DROPS every
+# profile key matching (api[-_]?key|key|token|secret|password|passwd|auth|
+# credential|cookie|bearer) on EVERY save and EVERY load. "auth" is a substring
+# of "authoring", so a slot named "authoring_model" would VANISH from the store
+# on the next save with no error. The slot is called "workhorse" for that
+# reason, and no dict persisted into the profile is ever keyed by a capability
+# class name (the per-class table below is a LIST of rows, not a dict keyed by
+# "authoring"). tests/test_model_plan.py pins this.
+# ---------------------------------------------------------------------------
+
+#: The alias-prefix a client-declared candidate carries in a decision's
+#: candidate list, so telemetry can tell a client choice from a default one.
+CLIENT_ALIAS_PREFIX = "client:"
+
+#: Which capability classes each client slot governs. vision_ocr, image_render
+#: and mechanical are deliberately NOT client-slotted in v1: OCR/render classes
+#: are modality-bound to a provider the client rarely owns a substitute for,
+#: and mechanical phases carry no LLM route at all.
+#:
+#: `judge` is NOT reachable from the workhorse slot, by design and not by
+#: omission: this module exists partly because "QC judges could silently ride
+#: the same model identity that authored the artifact" (header, WHAT THIS IS).
+#: Spilling a declared workhorse into the judge class would re-open exactly
+#: that hole, so the judge slot must be named EXPLICITLY to take effect.
+SLOT_CLASSES: Dict[str, Tuple[str, ...]] = {
+    "workhorse": ("authoring", "prompt_authoring", "cheap_text",
+                  "creative_cheap", "speech_text"),
+    "reasoning": ("reasoning_long", "long_synthesis", "research_synthesis"),
+    "judge": ("judge",),
+}
+
+#: Reverse index: capability class -> the slot that governs it (None = not
+#: client-slotted in v1).
+CLASS_SLOT: Dict[str, str] = {
+    cls: slot for slot, classes in SLOT_CLASSES.items() for cls in classes
+}
+
+#: THE INVARIANTS, as data beside the candidate table. A client choice is
+#: honoured only when it clears the floor of the class it would serve (or the
+#: client explicitly waived that class -- see floor_waivers). Same doctrine as
+#: capacity: an UNKNOWN reading is never rounded upward into a capability.
+CLASS_FLOORS: Dict[str, Dict[str, str]] = {
+    "authoring": {"context_class": "standard", "modality": "text"},
+    "prompt_authoring": {"context_class": "standard", "modality": "text"},
+    "cheap_text": {"context_class": "standard", "modality": "text"},
+    "creative_cheap": {"context_class": "standard", "modality": "text"},
+    "speech_text": {"context_class": "standard", "modality": "text"},
+    "judge": {"context_class": "standard", "modality": "text"},
+    # the modality doctrine, unchanged: these three cannot hold the research
+    # bundle on a standard window, so "long" is a FLOOR, not a preference.
+    "reasoning_long": {"context_class": "long", "modality": "text"},
+    "long_synthesis": {"context_class": "long", "modality": "text"},
+    "research_synthesis": {"context_class": "long", "modality": "text"},
+    "vision_ocr": {"context_class": "standard", "modality": "vision"},
+    "image_render": {"context_class": "standard", "modality": "image"},
+}
+
+#: Anything not named above is held to the ordinary text floor.
+DEFAULT_CLASS_FLOOR: Dict[str, str] = {"context_class": "standard",
+                                       "modality": "text"}
+
+#: The context classes that SATISFY each context floor. "standard" is the
+#: baseline every text model clears, so an UNKNOWN reading clears it too --
+#: there is nothing below standard to fall short of. "long" is a real
+#: capability claim, and only a model the catalog SAYS is long satisfies it:
+#: "unknown" is deliberately absent from that set, because the absence of a
+#: reading is never evidence of a longer window (the same doctrine that stops
+#: an unmeasured capacity ceiling from becoming a wide one).
+_CONTEXT_SATISFIES: Dict[str, frozenset] = {
+    "standard": frozenset({"standard", "long", "unknown"}),
+    "long": frozenset({"long"}),
+}
+
+
+def class_floor(capability: str) -> Dict[str, str]:
+    """The floor one capability class imposes on any model that serves it."""
+    return dict(CLASS_FLOORS.get(capability) or DEFAULT_CLASS_FLOOR)
+
+
+def floor_verdict(alias_def: Dict[str, Any], capability: str) -> Dict[str, Any]:
+    """Does this resolved model meet `capability`'s floor? Never guesses up.
+
+    context_class: a class demanding "long" is met ONLY by a model the catalog
+    says is "long". An arbitrary wired id resolves to context_class "unknown"
+    (nobody measured it) and UNKNOWN FAILS the long floor -- absence of a
+    reading is never evidence of a long window, exactly as an unmeasured
+    capacity ceiling never becomes a wide one.
+    modality: exact. A vision or image model is not a text authoring model and
+    a text model is not an OCR model."""
+    required = class_floor(capability)
+    ctx = str(alias_def.get("context_class") or "unknown").strip().lower()
+    mod = str(alias_def.get("modality") or "unknown").strip().lower()
+    reasons: List[str] = []
+    need_ctx = str(required.get("context_class") or "standard")
+    if ctx not in _CONTEXT_SATISFIES.get(need_ctx, frozenset({need_ctx})):
+        reasons.append(
+            f"context_class {ctx!r} does not meet the {need_ctx!r} floor of "
+            f"capability {capability!r}"
+            + (" -- UNKNOWN is the absence of a reading, never evidence of a "
+               "longer window" if ctx == "unknown" else ""))
+    need_mod = str(required.get("modality") or "text")
+    if mod != need_mod:
+        reasons.append(f"modality {mod!r} is not the {need_mod!r} modality "
+                       f"capability {capability!r} requires")
+    return {
+        "ok": not reasons,
+        "required": required,
+        "context_class": ctx,
+        "modality": mod,
+        "reason": "; ".join(reasons) or f"meets the {capability} floor",
+    }
+
+
+def model_plan(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The client's declared model plan block, or {} when none is declared."""
+    if not isinstance(profile, dict):
+        return {}
+    plan = profile.get("model_plan")
+    return plan if isinstance(plan, dict) else {}
+
+
+def plan_slot(plan: Dict[str, Any], slot: str) -> Optional[Dict[str, str]]:
+    """One slot's declared {provider, model}, normalised, or None.
+
+    A half-declared slot (provider without model, or the reverse) is NOT a
+    declaration: it returns None rather than being completed with a guess."""
+    raw = (plan or {}).get(slot)
+    if not isinstance(raw, dict):
+        return None
+    provider = _norm_provider(raw.get("provider"))
+    model = str(raw.get("model") or "").strip()
+    if not provider or not model:
+        return None
+    return {"provider": provider, "model": model}
+
+
+def _registry_capability_meta(model_id: str) -> Dict[str, Any]:
+    """The modality/context_class DEFAULT_ALIAS_REGISTRY states for this id.
+
+    WHY THIS EXISTS (verified 2026-09-04): model_catalog.json declares ZERO
+    capability metadata -- `context_class` and `modality` appear 0 times in the
+    whole file -- so resolve_alias()'s setdefault() hands back "standard"/"text"
+    for EVERY catalog-backed alias, deepseek-v4-pro included. The catalog is
+    authoritative for the literal ids (FIX 17b) and says nothing about
+    capability; this registry is where capability is actually declared. Reading
+    the floor off the catalog's defaults would judge the department's own
+    long-context model as standard-context, so the client's declaration is
+    measured against the table that actually states the fact.
+
+    Matches by alias key first, then by the id each registry row serves, so a
+    client who types the served id ("z-ai/glm-5.3") is judged the same as one
+    who types the alias ("glm-5.3"). Returns {} when nothing declares it --
+    and {} means UNKNOWN, which never clears a long floor."""
+    key = str(model_id or "").strip()
+    row = DEFAULT_ALIAS_REGISTRY.get(key)
+    if not isinstance(row, dict):
+        nm = _norm_model_id(key)
+        row = next((r for r in DEFAULT_ALIAS_REGISTRY.values()
+                    if nm and _norm_model_id(r.get("model")) == nm), None)
+    if not isinstance(row, dict):
+        return {}
+    return {f: row[f] for f in ("modality", "context_class") if f in row}
+
+
+def declared_alias_def(declared: Dict[str, str]) -> Tuple[Dict[str, Any], str]:
+    """Resolve one declared {provider, model} into an alias_def-shaped dict.
+
+    Three honest outcomes, in order:
+      catalog-alias      -- the id is a router/catalog alias AND names the same
+                            provider: the catalog row is used verbatim, so its
+                            served_ids/modality/context_class all apply.
+      catalog-repointed  -- the id is a known alias but the client named a
+                            DIFFERENT endpoint for it: the model's capability
+                            metadata (modality/context_class -- properties of
+                            the MODEL) rides along, while provider and served
+                            id come from what the client actually declared.
+      wired-id           -- an arbitrary id no catalog names: synthesized with
+                            context_class "unknown" (which fails every long
+                            floor) and modality "text" (the class of work every
+                            client-slotted class does). Nothing is inferred
+                            from the id's spelling.
+    """
+    provider = declared["provider"]
+    model = declared["model"]
+    resolved = resolve_alias(model)
+    meta = _registry_capability_meta(model)
+    if resolved and resolved.get("provider") and resolved.get("model"):
+        out = dict(resolved)
+        out.update(meta)  # capability is declared HERE, never by the catalog
+        out.setdefault("modality", "text")
+        out.setdefault("context_class", "standard")
+        if _norm_provider(out.get("provider")) == provider:
+            # Same provider, canonically spelled: the catalog may say
+            # "deepseek" where the client (and the profile store, and the key
+            # canon) say "deepseek-direct". Stamp the canonical form so the
+            # decision reports the route the client actually declared -- a
+            # fold, never a repoint (the equality above already proved that).
+            out["provider"] = provider
+            return out, "catalog-alias"
+        out["provider"] = provider
+        out["model"] = model
+        out["served_ids"] = {provider: model}
+        return out, "catalog-repointed"
+    synth: Dict[str, Any] = {"provider": provider, "model": model,
+                             "modality": "text", "context_class": "unknown",
+                             "served_ids": {provider: model}}
+    synth.update(meta)
+    return synth, ("registry-id" if meta else "wired-id")
+
+
+def client_plan_for(capability: str,
+                    profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The client's declaration for one capability class, or None.
+
+    Returns {slot, via, declared, alias, alias_def, alias_source, floor,
+    waived, capability}. `via`:
+      "declared"        -- the client named THIS slot;
+      "workhorse-spill" -- only the workhorse was named, and this is a
+                           reasoning class: per the launch policy the
+                           workhorse governs it too WHEN IT MEETS THE FLOOR,
+                           and falls back VISIBLY when it does not.
+    A spill can never be waived: a waiver is something a client asks for about
+    a model they NAMED for that job, never something inferred on their behalf.
+    """
+    plan = model_plan(profile)
+    if not plan:
+        return None
+    slot = CLASS_SLOT.get(capability)
+    if slot is None:
+        return None  # vision_ocr / image_render / mechanical: not slotted in v1
+    declared = plan_slot(plan, slot)
+    via = "declared"
+    if declared is None and slot == "reasoning":
+        declared = plan_slot(plan, "workhorse")
+        via = "workhorse-spill"
+    if declared is None:
+        return None
+    alias_def, alias_source = declared_alias_def(declared)
+    floor = floor_verdict(alias_def, capability)
+    waivers = {str(w).strip() for w in (plan.get("floor_waivers") or [])
+               if str(w).strip()}
+    return {
+        "capability": capability,
+        "slot": slot,
+        "via": via,
+        "declared": dict(declared),
+        "alias": f"{CLIENT_ALIAS_PREFIX}{slot}",
+        "alias_def": alias_def,
+        "alias_source": alias_source,
+        "floor": floor,
+        "waived": bool((not floor["ok"]) and via == "declared"
+                       and capability in waivers),
+    }
+
+
+def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The per-class table the launcher banner and the client report print.
+
+    `classes` is a LIST of rows, never a dict keyed by capability class --
+    "authoring" contains "auth" and would be dropped by the profile's
+    redaction rule if this shape were ever persisted there (see the header
+    note above)."""
+    plan = model_plan(profile)
+    rows: List[Dict[str, Any]] = []
+    for capability in sorted(CAPABILITY_CANDIDATES):
+        if capability == "mechanical":
+            continue
+        default_alias = str(
+            (CAPABILITY_CANDIDATES.get(capability) or [{}])[0].get("alias") or "")
+        pick = client_plan_for(capability, profile)
+        if pick is None:
+            rows.append({
+                "capability": capability, "slot": None, "via": None,
+                "source": "department-default", "provider": None, "model": None,
+                "default_alias": default_alias, "floor": None,
+                "detail": "no client declaration covers this class",
+            })
+            continue
+        applied = pick["floor"]["ok"] or pick["waived"]
+        rows.append({
+            "capability": capability,
+            "slot": pick["slot"],
+            "via": pick["via"],
+            "source": "client-plan" if applied else "department-default",
+            "provider": pick["declared"]["provider"],
+            "model": pick["declared"]["model"],
+            "default_alias": default_alias,
+            "floor": ("ok" if pick["floor"]["ok"]
+                      else ("waived" if pick["waived"] else "failed")),
+            "detail": pick["floor"]["reason"],
+        })
+    slots = {slot: plan_slot(plan, slot) for slot in SLOT_CLASSES}
+    return {
+        "declared": bool(plan),
+        "slots": slots,
+        "thinking": plan.get("thinking"),
+        "floor_waivers": sorted(str(w) for w in (plan.get("floor_waivers") or [])),
+        "source": plan.get("source"),
+        "declared_at": plan.get("declared_at"),
+        "classes": rows,
+    }
+
+
+# ---------------------------------------------------------------------------
 # FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
 # ---------------------------------------------------------------------------
 # DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
@@ -1097,12 +1423,67 @@ def resolve_route(phase_id: str, *,
     if modes_enabled():
         decision["mode_concurrency"] = mode_concurrency(mode, profile=profile)
 
+    # THE CLIENT'S CHOICE, ahead of the department default.
+    #
+    # `cands` is a COPY, never the module table: _mode_candidates() returns the
+    # LIVE CAPABILITY_CANDIDATES list object for every non-economy mode, so
+    # prepending in place would rewrite the default table process-wide -- every
+    # later phase, every other client in the same process, permanently. Copy
+    # first, prepend into the copy.
+    cands: List[Dict[str, Any]] = list(_mode_candidates(capability, mode))
+    plan_pick = client_plan_for(capability, profile)
+    client_prepended = False
+    if plan_pick is not None:
+        if plan_pick["floor"]["ok"] or plan_pick["waived"]:
+            # Prepend and then judge it with the SAME _eligible() every default
+            # candidate faces -- owned, consented, wired, key resolves. A client
+            # choice jumps the QUEUE, never the GATE.
+            # "alias" LAST: a catalog row carries its own "alias" field
+            # (text.fast), and splatting it after ours would rename the client
+            # row into a catalog alias -- which the loop below would then
+            # re-resolve through the catalog, throwing the client's declared
+            # provider away and routing the catalog's spelling instead.
+            cands.insert(0, {**plan_pick["alias_def"],
+                             "alias": plan_pick["alias"]})
+            decision["requested_alias"] = plan_pick["alias"]
+            client_prepended = True
+            decision["client_plan"] = {
+                "slot": plan_pick["slot"],
+                "via": plan_pick["via"],
+                "provider": plan_pick["declared"]["provider"],
+                "model": plan_pick["declared"]["model"],
+                "alias_source": plan_pick["alias_source"],
+                "floor": "waived" if plan_pick["waived"] else "ok",
+                "detail": plan_pick["floor"]["reason"],
+            }
+        else:
+            # Declared but below this class's floor and not waived: the class
+            # DEFAULT serves it, and the fallback is stamped so the launcher
+            # banner, the sidecar and the client report can all say so. Never a
+            # dispatch-time surprise.
+            decision["client_plan_floor"] = {
+                "slot": plan_pick["slot"],
+                "via": plan_pick["via"],
+                "declared": dict(plan_pick["declared"]),
+                "floor": plan_pick["floor"],
+                "fallback_alias": requested_alias or None,
+            }
+
     candidates: List[Dict[str, Any]] = []
     route: Optional[Dict[str, str]] = None
     reason = ""
-    for cand in _mode_candidates(capability, mode):
+    for cand in cands:
         alias = str(cand.get("alias") or "")
-        alias_def = resolve_alias(alias)
+        if cand.get("provider") and cand.get("model"):
+            # A candidate carrying its OWN resolved definition -- the
+            # client-plan row prepended above. Used verbatim, never re-resolved
+            # through the catalog: the client named a provider, and a catalog
+            # lookup would silently substitute the catalog's own spelling for
+            # it. Default rows carry an alias label only (plus the inert
+            # allow_flash_fallback flag), so this branch never fires for them.
+            alias_def = {k: v for k, v in cand.items() if k != "alias"}
+        else:
+            alias_def = resolve_alias(alias)
         row: Dict[str, Any] = {"alias": alias, **alias_def}
         if not alias_def:
             row.update({"eligible": False, "reason": "alias unknown to the catalog"})
@@ -1127,11 +1508,26 @@ def resolve_route(phase_id: str, *,
                      "model": _served_model(alias_def, alias_def["provider"])}
             reason = ("primary" if len(candidates) == 1 or ok == candidates[0].get("eligible")
                       else f"fallback: {why}")
+    if client_prepended:
+        # Whether the client's declaration actually CARRIED is a fact about the
+        # run, not an inference for a reader to make from the candidate list.
+        decision["client_plan"]["applied"] = bool(
+            candidates and candidates[0].get("eligible"))
+        if not decision["client_plan"]["applied"]:
+            decision["client_plan"]["rejected_reason"] = str(
+                (candidates[0] if candidates else {}).get("reason") or "")
     if route is not None:
         first_eligible_idx = next(
             (i for i, c in enumerate(candidates) if c.get("eligible")), 0)
-        reason = "primary" if first_eligible_idx == 0 else \
-            f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
+        if client_prepended and first_eligible_idx == 0:
+            cp = decision["client_plan"]
+            reason = (f"client model plan: {cp['slot']} slot declared "
+                      f"{cp['provider']}/{cp['model']}"
+                      + (" (floor waived by the client)"
+                         if cp["floor"] == "waived" else ""))
+        else:
+            reason = "primary" if first_eligible_idx == 0 else \
+                f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
         decision.update({"route": route, "reason": reason})
     else:
         rejected = "; ".join(f"{c.get('alias')}: {c.get('reason')}"

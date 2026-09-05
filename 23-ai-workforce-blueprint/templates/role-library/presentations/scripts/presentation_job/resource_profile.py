@@ -111,6 +111,7 @@ the existing capacity probe, exactly as before this fix.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -793,6 +794,290 @@ def _norm_model_id(text: Any) -> str:
     run collapsed to a single dash. 'zai/glm-5.3-flash:free', 'GLM 5.3 Flash'
     and 'glm_5_3_flash' all land on one comparable shape."""
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+
+
+# ---------------------------------------------------------------------------
+# THE CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
+#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#    forced to do anything. So as a client should be able to choose whatever
+#    they want to be their primary workhorse or authoring model."
+#
+# The plan lives HERE, in the profile, and nowhere else. It is the only store
+# every consumer already reaches: model_router.resolve_route() loads the
+# profile on every call, and the P4-PROMPT fan-out children re-resolve in a
+# SEPARATE process (parallel_prompt_worker) that inherits the env-resolved
+# profile path but has no run_dir -- a run-directory sidecar would be
+# invisible to exactly the phase that fans out widest.
+#
+# KEY NAMING (binding): redact_record() above DROPS every key matching
+# (api[-_]?key|key|token|secret|password|passwd|auth|credential|cookie|bearer)
+# on every save AND every load. "auth" is a substring of "authoring", so a slot
+# named "authoring_model" would silently vanish from the store. The slot is
+# named "workhorse"; "model_plan", "workhorse", "reasoning", "judge",
+# "thinking", "floor_waivers", "provider", "model" all survive the filter, and
+# tests/test_model_plan.py pins that with a real save/load round trip.
+# ---------------------------------------------------------------------------
+
+#: The client-choosable slots. Mirrors model_router.SLOT_CLASSES; used only as
+#: the fallback vocabulary when the router module is not importable beside this
+#: one (a partial deploy), never as a second source of truth for the mapping.
+MODEL_PLAN_SLOTS: tuple = ("workhorse", "reasoning", "judge")
+
+#: The thinking-level vocabulary the intake offers. Recorded now; wiring it
+#: into per-call reasoning_effort is deliberately NOT part of this change.
+THINKING_LEVELS: tuple = ("max", "high", "medium", "low", "off")
+
+
+def _model_router_module():
+    """The router module, or None. Its SLOT_CLASSES/floor_verdict are the one
+    definition of what a slot governs and what a class demands; this module
+    never re-implements them."""
+    try:
+        from . import model_router as _mr  # package-relative
+        return _mr
+    except ImportError:  # pragma: no cover - direct file run
+        try:
+            import model_router as _mr  # type: ignore[no-redef]
+            return _mr
+        except ImportError:
+            return None
+
+
+def parse_model_spec(text: Any) -> Optional[Dict[str, str]]:
+    """Parse the intake's `model@provider` vocabulary into {provider, model}.
+
+    Returns None for an empty answer (an omitted slot keeps the department
+    default -- silence is not a declaration). Raises ValueError on anything
+    that is not exactly one model id, one '@' and one provider id, naming the
+    shape instead of guessing which half is which. Trailing separators are
+    tolerated because the merged-turn label parser hands values through with
+    the client's own punctuation attached ("...@deepseek-direct; qc: ...").
+
+    The provider is folded through the ONE provider-id canon
+    (model_router._norm_provider -> capacity.normalize_provider), so
+    `ollama_cloud`, `Ollama Cloud` and `ollama-cloud` are one provider and
+    `deepseek` resolves to `deepseek-direct`. Folding a name is never evidence
+    the provider exists -- record_model_plan checks that separately."""
+    raw = str(text or "").strip().strip(";,.").strip()
+    if not raw:
+        return None
+    if raw.count("@") != 1:
+        raise ValueError(
+            f"model choice {raw!r} is not in the required 'model@provider' "
+            f"shape (exactly one '@'), for example "
+            f"'deepseek-v4-flash@deepseek-direct'")
+    model, provider = raw.rsplit("@", 1)
+    model = model.strip().strip(";,.").strip()
+    provider = provider.strip().strip(";,.").strip()
+    if not model or not provider:
+        raise ValueError(
+            f"model choice {raw!r} is missing its "
+            f"{'model' if not model else 'provider'} half; the shape is "
+            f"'model@provider', for example 'glm-5.3-flash@ollama-cloud'")
+    mr = _model_router_module()
+    if mr is not None:
+        provider = mr._norm_provider(provider) or provider
+    elif _capacity is not None:
+        provider = _capacity.normalize_provider(provider) or provider
+    return {"provider": provider, "model": model}
+
+
+def _wired_match(model: str, wired: List[Any]) -> bool:
+    """Is `model` in this provider's wired inventory? Same comparison
+    model_router._eligible uses: exact match on the folded shape, plus
+    fnmatch either way so a probe's explicit family wildcard is honored.
+    Folding spelling drift is never a family/prefix inference."""
+    nm = _norm_model_id(model)
+    for w in wired:
+        ws = str(w)
+        if nm and nm == _norm_model_id(ws):
+            return True
+        if fnmatch.fnmatch(model, ws) or fnmatch.fnmatch(ws, model):
+            return True
+    return False
+
+
+def model_plan(profile: Optional[Dict[str, Any]] = None,
+               config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """The client's declared model plan, or {} when none is declared."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    plan = (prof or {}).get("model_plan")
+    return plan if isinstance(plan, dict) else {}
+
+
+def record_model_plan(plan: Dict[str, Any], *,
+                      source: str = "interview",
+                      config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Persist ONE client model plan. Validates BEFORE anything is written.
+
+    `plan` accepts each slot as {"provider","model"}, as a "model@provider"
+    string, or as None/"" (omitted -- keeps the department default), plus
+    optional "thinking" and "floor_waivers".
+
+    REFUSES (ValueError, nothing written) when:
+      * the profile carries no providers at all -- a plan on a profile with no
+        providers is INVISIBLE, not merely unused: resolve_route reports
+        profile_state "absent" for an empty providers map and the dispatcher
+        falls back to its pre-router DeepSeek default, so the client would be
+        told "recorded" and then silently overridden on every call. The
+        message names the capacity probe that fixes it;
+      * the declared provider is not one the profile carries (the message
+        names the providers that DO exist);
+      * the provider HAS a wired inventory and the declared model is not in it
+        (the message names the inventory it was checked against);
+      * the declared model's MODALITY cannot do the slot's job (a vision or
+        image model in a text slot). Modality is physics, not preference, and
+        is the one floor no waiver crosses;
+      * "thinking" is outside THINKING_LEVELS.
+
+    HONOURS, with a recorded waiver (Trevor: not forced), a model whose
+    CONTEXT class falls short of a class floor -- e.g. a standard-window
+    model named explicitly for the reasoning slot. The class is appended to
+    floor_waivers, the reason is written into the audit row, and
+    model_router.resolve_route stamps floor="waived" on the decision so the
+    launcher banner and the client report both say it out loud.
+
+    A later, different answer UPDATES the plan and appends another audit row:
+    a client changing their workhorse never needs an operator."""
+    if not flag_enabled():
+        return load_profile(config_dir)
+
+    profile = load_profile(config_dir)
+    providers = profile.get("providers")
+    providers = providers if isinstance(providers, dict) else {}
+    if not providers:
+        raise ValueError(
+            "refusing to record a model plan: this profile carries NO "
+            "providers, and a plan on a provider-less profile is invisible -- "
+            "model_router.resolve_route reports profile_state 'absent' and the "
+            "dispatcher falls back to its default model on every call. Run the "
+            "capacity/provider probe first "
+            "('python3 -m presentation_job --capacity'), then record the plan.")
+
+    mr = _model_router_module()
+    slot_classes = getattr(mr, "SLOT_CLASSES", None) if mr is not None else None
+    if not isinstance(slot_classes, dict):
+        slot_classes = {s: () for s in MODEL_PLAN_SLOTS}
+
+    declared: Dict[str, Dict[str, str]] = {}
+    for slot in slot_classes:
+        raw = (plan or {}).get(slot)
+        if raw is None or raw == "":
+            continue
+        if isinstance(raw, dict):
+            spec = parse_model_spec(f"{raw.get('model', '')}@{raw.get('provider', '')}") \
+                if raw.get("model") and raw.get("provider") else None
+            if spec is None:
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: a declaration needs "
+                    f"BOTH a model and a provider (got {raw!r})")
+        else:
+            spec = parse_model_spec(raw)
+        if spec is None:
+            continue
+        declared[slot] = spec
+
+    unknown_slots = [s for s in (plan or {})
+                     if s not in slot_classes
+                     and s not in ("thinking", "floor_waivers", "source",
+                                   "declared_at")]
+    if unknown_slots:
+        raise ValueError(
+            f"refusing to record a model plan: unknown slot(s) "
+            f"{sorted(unknown_slots)}; the client-choosable slots are "
+            f"{sorted(slot_classes)}")
+
+    thinking = (plan or {}).get("thinking")
+    thinking = str(thinking).strip().lower() if thinking not in (None, "") else None
+    if thinking is not None and thinking not in THINKING_LEVELS:
+        raise ValueError(
+            f"refusing to record thinking level {thinking!r}: the vocabulary is "
+            f"{list(THINKING_LEVELS)}")
+
+    # --- validation, all of it, before a single byte is written ------------
+    waivers = {str(w).strip() for w in ((plan or {}).get("floor_waivers") or [])
+               if str(w).strip()}
+    waiver_reasons: List[Dict[str, str]] = []
+    for slot, spec in declared.items():
+        provider, model = spec["provider"], spec["model"]
+        entry = providers.get(provider)
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"refusing to record the {slot!r} slot: this profile does not "
+                f"carry provider {provider!r}. Providers on this profile: "
+                f"{sorted(providers)}. Run the capacity/provider probe first, "
+                f"or name one of those.")
+        if entry.get("consented") is False:
+            raise ValueError(
+                f"refusing to record the {slot!r} slot: provider {provider!r} "
+                f"is recorded as NOT consented on this profile.")
+        alias_def = None
+        if mr is not None:
+            alias_def, _src = mr.declared_alias_def(spec)
+        wired = entry.get("wired_models")
+        if isinstance(wired, list) and wired:
+            # Check the declared id AND the id this provider's endpoint would
+            # actually be sent. A client may legitimately name a catalog alias
+            # ("glm-flash") whose served id on openrouter is
+            # "z-ai/glm-5.3-flash" -- that is the id the wired inventory holds,
+            # and the id _eligible() will judge at route time. Comparing only
+            # the alias would refuse a declaration that routes perfectly.
+            served = (mr._served_model(alias_def, provider)
+                      if (mr is not None and alias_def) else "")
+            if not _wired_match(model, wired) and not (
+                    served and _wired_match(served, wired)):
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: model {model!r} is "
+                    f"not in {provider}'s wired inventory"
+                    + (f" (nor its served id {served!r})"
+                       if served and served != model else "")
+                    + f". Checked against "
+                    f"{sorted(str(w) for w in wired)} ({len(wired)} wired).")
+        # Floors. Modality is refused; context is honoured with a waiver.
+        if mr is None or not alias_def:
+            continue
+        for capability in slot_classes.get(slot, ()):  # noqa: B007
+            verdict = mr.floor_verdict(alias_def, capability)
+            if verdict["ok"]:
+                continue
+            if verdict["modality"] != verdict["required"].get("modality"):
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: {model!r} is a "
+                    f"{verdict['modality']} model and capability "
+                    f"{capability!r} requires a "
+                    f"{verdict['required'].get('modality')} model. Modality is "
+                    f"a capability, not a preference -- no waiver crosses it.")
+            # Context-class shortfall on an EXPLICITLY named slot: honour it.
+            waivers.add(capability)
+            waiver_reasons.append({"capability": capability, "slot": slot,
+                                   "detail": verdict["reason"]})
+
+    # --- write --------------------------------------------------------------
+    block: Dict[str, Any] = {
+        "workhorse": None, "reasoning": None, "judge": None,
+        "thinking": thinking,
+        "floor_waivers": sorted(waivers),
+        "source": str(source or "interview"),
+        "declared_at": _now(),
+    }
+    for slot in slot_classes:
+        block.setdefault(slot, None)
+    for slot, spec in declared.items():
+        block[slot] = dict(spec)
+    profile["model_plan"] = block
+
+    interview = profile.setdefault("interview", {})
+    log = interview.setdefault("model_plan", [])
+    log.append({
+        "declared": {s: dict(v) for s, v in declared.items()},
+        "thinking": thinking,
+        "floor_waivers": sorted(waivers),
+        "waiver_reasons": waiver_reasons,
+        "source": str(source or "interview"),
+        "answered_at": _now(),
+    })
+    save_profile(profile, config_dir)
+    return profile
 
 
 def _catalog_alias_resolver(catalog: Any):
