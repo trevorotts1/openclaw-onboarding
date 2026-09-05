@@ -4,7 +4,7 @@
 # Checks:
 #   G1  ROLE_DISCIPLINE_V1 marker present in the resolved AGENTS.md (exactly once)
 #   G2  CEO_ROUTING_NO_LOOPHOLES_V1 marker present in the resolved AGENTS.md
-#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V2) present in the resolved SOUL.md
+#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V3) present in the resolved SOUL.md
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
@@ -201,11 +201,11 @@ else
 fi
 
 # ─── G3: PRIME DIRECTIVE in SOUL.md ──────────────────────────────────────────
-_info "G3: checking CEO_ORCHESTRATOR_RULE_V2 (PRIME DIRECTIVE) in $SOUL_FILE"
-if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V2" "$SOUL_FILE" 2>/dev/null; then
-  _pass "G3: CEO_ORCHESTRATOR_RULE_V2 (PRIME DIRECTIVE) present in $SOUL_FILE"
+_info "G3: checking CEO_ORCHESTRATOR_RULE_V3 (PRIME DIRECTIVE) in $SOUL_FILE"
+if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V3" "$SOUL_FILE" 2>/dev/null; then
+  _pass "G3: CEO_ORCHESTRATOR_RULE_V3 (PRIME DIRECTIVE) present in $SOUL_FILE"
 else
-  _fail "G3: CEO_ORCHESTRATOR_RULE_V2 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
+  _fail "G3: CEO_ORCHESTRATOR_RULE_V3 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
   FAILURES=$((FAILURES + 1))
 fi
 
@@ -307,9 +307,9 @@ try:
 
     skills = default_agent.get("skills")
     if isinstance(skills, list) and len(skills) == 0:
-        print(f"PASS:{agent_id}")
+        print(f"EMPTY_SKILLS:{agent_id}")
     elif skills is None:
-        print(f"MISSING_KEY:{agent_id}")
+        print(f"PASS:{agent_id}")
     else:
         print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}")
 except Exception as e:
@@ -320,15 +320,15 @@ PYEOF
 case "$G4_RESULT" in
   PASS:*)
     _G4_ID="${G4_RESULT#PASS:}"
-    _pass "G4: default agent (id=${_G4_ID}) skills:[] is set (pptx skill blocked)"
+    _pass "G4: default agent (id=${_G4_ID}) inherits installed skills for assigned fallback execution"
     ;;
   PA_DEFAULT_OK:*)
     _G4_ID="${G4_RESULT#PA_DEFAULT_OK:}"
     _pass "G4: default agent (id=${_G4_ID}) is a PERSONAL-ASSISTANT/non-router — pptx router-deny N/A; PA-default topology is valid (v13.2.2)"
     ;;
-  MISSING_KEY:*)
-    _G4_ID="${G4_RESULT#MISSING_KEY:}"
-    _fail "G4: default agent (id=${_G4_ID}) has no 'skills' key in openclaw.json — pptx deny NOT applied; run apply-routing-fix.sh"
+  EMPTY_SKILLS:*)
+    _G4_ID="${G4_RESULT#EMPTY_SKILLS:}"
+    _fail "G4: default agent (id=${_G4_ID}) still has legacy empty skills; run apply-routing-fix.sh"
     FAILURES=$((FAILURES + 1))
     ;;
   HAS_SKILLS:*)
@@ -336,8 +336,7 @@ case "$G4_RESULT" in
     _G4_REST="${G4_RESULT#HAS_SKILLS:}"
     _G4_ID="${_G4_REST%%:*}"
     _G4_SKILLS="${_G4_REST#*:}"
-    _fail "G4: default agent (id=${_G4_ID}) skills is not empty: ${_G4_SKILLS} — run apply-routing-fix.sh"
-    FAILURES=$((FAILURES + 1))
+    _pass "G4: default agent (id=${_G4_ID}) retains owner-configured skills: ${_G4_SKILLS}"
     ;;
   NO_DEFAULT_AGENT)
     _fail "G4: no default agent found in openclaw.json agents.list (no default:true entry and no id=main fallback)"

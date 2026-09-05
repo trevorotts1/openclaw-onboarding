@@ -569,6 +569,10 @@ for slug, workspace_path in discovered.items():
         added += 1
         print(f"  + added   {roster_key:40s} → {workspace_path}")
     else:
+        # Older builders registered the canonical agentDir without creating it.
+        # Repair only our canonical runtime location; preserve custom owner paths.
+        if existing.get("agentDir") == agent_dir:
+            os.makedirs(agent_dir, exist_ok=True)
         # Preserve any operator-curated fields on the existing entry that we
         # don't override (e.g. custom memorySearch.extraPaths, telegram bot
         # binding). Only update fields where we're authoritative.

@@ -1,16 +1,18 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
+
+> **v25.0.4 — General/CEO fallback execution.** Missing or unmatched departments execute through the client's assigned General Task worker or verified CEO fallback, retaining the same task/execution. The paired Command Center v7.1.1 supplies catch-all dispatch and migration 133 for explicit runtime bindings. Older schemas defer binding safely. See [deployment and verification notes](docs/ceo-general-fallback-execution.md).
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.3.
+> **Version:** see `/version` - this repo at v25.0.4.
 
 
-## Current release: v25.0.2
+## Current release: v25.0.4
 
-Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.0 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
+Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.1 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
 
 Fresh and update-only dependency installs use the shipped `package-lock.json` through `npm ci`; a missing lock or failed install stops before migrations/deployment. There is no fallback that resolves a different dependency graph.
 
-The paired pin and minimum are both **v7.1.0**. Publish that Command Center security release before publishing this onboarding release. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
+The paired pin and minimum are both **v7.1.1**, including the security upgrade and verified General/CEO fallback execution. Deploy that paired Command Center release before onboarding v25.0.4. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
 
 ## v25.0.0 major milestone
 
@@ -151,7 +153,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.3** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.0.4** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

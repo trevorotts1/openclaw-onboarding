@@ -11,10 +11,9 @@
 #   plus the PRIME DIRECTIVE into its SOUL.md. The prior bug wrote doctrine to
 #   ~/clawd/AGENTS.md while the agent read from ~/.openclaw/workspace/AGENTS.md.
 #
-# LAYER 2 — STRUCTURAL PPTX DENY
-#   Sets skills:[] on the main agent in openclaw.json so the pptx/deck-building skill
-#   physically cannot load. The CEO orchestrator must route, not build. Deep-merge —
-#   no clobber of other agents.
+# LAYER 2 — RETIRE LEGACY EMPTY SKILL LIST
+#   CEO fallback execution inherits installed skills. Preserve nonempty owner lists
+#   and personal-assistant configuration; remove the old generated router-only [].
 #
 # LAYER 3 — SYMLINK UNBLOCK
 #   Adds the workspace real-path to skills.load.allowSymlinkTargets so the `tasks`
@@ -234,109 +233,14 @@ RDEOF
   fi
 fi
 
-# --- AGENTS.md: CEO_ROUTING_NO_LOOPHOLES_V2 ---
-# P1-04: migrate a legacy V1 block out (no END marker — terminates at its first
-# '---') so the V2 doctrine (adds the trust-engine chat-id rule) re-injects.
-if [ "$DRY_RUN" != "1" ] && grep -qF "$CEO_ROUTING_MARKER_V1" "$AGENTS_FILE" 2>/dev/null && ! grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE" 2>/dev/null; then
-  python3 - "$AGENTS_FILE" <<'CEOSTRIP_PY'
-import re, sys
-p = sys.argv[1]
-c = open(p, encoding="utf-8", errors="replace").read()
-c = re.sub(r"\n*<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->.*?\n---[ \t]*\n", "\n", c, count=1, flags=re.DOTALL)
-open(p, "w", encoding="utf-8").write(c)
-CEOSTRIP_PY
-  _log "L1: migrated legacy CEO_ROUTING_NO_LOOPHOLES_V1 → V2 in $AGENTS_FILE"
-fi
-if grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE" 2>/dev/null; then
-  _log "L1: CEO_ROUTING_NO_LOOPHOLES_V2 already present in $AGENTS_FILE — no-op"
-else
-  if [ "$DRY_RUN" = "1" ]; then
-    _dry "would inject CEO_ROUTING_NO_LOOPHOLES_V2 into $AGENTS_FILE"
-  else
-    touch "$AGENTS_FILE"
-    TMPF=$(mktemp)
-    awk -v marker="$ROLE_DISC_MARKER" '
-      BEGIN { injected=0; in_rd=0 }
-      {
-        print
-        if (!injected && index($0, marker)) { in_rd=1 }
-        if (in_rd && !injected && /^---[[:space:]]*$/) {
-          print ""
-          print "<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
-          print "## CEO ROUTING — NO LOOPHOLES (closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)"
-          print ""
-          print "The CEO / master-orchestrator'\''s ONLY permitted routing action is:"
-          print ""
-          print "  **POST \`/api/tasks/ingest\` with \`department_slug: \"<slug>\"\`**"
-          print ""
-          print "This places the task on the department'\''s Kanban board. The DEPARTMENT assigns the specialist"
-          print "and the persona. The doing belongs to the department — never to the CEO."
-          print ""
-          print "### Closed loopholes (ALL violations, no exceptions):"
-          print ""
-          print "| Loophole | Status |"
-          print "|----------|--------|"
-          print "| \"This task is trivial / simple / quick — I'\''ll just do it myself\" | VIOLATION |"
-          print "| \"I know how to make this API call, I'\''ll handle it directly\" | VIOLATION |"
-          print "| \"I'\''ll spawn a sub-agent and have it execute the work for me\" | VIOLATION — spawning a sub-agent to do production work IS the same as self-executing |"
-          print "| \"I'\''m telling the sub-agent to call KIE.ai / Fal.ai for me\" | VIOLATION — same as above |"
-          print "| \"I don'\''t know which department, so I'\''ll do it myself\" | VIOLATION — route to \`department_slug: \"general-task\"\` |"
-          print "| \"The owner seemed to want a quick answer\" | VIOLATION — route and let the department respond |"
-          print ""
-          print "### What the CEO MAY do (exhaustive list):"
-          print "- Have conversations with the owner"
-          print "- POST to \`/api/tasks/ingest\` to route tasks"
-          print "- Send Telegram messages"
-          print "- Read workspace files"
-          print "- Restart the gateway (orchestrator-only authority)"
-          print "- Manage agent/department config"
-          print ""
-          print "### Owner-permission exception"
-          print "Before the CEO would EVER do a task itself, it must FIRST seek AND RECEIVE explicit permission"
-          print "and consent from the owner. Seeking permission alone is not enough — explicit consent must be"
-          print "received. Without that explicit consent, the CEO routes — always."
-          print ""
-          print "### Trust engine — pass the client'\''s chat id when you route a CLIENT message (P1-04)"
-          print "When the task came from a CLIENT message (e.g. a Telegram request), you MUST pass the ORIGINATING"
-          print "chat id so the Command Center'\''s report-back loop keeps the client informed (assigned → in-progress"
-          print "+ ETA → done + where-to-find-it). A routed task must NEVER go silent. Set it on the signed router:"
-          print ""
-          print "    MC_ROUTE_REQUESTER_CHAT_ID=\"<originating client chat id>\" MC_ROUTE_REQUESTER_CHANNEL=\"telegram\" \\"
-          print "      bash \"$OC_ROOT/scripts/mc-route.sh\" <department_slug> \"<title>\" \"<owner message, verbatim>\""
-          print ""
-          print "Leave the chat id UNSET for operator/internal routes (never reported on). NEVER invent or reuse"
-          print "another client'\''s chat id — pass ONLY the real originating chat id of the message you are routing."
-          print ""
-          print "<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->"
-          print "---"
-          print ""
-          injected=1
-        }
-      }
-    ' "$AGENTS_FILE" > "$TMPF"
-    # If ROLE_DISCIPLINE marker was not found (older box), prepend at top
-    if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
-      ORIG2=$(cat "$AGENTS_FILE")
-      {
-        printf '%s\n' '<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->'
-        printf '%s\n\n' '## CEO ROUTING — NO LOOPHOLES (V2 adds the P1-04 trust-engine chat-id rule)'
-        printf '%s\n' "The CEO's ONLY permitted routing action: POST /api/tasks/ingest with department_slug."
-        printf '%s\n\n' 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions.'
-        printf '%s\n' 'TRUST ENGINE (P1-04): when the task came from a CLIENT message, ALWAYS pass the originating chat id'
-        printf '%s\n' 'so the report-back loop keeps the client informed — set MC_ROUTE_REQUESTER_CHAT_ID (and'
-        printf '%s\n' 'MC_ROUTE_REQUESTER_CHANNEL, default telegram) on the signed router: bash "$OC_ROOT/scripts/mc-route.sh".'
-        printf '%s\n\n' "Leave it unset for operator/internal routes; never invent or reuse another client's chat id."
-        printf '%s\n' '<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->'
-        # printf '%s' guard: a bare format string beginning with '-' (e.g. '---')
-        # is parsed as an option by printf and aborts under set -e. Pass it as a
-        # %s argument instead so the leading dashes are always literal.
-        printf '%s\n\n' '---'
-        printf '%s' "$ORIG2"
-      } > "$TMPF"
-    fi
-    mv "$TMPF" "$AGENTS_FILE"
-    _log "L1: CEO_ROUTING_NO_LOOPHOLES_V2 injected into $AGENTS_FILE"
-  fi
+# Canonical V3 policy ships in shared-utils on installs and updates.
+CEO_POLICY_HELPER=""
+for _ceo_policy_candidate in "${ONBOARDING_DIR:-}/shared-utils/ceo_execution_policy.py" "${_FS_SCRIPT_DIR:-}/../shared-utils/ceo_execution_policy.py" "$OC_ROOT/skills/shared-utils/ceo_execution_policy.py"; do
+  if [ -f "$_ceo_policy_candidate" ]; then CEO_POLICY_HELPER="$_ceo_policy_candidate"; break; fi
+done
+if [ -z "$CEO_POLICY_HELPER" ]; then echo "Missing ceo_execution_policy.py" >&2; exit 1; fi
+if [ "$DRY_RUN" != "1" ]; then
+  python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE" --kind CEO_ROUTING_NO_LOOPHOLES
 fi
 
 # --- AGENTS.md: PRESENTATION_ROUTING_REFLEX_V2 (signed-route pre-response gate) ---
@@ -1229,84 +1133,15 @@ if [ "$OC_ROOT" = "/data/.openclaw" ] && [ "$DRY_RUN" = "0" ]; then
   [ -f "$PRES_REFLEX_HELPER_PATH" ] && chown node:node "$PRES_REFLEX_HELPER_PATH" 2>/dev/null || true
 fi
 
-# --- SOUL.md: PRIME DIRECTIVE ---
-if grep -qF "$CEO_ORCH_V2_MARKER" "$SOUL_FILE" 2>/dev/null; then
-  _log "L1: PRIME DIRECTIVE already present in $SOUL_FILE — no-op"
-else
-  if [ "$DRY_RUN" = "1" ]; then
-    _dry "would inject PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V2) into $SOUL_FILE"
-  else
-    touch "$SOUL_FILE"
-    SOUL_EXISTING=$(cat "$SOUL_FILE" 2>/dev/null || true)
-    # Strip V1 block if present
-    if echo "$SOUL_EXISTING" | grep -qF "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"; then
-      SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
-import sys, re
-content = sys.stdin.read()
-content = re.sub(r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '', content, count=1, flags=re.DOTALL)
-print(content, end='')
-")
-    fi
-    # Strip personal-assistant intro if present
-    SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
-import sys, re
-content = sys.stdin.read()
-content = re.sub(r'^# SOUL\.md.*?^---\s*\n', '', content, count=1, flags=re.DOTALL | re.MULTILINE)
-print(content.lstrip(), end='')
-")
-    {
-      cat <<'PDEOF'
-<!-- CEO_ORCHESTRATOR_RULE_V2 -->
-## PRIME DIRECTIVE — I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
-
-1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
-   reaches me, I ROUTE it to the correct DEPARTMENT — every time. I have NO permission to decide
-   not to route, to refuse a task, or to choose what I will or will not do.
-2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
-   sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
-   sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
-   on the Kanban board. The doing belongs to the department and its specialist — never to me.
-3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
-   consent from the owner (the human in control). Without that explicit consent, I route — always.
-   (Routing is my default and is always allowed; I never need permission to route.)
-4. If I cannot determine the right department, I route to the General Tasks department. I never
-   self-execute because I am unsure, and I never hold a task to "stay in control" of it.
-5. What I MAY do: have conversations, manage agents, manage departments, and route tasks.
-   What I may NEVER do: refuse to route, decide who executes, execute the work myself, or
-   commandeer a sub-agent to keep control.
-
-### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
-
-The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
-This places the task on the department Kanban — the DEPARTMENT assigns the specialist.
-
-Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
-executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
-operate via the task board — it is not a production tool for the orchestrator.
-
-### Binding Rules
-
-- R1: Never generate images, videos, audio, or written deliverables
-- R2: Never write to files, databases, or external APIs as a production action
-- R3: Never use any skill that produces a deliverable (skills: [] enforced in config)
-- R4: Every actionable request -> POST /api/tasks/ingest with department_slug
-- R5: If CC unreachable -> escalate via Telegram, do NOT execute directly
-- R6: If route is unclear -> use department_slug: "general-task", never self-execute
-- R7: Permitted actions only: Telegram messaging, task-ingest POST, read workspace files, gateway restart
-
----
-
-PDEOF
-      printf '%s' "$SOUL_EXISTING"
-    } > "$SOUL_FILE"
-    _log "L1: PRIME DIRECTIVE written to $SOUL_FILE"
-  fi
+# --- SOUL.md: managed V1/V2 -> V3, preserving owner content ---
+if [ "$DRY_RUN" != "1" ]; then
+  python3 "$CEO_POLICY_HELPER" "$SOUL_FILE"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# LAYER 2 — STRUCTURAL PPTX DENY (skills:[] on the box's default agent)
+# LAYER 2 — RETIRE LEGACY EMPTY SKILL LIST on the default router
 # ═════════════════════════════════════════════════════════════════════════════
-_log "--- LAYER 2: structural pptx deny (skills:[] on the default agent) ---"
+_log "--- LAYER 2: enable installed skills for verified assigned fallback ---"
 
 L2_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
@@ -1399,17 +1234,17 @@ if not _is_router(default_agent):
 
 current_skills = default_agent.get("skills")
 # Already set to empty list or explicit pptx deny?
-if isinstance(current_skills, list) and len(current_skills) == 0:
-    print("ALREADY_DENIED")
+if current_skills != []:
+    print("SKILLS_PRESERVED")
     sys.exit(0)
 
 # Emit the pending change summary for dry-run display
-print(f"WILL_SET: agent id={_did} current skills={json.dumps(current_skills)} -> skills=[]")
+print(f"WILL_SET: agent id={_did} current skills={json.dumps(current_skills)} -> inherited installed skills")
 PYEOF
 ) || L2_RESULT="ERROR"
 
-if [ "$L2_RESULT" = "ALREADY_DENIED" ]; then
-  _log "L2: skills:[] already set on the default agent — no-op"
+if [ "$L2_RESULT" = "SKILLS_PRESERVED" ]; then
+  _log "L2: no legacy empty skill list — preserve configured skills"
 elif [[ "$L2_RESULT" == PA_DEFAULT_SKIP:* ]]; then
   _log "L2: default agent (id=${L2_RESULT#PA_DEFAULT_SKIP:}) is a PERSONAL-ASSISTANT/non-router — SKIPPING pptx skill-deny (a PA is not a router; gating it would freeze it). v13.2.2 PA-freeze guard."
 elif [ "$L2_RESULT" = "NO_MAIN_AGENT" ]; then
@@ -1493,8 +1328,9 @@ if target is None:
             break
 # Only gate a ROUTER. A non-router default agent (PA / owner) is left untouched.
 if target is not None and _is_router(target):
-    target["skills"] = []
-    print(f"[apply-routing-fix] L2: skills:[] set on default agent (id={_oc_id(target)})")
+    if target.get("skills") == []:
+        target.pop("skills")  # Retire generated router-only skill suppression.
+    print(f"[apply-routing-fix] L2: legacy empty skills removed from default agent (id={_oc_id(target)})")
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 PYEOF

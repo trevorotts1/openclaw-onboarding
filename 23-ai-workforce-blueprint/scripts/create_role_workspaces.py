@@ -125,7 +125,7 @@ Before executing ANY task you are spawned for, in this order:
 # directly" — that IS the bypass violation (CEO self-dispatching a sub-agent
 # to do production work = same as self-executing). The ONLY permitted routing
 # action is POST to /api/tasks/ingest with department_slug. Replaced.
-CEO_OPERATING_PROTOCOL = """
+LEGACY_CEO_OPERATING_PROTOCOL = """
 ## CEO ROUTING — NO LOOPHOLES (binding, no exceptions)
 
 ### PRIME DIRECTIVE
@@ -172,6 +172,9 @@ Before dispatching ANY task, in this order:
 3. If the task board is unreachable → escalate via Telegram. Do NOT execute.
 4. Review returned deliverables against the SOP the specialist followed.
 """
+
+from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy
+CEO_OPERATING_PROTOCOL = _ceo_policy_block()
 
 # ─── STUB GENERATORS (used as fallback when library has no match) ────────────
 
@@ -1501,6 +1504,13 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
     for filename in V21_REQUIRED:
         fpath = role_path / filename
         if fpath.exists():
+            if is_ceo and filename in ("IDENTITY.md", "SOUL.md"):
+                old = fpath.read_text(encoding="utf-8")
+                # Exact known legacy template only; never remove owner-authored prose.
+                old = old.replace(LEGACY_CEO_OPERATING_PROTOCOL, "")
+                updated = _upgrade_ceo_policy(old)
+                if updated != fpath.read_text(encoding="utf-8"):
+                    fpath.write_text(updated, encoding="utf-8")
             continue
         if filename == "IDENTITY.md":
             fpath.write_text(stub_identity(role_name, dept_name, is_ceo), encoding="utf-8")

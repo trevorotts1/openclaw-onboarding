@@ -161,7 +161,12 @@ fi
 
 # ─── T2: IDEMPOTENCE ─────────────────────────────────────────────────────────
 SHA1="$(shasum -a 256 "$CFG" | cut -d' ' -f1)"
+# Emulate an older builder: registered canonical agentDir, missing directory.
+CANONICAL_AGENT_DIR="$(cfg_probe "$CFG" "ag['entries']['dept-marketing']['agentDir']")"
+[[ "$CANONICAL_AGENT_DIR" == "$BOX/"* ]] || fail "T2: fixture runtime escaped sandbox"
+rm -rf "$CANONICAL_AGENT_DIR"
 runbox "$BOX" >/dev/null || fail "T2: second run exited non-zero"
+[ -d "$CANONICAL_AGENT_DIR" ] || fail "T2: existing canonical agentDir not repaired"
 SHA2="$(shasum -a 256 "$CFG" | cut -d' ' -f1)"
 [ "$SHA1" = "$SHA2" ] || fail "T2: NOT idempotent -- config changed on the second run ($SHA1 -> $SHA2)"
 pass "T2: a second run leaves the config byte-identical"
