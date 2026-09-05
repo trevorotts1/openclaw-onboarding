@@ -1,3 +1,30 @@
+## [v25.0.1]  -  2026-09-05  -  A fresh client intake running ULTRA now leaves proof that it did
+
+v24.3.0 made ultra **reachable** for a client. It did not make it **auditable** on the path a client actually takes, and that gap is this release.
+
+### What was broken, and what it cost
+
+The launch record — `.mode-plan.json` (which mode this run is in, at what concurrency, under what ceiling) and `.model-plan.json` (the routing stamp: which model fills each slot, and the thinking level) — is written by `launcher.dispatch()`. The intake poller has **two** dispatch branches and only one of them is the launcher:
+
+- `--resume` → `python3 -m presentation_job.launcher --resume …` — the launcher, writes both sidecars
+- `--new` → `python3 presentation_job.py --new`, then `--run` — **not** the launcher, wrote nothing
+
+`--new` is the branch a **fresh** client intake takes. So a new client who declared ULTRA got a run that executed ultra correctly and recorded **no evidence whatsoever** that it had. The mode governed, and the claim "ultra was on" was unverifiable — which is worse than not governing, because it fails exactly where proof is demanded. Anyone auditing a client's first deck had nothing to read: no mode, no provenance, no routing stamp.
+
+### The fix
+
+`presentation_job/launch_plan.py` writes the same two sidecars, in the same shape, for the `--new` branch. Every value comes from the same `model_router` authority the launcher calls (`mode_plan`, `mode_ceiling`, `plan_report`, `resolve_route`), so the two paths cannot disagree about what a mode means. The record also carries **provenance** — `intake-slot` when the client declared the mode in the interview, alongside the launcher's existing `--mode` / `PRESENTATION_MODE` / `default` vocabulary — so a reader can tell *why* a run was in the mode it was in, not merely that it was.
+
+Written after the intake resolves and before the engine is created, matching the launcher's ordering, so a run dir that never becomes a launch leaves no sidecar.
+
+**Best-effort by contract.** A sidecar that cannot be written prints to stderr and returns 0. An audit record must never be the reason a client's deck does not get built — the same contract `launcher.dispatch` already gives its own sidecar writes.
+
+**Rollback is inherited unchanged:** `PRESENTATION_MODES=0` writes no `.mode-plan.json`; `PRESENTATION_MODEL_ROUTER=0`, or a client who declared no model plan, writes no `.model-plan.json` — byte-for-byte the pre-fix launch.
+
+### On the duplicated writer
+
+This restates the launcher's ~12-line record assembly rather than sharing it, deliberately. The two callers genuinely differ: the launcher has inputs this path does not (`plan_calls` / `estimate_usd` from the FIX 12 credit preflight, which never runs on the poller's `--new` branch), so the records can only ever be shape-identical, which is what a consumer needs; and the launcher's model-plan writer is fused to a refusal gate (`DISPATCH_MODEL_PLAN_REFUSED`), so sharing it would import a new refusal into a branch that has never had one — a behaviour change far beyond writing an audit record. Drift between the two writers is held by an executable parity test that runs the **real** launcher and compares sidecar key shapes; it fails if either writer's shape moves.
+
 ## [v25.0.0]  -  2026-09-05  -  Major release milestone for client onboarding and workforce reliability
 
 Owner-requested major release cut from v24.3.0. The previously merged reliability batch and subsequent presentation fixes are preserved; this cut adds no new runtime feature or database migration.
