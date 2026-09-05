@@ -1,3 +1,27 @@
+## [v24.3.0]  -  2026-09-05  -  A client can finally reach ULTRA, the phase gate that was deleted is back, and DeepSeek fan-out stops being capped at 8
+
+### Ultra was unreachable for every client, silently
+
+FIX 11 (v24.2.2) taught the engine to *honour* a run mode. Nothing ever handed it one on the client path. The intake had no run-mode slot at all, so a client had no way to ask; and the poller passed no mode on **either** of its two branches. A client who asked for ultra in plain words got a standard run, at standard width, at standard cost, and nothing anywhere said so — not a warning, not a log line. The only way to get ultra was for an operator to set it by hand.
+
+This release adds a run-mode subfield to the intake's existing resource_plan turn and wires **both** poller seams: `--mode` on the resume branch, and `PRESENTATION_MODE` on the new-intake branch. Both were needed — the new-intake branch calls `presentation_job.py` directly and never touches the launcher, which is why `--mode` alone left half the client path still silently standard.
+
+### A phase could pass on file presence alone
+
+`ok = v_ok` — the line that lets the substance verifier's verdict actually decide a phase — was deleted by FIX 21 in commit 4019cf9b0 and never put back. `v_ok` was still computed on every loop; nothing read it. For a year of releases a phase completed the moment its artifact file *existed*, whatever was inside it. The unreachable half of the budget-timeout message ("exists but failed substance verification") was the tell. The line is restored, with the same wait/announce/checkpoint cadence FIX 21 was protecting — a failing verdict still never blocks early, it just stops counting an empty file as done.
+
+### Five artifacts had more than one declared producer
+
+Three upsell design phases each declared the render phase's `.png` as well as their own prompt file; both GHL funnel builds declared the same bare `build_receipt.json`. Whichever phase ran first satisfied the other's presence check, and the dispatcher's `already_satisfied` pre-check would skip the second outright. Each phase now declares only what it writes. `PIPELINE-MANIFEST.json` goes **v66 → v67** and `MANIFEST-SOURCE.txt` is re-stamped by `scripts/hash-universal-sops-manifest.py`.
+
+`P-SP-CLAIM` also stopped declaring `working/copy/intake.json` (it only ever *reads* it; it writes `working/copy/sp_claims.json`). That collision was what put it in WAVE 1 next to the phase that writes the file it reads — with the collision gone there is a real `P0A-INTAKE → P-SP-CLAIM` edge and it schedules into WAVE 2, so it no longer needs the pre-intake gate exemption it used to carry.
+
+### The throttle nobody could see: 8 workers where 100 were measured
+
+`_prompt_routing_stamp` in `dispatcher.py` compared the provider it was handed (`deepseek`) against the identity it stamped (`deepseek-direct`). They never matched, so every DeepSeek route discarded its own measured ceiling and fell back to `DEFAULT_MAX_WORKERS = 8` — against a measured ceiling of 100. The capacity work in v24.1.0 removed the 8-worker clamp; this string mismatch quietly put it back for the one provider that carries most of the load. Provider identity is normalised, so the measured ceiling is the ceiling.
+
+Operators should know this was **one of two throttles in series on the same pipe**. The second — the governor's `providers.yaml` never reaching a materialized department — was diagnosed in the same investigation and fixed on the box, not in this release. If fan-out still looks narrow after this release, that box-side fix is the other half.
+
 ## [v24.2.2]  -  2026-09-05  -  FIX 11 Ultra/Standard/Economy actually governs: the engine reads the mode the launcher hands it, and ULTRA_OPERATOR_CEILING=100 is applied as a cap on measured width (#1032)
 
 ## [v24.2.1]  -  2026-09-05  -  P-SP-P3-HYGIENE writes its own QC verdict instead of P-SP-STRUCTURE's artifact, so the structure phase is no longer silently skipped on signature decks (#1030)
