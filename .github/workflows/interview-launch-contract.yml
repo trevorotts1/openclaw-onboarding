@@ -9,7 +9,17 @@ on:
       - '05-ghl-setup/qc-ghl-setup.sh'
       - '23-ai-workforce-blueprint/scripts/workforce_completion.py'
       - '23-ai-workforce-blueprint/scripts/resume-workforce-build.sh'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/model_router.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/research_web.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py'
+      - '23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/oc_paths.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/env_store.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py'
       - 'tests/unit/test_intake_poll_plist.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py'
       - 'tests/unit/test_shared_client_paths.py'
       - 'tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh'
       - 'tests/unit/test_preidentity_closeout.py'
@@ -71,6 +81,12 @@ jobs:
         run: python3 tests/unit/test_portable_bootstrap.py
       - name: Validate literal scheduler configuration before replacing a working job
         run: python3 tests/unit/test_intake_poll_plist.py
+      - name: Install scheduler regression test runner
+        run: python3 -m pip install pytest
+      - name: Poller source resolution, client paths and loud failure regression
+        run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py
+      - name: Presentation worker client path and credential isolation
+        run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py
       - name: Shared client paths and credential isolation
         run: python3 tests/unit/test_shared_client_paths.py
       - name: GHL credential aliases through the delivered shared library

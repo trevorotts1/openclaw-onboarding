@@ -59,3 +59,15 @@ python3 tests/unit/test_pm2_boot.py
 These tests use isolated client roots, fake Docker inventory and no live services
 or package installs. The persona tests execute the real writer under `/bin/bash`
 with a restricted service PATH and verify both contents and repeat-run retention.
+
+Presentation intake scheduling uses the same selected client context. Mac plist
+jobs and VPS cron commands carry the root/workspace pins and the installed
+Presentations runs directory; a checkout used as the script source does not
+become the runs directory. Scheduler configuration is validated before replacing
+a working job. Invalid selections stop installation with a specific failure.
+
+Presentation worker credential candidates remain inside the selected client root
+and workspace. An invalid path resolver or incomplete helper deployment does not
+fall back to another installation’s HOME, `/data`, or legacy stores. Existing
+nonstandard credential locations must be migrated into the selected client
+installation or configured as a valid in-boundary override.

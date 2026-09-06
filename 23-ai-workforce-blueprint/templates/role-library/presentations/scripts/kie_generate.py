@@ -20,9 +20,8 @@ USAGE:
 
 ENVIRONMENT:
     KIE_API_KEY — must be set. Read from the environment first, else from the client's
-                  standard secrets stores ($OPENCLAW_SECRETS if set, then
-                  ~/.openclaw/workspace/.env, ~/clawd/secrets/.env,
-                  ~/.openclaw/secrets/.env — all HOME-relative, no hardcoded path).
+                  selected client stores resolved by presentation_job.oc_paths.
+                  OPENCLAW_SECRETS must remain inside that client boundary.
 
 ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory pin
     verbatim (the caller embeds it in `prompt`):
@@ -130,47 +129,28 @@ MAX_POLL_PASSES     = 100
 # an operator's literal absolute home path (such a path points at one specific
 # machine and would never exist on a client box). The secrets file is resolved at
 # RUNTIME:
-#   1. $OPENCLAW_SECRETS (explicit override — wins if set), then
-#   2. the client's standard env stores, HOME-relative via os.path.expanduser so the
-#      same template works for whatever user/box it runs on (no literal home path).
+#   1. $OPENCLAW_SECRETS, validated inside the selected client boundary, then
+#   2. that client's standard root/workspace stores via presentation_job.oc_paths.
+# Missing authority or invalid pins fail closed, without cross-client fallback.
 def _secrets_candidates() -> list:
-    """FIX 68: platform-aware order via presentation_job.oc_paths
-    (secrets_env_candidates) when it is reachable — /data/.openclaw/secrets/.env
-    first on the docker VPS (OPENCLAW_PLATFORM=vps or a live /data/.openclaw
-    root), the Mac stores first otherwise. The $OPENCLAW_SECRETS explicit
-    override stays FIRST (HIGH-3). Falls back to the legacy Mac-only list when
-    oc_paths is not deployed beside this helper (partial-update shared callers
-    never hard-break)."""
-    candidates = []
-    override = os.environ.get("OPENCLAW_SECRETS", "").strip()
-    if override:
-        candidates.append(os.path.expanduser(override))
-    oc_paths_list = None
+    """Use the selected-client authority, including its checked explicit override.
+
+    Missing deployment or invalid pins fail closed; no HOME/clawd fallback may
+    turn a configuration error into credentials borrowed from another client.
+    """
+    import importlib
     here = Path(__file__).resolve().parent
-    for cand in (
-        here,                                                          # role-library copy
-        here.parent / "role-library" / "presentations" / "scripts",    # presentation-render copy
+    for candidate in (
+        here,
+        here.parent / "role-library" / "presentations" / "scripts",
         here.parent.parent / "role-library" / "presentations" / "scripts",
     ):
-        if (cand / "presentation_job" / "oc_paths.py").is_file():
-            if str(cand) not in sys.path:
-                sys.path.insert(0, str(cand))
-            try:
-                import importlib
-                oc_paths_list = importlib.import_module(
-                    "presentation_job.oc_paths").secrets_env_candidates()
-            except Exception:  # noqa: BLE001 — broken module degrades to legacy list
-                oc_paths_list = None
-            break
-    if oc_paths_list:
-        candidates += [str(p) for p in oc_paths_list]
-    else:
-        candidates += [
-            os.path.expanduser("~/.openclaw/workspace/.env"),
-            os.path.expanduser("~/clawd/secrets/.env"),
-            os.path.expanduser("~/.openclaw/secrets/.env"),
-        ]
-    return candidates
+        if (candidate / "presentation_job" / "oc_paths.py").is_file():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            return [str(path) for path in importlib.import_module(
+                "presentation_job.oc_paths").secrets_env_candidates()]
+    raise RuntimeError("Selected-client credential path module is missing; no stores loaded")
 
 # ---------------------------------------------------------------------------
 # Guardrail: REFUSE to run if caller somehow wired the dead endpoint
@@ -273,9 +253,10 @@ def _import_secret_helper():
         if (anc / "shared-utils" / "secret_helper.py").is_file():
             repo_root = anc
             break
+    from presentation_job.oc_paths import skills as client_skills
     for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
-              os.path.expanduser("~/.openclaw/skills/shared-utils") if repo_root is None else str(repo_root / "shared-utils"),
-              "/data/.openclaw/skills/shared-utils"):
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(client_skills() / "shared-utils")):
         if d and (Path(d) / "secret_helper.py").is_file():
             try:
                 spec = importlib.util.spec_from_file_location(

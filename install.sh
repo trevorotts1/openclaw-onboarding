@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.9"
+ONBOARDING_VERSION="v25.0.10"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2666,22 +2666,16 @@ PYEOF
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
-# Resolves the workspace via obs_resolve_workspace (this file's own
-# convention), not oc_resolve_workspace_announced.
+# Uses the same selected-client workspace as the intake scheduler; failures
+# never fall through to another installation's department.
 # ----------------------------------------------------------
 colocate_presentation_entry() {
-  local dept_scripts=""
-  if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    local ws; ws="$(obs_resolve_workspace 2>/dev/null || true)"
-    if [ -n "$ws" ]; then
-      dept_scripts="$ws/departments/Presentations/scripts"
-    fi
-  fi
-  if [ -z "$dept_scripts" ]; then
-    local _home_ws="${HOME}/.openclaw/workspace"
-    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
-    dept_scripts="$_home_ws/departments/Presentations/scripts"
-  fi
+  local ws dept_scripts
+  ws="$(_fix61_selected_workspace)" || {
+    echo "  [U006] presentation entry co-location REFUSED: selected client workspace unresolved" >&2
+    return 1
+  }
+  dept_scripts="$ws/departments/Presentations/scripts"
   if [ ! -d "$dept_scripts" ]; then
     echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
     return 0
@@ -4565,6 +4559,16 @@ fi
 # ────────────────────────────────────────────────────────────────────────────
 install_intake_poll_schedule() {
     local _rc=0
+    # An EMPTY $PRESENTATIONS_SCRIPTS_SRC is never a usable prefix: it collapses
+    # "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" to the
+    # root-anchored literal "/presentation-intake-poll.sh", and the -f test below
+    # then reports a MISSING FILE when the real fault is an UNRESOLVED DIRECTORY.
+    # That misdirection is exactly what was seen in the field, so the empty
+    # prefix is rejected on its own terms, before it is ever concatenated.
+    if [ -z "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
+        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC is EMPTY — the presentations scripts directory was never resolved (neither the repo checkout nor the materialized department). Intake poll NOT scheduled."
+        return 1
+    fi
     local POLL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh"
     local TPL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.plist.template"
 
@@ -4572,6 +4576,14 @@ install_intake_poll_schedule() {
         warn "FIX 61: presentation-intake-poll.sh not found at $POLL_SRC — intake poll NOT scheduled. Manual: see the script header."
         return 1
     fi
+
+    local _poll_workspace
+    _poll_workspace="$(_fix61_selected_workspace)" || return 1
+    local _poll_runs_dir="$_poll_workspace/departments/Presentations/runs"
+    local _poll_root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}}"
+    case "$_poll_root" in /*) ;; *) warn "FIX 61: client root must be absolute." >&2; return 1 ;; esac
+    _poll_root="${_poll_root%/}"
+    [ -n "$_poll_root" ] || return 1
 
     if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
         # ── VPS: SILENT main-session openclaw cron, 5-minute cadence ──────────
@@ -4591,7 +4603,9 @@ install_intake_poll_schedule() {
         if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
-        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: bash $POLL_SRC . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
+        local _poll_command
+        printf -v _poll_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q PRESENTATION_RUNS_DIR=%q bash %q' "$_poll_root" "$_poll_workspace" "$_poll_workspace" "$_poll_runs_dir" "$POLL_SRC"
+        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: $_poll_command . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
         if _oc_cron_silent_main "presentation-intake-poll" "$CHANNEL_AGENT" "*/5 * * * *" "America/New_York" "$POLL_PROMPT" --light-context; then
             success "FIX 61: intake-poll cron installed (SILENT main-session, 5-min, no client auto-announce)"
         else
@@ -4635,7 +4649,6 @@ install_intake_poll_schedule() {
         #            and its precedence only lets a NON-BLANK process value
         #            win, so an empty string cannot shadow the store.
         local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
-        local _poll_runs_dir="$_dept_scripts_dir/../runs"
         local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
         local _poll_notify_cmd=""
         if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
@@ -4646,7 +4659,7 @@ install_intake_poll_schedule() {
         # Parse the actual template, substitute values as plist strings (never
         # sed/XML/shell fragments), validate, then atomically promote beside the
         # destination. Failed rendering leaves the old plist and job untouched.
-        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" <<'PY_RENDER_INTAKE_PLIST'
+        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" <<'PY_RENDER_INTAKE_PLIST'
 import os
 from pathlib import Path
 import plistlib
@@ -4655,7 +4668,7 @@ import shlex
 import sys
 import tempfile
 
-template, destination, poll, log, runtime_path, runs, notify = sys.argv[1:]
+template, destination, poll, log, runtime_path, runs, notify, client_root, workspace = sys.argv[1:]
 text = Path(template).read_text()
 # The repository template has a documentation comment before its XML declaration.
 start = text.find('<?xml')
@@ -4694,6 +4707,13 @@ if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
             'PRESENTATION_NOTIFY_CMD': values['<PRESENTATION_NOTIFY_CMD>'],
         }.items())):
     raise ValueError('Intake poll template does not satisfy the scheduler contract')
+# Carry client context into launchd's otherwise empty environment, even when
+# scripts themselves were sourced from a shared installer checkout.
+result['EnvironmentVariables'].update({
+    'OPENCLAW_ROOT': client_root,
+    'OPENCLAW_WORKSPACE_PATH': workspace,
+    'OPENCLAW_WORKSPACE_ROOT': workspace,
+})
 encoded = plistlib.dumps(result)
 if plistlib.loads(encoded) != result:
     raise ValueError('Intake poll plist failed round-trip validation')
@@ -4731,22 +4751,90 @@ PY_RENDER_INTAKE_PLIST
     return "$_rc"
 }
 
-PRESENTATIONS_SCRIPTS_SRC="${PRESENTATIONS_SCRIPTS_SRC:-}"
-if [ -z "$PRESENTATIONS_SCRIPTS_SRC" ]; then
-    # Resolve the repo checkout's presentations scripts dir (the template's
-    # source). Anchor on this script's own location — install.sh lives at the
-    # repo root, so the skill's scripts dir is one fixed hop below it.
-    _poll_src_candidate="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
-    if [ -f "$_poll_src_candidate/presentation-intake-poll.sh" ]; then
-        PRESENTATIONS_SCRIPTS_SRC="$_poll_src_candidate"
+# Reuse the selected platform workspace; never infer client ownership from an
+# unrelated /data directory. A configured resolver failure is not a default.
+_fix61_selected_workspace() {
+    local _ws="" _root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-}}}"
+    if [ -n "${OPENCLAW_WORKSPACE_PATH:-}" ] && [ -n "${OPENCLAW_WORKSPACE_ROOT:-}" ] && [ "${OPENCLAW_WORKSPACE_PATH%/}" != "${OPENCLAW_WORKSPACE_ROOT%/}" ]; then
+        warn "FIX 61: selected workspace pins conflict; refusing another client root." >&2
+        return 1
     fi
-fi
+    _ws="${OPENCLAW_WORKSPACE_PATH:-${OPENCLAW_WORKSPACE_ROOT:-${OC_WORKSPACE_DEFAULT:-${OC_WORKSPACE:-}}}}"
+    if [ -z "$_ws" ]; then
+        if [ -n "$_root" ]; then
+            _ws="${_root%/}/workspace"
+        elif command -v obs_resolve_workspace >/dev/null 2>&1; then
+            _ws="$(obs_resolve_workspace)" || {
+                warn "FIX 61: configured workspace resolver failed; no alternate client root selected." >&2
+                return 1
+            }
+            [ -n "$_ws" ] || { warn "FIX 61: configured workspace resolver returned no client workspace." >&2; return 1; }
+        else
+            _ws="$HOME/.openclaw/workspace"
+        fi
+    fi
+    case "$_ws" in /*) ;; *) warn "FIX 61: client workspace must be absolute." >&2; return 1 ;; esac
+    [ "${_ws%/}" != "" ] || return 1
+    printf '%s\n' "${_ws%/}"
+}
+
+# Resolve PRESENTATIONS_SCRIPTS_SRC ONCE, here, before the scheduler runs.
+# The poller and its plist template have TWO legitimate homes, and resolving
+# from a single candidate is what failed in the field:
+#   1. the repo checkout this installer is running from, and
+#   2. the MATERIALIZED department — the poller's runtime home, and the only
+#      home that exists when install.sh runs from anything that is not a full
+#      checkout (curl|bash, a trimmed payload, a re-run out of /tmp).
+# When the sole repo candidate missed, the variable stayed EMPTY and every
+# path built from it collapsed to "/presentation-intake-poll.sh".
+# Workspace resolution uses the selected platform client context. warn() writes to
+# stdout, so its calls here are redirected to stderr: this function's stdout IS
+# the resolved path and must carry nothing else.
+_fix61_resolve_scripts_src() {
+    local _c _ws=""
+    # A caller-supplied value is honoured but VALIDATED — never trusted blind.
+    if [ -n "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
+        if [ -f "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" ]; then
+            printf '%s\n' "$PRESENTATIONS_SCRIPTS_SRC"
+            return 0
+        fi
+        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC was preset to '$PRESENTATIONS_SCRIPTS_SRC', which holds no presentation-intake-poll.sh — refusing to replace the explicit pin." >&2
+        return 1
+    fi
+    _c="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    if [ -f "$_c/presentation-intake-poll.sh" ]; then
+        printf '%s\n' "$_c"
+        return 0
+    fi
+    _ws="$(_fix61_selected_workspace)" || return 1
+    _c="$_ws/departments/Presentations/scripts"
+    if [ -f "$_c/presentation-intake-poll.sh" ]; then
+        printf '%s\n' "$_c"
+        return 0
+    fi
+    return 1
+}
+PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src || true)"
+
+# This call used to sit bare under `set -e`, so a `return 1` killed the whole
+# installer on the spot — with no message, and with the rc latch below never
+# reached despite its comment promising the outcome "surfaces in the step's
+# exit status instead of being swallowed". Suspend errexit so the latch can
+# actually latch (the `set +e` / `set -e` pair this file already uses), then
+# fail LOUDLY and deliberately: a box that ships the Presentations department
+# with no dispatcher scheduled is worse than a box whose install stopped and
+# said why.
+_FIX61_RC=0
+set +e
 install_intake_poll_schedule
 _FIX61_RC=$?
+set -e
 if [ "$_FIX61_RC" -ne 0 ]; then
-    warn "FIX 61: intake-poll schedule install returned rc=$_FIX61_RC — the presentation intake poll is NOT scheduled on this box (staged submissions will sit undispatched until it is)."
-else
-    _FIX61_RC=0
+    error "FIX 61: intake-poll schedule install FAILED (rc=$_FIX61_RC) — the presentation intake poll is NOT scheduled on this box. Staged deck submissions would sit undispatched forever."
+    echo "  Presentations scripts dir resolved to: ${PRESENTATIONS_SCRIPTS_SRC:-<UNRESOLVED>}"
+    echo "  Correct that path, then re-run install.sh."
+    send_telegram_progress "ERROR: FIX 61 intake-poll schedule failed. Install aborted."
+    exit 1
 fi
 export _FIX61_RC
 

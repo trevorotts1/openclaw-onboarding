@@ -11,8 +11,9 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template'
-SOURCE = (REPO / 'install.sh').read_text().split('install_intake_poll_schedule() {', 1)[1].split('\nPRESENTATIONS_SCRIPTS_SRC=', 1)[0]
+SOURCE = (REPO / 'install.sh').read_text().split('install_intake_poll_schedule() {', 1)[1].split('\n    return "$_rc"\n}', 1)[0] + '\n    return "$_rc"\n}'
 FUNCTION = 'install_intake_poll_schedule() {' + SOURCE
+FUNCTION += '\n_fix61_selected_workspace() {' + (REPO / 'install.sh').read_text().split('_fix61_selected_workspace() {', 1)[1].split('\n}', 1)[0] + '\n}'
 
 class IntakePollPlistTests(unittest.TestCase):
     def setUp(self):
@@ -38,7 +39,8 @@ class IntakePollPlistTests(unittest.TestCase):
         stub.chmod(0o755)
 
     def run_installer(self):
-        env = dict(os.environ, HOME=str(self.home), PRESENTATIONS_SCRIPTS_SRC=str(self.scripts), OPENCLAW_PLATFORM='mac', FIXTURE_LAUNCHCTL_LOG=str(self.log), PATH=str(self.bin) + ':' + os.environ['PATH'])
+        base = {k: v for k, v in os.environ.items() if not k.startswith(('OPENCLAW_', 'OC_'))}
+        env = dict(base, HOME=str(self.home), PRESENTATIONS_SCRIPTS_SRC=str(self.scripts), OPENCLAW_PLATFORM='mac', FIXTURE_LAUNCHCTL_LOG=str(self.log), PATH=str(self.bin) + ':' + os.environ['PATH'])
         script = 'set -euo pipefail\nwarn() { echo "$*" >&2; }\nsuccess() { :; }\n' + FUNCTION + '\ninstall_intake_poll_schedule\n'
         return subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True, timeout=20)
 
@@ -57,9 +59,12 @@ class IntakePollPlistTests(unittest.TestCase):
             self.assertEqual(data['ProgramArguments'], ['/bin/bash', str(self.scripts / 'presentation-intake-poll.sh')])
             self.assertEqual(data['StandardOutPath'], str(self.home / 'Library/Logs/openclaw/presentation-intake-poll.log'))
             env = data['EnvironmentVariables']
-            self.assertEqual(env['PRESENTATION_RUNS_DIR'], str(self.scripts) + '/../runs')
+            self.assertEqual(env['PRESENTATION_RUNS_DIR'], str(self.home / '.openclaw/workspace/departments/Presentations/runs'))
             self.assertEqual(shlex.split(env['PRESENTATION_NOTIFY_CMD']), [str(self.scripts / 'presentation-notify.py')])
             self.assertIn(str(self.home / '.npm-global/bin'), env['PATH'].split(':'))
+            self.assertEqual(env['OPENCLAW_ROOT'], str(self.home / '.openclaw'))
+            self.assertEqual(env['OPENCLAW_WORKSPACE_PATH'], str(self.home / '.openclaw/workspace'))
+            self.assertEqual(env['OPENCLAW_WORKSPACE_ROOT'], env['OPENCLAW_WORKSPACE_PATH'])
             self.assertEqual(data['StartInterval'], 300)
             self.assertFalse(data['RunAtLoad'])
             self.assertEqual(list(self.destination.parent.glob('.presentation-intake-poll-*')), [])
