@@ -307,6 +307,10 @@ normalize_status_vocabulary() {
     | (.departments? | arrays) |= map(if type == "object" then ((.status? | strings) |= norm) else . end)
   '
 }
+if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$LOG_FILE" 2>&1; then
+  log "no client build identity yet - waiting for onboarding intake; state left unchanged"
+  exit 0
+fi
 normalize_status_vocabulary
 "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
 

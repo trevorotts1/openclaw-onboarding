@@ -812,7 +812,9 @@ else
 exit 0
 SHIM
     chmod +x "$h/bin/openclaw"
-    printf '{}' > "$h/.openclaw/workspace/.workforce-build-state.json"
+    # This fixture tests credential loading for an existing client. An empty
+    # object now correctly stops at the earlier no-identity closeout guard.
+    printf '{"companySlug":"fixture-company"}' > "$h/.openclaw/workspace/.workforce-build-state.json"
     if [[ -n "$envcontent" ]]; then
       printf '%s\n' "$envcontent" > "$h/.openclaw/secrets/.env"
       chmod 600 "$h/.openclaw/secrets/.env"
@@ -927,7 +929,7 @@ PYEOF
 exit 0
 SHIM
         chmod +x "$BOX19M/bin/openclaw"
-        printf '{}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
+        printf '{"companySlug":"fixture-company"}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
         printf 'KIE_API_KEY=fixture-test-kie-only-value\nNOTION_API_TOKEN=fixture-test-notion-only-value\n' \
           > "$BOX19M/.openclaw/secrets/.env"
         chmod 600 "$BOX19M/.openclaw/secrets/.env"

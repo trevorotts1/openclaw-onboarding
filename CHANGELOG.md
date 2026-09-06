@@ -7,7 +7,11 @@
 - FIX-68: actual migrations, canonical prebuild and production browser acceptance complement isolated provider transport tests.
 - Resolve Mac/native Linux/Docker by operating system and topology; honor selected client roots and support Hostinger/Contabo without assuming every VPS uses Docker.
 - Register and verify native Linux PM2 startup under the selected runtime user and PM2_HOME; preserve external Mac/container boot policies and report unmet Linux prerequisites as pending. Actual reboot acceptance remains installation-specific.
-- Skill 32 v13.1.5; requires paired Command Center v7.1.3. Client installations and external Cloudflare/Telegram/Notion delivery remain subject to their own acceptance run.
+- Recover only the exact empty pre-identity completion stub, preserving its build ID; prevent resume and closeout from creating that stub again. Normalize canonical CEO aliases in company-scoped prebuild verification.
+- Resolve the invitation sender’s verified OpenClaw executable under restricted service PATH, without changing the client environment or guessing ownership.
+- Bound skill readiness and QC subprocess groups to configurable deadlines (30 and 180 seconds by default), retain private diagnostic receipts and continue checking other skills after a failure.
+- Preserve explicit client root/workspace pins in the shared legacy library and Skill 05 QC; prevent credential fallback into another installation. Skill 05 v7.0.1; Skill 37 v13.1.2.
+- Skill 32 v13.1.5; requires paired Command Center v7.1.4 (including company-scoped department memory and removal of automatic demo goals). Client installations and external Cloudflare/Telegram/Notion delivery remain subject to their own acceptance run.
 
 
 ## [v25.0.6]  -  2026-09-06  -  Ask the ZHC owner and company names before first onboarding

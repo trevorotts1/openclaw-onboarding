@@ -178,6 +178,46 @@ def acknowledgement(payload, target):
     if str(recipient) != target or channel != 'telegram': return None
     return {'messageId':str(message_id),'channel':'telegram','recipientHash':hashlib.sha256(target.encode()).hexdigest()}
 
+def native_openclaw_candidates(env):
+    """Only this runtime user's npm bins and conventional native install bins."""
+    home = env.get('HOME', '')
+    candidates = []
+    if home and Path(home).is_absolute():
+        candidates.extend(Path(home) / suffix / 'openclaw' for suffix in ('.npm-global/bin', '.npm/bin', '.local/bin'))
+    candidates.extend(Path(directory) / 'openclaw' for directory in ('/opt/homebrew/bin', '/usr/local/bin'))
+    return candidates
+
+
+def resolve_openclaw_cli(env):
+    """Resolve once before minting; keep the selected client gateway environment.
+
+    Explicit pins fail closed. Discovery never scans other users or sources a
+    login profile. Retain the executable's bin directory for its Node shebang
+    when the caller is a minimal-PATH SSH/cron process.
+    """
+    explicit = env.get('OPENCLAW_BIN')
+    if explicit is not None:
+        if not explicit or not Path(explicit).is_absolute():
+            raise Pending('OPENCLAW_BIN must pin an absolute executable; no fallback attempted')
+        candidates = [Path(explicit)]
+    else:
+        found = shutil.which('openclaw', path=env.get('PATH', ''))
+        candidates = ([Path(found)] if found else []) + native_openclaw_candidates(env)
+    for candidate in candidates:
+        try:
+            if not candidate.is_file() or not os.access(candidate, os.X_OK):
+                continue
+            executable = str(candidate.resolve(strict=True))
+            child_env = dict(env)
+            bin_dir = str(candidate.absolute().parent)
+            child_env['PATH'] = bin_dir + os.pathsep + env.get('PATH', '')
+            return executable, child_env
+        except (OSError, ValueError):
+            continue
+    if explicit is not None:
+        raise Pending('OPENCLAW_BIN is unavailable or not executable; no fallback attempted')
+    return None
+
 def send_gateway(message, target, ledger, context, force=False, timeout=30, prepare_message=None):
     ledger=Path(ledger); ledger.parent.mkdir(parents=True,exist_ok=True)
     receipt_file=ledger.with_suffix(ledger.suffix+'.receipt.json')
@@ -203,14 +243,16 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
                 last=ledger.read_text().splitlines()[-1].split('|')[0]
                 if time.time()-int(last)<1800:return 7,{'status':'guarded','reason':'invitation recently accepted'}
             except (ValueError,IndexError): raise Pending('legacy delivery ledger malformed; reconcile before retry') from None
-        if not shutil.which('openclaw'):return 5,{'status':'failed','reason':'OpenClaw CLI missing; no direct HTTP fallback'}
+        cli = resolve_openclaw_cli(dict(os.environ))
+        if not cli:return 5,{'status':'failed','reason':'OpenClaw CLI missing; no direct HTTP fallback'}
+        executable, child_env = cli
         if prepare_message: message=prepare_message(message)
         base=dict(context,epoch=int(time.time()),recipientHash=hashlib.sha256(target.encode()).hexdigest(),messageSha256=hashlib.sha256(message.encode()).hexdigest())
         # Persist uncertainty BEFORE invoking a command that might send. Failed receipt
         # or ledger writes after remote acceptance cannot turn a retry into a duplicate.
         atomic_json(receipt_file,dict(base,status='sending'))
         try:
-            result=subprocess.run(['openclaw','message','send','--channel','telegram','--target',target,'--message',message,'--json'],capture_output=True,text=True,timeout=timeout)
+            result=subprocess.run([executable,'message','send','--channel','telegram','--target',target,'--message',message,'--json'],capture_output=True,text=True,timeout=timeout,env=child_env)
         except (OSError,subprocess.TimeoutExpired) as exc:
             outcome=dict(base,status='uncertain',reason='gateway '+type(exc).__name__+'; reconcile before retry')
             atomic_json(receipt_file,outcome); return 9,outcome

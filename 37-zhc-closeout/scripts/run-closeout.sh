@@ -211,6 +211,10 @@ if [[ ! -f "$STATE_FILE" ]]; then
   log "ERROR" "no state file at $STATE_FILE -- nothing to close out"
   exit 1
 fi
+if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$LOG_FILE" 2>&1; then
+  log "ERROR" "no client build identity yet -- nothing to close out; state left unchanged"
+  exit 1
+fi
 for cmd in jq curl openclaw; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     log "ERROR" "preflight: missing required command: $cmd"

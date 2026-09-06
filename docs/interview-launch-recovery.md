@@ -2,7 +2,7 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v25.0.7 / Command Center v7.1.3. Skill 32 v13.1.5 and Skill 37 v13.1.1.
+Paired releases: onboarding v25.0.7 / Command Center v7.1.4. Skill 32 v13.1.5, Skill 37 v13.1.2 and Skill 05 v7.0.1.
 
 ## Expected order
 
@@ -85,3 +85,34 @@ with stock Bash; tools that explicitly require modern Bash retain that prerequis
 ## Acceptance before calling a client live
 
 On an isolated test client, verify install → public readiness → actual Telegram link → browser enrollment → two saved answers → close/reopen/resume → Q/A export → finish interview → received build handoff → approved department/persona changes on the same board → runtime activation → client-owned Notion documents and verified final delivery. Try a second client/session and confirm it cannot read or write the first client's interview. Keep identity and receipt evidence with access secrets redacted.
+
+## Noninteractive invitations and browser verification
+
+The invitation sender resolves OpenClaw before minting a ticket: an explicit
+absolute executable `OPENCLAW_BIN` pin takes precedence, followed by the selected
+runtime's PATH, that user's npm/local bins, and standard native installation
+bins. An invalid explicit pin is a precise pending result; it never switches to
+another executable. The sender invokes the resolved absolute path and retains
+this client's gateway/configuration environment. It does not source login
+profiles or scan other users' installations.
+
+If an operator's Playwright MCP shares a locked browser profile, launch that
+operator test session with `--isolated` (a fresh profile) and restart the MCP
+session so the option takes effect. This is operator test-tool configuration,
+not a modification to the client's Command Center or personal browser profile.
+Do not delete a client's browser data to clear a profile lock.
+
+Use a separate test invitation for browser verification, not the one already
+sent to the client. A ticket is single-use. Observe the page's own automatic
+enrollment, save two answers, close/reopen and resume, and verify the reference
+export. A successful manual POST from browser developer tools proves only that
+the endpoint works; it does not prove that the page automatically redeems the
+link or that the interview UI works without manual intervention.
+
+## Empty closeout state and bounded installation checks
+
+Resume/closeout verification must not create a build before client identity exists. The launcher recognizes only the exact historical empty pending-verification receipt (matching UUID, empty-input digest, unmet requirements and null ownership/artifact fields), preserves its build ID and initializes the actual client once. Any answers, identity or unknown fields retain the existing-state guard. Do not delete state or replace a UUID with a company name to get past verification.
+
+Prebuild verifies active board rows within the selected company and normalizes both sides of the canonical department comparison, including `master-orchestrator` and `ceo`. It still requires the canonical workforce artifacts. Do not rewrite board slugs by hand to satisfy this check.
+
+Each `openclaw skills info` process group is limited to 30 seconds and each skill QC process group to 180 seconds. Set `OBS_SKILLS_INFO_TIMEOUT_SECONDS` or `OBS_QC_TIMEOUT_SECONDS` to an integer from 1 through 3600 only when that installation needs a different finite limit. A timeout marks the skill `qc-failed` with `skills-info:timeout` or `qc-script:timeout`; checking other skills can continue, while final completion remains gated. The selected workspace contains private `.onboarding-qc-diagnostics/<phase>-*/stdout.log`, `stderr.log` and `status.json` receipts. Inspect them locally to distinguish a missing credential, failed provider response and deadline expiry; do not paste secrets into client chat.

@@ -39,7 +39,7 @@ class BootTests(unittest.TestCase):
         self.start_patch(patch.object(boot.os, 'geteuid', side_effect=lambda: self.uid))
         self.start_patch(patch.object(boot.pwd, 'getpwnam', return_value=types.SimpleNamespace(pw_dir=self.environment['HOME'])))
         self.start_patch(patch.object(boot.pwd, 'getpwuid', return_value=types.SimpleNamespace(pw_name='client')))
-        self.start_patch(patch.object(boot.shutil, 'which', side_effect=lambda cmd: '/fixture/bin/' + cmd))
+        self.start_patch(patch.object(boot.shutil, 'which', side_effect=lambda cmd, **kwargs: '/fixture/bin/' + cmd))
         self.start_patch(patch.object(boot.subprocess, 'run', side_effect=self.fake_run))
 
     def start_patch(self, item):
@@ -64,6 +64,8 @@ class BootTests(unittest.TestCase):
             stdout = self.fields[next(arg.split('=', 1)[1] for arg in argv if arg.startswith('--property='))]
         elif '--property=PIDFile' in argv:
             stdout = str(Path(os.environ['PM2_HOME']) / 'pm2.pid')
+        elif '--property=Type' in argv:
+            stdout = 'forking'
         elif '--property=User' in argv:
             stdout = 'client'
         elif '--property=Environment' in argv:
@@ -142,6 +144,22 @@ class BootTests(unittest.TestCase):
         self.assertTrue(result['preservedExisting'])
         self.assertEqual(unit.read_text(), 'official PM2 unit\n')
         self.assertFalse(any(Path(args[0]).name == 'install' for args, _ in self.calls))
+
+    def test_loaded_path_cannot_shadow_selected_node(self):
+        unit = self.units / 'pm2-client.service'
+        unit.write_text('official PM2 unit\n')
+        self.fields['Environment'] = ' '.join(shlex.quote(key + '=' + (('/shadow:' + value) if key == 'PATH' else value)) for key, value in self.environment.items() if key in ('HOME', 'PM2_HOME', 'PATH'))
+        with patch.object(boot.shutil, 'which', side_effect=lambda cmd, **kwargs: '/shadow/node' if cmd == 'node' and kwargs.get('path') else '/fixture/bin/' + cmd):
+            with self.assertRaises(boot.Pending):
+                boot.ensure(self.units)
+        self.assertEqual(unit.read_text(), 'official PM2 unit\n')
+        self.assertFalse(any('enable' in args for args, _ in self.calls))
+
+    def test_wrong_service_type_cannot_certify_pm2_daemon(self):
+        self.fields['Type'] = 'simple'
+        with self.assertRaises(boot.Pending):
+            boot.ensure(self.units)
+        self.assertFalse(any('enable' in args for args, _ in self.calls))
 
     def test_loaded_pid_mismatch_prevents_enable(self):
         self.fields['PIDFile'] = '/other-client/pm2.pid'

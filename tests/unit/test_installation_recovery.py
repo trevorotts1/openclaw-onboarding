@@ -122,12 +122,18 @@ class Recovery(unittest.TestCase):
         start=self.source.index(name+'() {');return self.source[start:self.source.index('\n}\n',start)+3]
 
     def setup(self):
-        fields={'UPDATE_ONLY':'true','RESUME_REQUESTED':'false','SKILL_DIR':str(ROOT/'32-command-center-setup'),'OC_ROOT':str(self.root),'STATE_FILE':str(self.state),'DASHBOARD_DIR':str(self.app),'CLIENT_SLUG':'fixture-company','COMPANY_NAME':'Fixture Company','CONTACT_EMAIL':'owner@example.test','LOG_FILE':str(self.root/'log')}
+        fields={'UPDATE_ONLY':'true','RESUME_REQUESTED':'false','SKILL_DIR':str(ROOT/'32-command-center-setup'),'OC_ROOT':str(self.root),'STATE_FILE':str(self.state),'DASHBOARD_DIR':str(self.app),'DASHBOARD_DIR_SOURCE':'--app-dir flag','CLIENT_SLUG':'fixture-company','COMPANY_NAME':'Fixture Company','CONTACT_EMAIL':'owner@example.test','LOG_FILE':str(self.root/'log')}
         return '\n'.join(k+'='+shlex.quote(v) for k,v in fields.items())+'\nexport OPENCLAW_OWNER_NAME=FixtureOwner\nlog() { :; }\nstate_get() { echo ""; }\ncc_security_preflight() { :; }\nfail_install() { exit 71; }\n'
 
     def test_real_update_preflight_initializes_cloned_only_install(self):
         start=self.source.index('# ---- preflight ----');end=self.source.index('for cmd in jq curl git npm python3;',start)
-        block=self.source[start:end]
+        constants=self.source[self.source.index('CC_PKG_NAME='):self.source.index('# Normalize a git remote')]
+        block=constants+'\nDASHBOARD_REPO=https://github.com/fixture/blackceo-command-center.git\n'+self.function('cc_repo_slug')+self.function('cc_validate_cc_checkout')+self.source[start:end]
+        subprocess.run(['git','init','-q',str(self.app)],check=True)
+        subprocess.run(['git','-C',str(self.app),'remote','add','origin','https://github.com/fixture/blackceo-command-center.git'],check=True)
+        (self.app/'package.json').write_text('{"name":"mission-control"}')
+        (self.app/'next.config.mjs').write_text('export default {}')
+        (self.app/'src').mkdir()
         result=subprocess.run(['bash','-c','set -u\n'+self.setup()+block+'\ntest "$UPDATE_ONLY" = true\ntest "$LAUNCH_INIT_REQUIRED" = true'],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         state=json.loads(self.state.read_text());self.assertEqual(state['ownerName'],'FixtureOwner');self.assertFalse(state['interviewComplete'])

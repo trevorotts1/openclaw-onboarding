@@ -72,13 +72,30 @@ def env_read(path):
 
 
 def is_uninitialized(state):
-    # Only known operational failure metadata is eligible for first identity
-    # allocation. Unknown fields, answers or identity aliases never qualify.
+    # Only known operational metadata can precede first identity allocation.
+    # Preserve a historical resume-runner stub, never reset answers or IDs.
     allowed = {'stateRevision', 'commandCenterStatus', 'commandCenterFailureReason'}
-    return (set(state).issubset(allowed)
-            and isinstance(state.get('stateRevision', 0), int)
-            and state.get('commandCenterStatus', 'failed') == 'failed'
-            and isinstance(state.get('commandCenterFailureReason', ''), str))
+    if (type(state.get('stateRevision', 0)) is not int or state.get('stateRevision', 0) < 0
+            or state.get('commandCenterStatus', 'failed') != 'failed'
+            or not isinstance(state.get('commandCenterFailureReason', ''), str)):
+        return False
+    if set(state).issubset(allowed):return True
+    if not set(state).issubset(allowed | {'buildId','completionVerification'}):return False
+    receipt=state.get('completionVerification')
+    keys={'version','buildId','companyId','status','checkedAt','unmetRequirements','inputDigest','artifactDigest'}
+    if not isinstance(receipt,dict) or set(receipt)!=keys:return False
+    build_id=state.get('buildId')
+    try:
+        parsed=uuid.UUID(build_id)
+        checked=datetime.fromisoformat(receipt['checkedAt'])
+    except (ValueError,TypeError,AttributeError):return False
+    if str(parsed)!=build_id or parsed.version!=4 or checked.tzinfo is None:return False
+    from workforce_completion import evaluate, input_digest
+    return (type(receipt['version']) is int and receipt['version']==1
+            and receipt['buildId']==build_id and receipt['companyId'] is None
+            and receipt['status']=='pending' and receipt['artifactDigest'] is None
+            and receipt['inputDigest']==input_digest({})
+            and receipt['unmetRequirements']==evaluate({}))
 
 
 def inspect_installation(path, app):
@@ -232,8 +249,16 @@ def prebuild(path, app, root):
     chosen=company/'departments.json'
     artifacts.append({'path':'departments.json','sha256':hashlib.sha256(chosen.read_bytes()).hexdigest()})
     with sqlite3.connect(Path(values['DATABASE_PATH']).resolve().as_uri()+'?mode=rw',uri=True) as db:
+        # Runtime reconciliation may project master-orchestrator as ceo. Match
+        # canonical identities on both sides, after restricting board ownership.
+        owned_slugs = {
+            canonical_dept_slug(row[0]) for row in db.execute(
+                'SELECT slug FROM workspaces WHERE company_id=? AND archived_at IS NULL',
+                (s['companyId'],),
+            )
+        }
         for slug in slugs:
-            if not db.execute('SELECT 1 FROM workspaces WHERE slug=? AND company_id=? AND archived_at IS NULL',(canonical_dept_slug(slug),s['companyId'])).fetchone(): raise ValueError('prebuild workspace ownership verification failed: '+slug)
+            if canonical_dept_slug(slug) not in owned_slugs: raise ValueError('prebuild workspace ownership verification failed: '+slug)
             directory=company/'departments'/slug
             dept_artifacts=sorted(directory.rglob('SOUL.md'))
             if not dept_artifacts: raise ValueError('prebuild canonical artifact missing: '+slug)

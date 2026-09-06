@@ -1,5 +1,9 @@
 # Changelog - ghl-setup
 
+## [7.0.1] - 2026-09-06 — preserve the selected client paths during QC
+
+- Resolve platform, configuration and workspace through the delivered shared resolver on Mac and native/container Linux. Refuse missing resolver dependencies instead of probing a different client root.
+
 All notable changes to this skill wrapper are documented here.
 
 ---

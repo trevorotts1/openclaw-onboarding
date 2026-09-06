@@ -1302,6 +1302,15 @@ if [[ "$RESUME_REQUESTED" == "true" ]]; then
     fail_install "Resume target is not a validated Command Center checkout: $DASHBOARD_DIR"
   fi
 fi
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  # Validate a refresh target before inspecting its database or allocating any
+  # onboarding identity. A bad pin must not alter this client's saved state.
+  if ! cc_validate_cc_checkout "$DASHBOARD_DIR"; then
+    log "ERROR" "preflight (--update-only): refusing to run against an unvalidated directory: $DASHBOARD_DIR (source: $DASHBOARD_DIR_SOURCE; reason: $CC_CANDIDATE_REASON). Fix --app-dir or CC_APP_DIR; existing client state is unchanged."
+    exit 1
+  fi
+  DASHBOARD_DIR="$CC_CANDIDATE_PATH"
+fi
 _LAUNCH_INSPECTION=$(python3 "$SKILL_DIR/scripts/interview-launch.py" inspect --state "$STATE_FILE" --app "$DASHBOARD_DIR") || {
   log "ERROR" "Installation identity/database inspection refused; existing files preserved"
   exit 8

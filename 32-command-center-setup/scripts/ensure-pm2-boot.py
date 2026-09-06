@@ -50,7 +50,7 @@ def compatible_existing(systemctl, unit_name, user, home, pm2_home, pm2, node):
     """Prove an external PM2 unit matches this daemon without rewriting it."""
     def field(name):
         return run([systemctl, 'show', '--property=' + name, '--value', unit_name])
-    if field('User') != user or field('PIDFile') != str(Path(pm2_home) / 'pm2.pid'):
+    if field('Type') != 'forking' or field('User') != user or field('PIDFile') != str(Path(pm2_home) / 'pm2.pid'):
         return False
     # Loaded Environment does not include EnvironmentFile values or later
     # UnsetEnvironment removals. Unknown overlays cannot prove daemon ownership.
@@ -64,7 +64,8 @@ def compatible_existing(systemctl, unit_name, user, home, pm2_home, pm2, node):
     account_home = pwd.getpwnam(user).pw_dir
     if values.get('HOME', account_home) != home or values.get('PM2_HOME') != pm2_home:
         return False
-    if str(Path(node).parent) not in values.get('PATH', '').split(':'):
+    loaded_node = shutil.which('node', path=values.get('PATH', ''))
+    if not loaded_node or str(Path(loaded_node).resolve()) != node:
         return False
     # systemctl serializes ExecStart as a single command struct. If quoting or
     # multiple command records prevent an exact proof, leave it pending.

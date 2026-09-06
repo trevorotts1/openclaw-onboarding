@@ -15,6 +15,19 @@ REQUIRED_CHECKS = ('registration', 'postBuild', 'qc', 'libraries')
 CC_PHASES = ('commandCenterBuildFresh','commandCenterWorkspacesSeeded','commandCenterDepartmentsSynced',
              'commandCenterMdContentSynced','commandCenterDashboardContentSeeded','commandCenterDeptRuntimeParity','commandCenterTenantReady')
 
+class UnownedBuildState(ValueError):
+    pass
+
+def has_build_identity(state):
+    # Legacy builds may have only their client slug; preserve that existing
+    # identity. Operational failure/verification metadata is never ownership.
+    return any(isinstance(state.get(key),str) and state[key].strip() not in ('','default')
+               for key in ('companyId','companySlug','clientSlug'))
+
+def require_build_identity(state):
+    if not has_build_identity(state):
+        raise UnownedBuildState('No client build identity exists; complete onboarding intake before build/closeout verification')
+
 def artifact_digest(root):
     if not root or not Path(root).is_dir():
         return None
@@ -50,6 +63,7 @@ def evaluate(state):
 
 def finalize(path,check_results=None,artifact_root=None):
     def mutate(state):
+        require_build_identity(state)
         now=datetime.now(timezone.utc).isoformat();state.setdefault('buildId',str(uuid.uuid4()))
         if check_results is not None:
             checks=state.setdefault('buildChecks',{})
@@ -67,7 +81,8 @@ def finalize(path,check_results=None,artifact_root=None):
             state.setdefault('buildCompletedAt',now)
             if state.get('closeoutStatus') not in ('generating','partial','sent','done'):state['closeoutStatus']='pending'
         return not missing
-    result=update(path,mutate)
+    try:result=update(path,mutate)
+    except UnownedBuildState:return False
     # Resume completion also updates the exact company/build progress record.
     state=read(path);root=(state.get('buildArtifactVerification') or {}).get('root')
     if root:
@@ -85,6 +100,7 @@ def finalize(path,check_results=None,artifact_root=None):
 def refresh(path):
     """Recheck old/failed builds without trusting historical stamps. Bounded subprocesses."""
     state=read(path);scripts=Path(__file__).parent
+    if not has_build_identity(state):return False
     env=dict(os.environ,WORKFORCE_BUILD_STATE_FILE=str(path),WORKFORCE_PYTHON=sys.executable)
     slug=state.get('companySlug') or state.get('clientSlug')
     if not slug:return finalize(path)
@@ -110,6 +126,7 @@ def closeout_artifact_digest(state):
 
 def finalize_closeout(path):
     def mutate(state):
+        require_build_identity(state)
         missing=evaluate(state)
         if state.get('commandCenterStatus')!='done' or any(state.get(k) is not True for k in CC_PHASES):missing.append('command-center')
         if state.get('qualityHeld'):missing.append('quality-held')
@@ -131,10 +148,15 @@ def finalize_closeout(path):
         state.pop('closeoutCriticalFailed',None)
         state['closeoutCleanupPending']=True
         return True
-    return update(path,mutate)
+    try:return update(path,mutate)
+    except UnownedBuildState:return False
 
 if __name__=='__main__':
     path=sys.argv[1]
+    if '--has-identity' in sys.argv:
+        present=has_build_identity(read(path))
+        print(json.dumps({'identityPresent':present}))
+        sys.exit(0 if present else 1)
     verified=finalize_closeout(path) if '--closeout' in sys.argv else refresh(path) if '--refresh' in sys.argv else finalize(path)
     print(json.dumps({'verified':verified}))
     sys.exit(0 if verified else 1)
