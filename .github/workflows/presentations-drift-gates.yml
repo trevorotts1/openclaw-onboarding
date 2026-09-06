@@ -35,6 +35,13 @@ name: presentations-drift-gates
 #            PIPELINE-MANIFEST.json. Added after both docs were found describing an
 #            obsolete 21-step / 12-phase scheme that matched none of the (then) 36
 #            live phases, unnoticed for months because nothing checked it.
+#   GATE 7 - phase-doc VALUE lockstep: 00-START-HERE.md and the other docs that
+#            restate the manifest must state its CURRENT manifest_version, phase
+#            count and phase order, with no duplicated list numbers and no dead
+#            "look it up in the manifest" stubs. GATE 4 checks only that each id
+#            is NAMED, which is why it stayed green while the department's entry
+#            document said "manifest_version 55, 55 phases" against a live v67
+#            with 62 phases. Delegates to scripts/ci/phase_doc_sync.py --check.
 #   GATE 5 - manifest-copy drift detector (FIX 32): proves the detector that
 #            compares the two PIPELINE-MANIFEST.json copies (repo cluster vs
 #            materialized department) by canonical-JSON content sha. A scratch
@@ -90,6 +97,20 @@ on:
       # whose phase-id lists must stay a superset of PIPELINE-MANIFEST.json phases[]
       - "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md"
       - "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md"
+      # GATE 6 target -- the duplicate-SOP checker the gate delegates to. Measured
+      # 2026-09-06: a PR touching ONLY this file did not fire this job, so the gate
+      # that grades it could not block the change that broke it.
+      - "scripts/check-duplicate-sop-drift.py"
+      # GATE 7 targets -- the phase-doc VALUE lockstep: the generator/checker plus
+      # every doc that restates the manifest's version, phase count or phase order.
+      # Measured 2026-09-06 on d85607d50: NONE of these five docs fired this job on
+      # a PR, which is how 00-START-HERE.md reached seven revisions of drift.
+      - "scripts/ci/phase_doc_sync.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-prompt-presentations.md"
       # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs
       - "51-signature-presentation/**"
       # Skill-23 engine script verify.sh resolves against (register --check leg)

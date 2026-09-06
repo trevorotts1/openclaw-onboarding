@@ -1,8 +1,8 @@
 # Presentation Interview app — deployable source + question wiring
 
 The **Presentation Interview app**: a Cloudflare-hosted intake frontend that asks
-15 intake questions one at a time (7-9 core, hard cap 20), shows a segmented
-**"Question N of 15"** progress bar, captures a **logo** ("no logo on file —
+16 intake questions one at a time (7-9 core, hard cap 20), shows a segmented
+**"Question N of 16"** progress bar, captures a **logo** ("no logo on file —
 provide one or build without?") and **image links**, and on **Submit** stores the
 answers on the box and **pushes them to the presentation department** (starting
 the kanban flow — no shortcuts).
