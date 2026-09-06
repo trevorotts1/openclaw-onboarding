@@ -25,9 +25,14 @@ import pathlib
 import sys
 
 # Fields carried straight through from the JSON question objects to the UI.
+# refuse_values/refuse_message ride through so the FRONTEND can refuse the
+# other axis's vocabulary at the point the client types it, instead of only
+# on the box in intake_writer. Same fields, same spelling, as the bank's
+# subfield annotations -- see _project_run_mode_question.
 _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "allowed_values", "value_labels", "default",
-                "conditional_on", "ask_if", "block_gate", "storeOn", "key")
+                "conditional_on", "ask_if", "block_gate", "storeOn", "key",
+                "refuse_values", "refuse_message")
 
 # The curated core set the Presentation Interview app asks (15 <= cap 20).
 # Every id must exist in deck-intake-questions.json, upsell-questions.json, or
@@ -50,12 +55,101 @@ DEFAULT_CURATED = [
     "speech_speed_preference",    # speech speed (order 7.5)
     "want_sales_checkout",        # new sales/checkout yes-no (order 7.6)
     "want_vsl_page",              # new VSL yes-no (order 7.7)
+    "run_mode",                   # FIX 11 run mode (projected from the bank's
+                                   # resource_plan.run_mode subfield) -- the
+                                   # hosted app's only way to reach Ultra
     "client_notes",               # extras
 ]
 
 # Questions the APP asks that have no canonical deck-intake counterpart (they are
 # capture UX, not driver fields). brand_primary (logo check) exists canonically;
 # image_links is the app's image-link capture and stores under deck_brief.IMAGE_LINKS.
+#: The app-facing wording for the projected run-mode question. Only the
+#: CLIENT-FACING copy lives here: the vocabulary (allowed_values),
+#: refuse_values and refuse_message are read from the bank by
+#: _project_run_mode_question below, never restated. The bank cannot supply a
+#: prompt for this one because run_mode is a SUBFIELD of the merged
+#: resource_plan turn, whose single prompt covers six subfields at once -- a
+#: standalone question needs its own sentence, and that sentence is app UX.
+RUN_MODE_APP_COPY = {
+    "id": "run_mode",
+    "section": "deck-intake",
+    "order": 11.5,
+    "prompt": "How hard should we run the BUILD of this deck — Ultra, Standard, or Economy?",
+    "help": ("This is about the BUILD, not this interview. Ultra runs at the "
+             "highest concurrency and the strongest model mix (fastest, most "
+             "expensive); Standard is the department default; Economy runs "
+             "leaner and cheaper. Skip this and you get Standard — we never "
+             "put a run on Ultra unless you asked for it. Note: 'quick' and "
+             "'in-depth' belong to a different question (how long this "
+             "interview is) and are not answers here."),
+    "kind": "text",
+    # NOT deck_brief: a run mode is an EXECUTION axis, not deck content (the
+    # bank subfield's own note). pre_presentation_capture.RUN_MODE is a
+    # location presentation-intake-poll.sh's read_run_mode() already reads.
+    "storeOn": "pre_presentation_capture.RUN_MODE",
+    "value_labels": {
+        "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+        "standard": "Standard — the department default",
+        "economy": "Economy — leaner and cheaper",
+    },
+    "required": False,
+    "block_gate": False,
+}
+
+#: Where the run-mode vocabulary comes from, stated once.
+RUN_MODE_BANK_QUESTION = "resource_plan"
+RUN_MODE_BANK_SUBFIELD = "run_mode"
+
+#: Used ONLY when the canonical bank is unreachable (the standalone app
+#: checkout). A mirror, and test_payload.py fails if it drifts from the bank.
+RUN_MODE_FALLBACK_VOCABULARY = {
+    "allowed_values": ["ultra", "standard", "economy"],
+    "default": "",
+    "refuse_values": ["quick", "in-depth", "in_depth", "indepth"],
+    "refuse_message": (
+        "run mode got interview-depth vocabulary {value}. The RUN-MODE axis "
+        "(FIX 11) is ultra|standard|economy and decides how the deck is BUILT "
+        "(concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX "
+        "30/36 standard_mode, --intake-depth) is quick|in-depth and decides "
+        "how much of this interview you are asked. The two axes are never "
+        "interchangeable and never share a slot."),
+}
+
+
+def _project_run_mode_question(pool: list) -> dict:
+    """Project the bank's resource_plan.run_mode SUBFIELD into a standalone
+    app question.
+
+    FIX 11 wired the run mode through the bank, deck-intake-driver.py and
+    presentation-intake-poll.sh, but the hosted app had no run-mode handling of
+    any kind -- so a client using it could not declare one, and every hosted
+    run executed standard while every surface reported success. This is the
+    question that closes it.
+
+    It is a projection, not a new question: the vocabulary, the refused
+    interview-depth words and the refusal message are read from the bank
+    subfield -- the source of truth -- so the two paths can never disagree
+    about what a legal run mode is. Only the client-facing sentence is the
+    app's (RUN_MODE_APP_COPY). When the bank is unreachable the mirrored
+    fallback is used; test_payload.py pins the two together.
+    """
+    q = dict(RUN_MODE_APP_COPY)
+    ann = {}
+    for row in pool:
+        if row.get("id") == RUN_MODE_BANK_QUESTION:
+            ann = (row.get("subfields") or {}).get(RUN_MODE_BANK_SUBFIELD) or {}
+            break
+    if ann.get("enum"):
+        q["allowed_values"] = [str(v).strip().lower() for v in ann["enum"]]
+        q["default"] = ann.get("default", "")
+        q["refuse_values"] = list(ann.get("refuse_values") or [])
+        q["refuse_message"] = ann.get("refuse_message") or ""
+    else:
+        q.update(RUN_MODE_FALLBACK_VOCABULARY)
+    return q
+
+
 APP_ONLY_QUESTIONS = {
     "image_links": {
         "id": "image_links",
@@ -124,6 +218,15 @@ def load_specs(root: pathlib.Path) -> tuple[dict, dict, dict | None]:
 def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
                           store_target: dict | None = None) -> dict:
     by_id = {q.get("id"): q for q in specs.get("questions", [])}
+    # FIX 11: run_mode is a PROJECTION of the bank's resource_plan.run_mode
+    # subfield (see _project_run_mode_question), not a question row any JSON
+    # carries -- so it is built HERE, where every caller passes through, rather
+    # than in load_specs, which is only ONE of the ways a pool gets assembled
+    # (test_payload.py builds its own from the canonical files). A curated id
+    # that resolves on one path and raises on the other is a trap.
+    rm_id = RUN_MODE_APP_COPY["id"]
+    if rm_id in curated_ids and rm_id not in by_id:
+        by_id[rm_id] = _project_run_mode_question(specs.get("questions", []))
     missing = [i for i in curated_ids if i not in by_id]
     if missing:
         raise ValueError(f"curated ids not found in canonical JSONs: {missing}")
@@ -161,6 +264,11 @@ def selftest() -> int:
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
         assert "want_sales_checkout" in ids, "sales/checkout yes-no must be included"
         assert "want_vsl_page" in ids, "VSL yes-no must be included"
+        assert "run_mode" in ids, "FIX 11 run-mode question must be included"
+        rm = next(q for q in payload["questions"] if q["id"] == "run_mode")
+        assert rm["allowed_values"] == ["ultra", "standard", "economy"], rm
+        assert rm.get("default") == "", "undeclared is undeclared, never ultra"
+        assert "quick" in [str(v).lower() for v in rm.get("refuse_values", [])]
         assert all("prompt" in q and q["prompt"] for q in payload["questions"]), "every question needs a prompt"
         offer = next(q for q in payload["questions"] if q["id"] == "offer_name")
         assert offer.get("storeOn") == "deck_brief.OFFER_NAME", f"offer storeOn not qualified: {offer.get('storeOn')}"

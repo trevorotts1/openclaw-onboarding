@@ -316,6 +316,27 @@
         label: "VSL page", required: true, storeOn: "pre_presentation_capture.WANT_VSL_PAGE",
         allowed_values: ["yes", "no"],
         value_labels: { "yes": "Yes, build the VSL page", "no": "No thank you" } },
+      /* FIX 11 — the client's RUN MODE. The hosted app is a third intake path
+         and had no run-mode handling at all, so a client here could not reach
+         Ultra: every hosted run executed standard while every surface reported
+         success. kind "enum" is load-bearing — it renders a pick-one group, so
+         the interview-depth words (quick / in-depth) cannot be typed into this
+         slot at all; bridge/intake_writer.py refuses them server-side for the
+         API path, naming BOTH axes. required:false + default "" means Skip
+         declares nothing, and nothing resolves to standard downstream — never
+         ultra by default. storeOn is pre_presentation_capture, NOT deck_brief:
+         a run mode is an execution axis, not deck content. */
+      { id: "run_mode", order: 11.5, kind: "enum",
+        prompt: "How hard should we run the <span class=\"emph\">build</span> of this deck?",
+        help: "This is about the BUILD, not this interview. Skip it and you get Standard — we never put a run on Ultra unless you asked for it.",
+        label: "Run mode", required: false, storeOn: "pre_presentation_capture.RUN_MODE",
+        default: "",
+        allowed_values: ["ultra", "standard", "economy"],
+        value_labels: {
+          "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+          "standard": "Standard — the department default",
+          "economy": "Economy — leaner and cheaper"
+        } },
       { id: "client_notes", order: 12, kind: "text",
         prompt: "Anything else important we should <span class=\"emph\">know</span> before we start?",
         help: "Extras: target slide count, deadline, proof assets, anything else. Optional.",
@@ -323,7 +344,7 @@
     ];
 
     var MAX_QUESTIONS = 20;
-    var TOTAL = QUESTIONS.length; /* 15 curated questions -> "Question N of 15" */
+    var TOTAL = QUESTIONS.length; /* 16 curated questions -> "Question N of 16" */
     var answers = {};             /* qid -> { raw, value, storeOn, kind, label } */
 
     var stage = document.getElementById("stage");
