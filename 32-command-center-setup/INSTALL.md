@@ -7,32 +7,11 @@
 
 This guide walks you through activating your AI workforce as a live Command Center. The process has 8 phases. Some phases you do manually (like setting up Telegram). Other phases the agent does automatically.
 
-**Important:** Per OQ-1 below, the LOCKED Command Center shell (Phase 6 dashboard deploy) ships regardless of Skill 23 status — it does NOT wait on Skill 23. Skill 23 (AI Workforce Blueprint) being complete is required only for the WORKFORCE BUILD phases that materialize real departments, agents, and topics (Phases 3, 4, 5, 6i, 7). The agent checks for Skill 23 completion at Phase 1.4 below, but that check gates the workforce build, not the shell.
+**Current automated order (v13.1.3):** `scripts/run-full-install.sh` initializes missing pending client state, provisions client-specific service identity/configuration, deploys the locked Command Center and binds its database to the same company. Fresh clients use the standard-first lane: real standard department artifacts and board rows are verified before the interview invitation. Existing recorded lanes/operator choices are preserved.
 
-> **🔒 Locked interview-mode is BY DESIGN (ratified 2026-07-03, OQ-1).** The Command
-> Center ships to the client FIRST but LOCKED to the `/interview` surface. The CC
-> middleware (P0-5) 302-redirects every non-`/interview`, non-`/onboarding` page to
-> `/interview` while the client's build-state `interviewComplete` is `false`, and
-> reveals the full dashboard once `buildCompletedAt` is set at closeout. The lock is
-> STATE-DRIVEN off the canonical build-state fields (`interviewComplete` /
-> `buildCompletedAt`) — there is **no separate CC "unlock" env var** and provisioning
-> must not invent one. The interview-only view in front of an empty board before
-> closeout is the intended experience, **not a bug** — do not "unlock" it. What the
-> interview-complete gate below protects is the seeding/materialization of the
-> client's REAL zero-human workforce (departments, roles, agents), which must still
-> wait for the interview to be genuinely complete.
->
-> **Automated sequence (OQ-1 shell-first flip, v12.9.27).** `scripts/run-full-install.sh`
-> deploys the LOCKED CC shell FIRST, then gates the real workforce, in two blocks:
-> **BLOCK A** (Phase 1 prereqs → a **lock-assert** → Phase 6 dashboard deploy → Phase 6h
-> tunnel) brings up the locked `/interview` shell; **BLOCK B** (Phase 3/4/5 + Phase
-> 6b–6g seeding + Phase 6i SOP V2 library ingestion → Phase 7 verification → Phase 7z
-> ZHE gate) runs only after the interview-complete gate passes. The **lock-before-reachable** invariant is the safety
-> guarantee: the lock-assert FAILS CLOSED if the build-state file (the middleware's only
-> lock source) is missing, and because a pre-closeout build has `interviewComplete=false`
-> / `buildCompletedAt` unset, the shell serves LOCKED (302 → `/interview`) from its first
-> request — there is no unlocked-empty-board window. The manual phase walkthrough below
-> is unchanged in content; only the run-full-install orchestration order was flipped.
+The installer verifies the public `interview-launch.v1` readiness receipt before returning the pre-interview state. The sender then requests an authenticated one-use enrollment link and delivers it with the client's own Telegram configuration. An HTTP 200 from a gateway page is insufficient. Tunnel creation and verified public readiness are separate recorded steps.
+
+The foundation does not pretend that the owner has answered the interview or that the runtime workforce is activated. Completed Q/A drives the existing department/persona diff and workforce build; verified closeout governs the final dashboard. See [launch and recovery](../docs/interview-launch-recovery.md) for retry behavior and client acceptance.
 
 ---
 
@@ -44,7 +23,7 @@ The agent will verify these before starting:
 ```bash
 node --version
 ```
-Expected: v18 or higher. If lower, update Node.js first.
+Expected: Node ^20.19.0, ^22.13.0 or >=24. Use a compatible runtime before installation.
 
 ### 1.2 Check Git Installation
 ```bash
@@ -864,7 +843,7 @@ Teach Yourself means READ. Activate means EXECUTE.
 ```bash
 ls -la ~/.openclaw/workspace/departments/
 ```
-Expected: Department folders exist from Skill 23. **If missing, that is fine — proceed to Step 2 anyway.** Per OQ-1 (see above), the locked Command Center shell (Steps 2-8) ships regardless of Skill 23 status. Skill 23 is required only for the real WORKFORCE BUILD (departments, agents, topics), which `run-full-install.sh` materializes automatically once the interview is complete — there is nothing to STOP for here.
+Expected: Department folders exist from Skill 23. **If missing, that is fine — proceed to Step 2 anyway.** Per OQ-1 (see above), the locked Command Center shell (Steps 2-8) ships regardless of Skill 23 status. The standard-first lane prepares verified department artifacts/board rows before the interview; Skill 23 completion is required for personalization and workforce activation — there is nothing to STOP for here.
 
 #### Step 2: CLONE Command Center repository
 ```bash

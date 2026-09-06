@@ -1,0 +1,36 @@
+name: Interview launch contract
+on:
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'update-skills.sh'
+      - '32-command-center-setup/scripts/**'
+      - '23-ai-workforce-blueprint/scripts/send-interview-link.sh'
+      - '23-ai-workforce-blueprint/scripts/build-workforce.py'
+      - '37-zhc-closeout/scripts/**'
+      - 'tests/unit/test_build_company_identity.py'
+      - 'scripts/prebuild-standard-workforce.py'
+      - 'shared-utils/interview_invitation.py'
+      - 'shared-utils/canonical_slug.py'
+      - 'tests/unit/interview-launch.test.py'
+      - 'tests/unit/test_interview_invitation.py'
+      - '.github/workflows/interview-launch-contract.yml'
+  workflow_dispatch:
+jobs:
+  isolated-launch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fresh missing-state launch, scoped database, and full canonical prebuild
+        env:
+          RUN_LAUNCH_PREBUILD_FIXTURE: '1'
+        run: python3 tests/unit/interview-launch.test.py
+      - name: Authenticated public origin and acknowledged gateway invitation fixtures
+        run: python3 tests/unit/test_interview_invitation.py
+      - name: Canonical company identity through real post-interview builder
+        run: python3 tests/unit/test_build_company_identity.py
+      - name: Client-owned Notion creation and recovery with isolated transport
+        run: python3 37-zhc-closeout/scripts/test-notion-client-ownership.py

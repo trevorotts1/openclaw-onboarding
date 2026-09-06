@@ -108,7 +108,9 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
 fi
 
 # ---- platform detection (VPS first, Mac fallback) ----
-if [[ -d /data/.openclaw ]]; then
+if [[ -n "${OPENCLAW_ROOT:-}" ]]; then
+  OC_ROOT="$OPENCLAW_ROOT"
+elif [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
 elif [[ -d "$HOME/.openclaw" ]]; then
   OC_ROOT="$HOME/.openclaw"
@@ -117,8 +119,9 @@ else
   exit 1
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
-LOG_FILE="$OC_ROOT/workspace/.command-center-install.log"
+STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
+LOG_FILE="$(dirname "$STATE_FILE")/.command-center-install.log"
+mkdir -p "$(dirname "$STATE_FILE")"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DASHBOARD_REPO="https://github.com/trevorotts1/blackceo-command-center.git"
 # ---- Command Center install location (APPDIR-01) --------------------------
@@ -1224,16 +1227,33 @@ cc_install_locked_dependencies() {
   fi
 }
 
+cc_load_launch_environment() {
+  # Carry the SAME client-owned paths/IDs into the existing seed and sync tools.
+  # Values are parsed as data; never source/eval a service environment file.
+  local key value
+  for key in MC_COMPANY_ID MC_TENANT_ID MC_INSTALLATION_ID ZERO_HUMAN_COMPANY_DIR DATABASE_PATH OPENCLAW_WORKSPACE_ROOT OPENCLAW_WORKSPACE_PATH MC_TENANT_PUBLIC_URL MC_API_TOKEN; do
+    value="$(cc_env_get "$DASHBOARD_DIR/.env.local" "$key")"
+    [[ -n "$value" ]] && export "$key=$value"
+  done
+}
+
+cc_launch_stage() {
+  python3 "$SKILL_DIR/scripts/interview-launch.py" "$1" --state "$STATE_FILE" \
+    --app "$DASHBOARD_DIR" --root "$OC_ROOT" >>"$LOG_FILE" 2>&1
+}
+
 # ---- preflight ----
-cc_security_preflight
-if [[ ! -f "$STATE_FILE" ]]; then
-  if [[ "$UPDATE_ONLY" == "true" ]]; then
-    log "WARN" "no state file at $STATE_FILE — update-only continuing without state tracking"
-  else
-    log "ERROR" "no state file at $STATE_FILE — refusing to run"
-    exit 1
-  fi
+# The pending state is installation metadata, never fabricated interview answers.
+# Both initial install and absent-CC update enter this same initializer.
+if [[ "$UPDATE_ONLY" != "true" ]]; then
+  python3 "$SKILL_DIR/scripts/interview-launch.py" initialize --state "$STATE_FILE" \
+    --app "$DASHBOARD_DIR" --slug "$CLIENT_SLUG" --name "$COMPANY_NAME" --email "$CONTACT_EMAIL" \
+    >>"$LOG_FILE" 2>&1 || {
+      log "ERROR" "launch identity pending; inspect $LOG_FILE (existing state preserved; no shell or foreign company selected)"
+      exit 8
+    }
 fi
+cc_security_preflight
 for cmd in jq curl git npm python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     if [[ "$UPDATE_ONLY" == "true" ]]; then
@@ -1384,6 +1404,10 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
   # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
   cc_write_env_local
+  if [[ -n "$(state_get '.launchBootstrap')" ]]; then
+    cc_launch_stage provision || fail_install "client tenant configuration pending; see $LOG_FILE"
+    cc_load_launch_environment
+  fi
   ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
     && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
     || log "WARN" "phase=6: db:push reported errors (continuing)"
@@ -1396,6 +1420,9 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
   # (mission-control, command-center) BEFORE the atomic deploy restarts the
   # canonical process, so it is never fighting a duplicate alias for :4000.
+  if [[ -n "$(state_get '.launchBootstrap')" ]]; then
+    cc_launch_stage bind-database || fail_install "client company binding failed; refusing service startup"
+  fi
   cc_reconcile_pm2_names
   # (1) P1-07: build + restart now route through CC's OWN canonical update
   # path (update.sh -> atomic-deploy.sh: fresh-.next/BUILD_ID gate, atomic
@@ -1426,6 +1453,10 @@ else
   # (2)+(3)+(4) provision CC .env.local BEFORE build/boot (gateway token +
   # sovereign text model + API-auth posture), from THIS box's own config.
   cc_write_env_local
+  if [[ -n "$(state_get '.launchBootstrap')" ]]; then
+    cc_launch_stage provision || fail_install "client tenant configuration pending; see $LOG_FILE"
+    cc_load_launch_environment
+  fi
   # (1) build the `.next` bundle so `next start` serves code matching the checkout
   # (registers the intake-advance + backlog-redispatch sweeps). A fresh full
   # install has NO `.next` at all — so a hard build failure with no usable bundle
@@ -1469,6 +1500,9 @@ else
   # exactly ONE canonical "blackceo-command-center". A box can never end up with
   # two CCs fighting over :4000.
   log "INFO" "phase=6: starting dashboard via pm2 as '$CC_PM2_NAME' on CC_PORT=$DASHBOARD_PORT"
+  if [[ -n "$(state_get '.launchBootstrap')" ]]; then
+    cc_launch_stage bind-database || fail_install "client company binding failed; refusing service startup"
+  fi
   cc_reconcile_pm2_names
   pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
   if ! cc_pm2_start_canonical; then
@@ -1490,7 +1524,7 @@ fi
 # commandCenterPhase6hStatus, but the READ falls back to the old key so the
 # duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
 log "INFO" "phase=6h tunnel: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
+if [[ "$UPDATE_ONLY" == "true" && -z "$(state_get '.launchBootstrap')" ]]; then
   log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
 else
   existing_url=$(state_get '.commandCenterUrl')
@@ -1505,10 +1539,10 @@ else
   # a fresh registration.
   if [[ "$phase6h_status" == "failed-webhook" || "$phase6h_status" == "done" \
      || "$phase6h_status" == "done-no-subdomain-recorded" \
-     || "$phase6h_status" == "skipped-script-missing" ]]; then
+     || "$phase6h_status" == "requested" || "$phase6h_status" == "created" ]]; then
     log "INFO" "phase=6h tunnel: prior registration attempt recorded (status=$phase6h_status) — NOT re-POSTing webhook (duplicate-CC guard)"
-  elif [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
-    log "INFO" "phase=6h tunnel: commandCenterUrl already set ($existing_url) — skipping"
+  elif [[ "$(state_get '.commandCenterPublicOrigin.verified')" == "true" ]]; then
+    log "INFO" "phase=6h tunnel: verified receipt present — reconciling with authenticated readiness below"
   else
     TUNNEL_SCRIPT="$SKILL_DIR/scripts/create-tunnel.sh"
     if [[ ! -x "$TUNNEL_SCRIPT" ]]; then
@@ -1516,23 +1550,19 @@ else
       state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
     else
       log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
-      if ! bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
+      # Record the request before the external effect. Interrupted/ambiguous calls
+      # reconcile via the authenticated readiness probe; never blindly re-POST.
+      state_set '.commandCenterPhase6hStatus = "requested"'
+      export CC_TUNNEL_IDEMPOTENCY_KEY="$(state_get '.installationId')-command-center"
+      export CC_TUNNEL_EXPECTED_HOST="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$(state_get '.commandCenterUrl')")"
+      if ! OPENCLAW_ROOT="$OC_ROOT" bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
         log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
         state_set '.commandCenterPhase6hStatus = "failed-webhook"'
       else
-        # Try to recover the subdomain from the .env file the tunnel script wrote
-        SUBDOMAIN_HINT=""
-        if [[ -f "$OC_ROOT/.env" ]]; then
-          SUBDOMAIN_HINT="$CLIENT_SLUG.zerohumanworkforce.com"
-        fi
-        if [[ -n "$SUBDOMAIN_HINT" ]]; then
-          # P3-2: the URL carries the client slug — pass it via jq --arg, not interpolation.
-          state_set_arg '.commandCenterUrl = $val | .commandCenterPhase6hStatus = "done"' "https://$SUBDOMAIN_HINT"
-          log "INFO" "phase=6h tunnel: done — https://$SUBDOMAIN_HINT"
-        else
-          state_set '.commandCenterPhase6hStatus = "done-no-subdomain-recorded"'
-          log "INFO" "phase=6h tunnel: done (subdomain not recovered into state)"
-        fi
+        # A successful webhook is creation evidence, not authenticated readiness.
+        # The requested URL was scoped before deployment; no .env-exists guessing.
+        state_set '.commandCenterPhase6hStatus = "created"'
+        log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
       fi
     fi
   fi
@@ -1577,7 +1607,7 @@ fi
 #
 # --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
 # db:push) and must keep working for provisioned boxes whose flag predates this gate.
-if [[ "$UPDATE_ONLY" != "true" ]]; then
+if [[ "$UPDATE_ONLY" != "true" || ( -n "$(state_get '.launchBootstrap')" && "$(state_get '.interviewComplete')" != "true" ) ]]; then
   if [[ ! -f "$STATE_FILE" ]]; then
     log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (real workforce not seeded)."
     echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. The locked CC shell is already deployed (client can use /interview now); real workforce NOT materialized (the CC stays in locked interview-mode by design until closeout)." >&2
@@ -1587,9 +1617,24 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    if ! cc_launch_stage prebuild; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "foundation-pending"'
+      log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
+      exit 8
+    fi
+    if ! python3 "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --interview --env-file "$DASHBOARD_DIR/.env.local" >>"$LOG_FILE" 2>&1; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "readiness-pending"'
+      log "WARN" "Interview launch pending: authenticated public identity/runtime readiness not verified; no invitation may be claimed"
+      exit 8
+    fi
+    if ! cc_launch_stage invite; then
+      state_set '.commandCenterStatus = "launch-pending"'
+      log "WARN" "Interview invitation pending: no acknowledged delivery; see the scoped invitation receipt and install log"
+      exit 8
+    fi
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
     state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The locked CC shell is already deployed (client can use /interview now); it remains in locked interview-mode by design until closeout." >&2
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
     exit 0
   fi
   log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."

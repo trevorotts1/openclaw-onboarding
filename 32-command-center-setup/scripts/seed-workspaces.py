@@ -192,6 +192,10 @@ def find_departments_config():
     If $COMPANY_SLUG is set, prefer that company's folder. Otherwise pick the
     most-recently-modified ZHC folder (matches "the one the client just built").
     """
+    explicit_root = os.environ.get('ZERO_HUMAN_COMPANY_DIR')
+    if explicit_root:
+        source = Path(explicit_root)/'departments.json'
+        return _normalize_departments(json.loads(source.read_text())), str(source)
     target_slug = os.environ.get("COMPANY_SLUG", "").strip()
 
     # Build prioritized candidate list
@@ -338,6 +342,18 @@ def find_company_info(parent_folder_name=None):
         "brand_text":    "#f8fafc",   # neutral default (slate-50)
     }
 
+    # Explicit company context wins over ambient filesystem discovery.
+    explicit_root = os.environ.get('ZERO_HUMAN_COMPANY_DIR')
+    if explicit_root:
+        cfg = json.loads((Path(explicit_root)/'company-config.json').read_text())
+        info.update(name=cfg.get('name') or cfg.get('companyName') or '',
+                    slug=cfg.get('slug') or cfg.get('companySlug') or '',
+                    companyId=cfg.get('companyId') or cfg.get('company_id'))
+        if not info['name'] or not info['slug']: raise ValueError('explicit company config missing identity')
+        if os.environ.get('MC_COMPANY_ID') and info.get('companyId') and os.environ['MC_COMPANY_ID'] != info['companyId']:
+            raise ValueError('explicit company identity conflict')
+        return info
+
     # 1. Env vars
     info["name"] = os.environ.get("COMPANY_NAME", "").strip()
     brand_env = os.environ.get("COMPANY_BRAND_COLORS", "").strip()
@@ -455,6 +471,13 @@ def seed(db_path, departments, company_info):
     # Create company entry — write brand colors + industry into config blob
     company_slug = company_info["slug"]
     company_name = company_info["name"]
+    requested_id = company_info.get('companyId') or os.environ.get('MC_COMPANY_ID')
+    existing_company = cur.execute('SELECT id FROM companies WHERE slug=?',(company_slug,)).fetchone()
+    if requested_id and existing_company and existing_company[0] != requested_id:
+        raise ValueError('company slug belongs to a different canonical company ID')
+    company_id = requested_id or (existing_company[0] if existing_company else company_slug)
+    collision = cur.execute('SELECT slug FROM companies WHERE id=?',(company_id,)).fetchone()
+    if collision and collision[0] != company_slug: raise ValueError('canonical company ID belongs to a different slug')
     company_config = json.dumps({
         "brand": {
             "primary": company_info["brand_primary"],
@@ -471,11 +494,11 @@ def seed(db_path, departments, company_info):
           name=excluded.name,
           industry=excluded.industry,
           config=excluded.config
-    """, (company_slug, company_name, company_slug, company_info["industry"], company_config))
+    """, (company_id, company_name, company_slug, company_info["industry"], company_config))
     print(f"  Company: {company_name} (slug={company_slug}, industry={company_info['industry'] or 'n/a'})")
     print(f"  Brand: primary={company_info['brand_primary']} accent={company_info['brand_accent']}")
 
-    existing = {row[0] for row in cur.execute("SELECT id FROM workspaces WHERE company_id=?", (company_slug,)).fetchall()}
+    existing = {row[0] for row in cur.execute("SELECT id FROM workspaces WHERE company_id=?", (company_id,)).fetchall()}
     inserted = 0
     skipped = 0
 
@@ -498,6 +521,9 @@ def seed(db_path, departments, company_info):
         dept_id = _canonical_dept_slug(raw_id)
         if not dept_id:
             continue
+        owner = cur.execute('SELECT company_id FROM workspaces WHERE id=? OR slug=?',(dept_id,dept_id)).fetchall()
+        if any(row[0] != company_id for row in owner):
+            raise ValueError('department workspace belongs to a different company; refusing shared-client mutation')
         if dept_id in existing:
             skipped += 1
             continue
@@ -515,7 +541,7 @@ def seed(db_path, departments, company_info):
             dept_id,
             f"{dept['name']} department workspace",
             dept.get('emoji', '📁'),
-            company_slug
+            company_id
         ))
         if cur.rowcount:
             print(f"  INSERTED: {dept_id} ({dept['name']}) {dept.get('emoji', '📁')}")

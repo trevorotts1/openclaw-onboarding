@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.4"
+ONBOARDING_VERSION="v25.0.5"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -8231,9 +8231,9 @@ bootstrap_command_center_shell() {
 
     note "Bootstrapping the locked Command Center shell for slug '$_bccs_slug' (name-derived; interview not yet complete)..."
     if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_owner" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
-        success "Command Center locked shell bootstrapped (slug=$_bccs_slug) — will unlock automatically once the AI Workforce interview completes"
+        success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
     else
-        warn "Command Center bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; a later update-skills.sh run will retry"
+        warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"
     fi
     return 0
 }

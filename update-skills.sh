@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v25.0.4"
+ONBOARDING_VERSION="v25.0.5"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.0.4 - safe_json_edit
+# v25.0.5 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9305,6 +9305,12 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
             || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
         fi
       else
+        _CC_INSTALL_RC=$?
+        if [ "$_CC_INSTALL_RC" -eq 8 ]; then
+          echo "PENDING: skills content is current; interview launch prerequisites remain unresolved (this is not proof of a failed app deployment)." >&2
+          echo "         Read the client-scoped interviewLaunch receipt and $OC_WORKSPACE_DEFAULT/.command-center-install.log; resume through this updater." >&2
+          exit 8
+        fi
         echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
         echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
@@ -9422,7 +9428,7 @@ PYEOF
       echo ""
       echo "  Command Center not present on this box (no checkout, no pm2 app, port $_CC_PORT free) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
       if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
-        echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+        echo "  ✓ Command Center shell installation completed; interviewLaunch receipt separately records verified public prerequisites (provider liveness remains unverified)"
         _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"
         if [ -f "$_CC_BINDING_SYNC" ]; then
           python3 "$_CC_BINDING_SYNC" --db "$_CC_DIR_CANONICAL/mission-control.db" \
@@ -9431,6 +9437,12 @@ PYEOF
             || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
         fi
       else
+        _CC_INSTALL_RC=$?
+        if [ "$_CC_INSTALL_RC" -eq 8 ]; then
+          echo "PENDING: skills content is current; interview launch prerequisites remain unresolved (this is not proof of a failed app deployment)." >&2
+          echo "         Read the client-scoped interviewLaunch receipt and $OC_WORKSPACE_DEFAULT/.command-center-install.log; resume through this updater." >&2
+          exit 8
+        fi
         echo "FATAL: Command Center bootstrap failed; skills content is current but CC web-app was not bootstrapped." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run." >&2
         echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC bootstrap FAILED." >&2
@@ -9438,10 +9450,10 @@ PYEOF
       fi
     elif [ -n "$_CC_SLUG" ]; then
       echo ""
-      echo "  ℹ Command Center not provisioned and build-state is missing company/email — bootstrap deferred (needs slug+company+email)."
+      echo "  ℹ Command Center not provisioned and build-state is missing company/email — launch PENDING: installation identity needs slug+company+email; skills installed does not mean interview ready."
     else
       echo ""
-      echo "  ℹ Command Center not provisioned and build-state has no client slug — bootstrap deferred (interview not completed)."
+      echo "  ℹ Command Center not provisioned and build-state has no client slug — launch PENDING: installation owner identity unresolved; interview answers are not required to initialize it."
     fi
   fi
   # <<< TRAP3-CC-BOOTSTRAP-BRANCH-END
