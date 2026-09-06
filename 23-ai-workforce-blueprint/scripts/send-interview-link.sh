@@ -1,108 +1,13 @@
 #!/usr/bin/env bash
-# send-interview-link.sh — OPERATOR-TRIGGERED delivery of the AI Workforce
-# Interview link to the client owner, via the OpenClaw gateway ONLY.
-#
-# WHAT THIS IS
-#   The clean "when you're ready, start here" trigger for the Skill-23
-#   interview. The operator runs this ON THE CLIENT'S BOX (directly or over
-#   SSH); the box resolves ITS OWN owner chat (operator ids auto-rejected) and
-#   sends ONE Telegram message carrying either:
-#     START  — <dashboard>/interview            (nothing answered yet), or
-#     RESUME — <dashboard>/onboarding/resume/<slug>  (interview underway;
-#              the Command Center resumes at the exact next unanswered
-#              question from interview-handoff.md)
-#   When no dashboard URL is configured, the message instead invites the owner
-#   to reply here in Telegram to begin/continue — the interview is fully
-#   conductable in chat (INSTALL.md §5c Options A/B/C). It NEVER emits a
-#   placeholder/broken link.
-#
-# DOCTRINE (binding)
-#   • OPERATOR-TRIGGERED ONLY. This script is NEVER registered on a cron and
-#     never auto-fires. The idle re-engagement cadence is a different tool
-#     (interview-nudge-cron.sh → shared-utils/nudge-incomplete-interviews.py).
-#   • GATEWAY ONLY. All sends go through `openclaw message send`. Direct HTTP
-#     to api.telegram.org is FORBIDDEN. No openclaw CLI → log and FAIL, never
-#     fall back.
-#   • OPERATOR-REJECTION. The owner chat comes from
-#     shared-utils/resolve-owner-chat.sh (env pin → allowFrom →
-#     commands.ownerAllowFrom), which refuses every known operator id. This
-#     script hardcodes NO chat ids.
-#   • NO SECRETS. Nothing from openclaw.json is printed; the resolved chat id
-#     is masked (last 4 digits) in all output.
-#   • ANTI-SPAM. A send within the last 30 minutes (per-box ledger
-#     company-discovery/.interview-link-sends.log) refuses unless FORCE=1.
-#   • CANONICAL FILES ARE READ-ONLY here. This script reads
-#     .workforce-build-state.json + interview-handoff.md and writes ONLY its
-#     own non-canonical ledger line. It never touches build-state, the
-#     transcript, or the handoff.
-#   • SHARED-DASHBOARD SAFETY (shared-dashboard incident 2026-08-13 — BINDING). A link is
-#     only emitted when the dashboard host that serves it ANSWERS for THIS
-#     company. The shared Command Center deployment serves every client
-#     hostname (<client>.zerohumanworkforce.com -> the operator's CC), and a
-#     hostname-blind interview endpoint previously answered a fresh client with
-#     the OPERATOR's completed interview, so the client's /interview page
-#     immediately redirected itself to the dashboard (flash-then-jump). Rules:
-#       (a) If the link points at a SHARED dashboard host (a *.zerohumanworkforce.com
-#           host that does NOT run this box's own CC — see the CHECK_SHARED_HOST
-#           function below), the script VERIFIES the host answers interview
-#           state for THIS company (gate-status query) and that the state says
-#           the interview is NOT complete. On mismatch: FAIL and send the
-#           Telegram-native reply-here invite instead — NEVER a broken link.
-#       (b) If the link points at THIS box's own CC (localhost/127.0.0.1 or a
-#           box-owned hostname), no check is needed: the box's own state file
-#           was already read above, and the box's CC reads the same file.
-#       (c) Failures in the CHECK are treated as "cannot verify" -> FAIL to
-#           the Telegram invite (never send an unverifiable web link). A
-#           deliberately-breakable verification (curl to a health endpoint)
-#           does NOT count as verification of interview state.
-#   • STANDARD-FIRST DAY-ONE LINK. Under the standard-first onboarding lane
-#     (build-state buildType == "standard-first"), the operator runs this
-#     script on DAY ONE — after the locked Command Center shell + tunnel are
-#     deployed (run-full-install.sh BLOCK A) and the standard foundation is
-#     prebuilt (prebuild-standard-workforce.sh, STANDARD_READY) — so the owner
-#     receives the interview link before answering a single question. The
-#     message wording is chosen from build-state (legacy vs standard-first);
-#     NOTHING else changes here: the exit codes, START vs RESUME mode, the
-#     30-minute anti-spam guard, and the refuse-on-complete behavior all stay
-#     byte-identical across both lanes, and the link destination stays
-#     <dashboard>/interview. Legacy boxes (buildType absent or "legacy") get
-#     today's wording unchanged.
-#
-# Usage:
-#   bash scripts/send-interview-link.sh              # resolve + send
-#   bash scripts/send-interview-link.sh --dry-run    # print what WOULD send
-#   FORCE=1 bash scripts/send-interview-link.sh      # bypass the 30-min guard
-#
-# Env:
-#   OPENCLAW_DASHBOARD_URL   (optional) the client's Command Center base URL
-#                            (e.g. https://<client>.zerohumanworkforce.com).
-#                            With it: a tappable web link (works great on a
-#                            phone). Without it: the Telegram-native
-#                            reply-here invitation is sent instead.
-#   OPENCLAW_OWNER_CHAT_ID   (optional) explicit owner chat pin (resolver S0;
-#                            operator ids still rejected).
-#   INTERVIEW_GATE_URL       (optional) the base URL whose /api/interview/
-#                            gate-status answers interview-completion for this
-#                            company. Defaults to the dashboard host derived
-#                            from OPENCLAW_DASHBOARD_URL. For the shared
-#                            operator Command Center the default works
-#                            directly; an operator may point it at any
-#                            tenant-correct host.
-#   OPENCLAW_WORKSPACE_ROOT  (optional) workspace override (tests).
-#   CLIENT_FIRST_NAME        (optional, default "there").
-#   FORCE=1                  (optional) bypass the 30-minute re-send guard.
-#
-# Exit codes:
-#   0 sent (or dry-run printed)   2 usage error
-#   3 interview already complete  4 no owner chat resolvable
-#   5 openclaw CLI missing        6 gateway send failed
-#   7 re-send guard (use FORCE=1)
-#   lane=standard-first in the DRY-RUN banner / SENT line marks the
-#   standard-first wording; it is informational only (the exit codes are
-#   identical in both lanes).
-#
-# set -euo pipefail; bash -n clean; OS-aware (uname) not required — pure
-# POSIX-y bash + python3 for JSON reads (same pattern as resolve-owner-chat.sh).
+# Verified public interview invitation through the OpenClaw gateway.
+# Usage: send-interview-link.sh [--dry-run]; FORCE=1 bypasses accepted-send cooldown
+# only. Unknown delivery must be reconciled and is never retried automatically.
+# Identity/origin: canonical workforce state plus matching MC_* compatibility env.
+# OPENCLAW_DASHBOARD_URL is accepted only after exact authenticated readiness.
+# Exit: 0 accepted/dry-run; 2 usage; 3 complete; 4 owner unresolved; 5 missing CLI;
+# 6 pre-send rejection; 7 cooldown; 8 readiness/receipt pending; 9 delivery uncertain;
+# 10 accepted but legacy ledger write failed (durable acceptance retained).
+# No direct Telegram API and no silent chat invitation fallback.
 
 set -euo pipefail
 
@@ -112,7 +17,7 @@ DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '1,78p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -129,7 +34,7 @@ STATE_FILE="$WS/.workforce-build-state.json"
 HANDOFF_FILE="$WS/company-discovery/interview-handoff.md"
 LEDGER_FILE="$WS/company-discovery/.interview-link-sends.log"
 
-# ── Read interview state (read-only; tolerate a missing/garbled state file) ───
+# ── Read wording state; helper below rejects missing/invalid canonical state ───
 read_state() {
   python3 - "$STATE_FILE" <<'PYEOF'
 import json, sys
@@ -137,6 +42,7 @@ try:
     s = json.load(open(sys.argv[1]))
 except Exception:
     s = {}
+if not isinstance(s, dict): s = {}
 complete = "1" if (s.get("interviewComplete") is True or s.get("buildCompletedAt")) else "0"
 slug = str(s.get("companySlug") or s.get("interviewSessionId") or "").strip()
 # buildType: absent or "legacy" -> legacy lane (today's wording, byte-identical);
@@ -176,122 +82,41 @@ fi
 # The RESUME variants are lane-neutral (the interview is underway either way,
 # so the "continue where you left off" wording is identical in both lanes).
 FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
-DASH="${OPENCLAW_DASHBOARD_URL:-}"
-DASH="${DASH%/}"
-LINK=""
-if [ -n "$DASH" ]; then
-  if [ "$MODE" = "resume" ]; then
-    LINK="$DASH/onboarding/resume/$SLUG"
-  else
-    LINK="$DASH/interview"
-  fi
+HELPER="$SCRIPT_DIR/../../shared-utils/interview_invitation.py"
+if [ ! -f "$HELPER" ]; then HELPER="$SCRIPT_DIR/../../../shared-utils/interview_invitation.py"; fi
+if [ ! -f "$HELPER" ]; then
+  echo "[send-interview-link] PENDING: verified invitation helper missing." >&2
+  exit 8
 fi
+# Default is a public web invitation. Missing or unverified web readiness is
+# pending, never silently replaced by a Telegram-native interview.
+TMP_RESOLUTION="$(mktemp)"
+TMP_MSG=""
+trap 'rm -f "$TMP_RESOLUTION" "${TMP_MSG:-}"' EXIT
+DASH="$(python3 "$HELPER" resolve --state "$STATE_FILE" --resolution-file "$TMP_RESOLUTION")" || exit 8
+LINK="$DASH/interview"
 
-# ── Shared-dashboard safety (shared-dashboard incident 2026-08-13; doctrine above) ───────
-# Only the *shared* dashboard host needs the interview-state check: a host
-# that serves THIS box's own CC reads this same state file (already read
-# above), while the shared operator CC is hostname-blind to this company
-# unless its /api/interview/gate-status is tenant-scoped. So:
-#   * localhost / 127.0.0.1 dashboards  -> no check (box-own CC).
-#   * any other dashboard host          -> gate-status must answer
-#     interviewComplete:false for this company, else FAIL to the
-#     Telegram-native invite (never send an unverifiable web link).
-# D7 FIX: this compared the caller's argument against the bare strings
-# "localhost"/"127.0.0.1", but its ONE caller passes "$DASH" — a full URL such
-# as `http://localhost:3000` or `https://<client>.zerohumanworkforce.com`. A URL
-# never equals a bare hostname, so the box-own-CC branch was UNREACHABLE: even a
-# genuine localhost dashboard was classified "shared", which sent the script
-# down the gate-status curl path. When that probe cannot verify (no route to a
-# local-only CC from that context, non-JSON body, any non-"0" answer), the
-# script blanks $LINK and falls back to the Telegram-native invite — so a box
-# with a perfectly good local dashboard stopped handing its owner the web link
-# at all. Parse the hostname properly instead of string-matching the URL.
-CHECK_SHARED_HOST() {
-  python3 - "$1" <<'PYEOF'
-import sys
-from urllib.parse import urlparse
-
-raw = (sys.argv[1] or "").strip()
-# A bare "host:port" has no scheme; "//" makes urlparse read it as authority
-# rather than a path, so both "localhost:3000" and "http://localhost:3000" work.
-parsed = urlparse(raw if "://" in raw else "//" + raw, scheme="https")
-host = (parsed.hostname or "").lower()
-
-# ::1 is the IPv6 spelling of 127.0.0.1 — the same box-own CC, so it belongs in
-# the same branch rather than being misfiled as a shared host.
-if host in ("localhost", "127.0.0.1", "::1"):
-    sys.exit(0)  # box-own CC: state read above is authoritative
-# Shared/unknown host: the caller verifies gate-status externally.
-sys.exit(1)
-PYEOF
-}
-
-if [ -n "$LINK" ] && ! CHECK_SHARED_HOST "$DASH"; then
-  GATE_BASE="${INTERVIEW_GATE_URL:-$DASH}"
-  GATE_URL="$GATE_BASE/api/interview/gate-status"
-  GATE_JSON="$(curl -sS -m 10 "$GATE_URL" 2>/dev/null || true)"
-  GATE_COMPLETE="$(printf '%s' "$GATE_JSON" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print("1" if d.get("interviewComplete") is True else "0")
-except Exception:
-    print("unknown")
-' 2>/dev/null || echo unknown)"
-  if [ "$GATE_COMPLETE" = "0" ]; then
-    : # verified: the dashboard host answers incomplete for this company
-  else
-    echo "[send-interview-link] WARNING: dashboard host $DASH did not verify an incomplete interview for this company (gate-status=${GATE_COMPLETE:-unknown}) — sending the Telegram-native invite instead of an unverifiable web link." >&2
-    LINK=""
-  fi
-fi
 
 TMP_MSG="$(mktemp)"
-trap 'rm -f "$TMP_MSG"' EXIT
 if [ -n "$LINK" ] && [ "$MODE" = "resume" ]; then
   cat > "$TMP_MSG" <<EOF
 Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Continue here: $LINK
 
-It works great on your phone, and you can pause again anytime.
+Open this private link within 15 minutes. Your saved answers will resume after sign-in.
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
 Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. When you're ready, start here: $LINK
 
-It works great on your phone. Every answer is saved as you go, so you can pause anytime and pick up right where you left off.
+Open this private link within 15 minutes. Answers are saved as you go; if your session expires, request a fresh invitation to resume.
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
 Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversation in your own words, and we build your company from what you tell us. When you're ready, start here: $LINK
 
-It works great on your phone. Every answer is saved as you go, so you can pause anytime and pick up right where you left off.
+Open this private link within 15 minutes. Answers are saved as you go; if your session expires, request a fresh invitation to resume.
 EOF
-elif [ "$MODE" = "resume" ]; then
-  cat > "$TMP_MSG" <<EOF
-Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Whenever you're ready, just reply here and we'll continue from your next question.
-EOF
-elif [ "$LANE" = "standard-first" ]; then
-  cat > "$TMP_MSG" <<EOF
-Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. Whenever you're ready, just reply "ready" here and we'll begin. Every answer is saved as you go, so you can pause anytime.
-EOF
-else
-  cat > "$TMP_MSG" <<EOF
-Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversation in your own words, and we build your company from what you tell us. Whenever you're ready, just reply "ready" here and we'll begin. Every answer is saved as you go, so you can pause anytime.
-EOF
-fi
 
-# ── Anti-spam guard (30 min, per-box ledger; FORCE=1 bypasses) ────────────────
-GUARD_SECS=1800
-if [ "$DRY_RUN" -eq 0 ] && [ "${FORCE:-0}" != "1" ] && [ -f "$LEDGER_FILE" ]; then
-  LAST_EPOCH="$(tail -1 "$LEDGER_FILE" 2>/dev/null | cut -d'|' -f1 || true)"
-  NOW_EPOCH="$(date +%s)"
-  if [ -n "$LAST_EPOCH" ] && [ "$LAST_EPOCH" -eq "$LAST_EPOCH" ] 2>/dev/null; then
-    AGE=$(( NOW_EPOCH - LAST_EPOCH ))
-    if [ "$AGE" -lt "$GUARD_SECS" ]; then
-      echo "[send-interview-link] REFUSED: a link was sent $(( AGE / 60 )) minute(s) ago. Re-run with FORCE=1 to re-send deliberately." >&2
-      exit 7
-    fi
-  fi
 fi
 
 # ── Resolve the owner chat (operator-rejecting shared resolver) ───────────────
@@ -318,25 +143,13 @@ MASKED="…${CHAT_ID: -4}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
-  echo "----- message -----"
+  echo "----- preview only: enrollment is issued at send time -----"
   cat "$TMP_MSG"
   echo "-------------------"
   exit 0
 fi
 
-# ── Send via the gateway (NEVER direct Bot API) ───────────────────────────────
-if ! command -v openclaw >/dev/null 2>&1; then
-  echo "[send-interview-link] FATAL: openclaw CLI not on PATH — refusing to fall back to direct HTTP." >&2
-  exit 5
-fi
-if ! openclaw message send --channel telegram --target "$CHAT_ID" --file "$TMP_MSG" >/dev/null 2>&1; then
-  echo "[send-interview-link] FAILED: gateway send to chat $MASKED did not succeed. Nothing recorded — safe to retry." >&2
-  exit 6
-fi
-
-# ── Audit ledger (non-canonical; epoch|mode|lane|link-or-chat-invite) ─────────
-# The guard above reads ONLY field 1 (epoch); the lane field is informational.
-mkdir -p "$(dirname "$LEDGER_FILE")"
-printf '%s|%s|%s|%s\n' "$(date +%s)" "$MODE" "$LANE" "${LINK:-telegram-chat-invite}" >> "$LEDGER_FILE"
-
-echo "[send-interview-link] SENT lane=$LANE mode=$MODE chat=$MASKED link=${LINK:-telegram-chat-invite}"
+# Supported gateway contract + durable acceptance/uncertainty ledger. Owner chat
+# comes exclusively from the existing operator-rejecting resolver above.
+python3 "$HELPER" send --state "$STATE_FILE" --resolution-file "$TMP_RESOLUTION" --message-file "$TMP_MSG" \
+  --target "$CHAT_ID" --ledger "$LEDGER_FILE" --mode "$MODE" --lane "$LANE"

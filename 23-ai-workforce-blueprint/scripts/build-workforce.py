@@ -4808,7 +4808,7 @@ def build_from_config(config):
 HOME = os.path.expanduser("~")
 
 # PRD 1.9: resolve ALL paths through get_openclaw_paths() - the single path
-# authority. This script NEVER writes outside master_files/zero-human-company/.
+# authority for new unpinned companies. Existing verified launch state retains its companyRoot.
 # Legacy ~/clawd roots may be READ for backward compat via get_legacy_company_roots()
 # but nothing new is written there.
 _SHARED_UTILS_BW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils")
@@ -4860,7 +4860,8 @@ def resolve_company_paths(company_name: str):
     Set the global COMPANY_DIR / DEPARTMENTS_DIR / COMPANY_SLUG paths based on
     the client's company name. Creates the folders if missing.
 
-    PRD 1.9: new companies are ALWAYS written to the canonical root:
+    Existing launch state retains its explicit companyRoot after identity checks.
+    PRD 1.9: otherwise new companies are written to the canonical root:
         Mac:  ~/Downloads/openclaw-master-files/zero-human-company/<slug>/
         VPS:  /data/openclaw-master-files/zero-human-company/<slug>/
     Override with MASTER_FILES_DIR env var.
@@ -4874,22 +4875,45 @@ def resolve_company_paths(company_name: str):
     COMPANY_SLUG = pinned or slugify_company_name(company_name)
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', COMPANY_SLUG):
         raise ValueError('invalid canonical company slug')
-    os.environ['OPENCLAW_COMPANY_SLUG'] = COMPANY_SLUG
-    canonical_identity = identity.get('companyId') or os.environ.get('MC_COMPANY_ID')
-    _cfg_path = Path(ZHC_ROOT) / COMPANY_SLUG / 'company-config.json'
+    state_company = identity.get('companyId')
+    ambient_company = os.environ.get('MC_COMPANY_ID')
+    if state_company and ambient_company and state_company != ambient_company:
+        raise ValueError('company state/environment identity mismatch')
+    canonical_identity = state_company or ambient_company
+    pinned_root = identity.get('companyRoot')
+    ambient_root = os.environ.get('ZERO_HUMAN_COMPANY_DIR')
+    if pinned_root and (not isinstance(pinned_root, str) or not Path(pinned_root).is_absolute()):
+        raise ValueError('invalid canonical company root')
+    if pinned_root and ambient_root and Path(pinned_root).resolve() != Path(ambient_root).resolve():
+        raise ValueError('company state/environment root mismatch')
+    canonical = str(Path(pinned_root or ambient_root or Path(ZHC_ROOT) / COMPANY_SLUG).resolve())
+    _cfg_path = Path(canonical) / 'company-config.json'
     if _cfg_path.is_file():
         _cfg_identity = json.loads(_cfg_path.read_text())
-        _configured_id = _cfg_identity.get('company_id') or _cfg_identity.get('companyId') or _cfg_identity.get('id')
-        if canonical_identity and _configured_id and canonical_identity != _configured_id:
-            raise ValueError('company state/config identity mismatch')
-        canonical_identity = canonical_identity or _configured_id
+        if not isinstance(_cfg_identity, dict):
+            raise ValueError('company state/config identity mismatch: config must be an object')
+        _configured_ids = [_cfg_identity[key] for key in ('companyId','company_id','id') if key in _cfg_identity]
+        if not _configured_ids or any(not isinstance(value,str) or not value.strip() for value in _configured_ids):
+            raise ValueError('company state/config identity mismatch: canonical ownership missing')
+        if any(value != _configured_ids[0] or (canonical_identity and value != canonical_identity) for value in _configured_ids):
+            raise ValueError('company state/config identity mismatch: conflicting aliases')
+        _configured_slugs = [_cfg_identity[key] for key in ('companySlug','company_slug','slug') if key in _cfg_identity]
+        if any(not isinstance(value,str) or value != COMPANY_SLUG for value in _configured_slugs):
+            raise ValueError('company state/config slug mismatch')
+        canonical_identity = canonical_identity or _configured_ids[0]
     if canonical_identity:
         identity['companyId'] = canonical_identity
     identity['companySlug'] = COMPANY_SLUG
+    identity['companyRoot'] = canonical
     _state_commit(_build_state_path(), identity)
+    os.environ['OPENCLAW_COMPANY_SLUG'] = COMPANY_SLUG
+    if canonical_identity:
+        # Post-interview entry can run outside the installer shell. Child tools
+        # must inherit the verified database UUID, never substitute the slug.
+        os.environ['MC_COMPANY_ID'] = canonical_identity
 
-    # PRD 1.9: always write to canonical root (ZHC_ROOT is now master_files/zero-human-company/)
-    canonical = os.path.join(ZHC_ROOT, COMPANY_SLUG)
+    # Preserve the launch-pinned company tree when post-interview runs separately.
+    os.environ['ZERO_HUMAN_COMPANY_DIR'] = canonical
 
     # If the company already exists in a legacy location and NOT yet in canonical,
     # emit a loud warning so the operator runs the migration. Never silently write

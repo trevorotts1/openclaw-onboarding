@@ -1,6 +1,6 @@
 ---
 name: command-center-setup
-version: "v13.1.2"
+version: "v13.1.3"
 description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client — one deployment per client with its own Vercel deployment, CloudFlare Access app, Telegram supergroup with topics, and data store. Includes one-time install, runtime execution guide, and QC rubric (gate 8.5).
 ---
 
@@ -23,55 +23,17 @@ Per N3 ("read before act"), do not skip any of the above. Per N4, follow steps i
 
 Each client gets their **OWN** Command Center: own deployment, own dashboard URL, own CF Access app, own Telegram bot/supergroup/topics, own data store. NEVER point a client's Command Center at another client's deployment, bot, or workspace, and NEVER reuse another client's URL/topic/bot as a placeholder. If a client's own resource does not exist yet, **STOP and WAIT** — do not substitute. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
 
-## 🔴 INTERVIEW-COMPLETE PRECONDITION + LOCKED INTERVIEW-MODE (binding)
+## Installation first, personalization after the interview
 
-**Ratified 2026-07-03 (OQ-1). The Command Center now ships FIRST, but LOCKED to the
-`/interview` surface.** The client sees ONLY the interview (plus its `/onboarding`
-progress screen) until closeout; the full dashboard is revealed at build completion.
-This locked interview-shell is **BY DESIGN — it is NOT a rogue/stale board and NOT a
-bug to "fix."** Do not "unlock" it, strip the redirect, or treat the interview-only
-view as broken. See memory `feedback-cc-build-gated-on-ai-workforce-interview`.
+Fresh installation uses **standard-first** onboarding: create pending client state with stable company/tenant/installation/build IDs, provision the client's own service configuration, create its standard department foundation and board, then expose the locked interview shell. Existing recorded lanes and operator choices are preserved. Do not invent answers, interview completion or workforce completion.
 
-Two things are gated on DIFFERENT signals — keep them straight:
+`run-full-install.sh` initializes missing state before the lock assertion. A standard foundation is ready only when its company artifacts, department selection and active same-company workspaces match the verification receipt. It is preparatory company structure; runtime workforce activation still follows the completed interview and its approved department/persona changes.
 
-1. **The locked CC shell (ships FIRST).** The CC deployment can go up before the
-   interview is complete. The CC middleware (P0-5) reads the client build-state and
-   **302-redirects every non-`/interview`, non-`/onboarding` page to `/interview`
-   while `interviewComplete` is `false`**, and **unlocks the full dashboard once
-   `buildCompletedAt` is set** (closeout). The lock is STATE-DRIVEN off the canonical
-   build-state fields `interviewComplete` / `buildCompletedAt` in
-   `$OC_ROOT/workspace/.workforce-build-state.json` — there is no separate CC "unlock"
-   env var to flip; provisioning does not invent one.
+Before sending the interview, require the exact authenticated public `/api/auth/interview-ready` receipt and obtain a one-use enrollment ticket through `/api/auth/interview-invitation`. A generic HTTP 200 or gateway `/interview` page proves neither the right app nor browser access. The receipt verifies local prerequisites and explicitly leaves provider liveness unverified.
 
-2. **The REAL zero-human company (departments, roles, step-by-step instructions).**
-   This is the OUTPUT of interview → workforce build and is still gated on the
-   interview being COMPLETE. Materializing/seeding the real departments before the
-   interview would produce the DEFAULT department floor under company `default` (not
-   the client's real answers) — a FALSE deliverable. That gate stays.
+The shell remains governed by canonical interview/build/closeout state. The client answers in their own interview, resumes durable Q/A and can export a reference document. Completion triggers the existing build handoff; unavailable dependencies remain pending for recovery. Full activation/closeout requires actual verified artifacts and delivery, not a flag alone.
 
-**Enforcement (sequence — OQ-1 shell-first flip, v12.9.27):** `run-full-install.sh`
-now runs in two blocks around the interview gate:
-
-- **BLOCK A — the LOCKED CC shell deploys FIRST**, before the interview gate: Phase 1
-  prereqs → a **lock-assert** → Phase 6 dashboard deploy (pm2 on :4000) → Phase 6h
-  tunnel. The lock-assert enforces the **lock-before-reachable invariant**: it FAILS
-  CLOSED (full-install mode) if `$OC_ROOT/workspace/.workforce-build-state.json` — the
-  ONLY source the P0-5 middleware reads for lock state — is missing, so the installer
-  never starts a shell the middleware cannot lock. Because a fresh/in-progress
-  interview has `interviewComplete=false` and `buildCompletedAt` unset, the lock signal
-  is already on disk before the shell binds :4000 and before the tunnel exposes it, so
-  the shell serves LOCKED (302 → `/interview`) from its very first request. **There is
-  no window in which an empty, unlocked board is browsable.**
-- **BLOCK B — the REAL workforce stays gated.** After the gate, `run-full-install.sh`
-  (and `materialize-dept-agents.sh`, which keeps its own independent
-  `interviewComplete` check) only seed/scaffold departments, roles, agents and board
-  content once the interview is corroborated complete. If it is not, they **REPORT
-  "interview not completed yet" and exit clean** — leaving the client the already-up
-  locked `/interview` shell, scaffolding NO default departments and NOT hammering the
-  box.
-
-Verify completion with MULTIPLE signals (the flag is necessary but not sufficient;
-corroborate with real Q/A content + a CC board whose `company_id != 'default'`).
+See [launch and recovery](../docs/interview-launch-recovery.md). Never bypass client isolation, the build gate or the closeout gate to make a screen appear ready.
 
 ## What This Skill Is About
 
@@ -97,8 +59,8 @@ Use this skill when:
 | Skill 22: Book-to-Persona | Recommended | Department heads use personas from your coaching system. Without them, heads will be generic. |
 | Skill 31: Upgraded Memory System | Recommended | Department heads need the 8-layer memory system for persistent operation. |
 | Memory Wiki | Recommended | Department heads use wiki_search and wiki_get for structured knowledge retrieval across coaching theories and SOPs. |
-| **Node.js v18+** | MANDATORY | Dashboard is a Next.js app — the Command Center cannot start without `node` on PATH. QC asserts presence. |
-| **npm** | MANDATORY | Required to install dashboard dependencies (`npm install`). QC asserts presence. |
+| **Node.js ^20.19.0, ^22.13.0 or >=24** | MANDATORY | Dashboard is a Next.js app — the Command Center cannot start without `node` on PATH. QC asserts presence. |
+| **npm** | MANDATORY | Required to install dashboard dependencies (`npm ci`). QC asserts presence. |
 | **Python 3.8+** | MANDATORY | Several setup scripts (`persona-selector-v2.py`, `gemini-indexer.py`, build-workforce helpers) are Python-based. QC asserts presence. |
 
 ### Active Memory Note

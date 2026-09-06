@@ -71,7 +71,10 @@ ALIAS_MAP: dict = {
     # engineering / software-dev variants (UNIT ENG — 2026-06-28)
     "software-development": "engineering",
     "software-dev":         "engineering",
-    "app-development":      "engineering",
+    # App Development is its own chosen lane (CC canonical-slug.ts).
+    "appdev":               "app-development",
+    "app-dev":              "app-development",
+    "mobile":               "app-development",
     "apps":                 "engineering",
 
     # video variants
@@ -187,7 +190,7 @@ if __name__ == "__main__":
         # engineering aliases (UNIT ENG)
         ("software-development","engineering"),
         ("software-dev",        "engineering"),
-        ("app-development",     "engineering"),
+        ("app-development",     "app-development"),
         ("apps",                "engineering"),
         ("engineering",         "engineering"),
     ]

@@ -1,3 +1,14 @@
+## [v25.0.5]  -  2026-09-06  -  Repair fresh client interview launch and isolate closeout resources
+
+- Initialize missing client build state atomically with stable company/tenant/installation/build IDs before exposing the locked shell. Fresh clients default to standard-first; preserve existing lane/operator choices and reuse the same client checkout on retry.
+- Build and verify the standard foundation before interview launch, with hashed artifacts and actual same-company board rows. Preserve explicit client paths/UUIDs and align canonical department aliases without merging App Development into Engineering.
+- Provision scoped service configuration and require the authenticated public `interview-launch.v1` receipt. Track candidate versus verified tunnel origins, reconcile uncertain provisioning without duplicate requests, and reject wrong-host responses before storing tunnel credentials.
+- Replace unsupported Telegram `--file` sending with supported `--message --json`. Obtain a short-lived, one-use enrollment ticket from CC; verify exact company/tenant/installation/origin; persist accepted/uncertain delivery receipts without logging access tickets or blindly retrying unknown sends.
+- Keep interview answers scoped and durable across resume/export. Preserve pending completion handoff when its receiver is unavailable; standard-first personalization and closeout retain their verified completion gates.
+- Remove agency Notion fallback. Require the client's own token and verified parent, scope root/section lookup to that hierarchy, and retain staged documents for safe recovery.
+- Require paired Command Center v7.1.2. Verification uses isolated real-script, storage, browser and mocked external-call fixtures; no live client deployment or provider acceptance is claimed.
+
+
 ## [v25.0.4]  -  2026-09-05  -  Execute missing-department work through General Task or CEO
 
 - Execute missing or unmatched department work through the assigned General Task worker or verified CEO catch-all execution, without department-choice holds, duplicate intake or routing loops. Preserve specialist assignments, tenant boundaries, QC and kill switches.

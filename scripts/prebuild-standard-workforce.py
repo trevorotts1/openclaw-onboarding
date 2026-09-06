@@ -161,7 +161,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = ENGINE_DIR.parent
+REPO_ROOT = Path(os.environ.get("ONBOARDING_SKILLS_ROOT") or ENGINE_DIR.parent)
 
 # The operator consent source token (mirrors ownerConsent's source field).
 OPERATOR_CONSENT_SOURCE = "operator-prebuild"
@@ -424,6 +424,7 @@ def _seed_cc_and_prove_join(skill23, company_dir, db_path, company_slug):
     env["DASHBOARD_DB_PATH"] = str(db_path)
     env["DATABASE_PATH"] = str(db_path)
     env["COMPANY_SLUG"] = company_slug
+    env["ZERO_HUMAN_COMPANY_DIR"] = str(company_dir)
     # Deliberately NOT setting COMPANY_NAME: seed-workspaces.find_company_info()
     # gives the COMPANY_NAME env var TOP precedence, and when it is set the
     # company slug is re-derived from the NAME ('Scratch Canary Co' ->
@@ -451,7 +452,7 @@ def _seed_cc_and_prove_join(skill23, company_dir, db_path, company_slug):
     proc = subprocess.run(
         [sys.executable, str(prove_script),
          "--company-dir", str(company_dir), "--db", str(db_path),
-         "--company-slug", company_slug, "--json"],
+         "--company-slug", os.environ.get("MC_COMPANY_ID") or company_slug, "--json"],
         capture_output=True, text=True,
     )
     status_by_rc = {0: "OK", 1: "GATE-ERROR", 2: "DRIFT", 3: "CANNOT-VOUCH", 4: "NOT-APPLICABLE"}

@@ -90,8 +90,12 @@ chmod +x "$FAKE_BIN/openclaw"
 cat > "$FAKE_BIN/curl" <<'SH'
 #!/usr/bin/env bash
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) curl $*" >> "${CURL_LOG}"
-# Return a fake Notion page id for any notion API call
-if printf '%s\n' "$@" | grep -q "notion.com"; then
+# Return the explicitly selected client parent and scoped search response.
+if printf '%s\n' "$@" | grep -q 'notion.com/v1/pages/test-workspace-id'; then
+  printf '{"id":"test-workspace-id","object":"page","archived":false}\n'
+elif printf '%s\n' "$@" | grep -q 'notion.com/v1/search'; then
+  printf '{"object":"list","results":[],"has_more":false}\n'
+elif printf '%s\n' "$@" | grep -q "notion.com"; then
   printf '{"id":"fake-notion-page-id-1234","url":"https://www.notion.so/fakenotionpageid1234","object":"page"}\n'
 else
   printf '{}\n'
@@ -450,6 +454,7 @@ if [[ -f "$CREATE_NOTION" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"NotionCo\",
+    \"companyId\": \"notion-fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": []
   }"

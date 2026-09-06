@@ -1,18 +1,18 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.0.4 — General/CEO fallback execution.** Missing or unmatched departments execute through the client's assigned General Task worker or verified CEO fallback, retaining the same task/execution. The paired Command Center v7.1.1 supplies catch-all dispatch and migration 133 for explicit runtime bindings. Older schemas defer binding safely. See [deployment and verification notes](docs/ceo-general-fallback-execution.md).
+> **v25.0.5 — Verified interview launch and client-owned closeout.** Fresh installation creates the client's pending state, standard department foundation and Command Center before the interview. A verified public origin and signed, single-use Telegram interview link replace the broken bare-link handoff. Saved Q/A supports resume and reference export. Notion closeout uses only that client's verified resources. See [launch and recovery](docs/interview-launch-recovery.md).
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.4.
+> **Version:** see `/version` - this repo at v25.0.5.
 
 
-## Current release: v25.0.4
+## Current release: v25.0.5
 
-Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.1 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
+Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.2 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
 
 Fresh and update-only dependency installs use the shipped `package-lock.json` through `npm ci`; a missing lock or failed install stops before migrations/deployment. There is no fallback that resolves a different dependency graph.
 
-The paired pin and minimum are both **v7.1.1**, including the security upgrade and verified General/CEO fallback execution. Deploy that paired Command Center release before onboarding v25.0.4. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
+The paired pin and minimum are both **v7.1.2**, including authenticated interview launch, verified foundations, the security upgrade and General/CEO fallback execution. Deploy that paired Command Center release before onboarding v25.0.5. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
 
 ## v25.0.0 major milestone
 
@@ -25,7 +25,7 @@ This owner-requested major release consolidates the client interview, Skill 23 w
 
 The v25.0.0 milestone paired **Command Center v7.0.0** with minimum compatible runtime v6.1.0; v25.0.2 supersedes that floor with v7.1.0 for the security upgrade. See [tenant configuration](32-command-center-setup/TENANT-CONFIGURATION.md), [delivery evidence](37-zhc-closeout/GATEWAY-RECEIPTS.md), and [CHANGELOG.md](CHANGELOG.md).
 
-Publishing a release does not deploy client machines or certify live gateway/provider acceptance. Configure each client's own resources and run the documented client acceptance flow before promotion. Existing Command Center dependency advisories are not remediated by this version cut.
+Publishing a release does not deploy client machines or certify live gateway/provider acceptance. Configure each client's own resources and run the documented client acceptance flow before promotion. The prior CC v7.1.0 dependency remediation remains included.
 
 ## Earlier release notes
 
@@ -153,7 +153,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.4** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.0.5** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
