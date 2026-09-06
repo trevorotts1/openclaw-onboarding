@@ -1,3 +1,63 @@
+## [v25.0.7]  -  2026-09-06  -  providers.yaml never reached a department, and the verifier was blind to the same gap
+
+Every client box has been silently running the presentation rate governor on its built-in `_DEFAULTS` — because a file-suffix filter dropped `providers.yaml` on the way to the materialized department, and the completeness verifier that should have caught it was blind to the exact same suffix. It reported `ok=1 failed_inscope=0` with the file absent.
+
+### What was broken, and what it cost
+
+`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py` mirrors the role-library `scripts/` tree onto each box's materialized department. It copies a file only when its suffix appears in one of two tuples it sources from `create_role_workspaces.py`:
+
+```
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".md", ".template")
+_ADDITIVE_SCRIPT_SUFFIXES  = (".json",)
+```
+
+`.yaml` was in **neither**. Exactly two shipped files fell outside both tuples, and both were silently skipped on every roll, on every box:
+
+```
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/providers.yaml
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py.headtest
+```
+
+`providers.yaml` is the per-provider rate-governor configuration. `presentation_job/governor.py` reads it through `_load_config()`, which treats an absent file as an empty config and returns `dict(_DEFAULTS)` — no error, no warning, no log line. So on every client box the governor has been running the fallback numbers instead of the verified Part 7 ceilings:
+
+| provider | providers.yaml | what the boxes actually ran |
+|---|---|---|
+| `deepseek` | rps 5.0, max_inflight 400 | rps 1.0, max_inflight 50 |
+| `kie` | rps 2.0, max_inflight 100 | rps 1.0, max_inflight 50 |
+
+That is an 8x throttle on the DeepSeek in-flight ceiling and a 5x throttle on its sustained rate — capacity the accounts were paid for and the pipeline never used.
+
+The second half is worse than the first. `verify_scripts_materialization()` — the post-copy proof that is supposed to re-derive the verdict from the filesystem rather than trust the copy loop's own counter — takes `canonical_suffixes=_CANONICAL_SCRIPT_SUFFIXES` and `continue`s on any file whose suffix is not in it. **The same tuple gates the writer and the checker.** A file the mirror cannot copy is a file the verifier cannot look for. Reproduced against the shipped library with each tree's own module loaded:
+
+```
+[origin/main 2bf4d9bce]  292 files mirrored  providers.yaml at destination: False
+                         verifier problems: 0  ->  ok=1 failed_inscope=0
+[this change 680a53fc3]  293 files mirrored  providers.yaml at destination: True
+                         verifier problems: 0  ->  ok=1 failed_inscope=0
+```
+
+The green verdict on the first line is the whole defect: it is a true statement about the wrong set.
+
+### The fix
+
+- Add `.yaml` / `.yml` to `_CANONICAL_SCRIPT_SUFFIXES`, so the governor config is fleet-owned and mirrored like any other versioned tool.
+- Add an explicit `_NON_DELIVERED_SCRIPT_SUFFIXES = (".headtest",)`. A suffix that is deliberately not shipped now has to say so in writing, instead of being indistinguishable from one nobody remembered.
+- Add `23-ai-workforce-blueprint/scripts/test_dept_scripts_suffix_coverage.py` (8 tests): every suffix the role library actually ships must fall in the canonical set, the additive set, or the non-delivered list. A new suffix that lands in none of the three fails the build — the mechanical end of the `.js` / `.tpl` / `.md` / `.template` / `.yaml` drop class, which has now recurred five times.
+- Stop restating the tuple contents in `refresh-dept-scripts.py`'s prose. An inline copy of the literal is how the policy drifted the last time: the constant grew `.md` and `.template` while the comment still advertised the older six-suffix set.
+
+### Duplicate SOP filenames shipping from two trees, disagreeing
+
+`role-library/<dept>/sops/` and `universal-sops/<pack>/` both reach every client box, and nothing compared them. 8 filenames ship from both trees; all 8 disagree; 0 agree. Role files cite the `universal-sops/` path, so an agent following a citation has been reading a stale draft of an SOP that also exists, differently, next to the role that cited it.
+
+`scripts/check-duplicate-sop-drift.py` + GATE 6 in `scripts/ci/presentations-drift-gates.sh` pin per-artifact authority in `scripts/duplicate-sop-authority.json`. Each waiver records the sha256 of **both** copies, so the known backlog is tolerated at exactly its current bytes while any edit to either side — or a newly duplicated basename — fails the gate. Proven to fire on a one-character change to either copy. **No SOP content was rewritten**; the doctrine in those files is unchanged, and reconciling the 8 disagreements stays a deliberate authoring decision, not a side effect of a merge.
+
+### Seeing drift before it becomes an incident
+
+`scripts/dept-drift-detect.py` — a read-only reporter (no write calls) that diffs a materialized department against its role-library template and classifies each difference as *stale*, *locally-authored-or-wired*, or *provisioner-substitution*, so "this box is behind" can be separated from "this box was deliberately customized" without opening files by hand. `--fail-on-stale` makes it gateable; by default it only reports.
+
+Presentation suite: 1779 tests, 1727 passed / 49 failed / 3 skipped — byte-identical failure name sets against pristine `origin/main`, both directions. No test changed state.
+
+
 ## [v25.0.6]  -  2026-09-06  -  Ask the ZHC owner and company names before first onboarding
 
 - Ask the client/ZHC owner name and company name before first onboarding; retain the two answers separately in private local intake metadata.
