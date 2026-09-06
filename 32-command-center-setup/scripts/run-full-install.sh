@@ -1246,6 +1246,16 @@ cc_launch_stage() {
 # The pending state is installation metadata, never fabricated interview answers.
 # Both initial install and absent-CC update enter this same initializer.
 if [[ "$UPDATE_ONLY" != "true" ]]; then
+  _identity_helper="$SKILL_DIR/../scripts/onboarding-identity.py"
+  [[ -f "$_identity_helper" ]] || _identity_helper="$SKILL_DIR/../../scripts/onboarding-identity.py"
+  [[ -f "$_identity_helper" ]] || _identity_helper="$OC_ROOT/scripts/onboarding-identity.py"
+  _identity_result=$(python3 "$_identity_helper" --root "$OC_ROOT" --workspace "$(dirname "$STATE_FILE")" --company-name "$COMPANY_NAME" --company-slug "$CLIENT_SLUG" --interactive) || {
+    printf '%s\n' "$_identity_result" >&2
+    log "ERROR" "Client/owner and company names required before new onboarding; existing identity preserved"
+    exit 8
+  }
+  OPENCLAW_OWNER_NAME=$(printf '%s' "$_identity_result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+  export OPENCLAW_OWNER_NAME
   python3 "$SKILL_DIR/scripts/interview-launch.py" initialize --state "$STATE_FILE" \
     --app "$DASHBOARD_DIR" --slug "$CLIENT_SLUG" --name "$COMPANY_NAME" --email "$CONTACT_EMAIL" \
     >>"$LOG_FILE" 2>&1 || {

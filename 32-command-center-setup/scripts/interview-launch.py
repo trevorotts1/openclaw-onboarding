@@ -44,6 +44,7 @@ def initialize(path, slug, name, email, env):
             if s[key] == 'default': raise ValueError('default identity cannot provision a client')
         s.setdefault('companySlug', slug); s.setdefault('clientSlug', slug)
         s.setdefault('companyName', name); s.setdefault('contactEmail', email)
+        if env.get('OPENCLAW_OWNER_NAME', '').strip(): s.setdefault('ownerName', env['OPENCLAW_OWNER_NAME'].strip())
         s.setdefault('interviewComplete', False)
         s.setdefault('buildId', str(uuid.uuid4()))
         s.setdefault('launchBootstrap', {'version':1, 'createdAt':now(), 'status':'identity-allocated'})

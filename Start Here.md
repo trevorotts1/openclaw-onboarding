@@ -43,6 +43,17 @@ If you are reading this file, the user has triggered onboarding by saying someth
 
 **Your task:** Install all 63 active skills using the 5-Wave Parallel Orchestration below.
 
+### First onboarding: collect the owner and company names before setup
+
+Before a **brand-new** onboarding, ask these two questions in the current client conversation and wait for their answers:
+
+1. **What is the name of the client or owner of this ZHC?**
+2. **What is the name of the company?**
+
+Do not infer the company from the owner name, Telegram display name, hostname or agency profile. Pass the actual answers as separate arguments to `python3 <config-root>/scripts/onboarding-identity.py --root <config-root> --workspace <workspace-root> --owner-name "<answer 1>" --company-name "<answer 2>"`. Before scripts are downloaded, collect the answers and pass `OPENCLAW_OWNER_NAME` and `OPENCLAW_COMPANY_NAME` in the **installer process** environment. With curl piping, use `curl ... | env OPENCLAW_OWNER_NAME="<answer 1>" OPENCLAW_COMPANY_NAME="<answer 2>" bash`; setting them only on curl does not pass them to bash. Use proper argument quoting; never evaluate a client answer as shell code.
+
+The helper saves `<config-root>/onboarding-identity.json` before resources are created. Reuse it on retries. An established workforce keeps its existing company UUID, slug and answers; updates do not restart intake or rename it. Missing inputs return `needs-input` (exit 8); ask the missing question and resume. The terminal installer asks through `/dev/tty` when available. An agent must ask in the conversation, not leave a background terminal waiting for the client. Names are intake metadata, not fabricated interview answers.
+
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
 **0.1: Confirm AGENTS.md has the install kickoff flag (UPDATE PENDING or ONBOARDING PENDING)**

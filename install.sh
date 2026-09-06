@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.5"
+ONBOARDING_VERSION="v25.0.6"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -854,6 +854,8 @@ This is a Mac mini install (local macOS). All paths under ~/.openclaw/. When INS
 - Process supervision: macOS launchd (NOT container nohup)
 
 Default to Mac when ambiguous. Do NOT ask __OWNER_NAME__ ("Mac or VPS?") — always Mac.
+
+PHASE 0 — Before NEW onboarding, ask the client/owner name and company name; save with scripts/onboarding-identity.py. Reuse saved identity on resumes. Never guess a company from an owner name.
 
 PHASE 1 — Read the docs first (do not skip):
 1. Read ~/.openclaw/Start Here.md end to end.
@@ -2803,6 +2805,31 @@ except Exception as e:
     print(f"  ✗ Could not update concurrency: {e}", file=sys.stderr)
 PYEOF
 }
+
+# Required first-onboarding identity, before bootstrap, secrets or resource creation.
+# curl|bash consumes stdin as code: the helper prompts through /dev/tty only.
+collect_onboarding_identity() {
+    local helper="$_SCRIPT_DIR/scripts/onboarding-identity.py" temporary="" result
+    if [ ! -f "$helper" ]; then
+        temporary="$(mktemp)" || return 8
+        if ! curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/scripts/onboarding-identity.py" -o "$temporary"; then
+            rm -f "$temporary"; return 8
+        fi
+        helper="$temporary"
+    fi
+    if ! result=$(python3 "$helper" --root "$OC_CONFIG" --workspace "$OC_WORKSPACE_DEFAULT" --interactive); then
+        [ -z "$temporary" ] || rm -f "$temporary"
+        printf '%s\n' "$result" >&2
+        echo "Before new onboarding, ask the client/owner name and company name. Pass their answers as OPENCLAW_OWNER_NAME and OPENCLAW_COMPANY_NAME to the installer, then resume." >&2
+        return 8
+    fi
+    [ -z "$temporary" ] || rm -f "$temporary"
+    OPENCLAW_OWNER_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+    OPENCLAW_COMPANY_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
+    OPENCLAW_COMPANY_SLUG=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
+    export OPENCLAW_OWNER_NAME OPENCLAW_COMPANY_NAME OPENCLAW_COMPANY_SLUG
+}
+collect_onboarding_identity || exit 8
 
 # ----------------------------------------------------------
 # Bookkeeping: install dir + stale-state cleanup (v10.5.5)
@@ -8217,20 +8244,13 @@ bootstrap_command_center_shell() {
         return 0
     fi
 
-    local _bccs_owner _bccs_slug
-    _bccs_owner=$(resolve_owner_name)
-    if [ -z "$_bccs_owner" ] || [ "$_bccs_owner" = "there" ]; then
-        note "No owner identity resolved yet — Command Center bootstrap trigger deferred (will retry on the next update-skills.sh run)"
-        return 0
+    local _bccs_slug="${OPENCLAW_COMPANY_SLUG:-}" _bccs_company="${OPENCLAW_COMPANY_NAME:-}"
+    if [ -z "$_bccs_slug" ] || [ -z "$_bccs_company" ]; then
+        warn "Client/company intake is missing — collect the two names before creating the Command Center"
+        return 8
     fi
-    _bccs_slug=$(printf '%s' "$_bccs_owner" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-    if [ -z "$_bccs_slug" ]; then
-        warn "Owner name '$_bccs_owner' slugified to empty — Command Center bootstrap trigger deferred"
-        return 0
-    fi
-
-    note "Bootstrapping the locked Command Center shell for slug '$_bccs_slug' (name-derived; interview not yet complete)..."
-    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_owner" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
+    note "Bootstrapping the locked Command Center for the saved company..."
+    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
         success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
     else
         warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"

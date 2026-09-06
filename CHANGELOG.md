@@ -1,3 +1,12 @@
+## [v25.0.6]  -  2026-09-06  -  Ask the ZHC owner and company names before first onboarding
+
+- Ask the client/ZHC owner name and company name before first onboarding; retain the two answers separately in private local intake metadata.
+- Add terminal prompts that work with curl piping and an explicit needs-input result for agent/unattended runs. Forward both answers through VPS container re-execution.
+- Replace owner-first-name-as-company fallbacks in installer and updater recovery. Reuse saved identity; reject conflicting workspace, slug and company/tenant/installation IDs without changing existing state.
+- Carry the owner name into pending interview state and document the same question step in the direct-agent and Start Here entrypoints. Existing clients keep their UUID, slug and saved answers.
+- Skill 32 v13.1.4; paired Command Center remains v7.1.2. Isolated terminal, installer, identity, launch and bootstrap tests; no client deployment or real message sent.
+
+
 ## [v25.0.5]  -  2026-09-06  -  Repair fresh client interview launch and isolate closeout resources
 
 - Initialize missing client build state atomically with stable company/tenant/installation/build IDs before exposing the locked shell. Fresh clients default to standard-first; preserve existing lane/operator choices and reuse the same client checkout on retry.
