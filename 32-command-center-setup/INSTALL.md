@@ -9,7 +9,7 @@ First-time onboarding requires the client/ZHC owner name and company name before
 
 This guide walks you through activating your AI workforce as a live Command Center. The process has 8 phases. Some phases you do manually (like setting up Telegram). Other phases the agent does automatically.
 
-**Current automated order (v13.1.3):** `scripts/run-full-install.sh` initializes missing pending client state, provisions client-specific service identity/configuration, deploys the locked Command Center and binds its database to the same company. Fresh clients use the standard-first lane: real standard department artifacts and board rows are verified before the interview invitation. Existing recorded lanes/operator choices are preserved.
+**Current automated order (v13.1.4):** `scripts/run-full-install.sh` initializes missing pending client state, provisions client-specific service identity/configuration, deploys the locked Command Center and binds its database to the same company. Fresh clients use the standard-first lane: real standard department artifacts and board rows are verified before the interview invitation. Existing recorded lanes/operator choices are preserved.
 
 The installer verifies the public `interview-launch.v1` readiness receipt before returning the pre-interview state. The sender then requests an authenticated one-use enrollment link and delivers it with the client's own Telegram configuration. An HTTP 200 from a gateway page is insufficient. Tunnel creation and verified public readiness are separate recorded steps.
 
