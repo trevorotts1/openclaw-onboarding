@@ -6,6 +6,51 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="${1:-${LOG:-/dev/null}}"
 
+# ---------------------------------------------------------------------------
+# ENV STORE -- this file's own header already says it: "Called by launchd with
+# NO environment". Every path defaults, but the CREDENTIALS never did.
+#
+# The FIX 22 gate 30 lines below refuses the entire watchdog pass (exit 4,
+# AF-NOTIFY-UNCONFIGURED) when PRESENTATION_NOTIFY_CMD is unset -- and under
+# launchd it is unset even on a box where the value is present and non-blank
+# in every env store, because nothing here ever loaded one. That is the same
+# ENV-LOADING defect measured on presentation-intake-poll.sh (5,948
+# consecutive refusals, 2026-09-06), in the sibling launchd entry point.
+#
+# Load the store FIRST, so the gate below judges a real environment. Loading
+# it cannot weaken the gate: a box that genuinely has no transport anywhere
+# still refuses, and now the log says which stores were searched.
+#
+# Precedence is process-env-wins (a value already set NON-BLANK is never
+# overwritten), so the plist's own EnvironmentVariables and a one-off
+# `PRESENTATION_NOTIFY_CMD=... sh presentation-watchdog.sh` both still win.
+# The loader emits shlex-quoted `export` lines on stdout only -- no value
+# reaches ${LOG}; the report that does is paths, counts and presence+LENGTH.
+#
+# POSIX sh only (this script is #!/bin/sh and runs under dash in a container),
+# and every step is `||`-guarded because this script runs under `set -e`: a
+# loader that cannot run must degrade to the pre-fix behaviour, never abort
+# the watchdog pass it exists to enable.
+# Rollback: PRESENTATION_ENV_STORE=0.
+# ---------------------------------------------------------------------------
+if [ -f "${SCRIPT_DIR}/presentation_job/env_store.py" ]; then
+    _ENV_RC=0
+    _ENV_SH="$( cd "${SCRIPT_DIR}" && python3 -m presentation_job.env_store --emit-shell 2>/dev/null )" || _ENV_RC=$?
+    if [ "${_ENV_RC}" -eq 0 ]; then
+        eval "${_ENV_SH}" || echo "WARNING: env-store assignments could not be applied -- continuing with the environment launchd supplied" >> "${LOG}" 2>&1
+        unset _ENV_SH
+        ( cd "${SCRIPT_DIR}" && python3 -m presentation_job.env_store --report 2>&1 ) \
+            | while IFS= read -r _env_line; do
+                echo "[env-store] ${_env_line}" >> "${LOG}" 2>&1
+            done || true
+    else
+        unset _ENV_SH
+        echo "[env-store] loader exited rc=${_ENV_RC} -- the env store was NOT loaded and nothing was exported" >> "${LOG}" 2>&1
+    fi
+else
+    echo "[env-store] presentation_job/env_store.py NOT FOUND under ${SCRIPT_DIR} -- the env store was not loaded (partial deploy)" >> "${LOG}" 2>&1
+fi
+
 # Default run root; overridable via environment (launchd EnvironmentVariables,
 # see presentation-watchdog.plist.template -- the plist always passes SCAN_ROOT,
 # and a deployed box installs this script from the same template, so the

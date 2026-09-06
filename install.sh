@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.7"
+ONBOARDING_VERSION="v25.0.8"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4658,16 +4658,69 @@ install_intake_poll_schedule() {
             return 1
         fi
         mkdir -p "$PLIST_DIR" "$(dirname "$LOG_PATH")"
-        # Render the template: replace the two placeholders (sed with | delim —
-        # the paths contain /). Escape nothing: paths on this box have no | or &.
-        sed -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
-            -e "s|<LOG_PATH>|$LOG_PATH|g" \
-            "$TPL_SRC" > "$PLIST_DST"
-        if ! grep -q '<POLL_SCRIPT_PATH>\|<LOG_PATH>' "$PLIST_DST"; then
-            success "FIX 61: rendered $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH)"
+        # ── ENV-LOADING FIX (2026-09-06) ──────────────────────────────────
+        # launchd gives a job essentially NO environment. This render used to
+        # substitute two placeholders into a template that declared no
+        # EnvironmentVariables at all, so the poller ran with nothing — and
+        # launcher.py's fail-closed notify gate refused EVERY dispatch with
+        # AF-NOTIFY-UNCONFIGURED (5,948 consecutive refusals measured on the
+        # operator Mac) while PRESENTATION_NOTIFY_CMD was present and
+        # non-blank in all three of that box's env stores. The template now
+        # carries PATH / PRESENTATION_RUNS_DIR / PRESENTATION_NOTIFY_CMD, and
+        # this renderer must supply all three or the fix does not survive the
+        # next install.
+        #
+        # Values, resolved the same way the FIX 49 watchdog render resolved
+        # its own (never guessed, never fabricated):
+        #   PATH   — launchd supplies none. /opt/homebrew/bin carries the
+        #            interpreter this codebase is developed against;
+        #            $HOME/.npm-global/bin carries the openclaw CLI the notify
+        #            transport execs; the system prefix rides behind them.
+        #   RUNS   — the department's runs root, sibling of the scripts dir.
+        #   NOTIFY — the co-located transport, and ONLY if the file actually
+        #            exists. A PRESENTATION_NOTIFY_CMD pointing at a missing
+        #            file would trade "unconfigured" for a per-tick transport
+        #            failure, so it renders EMPTY instead and says so. Empty
+        #            is SAFE here: the poller loads the box's env store itself
+        #            and its precedence only lets a NON-BLANK process value
+        #            win, so an empty string cannot shadow the store.
+        local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
+        local _poll_runs_dir="$_dept_scripts_dir/../runs"
+        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
+        local _poll_notify_cmd=""
+        if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
+            _poll_notify_cmd="$_dept_scripts_dir/presentation-notify.py"
         else
-            warn "FIX 61: rendered plist still contains placeholders — refusing to load a malformed agent."
+            warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
+        fi
+        # The template stores placeholders HTML-escaped inside the XML body
+        # (&lt;NAME&gt;) and bare inside the comment header — sed must target
+        # BOTH forms or the body keeps literal &lt;PLACEHOLDER&gt; strings and
+        # launchd loads a plist full of literals. Same discipline the FIX 49
+        # watchdog render used. Values are literal paths with no | or &.
+        sed -e "s|&lt;POLL_SCRIPT_PATH&gt;|$POLL_SRC|g" \
+            -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
+            -e "s|&lt;LOG_PATH&gt;|$LOG_PATH|g" \
+            -e "s|<LOG_PATH>|$LOG_PATH|g" \
+            -e "s|&lt;POLL_PATH&gt;|$_poll_path|g" \
+            -e "s|<POLL_PATH>|$_poll_path|g" \
+            -e "s|&lt;PRESENTATION_RUNS_DIR&gt;|$_poll_runs_dir|g" \
+            -e "s|<PRESENTATION_RUNS_DIR>|$_poll_runs_dir|g" \
+            -e "s|&lt;PRESENTATION_NOTIFY_CMD&gt;|$_poll_notify_cmd|g" \
+            -e "s|<PRESENTATION_NOTIFY_CMD>|$_poll_notify_cmd|g" \
+            "$TPL_SRC" > "$PLIST_DST"
+        if grep -q '&lt;POLL_SCRIPT_PATH&gt;\|&lt;LOG_PATH&gt;\|&lt;POLL_PATH&gt;\|&lt;PRESENTATION_RUNS_DIR&gt;\|&lt;PRESENTATION_NOTIFY_CMD&gt;' "$PLIST_DST"; then
+            warn "FIX 61: rendered plist still contains an unsubstituted placeholder in its XML body — refusing to load a malformed agent."
             _rc=1
+        # The comment header sits BEFORE the <?xml?> declaration, which is not
+        # legal XML, so validate the BODY only (from <?xml onward) — the same
+        # `sed -n '/<?xml/,$p' | plistlib` check the FIX 49 watchdog render
+        # used. A plist that does not parse must never be loaded.
+        elif ! sed -n '/<?xml/,$p' "$PLIST_DST" | python3 -c "import plistlib,sys; d=plistlib.loads(sys.stdin.buffer.read()); raise SystemExit(0 if 'PRESENTATION_NOTIFY_CMD' in d.get('EnvironmentVariables', {}) else 1)" >/dev/null 2>&1; then
+            warn "FIX 61: rendered plist does not parse, or carries no PRESENTATION_NOTIFY_CMD in EnvironmentVariables — refusing to load it. The poller would run environment-less and refuse every dispatch."
+            _rc=1
+        else
+            success "FIX 61: rendered $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
         fi
         # Reload semantics: if already loaded, unload first so a re-run picks up
         # a re-rendered copy. 'launchctl load' on an already-loaded job is the

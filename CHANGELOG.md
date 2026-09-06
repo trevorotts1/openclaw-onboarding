@@ -1,3 +1,61 @@
+## [v25.0.8]  -  2026-09-06  -  The poller refused every dispatch for a day, and reported each refusal as a launch
+
+`PRESENTATION_NOTIFY_CMD` was present and non-blank in all three secret stores. It never reached the poller's process. So the launcher refused **every** dispatch with `AF-NOTIFY-UNCONFIGURED` — **5,948 refusals** in the live log — and the only summary line an operator sees reported each refusal as a launch. The pipeline was dead for over a day and the scan output said it was running.
+
+### What was broken, and what it cost
+
+**1. The env store never reached the poller.** The scheduler entry points started a process that read `PRESENTATION_NOTIFY_CMD` from its own environment and nothing loaded the box's secrets store into it. The variable was configured; the process could not see it. Every dispatch hit the notify gate and exited `EXIT_NOTIFY_UNCONFIGURED = 8`.
+
+Proven on the real gate — the loader is the only difference between the two legs, and the control is not a stand-in for the gate, it *is* the gate:
+
+```
+[CONTROL  pre-fix shape, loader NOT called]   python3 -m presentation_job.notify_preflight  ->  EXIT=8
+[FIX      the poller's load_env_store() runs] python3 -m presentation_job.notify_preflight  ->  EXIT=0
+```
+
+The loader follows the convention the rest of the pipeline already uses — `oc_paths.secrets_env_candidates()`, the same resolver behind `research_web.py`, `capacity.py`, `model_router.py` and `kie_generate.py` — rather than inventing a fourth way to find a secrets file.
+
+**2. Precedence, deliberately inverted from `set -a`.** An explicit value already in the process wins over the store, and a **blank** process value does not shadow the store. The naive `set -a; . store` gets both of these backwards: it lets the store clobber a deliberate override, and it lets an empty exported variable silently win. Two dedicated test legs pin both directions.
+
+**3. A fresh install produced a poller with no environment at all.** `presentation-intake-poll.plist.template` declared **zero** `EnvironmentVariables` keys (it does declare `ProgramArguments`, so the file was a working plist — it simply passed no environment). Every newly installed client hit the same refusal from the first scan. The template now declares `PATH`, the runs dir and the notify command; the renderer handles both the escaped and the bare placeholder form and validates the result with `plistlib` before anything is loaded.
+
+**4. Refusals were counted as launches.** Every dispatch is piped into the log loop:
+
+```bash
+( ... python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ) 2>&1 | while IFS= read -r line; do
+    log "  $line"
+done
+NEW_LAUNCHES=$((NEW_LAUNCHES + 1))      # unconditional
+```
+
+`$?` after a pipeline is the **loop's** status, not the launcher's — and the loop always succeeds. So the counter incremented whether the run started or not, and a scan that logged `REFUSING to dispatch … AF-NOTIFY-UNCONFIGURED` went on to log `1 launched`. That pairing is why 5,948 refusals went unnoticed for a day: the one line an operator reads was reporting success.
+
+Each of the three dispatch sites now reads `${PIPESTATUS[0]}` and increments `NEW_LAUNCHES` only on exit 0; anything else increments `REFUSED_DISPATCH` and says so in the log. `SKIPPED_RUNNING` and `SKIPPED_NO_INTAKE` were declared and emitted in telemetry but **never incremented anywhere** — a hard 0 on every scan no matter what was skipped — and are now wired to their real `continue` sites, along with a seventh `continue` that counted nothing at all. `RUN_DIRS_SEEN` and `SKIPPED_TERMINAL` make the accounting tally: seen == launched + refused + every skip.
+
+### A repaired test harness that could not fail
+
+`test_fix37_poller_counter.py::test_two_completed_runs_log_two_launches` was already failing on main — at **rc=127**:
+
+```
+bash: line 48: read_run_mode: command not found
+bash: line 156: LEASE_ENABLED: unbound variable
+assert 127 == 0
+```
+
+The harness never declared `LEASE_ENABLED` or `read_run_mode`, so under its own `set -u` the extracted body aborted before it counted anything. 127 is a shell abort, not a measurement. The damage was not the red test — it was the *green* one beside it: the sibling leg asserting "0 launched" passed because the aborted body never incremented, so its negative control was vacuous. The harness now declares everything the extracted body reads, and both legs measure again.
+
+### Verification
+
+23 new regression cases across `test_poller_env_store.py` (14) and `test_poller_launch_accounting.py` (8, one parametrized), plus the repaired `test_fix37_poller_counter.py`. Both new files fail on `origin/main`; the pre-fix reproduction shows `REFUSING to dispatch … AF-NOTIFY-UNCONFIGURED` immediately followed by `1 launched`.
+
+Presentation suite, measured on this change rebased onto v25.0.7: **1727 → 1751 passed, 49 → 48 failed**, 3 skipped. Failure name sets diffed both directions: **0 new failures**, 1 fixed (the rc=127 harness above). The remaining 48 are pre-existing on main and untouched.
+
+### Known remaining, not fixed here
+
+- `shared-utils/llm_score.py` still reads only `os.environ` and `openclaw.json` — it has no secrets-store fallback, unlike the five sibling readers that go through `oc_paths.secrets_env_candidates()`. That is the residual half of this defect class and is deliberately left for its own change.
+- `presentation_job/notify_preflight.py:143` echoes the transport program path in its success `reason` string. Pre-existing and untouched here; this change's own code emits no values.
+
+
 ## [v25.0.7]  -  2026-09-06  -  providers.yaml never reached a department, and the verifier was blind to the same gap
 
 Every client box has been silently running the presentation rate governor on its built-in `_DEFAULTS` — because a file-suffix filter dropped `providers.yaml` on the way to the materialized department, and the completeness verifier that should have caught it was blind to the exact same suffix. It reported `ok=1 failed_inscope=0` with the file absent.
