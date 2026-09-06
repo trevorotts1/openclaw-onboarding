@@ -1872,9 +1872,11 @@ jobs:
           set -uo pipefail
           # Scan Python and shell scripts for direct agents/<id>/CORE.md paths.
           # Allow-list: sessions/ reads, auth-profiles, test/fixture paths, archive.
+          # Explicit test directories include Python test_*.py fixtures as well as
+          # older test-*.sh names. Production file paths remain checked.
           # Note: patterns stored in variables to avoid bash misreading bare ( in run: block.
           SEARCH_PAT='agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md'
-          ALLOW_PAT='(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak|for cand in|if \[ -f)'
+          ALLOW_PAT='(^tests/(unit|integration|e2e)/|archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak|for cand in|if \[ -f)'
           VIOLATIONS=$(git grep -nE "$SEARCH_PAT" -- '*.py' '*.sh' \
             | grep -vE "$ALLOW_PAT" \
             || true)
