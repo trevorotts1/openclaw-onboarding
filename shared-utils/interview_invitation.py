@@ -17,6 +17,8 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 PROTOCOL = 'interview-launch.v1'
 class Pending(ValueError):
     pass
@@ -72,14 +74,12 @@ def load_service_environment(state, env):
             if not line.strip() or line.lstrip().startswith('#') or '=' not in line:continue
             key,value=line.split('=',1);key=key.strip()
             if key not in allowed:continue
-            value=value.strip()
-            try: value=json.loads(value)
-            except ValueError:
-                if len(value)>=2 and value[0]==value[-1] and value[0] in ('"',"'"):value=value[1:-1]
+            from service_env import decode_value
+            value=decode_value(value)
             if not isinstance(value,str) or not value:raise Pending('invalid scoped service environment value')
             if key in stored and stored[key]!=value:raise Pending('duplicate service environment conflict')
             stored[key]=value
-    except OSError:raise Pending('pinned service environment unreadable') from None
+    except (OSError, ValueError):raise Pending('pinned service environment unreadable or invalid') from None
     for key,variable in [('companyId','MC_COMPANY_ID'),('tenantId','MC_TENANT_ID'),('installationId','MC_INSTALLATION_ID')]:
         if not state.get(key) or stored.get(variable)!=state[key]:raise Pending('service environment identity mismatch')
     if not stored.get('MC_API_TOKEN'):raise Pending('service API token missing')

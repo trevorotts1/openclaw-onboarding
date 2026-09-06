@@ -63,6 +63,7 @@ set -u
 # Must happen BEFORE positional args so $@ is clean for the slug/name/email
 # assignments below.  Flags may appear in any position.
 UPDATE_ONLY=false
+RESUME_REQUESTED=false
 APP_DIR_FLAG=""
 APP_DIR_FLAG_SET=false
 _POSITIONAL=()
@@ -73,6 +74,7 @@ for _arg in "$@"; do
   fi
   case "$_arg" in
     --update-only) UPDATE_ONLY=true ;;
+    --resume) UPDATE_ONLY=true; RESUME_REQUESTED=true ;;
     --app-dir) _expect_app_dir=true ;;
     --app-dir=*) APP_DIR_FLAG="${_arg#--app-dir=}"; APP_DIR_FLAG_SET=true ;;
     *) _POSITIONAL+=("$_arg") ;;
@@ -97,7 +99,7 @@ CONTACT_EMAIL="${3:-}"
 # In --update-only mode they are read from the state file when absent.
 if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ -z "$CLIENT_SLUG" ]]; then
-    echo "Usage: run-full-install.sh [--update-only] <client-slug> <company-name> <contact-email>" >&2; exit 1
+    echo "Usage: run-full-install.sh [--resume | --update-only] <client-slug> <company-name> <contact-email>" >&2; exit 1
   fi
   if [[ -z "$COMPANY_NAME" ]]; then
     echo "run-full-install.sh: missing company name" >&2; exit 1
@@ -107,17 +109,15 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   fi
 fi
 
-# ---- platform detection (VPS first, Mac fallback) ----
-if [[ -n "${OPENCLAW_ROOT:-}" ]]; then
-  OC_ROOT="$OPENCLAW_ROOT"
-elif [[ -d /data/.openclaw ]]; then
-  OC_ROOT=/data/.openclaw
-elif [[ -d "$HOME/.openclaw" ]]; then
-  OC_ROOT="$HOME/.openclaw"
-else
-  echo "[run-full-install] FATAL: no OpenClaw root found" >&2
-  exit 1
+# Resolve the actual OS/topology and preserve the selected installation roots.
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_PLATFORM_COMMON="$SKILL_DIR/../platform/common.sh"
+[[ -f "$_PLATFORM_COMMON" ]] || _PLATFORM_COMMON="$SKILL_DIR/../../platform/common.sh"
+if [[ ! -f "$_PLATFORM_COMMON" ]]; then
+  echo "[run-full-install] platform/common.sh missing; refresh the onboarding bundle" >&2; exit 8
 fi
+source "$_PLATFORM_COMMON" || exit 8
+oc_set_platform_paths || exit 8
 
 STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
 LOG_FILE="$(dirname "$STATE_FILE")/.command-center-install.log"
@@ -400,7 +400,7 @@ cc_pm2_start_canonical() {
   # still apply; only the ecosystem circuit-breaker is absent on such a box.
   local cc_db=""
   if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
-    cc_db="$(sed -nE 's/^DATABASE_PATH=(.*)$/\1/p' "$DASHBOARD_DIR/.env.local" 2>/dev/null | head -1)"
+    cc_db="$(cc_env_get "$DASHBOARD_DIR/.env.local" DATABASE_PATH)"
   fi
   if [[ -f "$DASHBOARD_DIR/ecosystem.config.cjs" ]]; then
     ( cd "$DASHBOARD_DIR" \
@@ -611,6 +611,17 @@ cc_resolve_judge_model() {
 cc_env_has_nonempty() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 1
+  if [[ "$file" == "${DASHBOARD_DIR:-}/.env.local" ]]; then
+    python3 - "$SKILL_DIR/../shared-utils" "$file" "$key" <<'PYPRESENT'
+import sys
+sys.path.insert(0, sys.argv[1])
+from service_env import read_env
+try: values = read_env(sys.argv[2])
+except (ValueError, OSError): raise SystemExit(2)
+raise SystemExit(0 if values.get(sys.argv[3]) else 1)
+PYPRESENT
+    return $?
+  fi
   grep -qE "^[[:space:]]*${key}=[^[:space:]]" "$file" 2>/dev/null
 }
 
@@ -620,14 +631,31 @@ cc_env_has_nonempty() {
 # 0600. The VALUE is never echoed to a log. Returns 0=newly set, 2=preserved,
 # 1=write error.
 cc_env_set_if_absent() {
-  local file="$1" key="$2" val="$3" tmp
-  cc_env_has_nonempty "$file" "$key" && return 2
-  tmp="$(mktemp)" || return 1
+  local file="$1" key="$2" val="$3" tmp assignment
+  if cc_env_has_nonempty "$file" "$key"; then
+    return 2
+  else
+    [[ "$?" == 1 ]] || return 1
+  fi
+  if [[ "$file" == "${DASHBOARD_DIR:-}/.env.local" ]]; then
+    assignment=$(python3 - "$SKILL_DIR/../shared-utils" "$key" "$val" <<'PYASSIGN'
+import sys
+sys.path.insert(0, sys.argv[1])
+from service_env import encode_assignment
+try: print(encode_assignment(sys.argv[2], sys.argv[3]))
+except ValueError: raise SystemExit('Service configuration value cannot be written losslessly')
+PYASSIGN
+) || return 1
+  else
+    # Agent secret files keep their existing consumer contract.
+    assignment="$key=$val"
+  fi
+  tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 1
   if [[ -f "$file" ]]; then
     # Drop any empty or commented placeholder for KEY; keep every other line.
     grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
   fi
-  printf '%s=%s\n' "$key" "$val" >> "$tmp"
+  printf '%s\n' "$assignment" >> "$tmp"
   if mv "$tmp" "$file"; then
     chmod 600 "$file" 2>/dev/null || true
     return 0
@@ -637,17 +665,17 @@ cc_env_set_if_absent() {
 }
 
 # cc_env_get — echo KEY's value from an env file (empty when absent). Reads the
-# LAST assignment (matching cc_env_set_if_absent's append semantics) and strips a
-# single layer of surrounding quotes. The value is returned on stdout for capture
+# literal service assignment using the shared Next-compatible format. The value is returned on stdout for capture
 # only — NEVER logged. (KEY is [A-Z_]+ here, so it carries no regex metacharacters.)
 cc_env_get() {
-  local file="$1" key="$2" line
+  local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
-  line="$(grep -E "^[[:space:]]*${key}=" "$file" 2>/dev/null | tail -n1)" || return 0
-  line="${line#*=}"
-  line="${line%\"}"; line="${line#\"}"
-  line="${line%\'}"; line="${line#\'}"
-  printf '%s' "$line"
+  python3 - "$SKILL_DIR/../shared-utils" "$file" "$key" <<'PYENV'
+import sys
+sys.path.insert(0, sys.argv[1])
+from service_env import read_env
+print(read_env(sys.argv[2]).get(sys.argv[3], ''), end='')
+PYENV
 }
 
 # cc_mirror_api_auth_to_agent_secrets — WRITE-BACK-401 durable fix.
@@ -1231,10 +1259,30 @@ cc_load_launch_environment() {
   # Carry the SAME client-owned paths/IDs into the existing seed and sync tools.
   # Values are parsed as data; never source/eval a service environment file.
   local key value
-  for key in MC_COMPANY_ID MC_TENANT_ID MC_INSTALLATION_ID ZERO_HUMAN_COMPANY_DIR DATABASE_PATH OPENCLAW_WORKSPACE_ROOT OPENCLAW_WORKSPACE_PATH MC_TENANT_PUBLIC_URL MC_API_TOKEN; do
-    value="$(cc_env_get "$DASHBOARD_DIR/.env.local" "$key")"
+  for key in MC_COMPANY_ID MC_TENANT_ID MC_INSTALLATION_ID ZERO_HUMAN_COMPANY_DIR DATABASE_PATH OPENCLAW_WORKSPACE_ROOT OPENCLAW_WORKSPACE_PATH MC_TENANT_PUBLIC_URL MC_API_TOKEN MC_TENANT_REGISTRY_JSON MC_PERSONA_COMPANY_CONTEXTS_JSON MC_TENANT_SESSION_SECRET; do
+    value="$(cc_env_get "$DASHBOARD_DIR/.env.local" "$key")" || fail_install "Invalid client service environment; startup stopped"
     [[ -n "$value" ]] && export "$key=$value"
   done
+}
+
+cc_prepare_database_environment() {
+  local configured ambient="${DATABASE_PATH:-}"
+  configured="$(cc_env_get "$DASHBOARD_DIR/.env.local" DATABASE_PATH)" || fail_install "Invalid client service environment; migrations not run"
+  configured="${configured:-$DASHBOARD_DIR/mission-control.db}"
+  DATABASE_PATH=$(python3 - "$DASHBOARD_DIR" "$configured" "$ambient" <<'PYDB'
+import pathlib,sys
+app=pathlib.Path(sys.argv[1]); configured=pathlib.Path(sys.argv[2])
+if not configured.is_absolute(): configured=app/configured
+configured=configured.resolve()
+if sys.argv[3]:
+    ambient=pathlib.Path(sys.argv[3])
+    if not ambient.is_absolute(): ambient=app/ambient
+    if ambient.resolve()!=configured: raise SystemExit('DATABASE_PATH conflicts with the selected client service file')
+print(configured)
+PYDB
+) || fail_install "Client database path conflict; migrations not run"
+  export DATABASE_PATH
+  mkdir -p "$(dirname "$DATABASE_PATH")" || fail_install "Client database directory could not be prepared"
 }
 
 cc_launch_stage() {
@@ -1243,9 +1291,23 @@ cc_launch_stage() {
 }
 
 # ---- preflight ----
-# The pending state is installation metadata, never fabricated interview answers.
-# Both initial install and absent-CC update enter this same initializer.
-if [[ "$UPDATE_ONLY" != "true" ]]; then
+# --resume is the single recovery entry: preserve a valid existing checkout,
+# bootstrap an absent one, and never adopt an unrelated directory.
+if [[ "$RESUME_REQUESTED" == "true" ]]; then
+  if cc_validate_cc_checkout "$DASHBOARD_DIR"; then
+    UPDATE_ONLY=true; DASHBOARD_DIR="$CC_CANDIDATE_PATH"
+  elif [[ ! -e "$DASHBOARD_DIR" ]]; then
+    UPDATE_ONLY=false
+  else
+    fail_install "Resume target is not a validated Command Center checkout: $DASHBOARD_DIR"
+  fi
+fi
+_LAUNCH_INSPECTION=$(python3 "$SKILL_DIR/scripts/interview-launch.py" inspect --state "$STATE_FILE" --app "$DASHBOARD_DIR") || {
+  log "ERROR" "Installation identity/database inspection refused; existing files preserved"
+  exit 8
+}
+LAUNCH_INIT_REQUIRED=$(printf '%s' "$_LAUNCH_INSPECTION" | python3 -c 'import json,sys; print("true" if json.load(sys.stdin)["requiresInitialization"] else "false")')
+if [[ "$UPDATE_ONLY" != "true" || "$LAUNCH_INIT_REQUIRED" == "true" ]]; then
   _identity_helper="$SKILL_DIR/../scripts/onboarding-identity.py"
   [[ -f "$_identity_helper" ]] || _identity_helper="$SKILL_DIR/../../scripts/onboarding-identity.py"
   [[ -f "$_identity_helper" ]] || _identity_helper="$OC_ROOT/scripts/onboarding-identity.py"
@@ -1255,6 +1317,10 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
     exit 8
   }
   OPENCLAW_OWNER_NAME=$(printf '%s' "$_identity_result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+  CLIENT_SLUG=$(printf '%s' "$_identity_result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
+  COMPANY_NAME=$(printf '%s' "$_identity_result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
+  CONTACT_EMAIL="${CONTACT_EMAIL:-$(state_get '.contactEmail')}"
+  CONTACT_EMAIL="${CONTACT_EMAIL:-pending+${CLIENT_SLUG}@zerohumanworkforce.com}"
   export OPENCLAW_OWNER_NAME
   python3 "$SKILL_DIR/scripts/interview-launch.py" initialize --state "$STATE_FILE" \
     --app "$DASHBOARD_DIR" --slug "$CLIENT_SLUG" --name "$COMPANY_NAME" --email "$CONTACT_EMAIL" \
@@ -1263,6 +1329,7 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
       exit 8
     }
 fi
+
 cc_security_preflight
 for cmd in jq curl git npm python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -1280,8 +1347,8 @@ if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FI
   # transition fallback to the legacy clientSlug alias. state_get appends `// empty`,
   # so this resolves companySlug → clientSlug → empty across both state generations.
   CLIENT_SLUG=$(state_get '.companySlug // .clientSlug')
-  COMPANY_NAME=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
-  CONTACT_EMAIL=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
+  COMPANY_NAME=$(state_get '.companyName')
+  CONTACT_EMAIL=$(state_get '.contactEmail')
   [[ -n "$CLIENT_SLUG" ]] && log "INFO" "update-only: read client slug from state file: $CLIENT_SLUG"
 fi
 
@@ -1344,7 +1411,7 @@ fi
 # PHASE 1 — Prerequisites (pm2 + openclaw doctor --fix)
 # ----------------------------------------------------------------------
 log "INFO" "phase=1 prereqs: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
+if [[ "$UPDATE_ONLY" == "true" && "$LAUNCH_INIT_REQUIRED" != "true" ]]; then
   log "INFO" "phase=1 prereqs: --update-only mode — skipping (pm2 already installed on prior run)"
 elif [[ "$(state_get '.commandCenterPhase1Done')" == "true" ]]; then
   log "INFO" "phase=1 prereqs: already done — skipping"
@@ -1418,9 +1485,11 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     cc_launch_stage provision || fail_install "client tenant configuration pending; see $LOG_FILE"
     cc_load_launch_environment
   fi
-  ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
-    && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
-    || log "WARN" "phase=6: db:push reported errors (continuing)"
+  cc_prepare_database_environment
+  if ! ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ); then
+    fail_install "phase=6: db:push failed; migration incomplete, deployment stopped"
+  fi
+  log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)"
   # DATA-08 decoy-DB guard — hard, deploy-blocking gate. db:push has just
   # created/migrated the real mission-control.db, so this is the earliest
   # point the app-side and scripts-side resolutions can be compared for real.
@@ -1467,6 +1536,7 @@ else
     cc_launch_stage provision || fail_install "client tenant configuration pending; see $LOG_FILE"
     cc_load_launch_environment
   fi
+  cc_prepare_database_environment
   # (1) build the `.next` bundle so `next start` serves code matching the checkout
   # (registers the intake-advance + backlog-redispatch sweeps). A fresh full
   # install has NO `.next` at all — so a hard build failure with no usable bundle
@@ -1576,6 +1646,22 @@ else
       fi
     fi
   fi
+fi
+
+# Persist the final saved process list, including a newly created tunnel, before
+# any early interview-pending exit. Topology comes from platform/common.sh.
+if [[ "$OC_PLATFORM" == "vps" && "$OPENCLAW_RUNTIME_TOPOLOGY" == "native" ]]; then
+  if python3 "$SKILL_DIR/scripts/ensure-pm2-boot.py" --require-native >>"$LOG_FILE" 2>&1; then
+    state_set '.commandCenterBootPersistence = "systemd-enabled"'
+    log "INFO" "Native Linux PM2 reboot restoration is registered and enabled"
+  else
+    state_set '.commandCenterBootPersistence = "pending"'
+    fail_install "Native Linux PM2 boot persistence is pending; see $LOG_FILE for init/privilege or existing-unit remediation. No reboot-ready completion is claimed."
+  fi
+else
+  # Mac launchd and Docker entrypoint/host restart policies remain owned by
+  # their existing platform setup; never install host systemd inside Docker.
+  log "INFO" "PM2 boot policy remains owned by the selected $OC_PLATFORM/$OPENCLAW_RUNTIME_TOPOLOGY runtime"
 fi
 
 # ==============================================================================
@@ -1830,7 +1916,7 @@ else
   if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
     fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
   fi
-  AGENT_COUNT=$(python3 -c "import json,sys; sys.stdout.write(str(len(json.load(open('$OC_ROOT/openclaw.json'))['agents']['list'])))" 2>>"$LOG_FILE" || echo "0")
+  AGENT_COUNT=$(python3 -c 'import json,sys; sys.stdout.write(str(len(json.load(open(sys.argv[1]))["agents"]["list"])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
   if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
     fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
   fi

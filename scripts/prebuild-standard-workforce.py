@@ -202,6 +202,37 @@ def _log(msg):
     print(f"[prebuild-standard] {msg}", file=sys.stderr)
 
 
+def _resolve_persona_bash():
+    """Pin the portable persona script's interpreter; never trust a service PATH.
+
+    An explicit interpreter is authoritative and must pass the Bash>=3.2 probe.
+    The script itself supports stock macOS Bash, so a clean Mac needs no package
+    installation merely to stamp the governing persona documents.
+    """
+    explicit = os.environ.get("OPENCLAW_BASH", "").strip()
+    candidates = [explicit] if explicit else ["/bin/bash", "/usr/bin/bash", shutil.which("bash")]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        executable = Path(candidate)
+        if not executable.is_absolute() or not executable.is_file():
+            continue
+        try:
+            checked = subprocess.run(
+                [str(executable), "--noprofile", "--norc", "-c",
+                 'printf "%s.%s" "${BASH_VERSINFO[0]:-0}" "${BASH_VERSINFO[1]:-0}"'],
+                capture_output=True, text=True, timeout=5,
+                env={k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")},
+            )
+            if checked.returncode == 0 and re.fullmatch(r"[0-9]+\.[0-9]+", checked.stdout):
+                if tuple(map(int, checked.stdout.split("."))) >= (3, 2):
+                    return str(executable.resolve())
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+    raise ValueError("Governing personas require an absolute Bash >=3.2 interpreter; "
+                     "set OPENCLAW_BASH to a verified Bash executable (stock /bin/bash is supported on macOS)")
+
+
 def _resolve_skill23_scripts():
     """Locate the Skill 23 scripts dir (the shipped materializers live there).
     Precedence: explicit env override, then this repo's skill checkout, then
@@ -582,6 +613,15 @@ def main(argv=None, _runner_locked=False):
     result["standardFirstOnboardingValue"] = standard_first_flag
     _log(f"STANDARD_FIRST_ONBOARDING={standard_first_flag} — standard-first prebuild lane engaged")
 
+    # Resolve before materializing anything, so a missing interpreter cannot
+    # strand a half-built foundation. BASH_ENV must not rewrite this subprocess.
+    try:
+        persona_bash = _resolve_persona_bash()
+    except ValueError as exc:
+        result["reason"] = str(exc)
+        return emit(EXIT_STEP_FAILED)
+    result["personaInterpreter"] = persona_bash
+
     # Resolve --standard-first-onboarding: if the CLI arg is None, first check the
     # existing build-state (carry forward a prior choice), then default to the
     # current-lane default "at-onboarding" (materialize immediately).
@@ -862,7 +902,9 @@ def main(argv=None, _runner_locked=False):
     if persona_script.is_file():
         penv = dict(os.environ)
         penv["DEPARTMENTS_DIR"] = str(dd)
-        pcmd = ["bash", str(persona_script)]
+        penv.pop("BASH_ENV", None)
+        penv.pop("ENV", None)
+        pcmd = [persona_bash, str(persona_script)]
         if not args.apply:
             pcmd.append("--dry-run")
         _log(f"stamping governing personas ({'APPLY' if args.apply else 'dry-run'})")

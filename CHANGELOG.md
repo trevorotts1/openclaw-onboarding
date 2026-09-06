@@ -1,3 +1,15 @@
+## [v25.0.7]  -  2026-09-06  -  Repair fresh and partial Command Center installs with preserved client identity, literal service configuration, canonical database migrations and safe bootstrap workspace adoption; support Mac, native Linux and Docker clients on Hostinger and Contabo.
+
+- FIX-61/62/67: inspect actual state/database readiness, resume cloned-only or failed installs through one command, and retain canonical identity and existing answers.
+- FIX-63/65: serialize service values for the real Next loader, load the selected database before migration, and stop on migration/configuration failure.
+- FIX-64: run governing persona materialization on stock macOS Bash 3.2 with a verified interpreter and restricted service PATH.
+- FIX-66: adopt only proven unused default engine workspaces, preserve stable IDs, record backups and retain client ownership through repeated convergence.
+- FIX-68: actual migrations, canonical prebuild and production browser acceptance complement isolated provider transport tests.
+- Resolve Mac/native Linux/Docker by operating system and topology; honor selected client roots and support Hostinger/Contabo without assuming every VPS uses Docker.
+- Register and verify native Linux PM2 startup under the selected runtime user and PM2_HOME; preserve external Mac/container boot policies and report unmet Linux prerequisites as pending. Actual reboot acceptance remains installation-specific.
+- Skill 32 v13.1.5; requires paired Command Center v7.1.3. Client installations and external Cloudflare/Telegram/Notion delivery remain subject to their own acceptance run.
+
+
 ## [v25.0.6]  -  2026-09-06  -  Ask the ZHC owner and company names before first onboarding
 
 - Ask the client/ZHC owner name and company name before first onboarding; retain the two answers separately in private local intake metadata.

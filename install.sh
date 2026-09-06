@@ -26,73 +26,37 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.6"
+ONBOARDING_VERSION="v25.0.7"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
 # ----------------------------------------------------------
 # Determine platform: env override takes priority, then auto-detect.
-_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
-if [ -z "$_DETECT_PLATFORM" ]; then
-    if [ -d "/data/.openclaw" ]; then
-        _DETECT_PLATFORM="vps"
-    else
-        _DETECT_PLATFORM="mac"
-    fi
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
+_PLATFORM_COMMON_TEMP=""
+if [ ! -f "$_PLATFORM_COMMON" ]; then
+    _PLATFORM_COMMON_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/common.sh" -o "$_PLATFORM_COMMON_TEMP" || { rm -f "$_PLATFORM_COMMON_TEMP"; exit 1; }
+    _PLATFORM_COMMON="$_PLATFORM_COMMON_TEMP"
+fi
+source "$_PLATFORM_COMMON" || exit 1
+[ -z "$_PLATFORM_COMMON_TEMP" ] || rm -f "$_PLATFORM_COMMON_TEMP"
+_DETECT_PLATFORM="$(oc_detect_platform)" || exit 1
+if [ -n "${OPENCLAW_PLATFORM:-}" ] && [ "$OPENCLAW_PLATFORM" != "$_DETECT_PLATFORM" ]; then
+    echo "OPENCLAW_PLATFORM conflicts with the actual operating system." >&2; exit 1
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 
-# Source platform bootstrap (sets OC_CONFIG, OC_JSON, OC_PLATFORM, etc.
-# and runs platform-specific pre-flight).
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
-if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
-    # shellcheck source=/dev/null
-    source "$_PLATFORM_BOOTSTRAP"
-else
-    # Fallback when running via curl (no local repo clone yet).
-    # Inline the minimal path setup required before the clone happens.
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        OC_PLATFORM="vps"
-        OC_CONFIG="/data/.openclaw"
-        OC_JSON="/data/.openclaw/openclaw.json"
-        OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
-        OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
-        OC_CREDENTIALS="/data/.openclaw/credentials"
-        OC_AGENTS="/data/.openclaw/agents"
-        OC_SKILLS_DIR="/data/.openclaw/skills"
-        OC_LOGS="/data/.openclaw/logs"
-        OC_BACKUPS="/data/.openclaw/backups"
-        OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
-        OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_DOWNLOADS="/data/Downloads"
-        # v13.8.3: set LOG_FILE on the VPS curl-fallback path too. Without it,
-        # `note "Log file: $LOG_FILE"` (and every `>> "$LOG_FILE"`) aborts under
-        # `set -euo pipefail` with `LOG_FILE: unbound variable`. Mirrors the mac
-        # fallback branch below and platform/vps/bootstrap.sh §7.
-        mkdir -p "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    else
-        OC_PLATFORM="mac"
-        OC_CONFIG="$HOME/.openclaw"
-        OC_JSON="$HOME/.openclaw/openclaw.json"
-        OC_CREDENTIALS="$HOME/.openclaw/credentials"
-        OC_AGENTS="$HOME/.openclaw/agents"
-        OC_SKILLS_DIR="$HOME/.openclaw/skills"
-        OC_LOGS="$HOME/.openclaw/logs"
-        OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-        OC_DOWNLOADS="$HOME/Downloads"
-        OC_BACKUPS="$HOME/Downloads/openclaw-backups"
-        OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
-        OC_LEGACY_CLAWD="$HOME/clawd"
-        OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
-        mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    fi
+_PLATFORM_BOOTSTRAP_TEMP=""
+if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
 fi
+source "$_PLATFORM_BOOTSTRAP" || exit 1
+[ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
 
 set -euo pipefail
 
@@ -2309,34 +2273,10 @@ has_cred() {
 # Directory Discovery
 # ----------------------------------------------------------
 discover_skills_dir() {
-    # Mac canonical skills location is ~/Downloads/openclaw-master-files (where
-    # this installer extracts to). Fallbacks include the onboarding stage dir,
-    # legacy locations, and the ~/openclaw-onboarding clone if present.
-    local CANDIDATES="$OC_DOWNLOADS/openclaw-master-files"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/skills"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/onboarding"
-    CANDIDATES="$CANDIDATES|$HOME/openclaw-onboarding"
-
-    local dirs="$CANDIDATES"
-    while [ -n "$dirs" ]; do
-        local DIR
-        if echo "$dirs" | grep -q "|"; then
-            DIR=$(echo "$dirs" | cut -d'|' -f1)
-            dirs=$(echo "$dirs" | cut -d'|' -f2-)
-        else
-            DIR="$dirs"; dirs=""
-        fi
-        if [ -d "$DIR" ]; then
-            local SKILL_COUNT
-            SKILL_COUNT=$(find "$DIR" -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
-            if [ "$SKILL_COUNT" -gt "0" ]; then
-                echo "$DIR"
-                return
-            fi
-        fi
-    done
-    
-    echo "$OC_DOWNLOADS/openclaw-master-files"
+  # The selected client root is authoritative on Mac, native Linux and Docker.
+  # Downloads/legacy copies are source archives, never an alternate live client.
+  local active="${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}"
+  printf '%s\n' "$active"
 }
 
 discover_skills() {
@@ -3654,6 +3594,16 @@ fi
 # Copy scripts folder
 if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
+fi
+
+# Platform helpers are runtime dependencies of the delivered Skill32 resume command.
+if [ -d "$ONBOARDING_DIR/platform" ]; then
+    mkdir -p "$SKILLS_DIR/../platform"
+    cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+fi
+if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
+    echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
+    exit 8
 fi
 
 # >>> CANONICAL-CONFIG-DELIVERY-BEGIN
@@ -8181,8 +8131,10 @@ bootstrap_command_center_shell() {
         return 0
     fi
 
-    local CC_DIR="$HOME/projects/command-center"
-    [ -d "/data/.openclaw" ] && CC_DIR="/data/projects/command-center"
+    local CC_DIR="${CC_APP_DIR:-$HOME/projects/command-center}"
+    if [ -z "${CC_APP_DIR:-}" ] && [ "${OC_CONFIG:-}" = "/data/.openclaw" ]; then
+        CC_DIR="/data/projects/command-center"
+    fi
 
     # Absence check 1 — a valid Command Center checkout already present.
     if [ -d "$CC_DIR/.git" ] && [ -f "$CC_DIR/package.json" ]; then
@@ -8250,7 +8202,7 @@ bootstrap_command_center_shell() {
         return 8
     fi
     note "Bootstrapping the locked Command Center for the saved company..."
-    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
+    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" --app-dir "$CC_DIR" >>"$LOG_FILE" 2>&1; then
         success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
     else
         warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"

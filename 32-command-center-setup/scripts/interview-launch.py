@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '23-ai-workforce-bl
 from workforce_state import read, update, atomic_write, lock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared-utils"))
 from canonical_slug import canonical_dept_slug
+from service_env import read_env, encode_assignment
 
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -33,7 +34,7 @@ def initialize(path, slug, name, email, env):
     def mutate(s):
         for key in ('companySlug', 'clientSlug'):
             if s.get(key) and s[key] != slug: raise ValueError('existing company slug conflicts; refusing identity replacement')
-        fresh = not s or set(s).issubset({'stateRevision'})
+        fresh = is_uninitialized(s)
         for key, variable in [('companyId','MC_COMPANY_ID'), ('tenantId','MC_TENANT_ID'), ('installationId','MC_INSTALLATION_ID')]:
             value = env.get(variable)
             if s.get(key) and value and s[key] != value: raise ValueError(key + ' conflicts with installation configuration')
@@ -67,15 +68,40 @@ def initialize(path, slug, name, email, env):
 
 
 def env_read(path):
-    values = {}
-    if path.exists():
-        for line in path.read_text().splitlines():
-            if '=' not in line or line.lstrip().startswith('#'): continue
-            k, v = line.split('=',1)
-            try: v = json.loads(v)
-            except (ValueError, TypeError): v = v.strip().strip("'\"")
-            values[k.strip()] = str(v)
-    return values
+    return read_env(path)
+
+
+def is_uninitialized(state):
+    # Only known operational failure metadata is eligible for first identity
+    # allocation. Unknown fields, answers or identity aliases never qualify.
+    allowed = {'stateRevision', 'commandCenterStatus', 'commandCenterFailureReason'}
+    return (set(state).issubset(allowed)
+            and isinstance(state.get('stateRevision', 0), int)
+            and state.get('commandCenterStatus', 'failed') == 'failed'
+            and isinstance(state.get('commandCenterFailureReason', ''), str))
+
+
+def inspect_installation(path, app):
+    state = read(path)
+    values = env_read(app / '.env.local')
+    dbpath = Path(values.get('DATABASE_PATH') or app / 'mission-control.db')
+    if not dbpath.is_absolute(): dbpath = app / dbpath
+    dbstatus = 'missing'
+    if dbpath.exists() and dbpath.stat().st_size:
+        with sqlite3.connect(dbpath.resolve().as_uri() + '?mode=ro', uri=True) as db:
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            dbstatus = 'schema-ready' if {'companies','workspaces','tasks'} <= tables else 'schema-incomplete'
+            if is_uninitialized(state) and 'companies' in tables:
+                ids = {row[0] for row in db.execute("SELECT id FROM companies WHERE id != 'default'")}
+                configured = values.get('MC_COMPANY_ID')
+                if ids and (not configured or ids != {configured}):
+                    raise ValueError('Existing database has company data without a matching canonical identity; refusing fresh adoption')
+    fresh = is_uninitialized(state)
+    needs_identity = fresh or (bool(state.get('companyId')) and dbstatus != 'schema-ready')
+    status = 'initialize' if needs_identity else ('resume-launch' if state.get('launchBootstrap') and state.get('interviewComplete') is not True else 'update')
+    return {'status':status, 'databaseStatus':dbstatus, 'databasePath':str(dbpath.resolve()),
+            'requiresInitialization':needs_identity,
+            'companyId':state.get('companyId'), 'companySlug':state.get('companySlug') or state.get('clientSlug')}
 
 
 def verify_company_config(value, company_id, slug):
@@ -103,11 +129,16 @@ def provision(path, app, root, env):
         preserve('WORKFORCE_BUILD_STATE_PATH', str(Path(path).resolve()))
         preserve('OPENCLAW_ROOT', str(root.resolve()))
         values.setdefault('OPENCLAW_SKILL23_SCRIPTS', str(Path(__file__).resolve().parents[2]/'23-ai-workforce-blueprint/scripts'))
-        company = Path(env.get('ZERO_HUMAN_COMPANY_DIR') or s.get('companyRoot') or values.get('ZERO_HUMAN_COMPANY_DIR') or root / 'workspace/zero-human-company' / s['companySlug']).resolve()
+        company = Path(env.get('ZERO_HUMAN_COMPANY_DIR') or s.get('companyRoot') or values.get('ZERO_HUMAN_COMPANY_DIR') or Path(path).resolve().parent / 'zero-human-company' / s['companySlug']).resolve()
         if s.get('companyRoot') and Path(s['companyRoot']).resolve() != company: raise ValueError('company root conflict')
-        values.setdefault('DATABASE_PATH', str(app / 'mission-control.db'))
-        if env.get('DATABASE_PATH'):
-            preserve('DATABASE_PATH', str(Path(env['DATABASE_PATH']).resolve()))
+        def database_path(value):
+            selected = Path(value)
+            return (selected if selected.is_absolute() else app / selected).resolve()
+        stored_db = values.get('DATABASE_PATH')
+        ambient_db = env.get('DATABASE_PATH')
+        if stored_db and ambient_db and database_path(stored_db) != database_path(ambient_db):
+            raise ValueError('DATABASE_PATH conflicts with this installation')
+        values['DATABASE_PATH'] = str(database_path(stored_db or ambient_db or 'mission-control.db'))
         preserve('ZERO_HUMAN_COMPANY_DIR', str(company))
         company.mkdir(parents=True, exist_ok=True)
         config = company/'company-config.json'
@@ -146,9 +177,9 @@ def provision(path, app, root, env):
             values['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry,separators=(',',':'))
             preserve('MC_TENANT_PUBLIC_URL', origin)
         text = target.read_text() if target.exists() else ''
-        updates={k:v for k,v in values.items() if original_values.get(k)!=v}
+        updates={k:v for k,v in values.items() if original_values.get(k)!=v or k.endswith('_JSON')}
         lines = [line for line in text.splitlines() if line.split('=',1)[0].strip() not in updates]
-        lines.extend(k+'='+json.dumps(v,ensure_ascii=False) for k,v in updates.items())
+        lines.extend(encode_assignment(k, v) for k,v in updates.items())
         import tempfile
         fd, temporary = tempfile.mkstemp(dir=app, prefix='.launch-env-')
         with os.fdopen(fd,'w') as handle:
@@ -166,7 +197,7 @@ def provision(path, app, root, env):
 def bind_database(path, app):
     s = read(path); values = env_read(app/'.env.local'); dbpath = Path(values['DATABASE_PATH'])
     if not dbpath.is_absolute(): dbpath = app/dbpath
-    db = sqlite3.connect('file:'+str(dbpath)+'?mode=rw', uri=True)
+    db = sqlite3.connect(dbpath.resolve().as_uri()+'?mode=rw', uri=True)
     with db:
         db.execute('BEGIN IMMEDIATE')
         row = db.execute('SELECT id,slug FROM companies WHERE id=? OR slug=?',(s['companyId'],s['companySlug'])).fetchall()
@@ -200,7 +231,7 @@ def prebuild(path, app, root):
     s=read(path); slugs=s['standardPrebuild']['prebuiltDepartments']; artifacts=[]
     chosen=company/'departments.json'
     artifacts.append({'path':'departments.json','sha256':hashlib.sha256(chosen.read_bytes()).hexdigest()})
-    with sqlite3.connect('file:'+values['DATABASE_PATH']+'?mode=rw',uri=True) as db:
+    with sqlite3.connect(Path(values['DATABASE_PATH']).resolve().as_uri()+'?mode=rw',uri=True) as db:
         for slug in slugs:
             if not db.execute('SELECT 1 FROM workspaces WHERE slug=? AND company_id=? AND archived_at IS NULL',(canonical_dept_slug(slug),s['companyId'])).fetchone(): raise ValueError('prebuild workspace ownership verification failed: '+slug)
             directory=company/'departments'/slug
@@ -258,8 +289,10 @@ def invite(path, root):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('stage',choices=['initialize','provision','bind-database','prebuild','invite']);p.add_argument('--state',type=Path,required=True);p.add_argument('--app',type=Path);p.add_argument('--root',type=Path);p.add_argument('--slug');p.add_argument('--name');p.add_argument('--email');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('stage',choices=['inspect','initialize','provision','bind-database','prebuild','invite']);p.add_argument('--state',type=Path,required=True);p.add_argument('--app',type=Path);p.add_argument('--root',type=Path);p.add_argument('--slug');p.add_argument('--name');p.add_argument('--email');a=p.parse_args()
     try:
+        if a.stage=='inspect':
+            print(json.dumps(inspect_installation(a.state,a.app)));return 0
         if a.stage=='initialize':
             env=dict(os.environ)
             if a.app:

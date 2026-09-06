@@ -9,13 +9,19 @@ First-time onboarding requires the client/ZHC owner name and company name before
 
 This guide walks you through activating your AI workforce as a live Command Center. The process has 8 phases. Some phases you do manually (like setting up Telegram). Other phases the agent does automatically.
 
-**Current automated order (v13.1.4):** `scripts/run-full-install.sh` initializes missing pending client state, provisions client-specific service identity/configuration, deploys the locked Command Center and binds its database to the same company. Fresh clients use the standard-first lane: real standard department artifacts and board rows are verified before the interview invitation. Existing recorded lanes/operator choices are preserved.
+**Current automated order (v13.1.5):** `scripts/run-full-install.sh` initializes missing pending client state, provisions client-specific service identity/configuration, deploys the locked Command Center and binds its database to the same company. Fresh clients use the standard-first lane: real standard department artifacts and board rows are verified before the interview invitation. Existing recorded lanes/operator choices are preserved.
 
 The installer verifies the public `interview-launch.v1` readiness receipt before returning the pre-interview state. The sender then requests an authenticated one-use enrollment link and delivers it with the client's own Telegram configuration. An HTTP 200 from a gateway page is insufficient. Tunnel creation and verified public readiness are separate recorded steps.
 
 The foundation does not pretend that the owner has answered the interview or that the runtime workforce is activated. Completed Q/A drives the existing department/persona diff and workforce build; verified closeout governs the final dashboard. See [launch and recovery](../docs/interview-launch-recovery.md) for retry behavior and client acceptance.
 
 ---
+
+## Installed bundle prerequisites
+
+Skill32 runs from `<config-root>/skills/32-command-center-setup`. Direct-to-agent delivery must also place repository `platform/` at `<config-root>/platform/`, root `scripts/` at `<config-root>/scripts/`, and the full `shared-utils/` tree at `<config-root>/skills/shared-utils/`. `platform/common.sh`, `scripts/onboarding-identity.py`, `scripts/prebuild-standard-workforce.py`, and `skills/shared-utils/service_env.py` must exist before launch. Do not copy only Skill32 and then invoke a partial installer. The terminal installer and updater deliver these dependencies together.
+
+Use the actual operating system and runtime topology: macOS, native Linux, or the selected Docker container. Preserve `OPENCLAW_ROOT`, the configured workspace and any explicit app directory. Hostinger and Contabo do not imply `/data` or Docker. See [portable platforms](../docs/portable-onboarding-platforms.md).
 
 ## Phase 1: Prerequisites Check
 
@@ -527,16 +533,15 @@ Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-
 
 **🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside the operator's Cloudflare account. The token comes directly from the operator's system in the webhook response.**
 
-### Phase 6c — Make pm2 survive container restarts (added v10.13.22)
+### Phase 6c — Persist services for the actual runtime
 
-**Mac native install — pm2 + launchd already handles persistence via `pm2 startup`; no action required on Mac. This phase is for Hostinger Docker VPS only.**
+`pm2 save` saves the process list; it does not by itself register an operating-system startup service. Verify persistence for the runtime actually selected:
 
-The VPS install adds a `command:` override to `/docker/<project>/docker-compose.yml` that backgrounds a 45-second delayed `pm2 resurrect` call so the Mission Control dashboard + cloudflared connector survive `docker compose restart`. On Mac, pm2 is managed by launchd via `pm2 startup` and persists across reboots without any docker-compose hook, so the equivalent `scripts/install-pm2-restart-hook.sh` is a no-op on this repo.
+- **macOS:** verify the client user's launchd/PM2 startup service and saved process list. Retain the Mac power-resilience checks.
+- **Native Linux VPS:** the canonical installer runs `scripts/ensure-pm2-boot.py` after dashboard/tunnel convergence. On systemd it saves the actual runtime user's PM2 list, installs a startup unit with that user's HOME/PM2_HOME and absolute PM2/Node paths, enables it and verifies `is-enabled`. Root or passwordless sudo is required; unsupported init, missing privilege, or a conflicting externally managed PM2 unit leaves installation explicitly pending. A compatible existing PM2 unit is verified from its loaded user, environment, PID file and resurrect command, then preserved and enabled. The helper never restarts a live service or overwrites an operator's unit. Resolve the reported startup policy and rerun before claiming reboot readiness. Do not edit Docker Compose on a native host.
+- **Docker:** configure startup in the selected container's actual entrypoint/Compose project so its saved PM2 processes are restored after that container restarts. Preserve the existing command and client volume mounts. Do not guess a `/docker/<project>` path, a `node` account or a Hostinger-specific layout on another provider.
 
-If you operate a Hostinger Docker VPS, use the platform/vps variant of this script and follow the VPS INSTALL.md Phase 6c:
-
-- Unified repo (Mac + VPS): https://github.com/trevorotts1/openclaw-onboarding
-- VPS-specific docs: platform/vps/ in the same repo
+The legacy `scripts/install-pm2-restart-hook.sh` is a Mac no-op, not proof of Linux or Docker persistence. Do not mark this check complete until the selected runtime's startup configuration is verified.
 
 ## Phase 6i: SOP V2 Library Ingestion (Agent Does This Automatically)
 

@@ -2,17 +2,77 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v25.0.5 / Command Center v7.1.2. Skill 32 v13.1.3 and Skill 37 v13.1.1.
+Paired releases: onboarding v25.0.7 / Command Center v7.1.3. Skill 32 v13.1.5 and Skill 37 v13.1.1.
 
 ## Expected order
 
 1. Run the existing install entry point on the client's own machine. The launch helper atomically initializes missing pending state and stable company, tenant, installation and build identities. It records the actual operator invocation for the default standard-first preparation; existing recorded lane/operator choices remain authoritative. No answers or completion flags are invented.
-2. Provision the client's service environment and registry, bind the actual Command Center database company, and prepare the standard foundation using the canonical workforce engine. Each expected department must have company artifacts and an active same-company board workspace. A hash receipt protects the readiness claim; stored status alone cannot prove it.
+2. Provision the client's service environment and registry. Resolve and export that installation's absolute `DATABASE_PATH`, run the real Command Center schema migrations successfully, verify the required tables, and only then bind the canonical company. A failed migration stops this stage before foundation or invitation readiness. Prepare the standard foundation using the canonical workforce engine. Each expected department must have company artifacts and an active same-company board workspace. A hash receipt protects the readiness claim; stored status alone cannot prove it.
 3. Bring up the client's locked Command Center and its own Cloudflare origin. Provisioning stores a candidate origin; only an authenticated exact-host/identity readiness receipt makes it a verified interview origin. Ambiguous tunnel requests are reconciled using their stable request identity instead of blindly requesting another tunnel.
 4. The sender verifies readiness, resolves the client's owner destination and requests a signed one-use enrollment ticket from CC. It uses supported OpenClaw `--message --json` delivery. The browser opens `/interview#enroll=...`, redeems the ticket and loads that client's interview. Tickets expire after 15 minutes; request a fresh invitation to renew access to the same saved interview.
 5. Every accepted Q/A persists under the client interview identity. Retrying an answer operation does not duplicate it. Restart/resume restores the saved interview; reference export includes that client's questions and answers. Reusing an enrollment ticket or presenting another client's session cannot access it.
 6. Completing Q/A requests the existing authenticated build handoff. An unavailable receiver stays pending. The standard-first diff personalizes the existing foundation, adds/archives approved departments and proceeds through persona/runtime registration and build checks. An interview completion flag alone is not evidence that those later steps finished.
 7. Skill 37 builds the closeout documents and verifies delivery through the existing closeout gates. The interview Q/A remains separately saved and downloadable through the authenticated interview reference export. Notion requires the client's own token plus explicit client-bound parent. Root/page/section lookup stays within that verified hierarchy. Without those resources, documents remain staged locally and the missing step stays recoverable; no agency or foreign workspace is substituted.
+
+## One supported recovery command
+
+Update both paired releases, then run the Skill32 orchestrator **inside the client's
+actual runtime**, using the same validated Command Center checkout:
+
+```bash
+bash "/absolute/client/openclaw-root/skills/32-command-center-setup/scripts/run-full-install.sh" \
+  --resume --app-dir "/absolute/client/command-center"
+```
+
+Replace both example paths with this installation's existing paths. In a source
+checkout, use `32-command-center-setup/scripts/run-full-install.sh` from that
+checkout instead of the installed `skills` path. For a nonstandard root that is
+not already selected by the existing runtime configuration, pin
+`OPENCLAW_ROOT` to that same client root for the command. Preserve existing
+workspace pins; do not point the command at another client's directory.
+
+The same command supports a missing checkout, a clone that never finished setup,
+an interrupted installation and a configured installation. It validates the
+checkout, inspects state/database evidence and resumes the missing phases in
+place. A bare clone does not count as an installed Command Center. Failure-only
+metadata can resume identity initialization while retaining its diagnostics;
+unknown identity or interview-bearing state cannot be silently replaced.
+
+Do not reconstruct recovery by running migration, company binding, department
+seeding, prebuild or invitation scripts individually with improvised exports.
+The orchestrator loads the saved company UUID, tenant, installation, company root,
+workspace, lane and service configuration together. It resolves the configured
+absolute database path **before** every migration call, including update/resume.
+A conflicting ambient database path is rejected before touching the database.
+The binding helper must not fabricate a minimal schema to get past an error.
+
+A UUID company ID is valid. Never convert it to a slug, delete interview state,
+clear the tenant registry, skip standard-first prebuild or mark interview/build
+completion to bypass a failed prerequisite. Company names and slugs are labels;
+the existing canonical identity and saved answers survive retries.
+
+The corrected environment writer preserves structured JSON and literal characters
+through the actual Next and PM2 loaders. Let the orchestrator repair its owned
+configuration and verify the running host binding; do not source an environment
+file as shell code or hand-unescape it. It neither borrows credentials nor changes
+client ownership to make a hostname pass.
+
+Fresh migration-created Podcast, Anthology and Presentations placeholders are
+bound only when they are unchanged and unused, under the explicit client ID.
+Their row IDs and generated agent references are preserved, with a transactional
+backup. Existing tasks/history, customization, runtime-bound agents or foreign
+ownership prevent automatic adoption. Such a diagnostic requires investigation
+of that specific queue; never bulk-update every `company_id='default'` row.
+Convergence preserves an already repaired client binding rather than forcing it
+back to `default`.
+
+See [Mac and Linux VPS installation behavior](portable-onboarding-platforms.md)
+for native Linux, existing `/data` roots, Docker hosts and containers, including
+Hostinger and Contabo. The provider name does not identify the runtime topology.
+On a Docker-backed client, recover **inside the selected existing container**;
+do not start a second host installation or assume the user is always `node`.
+Native VPS installations do not require Docker. Mac persona generation works
+with stock Bash; tools that explicitly require modern Bash retain that prerequisite.
 
 ## Recovery and honest readiness
 
