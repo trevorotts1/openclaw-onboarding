@@ -191,9 +191,31 @@ def _run_counting_harness(walk_line: str, body: str, tmp_path: Path,
         + 'SCRIPTS_DIR="' + str(_SCRIPTS_DIR) + '"\n'
         + 'ENGINE_ENTRY="' + str(_SCRIPTS_DIR / "presentation_job.py") + '"\n'
         + 'LAUNCHER="' + str(_SCRIPTS_DIR / "presentation_job" / "launcher.py") + '"\n'
+        # HARNESS COMPLETENESS (2026-09-06 repair). The extracted body also
+        # references the FIX 61 lease state and the FIX 11 run-mode helper.
+        # Neither was declared here, so under the harness's own `set -u` the
+        # body aborted at `[ "$LEASE_ENABLED" = "1" ]` with rc=127 -- leg 2
+        # failed outright, and leg 3 PASSED FOR THE WRONG REASON (the aborted
+        # body never incremented anything, so "0 launched" was true by
+        # accident). A control that cannot fail proves nothing, so the
+        # harness now declares everything the body reads.
+        # PRESENTATION_INTAKE_LEASE=0 is the poller's own documented rollback:
+        # the lease helpers are never called, so no lease file is written and
+        # no stub for them is needed.
+        + 'LEASE_ENABLED="0"\n'
+        + "SKIPPED_LEASE_HELD=0\n"
+        + "LEASE_TAKEOVERS=0\n"
+        + 'RUN_MODE=""\n'
+        # read_run_mode is a real function in the script; in this harness it
+        # is stubbed to "undeclared", so the launcher default applies and this
+        # test stays about COUNTING, not about mode routing.
+        + "read_run_mode() { :; }\n"
         "NEW_LAUNCHES=0\n"
+        "REFUSED_DISPATCH=0\n"
         "SKIPPED_RUNNING=0\n"
         "SKIPPED_NO_INTAKE=0\n"
+        "SKIPPED_TERMINAL=0\n"
+        "RUN_DIRS_SEEN=0\n"
         + walk_line + "\n"
         + body + "\n"
         + close + "\n"
