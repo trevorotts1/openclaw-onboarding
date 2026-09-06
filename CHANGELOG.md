@@ -1,3 +1,52 @@
+## [v25.0.11]  -  2026-09-06  -  Every hosted client silently ran standard, and seven documents described a pipeline that no longer exists
+
+Three defects in the same seam: what a client *declares* about a deck run, and what the department *reads back* about its own pipeline. In all three the wrong answer was silent.
+
+### 1. The hosted interview app could not declare a run mode — so every hosted client ran standard
+
+The hosted interview is one of three intake paths, and it never **asked**. On `origin/main`, across the three files that define what the app collects:
+
+```
+questions.json               run_mode: 0   RUN_MODE: 0   | CONTROL offer_name: 1
+index.html                   run_mode: 0   RUN_MODE: 0   | CONTROL offer_name: 1
+build_questions_payload.py   run_mode: 0   RUN_MODE: 0   | CONTROL offer_name: 2   (DEFAULT_CURATED: 3)
+```
+
+Zero in all three, while a control field present in all three reads 1/1/2 — so the absence is real, not a broken probe. The app never wrote the canonical `RUN_MODE`, and it accepted `quick` / `in-depth` / `turbo` without refusing them: **interview-depth vocabulary leaking into the execution axis**, which is precisely the confusion FIX 11 and FIX 36 exist to prevent. A client who asked for ultra through the hosted path got standard, and nothing said otherwise.
+
+Now: the app asks, validates against the canonical set, refuses the depth-axis words instead of silently absorbing them, and writes `RUN_MODE`.
+
+### 2. Two blueprint driver forks recorded no run mode at all — and they were bigger than the canonical
+
+Not stale copies. **Diverged** ones:
+
+| file | lines | `_record_run_mode` | `RUN_MODE` |
+|---|---|---|---|
+| `23-ai-workforce-blueprint/scripts/deck-intake-driver.py` | 2468 | **0** | **0** |
+| `23-ai-workforce-blueprint/scripts/deck-intake-turngate.py` | 2468 | **0** | **0** |
+| `…/role-library/presentations/scripts/deck-intake-driver.py` (canonical) | 2356 | 2 | 4 |
+
+Both forks carried **112 more lines** than the canonical while missing the function that records what the client asked for. A client declaring ultra through a fork got standard, silently — the same failure as defect 1, reached by a different door. One implementation now records the run mode, and a regression test pins it.
+
+### 3. Seven documents described a pipeline that no longer exists
+
+`00-START-HERE.md` is the entry document for the Presentations department — `dept-presentations` and its role agents read it to learn the phase graph, and the director's parallelization SOP plans fan-out from it. It stated **manifest_version 55, 55 phases**. The live SSOT was **67 / 62**. Seven revisions of drift.
+
+It was not only the numbers: four duplicated list numbers (`14.` appearing four times), fifteen phases parked in a side list outside the sequence, and 22 dead `Full contract: look it up in the manifest.` stubs. `SOP-SLIDE-05` stated v64. `DEPARTMENT-COUNTS-CANONICAL.md` carried a 55-row table and an executed-count matrix whose every cell was wrong — it stated `[31, 43, 40, 50, …]` where the live derivation is `[39, 50, 48, 57, …]`. The director card, two role cards and a third version marker were stale too.
+
+**GATE 4 could not catch any of this.** It asserts only that every `phases[].id` is *named somewhere* in the doc — and every id was. What drifted was the stated version, the stated count, and the **order**, none of which GATE 4 reads.
+
+The cure is that no hand transcribes a phase table again: `scripts/ci/phase_doc_sync.py` **generates** every table and version marker from the manifest (`--write`), and new **GATE 7** fails CI when they disagree (`--check`). Run against pristine `origin/main`, the new checker exits 1 and names **29 drifts across all 7 documents**. It also ships a self-test that CI runs first — `PHASE_DOC_SYNC_SELFTEST_PASS: the checker trips on a real change and not on a no-op` — so a gate that could only ever pass would fail its own proof before it ever passed a tree.
+
+Every per-phase description Trevor wrote is preserved: of 58 substantive prose sentences sampled from the old document, **56 survive byte-for-byte**; the two that do not are the stale `manifest v54 / 55-phase` scaffolding of the side list, which is the defect itself.
+
+### Verification
+
+Presentation suite: **48 failed → 48 failed, 1817 → 1842 passed**, 3 skipped. Failure name sets diffed both directions: **identical, 0 new failures**, +25 passing. All 7 drift gates pass on the combined result.
+
+`test_batch_render.py::test_stuck_task_surfaces_fail_no_hang` is red in **both** legs. It asserts `wall < 5.0` and lands at ~5.07s; it is pre-existing, tracked separately, and deliberately not touched here.
+
+
 ## [v25.0.10]  -  2026-09-06  -  Repair fresh and partial Command Center installs with preserved client identity, literal service configuration, canonical database migrations and safe bootstrap workspace adoption; support Mac, native Linux and Docker clients on Hostinger and Contabo.
 
 - FIX-61/62/67: inspect actual state/database readiness, resume cloned-only or failed installs through one command, and retain canonical identity and existing answers.
