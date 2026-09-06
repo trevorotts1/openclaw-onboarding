@@ -8,6 +8,14 @@
 # had grown to 36 phases, while SOP-SLIDE-06 asserted (falsely, and unchecked) that the
 # docs used "the SAME phase ids" as the manifest:
 #
+# GATE 7 (phase-doc VALUE lockstep) -- catches what GATE 4 cannot: a doc that
+#                                     names every phase id but states a stale
+#                                     manifest_version, a stale phase count, a
+#                                     stale order, duplicated list numbers, or a
+#                                     dead "look it up in the manifest" stub.
+#                                     Delegates to scripts/ci/phase_doc_sync.py
+#                                     --check, which compares PARSED values.
+#
 #   Problem 1 (fix_bundle_complete class): the canonical DELIVERABLE_AUDIT_SPEC
 #   symbol went missing / import-broken in fix_bundle_complete.py, which left
 #   curate.py import-broken on main without any CI job noticing.
@@ -540,11 +548,41 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# GATE 7 (phase-doc VALUE lockstep) -- the gap GATE 4 leaves open.
+# GATE 4 only asserts every `phases[].id` is NAMED somewhere in a doc. That
+# passed green while 00-START-HERE.md -- the department's entry document, the one
+# dept-presentations and its role agents read to learn the phase graph -- stated
+# "manifest_version 55, 55 phases" against a live manifest_version 67 with 62
+# phases: seven revisions of drift, four duplicated list numbers, 15 phases
+# parked outside the sequence and 22 dead "look it up in the manifest" stubs.
+# Every id was named, so GATE 4 saw nothing.
+#
+# This gate compares PARSED VALUES -- ints and id sequences read out of each doc
+# and out of the manifest -- never a literal-string grep, which is how a gate
+# clause gets silently broken by an edit that has nothing to do with it.
+echo
+echo "== GATE 7: phase-doc VALUE lockstep (stated manifest_version / phase count / order vs PIPELINE-MANIFEST.json) =="
+GATE7_SCRIPT="scripts/ci/phase_doc_sync.py"
+if [ ! -f "$GATE7_SCRIPT" ]; then
+  echo "GATE 7 FAILED: $GATE7_SCRIPT not found" >&2
+  FAILED=1
+elif ! python3 "$GATE7_SCRIPT" --selftest; then
+  echo "GATE 7 FAILED: the checker itself no longer discriminates -- a green --check would mean nothing." >&2
+  FAILED=1
+elif python3 "$GATE7_SCRIPT" --check; then
+  echo "GATE 7 PASSED: checker self-test holds; every phase table and version marker matches the manifest."
+else
+  echo "GATE 7 FAILED: a doc that restates the pipeline manifest has drifted -- see PHASE_DOC_SYNC_FAIL above." >&2
+  echo "               Fix: python3 scripts/ci/phase_doc_sync.py --write" >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
 echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep)."
 exit 0
