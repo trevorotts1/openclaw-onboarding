@@ -258,6 +258,7 @@ LASTQ_25H="$(iso_ts 25)"
 # ---------------------------------------------------------------------------
 echo "--- (S1/S2) PREBUILT_NO_STORM: prebuilt + interview not started => no build self-ping, no promotion ---"
 STATE_SF_PREBUILT_NOT_STARTED='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "done",
@@ -320,6 +321,7 @@ fi
 echo ""
 echo "--- (S3) SF_HOP4_CLOSEOUT: prebuilt confirmed-or-declined + libraries + comms => HOP-4 + exactly one dispatch ---"
 STATE_SF_SETTLED='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "done",
@@ -383,6 +385,7 @@ fi
 echo ""
 echo "--- (S4) SF_HOP4_GATED: confirmationsComplete absent => buildCompletedAt must NOT be written ---"
 STATE_SF_UNSETTLED='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "done",
@@ -460,6 +463,7 @@ fi
 echo ""
 echo "--- (S5) PARTIAL_PREBUILD_LANE: a partial prebuild gets ONE [STANDARD-PREBUILD-RESUME], TTL-guarded ---"
 STATE_SF_PARTIAL='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "pending",
@@ -554,6 +558,7 @@ fi
 echo ""
 echo "--- (S6) RESUME_AFTER_FLIP: completed interview + pending custom dept => exactly one [WORKFORCE-RESUME] ---"
 STATE_SF_FLIPPED='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "done",
@@ -603,6 +608,7 @@ fi
 echo ""
 echo "--- (S7) LEGACY_UNTOUCHED: a legacy box still gets the normal lane, never the standard-first lane ---"
 STATE_LEGACY='{
+  "companySlug": "fixture-company",
   "interviewComplete": true,
   "interviewQc": {"status": "pass"},
   "roleLibraryStatus": "pending",
@@ -635,6 +641,7 @@ echo "--- (S8) PREBUILT_NEVER_STALE: the disk-reality reset must not demote a pr
 # prebuilt dept carries roleLibraryFilled=true but has NO how-to on disk; the
 # stale-check audits only done/library-filled claims and must still skip it.
 STATE_SF_STALETRAP='{
+  "companySlug": "fixture-company",
   "buildType": "standard-first",
   "standardPrebuild": {
     "status": "done",
