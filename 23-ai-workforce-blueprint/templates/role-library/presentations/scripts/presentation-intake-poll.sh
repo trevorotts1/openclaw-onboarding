@@ -65,6 +65,71 @@ log() {
     echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" | tee -a "$LOG_FILE"
 }
 
+# ---------------------------------------------------------------------------
+# ENV STORE -- launchd/cron hands this script essentially NO environment.
+#
+# THE DEFECT THIS CLOSES (measured on the operator Mac, 2026-09-06):
+# 5,948 consecutive dispatch refusals in this script's own log --
+#   AF-NOTIFY-UNCONFIGURED: PRESENTATION_NOTIFY_CMD is unset or blank
+# -- while PRESENTATION_NOTIFY_CMD was PRESENT and non-blank (len 61) in all
+# three of this box's env stores. The credential was never missing. It was
+# simply absent from THIS PROCESS's environment, because nothing here ever
+# loaded a store and the LaunchAgent's EnvironmentVariables dict did not
+# carry it either. launcher.py's notify_gate then refused every single
+# dispatch, every five minutes, for over a day.
+#
+# IT IS A CLASS, NOT AN INSTANCE. Every credential a CHILD of this script
+# needs arrives the same way. OPENROUTER_API_KEY is the second instance:
+# shared-utils/llm_score.py reads it from os.environ only (falling back to
+# openclaw.json's env block, never to the secrets stores), so a persona
+# pass spawned from an environment-less scheduler logs
+# "all models failed: OPENROUTER_API_KE...". Loading the store HERE, at the
+# entry point, fixes every such reader at once -- they are all children.
+#
+# PRECEDENCE: an already-set, NON-BLANK process value WINS and is never
+# overwritten, so `PRESENTATION_NOTIFY_CMD=... bash presentation-intake-poll.sh`
+# still overrides for one invocation and the plist's own EnvironmentVariables
+# still win over a stale store. That is the OPPOSITE of the `set -a; . file`
+# idiom used elsewhere in this repo, and it is deliberate -- see the module
+# docstring. A BLANK value is absence, not an override.
+#
+# NO VALUE IS EVER LOGGED. The loader's --emit-shell output (the only surface
+# carrying values) is captured in a command substitution and eval'd; it never
+# reaches $LOG_FILE. What IS logged is --report: paths, name counts, and
+# per-name presence plus LENGTH. Emitted AFTER the eval, so it reports what
+# actually resolved in this process rather than what the loader predicted.
+#
+# Loaded BEFORE RUNS_ROOT below, so a store may legitimately supply
+# PRESENTATION_RUNS_DIR too.
+#
+# Rollback: PRESENTATION_ENV_STORE=0 (documented no-op; the report says so).
+# ---------------------------------------------------------------------------
+load_env_store() {
+    if [ ! -f "$SCRIPTS_DIR/presentation_job/env_store.py" ]; then
+        log "  [env-store] presentation_job/env_store.py NOT FOUND under $SCRIPTS_DIR -- the env store was not loaded (partial deploy). Every credential this scan's children need must already be in this process env, or dispatch will be refused downstream."
+        return 1
+    fi
+    # `-m` needs the package's PARENT dir as cwd; a subshell keeps this
+    # script's own cwd untouched (same reason the dispatch lines below do it).
+    _ENV_SH="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.env_store --emit-shell 2>/dev/null )"
+    _ENV_RC=$?
+    if [ "$_ENV_RC" -ne 0 ]; then
+        unset _ENV_SH
+        log "  [env-store] loader exited rc=$_ENV_RC -- the env store was NOT loaded and nothing was exported"
+        return 1
+    fi
+    # eval, NOT `. "$file"`: the loader emits only shlex-quoted
+    # `export NAME=value` lines, so a store file cannot execute anything --
+    # strictly safer than sourcing it, which runs the whole file as shell.
+    eval "$_ENV_SH"
+    unset _ENV_SH
+    ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.env_store --report 2>&1 ) | while IFS= read -r _env_line; do
+        log "  [env-store] $_env_line"
+    done
+    return 0
+}
+load_env_store || true
+
 # Resolve the runs root
 RUNS_ROOT="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations/runs}"
 
@@ -81,11 +146,39 @@ if [ ! -f "$LAUNCHER" ]; then
     exit 2
 fi
 
+# ---------------------------------------------------------------------------
+# LAUNCH ACCOUNTING -- the counters must report what HAPPENED, not what was
+# ATTEMPTED.
+#
+# THE DEFECT THIS CLOSES: NEW_LAUNCHES was incremented unconditionally after
+# each dispatch, so a pass that logged
+#   launcher: REFUSING to dispatch <run> -- AF-NOTIFY-UNCONFIGURED: ...
+# twice ALSO logged "scan complete: 2 launched". A run that never started
+# read as started. That is how the 5,948-refusal outage above went unnoticed
+# for a day: the only summary line the operator sees was reporting success.
+#
+# A dispatch now increments NEW_LAUNCHES only when the dispatching command
+# actually EXITED 0; anything else increments REFUSED_DISPATCH and says so.
+# The launcher's exit status is read with ${PIPESTATUS[0]} because every
+# dispatch is piped into the log loop, and a pipeline's own `$?` is the
+# LOOP's status, not the launcher's -- reading `$?` there is what made the
+# refusal invisible in the first place.
+#
+# SKIPPED_RUNNING and SKIPPED_NO_INTAKE were declared here and emitted in the
+# telemetry event but NEVER incremented anywhere -- they reported a hard 0 on
+# every scan no matter what was skipped. That is the same defect (a counter
+# that cannot be right) in a quieter place, so they are wired to their real
+# `continue` sites below. SKIPPED_TERMINAL and RUN_DIRS_SEEN are added so the
+# accounting TALLIES: seen == launched + refused + every skip.
+# ---------------------------------------------------------------------------
 NEW_LAUNCHES=0
+REFUSED_DISPATCH=0
 SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
+SKIPPED_TERMINAL=0
 SKIPPED_LEASE_HELD=0
 LEASE_TAKEOVERS=0
+RUN_DIRS_SEEN=0
 # The run mode declared by the CLIENT for the run dir currently being
 # dispatched. Re-read per run dir inside the loop; declared here so `set -u`
 # has it defined on every path.
@@ -401,11 +494,13 @@ PYREL
 
 # Walk every run directory under $RUNS_ROOT.
 while IFS= read -r run_dir; do
+    RUN_DIRS_SEEN=$((RUN_DIRS_SEEN + 1))
     INTAKE_LEDGER="$run_dir/working/interview/intake_ledger.json"
     STATE_JSON="$run_dir/state.json"
 
     # Must have a completed intake ledger
     if [ ! -f "$INTAKE_LEDGER" ]; then
+        SKIPPED_NO_INTAKE=$((SKIPPED_NO_INTAKE + 1))
         continue
     fi
 
@@ -426,6 +521,7 @@ except Exception:
     fi
 
     if [ "$INTAKE_COMPLETE" -eq 0 ]; then
+        SKIPPED_NO_INTAKE=$((SKIPPED_NO_INTAKE + 1))
         continue
     fi
 
@@ -451,6 +547,7 @@ except Exception:
 " 2>/dev/null)
         if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "BLOCKED" ]; then
             # Already finished or parked -- skip
+            SKIPPED_TERMINAL=$((SKIPPED_TERMINAL + 1))
             continue
         fi
 
@@ -465,6 +562,7 @@ except Exception:
 " 2>/dev/null)
         if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
             # Already running
+            SKIPPED_RUNNING=$((SKIPPED_RUNNING + 1))
             continue
         fi
 
@@ -513,7 +611,19 @@ except Exception:
         ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ${RUN_MODE:+--mode "$RUN_MODE"} ) 2>&1 | while IFS= read -r line; do
             log "  $line"
         done
-        NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+        # LAUNCH ACCOUNTING: the launcher's OWN exit status, taken from
+        # PIPESTATUS[0] -- `$?` here is the log loop's status (always 0), which
+        # is precisely why a refusal used to be counted as a launch. The
+        # launcher exits non-zero when it REFUSES to dispatch (notify_gate's
+        # EXIT_NOTIFY_UNCONFIGURED=8 / AF-NOTIFY-UNCONFIGURED, the capacity
+        # autofails, a missing state.json). No engine started; do not claim one.
+        DISPATCH_RC=${PIPESTATUS[0]}
+        if [ "$DISPATCH_RC" -eq 0 ]; then
+            NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+        else
+            REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+            log "  NOT LAUNCHED: the launcher refused this resume dispatch (exit $DISPATCH_RC) -- see the launcher lines above for the reason. Counted as REFUSED, never as a launch."
+        fi
         # FIX 61: the dispatch window is over -- the engine now holds .job.lock.
         if [ "$LEASE_ENABLED" = "1" ]; then
             lease_release "$run_dir"
@@ -560,6 +670,13 @@ except Exception:
         if [ $? -ne 0 ]; then
             log "  ERROR: $run_dir did not resolve to a legal presentation_type: $RESOLVE_OUT"
             log "  skipping this run dir until its intake ledger is corrected -- it will NOT silently build the wrong deck type"
+            # LAUNCH ACCOUNTING: this was the one `continue` in the whole walk
+            # that incremented NOTHING -- a dispatch that produced no engine,
+            # invisible in every counter and in the telemetry event. It is
+            # precisely the case the comment above describes ("retried the
+            # identical failure every 5 minutes, forever"), so it is exactly
+            # the case that must be countable.
+            REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
             # FIX 61: the lease covered a window that produced no engine --
             # release it so the next tick (after the ledger is corrected)
             # can retry; a stale lease would block the fix itself.
@@ -596,8 +713,14 @@ except Exception:
         env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 "$ENGINE_ENTRY" --new --run-dir "$run_dir" --intake "$ENGINE_INTAKE_TMP" 2>&1 | while IFS= read -r line; do
             log "  [create] $line"
         done
+        # LAUNCH ACCOUNTING (see the resume branch): the ENGINE's own exit
+        # status, not the log loop's. A --new that fails leaves no job to run.
+        CREATE_RC=${PIPESTATUS[0]}
 
-        if [ -f "$run_dir/state.json" ]; then
+        if [ "$CREATE_RC" -ne 0 ]; then
+            log "  NOT LAUNCHED: engine --new exited $CREATE_RC for $run_dir -- no job was created. Counted as REFUSED, never as a launch."
+            REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+        elif [ -f "$run_dir/state.json" ]; then
             # Engine job created -- now launch the run (background).
             # We use Python subprocess here because poll.sh itself must return quickly.
             env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 -c "
@@ -621,9 +744,19 @@ if os.path.isfile(sp):
 " 2>&1 | while IFS= read -r line; do
                 log "  [run] $line"
             done
-            NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+            # LAUNCH ACCOUNTING: the spawner's own exit status. It exits
+            # non-zero when Popen could not start the engine at all -- in that
+            # case nothing is running and nothing may be counted as running.
+            RUN_RC=${PIPESTATUS[0]}
+            if [ "$RUN_RC" -eq 0 ]; then
+                NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+            else
+                log "  NOT LAUNCHED: the engine spawner exited $RUN_RC for $run_dir -- no engine process was started. Counted as REFUSED, never as a launch."
+                REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+            fi
         else
-            log "  WARNING: engine --new succeeded but state.json not found -- engine not launched"
+            log "  NOT LAUNCHED: engine --new exited 0 but state.json was not written for $run_dir -- engine not launched. Counted as REFUSED, never as a launch."
+            REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
         fi
         # FIX 61: dispatch window is over (engine spawned and holds .job.lock,
         # or no engine exists because --new failed). Release the lease either
@@ -641,7 +774,13 @@ done < <(find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null)
 # in the telemetry stream, not only in poll.log.
 TELEMETRY_DIR="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations}/telemetry"
 mkdir -p "$TELEMETRY_DIR"
-printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_lease_held":%d,"lease_takeovers":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_LEASE_HELD" "$LEASE_TAKEOVERS"     >> "$TELEMETRY_DIR/events.jsonl"
+# LAUNCH ACCOUNTING: `refused` is new and is the number that makes this event
+# honest -- a scan that refused every dispatch used to emit the SAME event as
+# a scan that launched them. `run_dirs_seen` closes the tally: it must equal
+# new_launches + refused + every skipped_* count, so a missing increment is
+# arithmetically visible instead of silently under-reported. The keys that
+# already existed keep their names and meanings; nothing was removed.
+printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"refused":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_terminal":%d,"skipped_lease_held":%d,"lease_takeovers":%d,"run_dirs_seen":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$REFUSED_DISPATCH" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_TERMINAL" "$SKIPPED_LEASE_HELD" "$LEASE_TAKEOVERS" "$RUN_DIRS_SEEN"     >> "$TELEMETRY_DIR/events.jsonl"
 
-log "scan complete: $NEW_LAUNCHES launched ($SKIPPED_LEASE_HELD skipped on lease, $LEASE_TAKEOVERS lease takeovers)"
+log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused ($SKIPPED_RUNNING skipped already-running, $SKIPPED_NO_INTAKE skipped no-completed-intake, $SKIPPED_TERMINAL skipped terminal, $SKIPPED_LEASE_HELD skipped on lease, $LEASE_TAKEOVERS lease takeovers, $RUN_DIRS_SEEN run dirs seen)"
 exit 0

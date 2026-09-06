@@ -6,8 +6,27 @@
   (Mac) or registering the 5-minute openclaw cron (Linux/VPS).
 
   PLACEHOLDERS install_intake_poll_schedule() replaces:
-    1. <POLL_SCRIPT_PATH>      -- absolute path to presentation-intake-poll.sh
-    2. <LOG_PATH>              -- where stdout/stderr should go
+    1. <POLL_SCRIPT_PATH>          -- absolute path to presentation-intake-poll.sh
+    2. <LOG_PATH>                  -- where stdout/stderr should go
+    3. <POLL_PATH>                 -- the PATH launchd must give the job
+    4. <PRESENTATION_RUNS_DIR>     -- the run root the poller scans
+    5. <PRESENTATION_NOTIFY_CMD>   -- the notify transport (may render EMPTY)
+
+  WHY 3-5 EXIST (2026-09-06). launchd hands a job essentially NO environment.
+  This template previously declared no EnvironmentVariables at all, so the
+  rendered LaunchAgent gave the poller nothing -- and launcher.py's
+  fail-closed notify gate refused every dispatch with
+  AF-NOTIFY-UNCONFIGURED (5,948 consecutive refusals measured on the operator
+  Mac) while PRESENTATION_NOTIFY_CMD was present and non-blank in all three
+  of that box's env stores. Fixing only the rendered artifact would not have
+  survived the next install; the template is the thing that had to change.
+
+  <PRESENTATION_NOTIFY_CMD> MAY RENDER EMPTY and that is safe by design:
+  presentation-intake-poll.sh now loads the box's env store itself
+  (presentation_job/env_store.py) and its precedence is process-env-WINS on a
+  NON-BLANK value only -- so an empty string here does not shadow the store,
+  while a real value here does win. The plist and the store are belt and
+  braces, in that order, and neither silently overrides the other.
 
   The poll runs on the same 5-minute cadence as the watchdog: it scans for
   intake interviews whose ledger says complete but whose engine was never
@@ -33,6 +52,15 @@
         <string>/bin/bash</string>
         <string>&lt;POLL_SCRIPT_PATH&gt;</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>&lt;POLL_PATH&gt;</string>
+        <key>PRESENTATION_RUNS_DIR</key>
+        <string>&lt;PRESENTATION_RUNS_DIR&gt;</string>
+        <key>PRESENTATION_NOTIFY_CMD</key>
+        <string>&lt;PRESENTATION_NOTIFY_CMD&gt;</string>
+    </dict>
     <key>StartInterval</key>
     <integer>300</integer>
     <key>RunAtLoad</key>

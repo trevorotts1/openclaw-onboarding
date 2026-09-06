@@ -1,4 +1,4 @@
-## [v25.0.7]  -  2026-09-06  -  Repair fresh and partial Command Center installs with preserved client identity, literal service configuration, canonical database migrations and safe bootstrap workspace adoption; support Mac, native Linux and Docker clients on Hostinger and Contabo.
+## [v25.0.9]  -  2026-09-06  -  Repair fresh and partial Command Center installs with preserved client identity, literal service configuration, canonical database migrations and safe bootstrap workspace adoption; support Mac, native Linux and Docker clients on Hostinger and Contabo.
 
 - FIX-61/62/67: inspect actual state/database readiness, resume cloned-only or failed installs through one command, and retain canonical identity and existing answers.
 - FIX-63/65: serialize service values for the real Next loader, load the selected database before migration, and stop on migration/configuration failure.
@@ -11,7 +11,126 @@
 - Resolve the invitation sender’s verified OpenClaw executable under restricted service PATH, without changing the client environment or guessing ownership.
 - Bound skill readiness and QC subprocess groups to configurable deadlines (30 and 180 seconds by default), retain private diagnostic receipts and continue checking other skills after a failure.
 - Preserve explicit client root/workspace pins in the shared legacy library and Skill 05 QC; prevent credential fallback into another installation. Skill 05 v7.0.1; Skill 37 v13.1.2.
+- Validate the presentation poller plist with literal-safe typed XML rendering and atomic promotion before any launchctl unload/load. Invalid configuration preserves the previous working job; special characters in paths and notification executable names are retained.
+- Includes main v25.0.7 materialization/drift and v25.0.8 scheduler environment/accounting changes; this companion was renumbered to v25.0.9 after those concurrent releases.
 - Skill 32 v13.1.5; requires paired Command Center v7.1.4 (including company-scoped department memory and removal of automatic demo goals). Client installations and external Cloudflare/Telegram/Notion delivery remain subject to their own acceptance run.
+
+## [v25.0.8]  -  2026-09-06  -  The poller refused every dispatch for a day, and reported each refusal as a launch
+
+`PRESENTATION_NOTIFY_CMD` was present and non-blank in all three secret stores. It never reached the poller's process. So the launcher refused **every** dispatch with `AF-NOTIFY-UNCONFIGURED` — **5,948 refusals** in the live log — and the only summary line an operator sees reported each refusal as a launch. The pipeline was dead for over a day and the scan output said it was running.
+
+### What was broken, and what it cost
+
+**1. The env store never reached the poller.** The scheduler entry points started a process that read `PRESENTATION_NOTIFY_CMD` from its own environment and nothing loaded the box's secrets store into it. The variable was configured; the process could not see it. Every dispatch hit the notify gate and exited `EXIT_NOTIFY_UNCONFIGURED = 8`.
+
+Proven on the real gate — the loader is the only difference between the two legs, and the control is not a stand-in for the gate, it *is* the gate:
+
+```
+[CONTROL  pre-fix shape, loader NOT called]   python3 -m presentation_job.notify_preflight  ->  EXIT=8
+[FIX      the poller's load_env_store() runs] python3 -m presentation_job.notify_preflight  ->  EXIT=0
+```
+
+The loader follows the convention the rest of the pipeline already uses — `oc_paths.secrets_env_candidates()`, the same resolver behind `research_web.py`, `capacity.py`, `model_router.py` and `kie_generate.py` — rather than inventing a fourth way to find a secrets file.
+
+**2. Precedence, deliberately inverted from `set -a`.** An explicit value already in the process wins over the store, and a **blank** process value does not shadow the store. The naive `set -a; . store` gets both of these backwards: it lets the store clobber a deliberate override, and it lets an empty exported variable silently win. Two dedicated test legs pin both directions.
+
+**3. A fresh install produced a poller with no environment at all.** `presentation-intake-poll.plist.template` declared **zero** `EnvironmentVariables` keys (it does declare `ProgramArguments`, so the file was a working plist — it simply passed no environment). Every newly installed client hit the same refusal from the first scan. The template now declares `PATH`, the runs dir and the notify command; the renderer handles both the escaped and the bare placeholder form and validates the result with `plistlib` before anything is loaded.
+
+**4. Refusals were counted as launches.** Every dispatch is piped into the log loop:
+
+```bash
+( ... python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ) 2>&1 | while IFS= read -r line; do
+    log "  $line"
+done
+NEW_LAUNCHES=$((NEW_LAUNCHES + 1))      # unconditional
+```
+
+`$?` after a pipeline is the **loop's** status, not the launcher's — and the loop always succeeds. So the counter incremented whether the run started or not, and a scan that logged `REFUSING to dispatch … AF-NOTIFY-UNCONFIGURED` went on to log `1 launched`. That pairing is why 5,948 refusals went unnoticed for a day: the one line an operator reads was reporting success.
+
+Each of the three dispatch sites now reads `${PIPESTATUS[0]}` and increments `NEW_LAUNCHES` only on exit 0; anything else increments `REFUSED_DISPATCH` and says so in the log. `SKIPPED_RUNNING` and `SKIPPED_NO_INTAKE` were declared and emitted in telemetry but **never incremented anywhere** — a hard 0 on every scan no matter what was skipped — and are now wired to their real `continue` sites, along with a seventh `continue` that counted nothing at all. `RUN_DIRS_SEEN` and `SKIPPED_TERMINAL` make the accounting tally: seen == launched + refused + every skip.
+
+### A repaired test harness that could not fail
+
+`test_fix37_poller_counter.py::test_two_completed_runs_log_two_launches` was already failing on main — at **rc=127**:
+
+```
+bash: line 48: read_run_mode: command not found
+bash: line 156: LEASE_ENABLED: unbound variable
+assert 127 == 0
+```
+
+The harness never declared `LEASE_ENABLED` or `read_run_mode`, so under its own `set -u` the extracted body aborted before it counted anything. 127 is a shell abort, not a measurement. The damage was not the red test — it was the *green* one beside it: the sibling leg asserting "0 launched" passed because the aborted body never incremented, so its negative control was vacuous. The harness now declares everything the extracted body reads, and both legs measure again.
+
+### Verification
+
+23 new regression cases across `test_poller_env_store.py` (14) and `test_poller_launch_accounting.py` (8, one parametrized), plus the repaired `test_fix37_poller_counter.py`. Both new files fail on `origin/main`; the pre-fix reproduction shows `REFUSING to dispatch … AF-NOTIFY-UNCONFIGURED` immediately followed by `1 launched`.
+
+Presentation suite, measured on this change rebased onto v25.0.7: **1727 → 1751 passed, 49 → 48 failed**, 3 skipped. Failure name sets diffed both directions: **0 new failures**, 1 fixed (the rc=127 harness above). The remaining 48 are pre-existing on main and untouched.
+
+### Known remaining, not fixed here
+
+- `shared-utils/llm_score.py` still reads only `os.environ` and `openclaw.json` — it has no secrets-store fallback, unlike the five sibling readers that go through `oc_paths.secrets_env_candidates()`. That is the residual half of this defect class and is deliberately left for its own change.
+- `presentation_job/notify_preflight.py:143` echoes the transport program path in its success `reason` string. Pre-existing and untouched here; this change's own code emits no values.
+
+
+## [v25.0.7]  -  2026-09-06  -  providers.yaml never reached a department, and the verifier was blind to the same gap
+
+Every client box has been silently running the presentation rate governor on its built-in `_DEFAULTS` — because a file-suffix filter dropped `providers.yaml` on the way to the materialized department, and the completeness verifier that should have caught it was blind to the exact same suffix. It reported `ok=1 failed_inscope=0` with the file absent.
+
+### What was broken, and what it cost
+
+`23-ai-workforce-blueprint/scripts/refresh-dept-scripts.py` mirrors the role-library `scripts/` tree onto each box's materialized department. It copies a file only when its suffix appears in one of two tuples it sources from `create_role_workspaces.py`:
+
+```
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".md", ".template")
+_ADDITIVE_SCRIPT_SUFFIXES  = (".json",)
+```
+
+`.yaml` was in **neither**. Exactly two shipped files fell outside both tuples, and both were silently skipped on every roll, on every box:
+
+```
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/providers.yaml
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py.headtest
+```
+
+`providers.yaml` is the per-provider rate-governor configuration. `presentation_job/governor.py` reads it through `_load_config()`, which treats an absent file as an empty config and returns `dict(_DEFAULTS)` — no error, no warning, no log line. So on every client box the governor has been running the fallback numbers instead of the verified Part 7 ceilings:
+
+| provider | providers.yaml | what the boxes actually ran |
+|---|---|---|
+| `deepseek` | rps 5.0, max_inflight 400 | rps 1.0, max_inflight 50 |
+| `kie` | rps 2.0, max_inflight 100 | rps 1.0, max_inflight 50 |
+
+That is an 8x throttle on the DeepSeek in-flight ceiling and a 5x throttle on its sustained rate — capacity the accounts were paid for and the pipeline never used.
+
+The second half is worse than the first. `verify_scripts_materialization()` — the post-copy proof that is supposed to re-derive the verdict from the filesystem rather than trust the copy loop's own counter — takes `canonical_suffixes=_CANONICAL_SCRIPT_SUFFIXES` and `continue`s on any file whose suffix is not in it. **The same tuple gates the writer and the checker.** A file the mirror cannot copy is a file the verifier cannot look for. Reproduced against the shipped library with each tree's own module loaded:
+
+```
+[origin/main 2bf4d9bce]  292 files mirrored  providers.yaml at destination: False
+                         verifier problems: 0  ->  ok=1 failed_inscope=0
+[this change 680a53fc3]  293 files mirrored  providers.yaml at destination: True
+                         verifier problems: 0  ->  ok=1 failed_inscope=0
+```
+
+The green verdict on the first line is the whole defect: it is a true statement about the wrong set.
+
+### The fix
+
+- Add `.yaml` / `.yml` to `_CANONICAL_SCRIPT_SUFFIXES`, so the governor config is fleet-owned and mirrored like any other versioned tool.
+- Add an explicit `_NON_DELIVERED_SCRIPT_SUFFIXES = (".headtest",)`. A suffix that is deliberately not shipped now has to say so in writing, instead of being indistinguishable from one nobody remembered.
+- Add `23-ai-workforce-blueprint/scripts/test_dept_scripts_suffix_coverage.py` (8 tests): every suffix the role library actually ships must fall in the canonical set, the additive set, or the non-delivered list. A new suffix that lands in none of the three fails the build — the mechanical end of the `.js` / `.tpl` / `.md` / `.template` / `.yaml` drop class, which has now recurred five times.
+- Stop restating the tuple contents in `refresh-dept-scripts.py`'s prose. An inline copy of the literal is how the policy drifted the last time: the constant grew `.md` and `.template` while the comment still advertised the older six-suffix set.
+
+### Duplicate SOP filenames shipping from two trees, disagreeing
+
+`role-library/<dept>/sops/` and `universal-sops/<pack>/` both reach every client box, and nothing compared them. 8 filenames ship from both trees; all 8 disagree; 0 agree. Role files cite the `universal-sops/` path, so an agent following a citation has been reading a stale draft of an SOP that also exists, differently, next to the role that cited it.
+
+`scripts/check-duplicate-sop-drift.py` + GATE 6 in `scripts/ci/presentations-drift-gates.sh` pin per-artifact authority in `scripts/duplicate-sop-authority.json`. Each waiver records the sha256 of **both** copies, so the known backlog is tolerated at exactly its current bytes while any edit to either side — or a newly duplicated basename — fails the gate. Proven to fire on a one-character change to either copy. **No SOP content was rewritten**; the doctrine in those files is unchanged, and reconciling the 8 disagreements stays a deliberate authoring decision, not a side effect of a merge.
+
+### Seeing drift before it becomes an incident
+
+`scripts/dept-drift-detect.py` — a read-only reporter (no write calls) that diffs a materialized department against its role-library template and classifies each difference as *stale*, *locally-authored-or-wired*, or *provisioner-substitution*, so "this box is behind" can be separated from "this box was deliberately customized" without opening files by hand. `--fail-on-stale` makes it gateable; by default it only reports.
+
+Presentation suite: 1779 tests, 1727 passed / 49 failed / 3 skipped — byte-identical failure name sets against pristine `origin/main`, both directions. No test changed state.
 
 
 ## [v25.0.6]  -  2026-09-06  -  Ask the ZHC owner and company names before first onboarding

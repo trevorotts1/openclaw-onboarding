@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.7"
+ONBOARDING_VERSION="v25.0.9"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4608,17 +4608,112 @@ install_intake_poll_schedule() {
             return 1
         fi
         mkdir -p "$PLIST_DIR" "$(dirname "$LOG_PATH")"
-        # Render the template: replace the two placeholders (sed with | delim —
-        # the paths contain /). Escape nothing: paths on this box have no | or &.
-        sed -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
-            -e "s|<LOG_PATH>|$LOG_PATH|g" \
-            "$TPL_SRC" > "$PLIST_DST"
-        if ! grep -q '<POLL_SCRIPT_PATH>\|<LOG_PATH>' "$PLIST_DST"; then
-            success "FIX 61: rendered $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH)"
+        # ── ENV-LOADING FIX (2026-09-06) ──────────────────────────────────
+        # launchd gives a job essentially NO environment. This render used to
+        # substitute two placeholders into a template that declared no
+        # EnvironmentVariables at all, so the poller ran with nothing — and
+        # launcher.py's fail-closed notify gate refused EVERY dispatch with
+        # AF-NOTIFY-UNCONFIGURED (5,948 consecutive refusals measured on the
+        # operator Mac) while PRESENTATION_NOTIFY_CMD was present and
+        # non-blank in all three of that box's env stores. The template now
+        # carries PATH / PRESENTATION_RUNS_DIR / PRESENTATION_NOTIFY_CMD, and
+        # this renderer must supply all three or the fix does not survive the
+        # next install.
+        #
+        # Values, resolved the same way the FIX 49 watchdog render resolved
+        # its own (never guessed, never fabricated):
+        #   PATH   — launchd supplies none. /opt/homebrew/bin carries the
+        #            interpreter this codebase is developed against;
+        #            $HOME/.npm-global/bin carries the openclaw CLI the notify
+        #            transport execs; the system prefix rides behind them.
+        #   RUNS   — the department's runs root, sibling of the scripts dir.
+        #   NOTIFY — the co-located transport, and ONLY if the file actually
+        #            exists. A PRESENTATION_NOTIFY_CMD pointing at a missing
+        #            file would trade "unconfigured" for a per-tick transport
+        #            failure, so it renders EMPTY instead and says so. Empty
+        #            is SAFE here: the poller loads the box's env store itself
+        #            and its precedence only lets a NON-BLANK process value
+        #            win, so an empty string cannot shadow the store.
+        local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
+        local _poll_runs_dir="$_dept_scripts_dir/../runs"
+        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
+        local _poll_notify_cmd=""
+        if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
+            _poll_notify_cmd="$_dept_scripts_dir/presentation-notify.py"
         else
-            warn "FIX 61: rendered plist still contains placeholders — refusing to load a malformed agent."
-            _rc=1
+            warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
         fi
+        # Parse the actual template, substitute values as plist strings (never
+        # sed/XML/shell fragments), validate, then atomically promote beside the
+        # destination. Failed rendering leaves the old plist and job untouched.
+        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" <<'PY_RENDER_INTAKE_PLIST'
+import os
+from pathlib import Path
+import plistlib
+import re
+import shlex
+import sys
+import tempfile
+
+template, destination, poll, log, runtime_path, runs, notify = sys.argv[1:]
+text = Path(template).read_text()
+# The repository template has a documentation comment before its XML declaration.
+start = text.find('<?xml')
+if start < 0:
+    raise ValueError('Intake poll template has no XML declaration')
+data = plistlib.loads(text[start:].encode())
+values = {
+    '<POLL_SCRIPT_PATH>': poll, '<LOG_PATH>': log, '<POLL_PATH>': runtime_path,
+    '<PRESENTATION_RUNS_DIR>': runs,
+    # This value is parsed by shlex.split in the notification transport.
+    '<PRESENTATION_NOTIFY_CMD>': shlex.quote(notify) if notify else '',
+}
+seen = set()
+def render(value):
+    if isinstance(value, dict):
+        return {key: render(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [render(item) for item in value]
+    if isinstance(value, str):
+        if value in values:
+            seen.add(value)
+            return values[value]
+        if re.search(r'<[A-Z_]+>', value):
+            raise ValueError('Unknown or embedded intake poll placeholder')
+    return value
+result = render(data)
+if seen != set(values):
+    raise ValueError('Intake poll template is missing required placeholders')
+if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
+        or result.get('ProgramArguments') != ['/bin/bash', poll]
+        or result.get('StartInterval') != 300
+        or result.get('StandardOutPath') != log
+        or result.get('StandardErrorPath') != log
+        or any(result.get('EnvironmentVariables', {}).get(key) != expected for key, expected in {
+            'PATH': runtime_path, 'PRESENTATION_RUNS_DIR': runs,
+            'PRESENTATION_NOTIFY_CMD': values['<PRESENTATION_NOTIFY_CMD>'],
+        }.items())):
+    raise ValueError('Intake poll template does not satisfy the scheduler contract')
+encoded = plistlib.dumps(result)
+if plistlib.loads(encoded) != result:
+    raise ValueError('Intake poll plist failed round-trip validation')
+fd, candidate = tempfile.mkstemp(prefix='.presentation-intake-poll-', suffix='.plist', dir=Path(destination).parent)
+try:
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(candidate, 0o644)
+    os.replace(candidate, destination)
+finally:
+    if os.path.exists(candidate):
+        os.unlink(candidate)
+PY_RENDER_INTAKE_PLIST
+        then
+            warn "FIX 61: intake poll render/validation failed — prior plist and running job preserved; no launchctl changes made."
+            return 1
+        fi
+        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
         # Reload semantics: if already loaded, unload first so a re-run picks up
         # a re-rendered copy. 'launchctl load' on an already-loaded job is the
         # documented "Load failed: 5: Input/output error" — treat it as loaded.

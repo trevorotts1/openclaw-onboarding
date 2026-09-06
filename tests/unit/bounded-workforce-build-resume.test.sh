@@ -315,6 +315,9 @@ esac
 
 RESUME_CRON_UUID="aabbccdd-1122-3344-5566-778899aabbcc"
 
+# These are existing, client-owned builds. Their explicit synthetic companySlug
+# passes the pre-intake ownership guard in BOTH the fixed and mutated runners;
+# no production guard is stubbed or removed to reach the recovery assertions.
 # Build one hermetic box. Echoes the box HOME.
 #   $1 = box name   $2 = build-state JSON   $3 = space-separated dept ids needing
 #                                                a real how-to.md on disk
@@ -383,6 +386,7 @@ _mutate() {
 }
 
 STATE_ALL_DONE_SOP_FAILED='{
+  "companySlug": "fixture-company",
   "interviewComplete": true,
   "interviewQc": {"status": "pass"},
   "status": "done",
@@ -467,6 +471,7 @@ fi
 echo ""
 echo "--- (10) STATUS_VOCABULARY: departments written as 'complete' are normalized to 'done' ---"
 STATE_VOCAB='{
+  "companySlug": "fixture-company",
   "interviewComplete": true,
   "interviewQc": {"status": "pass"},
   "closeoutStatus": "pending",
@@ -528,6 +533,7 @@ fi
 echo ""
 echo "--- (11) QC_BUILD_ELIGIBLE: interviewQc=needs-review is build-eligible, not a permanent strand ---"
 STATE_NEEDS_REVIEW='{
+  "companySlug": "fixture-company",
   "interviewComplete": true,
   "interviewQc": {"status": "needs-review"},
   "closeoutStatus": "pending",
@@ -660,6 +666,7 @@ SHIM
 
   # Departments already present from a prior partial build; build NOT complete.
   STATE_REOPENED='{
+    "companySlug": "fixture-company",
     "interviewComplete": false,
     "ownerChat": "111222333",
     "agentName": "TestOrchestrator",
@@ -858,6 +865,7 @@ fi
 echo ""
 echo "--- (17) NO_LASTATTEMPTAT_VISIBILITY: a stuck building-dept with no lastAttemptAt must still get a resume dispatch ---"
 STATE_STUCK_NO_TIMESTAMP='{
+  "companySlug": "fixture-company",
   "interviewComplete": true,
   "interviewQc": {"status": "pass"},
   "closeoutStatus": "pending",

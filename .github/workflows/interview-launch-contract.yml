@@ -9,6 +9,7 @@ on:
       - '05-ghl-setup/qc-ghl-setup.sh'
       - '23-ai-workforce-blueprint/scripts/workforce_completion.py'
       - '23-ai-workforce-blueprint/scripts/resume-workforce-build.sh'
+      - 'tests/unit/test_intake_poll_plist.py'
       - 'tests/unit/test_shared_client_paths.py'
       - 'tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh'
       - 'tests/unit/test_preidentity_closeout.py'
@@ -68,6 +69,8 @@ jobs:
           python-version: '3.11'
       - name: Mac, native VPS, Hostinger and Contabo container topology fixtures
         run: python3 tests/unit/test_portable_bootstrap.py
+      - name: Validate literal scheduler configuration before replacing a working job
+        run: python3 tests/unit/test_intake_poll_plist.py
       - name: Shared client paths and credential isolation
         run: python3 tests/unit/test_shared_client_paths.py
       - name: GHL credential aliases through the delivered shared library

@@ -2426,7 +2426,39 @@ _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
 # Neither suffix is a client-local override candidate (both are read
 # programmatically, never operator-edited), so the canonical/mirror policy
 # (always overwrite when divergent) is correct for them, same as .tpl.
-_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".md", ".template")
+# GAP-DELIVERY-YAML (FIX-DELIVERY-04): .yaml/.yml are fleet-owned canonical
+# assets exactly like .py/.sh/.js/.tpl/.md/.template — today
+# presentations/scripts/presentation_job/providers.yaml, the per-provider rate
+# governor config read by governor.py
+# (CONFIG_PATH = Path(__file__).resolve().parent / "providers.yaml") and by
+# build_deck.py. Before this fix .yaml appeared in NEITHER tuple in ANY of the
+# three writers, so it was silently dropped by every delivery path that has
+# ever existed: the file shipped in the skill but never reached a materialized
+# department, governor.py's loader fell through to its in-code `_DEFAULTS`
+# (rps 1.0 / burst 10 / max_inflight 50) for EVERY provider, and no verifier
+# could see it because verify_scripts_materialization() skips any suffix not
+# in this tuple. Measured on a live box after hand-copying the file: deepseek
+# rps 1.0 -> 5.0 and max_inflight 50 -> 400, kie 1.0/50 -> 2.0/100, and zai
+# max_inflight 50 -> 10 (the DEFAULTS were silently RAISING zai above its real
+# ceiling). providers.yaml is not a client-local override candidate — the
+# per-box knob is the plan tier the governor already reads separately from
+# resource_profile.json (PLAN_TIER_RPS) and layers OVER these values — so the
+# canonical/mirror policy (always overwrite when divergent) is correct for it.
+# .yml is included alongside .yaml so the identical-meaning sibling extension
+# cannot reintroduce this same gap the next time someone adds a config file.
+#
+# ── This tuple is COMPLETENESS-GATED (do not add a suffix without reading) ──
+# .js, then .tpl, then .md/.template, and now .yaml each fell through every
+# delivery path for the same reason: this is an ALLOWLIST, and a newly added
+# asset type is invisible until a human remembers to widen it. That class is
+# now enforced mechanically by
+# scripts/test_dept_scripts_suffix_coverage.py::test_no_unclassified_suffix,
+# which walks the real role-library scripts/ trees and FAILS if any suffix
+# present there is in neither this tuple nor _ADDITIVE_SCRIPT_SUFFIXES nor the
+# explicit _NON_DELIVERED_SCRIPT_SUFFIXES "deliberately not shipped" list. A
+# fifth silent drop can no longer reach a client box unnoticed.
+_CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".md", ".template",
+                              ".yaml", ".yml")
 
 # Additive/box-owned script suffixes: copied only if the destination is
 # missing, NEVER overwritten (may carry a client-local override). Named here
@@ -2437,6 +2469,29 @@ _CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".
 # re-declaring its own hardcoded tuple that could silently drift out of sync
 # with this one — the exact bug class that let .js fall through every path.
 _ADDITIVE_SCRIPT_SUFFIXES = (".json",)
+
+# Third bucket (FIX-DELIVERY-04): suffixes that are present in a role-library
+# scripts/ tree and are DELIBERATELY not delivered to a materialized
+# department. This list exists so the delivery policy is TOTAL — every suffix
+# the library actually ships is classified as exactly one of fleet-owned
+# (_CANONICAL_SCRIPT_SUFFIXES), box-owned (_ADDITIVE_SCRIPT_SUFFIXES), or
+# deliberately-not-delivered (here). Without a third bucket the completeness
+# gate could not tell "nobody has classified this yet" (a latent silent drop,
+# the .js/.tpl/.md/.template/.yaml bug class) apart from "classified as: do
+# not ship" — so it could not fail loudly on the former without false-firing
+# on the latter.
+#
+#   .headtest  presentations/scripts/build_deck.py.headtest — a captured
+#              head-of-file fixture. Referenced by NOTHING in this repo
+#              (searched every tracked .py/.sh/.json/.md file for the string
+#              "headtest": zero hits; control on the same search, the string
+#              "providers.yaml", returns build_deck.py and governor.py), so no
+#              department runtime can read it and shipping it would be dead
+#              weight on every client box.
+#
+# Adding a suffix HERE is a deliberate, reviewable "this is not runtime" claim
+# — not the silent `continue` that hid the four previous drops.
+_NON_DELIVERED_SCRIPT_SUFFIXES = (".headtest",)
 
 # Directory names never descended into when walking a role-library scripts/
 # tree — build/tooling cache, never a source of canonical files a department
@@ -2757,8 +2812,8 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # deploys role-owned no-AI generators (e.g. presentations/scripts/
     # build_teleprompter.py, build_deck.py) so the role SOPs can run them at
     # the relative path 'presentations/scripts/build_deck.py'.
-    # Suffixes copied are exactly _CANONICAL_SCRIPT_SUFFIXES (.py/.sh/.js/
-    # .sha256/.pdf) plus _ADDITIVE_SCRIPT_SUFFIXES (.json) — sourced from
+    # Suffixes copied are exactly _CANONICAL_SCRIPT_SUFFIXES plus
+    # _ADDITIVE_SCRIPT_SUFFIXES — sourced from
     # those two module-level constants, never re-declared as a separate
     # literal tuple here, so this loop and refresh-dept-scripts.py's
     # independent mirror can never silently disagree about which suffixes
@@ -2781,7 +2836,7 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # forever. Walks the full tree now (via _iter_scripts_tree_files, shared
     # with verify_scripts_materialization below so copy and verify can never
     # disagree about what the tree contains); only real cache/hidden dirs are
-    # pruned, and the per-file mirror(.py/.sh/.js/.tpl/.sha256/.pdf)-vs-fork(.json)
+    # pruned, and the per-file mirror(_CANONICAL)-vs-fork(_ADDITIVE)
     # policy is unchanged and now applies at every depth, not just depth 1.
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
@@ -2977,7 +3032,7 @@ def main():
     # never invoke the materializer at all). Point this at a LIVE
     # department's scripts/ dir and its role-library source and it reports,
     # loudly and with an itemized list, whether the box actually has every
-    # canonical (.py/.sh/.js/.tpl/.sha256/.pdf) file the library ships, at every
+    # canonical (_CANONICAL_SCRIPT_SUFFIXES) file the library ships, at every
     # depth — instead of a roll silently reporting success while a box never
     # received the update. Never writes anything.
     parser.add_argument(
