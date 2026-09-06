@@ -107,12 +107,14 @@ class Launch(unittest.TestCase):
         sender=scripts/'send-interview-link.sh'
         sender.write_text("""#!/bin/bash
 python3 - <<'STUB'
-import json,os
+import json,os,time,sys
 from pathlib import Path
 ws=Path(os.environ['OPENCLAW_WORKSPACE_ROOT']);state=json.loads((ws/'.workforce-build-state.json').read_text())
+p=ws/'company-discovery/.interview-link-sends.log.receipt.json'
+if p.exists() and os.environ.get('INTERVIEW_INVITATION_AUTOMATIC')=='1':sys.exit(7)
 with (ws/'invocations').open('a') as log:log.write('called\\n')
 receipt={k:state[k] for k in ('companyId','tenantId','installationId')}
-receipt.update(status='accepted',messageId='fixture-message',recipientHash='fixture-recipient-hash',origin=state['commandCenterUrl'])
+receipt.update(invitationExpiresAt=int(time.time())+900,status='accepted',messageId='fixture-message',recipientHash='fixture-recipient-hash',origin=state['commandCenterUrl'])
 p=ws/'company-discovery/.interview-link-sends.log.receipt.json';p.parent.mkdir(exist_ok=True);p.write_text(json.dumps(receipt))
 STUB
 """)
@@ -129,6 +131,16 @@ STUB
             self.state.write_text(json.dumps(state));m.invite(self.state,self.root);m.invite(self.state,self.root)
         self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
         self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['invitation']['messageId'],'fixture-message')
+        receipt_path=self.state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
+        expired=json.loads(receipt_path.read_text());expired['invitationExpiresAt']=1;receipt_path.write_text(json.dumps(expired))
+        with patch.object(m,'__file__',fake_location):
+            with self.assertRaisesRegex(ValueError,'renewal-required'):m.invite(self.state,self.root)
+        self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
+        self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['invitation']['status'],'renewal-required')
+        receipt_path.unlink();sender.write_text('#!/bin/bash\nexit 9\n')
+        with patch.object(m,'__file__',fake_location):
+            with self.assertRaisesRegex(ValueError,'sender exit 9'):m.invite(self.state,self.root)
+        self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['status'],'invitation-pending')
     def test_tunnel_ambiguous_transport_posts_once(self):
         import subprocess
         bindir=self.root/'bin';bindir.mkdir();calls=self.root/'calls'

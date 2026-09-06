@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Execute the real closeout caller against a strict, offline Notion transport."""
-import json, os, pathlib, subprocess, tempfile, unittest
+import json, os, pathlib, subprocess, tempfile, unittest, shutil
 SCRIPT=pathlib.Path(__file__).with_name('create-notion-closeout.sh')
 MOCK=r'''#!/usr/bin/env python3
 import json,os,sys,pathlib
@@ -37,7 +37,7 @@ class Ownership(unittest.TestCase):
   self.data={'companyId':'company-one','companyName':'Fixture Company','departments':{},'notionCloseoutPageId':'owned-root'};self.save()
  def tearDown(self):self.tmp.cleanup()
  def save(self):self.state.write_text(json.dumps(self.data))
- def run_script(self,refresh=True):return subprocess.run(['/opt/homebrew/bin/bash',str(SCRIPT)]+(['--refresh-workforce-only'] if refresh else []),env=self.env,capture_output=True,text=True,timeout=35)
+ def run_script(self,refresh=True):return subprocess.run([shutil.which('bash', path=self.env['PATH']),str(SCRIPT)]+(['--refresh-workforce-only'] if refresh else []),env=self.env,capture_output=True,text=True,timeout=35)
  def calls(self):return [json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
  def test_no_client_parent_never_uses_configured_agency(self):
   self.env.pop('NOTION_CLOSEOUT_PARENT_PAGE_ID');p=self.run_script(False);self.assertEqual(p.returncode,2,p.stderr);self.assertEqual(self.calls(),[]);self.assertTrue(json.loads(self.state.read_text())['notionCloseoutStaged'])
@@ -51,7 +51,7 @@ class Ownership(unittest.TestCase):
   self.env['MOCK_MODE']='foreign-only';p=self.run_script(False);self.assertEqual(p.returncode,2,p.stderr);self.assertFalse(any(x['url'].endswith('/pages') for x in self.calls()))
  def test_full_owned_resume_keeps_root_and_persists_company_receipt(self):
   self.data['notionCloseoutStaged']=True;self.save();p=self.run_script(False);self.assertEqual(p.returncode,0,p.stderr[-4000:]);self.assertFalse(json.loads(self.state.read_text())['notionCloseoutStaged']);self.assertFalse(any(x['method']=='POST' and x['body'].get('parent',{}).get('page_id')=='client-parent' for x in self.calls()));self.assertEqual(json.loads(self.state.read_text())['notionOwnership'],{'companyId':'company-one','parentPageId':'client-parent','rootPageId':'owned-root'})
- def run_provisioner(self):return subprocess.run(['/opt/homebrew/bin/bash',str(SCRIPT.with_name('ensure-notion-parent-page.sh'))],env=self.env,capture_output=True,text=True,timeout=15)
+ def run_provisioner(self):return subprocess.run([shutil.which('bash', path=self.env['PATH']),str(SCRIPT.with_name('ensure-notion-parent-page.sh'))],env=self.env,capture_output=True,text=True,timeout=15)
  def test_provisioner_missing_parent_does_not_discover_global_page(self):
   self.env.pop('NOTION_CLOSEOUT_PARENT_PAGE_ID');p=self.run_provisioner();self.assertEqual(p.returncode,0,p.stderr);self.assertEqual(self.calls(),[]);self.assertTrue(json.loads(self.state.read_text())['notionParentPagePending']);self.assertFalse((self.ws/'.env').exists())
  def test_provisioner_verifies_explicit_parent_and_preserves_owned_receipt(self):

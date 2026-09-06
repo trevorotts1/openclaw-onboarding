@@ -224,23 +224,23 @@ def invite(path, root):
         if any(receipt.get(k)!=v for k,v in dict(expected,origin=origin['origin']).items()):
             raise ValueError('invitation delivery receipt identity/origin conflict')
         return receipt if receipt.get('status')=='accepted' and receipt.get('messageId') and receipt.get('recipientHash') else None
-    # Automatic installation owns the first invitation. A later owner-requested
-    # renewal uses the sender directly; routine updates never repeat acceptance.
-    receipt=accepted()
-    result_code=0
-    if receipt is None:
-        sender=Path(__file__).resolve().parents[2]/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'
-        env=dict(os.environ,OPENCLAW_ROOT=str(root),OPENCLAW_WORKSPACE_ROOT=str(Path(path).parent))
-        env.pop('FORCE',None)
-        result=subprocess.run(['bash',str(sender)],env=env,capture_output=True,text=True)
-        result_code=result.returncode
-        receipt=accepted()
-        if receipt is None:
-            update(path,lambda current: current.setdefault('interviewLaunch',{}).update(status='invitation-pending',invitation={'status':'pending','senderExitCode':result_code,'checkedAt':now()}))
-            raise ValueError('invitation not acknowledged; sender exit '+str(result_code)+' (inspect scoped delivery receipt; unknown acceptance is never retried blindly)')
+    # The sender resolves today's owner and validates the receipt recipient even
+    # on automatic resumes. Automatic mode never repeats an acknowledged send.
+    sender=Path(__file__).resolve().parents[2]/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'
+    env=dict(os.environ,OPENCLAW_ROOT=str(root),OPENCLAW_WORKSPACE_ROOT=str(Path(path).parent),INTERVIEW_INVITATION_AUTOMATIC='1')
+    env.pop('FORCE',None)
+    result=subprocess.run(['bash',str(sender)],env=env,capture_output=True,text=True)
+    result_code=result.returncode
+    receipt=accepted() if result_code in (0,7,10) else None
+    import time
+    expiry=receipt.get('invitationExpiresAt') if receipt else None
+    if receipt is None or type(expiry) is not int or expiry<=time.time():
+        reason='renewal-required' if receipt else 'pending'
+        update(path,lambda current: current.setdefault('interviewLaunch',{}).update(status='invitation-pending',invitation={'status':reason,'senderExitCode':result_code,'checkedAt':now()}))
+        raise ValueError('invitation '+reason+'; sender exit '+str(result_code)+' (inspect scoped delivery receipt; unknown acceptance is never retried blindly)')
     def record(current):
         if any(current.get(k)!=v for k,v in expected.items()): raise ValueError('identity changed during invitation delivery')
-        current.setdefault('interviewLaunch',{}).update(status='invitation-accepted',invitation={k:receipt[k] for k in ('status','messageId','recipientHash','companyId','tenantId','installationId','origin')})
+        current.setdefault('interviewLaunch',{}).update(status='invitation-accepted',invitation={k:receipt[k] for k in ('status','messageId','recipientHash','companyId','tenantId','installationId','origin','invitationExpiresAt')})
         current['interviewLaunch']['invitation']['senderExitCode']=result_code
     update(path,record)
 

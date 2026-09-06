@@ -149,6 +149,10 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(self.send()[0],0);self.assertEqual(self.send()[0],7)
         with patch.object(m.time,'time',return_value=now+901):self.assertEqual(self.send()[0],0)
         self.assertEqual(len(self.ledger.read_text().splitlines()),2)
+    def test_automatic_invitation_never_renews_expired_accepted_receipt(self):
+        self.context['invitationExpiresAt']=1;self.assertEqual(self.send()[0],0)
+        with patch.dict(os.environ,{'INTERVIEW_INVITATION_AUTOMATIC':'1'}):self.assertEqual(self.send(force=True)[0],7)
+        self.assertEqual(len(self.ledger.read_text().splitlines()),1)
     def test_foreign_receipt_cannot_reuse_cooldown_or_expiry(self):
         self.assertEqual(self.send()[0],0)
         receipt=self.ledger.with_suffix(self.ledger.suffix+'.receipt.json')

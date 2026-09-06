@@ -53,6 +53,7 @@ trap 'rm -rf "$TMP"' EXIT
 SANDBOX_HOME="$TMP/home"
 MASTER="$TMP/master-files"
 COMPANY="$MASTER/zero-human-company/scratch-canary-co"
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then COMPANY="$SANDBOX_HOME/.openclaw/workspace/zero-human-company/scratch-canary-co"; fi
 STATE="$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json"
 DB="$TMP/mission-control.db"
 CONSENT="$TMP/consent.json"
@@ -71,6 +72,18 @@ echo '{}' > "$STATE"
 # can fall back to a live state file.
 RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SANDBOX_HOME/.openclaw"
          "WORKFORCE_BUILD_STATE_FILE=$STATE" "DASHBOARD_DB_PATH=$DB")
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
+  CLIENT_UUID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  python3 - "$STATE" "$COMPANY" "$CLIENT_UUID" <<'PYIDENTITY'
+import json,sys
+from pathlib import Path
+state,root,identity=sys.argv[1:]
+Path(state).write_text(json.dumps({'companyId':identity,'companySlug':'scratch-canary-co','companyRoot':root}))
+Path(root,'company-config.json').write_text(json.dumps({'company_id':identity,'companySlug':'scratch-canary-co','name':'Scratch Canary Co'}))
+PYIDENTITY
+  RUN_ENV+=("MC_COMPANY_ID=$CLIENT_UUID" "ZERO_HUMAN_COMPANY_DIR=$COMPANY")
+fi
+
 
 # ══ PHASE A: the prebuild (PHASE 2 driver) builds the fixture state ══
 "${RUN_ENV[@]}" bash "$PREBUILD" \
@@ -364,6 +377,20 @@ case "$STATE" in
   "$SANDBOX_HOME"/*) good "A9: explicit state remains inside isolated HOME" ;;
   *) bad "A9: state escaped isolated HOME" ;;
 esac
+
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
+  if python3 - "$STATE" "$COMPANY" "$CLIENT_UUID" "$MASTER" <<'PYIDENTITY'
+import json,sys
+from pathlib import Path
+state,root,identity,master=sys.argv[1:]
+s=json.loads(Path(state).read_text())
+assert s['companyId']==identity and Path(s['companyRoot']).resolve()==Path(root).resolve()
+assert Path(root,'departments','listings','SOUL.md').is_file()
+assert not Path(master,'zero-human-company','scratch-canary-co').exists()
+PYIDENTITY
+  then good "A10: UUID identity retained and custom launch root materialized without duplicate company tree"
+  else bad "A10: launch identity/root mismatch or duplicate company tree"; fi
+fi
 
 echo "=============================================="
 echo "test-build-standard-first-roundtrip.sh: PASS=$PASS FAIL=$FAIL"

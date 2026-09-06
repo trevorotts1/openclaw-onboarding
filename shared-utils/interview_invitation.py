@@ -192,6 +192,8 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
             raise Pending('delivery receipt identity mismatch; reconcile before retry')
         if previous.get('status') in ('sending','uncertain'):
             raise Pending('delivery uncertain; reconcile acknowledged gateway delivery before retry (FORCE cannot bypass)')
+        if previous.get('status')=='accepted' and os.environ.get('INTERVIEW_INVITATION_AUTOMATIC')=='1':
+            return 7, {'status':'guarded','reason':'automatic invitation already accepted; manual renewal required if expired'}
         expiry=previous.get('invitationExpiresAt')
         renewal=previous.get('status')=='accepted' and type(expiry) is int and time.time()>=expiry
         if previous.get('status')=='accepted' and not force and not renewal and time.time()-previous.get('epoch',0)<1800:
