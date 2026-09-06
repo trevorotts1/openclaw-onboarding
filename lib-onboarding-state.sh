@@ -49,7 +49,26 @@
 # ============================================================
 
 # Resolve OC_CONFIG / OC_SKILLS_DIR if the sourcing script didn't set them.
-: "${OC_CONFIG:=/data/.openclaw}"
+if [[ -n "${OPENCLAW_WORKSPACE_PATH:-}" && -n "${OPENCLAW_WORKSPACE_ROOT:-}" && "${OPENCLAW_WORKSPACE_PATH%/}" != "${OPENCLAW_WORKSPACE_ROOT%/}" ]]; then
+  echo "Conflicting client workspace pins" >&2; return 1
+fi
+if [[ -n "${OPENCLAW_ROOT:-}" ]]; then
+  OC_CONFIG="$OPENCLAW_ROOT"
+elif [[ -z "${OC_CONFIG:-}" ]]; then
+  _ONBOARDING_COMMON="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/platform/common.sh"
+  [[ -f "$_ONBOARDING_COMMON" ]] || _ONBOARDING_COMMON="$(dirname "$_ONBOARDING_COMMON")/../../platform/common.sh"
+  if [[ -f "$_ONBOARDING_COMMON" ]]; then
+    # Resolve the root in a subshell: do not turn a derived default workspace
+    # into an explicit pin before the shim reads its main-agent override.
+    OC_CONFIG="$(source "$_ONBOARDING_COMMON" && oc_set_platform_paths && printf '%s' "$OC_ROOT")" || return 1
+  else
+    OC_CONFIG="${OC_ROOT:-$HOME/.openclaw}"
+    if [[ -z "${OC_ROOT:-}" && "$(uname -s)" == Linux && -d /data/.openclaw ]]; then
+      OC_CONFIG=/data/.openclaw
+    fi
+  fi
+fi
+case "$OC_CONFIG" in /*) ;; *) echo "Onboarding client root must be absolute" >&2; return 1 ;; esac
 : "${OC_SKILLS_DIR:=$OC_CONFIG/skills}"
 ONBOARDING_STATE_FILE="${ONBOARDING_STATE_FILE:-$OC_CONFIG/.onboarding-state.json}"
 

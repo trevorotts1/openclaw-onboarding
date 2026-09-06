@@ -30,8 +30,8 @@ both were silent — the installer printed a green check either way.
 
 Both legs are DYNAMIC: they extract the real scheduling block out of install.sh
 and execute it against a sandboxed HOME with a stubbed ``launchctl``. A static
-grep would pass on a comment that merely says the right words. A static leg is
-kept as well, as a bleed test against the sed regressing to bare-only.
+grep would pass on a comment that merely says the right words. An additional dynamic mutation leg rejects unknown escaped placeholders
+before promotion or launchctl changes.
 
 Nothing here touches the real ``$HOME``, the real LaunchAgents directory, or
 the real launchctl: HOME is redirected to pytest's tmp_path and ``launchctl``
@@ -42,6 +42,7 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -87,7 +88,7 @@ def _extract_bash_function(src: str, name: str) -> str:
     raise AssertionError(f"{name}() has no column-0 closing brace")
 
 
-def _build_harness(tmp_path: Path) -> Path:
+def _build_harness(tmp_path: Path, resolver: str = "") -> Path:
     """Extract install.sh's real scheduling block into a runnable script.
 
     The block runs verbatim under the same `set -euo pipefail` the installer
@@ -115,12 +116,12 @@ def _build_harness(tmp_path: Path) -> Path:
         'send_telegram_progress() { echo "[stub telegram] $*" >&2; }',
     ]
     harness = tmp_path / "harness.sh"
-    harness.write_text("\n".join(preamble) + "\n" + block + "\n", encoding="utf-8")
+    harness.write_text("\n".join(preamble) + "\n" + resolver + "\n" + block + "\n", encoding="utf-8")
     harness.chmod(0o755)
     return harness
 
 
-def _run(tmp_path: Path, script_dir: Path, home: Path) -> subprocess.CompletedProcess:
+def _run(tmp_path: Path, script_dir: Path, home: Path, extra_env=None, resolver="") -> subprocess.CompletedProcess:
     """Run the extracted block with a sandboxed HOME and a stubbed launchctl."""
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
@@ -130,14 +131,16 @@ def _run(tmp_path: Path, script_dir: Path, home: Path) -> subprocess.CompletedPr
 
     home.mkdir(parents=True, exist_ok=True)
     return subprocess.run(
-        ["/bin/bash", str(_build_harness(tmp_path))],
+        ["/bin/bash", str(_build_harness(tmp_path, resolver))],
         capture_output=True,
         text=True,
+        timeout=20,
         env={
             "PATH": f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": str(home),
             "OPENCLAW_PLATFORM": "mac",
             "_SCRIPT_DIR": str(script_dir),
+            **(extra_env or {}),
         },
     )
 
@@ -249,32 +252,177 @@ def test_rendered_plist_parses_and_points_at_a_real_script(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# LEG 3 — static bleed test against the sed regressing to bare-only
+# LEG 3 — dynamic guard against unresolved escaped placeholders
 # ---------------------------------------------------------------------------
-def test_render_and_guard_cover_the_escaped_placeholder_spelling():
-    """The body stores placeholders escaped; matching only the bare form is the bug."""
-    src = INSTALL_SH.read_text(encoding="utf-8")
-    block = _extract_bash_function(src, "install_intake_poll_schedule")
+def test_render_and_guard_cover_the_escaped_placeholder_spelling(tmp_path):
+    """Unknown escaped tokens fail before promotion or launchctl operations.
 
-    for token in ("&lt;POLL_SCRIPT_PATH&gt;", "&lt;LOG_PATH&gt;"):
-        assert token in block, (
-            f"the render no longer substitutes {token!r}. The template stores its "
-            "placeholders HTML-escaped inside the XML body, so a bare-only sed "
-            "substitutes nothing there and launchd gets a literal placeholder."
-        )
+    plistlib now decodes XML entities before typed substitution, so requiring
+    raw escaped strings in the installer would assert a removed sed mechanism.
+    Exercise the actual renderer instead of relying on source spelling.
+    """
+    empty_root = tmp_path / "not-a-checkout"
+    empty_root.mkdir()
+    home = tmp_path / "home"
+    dept = home / ".openclaw/workspace/departments/Presentations/scripts"
+    dept.mkdir(parents=True)
+    (dept / "presentation-intake-poll.sh").write_bytes((_SCRIPTS_DIR / "presentation-intake-poll.sh").read_bytes())
+    template = (_SCRIPTS_DIR / "presentation-intake-poll.plist.template").read_text()
+    (dept / "presentation-intake-poll.plist.template").write_text(template.replace("&lt;LOG_PATH&gt;", "&lt;UNKNOWN_LOG_PATH&gt;"))
+    proc = _run(tmp_path, script_dir=empty_root, home=home)
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert not _rendered_plist(home).exists(), "invalid candidate must never become the active plist"
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
 
 
 def test_template_still_stores_placeholders_escaped_in_the_body():
     """Pin the assumption the render depends on.
 
-    If the template ever stops escaping its placeholders, the escaped-form sed
-    above becomes dead and this test says so rather than letting the render
-    quietly depend on a spelling that no longer exists.
+    The XML decoder must continue to receive a valid template whose text
+    values contain placeholders, rather than raw XML element syntax.
     """
     template = _SCRIPTS_DIR / "presentation-intake-poll.plist.template"
     body = template.read_text(encoding="utf-8")
     body = body[body.index("<?xml"):]
     assert "&lt;POLL_SCRIPT_PATH&gt;" in body, (
-        "template body no longer stores <POLL_SCRIPT_PATH> escaped; the render's "
-        "escaped-form substitution must be revisited"
+        "template body no longer stores <POLL_SCRIPT_PATH> escaped; the renderer's "
+        "XML template contract must be revisited"
     )
+
+
+def _materialize_scripts(workspace):
+    dept = workspace / "departments/Presentations/scripts"
+    dept.mkdir(parents=True)
+    for name in ("presentation-intake-poll.sh", "presentation-intake-poll.plist.template"):
+        (dept / name).write_bytes((_SCRIPTS_DIR / name).read_bytes())
+    return dept
+
+
+def test_explicit_client_root_selects_its_department_and_runs(tmp_path):
+    selected_root = tmp_path / "selected & client's root"
+    workspace = selected_root / "workspace"
+    dept = _materialize_scripts(workspace)
+    home = tmp_path / "home"
+    _materialize_scripts(home / ".openclaw/workspace")  # unrelated but plausible
+    proc = _run(tmp_path, tmp_path / "not-a-checkout", home,
+                {"OPENCLAW_ROOT": str(selected_root)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = plistlib.loads(_rendered_plist(home).read_bytes())
+    assert data["ProgramArguments"][1] == str(dept / "presentation-intake-poll.sh")
+    assert data["EnvironmentVariables"]["OPENCLAW_ROOT"] == str(selected_root)
+    assert data["EnvironmentVariables"]["OPENCLAW_WORKSPACE_PATH"] == str(workspace)
+    assert data["EnvironmentVariables"]["PRESENTATION_RUNS_DIR"] == str(workspace / "departments/Presentations/runs")
+
+
+def test_workspace_pin_controls_runs_even_with_repo_source_scripts(tmp_path):
+    workspace = tmp_path / "explicit workspace"
+    home = tmp_path / "home"
+    proc = _run(tmp_path, _REPO_ROOT, home,
+                {"OPENCLAW_ROOT": str(tmp_path / "client-root"), "OPENCLAW_WORKSPACE_ROOT": str(workspace)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = plistlib.loads(_rendered_plist(home).read_bytes())
+    assert data["EnvironmentVariables"]["PRESENTATION_RUNS_DIR"] == str(workspace / "departments/Presentations/runs")
+    assert data["ProgramArguments"][1] == str(_SCRIPTS_DIR / "presentation-intake-poll.sh")
+
+
+def test_failed_configured_resolver_never_borrows_existing_home_workspace(tmp_path):
+    home = tmp_path / "home"
+    _materialize_scripts(home / ".openclaw/workspace")
+    proc = _run(tmp_path, tmp_path / "not-a-checkout", home,
+                resolver="obs_resolve_workspace() { return 19; }")
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "configured workspace resolver failed" in proc.stderr
+    assert not _rendered_plist(home).exists()
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
+
+
+def test_failed_workspace_resolution_cannot_schedule_repo_source(tmp_path):
+    home = tmp_path / "home"
+    proc = _run(tmp_path, _REPO_ROOT, home,
+                resolver="obs_resolve_workspace() { return 19; }")
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert not _rendered_plist(home).exists()
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
+
+
+def test_conflicting_workspace_pins_cannot_schedule(tmp_path):
+    home = tmp_path / "home"
+    proc = _run(tmp_path, _REPO_ROOT, home, {
+        "OPENCLAW_WORKSPACE_PATH": str(tmp_path / "one"),
+        "OPENCLAW_WORKSPACE_ROOT": str(tmp_path / "two"),
+    })
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert not _rendered_plist(home).exists()
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
+
+
+def test_invalid_explicit_scripts_pin_does_not_fall_back_to_repo(tmp_path):
+    home = tmp_path / "home"
+    proc = _run(tmp_path, _REPO_ROOT, home, {"PRESENTATIONS_SCRIPTS_SRC": str(tmp_path / "missing")})
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "refusing to replace the explicit pin" in proc.stderr
+    assert not _rendered_plist(home).exists()
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
+
+
+def test_vps_cron_command_binds_selected_runs_and_literal_source_path(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "VPS & client's | workspace"
+    dept = _materialize_scripts(workspace)
+    prompt_file = tmp_path / "prompt.txt"
+    fixtures = '\n'.join([
+        'openclaw() { return 0; }',
+        'oc_cron_tombstoned() { return 1; }',
+        'oc_cron_present() { return 1; }',
+        '_oc_cron_silent_main() { printf "%s\\n" "$5" > "$FIXTURE_PROMPT_FILE"; }',
+    ])
+    proc = _run(tmp_path, tmp_path / "not-a-checkout", home, {
+        "OPENCLAW_PLATFORM": "vps", "OPENCLAW_WORKSPACE_ROOT": str(workspace),
+        "FIXTURE_PROMPT_FILE": str(prompt_file),
+    }, resolver=fixtures)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    prompt = prompt_file.read_text()
+    command = prompt.split('Run the intake-completion poll: ', 1)[1].split(' . This is', 1)[0]
+    assert shlex.split(command) == [
+        'env', 'OPENCLAW_ROOT=' + str(home / '.openclaw'),
+        'OPENCLAW_WORKSPACE_PATH=' + str(workspace), 'OPENCLAW_WORKSPACE_ROOT=' + str(workspace),
+        'PRESENTATION_RUNS_DIR=' + str(workspace / 'departments/Presentations/runs'),
+        'bash', str(dept / 'presentation-intake-poll.sh'),
+    ]
+    assert not _rendered_plist(home).exists()
+    assert "[stub launchctl]" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("resolver_failed", [False, True])
+def test_colocate_writes_only_selected_workspace_or_refuses(tmp_path, resolver_failed):
+    home = tmp_path / "home"
+    foreign = _materialize_scripts(home / ".openclaw/workspace")
+    selected_root = tmp_path / "selected client's root"
+    selected = _materialize_scripts(selected_root / "workspace")
+    skills = tmp_path / "skills"
+    source = skills / "23-ai-workforce-blueprint/scripts"
+    source.mkdir(parents=True)
+    names = ["presentation-canonical-entry.sh", "deck-build-guard.sh"]
+    for name in names:
+        (source / name).write_text("# canonical fixture " + name)
+        (foreign / name).write_text("# foreign original")
+    src = INSTALL_SH.read_text()
+    functions = '\n'.join([
+        _extract_bash_function(src, "_fix61_selected_workspace"),
+        _extract_bash_function(src, "colocate_presentation_entry"),
+    ])
+    env = {"HOME": str(home), "SKILLS_DIR": str(skills), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    if not resolver_failed:
+        env["OPENCLAW_ROOT"] = str(selected_root)
+    resolver = 'obs_resolve_workspace() { return 19; }' if resolver_failed else ''
+    proc = subprocess.run(['/bin/bash', '-c', 'set -euo pipefail\nwarn() { echo "$*" >&2; }\n' + resolver + '\n' + functions + '\ncolocate_presentation_entry\n'], env=env, capture_output=True, text=True, timeout=20)
+    if resolver_failed:
+        assert proc.returncode != 0, proc.stdout + proc.stderr
+        assert "co-location REFUSED" in proc.stderr
+        assert all(not (selected / name).exists() for name in names)
+    else:
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        for name in names:
+            assert (selected / name).read_bytes() == (source / name).read_bytes()
+            assert os.access(selected / name, os.X_OK)
+    assert all((foreign / name).read_text() == "# foreign original" for name in names)

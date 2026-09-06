@@ -82,16 +82,13 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(profile.read_bytes(), before)
 
     def test_vps_reexec_forwards_both_explicit_answers(self):
-        import shlex
-        source = (ROOT/'platform/vps/bootstrap.sh').read_text()
-        block = source[source.index('        exec docker exec -i'):source.index('    fi\nfi', source.index('        exec docker exec -i'))]
-        driver = self.root/'docker'
-        driver.write_text('#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n'); driver.chmod(0o755)
-        result = subprocess.run(['bash','-c','_oc_user=node; _oc_container=fixture; '+block], env=dict(os.environ, PATH=str(self.root)+':'+os.environ['PATH']), capture_output=True, text=True)
-        self.assertEqual(result.returncode,0,result.stderr)
-        args = json.loads(result.stdout)
-        for key in ('OPENCLAW_OWNER_NAME','OPENCLAW_COMPANY_NAME'):
-            self.assertEqual(args[args.index(key)-1], '-e')
+        # Exercise the real bootstrap instead of extracting one historical shell
+        # spelling: topology selection now builds a safely quoted argv array.
+        result = subprocess.run(
+            [sys.executable, str(ROOT/'tests/unit/test_portable_bootstrap.py'),
+             'PortableBootstrapTests.test_docker_host_reexec_preserves_identity_and_path_pins'],
+            capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_foreign_workspace_and_corrupt_state_fail_closed(self):
         self.collect(owner='One', company='Business')

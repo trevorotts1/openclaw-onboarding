@@ -1,3 +1,21 @@
+## [v25.0.10]  -  2026-09-06  -  Repair fresh and partial Command Center installs with preserved client identity, literal service configuration, canonical database migrations and safe bootstrap workspace adoption; support Mac, native Linux and Docker clients on Hostinger and Contabo.
+
+- FIX-61/62/67: inspect actual state/database readiness, resume cloned-only or failed installs through one command, and retain canonical identity and existing answers.
+- FIX-63/65: serialize service values for the real Next loader, load the selected database before migration, and stop on migration/configuration failure.
+- FIX-64: run governing persona materialization on stock macOS Bash 3.2 with a verified interpreter and restricted service PATH.
+- FIX-66: adopt only proven unused default engine workspaces, preserve stable IDs, record backups and retain client ownership through repeated convergence.
+- FIX-68: actual migrations, canonical prebuild and production browser acceptance complement isolated provider transport tests.
+- Resolve Mac/native Linux/Docker by operating system and topology; honor selected client roots and support Hostinger/Contabo without assuming every VPS uses Docker.
+- Register and verify native Linux PM2 startup under the selected runtime user and PM2_HOME; preserve external Mac/container boot policies and report unmet Linux prerequisites as pending. Actual reboot acceptance remains installation-specific.
+- Recover only the exact empty pre-identity completion stub, preserving its build ID; prevent resume and closeout from creating that stub again. Normalize canonical CEO aliases in company-scoped prebuild verification.
+- Resolve the invitation sender’s verified OpenClaw executable under restricted service PATH, without changing the client environment or guessing ownership.
+- Bound skill readiness and QC subprocess groups to configurable deadlines (30 and 180 seconds by default), retain private diagnostic receipts and continue checking other skills after a failure.
+- Preserve explicit client root/workspace pins in the shared legacy library and Skill 05 QC; prevent credential fallback into another installation. Skill 05 v7.0.1; Skill 37 v13.1.2.
+- Validate the presentation poller plist with literal-safe typed XML rendering and atomic promotion before any launchctl unload/load. Invalid configuration preserves the previous working job; special characters in paths and notification executable names are retained.
+- Includes main v25.0.7 materialization/drift, v25.0.8 scheduler environment/accounting and v25.0.9 poller source resolution and error reporting; this companion was renumbered to v25.0.10 after those concurrent releases.
+- Bind scheduler runs, child-process environment and presentation credential stores to the selected client root/workspace; reject invalid selections rather than searching another installation. Native VPS does not imply a Docker `/data` layout.
+- Skill 32 v13.1.5; requires paired Command Center v7.1.4 (including company-scoped department memory and removal of automatic demo goals). Client installations and external Cloudflare/Telegram/Notion delivery remain subject to their own acceptance run.
+
 ## [v25.0.9]  -  2026-09-06  -  The installer blamed a missing file for a directory it never resolved, and died without saying so
 
 Completes the intake-poll door that v25.0.8 opened halfway. v25.0.8 fixed the placeholder substitution; the LaunchAgent it rendered still was not a property list, the scripts directory it rendered from had exactly one candidate, and when that candidate missed the installer exited on the spot with no message at all.

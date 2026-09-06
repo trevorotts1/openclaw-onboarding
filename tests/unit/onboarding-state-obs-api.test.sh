@@ -65,8 +65,11 @@ bash -n "$LIB"           2>/dev/null && pass "lib-onboarding-state.sh parses (ba
 bash -n "$INSTALL"       2>/dev/null && pass "install.sh parses (bash -n)" || fail "install.sh bash -n FAILED"
 
 # ── (2) BUG WITNESS: oc_ lib alone does NOT define obs_seed_state ────────────
+# The enclosing static CI job forces a legacy Python platform override. These
+# behavioral fixtures own their client root and must not inherit host/platform
+# pins from that job or the operator shell.
 witness_home="$(mktemp -d)"
-witness_out="$(HOME="$witness_home" bash -c '
+witness_out="$(env -i HOME="$witness_home" PATH="$PATH" OPENCLAW_ROOT="$witness_home/.openclaw" bash -c '
   set -uo pipefail
   source "'"$LIB"'" >/dev/null 2>&1
   command -v obs_seed_state >/dev/null 2>&1 && echo "OBS_DEF" || echo "OBS_UNDEF"
@@ -89,7 +92,7 @@ mkdir -p "$src_tree/23-ai-workforce-blueprint" \
          "$src_tree/38-conversational-ai-system" \
          "$src_tree/99-ARCHIVED-legacy" \
          "$src_tree/not-a-numbered-skill"
-fix_out="$(HOME="$fix_home" SKILLS_DIR="$src_tree" bash -c '
+fix_out="$(env -i HOME="$fix_home" PATH="$PATH" OPENCLAW_ROOT="$fix_home/.openclaw" SKILLS_DIR="$src_tree" bash -c '
   set -uo pipefail
   source "'"$SHIM"'" >/dev/null 2>&1
   for fn in obs_seed_state obs_verify_skill obs_gate_summary obs_set_status obs_resolve_workspace obs_get_status; do
@@ -112,10 +115,11 @@ PYEOF
 rm -rf "$fix_home"
 
 for fn in obs_seed_state obs_verify_skill obs_gate_summary obs_set_status obs_resolve_workspace obs_get_status; do
-  case "$fix_out" in
-    *"DEF:$fn"*) pass "shim defines $fn" ;;
-    *)           fail "shim does NOT define $fn" ;;
-  esac
+  if printf '%s\n' "$fix_out" | grep -qxF "DEF:$fn"; then
+    pass "shim defines $fn"
+  else
+    fail "shim does NOT define $fn"
+  fi
 done
 case "$fix_out" in
   *STATE_FILE_OK*) pass "obs_seed_state wrote .onboarding-state.json" ;;

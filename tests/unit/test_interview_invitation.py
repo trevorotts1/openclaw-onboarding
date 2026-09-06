@@ -76,8 +76,53 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_foreign_recipient_ack_not_accepted(self):
         self.assertIsNone(m.acknowledgement({'messageId':'1','chatId':'foreign'},'123456789'))
     def test_missing_cli_does_not_send_or_write_success(self):
-        with patch.object(m.shutil,'which',return_value=None):self.assertEqual(self.send()[0],5)
+        with patch.object(m.shutil,'which',return_value=None),patch.object(m,'native_openclaw_candidates',return_value=[]):self.assertEqual(self.send()[0],5)
         self.assertFalse(self.capture.exists());self.assertFalse(self.ledger.exists())
+    def test_explicit_cli_pin_beats_path_and_preserves_gateway_environment(self):
+        pinned=self.root/'pinned cli';pinned.write_text(self.cli.read_text());pinned.chmod(0o755)
+        env=dict(os.environ,OPENCLAW_BIN=str(pinned),OPENCLAW_ROOT=str(self.root/'own-root'),OPENCLAW_GATEWAY_TOKEN='own-fixture-token')
+        executable,child=m.resolve_openclaw_cli(env)
+        self.assertEqual(executable,str(pinned.resolve()))
+        self.assertEqual(child['OPENCLAW_ROOT'],env['OPENCLAW_ROOT'])
+        self.assertEqual(child['OPENCLAW_GATEWAY_TOKEN'],env['OPENCLAW_GATEWAY_TOKEN'])
+        real_run=m.subprocess.run
+        with patch.dict(os.environ,env,clear=True),patch.object(m.subprocess,'run',wraps=real_run) as invoked:
+            self.assertEqual(self.send()[0],0)
+            self.assertEqual(invoked.call_args.args[0][0],str(pinned.resolve()))
+            self.assertEqual(invoked.call_args.kwargs['env']['OPENCLAW_ROOT'],env['OPENCLAW_ROOT'])
+
+    def test_bad_explicit_pin_refuses_before_minting_or_fallback(self):
+        not_executable=self.root/'not-executable';not_executable.write_text('fixture')
+        for value in ('', 'relative/openclaw', str(self.root/'missing'), str(not_executable)):
+            with self.subTest(pin=value),patch.dict(os.environ,OPENCLAW_BIN=value),patch.object(m,'native_openclaw_candidates') as fallback:
+                prepared=[]
+                with self.assertRaisesRegex(m.Pending,'OPENCLAW_BIN'):
+                    self.send(prepare_message=lambda text:prepared.append(text) or text)
+                fallback.assert_not_called();self.assertEqual(prepared,[])
+                self.assertFalse(self.capture.exists())
+                self.assertFalse(self.ledger.with_suffix(self.ledger.suffix+'.receipt.json').exists())
+
+    def test_minimal_path_discovers_own_npm_bin_and_invokes_absolute_target(self):
+        npm=self.root/'.npm-global/bin';npm.mkdir(parents=True)
+        wrapper=npm/'openclaw';wrapper.symlink_to(self.cli)
+        env=dict(os.environ,HOME=str(self.root),PATH='/usr/bin:/bin')
+        env.pop('OPENCLAW_BIN',None)
+        with patch.dict(os.environ,env,clear=True):
+            executable,child=m.resolve_openclaw_cli(dict(os.environ))
+            self.assertEqual(executable,str(self.cli.resolve()))
+            self.assertEqual(child['PATH'].split(os.pathsep)[0],str(npm))
+            self.assertEqual(self.send()[0],0)
+        self.assertTrue(self.capture.exists())
+
+    def test_native_fallback_uses_only_selected_candidates_with_minimal_path(self):
+        env=dict(os.environ,HOME=str(self.root),PATH='/usr/bin:/bin')
+        env.pop('OPENCLAW_BIN',None)
+        with patch.dict(os.environ,env,clear=True),patch.object(m,'native_openclaw_candidates',return_value=[self.cli]):
+            self.assertEqual(self.send()[0],0)
+        paths=m.native_openclaw_candidates({'HOME':str(self.root)})
+        self.assertEqual(paths[-2:],[Path('/opt/homebrew/bin/openclaw'),Path('/usr/local/bin/openclaw')])
+        self.assertTrue(all(str(p).startswith(str(self.root)) for p in paths[:-2]))
+
     def test_post_ack_ledger_failure_retains_acceptance(self):
         with patch.dict(os.environ,CLI_BEHAVIOR='ledgerfail'):code,receipt=self.send()
         self.assertEqual(code,10);self.assertEqual(receipt['status'],'accepted');self.assertEqual(self.send()[0],7)

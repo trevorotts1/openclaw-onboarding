@@ -106,7 +106,7 @@ def _hermetic_env(tmp_path: Path, store: Path, **extra) -> dict:
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": str(tmp_path / "home"),
-        "OPENCLAW_PLATFORM": "mac",
+        "OPENCLAW_ROOT": str(tmp_path),
         "OPENCLAW_SECRETS": str(store),
     }
     env.update(extra)

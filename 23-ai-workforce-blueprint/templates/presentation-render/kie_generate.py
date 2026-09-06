@@ -126,20 +126,28 @@ MAX_POLL_PASSES     = 100
 # an operator's literal absolute home path (such a path points at one specific
 # machine and would never exist on a client box). The secrets file is resolved at
 # RUNTIME:
-#   1. $OPENCLAW_SECRETS (explicit override — wins if set), then
-#   2. the client's standard env stores, HOME-relative via os.path.expanduser so the
-#      same template works for whatever user/box it runs on (no literal home path).
+#   1. $OPENCLAW_SECRETS, validated inside the selected client boundary, then
+#   2. that client's standard root/workspace stores via presentation_job.oc_paths.
+# Missing authority or invalid pins fail closed, without cross-client fallback.
 def _secrets_candidates() -> list:
-    candidates = []
-    override = os.environ.get("OPENCLAW_SECRETS", "").strip()
-    if override:
-        candidates.append(os.path.expanduser(override))
-    candidates += [
-        os.path.expanduser("~/.openclaw/workspace/.env"),
-        os.path.expanduser("~/clawd/secrets/.env"),
-        os.path.expanduser("~/.openclaw/secrets/.env"),
-    ]
-    return candidates
+    """Use the selected-client authority, including its checked explicit override.
+
+    Missing deployment or invalid pins fail closed; no HOME/clawd fallback may
+    turn a configuration error into credentials borrowed from another client.
+    """
+    import importlib
+    here = Path(__file__).resolve().parent
+    for candidate in (
+        here,
+        here.parent / "role-library" / "presentations" / "scripts",
+        here.parent.parent / "role-library" / "presentations" / "scripts",
+    ):
+        if (candidate / "presentation_job" / "oc_paths.py").is_file():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            return [str(path) for path in importlib.import_module(
+                "presentation_job.oc_paths").secrets_env_candidates()]
+    raise RuntimeError("Selected-client credential path module is missing; no stores loaded")
 
 # ---------------------------------------------------------------------------
 # Guardrail: REFUSE to run if caller somehow wired the dead endpoint

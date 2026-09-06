@@ -87,14 +87,17 @@
 #   T12 static: no destructive git verbs in the helper's source (reset --hard /
 #                              checkout -f / clean -f never appear).
 #
-# Self-contained: bash + git + a hasher. No gateway, no real credentials, no
+# Self-contained: bash + git + python3 + a hasher. No gateway, no real credentials, no
 # network (all git remotes are local file paths).
 # ============================================================================
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-INSTALLER="$REPO_ROOT/32-command-center-setup/scripts/run-full-install.sh"
+# Extracted credential helpers import the real shared literal-env parser through
+# the same Skill32 root as the installer. Pin this dependency to this checkout.
+SKILL_DIR="$REPO_ROOT/32-command-center-setup"
+INSTALLER="$SKILL_DIR/scripts/run-full-install.sh"
 GUARD="$REPO_ROOT/scripts/fleet-roll/preflight-credential-guard.sh"
 
 [ -f "$INSTALLER" ] || { echo "FATAL: installer not found at $INSTALLER"; exit 2; }

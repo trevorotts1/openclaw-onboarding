@@ -112,8 +112,8 @@ def _secret_helper():
     try:
         from presentation_job.oc_paths import skills as _oc_skills
         skills_default = Path(_oc_skills())
-    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
-        skills_default = Path.home() / ".openclaw" / "skills"
+    except ImportError:
+        return None  # No alias helper is safer than another client's module.
     # Walk up from this file: the repo checkout carries shared-utils/ at its
     # root; a deployed department copy carries it in the installed skills dir.
     repo_root = None
@@ -123,8 +123,7 @@ def _secret_helper():
             break
     for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
               str(repo_root / "shared-utils") if repo_root else "",
-              str(skills_default / "shared-utils"),
-              "/data/.openclaw/skills/shared-utils"):
+              str(skills_default / "shared-utils")):
         if d and (Path(d) / "secret_helper.py").is_file():
             try:
                 spec = importlib.util.spec_from_file_location(
@@ -163,17 +162,9 @@ def _read_secret_named(name: str) -> Optional[str]:
     value = (os.environ.get(name) or "").strip()
     if value and not _is_placeholder_value(value):
         return value
-    # FIX 68: platform-aware candidate order (oc_paths.secrets_env_candidates)
-    # -- /data/.openclaw/secrets/.env first on the docker VPS, ~/.openclaw
-    # first on a Mac. Same parse semantics, no hard-coded platform prefix.
-    try:
-        from presentation_job.oc_paths import secrets_env_candidates
-        candidates = secrets_env_candidates()
-    except Exception:  # noqa: BLE001 -- standalone/partial deploy falls back to the Mac default
-        candidates = [
-            Path.home() / ".openclaw" / "secrets" / ".env",
-            Path.home() / ".openclaw" / "secrets" / "secrets.env",
-        ]
+    # Invalid/missing client path authority must never select a different store.
+    from presentation_job.oc_paths import secrets_env_candidates
+    candidates = secrets_env_candidates()
     # FIX 67 canon: this name plus every alias in its family are accepted.
     helper = _secret_helper()
     try:

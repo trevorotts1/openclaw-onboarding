@@ -101,7 +101,7 @@ mkdir -p "$H_C2b/.openclaw/workspace"; _mkbin "$bin_c2b"
 printf '[{"name":"workforce-build-resume","id":"fake-001","kind":"command"}]' > "$J_C2b"
 : > "$C_C2b"
 cat > "$H_C2b/.openclaw/workspace/.workforce-build-state.json" <<'EOF'
-{"interviewComplete": true, "interviewQc": {"status":"pass"}, "buildCompletedAt": "2026-01-01T00:00:00Z", "closeoutStatus": "done", "departments": []}
+{"companySlug": "fixture-company", "interviewComplete": true, "interviewQc": {"status":"pass"}, "buildCompletedAt": "2026-01-01T00:00:00Z", "closeoutStatus": "done", "departments": []}
 EOF
 HOME="$H_C2b" PATH="$bin_c2b:$PATH" FAKE_OC_JOBS_FILE="$J_C2b" FAKE_OC_CALLS_FILE="$C_C2b" \
   bash "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" > "$SANDBOX/c2c.log" 2>&1
@@ -178,7 +178,7 @@ H_C3="$SANDBOX/home-c3"; bin_c3="$SANDBOX/bin-c3"; J_C3="$SANDBOX/jobs-c3.json";
 mkdir -p "$H_C3/.openclaw/workspace"; _mkbin "$bin_c3"
 printf '[]' > "$J_C3"; : > "$C_C3"
 cat > "$H_C3/.openclaw/workspace/.workforce-build-state.json" <<'EOF'
-{"interviewComplete": true, "interviewQc": {"status":"pass"}, "ownerChat": "999999999", "agentName": "TestAgent", "departments": [{"id":"sales","status":"pending"}], "roleLibraryStatus":"pending", "sopLibraryStatus":"pending"}
+{"companySlug": "fixture-company", "interviewComplete": true, "interviewQc": {"status":"pass"}, "ownerChat": "999999999", "agentName": "TestAgent", "departments": [{"id":"sales","status":"pending"}], "roleLibraryStatus":"pending", "sopLibraryStatus":"pending"}
 EOF
 # NOTE: OPERATOR_ESCALATION_CHAT_ID is required for a dispatch to happen at all.
 # Internal resume traffic is operator-only (it is never routed to .ownerChat, and

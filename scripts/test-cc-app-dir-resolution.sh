@@ -411,14 +411,41 @@ fi
 # ============================================================================
 # T14–T15 — END-TO-END against the REAL installer
 # ============================================================================
-# A sandboxed HOME with an .openclaw root is all --update-only needs to reach
-# phase 6: preflight is WARN-only in this mode, phase 1 and lock-assert are
-# both skipped. Nothing outside the sandbox is read or written; no box is
-# touched; no network is used.
+# A real existing-client state/schema passes the read-only identity inspection.
+# Corrupt placeholder bytes or an empty state instead exercise the earlier
+# corruption/intake gates, not this app-directory regression. The checkout's
+# intentionally obsolete package version stops the valid case immediately after
+# path validation; this test never deploys an app or starts a service.
 run_installer() {  # run_installer <home> [extra args...]
   local home="$1"; shift
-  mkdir -p "$home/.openclaw/workspace"
-  ( HOME="$home" bash "$INSTALLER" --update-only "$@" 2>&1 )
+  local app="$home/projects/command-center"
+  if [ "${1:-}" = --app-dir ]; then app="$2"; fi
+  mkdir -p "$home/.openclaw/workspace" "$home/fixture-bin"
+  python3 - "$home/.openclaw/workspace/.workforce-build-state.json" "$app/mission-control.db" <<'PYFIXTURE'
+import json, pathlib, sqlite3, sys
+state, database = map(pathlib.Path, sys.argv[1:])
+state.write_text(json.dumps({'companyId':'00000000-0000-4000-8000-000000000001',
+                            'companySlug':'fixture-company', 'companyName':'Fixture Company',
+                            'contactEmail':'fixture@example.test', 'interviewComplete':True}))
+database.unlink(missing_ok=True)  # replace only this test's sqlite-ish placeholder
+with sqlite3.connect(database) as db:
+    for table in ('companies', 'workspaces', 'tasks'):
+        db.execute('CREATE TABLE ' + table + ' (id TEXT PRIMARY KEY)')
+    db.execute('INSERT INTO companies VALUES (?)', ('00000000-0000-4000-8000-000000000001',))
+PYFIXTURE
+  cat > "$home/fixture-bin/node" <<'NODEFIXTURE'
+#!/bin/sh
+[ "$1" = --version ] && { echo v24.0.0; exit 0; }
+echo 'Unexpected Node execution in app-dir fixture' >&2
+exit 97
+NODEFIXTURE
+  local cmd
+  for cmd in npm pm2 curl openclaw; do
+    printf '#!/bin/sh\necho "Unexpected runtime command in app-dir fixture" >&2\nexit 97\n' > "$home/fixture-bin/$cmd"
+  done
+  chmod +x "$home/fixture-bin/"*
+  ( env -i HOME="$home" OPENCLAW_ROOT="$home/.openclaw" \
+      PATH="$home/fixture-bin:$PATH" "$BASH" "$INSTALLER" --update-only "$@" 2>&1 )
 }
 
 hdr "T14 — end-to-end: decoy at the default path -> nonzero AND phase 6 is terminal"
@@ -434,6 +461,7 @@ printf '%s' "$OUT" | grep -q 'phase=7' && { bad "T14: execution continued past p
 printf '%s' "$OUT" | grep -q 'refusing to run against an unvalidated directory' \
   || { bad "T14: the fail-closed message was not emitted"; T14BAD=1; }
 [ "$T14BAD" -eq 0 ] && ok "T14: exit=$ERC, phase 6 terminal (never reached phase 7), fail-closed message emitted"
+[ "$T14BAD" -eq 0 ] || printf '%s\n' "$OUT"
 rm -rf "$E2E_HOME"
 
 hdr "T15 — end-to-end: --app-dir at a valid checkout -> the gate is PASSED"
@@ -451,7 +479,36 @@ printf '%s' "$OUT" | grep -q "resolved Command Center checkout at $E2E_CC_PHYS" 
   || { bad "T15: the gate did not report resolving the --app-dir path"; T15BAD=1; }
 printf '%s' "$OUT" | grep -q 'source: --app-dir flag' \
   || { bad "T15: the resolution source was not reported as the --app-dir flag"; T15BAD=1; }
+printf '%s' "$OUT" | grep -q 'CC compatibility preflight failed' \
+  || { bad "T15: fixture did not stop at the post-validation package compatibility gate"; T15BAD=1; }
 [ "$T15BAD" -eq 0 ] && ok "T15: --app-dir honored end-to-end; phase 6 proceeded against the pinned checkout"
+[ "$T15BAD" -eq 0 ] || printf '%s\n' "$OUT"
+rm -rf "$E2E_HOME"
+
+hdr "T16 — end-to-end: invalid refresh target cannot allocate or mutate client identity"
+E2E_HOME="$(mktemp -d)"
+make_decoy "$E2E_HOME/projects/command-center"
+mkdir -p "$E2E_HOME/.openclaw/workspace"
+E2E_STATE="$E2E_HOME/.openclaw/workspace/.workforce-build-state.json"
+T16BAD=0
+for state_case in absent existing; do
+  if [ "$state_case" = existing ]; then
+    printf '{"companyId":"fixture-existing-client","answers":{"Q1":"Saved answer"}}\n' > "$E2E_STATE"
+    cp "$E2E_STATE" "$E2E_HOME/before-state.json"
+  fi
+  OUT="$(env -i HOME="$E2E_HOME" OPENCLAW_ROOT="$E2E_HOME/.openclaw" PATH="$PATH" \
+      "$BASH" "$INSTALLER" --update-only 2>&1)"; ERC=$?
+  if [ "$ERC" -eq 0 ] || ! printf '%s' "$OUT" | grep -q 'refusing to run against an unvalidated directory'; then
+    bad "T16: $state_case identity did not fail at the early checkout gate"; T16BAD=1
+  fi
+  if [ "$state_case" = absent ] && [ -e "$E2E_STATE" ]; then
+    bad "T16: invalid refresh allocated a new client state"; T16BAD=1
+  fi
+  if [ "$state_case" = existing ] && ! cmp -s "$E2E_STATE" "$E2E_HOME/before-state.json"; then
+    bad "T16: invalid refresh changed existing client identity/answers"; T16BAD=1
+  fi
+done
+[ "$T16BAD" -eq 0 ] && ok "T16: invalid target refused before intake/inspection; absent and existing identity preserved"
 rm -rf "$E2E_HOME"
 
 rm -rf "$ROOT" "$OROOT"

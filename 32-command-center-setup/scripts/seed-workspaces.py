@@ -438,6 +438,88 @@ def find_company_info(parent_folder_name=None):
 
     return info
 
+def _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+    """Claim only a recorded migration placeholder, never a live/shared queue.
+
+    Called inside seed's transaction. Row IDs and agent/skill references stay
+    unchanged. The original rows are backed up in the CC migration-owned ledger.
+    """
+    if not cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_workspace_bootstrap'").fetchone():
+        return False
+    record = cur.execute("SELECT original_workspace_json, adopted_company_id FROM engine_workspace_bootstrap WHERE workspace_id=?", (dept_id,)).fetchone()
+    if not record or record[1]:
+        return False
+    names = [r[1] for r in cur.execute('PRAGMA table_info(workspaces)')]
+    raw = cur.execute('SELECT * FROM workspaces WHERE id=?', (dept_id,)).fetchone()
+    if not raw:
+        return False
+    row = dict(zip(names, raw))
+    original = json.loads(record[0])
+    # Auto-created head_agent_id is allowed; identity, display and lifecycle
+    # changes indicate a customized queue and must not be adopted.
+    for key in ('id', 'slug', 'name', 'description', 'icon', 'sort_order', 'company_id', 'archived_at', 'archived_reason', 'user_md'):
+        if row.get(key) != original.get(key):
+            return False
+    if row.get('company_id') != 'default' or company_id in ('default', '', None) or row.get('user_md') or row.get('archived_reason'):
+        return False
+    agent_cols = [r[1] for r in cur.execute('PRAGMA table_info(agents)')]
+    agents = [dict(zip(agent_cols, r)) for r in cur.execute('SELECT * FROM agents WHERE workspace_id=?', (dept_id,))] if agent_cols else []
+    roles = {f'qc-agent-{dept_id}': 'qc', f'research-agent-{dept_id}': 'research',
+             f'da-agent-{dept_id}': 'devils-advocate', f'head-agent-{dept_id}': 'leadership'}
+    if dept_id == 'podcast':
+        roles.update({'podcast-editor': 'specialist', 'podcast-producer': 'specialist', 'show-notes-writer': 'specialist'})
+    labels = {'qc': ('QC Specialist', 'QC Specialist'),
+              'research': ('Research Specialist', 'Research Specialist'),
+              'devils-advocate': ("Devil's Advocate", "Devil's Advocate"),
+              'leadership': ('Department Head', 'Department Head')}
+    specialist_names = {'podcast-editor': 'Podcast Editor', 'podcast-producer': 'Podcast Producer', 'show-notes-writer': 'Show Notes Writer'}
+    for agent in agents:
+        role_type = roles.get(agent['id'])
+        if role_type in labels:
+            suffix, expected_role = labels[role_type]
+            expected_name = f"{row['name']} {suffix}"
+        else:
+            expected_name = expected_role = specialist_names.get(agent['id'])
+        if agent.get('name') != expected_name or agent.get('role') != expected_role:
+            return False
+        if (roles.get(agent['id']) != agent.get('role_type') or agent.get('status') != 'standby'
+                or agent.get('openclaw_agent_id') or agent.get('openclaw_session_id') or agent.get('is_master')
+                or any(agent.get(k) for k in ('soul_md', 'user_md', 'agents_md', 'tools_md', 'memory_md', 'persona'))):
+            return False
+    agent_ids = [a['id'] for a in agents]
+    if row.get('head_agent_id') and row['head_agent_id'] not in agent_ids:
+        return False
+    # Inspect all real tables, including legacy non-FK references. Any work or
+    # runtime history means this is an existing system queue, not a placeholder.
+    # Known seeded agents and their static skill bindings alone are harmless.
+    tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    for table in tables:
+        if table in ('workspaces', 'agents', 'engine_workspace_bootstrap', 'agent_skills'):
+            continue
+        quoted = '"' + table.replace('"', '""') + '"'
+        cols = [r[1] for r in cur.execute(f'PRAGMA table_info({quoted})')]
+        refs = {r[3]: r[2] for r in cur.execute(f'PRAGMA foreign_key_list({quoted})')}
+        for col in cols:
+            qcol = '"' + col.replace('"', '""') + '"'
+            if (col == 'workspace_id' or col.endswith('_workspace_id') or refs.get(col) == 'workspaces') and cur.execute(f'SELECT 1 FROM {quoted} WHERE {qcol}=? LIMIT 1', (dept_id,)).fetchone():
+                return False
+            if (col == 'agent_id' or col.endswith('_agent_id') or refs.get(col) == 'agents') and agent_ids:
+                params = ','.join('?' for _ in agent_ids)
+                if cur.execute(f'SELECT 1 FROM {quoted} WHERE {qcol} IN ({params}) LIMIT 1', agent_ids).fetchone():
+                    return False
+    bindings = []
+    if 'agent_skills' in tables and agent_ids:
+        params = ','.join('?' for _ in agent_ids)
+        binding_cols = [r[1] for r in cur.execute('PRAGMA table_info(agent_skills)')]
+        bindings = [dict(zip(binding_cols, r)) for r in cur.execute(f'SELECT * FROM agent_skills WHERE agent_id IN ({params})', agent_ids)]
+        if any(b['skill_id'] != 'skill-58' or b['agent_id'] not in ('podcast-editor', 'podcast-producer', 'show-notes-writer') for b in bindings):
+            return False
+    backup = json.dumps({'workspace': row, 'agents': agents, 'agent_skills': bindings}, sort_keys=True)
+    cur.execute("UPDATE engine_workspace_bootstrap SET adopted_company_id=?, adoption_backup_json=?, adopted_at=datetime('now') WHERE workspace_id=? AND adopted_company_id IS NULL", (company_id, backup, dept_id))
+    cur.execute("UPDATE workspaces SET company_id=? WHERE id=? AND company_id='default'", (company_id, dept_id))
+    print(f'  PREPARED BOOTSTRAP: {dept_id} (commits only when the entire seed succeeds; agent IDs preserved)')
+    return True
+
 def seed(db_path, departments, company_info):
     """
     v9.6.1: company_info is now a dict (name + slug + industry + brand colors)
@@ -445,7 +527,18 @@ def seed(db_path, departments, company_info):
     so the dashboard can render them.
     """
     conn = sqlite3.connect(db_path)
+    try:
+        _seed_transaction(conn, departments, company_info)
+    finally:
+        # Closing rolls back every pending write if any ownership/schema guard
+        # raised, including failures before the department loop.
+        conn.close()
+
+
+def _seed_transaction(conn, departments, company_info):
     cur = conn.cursor()
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.execute("BEGIN IMMEDIATE")
 
     # Ensure tables exist
     cur.execute("""
@@ -523,7 +616,13 @@ def seed(db_path, departments, company_info):
             continue
         owner = cur.execute('SELECT company_id FROM workspaces WHERE id=? OR slug=?',(dept_id,dept_id)).fetchall()
         if any(row[0] != company_id for row in owner):
-            raise ValueError('department workspace belongs to a different company; refusing shared-client mutation')
+            # UUID must be supplied by the canonical launch context. A company
+            # name or slug guessed by discovery is not adoption authorization.
+            if not requested_id or not _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+                conn.rollback()
+                conn.close()
+                raise ValueError(f'department {dept_id} belongs to a different company or an active/custom system queue; refusing shared-client mutation. Resume the supported installer; do not rewrite company IDs.')
+            existing.add(dept_id)
         if dept_id in existing:
             skipped += 1
             continue

@@ -1366,8 +1366,8 @@ def _secret_helper():
     try:
         from presentation_job.oc_paths import skills as _oc_skills
         skills_default = Path(_oc_skills())
-    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
-        skills_default = Path.home() / ".openclaw" / "skills"
+    except ImportError:
+        return None  # No alias helper is safer than another client's module.
     repo_root = None
     for anc in Path(__file__).resolve().parents:
         if (anc / "shared-utils" / "secret_helper.py").is_file():
@@ -1375,8 +1375,7 @@ def _secret_helper():
             break
     for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
               str(repo_root / "shared-utils") if repo_root else "",
-              str(skills_default / "shared-utils"),
-              "/data/.openclaw/skills/shared-utils"):
+              str(skills_default / "shared-utils")):
         if d and (Path(d) / "secret_helper.py").is_file():
             try:
                 spec = importlib.util.spec_from_file_location(
@@ -1392,13 +1391,8 @@ def _secret_helper():
 
 def _secrets_env_files() -> Tuple[str, ...]:
     """Candidate secrets env files, platform-aware (FIX 68 oc_paths)."""
-    try:
-        from presentation_job.oc_paths import secrets_env_candidates
-        return tuple(str(p) for p in secrets_env_candidates())
-    except Exception:  # noqa: BLE001 -- standalone deploy falls back to Mac defaults
-        return (str(Path.home() / ".openclaw" / "secrets" / ".env"),
-                str(Path.home() / ".openclaw" / "secrets" / "secrets.env"),
-                str(Path.home() / ".openclaw" / ".env"))
+    from presentation_job.oc_paths import secrets_env_candidates
+    return tuple(str(p) for p in secrets_env_candidates())
 
 
 def _alias_family(env_key: str) -> Tuple[str, ...]:

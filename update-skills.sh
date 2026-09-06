@@ -14,13 +14,22 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
-if [ -z "$_DETECT_PLATFORM" ]; then
-    [ -d "/data/.openclaw" ] && _DETECT_PLATFORM="vps" || _DETECT_PLATFORM="mac"
+ONBOARDING_VERSION="v25.0.10"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
+_PLATFORM_COMMON_TEMP=""
+if [ ! -f "$_PLATFORM_COMMON" ]; then
+    _PLATFORM_COMMON_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/common.sh" -o "$_PLATFORM_COMMON_TEMP" || { rm -f "$_PLATFORM_COMMON_TEMP"; exit 1; }
+    _PLATFORM_COMMON="$_PLATFORM_COMMON_TEMP"
+fi
+source "$_PLATFORM_COMMON" || exit 1
+[ -z "$_PLATFORM_COMMON_TEMP" ] || rm -f "$_PLATFORM_COMMON_TEMP"
+_DETECT_PLATFORM="$(oc_detect_platform)" || exit 1
+if [ -n "${OPENCLAW_PLATFORM:-}" ] && [ "$OPENCLAW_PLATFORM" != "$_DETECT_PLATFORM" ]; then
+    echo "OPENCLAW_PLATFORM conflicts with the actual operating system." >&2; exit 1
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
-
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 
 # ----------------------------------------------------------
 # PRE-BOOTSTRAP SELF-SYNC GUARD
@@ -111,23 +120,17 @@ export PLATFORM
 export OPENCLAW_BOOTSTRAP_MODE=update
 
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
-if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
-    # shellcheck source=/dev/null
-    source "$_PLATFORM_BOOTSTRAP"
-else
-    # Inline minimal fallback when running via curl (no local clone yet).
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        OC_PLATFORM="vps"; OC_CONFIG="/data/.openclaw"; OC_JSON="/data/.openclaw/openclaw.json"
-        OC_SKILLS_DIR="/data/.openclaw/skills"; OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
-    else
-        OC_PLATFORM="mac"; OC_CONFIG="$HOME/.openclaw"; OC_JSON="$HOME/.openclaw/openclaw.json"
-        OC_SKILLS_DIR="$HOME/.openclaw/skills"; OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
-    fi
+_PLATFORM_BOOTSTRAP_TEMP=""
+if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
 fi
+source "$_PLATFORM_BOOTSTRAP" || exit 1
+[ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v25.0.9"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1223,52 +1226,10 @@ COREMDEOF
 # Discover skills directory -- active dir first
 # ----------------------------------------------------------
 discover_skills_dir() {
-  # Detect platform: VPS has /data, Mac does not
-  if [ -d /data ]; then
-    # VPS (Hostinger Docker) -- active path is /data/.openclaw/skills
-    local ACTIVE_DIR="/data/.openclaw/skills"
-  else
-    # Mac -- active path is ~/.openclaw/skills
-    local ACTIVE_DIR="$HOME/.openclaw/skills"
-  fi
-
-  # Use the active dir whenever it exists and is non-empty
-  if [ -d "$ACTIVE_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$ACTIVE_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$ACTIVE_DIR"
-      return
-    fi
-  fi
-
-  # Active dir exists but is empty (first-install into it) -- still prefer it
-  if [ -d "$ACTIVE_DIR" ]; then
-    echo "$ACTIVE_DIR"
-    return
-  fi
-
-  # Fallback: check Downloads copy (legacy / pre-active-dir installs)
-  local LEGACY_DIR="$HOME/Downloads/openclaw-master-files"
-  if [ -d "$LEGACY_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$LEGACY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$LEGACY_DIR"
-      return
-    fi
-  fi
-
-  # Fuzzy search for folders with "openclaw" and "master" in name (case-insensitive)
-  local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1 || true)
-  if [ -n "$FUZZY_DIR" ] && [ -d "$FUZZY_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$FUZZY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$FUZZY_DIR"
-      return
-    fi
-  fi
-
-  # Last resort: create and target the active dir (fresh install)
-  echo "$ACTIVE_DIR"
+  # The selected client root is authoritative on Mac, native Linux and Docker.
+  # Downloads/legacy copies are source archives, never an alternate live client.
+  local active="${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}"
+  printf '%s\n' "$active"
 }
 
 # ----------------------------------------------------------
@@ -1397,7 +1358,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.0.9 - safe_json_edit
+# v25.0.10 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3751,8 +3712,7 @@ main() {
   # content manifest below. Deliver and verify it BEFORE the same-version
   # content-clean early exit; otherwise a box with current skills but a legacy
   # 22-file scripts allowlist would incorrectly no-op forever.
-  _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
-  [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
+  _OC_SCRIPTS_DEST="$OC_CONFIG/scripts"
   # rc 0 = delivered+verified; rc 1 = real fatal (missing source / genuine
   # delivery failure on a writable dest); rc 2 = OWNERSHIP quirk (dest not
   # writable). Only rc 1 withholds the stamp. rc 2 DEGRADES: a root-owned
@@ -3769,6 +3729,16 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
+# Platform helpers are runtime dependencies of the delivered Skill32 resume command.
+if [ -d "$ONBOARDING_DIR/platform" ]; then
+    mkdir -p "$SKILLS_DIR/../platform"
+    cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+fi
+if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
+    echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
+    exit 8
+fi
 
   # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
   # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
@@ -9080,7 +9050,7 @@ PY
   # instead of on an unrelated build-state field.
   # ----------------------------------------------------------
   # >>> TRAP3-CC-GUARD-HELPERS-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
-  _CC_DIR_CANONICAL="$HOME/projects/command-center"
+  _CC_DIR_CANONICAL="${CC_APP_DIR:-$HOME/projects/command-center}"
   _CC_PORT="${CC_PORT:-4000}"
   _CC_PM2_NAMES="blackceo-command-center mission-control command-center"
 
@@ -9102,6 +9072,12 @@ PY
   # Canonical path first so an already-correct box resolves unchanged; then the
   # documented fleet alternates. Echoes nothing and returns 1 when none exists.
   cc_resolve_existing_dir() {
+    # An explicit client app pin must never fall through to another checkout.
+    if [ -n "${CC_APP_DIR:-}" ]; then
+      cc_is_valid_checkout "$CC_APP_DIR" || return 1
+      printf '%s\n' "$CC_APP_DIR"
+      return 0
+    fi
     for _ccr_cand in \
       "$_CC_DIR_CANONICAL" \
       "/data/projects/command-center" \
@@ -9187,8 +9163,8 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # `clientSlug` (transition alias). Read companySlug first, fall back to clientSlug,
     # so both build-state generations resolve. jq fallback chain (was: clientSlug-only).
     _CC_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
-    _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
-    _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
+    _CC_COMPANY=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("companyName",""))' "$_STATE_FILE" 2>/dev/null || echo "")
+    _CC_EMAIL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("contactEmail",""))' "$_STATE_FILE" 2>/dev/null || echo "")
   fi
   # ----------------------------------------------------------
   # D5-PRE (stale-checkout guard): both D5 branches below run the ON-BOX Skill-32

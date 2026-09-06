@@ -31,7 +31,7 @@ _OBS_CANONICAL="${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh"
 
 if [ -f "$_OBS_CANONICAL" ]; then
     # shellcheck source=/dev/null
-    source "$_OBS_CANONICAL"
+    source "$_OBS_CANONICAL" || return 1
 else
     echo "[onboarding-state shim] WARNING: lib-onboarding-state.sh not found at $_OBS_CANONICAL" >&2
     echo "  Cannot provide onboarding state-machine (oc_*). Install may be incomplete." >&2
@@ -42,23 +42,26 @@ fi
 # Idempotent; safe to source multiple times (guarded below). Never destructive.
 # ============================================================
 [ -n "${__OBS_SOURCED:-}" ] && return 0
-__OBS_SOURCED=1
 
 # ── Path resolution (Mac primary, VPS fallback) ──────────────────────────────
-if [ -f /data/.openclaw/openclaw.json ] || [ -d /data/.openclaw ]; then
-  OBS_OC_ROOT="/data/.openclaw"
-else
-  OBS_OC_ROOT="$HOME/.openclaw"
-fi
+OBS_OC_ROOT="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}}"
 OBS_OC_JSON="$OBS_OC_ROOT/openclaw.json"
 
 # Workspace (where CORE_UPDATES land + where the state file lives). Mirror the
 # install.sh / apply-fleet-standards.sh resolver: per-agent override -> defaults
 # -> canonical default. Clawd is dead; never fall back to ~/clawd.
 obs_resolve_workspace() {
+  if [[ -n "${OPENCLAW_WORKSPACE_PATH:-}" && -n "${OPENCLAW_WORKSPACE_ROOT:-}" && "${OPENCLAW_WORKSPACE_PATH%/}" != "${OPENCLAW_WORKSPACE_ROOT%/}" ]]; then
+    echo "Conflicting client workspace pins" >&2; return 1
+  fi
+  if [[ -n "${OPENCLAW_WORKSPACE_PATH:-${OPENCLAW_WORKSPACE_ROOT:-}}" ]]; then
+    local pinned="${OPENCLAW_WORKSPACE_PATH:-$OPENCLAW_WORKSPACE_ROOT}"
+    case "$pinned" in /*) ;; *) echo "Client workspace pin must be absolute" >&2; return 1 ;; esac
+    printf '%s' "${pinned%/}"; return 0
+  fi
   local ws=""
   if [ -f "$OBS_OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
-    ws="$(OC_JSON="$OBS_OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+    ws="$(OC_JSON="$OBS_OC_JSON" python3 - <<'PYEOF'
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
@@ -69,15 +72,17 @@ try:
         ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
         if ws:
             print(os.path.expanduser(ws))
-except Exception:
-    pass
+except (OSError, ValueError, AttributeError, TypeError) as exc:
+    raise SystemExit('Cannot resolve configured client workspace: '+str(exc))
 PYEOF
-)"
+)" || return 1
   fi
   [ -z "$ws" ] && ws="$OBS_OC_ROOT/workspace"
+  case "$ws" in /*) ;; *) echo "Configured client workspace must be absolute" >&2; return 1 ;; esac
   printf '%s' "$ws"
 }
-OBS_WORKSPACE="$(obs_resolve_workspace)"
+OBS_WORKSPACE="$(obs_resolve_workspace)" || return 1
+__OBS_SOURCED=1
 OBS_STATE_FILE="$OBS_WORKSPACE/.onboarding-state.json"
 
 # Where the installed skills live + the source repo (for discovering qc/CORE).
@@ -229,12 +234,17 @@ PYEOF
 #   (b) CORE_UPDATES sentinel present in workspace files (only if skill ships CORE_UPDATES.md)
 #   (c) its qc-*.sh exits 0 (only if it ships one)
 # Side effect: sets the skill's status to qc-passed (0) or qc-failed (non-zero).
-# Echoes a one-line reason on failure.
+# Echoes a one-line reason on failure. CLI/QC deadlines default to 30/180s;
+# OBS_SKILLS_INFO_TIMEOUT_SECONDS / OBS_QC_TIMEOUT_SECONDS accept 1..3600.
+# Raw diagnostics stay in the private $OBS_WORKSPACE/.onboarding-qc-diagnostics
+# directory; timeout reasons contain no command output or credentials.
 obs_verify_skill() {
   local folder="$1"
   local src_dir="${2:-$OBS_SKILLS_DIR}"
   local skill_path="$src_dir/$folder"
   local reasons=""
+  local deadline_helper="$_SHIM_SCRIPT_DIR/run-with-deadline.py"
+  local diagnostic_dir="$OBS_WORKSPACE/.onboarding-qc-diagnostics"
 
   # Resolve the canonical OpenClaw name from SKILL.md frontmatter `name:`
   # (docs.openclaw.ai/tools/skills: name | else directory name).
@@ -267,14 +277,24 @@ obs_verify_skill() {
     # is emitted on stderr, and dropping it is what made an empty $info_out
     # indistinguishable from a genuinely unregistered skill.
     # shellcheck disable=SC2086
-    info_out="$(openclaw skills info "$skill_name" $_obs_agent_flag 2>"$info_err" || true)"
-    if [ -z "$info_out" ] && grep -qiE 'no explicit owner|multiple agents are configured|AgentSelectionRequiredError' "$info_err" 2>/dev/null; then
+    local info_rc=0
+    info_out="$(python3 "$deadline_helper" --seconds "${OBS_SKILLS_INFO_TIMEOUT_SECONDS:-30}" --diagnostics "$diagnostic_dir" --label skills-info --stdout -- openclaw skills info "$skill_name" $_obs_agent_flag 2>"$info_err")" || info_rc=$?
+    if [ "$info_rc" -eq 124 ]; then
+      reasons="${reasons}skills-info:timeout; "
+      rm -f "$info_err"
+    elif [ "$info_rc" -eq 125 ]; then
+      reasons="${reasons}skills-info:deadline-runner-failed; "
+      rm -f "$info_err"
+    elif [ -z "$info_out" ] && grep -qiE 'no explicit owner|multiple agents are configured|AgentSelectionRequiredError' "$info_err" 2>/dev/null; then
       # Distinct, actionable reason — the box is not broken, the call was.
       reasons="${reasons}skills-info:agent-required(set agents.defaults.systemAgent.agentId or OPENCLAW_AGENT_ID); "
       rm -f "$info_err" 2>/dev/null || true
     elif [ -z "$info_out" ]; then
       rm -f "$info_err" 2>/dev/null || true
       reasons="${reasons}skills-info:not-visible; "
+    elif [ "$info_rc" -ne 0 ]; then
+      reasons="${reasons}skills-info:nonzero-exit; "
+      rm -f "$info_err"
     elif rm -f "$info_err" 2>/dev/null; printf '%s' "$info_out" | grep -qiE 'not found|unknown skill|no such skill'; then
       reasons="${reasons}skills-info:not-registered; "
     elif ! printf '%s' "$info_out" | grep -qiE 'ready|enabled|visible|installed|name:|path:|details:|source:'; then
@@ -347,7 +367,13 @@ obs_verify_skill() {
     # workspace this verification gate itself uses (obs_resolve_workspace,
     # cached in $OBS_WORKSPACE) unless the caller already set AGENTS_MD, so
     # the gate checks the file the wiring loop actually wrote.
-    if ! AGENTS_MD="${AGENTS_MD:-$OBS_WORKSPACE/AGENTS.md}" bash "$qc_script" >/dev/null 2>&1; then
+    local qc_rc=0
+    AGENTS_MD="${AGENTS_MD:-$OBS_WORKSPACE/AGENTS.md}" python3 "$deadline_helper" --seconds "${OBS_QC_TIMEOUT_SECONDS:-180}" --diagnostics "$diagnostic_dir" --label qc-script -- bash "$qc_script" >/dev/null 2>&1 || qc_rc=$?
+    if [ "$qc_rc" -eq 124 ]; then
+      reasons="${reasons}qc-script:timeout; "
+    elif [ "$qc_rc" -eq 125 ]; then
+      reasons="${reasons}qc-script:deadline-runner-failed; "
+    elif [ "$qc_rc" -ne 0 ]; then
       reasons="${reasons}qc-script:nonzero-exit; "
     fi
   fi

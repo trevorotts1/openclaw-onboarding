@@ -25,11 +25,12 @@ store at the ENTRY POINT fixes every such reader at once, because every
 reader is a CHILD of one.
 
 WHY A PYTHON MODULE AND NOT A LINE OF SHELL. The candidate ORDER is
-platform-aware and already owned by one authority
-(presentation_job.oc_paths.secrets_env_candidates, FIX 68): on the docker
-VPS /data/.openclaw/secrets/.env is first, on a Mac the ~/.openclaw stores
-are. Re-deriving that order in sh would be a second, drifting copy of the
-same vocabulary. This module reuses the authority and adds nothing to it.
+owned by one authority (presentation_job.oc_paths.secrets_env_candidates).
+Only the selected client's installation and configured workspace are searched;
+Mac/native Linux default to HOME, while a verified container/data installation
+uses its own selected root. Explicit pins and same-client secret overrides are
+honored. Conflicts, escaping symlinks and missing resolver modules fail before
+any exports; no alternative installation is searched.
 
 PRECEDENCE -- THE PART THAT IS DELIBERATELY *NOT* THE `set -a` IDIOM.
 The sanctioned shell idiom used elsewhere in this repo (bin/presentation
@@ -49,10 +50,9 @@ must not be silently overwritten by a stale store. So:
 
 Precedence below that is store order: the first candidate file that defines
 a name wins, later files only fill gaps. That is the same
-"first source that answers, wins" posture every reader in this package
-already has (research_web._read_secret_named, model_router.provider_key_
-resolves) and the same "search every store" posture AGENTS.md requires of
-any credential claim.
+"first source that answers, wins" posture, restricted to this client’s stores.
+Path/identity bindings never load from a store: they come from the selected
+invocation so a store cannot redirect child processes to another installation.
 
 PARSED, NEVER EXECUTED. `. file` runs the store as shell. This module parses
 it instead, with the SAME line semantics the package's existing readers use
@@ -104,19 +104,12 @@ WATCHED_NAMES: Tuple[str, ...] = ("OPENROUTER_API_KEY", "PRESENTATION_RUNS_DIR")
 #: safely is not exported at all.
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-#: Last-resort candidate order used ONLY when presentation_job.oc_paths is not
-#: importable (a partial deploy). It is a deliberate copy of oc_paths' Mac
-#: list, mirroring the identical `except ImportError` fallbacks in
-#: research_web._read_secret_named and model_router._secrets_env_files -- the
-#: package's established posture for a standalone/partial deploy. oc_paths
-#: stays the authority whenever it can be imported.
-_FALLBACK_CANDIDATES: Tuple[str, ...] = (
-    "~/.openclaw/secrets/.env",
-    "~/.openclaw/secrets/secrets.env",
-    "~/.openclaw/.env",
-    "~/.openclaw/workspace/.env",
-    "~/clawd/secrets/.env",
-)
+# A credential/config store cannot change which installation owns this process.
+_PATH_BINDINGS = frozenset({
+    "HOME", "OPENCLAW_PLATFORM", "OPENCLAW_RUNTIME_TOPOLOGY", "OPENCLAW_ROOT",
+    "OC_ROOT", "OC_CONFIG", "OPENCLAW_WORKSPACE_PATH", "OPENCLAW_WORKSPACE_ROOT",
+    "OC_WORKSPACE_DEFAULT", "OC_SKILLS_DIR", "OC_JSON", "OPENCLAW_SECRETS",
+})
 
 
 def enabled(environ: Optional[Dict[str, str]] = None) -> bool:
@@ -127,26 +120,14 @@ def enabled(environ: Optional[Dict[str, str]] = None) -> bool:
     return str(view.get(FLAG_ENV, "1") or "").strip() != "0"
 
 
-def candidate_files() -> List[Path]:
-    """The ordered store-file candidates, from the FIX 68 authority.
+def candidate_files(environ: Optional[Dict[str, str]] = None) -> List[Path]:
+    """Resolve only this client's stores; incomplete/invalid resolution is fatal.
 
-    A tree where presentation_job.oc_paths cannot be imported prints a LOUD
-    line on stderr and falls back to the documented Mac list -- the same
-    posture presentation-intake-poll.sh's read_run_mode uses for a partial
-    deploy. Silence is never an option here: a wrong candidate order on a
-    VPS is exactly the FIX 68 defect."""
-    try:
-        from presentation_job.oc_paths import secrets_env_candidates
-        return [Path(p) for p in secrets_env_candidates()]
-    except Exception as exc:  # noqa: BLE001 -- a partial deploy must be LOUD
-        print(
-            f"[env-store] could not import presentation_job.oc_paths "
-            f"({exc.__class__.__name__}: {exc}) -- falling back to the "
-            f"documented Mac candidate list. On a VPS this is the WRONG "
-            f"order (/data/.openclaw is first there). Fix the deploy.",
-            file=sys.stderr,
-        )
-        return [Path(os.path.expanduser(spec)) for spec in _FALLBACK_CANDIDATES]
+    A missing module or conflicting pin must never turn into a search through
+    another installation's credentials.
+    """
+    from presentation_job.oc_paths import secrets_env_candidates
+    return list(secrets_env_candidates(environ))
 
 
 def parse_store(path: Path) -> Dict[str, str]:
@@ -197,7 +178,6 @@ def resolve(environ: Optional[Dict[str, str]] = None,
     logs anything logs this, never ``assignments``.
     """
     view = dict(os.environ if environ is None else environ)
-    files = list(candidate_files() if paths is None else paths)
 
     report: dict = {
         "enabled": enabled(view),
@@ -215,6 +195,7 @@ def resolve(environ: Optional[Dict[str, str]] = None,
         _describe_names(view, {}, report)
         return {}, report
 
+    files = list(candidate_files(view) if paths is None else paths)
     assignments: Dict[str, str] = {}
     for path in files:
         exists = path.is_file()
@@ -223,6 +204,8 @@ def resolve(environ: Optional[Dict[str, str]] = None,
             parsed = parse_store(path)
             entry["names"] = len(parsed)
             for name, value in parsed.items():
+                if name in _PATH_BINDINGS:
+                    continue
                 if not value.strip():
                     # A BLANK value in a store is the absence this whole fix
                     # is about, exactly as a blank in the process env is --
@@ -351,7 +334,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
              "nowhere (the same exit notify_preflight uses).")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    assignments, report = resolve()
+    try:
+        assignments, report = resolve()
+    except Exception as exc:
+        # No partial exports and no values/paths from an untrusted exception.
+        print(f"[env-store] client path resolution failed ({type(exc).__name__}); no stores loaded", file=sys.stderr)
+        return 2
 
     if args.emit_shell:
         text = emit_shell(assignments)

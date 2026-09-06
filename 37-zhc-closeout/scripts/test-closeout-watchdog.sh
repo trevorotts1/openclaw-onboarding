@@ -254,6 +254,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"BlockedCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"fail\"},
@@ -296,6 +297,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"IncompleteCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"fail\"},
@@ -328,21 +330,23 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"PassCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"pass\"},
     \"closeoutStatus\": \"pending\"
   }"
 
-  # run-closeout.sh will fail during preflight (no KIE_API_KEY, no Notion token)
-  # but must NOT set blocked-interview-incomplete — that gate was cleared.
-  run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
+  # Require evidence that the runner reached the NEXT gate. A pending state
+  # alone can also mean an earlier identity guard refused this fixture.
+  KIE_API_KEY="" NOTION_API_TOKEN="" run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
 
   cs=$(read_state_field '.closeoutStatus')
-  if [[ "$cs" != "blocked-interview-incomplete" ]]; then
-    pass "T5: closeoutStatus='$cs' (gate passed — not blocked-interview-incomplete)"
+  reason=$(read_state_field '.closeoutFailureReason')
+  if [[ "$cs" == "failed" && "$reason" == "preflight: KIE_API_KEY env var not set" ]]; then
+    pass "T5: QC gate passed and the expected missing-key preflight recorded its failure"
   else
-    fail "T5: closeoutStatus='$cs' (QC gate incorrectly blocked a pass-status interview)"
+    fail "T5: closeoutStatus='$cs', reason='$reason' (expected the downstream missing-key preflight)"
   fi
 else
   skip_test "T5: run-closeout.sh not found at $RUN_CLOSEOUT"
@@ -376,6 +380,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"PlaywrightCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"pass\"},

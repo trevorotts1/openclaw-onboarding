@@ -1,5 +1,9 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [13.1.2] - 2026-09-06 — leave pre-identity onboarding state untouched
+
+- Stop closeout before failure metadata or verification writes when no client identity exists. Existing scoped builds keep the normal closeout gates; fresh onboarding no longer inherits a misleading pending-build stub.
+
 ## [13.0.0] - 2026-07-05 - v12.14.14: doc-vs-code drift correction — version literal, model slugs, stale "Known Issues: None" (Wave-2 FIX-XC-13b, W2-doc-37)
 
 - **FIX-XC-13b — SKILL.md taught a stale `1.0.0` version literal.** `SKILL.md`'s Files table hardcoded `skill-version.txt` as "Currently `1.0.0`" while the skill was actually shipping v12.14.13. Replaced the frozen literal with a source-of-truth pointer ("read `skill-version.txt` at runtime; never hardcode the version elsewhere"), so the doc can no longer drift from the version file (the FIX-XC-13 pattern). `INSTALL.md`'s Known-Issues heading also referenced "v1.0.0" — removed.

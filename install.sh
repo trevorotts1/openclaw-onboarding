@@ -26,73 +26,37 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.9"
+ONBOARDING_VERSION="v25.0.10"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
 # ----------------------------------------------------------
 # Determine platform: env override takes priority, then auto-detect.
-_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
-if [ -z "$_DETECT_PLATFORM" ]; then
-    if [ -d "/data/.openclaw" ]; then
-        _DETECT_PLATFORM="vps"
-    else
-        _DETECT_PLATFORM="mac"
-    fi
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
+_PLATFORM_COMMON_TEMP=""
+if [ ! -f "$_PLATFORM_COMMON" ]; then
+    _PLATFORM_COMMON_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/common.sh" -o "$_PLATFORM_COMMON_TEMP" || { rm -f "$_PLATFORM_COMMON_TEMP"; exit 1; }
+    _PLATFORM_COMMON="$_PLATFORM_COMMON_TEMP"
+fi
+source "$_PLATFORM_COMMON" || exit 1
+[ -z "$_PLATFORM_COMMON_TEMP" ] || rm -f "$_PLATFORM_COMMON_TEMP"
+_DETECT_PLATFORM="$(oc_detect_platform)" || exit 1
+if [ -n "${OPENCLAW_PLATFORM:-}" ] && [ "$OPENCLAW_PLATFORM" != "$_DETECT_PLATFORM" ]; then
+    echo "OPENCLAW_PLATFORM conflicts with the actual operating system." >&2; exit 1
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 
-# Source platform bootstrap (sets OC_CONFIG, OC_JSON, OC_PLATFORM, etc.
-# and runs platform-specific pre-flight).
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
-if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
-    # shellcheck source=/dev/null
-    source "$_PLATFORM_BOOTSTRAP"
-else
-    # Fallback when running via curl (no local repo clone yet).
-    # Inline the minimal path setup required before the clone happens.
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        OC_PLATFORM="vps"
-        OC_CONFIG="/data/.openclaw"
-        OC_JSON="/data/.openclaw/openclaw.json"
-        OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
-        OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
-        OC_CREDENTIALS="/data/.openclaw/credentials"
-        OC_AGENTS="/data/.openclaw/agents"
-        OC_SKILLS_DIR="/data/.openclaw/skills"
-        OC_LOGS="/data/.openclaw/logs"
-        OC_BACKUPS="/data/.openclaw/backups"
-        OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
-        OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_DOWNLOADS="/data/Downloads"
-        # v13.8.3: set LOG_FILE on the VPS curl-fallback path too. Without it,
-        # `note "Log file: $LOG_FILE"` (and every `>> "$LOG_FILE"`) aborts under
-        # `set -euo pipefail` with `LOG_FILE: unbound variable`. Mirrors the mac
-        # fallback branch below and platform/vps/bootstrap.sh §7.
-        mkdir -p "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    else
-        OC_PLATFORM="mac"
-        OC_CONFIG="$HOME/.openclaw"
-        OC_JSON="$HOME/.openclaw/openclaw.json"
-        OC_CREDENTIALS="$HOME/.openclaw/credentials"
-        OC_AGENTS="$HOME/.openclaw/agents"
-        OC_SKILLS_DIR="$HOME/.openclaw/skills"
-        OC_LOGS="$HOME/.openclaw/logs"
-        OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-        OC_DOWNLOADS="$HOME/Downloads"
-        OC_BACKUPS="$HOME/Downloads/openclaw-backups"
-        OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
-        OC_LEGACY_CLAWD="$HOME/clawd"
-        OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
-        mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    fi
+_PLATFORM_BOOTSTRAP_TEMP=""
+if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
 fi
+source "$_PLATFORM_BOOTSTRAP" || exit 1
+[ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
 
 set -euo pipefail
 
@@ -2309,34 +2273,10 @@ has_cred() {
 # Directory Discovery
 # ----------------------------------------------------------
 discover_skills_dir() {
-    # Mac canonical skills location is ~/Downloads/openclaw-master-files (where
-    # this installer extracts to). Fallbacks include the onboarding stage dir,
-    # legacy locations, and the ~/openclaw-onboarding clone if present.
-    local CANDIDATES="$OC_DOWNLOADS/openclaw-master-files"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/skills"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/onboarding"
-    CANDIDATES="$CANDIDATES|$HOME/openclaw-onboarding"
-
-    local dirs="$CANDIDATES"
-    while [ -n "$dirs" ]; do
-        local DIR
-        if echo "$dirs" | grep -q "|"; then
-            DIR=$(echo "$dirs" | cut -d'|' -f1)
-            dirs=$(echo "$dirs" | cut -d'|' -f2-)
-        else
-            DIR="$dirs"; dirs=""
-        fi
-        if [ -d "$DIR" ]; then
-            local SKILL_COUNT
-            SKILL_COUNT=$(find "$DIR" -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
-            if [ "$SKILL_COUNT" -gt "0" ]; then
-                echo "$DIR"
-                return
-            fi
-        fi
-    done
-    
-    echo "$OC_DOWNLOADS/openclaw-master-files"
+  # The selected client root is authoritative on Mac, native Linux and Docker.
+  # Downloads/legacy copies are source archives, never an alternate live client.
+  local active="${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}"
+  printf '%s\n' "$active"
 }
 
 discover_skills() {
@@ -2726,22 +2666,16 @@ PYEOF
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
-# Resolves the workspace via obs_resolve_workspace (this file's own
-# convention), not oc_resolve_workspace_announced.
+# Uses the same selected-client workspace as the intake scheduler; failures
+# never fall through to another installation's department.
 # ----------------------------------------------------------
 colocate_presentation_entry() {
-  local dept_scripts=""
-  if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    local ws; ws="$(obs_resolve_workspace 2>/dev/null || true)"
-    if [ -n "$ws" ]; then
-      dept_scripts="$ws/departments/Presentations/scripts"
-    fi
-  fi
-  if [ -z "$dept_scripts" ]; then
-    local _home_ws="${HOME}/.openclaw/workspace"
-    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
-    dept_scripts="$_home_ws/departments/Presentations/scripts"
-  fi
+  local ws dept_scripts
+  ws="$(_fix61_selected_workspace)" || {
+    echo "  [U006] presentation entry co-location REFUSED: selected client workspace unresolved" >&2
+    return 1
+  }
+  dept_scripts="$ws/departments/Presentations/scripts"
   if [ ! -d "$dept_scripts" ]; then
     echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
     return 0
@@ -3654,6 +3588,16 @@ fi
 # Copy scripts folder
 if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
+fi
+
+# Platform helpers are runtime dependencies of the delivered Skill32 resume command.
+if [ -d "$ONBOARDING_DIR/platform" ]; then
+    mkdir -p "$SKILLS_DIR/../platform"
+    cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+fi
+if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
+    echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
+    exit 8
 fi
 
 # >>> CANONICAL-CONFIG-DELIVERY-BEGIN
@@ -4633,6 +4577,14 @@ install_intake_poll_schedule() {
         return 1
     fi
 
+    local _poll_workspace
+    _poll_workspace="$(_fix61_selected_workspace)" || return 1
+    local _poll_runs_dir="$_poll_workspace/departments/Presentations/runs"
+    local _poll_root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}}"
+    case "$_poll_root" in /*) ;; *) warn "FIX 61: client root must be absolute." >&2; return 1 ;; esac
+    _poll_root="${_poll_root%/}"
+    [ -n "$_poll_root" ] || return 1
+
     if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
         # ── VPS: SILENT main-session openclaw cron, 5-minute cadence ──────────
         if ! command -v openclaw >/dev/null 2>&1; then
@@ -4651,7 +4603,9 @@ install_intake_poll_schedule() {
         if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
-        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: bash $POLL_SRC . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
+        local _poll_command
+        printf -v _poll_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q PRESENTATION_RUNS_DIR=%q bash %q' "$_poll_root" "$_poll_workspace" "$_poll_workspace" "$_poll_runs_dir" "$POLL_SRC"
+        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: $_poll_command . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
         if _oc_cron_silent_main "presentation-intake-poll" "$CHANNEL_AGENT" "*/5 * * * *" "America/New_York" "$POLL_PROMPT" --light-context; then
             success "FIX 61: intake-poll cron installed (SILENT main-session, 5-min, no client auto-announce)"
         else
@@ -4695,7 +4649,6 @@ install_intake_poll_schedule() {
         #            and its precedence only lets a NON-BLANK process value
         #            win, so an empty string cannot shadow the store.
         local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
-        local _poll_runs_dir="$_dept_scripts_dir/../runs"
         local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
         local _poll_notify_cmd=""
         if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
@@ -4703,54 +4656,84 @@ install_intake_poll_schedule() {
         else
             warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
         fi
-        # Render the template. TWO defects govern this block, and both must
-        # hold — they were found independently and fix different halves:
-        #   1. PLACEHOLDER SPELLING. The template stores placeholders
-        #      HTML-escaped inside the XML body (&lt;NAME&gt;) and bare inside
-        #      the comment header, so sed must target BOTH forms or the body
-        #      keeps literal &lt;PLACEHOLDER&gt; strings and launchd is handed
-        #      ProgramArguments = ["/bin/bash", "<POLL_SCRIPT_PATH>"] while a
-        #      bare-form-only residue check passes and the step prints success.
-        #   2. THE COMMENT HEADER IS NOT XML. That header sits BEFORE the
-        #      <?xml?> declaration, so the rendered FILE does not parse as a
-        #      property list even once every placeholder is substituted.
-        #      Emit the BODY only (from <?xml onward) — the documentation
-        #      stays in the template, where maintainers actually read it, and
-        #      what ships to launchd is a file that parses on its own terms
-        #      rather than one that only parses after a reader strips it.
-        # Same discipline the FIX 49 watchdog render used. sed uses | as the
-        # delimiter because the values are paths containing /; they contain
-        # no | or &.
-        sed -e "s|&lt;POLL_SCRIPT_PATH&gt;|$POLL_SRC|g" \
-            -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
-            -e "s|&lt;LOG_PATH&gt;|$LOG_PATH|g" \
-            -e "s|<LOG_PATH>|$LOG_PATH|g" \
-            -e "s|&lt;POLL_PATH&gt;|$_poll_path|g" \
-            -e "s|<POLL_PATH>|$_poll_path|g" \
-            -e "s|&lt;PRESENTATION_RUNS_DIR&gt;|$_poll_runs_dir|g" \
-            -e "s|<PRESENTATION_RUNS_DIR>|$_poll_runs_dir|g" \
-            -e "s|&lt;PRESENTATION_NOTIFY_CMD&gt;|$_poll_notify_cmd|g" \
-            -e "s|<PRESENTATION_NOTIFY_CMD>|$_poll_notify_cmd|g" \
-            "$TPL_SRC" | sed -n '/<?xml/,$p' > "$PLIST_DST"
-        # Residue check covers BOTH spellings of every placeholder. The
-        # body-only emit above means the bare forms should already be gone
-        # with the header, but a template that ever moves a bare placeholder
-        # into the body must fail here rather than ship a literal.
-        if grep -q '&lt;POLL_SCRIPT_PATH&gt;\|&lt;LOG_PATH&gt;\|&lt;POLL_PATH&gt;\|&lt;PRESENTATION_RUNS_DIR&gt;\|&lt;PRESENTATION_NOTIFY_CMD&gt;\|<POLL_SCRIPT_PATH>\|<LOG_PATH>\|<POLL_PATH>\|<PRESENTATION_RUNS_DIR>\|<PRESENTATION_NOTIFY_CMD>' "$PLIST_DST"; then
-            warn "FIX 61: rendered plist still contains an unsubstituted placeholder — refusing to load a malformed agent."
-            _rc=1
-        # The file is now body-only, so it must parse as a property list ON ITS
-        # OWN — no reader-side stripping. It must ALSO carry the notify
-        # transport in EnvironmentVariables: a plist that parses but declares
-        # no PRESENTATION_NOTIFY_CMD puts the poller back to running
-        # environment-less and refusing every dispatch, which is the exact
-        # outage this pair of fixes exists to end.
-        elif ! python3 -c "import plistlib,sys; d=plistlib.load(open(sys.argv[1],'rb')); raise SystemExit(0 if 'PRESENTATION_NOTIFY_CMD' in d.get('EnvironmentVariables', {}) else 1)" "$PLIST_DST" >/dev/null 2>&1; then
-            warn "FIX 61: rendered plist does not parse, or carries no PRESENTATION_NOTIFY_CMD in EnvironmentVariables — refusing to load it. The poller would run environment-less and refuse every dispatch."
-            _rc=1
-        else
-            success "FIX 61: rendered $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
+        # Parse the actual template, substitute values as plist strings (never
+        # sed/XML/shell fragments), validate, then atomically promote beside the
+        # destination. Failed rendering leaves the old plist and job untouched.
+        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" <<'PY_RENDER_INTAKE_PLIST'
+import os
+from pathlib import Path
+import plistlib
+import re
+import shlex
+import sys
+import tempfile
+
+template, destination, poll, log, runtime_path, runs, notify, client_root, workspace = sys.argv[1:]
+text = Path(template).read_text()
+# The repository template has a documentation comment before its XML declaration.
+start = text.find('<?xml')
+if start < 0:
+    raise ValueError('Intake poll template has no XML declaration')
+data = plistlib.loads(text[start:].encode())
+values = {
+    '<POLL_SCRIPT_PATH>': poll, '<LOG_PATH>': log, '<POLL_PATH>': runtime_path,
+    '<PRESENTATION_RUNS_DIR>': runs,
+    # This value is parsed by shlex.split in the notification transport.
+    '<PRESENTATION_NOTIFY_CMD>': shlex.quote(notify) if notify else '',
+}
+seen = set()
+def render(value):
+    if isinstance(value, dict):
+        return {key: render(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [render(item) for item in value]
+    if isinstance(value, str):
+        if value in values:
+            seen.add(value)
+            return values[value]
+        if re.search(r'<[A-Z_]+>', value):
+            raise ValueError('Unknown or embedded intake poll placeholder')
+    return value
+result = render(data)
+if seen != set(values):
+    raise ValueError('Intake poll template is missing required placeholders')
+if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
+        or result.get('ProgramArguments') != ['/bin/bash', poll]
+        or result.get('StartInterval') != 300
+        or result.get('StandardOutPath') != log
+        or result.get('StandardErrorPath') != log
+        or any(result.get('EnvironmentVariables', {}).get(key) != expected for key, expected in {
+            'PATH': runtime_path, 'PRESENTATION_RUNS_DIR': runs,
+            'PRESENTATION_NOTIFY_CMD': values['<PRESENTATION_NOTIFY_CMD>'],
+        }.items())):
+    raise ValueError('Intake poll template does not satisfy the scheduler contract')
+# Carry client context into launchd's otherwise empty environment, even when
+# scripts themselves were sourced from a shared installer checkout.
+result['EnvironmentVariables'].update({
+    'OPENCLAW_ROOT': client_root,
+    'OPENCLAW_WORKSPACE_PATH': workspace,
+    'OPENCLAW_WORKSPACE_ROOT': workspace,
+})
+encoded = plistlib.dumps(result)
+if plistlib.loads(encoded) != result:
+    raise ValueError('Intake poll plist failed round-trip validation')
+fd, candidate = tempfile.mkstemp(prefix='.presentation-intake-poll-', suffix='.plist', dir=Path(destination).parent)
+try:
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(candidate, 0o644)
+    os.replace(candidate, destination)
+finally:
+    if os.path.exists(candidate):
+        os.unlink(candidate)
+PY_RENDER_INTAKE_PLIST
+        then
+            warn "FIX 61: intake poll render/validation failed — prior plist and running job preserved; no launchctl changes made."
+            return 1
         fi
+        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
         # Reload semantics: if already loaded, unload first so a re-run picks up
         # a re-rendered copy. 'launchctl load' on an already-loaded job is the
         # documented "Load failed: 5: Input/output error" — treat it as loaded.
@@ -4768,6 +4751,33 @@ install_intake_poll_schedule() {
     return "$_rc"
 }
 
+# Reuse the selected platform workspace; never infer client ownership from an
+# unrelated /data directory. A configured resolver failure is not a default.
+_fix61_selected_workspace() {
+    local _ws="" _root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-}}}"
+    if [ -n "${OPENCLAW_WORKSPACE_PATH:-}" ] && [ -n "${OPENCLAW_WORKSPACE_ROOT:-}" ] && [ "${OPENCLAW_WORKSPACE_PATH%/}" != "${OPENCLAW_WORKSPACE_ROOT%/}" ]; then
+        warn "FIX 61: selected workspace pins conflict; refusing another client root." >&2
+        return 1
+    fi
+    _ws="${OPENCLAW_WORKSPACE_PATH:-${OPENCLAW_WORKSPACE_ROOT:-${OC_WORKSPACE_DEFAULT:-${OC_WORKSPACE:-}}}}"
+    if [ -z "$_ws" ]; then
+        if [ -n "$_root" ]; then
+            _ws="${_root%/}/workspace"
+        elif command -v obs_resolve_workspace >/dev/null 2>&1; then
+            _ws="$(obs_resolve_workspace)" || {
+                warn "FIX 61: configured workspace resolver failed; no alternate client root selected." >&2
+                return 1
+            }
+            [ -n "$_ws" ] || { warn "FIX 61: configured workspace resolver returned no client workspace." >&2; return 1; }
+        else
+            _ws="$HOME/.openclaw/workspace"
+        fi
+    fi
+    case "$_ws" in /*) ;; *) warn "FIX 61: client workspace must be absolute." >&2; return 1 ;; esac
+    [ "${_ws%/}" != "" ] || return 1
+    printf '%s\n' "${_ws%/}"
+}
+
 # Resolve PRESENTATIONS_SCRIPTS_SRC ONCE, here, before the scheduler runs.
 # The poller and its plist template have TWO legitimate homes, and resolving
 # from a single candidate is what failed in the field:
@@ -4777,8 +4787,7 @@ install_intake_poll_schedule() {
 #      checkout (curl|bash, a trimmed payload, a re-run out of /tmp).
 # When the sole repo candidate missed, the variable stayed EMPTY and every
 # path built from it collapsed to "/presentation-intake-poll.sh".
-# Workspace resolution mirrors colocate_presentation_entry() above — this
-# file's own convention — rather than inventing a second one. warn() writes to
+# Workspace resolution uses the selected platform client context. warn() writes to
 # stdout, so its calls here are redirected to stderr: this function's stdout IS
 # the resolved path and must carry nothing else.
 _fix61_resolve_scripts_src() {
@@ -4789,20 +4798,15 @@ _fix61_resolve_scripts_src() {
             printf '%s\n' "$PRESENTATIONS_SCRIPTS_SRC"
             return 0
         fi
-        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC was preset to '$PRESENTATIONS_SCRIPTS_SRC', which holds no presentation-intake-poll.sh — ignoring it and re-resolving." >&2
+        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC was preset to '$PRESENTATIONS_SCRIPTS_SRC', which holds no presentation-intake-poll.sh — refusing to replace the explicit pin." >&2
+        return 1
     fi
     _c="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
     if [ -f "$_c/presentation-intake-poll.sh" ]; then
         printf '%s\n' "$_c"
         return 0
     fi
-    if command -v obs_resolve_workspace >/dev/null 2>&1; then
-        _ws="$(obs_resolve_workspace 2>/dev/null || true)"
-    fi
-    if [ -z "$_ws" ]; then
-        _ws="${HOME}/.openclaw/workspace"
-        [ -d "/data/.openclaw/workspace" ] && _ws="/data/.openclaw/workspace"
-    fi
+    _ws="$(_fix61_selected_workspace)" || return 1
     _c="$_ws/departments/Presentations/scripts"
     if [ -f "$_c/presentation-intake-poll.sh" ]; then
         printf '%s\n' "$_c"
@@ -8310,8 +8314,10 @@ bootstrap_command_center_shell() {
         return 0
     fi
 
-    local CC_DIR="$HOME/projects/command-center"
-    [ -d "/data/.openclaw" ] && CC_DIR="/data/projects/command-center"
+    local CC_DIR="${CC_APP_DIR:-$HOME/projects/command-center}"
+    if [ -z "${CC_APP_DIR:-}" ] && [ "${OC_CONFIG:-}" = "/data/.openclaw" ]; then
+        CC_DIR="/data/projects/command-center"
+    fi
 
     # Absence check 1 — a valid Command Center checkout already present.
     if [ -d "$CC_DIR/.git" ] && [ -f "$CC_DIR/package.json" ]; then
@@ -8379,7 +8385,7 @@ bootstrap_command_center_shell() {
         return 8
     fi
     note "Bootstrapping the locked Command Center for the saved company..."
-    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
+    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" --app-dir "$CC_DIR" >>"$LOG_FILE" 2>&1; then
         success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
     else
         warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"

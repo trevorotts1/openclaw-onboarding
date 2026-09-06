@@ -22,12 +22,15 @@ The agent is doing the same work `install.sh` would have done in your terminal �
 
 You are about to install or update OpenClaw Onboarding via the direct-to-agent path (no terminal). Follow these steps in order. Do NOT skip steps. Do NOT improvise.
 
-### 0. Pre-flight — detect platform
-Determine whether the target host is:
-- **Mac:** `~/.openclaw/`, `~/clawd/`, `~/Downloads/openclaw-master-files/` apply.
-- **VPS Hostinger Docker:** `/data/.openclaw/`, `/data/.openclaw/workspace/`, `/data/.openclaw/master-files/` apply.
+### 0. Pre-flight — detect the operating system and runtime
 
-For the rest of these instructions, substitute the correct paths for the detected platform.
+Read the actual operating system (`uname -s`) and whether OpenClaw runs natively or inside a container. Hostinger and Contabo are provider names, not evidence of Docker.
+
+- **macOS (Darwin):** default root `~/.openclaw`.
+- **Native Linux VPS:** default root `~/.openclaw`; preserve an existing selected `/data/.openclaw` installation or explicit `OPENCLAW_ROOT`.
+- **Docker:** operate inside the client's exact running container. A mounted `/data` normally uses `/data/.openclaw`; preserve explicit inside-container root/workspace pins. Never install a second copy on the host to replace a stopped or ambiguous container.
+
+Preserve `OPENCLAW_ROOT`, the saved configured workspace, and any matching `OPENCLAW_WORKSPACE_PATH` / `OPENCLAW_WORKSPACE_ROOT` pins. After downloading, use `platform/common.sh` to resolve the same values as the terminal path. `<skills-dir>` is `<config-root>/skills`; it is not a Downloads archive. See [portable platforms](docs/portable-onboarding-platforms.md).
 
 ### First onboarding: collect the owner and company names before setup
 
@@ -80,7 +83,15 @@ Fetch the latest skill bundle from the unified repo (auto-detects Mac vs VPS):
 
 Place every skill folder under `<skills-dir>/`. Place root files (`Start Here.md`, `INSTALL-CONTRACT.md`, `AGENTS.md`, `cron-prompt.txt`, `check-updates.sh`, `force-update.sh`, etc.) at `<config-root>/`. Place `shared-utils/` under `<skills-dir>/shared-utils/`.
 
-Also copy the repository root `scripts/` directory to `<config-root>/scripts/`. Now persist the two answers already collected in the conversation:
+Also copy the repository root `scripts/` directory to `<config-root>/scripts/` and `platform/` to `<config-root>/platform/`. The full `shared-utils/` tree belongs at `<config-root>/skills/shared-utils/`, including `service_env.py`; do not deliver only individual helper files. The installed layout must include:
+
+- `<config-root>/platform/common.sh`
+- `<config-root>/scripts/onboarding-identity.py` and `prebuild-standard-workforce.py`
+- `<config-root>/skills/shared-utils/service_env.py`
+- `<config-root>/skills/23-ai-workforce-blueprint/scripts/workforce_state.py`
+- `<config-root>/skills/32-command-center-setup/scripts/run-full-install.sh`
+
+If any is missing, finish delivering the same bundle before running Skill32. Now persist the two answers already collected in the conversation:
 
 ```text
 python3 <config-root>/scripts/onboarding-identity.py --root <config-root> --workspace <workspace-root> --owner-name "<client/owner answer>" --company-name "<company answer>"

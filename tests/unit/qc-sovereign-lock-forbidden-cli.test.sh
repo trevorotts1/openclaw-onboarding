@@ -77,7 +77,7 @@ link_tool() {
   fi
   ln -sf "$src" "$SANDBOX_BIN/$name"
 }
-for t in bash dirname git grep sed node npm jq; do link_tool "$t"; done
+for t in bash dirname uname python3 git grep sed node npm jq; do link_tool "$t"; done
 
 # Stubbed curl: the Vercel gate's live token probe is a warn_only check and this
 # suite does not grade it. The stub returns nothing, which makes that warning
@@ -101,10 +101,11 @@ strip_ansi() { sed -e 's/\x1b\[[0-9;]*m//g'; }
 # credentials live in the environment. No gh, no vercel.
 make_box() {
   local box="$1"
-  mkdir -p "$box/.openclaw/skills"
+  mkdir -p "$box/.openclaw/skills" "$box/.openclaw/platform"
   cp -R "$GH_SKILL" "$box/.openclaw/skills/10-github-setup"
   cp -R "$VC_SKILL" "$box/.openclaw/skills/08-vercel-setup"
   cp "$REPO_ROOT/lib-shared.sh" "$box/.openclaw/skills/lib-shared.sh"
+  cp "$REPO_ROOT/platform/common.sh" "$box/.openclaw/platform/common.sh"
   printf '[user]\n\tname = Operator\n\temail = operator@example.invalid\n' >"$box/.gitconfig"
 }
 
@@ -113,6 +114,7 @@ run_gate() {
   local box="$1" skill="$2" script="$3"; shift 3
   env -i \
     HOME="$box" \
+    OPENCLAW_ROOT="$box/.openclaw" \
     PATH="$SANDBOX_BIN" \
     "$@" \
     bash "$box/.openclaw/skills/$skill/$script" 2>&1 | strip_ansi
@@ -133,7 +135,7 @@ fi
 BOX2="$TMP/box2"; make_box "$BOX2"
 # Run the copy from box1 but point HOME at a box whose skills dir lacks Skill 10.
 rm -rf "$BOX2/.openclaw/skills/10-github-setup"
-OUT2="$(env -i HOME="$BOX2" PATH="$SANDBOX_BIN" \
+OUT2="$(env -i HOME="$BOX2" OPENCLAW_ROOT="$BOX2/.openclaw" PATH="$SANDBOX_BIN" \
         bash "$BOX1/.openclaw/skills/10-github-setup/qc-github-setup.sh" 2>&1 | strip_ansi)"
 RC2="${PIPESTATUS[0]}"
 if [ "$RC2" -eq 1 ] && printf '%s' "$OUT2" | grep -q 'FAIL — Skill 10 folder present'; then
@@ -185,11 +187,11 @@ fi
 # ── T7: Skill 08 still fails on a real defect (jq missing) ──────────────────
 NOJQ_BIN="$TMP/bin-nojq"
 mkdir -p "$NOJQ_BIN"
-for t in bash dirname git grep sed node npm curl; do
+for t in bash dirname uname python3 git grep sed node npm curl; do
   [ -e "$SANDBOX_BIN/$t" ] && cp -R "$SANDBOX_BIN/$t" "$NOJQ_BIN/$t"
 done
 BOX7="$TMP/box7"; make_box "$BOX7"
-OUT7="$(env -i HOME="$BOX7" PATH="$NOJQ_BIN" VERCEL_TOKEN=fixture-token-not-a-credential \
+OUT7="$(env -i HOME="$BOX7" OPENCLAW_ROOT="$BOX7/.openclaw" PATH="$NOJQ_BIN" VERCEL_TOKEN=fixture-token-not-a-credential \
         bash "$BOX7/.openclaw/skills/08-vercel-setup/qc-vercel-setup.sh" 2>&1 | strip_ansi)"
 RC7="${PIPESTATUS[0]}"
 if [ "$RC7" -eq 1 ] && printf '%s' "$OUT7" | grep -q 'FAIL — jq installed'; then
