@@ -1,3 +1,47 @@
+## [v25.0.9]  -  2026-09-06  -  The installer blamed a missing file for a directory it never resolved, and died without saying so
+
+Completes the intake-poll door that v25.0.8 opened halfway. v25.0.8 fixed the placeholder substitution; the LaunchAgent it rendered still was not a property list, the scripts directory it rendered from had exactly one candidate, and when that candidate missed the installer exited on the spot with no message at all.
+
+### What was broken, and what it cost
+
+**1. One candidate, and a misdirecting error when it missed.** `PRESENTATIONS_SCRIPTS_SRC` resolved only from the repo checkout. Run `install.sh` from anything that is not a full checkout — `curl | bash`, a trimmed payload, a re-run out of `/tmp` — and that candidate misses, the variable stays **empty**, and
+
+```
+"$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh"
+```
+
+collapses to the root-anchored literal `/presentation-intake-poll.sh`. The `-f` test then reported a missing **file** for what was an unresolved **directory** — sending whoever read the log looking for the wrong thing entirely.
+
+Resolution now tries the checkout **and** the materialized department (the poller's actual runtime home, and the only home that exists when the installer is not running from a checkout), validates a caller-supplied override instead of trusting it, and rejects the empty prefix on its own terms before it is ever concatenated.
+
+**2. The failure was silent, and the code meant to report it was unreachable.** The call sat bare under `set -e`, so a `return 1` killed the whole installer on the spot — no message. The rc latch immediately below it, whose own comment promised the outcome "surfaces in the step's exit status instead of being swallowed", was **dead code that could never execute**. Errexit is now suspended across the call so the latch actually latches, and the step then fails deliberately and loudly — `error()`, the resolved path printed, `send_telegram_progress()`, `exit 1` — this file's own hard-failure convention. A box that ships the Presentations department with no dispatcher scheduled is worse than a box whose install stopped and said why.
+
+**3. The rendered plist still was not a property list.** The template's comment header sits **before** the `<?xml?>` declaration, which is not well-formed XML. v25.0.8 substituted every placeholder correctly but left that header in the shipped file and worked around it by stripping it only at *validation* time — so what launchd received still did not parse on its own terms. The render now emits the **body only** (from `<?xml` onward). The documentation stays in the template, where maintainers read it; what ships is a file that parses by itself.
+
+Rendered with the shipped block and inspected directly:
+
+```
+first 60 bytes: '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLI'
+plistlib.loads() on the file itself: SUCCEEDED
+EnvironmentVariables: ['PATH', 'PRESENTATION_NOTIFY_CMD', 'PRESENTATION_RUNS_DIR']
+ProgramArguments: ['/bin/bash', '/…/departments/Presentations/scripts/presentation-intake-poll.sh']
+```
+
+The `EnvironmentVariables` block is v25.0.8's contribution and the body-only emit is this release's; both hold in the same artifact. The renderer still refuses to load a plist that carries no `PRESENTATION_NOTIFY_CMD`, so neither half can regress without failing the install.
+
+### Blast radius
+
+Existing boxes are unaffected: `update-skills.sh` never renders this plist (0 references to `presentation-intake-poll`, `POLL_SCRIPT_PATH`, or `plist.template`), so no fleet roll could have broken them — and equally, no fleet roll can heal a box whose plist is already broken. Only `install.sh` renders it, which is why this ships now rather than later: every **new** client onboarded since the defect landed gets a dead deck pipeline.
+
+### Verification
+
+7 regression cases in `test_fix61_intake_poll_schedule_install.py`, which extract the real scheduling block from `install.sh` and execute it against a sandboxed `HOME` with a stubbed `launchctl` — a static grep would pass on a comment that merely says the right words.
+
+Presentation suite on this change rebased onto v25.0.8: **47 failed → 47 failed, 1752 → 1759 passed**, 3 skipped. Failure name sets diffed both directions: **identical, 0 new failures**. The +7 are the new cases.
+
+Gate 8 (FIX 61 wiring) verified on the merged result, with a mutation leg: it passes as shipped, and fails naming clause (5) alone when the `_FIX61_RC` latch literal is removed — so the green is meaningful rather than vacuous.
+
+
 ## [v25.0.8]  -  2026-09-06  -  The poller refused every dispatch for a day, and reported each refusal as a launch
 
 `PRESENTATION_NOTIFY_CMD` was present and non-blank in all three secret stores. It never reached the poller's process. So the launcher refused **every** dispatch with `AF-NOTIFY-UNCONFIGURED` — **5,948 refusals** in the live log — and the only summary line an operator sees reported each refusal as a launch. The pipeline was dead for over a day and the scan output said it was running.
