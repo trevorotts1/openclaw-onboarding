@@ -18,6 +18,15 @@ Worker, this writer stamps the run dir, then cc_board.ingest_deck_task opens the
 kanban card — the presentation department start. No shortcuts: the deck can only
 build through presentation-canonical-entry.sh's gates.
 
+FIX 11 (hosted run mode): the app's client can declare ultra|standard|economy
+and this writer persists it to the intake ledger under the RUN_MODE key, in
+deck-intake-driver._record_run_mode's exact record shape, so
+presentation-intake-poll.sh reads it with no poller change. Absence writes
+nothing and the launcher default (standard) applies -- never ultra by default.
+The interview-depth vocabulary (quick/in-depth) is REFUSED here naming both
+axes: run mode is FIX 11 build policy, interview depth is FIX 30/36 intake
+length, and the two never share a slot. See _RUN_MODE_SUBFIELD below.
+
 FAIL-CLOSED on deck type (PRES-DEPT-FIX-REVIEW-2026-08-17.md Part 6 #3): this
 module used to hardcode deck_type="webinar" (+ creation_mode/presentation_mode/
 audience_mode) unconditionally, so a client who asked for a signature talk
@@ -194,10 +203,248 @@ ID_TO_FIELD = {
     "want_vsl_page": "WANT_VSL_PAGE",
     # speech speed lives flat on the intake record (not deck_brief)
     "speech_speed_preference": "speech_speed_preference",
+    # FIX 11 (hosted path): the client's run-mode declaration. Mapped
+    # explicitly rather than left to field_for()'s qid.upper() fallback so the
+    # key is stated once, next to the PRE_CAPTURE_FIELDS entry that keeps it
+    # OUT of deck_brief. See _RUN_MODE_* below.
+    "run_mode": "RUN_MODE",
 }
 
 # Fields that land under pre_presentation_capture rather than deck_brief.
-PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE"}
+# RUN_MODE is here for a different reason than the upsell flags: it is an
+# EXECUTION axis, not deck content, and deck-intake-questions.json's run_mode
+# subfield says so in as many words ("Deliberately NOT in storeTarget -- a run
+# mode is an execution axis, not deck content, so it stays out of
+# working/copy/intake.json's deck_brief"). pre_presentation_capture.RUN_MODE is
+# a location presentation-intake-poll.sh's read_run_mode() already reads
+# (candidate 2), so this routing costs the poller no change.
+PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE"}
+
+
+# ===========================================================================
+# FIX 11 -- THE CLIENT'S RUN MODE, ON THE HOSTED PATH
+# ===========================================================================
+# The hosted interview app is a THIRD intake path, beside the agent-driven
+# deck-intake-driver.py and the canonical entry script. FIX 11 wired the run
+# mode (ultra|standard|economy) through the bank, the driver and the poller --
+# but this writer, pages/questions.json, pages/index.html and
+# payload/build_questions_payload.py had no run-mode handling of ANY kind. The
+# app never ASKED, so no client could declare one, and every hosted run
+# executed STANDARD while every surface reported success. Silent, on real
+# paying clients.
+#
+# Stated precisely, because it is not quite "the writer could not persist it":
+# an INJECTED run_mode answer -- one no client could produce, because nothing
+# asked -- fell through write_ledger()'s generic answer loop into
+# entries["run_mode"] RAW, and read_run_mode()'s SECOND candidate key did pick
+# that up. What was missing was everything around it: the question, the
+# canonical RUN_MODE key (the poller's FIRST candidate, and the driver's), any
+# normalisation, and any refusal -- "quick", "in-depth" and "turbo" all landed
+# in the ledger and in deck_brief unrefused, to be dropped later by the poller
+# with a stderr line no client ever sees.
+#
+# THE CONTRACT IS THE DRIVER'S, NOT A NEW ONE. deck-intake-driver.py's
+# _record_run_mode is the reference implementation and this mirrors it exactly:
+#
+#   * the ledger key is RUN_MODE, and the subfield id run_mode is written
+#     alongside it as the SAME record (driver: _RUN_MODE_SUBFIELD);
+#   * the record shape is {value, validated, source, answered_at, normalized,
+#     answer} -- only `source` differs, naming this writer;
+#   * case-insensitive in, normalised lowercase out;
+#   * an OMITTED declaration writes NOTHING AT ALL. Absence is absence, and
+#     model_router.DEFAULT_MODE ("standard") then applies downstream. Never
+#     "ultra" by default: nothing silently launches at the operator ceiling.
+#
+# WHAT THIS ADDS OVER THE DRIVER: a refusal. The driver refuses bad vocabulary
+# one layer up, in validate_labeled_enums(), before _record_run_mode ever sees
+# it. This module has no such layer -- write_intake_file()/write_ledger() ARE
+# the entry points intake_bridge.cmd_ingest() calls -- so the refusal lives
+# here, in the same fail-closed idiom as _require_grounded_deck_type(): raise,
+# and write NOTHING, rather than let an unvalidated word reach a file.
+#
+# Stdlib only, so the vocabulary is MIRRORED from the bank rather than
+# imported (the same reason MANDATORY_PRE_CAPTURE and LEGACY_FIELD_MAPPING
+# above are mirrored). The mirror is not allowed to drift: the source of truth
+# is deck-intake-questions.json's resource_plan.run_mode subfield, and
+# test_intake_writer_run_mode.py fails if these constants stop matching it.
+_RUN_MODE_SOURCE_OF_TRUTH = (
+    "23-ai-workforce-blueprint/templates/role-library/presentations/intake/"
+    "deck-intake-questions.json :: questions[resource_plan].subfields.run_mode")
+
+#: (subfield id, ledger key) -- deck-intake-driver.py's _RUN_MODE_SUBFIELD.
+_RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
+
+#: The FIX 11 vocabulary. Mirrors the bank's enum AND
+#: presentation_job.model_router.MODES, the authority the poller validates
+#: against.
+RUN_MODES = ("ultra", "standard", "economy")
+
+#: What a run with NO declaration executes as -- model_router.DEFAULT_MODE.
+#: Stated here so "the client said nothing" has a named, testable answer; it is
+#: NOT written into any file (see _record_run_mode).
+DEFAULT_RUN_MODE = "standard"
+
+#: The OTHER axis's vocabulary, refused here. Mirrors the bank's refuse_values.
+RUN_MODE_REFUSED_VALUES = ("quick", "in-depth", "in_depth", "indepth")
+
+#: Mirrors the bank's refuse_message verbatim.
+RUN_MODE_REFUSE_MESSAGE = (
+    "run mode got interview-depth vocabulary {value}. The RUN-MODE axis "
+    "(FIX 11) is ultra|standard|economy and decides how the deck is BUILT "
+    "(concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX 30/36 "
+    "standard_mode, --intake-depth) is quick|in-depth and decides how much of "
+    "this interview you are asked. The two axes are never interchangeable and "
+    "never share a slot.")
+
+
+class RunModeVocabularyError(RuntimeError):
+    """Raised when a run-mode declaration is not one of RUN_MODES.
+
+    FAIL CLOSED, like UngroundedDeckTypeError above: write_intake_file() and
+    write_ledger() both raise this BEFORE writing anything, so a refused
+    declaration can never half-land -- no intake.json carrying the bad word, no
+    ledger marked "complete" on top of it.
+
+    Two distinct refusals, both loud:
+
+      * INTERVIEW-DEPTH vocabulary (quick / in-depth) gets
+        RUN_MODE_REFUSE_MESSAGE, which names BOTH axes. Run mode is FIX 11
+        concurrency/cost policy; interview depth is FIX 30/36 intake length.
+        Conflating them is the exact mistake the FIX-11/FIX-36 split exists to
+        prevent, so the client is told which two axes they crossed rather than
+        given a bare "invalid value".
+      * anything else unrecognised is refused naming the allowed vocabulary.
+        NEVER coerced -- an unknown word is not quietly rounded to a cheaper or
+        more expensive run.
+    """
+
+
+def normalize_run_mode(raw) -> "str | None":
+    """One raw declaration -> a legal lowercase mode, or None when absent.
+
+    Returns None for an omitted/blank declaration -- absence, which writes
+    nothing and lets DEFAULT_RUN_MODE apply downstream. Raises
+    RunModeVocabularyError for the interview-depth words and for anything else
+    unrecognised.
+    """
+    if isinstance(raw, dict):
+        raw = raw.get("value", raw.get("normalized", ""))
+    text = str(raw or "").strip().strip("'\"").strip(";,.").strip().lower()
+    if not text:
+        return None
+    if text in RUN_MODE_REFUSED_VALUES:
+        raise RunModeVocabularyError(
+            RUN_MODE_REFUSE_MESSAGE.replace("{value}", repr(text)))
+    if text not in RUN_MODES:
+        raise RunModeVocabularyError(
+            f"run_mode declaration {text!r} is not one of "
+            f"{'|'.join(RUN_MODES)} -- refusing to guess a run mode. An "
+            f"unknown mode is never silently coerced into a cheaper or more "
+            f"expensive one.")
+    return text
+
+
+def _raw_run_mode(intake: dict):
+    """Find the client's declaration wherever this module's callers put it.
+
+    The hosted app reaches write_intake_file()/write_ledger() by more than one
+    route (see _require_grounded_deck_type's docstring): assemble_intake()'s
+    flat-answers assembly, and intake_bridge.cmd_ingest() handing over the
+    frontend-shaped payload whole. Checked in declaration order: the client's
+    own answers first, then wherever a caller's routing already filed it.
+    """
+    sub_id, ledger_key = _RUN_MODE_SUBFIELD
+    for candidate in (
+            (intake.get("answers") or {}).get(sub_id),
+            (intake.get("pre_presentation_capture") or {}).get(ledger_key),
+            (intake.get("deck_brief") or {}).get(ledger_key),
+            intake.get(ledger_key),
+            intake.get(sub_id)):
+        if isinstance(candidate, dict):
+            candidate = candidate.get("value", candidate.get("normalized"))
+        if str(candidate or "").strip():
+            return candidate
+    return None
+
+
+def _require_grounded_run_mode(intake: dict) -> "str | None":
+    """Validate -- and normalise -- intake's run-mode axis in place.
+
+    Called by both write_intake_file() and write_ledger(), for the same reason
+    _require_grounded_deck_type() is: assemble_intake() is not the only path
+    into this module. Raises RunModeVocabularyError -- nothing is written -- on
+    a refused declaration.
+
+    On a VALID declaration the normalised lowercase value replaces whatever the
+    client typed, everywhere it landed, so intake.json and the ledger can never
+    disagree about the mode. On absence every trace is removed, so a blank
+    answer leaves no empty RUN_MODE for a reader to trip over.
+
+    deck_brief NEVER keeps it either way: a run mode is an execution axis, not
+    deck content (see PRE_CAPTURE_FIELDS).
+    """
+    sub_id, ledger_key = _RUN_MODE_SUBFIELD
+    mode = normalize_run_mode(_raw_run_mode(intake))
+
+    brief = intake.get("deck_brief")
+    if isinstance(brief, dict):
+        brief.pop(ledger_key, None)
+        brief.pop(sub_id, None)
+
+    pre = intake.get("pre_presentation_capture")
+    answers = intake.get("answers")
+    if mode is None:
+        if isinstance(pre, dict):
+            pre.pop(ledger_key, None)
+        if isinstance(answers, dict):
+            answers.pop(sub_id, None)
+        intake.pop(ledger_key, None)
+        return None
+    if not isinstance(pre, dict):
+        # A caller that filed the mode somewhere else and supplied no capture
+        # section at all still gets it recorded. Dropping the declaration here
+        # -- silently, on a payload we know carried one -- is the exact defect
+        # class this whole fix exists to close.
+        pre = {}
+        intake["pre_presentation_capture"] = pre
+    pre[ledger_key] = mode
+    if isinstance(answers, dict) and sub_id in answers:
+        answers[sub_id] = mode
+    return mode
+
+
+def _record_run_mode(mode: "str | None", entries: dict) -> None:
+    """Stamp the declared run mode onto the ledger in the DRIVER's shape.
+
+    deck-intake-driver.py's _record_run_mode writes entries[RUN_MODE] and
+    entries[run_mode] as the same record; presentation-intake-poll.sh's
+    read_run_mode() reads exactly those two keys (candidate 1) and needs no
+    change to see this one.
+
+    Takes the mode _require_grounded_run_mode() already validated rather than
+    re-deriving it from `intake`. Deriving twice was a real trap: the first
+    pass normalises the record IN PLACE, so a second pass over the mutated
+    intake could read a different answer than the one that was validated -- and
+    the way it fails is by finding nothing and silently writing nothing, which
+    is the defect this fix exists to close.
+
+    An omitted declaration writes NOTHING and REMOVES the empty passthrough
+    entry write_ledger()'s generic answer loop would otherwise leave behind --
+    the driver writes no key at all in that case, and a ledger that says
+    run_mode="" is not the same record as one that never mentions it.
+    """
+    sub_id, ledger_key = _RUN_MODE_SUBFIELD
+    if mode is None:
+        entries.pop(sub_id, None)
+        entries.pop(ledger_key, None)
+        return
+    now_iso = __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc).isoformat()
+    rec = {"value": mode, "validated": True,
+           "source": "presentation-interview-app",
+           "answered_at": now_iso, "normalized": mode, "answer": mode}
+    entries[ledger_key] = rec
+    entries[sub_id] = dict(rec)
 
 
 def field_for(qid: str, value) -> str:
@@ -337,6 +584,7 @@ def write_intake_file(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     TRUE ROOT no matter which caller built `intake`.
     """
     _require_grounded_deck_type(intake)
+    _require_grounded_run_mode(intake)
     _promote_anti_fabrication_fields(intake)
     out = run_dir / "working" / "copy" / "intake.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -357,6 +605,7 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     its own `answers`. See _require_grounded_deck_type().
     """
     _require_grounded_deck_type(intake)
+    run_mode = _require_grounded_run_mode(intake)
     ledger_path = run_dir / "working" / "interview" / "intake_ledger.json"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     answers = intake.get("answers") or {}
@@ -369,6 +618,11 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
             "validated": True,
             "source": "presentation-interview-app",
         }
+    # FIX 11: the run mode is stamped EXPLICITLY, after the generic loop, in
+    # deck-intake-driver._record_run_mode's exact shape -- the loop above would
+    # otherwise leave the client's raw, unnormalised word under the lowercase
+    # id alone, with no RUN_MODE key for the poller's first candidate.
+    _record_run_mode(run_mode, entries)
     ledger = {
         "status": "complete",
         "complete": True,
@@ -504,6 +758,12 @@ def cmd(args) -> int:
         # distinguishes "ungrounded deck type" from other failures.
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    except RunModeVocabularyError as exc:
+        # Fail closed the same way, with its own code: exit 4 distinguishes a
+        # refused run-mode declaration from an ungrounded deck type, so a
+        # caller can tell the client WHICH answer to fix.
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
     if args.verbose:
         print(f"wrote {ipath}")
         print(f"wrote {lpath}")

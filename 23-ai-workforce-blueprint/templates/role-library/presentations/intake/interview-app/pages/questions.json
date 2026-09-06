@@ -1,10 +1,10 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake-mini",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "question_set": "standard",
   "source": "deck-intake-questions.json (v1.6.0, curated)",
-  "description": "Curated 15-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.6.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 15. Progress label is 'Question N of 15'. presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it. FIX-PITCH-ANTI-FAB (v1.1.0): added named_methodology (order 1.5) and time_to_result (order 2.5) -- unconditional, required questions the bank added at v1.6.0 so pitch_engines_check.py's AF-NO-BRANDED-METHOD / AF-NO-TIME-TO-RESULT anti-fabrication gates, which read intake.json's root named_methodology/time_to_result directly, no longer auto-fail every deck built through this app for lack of a capture question. intake_writer.py's _promote_anti_fabrication_fields() lands both at intake.json's TRUE ROOT regardless of which storeOn section they arrive through.",
+  "description": "Curated 16-question intake for the Presentation Interview app. Every question id, prompt, kind, allowed_values, value_labels and storeOn is derived from the canonical 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json (v1.6.0) so the bridge can replay each answer through deck-intake-driver.py and the dept's _chk_intake provenance gate passes. Custom capture questions (logo, image_links) carry their own ids but are mapped to deck_brief fields by intake_writer.py. Cap 20; this set is 16. Progress label is 'Question N of 16' (the app computes it from the set length; MAX_QUESTIONS in index.html is the enforced cap). presentation_type (order 0, allowed_values/value_labels mirrored from deck-intake-questions.json's legacy_field_mapping) is asked first and required -- it is the ONE answer that legitimately determines deck_type/creation_mode/presentation_mode/audience_mode downstream (see intake_writer.py's LEGACY_FIELD_MAPPING); the app must never fabricate a default for it. FIX 11 HOSTED RUN MODE (v1.2.0): added run_mode (order 11.5) -- optional, allowed_values ultra|standard|economy, default empty (absence, which resolves to standard downstream, never ultra). Before it the hosted app was a third intake path with no run-mode handling anywhere, so a client using it could not reach Ultra at all and every hosted run executed standard while every surface reported success. Its vocabulary, refuse_values and refuse_message are mirrored VERBATIM from deck-intake-questions.json's resource_plan.run_mode subfield -- the source of truth -- and bridge/intake_writer.py persists it to the intake ledger's RUN_MODE key in deck-intake-driver._record_run_mode's exact record shape, which presentation-intake-poll.sh already reads. run_mode is deliberately NOT a deck_brief field: a run mode is an EXECUTION axis, not deck content. The interview-depth words (quick/in-depth) are refused here naming both axes. FIX-PITCH-ANTI-FAB (v1.1.0): added named_methodology (order 1.5) and time_to_result (order 2.5) -- unconditional, required questions the bank added at v1.6.0 so pitch_engines_check.py's AF-NO-BRANDED-METHOD / AF-NO-TIME-TO-RESULT anti-fabrication gates, which read intake.json's root named_methodology/time_to_result directly, no longer auto-fail every deck built through this app for lack of a capture question. intake_writer.py's _promote_anti_fabrication_fields() lands both at intake.json's TRUE ROOT regardless of which storeOn section they arrive through.",
   "questions": [
     {
       "id": "presentation_type",
@@ -189,6 +189,26 @@
       "storeOn": "pre_presentation_capture.WANT_VSL_PAGE",
       "required": true,
       "block_gate": true
+    },
+    {
+      "id": "run_mode",
+      "section": "deck-intake",
+      "order": 11.5,
+      "prompt": "How hard should we run the BUILD of this deck — Ultra, Standard, or Economy?",
+      "help": "This is about the BUILD, not this interview. Ultra runs at the highest concurrency and the strongest model mix (fastest, most expensive); Standard is the department default; Economy runs leaner and cheaper. Skip this and you get Standard — we never put a run on Ultra unless you asked for it. Note: 'quick' and 'in-depth' belong to a different question (how long this interview is) and are not answers here.",
+      "kind": "text",
+      "storeOn": "pre_presentation_capture.RUN_MODE",
+      "allowed_values": ["ultra", "standard", "economy"],
+      "value_labels": {
+        "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+        "standard": "Standard — the department default",
+        "economy": "Economy — leaner and cheaper"
+      },
+      "default": "",
+      "refuse_values": ["quick", "in-depth", "in_depth", "indepth"],
+      "refuse_message": "run mode got interview-depth vocabulary {value}. The RUN-MODE axis (FIX 11) is ultra|standard|economy and decides how the deck is BUILT (concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX 30/36 standard_mode, --intake-depth) is quick|in-depth and decides how much of this interview you are asked. The two axes are never interchangeable and never share a slot.",
+      "required": false,
+      "block_gate": false
     },
     {
       "id": "client_notes",
