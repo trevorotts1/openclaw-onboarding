@@ -77,6 +77,17 @@ def env_read(path):
     return values
 
 
+def verify_company_config(value, company_id, slug):
+    """Every present alias must corroborate the same explicit owner."""
+    if not isinstance(value, dict): raise ValueError('company config identity conflict: expected an object')
+    identities=[value[key] for key in ('companyId','company_id','id') if key in value]
+    if not identities or any(not isinstance(value,str) or not value.strip() or value!=company_id for value in identities):
+        raise ValueError('company config identity conflict: canonical ownership is missing or inconsistent')
+    slugs=[value[key] for key in ('companySlug','company_slug','slug') if key in value]
+    if any(not isinstance(value,str) or not value.strip() or value!=slug for value in slugs):
+        raise ValueError('company config slug conflict')
+
+
 def provision(path, app, root, env):
     s = read(path); target = app / '.env.local'
     with lock(target):
@@ -101,8 +112,7 @@ def provision(path, app, root, env):
         config = company/'company-config.json'
         if config.exists():
             existing = json.loads(config.read_text())
-            for key in ('companyId','companySlug'):
-                if existing.get(key) and existing[key] != s[key]: raise ValueError('company config identity conflict')
+            verify_company_config(existing,s['companyId'],s['companySlug'])
         else:
             if any(company.iterdir()): raise ValueError('nonempty company root lacks a matching identity config; refusing adoption')
             atomic_write(config, {**{k:s[k] for k in ('companyId','companySlug','companyName')},'name':s['companyName'],'slug':s['companySlug']})
@@ -118,6 +128,7 @@ def provision(path, app, root, env):
             for key in ('companyConfig','personaCatalog'):
                 if not Path(existing_context.get(key,'')).is_absolute() or not Path(existing_context[key]).is_file():
                     raise ValueError('existing persona context path unavailable: '+key)
+            verify_company_config(json.loads(Path(existing_context['companyConfig']).read_text()),s['companyId'],s['companySlug'])
         else: contexts[s['companyId']] = context
         values['MC_PERSONA_COMPANY_CONTEXTS_JSON'] = json.dumps(contexts,separators=(',',':'))
         values.setdefault('MC_TENANT_SESSION_SECRET', secrets.token_urlsafe(48))

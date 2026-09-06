@@ -44,6 +44,31 @@ class Launch(unittest.TestCase):
         foreign=self.root/'unidentified';foreign.mkdir();(foreign/'owner-content.md').write_text('preserve')
         with self.assertRaises(ValueError):m.provision(self.state,self.app,self.root,{'ZERO_HUMAN_COMPANY_DIR':str(foreign)})
         self.assertFalse((foreign/'company-config.json').exists());self.assertEqual((foreign/'owner-content.md').read_text(),'preserve')
+    def test_existing_config_requires_all_identity_aliases_to_match(self):
+        self.initialize();state=json.loads(self.state.read_text());own=state['companyId']
+        company=self.root/'selected-company';company.mkdir();config=company/'company-config.json'
+        envfile=self.app/'.env.local';envfile.write_text('MC_API_TOKEN=fixture-token\n# preserve operator text\n')
+        original_env=envfile.read_bytes();original_state=self.state.read_bytes()
+        cases=[{}, {'company_id':'foreign'}, {'id':'foreign'}, {'companyId':own,'company_id':'foreign'},
+               {'company_id':own,'id':'foreign'}, {'companyId':own,'companySlug':'other'},
+               {'companyId':own,'companySlug':'client-a','company_slug':'other'}, {'companyId':own,'slug':'other'},
+               {'companyId':own,'id':None}, {'companyId':own,'slug':''}]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                config.write_text(json.dumps(payload));before=config.read_bytes()
+                with self.assertRaises(ValueError):m.provision(self.state,self.app,self.root,{'ZERO_HUMAN_COMPANY_DIR':str(company)})
+                self.assertEqual(config.read_bytes(),before);self.assertEqual(envfile.read_bytes(),original_env);self.assertEqual(self.state.read_bytes(),original_state)
+        config.write_text(json.dumps({'id':own,'company_id':own,'company_slug':'client-a','ownerNote':'preserve'}));before=config.read_bytes()
+        m.provision(self.state,self.app,self.root,{'ZERO_HUMAN_COMPANY_DIR':str(company)})
+        self.assertEqual(config.read_bytes(),before)
+        self.assertIn('MC_PERSONA_COMPANY_CONTEXTS_JSON',m.env_read(envfile))
+        foreign_config=self.root/'foreign-context.json';foreign_config.write_text(json.dumps({'company_id':'foreign'}))
+        values=m.env_read(envfile);contexts=json.loads(values['MC_PERSONA_COMPANY_CONTEXTS_JSON']);contexts[own]['companyConfig']=str(foreign_config)
+        values['MC_PERSONA_COMPANY_CONTEXTS_JSON']=json.dumps(contexts)
+        envfile.write_text('\n'.join(key+'='+json.dumps(value) for key,value in values.items())+'\n')
+        before_env=envfile.read_bytes();before_state=self.state.read_bytes();before_foreign=foreign_config.read_bytes()
+        with self.assertRaises(ValueError):m.provision(self.state,self.app,self.root,{'ZERO_HUMAN_COMPANY_DIR':str(company)})
+        self.assertEqual(envfile.read_bytes(),before_env);self.assertEqual(self.state.read_bytes(),before_state);self.assertEqual(foreign_config.read_bytes(),before_foreign)
     def test_shared_company_slug_rejected(self):
         self.initialize();(self.app/'.env.local').write_text('MC_API_TOKEN=fixture-token\n');m.provision(self.state,self.app,self.root,{})
         with sqlite3.connect(self.app/'mission-control.db') as db:

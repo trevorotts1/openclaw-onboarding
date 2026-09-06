@@ -33,4 +33,17 @@ print(subprocess.check_output([sys.executable,'-c',\"import os;print(os.environ[
   self.env.pop('ZERO_HUMAN_COMPANY_DIR');(self.company/'company-config.json').write_text(json.dumps({'company_id':'foreign'}))
   result=self.execute();self.assertNotEqual(result.returncode,0);self.assertIn('config identity mismatch',result.stderr)
   self.assertEqual(self.state.read_bytes(),before);self.assertFalse((self.company/'departments').exists())
+ def test_config_aliases_fail_closed_before_state_or_directory_mutation(self):
+  before=self.state.read_bytes();config=self.company/'company-config.json'
+  cases=[{}, {'companyId':self.uuid,'company_id':'foreign'}, {'company_id':self.uuid,'id':'foreign'},
+         {'id':self.uuid,'companySlug':'client-a','company_slug':'foreign'}, {'companyId':self.uuid,'slug':'foreign'},
+         {'companyId':self.uuid,'id':None}]
+  for payload in cases:
+   with self.subTest(payload=payload):
+    config.write_text(json.dumps(payload));config_before=config.read_bytes();result=self.execute()
+    self.assertNotEqual(result.returncode,0);self.assertEqual(self.state.read_bytes(),before)
+    self.assertEqual(config.read_bytes(),config_before);self.assertFalse((self.company/'departments').exists())
+ def test_matching_legacy_id_and_slug_aliases_are_preserved(self):
+  config=self.company/'company-config.json';config.write_text(json.dumps({'id':self.uuid,'company_id':self.uuid,'company_slug':'client-a','ownerNote':'preserve'}));before=config.read_bytes()
+  result=self.execute();self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(config.read_bytes(),before)
 if __name__=='__main__':unittest.main()

@@ -4890,10 +4890,17 @@ def resolve_company_paths(company_name: str):
     _cfg_path = Path(canonical) / 'company-config.json'
     if _cfg_path.is_file():
         _cfg_identity = json.loads(_cfg_path.read_text())
-        _configured_id = _cfg_identity.get('company_id') or _cfg_identity.get('companyId') or _cfg_identity.get('id')
-        if canonical_identity and _configured_id and canonical_identity != _configured_id:
-            raise ValueError('company state/config identity mismatch')
-        canonical_identity = canonical_identity or _configured_id
+        if not isinstance(_cfg_identity, dict):
+            raise ValueError('company state/config identity mismatch: config must be an object')
+        _configured_ids = [_cfg_identity[key] for key in ('companyId','company_id','id') if key in _cfg_identity]
+        if not _configured_ids or any(not isinstance(value,str) or not value.strip() for value in _configured_ids):
+            raise ValueError('company state/config identity mismatch: canonical ownership missing')
+        if any(value != _configured_ids[0] or (canonical_identity and value != canonical_identity) for value in _configured_ids):
+            raise ValueError('company state/config identity mismatch: conflicting aliases')
+        _configured_slugs = [_cfg_identity[key] for key in ('companySlug','company_slug','slug') if key in _cfg_identity]
+        if any(not isinstance(value,str) or value != COMPANY_SLUG for value in _configured_slugs):
+            raise ValueError('company state/config slug mismatch')
+        canonical_identity = canonical_identity or _configured_ids[0]
     if canonical_identity:
         identity['companyId'] = canonical_identity
     identity['companySlug'] = COMPANY_SLUG

@@ -72,15 +72,21 @@ echo '{}' > "$STATE"
 # can fall back to a live state file.
 RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SANDBOX_HOME/.openclaw"
          "WORKFORCE_BUILD_STATE_FILE=$STATE" "DASHBOARD_DB_PATH=$DB")
+# Both fixtures have explicit ownership before prebuild. The legacy variant
+# retains its historical slug-as-ID; the launch variant proves a distinct UUID.
+CLIENT_ID="scratch-canary-co"
 if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
   CLIENT_UUID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-  python3 - "$STATE" "$COMPANY" "$CLIENT_UUID" <<'PYIDENTITY'
+  CLIENT_ID="$CLIENT_UUID"
+fi
+python3 - "$STATE" "$COMPANY" "$CLIENT_ID" <<'PYIDENTITY'
 import json,sys
 from pathlib import Path
 state,root,identity=sys.argv[1:]
 Path(state).write_text(json.dumps({'companyId':identity,'companySlug':'scratch-canary-co','companyRoot':root}))
 Path(root,'company-config.json').write_text(json.dumps({'company_id':identity,'companySlug':'scratch-canary-co','name':'Scratch Canary Co'}))
 PYIDENTITY
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
   RUN_ENV+=("MC_COMPANY_ID=$CLIENT_UUID" "ZERO_HUMAN_COMPANY_DIR=$COMPANY")
 fi
 
