@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.8"
+ONBOARDING_VERSION="v25.0.9"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4615,6 +4615,16 @@ fi
 # ────────────────────────────────────────────────────────────────────────────
 install_intake_poll_schedule() {
     local _rc=0
+    # An EMPTY $PRESENTATIONS_SCRIPTS_SRC is never a usable prefix: it collapses
+    # "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" to the
+    # root-anchored literal "/presentation-intake-poll.sh", and the -f test below
+    # then reports a MISSING FILE when the real fault is an UNRESOLVED DIRECTORY.
+    # That misdirection is exactly what was seen in the field, so the empty
+    # prefix is rejected on its own terms, before it is ever concatenated.
+    if [ -z "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
+        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC is EMPTY — the presentations scripts directory was never resolved (neither the repo checkout nor the materialized department). Intake poll NOT scheduled."
+        return 1
+    fi
     local POLL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh"
     local TPL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.plist.template"
 
@@ -4693,11 +4703,24 @@ install_intake_poll_schedule() {
         else
             warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
         fi
-        # The template stores placeholders HTML-escaped inside the XML body
-        # (&lt;NAME&gt;) and bare inside the comment header — sed must target
-        # BOTH forms or the body keeps literal &lt;PLACEHOLDER&gt; strings and
-        # launchd loads a plist full of literals. Same discipline the FIX 49
-        # watchdog render used. Values are literal paths with no | or &.
+        # Render the template. TWO defects govern this block, and both must
+        # hold — they were found independently and fix different halves:
+        #   1. PLACEHOLDER SPELLING. The template stores placeholders
+        #      HTML-escaped inside the XML body (&lt;NAME&gt;) and bare inside
+        #      the comment header, so sed must target BOTH forms or the body
+        #      keeps literal &lt;PLACEHOLDER&gt; strings and launchd is handed
+        #      ProgramArguments = ["/bin/bash", "<POLL_SCRIPT_PATH>"] while a
+        #      bare-form-only residue check passes and the step prints success.
+        #   2. THE COMMENT HEADER IS NOT XML. That header sits BEFORE the
+        #      <?xml?> declaration, so the rendered FILE does not parse as a
+        #      property list even once every placeholder is substituted.
+        #      Emit the BODY only (from <?xml onward) — the documentation
+        #      stays in the template, where maintainers actually read it, and
+        #      what ships to launchd is a file that parses on its own terms
+        #      rather than one that only parses after a reader strips it.
+        # Same discipline the FIX 49 watchdog render used. sed uses | as the
+        # delimiter because the values are paths containing /; they contain
+        # no | or &.
         sed -e "s|&lt;POLL_SCRIPT_PATH&gt;|$POLL_SRC|g" \
             -e "s|<POLL_SCRIPT_PATH>|$POLL_SRC|g" \
             -e "s|&lt;LOG_PATH&gt;|$LOG_PATH|g" \
@@ -4708,15 +4731,21 @@ install_intake_poll_schedule() {
             -e "s|<PRESENTATION_RUNS_DIR>|$_poll_runs_dir|g" \
             -e "s|&lt;PRESENTATION_NOTIFY_CMD&gt;|$_poll_notify_cmd|g" \
             -e "s|<PRESENTATION_NOTIFY_CMD>|$_poll_notify_cmd|g" \
-            "$TPL_SRC" > "$PLIST_DST"
-        if grep -q '&lt;POLL_SCRIPT_PATH&gt;\|&lt;LOG_PATH&gt;\|&lt;POLL_PATH&gt;\|&lt;PRESENTATION_RUNS_DIR&gt;\|&lt;PRESENTATION_NOTIFY_CMD&gt;' "$PLIST_DST"; then
-            warn "FIX 61: rendered plist still contains an unsubstituted placeholder in its XML body — refusing to load a malformed agent."
+            "$TPL_SRC" | sed -n '/<?xml/,$p' > "$PLIST_DST"
+        # Residue check covers BOTH spellings of every placeholder. The
+        # body-only emit above means the bare forms should already be gone
+        # with the header, but a template that ever moves a bare placeholder
+        # into the body must fail here rather than ship a literal.
+        if grep -q '&lt;POLL_SCRIPT_PATH&gt;\|&lt;LOG_PATH&gt;\|&lt;POLL_PATH&gt;\|&lt;PRESENTATION_RUNS_DIR&gt;\|&lt;PRESENTATION_NOTIFY_CMD&gt;\|<POLL_SCRIPT_PATH>\|<LOG_PATH>\|<POLL_PATH>\|<PRESENTATION_RUNS_DIR>\|<PRESENTATION_NOTIFY_CMD>' "$PLIST_DST"; then
+            warn "FIX 61: rendered plist still contains an unsubstituted placeholder — refusing to load a malformed agent."
             _rc=1
-        # The comment header sits BEFORE the <?xml?> declaration, which is not
-        # legal XML, so validate the BODY only (from <?xml onward) — the same
-        # `sed -n '/<?xml/,$p' | plistlib` check the FIX 49 watchdog render
-        # used. A plist that does not parse must never be loaded.
-        elif ! sed -n '/<?xml/,$p' "$PLIST_DST" | python3 -c "import plistlib,sys; d=plistlib.loads(sys.stdin.buffer.read()); raise SystemExit(0 if 'PRESENTATION_NOTIFY_CMD' in d.get('EnvironmentVariables', {}) else 1)" >/dev/null 2>&1; then
+        # The file is now body-only, so it must parse as a property list ON ITS
+        # OWN — no reader-side stripping. It must ALSO carry the notify
+        # transport in EnvironmentVariables: a plist that parses but declares
+        # no PRESENTATION_NOTIFY_CMD puts the poller back to running
+        # environment-less and refusing every dispatch, which is the exact
+        # outage this pair of fixes exists to end.
+        elif ! python3 -c "import plistlib,sys; d=plistlib.load(open(sys.argv[1],'rb')); raise SystemExit(0 if 'PRESENTATION_NOTIFY_CMD' in d.get('EnvironmentVariables', {}) else 1)" "$PLIST_DST" >/dev/null 2>&1; then
             warn "FIX 61: rendered plist does not parse, or carries no PRESENTATION_NOTIFY_CMD in EnvironmentVariables — refusing to load it. The poller would run environment-less and refuse every dispatch."
             _rc=1
         else
@@ -4739,22 +4768,69 @@ install_intake_poll_schedule() {
     return "$_rc"
 }
 
-PRESENTATIONS_SCRIPTS_SRC="${PRESENTATIONS_SCRIPTS_SRC:-}"
-if [ -z "$PRESENTATIONS_SCRIPTS_SRC" ]; then
-    # Resolve the repo checkout's presentations scripts dir (the template's
-    # source). Anchor on this script's own location — install.sh lives at the
-    # repo root, so the skill's scripts dir is one fixed hop below it.
-    _poll_src_candidate="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
-    if [ -f "$_poll_src_candidate/presentation-intake-poll.sh" ]; then
-        PRESENTATIONS_SCRIPTS_SRC="$_poll_src_candidate"
+# Resolve PRESENTATIONS_SCRIPTS_SRC ONCE, here, before the scheduler runs.
+# The poller and its plist template have TWO legitimate homes, and resolving
+# from a single candidate is what failed in the field:
+#   1. the repo checkout this installer is running from, and
+#   2. the MATERIALIZED department — the poller's runtime home, and the only
+#      home that exists when install.sh runs from anything that is not a full
+#      checkout (curl|bash, a trimmed payload, a re-run out of /tmp).
+# When the sole repo candidate missed, the variable stayed EMPTY and every
+# path built from it collapsed to "/presentation-intake-poll.sh".
+# Workspace resolution mirrors colocate_presentation_entry() above — this
+# file's own convention — rather than inventing a second one. warn() writes to
+# stdout, so its calls here are redirected to stderr: this function's stdout IS
+# the resolved path and must carry nothing else.
+_fix61_resolve_scripts_src() {
+    local _c _ws=""
+    # A caller-supplied value is honoured but VALIDATED — never trusted blind.
+    if [ -n "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
+        if [ -f "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" ]; then
+            printf '%s\n' "$PRESENTATIONS_SCRIPTS_SRC"
+            return 0
+        fi
+        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC was preset to '$PRESENTATIONS_SCRIPTS_SRC', which holds no presentation-intake-poll.sh — ignoring it and re-resolving." >&2
     fi
-fi
+    _c="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    if [ -f "$_c/presentation-intake-poll.sh" ]; then
+        printf '%s\n' "$_c"
+        return 0
+    fi
+    if command -v obs_resolve_workspace >/dev/null 2>&1; then
+        _ws="$(obs_resolve_workspace 2>/dev/null || true)"
+    fi
+    if [ -z "$_ws" ]; then
+        _ws="${HOME}/.openclaw/workspace"
+        [ -d "/data/.openclaw/workspace" ] && _ws="/data/.openclaw/workspace"
+    fi
+    _c="$_ws/departments/Presentations/scripts"
+    if [ -f "$_c/presentation-intake-poll.sh" ]; then
+        printf '%s\n' "$_c"
+        return 0
+    fi
+    return 1
+}
+PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src || true)"
+
+# This call used to sit bare under `set -e`, so a `return 1` killed the whole
+# installer on the spot — with no message, and with the rc latch below never
+# reached despite its comment promising the outcome "surfaces in the step's
+# exit status instead of being swallowed". Suspend errexit so the latch can
+# actually latch (the `set +e` / `set -e` pair this file already uses), then
+# fail LOUDLY and deliberately: a box that ships the Presentations department
+# with no dispatcher scheduled is worse than a box whose install stopped and
+# said why.
+_FIX61_RC=0
+set +e
 install_intake_poll_schedule
 _FIX61_RC=$?
+set -e
 if [ "$_FIX61_RC" -ne 0 ]; then
-    warn "FIX 61: intake-poll schedule install returned rc=$_FIX61_RC — the presentation intake poll is NOT scheduled on this box (staged submissions will sit undispatched until it is)."
-else
-    _FIX61_RC=0
+    error "FIX 61: intake-poll schedule install FAILED (rc=$_FIX61_RC) — the presentation intake poll is NOT scheduled on this box. Staged deck submissions would sit undispatched forever."
+    echo "  Presentations scripts dir resolved to: ${PRESENTATIONS_SCRIPTS_SRC:-<UNRESOLVED>}"
+    echo "  Correct that path, then re-run install.sh."
+    send_telegram_progress "ERROR: FIX 61 intake-poll schedule failed. Install aborted."
+    exit 1
 fi
 export _FIX61_RC
 
