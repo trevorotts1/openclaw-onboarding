@@ -91,6 +91,7 @@ build_probe() {   # $1 = dir the probe.sh will live in
     echo 'note()    { echo "NOTE: $*"; }'
     echo 'warn()    { echo "WARN: $*"; }'
     echo 'success() { echo "SUCCESS: $*"; }'
+    echo 'export OPENCLAW_COMPANY_NAME=FixtureBusiness OPENCLAW_COMPANY_SLUG=fixture-business'
     echo 'resolve_owner_name() { printf "%s" "Test Owner"; }'
     extract_bootstrap_fn
     echo 'bootstrap_command_center_shell'

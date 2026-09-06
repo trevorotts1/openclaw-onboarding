@@ -1,5 +1,7 @@
 # Fresh client interview launch and post-interview recovery
 
+First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
+
 Paired releases: onboarding v25.0.5 / Command Center v7.1.2. Skill 32 v13.1.3 and Skill 37 v13.1.1.
 
 ## Expected order

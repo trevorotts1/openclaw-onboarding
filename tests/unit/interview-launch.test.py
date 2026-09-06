@@ -179,7 +179,7 @@ STUB
         import subprocess,shlex
         source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
         block=source[source.index('# ---- preflight ----'):source.index('for cmd in jq curl git npm python3;')]
-        setup='\n'.join(['UPDATE_ONLY=false','STATE_FILE='+shlex.quote(str(self.state)),
+        setup='\n'.join(['UPDATE_ONLY=false','export OPENCLAW_OWNER_NAME=FixtureOwner','OC_ROOT='+shlex.quote(str(self.root)),'STATE_FILE='+shlex.quote(str(self.state)),
             'SKILL_DIR='+shlex.quote(str(ROOT/'32-command-center-setup')),
             'DASHBOARD_DIR='+shlex.quote(str(self.app)),
             'LOG_FILE='+shlex.quote(str(self.root/'preflight.log')),
@@ -190,6 +190,7 @@ STUB
         self.assertFalse(self.state.exists())
         self.assertEqual(subprocess.run(['bash','-c',setup+'\n'+block]).returncode,0)
         self.assertIs(json.loads(self.state.read_text())['interviewComplete'],False)
+        self.assertEqual(json.loads(self.state.read_text())['ownerName'],'FixtureOwner')
         before=self.state.read_bytes()
         result=subprocess.run(['bash','-c',setup+'\nCLIENT_SLUG=foreign\n'+block])
         self.assertEqual(result.returncode,8);self.assertEqual(self.state.read_bytes(),before)

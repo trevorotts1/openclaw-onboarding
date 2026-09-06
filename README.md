@@ -1,12 +1,12 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.0.5 — Verified interview launch and client-owned closeout.** Fresh installation creates the client's pending state, standard department foundation and Command Center before the interview. A verified public origin and signed, single-use Telegram interview link replace the broken bare-link handoff. Saved Q/A supports resume and reference export. Notion closeout uses only that client's verified resources. See [launch and recovery](docs/interview-launch-recovery.md).
+> **v25.0.6 — Ask who owns the ZHC and what the company is called.** New onboarding collects and saves both names before setup. Existing clients retain their company identity and interview answers. Includes the v25.0.5 verified interview launch repairs; paired Command Center remains **v7.1.2**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.5.
+> **Version:** see `/version` - this repo at v25.0.6.
 
 
-## Current release: v25.0.5
+## Current release: v25.0.6
 
 Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.2 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
 
@@ -153,7 +153,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.5** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.0.6** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

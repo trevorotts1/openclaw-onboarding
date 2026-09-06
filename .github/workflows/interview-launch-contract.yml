@@ -10,6 +10,8 @@ on:
       - '37-zhc-closeout/scripts/**'
       - 'tests/unit/test_build_company_identity.py'
       - 'scripts/prebuild-standard-workforce.py'
+      - 'scripts/onboarding-identity.py'
+      - 'tests/unit/test_onboarding_identity.py'
       - 'shared-utils/interview_invitation.py'
       - 'shared-utils/canonical_slug.py'
       - 'tests/unit/interview-launch.test.py'
@@ -24,6 +26,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: First onboarding owner and company intake (including real terminal)
+        run: python3 tests/unit/test_onboarding_identity.py
       - name: Fresh missing-state launch, scoped database, and full canonical prebuild
         env:
           RUN_LAUNCH_PREBUILD_FIXTURE: '1'

@@ -1,10 +1,12 @@
 ---
 name: command-center-setup
-version: "v13.1.3"
+version: "v13.1.4"
 description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client — one deployment per client with its own Vercel deployment, CloudFlare Access app, Telegram supergroup with topics, and data store. Includes one-time install, runtime execution guide, and QC rubric (gate 8.5).
 ---
 
 # Skill 32: Command Center Setup
+
+First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
 

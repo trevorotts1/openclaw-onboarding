@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v25.0.5"
+ONBOARDING_VERSION="v25.0.6"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1397,7 +1397,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.0.5 - safe_json_edit
+# v25.0.6 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9337,51 +9337,22 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # (see build-state-schema.json) — so a box with no CC and no completed
     # interview deferred here FOREVER on "interview not completed," blocked on
     # the very artifact only the interview produces. Per OQ-1 the LOCKED
-    # `/interview` shell must ship before the interview completes, so waiting
-    # on the interview's own output to unblock the shell is the bug. Fix: when
-    # no slug exists yet, derive one from the box's own owner-identity — set at
-    # initial pairing, long before Skill 23's interview — using the same
-    # openclaw.json field order as install.sh's resolve_owner_name(). Operator
-    # ruling (2026-07-28): default PERMANENTLY to the client's name-derived
-    # slug — e.g. a client named "Jane Doe" gets slug "jane" (first name only,
-    # lowercased), derived this same way; this pattern already runs in
-    # production without issue. No rename/migration path is built here; the
-    # name-derived slug is the final answer for this box.
+    # No owner-name-as-business fallback. A first onboarding must have the
+    # two explicit answers; updater recovery reuses the saved intake silently.
     if [ -z "$_CC_SLUG" ]; then
-      _CC_OWNER_NAME=""
-      if [ -n "${OC_JSON:-}" ] && [ -f "${OC_JSON:-}" ]; then
-        _CC_OWNER_NAME=$(OC_JSON_PATH="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null
-import json, os
-candidates = []
-env_name = os.environ.get("OPENCLAW_OWNER_NAME", "").strip()
-if env_name:
-    candidates.append(env_name)
-try:
-    d = json.load(open(os.environ["OC_JSON_PATH"]))
-    for path in (("meta", "ownerName"), ("owner", "name"), ("wizard", "ownerName"),
-                 ("meta", "owner", "name"), ("owner", "firstName")):
-        cur = d
-        for k in path:
-            cur = cur.get(k, {}) if isinstance(cur, dict) else {}
-        if isinstance(cur, str) and cur.strip():
-            candidates.append(cur.strip())
-            break
-except Exception:
-    pass
-for n in candidates:
-    print(n.split()[0])
-    break
-PYEOF
-)
+      _CC_IDENTITY_HELPER="$SKILLS_DIR/../scripts/onboarding-identity.py"
+      _CC_IDENTITY_RESULT=""
+      if [ -f "$_CC_IDENTITY_HELPER" ]; then
+        _CC_IDENTITY_RESULT=$(python3 "$_CC_IDENTITY_HELPER" --root "$SKILLS_DIR/.." --workspace "$(dirname "$_STATE_FILE")") || _CC_IDENTITY_RESULT=""
       fi
-      if [ -n "$_CC_OWNER_NAME" ]; then
-        _CC_SLUG=$(printf '%s' "$_CC_OWNER_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-      fi
-      if [ -n "$_CC_SLUG" ]; then
-        [ -n "$_CC_COMPANY" ] || _CC_COMPANY="$_CC_OWNER_NAME"
+      if [ -n "$_CC_IDENTITY_RESULT" ]; then
+        _CC_SLUG=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
+        _CC_COMPANY=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
+        OPENCLAW_OWNER_NAME=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+        export OPENCLAW_OWNER_NAME
         [ -n "$_CC_EMAIL" ] || _CC_EMAIL="pending+${_CC_SLUG}@zerohumanworkforce.com"
-        echo ""
-        echo "  ℹ Command Center slug not yet written (interview not complete) — derived permanent placeholder slug '$_CC_SLUG' from the box owner identity so the LOCKED /interview shell can ship now (OQ-1)."
+      else
+        echo "  Client identity pending: ask the ZHC owner/client name and company name before new onboarding; no company name was guessed."
       fi
     fi
 

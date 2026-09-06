@@ -93,6 +93,7 @@ fi
         # v10.14.10: forward OPENCLAW_* env vars from host SSH session into container.
         exec docker exec -i -u "$_oc_user" \
             -e OPENCLAW_OWNER_NAME \
+            -e OPENCLAW_COMPANY_NAME \
             -e OPENCLAW_PODBEAN_CLIENT_ID \
             -e OPENCLAW_PODBEAN_CLIENT_SECRET \
             "$_oc_container" bash -c \
