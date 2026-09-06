@@ -32,12 +32,14 @@ jobs:
     # -> fill_tokens -> _load_company_config -> get_openclaw_paths() — which then
     # dies (and SystemExit slips past their `except Exception`). OPENCLAW_PLATFORM
     # is the same first-class platform override install.sh / update-skills.sh /
-    # lib-shared.sh already honor; setting it makes detection deterministic for the
+    # legacy Python resolver honors; setting it makes detection deterministic for the
     # WHOLE job WITHOUT weakening real Mac/VPS detection (the override is ONLY
     # consulted when set, so a real box auto-detects exactly as before, including
     # the v12.29.0 legacy /data/clawd resolution). These are STATIC gates — they
     # read the repo's own templates/config, not a live install — so a forced
-    # platform is correct here. `mac` maps roots under $HOME; nothing is written.
+    # platform is correct for those legacy static readers. Behavioral fixtures
+    # must isolate their own roots and use the actual OS; the shared shell
+    # resolver intentionally rejects a Mac pin on this Linux runner.
     env:
       OPENCLAW_PLATFORM: mac
     steps:
@@ -1532,7 +1534,9 @@ jobs:
           # no-working-artifacts (.bak/.tmp/QC-READY.txt) invariant.
           mkdir -p "$HOME/.openclaw/skills"
           ln -snf "$GITHUB_WORKSPACE/42-personal-assistant-library" "$HOME/.openclaw/skills/42-personal-assistant-library"
-          bash 42-personal-assistant-library/qc-personal-assistant-library.sh
+          # This is an actual simulated install, not the legacy Python static reader.
+          env -u OPENCLAW_PLATFORM OPENCLAW_ROOT="$HOME/.openclaw" \
+            bash 42-personal-assistant-library/qc-personal-assistant-library.sh
           echo "✓ Skill 42 install QC green (29 specialists / 162 SOPs / structure intact / no artifacts)"
 
       - name: Skill 42 SOP naming convention is consistent (PA-NN-NN-slug.md)
