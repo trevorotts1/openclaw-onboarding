@@ -138,12 +138,19 @@ def test_real_probe_spelling_still_yields_a_measured_capacity(monkeypatch,
 # ---------------------------------------------------------------------------
 def test_a_genuinely_different_provider_is_still_not_a_measurement(monkeypatch,
                                                                    tmp_path):
+    # U1 (2026-09-07): the fixture's `available` moved 3 -> 7. Nothing about
+    # this guard changed -- 3 became UNUSABLE as the probe's answer because U1
+    # made a REFUSED width carry capacity.DEFAULT_CONSERVATIVE (which is 3), so
+    # "measured_capacity != 3" would have stopped distinguishing "the ollama
+    # number was attributed to this route" from "the width was refused". 7 is
+    # not any constant in this build, so the assertion means exactly what it
+    # says again.
     stamp = _stamp(monkeypatch, tmp_path,
-                   probe_provider=capacity.PROVIDER_OLLAMA_CLOUD, available=3)
+                   probe_provider=capacity.PROVIDER_OLLAMA_CLOUD, available=7)
 
     assert not stamp["capacity_status"].startswith("measured"), stamp
     assert stamp["capacity_status"] == "probe-not-measured", stamp
-    assert stamp["measured_capacity"] != 3, (
+    assert stamp["measured_capacity"] != 7, (
         "an ollama-cloud measurement must never be attributed to a deepseek "
         f"route: {stamp}")
 

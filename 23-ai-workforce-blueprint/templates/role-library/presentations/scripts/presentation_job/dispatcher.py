@@ -334,6 +334,25 @@ SINGLE_ATTEMPT_BUDGET_S = DEEPSEEK_TIMEOUT_S + 60  # ceiling on one round-trip +
 DEFAULT_MAX_WORKERS = 8        # sane default when capacity.py is unavailable; the real
                                 # ceiling (declared 100 for deepseek-direct) is resolved
                                 # from capacity.py at runtime -- see resolve_max_workers().
+# U1 (2026-09-07): DEFAULT_MAX_WORKERS IS NOT A CAPACITY ANSWER.
+# It was born 2026-08-18 ("Add the Work-Order Dispatcher", f16eb55cb) as the
+# worker-pool default when capacity.py is unavailable. It has NO lineage to the
+# operator's Ollama reserve (capacity.CAP_TABLE[(ollama-cloud, $100/month)] = 8,
+# ruling 2026-09-04: consume 8 of a real ceiling of 10, leave the client 2) --
+# the digits merely coincide, and that coincidence is dangerous: a log line
+# reading "8 workers" on an OpenRouter run LOOKS like the reserve being honoured
+# when it is actually capacity resolution having failed. From U1 onward this
+# constant may answer only three questions: (a) the router-absent rollback stamp
+# (byte-for-byte pre-FIX-7), (b) an explicit caller request, and (c) the case
+# where capacity.py itself cannot be imported. It may NEVER stand in for an
+# UNBOUNDED reading (that resolves to the MODE CEILING) and it may never stand
+# in for a capacity that could not be established (that REFUSES LOUDLY and
+# carries capacity.DEFAULT_CONSERVATIVE, the floor capacity.py itself owns).
+
+#: The autofail code a width refusal cites. Same string as capacity.AUTOFAIL_CODE
+#: and launcher.CAPACITY_AUTOFAIL_CODE; duplicated as a literal so the refusal
+#: path never depends on importing the module that just failed.
+CAPACITY_REFUSAL_CODE = "AF-CAPACITY-UNMEASURED"
 
 # --- Repeat suppression / backoff (see the dispatch-ledger section below) ----
 # Delay before re-dispatching a phase that just produced the SAME outcome
@@ -2786,6 +2805,143 @@ def _prompt_parallel_enabled() -> bool:
     return raw.strip().strip("'\"") != "0"
 
 
+# ---------------------------------------------------------------------------
+# U1 (2026-09-07) -- the two helpers the width authority below is built on.
+#
+# THE BUG U1 REMOVES: capacity.probe() correctly answers UNBOUNDED for a
+# NO_CAP_PROVIDERS account (capacity.NO_CAP_PROVIDERS = {"openrouter"},
+# capacity.py:259 -- the operator's 2026-08-18 ruling "do not limit someone who
+# brought their own capacity"), and `_routing_stamp` then REPLACED that reading
+# with DEFAULT_MAX_WORKERS. Because the mode ceiling is applied afterwards as a
+# min() (model_router.capped_width), ultra could never lift it back: MEASURED on
+# the operator box 2026-09-07, an OpenRouter route stamped measured_capacity 8
+# under BOTH ultra and standard. Since F6 (1602a5d39) that same number is also
+# the width of all nine manifest fan-out phases, so the 8 governed the whole
+# fan-out surface. Operator requirement, verbatim: "if I am using OpenRouter I
+# should not be capped at 8. I should be able to use at least 100 agents in
+# parallel if I'm using OpenRouter."
+# ---------------------------------------------------------------------------
+def _unbounded_width(mode: str,
+                     decision: Optional[Dict[str, Any]] = None) -> Optional[int]:
+    """The width an UNBOUNDED capacity reading resolves to: THE MODE CEILING.
+
+    UNBOUNDED is a READING ("this account has no structural ceiling"), never an
+    absence, so the only thing allowed to bound it is the mode's own
+    human-ratified ceiling -- ultra 100 (model_router.ULTRA_OPERATOR_CEILING),
+    standard whatever STANDARD_MODE_CEILING resolves to for this client -- and
+    the unit count, which parallel_prompt_worker._workers_for and
+    fanout.resolve_effective_workers apply downstream. Never DEFAULT_MAX_WORKERS.
+
+    `decision` is resolve_route()'s own block: when it carries `mode_ceiling`
+    that value is PROFILE-AWARE (it was computed against this client's declared
+    concurrency_ceiling) and is preferred. Falling back to
+    model_router.mode_ceiling(mode) with no profile yields the operator ceiling
+    for every mode -- which is mode_operator_ceiling()'s documented behaviour on
+    an unmeasured client (the axis is inert), not a widening invented here.
+
+    Returns None when model_router is absent -- the caller then keeps the
+    pre-FIX-7 rollback number, byte for byte."""
+    if _model_router is None:
+        return None
+    block = (decision or {}).get("mode_ceiling")
+    if not isinstance(block, dict):
+        try:
+            block = _model_router.mode_ceiling(mode)
+        except Exception:  # noqa: BLE001 -- a ceiling that cannot be computed
+            block = None                       # falls through to the constant
+    ceiling = (block or {}).get("ceiling")
+    try:
+        ceiling = int(ceiling)
+    except (TypeError, ValueError):
+        ceiling = 0
+    if ceiling >= 1:
+        return ceiling
+    try:
+        return int(_model_router.ULTRA_OPERATOR_CEILING)
+    except Exception:  # noqa: BLE001 -- router present but shape unexpected
+        return None
+
+
+def _conservative_floor() -> Optional[int]:
+    """capacity.DEFAULT_CONSERVATIVE -- "the floor every unknown collapses to.
+    NEVER guess upward" (capacity.py:204-205). The number a REFUSED width
+    carries, because it is the one the capacity module itself owns for an
+    unknown; DEFAULT_MAX_WORKERS is a worker-pool default and answers a
+    different question entirely. None when capacity.py cannot be imported."""
+    try:
+        from presentation_job import capacity as _cap
+        floor = int(_cap.DEFAULT_CONSERVATIVE)
+        return floor if floor >= 1 else None
+    except Exception:  # noqa: BLE001 -- capacity.py gone is the one case where
+        return None                        # DEFAULT_MAX_WORKERS is still honest
+
+
+def _refuse_unmeasured_width(stamp: Dict[str, Any], *,
+                             run_dir: Optional[Path], phase_id: str,
+                             missing: str, detail: str) -> None:
+    """REFUSE LOUDLY, naming the missing value -- never a silent 8.
+
+    Operator ruling (2026-09-07): "system need to ask if unclear ... never
+    silently substitute a fabricated number." This is the truly-unknown branch:
+    the probe could not establish a capacity FOR THE PROVIDER THIS STAMP WILL
+    DISPATCH TO (PARKED/UNDETERMINED, a probe about a genuinely different
+    provider, an identity neither side could resolve, or a probe that raised).
+
+    WHERE THE REFUSAL SURFACES -- three places, all of them durable:
+      1. stderr, as `REFUSING ... AF-CAPACITY-UNMEASURED: <detail> MISSING:
+         <value>` -- the engine's stderr is the run log the poller captures;
+      2. the phase's own sidecar (`working/work-orders/<phase>.jsonl`), status
+         `capacity_width_refused`, so the refusal outlives the log line and is
+         readable per phase after the fact;
+      3. the stamp itself, `capacity_refusal`, which travels into the wave
+         input (WaveContract.RoutingStamp extras) and into the fan-out sidecar
+         rows written by _dispatch_phase_fanout_units.
+    A run whose capacity was never measurable AT ALL is refused EARLIER and
+    harder -- launcher._refuse_unmeasured_capacity / _refuse_undetermined_parallel
+    emit the same AF-CAPACITY-UNMEASURED and exit DISPATCH_CAPACITY_REFUSED with
+    no engine spawned. This function covers what that gate cannot see: a
+    PER-ROUTE attribution failure discovered after dispatch has begun.
+
+    It does NOT raise. `_routing_stamp`'s contract -- stated in its own
+    docstring and relied on by every caller -- is that a stamp failure never
+    breaks P4-PROMPT, and F41's wave contract rejects a non-positive-int
+    measured_capacity outright ("routing.measured_capacity must be a positive
+    integer"), so a None here would kill the wave with an unrelated error
+    message instead of the reason. LOUD means announced and recorded, and the
+    width that proceeds is the conservative floor, labelled as a refusal."""
+    floor = _conservative_floor()
+    basis = "capacity.DEFAULT_CONSERVATIVE"
+    if floor is None:                       # capacity.py itself is unreachable
+        floor, basis = DEFAULT_MAX_WORKERS, "dispatcher.DEFAULT_MAX_WORKERS"
+    stamp["measured_capacity"] = int(floor)
+    stamp["capacity_refusal"] = {
+        "code": CAPACITY_REFUSAL_CODE,
+        "phase_id": phase_id,
+        "missing": missing,
+        "detail": detail,
+        "width_applied": int(floor),
+        "width_basis": basis,
+    }
+    msg = (f"{phase_id} routing stamp: REFUSING to fabricate a fan-out width -- "
+           f"{CAPACITY_REFUSAL_CODE}: {detail} MISSING: {missing}. Proceeding at "
+           f"the conservative floor {floor} ({basis}), NOT at "
+           f"{DEFAULT_MAX_WORKERS} -- a fabricated 8 here is indistinguishable "
+           f"from the operator's deliberate Ollama reserve. Declare "
+           f"capacity_override.json for this provider or answer the capacity "
+           f"interview (python3 -m presentation_job --capacity) to widen it.")
+    print(f"WARNING: {msg}", file=sys.stderr, flush=True)
+    try:
+        _append_sidecar(run_dir, phase_id, {
+            "status": "capacity_width_refused",
+            "code": CAPACITY_REFUSAL_CODE,
+            "missing": missing,
+            "reason": msg,
+            "width_applied": int(floor),
+        })
+    except Exception:  # noqa: BLE001 -- sidecar is best-effort, never a break
+        pass
+
+
 def _routing_stamp(run_dir: Optional[Path] = None,
                    phase_id: str = "P4-PROMPT") -> Dict[str, Any]:
     """FIX 7 profile-driven routing stamp for a phase that decides a WIDTH.
@@ -2827,18 +2983,36 @@ def _routing_stamp(run_dir: Optional[Path] = None,
     # so EVERY router-resolved wave self-rejected with
     # "routing.measured_capacity must be a positive integer (got None)" before
     # any provider call. The stamp must always carry a worker-slot count.
-    # Derive it from the capacity probe -- never fabricate a provider claim:
-    #   * UNBOUNDED (NO_CAP_PROVIDERS BYOK hit, e.g. deepseek-direct --
-    #     operator ruling fix/capacity-uncap-byok: never limit someone who
-    #     brought their own capacity) -> DEFAULT_MAX_WORKERS (8) worker slots;
-    #     the worker itself clamps to its own DEFAULT_MAX_WORKERS=8 ceiling.
-    #   * MEASURED positive int -> that real cap-table ceiling.
-    #   * probe PARKED/UNDETERMINED/FAILED for the routed provider (or probe
-    #     unavailable) -> DEFAULT_MAX_WORKERS, honestly labelled
-    #     capacity_status so the audit trail never reads as a measurement.
+    # Derive it from the capacity probe -- never fabricate a provider claim.
+    # U1 (2026-09-07) rewrote all three arms; the pre-U1 text is kept inline so
+    # the change is legible:
+    #   * UNBOUNDED (NO_CAP_PROVIDERS BYOK hit -- capacity.NO_CAP_PROVIDERS is
+    #     {"openrouter"}; operator ruling fix/capacity-uncap-byok: never limit
+    #     someone who brought their own capacity) -> THE MODE CEILING
+    #     (_unbounded_width: ultra 100, standard its own share), bounded
+    #     downstream by the slide/unit count.
+    #     WAS: "-> DEFAULT_MAX_WORKERS (8) worker slots; the worker itself
+    #     clamps to its own DEFAULT_MAX_WORKERS=8 ceiling." Both halves were
+    #     wrong by 2026-09-07: the 8 discarded a correct reading, and
+    #     parallel_prompt_worker._workers_for stopped re-clamping a measured
+    #     width to 8 with the 2026-09-04 ruling. F17 (382388378) named this
+    #     mapping in its own commit message and shipped around it; F6
+    #     (1602a5d39) then made it the width of all nine fan-out phases.
+    #   * MEASURED positive int for THIS route -> that real cap-table ceiling.
+    #   * probe PARKED/UNDETERMINED/FAILED for the routed provider, a probe
+    #     about a genuinely DIFFERENT provider, an unresolvable identity, or a
+    #     probe that raised -> REFUSE LOUDLY (_refuse_unmeasured_width): stderr
+    #     + sidecar + a `capacity_refusal` block, proceeding at
+    #     capacity.DEFAULT_CONSERVATIVE, never at a silent 8.
+    #     WAS: "-> DEFAULT_MAX_WORKERS, honestly labelled capacity_status so
+    #     the audit trail never reads as a measurement." The label was honest;
+    #     the NUMBER was still a fabrication, and 8 is the one number that
+    #     cannot be told apart from the operator's deliberate Ollama reserve.
     # The capacity PARK about a DIFFERENT provider (e.g. 9router combo routing
     # an unrelated model to ollama-cloud) does not gate this route: the
-    # launcher's AF-CAPACITY-UNMEASURED refuse already ran before dispatch.
+    # launcher's AF-CAPACITY-UNMEASURED refuse already ran before dispatch --
+    # but it cannot see a PER-ROUTE attribution failure, which is why the third
+    # arm now refuses here too.
     stamp["capacity_status"] = "fallback-default"
     stamp["capacity_source"] = "dispatcher-default"
     if _model_router is None:
@@ -2847,7 +3021,9 @@ def _routing_stamp(run_dir: Optional[Path] = None,
     try:
         decision = _model_router.resolve_route(phase_id, mode=_mode)
         route = (decision or {}).get("route")
-        if decision.get("profile_state") == "has_providers" and route:
+        profile_state = (decision or {}).get("profile_state")
+        routed_provider = ""
+        if profile_state == "has_providers" and route:
             stamp.update({
                 "provider": str(route.get("provider")),
                 "model": str(route.get("model")),
@@ -2856,6 +3032,39 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                 "requested_alias": decision.get("requested_alias"),
             })
             routed_provider = str(route.get("provider") or "")
+        elif profile_state == "absent":
+            # U1 SECOND CASE (2026-09-07) -- A CLIENT WITH NO PROFILE DROPPED TO
+            # 8 EVEN WHEN THE PROBE HAD MEASURED 2,500.
+            #
+            # `profile_state == "absent"` means resolve_route found no
+            # client-owned providers (or no resource_profile store at all), so
+            # it returns route=None and the dispatcher serves the phase from its
+            # OWN default -- stamp["provider"], "deepseek-direct", set at the top
+            # of this function. Until U1 the probe block below was gated on
+            # has_providers, so that whole branch was skipped and the stamp kept
+            # measured_capacity = DEFAULT_MAX_WORKERS.
+            # MEASURED on the operator box 2026-09-07, scratch-redirected state:
+            # an empty profile with capacity_override.json
+            # {"provider":"deepseek-direct","plan":"v4-flash"} probed
+            # MEASURED/deepseek-direct/2500 and the stamp still said 8 under
+            # ultra AND standard. That is a REAL MEASUREMENT being discarded --
+            # strictly worse than the UNBOUNDED case, because a number existed.
+            #
+            # There is nothing to attribute badly here: the provider the probe
+            # measured and the provider this stamp will dispatch to are compared
+            # by the same normalize_provider() identity test as any routed
+            # provider, so a probe about somebody else still refuses. What
+            # changes is only that "the client declared no providers" stops
+            # meaning "throw away what we measured about the provider we are
+            # about to use".
+            routed_provider = str(stamp.get("provider") or "")
+            stamp["route_reason"] = (decision or {}).get("reason")
+        # Any other profile_state -- "mechanical" (no LLM route exists) or a
+        # router-disabled decision carrying no profile_state at all
+        # (PRESENTATION_MODEL_ROUTER=0, the byte-for-byte pre-FIX-7 rollback) --
+        # is left exactly as it was: routed_provider stays "" and the base stamp
+        # returns untouched. U1 widens nothing on a rollback path.
+        if routed_provider:
             try:
                 from presentation_job import capacity as _cap_mod
                 probe_res = _cap_mod.probe()
@@ -2899,9 +3108,10 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                             f"routed={routed_provider!r}->{routed_canon!r}, "
                             f"probed={probe_provider!r}->{probe_canon!r}. The "
                             f"measured ceiling cannot be attributed to this "
-                            f"route; falling back to {DEFAULT_MAX_WORKERS} "
-                            f"worker slots, labelled "
-                            f"capacity_status=provider-unresolved.")
+                            f"route; the width is REFUSED (U1) and labelled "
+                            f"capacity_status=provider-unresolved -- see the "
+                            f"{CAPACITY_REFUSAL_CODE} line that follows for the "
+                            f"width actually applied.")
                     print(f"WARNING: {_msg}", file=sys.stderr, flush=True)
                     try:
                         _append_sidecar(run_dir, phase_id, {
@@ -2914,8 +3124,16 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                         pass
                 providers_match = bool(
                     probe_canon is not None and probe_canon == routed_canon)
-                if _cap_mod.is_unbounded(available):
-                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                unbounded_width = (_unbounded_width(_mode, decision)
+                                   if _cap_mod.is_unbounded(available) else None)
+                if unbounded_width is not None and providers_match:
+                    # U1 THE HEADLINE FIX. An UNBOUNDED reading about THIS
+                    # route resolves to the MODE CEILING -- ultra 100 for a
+                    # client whose own ceiling does not say less -- and is then
+                    # bounded by the slide/unit count downstream. The min()
+                    # below re-applies the same ceiling and is a no-op, which is
+                    # the point: nothing can lower this except a real ceiling.
+                    stamp["measured_capacity"] = int(unbounded_width)
                     stamp["capacity_status"] = "unbounded-byok"
                     stamp["capacity_source"] = str(
                         probe_res.get("detection_source") or "capacity-probe")
@@ -2928,9 +3146,16 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                 else:
                     # PARKED/UNDETERMINED for the routed provider, a probe
                     # about a genuinely DIFFERENT provider, or an identity
-                    # neither side could resolve -- fall back, labelled, and
-                    # never as if the three were the same thing.
-                    stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
+                    # neither side could resolve -- labelled, and never as if
+                    # the three were the same thing.
+                    #
+                    # U1: an UNBOUNDED reading lands here too when it cannot be
+                    # ATTRIBUTED to this route (providers_match False). That is
+                    # deliberate and it is a tightening: before U1 an unbounded
+                    # probe about somebody else's provider was labelled
+                    # "unbounded-byok" for this route, which was already a
+                    # mis-attribution and would now hand out the mode ceiling on
+                    # the strength of it.
                     stamp["capacity_status"] = (
                         "provider-unresolved" if provider_unresolved
                         else "probe-not-measured")
@@ -2939,10 +3164,26 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                         f"/{probe_provider or 'none'}"
                         f"->{probe_canon or 'unresolved'}"
                         f" vs {routed_canon or 'unresolved'}")
+                    _refuse_unmeasured_width(
+                        stamp, run_dir=run_dir, phase_id=phase_id,
+                        missing=(f"a capacity reading attributable to "
+                                 f"{routed_provider or 'the routed provider'}"),
+                        detail=(f"capacity.probe() answered "
+                                f"status={probe_res.get('status')!r} "
+                                f"available={available!r} about "
+                                f"{probe_provider or 'no provider'!r} "
+                                f"(canonical {probe_canon!r}); this phase routes "
+                                f"to {routed_provider!r} (canonical "
+                                f"{routed_canon!r})."))
             except Exception as cap_exc:  # noqa: BLE001 -- probe is best-effort
-                stamp["measured_capacity"] = DEFAULT_MAX_WORKERS
                 stamp["capacity_status"] = "probe-error"
                 stamp["capacity_source"] = type(cap_exc).__name__
+                _refuse_unmeasured_width(
+                    stamp, run_dir=run_dir, phase_id=phase_id,
+                    missing=(f"any capacity reading at all for "
+                             f"{routed_provider or 'the routed provider'}"),
+                    detail=(f"the capacity probe raised "
+                            f"{type(cap_exc).__name__}: {cap_exc}."))
     except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
         try:
             _append_sidecar(run_dir, phase_id, {
@@ -4105,7 +4346,15 @@ def _dispatch_phase_fanout_units(
     # uses: _routing_stamp -> (client resource profile -> route -> capacity
     # probe -> mode ceiling) -> measured_capacity, then min'd against the unit
     # count and the per-phase env override. A stamp that cannot resolve a route
-    # already falls back to DEFAULT_MAX_WORKERS (8), labelled -- never to 1.
+    # falls back labelled -- never to 1.
+    # U1 (2026-09-07) corrects what that fallback IS: it was DEFAULT_MAX_WORKERS
+    # (8), which is exactly the collapse U1 removes. The stamp now hands this
+    # function the MODE CEILING for an UNBOUNDED account, the measurement when
+    # one is attributable, and capacity.DEFAULT_CONSERVATIVE plus a LOUD
+    # AF-CAPACITY-UNMEASURED refusal when neither exists. The
+    # `or DEFAULT_MAX_WORKERS` below is now only reachable if a stamp lies about
+    # its own shape (a non-int, or a value <1), which _routing_stamp cannot
+    # produce -- it is a shape guard, not a capacity answer.
     from presentation_job.fanout import resolve_effective_workers
     routing = _routing_stamp(run_dir=run_dir, phase_id=phase_id)
     try:
@@ -4410,9 +4659,27 @@ def resolve_max_workers(dept_root: Path, requested: Optional[int],
     not). Branch on is_unbounded() BEFORE the isinstance(int) test: an
     unbounded account resolves to `unit_count` (dispatch as wide as the ready
     work allows, per cap_wave_width's own contract, execution_plan.py:155-176)
-    when the caller knows it, else DEFAULT_MAX_WORKERS as the pre-existing
-    conservative fallback (still far better than a wrong "8" is a real
-    honest choice for an unmeasured audience).
+    when the caller knows it.
+
+    U1 (2026-09-07): when the caller does NOT know a unit count this returned
+    DEFAULT_MAX_WORKERS -- the same "UNBOUNDED means 8" collapse `_routing_stamp`
+    had, in the accessor the dispatcher's own work-order pool uses (four call
+    sites below, none of which passes a unit_count). It now returns THE MODE
+    CEILING, exactly as the stamp does. `_unbounded_width` is given no decision
+    here, so it answers model_router.mode_ceiling(mode) with no profile: the
+    operator ceiling for every mode. That is mode_operator_ceiling()'s own
+    documented behaviour on a client whose ceiling was never measured (the mode
+    axis is inert there), not a widening invented in this function -- the
+    profile-aware ceiling is applied where the profile is actually loaded, in
+    _routing_stamp via resolve_route's `mode_ceiling` block. The router being
+    absent still yields DEFAULT_MAX_WORKERS: the pre-FIX-7 rollback number.
+
+    The final fallback (probe raised, or answered nothing usable) is the same
+    truly-unknown case `_refuse_unmeasured_width` covers in the stamp, so it
+    likewise resolves to capacity.DEFAULT_CONSERVATIVE -- "the floor every
+    unknown collapses to. NEVER guess upward" -- and only degrades to
+    DEFAULT_MAX_WORKERS when capacity.py itself cannot be imported, which is the
+    one situation that constant was actually written for.
     """
     if requested is not None:
         return max(1, requested)
@@ -4424,12 +4691,17 @@ def resolve_max_workers(dept_root: Path, requested: Optional[int],
         if _capacity.is_unbounded(available):
             if isinstance(unit_count, int) and unit_count > 0:
                 return unit_count
+            mode, _source = _active_mode()
+            ceiling = _unbounded_width(mode)
+            if ceiling is not None:
+                return int(ceiling)
             return DEFAULT_MAX_WORKERS
         if isinstance(available, int) and available > 0:
             return available
     except Exception:  # noqa: BLE001 -- capacity probing is best-effort; never block dispatch
         pass
-    return DEFAULT_MAX_WORKERS
+    floor = _conservative_floor()
+    return int(floor) if floor is not None else DEFAULT_MAX_WORKERS
 
 
 # ---------------------------------------------------------------------------
