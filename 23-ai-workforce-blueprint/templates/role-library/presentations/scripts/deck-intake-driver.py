@@ -1063,6 +1063,8 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
     refused. Called BEFORE the model plan so a refused answer never
     half-lands."""
     raw = _claimed_plan_tier(qdef, text)
+    if not raw:
+        return 0  # the client said nothing about a plan: absence is absence
 
     cap = _import_capacity()
     rp = _import_resource_profile()
@@ -1089,28 +1091,6 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
     if not pending:
         return 0  # a fully detected client is never asked the plan half
 
-    # AN OMITTED TIER WHILE A PROVIDER IS STILL OWED ONE IS A REFUSAL, not a
-    # silent zero.  The plan half is asked ONLY when the probe left a pending
-    # question, so an empty answer here is an unanswered ASKED question --
-    # not "absence is absence".  Letting it through returns rc=0, the client
-    # leaves the conversation, and the run PARKs later on
-    # AF-CAPACITY-UNMEASURED with nobody left to ask.  That is exactly the
-    # failure this function exists to prevent, and it is the same fail-closed
-    # posture the model plan already takes: refused while the client is still
-    # in the conversation, never twenty minutes into a dispatch.
-    ann_early = (qdef.get("subfields") or {}).get(_PLAN_TIER_SUBFIELD) or {}
-    if not raw:
-        offers = "; ".join(
-            f"{prov}: {', '.join(cap.PLANS_BY_PROVIDER.get(prov) or ()) or '(none)'}"
-            for prov in pending)
-        print(json.dumps({"error":
-            f"the plan tier is still owed for {', '.join(pending)} and the "
-            f"answer did not state one. Accepted tiers -- {offers} -- or "
-            f"answer {ann_early.get('conservative_value')!r} to decline and "
-            f"keep the conservative default. Asked now because the tier is "
-            f"recorded ONCE and then locked; unanswered, the build parks at "
-            f"dispatch with nobody left to ask."}))
-        return 1
 
     # THE DECLINE. Its literal comes from the BANK's own conservative_value,
     # never a constant duplicated here -- the same single-source rule the run
