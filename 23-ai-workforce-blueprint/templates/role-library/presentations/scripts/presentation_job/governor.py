@@ -482,6 +482,18 @@ def provider_config(provider: str) -> dict:
     tier_inflight = _plan_tier_inflight(provider)
     if tier_inflight is not None:
         cfg["max_inflight"] = tier_inflight
+        # [U5] ...and the ADMISSION window has to be wide enough to fill it.
+        # `burst` is not only the token-bucket capacity: acquire() enforces it
+        # as a HARD rolling-10s ceiling on admissions.  With deepseek's
+        # burst 20 a 100-wide ultra wave admitted 20 workers and made the
+        # other 80 queue -- measured on the operator box, 20/100 for
+        # deepseek-direct and 0/100 for openrouter.  A width the governor
+        # will not admit is not a width, so the same "never disagree" rule
+        # that binds max_inflight to the ceiling binds burst to it too.
+        # Only the burst moves: `rps` is untouched, so the SUSTAINED rate
+        # stays exactly where providers.yaml set it.  This raises, never
+        # lowers -- a yaml row already wider than the ceiling keeps its value.
+        cfg["burst"] = max(int(cfg.get("burst") or 0), int(tier_inflight))
     return cfg
 
 

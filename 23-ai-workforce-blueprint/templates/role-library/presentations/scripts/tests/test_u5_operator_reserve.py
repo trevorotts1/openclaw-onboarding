@@ -168,3 +168,64 @@ def test_zero_and_bogus_ceilings_are_ignored(tmp_path, monkeypatch):
         assert cfg["max_inflight"] == 8, (
             f"ceiling {bad!r} produced max_inflight {cfg['max_inflight']}; "
             "a bogus ceiling must fall back to the tier, not to the seat max")
+
+
+# ---------------------------------------------------------------------------
+# 4. THE ADMISSION WINDOW -- a width the governor will not admit is not a width
+# ---------------------------------------------------------------------------
+
+def _admit(provider, want):
+    """How many leases are granted with NO waiting? `burst` is enforced by
+    acquire() as a hard rolling-10s admission ceiling, so this measures the
+    real opening width of a fan-out wave."""
+    held, n = [], 0
+    try:
+        for _ in range(want):
+            held.append(governor.acquire(provider, timeout_s=0.001))
+            n += 1
+    except Exception:
+        pass
+    for lease in held:
+        try:
+            governor.release(lease)
+        except Exception:
+            pass
+    return n
+
+
+def test_burst_follows_the_ceiling_so_a_wave_can_actually_open(
+        tmp_path, monkeypatch):
+    """Measured on the operator box before this fix: deepseek-direct, profile
+    ceiling 100, admitted 20 of a 100-wide ultra wave and queued the other 80
+    behind a 10-second window. providers.yaml's burst was 20."""
+    _write_profile(tmp_path, monkeypatch, "deepseek-direct",
+                   concurrency_ceiling=100, ceiling_source="declared")
+    cfg = governor.provider_config("deepseek-direct")
+    assert cfg["max_inflight"] == 100
+    assert cfg["burst"] >= 100, (
+        f"burst {cfg['burst']} < ceiling 100: acquire() would admit only "
+        f"{cfg['burst']} of a 100-wide wave per rolling 10s window")
+    assert _admit("deepseek-direct", 100) == 100
+
+
+def test_sustained_rate_is_not_touched(tmp_path, monkeypatch):
+    """Only the opening window widens. rps is the sustained limiter and must
+    stay exactly where providers.yaml put it -- widening a burst is not
+    permission to hammer the account."""
+    from presentation_job import governor as g
+    yaml_rps = g._config_for("deepseek-direct").get("rps")
+    _write_profile(tmp_path, monkeypatch, "deepseek-direct",
+                   concurrency_ceiling=100, ceiling_source="declared")
+    assert governor.provider_config("deepseek-direct")["rps"] == yaml_rps
+
+
+def test_burst_only_ever_raises(tmp_path, monkeypatch):
+    """A yaml row already wider than the ceiling keeps its own value."""
+    from presentation_job import governor as g
+    yaml_burst = int(g._config_for("deepseek-direct").get("burst") or 0)
+    _write_profile(tmp_path, monkeypatch, "deepseek-direct",
+                   concurrency_ceiling=2, ceiling_source="declared")
+    cfg = governor.provider_config("deepseek-direct")
+    assert cfg["max_inflight"] == 2, "the ceiling still binds concurrency"
+    assert cfg["burst"] == yaml_burst, (
+        f"burst was lowered to {cfg['burst']}; this rule raises only")
