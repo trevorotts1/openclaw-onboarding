@@ -545,6 +545,25 @@ def supervise(
                       to_disk=apply)
                 continue
 
+        # F20 REPAIR: report-only must WITHHOLD the restart, not merely skip the
+        # bookkeeping. `_restart` sat here unguarded, so `apply=False` still
+        # spawned an engine (`--resume`) and still wrote
+        # supervisor-restart-logs/<run>.log -- and the child then wrote
+        # working/.lease.json into the scanned tree. That broke both promises in
+        # this function's own docstring ("Report-only unless `apply` is True",
+        # "with `apply=False` this pass writes NOTHING to the scanned tree") and
+        # made the printed summary a lie: `reported_only` was initialised, never
+        # incremented, and every dry run reported "0 withheld (report-only)"
+        # while restarting. On a scheduler that runs without --apply this is a
+        # fleet-wide unrequested-spawn path, so the guard fails closed.
+        if not apply:
+            reported_only += 1
+            _emit(scan_root, "restart_withheld", run_dir,
+                  f"report-only pass -- would restart (attempt {attempts + 1}/"
+                  f"{max_restarts}); re-run with --apply to act",
+                  to_disk=apply)
+            continue
+
         ok, detail = _restart(scan_root, run_dir, scripts_dir)
         entry["attempts"] = attempts + 1
         entry["last_attempt_at"] = now.isoformat(timespec="seconds")
