@@ -1,3 +1,60 @@
+## [v25.0.17]  -  2026-09-07  -  Ultra said 100, the governor admitted 20
+
+Ultra mode resolved a width of 100. The dispatcher authored 100 work orders. Then the rate governor released them **twenty at a time, per rolling ten seconds** — and every argument this build has had about ceilings, modes and caps was happening downstream of that gate.
+
+### The number nobody measured
+
+`burst` in `providers.yaml` reads like a token-bucket size. It is not only that. `governor.acquire` enforces it as a hard rolling-10-second ceiling on admissions — the code says so in its own comment: *"no rolling 10 s window may hold more than `burst` admissions"* (`governor.py:740`). Nothing had ever asked the one question that makes a width real: **of a 100-wide wave, how many workers does the governor actually let start?**
+
+Measured on the operator box against its live `resource_profile.json`:
+
+| provider | burst | admitted instantly, of 100 |
+|---|---|---|
+| `deepseek-direct` | 20 | **20** |
+| `openrouter` | 20 | **0** |
+
+That is roughly fifty seconds of queueing before each fan-out wave opens, on every one of the nine fan-out phases, on a sixty-two-phase pipeline. A width the governor will not admit is not a width.
+
+The admission window now follows the ceiling the same way `max_inflight` already did — `burst = max(yaml_burst, ceiling)`, **derived from the profile rather than hand-picked**, so it cannot drift the way the numbers below did. It raises only; a row already wider keeps its value. `rps` is untouched: widening the opening window is not permission to hammer the account, and the sustained rate stays exactly where `providers.yaml` put it. After: `deepseek-direct` admits 100 of 100.
+
+### UNBOUNDED did not mean eight
+
+`capacity.probe()` returns `UNBOUNDED` for a no-cap provider, and that is a *measurement*, not an absence. `dispatcher._routing_stamp` and `resolve_max_workers` then replaced it with `DEFAULT_MAX_WORKERS = 8` — a worker-pool default with no lineage to any capacity ruling. A client with no profile at all dropped to 8 **even when the probe had measured 2,500**.
+
+An `UNBOUNDED` reading attributable to the route now resolves to the mode ceiling. A capacity that genuinely cannot be established no longer invents a number: it refuses loudly with `AF-CAPACITY-UNMEASURED`, naming the missing value, on stderr, in the phase sidecar as `capacity_width_refused`, and on the routing stamp. Measured: eight of the nine fan-out phases moved 8 → 100. The ninth is `vision_ocr`, which parks fail-closed and makes no call.
+
+The genuine unknowns stay conservative. An undeclared unknown provider still collapses to `DEFAULT_CONSERVATIVE`.
+
+### The operator's reserve was being spent by a whitelist
+
+The Ollama `$100/month` seat allows ten concurrent agents. The operator ruling allocates **eight**, deliberately, so the client keeps two for whatever else runs on the same account. `capacity.CAP_TABLE` recorded that correctly, and `resource_profile` copies it straight into the profile as `concurrency_ceiling`.
+
+The governor then filtered that recorded ceiling through `float(ceiling) in (3.0, 10.0)`. **Eight is not in that set.** The reserve was written, discarded, and silently replaced by the tier map — which still said ten, under a comment claiming it held *"the same numbers as capacity.CAP_TABLE"*. It had not been true since the cap table became 3/8.
+
+Any positive recorded ceiling is now honored, so a measured 47 yields 47 instead of falling through. The rate axis was deliberately **not** widened the same way: a concurrency ceiling is not a requests-per-second, and DeepSeek's 2,500 parallel slots must never become 2,500 rps.
+
+### Standard's ceiling is back at 100
+
+`STANDARD_MODE_CEILING` was 100 in every version of `model_router.py` until a commit two days ago set it to 25, citing "the review's own recommendation". The review's words at that item were *"Trevor's call; my recommendation below"*. The call was never made, and the constant was applied more broadly than the suggestion described — it landed in `mode_ceiling()` → `capped_width()`, cutting **every** width decision rather than the fan-out QC phases the review had in mind. This is an undo of an unapproved change, not a new decision. The honest-mode-plan half of that same commit — `mode_concurrency()` reporting the number `capped_width()` will actually apply, instead of printing "concurrency plan 8" beside a wave running 100 — is deliberately kept.
+
+### The lease was charged to the wrong account
+
+`parallel_prompt_worker._default_provider_call` opened its outer governor lease against a hard-coded `"deepseek-direct"` regardless of where the wave was actually routed. A client on OpenRouter, Ollama or Anthropic took its rate and in-flight lease from **DeepSeek's** bucket: the real provider's limits were never enforced by that lease, and a shared DeepSeek account bucket was consumed by traffic that never touched DeepSeek. The lease now keys on the route's resolved provider, normalised — because provider identity has two live spellings here (`deepseek` from the catalog, `deepseek-direct` from capacity), and `governor._state` is keyed by the raw string, so passing it through unnormalised would have traded a wrong-bucket bug for a split-bucket one.
+
+### OpenRouter
+
+`rps 2.0 → 10.0`, `burst 20 → 100`, `max_inflight 50 → 100`.
+
+Stated plainly: **the 50 was never measured.** `providers.yaml` has one commit in its entire history, and that row's own footer reads *"paid unpublished -> start 20-50 ramp on 429"* — an opening bid, never a fact about OpenRouter, which publishes no paid concurrency ceiling. No run on this box has ever exercised OpenRouter at any concurrency. This replaces an unmeasured guess with a declared allocation; it does not raise a known limit. The 429 ramp is real and wired to OpenRouter's exact transport, but it scales the **rate** axis only — `max_inflight` is not reduced by a 429 — so 100 is safe by construction on arrival rate and an operator bet on the concurrency axis. A test locks that caveat and fails on purpose if it ever stops being true.
+
+### Tests
+
+Sixty new cases across five files, on surfaces that had **no coverage at all** — nothing in `tests/` had ever referenced `plan_tier` or `_plan_tier_inflight`, which is precisely how the tier map and the cap table drifted apart. Thirty-six of the sixty fail against pristine `main`; all sixty pass here. Three existing tests were rewritten rather than deleted, each with its old assertion quoted and the reason it was wrong recorded in the docstring; the test-function count in every one of those files is unchanged, with one assertion added net.
+
+### Not fixed, and not hidden
+
+Whether OpenRouter actually 429s at 100 concurrent is **undetermined** — no network call was made. On the operator box the Ollama plan tier has never been recorded, so the 3/8 reserve is dormant there, and OpenRouter's ceiling is marked `measured` but is null: the probe never landed. Both are interview and probe gaps, not code defects, and neither was touched. With standard restored to 100 and ultra capped at 100, the per-mode width axis differentiates nothing — that is a reported consequence awaiting an operator ruling, not an engineered-around one.
+
 ## [v25.0.16]  -  2026-09-07  -  Private interview renewal, durable resume guidance, version-aware Mac/VPS sender and Cloudflare Access recovery
 
 - Preserve main's v25.0.15 24-hour invitation fix and validate the exact bounded issuer receipt.

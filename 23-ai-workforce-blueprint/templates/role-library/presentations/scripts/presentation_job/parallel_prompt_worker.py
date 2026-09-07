@@ -94,6 +94,7 @@ import random
 import re
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -342,6 +343,86 @@ ART DIRECTION LEXICON: {lex}
     return body
 
 
+# U4: once-per-process announcement state for an unnameable route (below).
+_lease_announce_lock = threading.Lock()
+_lease_announced: set = set()
+
+
+def _announce_unleased_route(raw_provider: Any, reason: str) -> None:
+    """LOUD, once per distinct raw provider spelling per process: this wave's
+    provider identity could not be established, so the worker took NO outer
+    governor lease.
+
+    Announced on stderr AND on the governor's own acquisition log -- the same
+    proof surface the FIX 14/23 window proof reads -- because the log is only
+    read after the fact and stderr is only read live. This is deliberately the
+    shape `governor._announce_defaults_once` uses for the sibling case (a
+    provider with no providers.yaml row).
+
+    It is NOT fatal. The gate that matters still runs: dispatch_complete takes
+    its own lease keyed on the provider it actually dispatches to. What must
+    never happen -- and is what this replaces -- is charging the call to
+    DeepSeek's bucket because the code could not name the real provider."""
+    key = str(raw_provider)
+    with _lease_announce_lock:
+        if key in _lease_announced:
+            return
+        _lease_announced.add(key)
+    msg = (f"{PHASE_ID} governor lease: provider identity UNRESOLVABLE from the "
+           f"routing stamp ({reason}; routing.provider={raw_provider!r}). The "
+           f"worker is taking NO outer lease for this wave rather than charging "
+           f"it to a provider it cannot confirm -- dispatch_complete's inner "
+           f"gate still governs on the provider it actually dispatches to. Fix "
+           f"the routing stamp (dispatcher._routing_stamp) so routing.provider "
+           f"names this wave's provider.")
+    try:
+        print(f"WARNING: {msg}", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- announcing never breaks a unit
+        pass
+    try:
+        import presentation_job.dispatcher as _d
+        _gov = getattr(_d, "_governor", None)
+        if _gov is not None:
+            _gov._append_log(key or "unknown-provider", "lease-unresolved",
+                             0, 0, ok=False, note=msg)
+    except Exception:  # noqa: BLE001 -- the log is best-effort, same as above
+        pass
+
+
+def _wave_lease_provider(routing: Dict[str, Any], run_dir: Path) -> str:
+    """U4: the provider THIS wave's outer governor lease belongs to.
+
+    `routing` is the dispatcher's routing stamp for this phase, so
+    routing["provider"] is the route's resolved provider -- the value that
+    replaces the old hard-coded "deepseek-direct". It is folded through
+    dispatcher._govern_provider (capacity.normalize_provider, the ONE cap-table
+    authority) so the CATALOG spelling the stamp carries ('deepseek') and the
+    CANONICAL spelling the transport gates on ('deepseek-direct') collapse onto
+    one bucket and one re-entrancy depth key -- without that fold the two are
+    different strings and one logical call takes two real acquires against two
+    independent buckets over one account.
+
+    Returns "" when the stamp names no provider at all. That is announced
+    loudly (see _announce_unleased_route) and means "take no outer lease" --
+    never "pretend it is DeepSeek"."""
+    raw = (routing or {}).get("provider")
+    if not str(raw or "").strip():
+        _announce_unleased_route(raw, "the routing stamp carries no provider")
+        return ""
+    try:
+        import presentation_job.dispatcher as _d
+        canon = _d._govern_provider(raw)
+    except Exception as exc:  # noqa: BLE001 -- a fold failure is not a licence
+                              # to invent a provider; refuse loudly instead.
+        _announce_unleased_route(raw, f"provider fold failed: "
+                                      f"{type(exc).__name__}: {exc}")
+        return ""
+    if not canon or canon == "unknown-provider":
+        _announce_unleased_route(raw, "the fold could not canonicalise it")
+        return ""
+    return canon
+
+
 def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
                            attempt: int, run_dir: Path, owning_role: str,
                            n_slides: int) -> str:
@@ -383,21 +464,38 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
     # logical governor lease for the duration of the routed completion --
     # F8: one shared governor for the whole wave, since the wave's units are
     # threads in one process rather than spawn children with private buckets.
-    # The provider is whatever dispatch_complete routes to (deepseek-direct
-    # stays the no-profile default/rollback), so the worker gates on
-    # dispatcher's own _govern helper -- it keys the lease per thread+provider
-    # and dispatch_complete's inner gate re-uses it via the depth counter, so
-    # exactly ONE real acquire per logical call either way. A tree without
-    # governor.py no-ops the gate (_governor is None there).
+    #
+    # U4 (2026-09-07) -- THE LEASE FOLLOWS THE ROUTE, NOT A CONSTANT.
+    # This acquire was hard-coded to "deepseek-direct" regardless of where the
+    # wave was actually routed. A client on OpenRouter, Ollama, Anthropic or a
+    # newly adopted provider therefore took its rate/in-flight lease against
+    # DEEPSEEK'S bucket: the real provider's limits were never enforced (its
+    # bucket saw only dispatch_complete's inner acquire) and DeepSeek's shared
+    # account bucket was consumed by traffic that never touched DeepSeek.
+    # `routing` IS the dispatcher's own routing stamp for this wave
+    # (_routing_stamp -> wave_input -> validate_input), so routing["provider"]
+    # is the route's resolved provider -- the same value dispatch_complete will
+    # gate its inner acquire on. Both sides are folded by
+    # dispatcher._govern_provider (the ONE cap-table authority), which is what
+    # makes the depth counter dedupe them into exactly ONE real acquire: the
+    # stamp carries the CATALOG spelling ('deepseek') while the transport uses
+    # the canonical one ('deepseek-direct'), and comparing those raw is the
+    # DEFECT-5 mistake that discarded every measured ceiling.
+    # A route we cannot name is NOT silently defaulted to DeepSeek: we say so
+    # loudly and take NO outer lease, leaving dispatch_complete's inner gate --
+    # which keys on the provider it actually dispatches to -- as the one real
+    # gate. A wrong lease is worse than no lease; a silent wrong lease is the
+    # disease. A tree without governor.py no-ops the gate (_governor is None).
     _gov = getattr(dispatcher, "_governor", None)
     _lease = None
-    if _gov is not None:
+    _lease_provider = _wave_lease_provider(routing, run_dir)
+    if _gov is not None and _lease_provider:
         try:
             # The FIX 14 named call-site acquire: routed through the
             # dispatcher's provider registry (per thread+provider depth
             # counter) so dispatch_complete's inner gate re-uses THIS lease
             # instead of double-holding one logical call's capacity.
-            _lease = dispatcher._govern_acquire("deepseek-direct")
+            _lease = dispatcher._govern_acquire(_lease_provider)
         except Exception:  # noqa: BLE001 -- gating never kills a unit
             _lease = None
     try:
@@ -406,7 +504,7 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
     finally:
         if _lease is not None and _gov is not None:
             try:
-                dispatcher._govern_release("deepseek-direct", _lease)
+                dispatcher._govern_release(_lease_provider, _lease)
             except Exception:  # noqa: BLE001
                 pass
     return dispatcher._clean_payload(_content)

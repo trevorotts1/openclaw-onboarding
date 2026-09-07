@@ -54,13 +54,45 @@ openai:
   poll_counts_toward_rps: true
 
 openrouter:
-  # Part 7: no published paid cap; free 20 RPM; "start 20-50, ramp on 429".
-  # rps 2.0 keeps a 20-token rolling-10s start inside the window cap while
-  # max_inflight 50 lets the burst ramp; a forced 429 halves the next
-  # minute's rate and report_ok recovers it.
-  rps: 2.0
-  burst: 20
-  max_inflight: 50
+  # OPERATOR CEILING, 2026-09-07: "if I am using OpenRouter I should not be
+  # capped at 8. I should be able to use at least 100 agents in parallel if
+  # I'm using OpenRouter."  The governor must therefore never be the thing
+  # that admits fewer than 100 concurrent calls on this provider.  100 is the
+  # operator's DECLARED ALLOCATION and it matches model_router's ultra mode
+  # ceiling, so `min(mode ceiling 100, governor max_inflight 100)` = 100.
+  #
+  # WHAT THE OLD 20/50 WAS.  OpenRouter's paid concurrency and RPS caps are
+  # UNPUBLISHED -- Part 7 states only the free-tier 20 RPM and the DDoS
+  # protection -- so the previous
+  # `rps 2.0 / burst 20 / max_inflight 50` was OUR OWN opening bid
+  # ("start 20-50, ramp on 429"), not a measurement of OpenRouter.  It has
+  # never been ramped: the row has one commit in its whole history and no run
+  # on this box has ever exercised OpenRouter at any concurrency.  Replacing
+  # an unmeasured guess with an operator-declared number is not a widening of
+  # a known limit; it is the operator supplying the capacity fact the build
+  # could not establish for itself.
+  #
+  # WHY burst 100 / rps 10.0.  The governor enforces a hard rolling-10s
+  # ceiling of `burst` admissions (governor.acquire, the window_cap branch).
+  # At burst 20 a 100-unit fan-out needs ~50 s just to be ADMITTED, so the
+  # in-flight ceiling alone would not deliver 100 parallel in any useful
+  # sense.  burst 100 admits the whole wave inside one window; rps 10.0
+  # refills that bucket in 10 s so steady-state churn keeps up.
+  #
+  # WHAT THE RAMP DOES AND DOES NOT COVER -- read before trusting the 100.
+  # The ramp is real and wired: governor.report_429 halves the refill rate
+  # AND the 10 s window ceiling for 60 s (floor 1/32, re-halving on repeat
+  # 429s) and governor.report_ok doubles it back toward 1.0; the OpenRouter
+  # transport feeds both (dispatcher._openai_compat_complete -> _govern_ok on
+  # a clean response, _govern_429 on HTTP 429).  BUT the ramp scales the RATE
+  # axis ONLY -- `max_inflight` is not reduced by a 429.  So a 429 storm
+  # slows how fast new calls START; it does not pull the 100 concurrent
+  # sockets back down.  100 concurrent is an operator-declared bet, not a
+  # proven-safe number, and the first ultra run on OpenRouter must be watched
+  # for report_429 rows in the governor ledger.
+  rps: 10.0
+  burst: 100
+  max_inflight: 100
   daily_cap: 0
   poll_counts_toward_rps: true
 
@@ -134,7 +166,9 @@ zai:
 # Part 7 rate-limit derivations (verified [R12]):
 #   kie          20 new tasks / 10 s = 2 rps; window cap = burst 20; ~100+ running -> max_inflight 100
 #   deepseek     Pro 500 / Flash 2500 account-wide concurrent; text units Pro 400, Flash 2000 -> shared bucket max_inflight 400
-#   openrouter   free 20 RPM paid unpublished -> start 20-50 ramp on 429 (window 20, inflight 50)
+#   openrouter   free 20 RPM, paid cap UNPUBLISHED -> no measurable ceiling exists;
+#                the 20/50 was our own unmeasured opening bid. Operator ruling
+#                2026-09-07 declares the allocation: window 100, inflight 100.
 #   ollama       Pro 3 / Max 10 by plan (profile tier overrides rps + max_inflight)
 #   agnes        ~5 sustained Starter / ~25 Plus; image 80/min at 2K; 4000 images/day
 #   zai          unpublished tier-based -> start 5-10 ramp on 429
