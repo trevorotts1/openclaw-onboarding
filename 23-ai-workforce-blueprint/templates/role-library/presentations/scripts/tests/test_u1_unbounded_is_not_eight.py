@@ -274,30 +274,75 @@ def test_a_client_with_no_profile_keeps_the_measured_2500(monkeypatch, tmp_path)
 
 
 # ---------------------------------------------------------------------------
-# 3. THE THIRD CASE. Truly unknown -> REFUSE LOUDLY, naming the missing value.
-#    On pristine main this is a silent 8 with no refusal record at all.
+# 3. THE THIRD CASE, REWRITTEN AT MERGE (F4 landed).
+#
+#    THE OLD ASSERTION, kept here because it is the reason this changed:
+#        probe = capacity.probe()
+#        assert probe["status"] == capacity.STATUS_UNDETERMINED
+#        stamp = _stamp(monkeypatch, "ultra")
+#        assert isinstance(stamp.get("capacity_refusal"), dict)
+#        assert refusal["code"] == "AF-CAPACITY-UNMEASURED"
+#
+#    It was right when the stamp asked ONE question -- "what is this BOX's
+#    capacity" -- because with every detection source unreachable that question
+#    genuinely has no answer, and a silent 8 was the defect U1 fixed.
+#
+#    F4 changed the QUESTION, not the answer. The stamp now asks "what is THIS
+#    ROUTE's provider's capacity". Openrouter is a NO_CAP_PROVIDERS entry:
+#    bring-your-own-key, no structural ceiling. That question HAS an answer --
+#    UNBOUNDED -- whether or not any detector can identify the box, so refusing
+#    here would now be the dishonest branch. The route resolves to the mode
+#    ceiling, exactly as case 1 does for a measured account.
+#
+#    The refusal guard is NOT dropped: it moves to the test below, onto a route
+#    whose provider genuinely cannot be resolved (a cap-table provider with no
+#    plan), which is what "cannot be established" means once the question is
+#    per-provider.
 # ---------------------------------------------------------------------------
-def test_a_capacity_that_cannot_be_established_refuses_loudly(
+def test_a_byok_route_is_answerable_even_when_the_box_is_not(
         monkeypatch, tmp_path, capsys):
     _isolate(monkeypatch, tmp_path)
-    # A profile routing to openrouter, and a probe that can find NOTHING (no
-    # override at all, every detection source unreachable) -> UNDETERMINED,
-    # provider None: nothing attributable to this route.
     _cfg(monkeypatch, tmp_path, profile=_profile(BYOK, BYOK_MODEL))
 
+    # The BOX-level question is still unanswerable -- unchanged, and asserted
+    # so this test fails if the no-arg contract ever silently changes.
     probe = capacity.probe()
     assert probe["status"] == capacity.STATUS_UNDETERMINED, probe
+
+    # The ROUTE-level question is answerable, and that is the whole fix.
+    routed = capacity.probe(provider=BYOK, model=BYOK_MODEL)
+    assert routed["status"] == capacity.STATUS_MEASURED, routed
+
+    stamp = _stamp(monkeypatch, "ultra")
+    assert stamp.get("capacity_refusal") is None, (
+        "a BYOK route has a real answer (UNBOUNDED); refusing it would be the "
+        "dishonest branch now that the question is per-provider: " + repr(stamp))
+    assert stamp["probe_scope"] == "routed-provider", stamp
+    assert stamp["measured_capacity"] == model_router.ULTRA_OPERATOR_CEILING, stamp
+    assert stamp["measured_capacity"] != dispatcher.DEFAULT_MAX_WORKERS, stamp
+
+
+def test_a_route_whose_provider_cannot_be_resolved_still_refuses_loudly(
+        monkeypatch, tmp_path, capsys):
+    """THE GUARD THE CASE ABOVE USED TO CARRY. A cap-table provider with no
+    plan has no answer even per-route -- so the refusal must still fire, still
+    name the missing value, and still never fabricate a width."""
+    _isolate(monkeypatch, tmp_path)
+    _cfg(monkeypatch, tmp_path,
+         profile=_profile(capacity.PROVIDER_OLLAMA_CLOUD, "glm-5.3-flash"))
+
+    routed = capacity.probe(provider=capacity.PROVIDER_OLLAMA_CLOUD)
+    assert routed["status"] == capacity.STATUS_PARKED, (
+        "premise: a cap-table provider with no declared plan must PARK, "
+        "otherwise this test proves nothing: " + repr(routed))
 
     stamp = _stamp(monkeypatch, "ultra")
     refusal = stamp.get("capacity_refusal")
     assert isinstance(refusal, dict), (
-        "U1: where capacity cannot be established the honest behaviour is to "
-        "REFUSE LOUDLY naming the missing value -- never a silent 8: "
-        + repr(stamp))
+        "where a ROUTE's capacity cannot be established the honest behaviour "
+        "is still to REFUSE LOUDLY -- never a silent 8: " + repr(stamp))
     assert refusal["code"] == "AF-CAPACITY-UNMEASURED", refusal
-    assert BYOK in refusal["missing"], (
-        "the refusal must NAME the value that is missing", refusal)
-    assert refusal["width_basis"] == "capacity.DEFAULT_CONSERVATIVE", refusal
+    assert stamp["measured_capacity"] != dispatcher.DEFAULT_MAX_WORKERS, stamp
     assert stamp["measured_capacity"] == capacity.DEFAULT_CONSERVATIVE, stamp
     assert stamp["measured_capacity"] != dispatcher.DEFAULT_MAX_WORKERS, (
         "a fabricated 8 here is indistinguishable from the operator's "

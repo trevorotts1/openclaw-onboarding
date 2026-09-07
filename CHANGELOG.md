@@ -1,3 +1,64 @@
+## [v25.0.20]  -  2026-09-07  -  One provider's plan answer was capping the whole run
+
+A client on two providers answered one question — "Ollama, the $100 plan" — and every phase of their deck, including the ones routed to DeepSeek at 2,500 concurrent, ran eight wide. Not the Ollama phases. All of them.
+
+There were **three** independent ways that happened, and closing any one of them left the other two.
+
+### Path A — a file about one provider spoke for the whole box
+
+`capacity_override.json` was step (a) of detection: a record naming ONE provider pre-empted detection for the entire client. `resource_profile.record_plan_answer()` wrote it on every interview answer. So answering the Ollama question replaced whatever was there and pinned every route to 8.
+
+Measured, same command on both trees, isolated config dir:
+
+| | before | after |
+|---|---|---|
+| writer | `capacity_override.json` | `resource_profile.json` |
+| detection source | the override file | 9Router |
+| provider | ollama-cloud | **deepseek-direct** |
+| dispatchable | **8** | **2500** |
+
+`detect()` and `probe()` now take `provider=` and `model=`, and every answer is **about one provider and says which one** (`provider_requested` on the result). A no-arg call keeps its historical meaning — the primary route's account — for the launch gate, the wave scheduler and the work-order pool, which legitimately want a client-level answer.
+
+**It also destroyed operator files.** `persist_plan_answer` used `os.replace`, so an interview answer silently overwrote a hand-written operator declaration. This is not hypothetical: it happened on the operator box during this work, to a record carrying `max_concurrent: 2500, thinking: max, source: operator-ruling-2026-09-04`. Recovered from a backup. `declare_capacity` now **merges** a per-provider sub-record (schema 2) and preserves every field of a record it did not author — plan, ceiling, thinking, source, declared_at, and the operator's own `_note`. A legacy v1 record is lifted in memory and never rewritten on read.
+
+### Path B — the strictest provider became everyone's ceiling
+
+`model_router.measured_client_ceiling()` collected every provider's `concurrency_ceiling` and returned `min()`. A profile holding DeepSeek 2,500 and Ollama 8 answered **8**, and since v25.0.13 that number is the width of all nine fan-out phases and P4-PROMPT.
+
+It is now per-route: `measured_client_ceiling(profile, *, provider=None)`, threaded through `mode_ceiling` and `capped_width`, with `resolve_route` stamping the decision using the route's own provider. Measured on the merged tree: a DeepSeek route resolves **100**, an Ollama route **8**, on the same profile, in the same run.
+
+The no-arg `min()` is kept for callers that have no route, with its docstring corrected — it is the whole-client floor, not "the strictest measured ceiling wins".
+
+### Path C — the mismatched route fell to the floor
+
+Where the routed provider differed from the global probe's provider, the routing stamp dropped that route to `DEFAULT_CONSERVATIVE` = 3. So with an Ollama answer on a DeepSeek-primary box: wave 8, DeepSeek fan-out 3, Ollama 8. Without it: DeepSeek 100, Ollama 3. **One provider was always wrong** — which is the proof that a single global answer cannot serve a two-provider client.
+
+The stamp now probes the routed provider and records `probe_scope: routed-provider`. The identity guard stays as the loud failure for a provider that cannot be canonicalised, and the refusal branch stays for a route whose OWN plan is genuinely unknown.
+
+### The interview never recorded a plan tier
+
+No production code path called `record_plan_answer`. The question was asked, the answer was dropped, and the ask-once lock was never written — so a client was re-asked every deck while dispatch parked on `AF-CAPACITY-UNMEASURED` until an operator hand-ran the CLI. The intake driver now records the tier against each provider the probe reports as owed one, matched per provider so a tier from another provider's table can never be recorded against it, and records the explicit decline through `record_conservative_default`. It adds no interview turn.
+
+### `--declare-capacity` parked the run it was meant to unblock
+
+It hard-coded `provider: deepseek-direct`, which PARKs since DeepSeek gained structural caps on 2026-09-04. It now resolves the provider (argument, else detection) and the plan (explicit, slug, profile lock, detection), gains `--declare-provider` and `--declare-plan`, and **refuses with exit 2** rather than writing a record that parks.
+
+### The operator's reserve
+
+Unchanged and re-pinned by a non-vacuous test: Ollama `$20/month` = 3, `$100/month` = **8** — eight, not the seat's ten, so two slots stay free for other work. The guard deletes the profile entry and asserts the number moves, so it cannot pass by reading a default.
+
+### Tests
+
+Four new files, 71 cases: `test_capacity_per_provider.py` (16), `test_f3_per_route_ceiling.py` (21), `test_f4_routed_provider_probe.py` (22), `test_intake_driver_plan_tier.py` (13). Against pristine main they fail 12, 17, 17 and 1 respectively; the ones that pass on main are labelled controls, including the reserve guard and its anti-vacuity companion.
+
+The no-clobber guard was verified by patching the merge line out — the test went red, restored it went green.
+
+### Not in this release, and why
+
+- Every width consumer calls `probe()`, which makes four live `GET /models` calls it never reads: 58ms becomes 1,076ms, roughly 14-18s wasted per deck run. Pre-existing since FIX 9; a clean follow-up.
+- Reconcile-on-load and the primary-provider rule for the no-route ceiling are a **coupled pair** — the second matters only because the first exists — so both wait rather than shipping half.
+- An omitted plan tier while a provider is pending returns 0 and parks later. A refusal was tried and reverted: the intake bank declares that turn `required: false, block_gate: false`, so refusing made an optional merged turn blocking and broke the guard against recording a decline the client never made. The right fix keeps the question pending and says so loudly, which is a driver-flow change with its own tests.
+
 ## [v25.0.19]  -  2026-09-07  -  skill6 adaptive capability probe, lane policy, multi-iframe router, fail-closed QC
 
 ## [v25.0.17]  -  2026-09-07  -  Ultra said 100, the governor admitted 20

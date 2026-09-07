@@ -41,7 +41,7 @@ SCHEMA (version 1)
     "<provider-id>": {
       "provider":       "ollama-cloud",
       "plan_tier":      "$100/month" | null,     # non-detectable -> asked ONCE
-      "concurrency_ceiling": 10 | "UNBOUNDED" | null,
+      "concurrency_ceiling": 8 | "UNBOUNDED" | null,   # 8, not 10: see below
       "ceiling_source": "cap-table" | "declared" | "interview" | "probe",
       "consented":      true/false,
       "wired_models":   ["deepseek-v4-flash", ...],   # probed (FIX 9)
@@ -91,12 +91,21 @@ providers and "plan detected/unknown" ONLY. Redaction is per-section and
 runs on every write and every read-export; the raw store on disk is
 written already-redacted, so a leak of the FILE is not a leak of secrets.
 
-CAPACITY INTEROPERATION
------------------------
+CAPACITY INTEROPERATION (per provider -- do not "simplify" this back)
+----------------------------------------------------------------------
 The profile NEVER bypasses capacity.py's doctrine. is_plan_locked() and
 intake questions consult capacity.CAP_TABLE; capacity.probe() remains the
 dispatch-path authority. FIX 8 adds persistence and the ask-once lock --
 it does not move the gate.
+
+F2 (2026-09-07): this profile is THE store for the plan answer, per
+provider. record_plan_answer() no longer projects the answer into
+capacity_override.json -- capacity.detect() reads the locked entry from
+here (capacity._plan_from_profile) for the provider it was asked about.
+capacity_override.json survives only as a per-provider operator
+self-throttle (schema 2), honoured for the provider it names. Two stores
+encoding "the client answered once" is exactly how ONE provider's tier
+came to cap a multi-provider client's whole run.
 
 Rollout flag
 ------------
@@ -361,20 +370,36 @@ def _normalize(provider: str, plan: str):
 def record_plan_answer(provider: str, plan: str,
                        config_dir: Optional[Path] = None) -> Dict[str, Any]:
     """THE one intake answer for the plan-tier question -- persisted ONCE,
-    then LOCKED.
+    then LOCKED. THIS PROFILE IS THE STORE.
 
     Raises ValueError on a provider/plan pair the cap table does not know --
     an unknown tier is never silently persisted as if it were measured. The
     intake's other choice, "use conservative default", is NOT an answer about
     the account and never reaches this function: pass plan=None through
-    record_conservative_default() for that. The gate-side projection is
-    written too: capacity.persist_plan_answer() writes capacity_override.json
-    (the file dispatch's detection chain reads at step (a)), so the SECOND
-    run does not merely skip the question -- it DISPATCHES against the
-    locked ceiling. The profile stays the richer store; the override stays
-    the gate's projection of it. A NO_CAP_PROVIDERS plan (deepseek-direct's
-    v4-pro/v4-flash metadata labels) records into the profile WITHOUT
-    writing an override file -- there is no ceiling left to project."""
+    record_conservative_default() for that.
+
+    F2 -- WHAT WAS REMOVED AND WHY. This function used to ALSO project the
+    answer into capacity.persist_plan_answer() -> capacity_override.json,
+    "the gate's projection of the profile". That projection was the defect.
+    The override file was step (a) of a detection chain that answered ONE
+    question for the whole box, so a client answering "ollama-cloud,
+    $100/month" pinned their DeepSeek and OpenRouter routes to 8 as well --
+    a plan answer about one account wearing the whole client's clothes. Two
+    stores encoding one fact ("the client answered once") is the same drift
+    class the governor's tier-map-vs-cap-table fix removed; the second store
+    was single-provider, and its mere existence was misread as "measured for
+    every provider". So: ONE store (this profile), ONE lock
+    (pending_questions / is_plan_locked), per provider.
+
+    The concurrency_ceiling write below STAYS -- the governor's operator
+    reserve reads it (governor._plan_tier_inflight / _plan_tier_rps), and
+    that is a per-provider read, not a global cap.
+
+    The ONE case that still needs a durable declaration is the documented
+    rollback PRESENTATION_RESOURCE_PROFILE=0: with the profile switched off
+    nothing here persists, so the answer is written through
+    capacity.declare_capacity() as a per-provider schema-2 record instead --
+    honoured only for the provider it names."""
     norm_provider, norm_plan = _normalize(provider, plan)
     if not norm_provider or not norm_plan:
         raise ValueError(
@@ -391,11 +416,18 @@ def record_plan_answer(provider: str, plan: str,
         raise ValueError(
             f"refusing to record a plan for ({norm_provider!r}, {norm_plan!r}) -- "
             f"not a cap-table row and not a NO_CAP_PROVIDERS entry; known: {known}")
-    # The gate-side projection: capacity_override.json (the file dispatch's
-    # detection chain reads at step (a)), so the SECOND run does not merely
-    # skip the question -- it DISPATCHES against the locked ceiling.
-    if structural and _capacity is not None:
-        _capacity.persist_plan_answer(norm_provider, norm_plan, config_dir)
+    # F2: NO projection into capacity_override.json. The profile below is the
+    # store; capacity.detect() reads THIS provider's locked entry directly
+    # (capacity._plan_from_profile), so the second run dispatches against the
+    # locked ceiling without a second file having to agree with this one.
+    #
+    # The single exception is the documented rollback: with the profile
+    # switched off every write below is a no-op, so the answer would have no
+    # durable home at all. Then -- and only then -- declare it, scoped to the
+    # one provider it is about.
+    if structural and _capacity is not None and not flag_enabled():
+        _capacity.declare_capacity(norm_provider, plan=norm_plan,
+                                   config_dir=config_dir)
     profile = load_profile(config_dir)
     entry = upsert_provider(
         profile, norm_provider,

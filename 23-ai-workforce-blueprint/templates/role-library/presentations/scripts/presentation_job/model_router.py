@@ -944,17 +944,86 @@ def active_mode(explicit: Optional[str] = None, *, strict: bool = True) -> str:
     return DEFAULT_MODE
 
 
-def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
-    """The client's measured concurrency ceiling, read from the profile.
+def _ceiling_of(entry: Optional[Dict[str, Any]]) -> Any:
+    """One profile row's `concurrency_ceiling`, read with the same semantics
+    the whole-client reader uses: a positive int, the string "UNBOUNDED", or
+    None. A malformed value reads as UNMEASURED, never as evidence for a
+    higher width."""
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("concurrency_ceiling")
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+        return int(raw)
+    if raw == "UNBOUNDED":
+        return "UNBOUNDED"
+    return None
+
+
+def _profile_entry_for(profile: Optional[Dict[str, Any]],
+                       provider: Any) -> Optional[Dict[str, Any]]:
+    """The profile row for ONE provider, tolerant of the two live spellings.
+
+    F3 -- THE SPELLING TRAP THIS EXISTS FOR. `resolve_alias`/the catalog hand
+    back the SHORT form (`deepseek`) while `capacity.normalize_provider` and
+    the profile store write the LONG form (`deepseek-direct`); `ollama_cloud`
+    and `ollama-cloud` are the same provider spelled twice (FIX 17a). A plain
+    `providers.get(provider)` therefore MISSES every real entry and answers
+    None -- which reads as "unmeasured" and would look exactly like a fix
+    while changing nothing. Three lookups, in order: the raw key as written,
+    the canonical fold of it, then every key folded the same way (which
+    catches a profile stored under the short spelling and asked about under
+    the long one). Returns None only when no key names this provider."""
+    providers = _providers_of(profile)
+    if not providers:
+        return None
+    raw = str(provider or "").strip()
+    if not raw:
+        return None
+    entry = providers.get(raw)
+    if isinstance(entry, dict):
+        return entry
+    canon = _norm_provider(raw)
+    entry = providers.get(canon)
+    if isinstance(entry, dict):
+        return entry
+    for key, val in providers.items():
+        if isinstance(val, dict) and _norm_provider(key) == canon:
+            return val
+    return None
+
+
+def measured_client_ceiling(profile: Optional[Dict[str, Any]],
+                            *, provider: Optional[str] = None) -> Any:
+    """The measured concurrency ceiling read from the profile.
 
     Returns a positive int (a real measured ceiling), the string "UNBOUNDED"
     (a bring-your-own/unlimited client -- never coerced to a number), or
     None (nothing measured). Same semantics as capacity.available_or_none:
     a malformed value reads as unmeasured, never as evidence for a higher
-    width. The strictest measured ceiling wins when several providers
-    carry one."""
+    width.
+
+    WITH `provider` -- THE PER-ROUTE ANSWER, and the one every route should
+    ask for (F3). Only THAT provider's row is consulted: int -> int,
+    "UNBOUNDED" -> "UNBOUNDED", no row for it -> None (unmeasured, which
+    contributes no ceiling of its own; an absence is not a cap any more than
+    it is a capability). Spelling is folded by `_profile_entry_for`, so the
+    catalog's `deepseek` finds the store's `deepseek-direct`.
+
+    WITHOUT `provider` -- THE WHOLE-CLIENT FLOOR: min() over every provider
+    that carries a ceiling. THIS IS NOT "the strictest measured ceiling
+    wins", and reading it that way is the defect F3 removes: it made ONE
+    provider's plan answer the ceiling of EVERY route. MEASURED on the
+    operator box 2026-09-07 -- profile `ollama-cloud 8` (a $100/month plan
+    answer) + `deepseek-direct 100` (declared) -> 8, so `mode_ceiling(ultra)`
+    was 8 and `capped_width(2500, 'ultra')` returned 8, which since v25.0.13
+    F6 is the width of all nine fan-out phases. It is legitimate ONLY for
+    callers that have NO route to ask about and need one client-level number:
+    the launcher banner / `mode_concurrency` and the launch gate. Anything
+    holding a route passes `provider=`."""
     if not profile:
         return None
+    if provider is not None and str(provider).strip():
+        return _ceiling_of(_profile_entry_for(profile, provider))
     values: List[Any] = []
     for entry in (profile.get("providers") or {}).values():
         if isinstance(entry, dict):
@@ -1188,7 +1257,8 @@ def mode_concurrency(mode: str, *,
 
 
 def mode_ceiling(mode: str, *,
-                 profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                 profile: Optional[Dict[str, Any]] = None,
+                 provider: Optional[str] = None) -> Dict[str, Any]:
     """The HARD CAP a mode imposes on a concurrency width. A CAP -- never a
     floor, never a target.
 
@@ -1222,9 +1292,19 @@ def mode_ceiling(mode: str, *,
     spending decision rather than a capacity cap. Since FIX 15 the two agree
     for ultra and standard by construction -- that is the point of FIX 15 --
     but THIS is still the only number allowed to cut a measured width, and it
-    never installs Economy's cost policy as a capacity ceiling."""
+    never installs Economy's cost policy as a capacity ceiling.
+
+    F3 -- `provider` MAKES THIS A PER-ROUTE CAP. Given the routed provider,
+    the client ceiling term is THAT provider's own measured ceiling instead
+    of the min() across every provider the client owns. Without it the
+    behaviour is byte-identical to before: the whole-client floor, for the
+    callers that have no route (launcher banner, `.mode-plan.json`, the
+    launch gate). The routed provider is stamped into the returned block so
+    the sidecar records WHICH provider's ceiling actually applied -- `None`
+    there means the whole-client floor was used, which is a different claim
+    from "provider unmeasured"."""
     m = normalize_mode(mode)
-    measured = measured_client_ceiling(profile)
+    measured = measured_client_ceiling(profile, provider=provider)
     operator = ULTRA_OPERATOR_CEILING
     mode_op, axis_in_force = mode_operator_ceiling(m, measured)
     if isinstance(measured, int) and not isinstance(measured, bool) and measured > 0:
@@ -1245,12 +1325,15 @@ def mode_ceiling(mode: str, *,
     return {"mode": m, "ceiling": int(ceiling), "measured_ceiling": measured,
             "operator_ceiling": operator,
             "mode_operator_ceiling": int(mode_op),
-            "mode_axis_in_force": bool(axis_in_force), "reason": reason}
+            "mode_axis_in_force": bool(axis_in_force),
+            "ceiling_provider": (str(provider) if provider else None),
+            "reason": reason}
 
 
 def capped_width(width: Any, mode: str, *,
                  profile: Optional[Dict[str, Any]] = None,
-                 decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                 decision: Optional[Dict[str, Any]] = None,
+                 provider: Optional[str] = None) -> Dict[str, Any]:
     """Apply a mode's ceiling to a width SOMEBODY ELSE MEASURED.
 
         effective = min(measured width, mode ceiling [, Economy's cost width])
@@ -1263,10 +1346,19 @@ def capped_width(width: Any, mode: str, *,
 
     `decision` reuses the mode_ceiling / mode_concurrency blocks resolve_route
     already stamped, so an in-engine caller holding a decision does not reload
-    the client profile to ask the same question twice."""
+    the client profile to ask the same question twice.
+
+    F3 -- `provider` is for a caller that holds a ROUTE but no decision: the
+    ceiling term becomes that provider's own measured ceiling rather than the
+    min() across every provider the client owns. A `decision` still wins,
+    because resolve_route already stamped its ceiling WITH the routed
+    provider -- that is why fixing the decision fixes every downstream min()
+    (dispatcher._routing_stamp passes decision=, not provider=). Economy's
+    cost width is deliberately NOT per-provider: it is a spending decision
+    about the client, not a capacity reading about a route."""
     m = normalize_mode(mode)
     ceil_block = (decision or {}).get("mode_ceiling") \
-        or mode_ceiling(m, profile=profile)
+        or mode_ceiling(m, profile=profile, provider=provider)
     limits: List[Tuple[str, int]] = [
         ("mode ceiling", int(ceil_block.get("ceiling") or ULTRA_OPERATOR_CEILING))]
     if m == "economy":
@@ -1860,6 +1952,12 @@ def resolve_route(phase_id: str, *,
         # The CAP, stamped beside the plan so a caller holding this decision
         # can narrow a measured width without reloading the profile (and so
         # the sidecar records which ceiling actually applied).
+        #
+        # PROVISIONAL -- the route is not chosen yet, so this is the
+        # whole-client floor. It is RE-STAMPED with the routed provider the
+        # moment a route exists (F3, below); it survives as-is only when the
+        # phase parks with no route at all, where a client-level cap is the
+        # only honest answer left.
         decision["mode_ceiling"] = mode_ceiling(mode, profile=profile)
 
     # THE CLIENT'S CHOICE, ahead of the department default AND ahead of the
@@ -1985,6 +2083,27 @@ def resolve_route(phase_id: str, *,
             reason = "primary" if first_eligible_idx == 0 else \
                 f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
         decision.update({"route": route, "reason": reason})
+        if modes_enabled():
+            # F3 -- THE CEILING IS RE-STAMPED FOR THE ROUTE THAT WON.
+            # The provisional stamp above was the whole-client floor: min()
+            # over EVERY provider in the profile. On a two-provider client
+            # that made one provider's plan answer the ceiling of every
+            # route -- MEASURED on the operator box 2026-09-07, where
+            # `ollama-cloud 8` (a $100/month answer) held `deepseek-direct
+            # 100` down to 8, and since v25.0.13 F6 that number is the width
+            # of all nine fan-out phases. Now the cap is THIS route's
+            # provider's own measured ceiling.
+            #
+            # Spelling: the catalog says `deepseek`, the profile store and
+            # capacity say `deepseek-direct` -- `_profile_entry_for` folds
+            # both, because an unfolded lookup would answer None (reading as
+            # "unmeasured") and silently change nothing while looking fixed.
+            #
+            # capped_width() prefers decision["mode_ceiling"], so this one
+            # re-stamp is what fixes every downstream min(): the routing
+            # stamp, the P4-PROMPT wave, and the fan-out widths that read it.
+            decision["mode_ceiling"] = mode_ceiling(
+                mode, profile=profile, provider=route.get("provider"))
     else:
         rejected = "; ".join(f"{c.get('alias')}: {c.get('reason')}"
                              for c in candidates)

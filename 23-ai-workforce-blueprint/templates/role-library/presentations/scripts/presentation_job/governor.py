@@ -29,8 +29,9 @@ Per provider config lives in ``presentation_job/providers.yaml``::
       poll_counts_toward_rps: true
 
 The governor reads the resource profile for the plan tier when present
-(``ollama-cloud`` plan tiers: $20/month -> 3, $100/month -> 10, read from
-``resource_profile.json`` -- the same store capacity.py gates dispatch on),
+(``ollama-cloud`` plan tiers: $20/month -> 3, $100/month -> 8 -- 8 and not the
+raw seat maximum of 10 by operator ruling, see PLAN_TIER_RPS below -- read from
+``resource_profile.json``, the same store capacity.py gates dispatch on),
 else uses the YAML defaults.  Every acquisition is appended to a
 rolling-window log (``working/governor_log.jsonl`` next to the run dir, or
 ``/tmp/presentation_governor.log`` when there is no run dir) -- the proof
@@ -173,7 +174,9 @@ def _load_yaml_subset(text: str) -> dict:
 # (presentation_job.resource_profile), the same ask-once record capacity.py
 # gates dispatch on -- schema: providers.<provider>.plan_tier in
 # {"$20/month", "$100/month", null}.  The ollama-cloud tiers map onto the
-# Part 7 ceilings: $20/month -> 3 concurrent, $100/month -> 10.  Everything
+# Part 7 ceilings: $20/month -> 3 concurrent, $100/month -> 8 (the 10-slot
+# plan minus the operator's deliberate 2-slot reserve; see PLAN_TIER_RPS,
+# which is the number actually applied).  Everything
 # is best-effort: an absent flag, store, provider or plan leaves the YAML
 # config untouched.  This module never writes the profile and never prints
 # any value from it (providers and plan tiers only -- no credentials).

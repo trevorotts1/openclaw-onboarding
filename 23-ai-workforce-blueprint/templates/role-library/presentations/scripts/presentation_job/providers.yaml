@@ -106,8 +106,9 @@ anthropic:
 ollama:
   # Part 7: Pro 3, Max 10 -- over-cap queues, no session or weekly limits
   # since 2026-08-31. The YAML default keeps the free-floor 3; the resource
-  # profile plan tier ($20/month -> 3, $100/month -> 10 via PLAN_TIER_RPS)
-  # overrides rps and max_inflight when present.
+  # profile plan tier ($20/month -> 3, $100/month -> 8 via PLAN_TIER_RPS --
+  # 8, not the seat's raw 10: operator ruling 2026-09-04, "i said 8 so that 2
+  # are left over for other work") overrides rps and max_inflight when present.
   rps: 3.0
   burst: 10
   max_inflight: 3
