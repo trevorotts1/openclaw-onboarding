@@ -150,6 +150,249 @@ def record_heal_event(state, phase_id, store, phase_data, rung, attempt, reason,
     store.save(state)
 
 
+# ---------------------------------------------------------------------------
+# F10 (2026-09-06) -- REAL HEAL RUNGS FOR AGENT PHASES.
+#
+# Broken (K9 / S2): every rung below re-executed `engine._build_executor_argv(
+# phase.executor_cmd, ...)`. An AGENT phase has no executor_cmd -- its work is
+# done by work_order_dispatcher.py reading working/work-orders/<id>.json. So
+# _build_executor_argv returned nothing, the rung returned EXIT_EXECUTOR_FAILED
+# without doing anything at all, and the ladder was inert for the 38 of 62
+# phases that are agent-authored.
+#
+# MEASURED COST: on the 22 h run, 9 of the 21 human --resumes SUCCEEDED
+# IMMEDIATELY on the very next try. Those nine were transient failures that any
+# retry would have cleared. Nothing retried them; a human did, hours later.
+#
+# THE AGENT EQUIVALENT OF "RE-RUN THE EXECUTOR" is "REISSUE THE WORK ORDER":
+#   * write the order file again with heal_reason (what failed, verbatim) and
+#     attempt_hint, so dispatcher.compose_prompt feeds the model the real
+#     verifier findings instead of starting blind;
+#   * for a provider failure, add route_override {provider, model} so
+#     dispatcher.dispatch_complete pins the alternate provider for this order;
+#   * the rewrite CHANGES THE FILE'S mtime AND SIZE, which is exactly what
+#     dispatcher._dispatch_revision witnesses -- so should_dispatch's
+#     ANTI-STARVATION branch fires and the phase dispatches on the very next
+#     tick no matter how deep its backoff had grown;
+#   * clear the .dispatch-blocked.txt park marker, because the marker's own
+#     text says re-dispatch "resumes automatically if the Engine reissues the
+#     work order" -- this IS the Engine reissuing it;
+#   * then wait on the artifact with the SAME loop _run_agent_phase uses
+#     (engine._await_agent_artifact -- one implementation, not a second,
+#     drifting copy) on a SHORTER deadline: min(phase budget, 30 min). A heal
+#     rung must not be able to double a phase's wall-clock cost.
+# ---------------------------------------------------------------------------
+
+# The heal wait is capped well under a phase budget: a rung is a retry, not a
+# second full attempt at the phase's own pace.
+AGENT_HEAL_WAIT_CAP_S = 30 * 60
+
+
+def is_agent_phase(phase) -> bool:
+    """True for a phase whose artifact is authored by the work-order dispatcher
+    rather than by an executor process this engine can re-run."""
+    try:
+        return str(getattr(phase, "executor_kind", "") or "") == "agent"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _agent_heal_applies(engine, phase) -> bool:
+    """Whether the agent arm should act at all.
+
+    Not just "is this an agent phase" -- also NEVER under --dry-run. A dry run
+    executes nothing and spawns no dispatcher, so reissuing a work order would
+    queue real work, and waiting on it would block for the full heal deadline
+    against a dispatcher that is never coming. Returning False here leaves the
+    rung on its pre-F10 path, which for an agent phase is an immediate
+    EXIT_EXECUTOR_FAILED (empty argv) -- byte-for-byte the old behaviour a dry
+    run already got."""
+    if not is_agent_phase(phase):
+        return False
+    return not bool(getattr(engine, "dry_run", False))
+
+
+def _work_order_path(run_dir, phase_id):
+    from pathlib import Path as _P
+    return _P(str(run_dir)) / "working" / "work-orders" / f"{phase_id}.json"
+
+
+def _clear_blocked_marker(run_dir, phase_id) -> bool:
+    """Delete the dispatcher's park marker for this phase. Resolved through
+    dispatcher._blocked_marker_path so the filename can never drift between the
+    component that writes it and the components that clear it; the literal
+    fallback covers a tree whose dispatcher module will not import."""
+    from pathlib import Path as _P
+    path = None
+    try:
+        from . import dispatcher as _dispatcher
+        path = _dispatcher._blocked_marker_path(_P(str(run_dir)), phase_id)
+    except Exception:  # noqa: BLE001
+        path = (_P(str(run_dir)) / "working" / "work-orders"
+                / f"{phase_id}.dispatch-blocked.txt")
+    try:
+        if path.is_file():
+            path.unlink()
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def reissue_agent_work_order(engine, phase, *, heal_reason, attempt_hint,
+                             route_override=None) -> bool:
+    """Rewrite this agent phase's work order so the dispatcher picks it up
+    again, carrying the reason it failed. Returns True on a successful write.
+
+    The order is REWRITTEN, not patched in place, so its size changes as well as
+    its mtime -- _dispatch_revision witnesses both, and a size-only-identical
+    rewrite on a coarse filesystem clock would otherwise be invisible to it.
+
+    Any live dispatcher claim is deliberately NOT consulted here: the caller
+    (Engine._heal_or_fail_agent_phase) only gets here after the wait already
+    ended, which means either the budget expired or the dispatcher parked this
+    phase at its retry ceiling -- in both cases no attempt is in flight."""
+    import json as _json
+    import os as _os
+    path = _work_order_path(engine.run_dir, phase.id)
+    order = {}
+    try:
+        if path.is_file():
+            loaded = _json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                order = loaded
+    except (OSError, ValueError):
+        order = {}
+    order.update({
+        "phase": phase.id,
+        "owning_role": phase.owning_role,
+        "produces_artifact": list(phase.produces_artifact),
+        "verifier": phase.verifier,
+        "budget_minutes": phase.budget_minutes,
+        "heal_reason": str(heal_reason),
+        "attempt_hint": attempt_hint,
+        "reissued_at": utcnow(),
+    })
+    if route_override:
+        order["route_override"] = dict(route_override)
+    else:
+        order.pop("route_override", None)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(order, indent=2), encoding="utf-8")
+        _os.utime(path, None)
+    except OSError:
+        return False
+    _clear_blocked_marker(engine.run_dir, phase.id)
+    return True
+
+
+def _agent_heal_budget_s(phase) -> float:
+    try:
+        return float(min(phase.budget_minutes * 60, AGENT_HEAL_WAIT_CAP_S))
+    except Exception:  # noqa: BLE001
+        return float(AGENT_HEAL_WAIT_CAP_S)
+
+
+def _await_healed_agent_artifact(engine, phase) -> int:
+    """Wait for the reissued order to produce the artifact, using the ENGINE'S
+    OWN wait loop -- same completion rules, same substance tiebreaker, same
+    park-marker reaction (F9), same announce/checkpoint cadence.
+
+    EXIT_OK only when that loop reports "ok"; a second park or a timeout is
+    EXIT_EXECUTOR_FAILED and the caller quarantines."""
+    try:
+        glob_patterns = engine._phase_glob_patterns(phase)
+        baseline = engine._glob_progress_marker(glob_patterns) if glob_patterns else 0.0
+        outcome, _present, _notes, _marker = engine._await_agent_artifact(
+            phase, budget_seconds=_agent_heal_budget_s(phase),
+            glob_patterns=glob_patterns, baseline_progress=baseline)
+    except Exception:  # noqa: BLE001 -- a heal rung can never crash the engine
+        return EXIT_EXECUTOR_FAILED
+    return EXIT_OK if outcome == "ok" else EXIT_EXECUTOR_FAILED
+
+
+def rung2_regenerate_agent(engine, phase, deficiency) -> int:
+    """The agent arm of rung2_regenerate: reissue the work order with the real
+    failure reason attached, up to HEAL_CAP_REGENERATE times, waiting on the
+    shared engine loop between attempts."""
+    # FIX 1 (wave execution) holds: every mutation of the shared run state goes
+    # through engine._state_lock, and the WAIT deliberately does not -- holding
+    # the engine lock for up to 30 minutes would serialize the whole wave behind
+    # one healing phase. The lock is an RLock, so the nested acquires inside
+    # report/_checkpoint are free.
+    with engine._state_lock:
+        ps = engine._phase_state(phase.id)
+    for attempt in range(1, HEAL_CAP_REGENERATE + 1):
+        with engine._state_lock:
+            record_heal_event(engine.state, phase.id, engine.store, ps,
+                              rung=2, attempt=attempt, reason=deficiency)
+            engine.report.to_requester(
+                "blocked",
+                f"{phase.id} artifact check failed ({deficiency}). "
+                f"Re-issuing the work order -- attempt {attempt} of "
+                f"{HEAL_CAP_REGENERATE}.",
+                phase_id=phase.id, reason=f"rung2-agent:{deficiency}")
+        if not reissue_agent_work_order(
+                engine, phase, heal_reason=deficiency,
+                attempt_hint=f"heal attempt {attempt} of {HEAL_CAP_REGENERATE}"):
+            _ledger(engine, phase=phase.id, rung=2, attempt=attempt,
+                    failure_class=classify_failure(deficiency), reason=deficiency,
+                    route_change=False, outcome="work_order_reissue_failed")
+            return EXIT_EXECUTOR_FAILED
+        rc = _await_healed_agent_artifact(engine, phase)
+        _ledger(engine, phase=phase.id, rung=2, attempt=attempt,
+                failure_class=classify_failure(deficiency), reason=deficiency,
+                route_change=False, executor_kind="agent",
+                outcome=("ok" if rc == EXIT_OK else "still_failed"))
+        if rc == EXIT_OK:
+            return EXIT_OK
+    return EXIT_EXECUTOR_FAILED
+
+
+def rung2_provider_failover_agent(engine, phase, reason, *, from_provider,
+                                  to_provider, to_model) -> int:
+    """The agent arm of rung2_provider_failover: reissue the work order with a
+    route_override pinning the alternate provider, then wait on the shared
+    engine loop. dispatch_complete honours the override ahead of resolve_route,
+    but only when the router itself lists that provider as ELIGIBLE -- a heal
+    rung can never spend a provider the client does not own."""
+    # Same lock discipline as rung2_regenerate_agent above: state mutations are
+    # guarded, the wait below is not.
+    with engine._state_lock:
+        ps = engine._phase_state(phase.id)
+        record_heal_event(engine.state, phase.id, engine.store, ps,
+                          rung=2, attempt=1,
+                          reason=f"{reason} -- failover to {to_provider}",
+                          failure_class=FAILURE_PROVIDER_ERROR)
+        engine.report.to_requester(
+            "blocked",
+            f"{phase.id} hit a provider error ({reason}). Re-issuing the work order "
+            f"pinned to the alternate provider {to_provider}"
+            + (f" ({to_model})" if to_model else "") +
+            f" -- 1 of {HEAL_CAP_PROVIDER} failover attempt(s). "
+            "Nothing you need to do yet.",
+            phase_id=phase.id, reason=f"rung2-failover:{reason}")
+        engine._checkpoint(phase.id, last_provider=from_provider,
+                           failover_provider=to_provider)
+    override = {"provider": to_provider, "model": to_model}
+    if not reissue_agent_work_order(engine, phase, heal_reason=reason,
+                                    attempt_hint="provider failover",
+                                    route_override=override):
+        _ledger(engine, phase=phase.id, rung=2, attempt=1,
+                failure_class=FAILURE_PROVIDER_ERROR, reason=reason,
+                from_provider=from_provider, to_provider=to_provider,
+                route_change=False, outcome="work_order_reissue_failed")
+        return EXIT_EXECUTOR_FAILED
+    rc = _await_healed_agent_artifact(engine, phase)
+    _ledger(engine, phase=phase.id, rung=2, attempt=1,
+            failure_class=FAILURE_PROVIDER_ERROR, reason=reason,
+            from_provider=from_provider, to_provider=to_provider,
+            to_model=to_model, route_change=True, executor_kind="agent",
+            outcome=("ok" if rc == EXIT_OK else "still_failed"))
+    return rc
+
+
 def rung2_provider_failover(engine, phase, reason, child_env=None):
     """FIX 10: the alternate-PROVIDER rung -- the class-dispatched ladder's
     provider_error arm (MASTER Fix 10: "provider_error -> alternate provider
@@ -197,6 +440,15 @@ def rung2_provider_failover(engine, phase, reason, child_env=None):
                     from_provider=from_provider, to_provider=None,
                     route_change=False, outcome="no_alternate_provider")
             return EXIT_EXECUTOR_FAILED
+
+        # F10: an AGENT phase has no executor argv to re-run -- its equivalent
+        # of "re-execute on the other provider" is "reissue the work order with
+        # a route_override pinning it". See the F10 block above. Never under
+        # --dry-run: see _agent_heal_applies.
+        if _agent_heal_applies(engine, phase):
+            return rung2_provider_failover_agent(
+                engine, phase, reason, from_provider=from_provider,
+                to_provider=to_provider, to_model=to_model)
 
         argv = engine._build_executor_argv(phase.executor_cmd, phase.id)
         if not argv:
@@ -293,6 +545,13 @@ def rung2_regenerate(engine, phase, deficiency, child_env=None):
     # attempt got (OC_DECK_ENTRY_NONCE + OC_DECK_ENTRY_NONCE_FILE pointing at
     # this phase's .nonce-<id> file). F54's env=None here made every attempt 2
     # die at the front door with AF-CANONICAL-RENDER-BYPASS.
+    # F10: an AGENT phase has no executor_cmd -- _build_executor_argv returns
+    # nothing for it, which is why this rung silently did NOTHING for 38 of the
+    # 62 pipeline phases. Its real regenerate is a work-order reissue carrying
+    # the failure reason; see the F10 block above. Never under --dry-run: see
+    # _agent_heal_applies.
+    if _agent_heal_applies(engine, phase):
+        return rung2_regenerate_agent(engine, phase, deficiency)
     ps = engine._phase_state(phase.id)
     argv = engine._build_executor_argv(phase.executor_cmd, phase.id)
     if not argv:
