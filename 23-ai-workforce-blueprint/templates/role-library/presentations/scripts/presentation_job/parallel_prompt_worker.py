@@ -20,10 +20,17 @@ Binding contract implemented here (verbatim from spec lines 27-35):
     prompt_constraints{min_chars, max_chars, required_blocks (non-empty)}, slides
     (non-empty) with the exact per-slide field set; slide_id and ordinal unique;
     whole input rejected pre-dispatch on any validation failure.
-  * Concurrency: multiprocessing spawn model, one slide task per process slot,
-    default worker count min(measured_capacity, slides). Processes share no mutable
-    output file; each child receives only its slide payload plus an immutable
-    routing snapshot.
+  * Concurrency (F8): one worker THREAD per slide task inside THIS process,
+    default worker count min(measured_capacity, slides). Workers share no mutable
+    output file; each task receives only its slide payload plus an immutable
+    routing snapshot. The wave ran in multiprocessing spawn children until F8:
+    presentation_job.governor keeps its token bucket, in-flight counter and
+    report_429 penalty in MODULE-LEVEL state, so every spawn child started with
+    its OWN empty bucket and max_inflight / the rolling 10 s window / the 429
+    halving were never enforced ACROSS the wave (100 children could each burst
+    20 in 10 s against one account). Threads share this process's governor, so a
+    wave holds ONE account bucket. The unit of work is an HTTPS round trip, so
+    the GIL costs nothing here.
   * Per-slide result: {slide_id, ordinal, status, prompt_path, prompt_sha256,
     char_count, model_used, attempts, started_at, ended_at, duration_s,
     verify{passed, codes}, error_class, error_message, retryable}. Failed results
@@ -57,11 +64,11 @@ injectable through the module attribute `provider_call` -- the single seam every
 invocation goes through. The production default reuses the EXISTING routed
 authoring path dispatcher.py already uses today (dispatcher.compose_prompt +
 dispatcher.dispatch_complete -- FIX 16: the routed entrypoint, never the raw
-deepseek transport); credentials handling is never duplicated. In spawn
-children the attribute resolves through _resolve_provider(), which honors the
+deepseek transport); credentials handling is never duplicated. Every worker
+resolves the attribute through _resolve_provider(), which also honors the
 PRESENTATION_PROMPT_PROVIDER_STUB env var (absolute path to a stub-spec JSON) so
-spawn children stub deterministically; absent that env it calls the real
-dispatcher path. Stub kinds are local-only mocks: "succeed" (generates a
+a subprocess-launched worker stubs deterministically; absent both it calls the
+real dispatcher path. Stub kinds are local-only mocks: "succeed" (generates a
 gate-passing prompt from the slide payload itself), "fail_429", "fail_500",
 "fail_timeout" (retryable), "fail_auth" (non-retryable), "fail_verify" /
 "fail_verify_then_succeed" (verify_prompt failure path), "fail_empty", "fail_all".
@@ -79,6 +86,7 @@ class). Field passthrough is now identity-preserving by construction.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -87,7 +95,6 @@ import re
 import sys
 import tempfile
 import time
-import multiprocessing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -209,8 +216,10 @@ def load_input(path: Path) -> Dict[str, Any]:
 
 # ---------------------------------------------------------------------------
 # Transport seam. `provider_call` is the module attribute EVERY invocation goes
-# through; tests may rebind it in-process, and spawn children resolve the same
-# seam through _resolve_provider() (env stub spec or the real dispatcher path).
+# through; tests may rebind it in-process (F8: wave workers are threads in THIS
+# process, so an in-process rebind is honoured by every unit of the wave), and a
+# subprocess-launched worker resolves the same seam through _resolve_provider()
+# (env stub spec or the real dispatcher path).
 # ---------------------------------------------------------------------------
 ProviderCall = Callable[[Dict[str, Any], Dict[str, Any], int, Path, str, int], str]
 
@@ -370,8 +379,10 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
     # dispatcher's dispatch_complete, which resolves the route from the
     # client resource profile (DeepSeek-direct stays the default/rollback
     # path) and returns (content, usage, route_dict).
-    # FIX 14: this is a named governor call site. The spawn child holds its
-    # own logical governor lease for the duration of the routed completion.
+    # FIX 14: this is a named governor call site. The worker holds its own
+    # logical governor lease for the duration of the routed completion --
+    # F8: one shared governor for the whole wave, since the wave's units are
+    # threads in one process rather than spawn children with private buckets.
     # The provider is whatever dispatch_complete routes to (deepseek-direct
     # stays the no-profile default/rollback), so the worker gates on
     # dispatcher's own _govern helper -- it keys the lease per thread+provider
@@ -497,7 +508,8 @@ def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
 
 
 # ---------------------------------------------------------------------------
-# One slide task: runs in a spawn child OR inline (n==1 / forkless probes).
+# One slide task: runs on a wave worker THREAD (F8) OR inline (n==1 /
+# constrained probes).
 # ---------------------------------------------------------------------------
 def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     slide = task["slide"]
@@ -702,7 +714,10 @@ def _workers_for(slides: int, capacity: int, requested: Optional[int]) -> int:
 
 def _run_wave(wave_slides: List[Dict[str, Any]], cfg: Dict[str, Any],
               consumed: Dict[int, int]) -> List[Dict[str, Any]]:
-    """One dispatch wave: up to N workers, one slide task per slot."""
+    """One dispatch wave: up to N worker threads, one slide task per slot.
+
+    F8: the units run in THIS process so the whole wave shares ONE
+    presentation_job.governor (its buckets are module-level state)."""
     if not wave_slides:
         return []
     results: List[Dict[str, Any]] = []
@@ -721,14 +736,28 @@ def _run_wave(wave_slides: List[Dict[str, Any]], cfg: Dict[str, Any],
         })
     procs = _workers_for(len(wave_slides), cfg["routing"]["measured_capacity"],
                          cfg["requested_workers"])
-    ctx = multiprocessing.get_context("spawn")
-    # Inline fallback avoids spawn for single-slide waves in constrained envs.
+    # Inline fallback avoids a pool for single-slide waves in constrained envs.
     if procs <= 1 or cfg.get("inline"):
         for task in tasks:
             results.append(_run_one(task))
         return results
-    with ctx.Pool(processes=procs) as pool:
-        results = pool.map(_run_one, tasks)
+    # F8 -- ONE GOVERNOR PER WAVE. This used to be
+    # `multiprocessing.get_context("spawn").Pool(processes=procs)`.
+    # presentation_job.governor holds its token bucket, in-flight counter and
+    # report_429 penalty in module-level state, which a spawn child does NOT
+    # inherit: each child re-imported governor with an empty bucket, so
+    # max_inflight, the rolling 10 s window ceiling and the 429 halving bound
+    # ONE child instead of the wave. At 100 workers with deepseek burst 20 that
+    # is up to 2,000 admissions per 10 s against a single account bucket, and a
+    # 429 seen by one child never slowed its 99 peers.
+    # Threads run _run_one in THIS process, so every unit of the wave shares
+    # one governor (dispatcher._govern_acquire already keys its re-entrancy
+    # depth per thread, so the nested-lease accounting is thread-correct).
+    # The unit of work is an HTTPS round trip: the GIL is irrelevant here.
+    # `map` preserves task order, exactly as Pool.map did.
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=procs, thread_name_prefix="p4prompt") as pool:
+        results = list(pool.map(_run_one, tasks))
     return results
 
 
