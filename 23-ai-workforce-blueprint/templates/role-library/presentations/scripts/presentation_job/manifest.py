@@ -867,7 +867,20 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 #  produces working/prompts/infographic-prompt.txt (the FIX 2 fanout extra unit);
 #  P-STYLE-PREVIEW consumes the spec; P4-RENDER consumes the pick. Phase count
 #  55 -> 59. Floor follows the manifest in the same commit per U019 step 8.)
-MIN_MANIFEST_VERSION = 56  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 56 -> 68: THE FLOOR WAS LEFT BEHIND, and this bump closes the whole gap at once.
+# The floor last moved at 56 (W05-B2 / Fix 29). PIPELINE-MANIFEST.json moved 57..67
+# without it — each of those bumps skipped U019 step 8 — so the repo shipped a floor
+# ELEVEN versions behind its own manifest. That is the exact split-brain step 8 exists
+# to prevent, and it is why test_client_package.py::
+# test_min_manifest_version_matches_repo_manifest_file and
+# ::test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below
+# were BOTH red on pristine main: they assert EQUALITY (==), not >=.
+# 67 -> 68 is this commit's own manifest edit: P-STYLE-PICK.consumes gains
+# "working/copy/intake.json" — the record the phase already reads via
+# phases.Engine._style_pick_intake_auto -> defers.load_intake, making the declared DAG
+# match what the phase actually does (precedent: P-STYLE-SPEC already declares it).
+# The floor is set to 68 = the new manifest_version, per U019 step 8.
+MIN_MANIFEST_VERSION = 68  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
