@@ -531,3 +531,56 @@ def test_the_verifier_still_refuses_an_empty_run(tmp_path):
     _seed_samples(rd)
     ok, reasons = phase_verifiers._verify_style_pick(rd)
     assert ok is False and reasons
+
+
+# ---------------------------------------------------------------------------
+# 7. THE HANDS-OFF PATH -- the opt-in survives resolve_intake
+#
+# The client path with no operator in it is: agent intake -> launchd poller
+# --new -> engine. On that branch presentation-intake-poll.sh runs
+# presentation_job/resolve_intake.py, which builds the engine's intake from a
+# WHITELIST -- measured on this branch, the resolved dict carries 7 keys
+# (client, deck_slug, deck_type, presentation_type, requester, source,
+# standard_mode) and neither style_pick_auto nor pre_presentation_capture
+# survives it. The opt-in is nonetheless intact at the gate because the poller
+# writes that resolved dict to working/checkpoints/.engine-intake.json -- NOT
+# over working/copy/intake.json -- and defers.load_intake (the engine's reader)
+# reads working/copy/intake.json, which only the driver writes.
+#
+# That is a load-bearing SEAM, not an accident: load_intake's own docstring
+# claims state["intake"] "is preferred when present" (it is not, today). The
+# day either half of that seam moves -- resolve_intake writing over
+# copy/intake.json, or load_intake actually preferring state["intake"] -- the
+# opt-in silently vanishes and every opted-in client parks again. This test
+# goes red at that moment instead of a client discovering it.
+# ---------------------------------------------------------------------------
+def test_the_opt_in_survives_the_poller_new_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("PRESENTATION_REQUESTER_CHAT_ID", "probe-chat-1")
+    rd = tmp_path / "run"
+    intake = _drive_intake(rd, "match brand; style pick auto: yes")
+    assert intake.get(SUBFIELD) is True
+    assert _engine_reads_opt_in(rd) is True
+
+    # Exactly what presentation-intake-poll.sh's --new branch runs.
+    out = rd / "working" / "checkpoints" / ".engine-intake.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPTS / "presentation_job" / "resolve_intake.py"),
+         "--ledger", str(rd / "working" / "interview" / "intake_ledger.json"),
+         "--out", str(out), "--source", "intake-poll"],
+        capture_output=True, text=True, timeout=180)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+
+    # CONTROL: the resolver really did run and really did drop the field --
+    # so "the engine still sees it" below is proving the seam, not a no-op.
+    resolved = json.loads(out.read_text(encoding="utf-8"))
+    assert resolved.get("presentation_type") == "from_scratch", resolved
+    assert resolved.get(SUBFIELD) is None, (
+        "resolve_intake now carries the opt-in forward -- good, but this test's "
+        "control is stale: update it to assert the new, stronger path")
+
+    # THE POINT: the reader the gate uses is unaffected.
+    assert _engine_reads_opt_in(rd) is True, (
+        "resolve_intake overwrote working/copy/intake.json (or load_intake "
+        "started preferring state['intake']) -- the opt-in is gone and every "
+        "opted-in client parks 45 minutes at P-STYLE-PICK again")
