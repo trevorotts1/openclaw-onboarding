@@ -1,34 +1,40 @@
 # QC Checklist: GHL Install Pages
 
 ## 1. Purpose
-Enables browser-based deployment of finished HTML pages into Convert and Flow / GHL funnels or websites using Playwright.
+This checklist verifies install + readiness for deploying finished HTML pages into Convert and Flow / GHL funnels or websites. PRIMARY lane = **agent-browser** (Skill 03) routed through the mandatory `tools/browser_manager.sh` gateway, classified by the capability probe. Self-hosted Playwright is the **FALLBACK lane only** (known-hard flows, e.g. cross-origin iframe drag) — never the primary, never install Step 1.
 
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, the full reference `.md`, and the `.skill` package.
-- [ ] Playwright is installed and Chromium has been downloaded successfully.
-- [ ] The credential store or persistent-session path exists at the documented location for this repo.
-- [ ] The Playwright configuration uses persistent context with the documented session directory and minimum viewport requirements.
+- [ ] agent-browser (Skill 03, PRIMARY engine) is installed and matches the repo pin **0.27.0** (`tools/gates.json` → `agent_browser_version_pin`; drift only via the documented `GHL_AB_ALLOW_VERSION_DRIFT=1` / `GHL_AB_PINNED_VERSION` overrides).
+- [ ] The mandatory gateway `tools/browser_manager.sh` (+ `tools/browser_manager.py`) is present — agent-browser is NEVER invoked directly; every call goes through the gateway.
+- [ ] The credential store exists at the documented location (`~/.openclaw/secrets/.env`).
 - [ ] No standalone script in the skill folder is required; if a local deployment helper was created, confirm it is executable.
 
 ## 3. Dependency Checks
-- [ ] TYP, BYUP, and GHL setup (skill 05) are already complete.
-- [ ] Python 3 and Playwright are installed: `python3 -c "from playwright.sync_api import sync_playwright"` succeeds.
-- [ ] Chromium is installed for Playwright: `playwright install chromium` completed successfully.
-- [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (canonical path — `~/clawd/secrets/.env` is retired and must not be used), OR a persistent browser session exists at `~/.openclaw/playwright-data/ghl-install-pages` (Playwright fallback only). GHL email/password credentials are not used by this skill.
+- [ ] TYP, BYUP, GHL setup (skill 05), and agent-browser (skill 03) are already complete.
+- [ ] The capability probe has been run: `working/skill6-capability.json` exists (run-evidence root, never inside the skill dir) with `selectedLane != null` naming a real browser lane.
+- [ ] FALLBACK-lane check — Python 3 and Playwright are installed: `python3 -c "from playwright.sync_api import sync_playwright"` succeeds.
+- [ ] FALLBACK-lane check — Chromium is installed for Playwright: `python3 -m playwright install chromium` (interpreter trap: NEVER bare `playwright`/`pip`, which can bind to a different Python than `python3`).
+- [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (canonical path — `~/clawd/secrets/.env` is retired and must not be used). GHL email/password credentials are not used by this skill.
 - [ ] Finished HTML is available, self-contained, and ready to paste.
 
 ## 4. Key Detection
-- [ ] Confirm `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is present at `~/.openclaw/secrets/.env` (canonical path); this skill is token-only — `GHL_EMAIL` and `GHL_PASSWORD` are not used and must not appear in any agent-accessible credential path.
-- [ ] Also search for existing persistent session data at `~/.openclaw/playwright-data/ghl-install-pages` before declaring credentials missing.
+- [ ] Confirm `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is present at `~/.openclaw/secrets/.env` (canonical path). TOKEN-ONLY (D7) ladder: Tier-1 = the refresh-token seed (the ONLY unattended path); Tier-2 = the GATED email-2FA bootstrap via `tools/ghl_auth.py` (only when Tier-1 fails and all four gates pass); Tier-3 = fail loud. `GHL_EMAIL` and `GHL_PASSWORD` are not used and must not appear in any agent-accessible credential path.
+- [ ] The probe `secrets` block reports `firebaseRefreshToken: true` — presence-only checks only (`grep -c` / `-q`); NEVER print the token value.
+- [ ] FALLBACK lane only: if the Playwright fallback is actually in use, search for existing persistent session data at `~/.openclaw/playwright-data/ghl-install-pages` before declaring credentials missing.
 - [ ] Recognize broader GHL credential aliases from setup skill if needed for account context: `GHL_API_KEY`, `GHL_PIT`, `GOHIGHLEVEL_API_KEY`, and `GHL_LOCATION_ID`.
 - [ ] QC fails if the agent hardcodes credentials into a script or ignores an existing reusable session.
 
 ## 5. Functional Checks
-- [ ] Run the Playwright import verification command and confirm success output.
-- [ ] Verify the launch configuration uses `launch_persistent_context()` and **not** `launch()`.
+- [ ] Capability probe JSON exists with `selectedLane` non-null naming an available lane, AND at least one browser lane is real: agent-browser present via `browser_manager.sh` OR the OpenClaw managed-browser lane OK.
+- [ ] **NO FALSE GREEN: QC cannot pass with zero browser lanes.** `selectedLane == null` (no lane available) is a hard QC FAIL — an assert, never a warning.
+- [ ] `bash tools/browser_manager.sh ensure` succeeds for the selected lane and the singleton session starts and tears down clean (direct `agent-browser` invocation = FAIL).
 - [ ] Open the GHL dashboard and confirm the agent checks the current sub-account before editing any page.
 - [ ] Verify the agent can describe the nested iframe requirement and that code insertion happens inside the correct builder context.
 - [ ] Confirm the agent ends with preview/report behavior and does **not** publish without explicit user approval.
+
+### Fallback lane checks (only when `selectedLane` = Playwright or a Playwright-hybrid flow is required)
+- [ ] Verify the launch configuration uses `launch_persistent_context()` and **not** `launch()`, with the documented session directory and minimum viewport requirements.
 
 ## 6. QC Score
 - Score this skill from **0 to 10** after running the checks above.

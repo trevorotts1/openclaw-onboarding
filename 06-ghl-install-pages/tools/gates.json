@@ -9,7 +9,7 @@
       "still-runtime-snapshot": "No screenshot for this node yet. Snapshot the live DOM and resolve from the find-seed; label is a hint only."
     }
   },
-  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 are DOM-captured; gates 2-26 and 28 remain runtime snapshot-gates. SEPARATELY, the 2026-06-21 UI-MAP pass (15 screenshots, Downloads/ghl-ui-map.md) confirmed the VISIBLE LABELS + sequence for the funnel flow — those gates now carry screenshot-confirmed-label. The agent still resolves the live @ref at runtime. PENDING-LIVE-RUN for the end-to-end build.",
+  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 are DOM-captured; the remaining 28 (gates 2-26 and 28-30, incl. the multi-iframe protocol gates 29-30) remain runtime snapshot-gates. SEPARATELY, the 2026-06-21 UI-MAP pass (15 screenshots, Downloads/ghl-ui-map.md) confirmed the VISIBLE LABELS + sequence for the funnel flow — those gates now carry screenshot-confirmed-label. The agent still resolves the live @ref at runtime. PENDING-LIVE-RUN for the REST_autosave wired path end-to-end and the full-funnel publish E2E; the A/B/C build-method OUTCOME baseline in `_runtime_gate_baseline` is separately CAPTURED on the operator fixture.",
   "_runtime_gate_baseline": {
     "_doc": "END-TO-END runtime BUILD-OUTCOME baseline, promoted runtime -> captured on the strength of the 2026-06-21 Funnel-Factory re-run (A4-GATE-CAPTURE). DISTINCT from the per-gate `status` field above: `status` (captured=2 / runtime=26) tracks DOM-SELECTOR capture and is unchanged by this block. THIS block records the build-OUTCOME gates (preview HTTP 200 + marker present + asset renders + draft-not-published) that each build METHOD achieved on a real live run. `outcome_status` values mirror the gate legend: `captured` = verified live this run; `runtime` = not yet driven end-to-end. Every value here is supported by independent-curl / API evidence in A4-GATE-CAPTURE; NO value is asserted without that evidence. Operator fixture only: BlackCEO LLC test sub-account (FIXTURE0LOCATION0000), the operator's own box — NO client data.",
     "_evidence_source": "A4-GATE-CAPTURE (2026-06-21 Funnel-Factory re-run, BlackCEO LLC operator test fixture). Auth: token-only (Firebase refresh-token seed), headless, NO UI login / NO two-factor. Marker: ZHC-FACTORY-FUNNEL-0621.",
@@ -57,7 +57,7 @@
         "exact_location_verified": {"result": "PENDING-LIVE-RUN", "evidence": "emit_rest_save_plan gates the whole plan behind subaccount_matches(current_location_id, <configured GHL location id>) — MISMATCH emits zero steps; not yet driven end-to-end via the wired path"}
       }
     },
-    "_note": "Three build methods (A raw-code funnel/page, B vercel-embed, C website page) hold a live end-to-end runtime PASS on the operator fixture (outcome_status `captured`). The REST_autosave method is the cracked canvas-REST path wired in by T1 (ghl_rest_canvas -> ghl_builder.emit_rest_save_plan); its outcome_status is `runtime` (PENDING-LIVE-RUN) because T1 is mock-unit-test only and the wired path has NOT yet been driven end-to-end (the underlying recipe is proven live in the headless-canvas solution doc, but this method only flips to `captured` on a fresh end-to-end receipt under the durable skill6-fix evidence root). This block does NOT alter the 28-entry `gates` array or its captured/runtime counts (still 2 captured / 26 runtime, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is captured/runtime here is the build OUTCOME each method produces."
+    "_note": "Three build methods (A raw-code funnel/page, B vercel-embed, C website page) hold a live end-to-end runtime PASS on the operator fixture (outcome_status `captured`). The REST_autosave method is the cracked canvas-REST path wired in by T1 (ghl_rest_canvas -> ghl_builder.emit_rest_save_plan); its outcome_status is `runtime` (PENDING-LIVE-RUN) because T1 is mock-unit-test only and the wired path has NOT yet been driven end-to-end (the underlying recipe is proven live in the headless-canvas solution doc, but this method only flips to `captured` on a fresh end-to-end receipt under the durable skill6-fix evidence root). This block does NOT alter the 30-entry `gates` array or its captured/runtime counts (still 2 captured, now 28 runtime including the two multi-iframe protocol gates 29-30, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is captured/runtime here is the build OUTCOME each method produces. The full-funnel publish E2E and Skill 62's U26 live proof (deliberately HELD per CWFE-MANIFEST.json) remain OWED and are NOT claimed by this block; operator steps that clear only the owed half are in `OPERATOR-LIVE-CHECKLIST.md`."
   },
   "_env": {
     "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BCEO Client Sandbox (location XCgFTEA1oDvsPnTqqgoB) = designated test sub-account on this operator box per operator ruling 2026-07-20; every historical capture/evidence line in this file that names BlackCEO LLC (location Mct54Bwi1KlNouGXQcDX) records runs made against the PREVIOUS designated fixture and is preserved unrewritten. Client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
@@ -74,12 +74,12 @@
   "_label_coverage": {
     "screenshot_confirmed_label": [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21],
     "live_confirmed_label": [23, 24, 25, 26],
-    "still_runtime_snapshot": [2, 12, 22, 27, 28],
+    "still_runtime_snapshot": [2, 12, 22, 27, 28, 29, 30],
     "count_screenshot_confirmed": 19,
     "count_live_confirmed": 4,
-    "count_still_runtime": 5,
-    "total": 28,
-    "_note": "19 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). 4 gates (23-26, the Websites + Mode-2 embed flow) are now LIVE-CONFIRMED by the 2026-06-21 D10/D11 end-to-end run on the BlackCEO LLC operator test fixture (Website created + page built + Code element + preview HTTP 200 + marker rendered; Mode-2 iframe embed rendered live through preview). The Website builder is the SAME editor as the Funnel builder, with the URL/label/flow DIFFERENCES recorded inline on gate 25. Gate 12 (editor iframe boundary) is structural with no visible label. Gate 22 (funnel-list row) and gate 28 (published-page origin) remain runtime. Gate 27 is auth-storage (DOM-captured, no visible label)."
+    "count_still_runtime": 7,
+    "total": 30,
+    "_note": "19 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). 4 gates (23-26, the Websites + Mode-2 embed flow) are now LIVE-CONFIRMED by the 2026-06-21 D10/D11 end-to-end run on the BlackCEO LLC operator test fixture (Website created + page built + Code element + preview HTTP 200 + marker rendered; Mode-2 iframe embed rendered live through preview). The Website builder is the SAME editor as the Funnel builder, with the URL/label/flow DIFFERENCES recorded inline on gate 25. Gate 12 (editor iframe boundary) is structural with no visible label. Gate 22 (funnel-list row) and gate 28 (published-page origin) remain runtime. Gate 27 is auth-storage (DOM-captured, no visible label). Gates 29-30 are the multi-iframe protocol gates (correct-frame-before-edit / refreshed-snapshot-after-panel-open) — structural, no visible UI label, resolve via tools/iframe_router.py at runtime."
   },
   "login_route": {
     "use": "https://app.convertandflow.com/",
@@ -309,11 +309,25 @@
       "label_source": "still-runtime-snapshot",
       "find": "read the published page's own origin after first publish",
       "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds."
+    },
+    {
+      "id": 29, "spec": "MIF.1", "name": "correct_frame_before_edit", "status": "runtime",
+      "label": "(no UI label — the multi-iframe frame-targeting protocol, plan Part 3.5 row 4a)",
+      "label_source": "still-runtime-snapshot",
+      "find": "run tools/iframe_router.py detect_iframes on the live DOM -> write working/iframe-map.json {selector, name, src, originClass, purposeHint} -> declare target frame (iframe_selector + frame_epoch) BEFORE any in-frame act",
+      "note": "MULTI-IFRAME HARD GATE: before ANY in-frame act (drag/click/type inside a builder iframe), the builder MUST (1) detect + map the page's iframes (tools/iframe_router.py detect_iframes), (2) declare the target frame as iframe_selector + frame_epoch, and (3) act frame-scoped — never via a top-level selector for an in-frame node. A wrong-frame act MUST FAIL CLOSED (IframeDragError iframe-ambiguous / iframe-refs-stale), never click through the top-level snapshot. Same 'NO invented CSS is shipped as fact' law as every other runtime gate: detect iframes at runtime, do not assume a fixed frame layout."
+    },
+    {
+      "id": 30, "spec": "MIF.2", "name": "refreshed_snapshot_after_panel_open", "status": "runtime",
+      "label": "(no UI label — frame-ref invalidation + iframe-map rebuild, plan Part 3.5 row 4b)",
+      "label_source": "still-runtime-snapshot",
+      "find": "after ANY navigation, panel open (SEO/settings), or 'two saves': all frame refs INVALIDATED -> iframe-map rebuilt (tools/iframe_router.py detect_iframes) -> frame_epoch bumped (router bump_frame_epoch contract) -> THEN the next in-frame act",
+      "note": "STALE-FRAME HARD GATE: after any navigation, panel open (SEO / settings / Show settings), or 'two saves', every previously-captured frame @ref and in-frame element ref is INVALID — the DOM may have remounted the iframe (same src, new document). Before the next act: invalidate all frame refs, rebuild the iframe-map, bump frame_epoch (tools/iframe_router.py bump_frame_epoch contract), and re-snapshot inside the (possibly new) target frame. Acting on a stale epoch's refs must fail closed (IframeDragError iframe-refs-stale), never fall through to a top-level click."
     }
   ],
 
   "stable_id_selector_layer": {
-    "_doc": "STABLE-ID-FIRST resolution layer (research ghl-selectors-v2 CDP capture). ADDITIVE — this is NOT a member of the 28-entry `gates` array and does NOT change the captured=2/runtime=26 counts the install QC asserts. It documents the resolution DISCIPLINE referenced by each gate's `stable_ref` field. The stable ids below are PRIORS captured from the GHL builder DOM, not asserted CSS: the resolver tries the stable id FIRST, then falls back to the gate's existing `find` text/role probe, and STILL resolves + verifies the live @ref at runtime before acting. Tried-then-verified priors — no invented CSS ships as fact. Every id stays `prior-unverified-until-live-capture` until ONE live capture pass promotes it; on `agent-browser` pin bump or GHL UI drift, re-capture before trusting.",
+    "_doc": "STABLE-ID-FIRST resolution layer (research ghl-selectors-v2 CDP capture). ADDITIVE — this is NOT a member of the 30-entry `gates` array and does NOT change the captured=2/runtime=28 counts the install QC asserts. It documents the resolution DISCIPLINE referenced by each gate's `stable_ref` field. The stable ids below are PRIORS captured from the GHL builder DOM, not asserted CSS: the resolver tries the stable id FIRST, then falls back to the gate's existing `find` text/role probe, and STILL resolves + verifies the live @ref at runtime before acting. Tried-then-verified priors — no invented CSS ships as fact. Every id stays `prior-unverified-until-live-capture` until ONE live capture pass promotes it; on `agent-browser` pin bump or GHL UI drift, re-capture before trusting.",
     "resolution_order": ["1. try stable id (this layer) inside the correct context (see context_split)", "2. on id-miss, fall back to the gate `find` text/role/visible-text seed", "3. ALWAYS resolve the live @ref + verify it is visible/correct role before acting", "4. id-miss is NEVER a crash — it degrades to the find fallback"],
     "capture_date": "PENDING-LIVE-CAPTURE (ghl-selectors-v2 CDP prior; not yet promoted by a live capture pass on this box). Stamp the GHL-UI capture date here when promoted; keep beside the agent_browser_version_pin (0.27.0).",
     "ids": {
@@ -339,7 +353,7 @@
   },
 
   "full_width_alt_route_show_settings": {
-    "_doc": "ALTERNATE PRIOR (transcript-derived) to gate 14 (full_width_toggle). This is NOT a member of the 28-entry `gates` array and does NOT affect the captured=2/runtime=26 counts the install QC asserts — it is a distinct, snapshot-first PRIOR documenting the EASIER second route to the same 'Allow Rows to take entire width' toggle. The harden run owns gate 14's selector priors; this entry is added alongside, not in place of them.",
+    "_doc": "ALTERNATE PRIOR (transcript-derived) to gate 14 (full_width_toggle). This is NOT a member of the 30-entry `gates` array and does NOT affect the captured=2/runtime=28 counts the install QC asserts — it is a distinct, snapshot-first PRIOR documenting the EASIER second route to the same 'Allow Rows to take entire width' toggle. The harden run owns gate 14's selector priors; this entry is added alongside, not in place of them.",
     "alt_to_gate": 14,
     "spec": "A9.1b / transcript step 13b",
     "status": "runtime",

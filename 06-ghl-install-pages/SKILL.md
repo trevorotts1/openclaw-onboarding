@@ -28,14 +28,27 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > The previous raw-Playwright-only stack is replaced. The full hardened
 > procedure is in `ghl-browser-builder-full.md` (v3.0).
 
-> **STATUS — PENDING-LIVE-RUN.** The login-form DOM (gate #1, used ONLY to DETECT
-> a failed seed and STOP — never to log in) and the auth-storage schema (gate #27)
-> are LIVE-CAPTURED. The other 26 in-app controls are **runtime snapshot-gates**
-> (`tools/gates.json`): the agent snapshots the live DOM and picks the ref at
-> runtime — NO invented CSS is shipped as fact. The end-to-end funnel/website
-> live test is NOT yet claimed (blocked ONLY on a fresh Firebase refresh token —
-> the token-seed is the sole auth path; there is NO login-form / two-factor run,
-> attended or otherwise, per the TOKEN-ONLY doctrine in §2/D7).
+> **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
+> **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
+> (gate #1, used ONLY to DETECT a failed seed and STOP — never to log in) and
+> the auth-storage schema (gate #27) are LIVE-CAPTURED. The other 28 in-app
+> controls (incl. gates 29-30) are **runtime snapshot-gates** (`tools/gates.json`):
+> the agent snapshots the live DOM and picks the ref at runtime — NO invented CSS
+> is shipped as fact. Build methods A/B/C (raw-code funnel/page, vercel-embed,
+> website page) hold a `captured` end-to-end PASS on the operator fixture
+> (BlackCEO LLC FIXTURE0LOCATION0000, marker ZHC-FACTORY-FUNNEL-0621;
+> `token_only_auth` PASS) — `tools/gates.json` `_runtime_gate_baseline`. Skill
+> 62's U22 registration wiring is landed on this branch and its offline build is
+> COMPLETE (`62-cinematic-web-funnel-engine/CWFE-MANIFEST.json` `build_status`).
+> **STILL OWED (do not upgrade without a fresh dated receipt):** the REST_autosave
+> wired path end-to-end (`ghl_builder.emit_rest_save_plan` →
+> `tools/ghl_rest_canvas.py`; its per-gate results in `gates.json` stay
+> PENDING-LIVE-RUN), Skill 62's U26 live proof (deliberately HELD), and the
+> full-funnel publish E2E. The sole auth blocker for every owed run is a fresh
+> Firebase refresh token — the token-seed is the sole auth path; there is NO
+> login-form / two-factor run, attended or otherwise, per the TOKEN-ONLY doctrine
+> in §2/D7. No live run is scheduled or approved; the operator steps that clear
+> ONLY the owed half are in `OPERATOR-LIVE-CHECKLIST.md`.
 
 This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
@@ -125,10 +138,21 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
   DOCUMENTED, MANUAL last resort for a human operator ONLY — they are NEVER
   auto-invoked by this skill, and there is NO automatic UI-login / 2FA fallback.
+  AUTH LADDER — 3 tiers, identical everywhere it is stated (Prerequisites
+  auth bullet; Critical Things to Know; carried verbatim in INSTALL.md):
+  Tier-1 TOKEN-ONLY (Firebase refresh) — the default, unattended path;
+  Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
+  the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 - **GoHighLevel media/PIT credentials — where they live and how they resolve
   (READ BEFORE the image step).** The image/media pipeline needs three values, all
-  in the env stores (resolution order: `~/.openclaw/secrets/.env` →
-  `~/clawd/secrets/.env` → `~/.openclaw/workspace/.env`):
+  in the env stores (the ONE canonical resolution order, exactly:
+  `~/.openclaw/secrets/.env` → `~/clawd/secrets/.env` →
+  `~/.openclaw/workspace/.env`; `~/clawd/secrets/.env` is
+  **DEPRECATED-COMPAT** — still searched, not canonical, no new writes; every
+  other doc in this skill references this list, never restates its own).
+  Skill 6 reads the host-resolved process env
+  (`os.environ`) as already resolved by the host; only `ghl_media.py` /
+  `ghl_image_stage.py` fall back to parsing the stores above directly:
   - **LOCATION PIT** (media-scoped): `GOHIGHLEVEL_API_KEY` (preferred) → `GHL_API_KEY`
     → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT`. This is the token media upload
     REQUIRES. The **AGENCY** PIT (`GOHIGHLEVEL_AGENCY_PIT` /
@@ -288,7 +312,7 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    replace `ghl_verify.render_check` — the sealed verifier (§7/§8) is still the only
    verdict.
 4. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
-   engine, auth seeding, the 28-gate runtime contract, the full funnel +
+   engine, auth seeding, the 30-gate runtime contract, the full funnel +
    website + Mode-2 iframe flows, and the ledger/resume mechanics. Read this
    when you are actually about to deploy pages.
 5. **tools/** - The code:
@@ -305,7 +329,8 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      **folder-per-funnel** wiring (`ensure_funnel_media_folders` /
      `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
      browser-routed**.
-   - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
+   - `gates.json` - the 30-gate registry (2 captured, 28 runtime snapshot-gates,
+     incl. the multi-iframe protocol gates 29-30).
    - `ghl_survey_builder.py` - two-part browser-controlled survey pipeline
      (**v1.4.0**): Part 1 creates/reuses GHL custom fields; Part 2 builds the
      survey, maps Add-Object-Fields, wires conditional logic + branch convergence,
@@ -323,6 +348,12 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      cross-origin iframe drives it through this. **Read
      `TECHNIQUES-cross-origin-iframe-dragdrop.md` (skill root) FIRST** when a builder
      canvas is an iframe. `--selftest` needs no network/browser.
+   - `iframe_router.py` - the **single adaptive iframe entrypoint** (`route_drag` /
+     `route_click`): route through it instead of hand-picking between the AB
+     ladder (`ghl_iframe_dragdrop.py`) and Playwright CDP (`ghl_iframe_drag.py`);
+     the lane is chosen from the capability receipt (`iframeDrag.available`), and
+     multi-iframe ambiguity plus stale frame refs (`frame_epoch`) fail closed.
+     `--selftest` is offline.
    - `ghl_survey_rest.py` - the survey builder's **capture-gated canvas-free write
      lane**. Derives the save origin/path/verb from a RECORDED save-capture receipt
      (`routing/survey-save-capture.json`) ONLY — the anti-blind-POST invariant; no
@@ -383,6 +414,11 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   navigating. Auth lives in IndexedDB (firebaseLocalStorageDb) + the six SPA
   cookies, NOT localStorage. The refresh token ALONE logs the SPA in — NO Sign-in
   form is rendered, NO password is typed, two-factor is NEVER reached.
+  AUTH LADDER — 3 tiers, identical everywhere it is stated (Prerequisites
+  auth bullet; this section; carried verbatim in INSTALL.md):
+  Tier-1 TOKEN-ONLY (Firebase refresh) — the default, unattended path;
+  Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
+  the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 - GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.
   The canonical auth entry point is the orchestrator `tools/ghl_auth.py` (a 3-tier
   ladder). Tier 1 (token-only, above) stays PRIMARY and is the only path a normal
@@ -406,6 +442,24 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   the Convert and Flow Token Grabber Chrome extension, then retry the seed.
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never
   auto-invoked.
+
+### Adaptive browser lanes
+
+Lanes are selected per host by the capability probe — never assumed:
+
+| # | Lane | Cross-origin drag? |
+|---|------|--------------------|
+| 1 | agent-browser via `browser_manager` (PRIMARY, pin 0.27.0) | Partial without Playwright |
+| 1b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
+| 2 | OpenClaw managed browser `openclaw browser` + `--frame` | Proposed upgrade — experimental, not wired as PRIMARY |
+| 3 | Playwright-only | Degraded escape hatch |
+| 4 | REST / fallback-ladder | Content ops without UI drag |
+| 5 | CUA | NOT in Skill 6 yet — future last resort only |
+
+Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
+is the runtime source of truth. Capability-class mapping and lane detail live in
+`ENV-MATRIX.md` ("Capability classes").
+
 - Always verify you are in the correct sub-account before building
   (ghl_builder.py subaccount). Wrong sub-account = the client never sees pages.
   REFUSE on mismatch.
@@ -472,7 +526,7 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   DIRECT). Do NOT pre-ban `<iframe>` on a guess — the Vercel-embed workflow
   presupposes it renders; the live iframe/strip probe (harden run) settles it.
 - NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
-  pick the ref at runtime (the 26 runtime gates in tools/gates.json).
+  pick the ref at runtime (the 28 runtime gates in tools/gates.json).
 - Set large HTML payloads via the code-editor value API (eval), never key-by-key.
 - **MANDATORY theme/colors list on EVERY page blob.** Every page blob POSTed to
   GoHighLevel MUST carry a populated `general.general.colors` list. Without it

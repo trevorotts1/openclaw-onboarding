@@ -59,7 +59,7 @@ from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v25.0.17"
+BROWSER_MANAGER_PY_VERSION = "v25.1.0"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
@@ -802,6 +802,52 @@ def stale_env_preflight(
     return None
 
 
+
+
+# ── capability probe (P0-6 / plan 2.4-2) ───────────────────────────────────────────────────────────────────────
+
+def _probe_error_doc(reason: str) -> dict:
+    """Fail-closed probe document — selectedLane null, advisory, never raises.
+
+    The real probe (capability_probe.run_probe) fail-closes the same way
+    (zero browser lanes -> selectedLane null + blockers); this covers the
+    additionally-catastrophic case where the probe module itself cannot run.
+    """
+    return {
+        "probedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "selectedLane": None,
+        "blockers": ["probe-error"],
+        "warnings": [reason],
+        "lanes": {},
+        "error": reason,
+    }
+
+def capability_probe_result() -> dict:
+    """P0-6 / plan 2.4-2 — run the Skill 06 browser capability probe.
+
+    Soft-imports ``capability_probe`` (sibling module in tools/) and returns
+    its result dict verbatim — one classification implementation, never a
+    second drifting one. On ANY failure returns a fail-closed document
+    (selectedLane null, blockers ["probe-error"]) instead of raising: the CLI
+    wrapper prints it and ALWAYS exits 0 (advisory — bm_ensure warns rather
+    than blocks on this output).
+
+    Version note: the probe MEASURES the live binary (``agent-browser
+    --version``) for its lane table; the authoritative enforcement pin stays
+    ``_read_pinned_agent_browser_version`` (assert_agent_browser_version) —
+    the two are reconciled in ghl_ab_executor's selftest, never re-derived
+    here.
+    """
+    try:
+        import capability_probe  # type: ignore[import-untyped]
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never raise
+        return _probe_error_doc(f"capability_probe import failed: {exc}")
+    try:
+        return capability_probe.run_probe()
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never raise
+        return _probe_error_doc(f"capability probe failed: {exc}")
+
+
 if __name__ == "__main__":  # pragma: no cover - thin CLI, exercised via subprocess in tests
     import argparse
 
@@ -812,12 +858,63 @@ if __name__ == "__main__":  # pragma: no cover - thin CLI, exercised via subproc
              "stale relative to the container's StartedAt; prints nothing "
              "(and always exits 0 — advisory only) otherwise.",
     )
+    _parser.add_argument(
+        "--capability-probe", action="store_true",
+        help="P0-6 / plan 2.4-2: run the Skill 06 browser capability probe "
+             "and print its JSON to stdout (selectedLane, fallbackChain, "
+             "blockers, warnings — secrets surfaced as booleans only). "
+             "ADVISORY: ALWAYS exits 0, even when the probe fails or reports "
+             "blockers (a WARN line goes to stderr then; bm_ensure warns "
+             "rather than blocks on this output).",
+    )
+    _parser.add_argument(
+        "--capability-out", default=None, metavar="PATH",
+        help="P0-6: with --capability-probe, where to write the receipt JSON "
+             "(default: BM_CAPABILITY_RECEIPT_OVERRIDE, else "
+             "<skill>/working/skill6-capability.json).",
+    )
     _args = _parser.parse_args()
     if _args.stale_env_preflight:
         _msg = stale_env_preflight()
         if _msg:
             print(_msg)
         sys.exit(0)
-    else:
-        _parser.print_help()
-        sys.exit(0)
+    if _args.capability_probe:
+        _probe = capability_probe_result()
+        print(json.dumps(_probe, indent=2, sort_keys=False))
+        # P0-6: persist the receipt to the capability JSON path (non-fatal) so
+        # the dispatcher freshness gate and QC prereq can read it. Path:
+        # --capability-out > BM_CAPABILITY_RECEIPT_OVERRIDE (test-only, the
+        # BM_DURABLE_ROOT_OVERRIDE convention) > <skill>/working/
+        # skill6-capability.json. A write failure is a WARN, never a raise —
+        # the printout above remains the advisory evidence.
+        _cap_out = (
+            _args.capability_out
+            or os.environ.get("BM_CAPABILITY_RECEIPT_OVERRIDE")
+            or os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))),
+                "working", "skill6-capability.json")
+        )
+        try:
+            os.makedirs(os.path.dirname(_cap_out) or ".", exist_ok=True)
+            with open(_cap_out, "w", encoding="utf-8") as _fh:
+                json.dump(_probe, _fh, indent=2, sort_keys=False)
+                _fh.write("\n")
+        except OSError as _exc:
+            print("WARN capability-probe: receipt write failed (%s): %s"
+                  % (_cap_out, _exc), file=sys.stderr)
+        # Advisory WARN (stderr) — never a failure: mirrors the probe's own
+        # stderr WARN convention; distinguishable by stderr TEXT, never by
+        # exit code (the 64/75/76/79 codes stay reserved for refusals).
+        if not _probe.get("selectedLane"):
+            print("WARN capability-probe: selectedLane=null — no usable "
+                  "browser lane; agent-browser 0.27.0 install required "
+                  "before the next build.", file=sys.stderr)
+        elif _probe.get("blockers"):
+            print("WARN capability-probe: %d blocker(s) on lane %s: %s"
+                  % (len(_probe["blockers"]), _probe.get("selectedLane"),
+                     "; ".join(str(b) for b in _probe["blockers"])),
+                  file=sys.stderr)
+        sys.exit(0)  # advisory ALWAYS exit 0
+    _parser.print_help()
+    sys.exit(0)

@@ -1620,6 +1620,7 @@ If any step in a skill's installation fails:
 > **The canonical, machine-checked wave rosters live in `lib-onboarding-state.sh`** (`OC_WAVE1_SKILLS` … `OC_WAVE6_SKILLS`) — that is what the per-wave goal check and the onboarding watchdog actually read, and `scripts/qc-assert-wave-list-integrity.py` enforces that every name in it resolves to a real, non-archived skill folder. The numbered prose waves on this page are an install guide with their own historical numbering; where the two differ, the library wins.
 
 **Sequential Dependencies (Never Parallelize These):**
+- Skill 03 (Agent Browser, Wave 1) must complete before Skill 06 (GHL Install Pages) starts — 06 is NOT parallel-safe with 03
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
 - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
 
@@ -1931,11 +1932,15 @@ Install these 4 items yourself, one at a time:
 Spawn these sub-agents SIMULTANEOUSLY using `sessions_spawn`:
 
 **Agent A (Skills 04-07):**
+
+> **HARD ORDERING (Agent A only):** Skill 03 (Agent Browser, Wave 1) MUST complete before Skill 06 (GHL Install Pages) starts, and Skill 05 (GHL Setup) MUST complete before Skill 06 starts. Within Agent A, install in order 04 → 05 → 07, and install 06 only after 03 (Wave 1) and 05 are both done. This overrides the parallel spawn for the 06 row — everything else in Agent A stays parallel.
+
 ```
 sessions_spawn with task:
 "Install skills 04, 05, 06, 07 from ~/.openclaw/onboarding/. 
 For each skill: Read ALL .md files first, then execute installation steps exactly.
 Skills: 04-superpowers, 05-ghl-setup, 06-ghl-install-pages, 07-kie-setup.
+HARD ORDERING: install 04, then 05, then 07; install 06 ONLY after Skill 03 (Wave 1 agent-browser) AND Skill 05 have both completed.
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-a"
@@ -2208,6 +2213,9 @@ openclaw agent spawn \
 ```
 
 #### Spawn Wave 2 - Agent A (Skills 04-07)
+
+> **HARD ORDERING:** Skill 03 (Wave 1) and Skill 05 must both be complete before the `06-ghl-install-pages` spawn below runs. Do not background-spawn 06 in the same `&` batch unless 03 is already done — wait for 05, then spawn 06.
+
 ```bash
 for skill in "04-superpowers" "05-ghl-setup" "06-ghl-install-pages" "07-kie-setup"; do
   num=${skill%%-*}

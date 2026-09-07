@@ -2,7 +2,81 @@
 
 All notable changes to this skill wrapper are documented here.
 
+> **Versioning note:** This changelog tracks the skill's OWN semver
+> independently. `skill-version.txt` and SKILL.md's nested
+> `metadata.version` are repo-locked to the repo `/version` by
+> `scripts/bump-version.sh` (the "G3-on-06" roll) and are intentionally
+> DIFFERENT numbers from the release headings below;
+> `scripts/check-version-drift.py` compares only that repo-locked pair
+> (plus CHANGELOG well-formedness) and deliberately does NOT compare the
+> CHANGELOG heading number.
+
 ---
+
+## [v23.3.0] - 2026-09-07 - skill6-fix-plan wave: adaptive capability probe + lane policy, multi-iframe routing, lane adapters, INSTALL v3 rewrite (live E2E deliberately HELD)
+
+Branch **skill6/fix-plan-20260907**. Everything below is offline-proven only:
+all new tests are mock-only with zero network, and no live GHL/agent-browser
+end-to-end run has been performed — live E2E remains deliberately HELD
+pending an operator-approved live run (`OPERATOR-LIVE-CHECKLIST.md` tracks
+every still-owed receipt).
+
+### Added
+- **Adaptive capability probe (`tools/capability_probe.py`) + lane policy.**
+  Probes the host, classifies it, and selects a browser lane
+  (`agent_browser` / `openclaw_managed_browser` / `playwright_direct` /
+  `existing_session` only under an explicit env opt-in; `cua_last_resort`
+  NEVER auto-selected). Fail-closed: zero usable CDP lanes → `selectedLane:
+  null` + a `no-browser-lane` blocker. Secret VALUES are never emitted —
+  env checks surface as booleans only.
+- **Multi-iframe routing.** New `tools/iframe_router.py` (v1.0.0); gates 29
+  (`correct_frame_before_edit`) and 30 (`refreshed_snapshot_after_panel_open`)
+  added to `tools/gates.json` (registry now 30 gates: 2 captured + 28
+  runtime); `tools/iframe-survival-targets.json` bumped to v1.1.1 with the
+  LOUD-EMPTY contract — it ships EMPTY on purpose, and a zero-target survival
+  pass proves nothing until the operator populates real published-page URLs.
+- **Lane adapters.** `tools/openclaw_browser_adapter.sh` (Lane 2, strictly
+  capability-gated — runs only when the probe selected
+  `openclaw_managed_browser`, never by default) and
+  `tools/cua_last_resort_adapter.sh` (opt-in waiver contract:
+  `GHL_SKILL6_ALLOW_CUA=1` + a written waiver receipt; a CONTRACT wrapper,
+  not a working driver).
+- **Skill 62 readiness skeleton.** `funnel-engines/registry.json` registers
+  Skill 62 (cinematic-web-funnel-engine) as the third engine with
+  `readiness.status "skeleton"` / `certify_capable false`, and
+  `tools/funnel_engine_selector.py` refuses to route into a skeleton engine
+  without `--force-skeleton`.
+- **Day-0 and reference docs.** `OPERATOR-LIVE-CHECKLIST.md` (all boxes
+  UNCHECKED by design — clears only the STILL-OWED half of the SKILL.md
+  STATUS banner), `DAY-0-CARD.md` (hard prereq order 01 → 02 → 03 → 06 and
+  05 → 06, probe-first acceptance), and `tools/README.md` (tools index by
+  category). `Start Here.md` gains the hard wave-order rule: Skill 03
+  (Wave 1) must complete before Skill 06 starts, and Skill 05 before 06.
+- **Offline tests.** New `tests/test_capability_probe.py`,
+  `test_browser_manager_capability_wire.py`, `test_iframe_router.py`,
+  `test_openclaw_browser_adapter.py`, `test_cua_last_resort_adapter.py`,
+  `test_funnel_engine_registry_guard.py`, `test_survival_targets_doc.py` —
+  mock-only, in-process fakes, zero network.
+
+### Changed
+- **`INSTALL.md` v3 agent-browser-first rewrite** (Skill 03 agent-browser
+  PRIMARY, Playwright FALLBACK; capability probe is install Step 1),
+  **`QC.md` probe-first**, and `PREREQS.json` now requires
+  `skill-03-agent-browser` plus the credential
+  (`cred-firebase-refresh-token`, location id/PIT) and runtime
+  (capability probe, OpenClaw 2 managed browser, CUA) prerequisites.
+- **`qc-ghl-install-pages.sh` fail-closed hardening.** The two preflights
+  that were `warn_only` in the pre-change file (line 72: agent-browser
+  PRIMARY present; line 74: Firebase refresh token set) are now hard
+  `assert`s, and a new capability block fails QC when the probe module is
+  missing, `selectedLane` is null (or the CUA last resort), or hard blockers
+  exist — a box with zero browser lanes can never score green.
+- **`browser_manager` v25.1.0** gains the `probe` verb
+  (`browser_manager.sh probe`, lock-free, advisory) and the
+  `bm_capability_preflight` wiring; `tools/v2_dispatcher.py` adds the
+  capability-freshness gate — a missing or stale
+  `working/skill6-capability.json` receipt holds the task (refusal naming
+  the stale lane classification) unless the caller just re-probed.
 
 ## [23.0.0] - 2026-09-03 — test-contact creation labeled explicit-new-record (upsert policy cross-reference)
 
@@ -200,7 +274,7 @@ predecessor:
 
 ---
 
-## [Unreleased] - 2026-07-12 - P3-04 residuals: iframe failure taxonomy + weekly iframe-survival check
+## [v23.1.0] - 2026-07-12 - P3-04 residuals: iframe failure taxonomy + weekly iframe-survival check
 
 Branch **fix/skill6-residuals**, off `origin/main` (v19.58.0). Closes the two
 P3-04 (c) items whose deliverables land inside THIS skill (item 4: iframe
@@ -293,7 +367,7 @@ after origin/main — the Fable plan's proposed v19.18.0 was already consumed). 
 
 ---
 
-## [Unreleased] - 2026-07-10 - Command Center / Kanban tightenings (Skill-6 Bulletproof U9 §7)
+## [v23.2.0] - 2026-07-10 - Command Center / Kanban tightenings (Skill-6 Bulletproof U9 §7)
 
 Branch **skill6-bulletproof-build-cckanban** (off skill6-bulletproof-build). Unit **U9**
 of the Skill-6 Browser-Control Bulletproof spec. Tightens how every browser build reports

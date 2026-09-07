@@ -30,8 +30,56 @@
       "type": "skill",
       "label": "Skill 03 - agent-browser (PRIMARY browser engine)",
       "check": { "skill": "03-agent-browser" },
+      "severity": "required",
+      "satisfy": "Install Skill 03 (03-agent-browser) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'agent-browser must be installed (skill 03) - PRIMARY browser engine'. Required for the PRIMARY lane. The documented degraded exception is an explicit Playwright-only mode with a MEMORY warning (lane 3 escape hatch) - it must be an explicit operator choice, never a silent fallback. Without Skill 03 every page build falls back to the Playwright engine, which SKILL.md documents as the fallback for known-hard flows only, and cross-origin iframe drag/drop stops."
+    },
+    {
+      "id": "cred-firebase-refresh-token",
+      "type": "credential",
+      "label": "GoHighLevel Firebase refresh token (TOKEN-ONLY auth)",
+      "check": { "envVar": "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<token> to ~/.openclaw/secrets/.env (chmod 600; /data/.openclaw/secrets/.env on a VPS/Docker box). Aliases GHL_FIREBASE_REFRESH_TOKEN and FIREBASE_REFRESH_TOKEN resolve to the same credential. This is the ONLY auth path (SKILL.md D7 TOKEN-ONLY): the token alone seeds a logged-in session with no login form, no password, and no two-factor. CAF_FIREBASE_REFRESH_TOKEN is not in the secret-name canon and does not satisfy this check."
+    },
+    {
+      "id": "cred-location-id",
+      "type": "credential",
+      "label": "GoHighLevel location id",
+      "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<location id> to ~/.openclaw/secrets/.env (chmod 600). Alias GHL_LOCATION_ID (and HIGHLEVEL_LOCATION_ID / LOCATION_ID) satisfies this check. Per SKILL.md the media pipeline's resolve_location_id() additionally falls back to the FIRST id in GOHIGHLEVEL_ALLOWED_LOCATION_IDS or CAF_ALLOWED_LOCATION_IDS when the scalar vars are empty - those two list vars are a fallback, not the primary declaration."
+    },
+    {
+      "id": "cred-location-pit",
+      "type": "credential",
+      "label": "GoHighLevel LOCATION PIT (media-scoped API key)",
+      "check": { "envVar": "GOHIGHLEVEL_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add the LOCATION-scoped PIT as GOHIGHLEVEL_API_KEY=<pit> to ~/.openclaw/secrets/.env (chmod 600). Alias chain per SKILL.md: GOHIGHLEVEL_API_KEY -> GHL_API_KEY -> GOHIGHLEVEL_LOCATION_PIT -> GHL_LOCATION_PIT (GHL_PIT / GHL_PRIVATE_INTEGRATION_TOKEN also resolve via the secret-name canon). HARD RULE: the AGENCY PIT (GOHIGHLEVEL_AGENCY_PIT / GOHIGHLEVEL_AGENCY_API_KEY / GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT / GHL_AGENCY_PIT) 401s for media upload - NEVER substitute it. This token is what media upload REQUIRES."
+    },
+    {
+      "id": "runtime-capability-probe",
+      "type": "manual",
+      "label": "Browser capability probe run before first build",
+      "check": { "note": "Advisory: no offline check can prove a browser lane works on this host. browser_manager bm_ensure proves the PRIMARY lane at build time." },
       "severity": "optional",
-      "satisfy": "Install Skill 03 (03-agent-browser) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'agent-browser must be installed (skill 03) - PRIMARY browser engine'. Without it every page build falls back to the Playwright engine, which SKILL.md documents as the fallback for known-hard flows only."
+      "satisfy": "Run the capability probe (run_probe) before the first build: it classifies the host lanes (agent-browser, OpenClaw managed browser, Playwright, CUA) and writes working/skill6-capability.json with selectedLane and the fallback chain. bash tools/browser_manager.sh ensure is the mandatory gateway that proves the selected lane. Re-run after any OpenClaw/browser upgrade."
+    },
+    {
+      "id": "runtime-openclaw-2-browser",
+      "type": "manual",
+      "label": "OpenClaw 2.x managed browser (optimizes iframe_heavy)",
+      "check": { "note": "Advisory: requires OpenClaw >= 2026.8.1 with the browser plugin enabled; verified with 'openclaw browser --browser-profile openclaw status'." },
+      "severity": "optional",
+      "satisfy": "Optional upgrade lane: OpenClaw >= 2026.8.1 managed browser with frame-scoped snapshots ('openclaw browser snapshot --frame'). Optimizes iframe_heavy builds - never required for Skill 6 to be installed or to pass QC. Do not remove the agent-browser pin until this lane is proven equivalent on GHL."
+    },
+    {
+      "id": "runtime-cua",
+      "type": "manual",
+      "label": "Computer Use / CUA (last_resort_hard_ui)",
+      "check": { "note": "Advisory: CUA is not wired into Skill 6 build paths yet; it is the proposed last-resort lane only." },
+      "severity": "optional",
+      "satisfy": "Last resort for hard UI / cross-origin pixel work when all CDP browser lanes fail. Optimizes last_resort_hard_ui - requires a vision model and an explicit operator decision, is NEVER selected by default, and never silently falls back per action. Do not document CUA as an install requirement."
     }
   ]
 }

@@ -154,6 +154,16 @@ BOARD_NOTE_IFRAME_SURVIVAL_MISS = "VERIFY-FAIL"
 # for a target embedded on a different host.
 DEFAULT_IFRAME_SRC_MARKER = "leadconnectorhq.com"
 
+# Loud-empty advisory (v1.1.1 of iframe-survival-targets.json): the check ships
+# with targets[] EMPTY, and an empty list is a VALID clean run (see
+# load_iframe_survival_targets) — but a zero-target "clean" proves NOTHING. It
+# is an ADVISORY warning, never an error: exit codes are unchanged (empty = a
+# valid run); it just must not be MISTAKEN for evidence that any published page
+# still embeds its iframe.
+IFRAME_SURVIVAL_EMPTY_TARGETS_WARN = (
+    "survival check no-op: 0 targets — populate tools/iframe-survival-targets.json (operator)"
+)
+
 
 # ---------------------------------------------------------------------------
 # Loading
@@ -562,6 +572,7 @@ class IframeSurvivalReport:
     finished_at: float = 0.0
     results: List[Dict[str, Any]] = field(default_factory=list)
     misses: List[Dict[str, Any]] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
     canary_version: str = CANARY_VERSION
 
     def summary(self) -> Dict[str, Any]:
@@ -569,6 +580,7 @@ class IframeSurvivalReport:
             "total_targets": len(self.results),
             "misses": [m["target"] for m in self.misses],
             "clean": len(self.misses) == 0,
+            "warnings": list(self.warnings),
             "duration_s": round(self.finished_at - self.started_at, 3),
         }
 
@@ -609,8 +621,18 @@ def run_iframe_survival_check(
     the same ``evidence_root``) files exactly ONE card, never a fresh
     duplicate on every re-run — pass ``evidence_root=None`` (the default) to
     keep the old un-deduped behaviour (every call fires; matches every
-    existing caller/test)."""
+    existing caller/test).
+
+    Loud-empty (v1.1.1): an EMPTY ``targets`` list stays a valid, clean
+    zero-target run (exit codes unchanged), but the report now carries an
+    ADVISORY warning (``IframeSurvivalReport.warnings`` + a stderr WARN line)
+    saying the run proves nothing until the operator populates
+    iframe-survival-targets.json — a silent no-op must never be mistaken for
+    survival evidence."""
     report = IframeSurvivalReport(started_at=time.time())
+    if not targets:
+        report.warnings.append(IFRAME_SURVIVAL_EMPTY_TARGETS_WARN)
+        print(f"WARN: {IFRAME_SURVIVAL_EMPTY_TARGETS_WARN}", file=sys.stderr)
     for t in targets:
         entry: Dict[str, Any] = {
             "target": t["id"], "object_type": t.get("object_type", ""), "url": t["url"],
