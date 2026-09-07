@@ -96,7 +96,8 @@
     "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
     "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
     "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
-    "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN"
+    "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN",
+    "STYLE_PICK_AUTO": "pre_presentation_capture.STYLE_PICK_AUTO"
   },
   "session_budget": {
     "max_turns": 23,
@@ -528,7 +529,7 @@
       "section": "deck-intake",
       "order": 15,
       "kind": "merged",
-      "prompt": "Style: fresh clean-white default, or match brand? Give the primary brand color/logo source, any style preferences, and say if dark slides are OK.",
+      "prompt": "Style: fresh clean-white default, or match brand? Give the primary brand color/logo source, any style preferences, and say if dark slides are OK. Later I will send you 3 style directions to pick from (A, B or C) and wait 45 minutes for your reply -- say \"style pick auto: yes\" if you would rather I pick the first variant for you when that wait runs out instead of pausing the deck; leave it out and I will always wait for your pick.",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -547,8 +548,25 @@
           "storeOn": "DARK_OK",
           "kind": "boolean",
           "default": false
+        },
+        "style_pick_auto": {
+          "storeOn": "STYLE_PICK_AUTO",
+          "enum": [
+            "yes",
+            "no"
+          ],
+          "labels": [
+            "style pick auto",
+            "style_pick_auto",
+            "auto pick",
+            "auto style pick",
+            "pick for me",
+            "auto-pick"
+          ],
+          "note": "STYLE-PICK AUTO OPT-IN (F5): rides THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23), the same ruling run_mode rides on the resource_plan turn. Deliberately NOT on resource_plan: that turn is asked ONLY when the capacity probe leaves a pending question (help: 'a fully detected client is never asked it'), so an opt-in parked there would be unreachable for most clients, while style_and_brand is required + block_gate and is therefore asked on every deck. NO default key on purpose: an omitted answer records NOTHING and the engine's phases.Engine._style_pick_intake_auto() reads a missing/falsy field as NO opt-in -- auto-picking for a silent client is the forgery FIX 29 exists to prevent. 'yes' is recorded by deck-intake-driver._record_style_pick_auto() as the BOOLEAN True (never the string 'yes': the engine tests `auto is True`) on the STYLE_PICK_AUTO ledger key and on the intake root key style_pick_auto that cmd_complete merges into working/copy/intake.json."
         }
-      }
+      },
+      "help": "STYLE-PICK AUTO (F5): the style_pick_auto subfield is the client's own standing consent for the P-STYLE-PICK owner gateway (order 4.86, executor kind \"human\", budget 45 min). Recorded 'yes' -> intake.style_pick_auto = true (boolean) -> on a timeout the engine writes working/copy/style_preview_choice.json itself with auto_pick:true provenance and NO owner_msg_id, and the deck keeps rendering. Absent or 'no' -> the phase parks BLOCKED and waits for a real owner pick, which is recorded with `deck-intake-driver.py --run-dir <DIR> --style-pick A|B|C --owner-msg-id <id>`. The opt-in NEVER forges an owner_msg_id and never substitutes for a real pick that arrives in time -- a pick always wins over the timeout."
     },
     {
       "id": "visual_mix",

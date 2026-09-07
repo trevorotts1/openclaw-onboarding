@@ -35,6 +35,20 @@ source of truth). Supports two interview modes:
     atomic record per sp-8-questions.json. The turn-gate is REQUIRED --
     a batch dump is AF-INTAKE-BATCH.
 
+It also carries ONE non-interview command:
+
+  STYLE PICK (--style-pick A|B|C --owner-msg-id ID)
+    F5: the ONLY sanctioned client-side writer of
+    working/copy/style_preview_choice.json -- the artifact the human gateway
+    phase P-STYLE-PICK (order 4.86, executor kind "human", budget 45 min) waits
+    for. Records the client's A/B/C reply in the exact shape
+    presentation_job.phases.Engine._style_choice_authentic verifies, and
+    REFUSES without --owner-msg-id (a pick with no resolvable owner message id
+    is a forged approval, AF-FORGED-APPROVAL). It never writes the auto_pick
+    provenance -- that belongs to the engine's own timeout auto-pick, which
+    fires only under the client's recorded intake.style_pick_auto opt-in
+    (the style_and_brand turn's style_pick_auto subfield).
+
 At --complete, the driver writes/merges working/copy/intake.json with all
 derived fields, runs prove_sp_routing.py unconditionally for claim-gate
 enforcement, and marks the intake ledger complete.
@@ -1048,6 +1062,92 @@ def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
     entries[sub_id] = rec
 
 
+#: The client's STYLE-PICK AUTO opt-in (F5). Like the run mode above it rides
+#: an EXISTING turn as a labelled subfield and therefore never adds a 24th turn
+#: (Trevor ruling, session_budget.max_turns=23). Its host turn is
+#: `style_and_brand` (order 15), NOT `resource_plan`: resource_plan's own help
+#: text says it is asked ONLY when the capacity probe left a pending question
+#: ("a fully detected client is never asked it"), so an opt-in parked there
+#: would be unreachable for most clients, whereas style_and_brand is
+#: required + block_gate and is asked on every deck.
+_STYLE_PICK_AUTO_SUBFIELD = ("style_pick_auto", "STYLE_PICK_AUTO")
+
+
+def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
+                            entries: Dict[str, Any]) -> None:
+    """Mirror the style turn's style-pick-auto subfield onto its
+    STYLE_PICK_AUTO ledger key as a REAL BOOLEAN.
+
+    Why a boolean and not the answered string: the engine's opt-in reader,
+    presentation_job.phases.Engine._style_pick_intake_auto(), tests
+    ``auto is True`` against intake.json's ``style_pick_auto`` (falling back to
+    ``pre_presentation_capture.STYLE_PICK_AUTO``). The generic merged-turn
+    writer in cmd_answer records an enum subfield as the answered STRING
+    ("yes"), and ``"yes" is True`` is False -- so without this explicit record
+    a client who opted in would still park at P-STYLE-PICK. This runs AFTER
+    that generic loop and overwrites both keys with the boolean.
+
+    Unlike the run mode this one IS routed into working/copy/intake.json: the
+    opt-in is read from the run directory by the engine, so it must land there.
+    cmd_complete's flat merge carries entries["style_pick_auto"] to the intake
+    root (the engine's primary read), and the bank's storeTarget entry carries
+    entries["STYLE_PICK_AUTO"] to pre_presentation_capture.STYLE_PICK_AUTO
+    (the engine's fallback read).
+
+    The allowed vocabulary is read from the BANK (this subfield's own enum),
+    never from a constant duplicated here -- the same single-source rule
+    _record_run_mode and _claim_labels follow.
+
+    An omitted or unrecognised answer writes NOTHING: absence is absence, and
+    the engine reads a missing/falsy field as NO opt-in, so the pick stays a
+    real owner decision. An explicit "no" IS recorded (as False) so a client
+    who declined is on the record as having been asked -- it reads identically
+    to absence at the gate.
+
+    Re-answering the turn WITHOUT the subfield leaves an earlier declaration
+    standing, exactly as _record_run_mode does: a client who already said yes
+    is not "saying nothing", and a later answer about brand colours must not
+    silently revoke their standing consent. Only an explicit "no" revokes it.
+    """
+    sub_id, ledger_key = _STYLE_PICK_AUTO_SUBFIELD
+    ann = (qdef.get("subfields") or {}).get(sub_id) or {}
+    allowed = [str(v).strip().lower() for v in (ann.get("enum") or [])]
+    want = str(derived.get(sub_id) or "").strip().strip(";,.").strip().lower()
+    if not want or want not in allowed:
+        # Nothing declared (or unparseable). Never invent an opt-in -- and
+        # never leave the generic subfield loop's RAW STRING (or its skipped
+        # "" placeholder) sitting on these keys, where a downstream reader
+        # could mistake the truthy string "no" for a decision.
+        #
+        # A STANDING declaration from an earlier answer survives, on BOTH keys.
+        # The generic loop records an unclaimed no-default subfield as a
+        # skipped entry under the SUBFIELD ID only and never touches the
+        # storeOn key, so a naive pop leaves STYLE_PICK_AUTO holding the
+        # standing boolean while style_pick_auto -- the key cmd_complete's flat
+        # merge carries to the intake ROOT, and the engine's FIRST read -- is
+        # gone. The two keys must never disagree about a consent, so whichever
+        # one still carries a boolean is mirrored back onto the other.
+        standing = None
+        for key in (ledger_key, sub_id):
+            prior = entries.get(key)
+            if isinstance(prior, dict) and isinstance(prior.get("value"), bool):
+                standing = prior
+                break
+        if standing is None:
+            entries.pop(ledger_key, None)
+            entries.pop(sub_id, None)
+            return
+        entries[ledger_key] = standing
+        entries[sub_id] = standing
+        return
+    value = want == "yes"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rec = {"value": value, "validated": True, "source": "deck-intake-driver",
+           "answered_at": now_iso, "normalized": value, "answer": want}
+    entries[ledger_key] = rec
+    entries[sub_id] = rec
+
+
 def cmd_answer(args) -> int:
     """Record one answer and return the next question."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -1178,6 +1278,15 @@ def cmd_answer(args) -> int:
             # AFTER the model plan above was accepted, so a refused answer
             # never half-lands a run mode either.
             _record_run_mode(qdef, derived, entries)
+
+        # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
+        # is required + block_gate and therefore asked on EVERY deck (unlike
+        # resource_plan, which the capacity probe can skip entirely). Written
+        # explicitly, as a real boolean, because the engine's opt-in reader
+        # tests `auto is True` and the generic loop above records the answered
+        # string. See _record_style_pick_auto for the full contract.
+        if qid == "style_and_brand":
+            _record_style_pick_auto(qdef, derived, entries)
 
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":
@@ -2250,6 +2359,198 @@ def cmd_question_set(args) -> int:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# F5 -- THE CLIENT-SIDE STYLE-PICK RECORDER
+#
+# P-STYLE-PICK (order 4.86, executor kind "human", budget 45 min) is the one
+# guaranteed human gate in every deck. The engine delivers "pick A, B or C" to
+# the requester and then waits for working/copy/style_preview_choice.json --
+# but nothing client-side ever WROTE that file, so the agent handling the
+# client's "B" reply had no sanctioned way to record it and every deck timed
+# out and parked. This command is that way.
+#
+# It writes the exact shape phases.Engine._style_choice_authentic verifies:
+# owner_approved:true + a chosen_variant that is in the offered set + an
+# owner_msg_id the Fix 32 approvals oracle can resolve to a real owner-authored
+# message. It NEVER writes auto_pick (that provenance belongs only to the
+# engine's own timeout auto-pick under a recorded intake.style_pick_auto
+# opt-in), and it REFUSES to run without --owner-msg-id: a pick with no
+# resolvable owner message id is a forged approval (AF-FORGED-APPROVAL), and
+# the gate would deny it anyway.
+#
+# ONE ORACLE: this command does NOT re-implement authenticity. It runs
+# presentation_job.approvals.verify() as a courtesy PRE-CHECK and reports the
+# result, but the binding decision is always the engine's own re-verification
+# at the gate. A pre-check that cannot reach the oracle (partial deploy,
+# UNDETERMINED transport) is reported, never treated as proof either way, and
+# never blocks the record -- the engine keeps waiting and re-proves it there.
+# ---------------------------------------------------------------------------
+STYLE_CHOICE_REL = "working/copy/style_preview_choice.json"
+STYLE_SAMPLES_REL = "working/style-preview/style_samples_manifest.json"
+
+
+def read_style_variants(run_dir: Path) -> List[str]:
+    """The variant ids the owner was offered, in manifest order, from the
+    samples manifest P-STYLE-PREVIEW produced. Returns [] when the manifest is
+    absent or unreadable -- the SAME posture the engine's
+    _style_pick_offered_variants() takes, so the two never disagree about what
+    was on offer."""
+    path = run_dir / STYLE_SAMPLES_REL
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return []
+    variants = obj.get("variants") if isinstance(obj, dict) else None
+    if not isinstance(variants, list):
+        return []
+    return [str(v).strip() for v in variants if str(v).strip()]
+
+
+def resolve_style_variant(picked: str, variants: List[str]) -> Optional[str]:
+    """Resolve the client's reply to one of the OFFERED variant ids, exactly.
+
+    Clients type "B", "b", "variant B", or "2". The engine compares
+    `chosen_variant not in offered_variants` with no normalisation at all, so
+    the resolution has to happen HERE or a lowercase reply is denied at the
+    gate for no reason a client could understand. Returns the offered id
+    verbatim, or None when the reply matches nothing on offer."""
+    raw = str(picked or "").strip()
+    if not raw:
+        return None
+    if not variants:
+        # No manifest to check against: record what was given (the engine skips
+        # its membership test in exactly this case too) -- never invent one.
+        return raw
+    if raw in variants:
+        return raw
+    low = raw.lower()
+    for v in variants:
+        if v.lower() == low:
+            return v
+    m = re.search(r"variant\s+([A-Za-z0-9]+)", raw, re.I)
+    if m:
+        tok = m.group(1)
+        for v in variants:
+            if v.lower() == tok.lower():
+                return v
+    if raw.isdigit():
+        idx = int(raw)
+        if 1 <= idx <= len(variants):
+            return variants[idx - 1]
+    return None
+
+
+def _style_pick_precheck(choice: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
+    """Courtesy pre-check through the SINGLE Fix 32 oracle. Never binding, never
+    a gate: it tells the agent NOW whether the id it was handed will resolve, so
+    a typo is caught while the client is still in the conversation instead of 45
+    minutes later. Returns {"ran": bool, "ok": bool|None, "detail": str}."""
+    approval = {
+        "gate": "P-STYLE-PICK",
+        "approved_by": str(choice.get("approved_by") or "owner"),
+        "owner_msg_id": str(choice.get("owner_msg_id") or ""),
+        "reason": str(choice.get("reason") or ""),
+        "granted_at": str(choice.get("granted_at") or ""),
+    }
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import approvals as _approvals  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy is not a verdict
+        return {"ran": False, "ok": None,
+                "detail": f"presentation_job.approvals is not importable from "
+                          f"{SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) -- "
+                          f"the owner_msg_id was NOT pre-checked. The engine "
+                          f"re-verifies it at the gate either way."}
+    try:
+        _approvals.verify(approval, run_dir)
+    except Exception as exc:  # noqa: BLE001 -- ApprovalError or transport alike
+        return {"ran": True, "ok": False,
+                "detail": f"{exc.__class__.__name__}: {exc}"}
+    return {"ran": True, "ok": True, "detail": "owner_msg_id resolved."}
+
+
+def cmd_style_pick(args) -> int:
+    """Record the owner's A/B/C style pick as working/copy/style_preview_choice.json.
+
+    This is the ONLY sanctioned client-side writer of that file. Hand-writing it
+    is how the forged "e2e-test-002" pick got in; this command cannot produce
+    that shape because --owner-msg-id is mandatory."""
+    run_dir = args.run_dir.expanduser().resolve()
+    owner_msg_id = str(args.owner_msg_id or "").strip()
+    if not owner_msg_id:
+        print(json.dumps({
+            "error": "--style-pick requires --owner-msg-id: the message id of "
+                     "the client's OWN reply carrying A, B or C. A pick without "
+                     "a resolvable owner message id is a forged approval "
+                     "(AF-FORGED-APPROVAL) and the P-STYLE-PICK gate denies it. "
+                     "Never invent an id, and never fall back to the auto-pick "
+                     "path -- that one belongs to the engine and only under a "
+                     "recorded intake.style_pick_auto opt-in.",
+        }))
+        return 2
+
+    variants = read_style_variants(run_dir)
+    chosen = resolve_style_variant(args.style_pick, variants)
+    if chosen is None:
+        print(json.dumps({
+            "error": f"style pick {str(args.style_pick).strip()!r} is not one of "
+                     f"the offered variants {variants}. Read them from "
+                     f"{STYLE_SAMPLES_REL} and record the client's reply as one "
+                     f"of those ids (A/B/C, 1/2/3 and 'variant b' all resolve).",
+            "offered_variants": variants,
+        }))
+        return 1
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    choice = {
+        "owner_approved": True,
+        "chosen_variant": chosen,
+        "owner_msg_id": owner_msg_id,
+        "approved_by": str(getattr(args, "approved_by", "") or "owner").strip()
+                       or "owner",
+        "reason": f"owner style pick: variant {chosen} (client reply recorded "
+                  f"by deck-intake-driver.py --style-pick)",
+        "granted_at": now_iso,
+        "picked_at": now_iso,
+        "recorded_at": now_iso,
+        "recorded_by": "deck-intake-driver.py --style-pick",
+    }
+
+    precheck = _style_pick_precheck(choice, run_dir)
+    if precheck["ran"] and precheck["ok"] is False:
+        print(f"  WARN  [STYLE-PICK] the owner_msg_id {owner_msg_id!r} did NOT "
+              f"pre-verify: {precheck['detail']} The choice file is still "
+              f"written (the engine is the single oracle and re-checks it at "
+              f"the gate), but expect P-STYLE-PICK to keep waiting until a "
+              f"resolvable id is recorded.", file=sys.stderr)
+    elif not precheck["ran"]:
+        print(f"  WARN  [STYLE-PICK] {precheck['detail']}", file=sys.stderr)
+
+    dest = run_dir / "working" / "copy"
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / "style_preview_choice.json"
+        tmp = path.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(choice, fh, indent=2)
+        os.replace(tmp, path)
+    except OSError as exc:
+        print(json.dumps({"error": f"could not write {STYLE_CHOICE_REL}: {exc}"}))
+        return 2
+
+    print(json.dumps({
+        "status": "recorded",
+        "chosen_variant": chosen,
+        "owner_msg_id": owner_msg_id,
+        "offered_variants": variants,
+        "choice_path": str(run_dir / STYLE_CHOICE_REL),
+        "owner_msg_id_precheck": precheck,
+    }, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="deck-intake-driver.py",
@@ -2299,6 +2600,22 @@ def build_parser() -> argparse.ArgumentParser:
                           "(read-only -- never a substitute for the live "
                           "interview)")
 
+    # Owner style pick (F5) -- the client-side recorder for P-STYLE-PICK
+    pick = p.add_argument_group("owner style pick (P-STYLE-PICK, order 4.86)")
+    pick.add_argument("--style-pick", dest="style_pick", metavar="VARIANT",
+                      help="record the client's A/B/C style-preview pick into "
+                           "working/copy/style_preview_choice.json. REQUIRES "
+                           "--owner-msg-id (the id of the client's own reply); "
+                           "A/B/C, a/b/c, 'variant b' and 1/2/3 all resolve "
+                           "against the offered variants")
+    pick.add_argument("--owner-msg-id", dest="owner_msg_id", metavar="ID",
+                      help="with --style-pick: the message id of the CLIENT's "
+                           "own A/B/C reply. Mandatory -- a pick without a "
+                           "resolvable owner message id is a forged approval")
+    pick.add_argument("--approved-by", dest="approved_by", metavar="WHO",
+                      default="owner",
+                      help="with --style-pick: who approved (default 'owner')")
+
     # Export
     p.add_argument("--question-set", action="store_true",
                    help="export the full question bank (all modes, read-only)")
@@ -2319,6 +2636,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.question_set:
         # Import here to avoid circular issues with the parser's run_dir requirement
         return cmd_question_set(args)
+
+    # Owner style pick (F5) -- checked before the interview modes: it is not
+    # an interview turn at all, it is the recorder for the human gateway phase.
+    if getattr(args, "style_pick", None):
+        return cmd_style_pick(args)
 
     # Signature mode
     if args.signature:
@@ -2344,10 +2666,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(json.dumps({
         "error": "No mode selected. Use one of: --next, --answer, --complete, "
                  "--signature --sig-next, --signature --sig-answer ID TEXT, "
-                 "--question-set.",
+                 "--style-pick VARIANT --owner-msg-id ID, --question-set.",
         "usage": "deck-intake-driver.py --run-dir <DIR> [--next | --answer "
                  "ID TEXT | --complete | --signature [--sig-next | --sig-answer "
-                 "ID TEXT | --sig-record FILE] | --question-set]",
+                 "ID TEXT | --sig-record FILE] | --style-pick A|B|C "
+                 "--owner-msg-id ID | --question-set]",
     }))
     return 2
 
