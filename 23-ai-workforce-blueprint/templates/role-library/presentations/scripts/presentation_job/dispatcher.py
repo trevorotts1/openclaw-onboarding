@@ -1697,11 +1697,55 @@ def _active_mode() -> Tuple[str, str]:
                 f"invalid {env_name}={raw!r} -- fell back to standard")
 
 
+def _apply_route_override(decision: Optional[Dict[str, Any]],
+                          route_override: Optional[Dict[str, Any]],
+                          ) -> Optional[Dict[str, Any]]:
+    """F10: fold a heal rung's `route_override` into a routing decision.
+
+    The override wins ONLY when model_router's own candidate list for this
+    phase contains that provider with eligible=True. That is deliberate and it
+    is the entire safety property of this function: `candidates` is where
+    client-owned-provider consent, catalog health, capability and mode budget
+    have ALREADY been applied, so honouring only an eligible candidate means a
+    heal rung can re-point a phase but can never widen what the client owns.
+
+    An override that names nothing, names a provider with no eligible
+    candidate, or arrives with no decision at all returns `decision` unchanged
+    -- fail-closed onto the router's own pick, never onto a fabricated route.
+    The chosen candidate's own model is used when the override does not name
+    one (or names one the candidate does not offer), so the model can never
+    drift away from the provider that was actually vetted.
+    """
+    if not route_override or not isinstance(route_override, dict):
+        return decision
+    if not isinstance(decision, dict):
+        return decision
+    want_provider = str(route_override.get("provider") or "")
+    if not want_provider:
+        return decision
+    for cand in (decision.get("candidates") or []):
+        if not isinstance(cand, dict) or not cand.get("eligible"):
+            continue
+        if str(cand.get("provider") or "") != want_provider:
+            continue
+        model = str(route_override.get("model") or "") or str(cand.get("model") or "")
+        if not model:
+            continue
+        out = dict(decision)
+        out["route"] = {"provider": want_provider, "model": model}
+        out["reason"] = (f"heal route_override -> {want_provider}/{model} "
+                         f"(eligible candidate; prior: {decision.get('reason')})")
+        return out
+    return decision
+
+
 def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       phase_id: str,
                       run_dir: Optional[Path] = None,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
-                      retries: int = 3) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+                      retries: int = 3,
+                      route_override: Optional[Dict[str, Any]] = None,
+                      ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """THE routed completion entrypoint: every dispatcher LLM call site goes
     through here. Returns (content, usage, route_dict) where route_dict carries
     {provider, model, reason, requested_alias, router} for sidecar/telemetry
@@ -1711,7 +1755,11 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     consented providers -> catalog health -> mode budget -> fallback list.
     route=None (no eligible client-owned route) raises RoutingUnavailable --
     park/fail-closed, never a fabricated model. PRESENTATION_MODEL_ROUTER=0
-    (rollback) selects the pre-FIX-7 DeepSeek-direct path exactly."""
+    (rollback) selects the pre-FIX-7 DeepSeek-direct path exactly.
+
+    F10: `route_override` ({provider, model}, from a heal rung's reissued work
+    order) re-points the selection -- but only onto a candidate the router
+    itself already marked eligible. See _apply_route_override."""
     ctx = _RouteContext()
     decision: Optional[Dict[str, Any]] = None
     if _model_router is not None:
@@ -1725,6 +1773,16 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
         except Exception as exc:  # noqa: BLE001 -- a broken router never
                                   # hard-crashes a run: fall back to DeepSeek
             decision = {"router": f"error: {exc}", "route": None, "reason": str(exc)}
+
+    # F10 (2026-09-06): the Engine's provider-failover heal rung pins an
+    # alternate provider on the reissued work order (order["route_override"]).
+    # Honour it AHEAD of the router's own pick -- but ONLY when the router
+    # itself lists that provider among this phase's ELIGIBLE candidates. That
+    # gate is the whole safety property: a heal rung must never be a back door
+    # around client-owned-provider consent, catalog health or the mode budget.
+    # An override naming an ineligible (or unknown) provider is dropped and the
+    # router's decision stands untouched.
+    decision = _apply_route_override(decision, route_override)
 
     # FIX 14: the routed entrypoint itself holds one logical governor lease
     # for the phase's provider across the whole dispatch (all retry attempts
@@ -2123,6 +2181,16 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     # means "a real prior failure exists for this artifact" regardless of which
     # dispatch_one() call is speaking -- the attempt-number gate added nothing prior
     # attempts didn't already prove.
+    # F10 (2026-09-06): the Engine's heal ladder reissues an agent phase's work
+    # order with `heal_reason` -- the verbatim reason the last attempt failed
+    # (a substance-verifier note, a "produced nothing" timeout, or the text of
+    # this dispatcher's own retry-ceiling park marker). It is a prior finding
+    # exactly like the ones recovered from the sidecar, and it belongs in the
+    # SAME block: without it the model is handed a fresh-looking order and
+    # starts over blind on the very retry that exists to fix a named defect.
+    heal_reason = order.get("heal_reason") if isinstance(order, dict) else None
+    if heal_reason:
+        prior_reasons = list(prior_reasons or []) + [str(heal_reason)]
     if prior_reasons:
         user_parts.append(
             "=== YOUR PREVIOUS ATTEMPT FAILED THE REAL VERIFIER. Fix EXACTLY these named "
@@ -3728,7 +3796,12 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         route_dict2: Dict[str, Any] = {}
         try:
             content, usage, route_dict2 = dispatch_complete(
-                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                # F10: a heal rung's provider pin, if this order carries one.
+                # Ignored unless the router already lists it as eligible --
+                # see _apply_route_override.
+                route_override=(order.get("route_override")
+                                if isinstance(order, dict) else None))
         except RoutingUnavailable as exc:
             reason = f"RoutingUnavailable: {exc}"
             _append_sidecar(run_dir, phase_id, {
@@ -4908,6 +4981,21 @@ def watch_scan_root(scan_root: Path, *, interval: float = SWEEP_INTERVAL_S,
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+# F11: mode-specific --watch lifetime ceilings. --run-dir is ONE run's companion
+# process and must outlive the run (measured: 22 h); --scan-root is a periodic
+# sweeper across many runs and keeps the old 6 h ceiling.
+RUN_DIR_MAX_LIFETIME_MINUTES = 1440.0
+SCAN_ROOT_MAX_LIFETIME_MINUTES = 360.0
+
+
+def resolve_max_lifetime_minutes(explicit: Optional[float], *, run_dir_mode: bool) -> float:
+    """The ceiling actually used by main(). An explicitly passed flag always
+    wins; otherwise the mode's own default applies."""
+    if explicit is not None:
+        return float(explicit)
+    return RUN_DIR_MAX_LIFETIME_MINUTES if run_dir_mode else SCAN_ROOT_MAX_LIFETIME_MINUTES
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="work_order_dispatcher.py",
@@ -4931,10 +5019,18 @@ def build_parser() -> argparse.ArgumentParser:
                         "resolves from capacity.py's probe() -- the DETECTED tier "
                         "(no capacity_override.json is fabricated; --declare-capacity "
                         "writes one explicitly)")
-    p.add_argument("--max-lifetime-minutes", type=float, default=360.0,
+    # F11 (2026-09-06): the --run-dir default was 360 (6 h) while MEASURED runs
+    # last 22 hours, so the dispatcher servicing a long deck died roughly two
+    # thirds of the way through it and every agent phase queued afterwards
+    # burned its FULL budget producing nothing. 1440 (24 h) covers the measured
+    # envelope; --scan-root keeps 360 because that mode is a periodic sweeper,
+    # not the single companion process of one run. Explicitly passing the flag
+    # still wins in both modes -- see RUN_DIR_MAX_LIFETIME_MINUTES /
+    # SCAN_ROOT_MAX_LIFETIME_MINUTES and main()'s resolution below.
+    p.add_argument("--max-lifetime-minutes", type=float, default=None,
                    help="safety ceiling on how long --watch runs before exiting on its own "
-                        "(default 360 = 6h for --run-dir; --scan-root uses 24h internally "
-                        "unless overridden here)")
+                        f"(default {RUN_DIR_MAX_LIFETIME_MINUTES:.0f} = 24h for --run-dir, "
+                        f"{SCAN_ROOT_MAX_LIFETIME_MINUTES:.0f} = 6h for --scan-root)")
     p.add_argument("--declare-capacity", type=int, default=None,
                    help="idempotently write capacity_override.json declaring "
                         "{provider: deepseek-direct, max_concurrent: N} if the file does "
@@ -4965,7 +5061,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                       + (f" reasons={r.reasons}" if r.reasons else ""), flush=True)
             return 0
         watch_run_dir(run_dir, interval=args.interval,
-                     max_lifetime_s=args.max_lifetime_minutes * 60, max_workers=workers)
+                     max_lifetime_s=resolve_max_lifetime_minutes(
+                         args.max_lifetime_minutes, run_dir_mode=True) * 60,
+                     max_workers=workers)
         return 0
 
     scan_root = args.scan_root.expanduser().resolve()
@@ -4982,7 +5080,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                       f"(attempts={r.attempts})", flush=True)
         return 0
     watch_scan_root(scan_root, interval=args.interval,
-                    max_lifetime_s=args.max_lifetime_minutes * 60, max_workers=args.max_workers)
+                    max_lifetime_s=resolve_max_lifetime_minutes(
+                        args.max_lifetime_minutes, run_dir_mode=False) * 60,
+                    max_workers=args.max_workers)
     return 0
 
 

@@ -2083,6 +2083,15 @@ class Engine:
                     "issued_at": utcnow(),
                 }
                 wo_path.write_text(json.dumps(order, indent=2), encoding="utf-8")
+                # F9: reissuing the order is EXACTLY the event the dispatcher's
+                # own park marker names as the un-parking condition ("Dispatch
+                # resumes automatically if the Engine reissues the work order").
+                # Clearing it here is what makes the marker mean "the dispatcher
+                # parked THIS order" for the wait below, rather than "a park
+                # happened here at some point" -- without it, a marker that
+                # survived an engine SIGKILL would make the very next dispatch
+                # quarantine on its first poll tick without ever waiting.
+                self._clear_blocked_marker(phase.id)
                 self.report.event("phase.work_order",
                                   f"{phase.id} is agent-authored. Work order written to "
                                   f"working/work-orders/{phase.id}.json. Waiting for "
@@ -2106,7 +2115,248 @@ class Engine:
         if self.dry_run:
             return EXIT_OK
 
-        deadline = time.time() + phase.budget_minutes * 60
+        # F11 (2026-09-06): before this phase starts waiting on a dispatcher,
+        # make sure one is actually alive. See _respawn_dispatcher_if_dead.
+        self._respawn_dispatcher_if_dead(phase.id)
+
+        outcome, last_present, last_verify_notes, marker_text = self._await_agent_artifact(
+            phase, budget_seconds=phase.budget_minutes * 60,
+            glob_patterns=glob_patterns, baseline_progress=baseline_progress)
+        if outcome == "ok":
+            return EXIT_OK
+        if outcome == "dispatch_blocked":
+            # F9 (2026-09-06): the dispatcher PARKED this phase at its retry
+            # ceiling and said so in a marker file. Measured cost of ignoring
+            # it: P4-COPY and P4-PROMPT together burned 8.3 hours across ten
+            # fail-park-resume cycles in one run, 60-90 minutes of budget spent
+            # waiting for a dispatcher that had already stopped, every time.
+            return self._heal_or_fail_agent_phase(
+                phase, f"dispatcher retry ceiling: {marker_text}")
+        if last_present:
+            return self._heal_or_fail_agent_phase(
+                phase,
+                f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
+                f"substance verification for {phase.budget_minutes} minutes: "
+                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
+        return self._heal_or_fail_agent_phase(
+            phase,
+            f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
+            f"Expected: {', '.join(phase.produces_artifact)}")
+
+    # -- F9 / F10 / F11: the shared agent-phase wait -------------------------
+
+    def _blocked_marker_path(self, phase_id: str) -> Path:
+        """F9: the dispatcher's own park marker for this phase.
+
+        Resolved through dispatcher._blocked_marker_path so the two components
+        can never disagree about the filename; the literal fallback exists only
+        so a tree whose dispatcher module will not import (a degraded install,
+        an import-time failure of one of its optional deps) still gets the F9
+        reaction instead of silently reverting to waiting out the budget."""
+        try:
+            from . import dispatcher as _dispatcher
+            return _dispatcher._blocked_marker_path(self.run_dir, phase_id)
+        except Exception:  # noqa: BLE001 -- see docstring
+            return (self.run_dir / "working" / "work-orders"
+                    / f"{phase_id}.dispatch-blocked.txt")
+
+    _BLOCKED_MARKER_SUMMARY_CHARS = 200
+
+    def _read_blocked_marker(self, phase_id: str) -> Optional[str]:
+        """A SHORT summary of the marker, or None when no marker exists.
+
+        Short on purpose. This string becomes the phase's failure reason, and
+        that reason is passed to Reporter.to_requester -- i.e. it reaches the
+        CLIENT's chat. Dumping the whole marker file there would put internal
+        dispatcher diagnostics ("consecutive: 3 identical outcomes", the ledger
+        path) in front of a client who can do nothing with them. So: prefer the
+        marker's own `reason:` field, which is the one line that says what
+        happened, and otherwise fall back to a bounded slice of the collapsed
+        text. The full marker stays on disk for the operator, exactly where
+        dispatcher._park_blocked put it.
+
+        Read-only and best-effort: an unreadable marker is reported as a
+        present-but-unreadable park, never as "no park"."""
+        path = self._blocked_marker_path(phase_id)
+        try:
+            if not path.is_file():
+                return None
+        except OSError:
+            return None
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return "(park marker present but unreadable)"
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("reason:"):
+                reason = stripped.split(":", 1)[1].strip()
+                if reason:
+                    return reason[:self._BLOCKED_MARKER_SUMMARY_CHARS]
+        collapsed = " ".join(text.split())
+        if not collapsed:
+            return "(park marker present but empty)"
+        return collapsed[:self._BLOCKED_MARKER_SUMMARY_CHARS]
+
+    def _clear_blocked_marker(self, phase_id: str) -> bool:
+        """Delete this phase's dispatcher park marker. True when one was
+        removed. F9: the marker must not outlive the quarantine that reacted
+        to it -- should_dispatch() already re-arms on a work-order or status
+        change, and a stale marker sitting in `ls` after the Engine has moved
+        on is a lie to the operator the marker exists to inform."""
+        path = self._blocked_marker_path(phase_id)
+        try:
+            if path.is_file():
+                path.unlink()
+                return True
+        except OSError:
+            pass
+        return False
+
+    def _respawn_dispatcher_if_dead(self, phase_id: str) -> bool:
+        """F11 (2026-09-06): keep a dispatcher alive for the length of the run.
+
+        H5: work_order_dispatcher.py's --watch mode exits on its own
+        --max-lifetime-minutes ceiling (and on an OOM/crash/kill). Measured runs
+        last 22 hours. Nothing ever noticed the death: every agent phase queued
+        after it burned its FULL budget producing nothing, one phase at a time,
+        and to an operator that is indistinguishable from slow progress.
+
+        The check is the same one __main__ makes before its own spawn -- the
+        pid recorded in working/dispatcher-autospawn.lock, tested for liveness
+        with os.kill(pid, 0). A live pid (or no lock file at all, meaning
+        auto-dispatch was never armed for this run) is left completely alone;
+        only a lock whose holder is GONE triggers a respawn, so this can never
+        create a second dispatcher racing a healthy one.
+
+        Fail-soft in every direction: auto-dispatch disabled by flag/env, an
+        unresolvable scripts_dir, a spawn refusal -- all return False and the
+        phase waits exactly as it did before. Returns True only on a real
+        respawn."""
+        try:
+            from . import autospawn as _autospawn
+        except Exception:  # noqa: BLE001 -- degraded tree: never block a phase
+            return False
+        if _autospawn._auto_dispatch_disabled(False):
+            return False
+        lock_path = _autospawn._auto_dispatch_lock_path(self.run_dir)
+        try:
+            if not lock_path.is_file():
+                # No lock: this run was never armed with an auto-spawned
+                # dispatcher (--no-auto-dispatch, --dry-run, or an operator
+                # running one by hand). Not our business to arm it now.
+                return False
+            recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+            pid = int(recorded.get("pid") or 0)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return False
+        if _autospawn._pid_is_alive(pid):
+            return False
+        try:
+            from . import dispatcher as _dispatcher
+            scripts_dir = _dispatcher.resolve_scripts_dir_for_run(self.run_dir)
+        except Exception:  # noqa: BLE001
+            return False
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+        proc = _autospawn._spawn_dispatcher_if_available(self.run_dir, scripts_dir)
+        if proc is None:
+            return False
+        with self._state_lock:
+            self.report.event(
+                "phase.dispatcher_respawned",
+                f"{phase_id}: the dispatcher that was servicing this run (pid {pid}) is "
+                f"gone -- respawned work_order_dispatcher.py --watch (pid {proc.pid}). "
+                "Without this the phase would have waited out its whole budget for a "
+                "process that had already exited (F11).")
+        return True
+
+    def _heal_or_fail_agent_phase(self, phase: Phase, reason: str) -> int:
+        """F10 (2026-09-06): run the REAL heal ladder for an agent phase before
+        quarantining it.
+
+        MEASURED: on the 22 h run, 9 of the 21 human --resumes succeeded
+        IMMEDIATELY on the very next try. Those were transient failures that any
+        retry would have cleared -- and nothing retried them, because the heal
+        ladder had no arm that could act on an agent phase at all. run_phase()
+        only reaches heal.rung2_* when the executor returned EXIT_OK, and
+        _run_agent_phase never does on failure: it went straight to _fail_unit.
+        38 of 62 phases are agent-authored, so the ladder did nothing for
+        roughly two thirds of the pipeline.
+
+        The rungs themselves do the agent-specific work (heal.rung2_regenerate /
+        heal.rung2_provider_failover reissue the work order rather than
+        re-running an executor argv -- an agent phase has no argv). This method
+        only decides WHICH rung and enforces the once-per-run cap.
+
+        Bounded exactly like run_phase's own verifier-regeneration arm: one
+        ladder pass per phase per run, recorded on the phase record as
+        agent_heal_done, so a --resume cannot spin the ladder forever.
+        Owner-decision reasons never heal -- they fall through to _fail_unit,
+        which routes them to _block (park and notify)."""
+        failure_class = heal.classify_failure(reason)
+        if failure_class == heal.FAILURE_OWNER_DECISION:
+            return self._fail_unit(phase, reason)
+        with self._state_lock:
+            ps = self._phase_state(phase.id)
+            already = bool(ps.get("agent_heal_done"))
+        if already:
+            with self._state_lock:
+                heal._ledger(self, phase=phase.id, rung=2, attempt=0,
+                             failure_class=failure_class, reason=reason,
+                             route_change=False, outcome="agent_heal_cap_reached")
+            return self._fail_unit(phase, reason)
+        with self._state_lock:
+            self._checkpoint(phase.id, agent_heal_done=True)
+            heal._ledger(self, phase=phase.id, rung=2, attempt=0,
+                         failure_class=failure_class, reason=reason,
+                         route_change=False,
+                         outcome=("rung2_provider_failover"
+                                  if failure_class == heal.FAILURE_PROVIDER_ERROR
+                                  else "rung2_regenerate"))
+        if failure_class == heal.FAILURE_PROVIDER_ERROR:
+            rc = heal.rung2_provider_failover(self, phase, reason)
+        else:
+            rc = heal.rung2_regenerate(self, phase, reason)
+        if rc == EXIT_OK:
+            with self._state_lock:
+                self.report.event(
+                    "phase.agent_healed",
+                    f"{phase.id}: the heal ladder recovered this agent phase after "
+                    f"'{reason}' -- the artifact now exists and passes its substance "
+                    "verifier (F10).")
+            return EXIT_OK
+        return self._fail_unit(phase, reason)
+
+    def _await_agent_artifact(self, phase: Phase, *, budget_seconds: float,
+                              glob_patterns: List[str],
+                              baseline_progress: float,
+                              ) -> Tuple[str, bool, List[str], str]:
+        """THE agent-phase wait. Extracted verbatim from _run_agent_phase so the
+        F10 heal rungs wait on a reissued work order with the SAME loop -- same
+        completion rules, same tiebreaker, same announce/checkpoint cadence --
+        rather than a second, drifting copy of it.
+
+        Returns (outcome, last_present, last_verify_notes, marker_text) where
+        outcome is one of:
+          "ok"               -- the artifact is present and complete;
+          "dispatch_blocked" -- the dispatcher parked this phase at its retry
+                                ceiling (F9); marker_text carries its message;
+          "timeout"          -- the budget expired.
+        """
+        # --dry-run NEVER waits. _run_agent_phase already returns EXIT_OK before
+        # reaching this method, but F10 gave this loop a SECOND caller: the heal
+        # rungs, which run_phase reaches from its artifact-missing and
+        # verifier-failed branches -- and those branches are live under dry_run.
+        # Without this guard a dry-run engine sits in a real 30-minute sleep
+        # loop waiting for a dispatcher that a dry run never even spawns.
+        # Caught by tests/test_checkpoint.py, which builds dry_run engines whose
+        # P9 artifact is deliberately deleted; the whole suite hung there.
+        if self.dry_run:
+            return "timeout", False, [], ""
+        deadline = time.time() + budget_seconds
         announced_half = False
         checkpoint_every = max(60, phase.heartbeat_interval_minutes * 60 // 4)
         last_cp = time.time()
@@ -2178,10 +2428,32 @@ class Engine:
                     if self._sidecar_pending(phase.id):
                         ok = False
             if ok:
-                return EXIT_OK
+                return "ok", last_present, last_verify_notes, ""
+            # F9 (2026-09-06): REACT TO THE DISPATCHER'S PARK MARKER.
+            #
+            # H3: dispatcher._park_blocked writes
+            # working/work-orders/<phase>.dispatch-blocked.txt the moment a
+            # phase hits DISPATCH_REPEAT_CEILING, and its own text says
+            # re-dispatch "resumes automatically if the Engine reissues the
+            # work order". The Engine never read it. So the two components sat
+            # facing each other: the dispatcher waiting on the Engine, the
+            # Engine waiting on the dispatcher, for the REST OF THE BUDGET --
+            # 60-90 minutes per park, ten parks across P4-COPY and P4-PROMPT in
+            # one measured run, 8.3 hours of pure waiting.
+            #
+            # Deliberately placed AFTER the completion check above: a park
+            # marker left over from an earlier attempt must never override an
+            # artifact that is genuinely finished now. And gated on
+            # _sidecar_pending being False -- a LIVE dispatcher attempt still in
+            # flight on this order outranks a marker from a previous one (the
+            # same precedence FIX 21 established for presence).
+            if not self._sidecar_pending(phase.id):
+                marker_text = self._read_blocked_marker(phase.id)
+                if marker_text:
+                    return "dispatch_blocked", last_present, last_verify_notes, marker_text
             now = time.time()
             remaining = deadline - now
-            if not announced_half and remaining < (phase.budget_minutes * 60) / 2:
+            if not announced_half and remaining < budget_seconds / 2:
                 announced_half = True
                 with self._state_lock:
                     self.report.to_requester(
@@ -2193,17 +2465,13 @@ class Engine:
                 self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
                                  waiting_for=list(phase.produces_artifact),
                                  waited_seconds=int(now - started_at))
+                # F11: the checkpoint cadence is also the dispatcher-liveness
+                # cadence. A phase with a 90-minute budget can easily outlive
+                # the dispatcher that was servicing it when the wait began, so
+                # checking only at entry would still strand the rest of it.
+                self._respawn_dispatcher_if_dead(phase.id)
             time.sleep(15)
-        if last_present:
-            return self._fail_unit(
-                phase,
-                f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
-                f"substance verification for {phase.budget_minutes} minutes: "
-                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
-        return self._fail_unit(
-            phase,
-            f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
-            f"Expected: {', '.join(phase.produces_artifact)}")
+        return "timeout", last_present, last_verify_notes, ""
 
     # -- FIX 29 (W05 + W07): the human executor kind -------------------------
     #
@@ -2543,6 +2811,19 @@ class Engine:
         with self._state_lock:
             self._checkpoint(phase.id, status=PHASE_STATUS_QUARANTINED,
                              quarantined_reason=reason, quarantined_at=utcnow())
+            # F9 (2026-09-06): a quarantine is the END of the Engine's dealings
+            # with this attempt, so the dispatcher's park marker must not
+            # outlive it. Two reasons, both load-bearing:
+            #   * re-dispatch: dispatcher.should_dispatch already re-arms on the
+            #     phase's own state.json status change (quarantined is a change),
+            #     so a later --resume re-dispatches regardless -- but a marker
+            #     still sitting there would make the NEXT _await_agent_artifact
+            #     react to a stale park on its very first tick and quarantine
+            #     again without ever waiting;
+            #   * honesty: the marker exists to make `ls working/work-orders/`
+            #     tell an operator what needs attention. One left behind for a
+            #     unit already recorded in the failed-units ledger is noise.
+            self._clear_blocked_marker(phase.id)
             self.report.event(
                 "phase.quarantined",
                 f"{phase.id}: unit quarantined (run continues past it): {reason}")
