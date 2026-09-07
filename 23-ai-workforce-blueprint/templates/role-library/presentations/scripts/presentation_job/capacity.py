@@ -23,7 +23,10 @@ HARDENING (fix/capacity-override-clamp)
 declared value verbatim and unbounded, and that branch sat AHEAD of the
 provider-known/plan-unknown PARK branch -- so a `capacity_override.json` of
 `{"provider":"ollama-cloud","max_concurrent":9999}` (a known cap-table
-provider whose highest row anywhere is 10) yielded MEASURED / available=9999,
+provider whose highest row anywhere is 8 -- it was 10 when that bug was found;
+the 2026-09-04 operator ruling lowered the $100/month row to 8 to leave the
+client 2 free slots, and the point of the sentence is unchanged: 9999 was
+never a reading off the account) yielded MEASURED / available=9999,
 never PARKED, never AF-CAPACITY-UNMEASURED. The declared number was trusted as
 if it were a reading off the account, when it was only ever a claim about it.
 Fixed by re-ordering `_resolve_override()`'s three cases so the PARK check for

@@ -41,7 +41,7 @@ SCHEMA (version 1)
     "<provider-id>": {
       "provider":       "ollama-cloud",
       "plan_tier":      "$100/month" | null,     # non-detectable -> asked ONCE
-      "concurrency_ceiling": 10 | "UNBOUNDED" | null,
+      "concurrency_ceiling": 8 | "UNBOUNDED" | null,   # 8, not 10: see below
       "ceiling_source": "cap-table" | "declared" | "interview" | "probe",
       "consented":      true/false,
       "wired_models":   ["deepseek-v4-flash", ...],   # probed (FIX 9)
@@ -91,8 +91,8 @@ providers and "plan detected/unknown" ONLY. Redaction is per-section and
 runs on every write and every read-export; the raw store on disk is
 written already-redacted, so a leak of the FILE is not a leak of secrets.
 
-CAPACITY INTEROPERATION
------------------------
+CAPACITY INTEROPERATION (per provider -- do not "simplify" this back)
+----------------------------------------------------------------------
 The profile NEVER bypasses capacity.py's doctrine. is_plan_locked() and
 intake questions consult capacity.CAP_TABLE; capacity.probe() remains the
 dispatch-path authority. FIX 8 adds persistence and the ask-once lock --
