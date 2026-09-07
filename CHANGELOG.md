@@ -1,3 +1,13 @@
+## [v25.0.16]  -  2026-09-07  -  Private interview renewal, durable resume guidance, version-aware Mac/VPS sender and Cloudflare Access recovery
+
+- Preserve main's v25.0.15 24-hour invitation fix and validate the exact bounded issuer receipt.
+- Add explicit renewal/resume without recreating the company or losing submitted answers; routine install replay never resends accepted invitations.
+- Pair CC v7.1.5 for 30-day company-bound browser sessions, authenticated used-link recovery, scoped unfinished drafts and correct resumed phase. Legacy grants require a fresh invitation.
+- Resolve a client-compatible OpenClaw CLI before delivery; reject stale explicit pins and preserve Mac/native VPS/container roots.
+- Support scoped Cloudflare Access service headers through curl stdin, fail clearly on login redirects, and document verified local operator recovery without claiming public readiness.
+- Isolate sender tests from real HOME, credentials, binaries and networking; negative controls verify parent and child execution restrictions.
+- No client deployment, Cloudflare policy change or live interview/Notion acceptance is implied by these repository tests.
+
 ## [v25.0.15]  -  2026-09-07  -  The interview link died before the client ever opened it
 
 The AI Workforce Interview link is minted as a single-use enrollment ticket and handed to the client over Telegram. It expired **900 seconds — fifteen minutes — after minting**. A client reads a message when they read it, not within a quarter of an hour of an operator pressing send.

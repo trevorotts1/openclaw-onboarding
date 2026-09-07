@@ -1,6 +1,6 @@
 ---
 name: command-center-setup
-version: "v13.1.5"
+version: "v13.1.6"
 description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client — one deployment per client with its own Vercel deployment, CloudFlare Access app, Telegram supergroup with topics, and data store. Includes one-time install, runtime execution guide, and QC rubric (gate 8.5).
 ---
 
@@ -32,6 +32,8 @@ Fresh installation uses **standard-first** onboarding: create pending client sta
 `run-full-install.sh` initializes missing state before the lock assertion. A standard foundation is ready only when its company artifacts, department selection and active same-company workspaces match the verification receipt. It is preparatory company structure; runtime workforce activation still follows the completed interview and its approved department/persona changes.
 
 Before sending the interview, require the exact authenticated public `/api/auth/interview-ready` receipt and obtain a one-use enrollment ticket through `/api/auth/interview-invitation`. A generic HTTP 200 or gateway `/interview` page proves neither the right app nor browser access. The receipt verifies local prerequisites and explicitly leaves provider liveness unverified.
+
+For an explicit client “resume my interview” or expired-link request, run the installed Skill 23 `scripts/send-interview-link.sh --renew` within that client's selected root/workspace. Do not restart `run-full-install.sh`, recreate the company or rerun prebuild just to renew browser access. Normal installer replays deliberately do not resend acknowledged invitations. Private enrollment links last up to 24 hours; the stable `/interview` page resumes saved Q/A after authentication. New browser logins last up to 30 days in the paired resume release, independently of saved-answer retention and any outer Cloudflare Access policy. See [the renewal runbook](../docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
 The shell remains governed by canonical interview/build/closeout state. The client answers in their own interview, resumes durable Q/A and can export a reference document. Completion triggers the existing build handoff; unavailable dependencies remain pending for recovery. Full activation/closeout requires actual verified artifacts and delivery, not a flag alone.
 

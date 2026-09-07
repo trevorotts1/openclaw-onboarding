@@ -9,6 +9,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,6 +21,9 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 PROTOCOL = 'interview-launch.v1'
+# CC issues at most 24 hours; allow a small bounded clock skew, not arbitrary TTLs.
+MAX_INVITATION_TTL_SECONDS = 24 * 60 * 60
+INVITATION_CLOCK_SKEW_SECONDS = 10
 class Pending(ValueError):
     pass
 
@@ -65,7 +69,7 @@ def load_service_environment(state, env):
     filename=launch.get('serviceEnvPath') if isinstance(launch,dict) else None
     if filename is None:return result
     if not isinstance(filename,str) or not Path(filename).is_absolute(): raise Pending('service environment path invalid')
-    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN'}
+    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
     stored={}
     try:
         file=Path(filename)
@@ -88,6 +92,25 @@ def load_service_environment(state, env):
         result[key]=value
     return result
 
+def curl_auth_config(env):
+    """Use only the selected client's explicit/pinned credentials, via stdin."""
+    token=env.get('MC_API_TOKEN')
+    if not isinstance(token,str) or not token or any(ord(c)<32 for c in token):
+        raise Pending('authenticated readiness token missing or invalid')
+    headers=[('Authorization','Bearer '+token)]
+    names=('CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET')
+    if any(name in env for name in names):
+        if any(not isinstance(env.get(name),str) or not env[name].strip() or any(ord(c)<32 for c in env[name]) for name in names):
+            raise Pending('Cloudflare Access requires a complete valid client ID/secret pair')
+        headers.extend([('CF-Access-Client-Id',env[names[0]]),('CF-Access-Client-Secret',env[names[1]])])
+    return ''.join('header = "'+name+': '+value.replace('\\','\\\\').replace('"','\\"')+'"\n' for name,value in headers)
+
+
+def reject_public_redirect(status):
+    if status in ('301','302','303','307','308'):
+        raise Pending('public authentication required (redirect); configure this client Cloudflare Access service credentials or use the verified local operator recovery route')
+
+
 def resolve_public_origin(state, env, fetch=None):
     if not isinstance(state,dict): raise Pending('canonical workforce state must be an object')
     env=load_service_environment(state,env)
@@ -106,19 +129,18 @@ def resolve_public_origin(state, env, fetch=None):
     origin,host = public_origin(origins[0])
     if env.get('INTERVIEW_GATE_URL') and public_origin(env['INTERVIEW_GATE_URL'])[0] != origin:
         raise Pending('separate readiness origin refused')
-    token = env.get('MC_API_TOKEN')
-    if not token or '\n' in token or '\r' in token: raise Pending('authenticated readiness token missing or invalid')
+    config=curl_auth_config(env)
+    token=env['MC_API_TOKEN']
     if fetch:
         receipt = fetch(origin+'/api/auth/interview-ready',token)
     else:
-        # Credentials go through stdin, never command-line argv or diagnostics.
-        escaped = token.replace('\\','\\\\').replace('"','\\"')
-        config = 'header = "Authorization: Bearer '+escaped+'"\n'
+        # All authentication headers go through stdin, never argv or diagnostics.
         try:
             result = subprocess.run(['curl','--disable','--max-filesize','65536','--config','-','--silent','--show-error','--max-time','15','--max-redirs','0','--proto','=https','--write-out','\n%{http_code}',origin+'/api/auth/interview-ready'],input=config,text=True,capture_output=True,timeout=20)
         except (OSError,subprocess.TimeoutExpired): raise Pending('authenticated readiness transport unavailable') from None
         if result.returncode: raise Pending('authenticated readiness transport failed')
         body, _, status = result.stdout.rstrip('\r\n').rpartition('\n')
+        reject_public_redirect(status)
         if status != '200' or len(body)>65536: raise Pending('authenticated readiness HTTP failure')
         try: receipt=json.loads(body)
         except ValueError: raise Pending('malformed readiness receipt') from None
@@ -129,13 +151,12 @@ def resolve_public_origin(state, env, fetch=None):
     return dict(expected,origin=origin,host=host,protocol=PROTOCOL,receipt=receipt)
 
 def issue_invitation(resolved, env, target, metadata=None):
-    token=env.get('MC_API_TOKEN','')
-    escaped=token.replace('\\','\\\\').replace('"','\\"')
-    config='header = "Authorization: Bearer '+escaped+'"\n'
+    config=curl_auth_config(env)
     body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
     try:
         result=subprocess.run(['curl','--disable','--max-filesize','65536','--config','-','--silent','--show-error','--max-time','15','--max-redirs','0','--proto','=https','--header','Content-Type: application/json','--data',body,'--write-out','\n%{http_code}',resolved['origin']+'/api/auth/interview-invitation'],input=config,text=True,capture_output=True,timeout=20)
         data,_,status=result.stdout.rstrip('\r\n').rpartition('\n')
+        reject_public_redirect(status)
         if result.returncode or status!='200' or len(data)>65536: raise Pending('authenticated invitation issuance failed')
         receipt=json.loads(data)
         if not isinstance(receipt,dict): raise Pending('invalid invitation receipt')
@@ -143,7 +164,7 @@ def issue_invitation(resolved, env, target, metadata=None):
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
         if receipt.get('protocol')!='interview-invitation.v1' or receipt.get('oneUse') is not True: raise Pending('invitation protocol mismatch')
         expiry=receipt.get('expiresAt')
-        if type(expiry) is not int or not time.time()<expiry<=time.time()+86410: raise Pending('invitation expiry invalid')
+        if type(expiry) is not int or not time.time()<expiry<=time.time()+MAX_INVITATION_TTL_SECONDS+INVITATION_CLOCK_SKEW_SECONDS: raise Pending('invitation expiry invalid')
         url=receipt.get('url','');parsed=urlsplit(url)
         if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview' or parsed.query or not parsed.fragment.startswith('enroll='):
             raise Pending('invitation URL binding invalid')
@@ -182,10 +203,37 @@ def native_openclaw_candidates(env):
     """Only this runtime user's npm bins and conventional native install bins."""
     home = env.get('HOME', '')
     candidates = []
+    selected_root=env.get('OPENCLAW_ROOT') or env.get('OC_ROOT') or env.get('OC_CONFIG')
+    if selected_root and Path(selected_root).is_absolute():
+        candidates.append(Path(selected_root) / 'npm-global/bin/openclaw')
     if home and Path(home).is_absolute():
-        candidates.extend(Path(home) / suffix / 'openclaw' for suffix in ('.npm-global/bin', '.npm/bin', '.local/bin'))
+        candidates.extend(Path(home) / suffix / 'openclaw' for suffix in ('.openclaw/npm-global/bin', '.npm-global/bin', '.npm/bin', '.local/bin'))
     candidates.extend(Path(directory) / 'openclaw' for directory in ('/opt/homebrew/bin', '/usr/local/bin'))
     return candidates
+
+
+def required_openclaw_version(env):
+    """Configuration schema provenance is a minimum, not permission to downgrade."""
+    roots=[Path(env[name]) for name in ('OPENCLAW_ROOT','OC_ROOT','OC_CONFIG') if env.get(name)]
+    if any(not root.is_absolute() for root in roots) or (roots and any(root.resolve()!=roots[0].resolve() for root in roots[1:])):
+        raise Pending('OpenClaw client root pins conflict or are not absolute')
+    root=roots[0] if roots else Path(env.get('HOME',str(Path.home())))/'.openclaw'
+    config=root/'openclaw.json'
+    if not config.exists(): return None
+    try:
+        value=json.loads(config.read_text()).get('meta',{}).get('lastTouchedVersion')
+    except (OSError,ValueError,AttributeError):
+        raise Pending('selected OpenClaw configuration metadata is unreadable') from None
+    if value is None: return None
+    if not isinstance(value,str): raise Pending('selected OpenClaw version metadata is invalid')
+    parsed=version_tuple(value)
+    if parsed is None: raise Pending('selected OpenClaw version metadata is invalid')
+    return parsed
+
+
+def version_tuple(value):
+    match=re.fullmatch(r'(?:OpenClaw\s+)?v?(\d{4})\.(\d{1,2})\.(\d+)(?:-(\d+))?(?:\s+\([a-fA-F0-9]+\))?',value.strip())
+    return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
 def resolve_openclaw_cli(env):
@@ -195,6 +243,7 @@ def resolve_openclaw_cli(env):
     login profile. Retain the executable's bin directory for its Node shebang
     when the caller is a minimal-PATH SSH/cron process.
     """
+    expected=required_openclaw_version(env)
     explicit = env.get('OPENCLAW_BIN')
     if explicit is not None:
         if not explicit or not Path(explicit).is_absolute():
@@ -202,20 +251,34 @@ def resolve_openclaw_cli(env):
         candidates = [Path(explicit)]
     else:
         found = shutil.which('openclaw', path=env.get('PATH', ''))
-        candidates = ([Path(found)] if found else []) + native_openclaw_candidates(env)
+        native=native_openclaw_candidates(env)
+        scoped=[candidate for candidate in native if str(candidate) not in ('/opt/homebrew/bin/openclaw','/usr/local/bin/openclaw')]
+        candidates = (scoped if expected else []) + ([Path(found)] if found else []) + native
+    checked=set()
     for candidate in candidates:
         try:
             if not candidate.is_file() or not os.access(candidate, os.X_OK):
                 continue
             executable = str(candidate.resolve(strict=True))
+            if executable in checked: continue
+            checked.add(executable)
             child_env = dict(env)
             bin_dir = str(candidate.absolute().parent)
             child_env['PATH'] = bin_dir + os.pathsep + env.get('PATH', '')
+            if expected is not None:
+                try:
+                    reported=subprocess.run([executable,'--version'],capture_output=True,text=True,timeout=5,env=child_env)
+                except (OSError,subprocess.TimeoutExpired):
+                    continue
+                version=version_tuple(reported.stdout) if reported.returncode==0 else None
+                if version is None or version<expected: continue
             return executable, child_env
         except (OSError, ValueError):
             continue
     if explicit is not None:
-        raise Pending('OPENCLAW_BIN is unavailable or not executable; no fallback attempted')
+        raise Pending('OPENCLAW_BIN is unavailable, unverified or older than the client configuration; no fallback attempted')
+    if expected is not None:
+        raise Pending('No verified OpenClaw CLI supports this client configuration; pin the current client executable with OPENCLAW_BIN')
     return None
 
 def send_gateway(message, target, ledger, context, force=False, timeout=30, prepare_message=None):
@@ -237,7 +300,7 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
         expiry=previous.get('invitationExpiresAt')
         renewal=previous.get('status')=='accepted' and type(expiry) is int and time.time()>=expiry
         if previous.get('status')=='accepted' and not force and not renewal and time.time()-previous.get('epoch',0)<1800:
-            return 7, {'status':'guarded','reason':'invitation recently accepted'}
+            return 7, {'status':'guarded','reason':'invitation recently accepted; use --renew if a fresh sign-in link is needed'}
         if ledger.exists() and not force and not renewal:
             try:
                 last=ledger.read_text().splitlines()[-1].split('|')[0]
@@ -290,10 +353,15 @@ def main():
         message=Path(args.message_file).read_text()
         delivery_context=dict(origin=resolved['origin'],companyId=resolved['companyId'],tenantId=resolved['tenantId'],installationId=resolved['installationId'],mode=args.mode,lane=args.lane)
         def enroll(text):
+            private_entry=resolved['origin']+'/interview'
+            if private_entry not in text:
+                raise Pending('private invitation link missing from message')
             url=issue_invitation(resolved,env,args.target,delivery_context)
-            # Preparation always uses /interview: the browser reloads its persisted
-            # tenant state after enrollment; old resume routes do not redeem grants.
-            return text.replace(resolved['origin']+'/interview',url)
+            from datetime import datetime, timezone
+            deadline=datetime.fromtimestamp(delivery_context['invitationExpiresAt'],timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
+            # Replace only the primary sign-in link: the later authenticated
+            # resume bookmark must remain stable and must never carry a ticket.
+            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}','This private sign-in link expires on '+deadline+'.')
         code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)
         print(json.dumps(receipt));return code
     except (Pending,ValueError,OSError) as exc:

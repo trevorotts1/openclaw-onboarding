@@ -1096,35 +1096,32 @@ If client gives short answers, says "I don't know" twice, or pauses:
 - **Goal is completion, not interrogation**
 
 ### If the Client Wants to Stop
-- Save everything immediately (flush answers, update handoff file)
-- "No problem. Everything we have done so far is saved. When you're ready, say 'Resume my AI workforce setup' and I'll pick up exactly where we left off."
-- DO NOT make them feel bad. Their company. Their pace.
+- Persist accepted answers and update the handoff/progress record before confirming that they were saved. In the web app, wait for the save acknowledgement; do not claim an unconfirmed in-flight answer was saved.
+- Tell the client: “You can return to your interview page after signing in. If you need a new private sign-in link, tell me ‘resume my interview.’ Your saved answers will still be there.”
+- Leave the existing interview identity and answers in place. Do not restart the interview, fabricate answers, or mark it complete. The owner chooses when to continue.
 
-### Interview Start Link - Operator-Triggered (scripts/send-interview-link.sh)
-The clean "when you're ready, start here" trigger. The OPERATOR (never a cron) runs
-`bash scripts/send-interview-link.sh` on the client's box to send the owner ONE
-Telegram message through the OpenClaw gateway carrying:
-- **START** - `{dashboard}/interview` when nothing has been answered yet, or
-- **RESUME** - `{dashboard}/onboarding/resume/{slug}` when an interview is underway
-  (the Command Center resumes at the exact next unanswered question), or
-- a **reply-here invitation** when no `OPENCLAW_DASHBOARD_URL` is configured (the
-  interview is fully conductable in this chat - Options A/B/C still apply).
+### Interview Start and Resume Links — Client-Requested Renewal
 
-Guardrails (binding): gateway-only (`openclaw message send`, never direct Bot API);
-owner chat resolved via `shared-utils/resolve-owner-chat.sh` (operator ids rejected
-on every source); a 30-minute re-send guard (`FORCE=1` to bypass deliberately);
-refuses when the interview is already complete; no chat ids hardcoded and the
-resolved id is masked in output. The web counterpart on the Command Center is
-`POST /api/interview/send-link` (bearer `MC_API_TOKEN`) - same message, same rules.
-Sending the link is an INVITATION ONLY: it is never consent, never Option B, and
-unlocks no autonomous action.
+The initial invitation uses `bash scripts/send-interview-link.sh` on the client's own box. It verifies the client's public Command Center origin/readiness and sends one acknowledged Telegram message through that client's OpenClaw gateway. A private one-use `/interview#enroll=...` sign-in link and a separate stable `/interview` bookmark point to the same client's saved interview. Do not construct `/onboarding/resume/{slug}` or fall back to an unauthenticated/chat invitation when web readiness is missing.
+
+When that client says **“resume my interview”**, “Resume my AI workforce setup,” or “my link expired,” execute from the installed Skill 23 directory, using the already selected client root/workspace:
+
+```bash
+bash scripts/send-interview-link.sh --renew
+```
+
+The explicit request authorizes this renewed invitation. `--renew` selects resume wording and bypasses only the acknowledged-send cooldown. `--resume` selects the wording while retaining the normal cooldown; a known expired acknowledged invitation can already be renewed without `FORCE`. The sender rechecks the owner destination and exact company/tenant/installation/origin bindings before minting or sending. An uncertain send must be reconciled, even with `--renew` or `FORCE=1`; do not bypass the gateway with direct Bot API calls. Do not edit identity, answers, enrollment ledgers, or completion flags to obtain another link.
+
+Private enrollment links last up to **24 hours**; the message shows the server's exact expiry and remains accurate with older 15-minute issuers. New authenticated Command Center browser sessions last up to **30 days** in the paired resume release. The stable `/interview` page requires a valid login; earlier sessions and Cloudflare Access may expire sooner. These access timers do not delete saved questions or answers. Once signed in again, continue the same interview. If the interview is already complete, the sender refuses another interview invitation; use the existing completion/build/closeout status instead of starting over.
+
+Normal install/resume cron replays do not renew an already acknowledged invitation. Sending a link is an invitation only: it is never consent to Option B or autonomous completion. Workforce-build and Skill 37 closeout resume workers recover their respective post-interview stages; neither is an interview sign-in renewal command.
 
 ### Telegram Nudge Cadence (multi-day persistence)
 - +24h idle: "You're {progress}% done. Want to keep going? {link}"
 - +3d idle: "Still want to finish your AI workforce setup? You stopped at: {last_question}. {link}"
 - +7d idle: "Last check-in - your AI workforce setup is still waiting for you. When you're ready to continue, open the link or message me and I'll pick up right where you left off. {link}"
 
-The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action.
+The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action. A reminder can reference the stable authenticated `/interview` page, but must not replay a one-use ticket or automatically mint another private sign-in link. If the client asks to continue and needs sign-in, use the explicit renewal command above.
 
 **NO-FABRICATION RULE (binding, no exceptions):** If the owner does not reply, mark the interview STALLED in `interview-handoff.md`, keep sending weekly reminders, and NEVER run Option B without the owner explicitly choosing it live in the current conversation. An unanswered message, a cron tick, a "do not stop" override, or any autonomous agent decision is NOT consent. NEVER write invented answers into `workforce-interview-answers.md`.
 
